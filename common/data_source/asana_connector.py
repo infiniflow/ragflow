@@ -11,7 +11,6 @@ from common.data_source.models import Document, GenerateDocumentsOutput, Generat
 from common.data_source.utils import extract_size_bytes, get_file_ext
 
 
-
 # https://github.com/Asana/python-asana/tree/master?tab=readme-ov-file#documentation-for-api-endpoints
 class AsanaTask:
     def __init__(
@@ -37,9 +36,7 @@ class AsanaTask:
 
 
 class AsanaAPI:
-    def __init__(
-        self, api_token: str, workspace_gid: str, team_gid: str | None
-    ) -> None:
+    def __init__(self, api_token: str, workspace_gid: str, team_gid: str | None) -> None:
         self._user = None
         self.workspace_gid = workspace_gid
         self.team_gid = team_gid
@@ -58,36 +55,26 @@ class AsanaAPI:
         self.configuration.access_token = api_token
         self.task_count = 0
 
-    def get_tasks(
-        self, project_gids: list[str] | None, start_date: str
-    ) -> Iterator[AsanaTask]:
+    def get_tasks(self, project_gids: list[str] | None, start_date: str) -> Iterator[AsanaTask]:
         """Get all tasks from the projects with the given gids that were modified since the given date.
         If project_gids is None, get all tasks from all projects in the workspace."""
         projects_list = self._get_project_gids_to_process(project_gids)
         start_seconds = int(time.mktime(datetime.now().timetuple()))
         for project_gid in projects_list:
-            for task in self._get_tasks_for_project(
-                project_gid, start_date, start_seconds
-            ):
+            for task in self._get_tasks_for_project(project_gid, start_date, start_seconds):
                 yield task
         logging.info(f"Completed fetching {self.task_count} tasks from Asana")
         if self.api_error_count > 0:
-            logging.warning(
-                f"Encountered {self.api_error_count} API errors during task fetching"
-            )
+            logging.warning(f"Encountered {self.api_error_count} API errors during task fetching")
 
-    def get_task_ids(
-        self, project_gids: list[str] | None, start_date: str
-    ) -> Iterator[str]:
+    def get_task_ids(self, project_gids: list[str] | None, start_date: str) -> Iterator[str]:
         """Get task gids without hydrating comments, users, or task text."""
         projects_list = self._get_project_gids_to_process(project_gids)
         for project_gid in projects_list:
             for task_id in self._get_task_ids_for_project(project_gid, start_date):
                 yield task_id
 
-    def _get_project_gids_to_process(
-        self, project_gids: list[str] | None
-    ) -> list[str]:
+    def _get_project_gids_to_process(self, project_gids: list[str] | None) -> list[str]:
         logging.info("Starting to fetch Asana projects")
         projects = self.project_api.get_projects(
             opts={
@@ -102,9 +89,7 @@ class AsanaAPI:
             if project_gids is None or project_gid in project_gids:
                 projects_list.append(project_gid)
             else:
-                logging.debug(
-                    f"Skipping project: {project_gid} - not in accepted project_gids"
-                )
+                logging.debug(f"Skipping project: {project_gid} - not in accepted project_gids")
             project_count += 1
             if project_count % 100 == 0:
                 logging.info(f"Processed {project_count} projects")
@@ -121,25 +106,17 @@ class AsanaAPI:
             logging.info(f"Skipping archived project: {project_name} ({project_gid})")
             return
         if not team_gid:
-            logging.info(
-                f"Skipping project without a team: {project_name} ({project_gid})"
-            )
+            logging.info(f"Skipping project without a team: {project_name} ({project_gid})")
             return
         if project.get("privacy_setting") == "private":
             if self.team_gid and team_gid != self.team_gid:
-                logging.info(
-                    f"Skipping private project not in configured team: {project_name} ({project_gid})"
-                )
+                logging.info(f"Skipping private project not in configured team: {project_name} ({project_gid})")
                 return
-            logging.info(
-                f"Processing private project in configured team: {project_name} ({project_gid})"
-            )
+            logging.info(f"Processing private project in configured team: {project_name} ({project_gid})")
 
         return project
 
-    def _get_task_ids_for_project(
-        self, project_gid: str, start_date: str
-    ) -> Iterator[str]:
+    def _get_task_ids_for_project(self, project_gid: str, start_date: str) -> Iterator[str]:
         project = self._get_project_to_process(project_gid)
         if project is None:
             return
@@ -156,18 +133,14 @@ class AsanaAPI:
             if task_id:
                 yield task_id
 
-    def _get_tasks_for_project(
-        self, project_gid: str, start_date: str, start_seconds: int
-    ) -> Iterator[AsanaTask]:
+    def _get_tasks_for_project(self, project_gid: str, start_date: str, start_seconds: int) -> Iterator[AsanaTask]:
         project = self._get_project_to_process(project_gid)
         if project is None:
             return
 
         project_name = project.get("name", project_gid)
         simple_start_date = start_date.split(".")[0].split("+")[0]
-        logging.info(
-            f"Fetching tasks modified since {simple_start_date} for project: {project_name} ({project_gid})"
-        )
+        logging.info(f"Fetching tasks modified since {simple_start_date} for project: {project_name} ({project_gid})")
 
         opts = {
             "opt_fields": "name,memberships,memberships.project,completed_at,completed_by,created_at,"
@@ -183,10 +156,7 @@ class AsanaAPI:
                 end_seconds = time.mktime(datetime.now().timetuple())
                 runtime_seconds = end_seconds - start_seconds
                 if runtime_seconds > 0:
-                    logging.info(
-                        f"Processed {self.task_count} tasks in {runtime_seconds:.0f} seconds "
-                        f"({self.task_count / runtime_seconds:.2f} tasks/second)"
-                    )
+                    logging.info(f"Processed {self.task_count} tasks in {runtime_seconds:.0f} seconds ({self.task_count / runtime_seconds:.2f} tasks/second)")
 
             logging.debug(f"Processing Asana task: {data['name']}")
 
@@ -249,17 +219,13 @@ class AsanaAPI:
         for story in stories:
             story_count += 1
             if story["resource_subtype"] == "comment_added":
-                comment = self.stories_api.get_story(
-                    story["gid"], opts={"opt_fields": "text,created_by,created_at"}
-                )
+                comment = self.stories_api.get_story(story["gid"], opts={"opt_fields": "text,created_by,created_at"})
                 commenter = self.get_user(comment["created_by"]["gid"])["name"]
                 text += f"Comment by {commenter}: {comment['text']}\n\n"
                 comment_count += 1
 
         story_duration = time.time() - story_start
-        logging.debug(
-            f"Processed {story_count} stories (including {comment_count} comments) in {story_duration:.2f} seconds"
-        )
+        logging.debug(f"Processed {story_count} stories (including {comment_count} comments) in {story_duration:.2f} seconds")
 
         return text
 
@@ -271,30 +237,20 @@ class AsanaAPI:
 
         try:
             # Step 1: list attachment compact records
-            for att in self.attachments_api.get_attachments_for_object(
-                parent=task_gid,
-                opts={}
-            ):
+            for att in self.attachments_api.get_attachments_for_object(parent=task_gid, opts={}):
                 gid = att.get("gid")
                 if not gid:
                     continue
 
                 try:
                     # Step 2: expand to full attachment
-                    full = self.attachments_api.get_attachment(
-                        attachment_gid=gid,
-                        opts={
-                            "opt_fields": "gid,name,download_url,size,created_at"
-                        }
-                    )
+                    full = self.attachments_api.get_attachment(attachment_gid=gid, opts={"opt_fields": "gid,name,download_url,size,created_at"})
 
                     if full.get("download_url"):
                         attachments.append(full)
 
                 except Exception:
-                    logging.exception(
-                        f"Failed to fetch attachment detail {gid} for task {task_gid}"
-                    )
+                    logging.exception(f"Failed to fetch attachment detail {gid} for task {task_gid}")
                     self.api_error_count += 1
 
         except Exception:
@@ -310,22 +266,12 @@ class AsanaAPI:
         team_id: str | None,
     ):
 
-        ws_users = self.users_api.get_users(
-            opts={
-                "workspace": workspace_id,
-                "opt_fields": "gid,name,email"
-            }
-        )
+        ws_users = self.users_api.get_users(opts={"workspace": workspace_id, "opt_fields": "gid,name,email"})
 
-        workspace_users = {
-            u["gid"]: u.get("email")
-            for u in ws_users
-            if u.get("email")
-        }
+        workspace_users = {u["gid"]: u.get("email") for u in ws_users if u.get("email")}
 
         if not project_ids:
             return set(workspace_users.values())
-
 
         project_emails = set()
 
@@ -333,19 +279,13 @@ class AsanaAPI:
             pid = pid.strip()
             if not pid:
                 continue
-            project = self.project_api.get_project(
-                pid,
-                opts={"opt_fields": "team,privacy_setting"}
-            )
+            project = self.project_api.get_project(pid, opts={"opt_fields": "team,privacy_setting"})
 
             if project.get("privacy_setting") == "private":
                 if team_id and project.get("team", {}).get("gid") != team_id:
                     continue
 
-            memberships = self.project_memberships_api.get_project_memberships_for_project(
-                pid,
-                opts={"opt_fields": "user.gid,user.email"}
-            )
+            memberships = self.project_memberships_api.get_project_memberships_for_project(pid, opts={"opt_fields": "user.gid,user.email"})
 
             for m in memberships:
                 email = (m.get("user") or {}).get("email")
@@ -382,18 +322,12 @@ class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         continue_on_failure: bool = CONTINUE_ON_CONNECTOR_FAILURE,
     ) -> None:
         self.workspace_id = asana_workspace_id
-        self.project_ids_to_index: list[str] | None = (
-            [project_id.strip() for project_id in asana_project_ids.split(",") if project_id.strip()]
-            if asana_project_ids
-            else None
-        )
+        self.project_ids_to_index: list[str] | None = [project_id.strip() for project_id in asana_project_ids.split(",") if project_id.strip()] if asana_project_ids else None
         self.asana_team_id = asana_team_id.strip() if asana_team_id and asana_team_id.strip() else None
         self.batch_size = batch_size
         self.continue_on_failure = continue_on_failure
         self.size_threshold = None
-        logging.info(
-            f"AsanaConnector initialized with workspace_id: {asana_workspace_id}"
-        )
+        logging.info(f"AsanaConnector initialized with workspace_id: {asana_workspace_id}")
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         self.api_token = credentials["asana_api_token_secret"]
@@ -406,9 +340,7 @@ class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
         logging.info("Asana credentials loaded and API client initialized")
         return None
 
-    def poll_source(
-        self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch | None
-    ) -> GenerateDocumentsOutput:
+    def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch | None) -> GenerateDocumentsOutput:
         start_time = datetime.fromtimestamp(start, tz=timezone.utc).isoformat()
         end_time = datetime.fromtimestamp(end, tz=timezone.utc) if end is not None else None
         logging.info(f"Starting Asana poll from {start_time}")
@@ -480,14 +412,8 @@ class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                 file_blob = resp.content
                 filename = att.get("name", "attachment")
                 size_bytes = extract_size_bytes(att)
-                if (
-                    self.size_threshold is not None
-                    and isinstance(size_bytes, int)
-                    and size_bytes > self.size_threshold
-                ):
-                    logging.warning(
-                        f"{filename} exceeds size threshold of {self.size_threshold}. Skipping."
-                    )
+                if self.size_threshold is not None and isinstance(size_bytes, int) and size_bytes > self.size_threshold:
+                    logging.warning(f"{filename} exceeds size threshold of {self.size_threshold}. Skipping.")
                     continue
                 docs.append(
                     Document(
@@ -502,12 +428,9 @@ class AsanaConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
                     )
                 )
             except Exception:
-                logging.exception(
-                    f"Failed to download attachment {att.get('gid')} for task {task.id}"
-                )
+                logging.exception(f"Failed to download attachment {att.get('gid')} for task {task.id}")
 
         return docs
-
 
 
 if __name__ == "__main__":

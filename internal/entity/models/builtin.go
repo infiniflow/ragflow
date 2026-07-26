@@ -2,11 +2,12 @@ package models
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 )
@@ -47,16 +48,16 @@ func (b *BuiltinModel) NewInstance(baseURL map[string]string) ModelDriver {
 	}
 }
 
-func (b *BuiltinModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (b *BuiltinModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	return nil, fmt.Errorf("builtin model does not support chat")
 }
 
-func (b *BuiltinModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (b *BuiltinModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("builtin model does not support chat")
 }
 
 // Embed sends texts to a TEI (Text Embeddings Inference) server and returns embeddings
-func (b *BuiltinModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -122,35 +123,35 @@ func (b *BuiltinModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	return result, nil
 }
 
-func (b *BuiltinModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (b *BuiltinModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("builtin model does not support rerank")
 }
 
-func (b *BuiltinModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (b *BuiltinModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("builtin model does not support transcription")
 }
 
-func (b *BuiltinModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (b *BuiltinModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("builtin model does not support transcription")
 }
 
-func (b *BuiltinModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (b *BuiltinModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("builtin model does not support TTS")
 }
 
-func (b *BuiltinModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (b *BuiltinModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("builtin model does not support TTS")
 }
 
-func (b *BuiltinModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (b *BuiltinModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("builtin model does not support OCR")
 }
 
-func (b *BuiltinModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (b *BuiltinModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("builtin model does not support parse file")
 }
 
-func (b *BuiltinModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (b *BuiltinModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	return []ListModelResponse{
 		{
 			Name: b.model,
@@ -158,21 +159,21 @@ func (b *BuiltinModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 	}, nil
 }
 
-func (b *BuiltinModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (b *BuiltinModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("builtin model does not support balance")
 }
 
-func (b *BuiltinModel) CheckConnection(apiConfig *APIConfig) error {
+func (b *BuiltinModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
 	// Try to get model info to verify connection
-	_, err := b.Embed(nil, []string{"test"}, apiConfig, nil)
+	_, err := b.Embed(ctx, nil, []string{"test"}, apiConfig, nil, nil)
 	return err
 }
 
-func (b *BuiltinModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (b *BuiltinModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("builtin model does not support tasks")
 }
 
-func (b *BuiltinModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (b *BuiltinModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("builtin model does not support tasks")
 }
 
@@ -180,7 +181,7 @@ func (b *BuiltinModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskRespo
 func GetBuiltinEmbeddingModel(modelName string) ModelDriver {
 	// Get TEI base URL from environment or config
 	// Default to port 6380 where docker-tei-cpu-1 maps internal port 80
-	teiBaseURL := getEnv("TEI_BASE_URL", "http://localhost:6380")
+	teiBaseURL := getEnv(common.EnvTEIBaseURL, "http://localhost:6380")
 
 	// Create a builtin model instance with TEI endpoint
 	driver := NewBuiltinModel(teiBaseURL, modelName)
@@ -189,7 +190,7 @@ func GetBuiltinEmbeddingModel(modelName string) ModelDriver {
 
 // getEnv is a helper to get environment variable with default
 func getEnv(key, defaultValue string) string {
-	if value := strings.TrimSpace(strings.Replace(os.Getenv(key), "\\", "/", -1)); value != "" {
+	if value := strings.TrimSpace(strings.Replace(common.GetEnv(key), "\\", "/", -1)); value != "" {
 		return value
 	}
 	return defaultValue

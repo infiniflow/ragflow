@@ -21,7 +21,7 @@ from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import wait_for
 
 
-@pytest.mark.p1
+@pytest.mark.p3
 def test_dataset_search_rest_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     res = rest_client.post(
@@ -34,7 +34,7 @@ def test_dataset_search_rest_endpoint(rest_client, ensure_parsed_document):
     assert "chunks" in payload["data"], payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_multi_dataset_search_rest_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     res = rest_client.post(
@@ -47,7 +47,7 @@ def test_multi_dataset_search_rest_endpoint(rest_client, ensure_parsed_document)
     assert "chunks" in payload["data"], payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_multi_dataset_search_with_metadata_filter(rest_client, ensure_parsed_document):
     dataset_id, document_id = ensure_parsed_document()
     meta_res = rest_client.patch(
@@ -80,7 +80,7 @@ def test_multi_dataset_search_with_metadata_filter(rest_client, ensure_parsed_do
     assert "chunks" in payload["data"], payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_retrieval_compatibility_endpoint(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     # /api/v1/retrieval is SDK compatibility endpoint registered from chunk_api.py.
@@ -163,7 +163,7 @@ def test_retrieval_requires_auth_contract():
         assert payload["message"] == expected_message, (scenario_name, payload)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_retrieval_page_and_page_size_contract(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     cases = [
@@ -189,7 +189,7 @@ def test_retrieval_page_and_page_size_contract(rest_client, ensure_parsed_docume
             assert expected_message in body["message"], (scenario_name, body)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_retrieval_highlight_keyword_and_invalid_params_contract(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
 
@@ -272,7 +272,7 @@ def test_retrieval_vector_similarity_and_top_k_contract(rest_client, ensure_pars
             assert expected_message in body["message"], (scenario_name, body)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_retrieval_document_ids_and_metadata_condition_contract(rest_client, ensure_parsed_document):
     dataset_id, document_id = ensure_parsed_document()
 
@@ -311,7 +311,7 @@ def test_retrieval_document_ids_and_metadata_condition_contract(rest_client, ens
     assert metadata_condition_payload["data"]["chunks"] == [], metadata_condition_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_retrieval_rerank_unknown_contract(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     res = rest_client.post(
@@ -324,7 +324,7 @@ def test_retrieval_rerank_unknown_contract(rest_client, ensure_parsed_document):
     assert payload["message"], payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_retrieval_concurrent_contract(rest_client, ensure_parsed_document):
     dataset_id, _ = ensure_parsed_document()
     payload = {"question": "chunk", "dataset_ids": [dataset_id]}
@@ -374,7 +374,7 @@ def test_deleted_chunks_batch_not_in_retrieval_contract(rest_client, create_docu
     _retrieval_lacks_chunks(rest_client, dataset_id, "BATCH_DELETE_TEST_CHUNK", chunk_ids)
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_related_questions_contract(rest_client, rest_client_noauth):
     tokens_res = rest_client.get("/system/tokens")
     assert tokens_res.status_code == 200, tokens_res.text

@@ -13,9 +13,10 @@ import {
 import { useFetchPureFileList } from '@/hooks/use-file-request';
 import { IModalProps } from '@/interfaces/common';
 import { IFile } from '@/interfaces/database/file-manager';
-import { isEmpty } from 'lodash';
+import { isEmpty, uniqBy } from 'lodash';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { isFolderType } from './util';
 
 export function MoveDialog({ hideModal, onOk, loading }: IModalProps<any>) {
   const { t } = useTranslation();
@@ -31,18 +32,27 @@ export function MoveDialog({ hideModal, onOk, loading }: IModalProps<any>) {
       const ret = await fetchList(id as string);
       if (ret.code === 0) {
         setTreeData((tree) => {
-          return tree.concat(
-            ret.data.files
-              .filter((x: IFile) => x.type === 'folder')
-              .map((x: IFile) => ({
-                id: x.id,
-                parentId: x.parent_id,
-                title: x.name,
-                isLeaf:
-                  typeof x.has_child_folder === 'boolean'
-                    ? !x.has_child_folder
-                    : false,
-              })),
+          return uniqBy(
+            tree.concat(
+              ret.data.files
+                .filter(
+                  (x: IFile) =>
+                    x.type === 'folder' &&
+                    !(
+                      isFolderType(x.type) && x.name.toLowerCase() === 'skills'
+                    ),
+                )
+                .map((x: IFile) => ({
+                  id: x.id,
+                  parentId: x.parent_id,
+                  title: x.name,
+                  isLeaf:
+                    typeof x.has_child_folder === 'boolean'
+                      ? !x.has_child_folder
+                      : false,
+                })),
+            ),
+            'id',
           );
         });
       }

@@ -123,24 +123,14 @@ class TestGetMetadataFilterExpression:
 
     def test_simple_is_condition(self):
         """Test simple 'is' comparison."""
-        filter_dict = {
-            "conditions": [
-                {"name": "author", "comparison_operator": "is", "value": "John"}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "author", "comparison_operator": "is", "value": "John"}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert "JSON_EXTRACT(metadata, '$.author')" in result
         assert "= 'John'" in result
 
     def test_numeric_comparison_with_zero(self):
         """Test numeric comparison with zero value (regression test for bug)."""
-        filter_dict = {
-            "conditions": [
-                {"name": "count", "comparison_operator": "=", "value": 0}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "count", "comparison_operator": "=", "value": 0}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert "JSON_EXTRACT(metadata, '$.count')" in result
         assert "= 0" in result
@@ -148,85 +138,49 @@ class TestGetMetadataFilterExpression:
 
     def test_numeric_comparison_with_float_zero(self):
         """Test numeric comparison with 0.0."""
-        filter_dict = {
-            "conditions": [
-                {"name": "rating", "comparison_operator": "=", "value": 0.0}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "rating", "comparison_operator": "=", "value": 0.0}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert "JSON_EXTRACT(metadata, '$.rating')" in result
         assert "0.0" in result
 
     def test_empty_string_condition(self):
         """Test condition with empty string value."""
-        filter_dict = {
-            "conditions": [
-                {"name": "status", "comparison_operator": "is", "value": ""}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "status", "comparison_operator": "is", "value": ""}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert "JSON_EXTRACT(metadata, '$.status')" in result
         assert "= ''" in result
 
     def test_boolean_false_condition(self):
         """Test condition with False value."""
-        filter_dict = {
-            "conditions": [
-                {"name": "active", "comparison_operator": "is", "value": False}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "active", "comparison_operator": "is", "value": False}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert "JSON_EXTRACT(metadata, '$.active')" in result
         assert "false" in result
 
     def test_empty_list_condition(self):
         """Test condition with empty list."""
-        filter_dict = {
-            "conditions": [
-                {"name": "tags", "comparison_operator": "is", "value": []}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "tags", "comparison_operator": "is", "value": []}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert "JSON_EXTRACT(metadata, '$.tags')" in result
         assert "'[]'" in result
 
     def test_empty_dict_condition(self):
         """Test condition with empty dict."""
-        filter_dict = {
-            "conditions": [
-                {"name": "metadata", "comparison_operator": "is", "value": {}}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "metadata", "comparison_operator": "is", "value": {}}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert "JSON_EXTRACT(metadata, '$.metadata')" in result
         assert "'{}'" in result
 
     def test_none_value_condition(self):
         """Test condition with None value."""
-        filter_dict = {
-            "conditions": [
-                {"name": "optional", "comparison_operator": "is", "value": None}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "optional", "comparison_operator": "is", "value": None}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert "JSON_EXTRACT(metadata, '$.optional')" in result
         assert "NULL" in result
 
     def test_multiple_conditions_with_and(self):
         """Test multiple conditions with AND operator."""
-        filter_dict = {
-            "conditions": [
-                {"name": "author", "comparison_operator": "is", "value": "John"},
-                {"name": "year", "comparison_operator": ">", "value": 2020}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "author", "comparison_operator": "is", "value": "John"}, {"name": "year", "comparison_operator": ">", "value": 2020}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert "JSON_EXTRACT(metadata, '$.author')" in result
         assert "JSON_EXTRACT(metadata, '$.year')" in result
@@ -235,11 +189,8 @@ class TestGetMetadataFilterExpression:
     def test_multiple_conditions_with_or(self):
         """Test multiple conditions with OR operator."""
         filter_dict = {
-            "conditions": [
-                {"name": "status", "comparison_operator": "is", "value": "active"},
-                {"name": "status", "comparison_operator": "is", "value": "pending"}
-            ],
-            "logical_operator": "or"
+            "conditions": [{"name": "status", "comparison_operator": "is", "value": "active"}, {"name": "status", "comparison_operator": "is", "value": "pending"}],
+            "logical_operator": "or",
         }
         result = get_metadata_filter_expression(filter_dict)
         assert "JSON_EXTRACT(metadata, '$.status')" in result
@@ -247,71 +198,40 @@ class TestGetMetadataFilterExpression:
 
     def test_greater_than_operator(self):
         """Test greater than comparison."""
-        filter_dict = {
-            "conditions": [
-                {"name": "score", "comparison_operator": ">", "value": 90}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "score", "comparison_operator": ">", "value": 90}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert ">" in result
         assert "90" in result
 
     def test_less_than_operator(self):
         """Test less than comparison."""
-        filter_dict = {
-            "conditions": [
-                {"name": "age", "comparison_operator": "<", "value": 18}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "age", "comparison_operator": "<", "value": 18}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert "<" in result
         assert "18" in result
 
     def test_contains_operator(self):
         """Test contains operator."""
-        filter_dict = {
-            "conditions": [
-                {"name": "title", "comparison_operator": "contains", "value": "Python"}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "title", "comparison_operator": "contains", "value": "Python"}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert "JSON_EXTRACT(metadata, '$.title')" in result
 
     def test_empty_operator(self):
         """Test empty operator."""
-        filter_dict = {
-            "conditions": [
-                {"name": "description", "comparison_operator": "empty", "value": None}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "description", "comparison_operator": "empty", "value": None}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert "JSON_EXTRACT(metadata, '$.description')" in result
         assert "IS NULL" in result or "= ''" in result
 
     def test_not_empty_operator(self):
         """Test not empty operator."""
-        filter_dict = {
-            "conditions": [
-                {"name": "description", "comparison_operator": "not empty", "value": None}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "description", "comparison_operator": "not empty", "value": None}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert "JSON_EXTRACT(metadata, '$.description')" in result
 
     def test_parentheses_wrapping(self):
         """Test that result is wrapped in parentheses."""
-        filter_dict = {
-            "conditions": [
-                {"name": "field", "comparison_operator": "is", "value": "value"}
-            ],
-            "logical_operator": "and"
-        }
+        filter_dict = {"conditions": [{"name": "field", "comparison_operator": "is", "value": "value"}], "logical_operator": "and"}
         result = get_metadata_filter_expression(filter_dict)
         assert result.startswith("(")
         assert result.endswith(")")
-

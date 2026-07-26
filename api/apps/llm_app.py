@@ -62,7 +62,7 @@ def factories():
             f["model_types"] = list(
                 mdl_types.get(
                     f["name"],
-                    [LLMType.CHAT, LLMType.EMBEDDING, LLMType.RERANK, LLMType.IMAGE2TEXT, LLMType.SPEECH2TEXT, LLMType.TTS, LLMType.OCR],
+                    [LLMType.CHAT, LLMType.EMBEDDING, LLMType.RERANK, LLMType.VISION, LLMType.ASR, LLMType.TTS, LLMType.OCR],
                 )
             )
 
@@ -111,6 +111,7 @@ async def set_api_key():
             assert factory in ChatModel, f"Chat model from {factory} is not supported yet."
             mdl = ChatModel[factory](req["api_key"], llm.llm_name, base_url=base_url, **extra)
             try:
+
                 async def check_streamly():
                     async for chunk in mdl.async_chat_streamly(
                         None,
@@ -149,7 +150,7 @@ async def set_api_key():
             break
 
     if req.get("verify", False):
-        return get_json_result(data={"message": msg, "success": len(msg.strip())==0})
+        return get_json_result(data={"message": msg, "success": len(msg.strip()) == 0})
 
     if msg:
         return get_data_error_result(message=msg)
@@ -207,7 +208,10 @@ async def add_llm():
         saved_llm_name = llm_name + _LLM_NAME_SUFFIX.get(factory, "")
         logging.debug(
             "add_llm: attempting api_key recovery factory=%s llm_name=%s saved_llm_name=%s tenant_id=%s",
-            factory, llm_name, saved_llm_name, current_user.id,
+            factory,
+            llm_name,
+            saved_llm_name,
+            current_user.id,
         )
         existing_llms = TenantLLMService.query(
             tenant_id=current_user.id,
@@ -216,21 +220,25 @@ async def add_llm():
         )
         logging.debug(
             "add_llm: api_key recovery query matched=%d factory=%s saved_llm_name=%s",
-            len(existing_llms) if existing_llms else 0, factory, saved_llm_name,
+            len(existing_llms) if existing_llms else 0,
+            factory,
+            saved_llm_name,
         )
         if existing_llms:
-            existing_api_key, _, _ = TenantLLMService._decode_api_key_config(
-                existing_llms[0].api_key
-            )
+            existing_api_key, _, _ = TenantLLMService._decode_api_key_config(existing_llms[0].api_key)
             logging.debug(
                 "add_llm: api_key recovery decoded=%s factory=%s saved_llm_name=%s",
-                "present" if existing_api_key else "absent", factory, saved_llm_name,
+                "present" if existing_api_key else "absent",
+                factory,
+                saved_llm_name,
             )
             if existing_api_key:
                 req["api_key"] = existing_api_key
                 logging.info(
                     "add_llm: recovered saved api_key from existing record factory=%s saved_llm_name=%s tenant_id=%s",
-                    factory, saved_llm_name, current_user.id,
+                    factory,
+                    saved_llm_name,
+                    current_user.id,
                 )
 
     api_key = req.get("api_key", "x")
@@ -335,6 +343,7 @@ async def add_llm():
                 **extra,
             )
             try:
+
                 async def check_streamly():
                     async for chunk in mdl.async_chat_streamly(
                         None,
@@ -368,7 +377,7 @@ async def add_llm():
                 except Exception as e:
                     msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
 
-        case LLMType.IMAGE2TEXT.value:
+        case LLMType.VISION.value:
             from rag.utils.base64_image import test_image
 
             assert factory in CvModel, f"Image to text model from {factory} is not supported yet."
@@ -387,6 +396,7 @@ async def add_llm():
             assert factory in TTSModel, f"TTS model from {factory} is not supported yet."
             mdl = TTSModel[factory](key=model_api_key, model_name=mdl_nm, base_url=model_base_url)
             try:
+
                 def drain_tts():
                     for _ in mdl.tts("Hello~ RAGFlower!"):
                         pass
@@ -409,7 +419,7 @@ async def add_llm():
                     raise RuntimeError(reason or "Model not available")
             except Exception as e:
                 msg += f"\nFail to access model({factory}/{mdl_nm})." + str(e)
-        case LLMType.SPEECH2TEXT.value:
+        case LLMType.ASR.value:
             assert factory in Seq2txtModel, f"Speech model from {factory} is not supported yet."
             try:
                 mdl = Seq2txtModel[factory](key=model_api_key, model_name=mdl_nm, base_url=model_base_url)

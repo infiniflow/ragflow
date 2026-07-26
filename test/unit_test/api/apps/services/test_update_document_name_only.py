@@ -99,16 +99,8 @@ def _load_update_document_name_only_module(monkeypatch, *, file_lookup):
         fine_grained_tokenize=lambda tokens: tokens,
     )
 
-    module_path = (
-        Path(__file__).resolve().parents[5]
-        / "api"
-        / "apps"
-        / "services"
-        / "document_api_service.py"
-    )
-    spec = importlib.util.spec_from_file_location(
-        "test_update_document_name_only_module", module_path
-    )
+    module_path = Path(__file__).resolve().parents[5] / "api" / "apps" / "services" / "document_api_service.py"
+    spec = importlib.util.spec_from_file_location("test_update_document_name_only_module", module_path)
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, "test_update_document_name_only_module", module)
     spec.loader.exec_module(module)

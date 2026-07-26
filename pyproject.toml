@@ -1,18 +1,18 @@
 [project]
 name = "ragflow"
-version = "0.26.0"
+version = "0.26.4"
 description = "[RAGFlow](https://ragflow.io/) is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. It offers a streamlined RAG workflow for businesses of any scale, combining LLM (Large Language Models) to provide truthful question-answering capabilities, backed by well-founded citations from various complex formatted data."
 authors = [{ name = "Zhichang Yu", email = "yuzhichang@gmail.com" }]
 license-files = ["LICENSE"]
 readme = "README.md"
-requires-python = ">=3.13,<3.15"
+requires-python = ">=3.13,<3.14"
 dependencies = [
     # discord-py==2.3.2 unconditionally imports audioop in discord/player.py at module-
     # load time. audioop was removed from the CPython stdlib in Python 3.13 (PEP 594),
     # so any import of the discord package raises ImportError on Python 3.13 — even in
     # tests that never use voice features. audioop-lts provides the module as a backport.
     "audioop-lts>=0.2.1",
-    "aiosmtplib>=5.0.0",
+    "aiosmtplib>=5.1.1,<6.0.0",
     "akshare>=1.15.78,<2.0.0",
     "anthropic==0.76.0",
     "arxiv==2.1.3",
@@ -28,7 +28,7 @@ dependencies = [
     "chardet>=5.2.0,<6.0.0",
     "cn2an==0.5.22",
     "cohere==5.6.2",
-    "crawl4ai>=0.8.0",
+    "crawl4ai>=0.9.2,<0.9.3",
     "dashscope==1.25.11",
     "deepl==1.18.0",
     "debugpy>=1.8.13",
@@ -49,6 +49,7 @@ dependencies = [
     "flask-session==0.8.0",
     "google-api-python-client>=2.190.0,<3.0.0",
     "google-auth-oauthlib>=1.2.0,<2.0.0",
+    "google-cloud-bigquery>=3.25.0,<4.0.0",
     "google-cloud-storage>=2.19.0,<3.0.0",
     "google-genai>=1.41.0,<2.0.0",
     "google-search-results==2.4.2",
@@ -56,16 +57,16 @@ dependencies = [
     "groq>=0.30.0,<1.0.0",
     "grpcio-status==1.67.1",
     "html-text==0.6.2",
-    "infinity-sdk==0.7.0",
+    "infinity-sdk==0.7.2",
     "infinity-emb>=0.0.66,<0.0.67",
     "jira==3.10.5",
-    "json-repair==0.35.0",
+    "json-repair==0.60.1",
     "langfuse>=4.0.1",
     "mammoth>=1.11.0",
-    "markdown==3.6",
+    "markdown>=3.8.1,<4.0.0",
     "markdown-to-json==2.1.1",
     "markdownify>=1.2.0",
-    "mcp>=1.19.0",
+    "mcp>=1.28.1,<2.0.0",
     "mini-racer>=0.12.4,<0.13.0",
     "minio==7.2.4",
     "mistralai==0.4.2",
@@ -90,7 +91,7 @@ dependencies = [
     "pyobvector==0.2.22",
     "pyodbc>=5.2.0,<6.0.0",
     "pypandoc>=1.16",
-    "pypdf>=6.10.2",
+    "pypdf>=6.14.2",
     "python-calamine>=0.4.0",
     "python-docx>=1.1.2,<2.0.0",
     "paramiko>=3.5.1",
@@ -112,7 +113,7 @@ dependencies = [
     "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
     "slack-sdk==3.37.0",
     "socksio==1.0.0",
-    "agentrun-sdk>=0.0.16,<1.0.0",
+    "agentrun-sdk>=0.0.51,<1.0.0",
     "nest-asyncio>=1.6.0,<2.0.0",  # Needed for agent/component/message.py
     "sqlglotrs==0.9.0",
     "tavily-python==0.5.1",
@@ -129,15 +130,16 @@ dependencies = [
     "setuptools>=78.1.1,<81.0.0",
     "xpinyin==0.7.6",
     "yfinance==0.2.65",
-    "zhipuai==2.0.1",
+    "zai-sdk>=0.2.3,<1.0.0",
     "peewee>=3.17.1,<4.0.0",
+    "langgraph==1.2.0",
     #    following modules aren't necessary
     #    "nltk==3.9.1",
     #    "numpy>=1.26.0,<2.0.0",
     #    "openai>=1.45.0",
     #    "openpyxl>=3.1.0,<4.0.0",
     #    "pandas>=2.2.0,<3.0.0",
-    #    "pillow>=12.2.0,<13.0.0",
+    #    "pillow>=12.3.0,<13.0.0",
     #    "protobuf==5.27.2",
     #    "pymysql>=1.1.1,<2.0.0",
     #    "python-dotenv==1.0.1",
@@ -155,11 +157,12 @@ dependencies = [
     #    "xxhash>=3.5.0,<4.0.0",
     #    "trio>=0.17.0,<0.29.0",
     #    "click>=8.1.8",
-    # 1.82.6 has an internal ImportError loading add_system_prompt_to_messages
-    # from litellm_core_utils.prompt_templates.common_utils, which breaks
-    # `import litellm` at module load and tanks the whole server (#15916).
-    # 1.82.7 / 1.82.8 were already excluded for security in #13768.
-    "litellm~=1.82.0,!=1.82.6,!=1.82.7,!=1.82.8",
+    # 1.88.0 ships a broken `litellm.integrations.custom_logger`
+    # (imports `AgenticLoopPlan` from a sibling types module where the
+    # symbol is missing — see PR #15952 CI run 27414495913), and the
+    # 1.82.6/1.82.7/1.82.8 minors have a broken `litellm.caching.caching`
+    # import chain. Pin to a single known-good 1.82.x release.
+    "litellm==1.82.5",
     #    "pip>=25.2",
     #    "imageio-ffmpeg>=0.6.0",
     #    "cryptography==46.0.3",
@@ -170,13 +173,19 @@ dependencies = [
     "python-gitlab>=7.0.0",
     "alibabacloud-dingtalk>=2.0.0",
     "quart-schema==0.23.0",
+    "lark-oapi>=1.2.0",
+    "discord.py>=2.3.0",
+    "python-telegram-bot>=21.0",
+    "line-bot-sdk>=3.0.0",
+    "wechatpy>=1.8.18",
+    "aiohttp>=3.14.1",
 ]
 
 [dependency-groups]
 test = [
     "hypothesis>=6.132.0",
     "openpyxl>=3.1.5",
-    "pillow>=12.2.0,<13.0.0",
+    "pillow>=12.3.0,<13.0.0",
     "pytest>=8.3.5",
     "pytest-asyncio>=1.3.0",
     "pytest-xdist>=3.8.0",
@@ -202,6 +211,28 @@ constraint-dependencies = [
     # encounters (fixed in trio 0.26 by skipping non-callables). Pulled in transitively
     # via selenium-wire -> trio-websocket -> trio.
     "trio>=0.26.0",
+    # CVE-2026-44431: Cross-origin redirects in urllib3's low-level API may forward sensitive credential
+    # headers to unintended hosts. (CVSS 5.3)
+    # CVE-2026-44432: Decompression flaw in urllib3's streaming API can lead to client-side denial of service
+    # through excessive resource consumption. (CVSS 8.9)
+    # urllib3 < 2.7.0 is vulnerable, pulled in transitively via requests, minio, akshare, and others
+    "urllib3>=2.7.0",
+    # CVE-2026-41066: lxml < 6.1.0 vulnerable; pulled in transitively via html-text,
+    # readability-lxml, akshare, crawl4ai, duckduckgo-search, and others
+    "lxml>=6.1.1",
+    # CVE-2026-49825, CVE-2026-28348, CVE-2026-28350: lxml_html_clean < 0.4.5 vulnerable;
+    # pulled in transitively via html-text, readability-lxml
+    "lxml_html_clean>=0.4.5",
+    # inscriptis 2.7.0 pins lxml<6.0.0, blocking the lxml CVE fix;
+    # 2.7.3 relaxes to <6.2.0. Pulled in transitively via ir-datasets -> ranx
+    "inscriptis>=2.7.3",
+]
+exclude-dependencies = [
+    # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same
+    # `litellm` package namespace as upstream litellm and can corrupt imports.
+    "unclecode-litellm",
+    # Transitive dep of agentrun-sdk; not imported anywhere in RAGFlow code.
+    "agentrun-mem0ai",
 ]
 override-dependencies = [
     # moodlepy<=0.24.1 pins attrs<23.0.0, but trio>=0.26.0 requires attrs>=23.2.0.
@@ -226,12 +257,18 @@ packages = [
     'agent',
     'api',
     'deepdoc',
-    'graphrag',
-    'intergrations.chatgpt-on-wechat.plugins',
+    'rag.graphrag',
+    'tools.chatgpt_on_wechat.plugins',
     'mcp.server',
     'rag',
     'sdk.python.ragflow_sdk',
 ]
+
+# tools/ holds standalone Python projects whose names contain hyphens
+# (chatgpt-on-wechat). Python package names cannot contain hyphens, so
+# we map the underscored Python name to the hyphenated filesystem path.
+[tool.setuptools.package-dir]
+"tools.chatgpt_on_wechat.plugins" = "tools/chatgpt-on-wechat/plugins"
 
 [tool.ruff]
 line-length = 200

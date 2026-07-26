@@ -72,3 +72,18 @@ func (dao *TenantModelProviderDAO) ListByID(id string) ([]string, error) {
 		Pluck("provider_name", &providerNames).Error
 	return providerNames, err
 }
+
+// GetByTenantID returns all TenantModelProvider rows for a tenant.
+// Mirrors Python's TenantModelProviderService.get_by_tenant_id and is the
+// entry point for /api/v1/models ("list all added models"). The Go port
+// uses this to enumerate which providers a tenant has linked before
+// fanning out to TenantModelInstanceDAO / TenantModelDAO for the joined
+// result.
+func (dao *TenantModelProviderDAO) GetByTenantID(tenantID string) ([]*entity.TenantModelProvider, error) {
+	var providers []*entity.TenantModelProvider
+	err := DB.Where("tenant_id = ?", tenantID).Find(&providers).Error
+	if err != nil {
+		return nil, err
+	}
+	return providers, nil
+}

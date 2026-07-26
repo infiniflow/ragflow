@@ -31,11 +31,17 @@ import { t } from 'i18next';
 import { RAGFlowSelectOptionType } from '../ui/select';
 import { Separator } from '../ui/separator';
 
+export type SelectWithSearchOptionType = RAGFlowSelectOptionType & {
+  description?: ReactNode;
+};
+
 export type SelectWithSearchFlagOptionType = {
   label: ReactNode;
   value?: string;
   disabled?: boolean;
-  options?: RAGFlowSelectOptionType[];
+  options?: SelectWithSearchOptionType[];
+  keywords?: string[];
+  description?: ReactNode;
 };
 
 export type SelectWithSearchFlagProps = {
@@ -47,6 +53,7 @@ export type SelectWithSearchFlagProps = {
   disabled?: boolean;
   placeholder?: string;
   emptyData?: string;
+  allowCustomValue?: boolean;
   testId?: string;
   optionTestIdPrefix?: string;
 };
@@ -88,6 +95,7 @@ export const SelectWithSearch = forwardRef<
       disabled = false,
       placeholder = t('common.selectPlaceholder'),
       emptyData = t('common.noDataFound'),
+      allowCustomValue = false,
       testId,
       optionTestIdPrefix,
     },
@@ -96,6 +104,7 @@ export const SelectWithSearch = forwardRef<
     const id = useId();
     const [open, setOpen] = useState<boolean>(false);
     const [value, setValue] = useState<string>('');
+    const [searchValue, setSearchValue] = useState<string>('');
 
     const selectLabel = useMemo(() => {
       if (options.every((x) => x.options === undefined)) {
@@ -120,6 +129,9 @@ export const SelectWithSearch = forwardRef<
     }, [options, value]);
 
     const showSearch = useMemo(() => {
+      if (allowCustomValue) {
+        return true;
+      }
       if (Array.isArray(options) && options.length > 5) {
         return true;
       }
@@ -130,7 +142,21 @@ export const SelectWithSearch = forwardRef<
         return optionsNum > 5;
       }
       return false;
-    }, [options]);
+    }, [allowCustomValue, options]);
+
+    const hasCustomSearchValue = useMemo(() => {
+      const customValue = searchValue.trim();
+      if (!allowCustomValue || !customValue) {
+        return false;
+      }
+
+      const values = options.flatMap((option) =>
+        option.options
+          ? option.options.map((item) => item.value)
+          : option.value,
+      );
+      return !values.includes(customValue);
+    }, [allowCustomValue, options, searchValue]);
 
     const handleSelect = useCallback(
       (val: string) => {
@@ -207,12 +233,23 @@ export const SelectWithSearch = forwardRef<
               <CommandInput
                 placeholder={t('common.search') + '...'}
                 className=" placeholder:text-text-disabled"
+                value={searchValue}
+                onValueChange={setSearchValue}
               />
             )}
             <CommandList className="mt-2 outline-none">
               <CommandEmpty>
                 <div dangerouslySetInnerHTML={{ __html: emptyData }}></div>
               </CommandEmpty>
+              {hasCustomSearchValue && (
+                <CommandItem
+                  value={searchValue.trim()}
+                  onSelect={handleSelect}
+                  className="mb-1 min-h-10"
+                >
+                  <span className="leading-none">{searchValue.trim()}</span>
+                </CommandItem>
+              )}
               {options.map((group, groupIndex) => {
                 if (group.options) {
                   return (
@@ -240,12 +277,25 @@ export const SelectWithSearch = forwardRef<
                               ? `${optionTestIdPrefix}${option.value}`
                               : 'combobox-option'
                           }
-                          className={value === option.value ? 'bg-bg-card' : ''}
+                          className={cn(
+                            'relative flex flex-col min-h-10',
+                            option.description
+                              ? 'items-start gap-1'
+                              : 'justify-center items-start',
+                            value === option.value ? 'bg-bg-card' : '',
+                          )}
                         >
                           <span className="leading-none">{option.label}</span>
-
+                          {option.description && (
+                            <span className="text-text-secondary text-xs leading-none">
+                              {option.description}
+                            </span>
+                          )}
                           {value === option.value && (
-                            <CheckIcon size={16} className="ml-auto" />
+                            <CheckIcon
+                              size={16}
+                              className="absolute top-1/2 -translate-y-1/2 right-2"
+                            />
                           )}
                         </CommandItem>
                       ))}
@@ -258,7 +308,8 @@ export const SelectWithSearch = forwardRef<
                       value={group.value}
                       disabled={group.disabled}
                       keywords={
-                        typeof group.label === 'string' ? [group.label] : []
+                        group.keywords ??
+                        (typeof group.label === 'string' ? [group.label] : [])
                       }
                       onSelect={handleSelect}
                       data-testid={
@@ -266,14 +317,27 @@ export const SelectWithSearch = forwardRef<
                           ? `${optionTestIdPrefix}${group.value}`
                           : 'combobox-option'
                       }
-                      className={cn('mb-1 min-h-10 ', {
-                        'bg-bg-card ': value === group.value,
-                      })}
+                      className={cn(
+                        'relative flex flex-col min-h-10 mb-1',
+                        group.description
+                          ? 'items-start gap-1'
+                          : 'justify-center items-start',
+                        {
+                          'bg-bg-card ': value === group.value,
+                        },
+                      )}
                     >
                       <span className="leading-none">{group.label}</span>
-
+                      {group.description && (
+                        <span className="text-text-secondary text-xs leading-none">
+                          {group.description}
+                        </span>
+                      )}
                       {value === group.value && (
-                        <CheckIcon size={16} className="ml-auto" />
+                        <CheckIcon
+                          size={16}
+                          className="absolute top-1/2 -translate-y-1/2 right-2"
+                        />
                       )}
                     </CommandItem>
                   );

@@ -39,6 +39,7 @@ Infinity uses row_id (returned by search results since PR #13901) for targeted
 single-row updates. If a concurrent update changes the row_id, the Infinity
 connector retries with a fresh row_id lookup.
 """
+
 import logging
 import math
 import os
@@ -245,12 +246,7 @@ class ChunkFeedbackService:
             return False
 
     @classmethod
-    def apply_feedback(
-        cls,
-        tenant_id: str,
-        reference: dict,
-        is_positive: bool
-    ) -> dict:
+    def apply_feedback(cls, tenant_id: str, reference: dict, is_positive: bool) -> dict:
         """
         Apply user feedback to all chunks referenced in a response.
 
@@ -274,13 +270,16 @@ class ChunkFeedbackService:
             logging.debug("No chunk IDs found in reference for feedback")
             return {"success_count": 0, "fail_count": 0, "chunk_ids": []}
 
-        signed_budget = (
-            UPVOTE_WEIGHT_INCREMENT if is_positive else -DOWNVOTE_WEIGHT_DECREMENT
+        signed_budget = UPVOTE_WEIGHT_INCREMENT if is_positive else -DOWNVOTE_WEIGHT_DECREMENT
+        weighting = (
+            CHUNK_FEEDBACK_WEIGHTING
+            if CHUNK_FEEDBACK_WEIGHTING
+            in (
+                "uniform",
+                "relevance",
+            )
+            else "relevance"
         )
-        weighting = CHUNK_FEEDBACK_WEIGHTING if CHUNK_FEEDBACK_WEIGHTING in (
-            "uniform",
-            "relevance",
-        ) else "relevance"
 
         if weighting == "uniform":
             deltas = _allocate_deltas_uniform([(r[0], r[1]) for r in rows], signed_budget)
@@ -314,8 +313,4 @@ class ChunkFeedbackService:
             len(chunk_ids),
         )
 
-        return {
-            "success_count": success_count,
-            "fail_count": fail_count,
-            "chunk_ids": chunk_ids
-        }
+        return {"success_count": success_count, "fail_count": fail_count, "chunk_ids": chunk_ids}

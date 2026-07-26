@@ -9,12 +9,14 @@ import {
   IDocumentInfo,
   IDocumentInfoFilter,
 } from '@/interfaces/database/document';
+import { IStructureGraphResponse } from '@/interfaces/database/document-structure';
 import {
   IChangeParserConfigRequestBody,
   IDocumentMetaRequestBody,
 } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
+import documentStructureService from '@/services/document-structure-service';
 import kbService, {
   changeDocumentParser,
   changeDocumentsStatus,
@@ -37,7 +39,10 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
-import { extractParserConfigExt } from './parser-config-utils';
+import {
+  extractParserConfigExt,
+  isPipelineParserConfig,
+} from './parser-config-utils';
 import {
   useGetKnowledgeSearchParams,
   useSetPaginationParams,
@@ -58,6 +63,27 @@ export const enum DocumentApiAction {
   FetchDocumentThumbnails = 'fetchDocumentThumbnails',
   ParseDocument = 'parseDocument',
 }
+
+export const enum DocumentStructureApiAction {
+  FetchDocumentStructureGraph = 'fetchDocumentStructureGraph',
+  DeleteDocumentStructureGraph = 'deleteDocumentStructureGraph',
+}
+
+const DocumentKeys = {
+  byIds: (ids: string[]) =>
+    [DocumentApiAction.FetchDocumentList, 'byIds', ids] as const,
+};
+
+const documentIngestInFlight = new Map<string, Promise<unknown>>();
+
+export const DocumentStructureKeys = {
+  graph: (datasetId: string, documentId: string) =>
+    [
+      DocumentStructureApiAction.FetchDocumentStructureGraph,
+      datasetId,
+      documentId,
+    ] as const,
+};
 
 export const useUploadDocument = () => {
   const queryClient = useQueryClient();
@@ -214,6 +240,37 @@ export const useFetchDocumentList = (loop = true) => {
   };
 };
 
+export const useFetchDocumentsByIds = (ids: string[]) => {
+  const { id: datasetId } = useParams();
+
+  const { data, isFetching: loading } = useQuery<{
+    docs: IDocumentInfo[];
+    total: number;
+  }>({
+    queryKey: DocumentKeys.byIds(ids),
+    enabled: ids.length > 0 && !!datasetId,
+    initialData: { docs: [], total: 0 },
+    queryFn: async () => {
+      const ret = await listDocument(
+        {
+          id: datasetId,
+          page: 1,
+          page_size: ids.length,
+        },
+        {
+          ids,
+        },
+      );
+      if (ret.data.code === 0) {
+        return ret.data.data;
+      }
+      return { docs: [], total: 0 };
+    },
+  });
+
+  return { documents: data.docs, loading };
+};
+
 // get document filter
 export const useGetDocumentFilter = (): {
   filter: IDocumentInfoFilter;
@@ -334,7 +391,36 @@ export const useRunDocument = () => {
     },
   });
 
-  return { runDocumentByIds: mutateAsync, loading, data };
+  const runDocumentByIds = useCallback(
+    (params: {
+      documentIds: string[];
+      run: number;
+      option?: { delete: boolean; apply_kb: boolean };
+    }) => {
+      const key = JSON.stringify({
+        documentIds: [...params.documentIds].sort(),
+        run: params.run,
+        option: params.option || null,
+      });
+      const existingRequest = documentIngestInFlight.get(key);
+      if (existingRequest) {
+        return existingRequest;
+      }
+
+      const request = mutateAsync(params);
+      documentIngestInFlight.set(key, request);
+      const clearRequest = () => {
+        if (documentIngestInFlight.get(key) === request) {
+          documentIngestInFlight.delete(key);
+        }
+      };
+      void request.then(clearRequest, clearRequest);
+      return request;
+    },
+    [mutateAsync],
+  );
+
+  return { runDocumentByIds, loading, data };
 };
 
 export const useRemoveDocument = () => {
@@ -448,6 +534,71 @@ export const useSetDocumentParser = () => {
   });
 
   return { setDocumentParser: mutateAsync, data, loading };
+};
+
+/**
+ * Go-backend variant of useSetDocumentParser. The Go document endpoint takes
+ * `parser_id` (instead of the legacy `chunk_method`) and expects the
+ * pipeline-shaped parser_config (keyed by operator id) to be sent as-is.
+ * Keep it parallel to the Python version — the original hook stays untouched
+ * and can be dropped once the Python backend is retired.
+ */
+export const useSetDocumentPipelineParser = () => {
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentApiAction.SetDocumentParser, 'pipeline'],
+    mutationFn: async ({
+      parserId,
+      pipelineId,
+      parseType,
+      documentId,
+      datasetId,
+      parserConfig,
+    }: {
+      parserId: string;
+      pipelineId: string;
+      parseType?: number;
+      documentId: string;
+      datasetId: string;
+      parserConfig?: IChangeParserConfigRequestBody;
+    }) => {
+      const updateData: Record<string, unknown> = {
+        parser_id: parserId,
+        pipeline_id: pipelineId,
+      };
+
+      if (parseType !== undefined) {
+        updateData.parse_type = parseType;
+      }
+
+      if (parserConfig) {
+        updateData.parser_config = isPipelineParserConfig(parserConfig)
+          ? parserConfig
+          : extractParserConfigExt(parserConfig);
+      }
+
+      const { data } = await changeDocumentParser(
+        datasetId,
+        documentId,
+        updateData,
+      );
+      if (data.code === 0) {
+        queryClient.invalidateQueries({
+          queryKey: [DocumentApiAction.FetchDocumentList],
+        });
+
+        message.success(i18n.t('message.modified'));
+      }
+      return data.code;
+    },
+  });
+
+  return { setDocumentPipelineParser: mutateAsync, data, loading };
 };
 
 export const useSetDocumentMeta = () => {
@@ -566,3 +717,56 @@ export const useFetchDocumentThumbnailsByIds = () => {
 
   return { data, setDocumentIds };
 };
+
+export function useFetchDocumentStructureGraph() {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const enabled = !!datasetId && !!documentId;
+
+  const { data, isFetching: loading } =
+    useQuery<IStructureGraphResponse | null>({
+      queryKey: DocumentStructureKeys.graph(datasetId, documentId),
+      enabled,
+      initialData: null,
+      gcTime: 0,
+      queryFn: async () => {
+        const { data } =
+          await documentStructureService.getDocumentStructureGraph(
+            datasetId,
+            documentId,
+          );
+        return data?.data ?? null;
+      },
+    });
+
+  return { data, loading };
+}
+
+export function useDeleteDocumentStructureGraph() {
+  const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [DocumentStructureApiAction.DeleteDocumentStructureGraph],
+    mutationFn: async (templateId: string) => {
+      const { data } =
+        await documentStructureService.deleteDocumentStructureGraph(
+          datasetId,
+          documentId,
+          templateId,
+        );
+      if (data.code === 0) {
+        message.success(i18n.t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: DocumentStructureKeys.graph(datasetId, documentId),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { deleteDocumentStructureGraph: mutateAsync, loading, data };
+}

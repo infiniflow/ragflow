@@ -26,8 +26,11 @@ export default {
   // llm model
   listAllAddedModels: `${restAPIv1}/models`,
   defaultModel: `${restAPIv1}/models/default`,
+  // AIMLAPI agent-authorization (OAuth device grant) — obtain a key from the provider dialog
+  aimlapiAuthorizeStart: `${restAPIv1}/llm/aimlapi/authorize/start`,
+  aimlapiAuthorizePoll: `${restAPIv1}/llm/aimlapi/authorize/poll`,
   listProviders: `${restAPIv1}/providers`,
-  addProvider: `${restAPIv1}/providers/`,
+  addProvider: `${restAPIv1}/providers`,
   addProviderInstance: ({ llm_factory }: { llm_factory: string }) =>
     `${restAPIv1}/providers/${llm_factory}/instances`,
   verifyProviderConnection: ({ provider_name }: { provider_name: string }) =>
@@ -59,8 +62,23 @@ export default {
     instance_name: string;
   }) =>
     `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
+  editInstanceModel: ({
+    provider_name,
+    instance_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
   deleteProviderInstance: ({ provider_name }: { provider_name: string }) =>
     `${restAPIv1}/providers/${provider_name}/instances`,
+  updateProviderInstance: ({
+    provider_name,
+    instance_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+  }) => `${restAPIv1}/providers/${provider_name}/instances/${instance_name}`,
   updateModelStatus: ({
     provider_name,
     instance_name,
@@ -71,6 +89,24 @@ export default {
     model_name: string;
   }) =>
     `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models/${model_name}`,
+  patchInstanceModel: ({
+    provider_name,
+    instance_name,
+    model_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+    model_name: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models/${model_name}`,
+  deleteInstanceModels: ({
+    provider_name,
+    instance_name,
+  }: {
+    provider_name: string;
+    instance_name: string;
+  }) =>
+    `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
 
   // data source
   dataSourceUpdate: (id: string) => `${restAPIv1}/connectors/${id}`,
@@ -87,6 +123,15 @@ export default {
     `${restAPIv1}/connectors/google/oauth/web/result?type=${type}`,
   boxWebAuthStart: () => `${restAPIv1}/connectors/box/oauth/web/start`,
   boxWebAuthResult: () => `${restAPIv1}/connectors/box/oauth/web/result`,
+
+  // chat channel
+  chatChannelSet: `${restAPIv1}/chat-channels`,
+  chatChannelList: `${restAPIv1}/chat-channels`,
+  chatChannelDetail: (id: string) => `${restAPIv1}/chat-channels/${id}`,
+  chatChannelUpdate: (id: string) => `${restAPIv1}/chat-channels/${id}`,
+  chatChannelDel: (id: string) => `${restAPIv1}/chat-channels/${id}`,
+  chatChannelRuntime: (id: string) =>
+    `${restAPIv1}/chat-channels/${id}/runtime`,
 
   // plugin
   llmTools: `${restAPIv1}/plugin/tools`,
@@ -111,6 +156,48 @@ export default {
   getMeta: `${restAPIv1}/datasets/metadata/flattened`,
   getKnowledgeBasicInfo: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions/summary`,
+  artifactsList: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts`,
+  artifactsTopicList: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts_topics`,
+  getArtifactPage: (datasetId: string, pageType: string, slug: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/${pageType}/${slug}`,
+  listWikiCommits: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/commits`,
+  getWikiCommit: (datasetId: string, commitId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/commits/${commitId}`,
+  getArtifactGraph: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/graph`,
+  clearWiki: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts`,
+  getDatasetSkillTree: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills`,
+  getDatasetSkillPage: (datasetId: string, skillKwd: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills/${skillKwd
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
+  deleteDatasetSkillTree: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills`,
+  deleteDatasetSkillPage: (datasetId: string, skillKwd: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills/${skillKwd
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
+  getDatasetNav: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav`,
+  getDatasetNavChildren: (datasetId: string, name: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav/${name
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}/children`,
+  deleteDatasetNav: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav`,
+  deleteDatasetNavNode: (datasetId: string, name: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav/${name
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
   // data pipeline log
   fetchDataPipelineLog: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
@@ -118,13 +205,14 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/ingestions/${logId}`,
   fetchPipelineDatasetLogs: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
+  listPipelines: `${restAPIv1}/pipelines?type=builtin`,
   runIndex: (datasetId: string, indexType: string) =>
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   traceIndex: (datasetId: string, indexType: string) =>
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   unbindPipelineTask: (datasetId: string, indexType: string, wipe?: boolean) =>
     `${restAPIv1}/datasets/${datasetId}/${indexType.toLowerCase()}${wipe === false ? '?wipe=false' : ''}`,
-  pipelineRerun: `${webAPI}/canvas/rerun`,
+  pipelineRerun: `${restAPIv1}/agents/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
   updateDocumentsMetadata: (datasetId: string) =>
@@ -147,6 +235,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks`,
   chunkDetail: (datasetId: string, documentId: string, chunkId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
+  documentStructureGraph: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/graph`,
   retrievalTest: `${restAPIv1}/datasets/search`,
 
   // document
@@ -239,6 +329,8 @@ export default {
     `${restAPIv1}/agents/${agentId}/components/${componentId}/debug`,
   trace: (agentId: string, messageId: string) =>
     `${restAPIv1}/agents/${agentId}/logs/${messageId}`,
+  sharedTrace: (sharedId: string, messageId: string) =>
+    `${restAPIv1}/agentbots/${sharedId}/logs/${messageId}`,
   cancelCanvas: (taskId: string) => `${restAPIv1}/tasks/${taskId}/cancel`,
   // agent
   inputForm: (agentId: string, componentId: string) =>
@@ -261,11 +353,38 @@ export default {
   cancelDataflow: (id: string) => `${restAPIv1}/tasks/${id}/cancel`,
   getAttachmentFileDownload: (docId: string) =>
     `${restAPIv1}/agents/attachments/${docId}/download`,
+  getAttachmentFilePreview: ({
+    docId,
+    ext,
+    mimeType,
+    filename,
+  }: {
+    docId: string;
+    ext?: string;
+    mimeType?: string;
+    filename?: string;
+  }) => {
+    const params = new URLSearchParams();
+    if (ext) params.set('ext', ext);
+    if (mimeType) params.set('mime_type', mimeType);
+    if (filename) params.set('filename', filename);
+    const query = params.toString();
+    return `${restAPIv1}/agents/attachments/${docId}/preview${query ? `?${query}` : ''}`;
+  },
   downloadFile: `${restAPIv1}/agents/download`,
   testWebhook: (id: string) => `${restAPIv1}/agents/${id}/webhook/test`,
   fetchWebhookTrace: (id: string) => `${restAPIv1}/agents/${id}/webhook/logs`,
 
   // explore
+
+  // compilation templates
+  compilationTemplates: `${restAPIv1}/compilation_templates`,
+  compilationTemplate: (id: string) =>
+    `${restAPIv1}/compilation_templates/${id}`,
+  compilationTemplateGroups: `${restAPIv1}/compilation_template_groups`,
+  compilationTemplateGroup: (id: string) =>
+    `${restAPIv1}/compilation_template_groups/${id}`,
+  wikiPresets: `${restAPIv1}/compilation_templates/wiki_presets`,
 
   // mcp server
   listMcpServer: `${restAPIv1}/mcp/servers`,
@@ -313,6 +432,8 @@ export default {
   removeDataflow: `${webAPI}/dataflow/rm`,
   listDataflow: `${webAPI}/dataflow/list`,
   runDataflow: `${webAPI}/dataflow/run`,
+  listBuiltinPipelines: `${restAPIv1}/pipelines`,
+  getBuiltinPipeline: (id: string) => `${restAPIv1}/pipelines/${id}`,
 
   // admin
   adminLogin: `${restAPIv1}/admin/login`,

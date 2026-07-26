@@ -13,9 +13,7 @@ def step_01_open_login(flow_page, flow_state, login_url, active_auth_context, st
     snap("open")
 
 
-def step_02_switch_to_register(
-    flow_page, flow_state, login_url, active_auth_context, step, snap
-):
+def step_02_switch_to_register(flow_page, flow_state, login_url, active_auth_context, step, snap):
     require(flow_state, "login_opened")
     form, card = active_auth_context()
     toggle_button = card.locator(REGISTER_TAB)
@@ -29,9 +27,7 @@ def step_02_switch_to_register(
     snap("toggled_register")
 
 
-def step_03_assert_register_visible(
-    flow_page, flow_state, login_url, active_auth_context, step, snap
-):
+def step_03_assert_register_visible(flow_page, flow_state, login_url, active_auth_context, step, snap):
     require(flow_state, "login_opened", "register_toggle_available")
     form, _ = active_auth_context()
     nickname_input = form.locator(NICKNAME_INPUT)
@@ -40,9 +36,7 @@ def step_03_assert_register_visible(
     snap("register_visible")
 
 
-def step_04_switch_back_to_login(
-    flow_page, flow_state, login_url, active_auth_context, step, snap
-):
+def step_04_switch_back_to_login(flow_page, flow_state, login_url, active_auth_context, step, snap):
     require(flow_state, "login_opened", "register_toggle_available")
     form, card = active_auth_context()
     toggle_back = card.locator(LOGIN_TAB)
@@ -52,9 +46,7 @@ def step_04_switch_back_to_login(
     snap("toggled_login")
 
 
-def step_05_assert_login_visible(
-    flow_page, flow_state, login_url, active_auth_context, step, snap
-):
+def step_05_assert_login_visible(flow_page, flow_state, login_url, active_auth_context, step, snap):
     require(flow_state, "login_opened", "login_toggled_back")
     form, _ = active_auth_context()
     nickname_input = form.locator(NICKNAME_INPUT)
@@ -74,7 +66,5 @@ STEPS = [
 @pytest.mark.p1
 @pytest.mark.auth
 @pytest.mark.parametrize("step_fn", flow_params(STEPS))
-def test_toggle_login_register_flow(
-    step_fn, flow_page, flow_state, login_url, active_auth_context, step, snap
-):
+def test_toggle_login_register_flow(step_fn, flow_page, flow_state, login_url, active_auth_context, step, snap):
     step_fn(flow_page, flow_state, login_url, active_auth_context, step, snap)

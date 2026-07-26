@@ -42,7 +42,7 @@ class RAGFlowExcelParser:
 
             try:
                 file_like_object.seek(0)
-                df = pd.read_csv(file_like_object, on_bad_lines='skip')
+                df = pd.read_csv(file_like_object, on_bad_lines="skip")
                 return RAGFlowExcelParser._dataframe_to_workbook(df)
 
             except Exception as e_csv:
@@ -261,7 +261,7 @@ class RAGFlowExcelParser:
         except Exception as e:
             logging.warning(f"Parse spreadsheet error: {e}, trying to interpret as CSV file")
             file_like_object.seek(0)
-            df = pd.read_csv(file_like_object, on_bad_lines='skip')
+            df = pd.read_csv(file_like_object, on_bad_lines="skip")
         df = df.replace(r"^\s*$", "", regex=True)
         return df.to_markdown(index=False)
 
@@ -283,7 +283,7 @@ class RAGFlowExcelParser:
             for r in list(rows[1:]):
                 fields = []
                 for i, c in enumerate(r):
-                    if not c.value:
+                    if c.value is None or str(c.value).strip() == "":
                         continue
                     t = str(ti[i].value) if i < len(ti) else ""
                     t += ("：" if t else "") + str(c.value)

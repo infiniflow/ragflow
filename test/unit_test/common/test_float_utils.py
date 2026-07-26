@@ -17,8 +17,8 @@
 import math
 from common.float_utils import get_float
 
-class TestGetFloat:
 
+class TestGetFloat:
     def test_valid_float_string(self):
         """Test conversion of valid float strings"""
         assert get_float("3.14") == 3.14
@@ -66,8 +66,8 @@ class TestGetFloat:
 
     def test_special_float_strings(self):
         """Test handling of special float strings"""
-        assert get_float("inf") == float('inf')
-        assert get_float("-inf") == float('-inf')
+        assert get_float("inf") == float("inf")
+        assert get_float("-inf") == float("-inf")
 
         # NaN should return -inf according to our function's design
         result = get_float("nan")

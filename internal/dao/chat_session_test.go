@@ -18,6 +18,7 @@ package dao
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -37,7 +38,7 @@ func setupChatSessionDAOTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.API4Conversation{}); err != nil {
+	if err := db.AutoMigrate(&entity.API4Conversation{}, &entity.ChatSession{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -66,16 +67,82 @@ func createAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, userID
 	}
 }
 
+func createChatSessionForDAOTest(t *testing.T, db *gorm.DB, id, chatID, name string, updateTime int64) {
+	t.Helper()
+
+	updateDate := time.UnixMilli(updateTime).Local()
+	session := &entity.ChatSession{
+		ID:        id,
+		DialogID:  chatID,
+		Name:      &name,
+		Message:   json.RawMessage(`[{"role":"assistant","content":"hello"}]`),
+		Reference: json.RawMessage(`[]`),
+		BaseModel: entity.BaseModel{
+			CreateTime: &updateTime,
+			CreateDate: &updateDate,
+			UpdateTime: &updateTime,
+			UpdateDate: &updateDate,
+		},
+	}
+	if err := db.Create(session).Error; err != nil {
+		t.Fatalf("failed to create chat session %s: %v", id, err)
+	}
+}
+
+func TestChatSessionDAOUpdateByIDRefreshesTimestampsOnEmptyUpdate(t *testing.T) {
+	db := setupChatSessionDAOTestDB(t)
+
+	oldUpdateTime := int64(1000)
+	createChatSessionForDAOTest(t, db, "session-1", "chat-1", "same", oldUpdateTime)
+
+	ctx := t.Context()
+	if err := NewChatSessionDAO().UpdateByID(ctx, db, "session-1", map[string]interface{}{}); err != nil {
+		t.Fatalf("UpdateByID failed: %v", err)
+	}
+
+	session, err := NewChatSessionDAO().GetByID(ctx, db, "session-1")
+	if err != nil {
+		t.Fatalf("GetByID failed: %v", err)
+	}
+	if session.UpdateTime == nil || *session.UpdateTime <= oldUpdateTime {
+		t.Fatalf("expected update_time to be refreshed, got %v", session.UpdateTime)
+	}
+	if session.UpdateDate == nil || !session.UpdateDate.After(time.UnixMilli(oldUpdateTime)) {
+		t.Fatalf("expected update_date to be refreshed, got %v", session.UpdateDate)
+	}
+}
+
+func TestChatSessionDAOUpdateByIDSameValueSucceeds(t *testing.T) {
+	db := setupChatSessionDAOTestDB(t)
+
+	createChatSessionForDAOTest(t, db, "session-1", "chat-1", "same", 1000)
+
+	ctx := t.Context()
+	if err := NewChatSessionDAO().UpdateByID(ctx, db, "session-1", map[string]interface{}{"name": "same"}); err != nil {
+		t.Fatalf("UpdateByID failed: %v", err)
+	}
+}
+
+func TestChatSessionDAOUpdateByIDMissingSession(t *testing.T) {
+	db := setupChatSessionDAOTestDB(t)
+
+	ctx := t.Context()
+	err := NewChatSessionDAO().UpdateByID(ctx, db, "missing", nil)
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("expected ErrRecordNotFound, got %v", err)
+	}
+}
+
 func TestChatSessionDAOListAgentSessionsOrdersByUpdateTimeDesc(t *testing.T) {
 	db := setupChatSessionDAOTestDB(t)
-	pushDB(t, db)
 
 	createAgentSessionForDAOTest(t, db, "session-old", "agent-1", "user-1", 1000)
 	createAgentSessionForDAOTest(t, db, "session-new", "agent-1", "user-1", 3000)
 	createAgentSessionForDAOTest(t, db, "session-middle", "agent-1", "user-1", 2000)
 	createAgentSessionForDAOTest(t, db, "session-other-agent", "agent-2", "user-1", 9999)
 
-	total, sessions, err := NewChatSessionDAO().ListAgentSessions(ListAgentSessionsParams{
+	ctx := t.Context()
+	total, sessions, err := NewChatSessionDAO().ListAgentSessions(ctx, db, ListAgentSessionsParams{
 		AgentID:  "agent-1",
 		Page:     1,
 		PageSize: 10,
@@ -106,14 +173,14 @@ func TestChatSessionDAOListAgentSessionsOrdersByUpdateTimeDesc(t *testing.T) {
 
 func TestChatSessionDAOListAgentSessionsFiltersAndPaginates(t *testing.T) {
 	db := setupChatSessionDAOTestDB(t)
-	pushDB(t, db)
 
 	createAgentSessionForDAOTest(t, db, "session-1", "agent-1", "user-1", 1000)
 	createAgentSessionForDAOTest(t, db, "session-2", "agent-1", "user-1", 2000)
 	createAgentSessionForDAOTest(t, db, "session-3", "agent-1", "user-1", 3000)
 	createAgentSessionForDAOTest(t, db, "session-other-user", "agent-1", "user-2", 4000)
 
-	total, sessions, err := NewChatSessionDAO().ListAgentSessions(ListAgentSessionsParams{
+	ctx := t.Context()
+	total, sessions, err := NewChatSessionDAO().ListAgentSessions(ctx, db, ListAgentSessionsParams{
 		AgentID:  "agent-1",
 		UserID:   "user-1",
 		Page:     2,

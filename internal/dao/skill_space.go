@@ -18,9 +18,6 @@ package dao
 
 import (
 	"ragflow/internal/entity"
-	"strings"
-
-	"github.com/google/uuid"
 )
 
 // SkillSpaceDAO data access object for skills space
@@ -131,9 +128,4 @@ func (dao *SkillSpaceDAO) CountByTenant(tenantID string) (int64, error) {
 	var count int64
 	err := DB.Model(&entity.SkillSpace{}).Where("tenant_id = ? AND status = ?", tenantID, entity.SpaceStatusActive).Count(&count).Error
 	return count, err
-}
-
-// generateSpaceID generates a unique ID
-func generateSpaceID() string {
-	return strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
 }

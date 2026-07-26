@@ -13,8 +13,14 @@ const {
   listInstanceModels,
   showProviderInstance,
   addInstanceModel,
+  editInstanceModel,
   deleteProviderInstance,
   updateModelStatus,
+  patchInstanceModel,
+  deleteInstanceModels,
+  updateProviderInstance,
+  aimlapiAuthorizeStart,
+  aimlapiAuthorizePoll,
 } = api;
 
 const methods = {
@@ -66,6 +72,10 @@ const methods = {
     url: addInstanceModel,
     method: 'post',
   },
+  editInstanceModel: {
+    url: editInstanceModel,
+    method: 'put',
+  },
   deleteProviderInstance: {
     url: deleteProviderInstance,
     method: 'delete',
@@ -73,6 +83,26 @@ const methods = {
   updateModelStatus: {
     url: updateModelStatus,
     method: 'patch',
+  },
+  patchInstanceModel: {
+    url: patchInstanceModel,
+    method: 'patch',
+  },
+  deleteInstanceModels: {
+    url: deleteInstanceModels,
+    method: 'delete',
+  },
+  updateProviderInstance: {
+    url: updateProviderInstance,
+    method: 'put',
+  },
+  aimlapiAuthorizeStart: {
+    url: aimlapiAuthorizeStart,
+    method: 'post',
+  },
+  aimlapiAuthorizePoll: {
+    url: aimlapiAuthorizePoll,
+    method: 'post',
   },
 } as const;
 

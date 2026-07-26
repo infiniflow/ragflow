@@ -1,0 +1,41 @@
+instruction: |
+    - Each page must be a proper encyclopedic article, NOT a flat bullet list:
+    - 1. Take prefix ">" or "-" in the "page_example" as instructions to generate the content.
+    - 2. Sections with H2 headings, each starting with prose before sub-bullets.
+page_example: |
+    # Onboarding flow update
+    ## Background & research
+    summary(example): 40% of new users aren't activating. By reviewing our onboarding flow we'll help teams better understand the value of the product and activate faster on Slite.
+    ## Problem statement
+    > As a new user, I am trying to get started with the product. But I don't understand the features and the product because nothing is explained to me which makes me feel like I don't know how to use the tool at all.
+    ## Goals
+    - Increase user activation by 10 points
+
+    ## Hypothesis
+    > If we review our onboarding to help users, then we will retain more users leading to positive activation results.
+
+    ## Vision narrative
+    We ask users about themselves in order to give them more personalized information to help them get started.
+    ## Scope
+    1. Decide the questions we ask users
+    2. Personalize how we cater to each different types of users
+    3. Plan for the content
+    4. Build and ship the new flow
+    ## First mock-ups
+    > maybe some images here.
+
+    ## Open questions
+    [x] How will we measure this?
+    [x] How do Marketing and Product work on this together?
+
+    ## Technical factoring
+    > Engineers can estimate the project to plan for code structure and specific technical choices.
+    ```
+    async fn quick_task() -> Result<&'static str> {
+        println!("START quick_task");
+        await!(delay(10)).context("delay failed")?;
+        println!("END quick_task");
+        Ok("quick_task result")
+    ```
+
+topic: product

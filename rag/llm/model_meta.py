@@ -77,10 +77,11 @@ class VolcEngine(Base):
         serving_model = [model for model in raw_model_list["data"] if model.get("status", "") != "Shutdown"]
         res = []
         for model in serving_model:
-
             model_types = []
 
             if model.get("domain", "") == "Embedding":
+                model_types.append(LLMType.EMBEDDING.value)
+            elif set(model.get("task_type", [])) & {"TextEmbedding", "ImageEmbedding"}:
                 model_types.append(LLMType.EMBEDDING.value)
             else:
                 modalities = model.get("modalities", {})
@@ -92,9 +93,9 @@ class VolcEngine(Base):
                 if "embeddings" in output_modalities:
                     model_types.append(LLMType.EMBEDDING.value)
                 if "image" in input_modalities and "text" in output_modalities:
-                    model_types.append(LLMType.IMAGE2TEXT.value)
+                    model_types.append(LLMType.VISION.value)
                 if "audio" in input_modalities and "text" in output_modalities:
-                    model_types.append(LLMType.SPEECH2TEXT.value)
+                    model_types.append(LLMType.ASR.value)
                 if "audio" in output_modalities:
                     model_types.append(LLMType.TTS.value)
 
@@ -107,13 +108,9 @@ class VolcEngine(Base):
             if model.get("token_limits", {}).get("max_reasoning_token_length", 0) > 0:
                 features.append("thinking")
 
-            res.append({
-                "name": model["id"],
-                "model_types": model_types,
-                "features": features,
-                "max_tokens": model.get("token_limits", {}).get("max_input_token_length", 8192),
-                "status": model.get("status")
-            })
+            res.append(
+                {"name": model["id"], "model_types": model_types, "features": features, "max_tokens": model.get("token_limits", {}).get("max_input_token_length", 8192), "status": model.get("status")}
+            )
         return res
 
 
@@ -141,7 +138,7 @@ class Ollama(Base):
                 if not models:
                     return []
             res = []
-            capability_to_model_type_mapping = {"completion": LLMType.CHAT.value, "vision": LLMType.IMAGE2TEXT.value, "embedding": LLMType.EMBEDDING.value}
+            capability_to_model_type_mapping = {"completion": LLMType.CHAT.value, "vision": LLMType.VISION.value, "embedding": LLMType.EMBEDDING.value}
             capability_to_feature_mapping = {"thinking": "thinking", "tools": "is_tools"}
 
             for model in models:
@@ -177,9 +174,9 @@ class Xinference(Base):
             "chat": LLMType.CHAT.value,
             "embedding": LLMType.EMBEDDING.value,
             "rerank": LLMType.RERANK.value,
-            "image": LLMType.IMAGE2TEXT.value,
+            "image": LLMType.VISION.value,
             "TTS": LLMType.TTS.value,
-            "speech2text": LLMType.SPEECH2TEXT.value,
+            "asr": LLMType.ASR.value,
         }
         return mapping.get(model_type_str, LLMType.CHAT.value)
 
@@ -239,7 +236,7 @@ class LocalAI(Base):
             res = []
             capability_to_model_type_mapping = {
                 "completion": LLMType.CHAT.value,
-                "vision": LLMType.IMAGE2TEXT.value,
+                "vision": LLMType.VISION.value,
                 "embedding": LLMType.EMBEDDING.value,
             }
             capability_to_feature_mapping = {
@@ -368,9 +365,9 @@ class OpenRouter(Base):
             if "embeddings" in output_modalities:
                 model_types.append(LLMType.EMBEDDING.value)
             if "image" in input_modalities and "text" in output_modalities:
-                model_types.append(LLMType.IMAGE2TEXT.value)
+                model_types.append(LLMType.VISION.value)
             if "audio" in input_modalities and "text" in output_modalities:
-                model_types.append(LLMType.SPEECH2TEXT.value)
+                model_types.append(LLMType.ASR.value)
             if "audio" in output_modalities:
                 model_types.append(LLMType.TTS.value)
 
@@ -399,7 +396,7 @@ class OpenAIAPICompatible(Base):
 
     _EMBEDDING_HINTS = ("embed", "embedding", "bge")
     _RERANK_HINTS = ("rerank", "reranker")
-    _SPEECH2TEXT_HINTS = ("asr", "stt", "transcribe", "transcriber", "whisper")
+    _ASR_HINTS = ("asr", "stt", "transcribe", "transcriber", "whisper")
     _TTS_HINTS = ("tts", "text-to-speech")
     _VISION_HINTS = (
         "vl",
@@ -424,14 +421,14 @@ class OpenAIAPICompatible(Base):
             return [LLMType.RERANK.value]
         if cls._contains_hint(model_name, cls._EMBEDDING_HINTS):
             return [LLMType.EMBEDDING.value]
-        if cls._contains_hint(model_name, cls._SPEECH2TEXT_HINTS):
-            return [LLMType.SPEECH2TEXT.value]
+        if cls._contains_hint(model_name, cls._ASR_HINTS):
+            return [LLMType.ASR.value]
         if cls._contains_hint(model_name, cls._TTS_HINTS):
             return [LLMType.TTS.value]
 
         model_types = [LLMType.CHAT.value]
         if cls._contains_hint(model_name, cls._VISION_HINTS):
-            model_types.append(LLMType.IMAGE2TEXT.value)
+            model_types.append(LLMType.VISION.value)
         return model_types
 
     def _format_model_list(self, raw_model_list):
@@ -461,9 +458,140 @@ class OpenAIAPICompatible(Base):
         return model_list
 
 
+class FunASR(Base):
+    _FACTORY_NAME = "FunASR"
+
+    def _format_model_list(self, raw_model_list):
+        models = raw_model_list.get("data") if isinstance(raw_model_list, dict) else None
+        if not isinstance(models, list):
+            return []
+
+        model_list = []
+        for model in models:
+            if not isinstance(model, dict) or not model.get("id"):
+                continue
+            model_list.append(
+                {
+                    "name": model["id"],
+                    "model_types": [LLMType.ASR.value],
+                    "features": [],
+                    "max_tokens": 8192,
+                }
+            )
+        return model_list
+
+
 class VLLM(OpenAIAPICompatible):
     _FACTORY_NAME = "VLLM"
 
 
 class LMStudio(OpenAIAPICompatible):
     _FACTORY_NAME = "LM-Studio"
+
+
+class NewAPI(OpenAIAPICompatible):
+    _FACTORY_NAME = "New API"
+
+    def _get_api_key(self):
+        try:
+            parsed = json.loads(self.api_key)
+            if isinstance(parsed, dict):
+                return parsed.get("api_key", self.api_key)
+        except (JSONDecodeError, TypeError):
+            pass
+        return self.api_key
+
+
+class RAGcon(OpenAIAPICompatible):
+    _FACTORY_NAME = "RAGcon"
+
+
+class AIMLAPI(Base):
+    """AIMLAPI (aimlapi.com) aggregates 700+ models behind an OpenAI-compatible
+    API. ``GET /v1/models`` returns one record per model *and* endpoint, so a
+    single model id repeats under different ``type`` values (e.g.
+    ``openai/chat-completions`` and ``openai/responses/submit``); records are
+    de-duplicated by id and their RAGFlow model types unioned.
+
+    The ``type`` (endpoint family) field drives classification. Families RAGFlow
+    cannot consume — image/video/audio generation, batch, OCR — are intentionally
+    left out of the map, so those models are skipped. The listing carries no
+    modality flag, so image-capable chat models are detected from the id, the
+    same way OpenAIAPICompatible does.
+    """
+
+    _FACTORY_NAME = "aimlapi.com"
+
+    _TYPE_TO_MODEL_TYPE = {
+        "openai/chat-completions": LLMType.CHAT.value,
+        "openai/responses/submit": LLMType.CHAT.value,
+        "anthropic/messages": LLMType.CHAT.value,
+        "openai/embeddings": LLMType.EMBEDDING.value,
+        "internal/text-to-speech": LLMType.TTS.value,
+        "internal/speech-to-text/submit": LLMType.ASR.value,
+    }
+
+    # Chat models whose id hints at image input also serve VISION (VLM).
+    # Heuristic: the /v1/models listing exposes no structured modality field.
+    _VISION_HINTS = (
+        "gpt-4o",
+        "gpt-4.1",
+        "gpt-4-turbo",
+        "gpt-5",
+        "chatgpt-4o",
+        "claude-3",
+        "claude-opus-4",
+        "claude-sonnet-4",
+        "claude-haiku-4",
+        "gemini",
+        "qwen-vl",
+        "qwen2-vl",
+        "qwen2.5-vl",
+        "qwen3-vl",
+        "internvl",
+        "llava",
+        "pixtral",
+        "minicpm-v",
+        "glm-4v",
+        "glm-4.1v",
+        "llama-3.2",
+        "llama-4",
+        "grok-2-vision",
+        "grok-4",
+        "vision",
+        "-vl",
+    )
+
+    def _format_model_list(self, raw_model_list):
+        models = raw_model_list.get("data") if isinstance(raw_model_list, dict) else raw_model_list
+        if not isinstance(models, list):
+            return []
+
+        merged = {}
+        for model in models:
+            if not isinstance(model, dict):
+                continue
+            model_id = model.get("id")
+            if not model_id:
+                continue
+            model_type = self._TYPE_TO_MODEL_TYPE.get(model.get("type"))
+            if not model_type:
+                continue
+
+            entry = merged.get(model_id)
+            if entry is None:
+                info = model.get("info") or {}
+                entry = {
+                    "name": model_id,
+                    "model_types": [],
+                    "features": [],
+                    "max_tokens": info.get("contextLength") or 8192,
+                }
+                merged[model_id] = entry
+
+            if model_type not in entry["model_types"]:
+                entry["model_types"].append(model_type)
+            if model_type == LLMType.CHAT.value and LLMType.VISION.value not in entry["model_types"] and any(hint in model_id.lower() for hint in self._VISION_HINTS):
+                entry["model_types"].append(LLMType.VISION.value)
+
+        return list(merged.values())

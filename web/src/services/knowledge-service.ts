@@ -1,10 +1,14 @@
 import { IRenameTag } from '@/interfaces/database/dataset';
 import {
+  IFetchArtifactListRequestParams,
+  IFetchArtifactTopicListRequestParams,
   IFetchDocumentListRequestBody,
   IFetchKnowledgeListRequestParams,
+  IUpdateArtifactPageRequestBody,
 } from '@/interfaces/request/knowledge';
 import { ProcessingType } from '@/pages/dataset/dataset-overview/dataset-common';
 import api from '@/utils/api';
+import nextRequest from '@/utils/next-request';
 import registerServer from '@/utils/register-server';
 import request from '@/utils/request';
 
@@ -15,6 +19,7 @@ const {
   documentThumbnails,
   documentIngest,
   listTagByKnowledgeIds,
+  listPipelines,
   setMeta,
   getMeta,
   getMetaKeys,
@@ -61,6 +66,10 @@ const methods = {
   retrievalTestShare: {
     url: retrievalTestShare,
     method: 'post',
+  },
+  listPipelines: {
+    url: listPipelines,
+    method: 'get',
   },
   pipelineRerun: {
     url: api.pipelineRerun,
@@ -144,6 +153,7 @@ const chunkService = {
         page_size: params.page_size || params.size,
         keywords: params.keywords,
         available: getAvailableParam(params.available_int),
+        chunk_ids: params.chunk_ids,
       },
     });
 
@@ -384,6 +394,53 @@ export const getPipelineDetail = (datasetId: string, logId: string) =>
 
 export const getKnowledgeBasicInfo = (datasetId: string) =>
   request.get(api.getKnowledgeBasicInfo(datasetId));
+
+export const listArtifacts = (
+  datasetId: string,
+  params?: IFetchArtifactListRequestParams,
+) => request.get(api.artifactsList(datasetId), { params });
+
+export const listArtifactTopics = (
+  datasetId: string,
+  params?: IFetchArtifactTopicListRequestParams,
+) => request.get(api.artifactsTopicList(datasetId), { params });
+
+export const getArtifactPage = (
+  datasetId: string,
+  pageType: string,
+  slug: string,
+) => request.get(api.getArtifactPage(datasetId, pageType, slug));
+
+export const getArtifactGraph = (
+  datasetId: string,
+  params?: { node?: string },
+) => request.get(api.getArtifactGraph(datasetId), { params });
+
+export const updateArtifactPage = (
+  datasetId: string,
+  pageType: string,
+  slug: string,
+  data: IUpdateArtifactPageRequestBody,
+) => request.put(api.getArtifactPage(datasetId, pageType, slug), { data });
+
+export const listWikiCommits = (
+  datasetId: string,
+  pageType: string,
+  slug: string,
+  params?: { page?: number; page_size?: number },
+) =>
+  request.get(api.listWikiCommits(datasetId), {
+    params: {
+      ...params,
+      slug: slug.startsWith(`${pageType}/`) ? slug : `${pageType}/${slug}`,
+    },
+  });
+
+export const getWikiCommit = (datasetId: string, commitId: string) =>
+  request.get(api.getWikiCommit(datasetId, commitId));
+
+export const clearWiki = (datasetId: string) =>
+  nextRequest.delete(api.clearWiki(datasetId), {});
 
 export const checkEmbedding = (datasetId: string, data: Record<string, any>) =>
   request.post(api.checkEmbedding(datasetId), { data });

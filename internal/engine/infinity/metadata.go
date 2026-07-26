@@ -21,14 +21,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
-	infinity "github.com/infiniflow/infinity-go-sdk"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
+
+	infinity "github.com/infiniflow/infinity-go-sdk"
 
 	"go.uber.org/zap"
 )
@@ -36,34 +36,41 @@ import (
 // CreateMetadataStore creates a metadata table in Infinity
 // tenantID is the tenant identifier used to build the table name
 func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID string) error {
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
+	if err != nil {
+		return fmt.Errorf("failed to get database: %w", err)
+	}
+	defer release()
+
+	return e.createMetadataStoreWithDB(db, tenantID)
+}
+
+func (e *infinityEngine) createMetadataStoreWithDB(db *infinity.Database, tenantID string) error {
 	tableName := buildMetadataTableName(tenantID)
 
-	// Get database
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
-	if err != nil {
-		return fmt.Errorf("Failed to get database: %w", err)
-	}
-
 	// Check if table already exists
-	exists, err := e.tableExists(ctx, tableName)
+	exists, err := e.tableExistsWithDB(db, tableName)
 	if err != nil {
-		return fmt.Errorf("Failed to check if table exists: %w", err)
+		return fmt.Errorf("failed to check if table exists: %w", err)
 	}
 	if exists {
 		return fmt.Errorf("metadata table '%s' already exists", tableName)
 	}
 
-	// Use configured doc_meta mapping file
-	fpMapping := filepath.Join(utility.GetProjectRoot(), "conf", e.docMetaMappingFileName)
-
-	schemaData, err := os.ReadFile(fpMapping)
+	fpMapping, err := utility.FindConfFileInProject(e.docMetaMappingFileName)
 	if err != nil {
-		return fmt.Errorf("Failed to read mapping file: %w", err)
+		return err
+	}
+
+	// Use configured doc_meta mapping file
+	schemaData, err := os.ReadFile(*fpMapping)
+	if err != nil {
+		return fmt.Errorf("failed to read mapping file %q: %w", *fpMapping, err)
 	}
 
 	var schema map[string]fieldInfo
-	if err := json.Unmarshal(schemaData, &schema); err != nil {
-		return fmt.Errorf("Failed to parse mapping file: %w", err)
+	if err = json.Unmarshal(schemaData, &schema); err != nil {
+		return fmt.Errorf("failed to parse mapping file %q: %w", *fpMapping, err)
 	}
 
 	// Build column definitions
@@ -80,14 +87,14 @@ func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID strin
 	// Create table
 	_, err = db.CreateTable(tableName, columns, infinity.ConflictTypeIgnore)
 	if err != nil {
-		return fmt.Errorf("Failed to create doc meta table: %w", err)
+		return fmt.Errorf("failed to create doc meta table: %w", err)
 	}
 	common.Debug("Infinity created doc meta table", zap.String("tableName", tableName))
 
 	// Get table for creating indexes
 	table, err := db.GetTable(tableName)
 	if err != nil {
-		return fmt.Errorf("Failed to get table: %w", err)
+		return fmt.Errorf("failed to get table: %w", err)
 	}
 
 	// Create secondary index on id
@@ -98,7 +105,7 @@ func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID strin
 		"",
 	)
 	if err != nil {
-		return fmt.Errorf("Failed to create secondary index on id: %w", err)
+		return fmt.Errorf("failed to create secondary index on id: %w", err)
 	}
 
 	// Create secondary index on kb_id
@@ -109,7 +116,7 @@ func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID strin
 		"",
 	)
 	if err != nil {
-		return fmt.Errorf("Failed to create secondary index on kb_id: %w", err)
+		return fmt.Errorf("failed to create secondary index on kb_id: %w", err)
 	}
 
 	// Create secondary index on meta_fields for metadata filter queries
@@ -120,7 +127,7 @@ func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID strin
 		"",
 	)
 	if err != nil {
-		return fmt.Errorf("Failed to create secondary index on meta_fields: %w", err)
+		return fmt.Errorf("failed to create secondary index on meta_fields: %w", err)
 	}
 
 	return nil
@@ -133,27 +140,28 @@ func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.InsertMetadata called", zap.String("tableName", tableName), zap.Int("metaCount", len(metadata)))
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
-		return nil, fmt.Errorf("Failed to get database: %w", err)
+		return nil, fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
 		// Table doesn't exist, try to create it
 		errMsg := strings.ToLower(err.Error())
 		if !strings.Contains(errMsg, "not found") && !strings.Contains(errMsg, "doesn't exist") {
-			return nil, fmt.Errorf("Failed to get table %s: %w", tableName, err)
+			return nil, fmt.Errorf("failed to get table %s: %w", tableName, err)
 		}
 
 		// Create metadata table
-		if createErr := e.CreateMetadataStore(ctx, tenantID); createErr != nil {
-			return nil, fmt.Errorf("Failed to create metadata table: %w", createErr)
+		if createErr := e.createMetadataStoreWithDB(db, tenantID); createErr != nil {
+			return nil, fmt.Errorf("failed to create metadata table: %w", createErr)
 		}
 
 		table, err = db.GetTable(tableName)
 		if err != nil {
-			return nil, fmt.Errorf("Failed to get table after creation: %w", err)
+			return nil, fmt.Errorf("failed to get table after creation: %w", err)
 		}
 	}
 
@@ -193,7 +201,7 @@ func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 	// Insert metadata
 	_, err = table.Insert(insertMetadata)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to insert metadata: %w", err)
+		return nil, fmt.Errorf("failed to insert metadata: %w", err)
 	}
 
 	common.Info("InfinityConnection.InsertMetadata result", zap.String("tableName", tableName), zap.Int("metaCount", len(metadata)))
@@ -224,16 +232,17 @@ func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 // reader naturally parses as "replace". The merge semantics exist so
 // that user-driven metadata edits compose with auto-extracted fields
 // produced by the LLM extraction pipeline. See the CLI parser in
-// internal/cli/user_parser.go (parseSetMeta) for the user-facing
+// internal/cli/user_parser.go (parseDevSetMeta) for the user-facing
 // surface that drives this engine method.
 func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.UpdateMetadata called", zap.String("tableName", tableName), zap.String("docID", docID), zap.String("datasetID", datasetID))
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -335,15 +344,24 @@ func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, datas
 func (e *infinityEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
 	tableName := buildMetadataTableName(tenantID)
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return 0, fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
 		common.Warn(fmt.Sprintf("Metadata table %s does not exist, skipping delete", tableName))
 		return 0, nil
+	}
+
+	return e.deleteMetadataWithTable(table, condition)
+}
+
+func (e *infinityEngine) deleteMetadataWithTable(table *infinity.Table, condition map[string]interface{}) (int64, error) {
+	if table == nil {
+		return 0, fmt.Errorf("metadata table is nil")
 	}
 
 	// Get table columns for building filter
@@ -394,10 +412,11 @@ func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, d
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.DeleteMetadataKeys called", zap.String("tableName", tableName), zap.String("docID", docID), zap.Any("keys", keys))
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
@@ -497,7 +516,7 @@ func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, d
 			"id":    docID,
 			"kb_id": datasetID,
 		}
-		_, err := e.DeleteMetadata(ctx, condition, tenantID)
+		_, err := e.deleteMetadataWithTable(table, condition)
 		if err != nil {
 			return fmt.Errorf("failed to delete document: %w", err)
 		}
@@ -551,7 +570,35 @@ func (e *infinityEngine) SearchMetadata(ctx context.Context, req *types.SearchMe
 	// Build table name from tenantID
 	tableName := buildMetadataTableName(tenantID)
 
-	exists, err := e.tableExists(ctx, tableName)
+	// Build output columns: use caller-specified fields, or "*" for all columns
+	var outputColumns []string
+	if len(req.SelectFields) > 0 {
+		outputColumns = req.SelectFields
+	} else {
+		outputColumns = []string{"*"}
+	}
+
+	// Pagination defaults
+	pageSize := req.Limit
+	if pageSize <= 0 {
+		pageSize = 30
+	}
+	offset := max(req.Offset, 0)
+
+	// Build filter from req.Filter
+	var filterStr string
+	if req.Filter != nil {
+		filterStr = equivalentConditionToStr(req.Filter)
+	}
+
+	// Get database and table
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get database: %w", err)
+	}
+	defer release()
+
+	exists, err := e.tableExistsWithDB(db, tableName)
 	if err != nil {
 		common.Warn("Infinity SearchMetadata table existence check failed", zap.String("table", tableName), zap.Error(err))
 		return nil, fmt.Errorf("failed to check metadata table existence: %w", err)
@@ -568,25 +615,83 @@ func (e *infinityEngine) SearchMetadata(ctx context.Context, req *types.SearchMe
 		}, nil
 	}
 
-	// Build search request for metadata - simpler than chunk search, no match expressions
-	searchReq := &types.SearchRequest{
-		IndexNames:   []string{tableName},
-		Offset:       req.Offset,
-		Limit:        req.Limit,
-		SelectFields: req.SelectFields,
-		Filter:       req.Filter,
-		MatchExprs:   nil, // No match expressions for metadata
-		OrderBy:      req.OrderBy,
-		RankFeature:  nil,
+	tbl, err := db.GetTable(tableName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get metadata table %s: %w", tableName, err)
 	}
 
-	result, err := e.Search(ctx, searchReq)
-	if err != nil {
-		return nil, err
+	// Build Infinity query (chainable API)
+	table := tbl.Output(outputColumns)
+	if filterStr != "" {
+		table = table.Filter(filterStr)
 	}
+
+	// Add order_by if provided
+	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
+		var sortFields [][2]interface{}
+		for _, orderField := range req.OrderBy.Fields {
+			sortType := infinity.SortTypeAsc
+			if orderField.Type == types.SortDesc {
+				sortType = infinity.SortTypeDesc
+			}
+			sortFields = append(sortFields, [2]interface{}{orderField.Field, sortType})
+		}
+		table = table.Sort(sortFields)
+	}
+
+	table = table.Limit(pageSize)
+	if offset > 0 {
+		table = table.Offset(offset)
+	}
+	table = table.Option(map[string]interface{}{"total_hits_count": true})
+
+	// Execute query
+	df, err := table.ToDataFrame()
+	if err != nil {
+		common.Warn("Infinity SearchMetadata query failed",
+			zap.String("tableName", tableName),
+			zap.Error(err))
+		return nil, fmt.Errorf("metadata query failed: %w", err)
+	}
+
+	// Convert column-oriented DataFrame to row-oriented records
+	records := make([]map[string]interface{}, 0)
+	for colName, colData := range df.ColumnData {
+		for i, val := range colData {
+			for len(records) <= i {
+				records = append(records, make(map[string]interface{}))
+			}
+			records[i][colName] = val
+		}
+	}
+
+	// Handle ROW_ID -> row_id() mapping (Infinity internal column)
+	for _, rec := range records {
+		if val, ok := rec["ROW_ID"]; ok {
+			rec["row_id()"] = val
+			delete(rec, "ROW_ID")
+		}
+	}
+
+	// Realign meta_fields column for multi-row queries (Infinity may
+	// concatenate values into one blob with 4-byte length prefix)
+	realignMetaFieldsColumn(records)
+
+	// Parse total_hits_count from ExtraInfo
+	var totalHits int64
+	if df.ExtraInfo != "" {
+		if t, ok := totalHitsFromInfinityExtraInfo(df.ExtraInfo); ok {
+			totalHits = t
+		}
+	}
+
+	common.Debug("SearchMetadata in Infinity completed",
+		zap.Int("rows", len(records)),
+		zap.Int64("total", totalHits))
+
 	return &types.SearchMetadataResult{
-		MetadataRecords: result.Chunks,
-		Total:           result.Total,
+		MetadataRecords: records,
+		Total:           totalHits,
 	}, nil
 }
 
@@ -731,10 +836,11 @@ func (e *infinityEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kbIDs [
 	whereClause = kbFilter + " AND (" + whereClause + ")"
 
 	// Use Infinity connection to execute query
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil || db == nil {
 		return nil
 	}
+	defer release()
 
 	table, err := db.GetTable(tableName)
 	if err != nil || table == nil {

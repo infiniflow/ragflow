@@ -9,12 +9,17 @@ import { IModalProps } from '@/interfaces/common';
 import { IReferenceChunk } from '@/interfaces/database/chat';
 import { IChunk } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
-import { useEffect, useState } from 'react';
 
 interface IProps extends IModalProps<any> {
   documentId: string;
-  chunk: IChunk &
-    IReferenceChunk & { docnm_kwd: string; document_name: string };
+  chunk: {
+    docnm_kwd?: string;
+    document_name?: string;
+    positions?: number[][];
+    content_with_weight?: string;
+    content?: string | null;
+    [key: string]: any;
+  };
 }
 function getFileExtensionRegex(filename: string): string {
   const match = filename.match(/\.([^.]+)$/);
@@ -27,27 +32,32 @@ const PdfDrawer = ({
   chunk,
 }: IProps) => {
   const getDocumentUrl = useGetDocumentUrl(documentId);
-  const { highlights, setWidthAndHeight } = useGetChunkHighlights(chunk);
+  const { highlights, setWidthAndHeight } = useGetChunkHighlights(
+    chunk as IChunk | IReferenceChunk,
+  );
   // const ref = useRef<(highlight: IHighlight) => void>(() => {});
   // const [loaded, setLoaded] = useState(false);
-  const url = getDocumentUrl();
-
-  const [fileType, setFileType] = useState('');
-
-  useEffect(() => {
-    if (chunk.docnm_kwd || chunk.document_name) {
-      const type = getFileExtensionRegex(
-        chunk.docnm_kwd || chunk.document_name,
-      );
-      setFileType(type);
-    }
-  }, [chunk.docnm_kwd, chunk.document_name]);
+  const documentName = chunk.docnm_kwd || chunk.document_name;
+  const fileType = documentName ? getFileExtensionRegex(documentName) : '';
+  const isWebPage = !fileType && !!chunk.document_url;
+  const url = isWebPage ? (chunk.document_url as string) : getDocumentUrl();
   return (
     <Modal
       title={
         <div className="flex items-center gap-2">
-          <FileIcon name={chunk.docnm_kwd || chunk.document_name}></FileIcon>
-          {chunk.docnm_kwd || chunk.document_name}
+          <FileIcon name={documentName as string}></FileIcon>
+          {isWebPage ? (
+            <a
+              href={url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-text-sub-title-invert underline"
+            >
+              {documentName}
+            </a>
+          ) : (
+            documentName
+          )}
         </div>
       }
       onCancel={hideModal}

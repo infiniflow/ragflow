@@ -50,6 +50,15 @@ func NewMetadataService() *MetadataService {
 	}
 }
 
+// NewMetadataServiceForTest creates a MetadataService with injected dependencies
+// for tests that need to control the DAO and engine.
+func NewMetadataServiceForTest(kbDAO *dao.KnowledgebaseDAO, docEngine engine.DocEngine) *MetadataService {
+	return &MetadataService{
+		kbDAO:     kbDAO,
+		docEngine: docEngine,
+	}
+}
+
 // BuildMetadataIndexName constructs the metadata index name for a tenant
 func BuildMetadataIndexName(tenantID string) string {
 	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
@@ -70,8 +79,8 @@ func (s *MetadataService) GetTenantIDByKBIDs(kbIDs []string) (string, error) {
 
 // SearchMetadataResponse holds the result of a metadata search
 type SearchMetadataResponse struct {
-	IndexName string
-	MetadataRecords   []map[string]interface{}
+	IndexName       string
+	MetadataRecords []map[string]interface{}
 }
 
 // SearchMetadata searches the metadata index with the given parameters
@@ -92,8 +101,8 @@ func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string,
 	}
 
 	return &SearchMetadataResponse{
-		IndexName: BuildMetadataIndexName(tenantID),
-		MetadataRecords:   searchResult.MetadataRecords,
+		IndexName:       BuildMetadataIndexName(tenantID),
+		MetadataRecords: searchResult.MetadataRecords,
 	}, nil
 }
 
@@ -123,8 +132,8 @@ func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*Search
 	}
 
 	return &SearchMetadataResponse{
-		IndexName: BuildMetadataIndexName(tenantID),
-		MetadataRecords:   searchResult.MetadataRecords,
+		IndexName:       BuildMetadataIndexName(tenantID),
+		MetadataRecords: searchResult.MetadataRecords,
 	}, nil
 }
 
@@ -242,7 +251,7 @@ func CollectDocIDsByKB(chunks []map[string]interface{}) KBDocIDsMap {
 	seen := make(map[string]struct{})
 	result := make(KBDocIDsMap)
 	for _, chunk := range chunks {
-		kbID, _ := chunk["kb_id"].(string)
+		kbID := extractKBID(chunk)
 		docID := extractDocID(chunk)
 		if kbID == "" || docID == "" {
 			continue
@@ -298,6 +307,9 @@ func AttachDocMetaToChunks(chunks []map[string]interface{}, metaByDoc DocMetaMap
 	}
 	for _, chunk := range chunks {
 		docID := extractDocID(chunk)
+		if docID == "" {
+			continue
+		}
 		meta, ok := metaByDoc[docID]
 		if !ok {
 			continue
@@ -333,6 +345,17 @@ func (s *MetadataService) EnrichChunksWithDocMetadata(chunks []map[string]interf
 		return
 	}
 	AttachDocMetaToChunks(chunks, metaByDoc, metadataFields)
+}
+
+// extractKBID extracts the KB ID from a chunk, checking common field names.
+func extractKBID(chunk map[string]interface{}) string {
+	if id, ok := chunk["kb_id"].(string); ok && id != "" {
+		return id
+	}
+	if id, ok := chunk["dataset_id"].(string); ok && id != "" {
+		return id
+	}
+	return ""
 }
 
 // extractDocID extracts the document ID from a chunk, checking both id and doc_id.
@@ -376,7 +399,7 @@ func ExtractMetaFields(chunk map[string]interface{}) (map[string]interface{}, er
 				for k, val := range result {
 					if existing, exists := metaFields[k]; exists {
 						// Key already exists - merge values
-						metaFields[k] = mergeFieldValues(existing, val)
+						metaFields[k] = MergeFieldValues(existing, val)
 					} else {
 						metaFields[k] = val
 					}
@@ -395,7 +418,7 @@ func ExtractMetaFields(chunk map[string]interface{}) (map[string]interface{}, er
 // mergeFieldValues merges two field values when the same key appears multiple times
 // If both are arrays, append all elements. If one is array and other is string, append string to array.
 // Returns []interface{} with all merged values (flattened).
-func mergeFieldValues(existing, new interface{}) []interface{} {
+func MergeFieldValues(existing, new interface{}) []interface{} {
 	result := []interface{}{}
 
 	var addValue func(v interface{})
@@ -408,7 +431,13 @@ func mergeFieldValues(existing, new interface{}) []interface{} {
 			if val != "" {
 				result = append(result, val)
 			}
+		case float64, float32, int, int8, int16, int32, int64, bool:
+			result = append(result, val)
 		case []interface{}:
+			for _, item := range val {
+				addValue(item)
+			}
+		case []string:
 			for _, item := range val {
 				addValue(item)
 			}

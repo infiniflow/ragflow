@@ -29,7 +29,9 @@ export function LLMSelectForm() {
 
   return (
     <Form {...form}>
-      <LargeModelFormFieldWithoutFilter></LargeModelFormFieldWithoutFilter>
+      <LargeModelFormFieldWithoutFilter
+        ownerTenantId={data?.tenant_id}
+      ></LargeModelFormFieldWithoutFilter>
     </Form>
   );
 }

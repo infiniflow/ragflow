@@ -23,6 +23,7 @@ import {
   defaultMemoryModelForm,
   memoryModelFormSchema,
 } from './memory-model-form';
+import { MemorySettingProvider } from './memory-setting-context';
 
 // type MemoryMessageForm = z.infer<typeof MemoryMessageSchema>;
 export default function MemoryMessage() {
@@ -74,8 +75,9 @@ export default function MemoryMessage() {
         description={t('knowledgeConfiguration.titleDescription')}
       ></TopTitle>
       <div className="flex gap-14 flex-1 min-h-0">
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(() => {})} className="space-y-6 ">
+        <MemorySettingProvider data={data}>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(() => {})} className="space-y-6 ">
             <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
               <MainContainer className="text-text-secondary !space-y-10">
                 <div className="text-base font-medium text-text-primary">
@@ -106,7 +108,8 @@ export default function MemoryMessage() {
               ></DynamicForm.SavingButton>
             </div>
           </form>
-        </Form>
+          </Form>
+        </MemorySettingProvider>
       </div>
     </section>
   );

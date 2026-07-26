@@ -50,9 +50,20 @@ logger = logging.getLogger(__name__)
 # Extensions we ingest; mirrors the same set used by the OneDrive
 # connector so behaviour is consistent across all file-based sources.
 _SUPPORTED_EXTENSIONS = {
-    ".pdf", ".docx", ".doc", ".xlsx", ".xls",
-    ".pptx", ".ppt", ".txt", ".md", ".csv",
-    ".html", ".htm", ".json", ".xml",
+    ".pdf",
+    ".docx",
+    ".doc",
+    ".xlsx",
+    ".xls",
+    ".pptx",
+    ".ppt",
+    ".txt",
+    ".md",
+    ".csv",
+    ".html",
+    ".htm",
+    ".json",
+    ".xml",
 }
 
 _AZURE_ENDPOINT_SUFFIX = "blob.core.windows.net"
@@ -125,24 +136,16 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
         try:
             if mode == "connection_string":
                 if not conn_str:
-                    raise ConnectorMissingCredentialError(
-                        "Azure Blob: connection_string is required for the connection_string auth mode"
-                    )
+                    raise ConnectorMissingCredentialError("Azure Blob: connection_string is required for the connection_string auth mode")
                 if not container_name:
-                    raise ConnectorMissingCredentialError(
-                        "Azure Blob: container_name is required together with connection_string"
-                    )
+                    raise ConnectorMissingCredentialError("Azure Blob: container_name is required together with connection_string")
                 svc = BlobServiceClient.from_connection_string(conn_str)
                 self._container_client = svc.get_container_client(container_name)
             elif mode == "account_key":
                 if not (account_name and account_key):
-                    raise ConnectorMissingCredentialError(
-                        "Azure Blob: account_name and account_key are required for the account_key auth mode"
-                    )
+                    raise ConnectorMissingCredentialError("Azure Blob: account_name and account_key are required for the account_key auth mode")
                 if not container_name:
-                    raise ConnectorMissingCredentialError(
-                        "Azure Blob: container_name is required together with account_name + account_key"
-                    )
+                    raise ConnectorMissingCredentialError("Azure Blob: container_name is required together with account_name + account_key")
                 account_url = f"https://{account_name}.{_AZURE_ENDPOINT_SUFFIX}"
                 svc = BlobServiceClient(
                     account_url=account_url,
@@ -151,9 +154,7 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
                 self._container_client = svc.get_container_client(container_name)
             elif mode == "sas_token":
                 if not (container_url and sas_token):
-                    raise ConnectorMissingCredentialError(
-                        "Azure Blob: container_url and sas_token are required for the sas_token auth mode"
-                    )
+                    raise ConnectorMissingCredentialError("Azure Blob: container_url and sas_token are required for the sas_token auth mode")
                 # mirrors RAGFlowAzureSasBlob; strip a leading "?" so we
                 # never produce a double-"?" that breaks SAS auth.
                 normalized_sas = str(sas_token).lstrip("?")
@@ -161,17 +162,12 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
                 self._container_client = ContainerClient.from_container_url(full_url)
             else:
                 raise ConnectorMissingCredentialError(
-                    "Azure Blob credentials are incomplete. Provide one of: "
-                    "(a) connection_string + container_name, "
-                    "(b) account_name + account_key + container_name, "
-                    "(c) container_url + sas_token."
+                    "Azure Blob credentials are incomplete. Provide one of: (a) connection_string + container_name, (b) account_name + account_key + container_name, (c) container_url + sas_token."
                 )
         except ConnectorMissingCredentialError:
             raise
         except Exception as exc:
-            raise ConnectorMissingCredentialError(
-                f"Failed to initialise Azure Blob client: {exc}"
-            ) from exc
+            raise ConnectorMissingCredentialError(f"Failed to initialise Azure Blob client: {exc}") from exc
 
         return None
 
@@ -192,20 +188,12 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
             msg = str(exc)
             code = getattr(getattr(exc, "error_code", None), "value", None) or getattr(exc, "error_code", "")
             if "AuthenticationFailed" in msg or "InvalidAuthenticationInfo" in msg:
-                raise ConnectorMissingCredentialError(
-                    f"Azure Blob credential rejected: {msg[:300]}"
-                ) from exc
+                raise ConnectorMissingCredentialError(f"Azure Blob credential rejected: {msg[:300]}") from exc
             if "AuthorizationPermissionMismatch" in msg or "403" in msg:
-                raise InsufficientPermissionsError(
-                    f"Azure Blob: insufficient permissions on container: {msg[:300]}"
-                ) from exc
+                raise InsufficientPermissionsError(f"Azure Blob: insufficient permissions on container: {msg[:300]}") from exc
             if "ContainerNotFound" in msg or "404" in msg:
-                raise ConnectorValidationError(
-                    f"Azure Blob: container not found: {msg[:300]}"
-                ) from exc
-            raise UnexpectedValidationError(
-                f"Azure Blob validation failed ({code}): {msg[:300]}"
-            ) from exc
+                raise ConnectorValidationError(f"Azure Blob: container not found: {msg[:300]}") from exc
+            raise UnexpectedValidationError(f"Azure Blob validation failed ({code}): {msg[:300]}") from exc
 
     # ------------------------------------------------------------------
     # Checkpoint helpers
@@ -224,9 +212,7 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
     # Core data loading
     # ------------------------------------------------------------------
 
-    def poll_source(
-        self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
-    ) -> Any:
+    def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> Any:
         return self._iter_documents(since_epoch=start, until_epoch=end)
 
     def load_from_checkpoint(
@@ -239,9 +225,7 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
             checkpoint = self.build_dummy_checkpoint()
         since = start if start else None
         until = end if end else None
-        return self._iter_documents(
-            checkpoint=checkpoint, since_epoch=since, until_epoch=until
-        )
+        return self._iter_documents(checkpoint=checkpoint, since_epoch=since, until_epoch=until)
 
     def load_from_checkpoint_with_perm_sync(
         self,
@@ -272,9 +256,7 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
                     yield batch
                     batch = []
         except Exception as exc:
-            raise UnexpectedValidationError(
-                f"Azure Blob prune listing failed: {exc}"
-            ) from exc
+            raise UnexpectedValidationError(f"Azure Blob prune listing failed: {exc}") from exc
 
         if batch:
             yield batch
@@ -297,9 +279,7 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
         batch: list[Document] = []
 
         try:
-            for blob_props in self._container_client.list_blobs(
-                name_starts_with=self.prefix or None
-            ):
+            for blob_props in self._container_client.list_blobs(name_starts_with=self.prefix or None):
                 name: str = blob_props.name
 
                 if not _has_supported_extension(name, self.allow_images):
@@ -346,15 +326,9 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
                             name,
                         )
                         continue
-                    raise UnexpectedValidationError(
-                        f"Azure Blob: failed to download {name}: {exc}"
-                    ) from exc
+                    raise UnexpectedValidationError(f"Azure Blob: failed to download {name}: {exc}") from exc
 
-                doc_updated_at = (
-                    last_modified.astimezone(timezone.utc)
-                    if last_modified
-                    else datetime.now(timezone.utc)
-                )
+                doc_updated_at = last_modified.astimezone(timezone.utc) if last_modified else datetime.now(timezone.utc)
 
                 ext = _extension(name)
                 doc = Document(
@@ -380,9 +354,7 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
         except UnexpectedValidationError:
             raise
         except Exception as exc:
-            raise UnexpectedValidationError(
-                f"Azure Blob listing failed: {exc}"
-            ) from exc
+            raise UnexpectedValidationError(f"Azure Blob listing failed: {exc}") from exc
 
         if batch:
             yield batch
@@ -394,6 +366,7 @@ class AzureBlobConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPer
 # ----------------------------------------------------------------------
 # Module-level helpers
 # ----------------------------------------------------------------------
+
 
 def _extension(name: str) -> str:
     if "." not in name:

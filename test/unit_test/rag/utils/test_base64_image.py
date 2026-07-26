@@ -30,9 +30,7 @@ class TestParseStorageCompositeId:
 
     def test_hyphenated_object_key(self):
         """Object keys with hyphens split only on the first separator."""
-        result = base64_image.parse_storage_composite_id(
-            "kb12345678901234567890123456789012-page-1.png"
-        )
+        result = base64_image.parse_storage_composite_id("kb12345678901234567890123456789012-page-1.png")
         assert result == ("kb12345678901234567890123456789012", "page-1.png")
 
     def test_single_hyphen(self):

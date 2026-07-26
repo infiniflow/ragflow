@@ -17,6 +17,8 @@
 package dao
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -29,17 +31,26 @@ import (
 func setupTaskTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{
+	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
 		TranslateError: true,
 	})
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
 
 	// Migrate task table (Task depends on Document for the doc_id FK,
 	// but SQLite doesn't enforce FKs by default)
 	if err := db.AutoMigrate(&entity.Task{}); err != nil {
-		t.Fatalf("failed to migrate: %v", err)
+		t.Fatalf("failed to migrate Task: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.IngestionTask{}); err != nil {
+		t.Fatalf("failed to migrate IngestionTask: %v", err)
 	}
 
 	return db
@@ -121,5 +132,124 @@ func TestGetByDocID_EmptyDocID(t *testing.T) {
 	}
 	if tasks[0].ID != "task-1" {
 		t.Fatalf("expected task-1, got %s", tasks[0].ID)
+	}
+}
+
+func TestDeleteIngestionTasksByDocIDs_Success(t *testing.T) {
+	db := setupTaskTestDB(t)
+	orig := DB
+	DB = db
+	t.Cleanup(func() { DB = orig })
+
+	dao := NewTaskDAO()
+
+	// Insert ingestion tasks for two different documents
+	task1 := &entity.IngestionTask{ID: "itask-1", DocumentID: "doc-1", UserID: "user-1", DatasetID: "ds-1", Status: "pending"}
+	task2 := &entity.IngestionTask{ID: "itask-2", DocumentID: "doc-2", UserID: "user-1", DatasetID: "ds-1", Status: "pending"}
+	for _, tk := range []*entity.IngestionTask{task1, task2} {
+		if err := db.Create(tk).Error; err != nil {
+			t.Fatalf("failed to create ingestion task: %v", err)
+		}
+	}
+
+	// Delete tasks for doc-1
+	rowsAffected, err := dao.DeleteIngestionTasksByDocIDs([]string{"doc-1"})
+	if err != nil {
+		t.Fatalf("DeleteIngestionTasksByDocIDs failed: %v", err)
+	}
+	if rowsAffected != 1 {
+		t.Fatalf("expected 1 row affected, got %d", rowsAffected)
+	}
+
+	// Verify doc-1 tasks are gone, doc-2 remains
+	var remaining []*entity.IngestionTask
+	if err := db.Find(&remaining).Error; err != nil {
+		t.Fatalf("failed to find remaining tasks: %v", err)
+	}
+	if len(remaining) != 1 {
+		t.Fatalf("expected 1 task remaining, got %d", len(remaining))
+	}
+	if remaining[0].ID != "itask-2" {
+		t.Fatalf("expected itask-2 to remain, got %s", remaining[0].ID)
+	}
+}
+
+func TestDeleteIngestionTasksByDocIDs_EmptyIDs(t *testing.T) {
+	db := setupTaskTestDB(t)
+	orig := DB
+	DB = db
+	t.Cleanup(func() { DB = orig })
+
+	dao := NewTaskDAO()
+
+	rowsAffected, err := dao.DeleteIngestionTasksByDocIDs([]string{})
+	if err != nil {
+		t.Fatalf("DeleteIngestionTasksByDocIDs failed: %v", err)
+	}
+	if rowsAffected != 0 {
+		t.Fatalf("expected 0 rows affected, got %d", rowsAffected)
+	}
+}
+
+func TestDeleteIngestionTasksByDocIDs_Nonexistent(t *testing.T) {
+	db := setupTaskTestDB(t)
+	orig := DB
+	DB = db
+	t.Cleanup(func() { DB = orig })
+
+	dao := NewTaskDAO()
+
+	// Insert one task to make sure table isn't empty
+	task := &entity.IngestionTask{ID: "itask-1", DocumentID: "doc-1", UserID: "user-1", DatasetID: "ds-1", Status: "pending"}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("failed to create ingestion task: %v", err)
+	}
+
+	rowsAffected, err := dao.DeleteIngestionTasksByDocIDs([]string{"nonexistent"})
+	if err != nil {
+		t.Fatalf("DeleteIngestionTasksByDocIDs failed: %v", err)
+	}
+	if rowsAffected != 0 {
+		t.Fatalf("expected 0 rows affected, got %d", rowsAffected)
+	}
+}
+
+func TestDeleteIngestionTasksByDocIDs_MultipleIDs(t *testing.T) {
+	db := setupTaskTestDB(t)
+	orig := DB
+	DB = db
+	t.Cleanup(func() { DB = orig })
+
+	dao := NewTaskDAO()
+
+	// Insert tasks for multiple documents
+	tasks := []*entity.IngestionTask{
+		{ID: "itask-1", DocumentID: "doc-1", UserID: "user-1", DatasetID: "ds-1", Status: "pending"},
+		{ID: "itask-2", DocumentID: "doc-2", UserID: "user-1", DatasetID: "ds-1", Status: "pending"},
+		{ID: "itask-3", DocumentID: "doc-3", UserID: "user-1", DatasetID: "ds-1", Status: "pending"},
+		{ID: "itask-4", DocumentID: "keep", UserID: "user-1", DatasetID: "ds-1", Status: "pending"},
+	}
+	for _, tk := range tasks {
+		if err := db.Create(tk).Error; err != nil {
+			t.Fatalf("failed to create ingestion task: %v", err)
+		}
+	}
+
+	// Delete multiple document IDs
+	rowsAffected, err := dao.DeleteIngestionTasksByDocIDs([]string{"doc-1", "doc-2", "doc-3"})
+	if err != nil {
+		t.Fatalf("DeleteIngestionTasksByDocIDs failed: %v", err)
+	}
+	if rowsAffected != 3 {
+		t.Fatalf("expected 3 rows affected, got %d", rowsAffected)
+	}
+
+	// Verify only "keep" remains
+	var remaining []*entity.IngestionTask
+	if err := db.Find(&remaining).Error; err != nil {
+		t.Fatalf("failed to find remaining tasks: %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].ID != "itask-4" {
+		t.Fatalf("expected only itask-4 to remain, got %d tasks", len(remaining))
 	}
 }

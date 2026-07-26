@@ -17,7 +17,10 @@
       "max_tokens": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "jina-reranker-v3",

@@ -32,8 +32,9 @@ class TestGetRaptorChunkFieldMap:
     async def test_returns_primary_result_when_raptor_chunks_exist(self):
         """Test that primary result is returned when RAPTOR chunks exist."""
         from common import settings
+
         original_retriever = settings.docStoreConn
-        
+
         mock_doc_store = MagicMock()
         mock_doc_store.search.return_value = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}}
         mock_doc_store.get_fields.return_value = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}}
@@ -41,8 +42,10 @@ class TestGetRaptorChunkFieldMap:
 
         try:
             with patch("rag.svr.task_executor_refactor.raptor_utils.thread_pool_exec") as mock_thread:
+
                 async def mock_exec(*args, **kwargs):
                     return {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}}
+
                 mock_thread.side_effect = mock_exec
 
                 with patch("rag.svr.task_executor_refactor.raptor_utils.collect_raptor_chunk_ids") as mock_collect:
@@ -58,13 +61,15 @@ class TestGetRaptorChunkFieldMap:
     async def test_falls_back_to_secondary_search_when_no_raptor_chunks(self):
         """Test that fallback search is used when no RAPTOR chunks found."""
         from common import settings
+
         original_retriever = settings.docStoreConn
-        
+
         mock_doc_store = MagicMock()
         settings.docStoreConn = mock_doc_store
 
         try:
             call_count = 0
+
             async def mock_exec(*args, **kwargs):
                 nonlocal call_count
                 call_count += 1
@@ -90,14 +95,16 @@ class TestGetRaptorChunkFieldMap:
     async def test_handles_fallback_search_exception(self):
         """Test that exception in fallback search is handled gracefully."""
         from common import settings
+
         original_retriever = settings.docStoreConn
-        
+
         mock_doc_store = MagicMock()
         mock_doc_store.get_fields.return_value = {}
         settings.docStoreConn = mock_doc_store
 
         try:
             call_count = 0
+
             async def mock_exec(*args, **kwargs):
                 nonlocal call_count
                 call_count += 1
@@ -128,8 +135,9 @@ class TestDeleteRaptorChunks:
     async def test_deletes_all_chunks_when_keep_method_is_none(self):
         """Test that all RAPTOR chunks are deleted when keep_method is None."""
         from common import settings
+
         original_retriever = settings.docStoreConn
-        
+
         mock_doc_store = MagicMock()
         settings.docStoreConn = mock_doc_store
 
@@ -164,17 +172,15 @@ class TestDeleteRaptorChunks:
     async def test_deletes_stale_chunks_when_keep_method_specified(self):
         """Test that stale chunks are deleted when keep_method is specified."""
         from common import settings
+
         original_retriever = settings.docStoreConn
-        
+
         mock_doc_store = MagicMock()
         settings.docStoreConn = mock_doc_store
 
         try:
             with patch("rag.svr.task_executor_refactor.raptor_utils.get_raptor_chunk_field_map") as mock_get_map:
-                mock_get_map.return_value = {
-                    "chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "psi"}},
-                    "chunk_2": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}
-                }
+                mock_get_map.return_value = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "psi"}}, "chunk_2": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}}
 
                 with patch("rag.svr.task_executor_refactor.raptor_utils.collect_raptor_chunk_ids") as mock_collect:
                     mock_collect.return_value = {"chunk_1"}  # Only chunk_1 is stale (psi, not raptor)
@@ -193,16 +199,15 @@ class TestDeleteRaptorChunks:
     async def test_logs_info_when_removing_stale_chunks(self):
         """Test that info is logged when removing stale chunks."""
         from common import settings
+
         original_retriever = settings.docStoreConn
-        
+
         mock_doc_store = MagicMock()
         settings.docStoreConn = mock_doc_store
 
         try:
             with patch("rag.svr.task_executor_refactor.raptor_utils.get_raptor_chunk_field_map") as mock_get_map:
-                mock_get_map.return_value = {
-                    "chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "psi"}}
-                }
+                mock_get_map.return_value = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "psi"}}}
 
                 with patch("rag.svr.task_executor_refactor.raptor_utils.collect_raptor_chunk_ids") as mock_collect:
                     mock_collect.return_value = {"chunk_1"}

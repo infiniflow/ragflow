@@ -17,11 +17,14 @@
 package models
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -56,6 +59,7 @@ func newTimeoutTestGroq(baseURL string) *GroqModel {
 // nonStreamCallTimeout (the old 120s-wall footgun, just relocated), the
 // context would cancel mid-stream and this test would fail.
 func TestStreamNotTruncatedByNonStreamTimeout(t *testing.T) {
+	ctx := t.Context()
 	// Stream emits for ~240ms, far past the 60ms non-stream deadline but well
 	// inside the 10s stream deadline.
 	withTestTimeouts(t, 60*time.Millisecond, 10*time.Second)
@@ -83,9 +87,11 @@ func TestStreamNotTruncatedByNonStreamTimeout(t *testing.T) {
 	apiKey := "test-key"
 	var got strings.Builder
 	err := newTimeoutTestGroq(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"llama-3.3-70b-versatile",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
+		nil,
 		nil,
 		func(c *string, _ *string) error {
 			if c != nil && *c != "[DONE]" {
@@ -105,28 +111,49 @@ func TestStreamNotTruncatedByNonStreamTimeout(t *testing.T) {
 // TestNonStreamHonorsShortDeadline ensures dropping the blanket
 // http.Client.Timeout did not leave non-streaming calls unbounded: a slow
 // server must still trip the per-call nonStreamCallTimeout promptly.
+//
+// The semantic check is the error type: the call must return a
+// deadline error from the 100ms non-stream timeout. We avoid tight
+// wall-clock assertions, but still run the call behind a generous
+// watchdog so a broken timeout surfaces as a direct test failure
+// rather than relying on the package's global test timeout.
 func TestNonStreamHonorsShortDeadline(t *testing.T) {
+	ctx := t.Context()
 	withTestTimeouts(t, 100*time.Millisecond, 10*time.Second)
 
+	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
 		time.Sleep(800 * time.Millisecond) // far beyond the 100ms non-stream deadline
 		_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"late"}}]}`)
 	}))
 	defer srv.Close()
 
 	apiKey := "test-key"
-	start := time.Now()
-	_, err := newTimeoutTestGroq(srv.URL).ChatWithMessages(
-		"llama-3.3-70b-versatile",
-		[]Message{{Role: "user", Content: "hi"}},
-		&APIConfig{ApiKey: &apiKey},
-		nil,
-	)
-	elapsed := time.Since(start)
-	if err == nil {
-		t.Fatal("expected a deadline error from the slow server, got nil")
-	}
-	if elapsed > 400*time.Millisecond {
-		t.Fatalf("call took %v; expected it to abort near the 100ms deadline", elapsed)
+	done := make(chan error, 1)
+	go func() {
+		_, err := newTimeoutTestGroq(srv.URL).ChatWithMessages(
+			ctx,
+			"llama-3.3-70b-versatile",
+			[]Message{{Role: "user", Content: "hi"}},
+			&APIConfig{ApiKey: &apiKey},
+			nil, nil,
+		)
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("expected a deadline error from the slow server, got nil")
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("err=%v, want wrapped context.DeadlineExceeded", err)
+		}
+		if got := hits.Load(); got != 1 {
+			t.Fatalf("server hits=%d, want 1", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("non-stream call did not return within 2s — timeout wrap is broken")
 	}
 }

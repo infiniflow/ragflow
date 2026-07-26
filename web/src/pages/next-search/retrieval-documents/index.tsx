@@ -22,7 +22,8 @@ import {
 } from '@/hooks/use-knowledge-request';
 import { cn } from '@/lib/utils';
 import { CheckIcon, ChevronDown, Files, XIcon } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface IProps {
   onTesting(documentIds: string[]): void;
@@ -37,6 +38,7 @@ const RetrievalDocuments = ({
   setSelectedDocumentIds,
   setLoading,
 }: IProps) => {
+  const { t } = useTranslation();
   const { documents: documentsAll } = useAllTestingResult();
   const { documents } = useSelectTestingResult();
   const isTesting = useChunkIsTesting();
@@ -50,10 +52,15 @@ const RetrievalDocuments = ({
     }
   }, [isTesting, setLoading]);
 
-  const { documents: useDocuments } = {
-    documents:
-      documentsAll?.length > documents?.length ? documentsAll : documents,
-  };
+  const latestDocuments =
+    documentsAll?.length > documents?.length ? documentsAll : documents;
+  // Keep the last non-empty list so the popover anchor is not unmounted
+  // while a new testing request is pending.
+  const documentsRef = useRef(latestDocuments);
+  if (latestDocuments?.length) {
+    documentsRef.current = latestDocuments;
+  }
+  const useDocuments = documentsRef.current;
   const [selectedValues, setSelectedValues] =
     useState<string[]>(selectedDocumentIds);
 
@@ -113,7 +120,7 @@ const RetrievalDocuments = ({
   return (
     <Popover open={isPopoverOpen} onOpenChange={setIsPopoverOpen}>
       <PopoverTrigger asChild>
-        {useDocuments?.length && (
+        {useDocuments?.length > 0 && (
           <Button
             onClick={handleTogglePopover}
             className={cn(
@@ -126,7 +133,7 @@ const RetrievalDocuments = ({
                 <span>
                   {selectedDocumentIds?.length ?? 0}/{useDocuments?.length ?? 0}
                 </span>
-                Files
+                {t('knowledgeDetails.subbarFiles')}
               </div>
               <div className="flex items-center justify-between">
                 <XIcon
@@ -153,11 +160,11 @@ const RetrievalDocuments = ({
       >
         <Command>
           <CommandInput
-            placeholder="Search..."
+            placeholder={t('common.search')}
             onKeyDown={handleInputKeyDown}
           />
           <CommandList>
-            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandEmpty>{t('common.noResults')}</CommandEmpty>
             <CommandGroup>
               {!multiOptions.some((x) => 'options' in x) &&
                 (multiOptions as unknown as MultiSelectOptionType[]).map(
@@ -226,7 +233,7 @@ const RetrievalDocuments = ({
                       onSelect={handleClear}
                       className="flex-1 justify-center cursor-pointer"
                     >
-                      Clear
+                      {t('common.clear')}
                     </CommandItem>
                     <Separator
                       orientation="vertical"
@@ -238,7 +245,7 @@ const RetrievalDocuments = ({
                   onSelect={() => setIsPopoverOpen(false)}
                   className="flex-1 justify-center cursor-pointer max-w-full"
                 >
-                  Close
+                  {t('common.close')}
                 </CommandItem>
               </div>
             </CommandGroup>

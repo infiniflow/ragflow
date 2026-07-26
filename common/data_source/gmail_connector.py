@@ -100,7 +100,7 @@ def thread_to_document(full_thread: dict[str, Any], email_used_to_fetch_thread: 
 
         if message_metadata.get("updated_at"):
             updated_at = message_metadata.get("updated_at")
-            
+
     updated_at_datetime = None
     if updated_at:
         updated_at_datetime = gmail_time_str_to_utc(updated_at)
@@ -115,12 +115,10 @@ def thread_to_document(full_thread: dict[str, Any], email_used_to_fetch_thread: 
     if not semantic_identifier:
         semantic_identifier = "(no subject)"
 
-    combined_sections = "\n\n".join(
-        sec.text for sec in sections if hasattr(sec, "text")
-    )
+    combined_sections = "\n\n".join(sec.text for sec in sections if hasattr(sec, "text"))
     blob = combined_sections
     size_bytes = len(blob)
-    extension = '.txt'
+    extension = ".txt"
 
     return Document(
         id=thread_id,
@@ -318,6 +316,7 @@ if __name__ == "__main__":
     import time
     import os
     from common.data_source.google_util.util import get_credentials_from_env
+
     logging.basicConfig(level=logging.INFO)
     try:
         email = os.environ.get("GMAIL_TEST_EMAIL", "newyorkupperbay@gmail.com")
@@ -336,7 +335,7 @@ if __name__ == "__main__":
             int(time.time()) - 1 * 24 * 60 * 60,
             int(time.time()),
         ):
-            print("new batch","-"*80)
+            print("new batch", "-" * 80)
             for f in file:
                 print(f)
                 print("\n\n")

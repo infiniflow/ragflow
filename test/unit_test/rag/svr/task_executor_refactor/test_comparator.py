@@ -41,13 +41,7 @@ class TestComparisonResult:
 
     def test_init_with_all_fields(self):
         """Test initialization with all fields."""
-        result = ComparisonResult(
-            key="test_key",
-            match=False,
-            production_value=100,
-            dry_run_value=200,
-            diff_details="Values differ"
-        )
+        result = ComparisonResult(key="test_key", match=False, production_value=100, dry_run_value=200, diff_details="Values differ")
         assert result.key == "test_key"
         assert result.match is False
         assert result.production_value == 100
@@ -62,11 +56,7 @@ class TestComparisonResult:
 
     def test_to_dict_mismatch(self):
         """Test to_dict for mismatching result."""
-        result = ComparisonResult(
-            key="key",
-            match=False,
-            diff_details="Difference"
-        )
+        result = ComparisonResult(key="key", match=False, diff_details="Difference")
         d = result.to_dict()
         assert d == {"key": "key", "match": False, "diff_details": "Difference"}
 
@@ -92,24 +82,14 @@ class TestComparisonReport:
 
     def test_summary_with_keys(self):
         """Test summary with keys."""
-        report = ComparisonReport(
-            task_id="task_123",
-            total_keys=10,
-            matched_keys=8,
-            mismatched_keys=2
-        )
+        report = ComparisonReport(task_id="task_123", total_keys=10, matched_keys=8, mismatched_keys=2)
         summary = report.summary()
         assert "8/10" in summary
         assert "80.0%" in summary
 
     def test_to_dict(self):
         """Test to_dict serialization."""
-        report = ComparisonReport(
-            task_id="task_123",
-            total_keys=1,
-            matched_keys=1,
-            details=[ComparisonResult(key="k", match=True)]
-        )
+        report = ComparisonReport(task_id="task_123", total_keys=1, matched_keys=1, details=[ComparisonResult(key="k", match=True)])
         d = report.to_dict()
         assert d["task_id"] == "task_123"
         assert d["total_keys"] == 1
@@ -117,15 +97,7 @@ class TestComparisonReport:
 
     def test_to_markdown(self):
         """Test to_markdown serialization."""
-        report = ComparisonReport(
-            task_id="task_123",
-            total_keys=1,
-            matched_keys=1,
-            mismatched_keys=0,
-            missing_in_production=[],
-            missing_in_dry_run=[],
-            details=[ComparisonResult(key="k", match=True)]
-        )
+        report = ComparisonReport(task_id="task_123", total_keys=1, matched_keys=1, mismatched_keys=0, missing_in_production=[], missing_in_dry_run=[], details=[ComparisonResult(key="k", match=True)])
         md = report.to_markdown()
         assert "# Comparison Report: task_123" in md
         assert "## Summary" in md
@@ -222,11 +194,7 @@ class TestContextComparatorCompareValue:
 
     def test_compare_chunks_key_uses_chunk_comparison(self):
         """Test that chunk keys use chunk comparison strategy."""
-        result = self.comparator.compare_value(
-            "raw_chunks",
-            [{"id": "1", "content_with_weight": "a"}],
-            [{"id": "1", "content_with_weight": "a"}]
-        )
+        result = self.comparator.compare_value("raw_chunks", [{"id": "1", "content_with_weight": "a"}], [{"id": "1", "content_with_weight": "a"}])
         assert result.match is True
 
 
@@ -328,7 +296,7 @@ class TestContextComparatorCompareChunks:
 
     def test_all_chunks_compared_not_sampled(self):
         """Test that ALL chunks are compared, not just samples.
-        
+
         This test creates 10 chunks where only the middle one (index 5) differs.
         With the old sampling strategy, this difference might be missed.
         With full comparison, the difference should always be detected.
@@ -337,7 +305,7 @@ class TestContextComparatorCompareChunks:
         dry = [{"id": str(i), "content_with_weight": f"content_{i}"} for i in range(10)]
         # Only modify chunk at index 5 (which might not be sampled in old strategy)
         dry[5]["content_with_weight"] = "different_content"
-        
+
         result = self.comparator._compare_chunks("raw_chunks", prod, dry)
         assert result.match is False
         assert "Content differs" in result.diff_details
@@ -346,7 +314,7 @@ class TestContextComparatorCompareChunks:
         """Test that first chunk difference is detected."""
         prod = [{"id": "1", "content_with_weight": "a"}, {"id": "2", "content_with_weight": "b"}]
         dry = [{"id": "1", "content_with_weight": "different"}, {"id": "2", "content_with_weight": "b"}]
-        
+
         result = self.comparator._compare_chunks("raw_chunks", prod, dry)
         assert result.match is False
 
@@ -354,7 +322,7 @@ class TestContextComparatorCompareChunks:
         """Test that last chunk difference is detected."""
         prod = [{"id": "1", "content_with_weight": "a"}, {"id": "2", "content_with_weight": "b"}]
         dry = [{"id": "1", "content_with_weight": "a"}, {"id": "2", "content_with_weight": "different"}]
-        
+
         result = self.comparator._compare_chunks("raw_chunks", prod, dry)
         assert result.match is False
 
@@ -362,7 +330,7 @@ class TestContextComparatorCompareChunks:
         """Test that large list of chunks all match."""
         prod = [{"id": str(i), "content_with_weight": f"content_{i}"} for i in range(100)]
         dry = [{"id": str(i), "content_with_weight": f"content_{i}"} for i in range(100)]
-        
+
         result = self.comparator._compare_chunks("raw_chunks", prod, dry)
         assert result.match is True
 
@@ -372,7 +340,7 @@ class TestContextComparatorCompareChunks:
         dry = [{"id": str(i), "content_with_weight": f"content_{i}"} for i in range(100)]
         # Modify only the last chunk
         dry[99]["content_with_weight"] = "different"
-        
+
         result = self.comparator._compare_chunks("raw_chunks", prod, dry)
         assert result.match is False
 
@@ -487,10 +455,7 @@ class TestContextComparatorStripNonDeterministicFields:
 
     def test_strip_seconds_from_dict_value(self):
         """Test that 'seconds' key is removed from dict values."""
-        data = {
-            "graphrag_result": {"seconds": 45.48, "status": "done"},
-            "other_key": "value"
-        }
+        data = {"graphrag_result": {"seconds": 45.48, "status": "done"}, "other_key": "value"}
         result = self.comparator._strip_non_deterministic_fields(data)
         assert "seconds" not in result["graphrag_result"]
         assert result["graphrag_result"] == {"status": "done"}
@@ -498,11 +463,7 @@ class TestContextComparatorStripNonDeterministicFields:
 
     def test_strip_seconds_from_multiple_dict_values(self):
         """Test that 'seconds' is removed from multiple dict values."""
-        data = {
-            "result1": {"seconds": 10.0, "count": 5},
-            "result2": {"seconds": 20.0, "name": "test"},
-            "simple_key": 123
-        }
+        data = {"result1": {"seconds": 10.0, "count": 5}, "result2": {"seconds": 20.0, "name": "test"}, "simple_key": 123}
         result = self.comparator._strip_non_deterministic_fields(data)
         assert result["result1"] == {"count": 5}
         assert result["result2"] == {"name": "test"}
@@ -510,9 +471,7 @@ class TestContextComparatorStripNonDeterministicFields:
 
     def test_strip_does_not_modify_original_dict(self):
         """Test that the original dict is not modified in place."""
-        data = {
-            "result": {"seconds": 1.0, "value": "test"}
-        }
+        data = {"result": {"seconds": 1.0, "value": "test"}}
         _ = data["result"].copy()
         self.comparator._strip_non_deterministic_fields(data)
         # The original nested dict should still have seconds since we only do shallow copy
@@ -520,22 +479,14 @@ class TestContextComparatorStripNonDeterministicFields:
 
     def test_strip_with_empty_dict_values(self):
         """Test handling of empty dict values."""
-        data = {
-            "empty_dict": {},
-            "normal_key": "value"
-        }
+        data = {"empty_dict": {}, "normal_key": "value"}
         result = self.comparator._strip_non_deterministic_fields(data)
         assert result["empty_dict"] == {}
         assert result["normal_key"] == "value"
 
     def test_strip_with_non_dict_values(self):
         """Test that non-dict values are not affected."""
-        data = {
-            "string_val": "test",
-            "int_val": 42,
-            "list_val": [1, 2, 3],
-            "dict_val": {"seconds": 1.0, "name": "test"}
-        }
+        data = {"string_val": "test", "int_val": 42, "list_val": [1, 2, 3], "dict_val": {"seconds": 1.0, "name": "test"}}
         result = self.comparator._strip_non_deterministic_fields(data)
         assert result["string_val"] == "test"
         assert result["int_val"] == 42
@@ -544,23 +495,11 @@ class TestContextComparatorStripNonDeterministicFields:
 
     def test_strip_seconds_from_graphrag_result(self):
         """Test the specific case from the bug report: graphrag_result with seconds."""
-        prod_data = {
-            "graphrag_result": {
-                "seconds": 45.48,
-                "status": "success",
-                "entity_count": 100
-            }
-        }
-        dry_run_data = {
-            "graphrag_result": {
-                "seconds": 0.99,
-                "status": "success",
-                "entity_count": 100
-            }
-        }
+        prod_data = {"graphrag_result": {"seconds": 45.48, "status": "success", "entity_count": 100}}
+        dry_run_data = {"graphrag_result": {"seconds": 0.99, "status": "success", "entity_count": 100}}
         prod_stripped = self.comparator._strip_non_deterministic_fields(prod_data)
         dry_run_stripped = self.comparator._strip_non_deterministic_fields(dry_run_data)
-        
+
         # After stripping, both should be equal (except for seconds)
         assert prod_stripped["graphrag_result"] == {"status": "success", "entity_count": 100}
         assert dry_run_stripped["graphrag_result"] == {"status": "success", "entity_count": 100}
@@ -572,7 +511,7 @@ class TestContextComparatorStripNonDeterministicFields:
         ctx2 = RecordingContext()
         ctx1.record("graphrag_result", {"seconds": 45.48, "status": "success"})
         ctx2.record("graphrag_result", {"seconds": 0.99, "status": "success"})
-        
+
         report = self.comparator.compare("task_1", ctx1, ctx2)
         # Should match because seconds is stripped
         assert report.matched_keys == 1
@@ -584,7 +523,7 @@ class TestContextComparatorStripNonDeterministicFields:
         ctx2 = RecordingContext()
         ctx1.record("graphrag_result", {"seconds": 45.48, "status": "success", "count": 100})
         ctx2.record("graphrag_result", {"seconds": 0.99, "status": "failed", "count": 50})
-        
+
         report = self.comparator.compare("task_1", ctx1, ctx2)
         # Should mismatch because status and count differ
         assert report.mismatched_keys == 1

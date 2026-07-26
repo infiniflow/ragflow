@@ -127,6 +127,7 @@ def test_upload_document_skips_cross_kb_document_id_collision(monkeypatch):
 # Helpers shared by TestValidateUrlForCrawl
 # ---------------------------------------------------------------------------
 
+
 def _addrinfo(ip_str: str) -> list:
     """Build a minimal getaddrinfo-style result for a single address string."""
     family = socket.AF_INET6 if ":" in ip_str else socket.AF_INET
@@ -136,6 +137,7 @@ def _addrinfo(ip_str: str) -> list:
 # ---------------------------------------------------------------------------
 # _validate_url_for_crawl SSRF-guard tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.p2
 class TestValidateUrlForCrawl:
@@ -268,10 +270,7 @@ class TestValidateUrlForCrawl:
         monkeypatch.setattr(
             socket,
             "getaddrinfo",
-            lambda h, p: (
-                _addrinfo("93.184.216.34")
-                + _addrinfo("2606:2800:220:1:248:1893:25c8:1946")
-            ),
+            lambda h, p: _addrinfo("93.184.216.34") + _addrinfo("2606:2800:220:1:248:1893:25c8:1946"),
         )
         hostname, resolved_ip = FileService._validate_url_for_crawl("https://example.com/")
         assert hostname == "example.com"

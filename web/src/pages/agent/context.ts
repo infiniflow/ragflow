@@ -2,7 +2,7 @@ import { INodeEvent } from '@/hooks/use-send-message';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { IMessage } from '@/interfaces/database/chat';
 import { HandleType, Position } from '@xyflow/react';
-import { Dispatch, SetStateAction, createContext } from 'react';
+import { Dispatch, SetStateAction, createContext, useContext } from 'react';
 import { useAddNode } from './hooks/use-add-node';
 import { useCacheChatLog } from './hooks/use-cache-chat-log';
 import { useShowFormDrawer, useShowLogSheet } from './hooks/use-show-drawer';
@@ -10,6 +10,13 @@ import { useShowFormDrawer, useShowLogSheet } from './hooks/use-show-drawer';
 export const AgentFormContext = createContext<RAGFlowNodeType | undefined>(
   undefined,
 );
+
+export const OwnerTenantIdContext = createContext<string | undefined>(
+  undefined,
+);
+
+// eslint-disable-next-line react-refresh/only-export-components
+export const useOwnerTenantId = () => useContext(OwnerTenantIdContext);
 
 type AgentInstanceContextType = Pick<
   ReturnType<typeof useAddNode>,

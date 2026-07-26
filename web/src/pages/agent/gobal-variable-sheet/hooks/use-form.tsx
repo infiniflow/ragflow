@@ -12,6 +12,7 @@ export const useHandleForm = () => {
     try {
       return JSON.parse(value);
     } catch (error) {
+      console.warn(error);
       return value;
     }
   };

@@ -97,16 +97,10 @@ class E2BProvider(SandboxProvider):
             metadata={
                 "language": language,
                 "region": self.region,
-            }
+            },
         )
 
-    def execute_code(
-        self,
-        instance_id: str,
-        code: str,
-        language: str,
-        timeout: int = 10
-    ) -> ExecutionResult:
+    def execute_code(self, instance_id: str, code: str, language: str, timeout: int = 10) -> ExecutionResult:
         """
         Execute code in the E2B instance.
 
@@ -130,9 +124,7 @@ class E2BProvider(SandboxProvider):
         # POST /sandbox/{sandboxID}/execute
 
         raise RuntimeError(
-            "E2B provider is not yet fully implemented. "
-            "Please use the self-managed provider or implement the E2B API integration. "
-            "See https://github.com/e2b-dev/e2b for API documentation."
+            "E2B provider is not yet fully implemented. Please use the self-managed provider or implement the E2B API integration. See https://github.com/e2b-dev/e2b for API documentation."
         )
 
     def destroy_instance(self, instance_id: str) -> bool:
@@ -208,7 +200,7 @@ class E2BProvider(SandboxProvider):
                 "min": 5,
                 "max": 300,
                 "description": "API request timeout for code execution",
-            }
+            },
         }
 
     def _normalize_language(self, language: str) -> str:

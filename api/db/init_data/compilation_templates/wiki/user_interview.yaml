@@ -1,0 +1,27 @@
+instruction: |
+    - Each page must be a proper encyclopedic article, NOT a flat bullet list:
+    - 1. Take prefix ">" or "-" in the "page_example" as instructions to generate the content.
+    - 2. Sections with H2 headings, each starting with prose before sub-bullets.
+page_example: |
+    # User interview
+    ## Takeaways
+    - The team is still unaware about features x, y, z
+    - Takeaway 2
+    - Takeaway 3
+    ## Goal
+    > What are you trying to find out with this interview?
+    ## Feedback
+    ### Why did you sign up?
+    > Record user's answer.
+
+    ### Have you tried other alternatives?
+    - Competitors
+    - Process
+
+    ### Question #3
+    > Record user's answer.
+
+    ## Resources
+    > Upload screenshots or video recordings of your interview. Any relevant file exchanged during your conversation can be added too.
+
+topic: product

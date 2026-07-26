@@ -8,7 +8,7 @@ import { Link, LinkProps } from 'react-router';
 
 const buttonVariants = cva(
   cn(
-    'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm transition-colors outline-0',
+    'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm transition-colors outline-none',
     'disabled:pointer-events-none disabled:opacity-50 rounded border-0.5 border-transparent',
     '[&_svg]:pointer-events-none [&_svg:not([class*="size-"])]:size-4 shrink-0 [&_svg]:shrink-0',
   ),
@@ -133,50 +133,50 @@ export type ButtonProps<IsAnchor extends boolean = false> = {
     ? LinkProps
     : React.ButtonHTMLAttributes<HTMLButtonElement>);
 
-const Button = React.forwardRef(
-  <IsAnchor extends boolean = false>(
-    {
-      children,
-      className,
-      variant,
-      size,
-      dot = false,
-      asChild = false,
-      asLink = false,
-      loading = false,
-      disabled = false,
-      block = false,
-      ...props
-    }: ButtonProps<IsAnchor>,
-    ref: React.ForwardedRef<
-      IsAnchor extends true ? HTMLAnchorElement : HTMLButtonElement
-    >,
-  ) => {
-    const Comp = asChild ? Slot : asLink ? Link : 'button';
+const Button = React.forwardRef(function Button<
+  IsAnchor extends boolean = false,
+>(
+  {
+    children,
+    className,
+    variant,
+    size,
+    dot = false,
+    asChild = false,
+    asLink = false,
+    loading = false,
+    disabled = false,
+    block = false,
+    ...props
+  }: ButtonProps<IsAnchor>,
+  ref: React.ForwardedRef<
+    IsAnchor extends true ? HTMLAnchorElement : HTMLButtonElement
+  >,
+) {
+  const Comp = asChild ? Slot : asLink ? Link : 'button';
 
-    return (
-      <Comp
-        className={cn(
-          buttonVariants({ variant, size, className }),
-          { 'w-full': block },
-          { relative: dot },
+  return (
+    <Comp
+      className={cn(
+        buttonVariants({ variant, size, className }),
+        { 'w-full': block },
+        { relative: dot },
+      )}
+      // @ts-ignore
+      ref={ref as React.RefObject<HTMLButtonElement | HTMLAnchorElement>}
+      disabled={loading || disabled}
+      {...props}
+    >
+      <>
+        {dot && (
+          <span className="absolute size-[6px] rounded-full -right-[3px] -top-[3px] bg-state-error animate" />
         )}
-        // @ts-ignore
-        ref={ref as React.RefObject<HTMLButtonElement | HTMLAnchorElement>}
-        disabled={loading || disabled}
-        {...props}
-      >
-        <>
-          {dot && (
-            <span className="absolute size-[6px] rounded-full -right-[3px] -top-[3px] bg-state-error animate" />
-          )}
-          {loading && <LucideLoader2 className="animate-spin" />}
-          {children}
-        </>
-      </Comp>
-    );
-  },
-);
+        {loading && <LucideLoader2 className="animate-spin" />}
+        {children}
+      </>
+    </Comp>
+  );
+});
 
 Button.displayName = 'Button';
 

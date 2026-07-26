@@ -1,0 +1,67 @@
+kind: session_graph
+display_name: Session Graph — Knowledge graph from conversations
+config:
+  kind: knowledge_graph
+  entity:
+    description: >-
+      You are a robust entity and fact extractor for conversational data.
+    fields:
+      - type: person
+        description: A person mentioned or participating in the conversation.
+        rule: |
+          - Full name preferred (e.g., "Alice Zhang", not "A. Zhang").
+          - Max length: 60 characters.
+      - type: org
+        description: Organization, company, team, or department.
+        rule: |
+          - Use the official name when possible (e.g., "Acme Corp").
+          - Max length: 80 characters.
+      - type: topic
+        description: Discussed topic, theme, or subject area.
+        rule: |
+          - Use the phrasing from the conversation (e.g., "API migration").
+          - Max length: 80 characters.
+      - type: fact
+        description: A verifiable factual statement extracted from the conversation.
+        rule: |
+          - Must be a single proposition (subject + predicate + object).
+          - Must be directly supported by the source text.
+          - Do not include opinions, speculation, or hypotheticals.
+        fact_fields:
+          - subject
+          - predicate
+          - object
+          - polarity
+          - confidence
+  relation:
+    description: >-
+      You are an expert in extracting semantic relations from conversations.
+    fields:
+      - type: mentions
+        description: One entity references or brings up another.
+        rule: |
+          - Direction from referrer to referred: (A mentions B).
+      - type: decides
+        description: A decision or resolution made during the conversation.
+        rule: |
+          - Direction from decision-maker to decision: (A decides B).
+      - type: assigns
+        description: Task or responsibility assigned to someone.
+        rule: |
+          - Direction from assigner to assignee: (A assigns B to C).
+      - type: references
+        description: Reference to a prior topic, document, or event.
+        rule: |
+          - Direction from current to referenced: (A references B).
+      - type: other
+        description: Any meaningful relation not covered by the above types.
+        rule: |
+          - Provide an explicit label in a "relation_label" field.
+  global_rules: ''
+  synthesis:
+    enabled: true
+    compile_kwd: "artifact_page"
+    example: |
+      - Build a wiki article covering the entity's role in the conversations.
+      - Include a summary paragraph and sections for key decisions and actions.
+      - Use [[entity_name]] for cross-references to related entities.

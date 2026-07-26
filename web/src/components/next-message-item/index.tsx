@@ -26,6 +26,7 @@ import { getDirAttribute } from '@/utils/text-direction';
 import { isEmpty } from 'lodash';
 import { Atom, ChevronDown, ChevronUp } from 'lucide-react';
 import { DocumentDownloadButton } from '../document-download-button';
+import { LoadingDots } from '../loading-dots';
 import MarkdownContent from '../next-markdown-content';
 import { RAGFlowAvatar } from '../ragflow-avatar';
 import SvgIcon from '../svg-icon';
@@ -79,6 +80,7 @@ function MessageItem({
   children,
   showLog,
   isShare,
+  nickname,
 }: IProps) {
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
@@ -129,6 +131,8 @@ function MessageItem({
       return null;
     }
 
+    const hasCustomChildren = item.data && !!children;
+
     return (
       <div
         className={cn({
@@ -139,10 +143,10 @@ function MessageItem({
         })}
         dir={getDirAttribute(messageContent.replace(citationMarkerReg, ''))}
       >
-        {item.data ? (
+        {hasCustomChildren ? (
           children
         ) : sendLoading && isEmpty(messageContent) ? (
-          <>{!isShare && 'running...'}</>
+          <>{!isShare && <LoadingDots className="text-text-secondary" />}</>
         ) : (
           <MarkdownContent
             loading={loading}
@@ -186,7 +190,11 @@ function MessageItem({
         >
           {visibleAvatar &&
             (item.role === MessageType.User ? (
-              <RAGFlowAvatar avatar={avatar ?? '/logo.svg'} />
+              <RAGFlowAvatar
+                avatar={avatar ?? '/logo.svg'}
+                name={nickname}
+                isPerson
+              />
             ) : avatarDialog || agentName ? (
               <RAGFlowAvatar
                 avatar={avatarDialog as string}
@@ -307,32 +315,6 @@ function MessageItem({
                 ))}
               </div>
             )}
-            {/* {isAssistant && item.attachment && item.attachment.doc_id && (
-              <div className="w-full flex items-center justify-end">
-                <Button
-                  variant="link"
-                  className="p-1 m-0 h-auto text-text-sub-title-invert"
-                  onClick={async () => {
-                    if (item.attachment?.doc_id) {
-                      try {
-                        const response = await downloadFile({
-                          docId: item.attachment.doc_id,
-                          ext: item.attachment.format,
-                        });
-                        const blob = new Blob([response.data], {
-                          type: response.data.type,
-                        });
-                        downloadFileFromBlob(blob, item.attachment.file_name);
-                      } catch (error) {
-                        console.error('Download failed:', error);
-                      }
-                    }
-                  }}
-                >
-                  <Download size={16} />
-                </Button>
-              </div>
-            )} */}
           </section>
         </div>
       </section>

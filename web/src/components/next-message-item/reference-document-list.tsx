@@ -43,6 +43,7 @@ export function ReferenceDocumentList({ list }: { list: Docagg[] }) {
           documentId={selectedDocument.doc_id}
           chunk={{
             document_name: selectedDocument.doc_name,
+            document_url: selectedDocument.url,
           }}
         ></PdfDrawer>
       )}

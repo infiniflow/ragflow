@@ -35,18 +35,19 @@ func (e *infinityEngine) dropTable(ctx context.Context, tableName string) error 
 		return fmt.Errorf("table name cannot be empty")
 	}
 
+	db, release, err := e.client.checkoutDatabase(ctx, "common.go")
+	if err != nil {
+		return fmt.Errorf("failed to get database: %w", err)
+	}
+	defer release()
+
 	// Check if table exists
-	exists, err := e.tableExists(ctx, tableName)
+	exists, err := e.tableExistsWithDB(db, tableName)
 	if err != nil {
 		return fmt.Errorf("failed to check table existence: %w", err)
 	}
 	if !exists {
 		return fmt.Errorf("table '%s' does not exist", tableName)
-	}
-
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
-	if err != nil {
-		return fmt.Errorf("failed to get database: %w", err)
 	}
 
 	_, err = db.DropTable(tableName, infinity.ConflictTypeError)
@@ -64,13 +65,22 @@ func (e *infinityEngine) tableExists(ctx context.Context, tableName string) (boo
 		return false, fmt.Errorf("table name cannot be empty")
 	}
 
-	db, err := e.client.conn.GetDatabase(e.client.dbName)
+	db, release, err := e.client.checkoutDatabase(ctx, "common.go")
 	if err != nil {
 		return false, fmt.Errorf("failed to get database: %w", err)
 	}
+	defer release()
+
+	return e.tableExistsWithDB(db, tableName)
+}
+
+func (e *infinityEngine) tableExistsWithDB(db *infinity.Database, tableName string) (bool, error) {
+	if db == nil {
+		return false, fmt.Errorf("database is nil")
+	}
 
 	// Try to get the table - if it exists, no error
-	_, err = db.GetTable(tableName)
+	_, err := db.GetTable(tableName)
 	if err != nil {
 		errMsg := strings.ToLower(err.Error())
 		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "doesn't exist") {

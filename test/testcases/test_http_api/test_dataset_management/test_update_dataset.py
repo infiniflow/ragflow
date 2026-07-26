@@ -77,7 +77,7 @@ class TestRquest:
         dataset_id = add_dataset_func
         res = update_dataset(HttpApiAuth, dataset_id, {})
         assert res["code"] == 102, res
-        assert res["message"] == "No properties were modified", res
+        assert res["message"] == "no properties were modified", res
 
     @pytest.mark.p3
     def test_payload_unset(self, HttpApiAuth, add_dataset_func):
@@ -105,14 +105,14 @@ class TestDatasetUpdate:
         payload = {"name": "not uuid"}
         res = update_dataset(HttpApiAuth, "not_uuid", payload)
         assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert "Invalid UUID format" in res["message"], res
 
     @pytest.mark.p3
     def test_dataset_id_not_uuid1(self, HttpApiAuth):
         payload = {"name": "not uuid1"}
         res = update_dataset(HttpApiAuth, uuid.uuid4().hex, payload)
-        assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert res["code"] == 102, res
+        assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p3
     def test_dataset_id_wrong_uuid(self, HttpApiAuth):

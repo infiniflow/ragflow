@@ -52,7 +52,8 @@ func (dao *TenantLLMDAO) GetByTenantAndModelName(tenantID, providerName string, 
 // GetByTenantNameAndType get tenant LLM by tenant ID, model name, and model type
 func (dao *TenantLLMDAO) GetByTenantNameAndType(tenantID, modelName string, modelType entity.ModelType) (*entity.TenantLLM, error) {
 	var tenantLLM entity.TenantLLM
-	err := DB.Where("tenant_id = ? AND llm_name = ? AND model_type = ?", tenantID, modelName, modelType).First(&tenantLLM).Error
+	// tenant_llm.model_type is a VARCHAR column, so convert to string.
+	err := DB.Where("tenant_id = ? AND llm_name = ? AND model_type = ?", tenantID, modelName, modelType.String()).First(&tenantLLM).Error
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +63,8 @@ func (dao *TenantLLMDAO) GetByTenantNameAndType(tenantID, modelName string, mode
 // GetByTenantAndType get tenant LLM by tenant ID and model type
 func (dao *TenantLLMDAO) GetByTenantAndType(tenantID string, modelType entity.ModelType) (*entity.TenantLLM, error) {
 	var tenantLLM entity.TenantLLM
-	err := DB.Where("tenant_id = ? AND model_type = ?", tenantID, modelType).First(&tenantLLM).Error
+	// tenant_llm.model_type is a VARCHAR column, so convert to string.
+	err := DB.Where("tenant_id = ? AND model_type = ?", tenantID, modelType.String()).First(&tenantLLM).Error
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +74,8 @@ func (dao *TenantLLMDAO) GetByTenantAndType(tenantID string, modelType entity.Mo
 // GetByTenantAndFactory get tenant LLM by tenant ID, model type and factory
 func (dao *TenantLLMDAO) GetByTenantAndFactory(tenantID string, modelType entity.ModelType, factory string) (*entity.TenantLLM, error) {
 	var tenantLLM entity.TenantLLM
-	err := DB.Where("tenant_id = ? AND model_type = ? AND llm_factory = ?", tenantID, modelType, factory).First(&tenantLLM).Error
+	// tenant_llm.model_type is a VARCHAR column, so convert to string.
+	err := DB.Where("tenant_id = ? AND model_type = ? AND llm_factory = ?", tenantID, modelType.String(), factory).First(&tenantLLM).Error
 	if err != nil {
 		return nil, err
 	}

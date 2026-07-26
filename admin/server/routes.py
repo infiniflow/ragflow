@@ -153,6 +153,8 @@ def change_password(username):
 def alter_user_activate_status(username):
     try:
         data = request.get_json()
+        if current_user.email == username:
+            return error_response(f"can't alter current user status: {username}", 409)
         if not data or "activate_status" not in data:
             return error_response("Activation status is required", 400)
         activate_status = data["activate_status"]

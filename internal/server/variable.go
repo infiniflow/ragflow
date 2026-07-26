@@ -212,9 +212,7 @@ func NewVariableWatcher(store VariableStore) *VariableWatcher {
 
 // Start starts watching for variable changes
 func (w *VariableWatcher) Start(interval time.Duration) {
-	w.wg.Add(1)
-	go func() {
-		defer w.wg.Done()
+	w.wg.Go(func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
@@ -228,7 +226,7 @@ func (w *VariableWatcher) Start(interval time.Duration) {
 				return
 			}
 		}
-	}()
+	})
 	common.Info("Variable watcher started", zap.Duration("interval", interval))
 }
 

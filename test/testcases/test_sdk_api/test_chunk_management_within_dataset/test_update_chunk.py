@@ -21,7 +21,7 @@ import pytest
 
 
 class TestUpdatedChunk:
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_message",
         [

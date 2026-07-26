@@ -5,7 +5,9 @@ import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { Spin } from '@/components/ui/spin';
 import { useFetchChatList } from '@/hooks/use-chat-request';
+import { buildOwnersFilter } from '@/utils/list-filter-util';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
@@ -16,9 +18,19 @@ import { useCreateChatDialog } from './hooks/use-create-chat';
 import { useRenameChat } from './hooks/use-rename-chat';
 
 export default function ChatList() {
-  const { data, setPagination, pagination, handleInputChange, searchString } =
-    useFetchChatList();
+  const {
+    data,
+    setPagination,
+    pagination,
+    handleInputChange,
+    searchString,
+    filterValue,
+    handleFilterSubmit,
+    loading,
+  } = useFetchChatList();
   const { t } = useTranslation();
+  const { t: tc } = useTranslation('common');
+  const owners = [buildOwnersFilter(data?.chats ?? [], undefined, tc('owner'))];
   const {
     initialChatName,
     chatRenameVisible,
@@ -91,14 +103,27 @@ export default function ChatList() {
 
   return (
     <>
-      {data.chats?.length || searchString ? (
-        <article className="size-full flex flex-col" data-testid="chats-list">
-          <header className="px-5 pt-8 mb-4">
+      {loading && !data.chats?.length ? (
+        <article
+          className="size-full flex items-center justify-center"
+          data-testid="chats-list"
+        >
+          <Spin size="large" />
+        </article>
+      ) : data.chats?.length || searchString ? (
+        <article
+          className="size-full min-w-0 flex flex-col"
+          data-testid="chats-list"
+        >
+          <header className="mb-4 min-w-0 px-5 pt-8">
             <ListFilterBar
               title={t('chat.chatApps')}
               icon="chats"
               onSearchChange={handleInputChange}
               searchString={searchString}
+              filters={owners}
+              value={filterValue}
+              onChange={handleFilterSubmit}
             >
               <Button data-testid="create-chat" onClick={handleShowCreateModal}>
                 <Plus className="size-[1em]" />

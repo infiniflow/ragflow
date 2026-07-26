@@ -58,18 +58,14 @@ def _load_spacy_model(model_name: str = "en_core_web_sm"):
     try:
         import spacy
     except ImportError:
-        raise ImportError(
-            "spaCy is required for the spacy GraphRAG method. "
-            "Install it with:  pip install spacy  &&  python -m spacy download en_core_web_sm"
-        )
+        raise ImportError("spaCy is required for the spacy GraphRAG method. Install it with:  pip install spacy  &&  python -m spacy download en_core_web_sm")
     try:
         _nlp = spacy.load(model_name)
         logging.info("Loaded spaCy model '%s'", model_name)
     except OSError:
-        logging.warning(
-            "spaCy model '%s' not found; downloading automatically …", model_name
-        )
+        logging.warning("spaCy model '%s' not found; downloading automatically …", model_name)
         from spacy.cli import download as spacy_download
+
         spacy_download(model_name)
         _nlp = spacy.load(model_name)
         logging.info("Downloaded and loaded spaCy model '%s'", model_name)
@@ -110,19 +106,14 @@ _SKIP_SPACY_LABELS = {"ORDINAL", "CARDINAL"}
 # MGranRAG-style multi-pass keyword extraction
 # ---------------------------------------------------------------------------
 
+
 def _has_uppercase(text: str) -> bool:
     return any(c.isupper() for c in text)
 
 
 def _replace_word(word: str) -> str:
     """Normalise spaces around hyphens and apostrophes (from MGranRAG)."""
-    return (
-        word.replace(" - ", "-")
-        .replace(" -", "-")
-        .replace("- ", "-")
-        .replace(" 's", "'s")
-        .replace(" 'S", "'S")
-    )
+    return word.replace(" - ", "-").replace(" -", "-").replace("- ", "-").replace(" 's", "'s").replace(" 'S", "'S")
 
 
 def extract_keywords(spacy_doc) -> set[str]:
@@ -265,16 +256,19 @@ def extract_keywords(spacy_doc) -> set[str]:
             continue
 
         # Truncate trailing lowercase non-noun / non-number words.
-        if cwl and not _has_uppercase(cwl[-1]) and cpl[-1] not in (
-            "PROPN",
-            "NOUN",
-            "NUM",
-            "PART",
+        if (
+            cwl
+            and not _has_uppercase(cwl[-1])
+            and cpl[-1]
+            not in (
+                "PROPN",
+                "NOUN",
+                "NUM",
+                "PART",
+            )
         ):
             for i in range(len(cpl) - 1, 0, -1):
-                if cpl[i] in ("PROPN", "NOUN", "NUM", "PART") or _has_uppercase(
-                    cwl[i]
-                ):
+                if cpl[i] in ("PROPN", "NOUN", "NUM", "PART") or _has_uppercase(cwl[i]):
                     break
             word = _replace_word(" ".join(cwl[: i + 1]))
             keywords.add(word)
@@ -329,6 +323,7 @@ def ner_all_keywords(spacy_doc) -> set[str]:
 # ---------------------------------------------------------------------------
 # Main extractor class
 # ---------------------------------------------------------------------------
+
 
 class GraphExtractor(Extractor):
     """Extract entities and relationships using spaCy (no LLM calls).
@@ -440,12 +435,12 @@ class GraphExtractor(Extractor):
             sent_idx = self._keyword_sent_idx(doc, kw)
 
             # Description: use the containing sentence (LinearRAG semantic bridging).
-            #sent_text = self._keyword_sent_text(doc, kw)
+            # sent_text = self._keyword_sent_text(doc, kw)
 
             ent_record = dict(
                 entity_name=kw_upper,
                 entity_type=app_type.upper(),
-                description="", #sent_text or kw,
+                description="",  # sent_text or kw,
                 source_id=chunk_key,
             )
             # A keyword may appear multiple times; keep the first.
@@ -463,9 +458,7 @@ class GraphExtractor(Extractor):
         # Pre-compute TF weights if needed (LinearRAG).
         entity_tf: dict[str, float] = {}
         if self._use_tf_weight:
-            total_count = sum(
-                content.upper().count(name) for name in ent_records
-            )
+            total_count = sum(content.upper().count(name) for name in ent_records)
             for name in ent_records:
                 count = content.upper().count(name)
                 entity_tf[name] = count / total_count if total_count > 0 else 0.0
@@ -495,12 +488,11 @@ class GraphExtractor(Extractor):
                     # Relationship description: shared sentence text
                     # (LinearRAG semantic bridging — the sentence is the
                     # semantic bridge between entities).
-                    #desc = self._cooccurrence_description(doc, ea["entity_name"], eb["entity_name"])
+                    # desc = self._cooccurrence_description(doc, ea["entity_name"], eb["entity_name"])
 
                     # Edge weight: TF-normalised (LinearRAG) or fixed.
                     if self._use_tf_weight:
-                        w = (entity_tf.get(ea["entity_name"], 0.0)
-                             + entity_tf.get(eb["entity_name"], 0.0))
+                        w = entity_tf.get(ea["entity_name"], 0.0) + entity_tf.get(eb["entity_name"], 0.0)
                         weight = max(w, 0.01)
                     else:
                         weight = self._relationship_strength
@@ -510,7 +502,7 @@ class GraphExtractor(Extractor):
                         src_id=pair[0],
                         tgt_id=pair[1],
                         weight=weight,
-                        description="", #desc,
+                        description="",  # desc,
                         keywords=[ea["entity_name"], eb["entity_name"]],
                         source_id=chunk_key,
                     )
@@ -521,10 +513,7 @@ class GraphExtractor(Extractor):
         if self.callback:
             self.callback(
                 0.5 + 0.1 * len(out_results) / num_chunks,
-                msg=f"[spacy] Entities extraction of chunk {chunk_seq+1} "
-                f"{len(out_results)}/{num_chunks} done, "
-                f"{len(maybe_nodes)} nodes, {len(maybe_edges)} edges, "
-                f"{token_count} tokens.",
+                msg=f"[spacy] Entities extraction of chunk {chunk_seq + 1} {len(out_results)}/{num_chunks} done, {len(maybe_nodes)} nodes, {len(maybe_edges)} edges, {token_count} tokens.",
             )
 
     # ------------------------------------------------------------------

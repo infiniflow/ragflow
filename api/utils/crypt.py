@@ -30,25 +30,26 @@ def crypt(line):
     file_path = os.path.join(get_project_base_directory(), "conf", "public.pem")
     rsa_key = RSA.importKey(Path(file_path).read_text(), "Welcome")
     cipher = Cipher_pkcs1_v1_5.new(rsa_key)
-    password_base64 = base64.b64encode(line.encode('utf-8')).decode("utf-8")
+    password_base64 = base64.b64encode(line.encode("utf-8")).decode("utf-8")
     encrypted_password = cipher.encrypt(password_base64.encode())
-    return base64.b64encode(encrypted_password).decode('utf-8')
+    return base64.b64encode(encrypted_password).decode("utf-8")
 
 
 def decrypt(line):
     file_path = os.path.join(get_project_base_directory(), "conf", "private.pem")
     rsa_key = RSA.importKey(Path(file_path).read_text(), "Welcome")
     cipher = Cipher_pkcs1_v1_5.new(rsa_key)
-    return cipher.decrypt(base64.b64decode(line), "Fail to decrypt password!").decode('utf-8')
+    return cipher.decrypt(base64.b64decode(line), "Fail to decrypt password!").decode("utf-8")
 
 
 def decrypt2(crypt_text):
     from base64 import b64decode, b16decode
     from Crypto.Cipher import PKCS1_v1_5 as Cipher_PKCS1_v1_5
     from Crypto.PublicKey import RSA
+
     decode_data = b64decode(crypt_text)
     if len(decode_data) == 127:
-        hex_fixed = '00' + decode_data.hex()
+        hex_fixed = "00" + decode_data.hex()
         decode_data = b16decode(hex_fixed.upper())
 
     file_path = os.path.join(get_project_base_directory(), "conf", "private.pem")

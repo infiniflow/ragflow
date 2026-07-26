@@ -1,20 +1,15 @@
 import { useToast } from '@/components/hooks/use-toast';
 import message from '@/components/ui/message';
-import { AgentCategory, DataflowOperator, EmptyDsl } from '@/constants/agent';
+import { AgentCategory } from '@/constants/agent';
 import { FileMimeType } from '@/constants/common';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useSetAgent } from '@/hooks/use-agent-request';
-import { Node } from '@xyflow/react';
+import * as bridge from '@/pages/agent/utils/dsl-bridge';
+import { inferIsAgentFromImport } from '@/pages/agent/utils/dsl-bridge';
 import isEmpty from 'lodash/isEmpty';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { buildDslComponentsByGraph } from '../agent/utils';
-import { DataflowEmptyDsl } from './hooks/use-create-agent';
 import { FormSchemaType } from './upload-agent-dialog/upload-agent-form';
-
-function hasNode(nodes: Node[], operator: DataflowOperator) {
-  return nodes.some((x) => x.data.label === operator);
-}
 
 export const useHandleImportJsonFile = () => {
   const {
@@ -38,42 +33,10 @@ export const useHandleImportJsonFile = () => {
         const graphOrDslStr = await file.text();
         const errorMessage = t('flow.jsonUploadContentErrorMessage');
         try {
-          const graphOrDsl = JSON.parse(graphOrDslStr);
-          if (graphOrDslStr && !isEmpty(graphOrDsl)) {
-            let isAgent = true;
-            // Compatible with older versions
-            const graph = graphOrDsl?.graph ? graphOrDsl.graph : graphOrDsl;
-            if (Array.isArray(graph?.nodes)) {
-              const nodes: Node[] = graph.nodes;
-
-              if (
-                hasNode(nodes, DataflowOperator.Begin) &&
-                hasNode(nodes, DataflowOperator.Parser)
-              ) {
-                isAgent = false;
-              }
-            }
-
-            const dsl = isAgent
-              ? { ...EmptyDsl, graph: graph }
-              : { ...DataflowEmptyDsl, graph: graph };
-
-            if (graphOrDsl.globals) {
-              dsl.globals = graphOrDsl.globals;
-            }
-
-            if (graphOrDsl.variables) {
-              dsl.variables = graphOrDsl.variables;
-            }
-
-            if (Array.isArray(graph?.nodes) && Array.isArray(graph?.edges)) {
-              dsl.components = buildDslComponentsByGraph(
-                graph.nodes as any,
-                graph.edges as any,
-                graphOrDsl.components ?? dsl.components,
-              );
-            }
-
+          const rawParsed = JSON.parse(graphOrDslStr);
+          if (graphOrDslStr && !isEmpty(rawParsed)) {
+            const isAgent = inferIsAgentFromImport(rawParsed);
+            const dsl = bridge.importDsl(rawParsed, isAgent);
             setAgent({
               title: name,
               dsl,
@@ -85,8 +48,7 @@ export const useHandleImportJsonFile = () => {
           } else {
             message.error(errorMessage);
           }
-        } catch (error) {
-          console.log('🚀 ~ useHandleImportJsonFile ~ error:', error);
+        } catch {
           message.error(errorMessage);
         }
       }

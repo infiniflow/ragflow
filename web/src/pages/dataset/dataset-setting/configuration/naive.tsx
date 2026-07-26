@@ -11,6 +11,7 @@ import {
   ConfigurationFormContainer,
   MainContainer,
 } from '../configuration-form-container';
+import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
 import {
   AutoMetadata,
   EnableTocToggle,
@@ -19,10 +20,14 @@ import {
 } from './common-item';
 
 export function NaiveConfiguration() {
+  const ownerTenantId = useKnowledgeBaseContext().knowledgeBase?.tenant_id;
   return (
     <MainContainer>
       <ConfigurationFormContainer>
-        <LayoutRecognizeFormField testId="ds-settings-parser-pdf-parser-select"></LayoutRecognizeFormField>
+        <LayoutRecognizeFormField
+          testId="ds-settings-parser-pdf-parser-select"
+          ownerTenantId={ownerTenantId}
+        ></LayoutRecognizeFormField>
         <MaxTokenNumberFormField
           initialValue={512}
           sliderTestId="ds-settings-parser-recommended-chunk-size-slider"

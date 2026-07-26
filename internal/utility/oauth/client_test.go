@@ -89,7 +89,7 @@ func TestAuthorizationURLPreservesExistingQuery(t *testing.T) {
 
 func TestNewClientUnsupportedType(t *testing.T) {
 	_, err := NewClient(Config{Type: "saml"})
-	if err == nil || !strings.Contains(err.Error(), "Unsupported type") {
+	if err == nil || !strings.Contains(err.Error(), "unsupported type") {
 		t.Fatalf("expected unsupported-type error, got %v", err)
 	}
 }
@@ -306,7 +306,7 @@ func TestNewOAuthClientMissingFields(t *testing.T) {
 
 func TestNewOIDCMissingIssuer(t *testing.T) {
 	_, err := NewClient(Config{Type: "oidc"})
-	if err == nil || !strings.Contains(err.Error(), "Missing issuer") {
-		t.Errorf("expected Missing issuer error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "missing issuer") {
+		t.Errorf("expected missing issuer error, got %v", err)
 	}
 }

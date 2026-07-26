@@ -35,7 +35,7 @@ def _is_pdf(h: bytes) -> bool:
 
 
 def _is_ole(h: bytes) -> bool:
-    return h.startswith(b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1")
+    return h.startswith(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
 
 
 def _sha10(b: bytes) -> str:
@@ -70,7 +70,7 @@ def _extract_ole10native_payload(data: bytes) -> bytes:
         pos = 0
         if len(data) < 4:
             return data
-        _ = int.from_bytes(data[pos:pos + 4], "little")
+        _ = int.from_bytes(data[pos : pos + 4], "little")
         pos += 4
         # filename/src/tmp (NUL-terminated ANSI)
         for _ in range(3):
@@ -80,10 +80,10 @@ def _extract_ole10native_payload(data: bytes) -> bytes:
         pos += 4
         if pos + 4 > len(data):
             return data
-        size = int.from_bytes(data[pos:pos + 4], "little")
+        size = int.from_bytes(data[pos : pos + 4], "little")
         pos += 4
         if pos + size <= len(data):
-            return data[pos:pos + size]
+            return data[pos : pos + size]
     except Exception:
         pass
     return data
@@ -115,10 +115,7 @@ def extract_embed_file(target: Union[bytes, bytearray]) -> List[Tuple[str, bytes
     if _is_zip(head):
         try:
             with zipfile.ZipFile(io.BytesIO(top), "r") as z:
-                embed_dirs = (
-                    "word/embeddings/", "word/objects/", "word/activex/",
-                    "xl/embeddings/", "ppt/embeddings/"
-                )
+                embed_dirs = ("word/embeddings/", "word/objects/", "word/activex/", "xl/embeddings/", "ppt/embeddings/")
                 for name in z.namelist():
                     low = name.lower()
                     if any(low.startswith(d) for d in embed_dirs):
@@ -169,9 +166,7 @@ def extract_links_from_docx(docx_bytes: bytes):
 
         # Each relationship may represent a hyperlink, image, footer, etc.
         for rel in document.part.rels.values():
-            if rel.reltype == (
-                    "http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"
-            ):
+            if rel.reltype == ("http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"):
                 links.add(rel.target_ref)
 
     return links
@@ -212,23 +207,17 @@ def _get_session(headers: Optional[Dict[str, str]] = None) -> requests.Session:
     global _GLOBAL_SESSION
     if _GLOBAL_SESSION is None:
         _GLOBAL_SESSION = requests.Session()
-        _GLOBAL_SESSION.headers.update({
-            "User-Agent": (
-                "Mozilla/5.0 (X11; Linux x86_64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/121.0 Safari/537.36"
-            )
-        })
+        _GLOBAL_SESSION.headers.update({"User-Agent": ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36")})
     if headers:
         _GLOBAL_SESSION.headers.update(headers)
     return _GLOBAL_SESSION
 
 
 def extract_html(
-        url: str,
-        timeout: float = 60.0,
-        headers: Optional[Dict[str, str]] = None,
-        max_retries: int = 2,
+    url: str,
+    timeout: float = 60.0,
+    headers: Optional[Dict[str, str]] = None,
+    max_retries: int = 2,
 ) -> Tuple[Optional[bytes], Dict[str, str]]:
     """
     Extract the full HTML page as raw bytes from a given URL.
@@ -254,11 +243,13 @@ def extract_html(
             resp.raise_for_status()
 
             html_bytes = resp.content
-            metadata.update({
-                "final_url": resp.url,
-                "status_code": str(resp.status_code),
-                "content_type": resp.headers.get("Content-Type", ""),
-            })
+            metadata.update(
+                {
+                    "final_url": resp.url,
+                    "status_code": str(resp.status_code),
+                    "content_type": resp.headers.get("Content-Type", ""),
+                }
+            )
             return html_bytes, metadata
 
         except Timeout:

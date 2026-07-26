@@ -7,9 +7,13 @@ from typing import IO
 
 import bs4
 
-from common.data_source.config import HTML_BASED_CONNECTOR_TRANSFORM_LINKS_STRATEGY, \
-    HtmlBasedConnectorTransformLinksStrategy, WEB_CONNECTOR_IGNORED_CLASSES, WEB_CONNECTOR_IGNORED_ELEMENTS, \
-    PARSE_WITH_TRAFILATURA
+from common.data_source.config import (
+    HTML_BASED_CONNECTOR_TRANSFORM_LINKS_STRATEGY,
+    HtmlBasedConnectorTransformLinksStrategy,
+    WEB_CONNECTOR_IGNORED_CLASSES,
+    WEB_CONNECTOR_IGNORED_ELEMENTS,
+    PARSE_WITH_TRAFILATURA,
+)
 
 MINTLIFY_UNWANTED = ["sticky", "hidden"]
 
@@ -38,11 +42,7 @@ def strip_newlines(document: str) -> str:
 def format_element_text(element_text: str, link_href: str | None) -> str:
     element_text_no_newlines = strip_newlines(element_text)
 
-    if (
-        not link_href
-        or HTML_BASED_CONNECTOR_TRANSFORM_LINKS_STRATEGY
-        == HtmlBasedConnectorTransformLinksStrategy.STRIP
-    ):
+    if not link_href or HTML_BASED_CONNECTOR_TRANSFORM_LINKS_STRATEGY == HtmlBasedConnectorTransformLinksStrategy.STRIP:
         return element_text_no_newlines
 
     return f"[{element_text_no_newlines}]({link_href})"
@@ -63,9 +63,7 @@ def parse_html_with_trafilatura(html_content: str) -> str:
     return strip_excessive_newlines_and_spaces(extracted_text) if extracted_text else ""
 
 
-def format_document_soup(
-    document: bs4.BeautifulSoup, table_cell_separator: str = "\t"
-) -> str:
+def format_document_soup(document: bs4.BeautifulSoup, table_cell_separator: str = "\t") -> str:
     """Format html to a flat text document.
 
     The following goals:
@@ -101,16 +99,10 @@ def format_document_soup(
                 last_added_newline = False
 
             if element_text:
-                content_to_add = (
-                    element_text
-                    if verbatim_output > 0
-                    else format_element_text(element_text, link_href)
-                )
+                content_to_add = element_text if verbatim_output > 0 else format_element_text(element_text, link_href)
 
                 # Don't join separate elements without any spacing
-                if (text and not text[-1].isspace()) and (
-                    content_to_add and not content_to_add[0].isspace()
-                ):
+                if (text and not text[-1].isspace()) and (content_to_add and not content_to_add[0].isspace()):
                     text += " "
 
                 text += content_to_add
@@ -134,9 +126,7 @@ def format_document_soup(
             elif e.name == "a":
                 href_value = e.get("href", None)
                 # mostly for typing, having multiple hrefs is not valid HTML
-                link_href = (
-                    href_value[0] if isinstance(href_value, list) else href_value
-                )
+                link_href = href_value[0] if isinstance(href_value, list) else href_value
             elif e.name == "/a":
                 link_href = None
             elif e.name in ["p", "div"]:
@@ -185,12 +175,7 @@ def web_html_cleanup(
     if mintlify_cleanup_enabled:
         unwanted_classes.extend(MINTLIFY_UNWANTED)
     for undesired_element in unwanted_classes:
-        [
-            tag.extract()
-            for tag in soup.find_all(
-                class_=lambda x: x and undesired_element in x.split()
-            )
-        ]
+        [tag.extract() for tag in soup.find_all(class_=lambda x: x and undesired_element in x.split())]
 
     for undesired_tag in WEB_CONNECTOR_IGNORED_ELEMENTS:
         [tag.extract() for tag in soup.find_all(undesired_tag)]

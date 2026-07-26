@@ -31,7 +31,7 @@ class TestAuthorization:
             (None, 401, "<Unauthorized '401: Unauthorized'>"),
             (RAGFlowWebApiAuth(INVALID_API_TOKEN), 401, "<Unauthorized '401: Unauthorized'>"),
         ],
-        ids=["empty_auth", "invalid_api_token"]
+        ids=["empty_auth", "invalid_api_token"],
     )
     def test_auth_invalid(self, invalid_auth, expected_code, expected_message):
         res = update_memory(invalid_auth, "memory_id")
@@ -40,7 +40,6 @@ class TestAuthorization:
 
 
 class TestMemoryUpdate:
-
     @pytest.mark.p1
     @pytest.mark.parametrize("name", ["updated_memory", "f" * 128])
     def test_name(self, WebApiAuth, add_memory_func, name):
@@ -58,7 +57,7 @@ class TestMemoryUpdate:
             ("", "Memory name cannot be empty or whitespace."),
             (" ", "Memory name cannot be empty or whitespace."),
             ("a" * 129, f"Memory name '{'a' * 129}' exceeds limit of 128."),
-        ]
+        ],
     )
     def test_name_invalid(self, WebApiAuth, add_memory_func, name, expected_message):
         memory_ids = add_memory_func
@@ -115,21 +114,13 @@ class TestMemoryUpdate:
         assert "Do not set tenant_llm_id or tenant_embd_id directly" in res["message"], res
 
     @pytest.mark.p2
-    @pytest.mark.parametrize(
-        "permission",
-        [
-            "me",
-            "team"
-        ],
-        ids=["me", "team"]
-    )
+    @pytest.mark.parametrize("permission", ["me", "team"], ids=["me", "team"])
     def test_permission(self, WebApiAuth, add_memory_func, permission):
         memory_ids = add_memory_func
         payload = {"permissions": permission}
         res = update_memory(WebApiAuth, memory_ids[0], payload)
         assert res["code"] == 0, res
         assert res["data"]["permissions"] == permission.lower().strip(), res
-
 
     @pytest.mark.p1
     def test_memory_size(self, WebApiAuth, add_memory_func):

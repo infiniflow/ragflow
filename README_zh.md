@@ -1,6 +1,6 @@
 <div align="center">
 <a href="https://cloud.ragflow.io/">
-<img src="web/src/assets/logo-with-text.svg" width="350" alt="ragflow logo">
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow/main/web/src/assets/logo-with-text.svg" width="520" alt="ragflow logo">
 </a>
 </div>
 
@@ -15,6 +15,7 @@
   <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DFE0E5"></a>
   <a href="./README_ar.md"><img alt="README in Arabic" src="https://img.shields.io/badge/Arabic-DFE0E5"></a>
   <a href="./README_tr.md"><img alt="Türkçe README" src="https://img.shields.io/badge/Türkçe-DFE0E5"></a>
+  <a href="./README_ru.md"><img alt="Русская версия README" src="https://img.shields.io/badge/Русский-DFE0E5"></a>
 </p>
 
 <p align="center">
@@ -25,7 +26,7 @@
         <img alt="Static Badge" src="https://img.shields.io/badge/Get-Started-4e6b99">
     </a>
     <a href="https://hub.docker.com/r/infiniflow/ragflow" target="_blank">
-        <img src="https://img.shields.io/docker/pulls/infiniflow/ragflow?label=Docker%20Pulls&color=0db7ed&logo=docker&logoColor=white&style=flat-square" alt="docker pull infiniflow/ragflow:v0.26.0">
+        <img src="https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/infiniflow/ragflow-stats/main/badges/docker-pulls.json&style=flat-square&logo=docker&logoColor=white" alt="docker pull infiniflow/ragflow:v0.26.4">
     </a>
     <a href="https://github.com/infiniflow/ragflow/releases/latest">
         <img src="https://img.shields.io/github/v/release/infiniflow/ragflow?color=blue&label=Latest%20Release" alt="Latest Release">
@@ -46,7 +47,7 @@
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
+<img alt="RAGFlow in the GitHub Octoverse" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
 </div>
 
 <div align="center">
@@ -81,12 +82,13 @@
 请登录网址 [https://cloud.ragflow.io](https://cloud.ragflow.io) 体验云服务。
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
+<img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
+<img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
 </div>
 
 ## 🔥 近期更新
 
+- 2026-06-15 支持飞书、Discord、Telegram、Line 等多种聊天渠道。
 - 2026-04-24 支持 DeepSeek v4.
 - 2026-03-24 发布 [RAGFlow 官方 Skill](https://clawhub.ai/yingfeng/ragflow-skill) — 提供官方 Skill 以通过 OpenClaw 访问 RAGFlow 数据集。
 - 2025-12-26 支持 AI 代理的"记忆"功能。
@@ -97,17 +99,15 @@
 - 2025-08-08 支持 OpenAI 最新的 GPT-5 系列模型。
 - 2025-08-01 支持 agentic workflow 和 MCP。
 - 2025-05-23 Agent 新增 Python/JS 代码执行器组件。
-- 2025-05-05 支持跨语言查询。
 - 2025-03-19 PDF 和 DOCX 中的图支持用多模态大模型去解析得到描述。
-- 2024-12-18 升级了 DeepDoc 的文档布局分析模型。
-- 2024-08-22 支持用 RAG 技术实现从自然语言到 SQL 语句的转换。
+
 
 ## 🎉 关注项目
 
 ⭐️ 点击右上角的 Star 关注 RAGFlow，可以获取最新发布的实时通知 !🌟
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
 </div>
 
 ## 🌟 主要功能
@@ -141,7 +141,7 @@
 ## 🔎 系统架构
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
 ## 🎬 自主托管
@@ -165,14 +165,14 @@
    > 如需确认 `vm.max_map_count` 的大小：
    >
    > ```bash
-   > $ sysctl vm.max_map_count
+   > sysctl vm.max_map_count
    > ```
    >
    > 如果 `vm.max_map_count` 的值小于 262144，可以进行重置：
    >
    > ```bash
    > # 这里我们设为 262144:
-   > $ sudo sysctl -w vm.max_map_count=262144
+   > sudo sysctl -w vm.max_map_count=262144
    > ```
    >
    > 你的改动会在下次系统重启时被重置。如果希望做永久改动，还需要在 **/etc/sysctl.conf** 文件里把 `vm.max_map_count` 的值再相应更新一遍：
@@ -184,7 +184,7 @@
 2. 克隆仓库：
 
    ```bash
-   $ git clone https://github.com/infiniflow/ragflow.git
+   git clone https://github.com/infiniflow/ragflow.git
    ```
 
 3. 进入 **docker** 文件夹，利用提前编译好的 Docker 镜像启动服务器：
@@ -193,17 +193,17 @@
 > 请注意，目前官方提供的所有 Docker 镜像均基于 x86 架构构建，并不提供基于 ARM64 的 Docker 镜像。
 > 如果你的操作系统是 ARM64 架构，请参考[这篇文档](https://ragflow.io/docs/dev/build_docker_image)自行构建 Docker 镜像。
 
-   > 运行以下命令会自动下载 RAGFlow Docker 镜像 `v0.26.0`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.26.0` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。
+   > 运行以下命令会自动下载 RAGFlow Docker 镜像 `v0.26.4`。请参考下表查看不同 Docker 发行版的描述。如需下载不同于 `v0.26.4` 的 Docker 镜像，请在运行 `docker compose` 启动服务之前先更新 **docker/.env** 文件内的 `RAGFLOW_IMAGE` 变量。
 
    ```bash
-   $ cd ragflow/docker
+   cd ragflow/docker
 
-   # git checkout v0.26.0
+   git checkout v0.26.4
    # 可选：使用稳定版本标签（查看发布：https://github.com/infiniflow/ragflow/releases）
    # 这一步确保代码中的 entrypoint.sh 文件与 Docker 镜像的版本保持一致。
 
    # Use CPU for DeepDoc tasks:
-   $ docker compose -f docker-compose.yml up -d
+   docker compose -f docker-compose.yml up -d
 
    # To use GPU to accelerate DeepDoc tasks:
    # sed -i '1i DEVICE=gpu' .env
@@ -228,7 +228,7 @@
 4. 服务器启动成功后再次确认服务器状态：
 
    ```bash
-   $ docker logs -f docker-ragflow-cpu-1
+   docker logs -f docker-ragflow-cpu-1
    ```
 
    _出现以下界面提示说明服务器启动成功：_
@@ -272,7 +272,7 @@
 > 所有系统配置都需要通过系统重启生效：
 >
 > ```bash
-> $ docker compose -f docker-compose.yml up -d
+> docker compose -f docker-compose.yml up -d
 > ```
 
 ### 把文档引擎从 Elasticsearch 切换成为 Infinity
@@ -282,7 +282,7 @@ RAGFlow 默认使用 Elasticsearch 存储文本和向量数据. 如果要切换�
 1. 停止所有容器运行:
 
    ```bash
-   $ docker compose -f docker/docker-compose.yml down -v
+   docker compose -f docker/docker-compose.yml down -v
    ```
    Note: `-v` 将会删除 docker 容器的 volumes，已有的数据会被清空。
 
@@ -291,7 +291,7 @@ RAGFlow 默认使用 Elasticsearch 存储文本和向量数据. 如果要切换�
 3. 启动容器:
 
    ```bash
-   $ docker compose -f docker-compose.yml up -d
+   docker compose -f docker/docker-compose.yml up -d
    ```
 
 > [!WARNING]
@@ -318,10 +318,10 @@ docker build --platform linux/amd64 \
 
 ## 🔨 以源代码启动服务
 
-1. 安装 `uv` 和 `pre-commit`。如已经安装，可跳过本步骤：
+1. 安装 `uv`。如已经安装，可跳过本步骤：
 
    ```bash
-   pipx install uv pre-commit
+   pipx install uv
    export UV_INDEX=https://mirrors.aliyun.com/pypi/simple
    ```
 
@@ -331,8 +331,10 @@ docker build --platform linux/amd64 \
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
    uv sync --python 3.13 # install RAGFlow dependent python modules
-   uv run python3 download_deps.py
-   pre-commit install
+   uv run python3 ragflow_deps/download_deps.py
+   git config --local --unset core.hooksPath
+   uv tool install lefthook
+   lefthook install
    ```
 
 3. 通过 Docker Compose 启动依赖的服务（MinIO, Elasticsearch, Redis, and MySQL）：
@@ -343,7 +345,7 @@ docker build --platform linux/amd64 \
 
    在 `/etc/hosts` 中添加以下代码，目的是将 **conf/service_conf.yaml** 文件中的所有 host 地址都解析为 `127.0.0.1`：
 
-   ```
+   ```text
    127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 4. 如果无法访问 HuggingFace，可以把环境变量 `HF_ENDPOINT` 设成相应的镜像站点：
@@ -360,7 +362,7 @@ docker build --platform linux/amd64 \
    # centos
    sudo yum install jemalloc
    # mac
-   sudo brew install jemalloc
+   brew install jemalloc
    ```
 
 6. 启动后端服务：
@@ -386,7 +388,7 @@ docker build --platform linux/amd64 \
 
    _以下界面说明系统已经成功启动：_
 
-   ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
 9. 开发完成后停止 RAGFlow 前端和后端服务：
 
@@ -428,5 +430,5 @@ RAGFlow 只有通过开源协作才能蓬勃发展。秉持这一精神,我们�
 扫二维码添加 RAGFlow 小助手，进 RAGFlow 交流群。
 
 <p align="center">
-  <img src="https://github.com/infiniflow/ragflow/assets/7248/bccf284f-46f2-4445-9809-8f1030fb7585" width=50% height=50%>
+  <img alt="RAGFlow assistant QR code" src="https://github.com/infiniflow/ragflow/assets/7248/bccf284f-46f2-4445-9809-8f1030fb7585" width=50% height=50%>
 </p>

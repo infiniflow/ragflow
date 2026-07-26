@@ -17,9 +17,14 @@
 package dao
 
 import (
+	"context"
+	"strconv"
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -47,9 +52,19 @@ func NewChatSessionDAO() *ChatSessionDAO {
 }
 
 // GetByID gets chat session by ID
-func (dao *ChatSessionDAO) GetByID(id string) (*entity.ChatSession, error) {
+func (dao *ChatSessionDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.ChatSession, error) {
 	var conv entity.ChatSession
-	err := DB.Where("id = ?", id).First(&conv).Error
+	err := db.WithContext(ctx).Where("id = ?", id).First(&conv).Error
+	if err != nil {
+		return nil, err
+	}
+	return &conv, nil
+}
+
+// GetBySessionIDAndChatID gets a chat session by session ID and chat ID.
+func (dao *ChatSessionDAO) GetBySessionIDAndChatID(ctx context.Context, db *gorm.DB, sessionID, chatID string) (*entity.ChatSession, error) {
+	var conv entity.ChatSession
+	err := db.WithContext(ctx).Where("id = ? AND dialog_id = ?", sessionID, chatID).First(&conv).Error
 	if err != nil {
 		return nil, err
 	}
@@ -57,34 +72,55 @@ func (dao *ChatSessionDAO) GetByID(id string) (*entity.ChatSession, error) {
 }
 
 // Create creates a new chat session
-func (dao *ChatSessionDAO) Create(conv *entity.ChatSession) error {
-	return DB.Create(conv).Error
+func (dao *ChatSessionDAO) Create(ctx context.Context, db *gorm.DB, conv *entity.ChatSession) error {
+	return db.WithContext(ctx).Create(conv).Error
 }
 
 // UpdateByID updates a chat session by ID
-func (dao *ChatSessionDAO) UpdateByID(id string, updates map[string]interface{}) error {
-	return DB.Model(&entity.ChatSession{}).Where("id = ?", id).Updates(updates).Error
+func (dao *ChatSessionDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
+	if updates == nil {
+		updates = make(map[string]interface{})
+	}
+
+	now := time.Now().Local()
+	updates["update_time"] = now.UnixMilli()
+	updates["update_date"] = now.Truncate(time.Second)
+
+	result := db.WithContext(ctx).Session(&gorm.Session{SkipHooks: true}).Model(&entity.ChatSession{}).Where("id = ?", id).Updates(updates)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		var count int64
+		if err := db.WithContext(ctx).Model(&entity.ChatSession{}).Where("id = ?", id).Count(&count).Error; err != nil {
+			return err
+		}
+		if count == 0 {
+			return gorm.ErrRecordNotFound
+		}
+	}
+	return nil
 }
 
 // DeleteByID deletes a chat session by ID (hard delete)
-func (dao *ChatSessionDAO) DeleteByID(id string) error {
-	return DB.Where("id = ?", id).Delete(&entity.ChatSession{}).Error
+func (dao *ChatSessionDAO) DeleteByID(ctx context.Context, db *gorm.DB, id string) error {
+	return db.WithContext(ctx).Where("id = ?", id).Delete(&entity.ChatSession{}).Error
 }
 
 // ListByChatID lists chat sessions by chat ID
-func (dao *ChatSessionDAO) ListByChatID(chatID string) ([]*entity.ChatSession, error) {
+func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID string) ([]*entity.ChatSession, error) {
 	var convs []*entity.ChatSession
-	err := DB.Where("dialog_id = ?", chatID).
+	err := db.WithContext(ctx).Where("dialog_id = ?", chatID).
 		Order("create_time DESC").
 		Find(&convs).Error
 	return convs, err
 }
 
 // CheckDialogExists checks if a dialog exists with given tenant_id and dialog_id
-func (dao *ChatSessionDAO) CheckDialogExists(tenantID, chatID string) (bool, error) {
+func (dao *ChatSessionDAO) CheckDialogExists(ctx context.Context, db *gorm.DB, tenantID, chatID string) (bool, error) {
 	var count int64
-	err := DB.Model(&entity.Chat{}).
-		Where("tenant_id = ? AND id = ? AND status = ?", tenantID, chatID, "1").
+	err := db.WithContext(ctx).Model(&entity.Chat{}).
+		Where("tenant_id = ? AND id = ? AND status = ?", tenantID, chatID, common.StatusDialogValid).
 		Count(&count).Error
 	if err != nil {
 		return false, err
@@ -93,9 +129,9 @@ func (dao *ChatSessionDAO) CheckDialogExists(tenantID, chatID string) (bool, err
 }
 
 // GetDialogByID gets dialog by ID
-func (dao *ChatSessionDAO) GetDialogByID(chatID string) (*entity.Chat, error) {
+func (dao *ChatSessionDAO) GetDialogByID(ctx context.Context, db *gorm.DB, chatID string) (*entity.Chat, error) {
 	var dialog entity.Chat
-	err := DB.Where("id = ? AND status = ?", chatID, "1").First(&dialog).Error
+	err := db.WithContext(ctx).Where("id = ? AND status = ?", chatID, common.StatusDialogValid).First(&dialog).Error
 	if err != nil {
 		return nil, err
 	}
@@ -103,17 +139,17 @@ func (dao *ChatSessionDAO) GetDialogByID(chatID string) (*entity.Chat, error) {
 }
 
 // DeleteByDialogIDs deletes chat sessions by dialog IDs (hard delete)
-func (dao *ChatSessionDAO) DeleteByDialogIDs(dialogIDs []string) (int64, error) {
+func (dao *ChatSessionDAO) DeleteByDialogIDs(ctx context.Context, db *gorm.DB, dialogIDs []string) (int64, error) {
 	if len(dialogIDs) == 0 {
 		return 0, nil
 	}
-	result := DB.Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.ChatSession{})
+	result := db.WithContext(ctx).Unscoped().Where("dialog_id IN ?", dialogIDs).Delete(&entity.ChatSession{})
 	return result.RowsAffected, result.Error
 }
 
-func (dao *ChatSessionDAO) ListAgentSessionNames(agentID, expUserID string) ([]map[string]interface{}, error) {
+func (dao *ChatSessionDAO) ListAgentSessionNames(ctx context.Context, db *gorm.DB, agentID, expUserID string) ([]map[string]interface{}, error) {
 	var rows []map[string]interface{}
-	err := DB.Model(&entity.API4Conversation{}).
+	err := db.WithContext(ctx).Model(&entity.API4Conversation{}).
 		Select("id", "name").
 		Where("dialog_id = ? AND exp_user_id = ?", agentID, expUserID).
 		Order("create_date DESC").
@@ -148,8 +184,8 @@ func normalizeAgentSessionOrderBy(orderBy string) string {
 	}
 }
 
-func (dao *ChatSessionDAO) ListAgentSessions(params ListAgentSessionsParams) (int64, []*entity.API4Conversation, error) {
-	query := DB.Model(&entity.API4Conversation{}).Where("dialog_id = ?", params.AgentID)
+func (dao *ChatSessionDAO) ListAgentSessions(ctx context.Context, db *gorm.DB, params ListAgentSessionsParams) (int64, []*entity.API4Conversation, error) {
+	query := db.WithContext(ctx).Model(&entity.API4Conversation{}).Where("dialog_id = ?", params.AgentID)
 	if !params.IncludeDSL {
 		query = query.Omit("dsl")
 	}
@@ -163,7 +199,13 @@ func (dao *ChatSessionDAO) ListAgentSessions(params ListAgentSessionsParams) (in
 	}
 
 	if params.Keywords != "" {
-		query = query.Where("LOWER(message) LIKE ?", "%"+strings.ToLower(params.Keywords)+"%")
+		keywords := strings.ToLower(params.Keywords)
+		escapedKeywords := strings.Trim(strconv.QuoteToASCII(keywords), `"`)
+		if escapedKeywords == keywords {
+			query = query.Where("LOWER(message) LIKE ?", "%"+keywords+"%")
+		} else {
+			query = query.Where("(LOWER(message) LIKE ? OR LOWER(message) LIKE ?)", "%"+keywords+"%", "%"+escapedKeywords+"%")
+		}
 	}
 
 	dateColumn := "create_date"

@@ -1,5 +1,6 @@
 {
   "name": "OpenRouter",
+  "rank": 989,
   "url": {
     "default": "https://openrouter.ai/api/v1"
   },
@@ -23,6 +24,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -34,6 +38,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {
@@ -45,6 +52,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     },
     {

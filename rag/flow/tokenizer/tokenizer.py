@@ -21,7 +21,7 @@ import numpy as np
 from common.constants import LLMType
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_model_config_from_provider_instance
+from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config, get_model_config_by_id
 from common.connection_utils import timeout
 from rag.flow.base import ProcessBase, ProcessParamBase
 from rag.flow.parser.pdf_chunk_metadata import finalize_pdf_chunk
@@ -32,6 +32,7 @@ from common import settings
 from common.token_utils import truncate
 
 from common.misc_utils import thread_pool_exec
+
 
 class TokenizerParam(ProcessParamBase):
     def __init__(self):
@@ -60,7 +61,13 @@ class Tokenizer(ProcessBase):
         token_count = 0
         if self._canvas._kb_id:
             e, kb = KnowledgebaseService.get_by_id(self._canvas._kb_id)
-            embd_model_config = get_model_config_from_provider_instance(self._canvas._tenant_id, LLMType.EMBEDDING, kb.embd_id)
+            if kb.tenant_embd_id:
+                try:
+                    embd_model_config = get_model_config_by_id(self._canvas._tenant_id, LLMType.EMBEDDING, kb.tenant_embd_id)
+                except LookupError:
+                    embd_model_config = resolve_model_config(self._canvas._tenant_id, LLMType.EMBEDDING, kb.embd_id)
+            else:
+                embd_model_config = resolve_model_config(self._canvas._tenant_id, LLMType.EMBEDDING, kb.embd_id)
         else:
             embd_model_config = get_tenant_default_model_by_type(self._canvas._tenant_id, LLMType.EMBEDDING)
         embedding_model = LLMBundle(self._canvas._tenant_id, embd_model_config)
@@ -69,7 +76,7 @@ class Tokenizer(ProcessBase):
         for i, c in enumerate(chunks):
             txt = ""
             if isinstance(self._param.fields, str):
-                self._param.fields=[self._param.fields]
+                self._param.fields = [self._param.fields]
             for f in self._param.fields:
                 f = c.get(f)
                 if isinstance(f, str):
@@ -97,7 +104,10 @@ class Tokenizer(ProcessBase):
         cnts_batches = []
         for i in range(0, len(texts), settings.EMBEDDING_BATCH_SIZE):
             async with embed_limiter:
-                vts, c = await thread_pool_exec(batch_encode,texts[i : i + settings.EMBEDDING_BATCH_SIZE],)
+                vts, c = await thread_pool_exec(
+                    batch_encode,
+                    texts[i : i + settings.EMBEDDING_BATCH_SIZE],
+                )
             cnts_batches.append(vts)
             token_count += c
             if i % 33 == 32:

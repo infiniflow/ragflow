@@ -26,11 +26,7 @@ def _load_sharepoint_connector_module():
     """Load sharepoint_connector.py in isolation (avoid the package __init__)."""
     repo_root = Path(__file__).resolve().parents[3]
     package_name = "common.data_source"
-    saved_modules = {
-        name: module
-        for name, module in sys.modules.items()
-        if name == package_name or name.startswith(f"{package_name}.")
-    }
+    saved_modules = {name: module for name, module in sys.modules.items() if name == package_name or name.startswith(f"{package_name}.")}
     package_stub = ModuleType(package_name)
     package_stub.__path__ = [str(repo_root / "common" / "data_source")]
     sys.modules[package_name] = package_stub
@@ -214,9 +210,7 @@ def _collect(generator):
 def test_load_from_checkpoint_walks_libraries_and_downloads():
     connector, _jan, _feb = _build_connector_with_tree()
 
-    docs, checkpoint = _collect(
-        connector.load_from_checkpoint(0.0, 9e12, connector.build_dummy_checkpoint())
-    )
+    docs, checkpoint = _collect(connector.load_from_checkpoint(0.0, 9e12, connector.build_dummy_checkpoint()))
 
     assert checkpoint.has_more is False
     assert {doc.id for doc in docs} == {"drv-A:f1", "drv-A:f2"}
@@ -240,9 +234,7 @@ def test_load_from_checkpoint_filters_by_modified_window():
     start = datetime(2026, 1, 15, tzinfo=timezone.utc).timestamp()
     end = datetime(2026, 3, 1, tzinfo=timezone.utc).timestamp()
 
-    docs, _ = _collect(
-        connector.load_from_checkpoint(start, end, connector.build_dummy_checkpoint())
-    )
+    docs, _ = _collect(connector.load_from_checkpoint(start, end, connector.build_dummy_checkpoint()))
 
     assert [doc.id for doc in docs] == ["drv-A:f2"]
 
@@ -274,9 +266,7 @@ def test_document_ids_are_unique_across_drives_with_colliding_item_ids():
     connector.graph_client = _FakeGraphClient(site)
     connector._site_url = "https://contoso.sharepoint.com/sites/MySite"
 
-    docs, _ = _collect(
-        connector.load_from_checkpoint(0.0, 9e12, connector.build_dummy_checkpoint())
-    )
+    docs, _ = _collect(connector.load_from_checkpoint(0.0, 9e12, connector.build_dummy_checkpoint()))
     ids = {doc.id for doc in docs}
     assert ids == {"drv-A:same-id", "drv-B:same-id"}
 

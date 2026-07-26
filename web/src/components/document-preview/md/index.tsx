@@ -80,9 +80,11 @@ export const Md: React.FC<MdProps> = ({ url, className }) => {
         </div>
       )}
       {!loading && (
-        <ReactMarkdown remarkPlugins={MarkdownRemarkPluginsLite}>
-          {content}
-        </ReactMarkdown>
+        <article className="prose max-w-none dark:prose-invert prose-headings:text-text-primary prose-p:text-text-primary prose-strong:text-text-primary prose-li:text-text-primary prose-blockquote:text-text-secondary prose-blockquote:border-border-secondary prose-a:text-accent-primary prose-a:no-underline hover:prose-a:underline prose-code:text-text-primary prose-code:bg-bg-elevated prose-code:rounded prose-code:px-1.5 prose-code:py-0.5 prose-code:before:content-[''] prose-code:after:content-[''] prose-pre:bg-bg-elevated prose-th:bg-bg-elevated prose-th:text-text-primary prose-td:text-text-primary prose-hr:border-border-secondary">
+          <ReactMarkdown remarkPlugins={MarkdownRemarkPluginsLite}>
+            {content}
+          </ReactMarkdown>
+        </article>
       )}
     </div>
   );

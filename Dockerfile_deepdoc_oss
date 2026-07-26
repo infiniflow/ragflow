@@ -1,0 +1,66 @@
+# OSS DeepDoc server — minimal image with ONNX-only inference.
+# Build: docker build -f docker/Dockerfile_deepdoc_oss -t deepdoc_oss:latest .
+# With mirror (China): docker build --build-arg NEED_MIRROR=1 -f docker/Dockerfile_deepdoc_oss -t deepdoc_oss:latest .
+
+FROM ubuntu:24.04
+
+ARG NEED_MIRROR=1
+
+ENV PYTHONPATH=/app
+ENV DEBIAN_FRONTEND=noninteractive
+
+# ── System dependencies (onnxruntime + opencv runtime libs) ──
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    -o Acquire::Retries=5 \
+    python3.12 python3.12-venv \
+    libglib2.0-0 libglx-mesa0 libgl1 libgomp1 \
+    libgdiplus curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Python venv with ONNX inference stack ──
+RUN python3.12 -m venv /app/.venv
+COPY deepdoc/server/pyproject.toml /tmp/pyproject.toml
+RUN PIP_INDEX="https://pypi.org/simple" && \
+    PIP_TRUSTED="" && \
+    if [ "$NEED_MIRROR" = "1" ]; then \
+        PIP_INDEX="https://mirrors.aliyun.com/pypi/simple"; \
+        PIP_TRUSTED="mirrors.aliyun.com"; \
+    fi && \
+    if [ -n "$PIP_TRUSTED" ]; then \
+        /app/.venv/bin/pip install --no-cache-dir -i "$PIP_INDEX" --trusted-host "$PIP_TRUSTED" \
+        litserve onnxruntime opencv-python-headless numpy pillow pyclipper \
+        python-multipart shapely six huggingface_hub; \
+    else \
+        /app/.venv/bin/pip install --no-cache-dir -i "$PIP_INDEX" \
+        litserve onnxruntime opencv-python-headless numpy pillow pyclipper \
+        python-multipart shapely six huggingface_hub; \
+    fi
+
+# ── ONNX models (downloaded from HuggingFace) ──
+COPY deepdoc/server/download_deps.py /tmp/download_deps.py
+RUN if [ "$NEED_MIRROR" = "1" ]; then \
+        export HF_ENDPOINT=https://hf-mirror.com; \
+    fi && \
+    mkdir -p /app/rag/res/deepdoc && \
+    /app/.venv/bin/python3 /tmp/download_deps.py /app/rag/res/deepdoc
+
+# ── Vision module (ONNX inference logic) ──
+RUN mkdir -p /app/deepdoc/vision
+COPY deepdoc/vision/ /app/deepdoc/vision/
+
+# ── Docker stubs (lightweight replacements for heavy common/rag/deepdoc imports) ──
+COPY deepdoc/server/docker_stubs.py /tmp/docker_stubs.py
+RUN /app/.venv/bin/python3 /tmp/docker_stubs.py
+
+# ── Server code ──
+RUN mkdir -p /app/deepdoc/server/endpoints /app/deepdoc/server/adapters
+COPY deepdoc/server/deepdoc_server.py       /app/deepdoc/server/
+COPY deepdoc/server/endpoints/           /app/deepdoc/server/endpoints/
+COPY deepdoc/server/adapters/            /app/deepdoc/server/adapters/
+
+EXPOSE 9390
+
+HEALTHCHECK --interval=10s --timeout=10s --retries=5 \
+    CMD curl -f http://localhost:9390/health || exit 1
+
+ENTRYPOINT ["/app/.venv/bin/python3", "/app/deepdoc/server/deepdoc_server.py", "--model-dir", "/app/rag/res/deepdoc"]

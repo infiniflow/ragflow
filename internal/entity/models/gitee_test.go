@@ -24,6 +24,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 	"testing"
@@ -75,6 +76,7 @@ func deepSeekAliasModelsForTest(t *testing.T) map[string]Model {
 }
 
 func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
+	ctx := t.Context()
 	initProviderManagerWithGiteeForTest(t)
 	aliasModels := deepSeekAliasModelsForTest(t)
 	aliases := make([]string, 0, len(aliasModels))
@@ -96,12 +98,12 @@ func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
 
 		resp := ModelList{
 			Object: "list",
-			Models: make([]DSModel, 0, len(aliases)+1),
+			Models: make([]ModelListItem, 0, len(aliases)+1),
 		}
 		for _, alias := range aliases {
-			resp.Models = append(resp.Models, DSModel{ID: alias})
+			resp.Models = append(resp.Models, ModelListItem{ID: alias})
 		}
-		resp.Models = append(resp.Models, DSModel{ID: "unknown-model"})
+		resp.Models = append(resp.Models, ModelListItem{ID: "unknown-model"})
 
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(resp); err != nil {
@@ -110,7 +112,7 @@ func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	models, err := newGiteeForListModelsTest(srv.URL).ListModels(&APIConfig{})
+	models, err := newGiteeForListModelsTest(srv.URL).ListModels(ctx, &APIConfig{})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -151,6 +153,7 @@ func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
 }
 
 func TestGiteeListModelsKeepsOwnedBySuffixAfterAliasMetadataLookup(t *testing.T) {
+	ctx := t.Context()
 	initProviderManagerWithGiteeForTest(t)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +161,7 @@ func TestGiteeListModelsKeepsOwnedBySuffixAfterAliasMetadataLookup(t *testing.T)
 	}))
 	defer srv.Close()
 
-	models, err := newGiteeForListModelsTest(srv.URL).ListModels(&APIConfig{})
+	models, err := newGiteeForListModelsTest(srv.URL).ListModels(ctx, &APIConfig{})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -181,22 +184,23 @@ func TestGiteeListModelsKeepsOwnedBySuffixAfterAliasMetadataLookup(t *testing.T)
 }
 
 func TestGiteeListModelsIntegration(t *testing.T) {
-	if os.Getenv("GITEE_LIST_MODELS_INTEGRATION") != "1" {
+	ctx := t.Context()
+	if common.GetEnv(common.EnvGiteeListModelsIntegration) != "1" {
 		t.Skip("set GITEE_LIST_MODELS_INTEGRATION=1 to call the real Gitee models endpoint")
 	}
 
 	initProviderManagerWithGiteeForTest(t)
 
-	baseURL := os.Getenv("GITEE_BASE_URL")
+	baseURL := common.GetEnv(common.EnvGiteeBaseUrl)
 	if baseURL == "" {
 		baseURL = "https://api.moark.ai/v1"
 	}
 	apiConfig := &APIConfig{}
-	if apiKey := os.Getenv("GITEE_API_KEY"); apiKey != "" {
+	if apiKey := common.GetEnv(common.EnvGiteeApiKey); apiKey != "" {
 		apiConfig.ApiKey = &apiKey
 	}
 
-	models, err := newGiteeForListModelsTest(baseURL).ListModels(apiConfig)
+	models, err := newGiteeForListModelsTest(baseURL).ListModels(ctx, apiConfig)
 	if err != nil {
 		t.Fatalf("real Gitee ListModels: %v", err)
 	}

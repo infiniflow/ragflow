@@ -23,6 +23,7 @@ import { FC, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { ProfileSettingWrapperCard } from '../components/user-setting-header';
+import { NICKNAME_MAX_LENGTH, NICKNAME_PATTERN } from './constants';
 import { EditType, modalTitle, useProfile } from './hooks/use-profile';
 
 const timezoneOptions = TimezoneList.map(({ name }) => ({
@@ -33,8 +34,14 @@ const timezoneOptions = TimezoneList.map(({ name }) => ({
 const baseSchema = z.object({
   userName: z
     .string()
+    .trim()
     .min(1, { message: t('setting.usernameMessage') })
-    .trim(),
+    .max(NICKNAME_MAX_LENGTH, {
+      message: t('setting.usernameMaxLength', { max: NICKNAME_MAX_LENGTH }),
+    })
+    .regex(NICKNAME_PATTERN, {
+      message: t('setting.usernameInvalidCharacters'),
+    }),
   timeZone: z
     .string()
     .trim()
@@ -150,8 +157,8 @@ const ProfilePage: FC = () => {
           <label className="w-[190px] text-sm font-medium">
             {t('username')}
           </label>
-          <div className="flex-1 flex items-center gap-4 min-w-60">
-            <div className="text-sm text-text-primary border border-border-button flex-1 rounded-md py-1.5 px-2">
+          <div className="flex-1 flex items-center gap-4 min-w-0">
+            <div className="text-sm text-text-primary border border-border-button flex-1 min-w-0 rounded-md py-1.5 px-2 truncate">
               {profile.userName}
             </div>
 
@@ -262,13 +269,13 @@ const ProfilePage: FC = () => {
                         <FormControl className="w-full">
                           <Input
                             placeholder=""
+                            maxLength={NICKNAME_MAX_LENGTH}
                             {...field}
                             className="bg-bg-input border-border-default"
                           />
                         </FormControl>
                       </div>
                       <div className="flex w-full pt-1">
-                        <div className="w-1/4"></div>
                         <FormMessage />
                       </div>
                     </FormItem>

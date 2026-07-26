@@ -42,6 +42,10 @@ dev-dependencies = [
     "pytest-cov>=4.0.0",
 ]
 
+constraint-dependencies = [
+    "urllib3>=2.7.0",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]

@@ -3,7 +3,7 @@ import { SideBar } from './sidebar';
 
 import { cn } from '@/lib/utils';
 
-const UserSetting = () => {
+function UserSetting() {
   return (
     <section className="pt-8 size-full grid grid-cols-[4rem_minmax(0,1fr)] md:grid-cols-[303px_minmax(0,1fr)] grid-rows-1 min-w-0">
       <SideBar />
@@ -17,6 +17,6 @@ const UserSetting = () => {
       </div>
     </section>
   );
-};
+}
 
 export default UserSetting;

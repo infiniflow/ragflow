@@ -58,13 +58,11 @@ def _load_list_operations_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api", api_pkg)
 
     api_utils_mod = ModuleType("api.utils.api_utils")
-    api_utils_mod.timeout = lambda *_args, **_kwargs: (lambda func: func)
+    api_utils_mod.timeout = lambda *_args, **_kwargs: lambda func: func
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     module_path = repo_root / "agent" / "component" / "list_operations.py"
-    spec = importlib.util.spec_from_file_location(
-        "test_list_operations_unit_module", module_path
-    )
+    spec = importlib.util.spec_from_file_location("test_list_operations_unit_module", module_path)
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, "test_list_operations_unit_module", module)
     spec.loader.exec_module(module)
@@ -101,9 +99,7 @@ def _make_component(module, *, inputs, operation, n, strict=False):
 )
 def test_nth_behaves_like_lenient_indexing(monkeypatch, n, expected):
     module = _load_list_operations_module(monkeypatch)
-    component = _make_component(
-        module, inputs=["a", "b", "c", "d", "e"], operation="nth", n=n
-    )
+    component = _make_component(module, inputs=["a", "b", "c", "d", "e"], operation="nth", n=n)
     component._nth()
     assert component._param.outputs["result"]["value"] == expected
 
@@ -120,9 +116,7 @@ def test_nth_behaves_like_lenient_indexing(monkeypatch, n, expected):
 )
 def test_head_supports_lenient_and_strict(monkeypatch, strict, n, expected):
     module = _load_list_operations_module(monkeypatch)
-    component = _make_component(
-        module, inputs=["a", "b", "c", "d", "e"], operation="head", n=n, strict=strict
-    )
+    component = _make_component(module, inputs=["a", "b", "c", "d", "e"], operation="head", n=n, strict=strict)
     component._head()
     assert component._param.outputs["result"]["value"] == expected
 
@@ -131,9 +125,7 @@ def test_head_supports_lenient_and_strict(monkeypatch, strict, n, expected):
 @pytest.mark.parametrize("n", [0, 10])
 def test_head_strict_raises_for_out_of_range(monkeypatch, n):
     module = _load_list_operations_module(monkeypatch)
-    component = _make_component(
-        module, inputs=["a", "b", "c", "d", "e"], operation="head", n=n, strict=True
-    )
+    component = _make_component(module, inputs=["a", "b", "c", "d", "e"], operation="head", n=n, strict=True)
     with pytest.raises(ValueError, match="head requires n"):
         component._head()
 
@@ -150,9 +142,7 @@ def test_head_strict_raises_for_out_of_range(monkeypatch, n):
 )
 def test_tail_supports_lenient_and_strict(monkeypatch, strict, n, expected):
     module = _load_list_operations_module(monkeypatch)
-    component = _make_component(
-        module, inputs=["a", "b", "c", "d", "e"], operation="tail", n=n, strict=strict
-    )
+    component = _make_component(module, inputs=["a", "b", "c", "d", "e"], operation="tail", n=n, strict=strict)
     component._tail()
     assert component._param.outputs["result"]["value"] == expected
 
@@ -161,9 +151,7 @@ def test_tail_supports_lenient_and_strict(monkeypatch, strict, n, expected):
 @pytest.mark.parametrize("n", [0, 10])
 def test_tail_strict_raises_for_out_of_range(monkeypatch, n):
     module = _load_list_operations_module(monkeypatch)
-    component = _make_component(
-        module, inputs=["a", "b", "c", "d", "e"], operation="tail", n=n, strict=True
-    )
+    component = _make_component(module, inputs=["a", "b", "c", "d", "e"], operation="tail", n=n, strict=True)
     with pytest.raises(ValueError, match="tail requires n"):
         component._tail()
 
@@ -172,9 +160,7 @@ def test_tail_strict_raises_for_out_of_range(monkeypatch, n):
 @pytest.mark.parametrize("n", [0, 6, -6])
 def test_nth_strict_raises_for_out_of_range(monkeypatch, n):
     module = _load_list_operations_module(monkeypatch)
-    component = _make_component(
-        module, inputs=["a", "b", "c", "d", "e"], operation="nth", n=n, strict=True
-    )
+    component = _make_component(module, inputs=["a", "b", "c", "d", "e"], operation="nth", n=n, strict=True)
     with pytest.raises(ValueError, match="nth requires n"):
         component._nth()
 
@@ -182,10 +168,18 @@ def test_nth_strict_raises_for_out_of_range(monkeypatch, n):
 @pytest.mark.p2
 def test_set_outputs_tracks_first_and_last(monkeypatch):
     module = _load_list_operations_module(monkeypatch)
-    component = _make_component(
-        module, inputs=["a", "b", "c", "d", "e"], operation="tail", n=3
-    )
+    component = _make_component(module, inputs=["a", "b", "c", "d", "e"], operation="tail", n=3)
     component._tail()
     assert component._param.outputs["result"]["value"] == ["c", "d", "e"]
     assert component._param.outputs["first"]["value"] == "c"
     assert component._param.outputs["last"]["value"] == "e"
+
+
+@pytest.mark.p2
+def test_topn_operation_alias_normalizes_to_head(monkeypatch):
+    module = _load_list_operations_module(monkeypatch)
+    param = module.ListOperationsParam()
+    param.query = "items"
+    param.operations = "topN"
+    param.check()
+    assert param.operations == "head"

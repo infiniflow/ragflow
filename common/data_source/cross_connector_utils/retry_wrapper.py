@@ -13,6 +13,7 @@ from common.data_source.config import REQUEST_TIMEOUT_SECONDS
 F = TypeVar("F", bound=Callable[..., Any])
 logger = logging.getLogger(__name__)
 
+
 def retry_builder(
     tries: int = 20,
     delay: float = 0.1,

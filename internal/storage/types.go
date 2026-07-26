@@ -17,15 +17,7 @@
 package storage
 
 import (
-	"errors"
 	"time"
-)
-
-var (
-	// ErrNotFound is returned when an object is not found
-	ErrNotFound = errors.New("object not found")
-	// ErrBucketNotFound is returned when a bucket is not found
-	ErrBucketNotFound = errors.New("bucket not found")
 )
 
 // StorageType represents the type of storage backend
@@ -84,6 +76,9 @@ type Storage interface {
 	// ObjExist checks if an object exists
 	ObjExist(bucket, fnm string, tenantID ...string) bool
 
+	// ListObjects list all objects of the bucket
+	ListObjects(bucket string, tenantID ...string) ([]string, error)
+
 	// GetPresignedURL generates a presigned URL for accessing an object
 	// expires: duration until the URL expires
 	GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error)
@@ -99,4 +94,7 @@ type Storage interface {
 
 	// Move moves an object from source to destination
 	Move(srcBucket, srcPath, destBucket, destPath string) bool
+
+	// Close closes the storage connection
+	Close() error
 }

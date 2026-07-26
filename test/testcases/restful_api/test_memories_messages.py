@@ -19,6 +19,8 @@ import uuid
 
 import pytest
 
+from test.testcases.configs import IS_GO_PROXY
+
 
 @pytest.fixture
 def memory_cleanup(rest_client):
@@ -46,8 +48,8 @@ def create_memory_resource(rest_client, memory_cleanup):
         payload = {
             "name": f"{name_prefix}_{uuid.uuid4().hex[:8]}",
             "memory_type": ["raw"],
-            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
-            "llm_id": "glm-4-flash@ZHIPU-AI",
+            "embd_id": "BAAI/bge-small-en-v1.5@Local@Builtin",
+            "llm_id": "glm-4-flash@CI@ZHIPU-AI",
         }
         res = rest_client.post("/memories", json=payload)
         assert res.status_code == 200
@@ -128,7 +130,7 @@ def test_memory_create_missing_required_fields(rest_client):
     res = rest_client.post("/memories", json={"name": "missing_models", "memory_type": ["raw"]})
     assert res.status_code == 200
     payload = res.json()
-    assert payload["code"] == 101, payload
+    assert payload["code"] == (400 if IS_GO_PROXY else 101), payload
 
 
 @pytest.mark.p1

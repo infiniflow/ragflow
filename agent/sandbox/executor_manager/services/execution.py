@@ -230,9 +230,7 @@ async def execute_code(req: CodeExecutionRequest):
         if returncode != 0:
             raise RuntimeError(f"Directory creation failed: {stderr}")
 
-        tar_proc = await asyncio.create_subprocess_exec(
-            "tar", "czf", "-", "-C", workdir, code_name, runner_name, str(bundle["args_name"]), stdout=asyncio.subprocess.PIPE
-        )
+        tar_proc = await asyncio.create_subprocess_exec("tar", "czf", "-", "-C", workdir, code_name, runner_name, str(bundle["args_name"]), stdout=asyncio.subprocess.PIPE)
         tar_stdout, _ = await tar_proc.communicate()
 
         docker_proc = await asyncio.create_subprocess_exec(
@@ -334,8 +332,16 @@ async def _collect_artifacts(container: str, task_id: str, host_workdir: str) ->
 
     # List files in the artifacts directory inside the container
     returncode, stdout, _ = await async_run_command(
-        "docker", "exec", container, "find", artifacts_path,
-        "-maxdepth", "1", "-type", "f", timeout=5,
+        "docker",
+        "exec",
+        container,
+        "find",
+        artifacts_path,
+        "-maxdepth",
+        "1",
+        "-type",
+        "f",
+        timeout=5,
     )
     if returncode != 0 or not stdout.strip():
         return []
@@ -359,7 +365,14 @@ async def _collect_artifacts(container: str, task_id: str, host_workdir: str) ->
 
         # Check file size inside the container
         returncode, size_str, _ = await async_run_command(
-            "docker", "exec", container, "stat", "-c", "%s", file_path, timeout=5,
+            "docker",
+            "exec",
+            container,
+            "stat",
+            "-c",
+            "%s",
+            file_path,
+            timeout=5,
         )
         if returncode != 0:
             logger.warning(f"Failed to stat artifact {fname}")
@@ -374,7 +387,12 @@ async def _collect_artifacts(container: str, task_id: str, host_workdir: str) ->
 
         # Read file content via docker exec (docker cp doesn't work with gVisor tmpfs)
         returncode, content_b64, stderr = await async_run_command(
-            "docker", "exec", container, "base64", file_path, timeout=30,
+            "docker",
+            "exec",
+            container,
+            "base64",
+            file_path,
+            timeout=30,
         )
         if returncode != 0:
             logger.warning(f"Failed to read artifact {fname}: {stderr}")
@@ -382,12 +400,14 @@ async def _collect_artifacts(container: str, task_id: str, host_workdir: str) ->
 
         content_b64 = content_b64.replace("\n", "").strip()
 
-        items.append(ArtifactItem(
-            name=fname,
-            mime_type=mime_type,
-            size=file_size,
-            content_b64=content_b64,
-        ))
+        items.append(
+            ArtifactItem(
+                name=fname,
+                mime_type=mime_type,
+                size=file_size,
+                content_b64=content_b64,
+            )
+        )
         logger.info(f"Collected artifact: {fname} ({file_size} bytes, {mime_type})")
 
     return items

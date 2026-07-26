@@ -1,4 +1,4 @@
-import Image from '@/components/image';
+import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
@@ -197,7 +197,7 @@ const FloatingChatWidgetMarkdown = ({
             {documentId && (
               <section className="flex gap-1 justify-center">
                 {fileThumbnail ? (
-                  <img
+                  <AuthenticatedImg
                     src={fileThumbnail}
                     alt={document?.doc_name}
                     className="w-6 h-6 rounded"
@@ -294,7 +294,7 @@ const FloatingChatWidgetMarkdown = ({
   return (
     <div className="floating-chat-widget" dir={dir}>
       <Markdown
-        rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
+        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
         remarkPlugins={MarkdownRemarkPlugins}
         className="text-sm leading-relaxed space-y-2 prose-sm max-w-full"
         components={

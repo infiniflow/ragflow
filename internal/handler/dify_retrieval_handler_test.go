@@ -20,18 +20,20 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-		"gorm.io/gorm"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
-	"ragflow/internal/engine/types"
 
 	"github.com/gin-gonic/gin"
 )
@@ -82,8 +84,9 @@ func (m *mockModelService) GetChatModel(tenantID, llmID string) (*modelModule.Ch
 
 type mockMetadataService struct {
 	MetadataServiceIface
-	getFlattedMetaFn func(kbIDs []string) (common.MetaData, error)
-	labelQuestionFn  func(question string, kbs []*entity.Knowledgebase) map[string]float64
+	getFlattedMetaFn    func(kbIDs []string) (common.MetaData, error)
+	searchMetadataByKBs func(kbIDs []string, size int) (*service.SearchMetadataResponse, error)
+	labelQuestionFn     func(question string, kbs []*entity.Knowledgebase) map[string]float64
 }
 
 func (m *mockMetadataService) GetFlattedMetaByKBs(kbIDs []string) (common.MetaData, error) {
@@ -91,6 +94,17 @@ func (m *mockMetadataService) GetFlattedMetaByKBs(kbIDs []string) (common.MetaDa
 		return m.getFlattedMetaFn(kbIDs)
 	}
 	return common.MetaData{}, nil
+}
+
+func (m *mockMetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
+	if m.searchMetadataByKBs != nil {
+		return m.searchMetadataByKBs(kbIDs, size)
+	}
+	return &service.SearchMetadataResponse{
+		MetadataRecords: []map[string]interface{}{
+			{"id": "doc1", "meta_fields": map[string]interface{}{"author": "Zhang San"}},
+		},
+	}, nil
 }
 
 func (m *mockMetadataService) LabelQuestion(question string, kbs []*entity.Knowledgebase) map[string]float64 {
@@ -118,15 +132,15 @@ func (m *mockRetrievalService) Retrieval(ctx context.Context, req *nlp.Retrieval
 
 type mockDocDAO struct {
 	DocumentDAOIface
-	getByIDsFn func(ids []string) ([]*entity.Document, error)
+	getByIDsFn func(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error)
 }
 
-func (m *mockDocDAO) GetByIDs(ids []string) ([]*entity.Document, error) {
+func (m *mockDocDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error) {
 	if m.getByIDsFn != nil {
-		return m.getByIDsFn(ids)
+		return m.getByIDsFn(ctx, db, ids)
 	}
 	return []*entity.Document{
-		{ID: "doc1", Name: strPtr("Test Doc"), MetaFields: &entity.JSONMap{"author": "Zhang San"}},
+		{ID: "doc1", Name: strPtr("Test Doc")},
 	}, nil
 }
 
@@ -135,12 +149,12 @@ type mockDocEngine struct {
 	engine.DocEngine
 }
 
-func (m *mockDocEngine) Close() error                          { return nil }
-func (m *mockDocEngine) Ping(ctx context.Context) error         { return nil }
-func (m *mockDocEngine) GetType() string { return "mock" }
-	func (m *mockDocEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
-		return &types.SearchResult{}, nil
-	}
+func (m *mockDocEngine) Close() error                   { return nil }
+func (m *mockDocEngine) Ping(ctx context.Context) error { return nil }
+func (m *mockDocEngine) GetType() string                { return "mock" }
+func (m *mockDocEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	return &types.SearchResult{}, nil
+}
 func (m *mockDocEngine) GetChunk(ctx context.Context, _, _ string, _ []string) (interface{}, error) {
 	return map[string]interface{}{}, nil
 }
@@ -369,7 +383,7 @@ func TestDifyRetrieval_KBDBError(t *testing.T) {
 func TestDifyRetrieval_DocLoadError(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.docDAO = &mockDocDAO{
-		getByIDsFn: func(ids []string) ([]*entity.Document, error) {
+		getByIDsFn: func(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Document, error) {
 			return nil, errors.New("db unavailable")
 		},
 	}

@@ -4,7 +4,7 @@ import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useFetchMessageTrace } from '@/hooks/use-agent-request';
 import { useCreateChunk, useDeleteChunk } from '@/hooks/use-chunk-request';
-import kbService from '@/services/knowledge-service';
+import kbService, { getPipelineDetail } from '@/services/knowledge-service';
 import { formatSecondsToHumanReadable } from '@/utils/date';
 import { buildChunkHighlights } from '@/utils/document-util';
 import { useMutation, useQuery } from '@tanstack/react-query';
@@ -33,6 +33,7 @@ export const useFetchPipelineFileLogDetail = ({
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const logId = searchParams.get('id') || id;
+  const knowledgeId = searchParams.get('knowledgeId') || '';
 
   let queryKey: (string | number)[] = [];
   if (typeof refreshCount === 'number') {
@@ -45,10 +46,8 @@ export const useFetchPipelineFileLogDetail = ({
     gcTime: 0,
     enabled: !isAgent,
     queryFn: async () => {
-      if (isEdit) {
-        const { data } = await kbService.getPipelineDetail({
-          log_id: logId,
-        });
+      if (isEdit && knowledgeId && logId) {
+        const { data } = await getPipelineDetail(knowledgeId, logId);
         return data?.data ?? {};
       } else {
         return {};

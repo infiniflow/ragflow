@@ -1,4 +1,3 @@
-
 try:
     from test.playwright.helpers._auth_helpers import RESULT_TIMEOUT_MS as DEFAULT_TIMEOUT_MS
 except Exception:
@@ -12,9 +11,7 @@ def capture_response(page, trigger, predicate, timeout_ms: int = DEFAULT_TIMEOUT
             trigger()
         return response_info.value
     if hasattr(page, "expect_event"):
-        with page.expect_event(
-            "response", predicate=predicate, timeout=timeout_ms
-        ) as response_info:
+        with page.expect_event("response", predicate=predicate, timeout=timeout_ms) as response_info:
             trigger()
         return response_info.value
     if hasattr(page, "wait_for_event"):
@@ -23,9 +20,7 @@ def capture_response(page, trigger, predicate, timeout_ms: int = DEFAULT_TIMEOUT
     raise RuntimeError("Playwright Page lacks expect_response/expect_event/wait_for_event.")
 
 
-def capture_response_json(
-    page, trigger, predicate, timeout_ms: int = DEFAULT_TIMEOUT_MS
-) -> dict:
+def capture_response_json(page, trigger, predicate, timeout_ms: int = DEFAULT_TIMEOUT_MS) -> dict:
     response = capture_response(page, trigger, predicate, timeout_ms)
     info: dict = {"__url__": response.url, "__status__": response.status}
     try:

@@ -1,0 +1,103 @@
+"""Thinking mode configurations."""
+
+from rag.advanced_rag.harness.types import ExecutionStrategy
+
+THINKING_MODES: dict[str, ExecutionStrategy] = {
+    "low": ExecutionStrategy(
+        label="low",
+        execution_strategy="direct_search",
+        requires_decomposition=False,
+        requires_agent_loop=False,
+        requires_sufficiency_judge=False,
+        requires_selective_gen=False,
+        allows_dynamic_claims=False,
+        allows_replan=False,
+        max_orchestrator_cycles=1,
+        max_agent_cycles=0,
+        max_parallel_agents=1,
+        available_tools=["hybrid_search"],
+        sufficiency_threshold=0.85,
+        partial_threshold=0.50,
+        fallback_to_direct_llm=False,
+    ),
+    "medium": ExecutionStrategy(
+        label="medium",
+        execution_strategy="decompose_and_search",
+        requires_decomposition=True,
+        requires_agent_loop=False,
+        requires_sufficiency_judge=True,
+        requires_selective_gen=True,
+        allows_dynamic_claims=False,
+        allows_replan=False,
+        max_orchestrator_cycles=3,
+        max_agent_cycles=0,
+        max_parallel_agents=1,
+        available_tools=["hybrid_search"],
+        sufficiency_threshold=0.75,
+        partial_threshold=0.40,
+        fallback_to_direct_llm=False,
+    ),
+    "high": ExecutionStrategy(
+        label="high",
+        execution_strategy="agentic_research",
+        requires_decomposition=True,
+        requires_agent_loop=True,
+        requires_sufficiency_judge=True,
+        requires_selective_gen=True,
+        allows_dynamic_claims=False,
+        allows_replan=False,
+        max_orchestrator_cycles=3,
+        max_agent_cycles=2,
+        max_parallel_agents=2,
+        available_tools=[
+            "hybrid_search",
+            "web_search",
+            "catalog_navigate",
+            "dataset_navigate",
+            "graph_explore",
+            "inspector_open_context",
+            "inspector_compare",
+        ],
+        sufficiency_threshold=0.65,
+        partial_threshold=0.30,
+        fallback_to_direct_llm=False,
+    ),
+    "ultra": ExecutionStrategy(
+        label="ultra",
+        execution_strategy="deep_research",
+        requires_decomposition=True,
+        requires_agent_loop=True,
+        requires_sufficiency_judge=True,
+        requires_selective_gen=True,
+        allows_dynamic_claims=True,
+        allows_replan=True,
+        max_orchestrator_cycles=4,
+        max_agent_cycles=2,
+        max_parallel_agents=3,
+        available_tools=[
+            "hybrid_search",
+            "bm25_search",
+            "web_search",
+            "structured_query",
+            "catalog_navigate",
+            "dataset_navigate",
+            "mindmap_navigate",
+            "graph_explore",
+            "wiki_query",
+            "inspector_open_context",
+            "inspector_compare",
+            "inspector_grep_within",
+            "inspector_request_adjacent",
+        ],
+        sufficiency_threshold=0.55,
+        partial_threshold=0.20,
+        fallback_to_direct_llm=True,
+    ),
+}
+
+
+def get_mode(label: str) -> ExecutionStrategy:
+    mode = THINKING_MODES.get(label)
+    if not mode:
+        raise ValueError(f"Unknown thinking mode: {label}. Available: {list(THINKING_MODES.keys())}")
+    return mode

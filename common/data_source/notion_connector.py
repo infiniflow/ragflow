@@ -457,9 +457,7 @@ class NotionConnector(LoadConnector, PollConnector):
                     if result_type == "child_page":
                         child_pages.append(result_block_id)
                     else:
-                        nested_child_pages, nested_attachment_ids = self._read_slim_blocks(
-                            result_block_id
-                        )
+                        nested_child_pages, nested_attachment_ids = self._read_slim_blocks(result_block_id)
                         child_pages.extend(nested_child_pages)
                         attachment_ids.extend(nested_attachment_ids)
 
@@ -566,7 +564,13 @@ class NotionConnector(LoadConnector, PollConnector):
             joined_text = "\n".join(sec.text for sec in sections)
             blob = joined_text.encode("utf-8")
             yield Document(
-                id=page.id, blob=blob, source=DocumentSource.NOTION, semantic_identifier=semantic_identifier, extension=".txt", size_bytes=len(blob), doc_updated_at=datetime_from_string(page.last_edited_time)
+                id=page.id,
+                blob=blob,
+                source=DocumentSource.NOTION,
+                semantic_identifier=semantic_identifier,
+                extension=".txt",
+                size_bytes=len(blob),
+                doc_updated_at=datetime_from_string(page.last_edited_time),
             )
 
             for attachment_doc in attachment_docs:
@@ -616,11 +620,7 @@ class NotionConnector(LoadConnector, PollConnector):
 
         if self.recursive_index_enabled and all_child_page_ids:
             for child_page_batch_ids in batch_generator(all_child_page_ids, INDEX_BATCH_SIZE):
-                child_page_batch = [
-                    self._fetch_page(page_id)
-                    for page_id in child_page_batch_ids
-                    if page_id not in slim_indexed_pages
-                ]
+                child_page_batch = [self._fetch_page(page_id) for page_id in child_page_batch_ids if page_id not in slim_indexed_pages]
                 yield from self._read_pages_for_slim_docs(
                     child_page_batch,
                     slim_indexed_pages,

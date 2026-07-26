@@ -45,7 +45,6 @@ class GroupTitleChunker(BaseTitleChunker):
     def resolve_levels(self, line_records):
         return self.resolve_title_levels(line_records)
 
-
     def build_chunks(self, line_records, resolved):
         target_level = _resolve_group_target_level(
             resolved["levels"],
@@ -73,14 +72,7 @@ class GroupTitleChunker(BaseTitleChunker):
                 continue
 
             token_count = num_tokens_from_string(text)
-            should_merge = (
-                record_groups
-                and record_groups[-1][0]["doc_type_kwd"] == "text"
-                and (
-                    tk_cnt < MIN_GROUP_TOKENS
-                    or (tk_cnt < MAX_GROUP_TOKENS and sec_id == last_sid)
-                )
-            )
+            should_merge = record_groups and record_groups[-1][0]["doc_type_kwd"] == "text" and (tk_cnt < MIN_GROUP_TOKENS or (tk_cnt < MAX_GROUP_TOKENS and sec_id == last_sid))
 
             if should_merge:
                 record_groups[-1].append(record)

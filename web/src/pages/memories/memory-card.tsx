@@ -1,5 +1,6 @@
 import { HomeCard } from '@/components/home-card';
 import { MoreButton } from '@/components/more-button';
+import { SharedBadge } from '@/components/shared-badge';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IMemory } from './interface';
 import { MemoryDropdown } from './memory-dropdown';
@@ -27,6 +28,7 @@ export function MemoryCard({ data, showMemoryRenameModal }: IProps) {
           <MoreButton></MoreButton>
         </MemoryDropdown>
       }
+      sharedBadge={<SharedBadge>{data?.owner_name}</SharedBadge>}
       onClick={navigateToMemory(data?.id)}
     />
   );

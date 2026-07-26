@@ -43,10 +43,7 @@ class ProcessBase(ComponentBase):
         for k, v in kwargs.items():
             self.set_output(k, v)
         try:
-            await asyncio.wait_for(
-                self._invoke(**kwargs),
-                timeout=self._param.timeout
-            )
+            await asyncio.wait_for(self._invoke(**kwargs), timeout=self._param.timeout)
             self.callback(1, "Done")
         except Exception as e:
             if self.get_exception_default_value():

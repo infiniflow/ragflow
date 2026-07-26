@@ -1,0 +1,69 @@
+kind: mind_map
+display_name: Mind map - Radial concept hierarchy
+config:
+  kind: mind_map
+  entity:
+    description: >-
+      You are a robust mind-map extractor. Extract the central concept,
+      major branches, and supporting sub-branches needed to build a
+      non-linear visual hierarchy around the main subject.
+    fields:
+      - type: central_topic
+        description: The main idea, goal, problem, or subject placed at the center of the mind map.
+        rule: |
+          - Prefer a concise noun phrase that represents the whole chunk or document section.
+          - Use the source wording when it clearly names the topic.
+          - If no central topic can be inferred, output "-1".
+          - Max length: 80 characters.
+      - type: branch
+        description: A major theme, category, or dimension radiating from the central topic.
+        rule: |
+          - Use broad categories that organize multiple related details.
+          - Avoid duplicating the central topic as a branch.
+          - Keep labels concise and parallel when possible.
+          - Max length: 80 characters.
+      - type: sub_branch
+        description: A specific detail, task, supporting concept, example, or item under a branch.
+        rule: |
+          - Attach each sub-branch to the most specific relevant parent branch.
+          - Preserve important source terms, names, quantities, and constraints.
+          - Split unrelated details into separate sub-branches.
+          - Max length: 120 characters.
+      - type: keyword
+        description: A compact supporting word or phrase that clarifies a branch or sub-branch.
+        rule: |
+          - Use only meaningful terms that improve scanability.
+          - Do not include filler words or generic labels.
+          - Max length: 60 characters.
+  relation:
+    description: >-
+      You are an expert hierarchical reasoning assistant specializing in
+      mind-map structure. Link each concept to its parent so the result
+      forms an intuitive radial hierarchy.
+    fields:
+      - type: has_branch
+        description: The central topic contains a major branch.
+        rule: |
+          - Direction from central topic to branch: (A has_branch B).
+          - Use only for first-level branches radiating from the center.
+      - type: has_sub_branch
+        description: A branch or sub-branch contains a more specific child concept.
+        rule: |
+          - Direction from parent to child: (A has_sub_branch B).
+          - Use recursively for second-level and deeper details.
+      - type: supports
+        description: A keyword, example, task, or detail supports a parent concept.
+        rule: |
+          - Direction from supporting item to supported concept: (A supports B).
+          - Use when the item explains, evidences, or clarifies the parent.
+      - type: related_to
+        description: A cross-link between two concepts that are associated but not parent-child.
+        rule: |
+          - Use sparingly; prefer parent-child hierarchy when possible.
+          - Direction may follow the stronger explanatory dependency.
+  global_rules: |
+    - Build a mind map around one central concept whenever possible.
+    - Arrange major themes as first-level branches and details as recursive sub-branches.
+    - Keep labels short enough for visual nodes; avoid sentence-length node names.
+    - Preserve a clear hierarchy; do not create cycles in parent-child relations.
+    - Use the same language as the source text unless normalization is necessary.

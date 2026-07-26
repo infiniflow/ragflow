@@ -334,9 +334,7 @@ def test_parse_id_token_passes_pinned_algorithms_to_jwt_decode(monkeypatch):
     # verification path must not consult it. We sabotage
     # ``jwt.get_unverified_header`` to prove the code never calls it.
     def _explode(_token):  # pragma: no cover - must not be called
-        raise AssertionError(
-            "parse_id_token must not read the algorithm from the unverified JWT header"
-        )
+        raise AssertionError("parse_id_token must not read the algorithm from the unverified JWT header")
 
     monkeypatch.setattr(oidc_module.jwt, "get_unverified_header", _explode)
     monkeypatch.setattr(oidc_module.jwt, "PyJWKClient", _DummyJwkClient)
@@ -650,9 +648,7 @@ def test_github_fetch_user_info_async_success_and_error_unit(monkeypatch):
                     {"email": "octo-async@example.com", "primary": True},
                 ]
             )
-        return _FakeResponse(
-            {"login": "octocat-async", "name": "Octo Async", "avatar_url": "https://avatar.example/octo-async.png"}
-        )
+        return _FakeResponse({"login": "octocat-async", "name": "Octo Async", "avatar_url": "https://avatar.example/octo-async.png"})
 
     monkeypatch.setattr(github_module, "async_request", _fake_async_request)
     info = asyncio.run(client.async_fetch_user_info("async-token"))

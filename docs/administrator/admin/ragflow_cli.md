@@ -16,8 +16,9 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
 2. Install ragflow-cli.
 
    ```bash
-   pip install ragflow-cli==0.26.0
+   pipx install ragflow-cli==0.26.4
    ```
+  > You can also use `uv`, a tool for managing virtual environments and packages, to install RAGFlow CLI: `uv tool install ragflow-cli@0.26.4`.
 
 3. Launch the CLI client:
 
@@ -29,9 +30,9 @@ The RAGFlow CLI is a command-line-based system administration tool that offers a
     The default password is admin.
 
     **Parameters:**
-    
+
     - -h: RAGFlow admin server host address
-    
+
     - -p: RAGFlow admin server port
 
 ## Default administrative account

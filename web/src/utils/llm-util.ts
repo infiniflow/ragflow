@@ -43,29 +43,64 @@ export function buildModelValue(model: {
   return `${model.model_name}@${model.model_instance}@${model.model_provider}`;
 }
 
-/** Parse "modelName@instanceName@providerName" */
+/**
+ * Parse "modelName@instanceName@providerName" (or the 2-part
+ * "modelName@providerName" form where the instance defaults to "default").
+ *
+ * The composite key is right-anchored: the *last* '@'-separated field is the
+ * provider, the second-to-last is the instance, and everything to the left of
+ * the second-to-last '@' is the bare model name. Some model names legitimately
+ * contain '@' themselves (e.g. LM Studio embedding IDs such as
+ * `text-embedding-nomic-embed-text-v1.5@q8_0`), producing four-`@` composite
+ * keys like `text-embedding-nomic-embed-text-v1.5@q8_0@lmstudio@LM-Studio`.
+ *
+ * A naive `split("@")` (or anchoring on the first '@') mis-parses these keys
+ * — PATCH /api/v1/models/default then sends `model_name="…v1.5"` and
+ * `model_instance="q8_0@lmstudio"`, and the server replies
+ * `Instance 'q8_0@lmstudio' not found for provider 'LM-Studio'`.
+ *
+ * Right-anchored split mirrors `api/db/joint_services/tenant_model_service.py`
+ * `split_model_name` and the Go `parseModelName` (PR #16468 family).
+ */
 export function parseModelValue(val: string) {
   if (!val) return null;
-  const firstAt = val.indexOf('@');
   const lastAt = val.lastIndexOf('@');
-  if (firstAt === -1 || firstAt === lastAt) return null;
+  if (lastAt === -1) return null;
+  const secondLastAt = val.lastIndexOf('@', lastAt - 1);
+  if (secondLastAt === -1) {
+    // 2-part form: "modelName@providerName" — instance defaults to "default".
+    return {
+      model_name: val.substring(0, lastAt),
+      model_instance: 'default',
+      model_provider: val.substring(lastAt + 1),
+    };
+  }
   return {
-    model_name: val.substring(0, firstAt),
-    model_instance: val.substring(firstAt + 1, lastAt),
+    model_name: val.substring(0, secondLastAt),
+    model_instance: val.substring(secondLastAt + 1, lastAt),
     model_provider: val.substring(lastAt + 1),
   };
 }
 
 // Extract model name and factory ID from a model UUID
-// Supports both "model_name@factory_id" and "model_name@factory_id#instance_name"
+// Supports both "model_name@factory_id" and "model_name@factory_id#instance_name".
+// Uses right-anchored split for the same reason as parseModelValue:
+// model names may contain '@' themselves, so a naive split('@') drops the
+// last portion of the model name into factoryId.
 export function parseModelUuid(uuid: string): {
   modelName: string;
   factoryId: string;
 } {
   const hashIndex = uuid.indexOf('#');
   const core = hashIndex === -1 ? uuid : uuid.slice(0, hashIndex);
-  const [modelName, factoryId] = core.split('@');
-  return { modelName, factoryId };
+  const lastAt = core.lastIndexOf('@');
+  if (lastAt === -1) {
+    return { modelName: core, factoryId: '' };
+  }
+  return {
+    modelName: core.substring(0, lastAt),
+    factoryId: core.substring(lastAt + 1),
+  };
 }
 
 // Model parameter to tenant parameter mapping

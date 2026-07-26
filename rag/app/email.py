@@ -27,13 +27,13 @@ import io
 
 
 def chunk(
-        filename,
-        binary=None,
-        from_page=0,
-        to_page=MAXIMUM_PAGE_NUMBER,
-        lang="Chinese",
-        callback=None,
-        **kwargs,
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=MAXIMUM_PAGE_NUMBER,
+    lang="Chinese",
+    callback=None,
+    **kwargs,
 ):
     """
     Only eml is supported
@@ -93,10 +93,7 @@ def chunk(
 
     _add_content(msg, msg.get_content_type())
 
-    sections = TxtParser.parser_txt("\n".join(text_txt)) + [
-        (line, "") for line in
-        HtmlParser.parser_txt("\n".join(html_txt), chunk_token_num=parser_config["chunk_token_num"]) if line
-    ]
+    sections = TxtParser.parser_txt("\n".join(text_txt)) + [(line, "") for line in HtmlParser.parser_txt("\n".join(html_txt), chunk_token_num=parser_config["chunk_token_num"]) if line]
 
     st = timer()
     chunks = naive_merge(
@@ -105,7 +102,7 @@ def chunk(
         parser_config.get("delimiter", "\n!?。；！？"),
     )
 
-    main_res.extend(tokenize_chunks(chunks, doc, eng, None))
+    main_res.extend(tokenize_chunks(chunks, doc, eng, None, language=lang))
     logging.debug("naive_merge({}): {}".format(filename, timer() - st))
     # get the attachment info
     for part in msg.iter_attachments():
@@ -116,9 +113,7 @@ def chunk(
                 filename = part.get_filename()
                 payload = part.get_payload(decode=True)
                 try:
-                    attachment_res.extend(
-                        naive_chunk(filename, payload, callback=callback, **kwargs)
-                    )
+                    attachment_res.extend(naive_chunk(filename, payload, callback=callback, **kwargs))
                 except Exception:
                     pass
 
@@ -128,9 +123,7 @@ def chunk(
 if __name__ == "__main__":
     import sys
 
-
     def dummy(prog=None, msg=""):
         pass
-
 
     chunk(sys.argv[1], callback=dummy)

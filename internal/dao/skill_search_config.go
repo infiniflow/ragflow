@@ -18,9 +18,8 @@ package dao
 
 import (
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 	"strings"
-
-	"github.com/google/uuid"
 )
 
 // SkillSearchConfigDAO data access object for skill search config
@@ -129,7 +128,7 @@ func (dao *SkillSearchConfigDAO) CreateWithTenantSpace(tenantID, spaceID, embdID
 	}
 
 	defaultConfig := &entity.SkillSearchConfig{
-		ID:                     generateID(),
+		ID:                     utility.GenerateUUID(),
 		TenantID:               tenantID,
 		SpaceID:                spaceID,
 		EmbdID:                 embdID,
@@ -182,9 +181,4 @@ func (dao *SkillSearchConfigDAO) UpdateByTenantAndEmbdID(tenantID, spaceID, embd
 // Delete deletes a skill search config by ID (soft delete)
 func (dao *SkillSearchConfigDAO) Delete(id string) error {
 	return DB.Model(&entity.SkillSearchConfig{}).Where("id = ?", id).Update("status", "0").Error
-}
-
-// generateID generates a unique ID
-func generateID() string {
-	return strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
 }

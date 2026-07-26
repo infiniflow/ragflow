@@ -134,9 +134,7 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
         client_secret = credentials.get("client_secret")
 
         if not all([instance_url, client_id, client_secret]):
-            raise ConnectorMissingCredentialError(
-                "Salesforce credentials are incomplete (instance_url, client_id, client_secret required)"
-            )
+            raise ConnectorMissingCredentialError("Salesforce credentials are incomplete (instance_url, client_id, client_secret required)")
 
         token_url = urljoin(instance_url + "/", "services/oauth2/token")
         try:
@@ -150,9 +148,7 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
                 timeout=60,
             )
         except requests.RequestException as exc:
-            raise ConnectorMissingCredentialError(
-                f"Salesforce token request failed: {exc}"
-            )
+            raise ConnectorMissingCredentialError(f"Salesforce token request failed: {exc}")
 
         if not resp.ok:
             # Salesforce returns {"error": "...", "error_description": "..."}
@@ -161,9 +157,7 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
                 detail = body.get("error_description") or body.get("error") or resp.text
             except ValueError:
                 detail = resp.text[:200]
-            raise ConnectorMissingCredentialError(
-                f"Failed to acquire Salesforce access token (HTTP {resp.status_code}): {detail}"
-            )
+            raise ConnectorMissingCredentialError(f"Failed to acquire Salesforce access token (HTTP {resp.status_code}): {detail}")
 
         data = resp.json()
         token = data.get("access_token")
@@ -172,9 +166,7 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
         # correct host even when the configured URL went stale.
         canonical = (data.get("instance_url") or "").rstrip("/")
         if not token:
-            raise ConnectorMissingCredentialError(
-                "Salesforce token response did not contain access_token"
-            )
+            raise ConnectorMissingCredentialError("Salesforce token response did not contain access_token")
 
         self._access_token = token
         self._instance_url = canonical or instance_url
@@ -193,38 +185,24 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
         # the connected app or the user lacks API access altogether.
         resp = self._get(f"{self._base()}/sobjects")
         if resp.status_code == 401:
-            raise ConnectorMissingCredentialError(
-                "Salesforce access token is invalid or expired."
-            )
+            raise ConnectorMissingCredentialError("Salesforce access token is invalid or expired.")
         if resp.status_code == 403:
-            raise InsufficientPermissionsError(
-                "The Salesforce execution user lacks API access; enable the 'API Enabled' profile permission."
-            )
+            raise InsufficientPermissionsError("The Salesforce execution user lacks API access; enable the 'API Enabled' profile permission.")
         if not resp.ok:
-            raise UnexpectedValidationError(
-                f"Salesforce validation failed (HTTP {resp.status_code}): {resp.text[:200]}"
-            )
+            raise UnexpectedValidationError(f"Salesforce validation failed (HTTP {resp.status_code}): {resp.text[:200]}")
 
         try:
             payload = resp.json()
         except ValueError as exc:
-            raise ConnectorValidationError(
-                f"Salesforce /sobjects response is not JSON: {exc}"
-            )
+            raise ConnectorValidationError(f"Salesforce /sobjects response is not JSON: {exc}")
         if "sobjects" not in payload:
-            raise ConnectorValidationError(
-                "Unexpected response format from Salesforce /sobjects."
-            )
+            raise ConnectorValidationError("Unexpected response format from Salesforce /sobjects.")
 
         # Fail fast on typos / inaccessible objects instead of silently
         # missing their data during sync. The global describe lists every
         # object the user can see plus its queryable flag, so we can vet the
         # configured objects without an extra call per object.
-        queryable = {
-            so["name"]: bool(so.get("queryable", False))
-            for so in payload.get("sobjects", [])
-            if isinstance(so, dict) and so.get("name")
-        }
+        queryable = {so["name"]: bool(so.get("queryable", False)) for so in payload.get("sobjects", []) if isinstance(so, dict) and so.get("name")}
         unknown: list[str] = []
         not_queryable: list[str] = []
         for obj in self.objects:
@@ -247,11 +225,7 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
                 problems.append(f"unknown object(s): {', '.join(sorted(unknown))}")
             if not_queryable:
                 problems.append(f"non-queryable object(s): {', '.join(sorted(not_queryable))}")
-            raise ConnectorValidationError(
-                "Salesforce 'objects' configuration is invalid — "
-                + "; ".join(problems)
-                + ". Check for typos and that the execution user has read access to each object."
-            )
+            raise ConnectorValidationError("Salesforce 'objects' configuration is invalid — " + "; ".join(problems) + ". Check for typos and that the execution user has read access to each object.")
 
     # ------------------------------------------------------------------
     # Checkpoint helpers
@@ -270,9 +244,7 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
     # Core data loading
     # ------------------------------------------------------------------
 
-    def poll_source(
-        self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch
-    ) -> Any:
+    def poll_source(self, start: SecondsSinceUnixEpoch, end: SecondsSinceUnixEpoch) -> Any:
         return self._iter_documents(since_epoch=start, until_epoch=end if end else None)
 
     def load_from_checkpoint(
@@ -367,18 +339,12 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
                 body_snippet,
             )
             if _is_object_unavailable(resp):
-                raise SalesforceObjectUnavailable(
-                    f"Salesforce object unavailable ({context}): HTTP {resp.status_code} {body_snippet}"
-                )
-            raise UnexpectedValidationError(
-                f"Salesforce request failed ({context}): HTTP {resp.status_code} {body_snippet}"
-            )
+                raise SalesforceObjectUnavailable(f"Salesforce object unavailable ({context}): HTTP {resp.status_code} {body_snippet}")
+            raise UnexpectedValidationError(f"Salesforce request failed ({context}): HTTP {resp.status_code} {body_snippet}")
         try:
             return resp.json()
         except ValueError as exc:
-            raise UnexpectedValidationError(
-                f"Salesforce response is not JSON ({context}): {exc}"
-            )
+            raise UnexpectedValidationError(f"Salesforce response is not JSON ({context}): {exc}")
 
     def _describe_fields(self, obj: str) -> list[str]:
         """Return field API names for *obj*. Filters out compound types
@@ -415,14 +381,10 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
         field_list = ",".join(fields)
         filters = []
         if since_epoch:
-            since_iso = datetime.fromtimestamp(since_epoch, tz=timezone.utc).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
+            since_iso = datetime.fromtimestamp(since_epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             filters.append(f"SystemModstamp > {since_iso}")
         if until_epoch:
-            until_iso = datetime.fromtimestamp(until_epoch, tz=timezone.utc).strftime(
-                "%Y-%m-%dT%H:%M:%SZ"
-            )
+            until_iso = datetime.fromtimestamp(until_epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             filters.append(f"SystemModstamp <= {until_iso}")
         where = f" WHERE {' AND '.join(filters)}" if filters else ""
         soql = f"SELECT {field_list} FROM {obj}{where} ORDER BY SystemModstamp ASC"
@@ -513,9 +475,7 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
                     modified_dt: datetime | None = None
                     if modified_str:
                         try:
-                            modified_dt = datetime.fromisoformat(
-                                modified_str.replace("Z", "+00:00")
-                            )
+                            modified_dt = datetime.fromisoformat(modified_str.replace("Z", "+00:00"))
                         except ValueError:
                             modified_dt = None
 
@@ -525,12 +485,7 @@ class SalesforceConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
                     # ``Subject`` (Case) or ``Title`` (Knowledge); last
                     # resort is ``<Object>/<Id>`` so the doc list is
                     # never blank-titled.
-                    name = (
-                        record.get("Name")
-                        or record.get("Subject")
-                        or record.get("Title")
-                        or f"{obj}/{rec_id}"
-                    )
+                    name = record.get("Name") or record.get("Subject") or record.get("Title") or f"{obj}/{rec_id}"
 
                     body = self._record_to_text(obj, record)
                     blob = body.encode("utf-8")

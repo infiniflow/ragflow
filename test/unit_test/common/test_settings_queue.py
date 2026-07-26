@@ -47,7 +47,7 @@ class TestGetSvrQueueName:
 
     def test_suffix_parameter_ignored(self):
         """Test that suffix parameter is currently ignored (hardcoded to 'common').
-        
+
         Note: The function signature accepts a suffix parameter but currently
         hardcodes 'common' in the return value. This test documents this behavior.
         """
@@ -137,7 +137,7 @@ class TestGetSvrQueueNames:
 
     def test_suffix_parameter_passed_through(self):
         """Test that suffix parameter is passed to get_svr_queue_name.
-        
+
         Note: Since get_svr_queue_name currently hardcodes 'common' as the suffix,
         different suffix values will still produce the same result.
         """

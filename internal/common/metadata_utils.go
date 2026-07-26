@@ -49,7 +49,7 @@ var operatorMapping = map[string]string{
 	">=":     "≥",
 	"<=":     "≤",
 	"!=":     "≠",
-	"==":	"=",
+	"==":     "=",
 }
 
 // ParseAndConvert converts raw API conditions into MetaFilterInput.
@@ -77,9 +77,15 @@ func ParseAndConvert(metadataCondition map[string]interface{}) *MetaFilterInput 
 		}
 		name, _ := cond["name"].(string)
 		if name == "" {
+			name, _ = cond["key"].(string) // OpenAI API metadata_condition uses "key"
+		}
+		if name == "" {
 			continue
 		}
 		op, _ := cond["comparison_operator"].(string)
+		if op == "" {
+			op, _ = cond["operator"].(string) // OpenAI API uses "operator"
+		}
 		op = convertOperator(op)
 		conditions = append(conditions, MetaCondition{
 			Operator: op,

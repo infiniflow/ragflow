@@ -21,6 +21,7 @@ Uses only the standard library so it can be imported from both ``api/`` and
 
 import ipaddress
 import logging
+import os
 import socket
 import threading
 from contextlib import contextmanager
@@ -91,6 +92,11 @@ def pin_dns_global(hostname: str, ip: str):
 
 
 _DEFAULT_ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
+_ALLOW_ANY_HOST_ENV = "ALLOW_ANY_HOST"
+
+
+def _allow_any_host() -> bool:
+    return os.environ.get(_ALLOW_ANY_HOST_ENV, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _effective_ip(
@@ -145,6 +151,15 @@ def assert_url_is_safe(
         logger.warning("SSRF guard blocked URL with missing host: url=%r", url)
         raise ValueError("URL is missing a host.")
 
+    allow_any_host = _allow_any_host()
+    if allow_any_host:
+        logger.warning(
+            "SSRF guard bypass enabled via %s; allowing URL host without validation: hostname=%r url=%r",
+            _ALLOW_ANY_HOST_ENV,
+            hostname,
+            url,
+        )
+
     try:
         addr_infos = socket.getaddrinfo(hostname, None)
     except socket.gaierror as exc:
@@ -155,7 +170,7 @@ def assert_url_is_safe(
     for _family, _type, _proto, _canonname, sockaddr in addr_infos:
         raw_ip = ipaddress.ip_address(sockaddr[0])
         eff_ip = _effective_ip(raw_ip)
-        if not eff_ip.is_global:
+        if not allow_any_host and not eff_ip.is_global:
             logger.warning(
                 "SSRF guard blocked URL: hostname=%r resolved to non-public address=%s",
                 hostname,
@@ -181,8 +196,16 @@ def assert_host_is_safe(host: str) -> str:
 
     Returns the first validated public IP string so the caller can pin it if needed.
     """
+    host = host.strip()
     if not host:
         raise ValueError("Host must not be empty.")
+    if _allow_any_host():
+        logger.warning(
+            "SSRF guard bypass enabled via %s; allowing host without validation: host=%r",
+            _ALLOW_ANY_HOST_ENV,
+            host,
+        )
+        return host
 
     try:
         addr_infos = socket.getaddrinfo(host, None)

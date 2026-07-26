@@ -17,7 +17,7 @@ import random
 import re
 
 import pytest
-from configs import INVALID_API_TOKEN, HOST_ADDRESS
+from configs import INVALID_API_TOKEN, HOST_ADDRESS, IS_GO_PROXY, SDK_UNAUTHORIZED_ERROR_MESSAGE
 from ragflow_sdk import RAGFlow
 from hypothesis import example, given, settings
 from utils.hypothesis_utils import valid_names
@@ -28,10 +28,10 @@ class TestAuthorization:
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
-            (None, "<Unauthorized '401: Unauthorized'>"),
-            (INVALID_API_TOKEN, "<Unauthorized '401: Unauthorized'>"),
+            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
+            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
         ],
-        ids=["empty_auth", "invalid_api_token"]
+        ids=["empty_auth", "invalid_api_token"],
     )
     def test_auth_invalid(self, invalid_auth, expected_message):
         client = RAGFlow(invalid_auth, HOST_ADDRESS)
@@ -51,10 +51,10 @@ class TestMemoryCreate:
             "name": name,
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
             "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
-            "llm_id": "glm-4-flash@ZHIPU-AI"
+            "llm_id": "glm-4-flash@ZHIPU-AI",
         }
         memory = client.create_memory(**payload)
-        pattern = rf'^{name}|{name}(?:\((\d+)\))?$'
+        pattern = rf"^{name}|{name}(?:\((\d+)\))?$"
         escaped_name = re.escape(memory.name)
         assert re.match(pattern, escaped_name), str(memory)
 
@@ -64,7 +64,7 @@ class TestMemoryCreate:
         [
             ("", "Memory name cannot be empty or whitespace."),
             (" ", "Memory name cannot be empty or whitespace."),
-            ("a" * 129, f"Memory name '{'a'*129}' exceeds limit of 128."),
+            ("a" * 129, f"Memory name '{'a' * 129}' exceeds limit of 128."),
         ],
         ids=["empty_name", "space_name", "too_long_name"],
     )
@@ -73,25 +73,28 @@ class TestMemoryCreate:
             "name": name,
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
             "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
-            "llm_id": "glm-4-flash@ZHIPU-AI"
+            "llm_id": "glm-4-flash@ZHIPU-AI",
         }
         with pytest.raises(Exception) as exception_info:
             client.create_memory(**payload)
-        assert str(exception_info.value) == expected_message, str(exception_info.value)
+        if IS_GO_PROXY:
+            if name == "":
+                expected_message = "failed on the 'required' tag"
+            elif not name.strip():
+                expected_message = "name can't be empty"
+            else:
+                expected_message = "could not create new memory"
+        assert expected_message in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     @given(name=valid_names())
     @settings(deadline=None)
     def test_type_invalid(self, client, name):
-        payload = {
-            "name": name,
-            "memory_type": ["something"],
-            "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
-            "llm_id": "glm-4-flash@ZHIPU-AI"
-        }
+        payload = {"name": name, "memory_type": ["something"], "embd_id": "BAAI/bge-small-en-v1.5@Builtin", "llm_id": "glm-4-flash@ZHIPU-AI"}
         with pytest.raises(Exception) as exception_info:
             client.create_memory(**payload)
-        assert str(exception_info.value) == f"Memory type '{ {'something'} }' is not supported.", str(exception_info.value)
+        expected_message = "memory type 'something' is not supported" if IS_GO_PROXY else f"Memory type '{ {'something'} }' is not supported."
+        assert str(exception_info.value) == expected_message, str(exception_info.value)
 
     @pytest.mark.p3
     def test_name_duplicated(self, client):
@@ -100,7 +103,7 @@ class TestMemoryCreate:
             "name": name,
             "memory_type": ["raw"] + random.choices(["semantic", "episodic", "procedural"], k=random.randint(0, 3)),
             "embd_id": "BAAI/bge-small-en-v1.5@Builtin",
-            "llm_id": "glm-4-flash@ZHIPU-AI"
+            "llm_id": "glm-4-flash@ZHIPU-AI",
         }
         res1 = client.create_memory(**payload)
         assert res1.name == name, str(res1)

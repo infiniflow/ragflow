@@ -26,11 +26,7 @@ def _load_teams_connector_module():
     """Load teams_connector.py in isolation (avoid the package __init__)."""
     repo_root = Path(__file__).resolve().parents[3]
     package_name = "common.data_source"
-    saved_modules = {
-        name: module
-        for name, module in sys.modules.items()
-        if name == package_name or name.startswith(f"{package_name}.")
-    }
+    saved_modules = {name: module for name, module in sys.modules.items() if name == package_name or name.startswith(f"{package_name}.")}
     package_stub = ModuleType(package_name)
     package_stub.__path__ = [str(repo_root / "common" / "data_source")]
     sys.modules[package_name] = package_stub
@@ -175,9 +171,7 @@ def test_load_credentials_sets_graph_client(monkeypatch):
     monkeypatch.setattr(teams_connector, "GraphClient", lambda token_callback: SimpleNamespace(cb=token_callback))
 
     connector = TeamsConnector()
-    result = connector.load_credentials(
-        {"tenant_id": "tenant", "client_id": "client", "client_secret": "secret"}
-    )
+    result = connector.load_credentials({"tenant_id": "tenant", "client_id": "client", "client_secret": "secret"})
 
     assert result is None
     assert connector.graph_client is not None
@@ -217,9 +211,7 @@ def test_validate_maps_permission_error():
 def test_load_from_checkpoint_flattens_posts_and_replies():
     connector = _build_connector()
 
-    docs, checkpoint = _collect(
-        connector.load_from_checkpoint(0.0, 9e12, connector.build_dummy_checkpoint())
-    )
+    docs, checkpoint = _collect(connector.load_from_checkpoint(0.0, 9e12, connector.build_dummy_checkpoint()))
 
     assert checkpoint.has_more is False
     assert {doc.id for doc in docs} == {"t1__c1__m1", "t1__c1__m2"}
@@ -245,9 +237,7 @@ def test_load_from_checkpoint_filters_by_modified_window():
     start = datetime(2026, 1, 15, tzinfo=timezone.utc).timestamp()
     end = datetime(2026, 3, 1, tzinfo=timezone.utc).timestamp()
 
-    docs, _ = _collect(
-        connector.load_from_checkpoint(start, end, connector.build_dummy_checkpoint())
-    )
+    docs, _ = _collect(connector.load_from_checkpoint(start, end, connector.build_dummy_checkpoint()))
 
     assert [doc.id for doc in docs] == ["t1__c1__m2"]
 

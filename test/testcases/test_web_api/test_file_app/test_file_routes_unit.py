@@ -354,4 +354,3 @@ def test_parent_and_ancestors_use_new_routes(monkeypatch):
     assert parent_res["data"]["parent_folder"]["id"] == "parent1"
     assert ancestors_res["code"] == 0
     assert ancestors_res["data"]["parent_folders"][0]["id"] == "root"
-

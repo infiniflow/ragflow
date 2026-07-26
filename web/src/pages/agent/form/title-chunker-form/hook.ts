@@ -78,10 +78,10 @@ function transformApiResponseToForm(
     }
   }
 
-  if (method === TitleChunkerMethod.Group && !hierarchyGroup) {
+  if (!hierarchyGroup) {
     hierarchyGroup = '0';
   }
-  if (method === TitleChunkerMethod.Hierarchy && !hierarchyHierarchy) {
+  if (!hierarchyHierarchy) {
     hierarchyHierarchy = hierarchy || Hierarchy.H3;
   }
 

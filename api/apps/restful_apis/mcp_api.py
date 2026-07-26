@@ -184,6 +184,10 @@ async def update(mcp_id: str) -> Response:
     server_name = req.get("name", mcp_server.name)
     if server_name and len(server_name.encode("utf-8")) > 255:
         return get_data_error_result(message=f"Invalid MCP name or length is {len(server_name)} which is large than 255.")
+    if server_name and server_name != mcp_server.name:
+        e, _ = MCPServerService.get_by_name_and_tenant(name=server_name, tenant_id=current_user.id)
+        if e:
+            return get_data_error_result(message="Duplicated MCP server name.")
     url = req.get("url", mcp_server.url)
     hostname, resolved_ip, url_error = _assert_mcp_url_is_safe(url)
     if url_error:

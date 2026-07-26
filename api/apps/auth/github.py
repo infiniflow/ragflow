@@ -23,14 +23,15 @@ class GithubOAuthClient(OAuthClient):
         """
         Initialize the GithubOAuthClient with the provider's configuration.
         """
-        config.update({
-            "authorization_url": "https://github.com/login/oauth/authorize",
-            "token_url": "https://github.com/login/oauth/access_token",
-            "userinfo_url": "https://api.github.com/user",
-            "scope": "user:email"
-        })
+        config.update(
+            {
+                "authorization_url": "https://github.com/login/oauth/authorize",
+                "token_url": "https://github.com/login/oauth/access_token",
+                "userinfo_url": "https://api.github.com/user",
+                "scope": "user:email",
+            }
+        )
         super().__init__(config)
-
 
     def fetch_user_info(self, access_token, **kwargs):
         """
@@ -42,9 +43,7 @@ class GithubOAuthClient(OAuthClient):
             response = sync_request("GET", self.userinfo_url, headers=headers, timeout=self.http_request_timeout)
             response.raise_for_status()
             user_info.update(response.json())
-            email_response = sync_request(
-                "GET", self.userinfo_url + "/emails", headers=headers, timeout=self.http_request_timeout
-            )
+            email_response = sync_request("GET", self.userinfo_url + "/emails", headers=headers, timeout=self.http_request_timeout)
             email_response.raise_for_status()
             email_info = email_response.json()
             user_info["email"] = next((email for email in email_info if email["primary"]), None)["email"]
@@ -78,7 +77,6 @@ class GithubOAuthClient(OAuthClient):
             return self.normalize_user_info(user_info)
         except Exception as e:
             raise ValueError(f"Failed to fetch github user info: {e}")
-
 
     def normalize_user_info(self, user_info):
         email = user_info.get("email")

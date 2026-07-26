@@ -38,21 +38,21 @@ try:
     print("Uploading document...")
     # Using a simple text content for example
     content = "RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding."
-    docs = dataset.upload_documents([{"display_name": "sample.txt", "blob": content.encode('utf-8')}])
+    docs = dataset.upload_documents([{"display_name": "sample.txt", "blob": content.encode("utf-8")}])
     doc = docs[0]
 
     # 3. Parse the document (required before manual chunk operations if you want it to be processed)
     print("Parsing document...")
     dataset.async_parse_documents([doc.id])
-    
+
     # Wait for parsing to complete with timeout
     MAX_WAIT = 120  # seconds
     elapsed = 0
     while elapsed < MAX_WAIT:
         doc_status = dataset.list_documents(id=doc.id)[0]
         if doc_status.run == "1" and doc_status.progress >= 1.0:
-             print("Parsing completed.")
-             break
+            print("Parsing completed.")
+            break
         print(f"Parsing progress: {doc_status.progress:.2f}")
         time.sleep(2)
         elapsed += 2
@@ -75,7 +75,7 @@ try:
     # 6. Update a chunk
     print("Updating chunk...")
     chunk.update({"content": "RAGFlow features a streamlined and powerful RAG workflow."})
-    
+
     # 7. Delete the chunk
     print("Deleting chunk...")
     doc.delete_chunks([chunk.id])
@@ -83,7 +83,7 @@ try:
     # Cleanup
     print("Cleaning up dataset...")
     rag.delete_datasets(ids=[dataset.id])
-    
+
     print("Chunk example done.")
     sys.exit(0)
 

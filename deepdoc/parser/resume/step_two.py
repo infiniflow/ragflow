@@ -130,7 +130,7 @@ def forEdu(cv):
             d = degrees.get_name(n["degree"])
             if d:
                 e["degree_kwd"] = d
-            if d == "本科" and ("专科" in deg or "专升本" in deg or "中专" in deg or "大专" in deg or re.search(r"(成人|自考|自学考试)", n.get("school_name",""))):
+            if d == "本科" and ("专科" in deg or "专升本" in deg or "中专" in deg or "大专" in deg or re.search(r"(成人|自考|自学考试)", n.get("school_name", ""))):
                 d = "专升本"
             if d:
                 deg.append(d)
@@ -179,7 +179,7 @@ def forEdu(cv):
     if deg:
         if "本科" in deg and "专科" in deg:
             deg.append("专升本")
-            deg = [d for d in deg if d != '本科']
+            deg = [d for d in deg if d != "本科"]
         cv["degree_kwd"] = deg
         cv["highest_degree_kwd"] = highest_degree(deg)
     if edu_end_dt:
@@ -194,9 +194,7 @@ def forEdu(cv):
             logging.exception("forEdu {} {} {}".format(e, edu_end_dt, cv.get("work_exp_flt")))
     if sch:
         cv["school_name_kwd"] = sch
-        if (len(cv.get("degree_kwd", [])) >= 1 and "本科" in cv["degree_kwd"]) \
-                or all([c.lower() in ["硕士", "博士", "mba", "博士后"] for c in cv.get("degree_kwd", [])]) \
-                or not cv.get("degree_kwd"):
+        if (len(cv.get("degree_kwd", [])) >= 1 and "本科" in cv["degree_kwd"]) or all([c.lower() in ["硕士", "博士", "mba", "博士后"] for c in cv.get("degree_kwd", [])]) or not cv.get("degree_kwd"):
             for c in sch:
                 if schools.is_good(c):
                     if "tag_kwd" not in cv:
@@ -204,10 +202,11 @@ def forEdu(cv):
                     cv["tag_kwd"].append("好学校")
                     cv["tag_kwd"].append("好学历")
                     break
-        if (len(cv.get("degree_kwd", [])) >= 1 and "本科" in cv["degree_kwd"] and
-            any([d.lower() in ["硕士", "博士", "mba", "博士"] for d in cv.get("degree_kwd", [])])) \
-                or all([d.lower() in ["硕士", "博士", "mba", "博士后"] for d in cv.get("degree_kwd", [])]) \
-                or any([d in ["mba", "emba", "博士后"] for d in cv.get("degree_kwd", [])]):
+        if (
+            (len(cv.get("degree_kwd", [])) >= 1 and "本科" in cv["degree_kwd"] and any([d.lower() in ["硕士", "博士", "mba", "博士"] for d in cv.get("degree_kwd", [])]))
+            or all([d.lower() in ["硕士", "博士", "mba", "博士后"] for d in cv.get("degree_kwd", [])])
+            or any([d in ["mba", "emba", "博士后"] for d in cv.get("degree_kwd", [])])
+        ):
             if "tag_kwd" not in cv:
                 cv["tag_kwd"] = []
             if "好学历" not in cv["tag_kwd"]:
@@ -230,9 +229,7 @@ def forProj(cv):
         return cv
 
     pro_nms, desc = [], []
-    for i, n in enumerate(
-            sorted(cv.get("project_obj", []), key=lambda x: str(x.get("updated_at", "")) if isinstance(x, dict) else "",
-                   reverse=True)):
+    for i, n in enumerate(sorted(cv.get("project_obj", []), key=lambda x: str(x.get("updated_at", "")) if isinstance(x, dict) else "", reverse=True)):
         if n.get("name"):
             pro_nms.append(n["name"])
         if n.get("describe"):
@@ -261,8 +258,7 @@ def forWork(cv):
         cv["integerity_flt"] *= 0.7
         return cv
 
-    flds = ["position_name", "corporation_name", "corporation_id", "responsibilities",
-            "industry_name", "subordinates_count"]
+    flds = ["position_name", "corporation_name", "corporation_id", "responsibilities", "industry_name", "subordinates_count"]
     duas = []
     scales = []
     fea = {c: [] for c in flds}
@@ -271,9 +267,7 @@ def forWork(cv):
     goodcorp_ = False
     work_st_tm = ""
     corp_tags = []
-    for i, n in enumerate(
-            sorted(cv.get("work_obj", []), key=lambda x: str(x.get("start_time", "")) if isinstance(x, dict) else "",
-                   reverse=True)):
+    for i, n in enumerate(sorted(cv.get("work_obj", []), key=lambda x: str(x.get("start_time", "")) if isinstance(x, dict) else "", reverse=True)):
         if isinstance(n, str):
             try:
                 n = json_loads(n)
@@ -283,7 +277,7 @@ def forWork(cv):
         if n.get("start_time") and (not work_st_tm or n["start_time"] < work_st_tm):
             work_st_tm = n["start_time"]
         for c in flds:
-            if not n.get(c) or str(n[c]) == '0':
+            if not n.get(c) or str(n[c]) == "0":
                 fea[c].append("")
                 continue
             if c == "corporation_name":
@@ -368,8 +362,7 @@ def forWork(cv):
         cv["resp_ltks"] = rag_tokenizer.tokenize(" ".join(fea["responsibilities"][1:]))
 
     if fea["subordinates_count"]:
-        fea["subordinates_count"] = [int(i) for i in fea["subordinates_count"] if
-                                                               re.match(r"[^0-9]+$", str(i))]
+        fea["subordinates_count"] = [int(i) for i in fea["subordinates_count"] if re.match(r"[^0-9]+$", str(i))]
     if fea["subordinates_count"]:
         cv["max_sub_cnt_int"] = np.max(fea["subordinates_count"])
 
@@ -445,25 +438,55 @@ def birth(cv):
 
 def parse(cv):
     for k in cv.keys():
-        if cv[k] == '\\N':
-            cv[k] = ''
+        if cv[k] == "\\N":
+            cv[k] = ""
     # cv = cv.asDict()
-    tks_fld = ["address", "corporation_name", "discipline_name", "email", "expect_city_names",
-               "expect_industry_name", "expect_position_name", "industry_name", "industry_names", "name",
-               "position_name", "school_name", "self_remark", "title_name"]
+    tks_fld = [
+        "address",
+        "corporation_name",
+        "discipline_name",
+        "email",
+        "expect_city_names",
+        "expect_industry_name",
+        "expect_position_name",
+        "industry_name",
+        "industry_names",
+        "name",
+        "position_name",
+        "school_name",
+        "self_remark",
+        "title_name",
+    ]
     small_tks_fld = ["corporation_name", "expect_position_name", "position_name", "school_name", "title_name"]
-    kwd_fld = ["address", "city", "corporation_type", "degree", "discipline_name", "expect_city_names", "email",
-               "expect_industry_name", "expect_position_name", "expect_type", "gender", "industry_name",
-               "industry_names", "political_status", "position_name", "scale", "school_name", "phone", "tel"]
-    num_fld = ["annual_salary", "annual_salary_from", "annual_salary_to", "expect_annual_salary", "expect_salary_from",
-               "expect_salary_to", "salary_month"]
+    kwd_fld = [
+        "address",
+        "city",
+        "corporation_type",
+        "degree",
+        "discipline_name",
+        "expect_city_names",
+        "email",
+        "expect_industry_name",
+        "expect_position_name",
+        "expect_type",
+        "gender",
+        "industry_name",
+        "industry_names",
+        "political_status",
+        "position_name",
+        "scale",
+        "school_name",
+        "phone",
+        "tel",
+    ]
+    num_fld = ["annual_salary", "annual_salary_from", "annual_salary_to", "expect_annual_salary", "expect_salary_from", "expect_salary_to", "salary_month"]
 
     is_fld = [
         ("is_fertility", "已育", "未育"),
         ("is_house", "有房", "没房"),
         ("is_management_experience", "有管理经验", "无管理经验"),
         ("is_marital", "已婚", "未婚"),
-        ("is_oversea", "有海外经验", "无海外经验")
+        ("is_oversea", "有海外经验", "无海外经验"),
     ]
 
     rmkeys = []
@@ -475,15 +498,15 @@ def parse(cv):
     for k in rmkeys:
         del cv[k]
 
-    integrity = 0.
-    flds_num = 0.
+    integrity = 0.0
+    flds_num = 0.0
 
     def hasValues(flds):
         nonlocal integrity, flds_num
         flds_num += len(flds)
         for f in flds:
             v = str(cv.get(f, ""))
-            if len(v) > 0 and v != '0' and v != '[]':
+            if len(v) > 0 and v != "0" and v != "[]":
                 integrity += 1
 
     hasValues(tks_fld)
@@ -493,24 +516,23 @@ def parse(cv):
     cv["integerity_flt"] = integrity / flds_num
 
     if cv.get("corporation_type"):
-        for p, r in [(r"(公司|企业|其它|其他|Others*|\n|未填写|Enterprises|Company|companies)", ""),
-                     (r"[／/．·　<\(（]+.*", ""),
-                     (r".*(合资|民企|股份制|中外|私营|个体|Private|创业|Owned|投资).*", "民营"),
-                     (r".*(机关|事业).*", "机关"),
-                     (r".*(非盈利|Non-profit).*", "非盈利"),
-                     (r".*(外企|外商|欧美|foreign|Institution|Australia|港资).*", "外企"),
-                     (r".*国有.*", "国企"),
-                     (r"[ （）\(\)人/·0-9-]+", ""),
-                     (r".*(元|规模|于|=|北京|上海|至今|中国|工资|州|shanghai|强|餐饮|融资|职).*", "")]:
+        for p, r in [
+            (r"(公司|企业|其它|其他|Others*|\n|未填写|Enterprises|Company|companies)", ""),
+            (r"[／/．·　<\(（]+.*", ""),
+            (r".*(合资|民企|股份制|中外|私营|个体|Private|创业|Owned|投资).*", "民营"),
+            (r".*(机关|事业).*", "机关"),
+            (r".*(非盈利|Non-profit).*", "非盈利"),
+            (r".*(外企|外商|欧美|foreign|Institution|Australia|港资).*", "外企"),
+            (r".*国有.*", "国企"),
+            (r"[ （）\(\)人/·0-9-]+", ""),
+            (r".*(元|规模|于|=|北京|上海|至今|中国|工资|州|shanghai|强|餐饮|融资|职).*", ""),
+        ]:
             cv["corporation_type"] = re.sub(p, r, cv["corporation_type"], count=1000, flags=re.IGNORECASE)
         if len(cv["corporation_type"]) < 2:
             del cv["corporation_type"]
 
     if cv.get("political_status"):
-        for p, r in [
-            (r".*党员.*", "党员"),
-            (r".*(无党派|公民).*", "群众"),
-            (r".*团员.*", "团员")]:
+        for p, r in [(r".*党员.*", "党员"), (r".*(无党派|公民).*", "群众"), (r".*团员.*", "团员")]:
             cv["political_status"] = re.sub(p, r, cv["political_status"])
         if not re.search(r"[党团群]", cv["political_status"]):
             del cv["political_status"]
@@ -549,10 +571,7 @@ def parse(cv):
 
         # keyword fields
         if k in kwd_fld:
-            cv[f"{k}_kwd"] = [n.lower()
-                                           for n in re.split(r"[\t,，；;. ]",
-                                                             re.sub(r"([^a-zA-Z])[ ]+([^a-zA-Z ])", r"\1，\2", cv[k])
-                                                             ) if n]
+            cv[f"{k}_kwd"] = [n.lower() for n in re.split(r"[\t,，；;. ]", re.sub(r"([^a-zA-Z])[ ]+([^a-zA-Z ])", r"\1，\2", cv[k])) if n]
 
         if k in num_fld and cv.get(k):
             cv[f"{k}_int"] = cv[k]
@@ -575,24 +594,22 @@ def parse(cv):
         name = cv["name"]
 
         # name pingyin and its prefix
-        cv["name_py_tks"] = " ".join(PY.get_pinyins(nm[:20], '')) + " " + " ".join(PY.get_pinyins(nm[:20], ' '))
+        cv["name_py_tks"] = " ".join(PY.get_pinyins(nm[:20], "")) + " " + " ".join(PY.get_pinyins(nm[:20], " "))
         cv["name_py_pref0_tks"] = ""
         cv["name_py_pref_tks"] = ""
-        for py in PY.get_pinyins(nm[:20], ''):
+        for py in PY.get_pinyins(nm[:20], ""):
             for i in range(2, len(py) + 1):
                 cv["name_py_pref_tks"] += " " + py[:i]
-        for py in PY.get_pinyins(nm[:20], ' '):
+        for py in PY.get_pinyins(nm[:20], " "):
             py = py.split()
             for i in range(1, len(py) + 1):
                 cv["name_py_pref0_tks"] += " " + "".join(py[:i])
 
         cv["name_kwd"] = name
-        cv["name_pinyin_kwd"] = PY.get_pinyins(nm[:20], ' ')[:3]
-        cv["name_tks"] = (
-                rag_tokenizer.tokenize(name) + " " + (" ".join(list(name)) if not re.match(r"[a-zA-Z ]+$", name) else "")
-        ) if name else ""
+        cv["name_pinyin_kwd"] = PY.get_pinyins(nm[:20], " ")[:3]
+        cv["name_tks"] = (rag_tokenizer.tokenize(name) + " " + (" ".join(list(name)) if not re.match(r"[a-zA-Z ]+$", name) else "")) if name else ""
     else:
-        cv["integerity_flt"] /= 2.
+        cv["integerity_flt"] /= 2.0
 
     if cv.get("phone"):
         r = re.search(r"(1[3456789][0-9]{9})", cv["phone"])
@@ -603,7 +620,7 @@ def parse(cv):
 
     # deal with date  fields
     if cv.get("updated_at") and isinstance(cv["updated_at"], datetime.datetime):
-        cv["updated_at_dt"] = cv["updated_at"].strftime('%Y-%m-%d %H:%M:%S')
+        cv["updated_at_dt"] = cv["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
     else:
         y, m, d = getYMD(str(cv.get("updated_at", "")))
         if not y:
@@ -623,9 +640,9 @@ def parse(cv):
     for f, y, n in is_fld:
         if f not in cv:
             continue
-        if cv[f] == '是':
+        if cv[f] == "是":
             fea.append(y)
-        if cv[f] == '否':
+        if cv[f] == "否":
             fea.append(n)
 
     if fea:
@@ -648,7 +665,7 @@ def parse(cv):
         if not cv.get("work_exp_flt") and cv.get("work_start_time"):
             if re.match(r"[0-9]{9,}", str(cv["work_start_time"])):
                 cv["work_start_dt"] = turnTm2Dt(cv["work_start_time"])
-                cv["work_exp_flt"] = (time.time() - int(int(cv["work_start_time"]) / 1000)) / 3600. / 24. / 365.
+                cv["work_exp_flt"] = (time.time() - int(int(cv["work_start_time"]) / 1000)) / 3600.0 / 24.0 / 365.0
             elif re.match(r"[0-9]{4}[^0-9]", str(cv["work_start_time"])):
                 y, m, d = getYMD(str(cv["work_start_time"]))
                 cv["work_start_dt"] = "%s-%02d-%02d 00:00:00" % (y, int(m), int(d))
@@ -656,7 +673,7 @@ def parse(cv):
     except Exception as e:
         logging.exception("parse {} ==> {}".format(e, cv.get("work_start_time")))
     if "work_exp_flt" not in cv and cv.get("work_experience", 0):
-        cv["work_exp_flt"] = int(cv["work_experience"]) / 12.
+        cv["work_exp_flt"] = int(cv["work_experience"]) / 12.0
 
     keys = list(cv.keys())
     for k in keys:
@@ -665,7 +682,7 @@ def parse(cv):
     for k in cv.keys():
         if not re.search("_(kwd|id)$", k) or not isinstance(cv[k], list):
             continue
-        cv[k] = list(set([re.sub("(市)$", "", str(n)) for n in cv[k] if n not in ['中国', '0']]))
+        cv[k] = list(set([re.sub("(市)$", "", str(n)) for n in cv[k] if n not in ["中国", "0"]]))
     keys = [k for k in cv.keys() if re.search(r"_feas*$", k)]
     for k in keys:
         if cv[k] <= 0:

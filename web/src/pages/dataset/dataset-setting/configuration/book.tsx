@@ -7,13 +7,15 @@ import {
   ConfigurationFormContainer,
   MainContainer,
 } from '../configuration-form-container';
+import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
 import { AutoMetadata } from './common-item';
 
 export function BookConfiguration() {
+  const ownerTenantId = useKnowledgeBaseContext().knowledgeBase?.tenant_id;
   return (
     <MainContainer>
       <ConfigurationFormContainer>
-        <LayoutRecognizeFormField></LayoutRecognizeFormField>
+        <LayoutRecognizeFormField ownerTenantId={ownerTenantId}></LayoutRecognizeFormField>
       </ConfigurationFormContainer>
 
       <ConfigurationFormContainer>

@@ -13,10 +13,13 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import logging
+import os
 from abc import ABC
 import asyncio
-from crawl4ai import AsyncWebCrawler
-from agent.tools.base import ToolParamBase, ToolBase
+from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
+from agent.tools.base import ToolMeta, ToolParamBase, ToolBase
+from common.connection_utils import timeout
 
 
 class CrawlerParam(ToolParamBase):
@@ -25,6 +28,18 @@ class CrawlerParam(ToolParamBase):
     """
 
     def __init__(self):
+        self.meta: ToolMeta = {
+            "name": "web_crawler",
+            "description": "This tool can be used to crawl a web page and return its content as HTML, Markdown, or the extracted main text.",
+            "parameters": {
+                "query": {
+                    "type": "string",
+                    "description": "The absolute URL (including the http:// or https:// scheme) of the web page to crawl.",
+                    "default": "{sys.query}",
+                    "required": True,
+                }
+            },
+        }
         super().__init__()
         self.proxy = None
         self.extract_type = "markdown"
@@ -32,37 +47,70 @@ class CrawlerParam(ToolParamBase):
     def check(self):
         self.check_valid_value(self.extract_type, "Type of content from the crawler", ["html", "markdown", "content"])
 
+    def get_input_form(self) -> dict[str, dict]:
+        return {"query": {"name": "URL", "type": "line"}}
+
 
 class Crawler(ToolBase, ABC):
     component_name = "Crawler"
 
-    def _run(self, history, **kwargs):
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
+    def _invoke(self, **kwargs):
         from common.ssrf_guard import assert_url_is_safe, pin_dns_global
 
-        ans = self.get_input()
-        ans = " - ".join(ans["content"]) if "content" in ans else ""
+        if self.check_if_canceled("Crawler processing"):
+            return
+
+        url = kwargs.get("query")
+        if not url:
+            self.set_output("formalized_content", "")
+            return ""
+
         try:
-            _ssrf_hostname, _ssrf_ip = assert_url_is_safe(ans)
+            _ssrf_hostname, _ssrf_ip = assert_url_is_safe(url)
         except ValueError:
-            return Crawler.be_output("URL not valid")
+            msg = "URL not valid"
+            self.set_output("_ERROR", msg)
+            return msg
+
         try:
             # pin_dns_global is used (not thread-local) because crawl4ai resolves
             # DNS in asyncio executor threads that don't share thread-local state.
             with pin_dns_global(_ssrf_hostname, _ssrf_ip):
-                result = asyncio.run(self.get_web(ans))
+                result = asyncio.run(self.get_web(url))
 
-            return Crawler.be_output(result)
+            if self.check_if_canceled("Crawler processing"):
+                return
 
+            result = result or ""
+            self.set_output("formalized_content", result)
+            return result
         except Exception as e:
-            return Crawler.be_output(f"An unexpected error occurred: {str(e)}")
+            if self.check_if_canceled("Crawler processing"):
+                return
+
+            logging.exception(f"Crawler error: {e}")
+            msg = f"An unexpected error occurred: {str(e)}"
+            self.set_output("_ERROR", msg)
+            return msg
 
     async def get_web(self, url):
         if self.check_if_canceled("Crawler async operation"):
             return
 
         proxy = self._param.proxy if self._param.proxy else None
-        async with AsyncWebCrawler(verbose=True, proxy=proxy) as crawler:
-            result = await crawler.arun(url=url, bypass_cache=True)
+
+        browser_config = BrowserConfig(
+            verbose=True,
+            proxy_config=proxy,
+        )
+
+        run_config = CrawlerRunConfig(
+            cache_mode=CacheMode.BYPASS,
+        )
+
+        async with AsyncWebCrawler(config=browser_config) as crawler:
+            result = await crawler.arun(url=url, config=run_config)
 
             if self.check_if_canceled("Crawler async operation"):
                 return

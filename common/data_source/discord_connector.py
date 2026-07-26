@@ -281,12 +281,12 @@ class DiscordConnector(LoadConnector, PollConnector, SlimConnectorWithPermSync):
             id = doc_batch[0].id
             min_updated_at = doc_batch[0].doc_updated_at
             max_updated_at = doc_batch[-1].doc_updated_at
-            blob = b''
+            blob = b""
             size_bytes = 0
             for d in doc_batch:
                 min_updated_at = min(min_updated_at, d.doc_updated_at)
                 max_updated_at = max(max_updated_at, d.doc_updated_at)
-                blob += b'\n\n' + d.blob
+                blob += b"\n\n" + d.blob
                 size_bytes += d.size_bytes
 
             return Document(

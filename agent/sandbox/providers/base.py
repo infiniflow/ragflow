@@ -33,6 +33,7 @@ class SandboxProviderConfigError(Exception):
 @dataclass
 class SandboxInstance:
     """Represents a sandbox execution instance"""
+
     instance_id: str
     provider: str
     status: str  # running, stopped, error
@@ -46,6 +47,7 @@ class SandboxInstance:
 @dataclass
 class ExecutionResult:
     """Result of code execution in a sandbox"""
+
     stdout: str
     stderr: str
     exit_code: int
@@ -96,14 +98,7 @@ class SandboxProvider(ABC):
         pass
 
     @abstractmethod
-    def execute_code(
-        self,
-        instance_id: str,
-        code: str,
-        language: str,
-        timeout: int = 10,
-        arguments: Optional[Dict[str, Any]] = None
-    ) -> ExecutionResult:
+    def execute_code(self, instance_id: str, code: str, language: str, timeout: int = 10, arguments: Optional[Dict[str, Any]] = None) -> ExecutionResult:
         """
         Execute code in a sandbox instance.
 

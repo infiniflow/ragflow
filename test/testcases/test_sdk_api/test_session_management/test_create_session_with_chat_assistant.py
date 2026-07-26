@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
 from common import list_all_sessions
-from configs import SESSION_WITH_CHAT_NAME_LIMIT
+from configs import HOST_ADDRESS, SESSION_WITH_CHAT_NAME_LIMIT
 from ragflow_sdk import RAGFlow
 from ragflow_sdk.modules.session import Session
 
@@ -32,10 +32,9 @@ class _DummyStreamResponse:
             yield line
 
 
-
 @pytest.mark.usefixtures("clear_session_with_chat_assistants")
 class TestSessionWithChatAssistantCreate:
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, expected_message",
         [
@@ -92,7 +91,7 @@ class TestSessionWithChatAssistantCreate:
 
 @pytest.mark.p2
 def test_session_module_streaming_and_helper_paths_unit(monkeypatch):
-    client = RAGFlow("token", "http://localhost:9380")
+    client = RAGFlow("token", HOST_ADDRESS)
     chat_session = Session(client, {"id": "session-chat", "chat_id": "chat-1"})
     chat_done_session = Session(client, {"id": "session-chat-done", "chat_id": "chat-1"})
     agent_session = Session(client, {"id": "session-agent", "agent_id": "agent-1"})
@@ -128,9 +127,7 @@ def test_session_module_streaming_and_helper_paths_unit(monkeypatch):
     monkeypatch.setattr(
         chat_done_session,
         "post",
-        lambda *_args, **_kwargs: _DummyStreamResponse(
-            ['{"data":{"answer":"chat-done","reference":{"chunks":[]}}}', "data: [DONE]"]
-        ),
+        lambda *_args, **_kwargs: _DummyStreamResponse(['{"data":{"answer":"chat-done","reference":{"chunks":[]}}}', "data: [DONE]"]),
     )
     monkeypatch.setattr(agent_session, "post", _agent_post)
 

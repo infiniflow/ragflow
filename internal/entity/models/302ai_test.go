@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 )
@@ -88,15 +89,18 @@ func TestAI302ChatForcesNonStreaming(t *testing.T) {
 		})
 	})
 	defer srv.Close()
+	ctx := t.Context()
 
 	apiKey := "test-key"
 	stream := true
 	thinking := true
 	resp, err := newAI302ForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"gpt-5",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream, Thinking: &thinking},
+		&common.ModelUsage{},
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -129,15 +133,18 @@ func TestAI302StreamForcesStreaming(t *testing.T) {
 		}, "\n"))
 	})
 	defer srv.Close()
+	ctx := t.Context()
 
 	apiKey := "test-key"
 	stream := false
 	var content, reasoning []string
 	err := newAI302ForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"gpt-5",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
+		nil,
 		func(answer, reason *string) error {
 			if answer != nil {
 				content = append(content, *answer)
@@ -175,9 +182,10 @@ func TestAI302ListModelsHappyPath(t *testing.T) {
 		})
 	})
 	defer srv.Close()
+	ctx := t.Context()
 
 	apiKey := "test-key"
-	models, err := newAI302ForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey})
+	models, err := newAI302ForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -193,12 +201,13 @@ func TestAI302ListModelsRejectsMalformedResponse(t *testing.T) {
 		"empty id":     map[string]interface{}{"data": []map[string]string{{"id": ""}}},
 	} {
 		t.Run(name, func(t *testing.T) {
+			ctx := t.Context()
 			srv := newAI302Server(t, func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 				_ = json.NewEncoder(w).Encode(response)
 			})
 			defer srv.Close()
 
-			if _, err := newAI302ForTest(srv.URL).ListModels(&APIConfig{ApiKey: &apiKey}); err == nil {
+			if _, err := newAI302ForTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey}); err == nil {
 				t.Fatal("expected malformed response error")
 			}
 		})
@@ -223,9 +232,10 @@ func TestAI302ShowTaskEscapesTaskID(t *testing.T) {
 		})
 	})
 	defer srv.Close()
+	ctx := t.Context()
 
 	apiKey := "test-key"
-	resp, err := newAI302ForTest(srv.URL).ShowTask(" task/with?query#fragment ", &APIConfig{ApiKey: &apiKey})
+	resp, err := newAI302ForTest(srv.URL).ShowTask(ctx, " task/with?query#fragment ", &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ShowTask: %v", err)
 	}
@@ -243,7 +253,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 	docURL := "https://example.com/doc.pdf"
 	invalidURL := "ftp://example.com/doc.pdf"
 	send := func(*string, *string) error { return nil }
-
+	ctx := t.Context()
 	tests := []struct {
 		name string
 		run  func() error
@@ -252,7 +262,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "chat api key",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil)
+				_, err := newAI302ForTest("http://unused").ChatWithMessages(ctx, "gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, &ChatConfig{}, &common.ModelUsage{})
 				return err
 			},
 			want: "api key is required",
@@ -260,7 +270,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "chat model",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").ChatWithMessages("  ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").ChatWithMessages(ctx, "  ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, &ChatConfig{}, &common.ModelUsage{})
 				return err
 			},
 			want: "model name is required",
@@ -268,21 +278,21 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "stream api key",
 			run: func() error {
-				return newAI302ForTest("http://unused").ChatStreamlyWithSender("gpt-5", []Message{{Role: "user", Content: "x"}}, nil, nil, send)
+				return newAI302ForTest("http://unused").ChatStreamlyWithSender(ctx, "gpt-5", []Message{{Role: "user", Content: "x"}}, nil, nil, nil, send)
 			},
 			want: "api key is required",
 		},
 		{
 			name: "stream sender",
 			run: func() error {
-				return newAI302ForTest("http://unused").ChatStreamlyWithSender("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+				return newAI302ForTest("http://unused").ChatStreamlyWithSender(ctx, "gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 			},
 			want: "sender is required",
 		},
 		{
 			name: "embed model",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").Embed(nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").Embed(ctx, nil, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",
@@ -290,7 +300,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "rerank api key",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").Rerank(&model, "q", []string{"doc"}, nil, nil)
+				_, err := newAI302ForTest("http://unused").Rerank(ctx, &model, "q", []string{"doc"}, nil, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -298,7 +308,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "rerank query",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").Rerank(&model, "  ", []string{"doc"}, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").Rerank(ctx, &model, "  ", []string{"doc"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "query is required",
@@ -306,7 +316,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "asr model",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").TranscribeAudio(nil, &docURL, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").TranscribeAudio(ctx, nil, &docURL, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "model name is required",
@@ -314,7 +324,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "asr file",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").TranscribeAudio(&model, &file, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").TranscribeAudio(ctx, &model, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "file is missing",
@@ -322,7 +332,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "ocr api key",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").OCRFile(&model, nil, &docURL, nil, nil)
+				_, err := newAI302ForTest("http://unused").OCRFile(ctx, &model, nil, &docURL, nil, nil, nil)
 				return err
 			},
 			want: "api key is required",
@@ -330,7 +340,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "ocr input",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").OCRFile(&model, nil, &blankURL, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").OCRFile(ctx, &model, nil, &blankURL, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "file url or content is required",
@@ -338,7 +348,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "ocr invalid url",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").OCRFile(&model, nil, &invalidURL, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").OCRFile(ctx, &model, nil, &invalidURL, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "invalid document URL",
@@ -346,7 +356,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "parse file url",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").ParseFile(&model, nil, &blankURL, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").ParseFile(ctx, &model, nil, &blankURL, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "valid public document URL",
@@ -354,7 +364,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "parse file invalid url",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").ParseFile(&model, nil, &invalidURL, &APIConfig{ApiKey: &apiKey}, nil)
+				_, err := newAI302ForTest("http://unused").ParseFile(ctx, &model, nil, &invalidURL, &APIConfig{ApiKey: &apiKey}, nil, nil)
 				return err
 			},
 			want: "invalid document URL",
@@ -362,7 +372,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "models api key",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").ListModels(&APIConfig{})
+				_, err := newAI302ForTest("http://unused").ListModels(ctx, &APIConfig{})
 				return err
 			},
 			want: "api key is required",
@@ -370,7 +380,7 @@ func TestAI302ValidatesInputs(t *testing.T) {
 		{
 			name: "show task id",
 			run: func() error {
-				_, err := newAI302ForTest("http://unused").ShowTask("  ", &APIConfig{ApiKey: &apiKey})
+				_, err := newAI302ForTest("http://unused").ShowTask(ctx, "  ", &APIConfig{ApiKey: &apiKey})
 				return err
 			},
 			want: "task id is required",

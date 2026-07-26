@@ -1,0 +1,267 @@
+{
+  "globals": {
+    "sys.conversation_turns": 0,
+    "sys.date": "",
+    "sys.files": [],
+    "sys.history": [],
+    "sys.query": "",
+    "sys.user_id": ""
+  },
+  "graph": {
+    "edges": [
+      {
+        "id": "xy-edge__beginstart-Agent:GentleCrabsWriteend",
+        "source": "begin",
+        "sourceHandle": "start",
+        "target": "Agent:GentleCrabsWrite",
+        "targetHandle": "end"
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Agent:GentleCrabsWriteagentBottom-Agent:PlentyParrotsCampagentTop",
+        "source": "Agent:GentleCrabsWrite",
+        "sourceHandle": "agentBottom",
+        "target": "Agent:PlentyParrotsCamp",
+        "targetHandle": "agentTop"
+      },
+      {
+        "id": "xy-edge__Agent:PlentyParrotsCamptool-Tool:HugeSingersRingend",
+        "source": "Agent:PlentyParrotsCamp",
+        "sourceHandle": "tool",
+        "target": "Tool:HugeSingersRing",
+        "targetHandle": "end"
+      },
+      {
+        "id": "xy-edge__Agent:GentleCrabsWritestart-Message:FieryDragonsTryend",
+        "source": "Agent:GentleCrabsWrite",
+        "sourceHandle": "start",
+        "target": "Message:FieryDragonsTry",
+        "targetHandle": "end"
+      }
+    ],
+    "nodes": [
+      {
+        "data": {
+          "form": {
+            "mode": "conversational",
+            "prologue": "Hi! I'm your assistant. What can I do for you?"
+          },
+          "label": "Begin",
+          "name": "begin"
+        },
+        "id": "begin",
+        "measured": {
+          "height": 81,
+          "width": 200
+        },
+        "position": {
+          "x": 50,
+          "y": 200
+        },
+        "selected": false,
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "type": "beginNode"
+      },
+      {
+        "data": {
+          "form": {
+            "cite": true,
+            "delay_after_error": 1,
+            "description": "",
+            "exception_default_value": "",
+            "exception_goto": [],
+            "exception_method": "",
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "llm_id": "MiniMax-M2.7@MiniMax",
+            "maxTokensEnabled": false,
+            "max_retries": 3,
+            "max_rounds": 1,
+            "max_tokens": 256,
+            "mcp": [],
+            "message_history_window_size": 12,
+            "outputs": {
+              "content": {
+                "type": "string",
+                "value": ""
+              }
+            },
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompts": [
+              {
+                "content": "{sys.query}",
+                "role": "user"
+              }
+            ],
+            "showStructuredOutput": false,
+            "sys_prompt": "​根据用户任务调用对应的agent，输出时保留调用过程",
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "tools": [],
+            "topPEnabled": true,
+            "top_p": 0.3,
+            "user_prompt": "",
+            "visual_files_var": ""
+          },
+          "label": "Agent",
+          "name": "智能体_0"
+        },
+        "dragging": false,
+        "id": "Agent:GentleCrabsWrite",
+        "measured": {
+          "height": 89,
+          "width": 200
+        },
+        "position": {
+          "x": 326.7451592673202,
+          "y": 190.77995887492588
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "agentNode"
+      },
+      {
+        "data": {
+          "form": {
+            "cite": true,
+            "delay_after_error": 1,
+            "description": "这是一个用于特定任务的代理。",
+            "exception_default_value": "",
+            "exception_goto": [],
+            "exception_method": "",
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "llm_id": "deepseek-v4-pro@DeepSeek",
+            "maxTokensEnabled": false,
+            "max_retries": 3,
+            "max_rounds": 1,
+            "max_tokens": 256,
+            "mcp": [
+              {
+                "mcp_id": "841a643058f411f1b35d9d889eb78c1a",
+                "tools": {
+                  "maps_weather": {
+                    "annotations": null,
+                    "description": "根据城市名称或者标准adcode查询指定城市的天气",
+                    "enabled": true,
+                    "icons": null,
+                    "inputSchema": {
+                      "properties": {
+                        "city": {
+                          "description": "城市名称或者adcode",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "city"
+                      ],
+                      "type": "object"
+                    },
+                    "meta": null,
+                    "name": "maps_weather",
+                    "outputSchema": null,
+                    "title": null
+                  }
+                }
+              }
+            ],
+            "message_history_window_size": 12,
+            "outputs": {
+              "content": {
+                "type": "string",
+                "value": ""
+              }
+            },
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompts": [
+              {
+                "content": "{sys.query}",
+                "role": "user"
+              }
+            ],
+            "showStructuredOutput": false,
+            "sys_prompt": "\n      <role>\n        You are a helpful assistant, an AI assistant specialized in problem-solving for the user.\n        If a specific domain is provided, adapt your expertise to that domain; otherwise, operate as a generalist.\n      </role>\n      <instructions>\n        1. Understand the user’s request.\n        2. Decompose it into logical subtasks.\n        3. Execute each subtask step by step, reasoning transparently.\n        4. Validate accuracy and consistency.\n        5. Summarize the final result clearly.\n      </instructions>",
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "tools": [],
+            "topPEnabled": true,
+            "top_p": 0.3,
+            "user_prompt": "This is the order you need to send to the agent.",
+            "visual_files_var": ""
+          },
+          "label": "Agent",
+          "name": "天气agent"
+        },
+        "dragging": false,
+        "id": "Agent:PlentyParrotsCamp",
+        "measured": {
+          "height": 89,
+          "width": 200
+        },
+        "position": {
+          "x": 224.74515926732022,
+          "y": 326.7799588749259
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "agentNode"
+      },
+      {
+        "data": {
+          "form": {
+            "description": "这是一个用于特定任务的代理。",
+            "user_prompt": "This is the order you need to send to the agent."
+          },
+          "label": "Tool",
+          "name": "flow.tool_0"
+        },
+        "id": "Tool:HugeSingersRing",
+        "measured": {
+          "height": 45,
+          "width": 200
+        },
+        "position": {
+          "x": 142.74515926732022,
+          "y": 466.7799588749259
+        },
+        "selected": true,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "toolNode"
+      },
+      {
+        "data": {
+          "form": {
+            "content": [
+              "{Agent:GentleCrabsWrite@content}"
+            ]
+          },
+          "label": "Message",
+          "name": "回复消息_0"
+        },
+        "dragging": false,
+        "id": "Message:FieryDragonsTry",
+        "measured": {
+          "height": 85,
+          "width": 200
+        },
+        "position": {
+          "x": 618.4772366605233,
+          "y": 254.04849460706328
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "messageNode"
+      }
+    ]
+  },
+  "variables": []
+}

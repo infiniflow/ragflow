@@ -12,6 +12,7 @@ import { isEmpty } from 'lodash';
 import { useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useOwnerTenantId } from '../../context';
 import {
   FlattenMediaToTextFormField,
   ParserMethodFormField,
@@ -32,6 +33,7 @@ const markdownImageResponseTypeOptions: SelectWithSearchFlagOptionType[] = [
 export function SpreadsheetFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
   const form = useFormContext();
+  const ownerTenantId = useOwnerTenantId();
 
   const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
 
@@ -106,6 +108,7 @@ export function SpreadsheetFormFields({ prefix }: CommonProps) {
           label={t('chat.model')}
           modelTypes={ModelTypeMap.img2txt_id}
           allowClear
+          ownerTenantId={ownerTenantId}
         />
       )}
       {tcadpOptionsShown && (

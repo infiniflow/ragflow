@@ -210,7 +210,7 @@ def _load_llm_app(monkeypatch):
 
     api_utils_mod.get_request_json = _get_request_json
     api_utils_mod.server_error_response = lambda exc: {"code": 500, "message": str(exc), "data": None}
-    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda fn: fn)
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda fn: fn
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     constants_mod = ModuleType("common.constants")
@@ -218,8 +218,8 @@ def _load_llm_app(monkeypatch):
     constants_mod.LLMType = SimpleNamespace(
         CHAT=_StrEnum("chat"),
         EMBEDDING=_StrEnum("embedding"),
-        SPEECH2TEXT=_StrEnum("speech2text"),
-        IMAGE2TEXT=_StrEnum("image2text"),
+        ASR=_StrEnum("asr"),
+        VISION=_StrEnum("vision"),
         RERANK=_StrEnum("rerank"),
         TTS=_StrEnum("tts"),
         OCR=_StrEnum("ocr"),
@@ -819,7 +819,7 @@ def test_add_llm_model_type_probe_and_persistence_matrix_unit(monkeypatch):
     assert res["code"] == 0
     assert "Fail to access model(FRFail/m)." in res["data"]["message"]
 
-    res = _call({"llm_factory": "FImgFail", "llm_name": "m", "model_type": module.LLMType.IMAGE2TEXT.value, "verify": True})
+    res = _call({"llm_factory": "FImgFail", "llm_name": "m", "model_type": module.LLMType.VISION.value, "verify": True})
     assert res["code"] == 0
     assert "Fail to access model(FImgFail/m)." in res["data"]["message"]
 
@@ -831,7 +831,7 @@ def test_add_llm_model_type_probe_and_persistence_matrix_unit(monkeypatch):
     assert res["code"] == 0
     assert "Fail to access model(FOcrFail/m)." in res["data"]["message"]
 
-    res = _call({"llm_factory": "FSttFail", "llm_name": "m", "model_type": module.LLMType.SPEECH2TEXT.value, "verify": True})
+    res = _call({"llm_factory": "FSttFail", "llm_name": "m", "model_type": module.LLMType.ASR.value, "verify": True})
     assert res["code"] == 0
     assert "Fail to access model(FSttFail/m)." in res["data"]["message"]
 
