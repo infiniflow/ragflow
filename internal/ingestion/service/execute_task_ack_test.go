@@ -133,7 +133,7 @@ func TestExecuteTask_AcksMessageOnContextCancel(t *testing.T) {
 	cancel()
 
 	handle := &fakeTaskHandle{}
-	ingestor.executeTask(t.Context(), newAckTaskCtx(ctx, taskID, docID, handle))
+	ingestor.executeTask(ctx, newAckTaskCtx(t.Context(), taskID, docID, handle))
 
 	if runCalled {
 		t.Fatal("expected runDocumentTask to be skipped on cancelled ctx")

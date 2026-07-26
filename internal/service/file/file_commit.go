@@ -83,7 +83,7 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 
 	// All DB operations run inside a single transaction.
 	var treeStr string
-	if err := dao.DB.Transaction(func(tx *gorm.DB) error {
+	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Save commit
 		if err := tx.Create(commit).Error; err != nil {
 			return fmt.Errorf("failed to create commit: %w", err)
