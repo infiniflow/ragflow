@@ -126,7 +126,7 @@ func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []strin
 		},
 	}
 
-	searchResult, err := s.docEngine.SearchMetadata(context.Background(), searchReq)
+	searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}

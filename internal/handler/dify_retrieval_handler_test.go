@@ -64,20 +64,20 @@ func (m *mockKBService) Accessible(ctx context.Context, kbID, userID string) boo
 
 type mockModelService struct {
 	ModelServiceIface
-	getEmbeddingFn func(tenantID, embdID string) (*modelModule.EmbeddingModel, error)
-	getChatModelFn func(tenantID, llmID string) (*modelModule.ChatModel, error)
+	getEmbeddingFn func(ctx context.Context, tenantID, embdID string) (*modelModule.EmbeddingModel, error)
+	getChatModelFn func(ctx context.Context, tenantID, llmID string) (*modelModule.ChatModel, error)
 }
 
 func (m *mockModelService) GetEmbeddingModel(ctx context.Context, tenantID, embdID string) (*modelModule.EmbeddingModel, error) {
 	if m.getEmbeddingFn != nil {
-		return m.getEmbeddingFn(tenantID, embdID)
+		return m.getEmbeddingFn(ctx, tenantID, embdID)
 	}
 	return &modelModule.EmbeddingModel{}, nil
 }
 
-func (m *mockModelService) GetChatModel(tenantID, llmID string) (*modelModule.ChatModel, error) {
+func (m *mockModelService) GetChatModel(ctx context.Context, tenantID, llmID string) (*modelModule.ChatModel, error) {
 	if m.getChatModelFn != nil {
-		return m.getChatModelFn(tenantID, llmID)
+		return m.getChatModelFn(ctx, tenantID, llmID)
 	}
 	return &modelModule.ChatModel{}, nil
 }

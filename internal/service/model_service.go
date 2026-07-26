@@ -3198,7 +3198,7 @@ func (m *ModelProviderService) GetEmbeddingModel(ctx context.Context, tenantID, 
 }
 
 // GetChatModel  returns a ChatModel wrapper for the given tenant
-func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string) (*modelModule.ChatModel, error) {
+func (m *ModelProviderService) GetChatModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.ChatModel, error) {
 	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(tenantID, entity.ModelTypeChat, compositeModelName)
 	if err != nil {
 		return nil, err

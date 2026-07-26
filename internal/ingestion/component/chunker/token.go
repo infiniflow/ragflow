@@ -149,10 +149,10 @@ func (c *TokenChunkerComponent) Outputs() map[string]string { return ChunkerOutp
 // Timeout: honours ctx cancellation only — there is no inner @timeout
 // decorator equivalent (plan §8 R1).
 func (c *TokenChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	return c.invoke(ctx, inputs)
+	return c.invoke(ctx, db, inputs)
 }
 
-func (c *TokenChunkerComponent) invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
@@ -213,7 +213,7 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 		// refs) so image/table sections are cropped on demand rather
 		// than carried through the wire. Best-effort: a nil engine
 		// simply skips cropping.
-		engine, engErr := newPDFEngineFromUpstream(ctx, upstream)
+		engine, engErr := newPDFEngineFromUpstream(ctx, db, upstream)
 		if engErr != nil {
 			slog.Warn("TokenChunker: could not open PDF for on-demand cropping", "err", engErr)
 		}

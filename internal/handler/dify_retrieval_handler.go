@@ -50,7 +50,7 @@ type KBServiceIface interface {
 // ModelServiceIface abstracts ModelProviderService for the Dify handler.
 type ModelServiceIface interface {
 	GetEmbeddingModel(ctx context.Context, tenantID, embdID string) (*modelModule.EmbeddingModel, error)
-	GetChatModel(tenantID, compositeModelName string) (*modelModule.ChatModel, error)
+	GetChatModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.ChatModel, error)
 }
 
 // MetadataServiceIface abstracts MetadataService for the Dify handler.
@@ -291,7 +291,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 	// KG retrieval (optional)
 	if req.UseKG {
-		chatModel, kgErr := h.modelSvc.GetChatModel(kb.TenantID, "")
+		chatModel, kgErr := h.modelSvc.GetChatModel(ctx, kb.TenantID, "")
 		if kgErr != nil {
 			common.Warn("KG retrieval: failed to get chat model", zap.String("kbID", req.KnowledgeID), zap.Error(kgErr))
 		} else if chatModel != nil {

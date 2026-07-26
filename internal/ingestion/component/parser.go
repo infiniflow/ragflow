@@ -395,7 +395,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 // in input order).
 func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// 1. Decode the binary input.
-	binary, err := readParserBinary(ctx, inputs)
+	binary, err := readParserBinary(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -619,7 +619,7 @@ func buildPagesFromBytes(ctx context.Context, pages [][]byte, docType string) ([
 // A non-UTF-8 string is rejected with a clear error so a caller
 // that mistakenly hands a base64 string sees the failure
 // immediately (mirrors pipeline_chunker's "no try-base64" rule).
-func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error) {
+func readParserBinary(ctx context.Context, db *gorm.DB, inputs map[string]any) ([]byte, error) {
 	if inputs == nil {
 		return nil, nil
 	}
@@ -629,8 +629,8 @@ func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error
 	if s, ok := inputs["binary"].(string); ok {
 		if !utf8.ValidString(s) {
 			return nil, errors.New(
-				"Parser: binary string is not valid UTF-8. " +
-					"Text-page mode only accepts UTF-8 text input.")
+				"parser: binary string is not valid UTF-8. " +
+					"Text-page mode only accepts UTF-8 text input")
 		}
 		return []byte(s), nil
 	}
@@ -640,7 +640,7 @@ func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error
 		return FetchBinary(ctx, bucket, path)
 	}
 	if docID, ok := getString(inputs, "doc_id"); ok && docID != "" {
-		ref, err := ResolveDocumentStorage(ctx, docID)
+		ref, err := ResolveDocumentStorage(ctx, db, docID)
 		if err != nil {
 			return nil, fmt.Errorf("Parser: resolve doc_id %q: %w", docID, err)
 		}

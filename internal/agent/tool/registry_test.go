@@ -118,7 +118,7 @@ func TestBuildAll_ExeSQLRequiresNodeParams(t *testing.T) {
 
 // TestToolRegistry_SchemasAreComplete sweeps every name the public
 // registry advertises (including the execute_sql/exesql and
-// retrieval/search_my_dataset alias pairs), builds the tool, and
+// retrieval/search_my_dateset alias pairs), builds the tool, and
 // asserts that its Info() returns a complete schema — non-empty
 // Name and Desc, non-nil ParamsOneOf, and a consistent canonical
 // name across alias entries. Catches drift like "tool renamed but

@@ -380,7 +380,7 @@ func (s *TenantService) CreateChunkStore(ctx context.Context, req *CreateDataset
 
 	// Call document engine to create table
 	// Full table name will be built as "{tableName}_{kb_id}"
-	err = s.docEngine.CreateChunkStore(context.Background(), tableName, req.KBID, vecSize, req.ParserID)
+	err = s.docEngine.CreateChunkStore(ctx, tableName, req.KBID, vecSize, req.ParserID)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create dataset: %w", err)
 	}
@@ -404,7 +404,7 @@ func (s *TenantService) DeleteChunkStore(ctx context.Context, kbID string) (comm
 	}
 
 	// Call document engine to delete table
-	err = s.docEngine.DropChunkStore(context.Background(), fmt.Sprintf("ragflow_%s", kb.TenantID), kbID)
+	err = s.docEngine.DropChunkStore(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), kbID)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to delete table: %w", err)
 	}
