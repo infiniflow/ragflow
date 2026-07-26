@@ -172,7 +172,7 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		zap.Any("merged", merged),
 	)
 	argsJSON, _ := json.Marshal(merged)
-	out, err := c.inner.InvokableRun(ctx, db, string(argsJSON))
+	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("canvas: Retrieval: %w", err)
 	}

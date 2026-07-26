@@ -118,7 +118,7 @@ func TestBuildAll_ExeSQLRequiresNodeParams(t *testing.T) {
 
 // TestToolRegistry_SchemasAreComplete sweeps every name the public
 // registry advertises (including the execute_sql/exesql and
-// retrieval/search_my_dateset alias pairs), builds the tool, and
+// retrieval/search_my_dataset alias pairs), builds the tool, and
 // asserts that its Info() returns a complete schema — non-empty
 // Name and Desc, non-nil ParamsOneOf, and a consistent canonical
 // name across alias entries. Catches drift like "tool renamed but
@@ -188,7 +188,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 
 	// Alias consistency: execute_sql and exesql must surface the
 	// same canonical Info().Name; same for retrieval/search_my_dataset/
-	// search_my_dateset and crawler/web_crawler. A bug here would mean
+	// search_my_dataset and crawler/web_crawler. A bug here would mean
 	// an alias was accidentally pointed at a different tool.
 	canonicalByAlias := map[string]string{
 		"execute_sql":           "execute_sql",

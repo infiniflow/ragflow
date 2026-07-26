@@ -41,7 +41,7 @@ class RetrievalParam(ToolParamBase):
 
     def __init__(self):
         self.meta: ToolMeta = {
-            "name": "search_my_dateset",
+            "name": "search_my_dataset",
             "description": "This tool can be utilized for relevant content searching in the datasets.",
             "parameters": {
                 "query": {
@@ -53,7 +53,7 @@ class RetrievalParam(ToolParamBase):
             },
         }
         super().__init__()
-        self.function_name = "search_my_dateset"
+        self.function_name = "search_my_dataset"
         self.description = "This tool can be utilized for relevant content searching in the datasets."
         self.similarity_threshold = 0.2
         self.keywords_similarity_weight = 0.5

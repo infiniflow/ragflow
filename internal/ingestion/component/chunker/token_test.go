@@ -52,7 +52,7 @@ func TestTokenChunker_InvokeEmptyInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestTokenChunker_InvokeDelimMode_BasicChunking(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          "alpha\n\nbeta\n\ngamma",
@@ -110,7 +110,7 @@ func TestTokenChunker_DelimNeverStandaloneChunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          "alpha section\n666\nbeta section",
@@ -150,7 +150,7 @@ func TestTokenChunker_InvokeTokenSize_FallbackToMerge(t *testing.T) {
 	}
 	// Input without any \n\n so the delimiter miss branch triggers
 	// the token_size merge.
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          "First sentence. Second sentence. Third sentence. Fourth.",
@@ -179,7 +179,7 @@ func TestTokenChunker_InvokeChildrenDelim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          "alpha line\nbeta line",
@@ -209,7 +209,7 @@ func TestTokenChunker_InvokeJSONPayload(t *testing.T) {
 		{"text": "Alpha text\nBeta text", "doc_type_kwd": "text"},
 		{"text": "Gamma text\nDelta text", "doc_type_kwd": "text"},
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.md",
 		"output_format": "json",
 		"json":          items,
@@ -251,7 +251,7 @@ func TestTokenChunker_InvokeDeterministic(t *testing.T) {
 	}
 	var firstfp fingerprint
 	for run := 0; run < 10; run++ {
-		out, err := c.Invoke(context.Background(), inputs)
+		out, err := c.Invoke(context.Background(), nil, inputs)
 		if err != nil {
 			t.Fatalf("Invoke run %d: %v", run, err)
 		}
@@ -336,7 +336,7 @@ func TestTokenChunker_PrefersUpstreamChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.md",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "CHAPTER-AWARE", "doc_type_kwd": "text"}},

@@ -62,7 +62,7 @@ func TestDispatch_OutputFormatValidation_Allowed(t *testing.T) {
 	// Defaults already include markdown → {text, json}.
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("# Title\n\nbody\n"),
 		"doc_id":    "doc.md",
 		"file_type": "md",
@@ -116,7 +116,7 @@ func TestDispatch_OutputFormatValidation_Rejection(t *testing.T) {
 	// returns a FileType whose string form matches the setup key.
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("# Title\n"),
 		"file_type": "md",
 	})
@@ -142,7 +142,7 @@ func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 	setups := defaultSetups()
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary": []byte("plain content\n"),
 		"doc_id": "unknown",
 	})
@@ -167,7 +167,7 @@ func TestDispatch_SupportedFamilyFailure_HardErrors(t *testing.T) {
 	setups := defaultSetups()
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("PDF payload as bytes (not a real PDF — stub test)\n"),
 		"file_type": "pdf",
 	})
@@ -330,7 +330,7 @@ func TestDispatch_PDFMarkdown_UsesConfiguredOutputFormat(t *testing.T) {
 	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data,
 		"file_type": "pdf",
 		"name":      "Doc1.pdf",
@@ -363,7 +363,7 @@ func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 	setups["pdf"]["output_format"] = "json"
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data,
 		"file_type": "pdf",
 		"name":      "Doc1.pdf",
@@ -386,7 +386,7 @@ func TestDispatch_PDFUnsupportedParseMethod_HardErrors(t *testing.T) {
 	setups["pdf"]["parse_method"] = "CustomVLM"
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "bad.pdf",
@@ -457,7 +457,7 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 	setups["pdf"]["output_format"] = "json"
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "vision.pdf",
@@ -523,7 +523,7 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 	setups["pdf"]["output_format"] = "json"
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "vision.pdf",
@@ -572,7 +572,7 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	setups["pdf"]["output_format"] = "markdown"
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
@@ -664,7 +664,7 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesConfiguredBackend(t *testing.T) {
 	setups["pdf"]["paddleocr_api_key"] = "paddle-secret"
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
@@ -713,7 +713,7 @@ func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
 	setups["pdf"]["docling_api_key"] = "doc-secret"
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
@@ -751,7 +751,7 @@ func TestDispatch_PDFOpenDataLoaderMarkdown_UsesConfiguredBackend(t *testing.T) 
 	setups["pdf"]["opendataloader_apiserver"] = server.URL
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
@@ -785,7 +785,7 @@ func TestDispatch_PDFSoMarkMarkdown_UsesConfiguredBackend(t *testing.T) {
 	setups["pdf"]["somark_base_url"] = server.URL
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
@@ -821,7 +821,7 @@ func TestDispatch_PDFTCADPMarkdown_UsesConfiguredBackend(t *testing.T) {
 	setups["pdf"]["tcadp_apiserver"] = server.URL
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",

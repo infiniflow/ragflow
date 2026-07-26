@@ -242,7 +242,7 @@ func TestBrowser_E2E_Extract(t *testing.T) {
 	invokeCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	t.Logf("starting browser.Invoke (RunExtract) against %s (timeout 3m)", srv.URL)
-	out, err := c.Invoke(invokeCtx, nil)
+	out, err := c.Invoke(invokeCtx, nil, nil)
 	if err != nil {
 		t.Logf("extraction failed (best-effort): %v", err)
 		return

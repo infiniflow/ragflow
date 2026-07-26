@@ -60,8 +60,8 @@ func NewKnowledgebaseDAO() *KnowledgebaseDAO {
 }
 
 // Create creates a new knowledge base record
-func (dao *KnowledgebaseDAO) Create(kb *entity.Knowledgebase) error {
-	return DB.Create(kb).Error
+func (dao *KnowledgebaseDAO) Create(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) error {
+	return db.WithContext(ctx).Create(kb).Error
 }
 
 // Update updates a knowledge base record
