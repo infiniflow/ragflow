@@ -44,7 +44,9 @@ func TestUpdateSingleMemoryMessageWaitsForRefresh(t *testing.T) {
 	var gotRefresh string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/memory_tenant/_update/memory-1_42" {
-			t.Fatalf("path=%s, want /memory_tenant/_update/memory-1_42", r.URL.Path)
+			t.Errorf("path=%s, want /memory_tenant/_update/memory-1_42", r.URL.Path)
+			http.Error(w, "unexpected request path", http.StatusNotFound)
+			return
 		}
 		gotRefresh = r.URL.Query().Get("refresh")
 		w.Header().Set("X-Elastic-Product", "Elasticsearch")
