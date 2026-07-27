@@ -65,17 +65,6 @@ import (
 	models "ragflow/internal/entity/models"
 )
 
-// ErrEmbedderNotWired is returned by QueueSaveToMemoryTask when
-// the embedding-model call is reached. The Go runtime has no
-// embedding model port yet; until one lands, callers see this
-// error and know to fall back to the Python Canvas.
-var ErrEmbedderNotWired = errors.New(
-	"memory: embedder not wired in Go — " +
-		"QueueSaveToMemoryTask runs the lookup + message construction " +
-		"but cannot embed / save until internal/rag/llm/embedding_model " +
-		"ships (Phase 8b follow-up)",
-)
-
 // MemoryMessage is the wire shape for QueueSaveToMemoryTask. It
 // mirrors the Python `message_dict` built in
 // agent/component/message.py:_save_to_memory:
@@ -161,8 +150,8 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(
 		}
 		// (2) + (3) build the raw_message envelope. The Go port
 		// keeps the same field set as Python:344-386 so the
-		// downstream extractor (also still on the Python side)
-		// can consume the row without schema changes.
+		// downstream extractor can consume the row without
+		// schema changes.
 		rawMessageID := generateRawMessageID()
 		rawMessage := buildRawMessage(rawMessageID, memoryID, mem, msg)
 
@@ -254,31 +243,51 @@ func buildTaskRow(rawMessageID int64, memoryID string) map[string]any {
 }
 
 func (s *MemoryMessageService) embedAndSave(ctx context.Context, mem *CreateMemoryResponse, rawMessage map[string]any) error {
+	return s.embedAndSaveMessages(ctx, mem, []map[string]any{rawMessage})
+}
+
+// embedAndSaveMessages embeds every message's content with the memory's
+// embedding model and inserts the batch into the memory's chunk store,
+// creating the index on first use. Mirrors Python embed_and_save.
+func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *CreateMemoryResponse, messages []map[string]any) error {
 	if mem == nil {
 		return errors.New("memory not found")
 	}
 	if s == nil || s.memories == nil || s.memories.docEngine == nil {
 		return errors.New("message store is not initialized")
 	}
+	if len(messages) == 0 {
+		return nil
+	}
 
-	content, _ := rawMessage["content"].(string)
+	contents := make([]string, len(messages))
+	for i, message := range messages {
+		contents[i], _ = message["content"].(string)
+	}
 	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
 	if err != nil {
 		return err
 	}
 	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
-	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, []string{content}, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, contents, embeddingModel.APIConfig, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return err
 	}
-	if len(embeddings) == 0 || len(embeddings[0].Embedding) == 0 {
-		return errors.New("embedding response is empty")
+	if len(embeddings) != len(messages) {
+		return fmt.Errorf("embedding response count %d does not match message count %d", len(embeddings), len(messages))
 	}
 
-	vector := embeddings[0].Embedding
-	rawMessage[fmt.Sprintf("q_%d_vec", len(vector))] = vector
-	rawMessage["id"] = fmt.Sprintf("%s_%d", rawMessage["memory_id"], rawMessage["message_id"])
-	rawMessage["doc_id"] = rawMessage["memory_id"]
+	vectorDim := 0
+	for i, message := range messages {
+		vector := embeddings[i].Embedding
+		if len(vector) == 0 {
+			return errors.New("embedding response is empty")
+		}
+		vectorDim = len(vector)
+		message[fmt.Sprintf("q_%d_vec", len(vector))] = vector
+		message["id"] = fmt.Sprintf("%s_%v", message["memory_id"], message["message_id"])
+		message["doc_id"] = message["memory_id"]
+	}
 
 	indexName := memoryIndexName(mem.TenantID)
 	exists, err := s.memories.docEngine.ChunkStoreExists(ctx, indexName, mem.ID)
@@ -286,20 +295,19 @@ func (s *MemoryMessageService) embedAndSave(ctx context.Context, mem *CreateMemo
 		return fmt.Errorf("check message index: %w", err)
 	}
 	if !exists {
-		if err := s.memories.docEngine.CreateChunkStore(ctx, indexName, mem.ID, len(vector), ""); err != nil {
+		if err := s.memories.docEngine.CreateChunkStore(ctx, indexName, mem.ID, vectorDim, ""); err != nil {
 			return fmt.Errorf("create message index: %w", err)
 		}
 	}
-	if _, err := s.memories.docEngine.InsertChunks(ctx, []map[string]interface{}{mapStringAny(rawMessage)}, indexName, mem.ID); err != nil {
+	docs := make([]map[string]interface{}, len(messages))
+	for i, message := range messages {
+		docs[i] = mapStringAny(message)
+	}
+	if _, err := s.memories.docEngine.InsertChunks(ctx, docs, indexName, mem.ID); err != nil {
 		return fmt.Errorf("insert message into memory: %w", err)
 	}
 
 	return nil
-}
-
-// embedAndSave is kept for older unit tests; production uses the method above.
-func embedAndSave(_ context.Context, _ *CreateMemoryResponse, _ map[string]any) error {
-	return ErrEmbedderNotWired
 }
 
 func (s *MemoryMessageService) insertTask(_ context.Context, row map[string]any) error {

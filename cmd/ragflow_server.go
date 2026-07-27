@@ -510,6 +510,13 @@ func runIngestor(args *serverArgs) error {
 		}
 	}()
 
+	// Memory extraction consumer: drains task_type="memory" messages
+	// from the te.0.common Redis stream and runs LLM extraction.
+	memoryConsumerCtx, stopMemoryConsumer := context.WithCancel(context.Background())
+	defer stopMemoryConsumer()
+	memoryMessageSvc := service.NewMemoryMessageService(service.NewMemoryService())
+	go memoryMessageSvc.StartTaskConsumer(memoryConsumerCtx)
+
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
 

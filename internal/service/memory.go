@@ -187,6 +187,25 @@ func (PromptAssembler) AssembleSystemPrompt(memoryTypes []string) string {
 	return fullPrompt
 }
 
+// baseUserPromptTemplate is the default user prompt for memory extraction,
+// matching Python PromptAssembler.BASE_USER_PROMPT.
+const baseUserPromptTemplate = `
+**CONVERSATION:**
+{conversation}
+
+**CONVERSATION TIME:** {conversation_time}
+**CURRENT TIME:** {current_time}
+`
+
+// AssembleUserPrompt renders the default extraction user prompt with the
+// conversation content and timestamps.
+func (PromptAssembler) AssembleUserPrompt(conversation, conversationTime, currentTime string) string {
+	prompt := strings.Replace(baseUserPromptTemplate, "{conversation}", conversation, 1)
+	prompt = strings.Replace(prompt, "{conversation_time}", conversationTime, 1)
+	prompt = strings.Replace(prompt, "{current_time}", currentTime, 1)
+	return prompt
+}
+
 // getTypesToExtract filters out "raw" type and returns valid memory types
 //
 // Parameters:

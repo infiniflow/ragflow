@@ -51,6 +51,14 @@ func (dao *TaskDAO) GetByID(id string) (*entity.Task, error) {
 	return &task, nil
 }
 
+// UpdateProgress sets the progress and progress message of a task
+func (dao *TaskDAO) UpdateProgress(id string, progress float64, progressMsg string) error {
+	return DB.Model(&entity.Task{}).Where("id = ?", id).Updates(map[string]any{
+		"progress":     progress,
+		"progress_msg": progressMsg,
+	}).Error
+}
+
 // DeleteIngestionTasksByDocIDs deletes ingestion tasks by document IDs (hard delete)
 func (dao *TaskDAO) DeleteIngestionTasksByDocIDs(docIDs []string) (int64, error) {
 	if len(docIDs) == 0 {

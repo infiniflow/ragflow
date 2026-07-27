@@ -14,20 +14,15 @@
 //  limitations under the License.
 //
 
-// memory_message_service_test.go — Phase 8b real MemorySaver port
-// tests.
+// memory_message_service_test.go — MemorySaver port tests.
 //
 // Coverage focuses on the synchronous parts (memory lookup + raw
-// message construction + result aggregation). The embedder call
-// is exercised only to verify it loud-fails with
-// ErrEmbedderNotWired — the embedder port itself is a separate
-// follow-up.
+// message construction + result aggregation).
 
 package service
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"testing"
 )
@@ -144,18 +139,6 @@ func TestBuildTaskRow_Shape(t *testing.T) {
 	}
 	if id, _ := row["id"].(string); len(id) != 32 {
 		t.Errorf("id = %q, want 32-char uuid", id)
-	}
-}
-
-// TestEmbedAndSave_LoudFails: until the embedder port lands,
-// the call must return ErrEmbedderNotWired — not panic, not
-// silently succeed. A successful embed_and_save would mask the
-// deferred state and let callers persist data that never gets
-// embedded.
-func TestEmbedAndSave_LoudFails(t *testing.T) {
-	err := embedAndSave(context.Background(), nil, nil)
-	if !errors.Is(err, ErrEmbedderNotWired) {
-		t.Errorf("err = %v, want ErrEmbedderNotWired", err)
 	}
 }
 
