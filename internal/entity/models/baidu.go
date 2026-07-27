@@ -183,17 +183,15 @@ func (b *BaiduModel) ChatWithMessages(ctx context.Context, modelName string, mes
 		}
 
 		choice := &result.Choices[0]
-		if choice.Message.Content == nil {
-			return chatResponseParts{}, fmt.Errorf("invalid content format")
+		content := ""
+		if choice.Message.Content != nil {
+			content = *choice.Message.Content
 		}
-		content := *choice.Message.Content
-
 		reasonContent := ""
 		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
-			if choice.Message.ReasoningContent == nil {
-				return chatResponseParts{}, fmt.Errorf("invalid reasoning content format")
+			if choice.Message.ReasoningContent != nil {
+				reasonContent = *choice.Message.ReasoningContent
 			}
-			reasonContent = *choice.Message.ReasoningContent
 			if reasonContent != "" && reasonContent[0] == '\n' {
 				reasonContent = reasonContent[1:]
 			}
