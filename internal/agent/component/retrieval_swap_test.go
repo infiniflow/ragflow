@@ -96,6 +96,35 @@ func TestSearchMyDataset_AliasDelegatesToRealWrapper(t *testing.T) {
 	}
 }
 
+// TestRetrieval_EmptyResultFillsEmptyResponse pins the Python
+// parity fix: when the search returns no chunks, the component must
+// still surface `formalized_content` carrying the configured
+// empty_response — previously the output map was empty (only the
+// canvas-injected _created_time/_elapsed_time showed in the log),
+// and the downstream Agent concluded the knowledge base had no
+// relevant content without any visible reason.
+func TestRetrieval_EmptyResultFillsEmptyResponse(t *testing.T) {
+	prev := agenttool.GetRetrievalService()
+	agenttool.SetSimpleRetrievalService()
+	t.Cleanup(func() { agenttool.SetRetrievalService(prev) })
+
+	c, err := New(componentNameRetrieval, map[string]any{
+		"kb_ids":         []any{"kb-1"},
+		"empty_response": "no hits found",
+	})
+	if err != nil {
+		t.Fatalf("New(Retrieval): %v", err)
+	}
+	// Empty query → the service returns no chunks.
+	out, err := c.Invoke(context.Background(), nil, map[string]any{"query": ""})
+	if err != nil {
+		t.Fatalf("Retrieval Invoke errored: %v", err)
+	}
+	if fc, _ := out["formalized_content"].(string); fc != "no hits found" {
+		t.Errorf("formalized_content = %q, want empty_response %q", fc, "no hits found")
+	}
+}
+
 // TestRetrieval_InputsSurfaceMatchesStub guards against accidental
 // regression in the Inputs() description surface when swapping from
 // the stub to the wrapper. The v1 DSL fixture set uses these keys

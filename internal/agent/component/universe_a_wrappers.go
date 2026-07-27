@@ -179,7 +179,15 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	common.Debug("agent retrieval component: output",
 		zap.String("tool_output", out),
 	)
-	return parseToolEnvelope(out), nil
+	decoded := parseToolEnvelope(out)
+	// Match Python's Retrieval component: when the search yields no
+	// chunks, the node still surfaces `formalized_content` carrying
+	// the configured empty_response so downstream prompts see the
+	// fallback text instead of an empty output map.
+	if fc, _ := decoded["formalized_content"].(string); strings.TrimSpace(fc) == "" && c.params.EmptyResponse != "" {
+		decoded["formalized_content"] = c.params.EmptyResponse
+	}
+	return decoded, nil
 }
 
 func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {

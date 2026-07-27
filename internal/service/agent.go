@@ -87,7 +87,7 @@ func (s *AgentService) RunAgentWithWebhook(
 	if payload != nil {
 		ctx = context.WithValue(ctx, webhookPayloadKey{}, payload)
 	}
-	return s.RunAgent(ctx, userID, canvasID, "", "", "", nil)
+	return s.RunAgent(ctx, userID, canvasID, "", "", "", nil, nil)
 }
 
 func emitAgentMessageEvents(emit func(string, string), answer, thinking string, reference any) {
@@ -923,7 +923,14 @@ func (s *AgentService) DeleteVersion(ctx context.Context, userID, canvasID, vers
 // The per-run RunFunc is built by buildRunFunc — see its doc comment
 // for the full production chain (real Compile/Invoke, resume path,
 // error-layering contract).
-func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+//
+// beginInputs carries the Begin node's custom input values submitted
+// with the request (the 试运行 panel / chat form). Each entry is either
+// a raw value or a BeginQuery-shaped object carrying a "value" field.
+// They are seeded as the Begin component's outputs so downstream
+// references like {begin@<key>} resolve — mirroring Python's
+// Begin._invoke (agent/component/begin.py).
+func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, beginInputs map[string]any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	canvasRow, err := s.loadCanvasForUser(ctx, userID, canvasID)
 	if err != nil {
 		return nil, err
@@ -1047,6 +1054,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	}
 	if userInput != nil {
 		root["user_input"] = userInput
+	}
+	if len(beginInputs) > 0 {
+		root["begin_inputs"] = beginInputs
 	}
 	if len(files) > 0 {
 		root["files"] = files
@@ -1277,6 +1287,13 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		state.SetMemory(c.Memory)
 		state.EnsureSysDate()
 		state.Sys["query"] = userInput
+		// Seed the Begin component's outputs from the request's custom
+		// inputs (试运行 panel / chat form). Mirrors Python Begin._invoke:
+		// each submitted field becomes Outputs["begin"][<key>] so
+		// downstream references like {begin@<key>} resolve.
+		if beginInputs, ok := root["begin_inputs"].(map[string]any); ok {
+			seedBeginInputOutputs(state, beginInputs)
+		}
 		state.AppendCurrentUser(userInput)
 		state.AppendSysHistory("user: " + renderUserHistoryValue(userInput))
 		if uid, ok := root["user_id"].(string); ok && uid != "" {
@@ -1657,6 +1674,22 @@ func (s *AgentService) persistAgentRunSession(
 	}
 	session.Round++
 	return s.api4ConversationDAO.Update(ctx, dao.DB, session)
+}
+
+// seedBeginInputOutputs flattens the request's begin inputs into the
+// Begin component's output bucket. Entries may be raw values or
+// BeginQuery-shaped objects carrying a "value" field (the frontend
+// sends the latter via transferInputsArrayToObject).
+func seedBeginInputOutputs(state *canvas.CanvasState, inputs map[string]any) {
+	for key, raw := range inputs {
+		if field, ok := raw.(map[string]any); ok {
+			if value, exists := field["value"]; exists {
+				state.SetVar("begin", key, value)
+				continue
+			}
+		}
+		state.SetVar("begin", key, raw)
+	}
 }
 
 func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) entity.JSONMap {

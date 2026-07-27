@@ -64,7 +64,7 @@ type agentFileService interface {
 // NewAgentHandler assigns the concrete *service.AgentService — which
 // satisfies this interface because its RunAgent signature matches.
 type chatAgentService interface {
-	RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error)
+	RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, beginInputs map[string]any, files []map[string]interface{}) (<-chan canvas.RunEvent, error)
 }
 
 // documentAccessChecker is the minimal surface RerunAgent needs
@@ -392,7 +392,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	sessionID := c.Query("session_id")
 	userInput := readUserInput(c)
 
-	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput, nil)
+	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput, nil, nil)
 	if err != nil {
 		ec, em := mapAgentError(err)
 		common.ResponseWithCodeData(c, ec, nil, em)
@@ -1008,7 +1008,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		}, userInputMeta(userInput)...)...,
 	)
 
-	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput, req.Files)
+	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput, req.Inputs, req.Files)
 	if err != nil {
 		common.Warn("agent chat completions: RunAgent failed",
 			append([]zap.Field{

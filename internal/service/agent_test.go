@@ -536,7 +536,7 @@ func TestRunAgent_VersionBelongsToOtherCanvas(t *testing.T) {
 		"canvas-1",      // we're running canvas-1…
 		"",              // session ID auto-generated
 		"v-on-canvas-2", // …with a version that belongs to canvas-2
-		"hi", nil)
+		"hi", nil, nil)
 	if err == nil {
 		t.Fatal("expected error when version belongs to a different canvas (IDOR guard)")
 	}
@@ -582,7 +582,7 @@ func TestRunAgent_VersionNotFound(t *testing.T) {
 		"canvas-1",
 		"",
 		"does-not-exist",
-		"hi", nil)
+		"hi", nil, nil)
 	if err == nil {
 		t.Fatal("expected error when explicit version id does not exist")
 	}
@@ -639,7 +639,7 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 		"canvas-empty",
 		"test-session",
 		"", // no explicit version → use GetLatest, which returns ErrUserCanvasVersionNotFound
-		"hi", nil)
+		"hi", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent should proceed with placeholder when no version published: %v", err)
 	}
@@ -748,7 +748,7 @@ func TestRunAgent_StorageErrorFromCanvasAccess(t *testing.T) {
 		"canvas-1",
 		"",
 		"",
-		"hi", nil)
+		"hi", nil, nil)
 	if err == nil {
 		t.Fatal("expected storage error from closed DB")
 	}
@@ -1942,5 +1942,25 @@ func TestAgentHistoryRenderingMatchesPythonShapes(t *testing.T) {
 	want := `{'content': 'it\'s ready\nnext', 'ok': True}`
 	if assistant != want {
 		t.Fatalf("rendered assistant history = %q, want %q", assistant, want)
+	}
+}
+
+// TestSeedBeginInputOutputs pins the 试运行/custom-input wiring: the
+// request's begin inputs must land in Outputs["begin"] so downstream
+// references like {begin@<key>} resolve (Python Begin._invoke parity).
+func TestSeedBeginInputOutputs(t *testing.T) {
+	state := canvas.NewCanvasState("run-1", "task-1")
+	seedBeginInputOutputs(state, map[string]any{
+		// BeginQuery-shaped entry (frontend transferInputsArrayToObject).
+		"color": map[string]any{"name": "我最喜欢的颜色", "value": "红色", "type": "line"},
+		// Raw value entry (API callers may post plain values).
+		"city": "上海",
+	})
+
+	if got, err := state.GetVar("begin@color"); err != nil || got != "红色" {
+		t.Errorf("begin@color = %v (err=%v), want 红色", got, err)
+	}
+	if got, err := state.GetVar("begin@city"); err != nil || got != "上海" {
+		t.Errorf("begin@city = %v (err=%v), want 上海", got, err)
 	}
 }

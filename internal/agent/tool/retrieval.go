@@ -64,6 +64,7 @@ type retrievalArgs struct {
 	KeywordsSimilarityWeight *float64 `json:"keywords_similarity_weight,omitempty"`
 	UseKG                    bool     `json:"use_kg,omitempty"`
 	SimilarityThreshold      float64  `json:"similarity_threshold,omitempty"`
+	RerankID                 string   `json:"rerank_id,omitempty"`
 }
 
 // retrievalResult is the JSON shape returned to the model. The `_ERROR`
@@ -170,6 +171,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		KeywordsSimilarityWeight: args.KeywordsSimilarityWeight,
 		UseKG:                    args.UseKG,
 		SimilarityThreshold:      args.SimilarityThreshold,
+		RerankID:                 args.RerankID,
 		TenantID:                 retrievalTenantID(ctx),
 	})
 	if err != nil {
@@ -229,6 +231,9 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 	}
 	if args.SimilarityThreshold <= 0 {
 		args.SimilarityThreshold = r.defaults.SimilarityThreshold
+	}
+	if args.RerankID == "" {
+		args.RerankID = r.defaults.RerankID
 	}
 	args.UseKG = args.UseKG || r.defaults.UseKG
 	return args

@@ -160,3 +160,56 @@ func TestBegin_EmptyWebhookPayload(t *testing.T) {
 		t.Errorf("state.Sys[webhook_payload] should not be set for empty payload; got %v", state.Sys["webhook_payload"])
 	}
 }
+
+// TestBegin_SingleInputFallsBackToSysQuery pins the Python parity fix
+// (Begin._merge_runtime_inputs): when no runtime inputs were seeded
+// and the DSL declares exactly one custom input field, sys.query
+// becomes that field's output so {begin@<key>} references resolve.
+func TestBegin_SingleInputFallsBackToSysQuery(t *testing.T) {
+	c, err := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{
+			"color": map[string]any{"name": "我最喜欢的颜色", "type": "line"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewBeginComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-1", "task-1")
+	ctx := canvas.WithState(context.Background(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": "红色"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["color"]; got != "红色" {
+		t.Errorf("outputs[color] = %v, want 红色 (sys.query fallback)", got)
+	}
+}
+
+// TestBegin_SeededInputsWinOverFallback: when the service layer
+// already seeded Outputs["begin"] (runtime inputs), the sys.query
+// fallback must not overwrite them.
+func TestBegin_SeededInputsWinOverFallback(t *testing.T) {
+	c, err := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{
+			"color": map[string]any{"name": "我最喜欢的颜色", "type": "line"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewBeginComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-1", "task-1")
+	state.SetVar("begin", "color", "蓝色")
+	ctx := canvas.WithState(context.Background(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": "红色"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if _, exists := out["color"]; exists {
+		t.Errorf("fallback should not fire when begin outputs are seeded; got color=%v", out["color"])
+	}
+	if got, _ := state.GetVar("begin@color"); got != "蓝色" {
+		t.Errorf("begin@color = %v, want seeded 蓝色", got)
+	}
+}

@@ -26,6 +26,8 @@ import (
 	"fmt"
 	"sync"
 
+	modelModule "ragflow/internal/entity/models"
+
 	"gorm.io/gorm"
 )
 
@@ -55,6 +57,11 @@ type RetrievalRequest struct {
 	KeywordsSimilarityWeight *float64
 	UseKG                    bool
 	SimilarityThreshold      float64
+	// RerankID is the optional rerank model reference declared on the
+	// Retrieval node (Python RetrievalParam.rerank_id). Empty means no
+	// external rerank model — the nlp service reranks with the
+	// built-in token/vector combination instead.
+	RerankID string
 	// TenantID is the calling tenant (== user_id in RAGFlow's data model).
 	// Optional for the nlp adapter; the KG adapter uses it to resolve the
 	// tenant's default chat + embedding models. Reads from
@@ -106,6 +113,40 @@ func GetRetrievalService() RetrievalService {
 	retrievalServiceMu.RLock()
 	defer retrievalServiceMu.RUnlock()
 	return retrievalServiceImpl
+}
+
+// RetrievalModelProvider resolves the tenant-scoped models the
+// retrieval path needs: the knowledge base's embedding model (for
+// hybrid fulltext+vector search) and the optional rerank model.
+// *service.ModelProviderService satisfies this interface; it is
+// injected at boot because internal/service imports the agent
+// packages (importing it from here would create a cycle).
+type RetrievalModelProvider interface {
+	GetEmbeddingModel(ctx context.Context, tenantID, modelRef string) (*modelModule.EmbeddingModel, error)
+	GetRerankModel(tenantID, modelRef string) (*modelModule.RerankModel, error)
+}
+
+var (
+	retrievalModelProviderMu   sync.RWMutex
+	retrievalModelProviderImpl RetrievalModelProvider
+)
+
+// SetRetrievalModelProvider installs the model provider used by the
+// retrieval adapters to resolve embedding/rerank models. Passing nil
+// reverts to "no provider": retrieval then degrades to keyword-only
+// search (the pre-hybrid behaviour).
+func SetRetrievalModelProvider(p RetrievalModelProvider) {
+	retrievalModelProviderMu.Lock()
+	defer retrievalModelProviderMu.Unlock()
+	retrievalModelProviderImpl = p
+}
+
+// GetRetrievalModelProvider returns the installed provider, or nil
+// when none was wired at boot.
+func GetRetrievalModelProvider() RetrievalModelProvider {
+	retrievalModelProviderMu.RLock()
+	defer retrievalModelProviderMu.RUnlock()
+	return retrievalModelProviderImpl
 }
 
 type stubRetrievalService struct{}

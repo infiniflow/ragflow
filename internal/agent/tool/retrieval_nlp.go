@@ -137,11 +137,14 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 		topN = 8
 	}
 
-	tenantIDs, err := a.resolveTenantIDs(ctx, db, req)
+	tenantIDs, kbs, err := a.resolveTenantIDs(ctx, db, req)
 	if err != nil {
 		return nil, err
 	}
 	nlpReq := nlpRequestFromRetrieval(req, tenantIDs, topN)
+	if err := attachRetrievalModels(ctx, req, kbs, nlpReq); err != nil {
+		return nil, err
+	}
 
 	res, err := a.svc.Retrieval(ctx, nlpReq)
 	if err != nil {
@@ -183,7 +186,7 @@ func nlpRequestFromRetrieval(req RetrievalRequest, tenantIDs []string, topN int)
 	return nlpReq
 }
 
-func (a *NLPRetrievalAdapter) resolveTenantIDs(ctx context.Context, db *gorm.DB, req RetrievalRequest) ([]string, error) {
+func (a *NLPRetrievalAdapter) resolveTenantIDs(ctx context.Context, db *gorm.DB, req RetrievalRequest) ([]string, []*entity.Knowledgebase, error) {
 	seen := map[string]struct{}{}
 	tenantIDs := make([]string, 0, 1)
 	appendTenantID := func(tenantID string) {
@@ -201,12 +204,12 @@ func (a *NLPRetrievalAdapter) resolveTenantIDs(ctx context.Context, db *gorm.DB,
 	appendTenantID(req.TenantID)
 	datasetIDs := compactStrings(req.DatasetIDs)
 	if len(datasetIDs) == 0 || a == nil || a.kbDAO == nil {
-		return tenantIDs, nil
+		return tenantIDs, nil, nil
 	}
 
 	kbs, err := a.kbDAO.GetByIDs(ctx, db, datasetIDs)
 	if err != nil {
-		return nil, fmt.Errorf("retrieval: resolve dataset tenants: %w", err)
+		return nil, nil, fmt.Errorf("retrieval: resolve dataset tenants: %w", err)
 	}
 	for _, kb := range kbs {
 		if kb == nil {
@@ -215,9 +218,74 @@ func (a *NLPRetrievalAdapter) resolveTenantIDs(ctx context.Context, db *gorm.DB,
 		appendTenantID(kb.TenantID)
 	}
 	if len(tenantIDs) == 0 {
-		return nil, fmt.Errorf("retrieval: no valid knowledge bases found for dataset_ids %v", datasetIDs)
+		return nil, nil, fmt.Errorf("retrieval: no valid knowledge bases found for dataset_ids %v", datasetIDs)
 	}
-	return tenantIDs, nil
+	return tenantIDs, kbs, nil
+}
+
+// attachRetrievalModels resolves the knowledge base's embedding
+// model (and the optional rerank model) and mounts them on the nlp
+// request so the search runs hybrid (fulltext + vector + fusion)
+// instead of the keyword-only fallback. This mirrors Python's
+// agent/tools/retrieval.py, which resolves the kb's embd_id via
+// resolve_model_config before calling settings.retriever.retrieval —
+// without it the Go canvas retrieval returned empty results because
+// the keyword-only scores rarely pass the similarity threshold.
+//
+// When no RetrievalModelProvider is wired (unit tests, dev stubs),
+// the request is left untouched and retrieval stays keyword-only.
+func attachRetrievalModels(ctx context.Context, req RetrievalRequest, kbs []*entity.Knowledgebase, nlpReq *nlp.RetrievalRequest) error {
+	provider := GetRetrievalModelProvider()
+	if provider == nil {
+		return nil
+	}
+
+	// All kbs must share one embedding model — mixing models makes
+	// the query vector incomparable across indexes (same contract as
+	// Python's `assert len(embd_nms) == 1`).
+	embdID := ""
+	for _, kb := range kbs {
+		if kb == nil || strings.TrimSpace(kb.EmbdID) == "" {
+			continue
+		}
+		if embdID == "" {
+			embdID = kb.EmbdID
+			continue
+		}
+		if kb.EmbdID != embdID {
+			return fmt.Errorf("retrieval: knowledge bases use different embedding models (%q vs %q)", embdID, kb.EmbdID)
+		}
+	}
+
+	// The embedding model is resolved against the calling tenant
+	// (the canvas owner), matching Python's
+	// `resolve_model_config(canvas.tenant_id, EMBEDDING, embd_id)`.
+	// Fall back to the kb's tenant when the request carries none.
+	tenantID := strings.TrimSpace(req.TenantID)
+	if tenantID == "" {
+		for _, kb := range kbs {
+			if kb != nil && strings.TrimSpace(kb.TenantID) != "" {
+				tenantID = kb.TenantID
+				break
+			}
+		}
+	}
+
+	if embdID != "" && tenantID != "" {
+		emb, err := provider.GetEmbeddingModel(ctx, tenantID, embdID)
+		if err != nil {
+			return fmt.Errorf("retrieval: resolve embedding model %q: %w", embdID, err)
+		}
+		nlpReq.EmbeddingModel = emb
+	}
+	if req.RerankID != "" && tenantID != "" {
+		rerank, err := provider.GetRerankModel(tenantID, req.RerankID)
+		if err != nil {
+			return fmt.Errorf("retrieval: resolve rerank model %q: %w", req.RerankID, err)
+		}
+		nlpReq.RerankModel = rerank
+	}
+	return nil
 }
 
 // translateChunk converts one nlp chunk map into a RetrievalChunk.

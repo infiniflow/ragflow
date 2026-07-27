@@ -204,7 +204,7 @@ func TestRunAgent_RealCanvas_BeginMessage(t *testing.T) {
 		"canvas-hello",
 		"session-hello",
 		"", // latest version
-		"world", nil)
+		"world", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
@@ -292,7 +292,7 @@ func TestRunAgent_SessionHistoryFeedsSysHistoryAndPersists(t *testing.T) {
 	svc := NewAgentService()
 	run := func(input string) canvas.MessageEvent {
 		t.Helper()
-		events, err := svc.RunAgent(context.Background(), "user-1", "canvas-history", "session-history", "", input, nil)
+		events, err := svc.RunAgent(context.Background(), "user-1", "canvas-history", "session-history", "", input, nil, nil)
 		if err != nil {
 			t.Fatalf("RunAgent(%q): %v", input, err)
 		}
@@ -391,7 +391,7 @@ func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
 	makeCanvasWithDSL(t, "canvas-new-session", "user-1", "tenant-1", "v-new-session", dsl)
 
 	svc := NewAgentService()
-	events, err := svc.RunAgent(context.Background(), "user-1", "canvas-new-session", "", "", "1", nil)
+	events, err := svc.RunAgent(context.Background(), "user-1", "canvas-new-session", "", "", "1", nil, nil)
 	if err != nil {
 		t.Fatalf("first RunAgent: %v", err)
 	}
@@ -411,7 +411,7 @@ func TestRunAgent_NewSessionPersistsHistoryForNextTurn(t *testing.T) {
 		t.Fatal("persisted session has an empty ID")
 	}
 
-	events, err = svc.RunAgent(context.Background(), "user-1", "canvas-new-session", session.ID, "", "1", nil)
+	events, err = svc.RunAgent(context.Background(), "user-1", "canvas-new-session", session.ID, "", "1", nil, nil)
 	if err != nil {
 		t.Fatalf("second RunAgent: %v", err)
 	}
@@ -474,6 +474,7 @@ func TestRunAgent_RejectsSessionOwnedByAnotherUser(t *testing.T) {
 		"session-foreign",
 		"",
 		"attempted overwrite",
+		nil,
 		nil,
 	)
 	if err == nil {
@@ -599,7 +600,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 		"canvas-fillup",
 		"session-fillup",
 		"",
-		"please ask", nil)
+		"please ask", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 1: %v", err)
 	}
@@ -636,7 +637,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume(t *testing.T) {
 		"canvas-fillup",
 		"session-fillup", // SAME sessionID as run 1
 		"",
-		"my follow-up", nil)
+		"my follow-up", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
 	}
@@ -718,6 +719,7 @@ func TestRunAgent_InterruptPersistsPartialAssistantHistory(t *testing.T) {
 		"session-partial",
 		"",
 		"question",
+		nil,
 		nil,
 	)
 	if err != nil {
@@ -806,7 +808,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 		"canvas-fillup-events",
 		"session-fillup-events",
 		"",
-		"please ask", nil)
+		"please ask", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 1: %v", err)
 	}
@@ -829,7 +831,7 @@ func TestRunAgent_RealCanvas_WaitForUserResume_EventSemantics(t *testing.T) {
 		"canvas-fillup-events",
 		"session-fillup-events",
 		"",
-		"my follow-up", nil)
+		"my follow-up", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
 	}
@@ -947,7 +949,7 @@ func TestRunAgent_RealCanvas_GroupedParallelOuterFollower(t *testing.T) {
 		"canvas-parallel",
 		"session-parallel",
 		"",
-		"a,b,c", nil)
+		"a,b,c", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
@@ -1017,7 +1019,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 		"canvas-all",
 		"session-all-loop",
 		"",
-		"loop", nil)
+		"loop", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 1: %v", err)
 	}
@@ -1057,7 +1059,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 		"canvas-all",
 		"session-all-loop",
 		"",
-		"loop", nil)
+		"loop", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
 	}
@@ -1080,6 +1082,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume(t *testing.T) {
 
 	events3, err := svc.RunAgent(
 		context.Background(), "user-1", "canvas-all", "session-all-loop", "", "1", nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("RunAgent run 3: %v", err)
@@ -1143,7 +1146,7 @@ func TestRunAgent_AllFixture_LoopInterruptResume_MultiTurn(t *testing.T) {
 			"canvas-all-multi",
 			sessionID,
 			"",
-			input, nil)
+			input, nil, nil)
 		if err != nil {
 			t.Fatalf("RunAgent run %d (%q): %v", i+1, input, err)
 		}
@@ -1236,7 +1239,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 		"canvas-all-iteration",
 		sessionID,
 		"",
-		"iteration", nil)
+		"iteration", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 1: %v", err)
 	}
@@ -1265,7 +1268,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 		"canvas-all-iteration",
 		sessionID,
 		"",
-		"iteration", nil)
+		"iteration", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
 	}
@@ -1288,6 +1291,7 @@ func TestRunAgent_AllFixture_IterationFormatsItems(t *testing.T) {
 
 	events3, err := svc.RunAgent(
 		context.Background(), "user-1", "canvas-all-iteration", sessionID, "", "a,b,c,d,e", nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("RunAgent run 3: %v", err)
@@ -1346,7 +1350,7 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 		"canvas-all-var-assigner",
 		"session-all-var-assigner",
 		"",
-		"var_assigner", nil)
+		"var_assigner", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
@@ -1370,6 +1374,7 @@ func TestRunAgent_AllFixture_VarAssigner(t *testing.T) {
 		"session-all-var-assigner",
 		"",
 		"var_assigner",
+		nil,
 		nil,
 	)
 	if err != nil {
@@ -1430,7 +1435,7 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 		"canvas-all-data-ops",
 		"session-all-data-ops",
 		"",
-		"data_ops", nil)
+		"data_ops", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
@@ -1454,6 +1459,7 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 		"session-all-data-ops",
 		"",
 		"data_ops",
+		nil,
 		nil,
 	)
 	if err != nil {
@@ -1536,7 +1542,7 @@ func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 		"canvas-bogus",
 		"session-bogus",
 		"",
-		"hello", nil)
+		"hello", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent returned sync error: %v", err)
 	}
@@ -1608,7 +1614,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 		"canvas-all-categorize",
 		"session-all-categorize",
 		"",
-		"categorize", nil)
+		"categorize", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 1: %v", err)
 	}
@@ -1636,7 +1642,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 		"canvas-all-categorize",
 		"session-all-categorize",
 		"",
-		"categorize", nil)
+		"categorize", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent run 2: %v", err)
 	}
@@ -1671,6 +1677,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 		"session-all-categorize",
 		"",
 		"hello",
+		nil,
 		nil,
 	)
 	if err != nil {
@@ -1766,7 +1773,7 @@ func TestRunAgent_RealCanvas_InvokeFails(t *testing.T) {
 		"canvas-invoke-fail",
 		"session-invoke-fail",
 		"",
-		"hello", nil)
+		"hello", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent returned sync error: %v", err)
 	}
@@ -1873,7 +1880,7 @@ func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 		"canvas-cp",
 		"session-cp",
 		"", // latest version
-		"world", nil)
+		"world", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent: %v", err)
 	}
@@ -2047,7 +2054,7 @@ func TestRunAgent_FilesPopulateIteration(t *testing.T) {
 		canvasID,
 		sessionID,
 		"",
-		"hello-files", testFiles)
+		"hello-files", nil, testFiles)
 	if err != nil {
 		t.Fatalf("RunAgent with files: %v", err)
 	}
@@ -2115,6 +2122,7 @@ func TestRunAgent_MissingUploadEmitsError(t *testing.T) {
 		"session-missing-upload",
 		"",
 		"hello",
+		nil,
 		[]map[string]interface{}{{
 			"id":         "missing",
 			"name":       "missing.txt",
@@ -2192,7 +2200,7 @@ func TestRunAgent_NoFilesRunsNormally(t *testing.T) {
 		canvasID,
 		sessionID,
 		"",
-		"hello-nofiles", nil)
+		"hello-nofiles", nil, nil)
 	if err != nil {
 		t.Fatalf("RunAgent without files: %v", err)
 	}

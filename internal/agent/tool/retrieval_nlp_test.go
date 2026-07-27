@@ -32,6 +32,8 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/service/nlp"
 
 	"gorm.io/gorm"
 )
@@ -283,7 +285,7 @@ func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
 
 func TestNLPRetrievalAdapter_ResolveTenantIDsStaysWithinRequestTenant(t *testing.T) {
 	a := &NLPRetrievalAdapter{}
-	got, err := a.resolveTenantIDs(nil, nil, RetrievalRequest{
+	got, _, err := a.resolveTenantIDs(nil, nil, RetrievalRequest{
 		TenantID:   "tenant-a",
 		DatasetIDs: []string{"kb-1", "kb-2", "kb-missing"},
 	})
@@ -309,7 +311,7 @@ func TestNLPRetrievalAdapter_ResolveTenantIDsFromDatasetIDs(t *testing.T) {
 			},
 		},
 	}
-	got, err := a.resolveTenantIDs(nil, nil, RetrievalRequest{
+	got, kbs, err := a.resolveTenantIDs(nil, nil, RetrievalRequest{
 		DatasetIDs: []string{"kb-1", "kb-2", "kb-3", " "},
 	})
 	if err != nil {
@@ -317,6 +319,9 @@ func TestNLPRetrievalAdapter_ResolveTenantIDsFromDatasetIDs(t *testing.T) {
 	}
 	if len(got) != 2 || got[0] != "tenant-a" || got[1] != "tenant-b" {
 		t.Fatalf("tenantIDs=%v want [tenant-a tenant-b]", got)
+	}
+	if len(kbs) != 3 {
+		t.Fatalf("kbs len=%d want 3", len(kbs))
 	}
 }
 
@@ -328,7 +333,7 @@ func TestNLPRetrievalAdapter_ResolveTenantIDsKeepsRequestTenantFirst(t *testing.
 			},
 		},
 	}
-	got, err := a.resolveTenantIDs(nil, nil, RetrievalRequest{
+	got, _, err := a.resolveTenantIDs(nil, nil, RetrievalRequest{
 		TenantID:   "tenant-a",
 		DatasetIDs: []string{"kb-1"},
 	})
@@ -337,6 +342,127 @@ func TestNLPRetrievalAdapter_ResolveTenantIDsKeepsRequestTenantFirst(t *testing.
 	}
 	if len(got) != 2 || got[0] != "tenant-a" || got[1] != "tenant-b" {
 		t.Fatalf("tenantIDs=%v want [tenant-a tenant-b]", got)
+	}
+}
+
+// fakeRetrievalModelProvider records the refs it was asked to
+// resolve and returns placeholder models.
+type fakeRetrievalModelProvider struct {
+	embTenant    string
+	embRef       string
+	rerankTenant string
+	rerankRef    string
+	err          error
+}
+
+func (f *fakeRetrievalModelProvider) GetEmbeddingModel(_ context.Context, tenantID, modelRef string) (*modelModule.EmbeddingModel, error) {
+	f.embTenant, f.embRef = tenantID, modelRef
+	if f.err != nil {
+		return nil, f.err
+	}
+	modelName := modelRef
+	return modelModule.NewEmbeddingModel(nil, &modelName, nil, 0), nil
+}
+
+func (f *fakeRetrievalModelProvider) GetRerankModel(tenantID, modelRef string) (*modelModule.RerankModel, error) {
+	f.rerankTenant, f.rerankRef = tenantID, modelRef
+	if f.err != nil {
+		return nil, f.err
+	}
+	modelName := modelRef
+	return modelModule.NewRerankModel(nil, &modelName, nil), nil
+}
+
+// TestAttachRetrievalModels_ResolvesKbEmbeddingModel pins the
+// production fix: the adapter must resolve the kb's embd_id via the
+// injected provider and mount it on the nlp request — otherwise the
+// search runs keyword-only and the similarity threshold filters out
+// every chunk (the "agent gets no answer from the knowledge base"
+// bug).
+func TestAttachRetrievalModels_ResolvesKbEmbeddingModel(t *testing.T) {
+	provider := &fakeRetrievalModelProvider{}
+	SetRetrievalModelProvider(provider)
+	t.Cleanup(func() { SetRetrievalModelProvider(nil) })
+
+	nlpReq := &nlp.RetrievalRequest{}
+	err := attachRetrievalModels(
+		context.Background(),
+		RetrievalRequest{TenantID: "tenant-a", RerankID: "rerank-1"},
+		[]*entity.Knowledgebase{{ID: "kb-1", TenantID: "tenant-b", EmbdID: "bge-m3@Builtin"}},
+		nlpReq,
+	)
+	if err != nil {
+		t.Fatalf("attachRetrievalModels: %v", err)
+	}
+	if nlpReq.EmbeddingModel == nil {
+		t.Fatal("EmbeddingModel is nil — hybrid search would be skipped")
+	}
+	if provider.embTenant != "tenant-a" || provider.embRef != "bge-m3@Builtin" {
+		t.Errorf("embedding resolved with tenant/ref = %q/%q, want tenant-a/bge-m3@Builtin",
+			provider.embTenant, provider.embRef)
+	}
+	if nlpReq.RerankModel == nil {
+		t.Fatal("RerankModel is nil — rerank_id was dropped")
+	}
+	if provider.rerankRef != "rerank-1" {
+		t.Errorf("rerank ref = %q, want rerank-1", provider.rerankRef)
+	}
+}
+
+func TestAttachRetrievalModels_FallsBackToKbTenant(t *testing.T) {
+	provider := &fakeRetrievalModelProvider{}
+	SetRetrievalModelProvider(provider)
+	t.Cleanup(func() { SetRetrievalModelProvider(nil) })
+
+	nlpReq := &nlp.RetrievalRequest{}
+	err := attachRetrievalModels(
+		context.Background(),
+		RetrievalRequest{},
+		[]*entity.Knowledgebase{{ID: "kb-1", TenantID: "tenant-b", EmbdID: "bge-m3@Builtin"}},
+		nlpReq,
+	)
+	if err != nil {
+		t.Fatalf("attachRetrievalModels: %v", err)
+	}
+	if provider.embTenant != "tenant-b" {
+		t.Errorf("embedding tenant = %q, want tenant-b (kb tenant fallback)", provider.embTenant)
+	}
+}
+
+func TestAttachRetrievalModels_MixedEmbeddingModelsError(t *testing.T) {
+	provider := &fakeRetrievalModelProvider{}
+	SetRetrievalModelProvider(provider)
+	t.Cleanup(func() { SetRetrievalModelProvider(nil) })
+
+	nlpReq := &nlp.RetrievalRequest{}
+	err := attachRetrievalModels(
+		context.Background(),
+		RetrievalRequest{TenantID: "tenant-a"},
+		[]*entity.Knowledgebase{
+			{ID: "kb-1", TenantID: "tenant-a", EmbdID: "emb-a"},
+			{ID: "kb-2", TenantID: "tenant-a", EmbdID: "emb-b"},
+		},
+		nlpReq,
+	)
+	if err == nil {
+		t.Fatal("expected mixed-embedding-model error, got nil")
+	}
+}
+
+func TestAttachRetrievalModels_NoProviderKeepsKeywordOnly(t *testing.T) {
+	SetRetrievalModelProvider(nil)
+	nlpReq := &nlp.RetrievalRequest{}
+	err := attachRetrievalModels(
+		context.Background(),
+		RetrievalRequest{TenantID: "tenant-a"},
+		[]*entity.Knowledgebase{{ID: "kb-1", TenantID: "tenant-a", EmbdID: "emb-a"}},
+		nlpReq,
+	)
+	if err != nil {
+		t.Fatalf("attachRetrievalModels: %v", err)
+	}
+	if nlpReq.EmbeddingModel != nil {
+		t.Error("EmbeddingModel should stay nil without a provider")
 	}
 }
 
