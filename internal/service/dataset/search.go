@@ -111,12 +111,12 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	if searchID != "" {
 		if d.searchService == nil {
 			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
-			return nil, fmt.Errorf("Invalid search_id")
+			return nil, fmt.Errorf("invalid search_id")
 		}
-		searchDetail, err := d.searchService.GetDetail(searchID)
+		searchDetail, err := d.searchService.GetDetail(ctx, searchID)
 		if err != nil || searchDetail == nil || len(searchDetail) == 0 {
 			common.Warn("Invalid search_id", zap.String("searchID", searchID), zap.Error(err))
-			return nil, fmt.Errorf("Invalid search_id")
+			return nil, fmt.Errorf("invalid search_id")
 		} else if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
 				metadataFilter = scMetadataFilter
@@ -155,7 +155,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			chatID, _ = searchConfig["chat_id"].(string)
 		} else {
 			common.Warn("Invalid search_id: search_config missing or invalid", zap.String("searchID", searchID))
-			return nil, fmt.Errorf("Invalid search_id")
+			return nil, fmt.Errorf("invalid search_id")
 		}
 	}
 

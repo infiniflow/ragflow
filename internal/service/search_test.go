@@ -52,7 +52,8 @@ func createSearchServiceTestSearch(t *testing.T, id, tenantID, name string) {
 func TestSearchServiceCreateRejectsEmptyName(t *testing.T) {
 	setupSearchServiceTestDB(t)
 
-	_, err := NewSearchService().CreateSearch("tenant-1", "   ", nil)
+	ctx := t.Context()
+	_, err := NewSearchService().CreateSearch(ctx, "tenant-1", "   ", nil)
 	if err == nil {
 		t.Fatal("expected empty name validation error")
 	}
@@ -64,11 +65,12 @@ func TestSearchServiceCreateRejectsEmptyName(t *testing.T) {
 func TestSearchServiceUpdateRejectsUnauthorizedSearchID(t *testing.T) {
 	setupSearchServiceTestDB(t)
 
+	ctx := t.Context()
 	req := &UpdateSearchRequest{
 		Name:         "New Name",
 		SearchConfig: map[string]interface{}{},
 	}
-	_, err := NewSearchService().UpdateSearch("user-2", "invalid_search_id", req)
+	_, err := NewSearchService().UpdateSearch(ctx, "user-2", "invalid_search_id", req)
 	if err == nil {
 		t.Fatal("expected authorization error")
 	}
@@ -79,8 +81,8 @@ func TestSearchServiceUpdateRejectsUnauthorizedSearchID(t *testing.T) {
 
 func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 	setupSearchServiceTestDB(t)
-
-	created, err := NewSearchService().CreateSearch("tenant-1", "My Search", nil)
+	ctx := t.Context()
+	created, err := NewSearchService().CreateSearch(ctx, "tenant-1", "My Search", nil)
 	if err != nil {
 		t.Fatalf("CreateSearch failed: %v", err)
 	}
@@ -93,7 +95,7 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 		Name:         "Hijacked Name",
 		SearchConfig: map[string]interface{}{},
 	}
-	_, err = NewSearchService().UpdateSearch("user-2", created.SearchID, req)
+	_, err = NewSearchService().UpdateSearch(ctx, "user-2", created.SearchID, req)
 	if err == nil || err.Error() != "no authorization" {
 		t.Fatalf("expected no authorization, got %v", err)
 	}
@@ -103,7 +105,7 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 		Name:         "Updated Name",
 		SearchConfig: map[string]interface{}{"summary": true},
 	}
-	updated, err := NewSearchService().UpdateSearch("tenant-1", created.SearchID, req)
+	updated, err := NewSearchService().UpdateSearch(ctx, "tenant-1", created.SearchID, req)
 	if err != nil {
 		t.Fatalf("owner UpdateSearch failed: %v", err)
 	}
@@ -114,7 +116,7 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 		t.Fatalf("expected merged search_config, got %#v", updated.SearchConfig)
 	}
 
-	persisted, err := dao.NewSearchDAO().GetByID(created.SearchID)
+	persisted, err := dao.NewSearchDAO().GetByID(ctx, dao.DB, created.SearchID)
 	if err != nil {
 		t.Fatalf("get updated search: %v", err)
 	}
@@ -135,7 +137,8 @@ func TestSearchServiceListSearchesReturnsOwnerDisplayFields(t *testing.T) {
 	}
 	createSearchServiceTestSearch(t, "search-1", "user-1", "Search One")
 
-	result, err := NewSearchService().ListSearches("user-1", "", 0, 0, "create_time", true, nil)
+	ctx := t.Context()
+	result, err := NewSearchService().ListSearches(ctx, "user-1", "", 0, 0, "create_time", true, nil)
 	if err != nil {
 		t.Fatalf("ListSearches failed: %v", err)
 	}
@@ -152,7 +155,8 @@ func TestSearchServiceListSearchesNicknameFallsBackToTenantID(t *testing.T) {
 
 	createSearchServiceTestSearch(t, "search-1", "user-1", "Search One")
 
-	result, err := NewSearchService().ListSearches("user-1", "", 0, 0, "create_time", true, nil)
+	ctx := t.Context()
+	result, err := NewSearchService().ListSearches(ctx, "user-1", "", 0, 0, "create_time", true, nil)
 	if err != nil {
 		t.Fatalf("ListSearches failed: %v", err)
 	}
