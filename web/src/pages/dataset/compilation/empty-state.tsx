@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { IconFontFill } from '@/components/icon-font';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { GenerateType } from '@/pages/dataset/dataset/generate-button/constants';
 import {
   ITraceInfo,
   useDatasetGenerate,
@@ -14,7 +13,13 @@ import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-g
 import { replaceText } from '@/pages/dataset/process-log-modal';
 import { toFixed } from '@/utils/common-util';
 
-type EmptyStateType = 'llm-wiki' | 'skills';
+import {
+  GenerableViewMode,
+  ViewMode,
+  ViewModeGenerateTypeMap,
+} from './constants';
+
+type EmptyStateType = GenerableViewMode;
 
 interface ICompilationEmptyStateProps {
   type: EmptyStateType;
@@ -22,19 +27,24 @@ interface ICompilationEmptyStateProps {
   data?: ITraceInfo;
 }
 
-const DefaultGenerateTypeMap: Record<EmptyStateType, GenerateType> = {
-  'llm-wiki': GenerateType.Artifact,
-  skills: GenerateType.ToSkills,
-};
-
 const TitleKeyMap: Record<EmptyStateType, string> = {
-  'llm-wiki': 'knowledgeDetails.noWikiPages',
-  skills: 'knowledgeDetails.noSkills',
+  [ViewMode.LlmWiki]: 'knowledgeDetails.noWikiPages',
+  [ViewMode.Skills]: 'knowledgeDetails.noSkills',
+  [ViewMode.Graph]: 'knowledgeDetails.noStructureGraph',
+  [ViewMode.MindMap]: 'knowledgeDetails.noStructureMindmap',
+  [ViewMode.Timeline]: 'knowledgeDetails.noStructureTimeline',
+  // [ViewMode.SessionEssence]: 'knowledgeDetails.noStructureSessionEssence',
+  // [ViewMode.SessionGraph]: 'knowledgeDetails.noStructureSessionGraph',
 };
 
 const LabelKeyMap: Record<EmptyStateType, string> = {
-  'llm-wiki': 'knowledgeDetails.artifact',
-  skills: 'knowledgeDetails.toSkills',
+  [ViewMode.LlmWiki]: 'knowledgeDetails.artifact',
+  [ViewMode.Skills]: 'knowledgeDetails.toSkills',
+  [ViewMode.Graph]: 'knowledgeDetails.structureGraph',
+  [ViewMode.MindMap]: 'knowledgeDetails.structureMindmap',
+  [ViewMode.Timeline]: 'knowledgeDetails.structureTimeline',
+  // [ViewMode.SessionEssence]: 'knowledgeDetails.structureSessionEssence',
+  // [ViewMode.SessionGraph]: 'knowledgeDetails.structureSessionGraph',
 };
 
 export function CompilationEmptyState({
@@ -43,7 +53,7 @@ export function CompilationEmptyState({
   data,
 }: ICompilationEmptyStateProps) {
   const { t } = useTranslation();
-  const generateType = DefaultGenerateTypeMap[type];
+  const generateType = ViewModeGenerateTypeMap[type];
   const { runGenerate, pauseGenerate } = useDatasetGenerate();
   const { status, percent } = useGenerateStatus(data);
 
