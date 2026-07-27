@@ -350,6 +350,8 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         action: 'Action',
       },
       config: {
+        titleDescription:
+          'Update your memory configuration here, particularly the LLM and prompts.',
         descriptionPlaceholder: 'Describe your memory',
         memorySizeTooltip: `Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes).
 Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.`,
@@ -501,7 +503,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       testing: 'Retrieval testing',
       files: 'files',
       configuration: 'Configuration',
-      nextConfiguration: 'Next configuration',
+      nextConfiguration: 'Dataset configuration',
       knowledgeGraph: 'Knowledge graph',
       compilation: 'Compilation',
       export: 'Export',
