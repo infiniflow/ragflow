@@ -200,8 +200,9 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 // mapAgentError normalises service-layer errors onto the existing
 // {code, data, message} response envelope used by every other handler.
 //
-// Three classes:
+// Four classes:
 //   - service.ErrAgentNotOwner  -> "Only the owner..."        (DELETE only, 103)
+//   - service.ErrAgentSessionBusy -> "session already running" (103)
 //   - dao.ErrUserCanvasNotFound -> "Make sure you have permission..."  (103)
 //   - service.ErrAgentStorageError -> "Internal storage error"  (500)
 //
@@ -218,6 +219,9 @@ func mapAgentError(err error) (common.ErrorCode, string) {
 	}
 	if errors.Is(err, service.ErrAgentNotOwner) {
 		return common.CodeOperatingError, "Only the owner of the agent is authorized for this operation."
+	}
+	if errors.Is(err, service.ErrAgentSessionBusy) {
+		return common.CodeOperatingError, "This agent session is already running."
 	}
 	if errors.Is(err, dao.ErrUserCanvasNotFound) ||
 		errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
@@ -469,21 +473,35 @@ func sanitiseRunEventError(data string) string {
 	return data
 }
 
-// CancelAgent signals the in-flight run to stop.
-// @Summary Cancel Agent Run
+// CancelAgent rejects the obsolete canvas-scoped cancellation API.
+// @Summary Obsolete Agent Cancel API
 // @Tags agents
 // @Produce json
 // @Param canvas_id path string true "canvas id"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{canvas_id}/run [delete]
 func (h *AgentHandler) CancelAgent(c *gin.Context) {
+	common.ResponseWithCodeData(c, common.CodeParamError, nil, "use POST /api/v1/tasks/{task_id}/cancel")
+}
+
+// CancelTask cancels one ordinary Agent run by its per-run task id.
+// @Summary Cancel Agent Task
+// @Tags agents
+// @Produce json
+// @Param task_id path string true "task id"
+// @Success 200 {object} map[string]interface{}
+// @Router /api/v1/tasks/{task_id}/cancel [post]
+func (h *AgentHandler) CancelTask(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
 		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
-	canvasID := c.Param("canvas_id")
-	if err := h.agentService.CancelAgent(c.Request.Context(), user.ID, canvasID); err != nil {
+	if h.agentService == nil {
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "agent service unavailable")
+		return
+	}
+	if err := h.agentService.CancelTask(c.Request.Context(), user.ID, c.Param("task_id")); err != nil {
 		ec, em := mapAgentError(err)
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return

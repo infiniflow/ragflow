@@ -151,19 +151,20 @@ type ErrorEvent struct {
 //   - any other non-nil error: run failed; surface as `error` event.
 type RunFunc func(ctx context.Context, root map[string]any) (*CanvasState, error)
 
-// Runner is the per-canvas execution runtime. It owns the
+// Runner is the ordinary-Agent execution runtime. It owns the
 // interrupt-id map (V1 in-memory persistence keyed by
-// (canvasID, sessionID)) and the goroutine cancellation registry.
+// (canvasID, sessionID)) and the task-scoped context cancellation registry.
 //
 // Concurrency: Runner methods are safe for concurrent use. The
-// output channel is owned by the goroutine that started a run;
-// the Cancel method signals the underlying run via the cancel
-// channel that the RunFunc is expected to observe.
+// output channel is owned by the goroutine that started a run; Cancel(taskID)
+// cancels the same context passed to the RunFunc.
 type Runner struct {
 	mu           sync.Mutex
 	interruptIDs map[string]string // key = canvasID + "|" + sessionID; value = eino interrupt id
-	runCancels   map[string]chan struct{}
+	runCancels   map[string]*runCancel
 }
+
+type runCancel struct{ cancel context.CancelFunc }
 
 // NewRunner returns a fresh Runner with the in-memory interrupt-id
 // map initialised. The Runner has no background goroutines; it is
@@ -171,7 +172,7 @@ type Runner struct {
 func NewRunner() *Runner {
 	return &Runner{
 		interruptIDs: make(map[string]string),
-		runCancels:   make(map[string]chan struct{}),
+		runCancels:   make(map[string]*runCancel),
 	}
 }
 
@@ -235,30 +236,30 @@ func (r *Runner) Run(
 		return out
 	}
 
-	cancel := make(chan struct{})
-	r.mu.Lock()
-	if prev, hadPrev := r.runCancels[canvasID]; hadPrev {
-		select {
-		case <-prev:
-		default:
-			close(prev)
-		}
-	}
-	r.runCancels[canvasID] = cancel
-	r.mu.Unlock()
-
-	// Generate the identifiers the RunFunc and SSE envelope need.
-	// message_id is generated per-run so the front-end can correlate
-	// all events for a single user turn. task_id is the published
-	// version id (if available) or a per-run UUID.
-	messageID := utility.GenerateToken()
-	taskID := ""
-	if v, ok := root["version_id"].(string); ok && v != "" {
-		taskID = v
+	// Ordinary Agent Canvas uses session_id as task_id. The service pre-seeds
+	// it after acquiring its session lock; direct callers follow the same
+	// convention whenever a session id is available.
+	taskID, _ := root["__task_id__"].(string)
+	if taskID == "" {
+		taskID = sessionID
 	}
 	if taskID == "" {
 		taskID = utility.GenerateToken()
+		root["__task_id__"] = taskID
 	}
+	runCtx, cancel := context.WithCancel(ctx)
+	registration := &runCancel{cancel: cancel}
+	// A freshly generated task id should not inherit a stale marker when a
+	// test or an upstream caller deliberately reuses one.
+	if reset, _ := root["__cancel_key_reset__"].(bool); !reset {
+		clearCancelBestEffort(taskID)
+	}
+	r.mu.Lock()
+	r.runCancels[taskID] = registration
+	r.mu.Unlock()
+
+	// Generate the message identifier the RunFunc and SSE envelope need.
+	messageID := utility.GenerateToken()
 
 	// Inject the output channel + metadata so the RunFunc can emit
 	// events during execution (workflow_started, node_started,
@@ -269,14 +270,16 @@ func (r *Runner) Run(
 	root["__session_id__"] = sessionID
 
 	go func() {
-		defer close(out)
 		defer func() {
 			r.mu.Lock()
-			if r.runCancels[canvasID] == cancel {
-				delete(r.runCancels, canvasID)
+			if r.runCancels[taskID] == registration {
+				delete(r.runCancels, taskID)
 			}
 			r.mu.Unlock()
+			cancel()
+			clearCancelBestEffort(taskID)
 		}()
+		defer close(out)
 		// Panic sentinel (temporary diagnostic — see plan):
 		// a panic anywhere in the run goroutine used to silently
 		// propagate, leaving the events channel closed-empty so the
@@ -299,15 +302,28 @@ func (r *Runner) Run(
 		// root inside the RunFunc — see service/agent.go's
 		// buildRunFunc.
 		if userInput != nil {
-			if id := r.getInterruptID(canvasID, sessionID); id != "" {
+			id := r.getInterruptID(canvasID, sessionID)
+			if _, hasPersistedID := root["__resume_interrupt_id__"]; !hasPersistedID && id != "" {
 				root["__resume_interrupt_id__"] = id
 				root["__resume_data__"] = userInput
 			}
 		}
 
-		_, runErr := safeInvoke(ctx, cancel, run, root)
+		// Redis cancellation is a second-instance signal. A local cancel
+		// always uses the same child context, so Eino/HTTP calls receive the
+		// cancellation rather than merely letting the outer runner return.
+		go WatchCancel(runCtx, taskID, func() {
+			if onCancel, ok := root["__on_cancel__"].(func()); ok {
+				onCancel()
+			}
+			cancel()
+		})
+		_, runErr := safeInvoke(runCtx, run, root)
 		if runErr != nil {
-			if errors.Is(runErr, context.Canceled) || errors.Is(runErr, errCancelled) {
+			if errors.Is(runErr, context.Canceled) {
+				if onCancel, ok := root["__on_cancel__"].(func()); ok {
+					onCancel()
+				}
 				return
 			}
 			if ctxs := ExtractInterruptContexts(runErr); len(ctxs) > 0 {
@@ -356,20 +372,22 @@ func (r *Runner) Run(
 	return out
 }
 
-// Cancel signals an in-flight run for the given canvas to stop.
+func clearCancelBestEffort(taskID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	_ = ClearCancel(ctx, taskID)
+}
+
+// Cancel signals the in-flight run for the given task id to stop.
 // Safe to call when no run is active.
-func (r *Runner) Cancel(canvasID string) {
+func (r *Runner) Cancel(taskID string) {
 	r.mu.Lock()
-	cancel, ok := r.runCancels[canvasID]
+	registration, ok := r.runCancels[taskID]
 	r.mu.Unlock()
 	if !ok {
 		return
 	}
-	select {
-	case <-cancel:
-	default:
-		close(cancel)
-	}
+	registration.cancel()
 }
 
 // Peek reports whether a paused interrupt id is held for the given
@@ -382,16 +400,9 @@ func (r *Runner) Peek(canvasID, sessionID string) bool {
 	return ok
 }
 
-// errCancelled is the sentinel safeInvoke returns when the cancel
-// channel fires during a run. It is wrapped against context.Canceled
-// so callers can `errors.Is` either.
-var errCancelled = fmt.Errorf("canvas: run cancelled")
-
-// safeInvoke calls the supplied RunFunc with context-cancel and
-// driver-cancel both wired in. The RunFunc is expected to honour
-// ctx.Done() — the cancel channel is a secondary signal for the
-// V1 in-process driver.
-func safeInvoke(ctx context.Context, cancel chan struct{}, run RunFunc, root map[string]any) (*CanvasState, error) {
+// safeInvoke calls the supplied RunFunc with the managed child context.
+// The RunFunc is expected to honour ctx.Done().
+func safeInvoke(ctx context.Context, run RunFunc, root map[string]any) (*CanvasState, error) {
 	done := make(chan struct{})
 	var (
 		state *CanvasState
@@ -415,9 +426,16 @@ func safeInvoke(ctx context.Context, cancel chan struct{}, run RunFunc, root map
 	}()
 	select {
 	case <-done:
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		return state, err
-	case <-cancel:
-		return nil, errCancelled
+	case <-ctx.Done():
+		// Do not abandon the workflow goroutine. Eino and context-aware
+		// HTTP/tool calls should return promptly once the child context is
+		// cancelled; waiting here keeps the run under management.
+		<-done
+		return nil, ctx.Err()
 	}
 }
 

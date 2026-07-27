@@ -145,4 +145,7 @@ func TestRequestCancel_EmptyValueStillFires(t *testing.T) {
 	if got != "x" {
 		t.Fatalf("cancel key value = %q, want %q", got, "x")
 	}
+	if ttl := mr.TTL("task_value-cancel"); ttl <= 0 {
+		t.Fatalf("cancel key TTL = %v, want finite positive TTL", ttl)
+	}
 }

@@ -101,6 +101,16 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	g.POST("/test_db_connection", h.TestDBConnection)
 }
 
+// RegisterAgentTaskRoutes registers task-scoped ordinary Agent actions on an
+// /api/v1/tasks group. Keeping this separate avoids nesting the endpoint under
+// /agents while still making the route independently testable.
+func RegisterAgentTaskRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
+	if g == nil || h == nil {
+		return
+	}
+	g.POST("/:task_id/cancel", h.CancelTask)
+}
+
 // registerAnyMethod mirrors the Python
 // `@manager.route(path, methods=["POST","GET","PUT","PATCH","DELETE","HEAD"])`
 // pattern. Gin has no Match() helper, so we register each verb

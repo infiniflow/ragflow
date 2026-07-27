@@ -25,10 +25,12 @@ package canvas
 import (
 	"context"
 	"errors"
+	"ragflow/internal/common"
 	redis2 "ragflow/internal/engine/redis"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 )
 
 // cancelKeySuffix is appended to the task id to form the Redis key.
@@ -76,14 +78,13 @@ var cancelClientFn = func() (*redis.Client, error) {
 func WatchCancel(ctx context.Context, taskID string, onCancel func()) {
 	c, err := cancelClientFn()
 	if err != nil {
-		// Without Redis the watcher can do nothing. Returning silently
-		// matches the rest of the canvas layer: a missing cache is a
-		// deployment error surfaced at startup, not at every call.
+		common.Warn("agent cancel watcher unavailable", zap.String("task_id", taskID), zap.Error(err))
 		return
 	}
 	key := taskID + cancelKeySuffix
 	ticker := time.NewTicker(cancelPollInterval)
 	defer ticker.Stop()
+	readFailureLogged := false
 
 	for {
 		select {
@@ -92,11 +93,13 @@ func WatchCancel(ctx context.Context, taskID string, onCancel func()) {
 		case <-ticker.C:
 			v, err := c.Get(ctx, key).Result()
 			if err != nil && !errors.Is(err, redis.Nil) {
-				// Transient Redis error — log by skipping this tick; the
-				// next tick will retry. Avoid spinning on persistent
-				// failure.
+				if !readFailureLogged {
+					common.Warn("agent cancel watcher redis read failed", zap.String("task_id", taskID), zap.Error(err))
+					readFailureLogged = true
+				}
 				continue
 			}
+			readFailureLogged = false
 			if v != "" {
 				if onCancel != nil {
 					onCancel()
@@ -107,14 +110,24 @@ func WatchCancel(ctx context.Context, taskID string, onCancel func()) {
 	}
 }
 
-// RequestCancel publishes a cancel signal for the given task. The
-// 24h TTL matches the Python task_service.py protocol so a flag set
-// during one run is still observable by a resume that arrives hours
-// later (e.g. after a long client-side wait).
+// RequestCancel publishes a cancel signal for the given task. The 24h TTL
+// keeps the Redis protocol compatible with Python while bounding stale
+// markers; Go clears the key when this per-run task reaches a terminal state.
 func RequestCancel(ctx context.Context, taskID string) error {
 	c, err := cancelClientFn()
 	if err != nil {
 		return err
 	}
 	return c.Set(ctx, taskID+cancelKeySuffix, "x", RequestCancelTTL).Err()
+}
+
+// ClearCancel removes a session-scoped task cancel marker before a new run
+// and after a terminal run, preventing a previous Stop from poisoning the
+// next turn in the same session.
+func ClearCancel(ctx context.Context, taskID string) error {
+	c, err := cancelClientFn()
+	if err != nil {
+		return err
+	}
+	return c.Del(ctx, taskID+cancelKeySuffix).Err()
 }

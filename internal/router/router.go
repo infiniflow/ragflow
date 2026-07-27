@@ -580,6 +580,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Agent routes
 			agents := v1.Group("/agents")
 			RegisterAgentRoutes(agents, r.agentHandler)
+			// Ordinary Agent task cancellation uses the task id emitted in
+			// the current SSE turn; it is not canvas-scoped.
+			RegisterAgentTaskRoutes(v1.Group("/tasks"), r.agentHandler)
 
 			// Plugin routes
 			plugin := v1.Group("/plugin")

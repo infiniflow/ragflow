@@ -188,3 +188,65 @@ func TestRunTracker_NilClient(t *testing.T) {
 		t.Fatal("Get with nil client: err = nil, want error")
 	}
 }
+
+func TestRunTracker_TaskMetadata(t *testing.T) {
+	tracker, mr := newTestTracker(t, time.Hour)
+	ctx := context.Background()
+	if err := tracker.StartTask(ctx, "task-1", "user-1", "canvas-1", "session-1", "run-1"); err != nil {
+		t.Fatalf("StartTask: %v", err)
+	}
+	meta, err := tracker.GetTask(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("GetTask: %v", err)
+	}
+	if meta["user_id"] != "user-1" || meta["run_id"] != "run-1" || meta["status"] != "running" {
+		t.Fatalf("unexpected task metadata: %#v", meta)
+	}
+	if ttl := mr.TTL(taskKey("task-1")); ttl <= 0 {
+		t.Fatalf("task metadata TTL = %v, want finite positive TTL", ttl)
+	}
+	if err := tracker.MarkTask(ctx, "task-1", "cancelled", true); err != nil {
+		t.Fatalf("MarkTask: %v", err)
+	}
+	meta, _ = tracker.GetTask(ctx, "task-1")
+	if meta["status"] != "cancelled" || meta["cancel_requested"] != "1" {
+		t.Fatalf("unexpected terminal task metadata: %#v", meta)
+	}
+	if err := tracker.DeleteTask(ctx, "task-1"); err != nil {
+		t.Fatalf("DeleteTask: %v", err)
+	}
+	meta, _ = tracker.GetTask(ctx, "task-1")
+	if len(meta) != 0 {
+		t.Fatalf("task metadata not cleaned up: %#v", meta)
+	}
+}
+
+func TestRunTrackerSessionLock(t *testing.T) {
+	tracker, mr := newTestTracker(t, time.Hour)
+	ctx := context.Background()
+	locked, err := tracker.TryLockSession(ctx, "session-1", "owner-a")
+	if err != nil || !locked {
+		t.Fatalf("first TryLockSession = %v, %v; want true, nil", locked, err)
+	}
+	if ttl := mr.TTL(sessionLockKey("session-1")); ttl <= 0 {
+		t.Fatalf("session lock TTL = %v, want finite positive TTL", ttl)
+	}
+	locked, err = tracker.TryLockSession(ctx, "session-1", "owner-b")
+	if err != nil || locked {
+		t.Fatalf("second TryLockSession = %v, %v; want false, nil", locked, err)
+	}
+	if err := tracker.UnlockSession(ctx, "session-1", "owner-b"); err != nil {
+		t.Fatalf("foreign UnlockSession: %v", err)
+	}
+	locked, err = tracker.TryLockSession(ctx, "session-1", "owner-b")
+	if err != nil || locked {
+		t.Fatalf("foreign unlock released lock: %v, %v", locked, err)
+	}
+	if err := tracker.UnlockSession(ctx, "session-1", "owner-a"); err != nil {
+		t.Fatalf("owner UnlockSession: %v", err)
+	}
+	locked, err = tracker.TryLockSession(ctx, "session-1", "owner-b")
+	if err != nil || !locked {
+		t.Fatalf("TryLockSession after release = %v, %v; want true, nil", locked, err)
+	}
+}

@@ -20,7 +20,7 @@
 //
 // Status code mapping (stored as int under the "status" field):
 //
-//	0 = running, 1 = succeeded, 2 = failed, 3 = cancelled.
+//	0 = running, 1 = succeeded, 2 = failed, 3 = cancelled, 4 = waiting_for_user.
 package canvas
 
 import (
@@ -42,6 +42,7 @@ const (
 	runStatusSucceeded = "1"
 	runStatusFailed    = "2"
 	runStatusCancelled = "3"
+	runStatusWaiting   = "4"
 )
 
 // runFieldInterruptID is the hash field that holds the eino interrupt id a
@@ -49,6 +50,14 @@ const (
 const runFieldInterruptID = "interrupt_id"
 
 func runKey(runID string) string { return runKeyPrefix + runID }
+
+const taskKeyPrefix = "agent:task:"
+
+func taskKey(taskID string) string { return taskKeyPrefix + taskID }
+
+const sessionLockKeyPrefix = "agent:session-lock:"
+
+func sessionLockKey(sessionID string) string { return sessionLockKeyPrefix + sessionID }
 
 // RunTracker manages canvas-run metadata (canvas_id, status, checkpoint
 // link, resume chain, ...) on a Redis Hash. Operations are explicit — the
@@ -152,8 +161,9 @@ func (t *RunTracker) GetInterruptID(ctx context.Context, runID string) (string, 
 	return v, true, nil
 }
 
-// ClearInterruptID removes the persisted interrupt id. Called when a run
-// completes (no longer paused) or is cancelled (the checkpoint is wiped).
+// ClearInterruptID removes the persisted interrupt id after a resumed run
+// completes. Cancelling an unrelated turn does not discard the session's
+// UserFillUp checkpoint.
 func (t *RunTracker) ClearInterruptID(ctx context.Context, runID string) error {
 	if t == nil || t.client == nil {
 		return errors.New("run tracker: redis client not initialized")
@@ -189,11 +199,95 @@ func (t *RunTracker) MarkCancelled(ctx context.Context, runID string) error {
 	if t == nil || t.client == nil {
 		return errors.New("run tracker: redis client not initialized")
 	}
-	return t.client.HSet(ctx, runKey(runID),
+	key := runKey(runID)
+	pipe := t.client.Pipeline()
+	pipe.HSet(ctx, key,
 		"status", runStatusCancelled,
 		"finished_at", time.Now().UnixMilli(),
 		"cancel_requested", 1,
-	).Err()
+	)
+	pipe.Expire(ctx, key, t.ttl)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// StartTask records the session-scoped task owner and runtime identity used
+// by /tasks/{task_id}/cancel. It intentionally lives separately from the
+// stable session checkpoint run hash.
+func (t *RunTracker) StartTask(ctx context.Context, taskID, userID, canvasID, sessionID, runID string) error {
+	if t == nil || t.client == nil {
+		return errors.New("run tracker: redis client not initialized")
+	}
+	key := taskKey(taskID)
+	pipe := t.client.Pipeline()
+	pipe.HSet(ctx, key, map[string]any{
+		"task_id": taskID, "user_id": userID, "canvas_id": canvasID,
+		"session_id": sessionID, "run_id": runID, "status": "running",
+		"started_at": time.Now().UnixMilli(), "cancel_requested": 0,
+	})
+	pipe.Expire(ctx, key, t.ttl)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// GetTask returns task metadata; an empty map means the task is unknown.
+func (t *RunTracker) GetTask(ctx context.Context, taskID string) (map[string]string, error) {
+	if t == nil || t.client == nil {
+		return nil, errors.New("run tracker: redis client not initialized")
+	}
+	return t.client.HGetAll(ctx, taskKey(taskID)).Result()
+}
+
+func (t *RunTracker) MarkTask(ctx context.Context, taskID, status string, cancelRequested bool) error {
+	if t == nil || t.client == nil {
+		return errors.New("run tracker: redis client not initialized")
+	}
+	return t.client.HSet(ctx, taskKey(taskID), map[string]any{
+		"status": status, "cancel_requested": boolInt(cancelRequested),
+		"finished_at": time.Now().UnixMilli(),
+	}).Err()
+}
+
+func (t *RunTracker) DeleteTask(ctx context.Context, taskID string) error {
+	if t == nil || t.client == nil {
+		return errors.New("run tracker: redis client not initialized")
+	}
+	return t.client.Del(ctx, taskKey(taskID)).Err()
+}
+
+// TryLockSession acquires the distributed ordinary-Agent run lock for one
+// session. The caller supplies a unique token so an older run can never
+// release a newer lock after a TTL expiry. Its TTL is the tracker TTL (24h
+// in production), preventing a crashed server from leaving a permanent lock.
+func (t *RunTracker) TryLockSession(ctx context.Context, sessionID, token string) (bool, error) {
+	if t == nil || t.client == nil {
+		return false, errors.New("run tracker: redis client not initialized")
+	}
+	return t.client.SetNX(ctx, sessionLockKey(sessionID), token, t.ttl).Result()
+}
+
+// UnlockSession releases a session lock only when it is still owned by token.
+func (t *RunTracker) UnlockSession(ctx context.Context, sessionID, token string) error {
+	if t == nil || t.client == nil {
+		return errors.New("run tracker: redis client not initialized")
+	}
+	const unlockScript = `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0`
+	return t.client.Eval(ctx, unlockScript, []string{sessionLockKey(sessionID)}, token).Err()
+}
+
+func boolInt(v bool) int {
+	if v {
+		return 1
+	}
+	return 0
+}
+
+// MarkWaiting records a normal UserFillUp pause. It is not a failure.
+func (t *RunTracker) MarkWaiting(ctx context.Context, runID string) error {
+	if t == nil || t.client == nil {
+		return errors.New("run tracker: redis client not initialized")
+	}
+	return t.client.HSet(ctx, runKey(runID), "status", runStatusWaiting).Err()
 }
 
 // Get returns all hash fields for a run. The empty map (not nil) plus a

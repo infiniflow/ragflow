@@ -79,3 +79,14 @@ func TestAgentRoutes_NilSafety(t *testing.T) {
 	RegisterAgentRoutes(eng.Group("/agents"), nil)
 	// Reaching here without panicking is the assertion.
 }
+
+func TestAgentTaskCancelRouteRegistered(t *testing.T) {
+	eng := gin.New()
+	RegisterAgentTaskRoutes(eng.Group("/api/v1/tasks"), &handler.AgentHandler{})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/task-1/cancel", nil)
+	eng.ServeHTTP(w, req)
+	if w.Code == http.StatusNotFound {
+		t.Fatal("POST /api/v1/tasks/:task_id/cancel was not registered")
+	}
+}
