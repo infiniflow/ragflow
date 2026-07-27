@@ -133,3 +133,79 @@ func TestTagChunker_HTMLTable(t *testing.T) {
 		t.Errorf("chunk0 tag_kwd = %v, want [a1 b1]", tags0)
 	}
 }
+
+// TestTagChunk_TopInt covers Chunker-1.8: each tag-pair row must carry
+// the 0-based source row index as top_int, matching Python
+// tag.py:33 beAdoc(row_num=i).
+func TestTagChunk_TopInt(t *testing.T) {
+	chunks := tagChunksOf(t, map[string]any{
+		"name":          "tags.txt",
+		"output_format": "text",
+		"text":          "tag1\tcontent1\ntag2\tcontent2",
+	})
+	if len(chunks) != 2 {
+		t.Fatalf("want 2 chunks, got %d", len(chunks))
+	}
+	if ti, ok := chunks[0]["top_int"]; !ok {
+		t.Error("chunk 0: top_int missing")
+	} else if arr, ok2 := ti.([]any); !ok2 {
+		t.Errorf("chunk 0: top_int has unexpected type %T: %v", ti, ti)
+	} else if len(arr) != 1 {
+		t.Errorf("chunk 0: top_int = %v, want [0]", arr)
+	}
+	if ti, ok := chunks[1]["top_int"]; !ok {
+		t.Error("chunk 1: top_int missing")
+	} else if arr, ok2 := ti.([]any); !ok2 {
+		t.Errorf("chunk 1: top_int has unexpected type %T: %v", ti, ti)
+	} else if len(arr) != 1 {
+		t.Errorf("chunk 1: top_int = %v, want [1]", arr)
+	}
+}
+
+// TestTagChunk_CSVTopIntStartLine locks the RowNum convention from
+// review finding #4: a multi-line quoted CSV record must report the
+// record's START line, not the line after it ends. The first record
+// spans physical lines 0-1, so its top_int is [0]; the second record
+// is on line 2, so its top_int is [2].
+func TestTagChunk_CSVTopIntStartLine(t *testing.T) {
+	chunks := tagChunksOf(t, map[string]any{
+		"name":          "tags.csv",
+		"output_format": "text",
+		"text":          "\"multi\nline content\",TAG\nsecond,OTHER",
+	})
+	if len(chunks) != 2 {
+		t.Fatalf("want 2 chunks, got %d", len(chunks))
+	}
+	if ti, ok := chunks[0]["top_int"].([]any); !ok || len(ti) != 1 || ti[0] != float64(0) {
+		t.Errorf("chunk 0: top_int = %v, want [0]", chunks[0]["top_int"])
+	}
+	if ti, ok := chunks[1]["top_int"].([]any); !ok || len(ti) != 1 || ti[0] != float64(2) {
+		t.Errorf("chunk 1: top_int = %v, want [2]", chunks[1]["top_int"])
+	}
+}
+
+// TestTagChunk_TSVMultiLineRowNumStart pins the RowNum fix for TSV
+// multi-line records: when a record spans multiple physical lines
+// (because the first line does not contain a tab delimiter), the
+// resulting chunk's top_int must report the first non-empty CONTENT
+// start line, not the line where the tab-delimiter eventually
+// terminates the record (PR #17419 review #1).
+func TestTagChunk_TSVMultiLineRowNumStart(t *testing.T) {
+	chunks := tagChunksOf(t, map[string]any{
+		"name":          "tags.txt",
+		"output_format": "text",
+		// Line 0 is empty, line 1 has no tab (accumulated as prefix
+		// of the first record), line 2 is valid TSV.
+		// The prefix starts at line 1 → RowNum must be 1, not 2.
+		"text": "\nprefix\nrecord1\tTAG1\nmulti\nline-prefix\nrecord2\tTAG2",
+	})
+	if len(chunks) != 2 {
+		t.Fatalf("want 2 chunks, got %d", len(chunks))
+	}
+	if ti, ok := chunks[0]["top_int"].([]any); !ok || len(ti) != 1 || ti[0] != float64(1) {
+		t.Errorf("chunk 0: top_int = %v, want [1] (content start)", chunks[0]["top_int"])
+	}
+	if ti, ok := chunks[1]["top_int"].([]any); !ok || len(ti) != 1 || ti[0] != float64(3) {
+		t.Errorf("chunk 1: top_int = %v, want [3] (content start after blank line)", chunks[1]["top_int"])
+	}
+}

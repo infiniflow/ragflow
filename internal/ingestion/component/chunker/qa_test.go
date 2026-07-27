@@ -213,7 +213,7 @@ func TestQAChunker_PrefixSpaceSeparatorStrips(t *testing.T) {
 	}
 	cww, _ := chunks[0]["content_with_weight"].(string)
 	// Python qa.py:241 uses `[\t:： ]+`, so a space is a valid separator:
-	// a leading "A"/"Q" followed by a space is stripped (diff Chunker-2.12).
+	// a leading "A"/"Q" followed by a space is stripped. .
 	if cww != "Question: language model is useful\tAnswer: How does it work" {
 		t.Fatalf("space-separator prefix not stripped: %q", cww)
 	}

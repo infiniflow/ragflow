@@ -63,6 +63,50 @@ func TestPPTParser_ParseWithResult_CGO(t *testing.T) {
 	}
 }
 
+// TestPPTParser_TCADPFileType covers : when a .ppt file
+// is routed through PPTParser with parse_method="tcadp", the underlying
+// PPTXParser must pass "PPT" as the file_type to TCADP, not "PPTX".
+// This test verifies format propagation from PPTParser through
+// ConfigureFromSetup to the embedded PPTXParser.
+func TestPPTParser_TCADPFileType(t *testing.T) {
+	// PPTParser delegates to PPTXParser{format:"ppt"}.
+	p := NewPPTParser()
+	setup := map[string]any{
+		"parse_method":  "tcadp",
+		"output_format": "json",
+	}
+	p.ConfigureFromSetup(setup)
+
+	// Verify the embedded PPTXParser received the config and keeps
+	// format="ppt" (which maps to "PPT" in TCADP fileType).
+	if p.pptx.format != "ppt" {
+		t.Errorf("PPTParser.pptx.format = %q, want %q", p.pptx.format, "ppt")
+	}
+	if p.pptx.ParseMethod != "tcadp" {
+		t.Errorf("PPTParser.pptx.ParseMethod = %q, want %q", p.pptx.ParseMethod, "tcadp")
+	}
+	if p.pptx.OutputFormat != "json" {
+		t.Errorf("PPTParser.pptx.OutputFormat = %q, want %q", p.pptx.OutputFormat, "json")
+	}
+}
+
+// TestPPTXParser_TCADPFileType covers : PPTXParser
+// with format="pptx" must derive fileType "PPTX" for TCADP calls.
+func TestPPTXParser_TCADPFileType(t *testing.T) {
+	p := NewPPTXParser()
+	if p.format != "pptx" {
+		t.Fatalf("NewPPTXParser().format = %q, want pptx", p.format)
+	}
+	setup := map[string]any{
+		"parse_method":  "tcadp",
+		"output_format": "json",
+	}
+	p.ConfigureFromSetup(setup)
+	if p.ParseMethod != "tcadp" {
+		t.Errorf("ParseMethod = %q, want tcadp", p.ParseMethod)
+	}
+}
+
 // buildPPTX creates a minimal valid PPTX document with one slide
 // containing the given text, using office_oxide's PptxWriter.
 func buildPPTX(t *testing.T, text string) []byte {

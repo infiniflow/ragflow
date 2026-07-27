@@ -98,3 +98,22 @@ func TestOneChunker_JSONMultipleMerges(t *testing.T) {
 		t.Errorf("image = %q, want first available media context", got)
 	}
 }
+
+// TestOneChunker_PreservesPositions covers Chunker-1.8: when a single
+// upstream item carries PDF coordinates, the OneChunker must preserve
+// Positions and PDFPositions on the output chunk.
+func TestOneChunker_PreservesPositions(t *testing.T) {
+	chunks := oneChunksOf(t, map[string]any{
+		"name":          "page.pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "page text", "positions": []any{[]any{10.0, 20.0, 30.0, 40.0}}},
+		},
+	})
+	if len(chunks) != 1 {
+		t.Fatalf("want 1 chunk, got %d", len(chunks))
+	}
+	if chunks[0]["positions"] == nil {
+		t.Error("positions was not preserved on output chunk")
+	}
+}

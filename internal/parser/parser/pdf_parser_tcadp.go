@@ -143,6 +143,21 @@ func tcadpAnyToItems(raw any) []map[string]any {
 	case map[string]any:
 		text := strings.TrimSpace(stringValue(v["content"]))
 		contentType := strings.ToLower(strings.TrimSpace(stringValue(v["type"])))
+		page := extractTCADPPage(v)
+		emit := func(text, docType, layout string) []map[string]any {
+			m := map[string]any{"text": text, "doc_type_kwd": docType, "layout": layout}
+			if page > 0 {
+				// 0-indexed 5-tuple (page-1). The ingestion pipeline
+				// (processChunkPositions -> AddPositions,
+				// internal/ingestion/task/position.go) converts this to
+				// page_num_int=[page], top_int=[0] and
+				// position_int=[[page,0,0,0,0]], mirroring Python
+				// presentation.py:148-149. Fixes migration
+				// (presentation TCADP items dropped slide page location).
+				m["positions"] = []float64{float64(page - 1), 0, 0, 0, 0}
+			}
+			return []map[string]any{m}
+		}
 		switch contentType {
 		case "table":
 			if text == "" {
@@ -151,26 +166,40 @@ func tcadpAnyToItems(raw any) []map[string]any {
 			if text == "" {
 				return nil
 			}
-			return []map[string]any{{"text": text, "doc_type_kwd": "table", "layout": "table"}}
+			return emit(text, "table", "table")
 		case "image":
 			caption := strings.TrimSpace(stringValue(v["caption"]))
 			if caption == "" {
 				caption = "[Image]"
 			}
-			return []map[string]any{{"text": caption, "doc_type_kwd": "image", "layout": "figure"}}
+			return emit(caption, "image", "figure")
 		case "equation":
 			if text == "" {
 				return nil
 			}
-			return []map[string]any{{"text": "$$" + text + "$$", "doc_type_kwd": "text", "layout": "equation"}}
+			return emit("$$"+text+"$$", "text", "equation")
 		default:
 			if text == "" {
 				return nil
 			}
-			return []map[string]any{{"text": text, "doc_type_kwd": "text", "layout": "text"}}
+			return emit(text, "text", "text")
 		}
 	}
 	return nil
+}
+
+// extractTCADPPage returns the 1-indexed page number carried by a raw TCADP
+// element, using the same key set collectPDFPageNumbers walks
+// (pdf_parser_remote_common.go). It returns 0 when the element has no page
+// information (e.g. spreadsheet TCADP), so callers can skip position emission
+// and remain parity-correct with Python (table.py sets no page either).
+func extractTCADPPage(v map[string]any) int {
+	for _, key := range []string{"page_number", "page_num", "page_no", "page_index", "page_idx", "page"} {
+		if page := int(numberValue(v[key])); page > 0 {
+			return page
+		}
+	}
+	return 0
 }
 
 func tcadpTableRowsText(raw any) string {
