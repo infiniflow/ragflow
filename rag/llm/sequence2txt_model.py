@@ -22,6 +22,7 @@ import re
 import struct
 import tempfile
 from abc import ABC
+from collections.abc import Mapping, Sequence
 from urllib.parse import urlparse
 
 import requests
@@ -154,12 +155,31 @@ class GreenPTSeq2txt(Base):
         except (OSError, requests.RequestException):
             logger.exception("[GreenPT] Speech transcription request failed for model %s", self.model_name)
             raise
-        channels = response.json().get("results", {}).get("channels", [])
-        alternatives = channels[0].get("alternatives", []) if channels else []
-        if not alternatives:
-            logger.warning("[GreenPT] Speech response has no transcript; status=%s", response.status_code)
-            raise ValueError("GreenPT speech response contains no transcript")
-        text = alternatives[0].get("transcript", "").strip()
+        try:
+            payload = response.json()
+            if not isinstance(payload, Mapping):
+                raise TypeError("response root must be an object")
+            results = payload.get("results")
+            if not isinstance(results, Mapping):
+                raise TypeError("results must be an object")
+            channels = results.get("channels")
+            if not isinstance(channels, Sequence) or isinstance(channels, (str, bytes)) or not channels:
+                raise TypeError("channels must be a non-empty array")
+            channel = channels[0]
+            if not isinstance(channel, Mapping):
+                raise TypeError("channel must be an object")
+            alternatives = channel.get("alternatives")
+            if not isinstance(alternatives, Sequence) or isinstance(alternatives, (str, bytes)) or not alternatives:
+                raise TypeError("alternatives must be a non-empty array")
+            alternative = alternatives[0]
+            if not isinstance(alternative, Mapping):
+                raise TypeError("alternative must be an object")
+            transcript = alternative.get("transcript")
+            if not isinstance(transcript, str) or not (text := transcript.strip()):
+                raise TypeError("transcript must be a non-empty string")
+        except (TypeError, ValueError) as exc:
+            logger.warning("[GreenPT] Invalid speech response; model=%s status=%s", self.model_name, response.status_code)
+            raise ValueError("GreenPT speech response contains no valid transcript") from exc
         logger.info(
             "[GreenPT] Speech transcription completed; status=%s transcript_available=%s",
             response.status_code,

@@ -18,6 +18,8 @@ import logging
 from io import BytesIO
 from unittest.mock import Mock, patch
 
+import pytest
+
 from common.constants import LLMType
 from rag.llm.model_meta import GreenPT
 from rag.llm.rerank_model import GreenPTRerank
@@ -54,9 +56,7 @@ def test_greenpt_transcription_uses_listen_protocol(caplog):
     caplog.set_level(logging.INFO)
     response = Mock()
     response.status_code = 200
-    response.json.return_value = {
-        "results": {"channels": [{"alternatives": [{"transcript": " renewable inference "}]}]}
-    }
+    response.json.return_value = {"results": {"channels": [{"alternatives": [{"transcript": " renewable inference "}]}]}}
     response.raise_for_status.return_value = None
 
     with (
@@ -70,5 +70,36 @@ def test_greenpt_transcription_uses_listen_protocol(caplog):
     assert post.call_args.kwargs["headers"]["Authorization"] == "Token secret"
     assert post.call_args.kwargs["params"] == {"model": "green-s", "language": "en"}
     assert "status=200" in caplog.text
+    assert "secret" not in caplog.text
+    assert "sample.wav" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        [],
+        {},
+        {"results": []},
+        {"results": {"channels": "invalid"}},
+        {"results": {"channels": [[]]}},
+        {"results": {"channels": [{"alternatives": "invalid"}]}},
+        {"results": {"channels": [{"alternatives": [[]]}]}},
+        {"results": {"channels": [{"alternatives": [{"transcript": 42}]}]}},
+        {"results": {"channels": [{"alternatives": [{"transcript": " "}]}]}},
+    ],
+)
+def test_greenpt_transcription_rejects_malformed_responses(payload, caplog):
+    caplog.set_level(logging.WARNING)
+    response = Mock(status_code=200)
+    response.json.return_value = payload
+
+    with (
+        patch("builtins.open", return_value=BytesIO(b"audio")),
+        patch("rag.llm.sequence2txt_model.requests.post", return_value=response),
+        pytest.raises(ValueError, match="contains no valid transcript"),
+    ):
+        GreenPTSeq2txt("secret").transcription("sample.wav")
+
+    assert "model=green-s status=200" in caplog.text
     assert "secret" not in caplog.text
     assert "sample.wav" not in caplog.text
