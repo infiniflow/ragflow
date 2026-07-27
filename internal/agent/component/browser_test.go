@@ -249,7 +249,8 @@ func TestResolveBrowserLLM_ResolvesTenantModelID(t *testing.T) {
 	tenantLLMLookupForTest = nil
 	t.Cleanup(func() { tenantLLMLookupForTest = prevLookup })
 
-	provider, model, apiKey, baseURL, err := resolveBrowserLLM("tenant-1", "tenant-model-1")
+	ctx := t.Context()
+	provider, model, apiKey, baseURL, err := resolveBrowserLLM(ctx, db, "tenant-1", "tenant-model-1")
 	if err != nil {
 		t.Fatalf("resolveBrowserLLM: %v", err)
 	}

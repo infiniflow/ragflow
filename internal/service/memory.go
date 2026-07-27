@@ -33,6 +33,8 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/service/nlp"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -1469,8 +1471,8 @@ func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantI
 		}
 		memoryMap := map[string]interface{}{
 			"id":           resp.ID,
-			"llm_id":       ResolveTenantModelDisplayName(ptrStringValue(resp.TenantLLMID), resp.LLMID, modelNameCache),
-			"embd_id":      ResolveTenantModelDisplayName(ptrStringValue(resp.TenantEmbdID), resp.EmbdID, modelNameCache),
+			"llm_id":       ResolveTenantModelDisplayName(ctx, dao.DB, ptrStringValue(resp.TenantLLMID), resp.LLMID, modelNameCache),
+			"embd_id":      ResolveTenantModelDisplayName(ctx, dao.DB, ptrStringValue(resp.TenantEmbdID), resp.EmbdID, modelNameCache),
 			"name":         resp.Name,
 			"avatar":       resp.Avatar,
 			"tenant_id":    resp.TenantID,
@@ -1494,7 +1496,7 @@ func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantI
 // ResolveTenantModelDisplayName turns a tenant_model ID into
 // modelName@instance@provider. rawModelID is the API-facing fallback
 // stored on memory.llm_id / memory.embd_id / knowledgebase.embd_id.
-func ResolveTenantModelDisplayName(tenantModelID, rawModelID string, cache map[string]string) string {
+func ResolveTenantModelDisplayName(ctx context.Context, db *gorm.DB, tenantModelID, rawModelID string, cache map[string]string) string {
 	tenantModelID = strings.TrimSpace(tenantModelID)
 	rawModelID = strings.TrimSpace(rawModelID)
 	if tenantModelID == "" || strings.Contains(tenantModelID, "@") {
@@ -1510,15 +1512,15 @@ func ResolveTenantModelDisplayName(tenantModelID, rawModelID string, cache map[s
 		cache[tenantModelID] = displayName
 	}()
 
-	model, err := dao.NewTenantModelDAO().GetByID(tenantModelID)
+	model, err := dao.NewTenantModelDAO().GetByID(ctx, db, tenantModelID)
 	if err != nil {
 		return displayName
 	}
-	instance, err := dao.NewTenantModelInstanceDAO().GetByID(model.InstanceID)
+	instance, err := dao.NewTenantModelInstanceDAO().GetByID(ctx, db, model.InstanceID)
 	if err != nil {
 		return displayName
 	}
-	provider, err := dao.NewTenantModelProviderDAO().GetByID(model.ProviderID)
+	provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, model.ProviderID)
 	if err != nil {
 		return displayName
 	}

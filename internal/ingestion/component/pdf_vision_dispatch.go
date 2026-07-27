@@ -488,7 +488,7 @@ func defaultPDFVisionModelResolver(
 		driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 		return driver, modelName, apiConfig, err
 	}
-	driver, modelName, apiConfig, _, err := resolveModelConfig(tenantID, entity.ModelTypeImage2Text, modelID)
+	driver, modelName, apiConfig, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelID)
 	return driver, modelName, apiConfig, err
 }
 

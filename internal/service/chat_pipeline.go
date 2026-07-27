@@ -1888,7 +1888,7 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 	// when the LLM is registered as such, otherwise CHAT.
 	modelType := entity.ModelTypeChat
 	modelTypeStr := "chat"
-	if modelTypes, mtErr := s.ModelProviderSvc.ResolveModelType(chat.TenantID, chat.LLMID); mtErr == nil {
+	if modelTypes, mtErr := s.ModelProviderSvc.ResolveModelType(ctx, chat.TenantID, chat.LLMID); mtErr == nil {
 		for _, mt := range modelTypes {
 			if mt == entity.ModelTypeImage2Text {
 				modelType = entity.ModelTypeImage2Text

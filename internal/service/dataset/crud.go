@@ -395,7 +395,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 		if tenantEmbdID == "" && isHexID(kb.EmbdID) {
 			tenantEmbdID = kb.EmbdID
 		}
-		item["embedding_model"] = service.ResolveTenantModelDisplayName(tenantEmbdID, kb.EmbdID, modelNameCache)
+		item["embedding_model"] = service.ResolveTenantModelDisplayName(ctx, dao.DB, tenantEmbdID, kb.EmbdID, modelNameCache)
 		data = append(data, item)
 	}
 
