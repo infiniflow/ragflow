@@ -20,6 +20,7 @@
 package component
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -37,9 +38,9 @@ type tenantModelExtra struct {
 
 var resolveTenantModelByType = defaultResolveTenantModelByType
 
-func defaultResolveTenantModelByType(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	tenantDAO := dao.NewTenantDAO()
-	tenant, err := tenantDAO.GetByID(tenantID)
+	tenant, err := tenantDAO.GetByID(ctx, db, tenantID)
 	if err != nil {
 		return nil, "", nil, 0, err
 	}

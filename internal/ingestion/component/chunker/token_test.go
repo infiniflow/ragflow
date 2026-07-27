@@ -18,9 +18,11 @@ package chunker
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // TestTokenChunker_Registered asserts the registry has a CategoryIngestion
@@ -296,8 +298,6 @@ func TestTokenChunker_NewRejectsBadParam(t *testing.T) {
 		{"one delimiter_mode (use OneChunker)", map[string]any{"delimiter_mode": "one"}},
 		{"zero chunk_token_size", map[string]any{"delimiter_mode": "token_size", "chunk_token_size": 0}},
 		{"negative chunk_token_size", map[string]any{"delimiter_mode": "token_size", "chunk_token_size": -5}},
-		{"negative overlapped_percent", map[string]any{"delimiter_mode": "token_size", "chunk_token_size": 50, "overlapped_percent": -0.1}},
-		{"overlapped_percent >= 1", map[string]any{"delimiter_mode": "token_size", "chunk_token_size": 50, "overlapped_percent": 1.0}},
 		{"negative table_context_size", map[string]any{"delimiter_mode": "token_size", "chunk_token_size": 50, "table_context_size": -1}},
 	}
 	for _, tc := range cases {
@@ -359,4 +359,194 @@ func TestTokenChunker_PrefersUpstreamChunks(t *testing.T) {
 		}
 	}
 	t.Fatalf("upstream chunk 'CHAPTER-AWARE' was not found in output: %v", out["chunks"])
+}
+
+// TestTokenChunker_NewAcceptsPythonOverlappedRange covers Chunker-2.6:
+// overlapped_percent uses Python's [0,90] integer-percentage semantics,
+// accepting both a [0,1) fraction and a [0,90] percentage (the latter
+// normalized via normalizeOverlappedPercent).
+func TestTokenChunker_NewAcceptsPythonOverlappedRange(t *testing.T) {
+	// Values that should be valid in the Python range (fractions and
+	// percentages, including out-of-range inputs that Python clamps).
+	for _, pct := range []float64{0, 0.1, 0.5, 15, 30, 50, 90, 95, -5} {
+		conf := map[string]any{
+			"delimiter_mode":     "token_size",
+			"chunk_token_size":   100,
+			"overlapped_percent": pct,
+		}
+		_, err := NewTokenChunker(conf)
+		if err != nil {
+			t.Errorf("overlapped_percent=%v: unexpected error: %v", pct, err)
+		}
+	}
+}
+
+// TestNormalizeOverlappedPercent is the Go port of Python
+// common/float_utils.py:50-58 normalize_overlapped_percent (diff Chunker-2.6).
+// Python's user-facing input is a [0,1) fraction; the helper converts it to
+// the [0,90] integer-percentage scale the merge math expects.
+func TestNormalizeOverlappedPercent(t *testing.T) {
+	cases := []struct {
+		name string
+		in   any
+		want float64
+	}{
+		{"zero", 0, 0},
+		{"fraction 0.1 -> 10", 0.1, 10},
+		{"fraction 0.5 -> 50", 0.5, 50},
+		{"fraction 0.95 -> 90 (clamp)", 0.95, 90},
+		{"percent 15", 15, 15},
+		{"int truncation 33.3 -> 33", 33.3, 33},
+		{"clamp 95 -> 90", 95, 90},
+		{"clamp -5 -> 0", -5, 0},
+		{"negative fraction -0.1 -> 0", -0.1, 0},
+		// Huge out-of-range values must clamp to 90 (not 0). Go's
+		// float->int is implementation-defined past int's range, so the
+		// clamp must run before truncation (review finding #4). Python's
+		// normalize_overlapped_percent returns 90 for these, not 0.
+		{"huge 1e300 -> 90", 1e300, 90},
+		{"huge -1e300 -> 0", -1e300, 0},
+		{"huge math.MaxFloat64 -> 90", math.MaxFloat64, 90},
+		{`numeric string "10" -> 10`, "10", 10},
+		{`numeric string fraction "0.1" -> 10`, "0.1", 10},
+		{"bad string -> 0", "abc", 0},
+		{"nil -> 0", nil, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := schema.NormalizeOverlappedPercent(tc.in); got != tc.want {
+				t.Errorf("NormalizeOverlappedPercent(%v) = %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestTokenChunker_NormalizesOverlappedPercent asserts the stored value after
+// construction matches Python's normalized [0,90] scale (diff Chunker-2.6).
+func TestTokenChunker_NormalizesOverlappedPercent(t *testing.T) {
+	cases := []struct {
+		name string
+		in   any
+		want float64
+	}{
+		{"clamp 95 -> 90", 95, 90},
+		{"clamp -5 -> 0", -5, 0},
+		{"fraction 0.1 -> 10", 0.1, 10},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := NewTokenChunker(map[string]any{
+				"delimiter_mode":     "token_size",
+				"chunk_token_size":   100,
+				"overlapped_percent": tc.in,
+			})
+			if err != nil {
+				t.Fatalf("NewTokenChunker(%v): %v", tc.in, err)
+			}
+			got := c.(*TokenChunkerComponent).param.OverlappedPercent
+			if got != tc.want {
+				t.Errorf("overlapped_percent=%v: stored %v, want %v", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestSplitIntoSections locks the CRLF-safe blank-line splitting used by
+// mergeByTokenSize. It does NOT claim Chunker-2.7/2.10 coverage: that
+// section-splitting semantics is still OPEN in
+// docs/migration_python_go_diff.md (flow-vs-app Python alignment target
+// undecided), so this only guards the existing behaviour.
+func TestSplitIntoSections(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want int
+	}{
+		{"two paragraphs", "a\n\nb", 2},
+		{"three paragraphs with excess blank lines", "a\n\n\nb\n\nc", 3},
+		{"single paragraph", "hello world", 1},
+		// A blank line containing only whitespace is still a boundary
+		// under \n\s*\n (this is what reverted the stricter \n{2,}).
+		{"blank line with space is a boundary", "a\n \nb", 2},
+		{"leading blank lines produce empty prefix (caller filters)", "\n\ntext", 2},
+		// CRLF regression guard: \r\n\r\n must split the same as \n\n.
+		{"CRLF paragraph break splits", "a\r\n\r\nb", 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := splitIntoSections(tt.text)
+			if len(got) != tt.want {
+				t.Errorf("splitIntoSections(%q) = %d sections, want %d: %v", tt.text, len(got), tt.want, got)
+			}
+		})
+	}
+}
+
+// TestTokenChunkerParam_ValidateOverlappedRange covers the strict overlap
+// handling in TokenChunkerParam.Validate (review findings #3 + #4):
+// a directly-constructed struct with a [0,1) fraction is scaled to its
+// [0,90] percent (so 0.3 means 30%, matching the config path), while
+// out-of-range values are rejected — the config path (Update) clamps
+// instead, so this is the only guard that catches a bad literal.
+func TestTokenChunkerParam_ValidateOverlappedRange(t *testing.T) {
+	cases := []struct {
+		name    string
+		in      float64
+		want    float64 // expected stored value after Validate when err==nil
+		wantErr bool
+	}{
+		{"fraction 0.3 -> 30", 0.3, 30, false},
+		{"percent 0", 0, 0, false},
+		{"percent 30", 30, 30, false},
+		{"percent 90 (boundary)", 90, 90, false},
+		{"percent 95 -> error", 95, 0, true},
+		{"negative -5 -> error", -5, 0, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p := schema.TokenChunkerParam{
+				DelimiterMode:     "token_size",
+				ChunkTokenSize:    100,
+				OverlappedPercent: tc.in,
+			}
+			err := p.Validate()
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("Validate(overlapped_percent=%v): want error, got nil", tc.in)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Validate(overlapped_percent=%v): unexpected error: %v", tc.in, err)
+			}
+			if p.OverlappedPercent != tc.want {
+				t.Errorf("after Validate: overlapped_percent=%v, want %v", p.OverlappedPercent, tc.want)
+			}
+		})
+	}
+}
+
+// TestTokenChunkerParam_UpdatePreservesOverlappedPercent locks review
+// finding #3: tokenChunkerParam.Update must not reset OverlappedPercent to 0
+// when the incoming config omits the key. All other fields use a presence
+// guard, and a partial Update (e.g. changing only chunk_token_size) must
+// preserve the previously configured overlap instead of clobbering it.
+func TestTokenChunkerParam_UpdatePreservesOverlappedPercent(t *testing.T) {
+	p := defaultsToken(tokenChunkerParam{})
+	p.TokenChunkerParam.OverlappedPercent = 30 // pre-existing config
+
+	// Partial update: only chunk_token_size changes.
+	p.Update(map[string]any{"chunk_token_size": 100})
+
+	if p.TokenChunkerParam.OverlappedPercent != 30 {
+		t.Errorf("after partial Update: overlapped_percent=%v, want 30 (preserved)",
+			p.TokenChunkerParam.OverlappedPercent)
+	}
+
+	// Explicit key still wins and normalizes.
+	p.Update(map[string]any{"overlapped_percent": 0.5})
+	if p.TokenChunkerParam.OverlappedPercent != 50 {
+		t.Errorf("after explicit Update: overlapped_percent=%v, want 50 (normalized)",
+			p.TokenChunkerParam.OverlappedPercent)
+	}
 }
