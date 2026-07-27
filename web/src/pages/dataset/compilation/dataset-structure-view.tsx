@@ -1,3 +1,7 @@
+import {
+  SelectWithSearch,
+  SelectWithSearchFlagOptionType,
+} from '@/components/originui/select-with-search';
 import { RepresentationRenderer } from '@/components/structure-graph/representation-renderer';
 import { Card } from '@/components/ui/card';
 import {
@@ -6,26 +10,32 @@ import {
   useFetchKnowledgeBaseConfiguration,
   useKnowledgeBaseId,
 } from '@/hooks/use-knowledge-request';
+import { IStructureGraphEntity } from '@/interfaces/database/document-structure';
 import { GenerateStatus } from '@/pages/dataset/dataset/generate-button/constants';
 import { useTraceRunData } from '@/pages/dataset/dataset/generate-button/hook';
 import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { StructureKind, ViewModeGenerateTypeMap } from './constants';
+import { StructureKind, ViewMode, ViewModeGenerateTypeMap } from './constants';
 import CompilationEmptyState from './empty-state';
 
 interface DatasetStructureViewProps {
   kind: StructureKind;
 }
 
+const getEntityName = (entity: IStructureGraphEntity) =>
+  entity.name ?? entity.id ?? '';
+
 export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const knowledgeBaseId = useKnowledgeBaseId();
   const { data: knowledgeBase } = useFetchKnowledgeBaseConfiguration();
-  const { data, loading } = useFetchDatasetStructureGraph(kind);
+  const [graphKeywords, setGraphKeywords] = useState('');
+  const [selectedNodeId, setSelectedNodeId] = useState('');
+  const { data, loading } = useFetchDatasetStructureGraph(kind, graphKeywords);
   const template = data?.templates?.[0];
 
   const { data: structureRunData } = useTraceRunData(
@@ -41,9 +51,46 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
     }
   }, [structureStatus, queryClient, knowledgeBaseId, kind]);
 
+  const entityOptions = useMemo<SelectWithSearchFlagOptionType[]>(
+    () =>
+      (template?.entities ?? []).map((entity) => {
+        const name = getEntityName(entity);
+        return {
+          label: name,
+          value: name,
+          keywords: [name, ...(entity.aliases ?? [])],
+        };
+      }),
+    [template?.entities],
+  );
+
+  // Only refill the select when the selected entity is still in the current
+  // graph data, to avoid showing raw text with no matching option
+  const selectedEntityName =
+    selectedNodeId &&
+    (template?.entities ?? []).some(
+      (entity) => getEntityName(entity) === selectedNodeId,
+    )
+      ? selectedNodeId
+      : '';
+
+  const handleSelectEntity = useCallback((name: string) => {
+    if (!name) {
+      setGraphKeywords('');
+      setSelectedNodeId('');
+      return;
+    }
+    setSelectedNodeId(name);
+  }, []);
+
+  const handleNoMatchEnter = useCallback((keywords: string) => {
+    setGraphKeywords(keywords);
+    setSelectedNodeId('');
+  }, []);
+
   const canGenerate = (knowledgeBase?.chunk_count ?? 0) > 0;
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
         <div className="flex items-center justify-center flex-1 text-text-secondary">
@@ -53,7 +100,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
     );
   }
 
-  if (!template) {
+  if (!template && !graphKeywords) {
     return (
       <CompilationEmptyState
         type={kind}
@@ -65,7 +112,24 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
 
   return (
     <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
-      <RepresentationRenderer template={template} />
+      {kind === ViewMode.Graph && (
+        <div className="flex justify-end px-4 pt-4">
+          <SelectWithSearch
+            options={entityOptions}
+            value={selectedEntityName || graphKeywords}
+            onChange={handleSelectEntity}
+            placeholder={t('knowledgeDetails.searchEntity')}
+            allowClear
+            triggerClassName="w-96 max-w-full"
+            onNoMatchEnter={handleNoMatchEnter}
+            disableAutoSelectOnEnter
+          />
+        </div>
+      )}
+      <RepresentationRenderer
+        template={template}
+        highlightNodeId={selectedEntityName || null}
+      />
     </Card>
   );
 }

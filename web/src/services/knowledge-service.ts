@@ -419,8 +419,14 @@ export const getArtifactGraph = (
   params?: IFetchArtifactGraphRequestParams,
 ) => request.get(api.getArtifactGraph(datasetId), { params });
 
-export const getArtifactsStructure = (datasetId: string, kind: string) =>
-  request.get(api.artifactsStructure(datasetId), { params: { kind } });
+export const getArtifactsStructure = (
+  datasetId: string,
+  kind: string,
+  keywords?: string,
+) =>
+  request.get(api.artifactsStructure(datasetId), {
+    params: keywords ? { kind, keywords } : { kind },
+  });
 
 export const updateArtifactPage = (
   datasetId: string,

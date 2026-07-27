@@ -764,20 +764,39 @@ export const DatasetStructureKeys = {
     [KnowledgeApiAction.FetchDatasetStructure, datasetId] as const,
   kind: (datasetId: string, kind: string) =>
     [KnowledgeApiAction.FetchDatasetStructure, datasetId, kind] as const,
+  kindWithKeywords: (datasetId: string, kind: string, keywords: string) =>
+    [
+      KnowledgeApiAction.FetchDatasetStructure,
+      datasetId,
+      kind,
+      keywords,
+    ] as const,
 };
 
-export function useFetchDatasetStructureGraph(kind: string) {
+export function useFetchDatasetStructureGraph(kind: string, keywords?: string) {
   const knowledgeBaseId = useKnowledgeBaseId();
   const enabled = !!knowledgeBaseId && !!kind;
+  const trimmedKeywords = keywords?.trim();
 
   const { data, isFetching: loading } =
     useQuery<IStructureGraphResponse | null>({
-      queryKey: DatasetStructureKeys.kind(knowledgeBaseId, kind),
+      queryKey: trimmedKeywords
+        ? DatasetStructureKeys.kindWithKeywords(
+            knowledgeBaseId,
+            kind,
+            trimmedKeywords,
+          )
+        : DatasetStructureKeys.kind(knowledgeBaseId, kind),
       initialData: null,
       enabled,
       gcTime: 0,
+      placeholderData: keepPreviousData,
       queryFn: async () => {
-        const { data } = await getArtifactsStructure(knowledgeBaseId, kind);
+        const { data } = await getArtifactsStructure(
+          knowledgeBaseId,
+          kind,
+          trimmedKeywords,
+        );
         return (data?.data as IStructureGraphResponse | null) ?? null;
       },
     });
