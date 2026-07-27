@@ -277,19 +277,23 @@ func NormalizeOverlappedPercent(v any) float64 {
 }
 
 // clampOverlappedPercent applies the [0,1) fraction -> [0,90] percent
-// conversion and integer truncation, then clamps to [0,90] (Python
-// faithfulness). Used by the lenient config path (NormalizeOverlappedPercent).
+// conversion, clamps to [0,90], then truncates to an integer (Python
+// faithfulness). Clamping MUST happen before the int conversion: Go's
+// float->int is implementation-defined when the value is out of int's range
+// (e.g. 1e300), whereas Python's int() is arbitrary-precision, so clamping
+// first keeps us aligned with Python's max(0, min(int(v), 90)). Used by the
+// lenient config path (NormalizeOverlappedPercent).
 func clampOverlappedPercent(value float64) float64 {
 	if 0 < value && value < 1 {
 		value *= 100
 	}
-	value = float64(int(value))
 	if value < 0 {
 		value = 0
 	}
 	if value > 90 {
 		value = 90
 	}
+	value = float64(int(value))
 	return value
 }
 

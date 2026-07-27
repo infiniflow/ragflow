@@ -90,7 +90,9 @@ func (p *tokenChunkerParam) Update(conf map[string]any) {
 	} else if v, ok := conf["delimiters"].([]string); ok {
 		p.TokenChunkerParam.Delimiters = append([]string(nil), v...)
 	}
-	p.TokenChunkerParam.OverlappedPercent = schema.NormalizeOverlappedPercent(conf["overlapped_percent"])
+	if v, ok := conf["overlapped_percent"]; ok {
+		p.TokenChunkerParam.OverlappedPercent = schema.NormalizeOverlappedPercent(v)
+	}
 	if v, ok := conf["children_delimiters"].([]any); ok {
 		p.TokenChunkerParam.ChildrenDelimiters = stringListFromAny(v)
 	} else if v, ok := conf["children_delimiters"].([]string); ok {

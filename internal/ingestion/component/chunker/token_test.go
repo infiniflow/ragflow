@@ -18,6 +18,7 @@ package chunker
 
 import (
 	"context"
+	"math"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
@@ -399,6 +400,13 @@ func TestNormalizeOverlappedPercent(t *testing.T) {
 		{"clamp 95 -> 90", 95, 90},
 		{"clamp -5 -> 0", -5, 0},
 		{"negative fraction -0.1 -> 0", -0.1, 0},
+		// Huge out-of-range values must clamp to 90 (not 0). Go's
+		// float->int is implementation-defined past int's range, so the
+		// clamp must run before truncation (review finding #4). Python's
+		// normalize_overlapped_percent returns 90 for these, not 0.
+		{"huge 1e300 -> 90", 1e300, 90},
+		{"huge -1e300 -> 0", -1e300, 0},
+		{"huge math.MaxFloat64 -> 90", math.MaxFloat64, 90},
 		{`numeric string "10" -> 10`, "10", 10},
 		{`numeric string fraction "0.1" -> 10`, "0.1", 10},
 		{"bad string -> 0", "abc", 0},
@@ -515,5 +523,30 @@ func TestTokenChunkerParam_ValidateOverlappedRange(t *testing.T) {
 				t.Errorf("after Validate: overlapped_percent=%v, want %v", p.OverlappedPercent, tc.want)
 			}
 		})
+	}
+}
+
+// TestTokenChunkerParam_UpdatePreservesOverlappedPercent locks review
+// finding #3: tokenChunkerParam.Update must not reset OverlappedPercent to 0
+// when the incoming config omits the key. All other fields use a presence
+// guard, and a partial Update (e.g. changing only chunk_token_size) must
+// preserve the previously configured overlap instead of clobbering it.
+func TestTokenChunkerParam_UpdatePreservesOverlappedPercent(t *testing.T) {
+	p := defaultsToken(tokenChunkerParam{})
+	p.TokenChunkerParam.OverlappedPercent = 30 // pre-existing config
+
+	// Partial update: only chunk_token_size changes.
+	p.Update(map[string]any{"chunk_token_size": 100})
+
+	if p.TokenChunkerParam.OverlappedPercent != 30 {
+		t.Errorf("after partial Update: overlapped_percent=%v, want 30 (preserved)",
+			p.TokenChunkerParam.OverlappedPercent)
+	}
+
+	// Explicit key still wins and normalizes.
+	p.Update(map[string]any{"overlapped_percent": 0.5})
+	if p.TokenChunkerParam.OverlappedPercent != 50 {
+		t.Errorf("after explicit Update: overlapped_percent=%v, want 50 (normalized)",
+			p.TokenChunkerParam.OverlappedPercent)
 	}
 }
