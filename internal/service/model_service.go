@@ -1000,7 +1000,29 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 	}
 
 	if len(modelsToVerify) == 0 {
-		return modelVerifyResult, fmt.Errorf("no models found for provider")
+		// Third fallback: try to fetch remote models via the provider's API,
+		// mirroring Python's get_model_list() fallback in verify_api_key.
+		remoteModels, listErr := driver.ListModels(ctx, apiConfig)
+		if listErr == nil {
+			for _, rm := range remoteModels {
+				modelName := strings.TrimSpace(rm.Name)
+				if modelName == "" {
+					continue
+				}
+				modelTypes := rm.ModelTypes
+				if len(modelTypes) == 0 {
+					modelTypes = modelModule.InferModelTypes(modelName)
+				}
+				modelsToVerify = append(modelsToVerify, &modelModule.Model{
+					Name:       modelName,
+					ModelTypes: modelTypes,
+				})
+			}
+		}
+
+		if len(modelsToVerify) == 0 {
+			return modelVerifyResult, fmt.Errorf("no models found for provider")
+		}
 	}
 
 	var errs []error
