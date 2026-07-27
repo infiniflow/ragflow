@@ -7,6 +7,8 @@
     "chat": "v1/chat/completions",
     "models": "v1/models",
     "embedding": "v1/embeddings",
+    "asr": "v1/audio/transcriptions",
+    "tts": "v1/audio/speech",
     "ocr": "v1/ocr"
   },
   "class": "mistral",
@@ -20,6 +22,18 @@
       "tools": {
         "support": true
       }
+    },
+    {
+      "name": "voxtral-mini-tts-2603",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "voxtral-mini-transcribe-realtime-2602",
+      "model_types": [
+        "asr"
+      ]
     },
     {
       "name": "mistral-medium-latest",
