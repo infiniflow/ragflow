@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"ragflow/internal/dao"
 	"strings"
 
 	"ragflow/internal/common"
@@ -158,7 +157,7 @@ func (c *CodeExecTool) InvokableRun(ctx context.Context, argumentsInJSON string,
 		zap.Int("timeout", req.Timeout),
 		zap.Int("arguments_keys", len(req.Arguments)),
 		zap.Int("script_len", len(req.Script)))
-	resp, err := client.ExecuteCode(ctx, dao.DB, req)
+	resp, err := client.ExecuteCode(ctx, req)
 	if err != nil {
 		return codeExecStubResult(err.Error()), err
 	}

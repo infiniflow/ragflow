@@ -44,8 +44,6 @@ package tool
 import (
 	"context"
 	"sync"
-
-	"gorm.io/gorm"
 )
 
 // SandboxClient is the abstract interface for the CodeExec gRPC
@@ -53,7 +51,7 @@ import (
 // a real client; the default is a stub returning
 // ErrSandboxNotWired.
 type SandboxClient interface {
-	ExecuteCode(ctx context.Context, db *gorm.DB, req SandboxRequest) (*SandboxResponse, error)
+	ExecuteCode(ctx context.Context, req SandboxRequest) (*SandboxResponse, error)
 }
 
 // SandboxRequest is the wire shape between the CodeExec tool and
@@ -110,7 +108,7 @@ func GetSandboxClient() SandboxClient {
 
 type stubSandboxClient struct{}
 
-func (stubSandboxClient) ExecuteCode(_ context.Context, _ *gorm.DB, _ SandboxRequest) (*SandboxResponse, error) {
+func (stubSandboxClient) ExecuteCode(_ context.Context, _ SandboxRequest) (*SandboxResponse, error) {
 	return nil, ErrSandboxNotWired
 }
 

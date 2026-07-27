@@ -165,8 +165,8 @@ type SettingsReader interface {
 // settings-driven init produce semantically identical providers.
 // Subsequent calls are no-ops once a provider is loaded; use
 // Reset + ReloadFromSettings to pick up admin-panel changes.
-func (m *ProviderManager) LoadFromSettings(ctx context.Context, db *gorm.DB) error {
-	return m.LoadFromSettingsWithReader(ctx, db, dao.NewSystemSettingsDAO())
+func (m *ProviderManager) LoadFromSettings(ctx context.Context) error {
+	return m.LoadFromSettingsWithReader(ctx, dao.DB, dao.NewSystemSettingsDAO())
 }
 
 // LoadFromSettingsWithReader is the testable seam for

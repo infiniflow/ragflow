@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	agenttool "ragflow/internal/agent/tool"
-
-	"gorm.io/gorm"
 )
 
 // ManagerClient adapts the active sandbox provider manager to the CodeExec
@@ -19,11 +17,11 @@ func NewManagerClient() *ManagerClient {
 	return &ManagerClient{manager: DefaultManager()}
 }
 
-func (c *ManagerClient) ExecuteCode(ctx context.Context, db *gorm.DB, req agenttool.SandboxRequest) (*agenttool.SandboxResponse, error) {
+func (c *ManagerClient) ExecuteCode(ctx context.Context, req agenttool.SandboxRequest) (*agenttool.SandboxResponse, error) {
 	if c == nil || c.manager == nil {
 		return nil, fmt.Errorf("sandbox: provider manager unavailable")
 	}
-	if err := c.manager.LoadFromSettings(ctx, db); err != nil {
+	if err := c.manager.LoadFromSettings(ctx); err != nil {
 		return nil, err
 	}
 	provider := c.manager.Provider()
@@ -58,7 +56,7 @@ func (c *ManagerClient) ExecuteCode(ctx context.Context, db *gorm.DB, req agentt
 	if result.Metadata != nil {
 		if structured, ok := result.Metadata["structured_result"].(map[string]any); ok {
 			resp.StructuredResult = structured
-		} else if structured, ok := result.Metadata["result"].(map[string]any); ok {
+		} else if structured, ok = result.Metadata["result"].(map[string]any); ok {
 			resp.StructuredResult = structured
 		}
 	}
