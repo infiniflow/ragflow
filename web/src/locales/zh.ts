@@ -563,6 +563,13 @@ export default {
       delimiter: `文本分段标识符`,
       delimiterTip:
         '支持多字符作为分隔符，多字符用两个反引号 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系统将首先使用换行符、两个#号以及分号先对文本进行分割，随后再对分得的小文本块按照「建议文本块大小」设定的大小进行拼装。在设置文本分段标识符前请确保理解上述文本分段切片机制。',
+      delimiterAddPlaceholder: '输入后按回车确认',
+      delimiterRemove: '移除分隔符',
+      delimiterPresetsLabel: '快捷分隔符：',
+      delimiterPresetNewline: '换行',
+      delimiterPresetTab: '制表符',
+      delimiterPresetHeading: '标题',
+      delimiterPresetHr: '分隔线',
       enableChildrenDelimiter: '子文本块用于检索',
       childrenDelimiter: '文本分段标识符',
       childrenDelimiterTip:
