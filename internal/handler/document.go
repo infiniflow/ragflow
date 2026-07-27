@@ -836,7 +836,7 @@ func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("Can't find the dataset with ID %s!", datasetID))
 		return
 	}
-	if !h.datasetService.CheckKBTeamPermission(kb, tenantID) {
+	if !h.datasetService.CheckKBTeamPermission(ctx, kb, tenantID) {
 		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
 		return
 	}

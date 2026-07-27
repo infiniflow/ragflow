@@ -128,7 +128,7 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, paylo
 		AgentResponse: payloadString(msgDict["agent_response"]),
 	}
 
-	task, err := s.taskDAO.GetByID(taskID)
+	task, err := s.taskDAO.GetByID(ctx, dao.DB, taskID)
 	if err != nil {
 		return fmt.Errorf("memory: task %s is not found", taskID)
 	}
@@ -147,7 +147,7 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, paylo
 // skip raw-only memories, run LLM extraction, embed and persist the
 // extracted messages under the raw message's id.
 func (s *MemoryMessageService) saveExtractedToMemory(ctx context.Context, memoryID string, msg MemoryMessage, sourceID int64, taskID string) error {
-	mem, err := s.memories.GetMemoryConfig(memoryID)
+	mem, err := s.memories.GetMemoryConfig(ctx, memoryID)
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 	if mem.TenantLLMID != nil && *mem.TenantLLMID != "" {
 		llmRef = *mem.TenantLLMID
 	}
-	driver, modelName, apiConfig, _, err := NewModelProviderService().ResolveModelConfig(mem.TenantID, entity.ModelTypeChat, llmRef)
+	driver, modelName, apiConfig, _, err := NewModelProviderService().ResolveModelConfig(ctx, mem.TenantID, entity.ModelTypeChat, llmRef)
 	if err != nil {
 		return nil, fmt.Errorf("resolve chat model: %w", err)
 	}

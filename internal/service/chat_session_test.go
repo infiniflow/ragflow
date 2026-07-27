@@ -183,7 +183,7 @@ type fakeChatModelConfigResolver struct {
 	err      error
 }
 
-func (f *fakeChatModelConfigResolver) GetChatModelConfig(tenantID, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func (f *fakeChatModelConfigResolver) GetChatModelConfig(ctx context.Context, tenantID, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	f.tenantID = tenantID
 	f.llmID = llmID
 	if f.err != nil {

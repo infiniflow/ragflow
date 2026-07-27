@@ -153,7 +153,8 @@ func TestListMemoriesUsesTenantModelIDForDisplayName(t *testing.T) {
 		t.Fatalf("seed memory: %v", err)
 	}
 
-	resp, err := NewMemoryService().ListMemories("user-1", []string{"user-1"}, nil, "", "", 1, 10)
+	ctx := t.Context()
+	resp, err := NewMemoryService().ListMemories(ctx, "user-1", []string{"user-1"}, nil, "", "", 1, 10)
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -189,7 +190,8 @@ func TestListMemoriesFallsBackToRawModelIDWithoutTenantModelID(t *testing.T) {
 		t.Fatalf("seed memory: %v", err)
 	}
 
-	resp, err := NewMemoryService().ListMemories("user-1", []string{"user-1"}, nil, "", "", 1, 10)
+	ctx := t.Context()
+	resp, err := NewMemoryService().ListMemories(ctx, "user-1", []string{"user-1"}, nil, "", "", 1, 10)
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}

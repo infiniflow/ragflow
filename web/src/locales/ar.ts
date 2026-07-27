@@ -479,8 +479,7 @@ export default {
       setDefaultTip: '',
       setDefault: 'تعيين كافتراضي',
       editLinkDataPipeline: 'تعديل مسار الابتلاع',
-      linkPipelineSetTip:
-        'إدارة ربط خط أنابيب الاستيعاب مع مجموعة البيانات هذه',
+      linkPipelineSetTip: 'إدارة ربط خط أنابيب الاستيعاب مع مجموعة البيانات هذه',
       default: 'تقصير',
       dataPipeline: 'تبديل أو تكوين مسار الابتلاع.',
       linkDataPipeline: 'ربط خط أنابيب استيعاب',

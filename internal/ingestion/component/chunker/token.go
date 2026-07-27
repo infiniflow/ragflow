@@ -18,7 +18,9 @@
 //
 //   - WHITELIST: delimiter_mode ∈ {"token_size","delimiter"} (the
 //     single-chunk "one" behaviour moved to OneChunker in one.go).
-//     chunk_token_size > 0, overlapped_percent ∈ [0, 1), table_context_size ≥ 0,
+//     chunk_token_size > 0, overlapped_percent accepts a [0,1) fraction or a
+//     [0,90] percentage (normalized to [0,90] by normalizeOverlappedPercent,
+//     mirroring Python's normalize_overlapped_percent), table_context_size ≥ 0,
 //     image_context_size ≥ 0. enum/range checks live in param.Check.
 //
 //   - DELIMITER PARSING mirrors python `_compile_delimiter_pattern`:
@@ -82,7 +84,7 @@ func (p *tokenChunkerParam) Update(conf map[string]any) {
 	if v, ok := conf["delimiter_mode"].(string); ok {
 		p.TokenChunkerParam.DelimiterMode = v
 	}
-	if v, ok := numericFromAny(conf["chunk_token_size"]); ok {
+	if v, ok := schema.NumericFromAny(conf["chunk_token_size"]); ok {
 		p.TokenChunkerParam.ChunkTokenSize = int(v)
 	}
 	if v, ok := conf["delimiters"].([]any); ok {
@@ -90,18 +92,18 @@ func (p *tokenChunkerParam) Update(conf map[string]any) {
 	} else if v, ok := conf["delimiters"].([]string); ok {
 		p.TokenChunkerParam.Delimiters = append([]string(nil), v...)
 	}
-	if v, ok := numericFromAny(conf["overlapped_percent"]); ok {
-		p.TokenChunkerParam.OverlappedPercent = v
+	if v, ok := conf["overlapped_percent"]; ok {
+		p.TokenChunkerParam.OverlappedPercent = schema.NormalizeOverlappedPercent(v)
 	}
 	if v, ok := conf["children_delimiters"].([]any); ok {
 		p.TokenChunkerParam.ChildrenDelimiters = stringListFromAny(v)
 	} else if v, ok := conf["children_delimiters"].([]string); ok {
 		p.TokenChunkerParam.ChildrenDelimiters = append([]string(nil), v...)
 	}
-	if v, ok := numericFromAny(conf["table_context_size"]); ok {
+	if v, ok := schema.NumericFromAny(conf["table_context_size"]); ok {
 		p.TokenChunkerParam.TableContextSize = int(v)
 	}
-	if v, ok := numericFromAny(conf["image_context_size"]); ok {
+	if v, ok := schema.NumericFromAny(conf["image_context_size"]); ok {
 		p.TokenChunkerParam.ImageContextSize = int(v)
 	}
 }
@@ -303,6 +305,16 @@ var sentenceDelimiter = regexp.MustCompile(`(\n|[!?。；！？]|\.\s)`)
 func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *regexp.Regexp) map[string]any {
 	target := c.param.ChunkTokenSize
 	overlapPct := c.param.OverlappedPercent
+	// Clamp to [0,100] so the merge math below never produces a
+	// negative/inverted threshold for an out-of-range value (review:
+	// yuzhichang, PR #17396). c.param.OverlappedPercent is already in
+	// [0,90] via Update/Validate, so this is a defensive no-op in
+	// normal operation.
+	if overlapPct < 0 {
+		overlapPct = 0
+	} else if overlapPct > 100 {
+		overlapPct = 100
+	}
 
 	// Split into paragraph-aligned sections.
 	sections := splitIntoSections(text)
@@ -324,7 +336,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 	//     threshold → start a new chunk (with optional overlap prefix).
 	//   - Otherwise → merge into the current chunk.
 	mergeOrNew := func(segment string, tokens int) {
-		threshold := float64(target) * (100 - overlapPct*100) / 100.0
+		threshold := float64(target) * (100 - overlapPct) / 100.0
 		if len(cks) == 0 || float64(tkns[len(tkns)-1]) > threshold {
 			seg := segment
 			segTokens := tokens
@@ -335,7 +347,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 				// Take the last overlapped_percent of the previous chunk
 				// (in runes, matching Python's len(overlapped) * ratio).
 				prevRunes := []rune(prev)
-				cut := int(float64(len(prevRunes)) * (100 - overlapPct*100) / 100.0)
+				cut := int(float64(len(prevRunes)) * (100 - overlapPct) / 100.0)
 				if cut < len(prevRunes) {
 					suffix := string(prevRunes[cut:])
 					seg = suffix + segment
@@ -411,13 +423,19 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 }
 
 // splitIntoSections partitions text into paragraph-level sections by
-// splitting on double-newline boundaries. This mirrors the caller side
-// in Python's naive_merge where sections are pre-split before merging.
+// splitting on blank-line boundaries. It uses \n\s*\n (not \n{2,}) so a
+// CRLF paragraph break (\r\n\r\n) still matches — the Go chunker performs
+// no \r\n normalization of its own, so a stricter \n{2,} would silently
+// lose CRLF boundaries. NOTE: the precise 2.7/2.10 section-splitting
+// semantics are still OPEN in docs/migration_python_go_diff.md (alignment
+// target flow-vs-app Python undecided); this keeps the pre-existing,
+// CRLF-safe behaviour until that is resolved in a dedicated change.
 func splitIntoSections(text string) []string {
 	if text == "" {
 		return nil
 	}
-	// Split on consecutive newlines (paragraph boundaries).
+	// Split on a blank line: a newline, optional whitespace (absorbs a
+	// trailing \r on CRLF input), then another newline.
 	re := regexp.MustCompile(`\n\s*\n`)
 	parts := re.Split(text, -1)
 	return parts
@@ -704,7 +722,15 @@ func takeFromStart(text string, tokens int) string {
 // mergeByTokenSizeFromJSON mirrors `naive_merge` at
 // rag/nlp/__init__.py:1156.
 func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64) [][]schema.ChunkDoc {
-	threshold := float64(chunkTokens) * (100 - overlappedPct*100) / 100.0
+	// overlappedPct is a [0,100] percentage. Clamp so the merge math below
+	// never yields a negative/inverted threshold for out-of-range input
+	// (review: yuzhichang, PR #17396).
+	if overlappedPct < 0 {
+		overlappedPct = 0
+	} else if overlappedPct > 100 {
+		overlappedPct = 100
+	}
+	threshold := float64(chunkTokens) * (100 - overlappedPct) / 100.0
 	for idx := range perItem {
 		chunks := perItem[idx]
 		if len(chunks) == 0 {
@@ -735,7 +761,7 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 					// (diff Chunker-2.2).
 					if prevText := removeTag(merged[len(merged)-1].Text); prevText != "" {
 						runes := []rune(prevText)
-						cut := int(float64(len(runes)) * (100 - overlappedPct*100) / 100.0)
+						cut := int(float64(len(runes)) * (100 - overlappedPct) / 100.0)
 						if cut < len(runes) {
 							cp.Text = string(runes[cut:]) + cp.Text
 							cp.TKNums = intPtr(tokenizeStr(cp.Text))

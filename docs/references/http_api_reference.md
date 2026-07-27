@@ -2322,7 +2322,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "You don't own the document 5c5999ec7be811ef9cab0242ac12000e5."
+    "message": "you don't own the document 5c5999ec7be811ef9cab0242ac12000e5"
 }
 ```
 
