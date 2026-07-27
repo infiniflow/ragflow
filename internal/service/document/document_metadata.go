@@ -20,7 +20,7 @@ import (
 
 // GetMetadataSummary get metadata summary for documents
 func (s *DocumentService) GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error) {
-	tenantID, err := s.metadataSvc.GetTenantIDByKBID(kbID)
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, kbID)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string,
 	}
 
 	// Get tenant ID
-	tenantID, err := s.metadataSvc.GetTenantIDByKBID(doc.KbID)
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, doc.KbID)
 	if err != nil {
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
@@ -64,7 +64,7 @@ func (s *DocumentService) DeleteDocumentMetadata(ctx context.Context, docID stri
 	}
 
 	// Get tenant ID
-	tenantID, err := s.metadataSvc.GetTenantIDByKBID(doc.KbID)
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, doc.KbID)
 	if err != nil {
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
@@ -87,7 +87,7 @@ func (s *DocumentService) DeleteDocumentAllMetadata(ctx context.Context, docID s
 	}
 
 	// Get tenant ID
-	tenantID, err := s.metadataSvc.GetTenantIDByKBID(doc.KbID)
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, doc.KbID)
 	if err != nil {
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
@@ -115,7 +115,7 @@ func (s *DocumentService) GetDocumentMetadataByID(ctx context.Context, docID str
 		return nil, fmt.Errorf("document not found: %w", err)
 	}
 
-	tenantID, err := s.metadataSvc.GetTenantIDByKBID(doc.KbID)
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, doc.KbID)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +140,7 @@ func (s *DocumentService) GetMetadataByKBs(ctx context.Context, kbIDs []string) 
 		return make(map[string]interface{}), nil
 	}
 
-	searchResult, err := s.metadataSvc.SearchMetadataByKBs(kbIDs, 10000)
+	searchResult, err := s.metadataSvc.SearchMetadataByKBs(ctx, kbIDs, 10000)
 	if err != nil {
 		return nil, err
 	}
@@ -586,7 +586,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 
 	// Apply metadata_condition filter.
 	if len(selector.MetadataCondition) > 0 {
-		flattedMeta, err := s.metadataSvc.GetFlattedMetaByKBs([]string{datasetID})
+		flattedMeta, err := s.metadataSvc.GetFlattedMetaByKBs(ctx, []string{datasetID})
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to get flattened metadata: %w", err)
 		}

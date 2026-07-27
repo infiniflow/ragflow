@@ -92,7 +92,7 @@ func TestTitleChunker_InvokeEmptyInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTitleChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestTitleChunker_Headings_ASCII(t *testing.T) {
 	}
 
 	input := "# Top\nFirst body line under Top.\nSecond body.\n## Sub\nBody under Sub heading.\n# TopTwo\nBody under TopTwo."
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name": "doc.md",
 		"text": input,
 	})
@@ -159,7 +159,7 @@ func TestTitleChunker_NoHeadings_FallsBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTitleChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name": "doc.txt",
 		"text": "alpha line one\nalpha line two",
 	})
@@ -186,7 +186,7 @@ func TestTitleChunker_DispatcherHierarchy(t *testing.T) {
 	if _, ok := c.(*TitleChunkerComponent); !ok {
 		t.Fatalf("NewTitleChunker returned %T", c)
 	}
-	_, err = c.Invoke(context.Background(), map[string]any{
+	_, err = c.Invoke(context.Background(), nil, map[string]any{
 		"name": "doc.md",
 		"text": "# Top\nFirst body.\n# TopTwo\nBody under TopTwo.",
 	})
@@ -215,7 +215,7 @@ func TestTitleChunker_InvokeDeterministic(t *testing.T) {
 	var firstLen int
 	var firstTexts []string
 	for run := 0; run < 10; run++ {
-		out, err := c.Invoke(context.Background(), inputs)
+		out, err := c.Invoke(context.Background(), nil, inputs)
 		if err != nil {
 			t.Fatalf("Invoke run %d: %v", run, err)
 		}

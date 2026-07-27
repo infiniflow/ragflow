@@ -46,6 +46,8 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
+
+	"gorm.io/gorm"
 )
 
 const ComponentNameTagChunker = "TagChunker"
@@ -78,7 +80,7 @@ func (c *TagChunkerComponent) Inputs() map[string]string { return ChunkerInputs 
 
 func (c *TagChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
 
-func (c *TagChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *TagChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	return c.invoke(ctx, inputs)
 }
 

@@ -66,7 +66,7 @@ func LoadFromIngestionTask(ctx context.Context, ingestionTask *entity.IngestionT
 		return nil, fmt.Errorf("document %s not found", ingestionTask.DocumentID)
 	}
 
-	kb, err := dao.NewKnowledgebaseDAO().GetByID(doc.KbID)
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, doc.KbID)
 	if err != nil || kb == nil {
 		return nil, fmt.Errorf("error when load knowledgebase %s: %w", doc.KbID, err)
 	}

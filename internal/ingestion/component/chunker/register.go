@@ -30,6 +30,8 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+
+	"gorm.io/gorm"
 )
 
 // MustRegisterChunker registers a single chunker component under
@@ -60,8 +62,8 @@ type imageUploadDecorator struct {
 	inner runtime.Component
 }
 
-func (d *imageUploadDecorator) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	out, err := d.inner.Invoke(ctx, inputs)
+func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	out, err := d.inner.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

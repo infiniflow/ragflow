@@ -503,6 +503,21 @@ class KnowledgebaseService(CommonService):
 
     @classmethod
     @DB.connection_context()
+    def get_owner_filter(cls, joined_tenant_ids, user_id):
+        owners = (
+            cls.model.select(
+                cls.model.tenant_id.alias("id"),
+                User.nickname.alias("label"),
+                fn.COUNT(cls.model.id).alias("count"),
+            )
+            .join(User, on=(cls.model.tenant_id == User.id))
+            .where(cls._visibility_and_status_filter(joined_tenant_ids, user_id))
+            .group_by(cls.model.tenant_id, User.nickname)
+        )
+        return list(owners.dicts())
+
+    @classmethod
+    @DB.connection_context()
     def accessible(cls, kb_id, user_id):
         # Check if a dataset is accessible by a user
         # Args:

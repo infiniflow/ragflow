@@ -458,6 +458,13 @@ def list_datasets(tenant_id: str, args: dict):
     return True, {"data": response_data_list, "total": total}
 
 
+def list_dataset_filters(tenant_id: str):
+    tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+    tenant_ids = [m["tenant_id"] for m in tenants]
+    owners = KnowledgebaseService.get_owner_filter(tenant_ids, tenant_id)
+    return True, {"filter": {"owner": owners}, "total": sum(owner["count"] for owner in owners)}
+
+
 async def get_knowledge_graph(dataset_id: str, tenant_id: str):
     """
     Get knowledge graph for a dataset.

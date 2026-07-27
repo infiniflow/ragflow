@@ -41,6 +41,7 @@ import (
 	"strings"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -468,7 +469,7 @@ func (c *GroupTitleChunkerComponent) Outputs() map[string]string {
 	return ChunkerOutputs
 }
 
-func (c *GroupTitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *GroupTitleChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		inputs = map[string]any{}
 	}

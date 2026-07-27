@@ -101,7 +101,7 @@ func newStubEmbedder(dim int) *stubEmbedder {
 func withStubEmbedder(t *testing.T, dim int) (*TokenizerComponent, *stubEmbedder) {
 	t.Helper()
 	stub := newStubEmbedder(dim)
-	comp, err := NewTokenizerComponentWithResolver(nil, func(_, _, _ string) (Embedder, error) { return stub, nil })
+	comp, err := NewTokenizerComponentWithResolver(nil, func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil })
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
@@ -135,12 +135,8 @@ func TestTokenizerComponent_Registered(t *testing.T) {
 func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 	c, stub := withStubEmbedder(t, 4)
 	_ = stub
-	var err error
-	if err != nil {
-		t.Fatalf("NewTokenizerComponent: %v", err)
-	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{},
 	})
@@ -168,7 +164,7 @@ func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
 	c, stub := withStubEmbedder(t, 4)
 	_ = stub
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"output_format": "chunks",
 	})
 	if err != nil {
@@ -183,13 +179,13 @@ func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
 func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
 	cIntf, err := NewTokenizerComponentWithResolver(map[string]any{
 		"search_method": []any{"embedding"},
-	}, func(_, _, _ string) (Embedder, error) {
+	}, func(ctx context.Context, _, _, _ string) (Embedder, error) {
 		return newStubEmbedder(4), nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
-	out, err := cIntf.(*TokenizerComponent).Invoke(context.Background(), map[string]any{
+	out, err := cIntf.(*TokenizerComponent).Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha bravo"}},
@@ -216,7 +212,7 @@ func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
 // empty chunk list, so tokenizeChunks is a no-op and the C++ pool is not needed.
 func TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero(t *testing.T) {
 	c, stub := withStubEmbedder(t, 2)
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{},

@@ -34,6 +34,8 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 const componentNameStringTransform = "StringTransform"
@@ -137,7 +139,7 @@ func (s *StringTransformComponent) Name() string { return s.name }
 
 // Invoke runs the configured method (split or merge) and returns
 // outputs["result"] with the transformed payload.
-func (s *StringTransformComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (s *StringTransformComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
 		return nil, fmt.Errorf("StringTransform: %w", err)
@@ -153,8 +155,8 @@ func (s *StringTransformComponent) Invoke(ctx context.Context, inputs map[string
 }
 
 // Stream mirrors Invoke; StringTransform is a single-shot transform.
-func (s *StringTransformComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := s.Invoke(ctx, inputs)
+func (s *StringTransformComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := s.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

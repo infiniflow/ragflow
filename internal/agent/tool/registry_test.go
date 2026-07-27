@@ -188,7 +188,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 
 	// Alias consistency: execute_sql and exesql must surface the
 	// same canonical Info().Name; same for retrieval/search_my_dataset/
-	// search_my_dateset and crawler/web_crawler. A bug here would mean
+	// search_my_dataset and crawler/web_crawler. A bug here would mean
 	// an alias was accidentally pointed at a different tool.
 	canonicalByAlias := map[string]string{
 		"execute_sql":           "execute_sql",

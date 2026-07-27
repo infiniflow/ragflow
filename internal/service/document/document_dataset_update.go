@@ -20,7 +20,7 @@ import (
 )
 
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
-	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, userID)
+	kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, userID)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset.")
 	}
@@ -110,7 +110,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 
 func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
 	tenantID := userID
-	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
+	kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, tenantID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("You don't own the dataset.")

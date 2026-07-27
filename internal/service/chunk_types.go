@@ -147,7 +147,7 @@ func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkRespon
 	var chunk map[string]interface{}
 	for _, tenant := range tenants {
 		// Get kbIDs for this tenant
-		kbIDs, err := s.kbDAO.GetKBIDsByTenantID(tenant.TenantID)
+		kbIDs, err := s.kbDAO.GetKBIDsByTenantID(ctx, dao.DB, tenant.TenantID)
 		if err != nil {
 			continue
 		}
@@ -254,7 +254,7 @@ func IndexName(uid string) string {
 }
 
 func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string, req StopParsingRequest) (map[string]interface{}, common.ErrorCode, error) {
-	if !s.kbDAO.Accessible(datasetID, userID) {
+	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("You don't own the dataset %s", datasetID)
 	}
 
@@ -264,7 +264,7 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 
 	docList, duplicateMessages := CheckDuplicateIDs(req.DocumentIDs, "document")
 
-	kb, err := s.kbDAO.GetByID(datasetID)
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
 	}
@@ -373,7 +373,7 @@ func (s *ChunkService) List(ctx context.Context, req *ListChunksRequest, userID 
 	}
 
 	// Get knowledge base to find tenant
-	kb, err := s.kbDAO.GetByID(doc.KbID)
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
 	if err != nil || kb == nil {
 		return nil, fmt.Errorf("knowledge base not found")
 	}
@@ -391,7 +391,7 @@ func (s *ChunkService) List(ctx context.Context, req *ListChunksRequest, userID 
 	}
 
 	// Get kbIDs for this tenant
-	kbIDs, err := s.kbDAO.GetKBIDsByTenantID(targetTenantID)
+	kbIDs, err := s.kbDAO.GetKBIDsByTenantID(ctx, dao.DB, targetTenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get kb ids: %w", err)
 	}
@@ -536,7 +536,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *UpdateChunkRequest,
 	// Find the tenant that owns this dataset
 	var targetTenantID string
 	for _, tenant := range tenants {
-		kb, err := s.kbDAO.GetByIDAndTenantID(req.DatasetID, tenant.TenantID)
+		kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, req.DatasetID, tenant.TenantID)
 		if err == nil && kb != nil {
 			targetTenantID = tenant.TenantID
 			break
@@ -744,7 +744,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *RemoveChunksReques
 	// Find the tenant that owns this document
 	var targetTenantID string
 	for _, tenant := range tenants {
-		kb, err := s.kbDAO.GetByIDAndTenantID(doc.KbID, tenant.TenantID)
+		kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, doc.KbID, tenant.TenantID)
 		if err == nil && kb != nil {
 			targetTenantID = tenant.TenantID
 			break

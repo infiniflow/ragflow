@@ -50,6 +50,8 @@ package component
 
 import (
 	"context"
+
+	"gorm.io/gorm"
 )
 
 const componentNameParallel = "Parallel"
@@ -148,13 +150,13 @@ func (c *ParallelComponent) Outputs() map[string]string {
 // The returned map is empty. State writes from this method would be
 // silently dropped by the eino graph, because ParallelComponent is not
 // registered as an eino node when the macro expansion fires.
-func (c *ParallelComponent) Invoke(_ context.Context, _ map[string]any) (map[string]any, error) {
+func (c *ParallelComponent) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	return map[string]any{}, nil
 }
 
 // Stream mirrors Invoke and emits an empty map as a single chunk.
-func (c *ParallelComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := c.Invoke(ctx, inputs)
+func (c *ParallelComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := c.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
