@@ -782,6 +782,11 @@ async def compile_structure_from_text(
     if not isinstance(template_kind, str) or not template_kind.strip():
         template_kind = autotype
 
+    # NOTE: page_index templates are normally routed through the OpenFable-style
+    # tree builder (page_index_tree_builder.py) by runner.py. This per-chunk
+    # fallback remains for callers that invoke compile_structure_from_text directly
+    # with a page_index config — it should be removed once all call sites route
+    # through the tree builder.
     packed_batches, _info = _build_chunk_batches(
         chunks,
         chat_mdl,

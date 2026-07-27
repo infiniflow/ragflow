@@ -42,6 +42,9 @@ from api.db.services.compilation_template_group_service import (
 )
 from api.db.services.llm_service import LLMBundle
 from common.exceptions import TaskCanceledException
+from rag.advanced_rag.knowlege_compile.page_index_tree_builder import (
+    build_page_index_tree,
+)
 from rag.advanced_rag.knowlege_compile.structure import (
     LLMCallPool,
     MERGE_SCOPE_DATASET,
@@ -309,6 +312,7 @@ async def run_structure_compile_over_batches(
     flush_tasks: set[asyncio.Task[None]] = set()
     doc_storage_condition = asyncio.Condition()
     next_doc_storage_sequence = 0
+    all_chunks: list[dict] = []  # accumulated for page_index tree builder
 
     async def _flush(template_id: str) -> None:
         nonlocal flush_sequence
@@ -462,7 +466,10 @@ async def run_structure_compile_over_batches(
                     if isinstance(cid, str) and cid not in chunks_by_id:
                         text = chunk.get("content_with_weight") or chunk.get("text") or ""
                         chunks_by_id[cid] = text if isinstance(text, str) else ""
+                all_chunks.extend(batch)
                 for template_id, parser_cfg in active_templates:
+                    if _is_page_index_template(parser_cfg):
+                        continue  # page_index handled by tree builder after all batches collected
                     if cancel_check():
                         raise TaskCanceledException("Task was cancelled during document knowledge compilation")
                     task = asyncio.create_task(_compile_batch(batch_no, batch, template_id, parser_cfg))
@@ -482,6 +489,47 @@ async def run_structure_compile_over_batches(
             raise TaskCanceledException("Task was cancelled during document knowledge compilation")
         await _reap_one()
     await _commit_ready()
+
+    # ── Page_index tree builder ─────────────────────────────────────────
+    # page_index templates are handled by the OpenFable-style tree builder
+    # instead of the per-chunk batch loop. The tree builder sees all chunks
+    # (or coherent partitions for long docs) and builds a complete table-of-
+    # contents tree in one pass, then converts it to entity+relation ES rows.
+    page_index_template_ids = [tid for tid, cfg in active_templates if _is_page_index_template(cfg)]
+    if page_index_template_ids and all_chunks:
+        for template_id in page_index_template_ids:
+            parser_cfg = dict(active_templates).get(template_id) or {}
+            if cancel_check():
+                raise TaskCanceledException("Task was cancelled before page_index tree build")
+            progress_cb(msg=f"  building page_index tree ({len(all_chunks)} chunks) for template ({template_ids_by_id[template_id]}/{total})")
+            try:
+                tree_chat_mdl = llm_pool.wrap(
+                    chat_mdl_by_tid[template_id],
+                    priority=30,
+                    label=f"page_index_tree:{template_id}",
+                    context=f"{doc_id}:{template_id}:page-index-tree",
+                )
+                es_docs = await build_page_index_tree(
+                    all_chunks,
+                    tree_chat_mdl,
+                    embedding_model,
+                    doc_id,
+                    parser_config=parser_cfg,
+                    compilation_template_id=template_id,
+                )
+                if es_docs:
+                    accumulators[template_id].extend(es_docs)
+                    progress_cb(
+                        msg=f"  page_index tree done: {len(es_docs)} docs "
+                        f"({sum(1 for d in es_docs if d.get('knowledge_graph_kwd') == 'entity')} entities, "
+                        f"{sum(1 for d in es_docs if d.get('knowledge_graph_kwd') == 'relation')} relations)"
+                    )
+            except Exception:
+                logging.exception(
+                    "page_index tree builder failed for template %s doc %s",
+                    template_id,
+                    doc_id,
+                )
 
     for template_id, _ in active_templates:
         if cancel_check():
