@@ -124,6 +124,34 @@ class FuturMixSeq2txt(GPTSeq2txt):
         logging.info("[FuturMix] Speech2Text initialized with model %s", model_name)
 
 
+class GreenPTSeq2txt(Base):
+    _FACTORY_NAME = "GreenPT"
+
+    def __init__(self, key, model_name="green-s", base_url="https://api.greenpt.ai/v1", **kwargs):
+        self.api_key = key
+        self.model_name = model_name
+        self.base_url = (base_url or "https://api.greenpt.ai/v1").rstrip("/")
+
+    def transcription(self, audio_path, **kwargs):
+        params = {"model": self.model_name}
+        params.update(kwargs)
+        with open(audio_path, "rb") as audio_file:
+            response = requests.post(
+                f"{self.base_url}/listen",
+                headers={"Authorization": f"Token {self.api_key}", "Content-Type": "application/octet-stream"},
+                params=params,
+                data=audio_file,
+                timeout=300,
+            )
+        response.raise_for_status()
+        channels = response.json().get("results", {}).get("channels", [])
+        alternatives = channels[0].get("alternatives", []) if channels else []
+        if not alternatives:
+            raise ValueError("GreenPT speech response contains no transcript")
+        text = alternatives[0].get("transcript", "").strip()
+        return text, num_tokens_from_string(text)
+
+
 class QWenSeq2txt(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
     _FUN_ASR_FLASH_PREFIX = "fun-asr-flash"

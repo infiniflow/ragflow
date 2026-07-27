@@ -1563,6 +1563,13 @@ class AIMLAPIChat(Base):
         logging.info("[aimlapi.com] Chat initialized with model %s", model_name)
 
 
+class GreenPTChat(Base):
+    _FACTORY_NAME = "GreenPT"
+
+    def __init__(self, key, model_name, base_url="https://api.greenpt.ai/v1", **kwargs):
+        super().__init__(key, model_name, base_url or "https://api.greenpt.ai/v1", **kwargs)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",

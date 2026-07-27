@@ -458,6 +458,34 @@ class OpenAIAPICompatible(Base):
         return model_list
 
 
+class GreenPT(OpenAIAPICompatible):
+    _FACTORY_NAME = "GreenPT"
+
+    _MODEL_TYPES = {
+        "green-embedding": [LLMType.EMBEDDING.value],
+        "qwen3-embedding-8b": [LLMType.EMBEDDING.value],
+        "green-rerank": [LLMType.RERANK.value],
+        "green-s": [LLMType.ASR.value],
+        "green-s-pro": [LLMType.ASR.value],
+    }
+    _MAX_TOKENS = {
+        "glm-5.2": 1_000_000,
+        "kimi-k2.7-code": 262_144,
+        "green-embedding": 32_768,
+        "qwen3-embedding-8b": 32_768,
+        "green-rerank": 32_768,
+    }
+
+    def _format_model_list(self, raw_model_list):
+        models = super()._format_model_list(raw_model_list)
+        for model in models:
+            model["model_types"] = self._MODEL_TYPES.get(model["name"], model["model_types"])
+            model["max_tokens"] = self._MAX_TOKENS.get(model["name"], model["max_tokens"])
+            if model["model_types"] == [LLMType.CHAT.value]:
+                model["features"] = ["is_tools"]
+        return models
+
+
 class FunASR(Base):
     _FACTORY_NAME = "FunASR"
 
