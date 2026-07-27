@@ -258,8 +258,9 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	if req.Role == "" {
 		req.Role = "user"
 	}
+	ctx := c.Request.Context()
 
-	userInfo, err := h.service.CreateUser(req.Username, req.Password, req.Role)
+	userInfo, err := h.service.CreateUser(ctx, req.Username, req.Password, req.Role)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return

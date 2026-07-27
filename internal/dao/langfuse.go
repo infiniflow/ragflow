@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"context"
 	"errors"
 
 	"gorm.io/gorm"
@@ -36,9 +37,9 @@ func NewLangfuse() *LangfuseDAO {
 // GetByTenantID returns the Langfuse credentials row for a tenant.
 // It returns (nil, nil) when no row exists, mirroring the Python
 // TenantLangfuseService.filter_by_tenant behaviour (DoesNotExist -> None).
-func (dao *LangfuseDAO) GetByTenantID(tenantID string) (*entity.TenantLangfuse, error) {
+func (dao *LangfuseDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (*entity.TenantLangfuse, error) {
 	var row entity.TenantLangfuse
-	err := DB.Where("tenant_id = ?", tenantID).First(&row).Error
+	err := db.WithContext(ctx).Where("tenant_id = ?", tenantID).First(&row).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -49,13 +50,13 @@ func (dao *LangfuseDAO) GetByTenantID(tenantID string) (*entity.TenantLangfuse, 
 }
 
 // Create inserts a new Langfuse credentials row (mirrors save).
-func (dao *LangfuseDAO) Create(row *entity.TenantLangfuse) error {
-	return DB.Create(row).Error
+func (dao *LangfuseDAO) Create(ctx context.Context, db *gorm.DB, row *entity.TenantLangfuse) error {
+	return db.WithContext(ctx).Create(row).Error
 }
 
 // UpdateByTenantID updates the Langfuse credentials row for a tenant
-func (dao *LangfuseDAO) UpdateByTenantID(tenantID string, updates map[string]any) error {
-	res := DB.Model(&entity.TenantLangfuse{}).Where("tenant_id = ?", tenantID).Updates(updates)
+func (dao *LangfuseDAO) UpdateByTenantID(ctx context.Context, db *gorm.DB, tenantID string, updates map[string]any) error {
+	res := db.WithContext(ctx).Model(&entity.TenantLangfuse{}).Where("tenant_id = ?", tenantID).Updates(updates)
 	if res.Error != nil {
 		return res.Error
 	}
@@ -67,8 +68,8 @@ func (dao *LangfuseDAO) UpdateByTenantID(tenantID string, updates map[string]any
 
 // DeleteByTenantID deletes the Langfuse credentials row for a tenant
 // (mirrors delete_model / delete_ty_tenant_id).
-func (dao *LangfuseDAO) DeleteByTenantID(tenantID string) error {
-	res := DB.Where("tenant_id = ?", tenantID).Delete(&entity.TenantLangfuse{})
+func (dao *LangfuseDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) error {
+	res := db.WithContext(ctx).Where("tenant_id = ?", tenantID).Delete(&entity.TenantLangfuse{})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -78,8 +79,8 @@ func (dao *LangfuseDAO) DeleteByTenantID(tenantID string) error {
 	return nil
 }
 
-func (dao *LangfuseDAO) SaveByTenantID(row *entity.TenantLangfuse) error {
-	return DB.Clauses(clause.OnConflict{
+func (dao *LangfuseDAO) SaveByTenantID(ctx context.Context, db *gorm.DB, row *entity.TenantLangfuse) error {
+	return db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "tenant_id"}},
 		DoUpdates: clause.Assignments(map[string]any{
 			"secret_key": row.SecretKey,
@@ -89,8 +90,8 @@ func (dao *LangfuseDAO) SaveByTenantID(row *entity.TenantLangfuse) error {
 	}).Create(row).Error
 }
 
-func (dao *LangfuseDAO) DeleteExistingByTenantID(tenantID string) error {
-	return DB.Transaction(func(tx *gorm.DB) error {
+func (dao *LangfuseDAO) DeleteExistingByTenantID(ctx context.Context, db *gorm.DB, tenantID string) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row entity.TenantLangfuse
 		err := tx.Where("tenant_id = ?", tenantID).First(&row).Error
 		if err != nil {
