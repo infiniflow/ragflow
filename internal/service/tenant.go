@@ -837,7 +837,7 @@ func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, mode
 		tenantModelTypeID: tenantModelID,
 	})
 
-	return nil
+	return err
 }
 
 // Tenant member role constants.

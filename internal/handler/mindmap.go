@@ -20,14 +20,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"regexp"
-	"strings"
-	"time"
-
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
+	"regexp"
+	"strings"
 )
 
 type mindMapRunConfig struct {
@@ -64,8 +62,6 @@ func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, erro
 	}
 	modelID, _ := config.SearchConfig["chat_id"].(string)
 	messages := []modelModule.Message{{Role: "system", Content: mindMapPrompt(strings.Join(sections, "\n"))}, {Role: "user", Content: "Output:"}}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
 
 	// search_config chat_id can be a stale tenant_model ID that no longer
 	// exists. ResolveModelConfig tries ID lookup first, then falls back to
