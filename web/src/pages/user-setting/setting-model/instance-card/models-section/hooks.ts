@@ -15,7 +15,9 @@
  */
 
 import { LLMFactory } from '@/constants/llm';
+import { useQueryClient } from '@tanstack/react-query';
 import {
+  LlmKeys,
   useAddInstanceModel,
   useDeleteInstanceModels,
   useListProviderModels,
@@ -615,14 +617,10 @@ export function useModelMutations({
 interface UseModelEditArgs {
   providerName: string;
   instanceName: string;
-  setCatalog: Dispatch<SetStateAction<IProviderModelItem[]>>;
 }
 
-export function useModelEdit({
-  providerName,
-  instanceName,
-  setCatalog,
-}: UseModelEditArgs) {
+export function useModelEdit({ providerName, instanceName }: UseModelEditArgs) {
+  const queryClient = useQueryClient();
   const customModelDialogFields = useCustomModelFields();
   const { patchInstanceModel, loading: editLoading } = usePatchInstanceModel();
   // Model currently being edited via AddCustomModelDialog (with `name`
@@ -655,17 +653,34 @@ export function useModelEdit({
     };
   }, [editingModel]);
 
-  // Persist edits to an existing model. The local `catalog` is patched so
-  // the UI reflects the new values immediately, before the cache
-  // invalidation lands.
+  // Persist edits to an existing model. The instance-models cache
+  // (the source of truth for already-added models) is patched so the
+  // UI reflects the new `max_tokens` / `model_types` / `is_tools`
+  // values immediately, before the PATCH's invalidation refetches.
+  // Updating `catalog` instead would be a no-op here: the union in
+  // `useModelsDerived` lets `instanceItems` win on name conflicts, so
+  // a catalog-only patch is invisible for any model already attached
+  // to the instance.
   const handleEditSubmit = async (item: IProviderModelItem) => {
     if (!editingModel) return;
     const targetName = editingModel.name;
 
-    setCatalog((prev) =>
-      prev.some((m) => m.name === targetName)
-        ? prev.map((m) => (m.name === targetName ? item : m))
-        : prev,
+    queryClient.setQueryData<IInstanceModel[]>(
+      LlmKeys.instanceModels(providerName, instanceName),
+      (prev) => {
+        if (!prev) return prev;
+        const idx = prev.findIndex((m) => m.name === targetName);
+        if (idx === -1) return prev;
+        const next = [...prev];
+        const existing = next[idx];
+        next[idx] = {
+          ...existing,
+          max_tokens: item.max_tokens ?? 0,
+          model_type: item.model_types ?? [],
+          is_tools: hasToolFeature(item.features),
+        };
+        return next;
+      },
     );
 
     await patchInstanceModel({
