@@ -30,9 +30,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/tokenizer"
 )
 
@@ -107,20 +104,39 @@ func NewPubMedToolWithDefaults(h *HTTPHelper, defaults pubmedParams) *PubMedTool
 	return &PubMedTool{helper: h, defaults: defaults}
 }
 
-// Info exposes only query to the LLM. Node parameters belong to canvas setup,
-// not model-emitted runtime arguments.
-func (p *PubMedTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: pubmedToolName,
-		Desc: pubmedToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+func (p *PubMedTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        pubmedToolName,
+		Description: pubmedToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "The search keywords to execute with PubMed. The keywords should be the most important words or terms, including synonyms, from the original request.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "The search keywords to execute with PubMed. The keywords should be the most important words or terms, including synonyms, from the original request.",
+				Required:    true,
 			},
-		}),
-	}, nil
+			"max_results": {
+				Type:        ParamTypeInteger,
+				Description: "Maximum number of records to return. Defaults to 5 (max 100 per request).",
+				Required:    false,
+			},
+			"date_from": {
+				Type:        ParamTypeString,
+				Description: "Filter results by publication start date (YYYY/MM/DD format).",
+				Required:    false,
+			},
+			"date_to": {
+				Type:        ParamTypeString,
+				Description: "Filter results by publication end date (YYYY/MM/DD format).",
+				Required:    false,
+			},
+			"authors": {
+				Type:        ParamTypeString,
+				Description: "Filter results by author name(s).",
+				Required:    false,
+			},
+		},
+	}
 }
 
 func (p *PubMedTool) ComponentSpec() ComponentSpec {
@@ -197,7 +213,8 @@ type pubmedXMLResponse struct {
 	Articles []pubmedXMLArticle `xml:"PubmedArticle"`
 }
 
-func (p *PubMedTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+// InvokableRun performs the two-step PubMed lookup.
+func (p *PubMedTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var params pubmedParams
 	if err := json.Unmarshal([]byte(argsJSON), &params); err != nil {
 		err = fmt.Errorf("pubmed: parse arguments: %w", err)

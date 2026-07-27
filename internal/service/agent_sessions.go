@@ -665,12 +665,12 @@ type CreateAgentSessionRequest struct {
 
 // CreateAgentSession inserts a fresh conversation row tied to the
 // given agent canvas. The Phase 5 stub intentionally does NOT run
-// Canvas(dsl).reset() (Eino runtime is still unimplemented in the Go
-// port); instead it stores a minimal but well-shaped row so that
+// Canvas(dsl).reset() (harness runtime integration is still unimplemented
+// in the Go port); instead it stores a minimal but well-shaped row so that
 // subsequent ListAgentSessions / GetAgentSession / chat-completion
 // stubs can return a stable id and the integration suite can verify
-// the creation + read + delete cycle without depending on a real LLM
-// run. When Eino lands, the function will gain a pre-run prologue
+// the create + read + delete cycle without depending on a real LLM
+// run. When harness lands, the function will gain a pre-run prologue
 // pass that calls Canvas.Reset() and stores the assistant message.
 //
 // Required columns (per the API4Conversation entity, see

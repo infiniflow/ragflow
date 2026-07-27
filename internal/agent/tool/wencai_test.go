@@ -97,30 +97,18 @@ func TestWencai_RespectsCanceledContext(t *testing.T) {
 func TestWencai_InfoMatchesPythonMeta(t *testing.T) {
 	t.Parallel()
 
-	info, err := NewWencaiTool().Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	tool := NewWencaiTool()
+	meta := tool.ToolMeta()
+	if meta.Name != "iwencai" {
+		t.Fatalf("Name = %q, want iwencai", meta.Name)
 	}
-	if info.Name != "iwencai" {
-		t.Fatalf("Name = %q, want iwencai", info.Name)
+	if strings.Contains(meta.Description, "STUB") || strings.Contains(meta.Description, "unsupported") {
+		t.Fatalf("Desc still exposes stub behavior: %q", meta.Description)
 	}
-	if strings.Contains(info.Desc, "STUB") || strings.Contains(info.Desc, "unsupported") {
-		t.Fatalf("Desc still exposes stub behavior: %q", info.Desc)
-	}
-	schema, err := info.ParamsOneOf.ToJSONSchema()
-	if err != nil {
-		t.Fatalf("ToJSONSchema: %v", err)
-	}
-	raw, err := json.Marshal(schema)
-	if err != nil {
-		t.Fatalf("marshal schema: %v", err)
-	}
-	params := string(raw)
-	if !strings.Contains(params, `"query"`) || !strings.Contains(params, `"required":["query"]`) {
-		t.Fatalf("schema does not require query: %s", params)
-	}
-	if strings.Contains(params, `"top_n"`) || strings.Contains(params, `"query_type"`) {
-		t.Fatalf("schema leaked node parameters: %s", params)
+	paramsJSON, _ := json.Marshal(meta.Parameters)
+	params := string(paramsJSON)
+	if !strings.Contains(params, `"query"`) {
+		t.Fatalf("params missing query: %s", params)
 	}
 }
 

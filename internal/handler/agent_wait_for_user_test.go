@@ -29,7 +29,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/cloudwego/eino/compose"
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
@@ -37,6 +36,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	hi "ragflow/internal/harness/graph/interrupt"
 	"ragflow/internal/service"
 )
 
@@ -183,7 +183,7 @@ func waitForUserRoutes(svc *waitFakeAgentService) *gin.Engine {
 }
 
 // TestWaitForUser_SSECycleRoundTrip drives the wait-for-user cycle
-// end-to-end using the eino interrupt mechanism.
+// end-to-end using the harness interrupt mechanism.
 //
 //  1. First call (no user_input). The stub RunFunc returns an eino
 //     interrupt error via compose.Interrupt — simulating a UserFillUp
@@ -216,7 +216,7 @@ func TestWaitForUser_SSECycleRoundTrip(t *testing.T) {
 			// (since a raw signal has no wrapped InterruptCtx
 			// list — this is acceptable for V1 and matches
 			// the test's relaxed cpn_id assertion below).
-			return nil, compose.Interrupt(context.Background(), map[string]any{
+			return nil, harnessInterrupt(map[string]any{
 				"kind":    "user_fill_up",
 				"cpn_id":  "answer-1",
 				"tips":    "Do you want to continue?",
@@ -426,13 +426,11 @@ func TestWaitForUser_RunFuncErrorSurfacesErrorEvent(t *testing.T) {
 	}
 }
 
-// TestIsInterruptError_RecognisesEinoSignal confirms the canvas-layer
-// helper that the orchestrator Driver depends on. After the
-// wait-for-user refactor (eino interrupt) the driver no longer
-// inspects the post-run state for a __wait_for_user__ sentinel —
-// it inspects the run error for an eino interrupt signal. The
+// TestIsInterruptError_RecognisesHarnessSignal confirms the canvas-layer
+// helper that the orchestrator Driver depends on. It inspects
+// the run error for a harness interrupt signal. The
 // helper that classifies the error is canvas.IsInterruptError.
-func TestIsInterruptError_RecognisesEinoSignal(t *testing.T) {
+func TestIsInterruptError_RecognisesHarnessSignal(t *testing.T) {
 	// Plain error — not an interrupt.
 	if canvas.IsInterruptError(errors.New("boom")) {
 		t.Errorf("plain error should not be classified as interrupt")
@@ -446,6 +444,16 @@ func TestIsInterruptError_RecognisesEinoSignal(t *testing.T) {
 	if canvas.IsInterruptError(nil) {
 		t.Errorf("nil should not be classified as interrupt")
 	}
+}
+
+// harnessInterrupt wraps the harness interrupt.Interrupt call to produce
+// an error that canvas.IsInterruptError can recognize, without requiring
+// eino's compose.Interrupt. Used by the stub run function in
+// TestWaitForUser_SSECycleRoundTrip to simulate a UserFillUp pause.
+func harnessInterrupt(value any) error {
+	ctx := hi.WithInterruptContext(context.Background())
+	_, err := hi.Interrupt(ctx, value)
+	return err
 }
 
 // parseSSEFrames splits a raw SSE body into its data frames,

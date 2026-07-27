@@ -113,10 +113,8 @@ var toolComponentRegistrations = []struct {
 	{componentName: "GoogleScholar", toolName: "google_scholar"},
 	{componentName: "KeenableSearch", toolName: "keenable"},
 	{componentName: "PubMed", toolName: "pubmed"},
-	{componentName: "SearXNG", toolName: "searxng"},
 	{componentName: "TavilySearch", toolName: "tavily"},
 	{componentName: "TavilyExtract", toolName: "tavily_extract"},
-	{componentName: "WenCai", toolName: "wencai"},
 	{componentName: "Wikipedia", toolName: "wikipedia"},
 	{componentName: "YahooFinance", toolName: "yahoo_finance"},
 }

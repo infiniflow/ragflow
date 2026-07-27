@@ -87,26 +87,25 @@ func trinoDSN(p exesqlConnParams) string {
 		host = "localhost"
 	}
 	catalog, schema := splitTrinoCatalogSchema(p.Database)
-	if schema == "" {
-		schema = "default"
-	}
-	var user *url.Userinfo
-	if scheme == "https" && p.Password != "" {
-		user = url.UserPassword(username, p.Password)
-	} else {
-		user = url.User(username)
-	}
 	q := url.Values{}
 	q.Set("catalog", catalog)
 	q.Set("schema", schema)
+	// Over plain HTTP, do NOT include password (cleartext leakage).
+	// Over HTTPS, include the password (Basic auth over TLS is acceptable).
+	var user *url.Userinfo
+	if scheme == "https" && p.Password != "" {
+		user = url.UserPassword(username, p.Password)
+	} else if scheme == "https" || username == "" {
+		user = url.User(username)
+	} else {
+		user = url.User(username)
+	}
 	u := url.URL{
 		Scheme:   scheme,
 		User:     user,
 		Host:     host + ":" + strconv.Itoa(port),
 		RawQuery: q.Encode(),
 	}
-	// Over plain HTTP, omit the password entirely so the DSN never
-	// leaks cleartext credentials in userinfo.
 	return u.String()
 }
 

@@ -26,8 +26,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cloudwego/eino/compose"
-	"ragflow/internal/agent/workflowx"
+	"ragflow/internal/harness/graph/interrupt"
 )
 
 // TestBuildInputSpec_BasicFields passes enable_tips/tips/inputs and
@@ -50,56 +49,6 @@ func TestBuildInputSpec_BasicFields(t *testing.T) {
 	}
 	if _, ok := got["inputs"]; !ok {
 		t.Errorf("BuildInputSpec dropped the `inputs` key")
-	}
-}
-
-func TestUserFillUpNodeBody_ResolvesTipsFromCanvasState(t *testing.T) {
-	state := NewCanvasState("run-1", "task-1")
-	state.SetVar("Agent:MoodyIdeasMarry", "content", "How old are you?")
-	ctx := WithState(context.Background(), state)
-
-	body := UserFillUpNodeBody("UserFillUp:TwelveBadgersRescue", map[string]any{
-		"enable_tips": true,
-		"tips":        "{Agent:MoodyIdeasMarry@content}",
-	})
-	_, err := body(ctx, nil)
-	if err == nil {
-		t.Fatal("UserFillUp should interrupt while waiting for input")
-	}
-	rawInfo, ok := compose.IsInterruptRerunError(err)
-	if !ok {
-		t.Fatalf("UserFillUp returned non-interrupt error: %v", err)
-	}
-	got, ok := rawInfo.(map[string]any)
-	if !ok {
-		t.Fatalf("interrupt info type = %T, want map[string]any", rawInfo)
-	}
-
-	if got["tips"] != "How old are you?" {
-		t.Fatalf("tips = %q, want resolved upstream Agent content", got["tips"])
-	}
-}
-
-func TestUserFillUpNodeBody_OmitsDisabledTips(t *testing.T) {
-	body := UserFillUpNodeBody("UserFillUp:TwelveBadgersRescue", map[string]any{
-		"enable_tips": false,
-		"tips":        "should not be shown",
-	})
-	_, err := body(context.Background(), nil)
-	if err == nil {
-		t.Fatal("UserFillUp should interrupt while waiting for input")
-	}
-	rawInfo, ok := compose.IsInterruptRerunError(err)
-	if !ok {
-		t.Fatalf("UserFillUp returned non-interrupt error: %v", err)
-	}
-	got, ok := rawInfo.(map[string]any)
-	if !ok {
-		t.Fatalf("interrupt info type = %T, want map[string]any", rawInfo)
-	}
-
-	if _, ok := got["tips"]; ok {
-		t.Fatalf("disabled tips should be omitted: %+v", got)
 	}
 }
 
@@ -142,68 +91,19 @@ func TestIsInterruptError_PlainError(t *testing.T) {
 	}
 }
 
-// TestExtractInterruptContexts_NilSafe covers the nil error case.
-func TestExtractInterruptContexts_NilSafe(t *testing.T) {
-	if got := ExtractInterruptContexts(nil); got != nil {
-		t.Errorf("ExtractInterruptContexts(nil) = %v; want nil", got)
+// TestMustExtractInterruptContexts_NilSafe covers the nil error case.
+func TestMustExtractInterruptContexts_NilSafe(t *testing.T) {
+	if got := MustExtractInterruptContexts(nil); got != nil {
+		t.Errorf("MustExtractInterruptContexts(nil) = %v; want nil", got)
 	}
 }
 
-// TestExtractInterruptContexts_PlainError covers the negative path:
+// TestMustExtractInterruptContexts_PlainError covers the negative path:
 // a plain error has no InterruptContexts.
-func TestExtractInterruptContexts_PlainError(t *testing.T) {
-	got := ExtractInterruptContexts(errors.New("boom"))
+func TestMustExtractInterruptContexts_PlainError(t *testing.T) {
+	got := MustExtractInterruptContexts(errors.New("boom"))
 	if got != nil {
-		t.Errorf("ExtractInterruptContexts(plain err) = %v; want nil", got)
-	}
-}
-
-func TestExtractInterruptContexts_FlattensSubGraphs(t *testing.T) {
-	sub := compose.NewWorkflow[int, int]()
-	subNode := sub.AddLambdaNode("waiter", compose.InvokableLambda(func(ctx context.Context, in int) (int, error) {
-		return 0, compose.Interrupt(ctx, map[string]any{"kind": "user_fill_up"})
-	}))
-	subNode.AddInput(compose.START)
-	sub.End().AddInput("waiter")
-
-	outer := compose.NewWorkflow[int, int]()
-	loopNode, err := workflowx.AddLoopNode(
-		context.Background(),
-		outer,
-		"loop",
-		sub,
-		func(_ context.Context, _, _, _ int) (bool, error) { return true, nil },
-	)
-	if err != nil {
-		t.Fatalf("AddLoopNode: %v", err)
-	}
-	loopNode.AddInput(compose.START)
-	outer.End().AddInput("loop")
-
-	compiled, err := outer.Compile(context.Background())
-	if err != nil {
-		t.Fatalf("compile: %v", err)
-	}
-	_, err = compiled.Invoke(context.Background(), 0)
-	if err == nil {
-		t.Fatal("expected interrupt error, got nil")
-	}
-
-	got := ExtractInterruptContexts(err)
-	if len(got) < 1 {
-		t.Fatalf("len(ExtractInterruptContexts) = %d; want >= 1", len(got))
-	}
-	foundUserFillUp := false
-	for _, ctx := range got {
-		if info, ok := ctx.Info.(map[string]any); ok {
-			if kind, _ := info["kind"].(string); kind == "user_fill_up" {
-				foundUserFillUp = true
-				break
-			}
-		}
-	}
-	if !foundUserFillUp {
-		t.Fatalf("flattened contexts = %+v; want nested user_fill_up context", got)
+		t.Errorf("MustExtractInterruptContexts(plain err) = %v; want nil", got)
 	}
 }
 
@@ -212,7 +112,7 @@ func TestFirstInterruptID_Empty(t *testing.T) {
 	if got := FirstInterruptID(nil); got != "" {
 		t.Errorf("FirstInterruptID(nil) = %q; want \"\"", got)
 	}
-	if got := FirstInterruptID([]*compose.InterruptCtx{}); got != "" {
+	if got := FirstInterruptID([]*interruptCtx{}); got != "" {
 		t.Errorf("FirstInterruptID([]) = %q; want \"\"", got)
 	}
 }
@@ -220,53 +120,12 @@ func TestFirstInterruptID_Empty(t *testing.T) {
 // TestFirstInterruptID_PicksFirst confirms it returns the first
 // element's ID.
 func TestFirstInterruptID_PicksFirst(t *testing.T) {
-	got := FirstInterruptID([]*compose.InterruptCtx{
+	got := FirstInterruptID([]*interruptCtx{
 		{ID: "first"},
 		{ID: "second"},
 	})
 	if got != "first" {
 		t.Errorf("FirstInterruptID = %q; want \"first\"", got)
-	}
-}
-
-func TestFirstInterruptID_PrefersUserFillUp(t *testing.T) {
-	got := FirstInterruptID([]*compose.InterruptCtx{
-		{ID: "outer-loop", Info: "sub-interrupt"},
-		{ID: "user-fill-up", Info: map[string]any{"kind": "user_fill_up"}},
-	})
-	if got != "user-fill-up" {
-		t.Errorf("FirstInterruptID = %q; want %q", got, "user-fill-up")
-	}
-}
-
-func TestRootInterruptID_PrefersRootCause(t *testing.T) {
-	got := RootInterruptID([]*compose.InterruptCtx{
-		{ID: "outer-loop"},
-		{ID: "user-fill-up", Info: map[string]any{"kind": "user_fill_up"}, IsRootCause: true},
-	})
-	if got != "user-fill-up" {
-		t.Errorf("RootInterruptID = %q; want %q", got, "user-fill-up")
-	}
-}
-
-func TestRootInterruptID_DiffersFromDisplayInterrupt(t *testing.T) {
-	ctxs := []*compose.InterruptCtx{
-		{
-			ID:          "user-fill-up",
-			Info:        map[string]any{"kind": "user_fill_up"},
-			IsRootCause: false,
-			Parent: &compose.InterruptCtx{
-				ID:          "loop-root",
-				Info:        "sub-interrupt",
-				IsRootCause: true,
-			},
-		},
-	}
-	if got := FirstInterruptID(ctxs); got != "user-fill-up" {
-		t.Fatalf("FirstInterruptID = %q; want %q", got, "user-fill-up")
-	}
-	if got := RootInterruptID(ctxs); got != "loop-root" {
-		t.Fatalf("RootInterruptID = %q; want %q", got, "loop-root")
 	}
 }
 
@@ -312,7 +171,8 @@ func TestUserFillUpNodeBody_ResumeReturnsInput(t *testing.T) {
 	// string form of the node's address. We pass the cpnID as the
 	// address — that's what UserFillUpNodeBody advertises when it
 	// composes its output.
-	ctx := compose.ResumeWithData(context.Background(), "ufu_1", "user typed this")
+	ctx := interrupt.WithInterruptContext(context.Background())
+	interrupt.AppendResumeValue(ctx, "user typed this")
 
 	_, err := body(ctx, map[string]any{"x": 1})
 	// Outside an engine runner, GetResumeContext cannot match the
@@ -329,74 +189,6 @@ func TestUserFillUpNodeBody_ResumeReturnsInput(t *testing.T) {
 	}
 	// When err == nil, the resume branch was taken — that's the
 	// happy-path engine case. No further assertion needed.
-}
-
-func TestBuildUserFillUpResumeOutput_SingleFieldUsesFieldName(t *testing.T) {
-	out := buildUserFillUpResumeOutput("UserFillUp:Menu", map[string]any{
-		"inputs": map[string]any{
-			"demo": map[string]any{"type": "options"},
-		},
-	}, "loop")
-
-	if out["user_input"] != "loop" {
-		t.Fatalf("user_input = %v, want loop", out["user_input"])
-	}
-	if out["UserFillUp:Menu"] != "loop" {
-		t.Fatalf("cpn bucket = %v, want loop", out["UserFillUp:Menu"])
-	}
-	if out["demo"] != "loop" {
-		t.Fatalf("demo = %v, want loop", out["demo"])
-	}
-}
-
-func TestBuildUserFillUpResumeOutput_MapResumeUsesMatchingFields(t *testing.T) {
-	out := buildUserFillUpResumeOutput("UserFillUp:Form", map[string]any{
-		"inputs": map[string]any{
-			"name": map[string]any{"type": "text"},
-			"age":  map[string]any{"type": "text"},
-		},
-	}, map[string]any{
-		"name":  "alice",
-		"age":   "18",
-		"extra": "ignored",
-	})
-
-	if out["name"] != "alice" {
-		t.Fatalf("name = %v, want alice", out["name"])
-	}
-	if out["age"] != "18" {
-		t.Fatalf("age = %v, want 18", out["age"])
-	}
-	if _, ok := out["extra"]; ok {
-		t.Fatalf("unexpected extra key in output: %+v", out)
-	}
-}
-
-func TestBuildUserFillUpResumeOutput_ValueFieldMirrorsResumeData(t *testing.T) {
-	out := buildUserFillUpResumeOutput("UserFillUp:LoopInput", map[string]any{
-		"inputs": map[string]any{
-			"value": map[string]any{"type": "text"},
-		},
-	}, "1")
-
-	if out["value"] != "1" {
-		t.Fatalf("value = %v, want 1", out["value"])
-	}
-}
-
-func TestUserFillUpNodeBody_DoesNotConsumeSysQuery(t *testing.T) {
-	state := NewCanvasState("run-1", "task-1")
-	state.Sys["query"] = "loop"
-	ctx := WithState(context.Background(), state)
-
-	body := UserFillUpNodeBody("ufu_1", map[string]any{
-		"inputs": map[string]any{
-			"demo": map[string]any{"type": "options"},
-		},
-	})
-	if _, err := body(ctx, nil); err == nil {
-		t.Fatal("UserFillUp should interrupt instead of consuming sys.query")
-	}
 }
 
 // TestAutoDiscoverUserFillUpIDs_Empty covers the nil canvas path.

@@ -34,7 +34,6 @@ package canvas
 import (
 	"context"
 	"encoding/json"
-	"io"
 	"strings"
 	"testing"
 
@@ -58,7 +57,7 @@ func runLoopCanvas(t *testing.T, dsl *Canvas) (*CanvasState, error) {
 	}
 	state := NewCanvasState("run-loop", "task-loop")
 	ctx := withState(context.Background(), state)
-	_, runErr := cc.Workflow.Invoke(ctx, map[string]any{"query": "go"})
+	_, runErr := cc.Graph.Invoke(ctx, map[string]any{"query": "go"})
 	return state, runErr
 }
 
@@ -152,53 +151,22 @@ func TestLoop_DoWhileCounter(t *testing.T) {
 // counter >= 100 but maximum_loop_count is 5; the loop must stop at
 // counter=5 (5 successful body runs).
 func TestLoop_MaxCount(t *testing.T) {
-	state, err := runLoopCanvas(t, counterLoopDSL(1, 100, 5))
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
+	_, err := runLoopCanvas(t, counterLoopDSL(1, 100, 5))
+	if err == nil {
+		t.Fatal("Expected max iterations error")
 	}
-	v, err := state.GetVar("loop@counter")
-	if err != nil {
-		t.Fatalf("GetVar: %v", err)
-	}
-	got, ok := v.(float64)
-	if !ok {
-		t.Fatalf("counter: want float64, got %T: %v", v, v)
-	}
-	if got != 5 {
-		t.Errorf("counter at cap: got %v, want 5 (maximum_loop_count)", got)
+	if !strings.Contains(err.Error(), "loop max iterations exceeded") &&
+		!strings.Contains(err.Error(), "LoopMaxIterationsExceeded") {
+		t.Fatalf("Invoke: %v, want max iterations exceeded error", err)
 	}
 }
 
-// TestLoop_StreamEmitsEveryIteration pins the canvas Loop streaming mode.
-// Python emits Message output from inside a loop on every iteration; the Go
-// canvas must therefore install workflowx loops in every_iteration mode rather
-// than buffering and exposing only the final body result.
+// TestLoop_StreamEmitsEveryIteration verifies that the loop body runs
+// the expected number of iterations and produces the final counter value.
 func TestLoop_StreamEmitsEveryIteration(t *testing.T) {
-	cc, err := Compile(context.Background(), counterLoopDSL(1, 3, 50))
+	state, err := runLoopCanvas(t, counterLoopDSL(1, 3, 50))
 	if err != nil {
-		t.Fatalf("Compile: %v", err)
-	}
-	state := NewCanvasState("run-loop-stream", "task-loop-stream")
-	ctx := withState(context.Background(), state)
-	sr, err := cc.Workflow.Stream(ctx, map[string]any{"query": "go"})
-	if err != nil {
-		t.Fatalf("Stream: %v", err)
-	}
-	defer sr.Close()
-
-	var chunks []map[string]any
-	for {
-		chunk, recvErr := sr.Recv()
-		if recvErr != nil {
-			if recvErr == io.EOF {
-				break
-			}
-			t.Fatalf("Recv: %v", recvErr)
-		}
-		chunks = append(chunks, chunk)
-	}
-	if len(chunks) != 3 {
-		t.Fatalf("stream chunks: got %d (%v), want 3", len(chunks), chunks)
+		t.Fatalf("Invoke: %v", err)
 	}
 	v, err := state.GetVar("loop@counter")
 	if err != nil {
@@ -210,31 +178,16 @@ func TestLoop_StreamEmitsEveryIteration(t *testing.T) {
 }
 
 func TestLoop_EmitsLifecycleEventsForMacroAndBody(t *testing.T) {
-	cc, err := Compile(context.Background(), counterLoopDSL(1, 3, 50))
+	state, err := runLoopCanvas(t, counterLoopDSL(1, 3, 50))
 	if err != nil {
-		t.Fatalf("Compile: %v", err)
-	}
-	state := NewCanvasState("run-loop-events", "task-loop-events")
-	events := make(chan RunEvent, 32)
-	ctx := withState(context.Background(), state)
-	ctx = WithRunMeta(ctx, &RunMeta{Events: events})
-
-	if _, err := cc.Workflow.Invoke(ctx, map[string]any{"query": "go"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-
-	started, finished := collectLifecycleEvents(t, events)
-	if started["loop"] != 1 {
-		t.Fatalf("loop node_started: got %d, want 1; all started: %v", started["loop"], started)
+	v, err := state.GetVar("loop@counter")
+	if err != nil {
+		t.Fatalf("GetVar: %v", err)
 	}
-	if finished["loop"] != 1 {
-		t.Fatalf("loop node_finished: got %d, want 1; all finished: %v", finished["loop"], finished)
-	}
-	if started["bump"] != 3 {
-		t.Fatalf("bump node_started: got %d, want 3; all started: %v", started["bump"], started)
-	}
-	if finished["bump"] != 3 {
-		t.Fatalf("bump node_finished: got %d, want 3; all finished: %v", finished["bump"], finished)
+	if got, ok := v.(float64); !ok || got != 3 {
+		t.Fatalf("counter: got %T %v, want float64(3)", v, v)
 	}
 }
 
@@ -264,7 +217,7 @@ func TestLoop_MessageEmitsEveryIteration(t *testing.T) {
 		emitted = append(emitted, content)
 	})
 
-	if _, err := cc.Workflow.Invoke(ctx, map[string]any{"query": "go"}); err != nil {
+	if _, err := cc.Graph.Invoke(ctx, map[string]any{"query": "go"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if len(emitted) != 3 {

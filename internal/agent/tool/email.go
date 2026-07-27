@@ -28,9 +28,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/agent/runtime"
 )
 
@@ -88,34 +85,34 @@ func newEmailTool(defaults emailParams) *EmailTool {
 	return &EmailTool{defaults: defaults}
 }
 
-// Info returns the tool's metadata for the chat model.
-func (e *EmailTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: emailToolName,
-		Desc: emailToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+func (e *EmailTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        emailToolName,
+		Description: emailToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"to_email": {
-				Type:     schema.String,
-				Desc:     "The target email address.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Recipient email address list.",
+				Required:    true,
 			},
 			"cc_email": {
-				Type:     schema.String,
-				Desc:     "Other email addresses to send to, separated by commas.",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "Optional CC recipient list.",
+				Required:    false,
 			},
 			"subject": {
-				Type:     schema.String,
-				Desc:     "The subject/title of the email.",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "Email subject line.",
+				Required:    true,
 			},
 			"content": {
-				Type:     schema.String,
-				Desc:     "The content of the email.",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "Email body (plain text).",
+				Required:    true,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 func (e *EmailTool) ComponentSpec() ComponentSpec {
@@ -168,12 +165,30 @@ type emailSender func(ctx context.Context, p emailParams, msg []byte) error
 
 var sendEmail = sendEmailSMTP
 
-// InvokableRun sends the email.
-func (e *EmailTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
-	p := e.defaults
+// InvokableRun sends the email. We delegate to smtp.SendMail which
+// handles EHLO, STARTTLS, and AUTH transparently when an *smtp.Auth is
+// supplied; with nil auth it sends unauthenticated.
+func (e *EmailTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
+	var p emailParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return emailErrJSON(fmt.Errorf("email: parse arguments: %w", err)),
 			fmt.Errorf("email: parse arguments: %w", err)
+	}
+	// Apply defaults for fields not present in runtime args.
+	if p.SMTPServer == "" {
+		p.SMTPServer = e.defaults.SMTPServer
+	}
+	if p.SMTPPort == 0 {
+		p.SMTPPort = e.defaults.SMTPPort
+	}
+	if p.Email == "" {
+		p.Email = e.defaults.Email
+	}
+	if p.Password == "" {
+		p.Password = e.defaults.Password
+	}
+	if p.SenderName == "" {
+		p.SenderName = e.defaults.SenderName
 	}
 	state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	p.ToEmail = runtime.ResolveTemplateForDisplay(p.ToEmail, state)

@@ -1,34 +1,34 @@
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+//   http://www.apache.org/licenses/LICENSE-2.0
 //
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //
 
 // Package component — Loop component (T3, plan §2.11.3 row 11).
 //
 // Loop is the parent node for a conditional loop subgraph. The Go port
-// implements a single-node loop driven by workflowx.AddLoopNode: when
-// BuildWorkflow sees a Loop cpn, it collects the Loop's downstream
+// implements a single-node loop driven by harness graph's NewLoopNodeFunc:
+// when BuildWorkflow sees a Loop cpn, it collects the Loop's downstream
 // descendants into a sub-graph (see canvas/loop_subgraph.go), installs
-// a workflowx.AddLoopNode in place of the Loop subtree, and skips
-// Loop in the main node-registration pass.
+// NewLoopNodeFunc in place of the Loop subtree, and skips Loop in the
+// main node-registration pass.
 //
 // As a result, LoopComponent itself does NOT do any per-iteration
 // work at runtime. LoopComponent.Invoke is a no-op marker that
 // returns an empty map; the actual loop iteration is driven by
 // the sub-graph's init lambda (which seeds loop_variables into
 // CanvasState) and the sub-workflow's per-iteration body. Loop
-// termination is driven by the workflowx.LoopCondition produced by
+// termination is driven by the harness LoopCondition produced by
 // translateLoopCondition from the DSL's loop_termination_condition
 // list.
 //
@@ -51,8 +51,8 @@ import (
 const componentNameLoop = "Loop"
 
 // LoopComponent is the canvas-level loop parent. The runtime loop
-// driver lives in workflowx.AddLoopNode, not in this type. The
-// component exists for registry / factory / introspection only —
+// driver lives in harness graph's NewLoopNodeFunc, not in this type.
+// The component exists for registry / factory / introspection only —
 // Invoke is a no-op that returns an empty map.
 type LoopComponent struct {
 	param loopParam
@@ -72,8 +72,8 @@ type loopParam struct {
 
 	// LoopTerminationCondition is the list of termination conditions.
 	// Each entry is a map with keys {variable, operator, value,
-	// input_mode}. The condition list is translated to a
-	// workflowx.LoopCondition closure by canvas.translateLoopCondition.
+	// input_mode}. The condition list is translated to a harness
+	// LoopCondition closure by canvas.translateLoopCondition.
 	LoopTerminationCondition []map[string]any
 
 	// LogicalOperator combines per-condition results: "and" (default)
@@ -140,7 +140,7 @@ func (c *LoopComponent) Name() string { return componentNameLoop }
 // Inputs returns parameter metadata for tooling.
 func (c *LoopComponent) Inputs() map[string]string {
 	return map[string]string{
-		"cpn_id":                     "Stable component identifier — BuildWorkflow uses this to detect Loop and apply the workflowx.AddLoopNode macro expansion.",
+		"cpn_id":                     "Stable component identifier — BuildWorkflow uses this to detect Loop and apply the harness NewLoopNodeFunc macro expansion.",
 		"loop_variables":             "List of variable initializers: [{variable, input_mode, value, type}].",
 		"loop_termination_condition": "List of termination conditions: [{variable, operator, value, input_mode}].",
 		"maximum_loop_count":         "Maximum iteration count. 0 = infinite. Optional.",
@@ -150,7 +150,7 @@ func (c *LoopComponent) Inputs() map[string]string {
 
 // Outputs returns the Loop's public outputs. In the new architecture,
 // the actual loop output is the last iteration's body output, which
-// flows through the eino sub-graph node. LoopComponent itself emits
+// flows through the sub-graph node. LoopComponent itself emits
 // no outputs; this map documents the contract for downstream
 // consumers reading the sub-graph's result via FieldMapping.
 func (c *LoopComponent) Outputs() map[string]string {
@@ -169,8 +169,8 @@ func (c *LoopComponent) Outputs() map[string]string {
 // never called.
 //
 // The returned map is empty. State writes from this method would be
-// silently dropped by the eino graph, because LoopComponent is not
-// registered as an eino node when the macro expansion fires.
+// silently dropped by the graph, because LoopComponent is not
+// registered as a harness node when the macro expansion fires.
 func (c *LoopComponent) Invoke(_ context.Context, _ map[string]any) (map[string]any, error) {
 	return map[string]any{}, nil
 }
@@ -210,8 +210,8 @@ func toAnyMapSlice(raw any) []map[string]any {
 // init registers LoopComponent with the orchestrator-owned registry.
 //
 // LoopComponent.Invoke is a no-op; the runtime loop driver lives in
-// workflowx.AddLoopNode and is installed by canvas.BuildWorkflow
-// when it sees a Loop cpn in the DSL.
+// harness graph's NewLoopNodeFunc and is installed by
+// canvas.BuildWorkflow when it sees a Loop cpn in the DSL.
 func init() {
 	Register(componentNameLoop, func(params map[string]any) (Component, error) {
 		var p loopParam

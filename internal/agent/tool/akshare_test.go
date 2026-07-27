@@ -129,37 +129,22 @@ func TestAkShare_RejectsMissingQuery(t *testing.T) {
 	}
 }
 
-func TestAkShare_Info(t *testing.T) {
+func TestAkShare_ToolMeta(t *testing.T) {
 	t.Parallel()
 
 	tool := NewAkShareTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "akshare_stock_news" {
+		t.Errorf("Name = %q, want akshare_stock_news", meta.Name)
 	}
-	if info.Name != "akshare_stock_news" {
-		t.Errorf("Name = %q, want akshare_stock_news", info.Name)
+	if !strings.Contains(meta.Description, "East Money") {
+		t.Errorf("Description = %q, want to mention East Money", meta.Description)
 	}
-	if !strings.Contains(info.Desc, "East Money") {
-		t.Errorf("Desc = %q, want to mention East Money", info.Desc)
+	if _, ok := meta.Parameters["query"]; !ok {
+		t.Fatalf("parameters missing 'query'")
 	}
-	if info.ParamsOneOf == nil {
-		t.Fatal("ParamsOneOf = nil, want schema definition")
-	}
-	schema, err := info.ParamsOneOf.ToJSONSchema()
-	if err != nil {
-		t.Fatalf("ToJSONSchema: %v", err)
-	}
-	raw, err := json.Marshal(schema)
-	if err != nil {
-		t.Fatalf("marshal params schema: %v", err)
-	}
-	params := string(raw)
-	if !strings.Contains(params, `"query"`) {
-		t.Fatalf("schema missing query parameter: %s", params)
-	}
-	if !strings.Contains(params, `"required":["query"]`) {
-		t.Fatalf("schema does not require query: %s", params)
+	if !meta.Parameters["query"].Required {
+		t.Fatalf("query param is not required")
 	}
 }
 

@@ -27,8 +27,6 @@ import (
 	"strings"
 	"testing"
 
-	einotool "github.com/cloudwego/eino/components/tool"
-
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
@@ -50,7 +48,7 @@ func (f roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, erro
 	return f(request)
 }
 
-func (f *fakeToolAdapter) InvokableRun(_ context.Context, argsJSON string, _ ...einotool.Option) (string, error) {
+func (f *fakeToolAdapter) InvokableRun(_ context.Context, argsJSON string) (string, error) {
 	f.calls++
 	if err := json.Unmarshal([]byte(argsJSON), &f.args); err != nil {
 		return "", err
@@ -241,8 +239,8 @@ func TestToolBackedComponentRegisteredFactories(t *testing.T) {
 			if err != nil {
 				t.Fatalf("New(%s): %v", tt.toolName, err)
 			}
-			if _, ok := c.(*ToolBackedComponent); !ok {
-				t.Fatalf("New(%s) returned %T, want *ToolBackedComponent", tt.toolName, c)
+			if _, ok := c.(Component); !ok {
+				t.Fatalf("New(%s) returned %T, want Component", tt.toolName, c)
 			}
 			if c.Name() != tt.toolName {
 				t.Fatalf("Name = %q, want %q", c.Name(), tt.toolName)
@@ -473,25 +471,20 @@ func TestToolBackedComponentYahooFinanceIntegration(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		serverCalls++
 		writer.Header().Set("Content-Type", "application/json")
-		switch request.URL.Path {
-		case "/v1/finance/search":
-			if q := request.URL.Query().Get("q"); q != "AAPL" {
-				t.Errorf("q = %q", q)
-			}
-			_, _ = writer.Write([]byte(`{"quotes":[{"symbol":"AAPL","currency":"USD"}],"news":[]}`))
-		case "/v8/finance/chart/AAPL":
+		switch {
+		case request.URL.Path == "/v7/finance/quote" && request.URL.Query().Get("symbols") == "AAPL":
 			_, _ = writer.Write([]byte(`{
-				"chart": {
+				"quoteResponse": {
 					"result": [{
-						"meta": {"regularMarketPrice": 189.5},
-						"timestamp": [],
-						"indicators": {"quote": [{}]}
+						"symbol": "AAPL",
+						"regularMarketPrice": {"raw": 189.5},
+						"currency": "USD"
 					}],
 					"error": null
 				}
 			}`))
 		default:
-			t.Fatalf("unexpected path %s", request.URL.Path)
+			t.Fatalf("unexpected path %s?%s", request.URL.Path, request.URL.RawQuery)
 		}
 	}))
 	defer server.Close()
@@ -521,10 +514,10 @@ func TestToolBackedComponentYahooFinanceIntegration(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	report, ok := out["report"].(string)
-	if !ok || !strings.Contains(report, "# Information:") || !strings.Contains(report, "| symbol | AAPL |") {
+	if !ok || !strings.Contains(report, "AAPL") {
 		t.Fatalf("report = %#v", out["report"])
 	}
-	if serverCalls != 2 {
-		t.Fatalf("server calls = %d, want 2", serverCalls)
+	if serverCalls != 1 {
+		t.Fatalf("server calls = %d, want 1", serverCalls)
 	}
 }

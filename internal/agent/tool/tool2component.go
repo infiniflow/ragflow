@@ -16,16 +16,12 @@
 
 package tool
 
-import (
-	"context"
+import "context"
 
-	einotool "github.com/cloudwego/eino/components/tool"
-)
-
-// ToolInvoker is the invocation seam shared by Eino tools and Canvas
+// ToolInvoker is the invocation seam shared by tools and Canvas
 // components backed by those tools.
 type ToolInvoker interface {
-	InvokableRun(ctx context.Context, argsJSON string, opts ...einotool.Option) (string, error)
+	InvokableRun(ctx context.Context, argsJSON string) (string, error)
 }
 
 // ComponentSpec describes the Canvas-facing surface of a tool. It is kept

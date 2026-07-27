@@ -21,9 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const (
@@ -89,25 +86,24 @@ func newWencaiTool(defaults wencaiParams) *WencaiTool {
 	return &WencaiTool{defaults: defaults}
 }
 
-// Info exposes only Python meta.parameters. Node configuration does not
-// belong in the model-emitted function-call schema.
-func (w *WencaiTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: wencaiToolName,
-		Desc: strings.TrimSpace(wencaiToolDescription),
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+func (w *WencaiTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        wencaiToolName,
+		Description: wencaiToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "The question/conditions to select stocks.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Natural-language Wencai query (e.g. \"近期涨停股\", \"高股息低估值\").",
+				Required:    true,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // InvokableRun matches the current Python invocation result: valid arguments
 // produce an empty report and no error because the upstream call is disabled.
-func (w *WencaiTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (w *WencaiTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	select {
 	case <-ctx.Done():
 		err := ctx.Err()

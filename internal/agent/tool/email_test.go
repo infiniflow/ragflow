@@ -123,7 +123,7 @@ func TestEmail_STARTTLSRequiredBeforeSubmission(t *testing.T) {
 
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("Listen: %v", err)
+		t.Fatalf("net.Listen: %v", err)
 	}
 	defer listener.Close()
 	commands := make(chan []string, 1)
@@ -227,21 +227,14 @@ func TestEmail_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewEmailTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "email" {
+		t.Errorf("Name = %q, want email", meta.Name)
 	}
-	if info.Name != "email" {
-		t.Errorf("Name = %q, want email", info.Name)
+	if !strings.Contains(meta.Description, "SMTP") {
+		t.Errorf("Desc = %q, want to mention SMTP", meta.Description)
 	}
-	if !strings.Contains(info.Desc, "SMTP") {
-		t.Errorf("Desc = %q, want to mention SMTP", info.Desc)
-	}
-	schemaJSON, err := info.ToJSONSchema()
-	if err != nil {
-		t.Fatalf("ToJSONSchema: %v", err)
-	}
-	raw, err := json.Marshal(schemaJSON)
+	raw, err := json.Marshal(meta.Parameters)
 	if err != nil {
 		t.Fatalf("marshal schema: %v", err)
 	}

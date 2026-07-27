@@ -16,7 +16,7 @@
 
 // Package tool implements RAGFlow agent canvas tool adapters in Go.
 //
-// All tools implement eino's tool.InvokableTool interface and are
+// All tools implement the tool.Tool interface and are
 // intended to be registered with the agent canvas via a factory function
 // (see .claude/plans/agent-go-port.md §2.11.4 "Tool 关键统一模式").
 package tool

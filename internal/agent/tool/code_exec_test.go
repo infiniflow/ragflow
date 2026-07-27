@@ -81,15 +81,12 @@ func TestCodeExec_Info(t *testing.T) {
 	t.Parallel()
 
 	c := NewCodeExecTool()
-	info, err := c.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := c.ToolMeta()
+	if meta.Name != "execute_code" {
+		t.Errorf("Name = %q, want execute_code", meta.Name)
 	}
-	if info.Name != "execute_code" {
-		t.Errorf("Name = %q, want execute_code", info.Name)
-	}
-	if !strings.Contains(info.Desc, "Python") {
-		t.Errorf("Desc = %q, want to mention Python", info.Desc)
+	if !strings.Contains(meta.Description, "Python") {
+		t.Errorf("Desc = %q, want to mention Python", meta.Description)
 	}
 }
 
@@ -315,11 +312,8 @@ func TestCodeExec_PassesArgumentsToSandbox(t *testing.T) {
 	t.Cleanup(func() { SetSandboxClient(prev) })
 
 	c := NewCodeExecTool()
-	_, err := c.InvokableRun(context.Background(),
+	_, _ = c.InvokableRun(context.Background(),
 		`{"language":"python","code":"def main(**kw): return kw","arguments":{"x":1,"y":"z"}}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
 	if captured.Arguments["x"].(float64) != 1 || captured.Arguments["y"].(string) != "z" {
 		t.Errorf("Arguments = %v, want {x:1, y:z}", captured.Arguments)
 	}

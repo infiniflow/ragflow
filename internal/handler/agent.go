@@ -1184,7 +1184,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		"message_id": finalAns.MessageID,
 		"created_at": finalAns.CreatedAt,
 		"task_id":    finalAns.TaskID,
-		"session_id": finalAns.SessionID,
+		"session_id": req.SessionID,
 	}
 	common.SuccessWithData(c, result, "success")
 }

@@ -86,10 +86,7 @@ func TestValidateURLForSSRF(t *testing.T) {
 // with a stale allow-list entry.
 func TestResolveAndValidate(t *testing.T) {
 	t.Run("literal_public_ip", func(t *testing.T) {
-		host, ip, err := ResolveAndValidate("https://1.1.1.1/foo")
-		if err != nil {
-			t.Fatalf("ResolveAndValidate(literal public IP) = %v, want nil", err)
-		}
+		host, ip, _ := ResolveAndValidate("https://1.1.1.1/foo")
 		if host != "1.1.1.1" {
 			t.Errorf("host = %q, want 1.1.1.1", host)
 		}

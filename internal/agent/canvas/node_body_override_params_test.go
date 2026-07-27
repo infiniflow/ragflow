@@ -62,7 +62,7 @@ func TestBuildNodeBody_OverrideParams(t *testing.T) {
 	}
 
 	ctx := WithComponentFactory(context.Background(), factory)
-	ctx = withOverrideParams(ctx, override)
+	ctx = withSetupOverrides(ctx, override)
 
 	body, err := buildNodeBody(ctx, "cpn-parser", "Parser", baseParams)
 	if err != nil {

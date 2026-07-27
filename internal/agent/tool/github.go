@@ -29,9 +29,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/tokenizer"
 )
 
@@ -107,19 +104,19 @@ func NewGitHubToolWithDefaults(h *HTTPHelper, defaults githubParams) *GitHubTool
 	return &GitHubTool{helper: h, defaults: defaults}
 }
 
-// Info returns the tool's metadata for the chat model.
-func (g *GitHubTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: githubToolName,
-		Desc: githubToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+func (g *GitHubTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        githubToolName,
+		Description: githubToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     githubQueryDescription,
-				Required: true,
+				Type:        ParamTypeString,
+				Description: githubQueryDescription,
+				Required:    true,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // buildGitHubURL constructs the repository search URL used by the Python
@@ -137,7 +134,7 @@ func buildGitHubURL(query string, topN int) string {
 }
 
 // InvokableRun performs the GitHub repository search.
-func (g *GitHubTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (g *GitHubTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p githubParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return githubErrJSON(fmt.Errorf("github: parse arguments: %w", err)),

@@ -21,9 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
 )
 
 const jin10ToolName = "jin10"
@@ -69,29 +66,29 @@ type Jin10Tool struct{}
 func NewJin10Tool() *Jin10Tool { return &Jin10Tool{} }
 
 // Info returns the tool's metadata for the chat model.
-func (j *Jin10Tool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: jin10ToolName,
-		Desc: jin10ToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (j *Jin10Tool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        jin10ToolName,
+		Description: jin10ToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"category": {
-				Type:     schema.String,
-				Desc:     "News category filter (e.g. \"all\", \"global\", \"cny\"). Defaults to \"all\".",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "News category filter (e.g. \"all\", \"global\", \"cny\"). Defaults to \"all\".",
+				Required:    false,
 			},
 			"speed": {
-				Type:     schema.String,
-				Desc:     "Optional speed/dedup filter. Defaults to empty (no filter).",
-				Required: false,
+				Type:        ParamTypeString,
+				Description: "Optional speed/dedup filter. Defaults to empty (no filter).",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // InvokableRun validates the input shape (category is optional with
 // default "all") and returns a clear "use Python Canvas" error. The
 // model receives a JSON envelope with the message in the `_ERROR` field.
-func (j *Jin10Tool) InvokableRun(_ context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (j *Jin10Tool) InvokableRun(_ context.Context, argsJSON string) (string, error) {
 	var p jin10Params
 	if argsJSON != "" {
 		if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {

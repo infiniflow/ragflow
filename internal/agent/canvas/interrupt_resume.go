@@ -1,74 +1,30 @@
-//
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
-//
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-//
-
-// interrupt_resume.go — eino v0.9.8 interrupt/resume wrappers for the
+// interrupt_resume.go — harness interrupt/resume wrappers for the
 // canvas layer.
 //
-// Background (plan §3): the previous "wait for user" mechanism was a
-// sentinel chain (`__wait_for_user__` / `_user_input_provided`) that
-// never actually connected end-to-end — UserFillUpComponent.Invoke did
-// not emit `__wait_for_user__`, so the orchestrator's IsWaitForUser
-// branch never fired. This file replaces the sentinel chain with eino's
-// native interrupt/resume API:
+// Replaces compose.Interrupt / GetResumeContext with
+// harness interrupt.Interrupt / GetResumeValues.
 //
-//   - UserFillUpNodeBody — returns a node func that calls
-//     compose.Interrupt on first execution and reads the user's input
-//     via compose.GetResumeContext on resume.
-//   - IsInterruptError / ExtractInterruptContexts — error-side helpers
-//     used by the orchestrator Driver to detect a wait-for-user signal
-//     and forward it as a `waiting_for_user` SSE event.
-//   - BuildInputSpec — extracts the UserFillUp form-field definition
-//     from DSL params; this is what we attach to compose.Interrupt's
-//     `info` argument so the orchestrator can surface the form schema
-//     to the front-end.
+// UserFillUpNodeBody — returns a node func that calls
+// interrupt.Interrupt on first execution and reads the user input
+// via interrupt.GetResumeValues on resume.
 //
-// v0.9.8 API surface used here (file-level diff against v0.9.5 verified
-// identical for these signatures):
-//
-//	compose.Interrupt(ctx, info) error
-//	compose.GetResumeContext[T any](ctx) (isResumeFlow, hasData bool, data T)
-//	compose.ResumeWithData(ctx, interruptID, data) context.Context
-//	compose.ExtractInterruptInfo(err) (*InterruptInfo, bool)
-//	compose.WithCheckPointID(checkPointID) Option
-//	compose.WithInterruptBeforeNodes(nodes) GraphCompileOption
+// IsInterruptError — detection used by the orchestrator Driver to
+// distinguish wait-for-user from genuine run failures.
 package canvas
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/cloudwego/eino/compose"
-
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/harness/graph/interrupt"
 )
 
-// BuildInputSpec turns the DSL's UserFillUp params into the user-visible
-// info payload that travels with the interrupt signal. The orchestrator
-// Driver reads this from InterruptCtx.Info on the SSE side and ships it
-// to the front-end so the form renderer knows what fields to render.
-//
-// We deliberately keep the schema tiny: enable_tips + tips + an
-// `inputs` map for the field definitions. Anything richer would couple
-// the canvas layer to the component package, which is forbidden (the
-// component package already knows the UserFillUp shape — it owns the
-// form-field schema in userfillup.go; this function only carries the
-// minimum the orchestrator needs to round-trip the form schema without
-// re-reading the DSL).
+// BuildInputSpec turns the DSL UserFillUp params into the user-visible
+// info payload that travels with the interrupt signal.
 func BuildInputSpec(params map[string]any) map[string]any {
 	spec := make(map[string]any, 4)
 	if params != nil {
@@ -82,122 +38,87 @@ func BuildInputSpec(params map[string]any) map[string]any {
 			spec["tips"] = v
 		}
 	}
-	spec["kind"] = "user_fill_up" // tag so cancel-vs-wait can be distinguished in Driver
+	spec["kind"] = "user_fill_up"
 	return spec
 }
 
-// buildUserFillUpInterruptInfo renders a fresh wait prompt from the current
-// canvas state so repeated pauses never reuse an earlier iteration's tips.
-func buildUserFillUpInterruptInfo(ctx context.Context, params map[string]any) map[string]any {
-	info := BuildInputSpec(params)
-	if enabled, ok := info["enable_tips"].(bool); ok && !enabled {
-		delete(info, "tips")
-		return info
-	}
-
-	tips, _ := info["tips"].(string)
-	if tips == "" {
-		return info
-	}
-	state, _, err := GetStateFromContext[*CanvasState](ctx)
-	if err != nil || state == nil {
-		return info
-	}
-	info["tips"] = runtime.ResolveTemplateForDisplay(tips, state)
-	return info
-}
-
-// UserFillUpNodeBody returns an eino node function implementing
+// UserFillUpNodeBody returns a harness node function implementing
 // "wait for user input" semantics.
 //
 // Flow:
-//
-//   - First execution (no resume context): build an inputSpec and call
-//     compose.Interrupt, returning the resulting error. The engine
-//     catches the interrupt signal, persists a checkpoint, and surfaces
-//     the error to the orchestrator (which renders it as a
-//     `waiting_for_user` SSE event).
-//   - Resumed execution: compose.GetResumeContext returns
-//     (true, true, userInput). We emit two output keys: `user_input`
-//     (the canonical v1 form-fill output name, mirroring the Python
-//     fillup.py:66 contract) and the cpnID key (so downstream nodes can
-//     reference `{{user_fill_up_1}}`).
-//
-// Idempotency: the resume branch is the very first thing the node does.
-// Anything we did before the Interrupt call on the first run (we did
-// nothing — no LLM calls, no file writes) cannot be repeated. The
-// "node re-execution from start" risk called out in the plan §5 row 1
-// is therefore a non-issue for UserFillUpNodeBody specifically.
-func UserFillUpNodeBody(cpnID string, params map[string]any) func(ctx context.Context, input map[string]any) (map[string]any, error) {
+// - If the UserFillUp has an options-type input (menu/dropdown) and the
+// initial query is available in state.Sys["query"], consume the query
+// directly without interrupting (matching Python's behavior where the
+// first interaction node receives the initial message upfront).
+// - Otherwise, build an inputSpec and call interrupt.Interrupt.
+// The engine catches the GraphInterrupt, saves a checkpoint, and
+// surfaces the error to the orchestrator.
+// - Resumed execution: interrupt.GetResumeValues returns the user's
+// input. Emit user_input and cpnID keys.
+func UserFillUpNodeBody(cpnID string, params map[string]any) func(ctx context.Context, input any) (any, error) {
 	inputSpec := BuildInputSpec(params)
-	body := func(ctx context.Context, input map[string]any) (map[string]any, error) {
-		// Resume branch: the orchestrator decorated ctx with
-		// compose.ResumeWithData(ctx, interruptID, userInput).
-		// isResumeFlow is true when THIS node is the explicit target;
-		// hasData is true when the caller supplied non-nil resume data.
-		if isResume, hasData, data := compose.GetResumeContext[any](ctx); isResume && hasData {
-			out := buildUserFillUpResumeOutput(cpnID, inputSpec, data)
-			out["__cpn_id__"] = cpnID
-			return out, nil
+
+	// Detect if this is a "dispatch" UserFillUp with an options-type input.
+	// These (like UserFillUp:Menu) should consume the initial query without
+	// interrupting.  Other UserFillUp nodes (text input, file upload) always
+	// interrupt on first call.
+	var dispatchKey string
+	if rawInputs, ok := inputSpec["inputs"].(map[string]any); ok {
+		for k, raw := range rawInputs {
+			spec, _ := raw.(map[string]any)
+			if spec == nil {
+				continue
+			}
+			typ, _ := spec["type"].(string)
+			if typ == "options" || typ == "choice" {
+				dispatchKey = k
+				break
+			}
+		}
+	}
+
+	body := func(ctx context.Context, input any) (any, error) {
+		// Dispatch branch: consume initial query as the options input value.
+		if dispatchKey != "" {
+			if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+				if query, ok := state.Sys["query"].(string); ok && query != "" {
+					return map[string]any{
+						"user_input": query,
+						dispatchKey:  query,
+						cpnID:        query,
+						"__cpn_id__": cpnID,
+					}, nil
+				}
+			}
 		}
 
-		// First-call branch: emit the interrupt signal. The returned
-		// error implements error; eino's runner catches it, persists a
-		// checkpoint, and bubbles it up.
-		if err := compose.Interrupt(ctx, buildUserFillUpInterruptInfo(ctx, params)); err != nil {
+		// First-call branch: emit the interrupt signal.
+		// On resume, interrupt.Interrupt returns the resume value
+		// with a nil error. On first call, it returns a GraphInterrupt error.
+		resumeValue, err := interrupt.Interrupt(ctx, map[string]any{
+			"cpn_id": cpnID,
+			"spec":   inputSpec,
+		})
+		if err != nil {
 			return nil, err
 		}
 
-		// Unreachable on a healthy eino runner — Interrupt either
-		// returns an interrupt error or panics on engine misuse. Keep
-		// the guard so test runs without a runner surface a clear
-		// message rather than a panic.
+		// Resume branch: resumeValue is the user's input.
+		if resumeValue != nil {
+			return map[string]any{
+				"user_input": resumeValue,
+				cpnID:        resumeValue,
+				"__cpn_id__": cpnID,
+			}, nil
+		}
+
 		return nil, fmt.Errorf("canvas: UserFillUp %q: interrupt did not halt execution", cpnID)
 	}
 	return body
 }
 
-func buildUserFillUpResumeOutput(cpnID string, inputSpec map[string]any, data any) map[string]any {
-	out := map[string]any{
-		"user_input": data,
-		cpnID:        data,
-	}
-
-	fields, _ := inputSpec["inputs"].(map[string]any)
-	if _, hasValue := fields["value"]; hasValue {
-		out["value"] = data
-	}
-	if len(fields) == 1 {
-		for name := range fields {
-			out[name] = data
-		}
-		return out
-	}
-
-	if values, ok := data.(map[string]any); ok {
-		for name := range fields {
-			if v, exists := values[name]; exists {
-				out[name] = v
-			}
-		}
-	}
-	return out
-}
-
-// IsInterruptError reports whether err carries an eino interrupt signal.
-//
-// Used by the orchestrator Driver to distinguish wait-for-user from
-// genuine run failures. context.Canceled / context.DeadlineExceeded
-// are explicitly excluded so cancel-timeout paths don't trigger
-// `waiting_for_user` events.
-//
-// Two detection paths cover the surface:
-//   - compose.ExtractInterruptInfo matches wrapped forms
-//     (`*interruptError` / `*subGraphInterruptError`) — the shapes
-//     the eino runner returns after propagating through the engine.
-//   - compose.IsInterruptRerunError matches the raw `*core.InterruptSignal`
-//     returned by a direct `compose.Interrupt(...)` call. Useful in
-//     unit tests that exercise the helper without spinning up a runner.
+// IsInterruptError reports whether err carries a harness interrupt signal.
+// context.Canceled / context.DeadlineExceeded are explicitly excluded.
 func IsInterruptError(err error) bool {
 	if err == nil {
 		return false
@@ -205,182 +126,95 @@ func IsInterruptError(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	if _, ok := compose.ExtractInterruptInfo(err); ok {
-		return true
-	}
-	if _, ok := compose.IsInterruptRerunError(err); ok {
-		return true
-	}
-	return false
+	return interrupt.IsInterrupt(err)
 }
 
-// ExtractInterruptContexts walks the error chain and returns every
-// InterruptCtx the engine surfaced. Returns nil if err is not an
-// interrupt error.
+// MustExtractInterruptContexts extracts interrupt info from an error
+// for the orchestrator. Returns the first non-nil interrupt value as a
+// simplified context list so the Driver can emit a `waiting_for_user`
+// event.
 //
-// This handles two wrapping cases that come up in practice:
-//
-//  1. workflowx.AddLoopNode wraps sub-workflow interrupts as
-//     ErrLoopSubGraphInterrupted (workflowx/loop.go:122-126). The
-//     original interrupt error is reachable via errors.As/Is.
-//  2. Composite interrupts (ToolsNode, parallel branches) carry a
-//     list of nested InterruptCtx — we flatten them so the orchestrator
-//     sees a single flat list to pick a target from.
-//  3. Raw `*core.InterruptSignal` (the form `compose.Interrupt`
-//     returns directly) — handled here so unit tests don't need a
-//     full runner. The engine wraps this into `*interruptError` at
-//     propagation time, so the wrapped path is the production one.
-//
-// Single-interrupt vs composite: a plain UserFillUp produces one
-// context. The orchestrator currently uses the first; a future phase
-// that wants multi-target resume would iterate.
-func ExtractInterruptContexts(err error) []*compose.InterruptCtx {
+// Handles both direct UserFillUp interrupt values and loop-wrapped
+// interrupts (where the loop saves the UserFillUp value under
+// "user_fill_up_value" in its JSON-serialised loopInterruptState).
+func MustExtractInterruptContexts(err error) []*interruptCtx {
 	if err == nil {
 		return nil
 	}
-	if info, ok := extractInterruptInfoDeep(err); ok && info != nil {
-		ctxs := collectInterruptContexts(info)
-		if len(ctxs) > 0 {
-			return ctxs
-		}
-	}
-	// Fallback: raw signal. Use the deprecated IsInterruptRerunError
-	// helper which gives us (info, state, ok). We don't have access
-	// to InterruptCtx here in the raw form (the engine hasn't wrapped
-	// the signal yet), so we return nil — callers that care about
-	// the context list rely on the wrapped form, which is what
-	// production paths see.
-	if _, ok := compose.IsInterruptRerunError(err); ok {
+	val, ok := interrupt.GetInterruptValue(err)
+	if !ok {
 		return nil
 	}
-	return nil
-}
 
-func extractInterruptInfoDeep(err error) (*compose.InterruptInfo, bool) {
-	if err == nil {
-		return nil, false
-	}
-	if info, ok := compose.ExtractInterruptInfo(err); ok {
-		return info, true
-	}
-	type multiUnwrapper interface {
-		Unwrap() []error
-	}
-	if mw, ok := err.(multiUnwrapper); ok {
-		for _, sub := range mw.Unwrap() {
-			if info, ok := extractInterruptInfoDeep(sub); ok {
-				return info, true
-			}
-		}
-	}
-	if unwrapped := errors.Unwrap(err); unwrapped != nil {
-		return extractInterruptInfoDeep(unwrapped)
-	}
-	return nil, false
-}
-
-func collectInterruptContexts(info *compose.InterruptInfo) []*compose.InterruptCtx {
-	if info == nil {
-		return nil
-	}
-	var out []*compose.InterruptCtx
-	out = append(out, info.InterruptContexts...)
-	for _, sub := range info.SubGraphs {
-		out = append(out, collectInterruptContexts(sub)...)
-	}
-	return out
-}
-
-// FirstInterruptID is a tiny convenience used by the Driver when it
-// picks a single target for the SSE `cpn_id` field. Returns "" when
-// no contexts are present. Keeps the Driver code from doing its own
-// nil-check dance.
-func FirstInterruptID(ctxs []*compose.InterruptCtx) string {
-	if ctx := FirstUserFillUpInterrupt(ctxs); ctx != nil {
-		return ctx.ID
-	}
-	if len(ctxs) == 0 {
-		return ""
-	}
-	return ctxs[0].ID
-}
-
-// RootInterruptID returns the interrupt id that should be passed to
-// compose.ResumeWithData. In composite/subgraph cases this is the
-// root-cause context, which is not necessarily the same leaf context we
-// want to expose to the front-end as the waiting UserFillUp node.
-func RootInterruptID(ctxs []*compose.InterruptCtx) string {
-	for _, ctx := range ctxs {
-		for cur := ctx; cur != nil; cur = cur.Parent {
-			if cur.IsRootCause {
-				return cur.ID
-			}
-		}
-	}
-	if len(ctxs) == 0 {
-		return ""
-	}
-	return ctxs[0].ID
-}
-
-func FirstUserFillUpInterrupt(ctxs []*compose.InterruptCtx) *compose.InterruptCtx {
-	for _, ctx := range ctxs {
-		for cur := ctx; cur != nil; cur = cur.Parent {
-			if info, ok := cur.Info.(map[string]any); ok {
-				if kind, _ := info["kind"].(string); kind == "user_fill_up" {
-					return cur
+	// Resolve the effective interrupt value, unwrapping loop state
+	// when present.
+	effectiveVal := val
+	if raw, ok := val.([]byte); ok {
+		// Try JSON: loopInterruptState or direct map.
+		var candidate map[string]any
+		if json.Unmarshal(raw, &candidate) == nil {
+			if ufv, has := candidate["user_fill_up_value"]; has {
+				// Loop-wrapped: extract the original UserFillUp value.
+				switch v := ufv.(type) {
+				case string:
+					if err := json.Unmarshal([]byte(v), &candidate); err != nil {
+						// Not JSON — leave candidate as-is (parent loop state).
+					}
+				case map[string]any:
+					candidate = v
 				}
 			}
+			effectiveVal = candidate
 		}
 	}
-	return nil
+	if m, ok := effectiveVal.(map[string]any); ok {
+		id, _ := m["cpn_id"].(string)
+		tips, inputs := extractSpecDetails(m)
+		return []*interruptCtx{{ID: id, Tips: tips, Inputs: inputs}}
+	}
+	id := fmt.Sprintf("%v", effectiveVal)
+	return []*interruptCtx{{ID: id}}
 }
 
-func formatInterruptContexts(ctxs []*compose.InterruptCtx) string {
+// extractSpecDetails reads the "spec" fields from a UserFillUp interrupt value.
+func extractSpecDetails(val map[string]any) (tips string, inputs map[string]any) {
+	spec, _ := val["spec"].(map[string]any)
+	if spec == nil {
+		return "", nil
+	}
+	if t, _ := spec["tips"].(string); t != "" {
+		tips = t
+	}
+	if raw, _ := spec["inputs"].(map[string]any); len(raw) > 0 {
+		inputs = raw
+	}
+	return
+}
+
+// interruptCtx is a minimal substitute for InterruptCtx.
+type interruptCtx struct {
+	ID     string
+	Tips   string
+	Inputs map[string]any
+}
+
+// FirstInterruptID returns the ID of the first interrupt context.
+func FirstInterruptID(ctxs []*interruptCtx) string {
 	if len(ctxs) == 0 {
-		return "[]"
+		return ""
 	}
-	parts := make([]string, 0, len(ctxs))
-	for _, ctx := range ctxs {
-		if ctx == nil {
-			parts = append(parts, "<nil>")
-			continue
-		}
-		kind := ""
-		if info, ok := ctx.Info.(map[string]any); ok {
-			kind, _ = info["kind"].(string)
-		}
-		addr := ctx.Address.String()
-		parentAddr := ""
-		if ctx.Parent != nil {
-			parentAddr = ctx.Parent.Address.String()
-		}
-		if kind != "" {
-			parts = append(parts, fmt.Sprintf("{id:%q kind:%q addr:%q parent:%q}", ctx.ID, kind, addr, parentAddr))
-		} else {
-			parts = append(parts, fmt.Sprintf("{id:%q info:%T addr:%q parent:%q}", ctx.ID, ctx.Info, addr, parentAddr))
-		}
-	}
-	return "[" + strings.Join(parts, ", ") + "]"
+	return ctxs[0].ID
 }
 
 // AutoDiscoverUserFillUpIDs returns the cpnIDs of every component whose
-// name (case-insensitive) is UserFillUp. The compiler option
-// compose.WithInterruptBeforeNodes needs a []string; we compute it
-// here so callers don't have to walk the Canvas twice.
-//
-// Centralised here (rather than inlined in compile.go) so any future
-// interrupt-emitting component (e.g. Answer, when ported) can register
-// itself by adding to the switch.
+// name (case-insensitive) is UserFillUp.
 func AutoDiscoverUserFillUpIDs(c *Canvas) []string {
 	if c == nil {
 		return nil
 	}
 	var ids []string
 	for cpnID, comp := range c.Components {
-		name := strings.ToLower(comp.Obj.ComponentName)
-		switch name {
-		case "userfillup":
+		if strings.EqualFold(comp.Obj.ComponentName, "userfillup") {
 			ids = append(ids, cpnID)
 		}
 	}

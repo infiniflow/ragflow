@@ -66,13 +66,15 @@ func TestIntegration_ToolCalls(t *testing.T) {
 	cb := pregel.NewCallbackManager()
 	cb.AddCallback(recorder)
 
-	engine := pregel.NewEngine(sg,
-		pregel.WithCheckpointer(checkpoint.NewMemorySaver()),
-		pregel.WithCallbacks(cb),
-		pregel.WithRecursionLimit(10),
+	te := pregel.NewTracedEngine(
+		pregel.NewEngine(sg,
+			pregel.WithCheckpointer(checkpoint.NewMemorySaver()),
+			pregel.WithRecursionLimit(10),
+		),
 	)
+	te.SetCallbacks(cb)
 
-	outputCh, errCh := engine.Run(ctx, map[string]any{"value": ""}, types.StreamModeValues)
+	outputCh, errCh := te.Run(ctx, map[string]any{"value": ""}, types.StreamModeValues)
 	drainOutput(outputCh)
 	if err := <-errCh; err != nil {
 		t.Fatal(err)
@@ -211,13 +213,15 @@ func TestIntegration_SubAgents(t *testing.T) {
 
 	cb := pregel.NewCallbackManager()
 	cb.AddCallback(recorder)
-	engine := pregel.NewEngine(sg,
-		pregel.WithCheckpointer(checkpoint.NewMemorySaver()),
-		pregel.WithCallbacks(cb),
-		pregel.WithRecursionLimit(10),
+	te := pregel.NewTracedEngine(
+		pregel.NewEngine(sg,
+			pregel.WithCheckpointer(checkpoint.NewMemorySaver()),
+			pregel.WithRecursionLimit(10),
+		),
 	)
+	te.SetCallbacks(cb)
 
-	outputCh, errCh := engine.Run(ctx, map[string]any{"value": ""}, types.StreamModeValues)
+	outputCh, errCh := te.Run(ctx, map[string]any{"value": ""}, types.StreamModeValues)
 	drainOutput(outputCh)
 	if err := <-errCh; err != nil {
 		t.Fatal(err)
@@ -349,13 +353,15 @@ func TestIntegration_DeepResearchLoop(t *testing.T) {
 
 	cb := pregel.NewCallbackManager()
 	cb.AddCallback(recorder)
-	engine := pregel.NewEngine(sg,
-		pregel.WithCheckpointer(checkpoint.NewMemorySaver()),
-		pregel.WithCallbacks(cb),
-		pregel.WithRecursionLimit(20),
+	te := pregel.NewTracedEngine(
+		pregel.NewEngine(sg,
+			pregel.WithCheckpointer(checkpoint.NewMemorySaver()),
+			pregel.WithRecursionLimit(20),
+		),
 	)
+	te.SetCallbacks(cb)
 
-	outputCh, errCh := engine.Run(ctx, map[string]any{"value": "", "iteration": 1}, types.StreamModeValues)
+	outputCh, errCh := te.Run(ctx, map[string]any{"value": "", "iteration": 1}, types.StreamModeValues)
 	drainOutput(outputCh)
 	if err := <-errCh; err != nil {
 		t.Fatalf("engine run error: %v", err)

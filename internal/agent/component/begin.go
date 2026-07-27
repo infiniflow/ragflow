@@ -55,7 +55,7 @@ func NewBeginComponent(_ map[string]any) (Component, error) {
 }
 
 // Name returns the registered component name. Used by the registry and
-// the eino node-name injection in BuildWorkflow.
+// the node-name injection in BuildWorkflow.
 func (b *BeginComponent) Name() string { return b.name }
 
 // Invoke writes inputs["query"] and (when present) inputs["user_id"] into

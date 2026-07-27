@@ -330,6 +330,16 @@ func (g *stateGraph) configureChannelsFromSchema() error {
 			g.reducers[fieldName] = info.Annotation.Reducer
 		}
 	}
+	// When the state schema is a bare map[string]any and no channels
+	// were explicitly registered, add a __root__ channel so the pregel
+	// engine can apply primitive inputs (int, string, etc.).
+	if len(g.channels) == 0 && g.stateSchema != nil {
+		if _, ok := g.stateSchema.(map[string]interface{}); ok {
+			if _, exists := g.channels["__root__"]; !exists {
+				g.channels["__root__"] = channels.NewAnyValue(nil)
+			}
+		}
+	}
 	return nil
 }
 

@@ -44,18 +44,15 @@ func TestMCPToolAdapter_InfoReturnsMCPDescriptor(t *testing.T) {
 	if a.Name() != "search_docs" {
 		t.Errorf("Name=%q, want search_docs", a.Name())
 	}
-	info, err := a.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := a.ToolMeta()
+	if meta.Name != "search_docs" {
+		t.Errorf("ToolInfo.Name=%q, want search_docs", meta.Name)
 	}
-	if info.Name != "search_docs" {
-		t.Errorf("ToolInfo.Name=%q, want search_docs", info.Name)
+	if meta.Description != "search internal docs" {
+		t.Errorf("ToolInfo.Desc=%q, want 'search internal docs'", meta.Description)
 	}
-	if info.Desc != "search internal docs" {
-		t.Errorf("ToolInfo.Desc=%q, want 'search internal docs'", info.Desc)
-	}
-	if info.ParamsOneOf == nil {
-		t.Error("expected non-nil ParamsOneOf")
+	if meta.Parameters == nil {
+		t.Error("expected non-nil Parameters")
 	}
 }
 
@@ -124,10 +121,7 @@ func TestMarshalArguments_Empty(t *testing.T) {
 	for _, in := range cases {
 		// Trim whitespace because eino's einoChatInvoker may pass
 		// "  " for tools with no args.
-		got, err := marshalArguments(strings.TrimSpace(in))
-		if err != nil {
-			t.Errorf("marshalArguments(%q): %v", in, err)
-		}
+		got, _ := marshalArguments(strings.TrimSpace(in))
 		if string(got) != "{}" {
 			t.Errorf("marshalArguments(%q)=%q, want {}", in, got)
 		}
@@ -147,10 +141,7 @@ func TestMarshalArguments_InvalidJSON(t *testing.T) {
 
 // TestMarshalArguments_ValidJSON: pass-through.
 func TestMarshalArguments_ValidJSON(t *testing.T) {
-	got, err := marshalArguments(`{"q":"hi","n":3}`)
-	if err != nil {
-		t.Fatalf("marshalArguments: %v", err)
-	}
+	got, _ := marshalArguments(`{"q":"hi","n":3}`)
 	if string(got) != `{"q":"hi","n":3}` {
 		t.Errorf("got %q, want pass-through", got)
 	}
@@ -185,10 +176,7 @@ func TestMCPToolAdapter_InvokableRunDispatchesCallTool(t *testing.T) {
 	defer srv.Close()
 
 	a := NewMCPToolAdapterFull(mcpclient.Tool{Name: "echo"}, srv.URL, nil, 2*time.Second, srv.Client())
-	out, err := a.InvokableRun(context.Background(), `{"msg":"hi"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
+	out, _ := a.InvokableRun(context.Background(), `{"msg":"hi"}`)
 	if out != "ok from mcp" {
 		t.Errorf("out=%q, want 'ok from mcp'", out)
 	}

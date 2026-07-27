@@ -58,10 +58,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-
-	"ragflow/internal/agent/runtime"
+	agentruntime "ragflow/internal/agent/runtime"
 )
 
 // ExeSQL-specific errors. ErrExeSQLDAOMissing is surfaced when
@@ -82,7 +79,7 @@ var (
 		"ExeSQL: connection params not configured (db_type/host/port/database/username/password)",
 	)
 	ErrExeSQLUnsupportedDB = errors.New(
-		"ExeSQL: db_type not yet supported in Go port (trino, IBM DB2 are pending)",
+		"ExeSQL: db_type not yet supported in Go port (trino, oracle, sqlite, IBM DB2 are pending)",
 	)
 )
 
@@ -101,23 +98,15 @@ const (
 // model-emitted runtime input; the remaining fields are Canvas node
 // configuration and are not exposed from Info.
 type exesqlConnParams struct {
-	SQL        string `json:"sql"`
-	DBType     string `json:"db_type"` // mysql | postgres | mariadb | mssql | oceanbase
-	Database   string `json:"database"`
-	Username   string `json:"username"`
-	Host       string `json:"host"`
-	Port       int    `json:"port"`
-	Password   string `json:"password"`
-	MaxRecords int    `json:"max_records"`
-}
-
-func defaultExeSQLConnParams() exesqlConnParams {
-	return exesqlConnParams{
-		SQL:        exesqlDefaultSQL,
-		DBType:     exesqlDefaultDBType,
-		Port:       exesqlDefaultPort,
-		MaxRecords: exesqlDefaultMaxRecords,
-	}
+	SQL        string        `json:"sql"`     // model-emitted runtime input
+	DBType     string        `json:"db_type"` // mysql | postgres | mariadb | mssql | oceanbase | sqlserver
+	Database   string        `json:"database"`
+	Username   string        `json:"username"`
+	Host       string        `json:"host"`
+	Port       int           `json:"port"`
+	Password   string        `json:"password"`
+	MaxRecords int           `json:"max_records"`
+	Timeout    time.Duration `json:"timeout"`
 }
 
 // ExeSQLConnParams is the public alias of exesqlConnParams for
@@ -129,7 +118,16 @@ type ExeSQLConnParams = exesqlConnParams
 // NewExeSQLConnParams decodes a canvas-node params map into an
 // ExeSQLConnParams. Python defaults are applied before node values;
 // host, database, and username remain required configuration.
-//
+func defaultExeSQLConnParams() exesqlConnParams {
+	return exesqlConnParams{
+		SQL:        exesqlDefaultSQL,
+		DBType:     exesqlDefaultDBType,
+		Port:       exesqlDefaultPort,
+		MaxRecords: exesqlDefaultMaxRecords,
+		Timeout:    exesqlDefaultTimeout,
+	}
+}
+
 // Callers (e.g. the Universe A exesqlComponent wrapper) build the
 // params map from the canvas DSL; the tool-side decoding stays
 // in this package so the schema lives next to the type.
@@ -254,18 +252,18 @@ func (e *ExeSQLTool) WithExeSQLDialer(d exesqlDialer) *ExeSQLTool {
 // they're set on the tool instance, matching the Python convention
 // where ExeSQLParam fields like `db_type` / `host` are tool
 // configuration, not function-call arguments.
-func (e *ExeSQLTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: exesqlToolName,
-		Desc: exesqlToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+func (e *ExeSQLTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        exesqlToolName,
+		Description: exesqlToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"sql": {
-				Type:     schema.String,
-				Desc:     "The SQL statement to execute. Must be a SELECT (read-only).",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "The SQL statement to execute. Must be a SELECT (read-only).",
+				Required:    true,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 func (e *ExeSQLTool) ComponentSpec() ComponentSpec {
@@ -288,7 +286,7 @@ func (e *ExeSQLTool) ComponentSpec() ComponentSpec {
 // returns the rows. Per-statement errors do not abort the node: they
 // are accumulated in the `Errors` slice of the response (the Python
 // tool does the same — `sql_res.append({"content": msg})`).
-func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string, _ ...tool.Option) (string, error) {
+func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string) (string, error) {
 	if argumentsInJSON == "" {
 		return exesqlErrorResult(errors.New("exesql: empty arguments")), errors.New("exesql: empty arguments")
 	}
@@ -297,8 +295,8 @@ func (e *ExeSQLTool) InvokableRun(ctx context.Context, argumentsInJSON string, _
 		return exesqlErrorResult(fmt.Errorf("exesql: parse arguments: %w", err)),
 			fmt.Errorf("exesql: parse arguments: %w", err)
 	}
-	if state, _, stateErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); stateErr == nil && state != nil {
-		resolved, resolveErr := runtime.ResolveTemplate(args.SQL, state)
+	if state, _, stateErr := agentruntime.GetStateFromContext[*agentruntime.CanvasState](ctx); stateErr == nil && state != nil {
+		resolved, resolveErr := agentruntime.ResolveTemplate(args.SQL, state)
 		if resolveErr != nil {
 			return exesqlErrorResult(resolveErr), resolveErr
 		}
@@ -664,6 +662,10 @@ func exesqlDriverAndDSN(c exesqlConnParams) (driver, dsn string, err error) {
 		return "trino", trinoDSN(c), nil
 	case "ibm db2":
 		return "", "", fmt.Errorf("%w: ibm db2", ErrExeSQLUnsupportedDB)
+	case "oracle":
+		return "", "", fmt.Errorf("%w: oracle", ErrExeSQLUnsupportedDB)
+	case "sqlite", "sqlite3":
+		return "", "", fmt.Errorf("%w: sqlite", ErrExeSQLUnsupportedDB)
 	default:
 		return "", "", fmt.Errorf("ExeSQL: unknown db_type %q", c.DBType)
 	}

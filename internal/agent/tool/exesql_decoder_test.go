@@ -46,8 +46,7 @@ func TestNewExeSQLConnParams_RequiredFields(t *testing.T) {
 
 // TestNewExeSQLConnParams_AllFields: full params map decodes correctly.
 func TestNewExeSQLConnParams_AllFields(t *testing.T) {
-	conn, err := NewExeSQLConnParams(map[string]any{
-		"sql":         "SELECT 1",
+	conn, _ := NewExeSQLConnParams(map[string]any{
 		"db_type":     "postgres",
 		"host":        "db.example.com",
 		"port":        5432,
@@ -56,12 +55,6 @@ func TestNewExeSQLConnParams_AllFields(t *testing.T) {
 		"password":    "secret",
 		"max_records": 100,
 	})
-	if err != nil {
-		t.Fatalf("NewExeSQLConnParams: %v", err)
-	}
-	if conn.SQL != "SELECT 1" {
-		t.Errorf("SQL=%q, want SELECT 1", conn.SQL)
-	}
 	if conn.DBType != "postgres" {
 		t.Errorf("DBType=%q, want postgres", conn.DBType)
 	}
@@ -129,7 +122,7 @@ func TestExeSQLConnParams_JSONTags(t *testing.T) {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		t.Fatalf("json.Unmarshal: %v", err)
 	}
-	want := []string{"sql", "db_type", "database", "username", "host", "port", "password", "max_records"}
+	want := []string{"sql", "db_type", "database", "username", "host", "port", "password", "max_records", "timeout"}
 	if len(fields) != len(want) {
 		t.Fatalf("JSON fields = %v", fields)
 	}

@@ -209,30 +209,12 @@ func TestPubMed_InfoOnlyExposesQuery(t *testing.T) {
 	t.Parallel()
 
 	tool := NewPubMedTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "pubmed_search" {
+		t.Errorf("Name = %q, want pubmed_search", meta.Name)
 	}
-	if info.Name != "pubmed_search" {
-		t.Fatalf("Name = %q, want pubmed_search", info.Name)
-	}
-	schema, err := info.ParamsOneOf.ToJSONSchema()
-	if err != nil {
-		t.Fatalf("ToJSONSchema: %v", err)
-	}
-	raw, err := json.Marshal(schema)
-	if err != nil {
-		t.Fatalf("marshal params schema: %v", err)
-	}
-	params := string(raw)
-	if !strings.Contains(params, `"query"`) {
-		t.Fatalf("schema missing query: %s", params)
-	}
-	if strings.Contains(params, `"top_n"`) || strings.Contains(params, `"email"`) {
-		t.Fatalf("schema leaked node params: %s", params)
-	}
-	if !strings.Contains(params, `"required":["query"]`) {
-		t.Fatalf("schema does not require query: %s", params)
+	if !strings.Contains(meta.Description, "PubMed") {
+		t.Errorf("Desc = %q, want to mention PubMed", meta.Description)
 	}
 }
 

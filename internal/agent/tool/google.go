@@ -29,9 +29,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/tokenizer"
 )
 
@@ -92,28 +89,29 @@ func NewGoogleToolWithDefaults(h *HTTPHelper, defaults googleParams) *GoogleTool
 	return &GoogleTool{helper: h, defaults: defaults}
 }
 
-func (g *GoogleTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: googleToolName,
-		Desc: googleToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+func (g *GoogleTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        googleToolName,
+		Description: googleToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"q": {
-				Type:     schema.String,
-				Desc:     "The search keywords to execute with Google. The keywords should be the most important words/terms(includes synonyms) from the original request.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "The search keywords to execute with Google. The keywords should be the most important words/terms(includes synonyms) from the original request.",
+				Required:    true,
 			},
 			"start": {
-				Type:     schema.Integer,
-				Desc:     "Parameter defines the result offset. It skips the given number of results. It's used for pagination. (e.g., 0 (default) is the first page of results, 10 is the 2nd page of results, 20 is the 3rd page of results, etc.). Google Local Results only accepts multiples of 20(e.g. 20 for the second page results, 40 for the third page results, etc.) as the start value.",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Parameter defines the result offset. It skips the given number of results. It's used for pagination. (e.g., 0 (default) is the first page of results, 10 is the 2nd page of results, 20 is the 3rd page of results, etc.). Google Local Results only accepts multiples of 20(e.g. 20 for the second page results, 40 for the third page results, etc.) as the start value.",
+				Required:    false,
 			},
 			"num": {
-				Type:     schema.Integer,
-				Desc:     "Parameter defines the maximum number of results to return. (e.g., 10 (default) returns 10 results, 40 returns 40 results, and 100 returns 100 results). The use of num may introduce latency, and/or prevent the inclusion of specialized result types. It is better to omit this parameter unless it is strictly necessary to increase the number of results per page. Results are not guaranteed to have the number of results specified in num.",
-				Required: false,
+				Type:        ParamTypeInteger,
+				Description: "Parameter defines the maximum number of results to return. (e.g., 10 (default) returns 10 results, 40 returns 40 results, and 100 returns 100 results). The use of num may introduce latency, and/or prevent the inclusion of specialized result types. It is better to omit this parameter unless it is strictly necessary to increase the number of results per page. Results are not guaranteed to have the number of results specified in num.",
+				Required:    false,
 			},
-		}),
-	}, nil
+		},
+	}
 }
 
 // InputForm returns the Google fields exposed through Agent tool aggregation.
@@ -183,7 +181,10 @@ func buildGoogleURL(p googleParams) string {
 	return googleEndpoint + "?" + q.Encode()
 }
 
-func (g *GoogleTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+// InvokableRun performs the Google search via SerpApi. The api_key, country,
+// language, q, start, and num may come from the call args or the tool's
+// node-level defaults (NewGoogleToolWithDefaults).
+func (g *GoogleTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p googleParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return googleErrJSON(fmt.Errorf("google: parse arguments: %w", err)),

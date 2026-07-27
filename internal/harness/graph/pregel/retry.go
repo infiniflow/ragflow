@@ -4,9 +4,10 @@ package pregel
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
-	"ragflow/internal/harness/graph/errors"
+	gerrors "ragflow/internal/harness/graph/errors"
 	"ragflow/internal/harness/graph/types"
 )
 
@@ -44,8 +45,15 @@ func (e *RetryExecutor) Execute(ctx context.Context, name string, fn func(contex
 		}
 
 		// Check if this is a non-retryable error
-		if errors.IsGraphInterrupt(err) {
+		if gerrors.IsGraphInterrupt(err) {
 			return nil, err // propagate GraphInterrupt immediately without wrapping
+		}
+		// ErrLoopMaxIterationsExceeded is a normal termination condition,
+		// not a transient failure. Retrying it would re-execute the entire
+		// loop body and produce incorrect state (e.g. iterator counter
+		// incremented beyond the cap). Propagate immediately.
+		if strings.Contains(err.Error(), "loop max iterations exceeded") {
+			return nil, err
 		}
 		if e.policy.RetryOn != nil && !e.policy.RetryOn(err) {
 			return nil, fmt.Errorf("node %s failed with non-retryable error: %w", name, err)

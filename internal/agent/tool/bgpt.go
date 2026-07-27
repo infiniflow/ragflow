@@ -29,9 +29,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/cloudwego/eino/components/tool"
-	"github.com/cloudwego/eino/schema"
-
 	"ragflow/internal/tokenizer"
 )
 
@@ -102,19 +99,34 @@ func newBGPTTool(h *HTTPHelper, defaults bgptParams) *BGPTTool {
 	return &BGPTTool{helper: h, defaults: defaults}
 }
 
-// Info returns the tool's metadata for the chat model.
-func (b *BGPTTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: bgptToolName,
-		Desc: bgptToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+// ToolMeta returns the tool's metadata for the chat model.
+func (b *BGPTTool) ToolMeta() ToolMeta {
+	return ToolMeta{
+		Name:        bgptToolName,
+		Description: bgptToolDescription,
+		Parameters: map[string]ParameterInfo{
 			"query": {
-				Type:     schema.String,
-				Desc:     "Natural-language scientific search query.",
-				Required: true,
+				Type:        ParamTypeString,
+				Description: "Natural-language scientific search query.",
+				Required:    true,
 			},
-		}),
-	}, nil
+			"num_results": {
+				Type:        ParamTypeInteger,
+				Description: "Maximum number of results. Defaults to 10.",
+				Required:    false,
+			},
+			"api_key": {
+				Type:        ParamTypeString,
+				Description: "Optional BGPT API key. Leave blank for the free tier.",
+				Required:    false,
+			},
+			"days_back": {
+				Type:        ParamTypeInteger,
+				Description: "Optional recency filter (e.g. 365 for last year).",
+				Required:    false,
+			},
+		},
+	}
 }
 
 func (b *BGPTTool) ComponentSpec() ComponentSpec {
@@ -136,7 +148,7 @@ func (b *BGPTTool) ComponentSpec() ComponentSpec {
 }
 
 // InvokableRun performs the BGPT search.
-func (b *BGPTTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
+func (b *BGPTTool) InvokableRun(ctx context.Context, argsJSON string) (string, error) {
 	var p bgptParams
 	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
 		return bgptErrJSON(fmt.Errorf("bgpt: parse arguments: %w", err)),

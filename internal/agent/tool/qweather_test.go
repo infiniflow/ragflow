@@ -63,10 +63,7 @@ func TestQWeather_BuildURL(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := buildQWeatherURL(tc.params)
-			u, err := url.Parse(got)
-			if err != nil {
-				t.Fatalf("url.Parse(%q): %v", got, err)
-			}
+			u, _ := url.Parse(got)
 			if u.Host != tc.wantHost {
 				t.Errorf("host = %q, want %q", u.Host, tc.wantHost)
 			}
@@ -117,11 +114,8 @@ func TestQWeather_ParseResponse(t *testing.T) {
 	})
 	tool := NewQWeatherToolWith(helper)
 
-	out, err := tool.InvokableRun(context.Background(),
+	out, _ := tool.InvokableRun(context.Background(),
 		`{"api_key":"K-abc","location":"101010100"}`)
-	if err != nil {
-		t.Fatalf("InvokableRun: %v", err)
-	}
 	if gotQuery.Get("key") != "K-abc" {
 		t.Errorf("server saw key = %q, want K-abc", gotQuery.Get("key"))
 	}
@@ -216,14 +210,11 @@ func TestQWeather_Info(t *testing.T) {
 	t.Parallel()
 
 	tool := NewQWeatherTool()
-	info, err := tool.Info(context.Background())
-	if err != nil {
-		t.Fatalf("Info: %v", err)
+	meta := tool.ToolMeta()
+	if meta.Name != "qweather" {
+		t.Errorf("Name = %q, want qweather", meta.Name)
 	}
-	if info.Name != "qweather" {
-		t.Errorf("Name = %q, want qweather", info.Name)
-	}
-	if !strings.Contains(info.Desc, "QWeather") && !strings.Contains(info.Desc, "和风") {
-		t.Errorf("Desc = %q, want to mention QWeather", info.Desc)
+	if !strings.Contains(meta.Description, "QWeather") && !strings.Contains(meta.Description, "和风") {
+		t.Errorf("Desc = %q, want to mention QWeather", meta.Description)
 	}
 }

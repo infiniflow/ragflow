@@ -1,17 +1,17 @@
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
+// http://www.apache.org/licenses/LICENSE-2.0
 //
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 //
 
 // runtime — per-run shared state for canvas components.
@@ -39,24 +39,21 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/cloudwego/eino/compose"
 )
 
 // CanvasState is the per-run shared state bag that all components read/write
-// through eino's StatePreHandler / StatePostHandler (compose/state.go).
+// through StatePreHandler / StatePostHandler (compose/state.go).
 //
 // Fields mirror Python agent/canvas.py:43-95 with these mappings:
-//   - Outputs     : cpn_id -> param_name -> resolved value (variable source)
-//   - Sys         : sys.* namespace (query, user_id, conversation_turns, files)
-//   - Env         : env.* namespace (deployment-time constants)
-//   - Path        : entry-point sequence (Begin nodes)
-//   - History     : conversation history (chat-flow agents)
-//   - Memory      : tool-call summaries kept separate from conversation turns
-//   - Retrieval   : aggregate retrieval result (chunks, doc_aggs)
-//   - Globals     : cross-canvas-instance globals
-//   - CancelFlag  : set when cancel signal received; nodes may poll
-//   - RunID       : unique per-run identifier (used by RunTracker + CheckPointStore)
+// - Outputs : cpn_id -> param_name -> resolved value (variable source)
+// - Sys : sys.* namespace (query, user_id, conversation_turns, files)
+// - Env : env.* namespace (deployment-time constants)
+// - Path : entry-point sequence (Begin nodes)
+// - History : conversation history (chat-flow agents)
+// - Retrieval : aggregate retrieval result (chunks, doc_aggs)
+// - Globals : cross-canvas-instance globals
+// - CancelFlag : set when cancel signal received; nodes may poll
+// - RunID : unique per-run identifier (used by RunTracker + CheckPointStore)
 type CanvasState struct {
 	mu                 sync.RWMutex
 	activeHistoryIndex int
@@ -113,19 +110,8 @@ func (s *CanvasState) EnsureSysDate() {
 	s.Sys["date"] = time.Now().UTC().Format("2006-01-02 15:04:05")
 }
 
-// init registers CanvasState with eino's internal type registry so
-// that eino's StatePre/Post handler chain (which uses its own
-// InternalSerializer, NOT stdlib encoding/json) recognises the
-// type during the deepCopyState call that fires on every interrupt
-// boundary. eino's serialization registry requires the type to
-// implement both json.Marshaler AND json.Unmarshaler; CanvasState
-// has both (below). Without this init, the interrupt path surfaces
-// "failed to marshal state: unknown type: runtime.CanvasState"
-// and the resume cycle is blocked at the eino layer.
-func init() {
-	_ = compose.RegisterSerializableType[CanvasState]("runtime.CanvasState")
-}
-
+// init registers CanvasState with harness internal type registry so
+// that the StatePre/Post handler chain (which uses its own
 // canvasStateJSON is the wire shape used by MarshalJSON / UnmarshalJSON.
 // Defined so the field tags and omitempty semantics are pinned in one
 // place. The CancelFlag is round-tripped as a bool (atomic.Bool can't
@@ -145,12 +131,12 @@ type canvasStateJSON struct {
 	TaskID             string                    `json:"task_id"`
 }
 
-// MarshalJSON serialises the CanvasState for eino's StatePre/Post
+// MarshalJSON serialises the CanvasState for StatePre/Post
 // handler chain (which JSON-encodes the state on every node boundary
 // when a StateSerializer is wired) and for Redis-backed CheckPointStore
 // payloads.
 //
-// Eino's interrupt path hit "failed to marshal state: unknown
+// interrupt path hit "failed to marshal state: unknown
 // type: runtime.CanvasState"
 // because the struct had no MarshalJSON and contained a sync.RWMutex
 // (unexported) + atomic.Bool (indirected; serialises as 8 bytes
@@ -164,13 +150,13 @@ type canvasStateJSON struct {
 func (s *CanvasState) MarshalJSON() ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var activeHistoryIndex *int
-	if s.activeHistoryIndex >= 0 {
-		index := s.activeHistoryIndex
-		activeHistoryIndex = &index
+	activeHistoryIndex := s.activeHistoryIndex
+	var ahi *int
+	if activeHistoryIndex >= 0 {
+		ahi = &activeHistoryIndex
 	}
 	snap := canvasStateJSON{
-		ActiveHistoryIndex: activeHistoryIndex,
+		ActiveHistoryIndex: ahi,
 		Outputs:            s.Outputs,
 		Sys:                s.Sys,
 		Env:                s.Env,
@@ -212,16 +198,17 @@ func (s *CanvasState) UnmarshalJSON(b []byte) error {
 	}
 	s.Path = snap.Path
 	s.History = snap.History
-	s.activeHistoryIndex = -1
-	if snap.ActiveHistoryIndex != nil {
-		s.activeHistoryIndex = *snap.ActiveHistoryIndex
+	if snap.Memory != nil {
+		s.Memory = snap.Memory
 	}
-	s.Memory = snap.Memory
 	if snap.Retrieval != nil {
 		s.Retrieval = snap.Retrieval
 	}
 	if snap.Globals != nil {
 		s.Globals = snap.Globals
+	}
+	if snap.ActiveHistoryIndex != nil {
+		s.activeHistoryIndex = *snap.ActiveHistoryIndex
 	}
 	if s.CancelFlag == nil {
 		s.CancelFlag = &atomic.Bool{}
@@ -236,14 +223,14 @@ func (s *CanvasState) UnmarshalJSON(b []byte) error {
 //
 // Supported forms (matches plan §2.5 + agent/canvas.py:168-239):
 //
-//	"cpn_id@param"        — Outputs[cpn_id][param]
-//	"cpn_id@param.path"   — dot-path traversal on Outputs[cpn_id][param]
-//	"sys.x"               — Sys["x"]   (also "sys.x.path")
-//	"env.x"               — Env["x"]   (also "env.x.path")
-//	"item"                — iteration alias (nil if unset)
-//	"index"               — iteration alias (nil if unset)
+//	"cpn_id@param" — Outputs[cpn_id][param]
+//	"cpn_id@param.path" — dot-path traversal on Outputs[cpn_id][param]
+//	"sys.x" — Sys["x"] (also "sys.x.path")
+//	"env.x" — Env["x"] (also "env.x.path")
+//	"item" — iteration alias (nil if unset)
+//	"index" — iteration alias (nil if unset)
 //
-// An unknown cpn_id returns (nil, nil) — mirrors Python's "treat as literal"
+// An unknown cpn_id returns (nil, nil) — mirrors Python "treat as literal"
 // fallback (canvas.py:494-495).
 func (s *CanvasState) GetVar(ref string) (any, error) {
 	if ref == "" {
@@ -255,7 +242,7 @@ func (s *CanvasState) GetVar(ref string) (any, error) {
 }
 
 // SetVar writes Outputs[cpnID][param] = v. Nested keys separated by "." are
-// auto-created (mirrors Python's set_variable_param_value at
+// auto-created (mirrors Python set_variable_param_value at
 // canvas.py:261-271). The lock is held for the entire walk to keep
 // "walk + assign" atomic under concurrent writers.
 func (s *CanvasState) SetVar(cpnID, param string, v any) {
@@ -286,7 +273,7 @@ func (s *CanvasState) ReadVars(refs []string) (map[string]any, error) {
 	return out, nil
 }
 
-// Snapshot returns a shallow copy of every cpn's outputs map. It is the
+// Snapshot returns a shallow copy of every cpn outputs map. It is the
 // snapshot that StatePreHandler exposes to component bodies. Shallow is
 // fine: components only re-read primitive values from this snapshot
 // during one execution; a deeper copy would just cost allocations.
@@ -329,280 +316,8 @@ func (s *CanvasState) SnapshotNamespaces() (sys map[string]any, env map[string]a
 	return sys, env, globals
 }
 
-// SetHistory replaces the conversation history with a defensive copy.
-func (s *CanvasState) SetHistory(history []map[string]any) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.History = cloneMapSlice(history)
-	s.activeHistoryIndex = -1
-}
-
-// AppendHistory adds one user or assistant turn. payload preserves the
-// Python DSL value while content is the text consumed by Go LLM components.
-func (s *CanvasState) AppendHistory(role string, payload any) {
-	if s == nil || role == "" {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.appendHistory(role, payload)
-	s.activeHistoryIndex = -1
-}
-
-// AppendCurrentUser adds the user prompt for the in-flight turn and records
-// its exact history index. SnapshotPriorHistory uses this identity instead of
-// guessing that any trailing user entry must be the current prompt.
-func (s *CanvasState) AppendCurrentUser(payload any) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.activeHistoryIndex = s.appendHistory("user", payload)
-}
-
-func (s *CanvasState) appendHistory(role string, payload any) int {
-	payload = cloneJSONValue(payload)
-	s.History = append(s.History, map[string]any{
-		"role":    role,
-		"content": historyContent(payload),
-		"payload": payload,
-	})
-	return len(s.History) - 1
-}
-
-// SnapshotHistory returns a defensive copy of all conversation turns.
-func (s *CanvasState) SnapshotHistory() []map[string]any {
-	if s == nil {
-		return nil
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return cloneMapSlice(s.History)
-}
-
-// SnapshotPriorHistory returns completed turns before the current in-flight
-// user input. Python appends the current user before workflow execution but
-// excludes it when prepending history to the same LLM request.
-func (s *CanvasState) SnapshotPriorHistory() []map[string]any {
-	if s == nil {
-		return nil
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	history := cloneMapSlice(s.History)
-	if s.activeHistoryIndex >= 0 && s.activeHistoryIndex == len(history)-1 {
-		return history[:s.activeHistoryIndex]
-	}
-	return history
-}
-
-// SetMemory replaces tool-call memory with a defensive copy.
-func (s *CanvasState) SetMemory(memory []map[string]any) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.Memory = cloneMapSlice(memory)
-}
-
-// AppendMemory records one tool-call summary without polluting conversation
-// history used by message-history windows.
-func (s *CanvasState) AppendMemory(user, assistant, summary string) {
-	if s == nil || summary == "" {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.Memory = append(s.Memory, map[string]any{
-		"user":      user,
-		"assistant": assistant,
-		"summary":   summary,
-	})
-}
-
-// SnapshotMemory returns a defensive copy of tool-call memory.
-func (s *CanvasState) SnapshotMemory() []map[string]any {
-	if s == nil {
-		return nil
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return cloneMapSlice(s.Memory)
-}
-
-// AppendSysHistory appends a rendered entry to sys.history while accepting
-// both []any and []string values decoded from existing DSLs.
-func (s *CanvasState) AppendSysHistory(entry string) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.Sys == nil {
-		s.Sys = make(map[string]any)
-	}
-	var history []any
-	switch value := s.Sys["history"].(type) {
-	case []any:
-		history = append(history, value...)
-	case []string:
-		history = make([]any, 0, len(value)+1)
-		for _, item := range value {
-			history = append(history, item)
-		}
-	}
-	s.Sys["history"] = append(history, entry)
-}
-
-// SetSysHistory replaces sys.history with a defensive copy.
-func (s *CanvasState) SetSysHistory(history []any) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.Sys == nil {
-		s.Sys = make(map[string]any)
-	}
-	s.Sys["history"] = append([]any(nil), history...)
-}
-
-// SnapshotSysHistory returns sys.history in its canonical []any wire shape.
-func (s *CanvasState) SnapshotSysHistory() []any {
-	if s == nil {
-		return nil
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	switch value := s.Sys["history"].(type) {
-	case []any:
-		return append([]any(nil), value...)
-	case []string:
-		out := make([]any, 0, len(value))
-		for _, item := range value {
-			out = append(out, item)
-		}
-		return out
-	default:
-		return []any{}
-	}
-}
-
-// IncrementConversationTurns advances sys.conversation_turns once for the
-// current run. JSON-backed DSLs commonly decode numbers as float64, while
-// tests and programmatic callers often use int, so preserve either shape.
-func (s *CanvasState) IncrementConversationTurns() {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.Sys == nil {
-		s.Sys = make(map[string]any)
-	}
-	switch turns := s.Sys["conversation_turns"].(type) {
-	case int:
-		s.Sys["conversation_turns"] = turns + 1
-	case int32:
-		s.Sys["conversation_turns"] = turns + 1
-	case int64:
-		s.Sys["conversation_turns"] = turns + 1
-	case float32:
-		s.Sys["conversation_turns"] = turns + 1
-	case float64:
-		s.Sys["conversation_turns"] = turns + 1
-	default:
-		s.Sys["conversation_turns"] = 1
-	}
-}
-
-func cloneMapSlice(items []map[string]any) []map[string]any {
-	if items == nil {
-		return nil
-	}
-	if len(items) == 0 {
-		return []map[string]any{}
-	}
-	out := make([]map[string]any, 0, len(items))
-	for _, item := range items {
-		out = append(out, cloneJSONValue(item).(map[string]any))
-	}
-	return out
-}
-
-func cloneJSONValue(value any) any {
-	return cloneJSONReflect(reflect.ValueOf(value))
-}
-
-func cloneJSONReflect(value reflect.Value) any {
-	if !value.IsValid() {
-		return nil
-	}
-	switch value.Kind() {
-	case reflect.Interface, reflect.Pointer:
-		if value.IsNil() {
-			return nil
-		}
-		return cloneJSONReflect(value.Elem())
-	case reflect.Map:
-		if value.IsNil() {
-			return map[string]any(nil)
-		}
-		copyItem := make(map[string]any, value.Len())
-		iter := value.MapRange()
-		for iter.Next() {
-			copyItem[fmt.Sprint(iter.Key().Interface())] = cloneJSONReflect(iter.Value())
-		}
-		return copyItem
-	case reflect.Slice:
-		if value.IsNil() {
-			return []any(nil)
-		}
-		fallthrough
-	case reflect.Array:
-		copyItem := make([]any, value.Len())
-		for index := range value.Len() {
-			copyItem[index] = cloneJSONReflect(value.Index(index))
-		}
-		return copyItem
-	case reflect.Struct:
-		raw, err := json.Marshal(value.Interface())
-		if err != nil {
-			return value.Interface()
-		}
-		var copyItem any
-		if err := json.Unmarshal(raw, &copyItem); err != nil {
-			return value.Interface()
-		}
-		return copyItem
-	default:
-		return value.Interface()
-	}
-}
-
-func historyContent(payload any) string {
-	switch value := payload.(type) {
-	case nil:
-		return ""
-	case string:
-		return value
-	case map[string]any:
-		if content, ok := value["content"].(string); ok {
-			return content
-		}
-		return ""
-	default:
-		return fmt.Sprint(value)
-	}
-}
-
 // RecordOutput stores payload under Outputs[cpnID][bucket]. Used by the
-// StatePostHandler to persist a node's result so downstream nodes can
+// StatePostHandler to persist a node result so downstream nodes can
 // resolve {{cpnID@bucket.x}} references against it.
 func (s *CanvasState) RecordOutput(cpnID, bucket string, payload any) {
 	if cpnID == "" {
@@ -755,7 +470,7 @@ func copyRetrievalDocAggs(value any) []any {
 // SetRetrievalChunks records the supplied chunks into
 // state.Retrieval["chunks"]. Existing entries are replaced
 // (last-writer-wins) so a multi-tool canvas reflects the most
-// recent retrieval pass when the Agent's grounding call reads the
+// recent retrieval pass when the Agent grounding call reads the
 // state.
 func (s *CanvasState) SetRetrievalChunks(chunks []map[string]any) {
 	if s == nil {
@@ -909,11 +624,11 @@ func setVarLocked(outputs map[string]map[string]any, cpnID, param string, v any)
 // on "." and dispatched by intermediate type, mirroring Python's
 // get_variable_param_value precedence (canvas.py:212-239):
 //
-//  1. nil  → return nil
-//  2. string → try json.Unmarshal, then continue on the parsed value
-//  3. map[string]any → index by key
-//  4. []any → index by int (cast failure → nil)
-//  5. else → return nil
+// 1. nil → return nil
+// 2. string → try json.Unmarshal, then continue on the parsed value
+// 3. map[string]any → index by key
+// 4. []any → index by int (cast failure → nil)
+// 5. else → return nil
 //
 // The empty path returns the root value as-is.
 func dotTraverse(root any, path string) any {
@@ -955,5 +670,259 @@ func step(cur any, key string) any {
 		return v[idx]
 	default:
 		return nil
+	}
+}
+
+// AppendHistory adds a turn to the conversation history.
+// Unlike AppendCurrentUser, it does NOT update activeHistoryIndex
+// so that SnapshotPriorHistory includes this turn.
+func (s *CanvasState) AppendHistory(role string, payload any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	payload = cloneJSONValue(payload)
+	s.History = append(s.History, map[string]any{
+		"role":    role,
+		"content": historyContent(payload),
+		"payload": payload,
+	})
+}
+
+// SnapshotHistory returns a defensive deep copy of the History slice.
+func (s *CanvasState) SnapshotHistory() []map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return cloneMapSlice(s.History)
+}
+
+// SnapshotMemory returns a shallow copy of the Memory slice.
+func (s *CanvasState) SnapshotMemory() []map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	out := make([]map[string]any, len(s.Memory))
+	copy(out, s.Memory)
+	return out
+}
+
+// AppendSysHistory appends a rendered entry to sys.history.
+func (s *CanvasState) AppendSysHistory(entry string) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Sys == nil {
+		s.Sys = make(map[string]any)
+	}
+	var history []any
+	switch value := s.Sys["history"].(type) {
+	case []any:
+		history = append(history, value...)
+	case []string:
+		history = make([]any, 0, len(value)+1)
+		for _, item := range value {
+			history = append(history, item)
+		}
+	}
+	s.Sys["history"] = append(history, entry)
+}
+
+// AppendCurrentUser records the user input as a conversation turn.
+func (s *CanvasState) AppendCurrentUser(payload any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.activeHistoryIndex = s.appendHistory("user", payload)
+}
+
+func (s *CanvasState) appendHistory(role string, payload any) int {
+	payload = cloneJSONValue(payload)
+	s.History = append(s.History, map[string]any{
+		"role":    role,
+		"content": historyContent(payload),
+		"payload": payload,
+	})
+	return len(s.History) - 1
+}
+
+// SnapshotPriorHistory returns completed turns before the current in-flight user input.
+func (s *CanvasState) SnapshotPriorHistory() []map[string]any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	history := cloneMapSlice(s.History)
+	if s.activeHistoryIndex >= 0 && s.activeHistoryIndex == len(history)-1 {
+		return history[:s.activeHistoryIndex]
+	}
+	return history
+}
+
+// SetMemory replaces tool-call memory with a defensive copy.
+func (s *CanvasState) SetMemory(memory []map[string]any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Memory = cloneMapSlice(memory)
+}
+
+// AppendMemory records one tool-call summary without polluting conversation history.
+func (s *CanvasState) AppendMemory(user, assistant, summary string) {
+	if s == nil || summary == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Memory = append(s.Memory, map[string]any{
+		"user":      user,
+		"assistant": assistant,
+		"summary":   summary,
+	})
+}
+
+// SnapshotSysHistory returns sys.history in its canonical []any wire shape.
+func (s *CanvasState) SnapshotSysHistory() []any {
+	if s == nil {
+		return nil
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	switch value := s.Sys["history"].(type) {
+	case []any:
+		return append([]any(nil), value...)
+	case []string:
+		out := make([]any, 0, len(value))
+		for _, item := range value {
+			out = append(out, item)
+		}
+		return out
+	default:
+		return []any{}
+	}
+}
+
+// SetSysHistory replaces sys.history with a defensive copy.
+func (s *CanvasState) SetSysHistory(history []any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Sys == nil {
+		s.Sys = make(map[string]any)
+	}
+	s.Sys["history"] = append([]any(nil), history...)
+}
+
+// IncrementConversationTurns advances sys.conversation_turns once for the current run.
+func (s *CanvasState) IncrementConversationTurns() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Sys == nil {
+		s.Sys = make(map[string]any)
+	}
+	switch turns := s.Sys["conversation_turns"].(type) {
+	case int:
+		s.Sys["conversation_turns"] = turns + 1
+	case float64:
+		s.Sys["conversation_turns"] = turns + 1
+	default:
+		s.Sys["conversation_turns"] = 1
+	}
+}
+
+func cloneMapSlice(items []map[string]any) []map[string]any {
+	if items == nil {
+		return nil
+	}
+	if len(items) == 0 {
+		return []map[string]any{}
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, cloneJSONValue(item).(map[string]any))
+	}
+	return out
+}
+
+func cloneJSONValue(value any) any {
+	return cloneJSONReflect(reflect.ValueOf(value))
+}
+
+func cloneJSONReflect(value reflect.Value) any {
+	if !value.IsValid() {
+		return nil
+	}
+	switch value.Kind() {
+	case reflect.Interface, reflect.Pointer:
+		if value.IsNil() {
+			return nil
+		}
+		return cloneJSONReflect(value.Elem())
+	case reflect.Map:
+		if value.IsNil() {
+			return map[string]any(nil)
+		}
+		copyItem := make(map[string]any, value.Len())
+		iter := value.MapRange()
+		for iter.Next() {
+			copyItem[fmt.Sprint(iter.Key().Interface())] = cloneJSONReflect(iter.Value())
+		}
+		return copyItem
+	case reflect.Slice:
+		if value.IsNil() {
+			return []any(nil)
+		}
+		fallthrough
+	case reflect.Array:
+		copyItem := make([]any, value.Len())
+		for index := range value.Len() {
+			copyItem[index] = cloneJSONReflect(value.Index(index))
+		}
+		return copyItem
+	case reflect.Struct:
+		raw, err := json.Marshal(value.Interface())
+		if err != nil {
+			return value.Interface()
+		}
+		var copyItem any
+		if err := json.Unmarshal(raw, &copyItem); err != nil {
+			return value.Interface()
+		}
+		return copyItem
+	default:
+		return value.Interface()
+	}
+}
+
+func historyContent(payload any) string {
+	switch value := payload.(type) {
+	case nil:
+		return ""
+	case string:
+		return value
+	case map[string]any:
+		if content, ok := value["content"].(string); ok {
+			return content
+		}
+		return ""
+	default:
+		return fmt.Sprint(value)
 	}
 }
