@@ -266,9 +266,17 @@ def _struct_render_type_fields(fields: list, language: str, *, kind: str) -> Tup
         lines.append("- type: other")
 
     if kind == "relation":
-        skeleton = '{ "type": "<one of: ' + "|".join(type_values) + '>", "source": "<known entity name>", "target": "<known entity name>", "description": "<evidence or relation description>" }'
+        skeleton = (
+            '{ "type": "<one of: '
+            + "|".join(type_values)
+            + '>", "source": "<known entity name>", "target": "<known entity name>", "description": "<evidence or relation description>", "source_chunk_ids": ["<source chunk id>", ...] }'
+        )
     else:
-        skeleton = '{ "type": "<one of: ' + "|".join(type_values) + '>", "name": "<exact extracted item text>", "description": "<evidence, definition, or detail from the source>" }'
+        skeleton = (
+            '{ "type": "<one of: '
+            + "|".join(type_values)
+            + '>", "name": "<exact extracted item text>", "description": "<evidence, definition, or detail from the source>", "source_chunk_ids": ["<source chunk id>", ...] }'
+        )
     return "\n".join(lines), skeleton
 
 
@@ -378,7 +386,13 @@ def _struct_unwrap_items(res) -> list:
 async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, language: str) -> Tuple[list[dict], list[dict]]:
     node_prompt, edge_prompt_template = _struct_hypergraph_prompts(parser_config, language)
 
-    user_prompt = f"## Source Text:\n{text}\n\n## Output (JSON only):"
+    user_prompt = (
+        "## Source Text:\n"
+        "Each source chunk is enclosed by [CHUNK_ID: ...] and [END_CHUNK]. "
+        "For every entity and relation, return source_chunk_ids containing only "
+        "the IDs of chunks that support that item.\n"
+        f"{text}\n\n## Output (JSON only):"
+    )
     node_res = await gen_json(node_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}))
     nodes = _struct_unwrap_items(node_res)
 
@@ -401,6 +415,22 @@ async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, l
     edges = _struct_unwrap_items(edge_res)
 
     return nodes, edges
+
+
+def _struct_payload_chunk_ids(payload: dict, batch_ids: list) -> list:
+    """Keep only model-selected chunk IDs that belong to the current batch."""
+    raw_ids = payload.get("source_chunk_ids")
+    if isinstance(raw_ids, str):
+        raw_ids = [raw_ids]
+    if not isinstance(raw_ids, list):
+        raw_ids = []
+    allowed = set(batch_ids)
+    selected = []
+    for chunk_id in raw_ids:
+        chunk_id = str(chunk_id).strip()
+        if chunk_id in allowed and chunk_id not in selected:
+            selected.append(chunk_id)
+    return selected or list(batch_ids)
 
 
 _struct_embed = _encode
@@ -654,8 +684,8 @@ async def _struct_process_batch(
         return []
 
     batch_ids: list = [e["chunk_id"] for e in packed if e.get("chunk_id")]
-    batch_segments: list[str] = [e["text"] for e in packed if isinstance(e.get("text"), str)]
-    combined_text = "\n\n---\n\n".join(batch_segments)
+    batch_segments: list[str] = [f"[CHUNK_ID: {e['chunk_id']}]\n{e['text']}\n[END_CHUNK]" for e in packed if e.get("chunk_id") and isinstance(e.get("text"), str)]
+    combined_text = "\n\n".join(batch_segments)
 
     src_field, target_field = _struct_relation_member_fields(parser_config)
 
@@ -694,7 +724,7 @@ async def _struct_process_batch(
                 payload,
                 autotype,
                 doc_id,
-                batch_ids,
+                _struct_payload_chunk_ids(payload, batch_ids),
                 vec,
                 kind,
                 src_field=src_field,
