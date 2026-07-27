@@ -24,8 +24,11 @@ import pandas as pd
 from common.constants import PAGERANK_FLD, TAG_FLD
 from common.doc_store.doc_store_base import MatchExpr, MatchTextExpr, MatchDenseExpr, FusionExpr, OrderByExpr
 from common.doc_store.infinity_conn_base import InfinityConnectionBase
+from common.float_utils import get_float
 
 
+DENSE_FILTER_FULLTEXT_WEIGHT_THRESHOLD = 0.8
+DEFAULT_VECTOR_SIMILARITY_WEIGHT = 0.5
 _JSON_LIST_FIELDS = frozenset(
     (
         "source_chunk_ids",
@@ -38,6 +41,27 @@ _JSON_LIST_FIELDS = frozenset(
         "rechunked_from_chunk_ids",
     )
 )
+
+
+def _vector_similarity_weight(match_expressions: list[MatchExpr]) -> float:
+    vector_similarity_weight = DEFAULT_VECTOR_SIMILARITY_WEIGHT
+    for matchExpr in match_expressions:
+        if not isinstance(matchExpr, FusionExpr) or matchExpr.method != "weighted_sum":
+            continue
+        fusion_params = matchExpr.fusion_params or {}
+        weights = fusion_params.get("weights")
+        if not weights:
+            continue
+        weight_parts = str(weights).split(",")
+        if len(weight_parts) > 1:
+            vector_similarity_weight = get_float(weight_parts[1])
+    return vector_similarity_weight
+
+
+def _build_dense_filter(filter_cond: str | None, filter_fulltext: str | None, vector_similarity_weight: float) -> str:
+    if vector_similarity_weight > DENSE_FILTER_FULLTEXT_WEIGHT_THRESHOLD:
+        return filter_cond or ""
+    return filter_fulltext or filter_cond or ""
 
 
 @singleton
@@ -191,6 +215,7 @@ class InfinityConnection(InfinityConnectionBase):
                     self.logger.error(f"No valid tables found for indexNames {index_names} and knowledgebaseIds {knowledgebase_ids}")
                     return pd.DataFrame(), 0
 
+            # vector_similarity_weight = _vector_similarity_weight(match_expressions)
             for matchExpr in match_expressions:
                 if isinstance(matchExpr, MatchTextExpr):
                     if filter_cond and "filter" not in matchExpr.extra_options:
@@ -223,6 +248,9 @@ class InfinityConnection(InfinityConnectionBase):
                 elif isinstance(matchExpr, MatchDenseExpr):
                     if filter_fulltext and "filter" not in matchExpr.extra_options:
                         matchExpr.extra_options.update({"filter": filter_fulltext})
+                    # dense_filter = _build_dense_filter(filter_cond, filter_fulltext, vector_similarity_weight)
+                    # if dense_filter and "filter" not in matchExpr.extra_options:
+                    #    matchExpr.extra_options.update({"filter": dense_filter})
                     for k, v in matchExpr.extra_options.items():
                         if not isinstance(v, str):
                             matchExpr.extra_options[k] = str(v)
