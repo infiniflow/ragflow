@@ -350,6 +350,8 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         action: 'Action',
       },
       config: {
+        titleDescription:
+          'Update your memory configuration here, particularly the LLM and prompts.',
         descriptionPlaceholder: 'Describe your memory',
         memorySizeTooltip: `Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes).
 Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.`,
@@ -501,7 +503,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       testing: 'Retrieval testing',
       files: 'files',
       configuration: 'Configuration',
-      nextConfiguration: 'Next configuration',
+      nextConfiguration: 'Dataset configuration',
       knowledgeGraph: 'Knowledge graph',
       compilation: 'Compilation',
       export: 'Export',
@@ -619,11 +621,15 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       topKTip: `Used together with the Rerank model, this setting defines the number of text chunks to be sent to the specified reranking model.`,
       delimiter: `Delimiter for text`,
       delimiterTip:
-        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
+        'A delimiter string is parsed into a list of delimiters. Backticks (` `) are the delimiter-of-delimiters: any matching pair of backticks wraps the characters inside it into one multi-character delimiter; any character outside backticks is itself a delimiter. Delimiters are matched longest-first. Example: \\n`##`; parses to three delimiters — newline (\\n), double hash (##), semicolon (;) — and your text will be split at any of them. Single-char delimiters (e.g. !?; → !, ?, ;) need no backticks; multi-char ones (e.g. ##, END) must be backtick-wrapped.',
       enableChildrenDelimiter: 'Child chunk are used for retrieval',
       childrenDelimiter: 'Delimiter for text',
       childrenDelimiterTip:
-        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
+        'A delimiter string is parsed into a list of delimiters. Backticks (` `) are the delimiter-of-delimiters: any matching pair of backticks wraps the characters inside it into one multi-character delimiter; any character outside backticks is itself a delimiter. Delimiters are matched longest-first. Example: \\n`##`; parses to three delimiters — newline (\\n), double hash (##), semicolon (;) — and your text will be split at any of them. Single-char delimiters (e.g. !?; → !, ?, ;) need no backticks; multi-char ones (e.g. ##, END) must be backtick-wrapped.',
+      delimiterPreviewLabel: 'Splits at:',
+      delimiterPreviewEmpty:
+        'No delimiters — text will be chunked by size only.',
+      delimiterPreviewCount: '({{count}})',
 
       html4excel: 'Excel to HTML',
       html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dev/enable_excel2html for details.`,

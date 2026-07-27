@@ -102,7 +102,7 @@ type UserResponse struct {
 }
 
 // Register user registration
-func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.ErrorCode, error) {
+func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*entity.User, common.ErrorCode, error) {
 	cfg := server.GetConfig()
 	if !cfg.Authentication.RegisterEnabled {
 		return nil, common.CodeOperatingError, fmt.Errorf("User registration is disabled!")
@@ -226,7 +226,7 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		Size:      0,
 	}
 
-	tenantLLMs, err := s.getInitTenantLLM(userID)
+	tenantLLMs, err := s.getInitTenantLLM(ctx, userID)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to initialize tenant llm: %w", err)
 	}
@@ -262,7 +262,7 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 }
 
 // getInitTenantLLM builds the tenant_llm rows created for a new user's default tenant.
-func (s *UserService) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
+func (s *UserService) getInitTenantLLM(ctx context.Context, userID string) ([]*entity.TenantLLM, error) {
 	cfg := server.GetConfig()
 	if cfg == nil {
 		return nil, fmt.Errorf("config not initialized")
@@ -295,7 +295,7 @@ func (s *UserService) getInitTenantLLM(userID string) ([]*entity.TenantLLM, erro
 	llmDAO := dao.NewLLMDAO()
 	tenantLLMs := make([]*entity.TenantLLM, 0)
 	for _, factoryConfig := range factoryConfigs {
-		llms, err := llmDAO.GetByFactory(factoryConfig.Factory)
+		llms, err := llmDAO.GetByFactory(ctx, dao.DB, factoryConfig.Factory)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get LLMs for factory %s: %w", factoryConfig.Factory, err)
 		}

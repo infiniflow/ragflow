@@ -130,9 +130,10 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 
 	// Record request parsing completion time (for timing)
 	tParsed := time.Now()
+	ctx := c.Request.Context()
 
 	// Call service layer to create memory
-	result, err := h.memoryService.CreateMemory(userID, &req)
+	result, err := h.memoryService.CreateMemory(ctx, userID, &req)
 	if err != nil {
 		// Log error if timing is enabled
 		if timingEnabled != "" {
@@ -218,8 +219,10 @@ func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	// Call service layer to update memory
-	result, err := h.memoryService.UpdateMemory(userID, memoryID, &req)
+	result, err := h.memoryService.UpdateMemory(ctx, userID, memoryID, &req)
 	if err != nil {
 		errMsg := err.Error()
 		// Check if it's a "not found" error
@@ -261,9 +264,10 @@ func (h *MemoryHandler) DeleteMemory(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "memory ID is required")
 		return
 	}
+	ctx := c.Request.Context()
 
 	// Call service layer to delete memory
-	err := h.memoryService.DeleteMemory(memoryID)
+	err := h.memoryService.DeleteMemory(ctx, memoryID)
 	if err != nil {
 		errMsg := err.Error()
 		// Check if it's a "not found" error
@@ -351,8 +355,10 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 		}
 	}
 
+	ctx := c.Request.Context()
+
 	// Call service layer to get memory list
-	result, err := h.memoryService.ListMemories(user.ID, tenantIDs, memoryTypes, storageType, keywords, page, pageSize)
+	result, err := h.memoryService.ListMemories(ctx, user.ID, tenantIDs, memoryTypes, storageType, keywords, page, pageSize)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
@@ -380,9 +386,10 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "memory ID is required")
 		return
 	}
+	ctx := c.Request.Context()
 
 	// Call service layer to get memory configuration
-	result, err := h.memoryService.GetMemoryConfig(memoryID)
+	result, err := h.memoryService.GetMemoryConfig(ctx, memoryID)
 	if err != nil {
 		errMsg := err.Error()
 		// Check if it's a "not found" error
