@@ -16,13 +16,14 @@
 
 // DOCX vision figure dispatch: enriches the parse result with
 // LLM-generated descriptions of embedded images, mirroring
-// Python's vision_figure_parser_docx_wrapper_naive in
-// deepdoc/parser/figure_parser.py.
+// Python's enhance_media_sections_with_vision in
+// rag/flow/parser/utils.py (invoked from parser.py:_doc's JSON branch).
 //
-// Unlike the PDF vision path (which replaces dispatchParse
-// entirely), DOCX vision is a post-processing step: it takes
-// the already-parsed markdown + extracted figures and augments
-// the markdown text with vision model descriptions.
+// Unlike the PDF vision path (which replaces dispatchParse entirely),
+// DOCX vision is a post-processing step. It mirrors Python exactly:
+// vision enrichment happens ONLY on the JSON output path, where each
+// item carries a doc_type_kwd and an optional image. The markdown path
+// performs no vision enrichment in Python, so it must not here either.
 
 package component
 
@@ -31,7 +32,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 
@@ -59,18 +59,20 @@ var (
 	docxVisionPromptMu    sync.RWMutex
 )
 
-// maybeDispatchDOCXVision checks whether the dispatch result for a
-// DOCX file contains embedded image figures and, when a vision
-// model is available, enriches the markdown with AI-generated
-// figure descriptions. It mirrors the Python flow:
+// maybeDispatchDOCXVision enriches a DOCX parse result with vision-model
+// descriptions of embedded images. It mirrors Python's
+// enhance_media_sections_with_vision (rag/flow/parser/utils.py:162), which
+// runs only in the JSON output branch of parser.py:_doc.
 //
-//  1. naive_merge_docx  → chunks (text + images + context)
-//  2. vision_figure_parser_docx_wrapper_naive → LLM descriptions
+// For each JSON item whose doc_type_kwd is "image" or "table" AND that
+// carries a non-empty "image" field, the vision model describes the image
+// and the description is appended to the item's text (Python:
+// item["text"] = f"{text}\n{parsed_text}" if text else parsed_text). Items
+// without an image (e.g. DOCX tables) are left untouched, exactly as Python
+// skips them via `if item.get("image") is None: continue`.
 //
-// The function is called AFTER dispatchParse so the normal parse
-// path produces figures in dispatched.File["figures"].
-// It returns (result, handled, error). handled is true when the
-// dispatched result was modified.
+// The markdown output path receives no vision enrichment — Python's DOCX
+// markdown branch only concatenates text and never calls the vision model.
 func maybeDispatchDOCXVision(
 	ctx context.Context,
 	fileType utility.FileType,
@@ -81,11 +83,9 @@ func maybeDispatchDOCXVision(
 	if fileType != utility.FileTypeDOCX {
 		return dispatched, false, nil
 	}
-	if dispatched.Err != nil || dispatched.OutputFormat != "markdown" {
-		return dispatched, false, nil
-	}
-	figs, hasFigures := extractDOCXFiguresFromDispatch(dispatched)
-	if !hasFigures {
+	// Python triggers vision enrichment only on the JSON path
+	// (parser.py:_doc → enhance_media_sections_with_vision).
+	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
 		return dispatched, false, nil
 	}
 
@@ -102,105 +102,74 @@ func maybeDispatchDOCXVision(
 		return dispatched, false, nil
 	}
 
-	descriptions := make([]string, len(figs))
+	// Collect the indices of JSON items that carry an embeddable image.
+	type target struct {
+		idx int
+	}
+	var targets []target
+	for i, item := range dispatched.JSON {
+		kd, _ := item["doc_type_kwd"].(string)
+		if kd != "image" && kd != "table" {
+			continue
+		}
+		img, _ := item["image"].(string)
+		if img == "" {
+			continue
+		}
+		targets = append(targets, target{idx: i})
+	}
+	if len(targets) == 0 {
+		return dispatched, false, nil
+	}
+
+	descriptions := make([]string, len(targets))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, docxVisionConcurrency)
 
-	for i, fig := range figs {
+	for slot, tg := range targets {
 		wg.Add(1)
-		go func(idx int, f map[string]any) {
+		go func(slot int, itemIdx int) {
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			imageB64, _ := f["image"].(string)
-			ctxAbove, _ := f["context_above"].(string)
-			ctxBelow, _ := f["context_below"].(string)
-
-			if imageB64 == "" {
+			img, _ := dispatched.JSON[itemIdx]["image"].(string)
+			if img == "" {
 				return
 			}
-
-			prompt, err := docxVisionPromptBuilder(ctxAbove, ctxBelow)
-			if err != nil {
+			// DOCX JSON items have no surrounding context (unlike the
+			// former markdown path), so use the bare figure prompt —
+			// matching Python's VisionFigureParser(context_size=0).
+			prompt, perr := docxVisionPromptBuilder("", "")
+			if perr != nil {
 				return
 			}
-
-			messages := buildVisionMessages(prompt, imageB64)
-			resp, err := visionChatInvoker(ctx, driver, modelName, messages, apiConfig)
-			if err != nil {
+			messages := buildVisionMessages(prompt, img)
+			resp, ierr := visionChatInvoker(ctx, driver, modelName, messages, apiConfig)
+			if ierr != nil {
 				return
 			}
-			descriptions[idx] = extractDOCXVisionAnswer(resp)
-		}(i, fig)
+			descriptions[slot] = extractDOCXVisionAnswer(resp)
+		}(slot, tg.idx)
 	}
 	wg.Wait()
 
-	// Insert each description at the figure's position in the markdown,
-	// matching Python's `chunks[idx]["text"] += description`.
-	// Figures carry a "marker" (text immediately before the image) to
-	// locate the insertion point. Process in reverse order so earlier
-	// insertions don't shift later markers.
-	md := dispatched.Markdown
-	type indexedDesc struct {
-		idx  int
-		desc string
-	}
-	var inserts []indexedDesc
-	for i, d := range descriptions {
-		if d = strings.TrimSpace(d); d == "" {
+	modified := false
+	for slot, tg := range targets {
+		desc := strings.TrimSpace(descriptions[slot])
+		if desc == "" {
 			continue
 		}
-		if i >= len(figs) {
-			continue
+		existing, _ := dispatched.JSON[tg.idx]["text"].(string)
+		if existing != "" {
+			dispatched.JSON[tg.idx]["text"] = existing + "\n" + desc
+		} else {
+			dispatched.JSON[tg.idx]["text"] = desc
 		}
-		marker, _ := figs[i]["marker"].(string)
-		if marker != "" {
-			if pos := strings.LastIndex(md, marker); pos >= 0 {
-				inserts = append(inserts, indexedDesc{idx: pos + len(marker), desc: d})
-				continue
-			}
-		}
-		// Fallback: try context_above as a search anchor.
-		if ctx, _ := figs[i]["context_above"].(string); ctx != "" {
-			if pos := strings.LastIndex(md, ctx); pos >= 0 {
-				inserts = append(inserts, indexedDesc{idx: pos + len(ctx), desc: d})
-				continue
-			}
-		}
-		// No anchor found — append to end.
-		inserts = append(inserts, indexedDesc{idx: len(md), desc: "\n\n" + d})
+		modified = true
 	}
-	// Sort descending by position for stable insertion.
-	sort.Slice(inserts, func(a, b int) bool { return inserts[a].idx > inserts[b].idx })
-	for _, ins := range inserts {
-		desc := ins.desc
-		if !strings.HasPrefix(desc, "\n") {
-			desc = "\n\n" + desc
-		}
-		md = md[:ins.idx] + desc + md[ins.idx:]
-	}
-	dispatched.Markdown = md
 
-	return dispatched, true, nil
-}
-
-func extractDOCXFiguresFromDispatch(dispatched parserDispatchResult) ([]map[string]any, bool) {
-	if dispatched.File == nil {
-		return nil, false
-	}
-	raw, ok := dispatched.File["figures"]
-	if !ok {
-		return nil, false
-	}
-	list, ok := raw.([]map[string]any)
-	if !ok {
-		return nil, false
-	}
-	if len(list) == 0 {
-		return nil, false
-	}
-	return list, true
+	return dispatched, modified, nil
 }
 
 // buildDOCXVisionPrompt loads the figure-describe prompt template

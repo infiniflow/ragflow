@@ -303,9 +303,6 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 		if reasoning != nil {
 			msg.ReasoningContent = *reasoning
 		}
-		if m.chatCfg != nil && m.chatCfg.StreamCallback != nil {
-			m.chatCfg.StreamCallback(msg.Content, msg.ReasoningContent)
-		}
 		if closed := sw.Send(msg, nil); closed {
 			return fmt.Errorf("models: stream closed before send completed")
 		}

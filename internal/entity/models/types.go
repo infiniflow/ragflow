@@ -182,9 +182,6 @@ type ChatConfig struct {
 	// non-nil) after the stream completes; callers read it the same
 	// way they read ToolCallsResult.
 	UsageResult *TokenUsage `json:"-"`
-	// StreamCallback receives raw content/reasoning deltas as soon as
-	// the model driver streams them.
-	StreamCallback func(contentDelta, reasoningDelta string) `json:"-"`
 }
 
 type APIConfig struct {

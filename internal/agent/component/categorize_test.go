@@ -23,7 +23,7 @@ func TestCategorize_ChosenCategory(t *testing.T) {
 		Categories:      []string{"sales", "support", "billing"},
 		DefaultCategory: "support",
 	})
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestCategorize_FallbackToDefault(t *testing.T) {
 		Categories:      []string{"a", "b", "c"},
 		DefaultCategory: "b",
 	})
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestCategorize_DefaultDefaultsToFirstCategory(t *testing.T) {
 		Categories: []string{"alpha", "beta", "gamma"},
 		// no default_category
 	})
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestCategorize_CaseInsensitive(t *testing.T) {
 		Categories:      []string{"sales", "support", "billing"},
 		DefaultCategory: "sales",
 	})
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestCategorize_PromptListsCategories(t *testing.T) {
 		DefaultCategory: "x",
 		Items:           []string{"foo", "bar"},
 	})
-	_, err := c.Invoke(context.Background(), map[string]any{})
+	_, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestCategorize_PromptIncludesRuntimeQuery(t *testing.T) {
 			"English": "this query has english letter",
 		},
 	})
-	_, err := c.Invoke(ctx, map[string]any{})
+	_, err := c.Invoke(ctx, nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestCategorize_PromptUsesInputQueryValue(t *testing.T) {
 		Query:      "sys.query",
 		Categories: []string{"Number", "chinese", "English"},
 	})
-	_, err := c.Invoke(context.Background(), map[string]any{"query": "测试"})
+	_, err := c.Invoke(context.Background(), nil, map[string]any{"query": "测试"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestCategorize_HistoryWindowRealData(t *testing.T) {
 		Categories:               []string{"Number", "chinese", "English"},
 		MessageHistoryWindowSize: 2,
 	})
-	_, err := c.Invoke(ctx, map[string]any{"query": "current question"})
+	_, err := c.Invoke(ctx, nil, map[string]any{"query": "current question"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -262,7 +262,7 @@ func TestCategorizeRegistered_DefaultHistoryWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(Categorize): %v", err)
 	}
-	_, err = c.Invoke(ctx, map[string]any{"query": "current question"})
+	_, err = c.Invoke(ctx, nil, map[string]any{"query": "current question"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -286,7 +286,7 @@ func TestCategorize_HistoryWindowRejectsNegative(t *testing.T) {
 		Categories:               []string{"Number", "chinese", "English"},
 		MessageHistoryWindowSize: -1,
 	})
-	_, err := c.Invoke(context.Background(), map[string]any{"query": "current question"})
+	_, err := c.Invoke(context.Background(), nil, map[string]any{"query": "current question"})
 	if err == nil {
 		t.Fatal("expected negative message_history_window_size error")
 	}
@@ -334,7 +334,7 @@ func TestCategorize_SplitsCompositeLLMIDIntoDriverAndModel(t *testing.T) {
 		Categories:      []string{"sales", "support"},
 		DefaultCategory: "support",
 	})
-	_, err := c.Invoke(context.Background(), map[string]any{})
+	_, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -398,7 +398,7 @@ func TestCategorize_ResolvesTenantModelInstanceCredentials(t *testing.T) {
 		Categories:      []string{"sales", "support"},
 		DefaultCategory: "support",
 	})
-	_, err := c.Invoke(stateWithTenant("tenant-1"), map[string]any{})
+	_, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -452,7 +452,7 @@ func TestCategorize_ResolvesTenantModelID(t *testing.T) {
 		Categories:      []string{"sales", "support"},
 		DefaultCategory: "support",
 	})
-	_, err := c.Invoke(stateWithTenant("tenant-1"), map[string]any{})
+	_, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -502,7 +502,7 @@ func TestCategorize_ResolvesSoleActiveInstanceWhenDefaultMissing(t *testing.T) {
 		Categories:      []string{"sales", "support"},
 		DefaultCategory: "support",
 	})
-	_, err := c.Invoke(stateWithTenant("tenant-1"), map[string]any{})
+	_, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -527,7 +527,7 @@ func TestCategorize_RoutesToSelectedCategoryHandle(t *testing.T) {
 		CategoryRoutes:  map[string]string{"打招呼": "a111", "Retrieval": "b222", "Other": "c333"},
 		DefaultCategory: "Other",
 	})
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -545,7 +545,7 @@ func TestCategorize_RoutesFromCategoryDescriptionToList(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewCategorizeComponent(CategorizeParam{ModelID: "stub"})
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"category_description": map[string]any{
 			"打招呼":       map[string]any{"description": "hello", "to": []any{"Message:CateLoop"}},
 			"Retrieval": map[string]any{"description": "rag", "to": []any{"Message:CateRetrieval"}},
@@ -569,7 +569,7 @@ func TestCategorize_ExplicitCategoriesKeepCategoryDescriptionMetadata(t *testing
 	withStubInvoker(t, stub)
 
 	c := NewCategorizeComponent(CategorizeParam{ModelID: "stub"})
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"categories": []any{"Number", "chinese", "English"},
 		"category_description": map[string]any{
 			"Number":  map[string]any{"description": "This query has only a number", "examples": []any{"4321"}, "to": []any{"Message:Number"}},
@@ -617,7 +617,7 @@ func TestCategorizeRegistered_ExplicitCategoriesKeepCategoryDescriptionMetadata(
 	if err != nil {
 		t.Fatalf("New(Categorize): %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{"query": "hello"})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{"query": "hello"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

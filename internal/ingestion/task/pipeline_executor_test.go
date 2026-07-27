@@ -417,14 +417,14 @@ type recordingProgressSink struct {
 	events   []pipelinepkg.ProgressEvent
 }
 
-func (r *recordingProgressSink) OnComponentTotal(taskID string, total int) {
+func (r *recordingProgressSink) OnComponentTotal(ctx context.Context, taskID string, total int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.total = total
 	r.totalSet = true
 }
 
-func (r *recordingProgressSink) OnComponentProgress(ev pipelinepkg.ProgressEvent) {
+func (r *recordingProgressSink) OnComponentProgress(ctx context.Context, ev pipelinepkg.ProgressEvent) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.events = append(r.events, ev)
@@ -432,7 +432,7 @@ func (r *recordingProgressSink) OnComponentProgress(ev pipelinepkg.ProgressEvent
 
 type sinkPassthroughStage struct{}
 
-func (sinkPassthroughStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+func (sinkPassthroughStage) Invoke(_ context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	return inputs, nil
 }
 

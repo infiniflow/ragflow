@@ -1009,6 +1009,8 @@ async def run_tree_templates(
                 ctx.kb_id,
                 doc_id,
                 tree,
+                embd_mdl=embedding_model,
+                chat_mdl=chat_mdl_by_tid[template_id],
             )
         except Exception:
             logging.exception(

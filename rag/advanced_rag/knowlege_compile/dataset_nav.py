@@ -185,6 +185,7 @@ async def _store_knn(
         "content_with_weight",
         "name",
         "doc_id",
+        "compile_kwd",
         "type_kwd",
         "parent_kwd",
         "depth_int",
@@ -213,7 +214,13 @@ async def _store_knn(
         [kb_id],
     )
     results = settings.docStoreConn.get_fields(res, fields) if res else {}
-    return list(results.values())
+    rows = list(results.values())
+    if filter_condition and any(not _matches_condition(row, filter_condition) for row in rows):
+        scanned = await _store_search(tenant_id, kb_id, filter_condition, fields, limit=10000)
+        rows = [row for row in scanned if _vector_len(row.get(vf)) == vec_dim and _matches_condition(row, filter_condition)]
+        rows.sort(key=lambda row: _cosine_sim(vec, row.get(vf)), reverse=True)
+        rows = rows[:top_k]
+    return rows
 
 
 async def _store_upsert(tenant_id: str, kb_id: str, doc: dict) -> None:
@@ -388,6 +395,19 @@ def _fine_tokenize(text: str) -> str:
     return rag_tokenizer.fine_grained_tokenize(text)
 
 
+def _matches_condition(row: dict, condition: dict) -> bool:
+    """Check the simple equality filters used by dataset navigation."""
+    for field, expected in condition.items():
+        if not expected or field == "kb_id":
+            continue
+        actual = row.get(field)
+        actual_values = actual if isinstance(actual, (list, tuple, set)) else [actual]
+        expected_values = expected if isinstance(expected, (list, tuple, set)) else [expected]
+        if not any(str(value) == str(item) for value in actual_values for item in expected_values):
+            return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Incremental clustering core
 # ---------------------------------------------------------------------------
@@ -426,6 +446,7 @@ async def _find_best_cluster(
     # compute actual similarity to root
     stored = best.get(_vec_field(vec_dim))
     sim = _cosine_sim(doc_embedding, stored)
+    visited_names = {best_name}
 
     # Step 2: recursively descend into children
     while sim >= _RECURSE_THRESHOLD:
@@ -439,14 +460,18 @@ async def _find_best_cluster(
         if not children:
             break
         child = children[0]
+        child_name = child.get("name", "")
+        if not child_name or child_name in visited_names:
+            break
         stored = child.get(_vec_field(vec_dim))
         child_sim = _cosine_sim(doc_embedding, stored)
         if child_sim < _RECURSE_THRESHOLD:
             break
-        best_name = child.get("name", best_name)
+        best_name = child_name
         best_parent = best.get("parent_kwd", best_parent)
         sim = child_sim
         best = child
+        visited_names.add(best_name)
 
     return best_name, best_parent, sim
 
@@ -568,15 +593,9 @@ async def upsert_dataset_nav_doc(
         logging.info("dataset_nav: skipping doc=%s (kb=%s) — no summary", doc_id, kb_id)
         return
 
-    # 2. Check if this doc already has a nav_doc row
-    existing_doc = await _store_get(tenant_id, kb_id, _nav_doc_id(doc_id))
-    if existing_doc:
-        old_payload = json.loads(existing_doc.get("content_with_weight") or "{}")
-        if old_payload.get("description") == summary:
-            logging.info("dataset_nav: doc=%s unchanged, skipping", doc_id)
-            return
-
-    # 3. Embed doc summary
+    # 2. Embed doc summary before taking the KB lock. The result is
+    # independent of the nav tree; all tree reads, deletes, and writes below
+    # are serialized by the same lock.
     doc_embedding = await _embed(embd_mdl, summary) if embd_mdl else []
     vec_dim = len(doc_embedding)
 
@@ -592,8 +611,18 @@ async def upsert_dataset_nav_doc(
         return
 
     try:
+        # 3. Check and replace the existing nav_doc while holding the same
+        # lock as placement. Otherwise concurrent updates can both observe
+        # the old row and race while deleting/rebuilding its parent cluster.
+        existing_doc = await _store_get(tenant_id, kb_id, _nav_doc_id(doc_id))
+        if existing_doc:
+            old_payload = json.loads(existing_doc.get("content_with_weight") or "{}")
+            if old_payload.get("description") == summary:
+                return
+            await _remove_dataset_nav_doc_locked(tenant_id, kb_id, doc_id)
+
         # 4. Layered KNN search for nearest cluster
-        if doc_embedding:
+        if _vector_len(doc_embedding) > 0:
             best_name, best_parent, sim = await _find_best_cluster(
                 tenant_id,
                 kb_id,
@@ -726,6 +755,45 @@ async def upsert_dataset_nav_doc(
             logging.exception("dataset_nav: lock release failed for kb=%s", kb_id)
 
 
+async def _remove_dataset_nav_doc_locked(
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+) -> None:
+    """Remove a document nav row; the caller must hold the KB nav lock."""
+    # 1. Find and delete the nav_doc row
+    doc_row_id = _nav_doc_id(doc_id)
+    doc_row = await _store_get(tenant_id, kb_id, doc_row_id)
+    if not doc_row:
+        return
+    parent_name = doc_row.get("parent_kwd", "")
+    await _store_delete(tenant_id, kb_id, doc_row_id)
+
+    # 2. Remove doc_id from the parent cluster's doc_ids_kwd
+    if parent_name and parent_name != "root":
+        cluster_id = _nav_cluster_id(kb_id, parent_name)
+        cluster_row = await _store_get(tenant_id, kb_id, cluster_id)
+        if cluster_row:
+            doc_ids = cluster_row.get("doc_ids_kwd") or []
+            if doc_id in doc_ids:
+                doc_ids.remove(doc_id)
+            if not doc_ids:
+                # Cluster is empty — delete it
+                await _store_delete(tenant_id, kb_id, cluster_id)
+                # Recurse: check grandparent
+                grandparent = cluster_row.get("parent_kwd", "")
+                if grandparent and grandparent != "root":
+                    await _cleanup_empty_cluster(
+                        tenant_id,
+                        kb_id,
+                        grandparent,
+                    )
+            else:
+                cluster_row["doc_ids_kwd"] = doc_ids
+                cluster_row["doc_count_int"] = len(doc_ids)
+                await _store_upsert(tenant_id, kb_id, cluster_row)
+
+
 async def remove_dataset_nav_doc(
     tenant_id: str,
     kb_id: str,
@@ -751,37 +819,7 @@ async def remove_dataset_nav_doc(
         return
 
     try:
-        # 1. Find and delete the nav_doc row
-        doc_row_id = _nav_doc_id(doc_id)
-        doc_row = await _store_get(tenant_id, kb_id, doc_row_id)
-        if not doc_row:
-            return
-        parent_name = doc_row.get("parent_kwd", "")
-        await _store_delete(tenant_id, kb_id, doc_row_id)
-
-        # 2. Remove doc_id from the parent cluster's doc_ids_kwd
-        if parent_name and parent_name != "root":
-            cluster_id = _nav_cluster_id(kb_id, parent_name)
-            cluster_row = await _store_get(tenant_id, kb_id, cluster_id)
-            if cluster_row:
-                doc_ids = cluster_row.get("doc_ids_kwd") or []
-                if doc_id in doc_ids:
-                    doc_ids.remove(doc_id)
-                if not doc_ids:
-                    # Cluster is empty — delete it
-                    await _store_delete(tenant_id, kb_id, cluster_id)
-                    # Recurse: check grandparent
-                    grandparent = cluster_row.get("parent_kwd", "")
-                    if grandparent and grandparent != "root":
-                        await _cleanup_empty_cluster(
-                            tenant_id,
-                            kb_id,
-                            grandparent,
-                        )
-                else:
-                    cluster_row["doc_ids_kwd"] = doc_ids
-                    cluster_row["doc_count_int"] = len(doc_ids)
-                    await _store_upsert(tenant_id, kb_id, cluster_row)
+        await _remove_dataset_nav_doc_locked(tenant_id, kb_id, doc_id)
     except Exception:
         logging.exception(
             "dataset_nav: remove failed for kb=%s doc=%s",

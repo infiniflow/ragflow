@@ -23,6 +23,7 @@ export interface TreeDataItem {
   selectedIcon?: any;
   openIcon?: any;
   children?: TreeDataItem[];
+  hasChildren?: boolean;
   actions?: React.ReactNode;
   onClick?: () => void;
 }
@@ -142,7 +143,8 @@ const TreeItem = React.forwardRef<HTMLDivElement, TreeItemProps>(
         <ul>
           {data.map((item) => (
             <li key={item.id}>
-              {item.children && item.children.length > 0 ? (
+              {item.hasChildren ||
+              (item.children && item.children.length > 0) ? (
                 <TreeNode
                   item={item}
                   selectedItemId={selectedItemId}
@@ -216,7 +218,7 @@ const TreeNode = ({
         </AccordionTrigger>
         <AccordionContent className="ml-4 pl-1 border-l">
           <TreeItem
-            data={item.children ? item.children : item}
+            data={item.children ?? []}
             selectedItemId={selectedItemId}
             handleSelectChange={handleSelectChange}
             expandedItemIds={expandedItemIds}

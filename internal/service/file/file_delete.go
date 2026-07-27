@@ -2,8 +2,10 @@ package file
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
 )
@@ -13,7 +15,7 @@ import (
 func (s *FileService) DeleteFiles(ctx context.Context, uid string, fileIDs []string) (bool, string) {
 	for _, fileID := range fileIDs {
 		// 1. Get file
-		file, err := s.fileDAO.GetByID(fileID)
+		file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 		if err != nil || file == nil {
 			return false, "File or Folder not found!"
 		}
@@ -29,7 +31,7 @@ func (s *FileService) DeleteFiles(ctx context.Context, uid string, fileIDs []str
 		}
 
 		// 3. Permission check
-		if !s.checkFilePerm(s.fileDAO, file, uid) {
+		if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
 			return false, "No authorization."
 		}
 
@@ -40,11 +42,11 @@ func (s *FileService) DeleteFiles(ctx context.Context, uid string, fileIDs []str
 
 		// 5. Delete based on type
 		if file.Type == FileTypeFolder {
-			if err := s.deleteFolderRecursive(ctx, file, uid); err != nil {
+			if err = s.deleteFolderRecursive(ctx, file, uid); err != nil {
 				return false, fmt.Sprintf("Failed to delete folder: %v", err)
 			}
 		} else {
-			if err := s.deleteSingleFile(ctx, file); err != nil {
+			if err = s.deleteSingleFile(ctx, file); err != nil {
 				return false, fmt.Sprintf("Failed to delete file: %v", err)
 			}
 		}
@@ -67,7 +69,7 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 	}
 
 	// 2. Handle associated documents
-	informs, err := s.file2DocumentDAO.GetByFileID(file.ID)
+	informs, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, file.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get file2document mappings: %w", err)
 	}
@@ -78,20 +80,23 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 			}
 			docID := *inform.DocumentID
 			if s.documentService != nil {
-				if err := s.documentService.RemoveDocumentKeepFile(docID); err != nil {
+				if err = s.documentService.RemoveDocumentKeepFile(ctx, docID); err != nil {
+					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+						return fmt.Errorf("context cancelled while removing document %s: %w", docID, err)
+					}
 					common.Logger.Error(fmt.Sprintf("Fail to remove document: %s, error: %v", docID, err))
 				}
 			}
 		}
 
 		// Delete file2document mapping (outside the loop, called once - matching Python behavior)
-		if err := s.file2DocumentDAO.DeleteByFileID(file.ID); err != nil {
+		if err = s.file2DocumentDAO.DeleteByFileID(ctx, dao.DB, file.ID); err != nil {
 			return fmt.Errorf("failed to delete file2document mapping: %w", err)
 		}
 	}
 
 	// 3. Delete file record
-	if err := s.fileDAO.Delete(file.ID); err != nil {
+	if err = s.fileDAO.Delete(ctx, dao.DB, file.ID); err != nil {
 		return err
 	}
 
@@ -102,7 +107,7 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 // Matches Python's _delete_folder_recursive function
 func (s *FileService) deleteFolderRecursive(ctx context.Context, folder *entity.File, uid string) error {
 	// Get all sub-files
-	subFiles, err := s.fileDAO.ListByParentID(folder.ID)
+	subFiles, err := s.fileDAO.ListByParentID(ctx, dao.DB, folder.ID)
 	if err != nil {
 		return err
 	}
@@ -110,19 +115,19 @@ func (s *FileService) deleteFolderRecursive(ctx context.Context, folder *entity.
 	for _, subFile := range subFiles {
 		if subFile.Type == FileTypeFolder {
 			// Recursively delete subfolder
-			if err := s.deleteFolderRecursive(ctx, subFile, uid); err != nil {
+			if err = s.deleteFolderRecursive(ctx, subFile, uid); err != nil {
 				return err
 			}
 		} else {
 			// Delete single file
-			if err := s.deleteSingleFile(ctx, subFile); err != nil {
+			if err = s.deleteSingleFile(ctx, subFile); err != nil {
 				return err
 			}
 		}
 	}
 
 	// Delete the folder itself
-	if err := s.fileDAO.Delete(folder.ID); err != nil {
+	if err = s.fileDAO.Delete(ctx, dao.DB, folder.ID); err != nil {
 		return err
 	}
 

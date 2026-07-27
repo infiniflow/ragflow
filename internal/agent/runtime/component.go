@@ -33,6 +33,8 @@ import (
 	"context"
 	"fmt"
 	"sync"
+
+	"gorm.io/gorm"
 )
 
 // Component is the minimal interface the canvas builder needs at
@@ -40,7 +42,7 @@ import (
 // Component type has more methods (Name / Stream / Inputs / Outputs);
 // it satisfies this smaller interface by Go's structural typing.
 type Component interface {
-	Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error)
+	Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error)
 }
 
 // ComponentFactory builds a Component from a DSL name + params map.

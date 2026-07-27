@@ -2,6 +2,7 @@ package file
 
 import (
 	"bytes"
+	"context"
 
 	"errors"
 	"io"
@@ -33,7 +34,7 @@ func sptr(s string) *string { return &s }
 // testFilePerm controls the permission check returned by testFileService.
 // Tests that need to simulate denied access can set it to a function that
 // returns false.
-var testFilePerm CheckFilePermFunc = func(_ *dao.FileDAO, _ *entity.File, _ string) bool { return true }
+var testFilePerm CheckFilePermFunc = func(_ context.Context, _ *dao.FileDAO, _ *entity.File, _ string) bool { return true }
 
 func testFileService() *FileService {
 	return &FileService{
@@ -236,7 +237,8 @@ func TestFileService_DownloadAgentFile_Success(t *testing.T) {
 	tenantID := "tenant123"
 	location := "file-abc.txt"
 
-	blob, err := svc.DownloadAgentFile(tenantID, location)
+	ctx := t.Context()
+	blob, err := svc.DownloadAgentFile(ctx, tenantID, location)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -271,7 +273,8 @@ func TestFileService_DownloadAgentFile_Error(t *testing.T) {
 	tenantID := "tenant123"
 	location := "file-abc.txt"
 
-	blob, err := svc.DownloadAgentFile(tenantID, location)
+	ctx := t.Context()
+	blob, err := svc.DownloadAgentFile(ctx, tenantID, location)
 	if err == nil {
 		t.Fatalf("expected error, got nil")
 	}
@@ -309,8 +312,9 @@ func TestFileService_UploadFromURL_PDFAddsExtensionAndStoresToDownloads(t *testi
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
+	ctx := t.Context()
 	svc := testFileService()
-	resp, err := svc.UploadFromURL("tenant123", server.URL+"/report")
+	resp, err := svc.UploadFromURL(ctx, "tenant123", server.URL+"/report")
 	if err != nil {
 		t.Fatalf("UploadFromURL failed: %v", err)
 	}
@@ -355,8 +359,9 @@ func TestFileService_UploadFromURL_HTMLNormalizesReadableContent(t *testing.T) {
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
+	ctx := t.Context()
 	svc := testFileService()
-	resp, err := svc.UploadFromURL("tenant123", server.URL+"/page")
+	resp, err := svc.UploadFromURL(ctx, "tenant123", server.URL+"/page")
 	if err != nil {
 		t.Fatalf("UploadFromURL failed: %v", err)
 	}

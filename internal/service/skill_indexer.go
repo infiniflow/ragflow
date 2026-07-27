@@ -461,7 +461,7 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, spaceID 
 
 	// Find the actual space folder ID by space name (consistent with frontend behavior)
 	// Frontend uses space name to find folder, not space.FolderID which may be outdated
-	spaceFolderID, err := s.getSpaceFolderIDByName(tenantID, space.Name)
+	spaceFolderID, err := s.getSpaceFolderIDByName(ctx, tenantID, space.Name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to find space folder: %w", err)
 	}
@@ -504,7 +504,7 @@ func (s *SkillIndexerService) getSkillsFromFileSystem(ctx context.Context, tenan
 	var skills []SkillInfo
 
 	// Get all skill folders under the space
-	skillFolders, err := s.fileDAO.ListByParentID(spaceFolderID)
+	skillFolders, err := s.fileDAO.ListByParentID(ctx, dao.DB, spaceFolderID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list skill folders: %w", err)
 	}
@@ -517,7 +517,7 @@ func (s *SkillIndexerService) getSkillsFromFileSystem(ctx context.Context, tenan
 		}
 
 		// Get all versions of this skill
-		versions, err := s.fileDAO.ListByParentID(skillFolder.ID)
+		versions, err := s.fileDAO.ListByParentID(ctx, dao.DB, skillFolder.ID)
 		if err != nil {
 			common.Warn(fmt.Sprintf("failed to list versions for skill %s: %v", skillFolder.Name, err))
 			continue
@@ -590,7 +590,7 @@ func (s *SkillIndexerService) findLatestVersion(versions []*entity.File) *entity
 // getSkillContentFromFolder reads skill content from the version folder
 func (s *SkillIndexerService) getSkillContentFromFolder(ctx context.Context, tenantID string, skillFolder, versionFolder *entity.File, spaceID string) (*SkillInfo, error) {
 	// Get all files in the version folder
-	files, err := s.fileDAO.ListByParentID(versionFolder.ID)
+	files, err := s.fileDAO.ListByParentID(ctx, dao.DB, versionFolder.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list files in version folder: %w", err)
 	}
@@ -672,15 +672,15 @@ func isTextFileForSkill(fileName string) bool {
 
 // getSpaceFolderIDByName finds the space folder ID by space name (consistent with frontend behavior)
 // Frontend finds space folder by listing folders under skills folder and matching by name
-func (s *SkillIndexerService) getSpaceFolderIDByName(tenantID, spaceName string) (string, error) {
+func (s *SkillIndexerService) getSpaceFolderIDByName(ctx context.Context, tenantID, spaceName string) (string, error) {
 	// Get root folder
-	rootFolder, err := s.fileDAO.GetRootFolder(tenantID)
+	rootFolder, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
 	if err != nil {
 		return "", fmt.Errorf("failed to get root folder: %w", err)
 	}
 
 	// Find skills folder under root
-	files, _, err := s.fileDAO.GetByPfID(tenantID, rootFolder.ID, 0, 0, "name", false, "")
+	files, _, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, rootFolder.ID, 0, 0, "name", false, "")
 	if err != nil {
 		return "", fmt.Errorf("failed to list root folder contents: %w", err)
 	}
@@ -698,7 +698,7 @@ func (s *SkillIndexerService) getSpaceFolderIDByName(tenantID, spaceName string)
 	}
 
 	// Find space folder by name under skills folder
-	spaceFolders, _, err := s.fileDAO.GetByPfID(tenantID, skillsFolderID, 0, 0, "name", false, "")
+	spaceFolders, _, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, skillsFolderID, 0, 0, "name", false, "")
 	if err != nil {
 		return "", fmt.Errorf("failed to list skills folder contents: %w", err)
 	}
@@ -922,7 +922,7 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(tenantID, embdID)
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
@@ -960,7 +960,7 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 	}
 
 	common.Info(fmt.Sprintf("Getting embedding model for %s", embdID))
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(tenantID, embdID)
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to get embedding model: %v", err), err)
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
@@ -1018,7 +1018,7 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 		return 0, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(tenantID, embdID)
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get embedding model: %w", err)
 	}
