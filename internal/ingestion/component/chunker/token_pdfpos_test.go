@@ -52,6 +52,60 @@ func TestMergeByTokenSizeFromJSON_ExtendsPDFPositions(t *testing.T) {
 	}
 }
 
+// TestMergeByTokenSizeFromJSON_ExtendsManyPDFPositions exercises the K>2
+// merge path, where the deferred-marshal accumulator must preserve every
+// source item's coordinates (the old extendRawJSONArray re-marshaled the whole
+// list on each step, which scaled O(K^2)). Three text items all under the
+// token threshold merge into one chunk; all three coordinate rows must survive.
+func TestMergeByTokenSizeFromJSON_ExtendsManyPDFPositions(t *testing.T) {
+	posA := json.RawMessage(`[[1,10,20,30,40]]`)
+	posB := json.RawMessage(`[[2,15,25,35,45]]`)
+	posC := json.RawMessage(`[[3,12,22,32,42]]`)
+	items := [][]schema.ChunkDoc{
+		{
+			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posA},
+			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posB},
+			{Text: "c", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posC},
+		},
+	}
+	got := mergeByTokenSizeFromJSON(items, 128, 0)
+	merged := got[0]
+	if len(merged) != 1 {
+		t.Fatalf("want 1 merged chunk, got %d", len(merged))
+	}
+	combined := string(merged[0].PDFPositions)
+	for _, want := range []string{"1,10,20,30,40", "2,15,25,35,45", "3,12,22,32,42"} {
+		if !strings.Contains(combined, want) {
+			t.Errorf("merged chunk dropped coordinate row %q: %s", want, combined)
+		}
+	}
+}
+
+// TestMergeByTokenSizeFromJSON_ExtendsPDFPositionsNested exercises the real
+// wire format emitted by layout.SectionsToJSON: a THREE-level nested matrix
+// [[[pageNumbers...], left, right, top, bottom]]. The deferred-marshal
+// accumulator must preserve the nested page list exactly — a flattening
+// representation (e.g. [][]float64) would silently drop these positions.
+func TestMergeByTokenSizeFromJSON_ExtendsPDFPositionsNested(t *testing.T) {
+	posA := json.RawMessage(`[[[1],10,20,30,40]]`)
+	posB := json.RawMessage(`[[[2],15,25,35,45]]`)
+	items := [][]schema.ChunkDoc{
+		{
+			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posA},
+			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posB},
+		},
+	}
+	got := mergeByTokenSizeFromJSON(items, 128, 0)
+	combined := string(got[0][0].PDFPositions)
+	// The nested page list must survive, not be flattened to e.g. [1,10,20,30,40].
+	if !strings.Contains(combined, "[[1],10,20,30,40]") {
+		t.Errorf("merged chunk lost/dropped nested _pdf_positions (got %s)", combined)
+	}
+	if !strings.Contains(combined, "[[2],15,25,35,45]") {
+		t.Errorf("merged chunk dropped second nested _pdf_positions row (got %s)", combined)
+	}
+}
+
 // TestMergeByTokenSizeFromJSON_ExtendsPositions covers the parallel
 // `positions` field (diff 2.3).
 func TestMergeByTokenSizeFromJSON_ExtendsPositions(t *testing.T) {

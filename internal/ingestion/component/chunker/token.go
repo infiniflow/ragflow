@@ -703,6 +703,14 @@ func takeFromStart(text string, tokens int) string {
 
 // mergeByTokenSizeFromJSON mirrors `naive_merge` at
 // rag/nlp/__init__.py:1156.
+//
+// PDF coordinate lists (`_pdf_positions` / `positions`) are accumulated in a
+// posAccum that defers JSON marshaling until the whole document group is
+// merged. This avoids re-marshaling the entire accumulated coordinate list on
+// every merge step, which previously cost O(K^2) marshal/unmarshal for a chunk
+// formed from K source items (see extendRawJSONArray). Positions are appended
+// in their wire-matrix form ([pageNums..., left, right, top, bottom] per row),
+// so the final flush re-emits byte-compatible JSON.
 func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64) [][]schema.ChunkDoc {
 	threshold := float64(chunkTokens) * (100 - overlappedPct*100) / 100.0
 	for idx := range perItem {
@@ -711,10 +719,27 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 			continue
 		}
 		var merged []schema.ChunkDoc
+		// acc is aligned with merged: a nil entry means the chunk carries
+		// no positions to accumulate (non-text chunks keep their own copy).
+		var acc []*posAccum
+		flush := func() {
+			for i := range merged {
+				if acc[i] == nil {
+					continue
+				}
+				if v := acc[i].flushPDF(); v != nil {
+					merged[i].PDFPositions = v
+				}
+				if v := acc[i].flushPos(); v != nil {
+					merged[i].Positions = v
+				}
+			}
+		}
 		for _, ck := range chunks {
 			ckType := ck.CKType
 			if ckType != "text" {
 				merged = append(merged, cloneChunkDoc(ck))
+				acc = append(acc, nil)
 				continue
 			}
 			tk := intValue(ck.TKNums)
@@ -743,6 +768,7 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 					}
 				}
 				merged = append(merged, cp)
+				acc = append(acc, newPosAccum(ck.PDFPositions, ck.Positions))
 				continue
 			}
 			// Merge into the accumulated text chunk.
@@ -760,12 +786,80 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 			// coordinate lists instead of dropping the incoming item's
 			// positions. Mirrors Python token_chunker.py:240
 			// `merged[prev][PDF_POSITIONS_KEY].extend(...)` (diffs 2.5 / 2.3).
-			prev.PDFPositions = extendRawJSONArray(prev.PDFPositions, ck.PDFPositions)
-			prev.Positions = extendRawJSONArray(prev.Positions, ck.Positions)
+			acc[len(acc)-1].extend(ck.PDFPositions, ck.Positions)
 		}
+		flush()
 		perItem[idx] = merged
 	}
 	return perItem
+}
+
+// posAccum accumulates PDF coordinate rows across chunk merges without
+// re-marshaling the whole list on every merge step. Rows are kept as
+// [][]json.RawMessage so the original wire matrix (which is three-level
+// nested: [[[pageNumbers...], left, right, top, bottom]] — see
+// layout.SectionsToJSON) is preserved byte-for-byte on flush. Parsing is lazy:
+// each source item's positions are decoded at most once (on first extend or
+// flush), giving O(total rows) work instead of O(K^2).
+type posAccum struct {
+	pdf    [][]json.RawMessage
+	pos    [][]json.RawMessage
+	pdfRaw json.RawMessage
+	posRaw json.RawMessage
+	parsed bool
+}
+
+func newPosAccum(pdfRaw, posRaw json.RawMessage) *posAccum {
+	return &posAccum{pdfRaw: pdfRaw, posRaw: posRaw}
+}
+
+func (a *posAccum) ensureParsed() {
+	if a.parsed {
+		return
+	}
+	if len(a.pdfRaw) > 0 {
+		_ = json.Unmarshal(a.pdfRaw, &a.pdf)
+	}
+	if len(a.posRaw) > 0 {
+		_ = json.Unmarshal(a.posRaw, &a.pos)
+	}
+	a.pdfRaw = nil
+	a.posRaw = nil
+	a.parsed = true
+}
+
+func (a *posAccum) extend(pdfRaw, posRaw json.RawMessage) {
+	a.ensureParsed()
+	if len(pdfRaw) > 0 {
+		var rows [][]json.RawMessage
+		if err := json.Unmarshal(pdfRaw, &rows); err == nil {
+			a.pdf = append(a.pdf, rows...)
+		}
+	}
+	if len(posRaw) > 0 {
+		var rows [][]json.RawMessage
+		if err := json.Unmarshal(posRaw, &rows); err == nil {
+			a.pos = append(a.pos, rows...)
+		}
+	}
+}
+
+func (a *posAccum) flushPDF() json.RawMessage {
+	a.ensureParsed()
+	if len(a.pdf) == 0 {
+		return nil
+	}
+	b, _ := json.Marshal(a.pdf)
+	return b
+}
+
+func (a *posAccum) flushPos() json.RawMessage {
+	a.ensureParsed()
+	if len(a.pos) == 0 {
+		return nil
+	}
+	b, _ := json.Marshal(a.pos)
+	return b
 }
 
 func cloneChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
@@ -795,33 +889,6 @@ func cloneChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 		for k, v := range in.Extra {
 			out.Extra[k] = append(json.RawMessage(nil), v...)
 		}
-	}
-	return out
-}
-
-// extendRawJSONArray concatenates two JSON array payloads, mirroring
-// Python's `merged[prev][KEY].extend(current[KEY])`. Either operand may be
-// empty; the result is always a valid JSON array (or an empty raw message).
-// It is used to accumulate PDF coordinate lists (`_pdf_positions`,
-// `positions`) when text chunks are merged (diffs 2.5 / 2.3).
-func extendRawJSONArray(a, b json.RawMessage) json.RawMessage {
-	if len(a) == 0 {
-		return b
-	}
-	if len(b) == 0 {
-		return a
-	}
-	var arrA, arrB []json.RawMessage
-	if err := json.Unmarshal(a, &arrA); err != nil {
-		return b
-	}
-	if err := json.Unmarshal(b, &arrB); err != nil {
-		return a
-	}
-	arrA = append(arrA, arrB...)
-	out, err := json.Marshal(arrA)
-	if err != nil {
-		return a
 	}
 	return out
 }
