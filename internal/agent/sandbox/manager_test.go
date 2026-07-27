@@ -399,7 +399,7 @@ type fakeSettingsReader struct {
 	fakeErr error
 }
 
-func (f *fakeSettingsReader) GetByName(name string) ([]entity.SystemSettings, error) {
+func (f *fakeSettingsReader) GetByName(ctx context.Context, name string) ([]entity.SystemSettings, error) {
 	if f.fakeErr != nil {
 		return nil, f.fakeErr
 	}
