@@ -20,7 +20,7 @@ import (
 // driver/model pair when the canvas DSL omitted them. It first checks the old
 // tenant_llm table, then falls back to tenant_model_provider +
 // tenant_model_instance when the composite llm_id carries an instance name.
-func resolveTenantLLMConfig(ctx context.Context, driver, modelID, apiKey, baseURL, originalModelID string) (string, string) {
+func resolveTenantLLMConfig(ctx context.Context, db *gorm.DB, driver, modelID, apiKey, baseURL, originalModelID string) (string, string) {
 	if apiKey != "" || driver == "" || modelID == "" {
 		return apiKey, baseURL
 	}
@@ -35,7 +35,7 @@ func resolveTenantLLMConfig(ctx context.Context, driver, modelID, apiKey, baseUR
 		return apiKey, baseURL
 	}
 
-	if resolvedKey, resolvedBaseURL, ok := resolveTenantLLMCredentials(tid, driver, modelID, baseURL); ok {
+	if resolvedKey, resolvedBaseURL, ok := resolveTenantLLMCredentials(ctx, db, tid, driver, modelID, baseURL); ok {
 		return resolvedKey, resolvedBaseURL
 	}
 	if originalModelID == "" {
@@ -47,7 +47,7 @@ func resolveTenantLLMConfig(ctx context.Context, driver, modelID, apiKey, baseUR
 	return apiKey, baseURL
 }
 
-func resolveChatModelRef(ctx context.Context, modelID, driver, apiKey, baseURL string) (string, string, string, string, error) {
+func resolveChatModelRef(ctx context.Context, db *gorm.DB, modelID, driver, apiKey, baseURL string) (string, string, string, string, error) {
 	originalModelID := modelID
 	if driver == "" && modelID != "" {
 		if m, prov, ok := agentProviderLastSegmentSplit(modelID); ok {
@@ -56,7 +56,7 @@ func resolveChatModelRef(ctx context.Context, modelID, driver, apiKey, baseURL s
 		}
 	}
 	if driver == "" && modelID != "" {
-		resolvedModelID, resolvedDriver, resolvedAPIKey, resolvedBaseURL, ok, err := resolveTenantChatModelByID(ctx, modelID, apiKey, baseURL)
+		resolvedModelID, resolvedDriver, resolvedAPIKey, resolvedBaseURL, ok, err := resolveTenantChatModelByID(ctx, db, modelID, apiKey, baseURL)
 		if err != nil {
 			return "", "", "", "", err
 		}
@@ -67,15 +67,15 @@ func resolveChatModelRef(ctx context.Context, modelID, driver, apiKey, baseURL s
 			baseURL = resolvedBaseURL
 		}
 	}
-	apiKey, baseURL = resolveTenantLLMConfig(ctx, driver, modelID, apiKey, baseURL, originalModelID)
+	apiKey, baseURL = resolveTenantLLMConfig(ctx, db, driver, modelID, apiKey, baseURL, originalModelID)
 	return modelID, driver, apiKey, baseURL, nil
 }
 
 // resolveTenantLLMCredentials looks up the old tenant_llm table for the given
 // tenant / factory / model. Returns true when credentials were found.
-func resolveTenantLLMCredentials(tid, driver, modelID, baseURL string) (string, string, bool) {
+func resolveTenantLLMCredentials(ctx context.Context, db *gorm.DB, tid, driver, modelID, baseURL string) (string, string, bool) {
 	common.Debug("llm credentials: tenant_llm lookup", zap.String("tid", tid), zap.String("factory", driver), zap.String("model", modelID))
-	row, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(tid, driver, modelID)
+	row, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(ctx, db, tid, driver, modelID)
 	if err != nil {
 		common.Debug("llm credentials: tenant_llm lookup", zap.Error(err))
 		return "", baseURL, false
@@ -180,7 +180,7 @@ func findSoleActiveProviderInstance(providerID string) *entity.TenantModelInstan
 	return active[0]
 }
 
-func resolveTenantChatModelByID(ctx context.Context, modelRef, apiKey, baseURL string) (string, string, string, string, bool, error) {
+func resolveTenantChatModelByID(ctx context.Context, db *gorm.DB, modelRef, apiKey, baseURL string) (string, string, string, string, bool, error) {
 	if !isBareTenantModelID(modelRef) {
 		return "", "", apiKey, baseURL, false, nil
 	}
@@ -193,7 +193,7 @@ func resolveTenantChatModelByID(ctx context.Context, modelRef, apiKey, baseURL s
 		return "", "", apiKey, baseURL, false, nil
 	}
 
-	modelName, provider, modelKey, modelBaseURL, ok, err := resolveTenantChatModelByTenantModelID(tid, modelRef, apiKey, baseURL)
+	modelName, provider, modelKey, modelBaseURL, ok, err := resolveTenantChatModelByTenantModelID(ctx, db, tid, modelRef, apiKey, baseURL)
 	if err != nil {
 		return "", "", apiKey, baseURL, false, err
 	}
@@ -201,7 +201,7 @@ func resolveTenantChatModelByID(ctx context.Context, modelRef, apiKey, baseURL s
 		return modelName, provider, modelKey, modelBaseURL, true, nil
 	}
 
-	modelName, provider, instanceKey, instanceBaseURL, ok, err := resolveTenantChatModelByInstanceID(tid, modelRef, apiKey, baseURL)
+	modelName, provider, instanceKey, instanceBaseURL, ok, err := resolveTenantChatModelByInstanceID(ctx, db, tid, modelRef, apiKey, baseURL)
 	if err != nil {
 		return "", "", apiKey, baseURL, false, err
 	}
@@ -211,8 +211,8 @@ func resolveTenantChatModelByID(ctx context.Context, modelRef, apiKey, baseURL s
 	return "", "", apiKey, baseURL, false, fmt.Errorf("tenant chat model id %q not found", modelRef)
 }
 
-func resolveTenantChatModelByTenantModelID(tid, modelID, apiKey, baseURL string) (string, string, string, string, bool, error) {
-	model, err := dao.NewTenantModelDAO().GetByID(modelID)
+func resolveTenantChatModelByTenantModelID(ctx context.Context, db *gorm.DB, tid, modelID, apiKey, baseURL string) (string, string, string, string, bool, error) {
+	model, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", "", apiKey, baseURL, false, nil
@@ -242,7 +242,7 @@ func resolveTenantChatModelByTenantModelID(tid, modelID, apiKey, baseURL string)
 	return model.ModelName, provider.ProviderName, apiKey, baseURL, true, nil
 }
 
-func resolveTenantChatModelByInstanceID(tid, instanceID, apiKey, baseURL string) (string, string, string, string, bool, error) {
+func resolveTenantChatModelByInstanceID(ctx context.Context, db *gorm.DB, tid, instanceID, apiKey, baseURL string) (string, string, string, string, bool, error) {
 	instance, err := dao.NewTenantModelInstanceDAO().GetByID(instanceID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -258,7 +258,7 @@ func resolveTenantChatModelByInstanceID(tid, instanceID, apiKey, baseURL string)
 		return "", "", apiKey, baseURL, false, fmt.Errorf("tenant %s has no access to model instance id %s", tid, instanceID)
 	}
 
-	models, err := dao.NewTenantModelDAO().GetModelsByInstanceID(instance.ID)
+	models, err := dao.NewTenantModelDAO().GetModelsByInstanceID(ctx, db, instance.ID)
 	if err != nil {
 		return "", "", apiKey, baseURL, false, fmt.Errorf("resolve models for tenant model instance id %q: %w", instanceID, err)
 	}

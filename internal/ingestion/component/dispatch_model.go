@@ -67,12 +67,12 @@ func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID 
 		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
 	}
 	if tenantModelID := tenantModelIDByType(tenant, modelType); tenantModelID != "" {
-		driver, modelName, apiConfig, maxTokens, err := resolveModelConfigByID(tenantID, modelType, tenantModelID)
+		driver, modelName, apiConfig, maxTokens, err := resolveModelConfigByID(ctx, db, tenantID, modelType, tenantModelID)
 		if err == nil {
 			return driver, modelName, apiConfig, maxTokens, nil
 		}
 	}
-	return resolveModelConfig(tenantID, modelType, modelID)
+	return resolveModelConfig(ctx, db, tenantID, modelType, modelID)
 }
 
 func tenantModelIDByType(tenant *entity.Tenant, modelType entity.ModelType) string {
@@ -106,22 +106,22 @@ func stringValue(value *string) string {
 	return *value
 }
 
-func resolveModelConfig(tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func resolveModelConfig(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	modelDAO := dao.NewTenantModelDAO()
-	if _, err := modelDAO.GetByID(modelRef); err == nil {
-		return resolveModelConfigByID(tenantID, modelType, modelRef)
+	if _, err := modelDAO.GetByID(ctx, db, modelRef); err == nil {
+		return resolveModelConfigByID(ctx, db, tenantID, modelType, modelRef)
 	} else if !errorsIsRecordNotFound(err) {
 		return nil, "", nil, 0, err
 	}
-	return resolveModelConfigFromProviderInstance(tenantID, modelType, modelRef)
+	return resolveModelConfigFromProviderInstance(ctx, db, tenantID, modelType, modelRef)
 }
 
-func resolveModelConfigByID(tenantID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	modelDAO := dao.NewTenantModelDAO()
 	instanceDAO := dao.NewTenantModelInstanceDAO()
 	providerDAO := dao.NewTenantModelProviderDAO()
 
-	modelObj, err := modelDAO.GetByID(modelID)
+	modelObj, err := modelDAO.GetByID(ctx, db, modelID)
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
@@ -174,7 +174,7 @@ func resolveModelConfigByID(tenantID string, modelType entity.ModelType, modelID
 	return driver, modelObj.ModelName, apiConfig, maxTokens, nil
 }
 
-func resolveModelConfigFromProviderInstance(tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	pureModelName, instanceName, providerName, err := parseCompositeModelName(modelName)
 	if err != nil {
 		return nil, "", nil, 0, err
@@ -200,7 +200,7 @@ func resolveModelConfigFromProviderInstance(tenantID string, modelType entity.Mo
 	baseURL := extra["base_url"]
 
 	modelObj, modelErr := modelDAO.GetByProviderIDAndInstanceIDAndModelTypeAndModelName(
-		provider.ID, instance.ID, int(modelType), pureModelName,
+		ctx, db, provider.ID, instance.ID, int(modelType), pureModelName,
 	)
 	switch {
 	case modelErr == nil:

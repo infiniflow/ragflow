@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"context"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -31,7 +32,7 @@ func setupTenantModelDAOTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.TenantModel{}); err != nil {
+	if err = db.AutoMigrate(&entity.TenantModel{}); err != nil {
 		t.Fatalf("failed to migrate tenant_model: %v", err)
 	}
 	return db
@@ -58,7 +59,8 @@ func TestTenantModelDAODeleteByModelIDAndScopeDeletesOnlyMatchingModel(t *testin
 	seedTenantModel(t, db, &entity.TenantModel{ID: "model-delete", ModelName: "m", ModelType: int(entity.ModelTypeChat), ProviderID: "provider-1", InstanceID: "instance-1", Status: "active"})
 	seedTenantModel(t, db, &entity.TenantModel{ID: "model-keep", ModelName: "m", ModelType: int(entity.ModelTypeChat), ProviderID: "provider-1", InstanceID: "instance-2", Status: "active"})
 
-	rows, err := NewTenantModelDAO().DeleteByModelIDAndProviderIDAndInstanceID("model-delete", "provider-1", "instance-1")
+	ctx := context.Background()
+	rows, err := NewTenantModelDAO().DeleteByModelIDAndProviderIDAndInstanceID(ctx, db, "model-delete", "provider-1", "instance-1")
 	if err != nil {
 		t.Fatalf("DeleteByModelIDAndProviderIDAndInstanceID() error = %v", err)
 	}
@@ -67,13 +69,13 @@ func TestTenantModelDAODeleteByModelIDAndScopeDeletesOnlyMatchingModel(t *testin
 	}
 
 	var count int64
-	if err := db.Model(&entity.TenantModel{}).Where("id = ?", "model-delete").Count(&count).Error; err != nil {
+	if err = db.Model(&entity.TenantModel{}).Where("id = ?", "model-delete").Count(&count).Error; err != nil {
 		t.Fatalf("count deleted model: %v", err)
 	}
 	if count != 0 {
 		t.Fatalf("deleted model count = %d, want 0", count)
 	}
-	if err := db.Model(&entity.TenantModel{}).Where("id = ?", "model-keep").Count(&count).Error; err != nil {
+	if err = db.Model(&entity.TenantModel{}).Where("id = ?", "model-keep").Count(&count).Error; err != nil {
 		t.Fatalf("count kept model: %v", err)
 	}
 	if count != 1 {
@@ -87,7 +89,8 @@ func TestTenantModelDAOUpdateStatusByIDAndScope(t *testing.T) {
 
 	seedTenantModel(t, db, &entity.TenantModel{ID: "model-status", ModelName: "m", ModelType: int(entity.ModelTypeChat), ProviderID: "provider-1", InstanceID: "instance-1", Status: "active"})
 
-	rows, err := NewTenantModelDAO().UpdateStatusByIDAndScope("model-status", "provider-1", "instance-1", "inactive")
+	ctx := context.Background()
+	rows, err := NewTenantModelDAO().UpdateStatusByIDAndScope(ctx, db, "model-status", "provider-1", "instance-1", "inactive")
 	if err != nil {
 		t.Fatalf("UpdateStatusByIDAndScope() error = %v", err)
 	}
@@ -96,14 +99,14 @@ func TestTenantModelDAOUpdateStatusByIDAndScope(t *testing.T) {
 	}
 
 	var got entity.TenantModel
-	if err := db.Where("id = ?", "model-status").First(&got).Error; err != nil {
+	if err = db.Where("id = ?", "model-status").First(&got).Error; err != nil {
 		t.Fatalf("failed to reload model: %v", err)
 	}
 	if got.Status != "inactive" {
 		t.Fatalf("status = %q, want inactive", got.Status)
 	}
 
-	rows, err = NewTenantModelDAO().UpdateStatusByIDAndScope("model-status", "provider-1", "wrong-instance", "active")
+	rows, err = NewTenantModelDAO().UpdateStatusByIDAndScope(ctx, db, "model-status", "provider-1", "wrong-instance", "active")
 	if err != nil {
 		t.Fatalf("UpdateStatusByIDAndScope() wrong scope error = %v", err)
 	}

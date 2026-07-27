@@ -152,16 +152,16 @@ func NewTenantLLMService() *TenantLLMService {
  *	// Get API key for model without factory
  *	tenantLLM, err := service.GetAPIKey("tenant-123", "gpt-4")
  */
-func (s *TenantLLMService) GetAPIKey(tenantID, modelName string) (*entity.TenantLLM, error) {
+func (s *TenantLLMService) GetAPIKey(ctx context.Context, tenantID, modelName string) (*entity.TenantLLM, error) {
 	modelName, factory := s.SplitModelNameAndFactory(modelName)
 
 	var tenantLLM *entity.TenantLLM
 	var err error
 
 	if factory == "" {
-		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDAndLLMName(tenantID, modelName)
+		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDAndLLMName(ctx, dao.DB, tenantID, modelName)
 	} else {
-		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDLLMNameAndFactory(tenantID, modelName, factory)
+		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDLLMNameAndFactory(ctx, dao.DB, tenantID, modelName, factory)
 	}
 
 	if err != nil {
@@ -260,7 +260,7 @@ func (s *TenantLLMService) GetAPIKeyFromInstance(tenantID, compositeModelName st
  *	//     "tenant_embd_id": 456,   // ID from tenant_llm table
  *	// }
  */
-func (s *TenantLLMService) EnsureTenantModelIDForParams(tenantID string, params map[string]interface{}) map[string]interface{} {
+func (s *TenantLLMService) EnsureTenantModelIDForParams(ctx context.Context, tenantID string, params map[string]interface{}) map[string]interface{} {
 	paramKeys := []string{"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id"}
 
 	for _, key := range paramKeys {
@@ -273,7 +273,7 @@ func (s *TenantLLMService) EnsureTenantModelIDForParams(tenantID string, params 
 					continue
 				}
 
-				tenantLLM, err := s.GetAPIKey(tenantID, modelName)
+				tenantLLM, err := s.GetAPIKey(ctx, tenantID, modelName)
 				if err == nil && tenantLLM != nil {
 					params[tenantKey] = tenantLLM.ID
 				} else {
@@ -492,7 +492,7 @@ func (s *TenantService) GetDefaultModelName(ctx context.Context, tenantID string
 	return modelID, nil
 }
 
-func (s *TenantService) GetModelInfo(tenantID string, defaultModel string, modelType string) (*string, *string, *string, bool, error) {
+func (s *TenantService) GetModelInfo(ctx context.Context, tenantID string, defaultModel string, modelType string) (*string, *string, *string, bool, error) {
 	// Mirror Python's _get_model_info: right-anchored rsplit so that model
 	// names containing '@' (e.g. LM Studio IDs like
 	// "text-embedding-nomic-embed-text-v1.5@q8_0") remain intact.
@@ -548,7 +548,7 @@ func (s *TenantService) GetModelInfo(tenantID string, defaultModel string, model
 	}
 
 	// Check if the model exists and is active.
-	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProvider.ID, modelInstance.ID, modelName)
+	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, modelProvider.ID, modelInstance.ID, modelName)
 	if err != nil {
 		if !dao.IsNotFoundErr(err) {
 			return nil, nil, nil, false, err
@@ -606,7 +606,7 @@ func (s *TenantService) ListTenantDefaultModels(ctx context.Context, userID stri
 
 	var result []ModelItem
 
-	defaultChatModelProvider, defaultChatModelInstance, defaultChatModelName, defaultChatModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.LLMID, "chat")
+	defaultChatModelProvider, defaultChatModelInstance, defaultChatModelName, defaultChatModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.LLMID, "chat")
 	if err == nil {
 		result = append(result, ModelItem{
 			ModelProvider: defaultChatModelProvider,
@@ -618,7 +618,7 @@ func (s *TenantService) ListTenantDefaultModels(ctx context.Context, userID stri
 		})
 	}
 
-	defaultEmbeddingModelProvider, defaultEmbeddingModelInstance, defaultEmbeddingModelName, defaultEmbeddingModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.EmbDID, "embedding")
+	defaultEmbeddingModelProvider, defaultEmbeddingModelInstance, defaultEmbeddingModelName, defaultEmbeddingModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.EmbDID, "embedding")
 	if err == nil {
 		result = append(result, ModelItem{
 			ModelProvider: defaultEmbeddingModelProvider,
@@ -630,7 +630,7 @@ func (s *TenantService) ListTenantDefaultModels(ctx context.Context, userID stri
 		})
 	}
 
-	defaultRerankModelProvider, defaultRerankModelInstance, defaultRerankModelName, defaultRerankModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.RerankID, "rerank")
+	defaultRerankModelProvider, defaultRerankModelInstance, defaultRerankModelName, defaultRerankModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.RerankID, "rerank")
 	if err == nil {
 		result = append(result, ModelItem{
 			ModelProvider: defaultRerankModelProvider,
@@ -642,7 +642,7 @@ func (s *TenantService) ListTenantDefaultModels(ctx context.Context, userID stri
 		})
 	}
 
-	defaultASRModelProvider, defaultASRModelInstance, defaultASRModelName, defaultASREnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.ASRID, "asr")
+	defaultASRModelProvider, defaultASRModelInstance, defaultASRModelName, defaultASREnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.ASRID, "asr")
 	if err == nil {
 		result = append(result, ModelItem{
 			ModelProvider: defaultASRModelProvider,
@@ -654,7 +654,7 @@ func (s *TenantService) ListTenantDefaultModels(ctx context.Context, userID stri
 		})
 	}
 
-	defaultImage2TextModelProvider, defaultImage2TextModelInstance, defaultImage2TextModelName, defaultImage2TextModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.Img2TxtID, "vision")
+	defaultImage2TextModelProvider, defaultImage2TextModelInstance, defaultImage2TextModelName, defaultImage2TextModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.Img2TxtID, "vision")
 	if err == nil {
 		result = append(result, ModelItem{
 			ModelProvider: defaultImage2TextModelProvider,
@@ -667,7 +667,7 @@ func (s *TenantService) ListTenantDefaultModels(ctx context.Context, userID stri
 	}
 
 	if ownedTenant.OCRID != "" {
-		defaultOCRModelProvider, defaultOCRModelInstance, defaultOCRModelName, defaultOCRModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.OCRID, "ocr")
+		defaultOCRModelProvider, defaultOCRModelInstance, defaultOCRModelName, defaultOCRModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.OCRID, "ocr")
 		if err == nil {
 			result = append(result, ModelItem{
 				ModelProvider: defaultOCRModelProvider,
@@ -681,7 +681,7 @@ func (s *TenantService) ListTenantDefaultModels(ctx context.Context, userID stri
 	}
 
 	if ownedTenant.TTSID != "" {
-		defaultTTSModelProvider, defaultTTSModelInstance, defaultTTSModelName, defaultTTSModelEnable, err := s.GetModelInfo(ownedTenant.TenantID, ownedTenant.TTSID, "tts")
+		defaultTTSModelProvider, defaultTTSModelInstance, defaultTTSModelName, defaultTTSModelEnable, err := s.GetModelInfo(ctx, ownedTenant.TenantID, ownedTenant.TTSID, "tts")
 		if err == nil {
 			result = append(result, ModelItem{
 				ModelProvider: defaultTTSModelProvider,
@@ -697,7 +697,7 @@ func (s *TenantService) ListTenantDefaultModels(ctx context.Context, userID stri
 	return result, nil
 }
 
-func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName, modelName, modelType string) error {
+func (s *TenantService) checkModelAvailable(ctx context.Context, tenantID, providerName, instanceName, modelName, modelType string) error {
 	_, _, modelTypeBit, err := tenantDefaultModelFields(modelType)
 	if err != nil {
 		return err
@@ -709,7 +709,7 @@ func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName
 	}
 
 	// Static bypass: OCR with infiniflow@default@deepdoc is always enabled (mirrors Python _check_model_available).
-	if modelType == "ocr" && providerName == "infiniflow" && instanceName == "default" && modelName == "deepdoc" {
+	if modelType == "ocr" && providerName == "infiniflow" && instanceName == "default" {
 		return nil
 	}
 
@@ -733,7 +733,7 @@ func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName
 	}
 
 	// Validate model availability through the DB (TenantModel table)
-	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProvider.ID, modelInstance.ID, modelName)
+	modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, modelProvider.ID, modelInstance.ID, modelName)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return fmt.Errorf("model %s isn't available", modelName)
@@ -769,7 +769,7 @@ func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, mode
 
 	var tenantModelID interface{}
 	if modelID != "" {
-		modelEntity, err := s.modelDAO.GetByID(modelID)
+		modelEntity, err := s.modelDAO.GetByID(ctx, dao.DB, modelID)
 		if err != nil {
 			return fmt.Errorf("model ID %s is invalid", modelID)
 		}
@@ -802,7 +802,7 @@ func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, mode
 		defaultModel = ""
 		tenantModelID = nil
 	} else if modelProvider != "" && modelInstance != "" && modelName != "" {
-		err = s.checkModelAvailable(ownedTenant.TenantID, modelProvider, modelInstance, modelName, modelType)
+		err = s.checkModelAvailable(ctx, ownedTenant.TenantID, modelProvider, modelInstance, modelName, modelType)
 		if err != nil {
 			return err
 		}
@@ -820,7 +820,7 @@ func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, mode
 				if err != nil {
 					return err
 				}
-				modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(modelProviderEntity.ID, modelInstanceEntity.ID, modelName)
+				modelEntity, err := s.modelDAO.GetModelByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, modelProviderEntity.ID, modelInstanceEntity.ID, modelName)
 				if err != nil {
 					return err
 				}
