@@ -214,6 +214,48 @@ func TestBuildParserConfig_AllComponentsPresent(t *testing.T) {
 	}
 }
 
+func TestBuildParserConfig_BuiltinExtractorKeepsTagFileID(t *testing.T) {
+	registry, err := DefaultRegistry()
+	if err != nil {
+		t.Fatalf("DefaultRegistry: %v", err)
+	}
+	checked := 0
+	for _, ref := range registry.Refs() {
+		tpl, ok := registry.Get(ref)
+		if !ok {
+			t.Fatalf("registry.Get(%q) failed", ref)
+		}
+		dslJSON, err := json.Marshal(tpl.DSL)
+		if err != nil {
+			t.Fatalf("marshal DSL %q: %v", ref, err)
+		}
+		schemas, err := ExtractAllComponentParams(dslJSON)
+		if err != nil {
+			t.Fatalf("ExtractAllComponentParams %q: %v", ref, err)
+		}
+		for _, s := range schemas {
+			if s.ComponentName != "Extractor" {
+				continue
+			}
+			checked++
+			overrides := map[string]any{
+				s.CpnID: map[string]any{"tag_file_id": "file-123"},
+			}
+			result := BuildParserConfig(dslJSON, overrides)
+			params, ok := result[s.CpnID].(map[string]any)
+			if !ok {
+				t.Fatalf("template %q: expected component %q in result", ref, s.CpnID)
+			}
+			if params["tag_file_id"] != "file-123" {
+				t.Errorf("template %q: expected tag_file_id to survive BuildParserConfig, got %v", ref, params["tag_file_id"])
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("expected at least one builtin template with an Extractor component")
+	}
+}
+
 // --- ResolveComponentParamsDefaults ---
 
 func TestResolveComponentParamsDefaults_Basic(t *testing.T) {
