@@ -1,0 +1,11 @@
+{
+  "label": "Creation and Management",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "description": "Creation and Management"
+  },
+  "customProps": {
+    "categoryIcon": "RagAiAgent"
+  }
+}

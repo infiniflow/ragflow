@@ -1,0 +1,11 @@
+---
+sidebar_position: 7
+slug: /test_run
+sidebar_custom_props: {
+  categoryIcon: RagAiAgent
+}
+---
+
+# Test Run
+
+On the pipeline canvas, click **Run** to upload a sample file and view step-by-step results.
