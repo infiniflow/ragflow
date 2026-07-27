@@ -310,6 +310,7 @@ export default {
         action: '操作',
       },
       config: {
+        titleDescription: '在这里更新您的记忆配置，特别是大语言模型和提示词。',
         descriptionPlaceholder: '描述你的记忆',
         memorySizeTooltip: `记录每条消息的内容 + 其嵌入向量（≈ 内容 + 维度 × 8 字节）。
 例如：一条带有 1024 维嵌入的 1 KB 消息大约使用 9 KB。5 MB 的默认限制大约可容纳 500 条此类消息。`,
@@ -447,7 +448,7 @@ export default {
       dataset: '知识库',
       testing: '检索测试',
       configuration: '配置',
-      nextConfiguration: '下个配置',
+      nextConfiguration: '知识库配置',
       knowledgeGraph: '知识图谱',
       compilation: '编译',
       export: '导出',
@@ -678,7 +679,7 @@ export default {
       parseType: '解析方法',
       manualSetup: '选择pipeline',
       builtIn: '内置',
-      titleDescription: '在这里更新您的记忆配置，特别是大语言模型和提示词。',
+      titleDescription: '在这里更新您的知识库配置，特别是大语言模型和提示词。',
       name: '知识库名称',
       photo: '知识库图片',
       photoTip: '你可以上传4MB的文件',
