@@ -383,11 +383,20 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	}
 
 	data := make([]map[string]interface{}, 0, len(kbs))
+	modelNameCache := make(map[string]string)
 	for _, kb := range kbs {
 		if kb == nil {
 			continue
 		}
-		data = append(data, datasetListItemToMap(kb))
+		item := datasetListItemToMap(kb)
+		// Mirror the memory list: surface the concrete model display name
+		// (modelName@instance@provider) instead of a raw tenant_model ID.
+		tenantEmbdID := ptrStringValue(kb.TenantEmbdID)
+		if tenantEmbdID == "" && isHexID(kb.EmbdID) {
+			tenantEmbdID = kb.EmbdID
+		}
+		item["embedding_model"] = service.ResolveTenantModelDisplayName(tenantEmbdID, kb.EmbdID, modelNameCache)
+		data = append(data, item)
 	}
 
 	return data, total, common.CodeSuccess, nil
