@@ -1469,8 +1469,8 @@ func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantI
 		}
 		memoryMap := map[string]interface{}{
 			"id":           resp.ID,
-			"llm_id":       resolveTenantModelDisplayName(ptrStringValue(resp.TenantLLMID), resp.LLMID, modelNameCache),
-			"embd_id":      resolveTenantModelDisplayName(ptrStringValue(resp.TenantEmbdID), resp.EmbdID, modelNameCache),
+			"llm_id":       ResolveTenantModelDisplayName(ptrStringValue(resp.TenantLLMID), resp.LLMID, modelNameCache),
+			"embd_id":      ResolveTenantModelDisplayName(ptrStringValue(resp.TenantEmbdID), resp.EmbdID, modelNameCache),
 			"name":         resp.Name,
 			"avatar":       resp.Avatar,
 			"tenant_id":    resp.TenantID,
@@ -1491,10 +1491,10 @@ func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantI
 	}, nil
 }
 
-// resolveTenantModelDisplayName turns a tenant_model ID into
+// ResolveTenantModelDisplayName turns a tenant_model ID into
 // modelName@instance@provider. rawModelID is the API-facing fallback
-// stored on memory.llm_id / memory.embd_id.
-func resolveTenantModelDisplayName(tenantModelID, rawModelID string, cache map[string]string) string {
+// stored on memory.llm_id / memory.embd_id / knowledgebase.embd_id.
+func ResolveTenantModelDisplayName(tenantModelID, rawModelID string, cache map[string]string) string {
 	tenantModelID = strings.TrimSpace(tenantModelID)
 	rawModelID = strings.TrimSpace(rawModelID)
 	if tenantModelID == "" || strings.Contains(tenantModelID, "@") {

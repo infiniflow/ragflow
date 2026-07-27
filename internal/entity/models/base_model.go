@@ -47,7 +47,7 @@ type chatResponseParts struct {
 	RequestID     string
 	Content       *string
 	ReasonContent *string
-	ToolCalls     []map[string]interface{}
+	ToolCalls     []map[string]any
 	Usage         *TokenUsage
 }
 
@@ -323,10 +323,9 @@ func ReadErrorBody(r io.Reader) string {
 
 func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
 	reqBody := map[string]any{
-		"model":       modelName,
-		"messages":    buildChatMessages(messages),
-		"stream":      stream,
-		"temperature": 1,
+		"model":    modelName,
+		"messages": buildChatMessages(messages),
+		"stream":   stream,
 	}
 
 	if cfg != nil {
