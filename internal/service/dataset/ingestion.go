@@ -102,10 +102,10 @@ func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, userID,
 
 	log, err := d.pipelineLogDAO.GetByIDAndKBID(ctx, dao.DB, logID, datasetID)
 	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("log not found")
+		}
 		return nil, common.CodeServerError, fmt.Errorf("get ingestion log: %w", err)
-	}
-	if log == nil {
-		return nil, common.CodeDataError, errors.New("log not found")
 	}
 
 	return datasetIngestionLogToMap(log), common.CodeSuccess, nil

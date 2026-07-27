@@ -347,7 +347,7 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 			return nil, nil
 		})
 
-	if _, err := svc.processOutput(context.Background(), pipelineOut, time.Now()); err != nil {
+	if _, err = svc.processOutput(ctx, pipelineOut, time.Now()); err != nil {
 		t.Fatalf("RunPipeline: %v", err)
 	}
 

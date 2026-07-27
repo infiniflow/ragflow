@@ -427,10 +427,13 @@ func (s *SkillSpaceService) DeleteSpace(ctx context.Context, spaceID, tenantID s
 // asyncDeleteSpace performs the actual deletion work in the background.
 // It deletes the search index, removes files via Go FileService, and soft-deletes the space record.
 func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folderID, tenantID string, docEngine engine.DocEngine) {
+	bgCtx, bgCancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer bgCancel()
+
 	defer func() {
 		if r := recover(); r != nil {
 			common.Warn("Panic in asyncDeleteSpace, marking space as deleted", zap.Any("recover", r), zap.String("spaceID", spaceID))
-			_, _ = s.spaceDAO.CASStatus(ctx, dao.DB, spaceID, entity.SpaceStatusDeleting, entity.SpaceStatusDeleted)
+			_, _ = s.spaceDAO.CASStatus(bgCtx, dao.DB, spaceID, entity.SpaceStatusDeleting, entity.SpaceStatusDeleted)
 		}
 	}()
 
@@ -473,12 +476,12 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 	// Step 3: Soft delete the space record (status "2" → "0")
 	// First, permanently remove any previously deleted spaces with the same tenant+name
 	// to avoid UNIQUE INDEX constraint violation when changing status from "2" to "0"
-	space, err := s.spaceDAO.GetByIDAnyStatus(ctx, dao.DB, spaceID)
+	space, err := s.spaceDAO.GetByIDAnyStatus(bgCtx, dao.DB, spaceID)
 	if err == nil && space != nil {
-		_ = s.spaceDAO.DeletePermanentByName(ctx, dao.DB, space.TenantID, space.Name)
+		_ = s.spaceDAO.DeletePermanentByName(bgCtx, dao.DB, space.TenantID, space.Name)
 	}
 
-	swapped, err := s.spaceDAO.CASStatus(ctx, dao.DB, spaceID, entity.SpaceStatusDeleting, entity.SpaceStatusDeleted)
+	swapped, err := s.spaceDAO.CASStatus(bgCtx, dao.DB, spaceID, entity.SpaceStatusDeleting, entity.SpaceStatusDeleted)
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to update space status to deleted, spaceID=%s", spaceID), err)
 		return

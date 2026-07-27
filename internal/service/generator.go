@@ -122,13 +122,13 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 				break
 			}
 		}
-		driver, modelName, apiConfig, _, err := modelProviderSvc.ResolveModelConfig(tenantID, resolvedType, llmID)
+		driver, modelName, apiConfig, _, err := modelProviderSvc.ResolveModelConfig(ctx, tenantID, resolvedType, llmID)
 		if err != nil {
 			return query, fmt.Errorf("failed to get chat model: %w", err)
 		}
 		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
 	} else {
-		driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(tenantID, entity.ModelTypeChat)
+		driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(ctx, tenantID, entity.ModelTypeChat)
 		if err != nil {
 			return query, fmt.Errorf("failed to get default chat model: %w", err)
 		}

@@ -914,11 +914,6 @@ type UserTenantService struct {
 /**
  * Returns:
  *   - *UserTenantService: a new UserTenantService instance
- *
- * Example:
- *
- *	service := NewUserTenantService()
- *	relations, err := service.GetUserTenantRelationByUserID("user123")
  */
 func NewUserTenantService() *UserTenantService {
 	return &UserTenantService{
@@ -933,37 +928,6 @@ type UserTenantRelation struct {
 	UserID   string `json:"user_id"`
 	TenantID string `json:"tenant_id"`
 	Role     string `json:"role"`
-}
-
-// GetUserTenantRelationByUserID retrieves all user-tenant relationships for a given user ID
-/**
- * This method returns a list of user-tenant relationships with selected fields:
- * - id: the relationship ID
- * - user_id: the user ID
- * - tenant_id: the tenant ID
- * - role: the user's role in the tenant
- *
- * Parameters:
- *   - userID: the unique identifier of the user
- *
- * Returns:
- *   - []*UserTenantRelation: list of user-tenant relationships
- *   - error: error if the operation fails, nil otherwise
- *
- * Example:
- *
- *	service := NewUserTenantService()
- *	relations, err := service.GetUserTenantRelationByUserID("user123")
- *	if err != nil {
- *	    log.Printf("Failed to get user tenant relations: %v", err)
- *	    return
- *	}
- *	for _, rel := range relations {
- *	    fmt.Printf("User %s has role %s in tenant %s\n", rel.UserID, rel.Role, rel.TenantID)
- *	}
- */
-func (s *UserTenantService) GetUserTenantRelationByUserID(userID string) ([]*UserTenantRelation, error) {
-	return s.GetUserTenantRelationByUserIDWithContext(context.Background(), userID)
 }
 
 // GetUserTenantRelationByUserIDWithContext retrieves all user-tenant relationships for a given user ID with context.

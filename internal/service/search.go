@@ -265,6 +265,9 @@ func (s *SearchService) GetSearchDetail(ctx context.Context, userID string, sear
 	for _, tenant := range tenants {
 		searches, err := s.searchDAO.QueryByTenantIDAndID(ctx, dao.DB, tenant.TenantID, searchID)
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			continue // Try next tenant
 		}
 		if len(searches) > 0 {
