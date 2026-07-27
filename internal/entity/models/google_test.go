@@ -265,6 +265,35 @@ func TestGoogleModelChatRequiresModelName(t *testing.T) {
 	}
 }
 
+func TestGoogleModelChatRequiresConversationalMessage(t *testing.T) {
+	ctx := t.Context()
+	model := &GoogleModel{}
+	apiKey := "test-api-key"
+	messages := []Message{{Role: "system", Content: "You are a helpful assistant."}}
+
+	response, err := model.ChatWithMessages(ctx, "gemini-2.5-flash", messages, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err == nil {
+		t.Fatal("expected an error for system-only messages")
+	}
+	if !strings.Contains(err.Error(), "no conversational message") {
+		t.Fatalf("expected no-conversational-message error, got %v", err)
+	}
+	if response != nil {
+		t.Fatalf("expected no response, got %v", response)
+	}
+
+	err = model.ChatStreamlyWithSender(ctx, "gemini-2.5-flash", messages, &APIConfig{ApiKey: &apiKey}, nil, nil, func(*string, *string) error {
+		t.Errorf("sender should not be called for system-only messages")
+		return nil
+	})
+	if err == nil {
+		t.Fatal("expected an error for system-only messages")
+	}
+	if !strings.Contains(err.Error(), "no conversational message") {
+		t.Fatalf("expected no-conversational-message error, got %v", err)
+	}
+}
+
 func TestGoogleModelNewInstancePreservesCustomBaseURL(t *testing.T) {
 	model := NewGoogleModel(map[string]string{"default": "https://generativelanguage.googleapis.com"}, URLSuffix{Models: "v1beta/models"})
 	customBaseURL := map[string]string{"default": "https://example.test/google"}
@@ -478,7 +507,10 @@ func TestGoogleSystemInstructionExtractedFromMessages(t *testing.T) {
 		t.Fatalf("contents[0].Role = %s, want user", contents[0].Role)
 	}
 
-	systemInstruction := googleSystemInstruction(messages)
+	systemInstruction, err := googleSystemInstruction(messages)
+	if err != nil {
+		t.Fatalf("googleSystemInstruction error = %v", err)
+	}
 	if systemInstruction == nil || len(systemInstruction.Parts) != 1 {
 		t.Fatalf("systemInstruction = %#v, want one part", systemInstruction)
 	}
@@ -493,11 +525,38 @@ func TestGoogleSystemInstructionExtractedFromMessages(t *testing.T) {
 }
 
 func TestGoogleSystemInstructionNilWhenNoSystemMessage(t *testing.T) {
-	if got := googleSystemInstruction([]Message{{Role: "user", Content: "Hello"}}); got != nil {
+	got, err := googleSystemInstruction([]Message{{Role: "user", Content: "Hello"}})
+	if err != nil {
+		t.Fatalf("googleSystemInstruction error = %v", err)
+	}
+	if got != nil {
 		t.Fatalf("systemInstruction = %#v, want nil", got)
 	}
 	if cfg := googleGenerateContentConfig(nil, nil); cfg != nil {
 		t.Fatalf("cfg = %#v, want nil", cfg)
+	}
+}
+
+func TestGoogleSystemInstructionRejectsImageContent(t *testing.T) {
+	messages := []Message{
+		{
+			Role: "system",
+			Content: []interface{}{
+				map[string]interface{}{
+					"type":      "image_url",
+					"image_url": map[string]interface{}{"url": "https://example.com/cat.png"},
+				},
+			},
+		},
+		{Role: "user", Content: "Hello"},
+	}
+
+	systemInstruction, err := googleSystemInstruction(messages)
+	if err == nil {
+		t.Fatalf("googleSystemInstruction error = nil, want error for image content in system message")
+	}
+	if systemInstruction != nil {
+		t.Fatalf("systemInstruction = %#v, want nil on error", systemInstruction)
 	}
 }
 

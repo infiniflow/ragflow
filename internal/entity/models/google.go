@@ -120,18 +120,23 @@ func (g *GoogleModel) baseURL(apiConfig *APIConfig) string {
 	return strings.TrimSpace(baseURL)
 }
 
-func googleSystemInstruction(messages []Message) *genai.Content {
+func googleSystemInstruction(messages []Message) (*genai.Content, error) {
 	var parts []*genai.Part
 	for _, msg := range messages {
 		if msg.Role != "system" {
 			continue
 		}
-		parts = append(parts, googleMessageParts(msg.Content)...)
+		for _, part := range googleMessageParts(msg.Content) {
+			if part.FileData != nil {
+				return nil, fmt.Errorf("gemini: system message must be text only, got image content")
+			}
+			parts = append(parts, part)
+		}
 	}
 	if len(parts) == 0 {
-		return nil
+		return nil, nil
 	}
-	return &genai.Content{Parts: parts}
+	return &genai.Content{Parts: parts}, nil
 }
 
 func googleChatContents(messages []Message) []*genai.Content {
@@ -386,7 +391,13 @@ func (g *GoogleModel) ChatWithMessages(ctx context.Context, modelName string, me
 	}
 
 	contents := googleChatContents(messages)
-	systemInstruction := googleSystemInstruction(messages)
+	if len(contents) == 0 {
+		return nil, fmt.Errorf("gemini: no conversational message after excluding system messages")
+	}
+	systemInstruction, err := googleSystemInstruction(messages)
+	if err != nil {
+		return nil, err
+	}
 
 	// Generate content (non-streaming)
 	response, err := client.Models.GenerateContent(ctx, modelName, contents, googleGenerateContentConfig(chatModelConfig, systemInstruction))
@@ -422,7 +433,13 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 
 	contents := googleChatContents(messages)
-	systemInstruction := googleSystemInstruction(messages)
+	if len(contents) == 0 {
+		return fmt.Errorf("gemini: no conversational message after excluding system messages")
+	}
+	systemInstruction, err := googleSystemInstruction(messages)
+	if err != nil {
+		return err
+	}
 	var toolCalls []map[string]interface{}
 
 	for response, err := range client.Models.GenerateContentStream(
