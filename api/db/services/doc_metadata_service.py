@@ -33,6 +33,9 @@ from api.db.db_models import Knowledgebase
 from common.doc_store.doc_store_base import OrderByExpr
 
 
+METADATA_ID_BATCH_SIZE = 10000
+
+
 def _es_response_total(response: Any) -> Optional[int]:
     """Extract the exact total hit count from an ES search response.
 
@@ -200,6 +203,18 @@ class DocMetadataService:
         Returns:
             Search results from ES/Infinity, or empty list if index doesn't exist
         """
+        if condition is None:
+            condition = {"kb_id": kb_id}
+
+        doc_ids = condition.get("id")
+        if isinstance(doc_ids, list) and len(doc_ids) > METADATA_ID_BATCH_SIZE:
+            all_results = []
+            for offset in range(0, len(doc_ids), METADATA_ID_BATCH_SIZE):
+                batch_condition = dict(condition)
+                batch_condition["id"] = doc_ids[offset : offset + METADATA_ID_BATCH_SIZE]
+                all_results.extend(cls._search_metadata(kb_id, condition=batch_condition))
+            return all_results
+
         kb = Knowledgebase.get_by_id(kb_id)
         if not kb:
             return []
@@ -215,9 +230,6 @@ class DocMetadataService:
                 logging.error(f"Failed to create metadata index {index_name}")
                 return []
             logging.debug(f"Successfully created metadata index {index_name}")
-
-        if condition is None:
-            condition = {"kb_id": kb_id}
 
         # Add sort by id for ES to enable search_after on large data
         order_by = OrderByExpr()
