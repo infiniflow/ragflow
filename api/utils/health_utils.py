@@ -246,6 +246,19 @@ def check_minio_alive():
         }
 
 
+def check_s3_alive():
+    """
+    Check AWS S3 (or any S3-compatible) liveness via the active
+    storage backend's `.health()` method. Delegates to the generic
+    ``check_storage`` so the same check works for AWS S3, MinIO,
+    R2, and any other S3-compatible endpoint. See #17294.
+    """
+    ok, payload = check_storage()
+    if ok:
+        return {"status": "alive", "message": f"Confirm elapsed: {payload.get('elapsed', '?')} ms."}
+    return {"status": "timeout", "message": f"error: {payload.get('error', 'unknown')}"}
+
+
 def get_redis_info():
     try:
         return {"status": "alive", "message": REDIS_CONN.info()}
