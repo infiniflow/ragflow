@@ -702,6 +702,55 @@ def list_agents(tenant_id):
     else:
         effective_owner_ids = list(authorized_owner_ids)
 
+    # Merge mode: with no ``canvas_category`` (and no agent-only filters), list
+    # the caller's compilation template groups alongside agents, interleaved by
+    # ``update_time``. ``canvas_type`` / ``tags`` are agent-only concepts, so
+    # their presence keeps the response agent-only.
+    merge_groups = not canvas_category and not canvas_type and not tags
+    if merge_groups:
+        from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
+
+        # Fetch every matching agent (page_number=0 disables SQL pagination) so
+        # the two sources can be globally ordered before we page in Python.
+        agents, _ = UserCanvasService.get_by_tenant_ids(
+            effective_owner_ids,
+            tenant_id,
+            0,
+            0,
+            order_by,
+            desc,
+            keywords,
+            None,
+            tags,
+            canvas_type,
+        )
+        # Groups are owner-only (no team sharing), so they're scoped to the
+        # caller. Keyword filters the group name; scope is left unfiltered.
+        try:
+            groups = CompilationTemplateGroupService.list_saved(tenant_id, keywords, "", order_by, desc)
+        except Exception:
+            logging.exception("list_agents: compilation template group merge failed for tenant=%s", tenant_id)
+            groups = []
+
+        items: list[dict] = []
+        for agent in agents:
+            agent["type"] = "agent"
+            items.append(agent)
+        for group in groups:
+            group["type"] = "compilation_template_group"
+            items.append(group)
+
+        # Interleave by update_time (the requested merge key); items missing the
+        # field sort as oldest.
+        items.sort(key=lambda item: item.get("update_time") or 0, reverse=desc)
+
+        total = len(items)
+        if page_number and items_per_page:
+            start = (page_number - 1) * items_per_page
+            items = items[start : start + items_per_page]
+
+        return get_json_result(data={"canvas": items, "total": total})
+
     canvas, total = UserCanvasService.get_by_tenant_ids(
         effective_owner_ids,
         tenant_id,
