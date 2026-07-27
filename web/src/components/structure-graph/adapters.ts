@@ -16,9 +16,13 @@ declare module '@/components/ui/tree-view' {
   }
 }
 
+export function getEntityDisplayName(entity: IStructureGraphEntity) {
+  return entity.name ?? entity.id ?? '';
+}
+
 function normalizeEntity(entity: IStructureGraphEntity) {
   const id = entity.id ?? entity.name ?? '';
-  const name = entity.name ?? entity.id ?? '';
+  const name = getEntityDisplayName(entity);
   return { ...entity, id, name };
 }
 

@@ -2,6 +2,7 @@ import {
   SelectWithSearch,
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
+import { getEntityDisplayName } from '@/components/structure-graph/adapters';
 import { RepresentationRenderer } from '@/components/structure-graph/representation-renderer';
 import { Card } from '@/components/ui/card';
 import {
@@ -10,7 +11,6 @@ import {
   useFetchKnowledgeBaseConfiguration,
   useKnowledgeBaseId,
 } from '@/hooks/use-knowledge-request';
-import { IStructureGraphEntity } from '@/interfaces/database/document-structure';
 import { GenerateStatus } from '@/pages/dataset/dataset/generate-button/constants';
 import { useTraceRunData } from '@/pages/dataset/dataset/generate-button/hook';
 import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
@@ -24,9 +24,6 @@ import CompilationEmptyState from './empty-state';
 interface DatasetStructureViewProps {
   kind: StructureKind;
 }
-
-const getEntityName = (entity: IStructureGraphEntity) =>
-  entity.name ?? entity.id ?? '';
 
 export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
   const { t } = useTranslation();
@@ -54,7 +51,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
   const entityOptions = useMemo<SelectWithSearchFlagOptionType[]>(
     () =>
       (template?.entities ?? []).map((entity) => {
-        const name = getEntityName(entity);
+        const name = getEntityDisplayName(entity);
         return {
           label: name,
           value: name,
@@ -69,7 +66,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
   const selectedEntityName =
     selectedNodeId &&
     (template?.entities ?? []).some(
-      (entity) => getEntityName(entity) === selectedNodeId,
+      (entity) => getEntityDisplayName(entity) === selectedNodeId,
     )
       ? selectedNodeId
       : '';
