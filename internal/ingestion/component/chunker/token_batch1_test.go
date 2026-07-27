@@ -17,6 +17,7 @@
 package chunker
 
 import (
+	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -61,7 +62,7 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 			{Text: "body", DocType: "text", CKType: "text", TKNums: intPtr(5)},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 128, 0.3)
+	got := mergeByTokenSizeFromJSON(items, 128, 30.0)
 	merged := got[0]
 	if len(merged) != 2 {
 		t.Fatalf("want 2 merged chunks (overlap path), got %d", len(merged))
@@ -71,6 +72,47 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 	// region (merged[1]) must be tag-free (diff Chunker-2.2).
 	if strings.Contains(merged[1].Text, "@@") || strings.Contains(merged[1].Text, "##") {
 		t.Errorf("overlap prefix leaked parser tag into chunk 1: %q", merged[1].Text)
+	}
+}
+
+// TestMergeByTokenSizeFromJSON_ClampsOverlappedPct locks the review finding
+// from yuzhichang (PR #17396): mergeByTokenSizeFromJSON clamps an out-of-range
+// overlappedPct to [0,100] so the merge math never yields a negative/inverted
+// threshold. Out-of-range values must not panic and must behave identically to
+// their clamped-in-range equivalent (150 == 100, -5 == 0, and the same for
+// huge magnitudes that would otherwise overflow the float->int slice index).
+func TestMergeByTokenSizeFromJSON_ClampsOverlappedPct(t *testing.T) {
+	items := [][]schema.ChunkDoc{
+		{
+			{Text: strings.Repeat("word ", 20), DocType: "text", CKType: "text", TKNums: intPtr(100)},
+			{Text: "body", DocType: "text", CKType: "text", TKNums: intPtr(5)},
+		},
+	}
+
+	at100 := mergeByTokenSizeFromJSON(items, 128, 100)
+	if at100 == nil || len(at100) == 0 {
+		t.Fatalf("overlappedPct=100: nil/empty result")
+	}
+	at150 := mergeByTokenSizeFromJSON(items, 128, 150)
+	atHuge := mergeByTokenSizeFromJSON(items, 128, 1e300)
+	if !reflect.DeepEqual(at100, at150) {
+		t.Errorf("overlappedPct=150 should clamp to 100; output differs from 100")
+	}
+	if !reflect.DeepEqual(at100, atHuge) {
+		t.Errorf("overlappedPct=1e300 should clamp to 100; output differs from 100")
+	}
+
+	at0 := mergeByTokenSizeFromJSON(items, 128, 0)
+	if at0 == nil || len(at0) == 0 {
+		t.Fatalf("overlappedPct=0: nil/empty result")
+	}
+	atNeg := mergeByTokenSizeFromJSON(items, 128, -5)
+	atNegHuge := mergeByTokenSizeFromJSON(items, 128, -1e300)
+	if !reflect.DeepEqual(at0, atNeg) {
+		t.Errorf("overlappedPct=-5 should clamp to 0; output differs from 0")
+	}
+	if !reflect.DeepEqual(at0, atNegHuge) {
+		t.Errorf("overlappedPct=-1e300 should clamp to 0; output differs from 0")
 	}
 }
 
