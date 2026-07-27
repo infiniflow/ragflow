@@ -832,10 +832,12 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 		return fmt.Errorf("model provider, instance and name must be specified together")
 	}
 
-	err = s.tenantDAO.Update(ownedTenant.TenantID, map[string]interface{}{
+	if err := s.tenantDAO.Update(ownedTenant.TenantID, map[string]interface{}{
 		modelTypeID:       defaultModel,
 		tenantModelTypeID: tenantModelID,
-	})
+	}); err != nil {
+		return fmt.Errorf("failed to update tenant default %s model: %w", modelType, err)
+	}
 
 	return nil
 }

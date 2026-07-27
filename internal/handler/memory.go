@@ -264,10 +264,17 @@ func (h *MemoryHandler) DeleteMemory(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "memory ID is required")
 		return
 	}
+
+	// Get current logged-in user for access control
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
 	ctx := c.Request.Context()
 
-	// Call service layer to delete memory
-	err := h.memoryService.DeleteMemory(ctx, memoryID)
+	// Call service layer to delete memory (with access control)
+	err := h.memoryService.DeleteMemory(ctx, user.ID, memoryID)
 	if err != nil {
 		errMsg := err.Error()
 		// Check if it's a "not found" error
@@ -386,10 +393,17 @@ func (h *MemoryHandler) GetMemoryConfig(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "memory ID is required")
 		return
 	}
+
+	// Get current logged-in user for access control
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
 	ctx := c.Request.Context()
 
-	// Call service layer to get memory configuration
-	result, err := h.memoryService.GetMemoryConfig(ctx, memoryID)
+	// Call service layer to get memory configuration (with access control)
+	result, err := h.memoryService.GetMemoryConfig(ctx, user.ID, memoryID)
 	if err != nil {
 		errMsg := err.Error()
 		// Check if it's a "not found" error
