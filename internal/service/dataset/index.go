@@ -439,7 +439,7 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID s
 		return nil, common.CodeDataError, errors.New("`embd_id` is required")
 	}
 	embeddingID := strings.TrimSpace(req.EmbeddingID)
-	if ok, message := d.verifyEmbeddingAvailability(ctx, embeddingID, userID); !ok {
+	if ok, message := d.verifyEmbeddingAvailability(ctx, embeddingID, kb.TenantID); !ok {
 		return nil, common.CodeDataError, errors.New(message)
 	}
 	if d.docEngine == nil {
