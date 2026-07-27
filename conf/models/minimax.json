@@ -2,14 +2,14 @@
   "name": "MiniMax",
   "rank": 987,
   "url": {
-    "default": "https://api.minimaxi.com",
-    "global": "https://api.minimax.io"
+    "default": "https://api.minimaxi.com/v1",
+    "global": "https://api.minimax.io/v1"
   },
   "url_suffix": {
-    "chat": "v1/text/chatcompletion_v2",
-    "models": "v1/models",
-    "tts": "v1/t2a_v2",
-    "files": "v1/files/list"
+    "chat": "text/chatcompletion_v2",
+    "models": "models",
+    "tts": "t2a_v2",
+    "files": "files/list"
   },
   "class": "minimax",
   "models": [
