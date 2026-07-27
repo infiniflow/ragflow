@@ -3391,7 +3391,7 @@ wheels = [
 
 [[package]]
 name = "litellm"
-version = "1.82.5"
+version = "1.84.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -3407,9 +3407,9 @@ dependencies = [
     { name = "tiktoken" },
     { name = "tokenizers" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/d7/f0/ec42ee14b388ce1d08a1df638f894ed7f1e6ac35b9daf0588ff7f7d52262/litellm-1.82.5.tar.gz", hash = "sha256:7988a9b48c8ccd9e5ebced80a4dfce9ce87083b303c3f67082450a4ad6dd312f" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/dd/e9/8941b7e72a187000561d932c0f2f2ed2b0fd080dfc33ba6e05961d45ca7d/litellm-1.84.0.tar.gz", hash = "sha256:b8ad0cbea11a5941b18d5af973017a340abd3d3ab41cb86e5401b970626d71a6" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/68/1f/b6c8043eec81eade53a4d0e15a50b788ab0e82661e01a25e0b8536a4dca0/litellm-1.82.5-py3-none-any.whl", hash = "sha256:e1012ab816352215c4e00776dd48b0c68058b537888a8ff82cca62af19e6fb11" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/01/a6/77fa1bbf5e42eb596b06318b3f7e6af5d0f44028046d1d598c6a595d028f/litellm-1.84.0-py3-none-any.whl", hash = "sha256:2a58d6041e6aa27d1a28dc8d8828ab500fef1a00ef74ca65e60899035010c2f2" },
 ]
 
 [[package]]
@@ -8229,7 +8229,7 @@ requires-dist = [
     { name = "langgraph", specifier = "==1.2.0" },
     { name = "lark-oapi", specifier = ">=1.2.0" },
     { name = "line-bot-sdk", specifier = ">=3.0.0" },
-    { name = "litellm", specifier = "==1.82.5" },
+    { name = "litellm", specifier = "==1.84.0" },
     { name = "mammoth", specifier = ">=1.11.0" },
     { name = "markdown", specifier = ">=3.8.1,<4.0.0" },
     { name = "markdown-to-json", specifier = "==2.1.1" },
