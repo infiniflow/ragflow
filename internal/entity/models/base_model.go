@@ -77,11 +77,9 @@ func parseChatCompletionResponse(body []byte, chatConfig *ChatConfig, modelUsage
 // completed model response.
 func recordResponseUsage(modelUsage *common.ModelUsage, requestID string, usage *TokenUsage, modelType string) {
 	if modelUsage == nil {
-		modelUsage = &common.ModelUsage{
-			Type:    modelType,
-			StartAt: time.Now(),
-		}
-	} else if modelUsage.Type == "" {
+		return
+	}
+	if modelUsage.Type == "" {
 		modelUsage.Type = modelType
 	}
 	modelUsage.RequestID = requestID
@@ -131,10 +129,7 @@ func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usa
 		chatConfig.UsageResult = usage
 	}
 	if modelUsage == nil {
-		modelUsage = &common.ModelUsage{
-			Type:    "chat",
-			StartAt: time.Now(),
-		}
+		return
 	}
 	if err := collectModelUsage(modelUsage, usage); err != nil {
 		common.Error("Failed to collect model usage", err)

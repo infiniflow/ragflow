@@ -208,6 +208,7 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 	if chatModelConfig != nil {
 		chatModelConfig.ToolCallsResult = nil
 		if chatModelConfig.Thinking != nil {

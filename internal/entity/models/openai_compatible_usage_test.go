@@ -31,9 +31,23 @@ func TestOpenAICompatibleProvidersExtractStreamingUsage(t *testing.T) {
 		path string
 	}{
 		{
+			name: "siliconflow",
+			new: func(baseURL string) ModelDriver {
+				return NewSiliconflowModel(map[string]string{"default": baseURL}, URLSuffix{Chat: "chat/completions"})
+			},
+			path: "/chat/completions",
+		},
+		{
 			name: "aliyun",
 			new: func(baseURL string) ModelDriver {
 				return NewAliyunModel(map[string]string{"default": baseURL}, URLSuffix{Chat: "chat/completions"})
+			},
+			path: "/chat/completions",
+		},
+		{
+			name: "qiniu",
+			new: func(baseURL string) ModelDriver {
+				return NewQiniuModel(map[string]string{"default": baseURL}, URLSuffix{Chat: "chat/completions"})
 			},
 			path: "/chat/completions",
 		},

@@ -281,6 +281,7 @@ func (q *QiniuModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	url := fmt.Sprintf("%s/%s", baseURL, q.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
 	if chatModelConfig != nil {
 		applyQiniuThinkingConfig(reqBody, modelName, chatModelConfig)
