@@ -35,3 +35,5 @@ Embedding model:
 :::caution IMPORTANT
 To search across multiple knowledge bases at the same time, all selected knowledge bases must use the same embedding model.
 :::
+
+![Configure The Indexer Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_indexer_component.png)

@@ -11,3 +11,9 @@ sidebar_custom_props: {
 1. When creating or editing a knowledge base, find the parsing method section.
 2. Click **Select pipeline** and choose the pipeline you saved.
 3. Any file uploaded to this knowledge base will be processed by your custom Pipeline.
+
+![Connect The Pipeline To A Knowledge Base](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/connect_the_pipeline_to_a_knowledge_base_1.png)
+
+![Connect The Pipeline To A Knowledge Base](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/connect_the_pipeline_to_a_knowledge_base_2.png)
+
+![Connect The Pipeline To A Knowledge Base](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/connect_the_pipeline_to_a_knowledge_base_3.png)

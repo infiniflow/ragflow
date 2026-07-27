@@ -9,3 +9,9 @@ sidebar_custom_props: {
 # Import Agent
 - First-time import: Upload the JSON file, fill in corresponding information, drag or click to upload the file, then save.
 - Non-first-time import: Upload the JSON file, fill in corresponding information, drag or click to upload the file, then save.
+
+![Import An Agent](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/import_an_agent_1.png)
+
+![Import An Agent](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/import_an_agent_2.png)
+
+![Import An Agent](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/import_an_agent_3.png)

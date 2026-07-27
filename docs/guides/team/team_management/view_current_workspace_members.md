@@ -20,3 +20,5 @@ The list contains the following fields:
 You can search members by nickname or email address, and sort members by **Update date**.
 
 Only the workspace owner can query and manage the full member list for the workspace.
+
+![View Current Workspace Members](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_current_workspace_members.png)

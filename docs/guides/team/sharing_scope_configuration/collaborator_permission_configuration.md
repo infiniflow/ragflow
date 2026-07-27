@@ -20,3 +20,5 @@ To configure collaborator permissions:
 | Read permission | Allows users to view and use the resource, but does not allow them to modify resource content or configuration. |
 | Write permission | Allows users to edit resource content, such as adding, modifying, or deleting content in the resource, but does not allow them to modify resource permissions or management configuration. |
 | Manage permission | Grants resource management permissions. Users can manage resource configuration, collaborator permissions, and other management operations. |
+
+![Collaborator Permission Configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/collaborator_permission_configuration.png)

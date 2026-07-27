@@ -17,3 +17,5 @@ The list contains the following fields:
 | Action | Operations available for the joined team, such as accepting, declining, or leaving. |
 
 You can search joined teams by the owner nickname or email address, and sort joined teams by **Update date**.
+
+![View Joined Teams](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_joined_teams.png)

@@ -22,3 +22,9 @@ Steps:
 :::tip NOTE
 The `Begin` component is the start of the workflow. Each Agent can only have one Begin component and it cannot be deleted. After creation, configure Begin first, then configure subsequent components.
 :::
+
+![Create An Agent From Blank](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_an_agent_from_blank_1.png)
+
+![Create An Agent From Blank](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_an_agent_from_blank_2.png)
+
+![Create An Agent From Blank](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_an_agent_from_blank_3.png)

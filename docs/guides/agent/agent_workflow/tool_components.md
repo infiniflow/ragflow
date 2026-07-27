@@ -52,6 +52,9 @@ Tavily Search retrieves web results through Tavily. It is suitable for public we
 
 The component returns search result items, including titles, URLs, snippets and related metadata. Downstream Agent or Message components can reference the result content for answer generation.
 
+![Tavily Search](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/tavily_search.png)
+
+
 ### Tavily Extract (TavilyExtract)
 
 Tavily Extract extracts content from specified web pages. It is suitable for reading known URLs, article pages, documentation pages or web pages found by a previous search step.
@@ -83,6 +86,9 @@ Tavily Extract extracts content from specified web pages. It is suitable for rea
 
 The component returns extracted page text and metadata. The extracted text can be passed to Agent, Text Processing or Data Operation components.
 
+![Tavily Extract](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/tavily_extract.png)
+
+
 ### Google Search (Google)
 
 Google Search retrieves public web results through Google. It is suitable for broad web search scenarios where a Google-compatible search capability has been configured.
@@ -105,6 +111,9 @@ Google Search retrieves public web results through Google. It is suitable for br
 #### Output Result
 
 The component returns search result titles, URLs and summaries for downstream processing.
+
+![Google Search](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/google_search.png)
+
 
 ### DuckDuckGo (DuckDuckGo)
 
@@ -130,6 +139,11 @@ DuckDuckGo is a privacy-focused search engine component. It does not require a s
 #### Output Result
 
 The component returns web search result items. Confirm parameter mapping in the current version before using news retrieval.
+
+![Duckduckgo](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/duckduckgo_1.png)
+
+![Duckduckgo](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/duckduckgo_2.png)
+
 
 ### SearXNG (SearXNG)
 
@@ -179,6 +193,9 @@ Keenable Search retrieves information through the configured Keenable service. U
 
 The component returns search results that can be used by downstream Agent or Message components.
 
+![Keenable Search](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/keenable_search.png)
+
+
 ### Wikipedia (Wikipedia)
 
 Wikipedia searches encyclopedia entries and extracts summaries. It is suitable for querying clear entities, concepts and historical events.
@@ -202,6 +219,9 @@ Wikipedia searches encyclopedia entries and extracts summaries. It is suitable f
 #### Output Result
 
 The component returns matching entries, summaries and related metadata.
+
+![Wikipedia](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/wikipedia.png)
+
 
 ## Academic Literature Retrieval
 
@@ -232,6 +252,9 @@ Google Scholar retrieves papers, theses, books, abstracts and other academic mat
 
 The component returns paper titles, authors, abstracts, links and related metadata when available.
 
+![Google Scholar](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/google_scholar.png)
+
+
 ### ArXiv (ArXiv)
 
 ArXiv retrieves preprints from arXiv. It is suitable for computer science, mathematics, physics and related research scenarios.
@@ -254,6 +277,9 @@ ArXiv retrieves preprints from arXiv. It is suitable for computer science, mathe
 #### Output Result
 
 The component returns paper metadata such as title, authors, abstract, publication time and URL.
+
+![Arxiv](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/arxiv.png)
+
 
 ### PubMed (PubMed)
 
@@ -278,6 +304,9 @@ PubMed retrieves biomedical and life science literature. It is suitable for medi
 
 The component returns PubMed records, abstracts and publication metadata when available.
 
+![Pubmed](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pubmed.png)
+
+
 ### BGPT (BGPT)
 
 BGPT is used for literature or biomedical-related retrieval scenarios supported by the configured BGPT service.
@@ -300,6 +329,9 @@ BGPT is used for literature or biomedical-related retrieval scenarios supported 
 #### Output Result
 
 The component returns retrieval results from the BGPT service for downstream reference.
+
+![Bgpt](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/bgpt.png)
+
 
 ## Data and Financial Queries
 
@@ -330,6 +362,9 @@ Supported database types depend on the current deployment and configured connect
 #### Output Result
 
 The component returns query results, error information or structured rows for downstream components.
+
+![Execute SQL](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/execute_sql.png)
+
 
 ### Yahoo Finance (YahooFinance)
 
@@ -416,6 +451,9 @@ The Email component sends emails through configured mail service parameters. It 
 
 The component returns send status and error information when sending fails.
 
+![Email](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/email.png)
+
+
 ### HTTP Request (Invoke)
 
 HTTP Request calls external HTTP interfaces. It is suitable for querying order status, writing work orders, triggering third-party services and integrating business systems.
@@ -459,6 +497,9 @@ HTTP Request calls external HTTP interfaces. It is suitable for querying order s
 
 The component returns HTTP response content, status information and error details for downstream processing.
 
+![HTTP Request](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/http_request.png)
+
+
 ## Content Generation and Automation
 
 ### Document Generator (DocGenerator)
@@ -490,6 +531,9 @@ Supported output formats depend on the current deployment and component configur
 #### Output Result
 
 The component returns generated file information and downloadable output variables.
+
+![Document Generator](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/document_generator.png)
+
 
 ### Browser (Browser)
 

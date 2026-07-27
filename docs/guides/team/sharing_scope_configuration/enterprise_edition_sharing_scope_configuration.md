@@ -18,3 +18,9 @@ Collaborators can be one of the following object types:
 | Member | Specifies an individual team member. |
 | Department | Specifies a department. Members in the department can inherit the corresponding permissions. |
 | Group | Specifies a user group. Members in the group can inherit the corresponding permissions. |
+
+![Enterprise Edition Sharing Scope Configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/enterprise_edition_sharing_scope_configuration_1.png)
+
+![Enterprise Edition Sharing Scope Configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/enterprise_edition_sharing_scope_configuration_2.png)
+
+![Enterprise Edition Sharing Scope Configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/enterprise_edition_sharing_scope_configuration_3.png)

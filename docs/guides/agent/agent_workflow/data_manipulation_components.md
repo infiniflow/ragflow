@@ -17,6 +17,9 @@ Configuration:
 2. **Code**: Select Python or JavaScript and write business logic.
 3. **Return Value**: Define output data returned to downstream components.
 
+![Code Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/code_component.png)
+
+
 ## Text Processing Component
 Text Processing splits or merges text. Used to split long upstream text by separators or combine multiple variables into one template.
 
@@ -25,6 +28,9 @@ Processing Modes:
 - **Split**: Split text by specified delimiters (comma, line break, space etc.)
 
 Configure script content with variables inserted via `/`. Output results can be referenced by subsequent nodes.
+
+![Text Processing Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/text_processing_component.png)
+
 
 ## Data Operation Component
 Data Operation processes structured objects returned by upstream tools, code or database nodes to clean data for downstream usage.
@@ -49,6 +55,9 @@ Supported Operations:
 | Remove keys | Delete specified fields | Remove unnecessary sensitive or unused fields |
 | Rename keys | Rename object field keys | Unify field naming standards |
 
+![Data Operation Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/data_operation_component.png)
+
+
 ## Variable Assignor Component
 Variable Assignor writes or updates variables during workflow execution. It can save upstream results to target variables and support overwrite, clear, append and arithmetic operations for numbers, arrays and objects.
 
@@ -61,6 +70,9 @@ Supported Operations:
 | Overwritten by | Yes | Overwrite target variable with another variable's value |
 | Set | Yes | Assign fixed constant value to target variable |
 | Clear | No | Empty the target variable |
+
+![Variable Assigner Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/variable_assigner_component.png)
+
 
 ## List Operation Component
 List Operation processes array data, supporting element extraction, head/tail fetching, filtering, sorting and deduplication. Suitable for array outputs from Begin, HTTP Request, Code and SQL.
@@ -91,3 +103,5 @@ Configuration:
 3. Save configuration and run tests.
 
 Output: Variables inside each group can be referenced via group name such as `Group0`.
+
+![Variable Aggregation Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/variable_aggregation_component.png)

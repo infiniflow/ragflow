@@ -16,3 +16,11 @@ Steps:
 4. Enter the Agent name.
 5. Click **OK**.
 6. After entering the canvas, check the configuration of each component and save.
+
+![Create From A Template](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_from_a_template_1.png)
+
+![Create From A Template](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_from_a_template_2.png)
+
+![Create From A Template](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_from_a_template_3.png)
+
+![Create From A Template](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_from_a_template_4.png)

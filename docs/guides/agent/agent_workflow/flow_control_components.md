@@ -19,6 +19,9 @@ Recommendations:
 - File upload: Receive contracts, reports or screenshots
 - Boolean: Confirm continue/cancel operations
 
+![User Input Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/user_input_component.png)
+
+
 ## Switch (Conditional) Component
 Switch executes rule-based judgment and routes workflows to different downstream paths according to results.
 
@@ -29,6 +32,9 @@ Supported operators: Equals, Not equal, Greater than, Greater equal, Less than, 
 :::tip NOTE
 Switch is rule-based judgment for structured data and clear conditions. Categorize uses LLM-based classification for natural language intent recognition.
 :::
+
+![Condition Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/condition_component.png)
+
 ## Iteration Component
 Iteration splits text into fragments and executes the same set of internal components for each fragment. Suitable for long-text translation, paragraph-wise summarization, batch generation and item-by-item list processing.
 
@@ -43,6 +49,9 @@ Configuration Parameters:
 :::tip NOTE
 Configure both termination condition and maximum loop count to avoid long-running infinite loops.
 :::
+
+![Loop Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/loop_component.png)
+
 ## Categorize Component
 Categorize uses LLM to judge user intent or input category and branch the workflow based on classification results.
 
@@ -57,3 +66,5 @@ Configuration Steps:
 Classification Recommendations:
 Use easy-to-understand category names, e.g. Product Consultation, Installation Reservation, After-sales Fault, Other Questions.
 Examples improve classification stability; provide 2~3 typical samples for each category.
+
+![Question Classification Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/question_classification_component.png)
