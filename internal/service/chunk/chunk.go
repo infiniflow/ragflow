@@ -1291,7 +1291,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 
 	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, req.DocumentID, req.DatasetID)
 	if err != nil || doc == nil {
-		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the document %s.", req.DocumentID)}
+		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("you don't own the document %s", req.DocumentID)}
 	}
 
 	content := strings.TrimSpace(req.Content)

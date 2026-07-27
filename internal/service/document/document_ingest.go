@@ -127,7 +127,7 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		}
 
 		if req.Delete {
-			_, _ = s.taskDAO.DeleteIngestionTasksByDocIDs([]string{doc.ID})
+			_, _ = s.taskDAO.DeleteIngestionTasksByDocIDs(ctx, dao.DB, []string{doc.ID})
 			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 			if s.docEngine != nil {
 				exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, doc.KbID)
