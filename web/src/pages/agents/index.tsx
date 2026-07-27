@@ -1,62 +1,297 @@
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AgentCategory } from '@/constants/agent';
-import { useCallback } from 'react';
+import { CardContainer } from '@/components/card-container';
+import { EmptyCardType } from '@/components/empty/constant';
+import { EmptyAppCard } from '@/components/empty/empty';
+import ListFilterBar from '@/components/list-filter-bar';
+import { RenameDialog } from '@/components/rename-dialog';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useFetchAgentListByPage } from '@/hooks/use-agent-request';
+import { useDeleteCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
+import { Routes } from '@/routes';
+import { pick } from 'lodash';
+import { Clipboard, ClipboardPlus, FileInput, Plus } from 'lucide-react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router';
-import { AgentCanvasSection } from './agent-canvas-section';
-import { CompilationOperatorSection } from './compilation-operator-section';
-import { FlowType } from './constant';
+import { useNavigate, useSearchParams } from 'react-router';
+import { AgentCard } from './agent-card';
+import { CompilationTemplateCard } from './compilation-template-card';
+import { CreateAgentDialog } from './create-agent-dialog';
+import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
+import { useSelectFilters } from './hooks/use-select-filters';
+import { UploadAgentDialog } from './upload-agent-dialog';
+import { useHandleImportJsonFile } from './use-import-json';
+import { useRenameAgent } from './use-rename-agent';
 
-const AgentTabList = [
-  { value: FlowType.Flow, labelKey: 'tabList.ingestionPipeline' },
-  { value: FlowType.Compiler, labelKey: 'tabList.compilationOperator' },
-  { value: FlowType.Agent, labelKey: 'tabList.workflow' },
-] as const;
+const CompilationGroupCategory = 'compilation_template_group';
 
 export default function Agents() {
   const { t } = useTranslation();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const tab =
-    (searchParams.get('tab') as FlowType) || FlowType.Flow;
 
-  const handleTabChange = useCallback(
-    (value: string) => {
-      const next = new URLSearchParams(searchParams);
-      next.set('tab', value);
-      next.delete('page');
-      setSearchParams(next);
+  const {
+    data,
+    loading: listLoading,
+    pagination,
+    setPagination,
+    searchString,
+    handleInputChange,
+    filterValue,
+    handleFilterSubmit,
+  } = useFetchAgentListByPage();
+
+  const canvasCategory = useMemo(
+    () =>
+      Array.isArray(filterValue.canvasCategory)
+        ? (filterValue.canvasCategory[0] as string | undefined)
+        : undefined,
+    [filterValue.canvasCategory],
+  );
+  const isCompilation = canvasCategory === CompilationGroupCategory;
+
+  const { navigateToAgentTemplates } = useNavigatePage();
+  const navigate = useNavigate();
+
+  const {
+    agentRenameLoading,
+    initialAgentName,
+    onAgentRenameOk,
+    agentRenameVisible,
+    hideAgentRenameModal,
+    showAgentRenameModal,
+  } = useRenameAgent();
+
+  const {
+    creatingVisible,
+    hideCreatingModal,
+    showCreatingModal,
+    loading,
+    handleCreateAgentOrPipeline,
+  } = useCreateAgentOrPipeline();
+
+  const {
+    handleImportJson,
+    fileUploadVisible,
+    onFileUploadOk,
+    hideFileUploadModal,
+  } = useHandleImportJsonFile();
+
+  const { deleteGroup } = useDeleteCompilationTemplateGroup();
+
+  const filters = useSelectFilters();
+
+  const handlePageChange = useCallback(
+    (page: number, pageSize?: number) => {
+      setPagination({ page, pageSize });
     },
-    [searchParams, setSearchParams],
+    [setPagination],
   );
 
-  const tabs = (
-    <Tabs value={tab} onValueChange={handleTabChange}>
-      <TabsList>
-        {AgentTabList.map((x) => (
-          <TabsTrigger
-            key={x.value}
-            value={x.value}
-            data-testid={`agents-tab-${x.value}`}
-          >
-            {t(`flow.${x.labelKey}`)}
-          </TabsTrigger>
-        ))}
-      </TabsList>
-    </Tabs>
+  const handleAddCompilation = useCallback(() => {
+    navigate(`${Routes.CompilationTemplatesEditNext}?source=agents`);
+  }, [navigate]);
+
+  const handleEditCompilation = useCallback(
+    (id: string) => () => {
+      navigate(`${Routes.CompilationTemplatesEditNext}/${id}?source=agents`);
+    },
+    [navigate],
   );
 
-  if (tab === FlowType.Compiler) {
-    return <CompilationOperatorSection tabs={tabs} />;
-  }
+  const handleDeleteCompilation = useCallback(
+    async (id: string) => {
+      await deleteGroup(id);
+    },
+    [deleteGroup],
+  );
+
+  const [searchUrl, setSearchUrl] = useSearchParams();
+  const isCreate = searchUrl.get('isCreate') === 'true';
+
+  useEffect(() => {
+    if (isCreate) {
+      showCreatingModal();
+      searchUrl.delete('isCreate');
+      setSearchUrl(searchUrl);
+    }
+  }, [isCreate, showCreatingModal, searchUrl, setSearchUrl]);
 
   return (
-    <AgentCanvasSection
-      tabs={tabs}
-      canvasCategory={
-        tab === FlowType.Agent
-          ? AgentCategory.AgentCanvas
-          : AgentCategory.DataflowCanvas
-      }
-    />
+    <>
+      <article
+        className="size-full min-w-0 flex flex-col"
+        data-testid="agents-list"
+      >
+        <header className="mb-4 min-w-0 px-5 pt-8">
+          <ListFilterBar
+            title={t('flow.agents')}
+            icon="agents"
+            searchString={searchString}
+            onSearchChange={handleInputChange}
+            filters={filters}
+            onChange={handleFilterSubmit}
+            value={filterValue}
+          >
+            {isCompilation ? (
+              <Button
+                onClick={handleAddCompilation}
+                data-testid="create-compilation-template"
+              >
+                <Plus className="size-[1em]" />
+              </Button>
+            ) : (
+              <DropdownMenu>
+                <DropdownMenuTrigger data-testid="create-agent" asChild>
+                  <Button>
+                    <Plus className="size-[1em]" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent data-testid="agent-create-menu">
+                  <DropdownMenuItem
+                    justifyBetween={false}
+                    onClick={showCreatingModal}
+                  >
+                    <Clipboard />
+                    {t('flow.createFromBlank')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    justifyBetween={false}
+                    onClick={() => navigateToAgentTemplates()}
+                  >
+                    <ClipboardPlus />
+                    {t('flow.createFromTemplate')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    data-testid="agent-import-json"
+                    justifyBetween={false}
+                    onClick={handleImportJson}
+                  >
+                    <FileInput />
+                    {t('flow.importJsonFile')}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </ListFilterBar>
+        </header>
+
+        {data.length ? (
+          <>
+            <CardContainer className="flex-1 overflow-auto px-5">
+              {isCompilation
+                ? (data as any[]).map((item) => (
+                    <CompilationTemplateCard
+                      key={item.id}
+                      data={item}
+                      onClick={handleEditCompilation(item.id)}
+                      onDelete={handleDeleteCompilation}
+                    />
+                  ))
+                : data.map((x) => (
+                    <AgentCard
+                      key={x.id}
+                      data={x}
+                      showAgentRenameModal={showAgentRenameModal}
+                    />
+                  ))}
+            </CardContainer>
+
+            <footer className="mt-4 px-5 pb-5">
+              <RAGFlowPagination
+                {...pick(pagination, 'current', 'pageSize')}
+                total={pagination.total}
+                onChange={handlePageChange}
+              />
+            </footer>
+          </>
+        ) : searchString ? (
+          <div className="flex-1 flex items-center justify-center">
+            <EmptyAppCard
+              showIcon
+              size="large"
+              className="w-[480px] p-14"
+              isSearch
+              type={EmptyCardType.Agent}
+              onClick={() => showCreatingModal()}
+            />
+          </div>
+        ) : listLoading ? null : (
+          <div className="flex-1 flex items-center justify-center">
+            <EmptyAppCard
+              showIcon
+              size="large"
+              className="w-[480px] p-14 !cursor-default"
+              type={EmptyCardType.Agent}
+              tabIndex={-1}
+              // onClick={() => showCreatingModal()}
+            >
+              <ul className="flex flex-col gap-y-5 text-text-secondary text-sm pt-5">
+                <li data-testid="agents-empty-create">
+                  <Button
+                    variant="static"
+                    size="auto"
+                    onClick={showCreatingModal}
+                  >
+                    <Clipboard className="size-[1em]" />
+                    {t('flow.createFromBlank')}
+                  </Button>
+                </li>
+
+                <li>
+                  <Button
+                    asLink
+                    variant="static"
+                    size="auto"
+                    to={Routes.AgentTemplates}
+                  >
+                    <ClipboardPlus className="size-[1em]" />
+                    {t('flow.createFromTemplate')}
+                  </Button>
+                </li>
+
+                <li>
+                  <Button
+                    variant="static"
+                    size="auto"
+                    onClick={handleImportJson}
+                  >
+                    <FileInput className="size-[1em]" />
+                    {t('flow.importJsonFile')}
+                  </Button>
+                </li>
+              </ul>
+            </EmptyAppCard>
+          </div>
+        )}
+      </article>
+
+      {agentRenameVisible && (
+        <RenameDialog
+          hideModal={hideAgentRenameModal}
+          onOk={onAgentRenameOk}
+          initialName={initialAgentName}
+          loading={agentRenameLoading}
+        ></RenameDialog>
+      )}
+      {creatingVisible && (
+        <CreateAgentDialog
+          loading={loading}
+          visible={creatingVisible}
+          hideModal={hideCreatingModal}
+          onOk={handleCreateAgentOrPipeline}
+        ></CreateAgentDialog>
+      )}
+      {fileUploadVisible && (
+        <UploadAgentDialog
+          hideModal={hideFileUploadModal}
+          onOk={onFileUploadOk}
+        ></UploadAgentDialog>
+      )}
+    </>
   );
 }
