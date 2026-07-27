@@ -8,6 +8,7 @@ import { useFetchBuiltinCompilationTemplates } from '@/hooks/use-compilation-tem
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
 import { formatKindLabel } from '@/utils/compilation-template-util';
@@ -24,6 +25,7 @@ export const useEditNextCompilationTemplateGroup = ({
 }: UseEditNextCompilationTemplateGroupOptions = {}) => {
   const { id } = useParams<{ id: string }>();
   const { navigateToCompilationTemplates } = useNavigatePage();
+  const { t } = useTranslation();
 
   const isCreate = isCreateCompilationTemplateGroup(id);
 
@@ -41,9 +43,9 @@ export const useEditNextCompilationTemplateGroup = ({
     () =>
       builtinKindOptions.map((option) => ({
         ...option,
-        label: formatKindLabel(option.value),
+        label: formatKindLabel(t, option.value),
       })),
-    [builtinKindOptions],
+    [builtinKindOptions, t],
   );
 
   const { form } = useCompilationTemplateGroupForm({
