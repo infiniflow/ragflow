@@ -402,7 +402,7 @@ type fakeSettingsReader struct {
 	fakeErr error
 }
 
-func (f *fakeSettingsReader) GetByName(ctx context.Context, db *gorm.DB, name string) ([]entity.SystemSettings, error) {
+func (f *fakeSettingsReader) GetByName(_ context.Context, _ *gorm.DB, name string) ([]entity.SystemSettings, error) {
 	if f.fakeErr != nil {
 		return nil, f.fakeErr
 	}
