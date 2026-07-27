@@ -235,29 +235,27 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 
 // buildExtractedMessage builds the persisted envelope for one extracted
 // memory item. Field set matches buildRawMessage except message_type and
-// source_id, which listMemoryMessages uses to aggregate extracts.
+// source_id, which listMemoryMessages uses to aggregate extracts. Only
+// logical message fields are set here; the doc engine maps them to
+// storage fields (including tokenization) at insert time.
 func buildExtractedMessage(messageID, sourceID int64, memoryID string, msg MemoryMessage, item extractedMemory, now time.Time) map[string]any {
 	var invalidAt any
 	if strings.TrimSpace(item.InvalidAt) != "" {
 		invalidAt = formatMemoryTime(item.InvalidAt, now)
 	}
 	return map[string]any{
-		"message_id":             messageID,
-		"message_type":           item.MessageType,
-		"message_type_kwd":       item.MessageType,
-		"source_id":              sourceID,
-		"memory_id":              memoryID,
-		"user_id":                msg.UserID,
-		"agent_id":               msg.AgentID,
-		"session_id":             msg.SessionID,
-		"content":                item.Content,
-		"content_ltks":           item.Content,
-		"tokenized_content_ltks": item.Content,
-		"valid_at":               formatMemoryTime(item.ValidAt, now),
-		"invalid_at":             invalidAt,
-		"forget_at":              nil,
-		"status":                 true,
-		"status_int":             1,
+		"message_id":   messageID,
+		"message_type": item.MessageType,
+		"source_id":    sourceID,
+		"memory_id":    memoryID,
+		"user_id":      msg.UserID,
+		"agent_id":     msg.AgentID,
+		"session_id":   msg.SessionID,
+		"content":      item.Content,
+		"valid_at":     formatMemoryTime(item.ValidAt, now),
+		"invalid_at":   invalidAt,
+		"forget_at":    nil,
+		"status":       true,
 	}
 }
 

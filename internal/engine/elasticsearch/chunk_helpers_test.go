@@ -245,3 +245,67 @@ func assertEqual(t *testing.T, got, want interface{}) {
 		t.Fatalf("got %#v, want %#v", got, want)
 	}
 }
+
+// TestMapMemoryMessageToESDoc: logical message fields are mapped to the
+// storage document at insert time — message_type/status collapse to
+// their storage counterparts and content is tokenized before write,
+// mirroring Python memory/utils/es_conn.py:map_message_to_es_fields.
+func TestMapMemoryMessageToESDoc(t *testing.T) {
+	doc := mapMemoryMessageToESDoc(map[string]interface{}{
+		"id":           "mem-1_42",
+		"doc_id":       "mem-1",
+		"message_id":   int64(42),
+		"message_type": "raw",
+		"source_id":    0,
+		"memory_id":    "mem-1",
+		"agent_id":     "a1",
+		"content":      "User Input: hello world\nAgent Response: hi there",
+		"status":       true,
+		"forget_at":    nil,
+	})
+
+	assertEqual(t, doc["message_type_kwd"], "raw")
+	if _, ok := doc["message_type"]; ok {
+		t.Fatalf("message_type must collapse into message_type_kwd, got %#v", doc)
+	}
+	assertEqual(t, doc["status_int"], 1)
+	if _, ok := doc["status"]; ok {
+		t.Fatalf("status must collapse into status_int, got %#v", doc)
+	}
+
+	raw := "User Input: hello world\nAgent Response: hi there"
+	assertEqual(t, doc["content_ltks"], raw)
+	tokenized, ok := doc["tokenized_content_ltks"].(string)
+	if !ok || tokenized == "" {
+		t.Fatalf("tokenized_content_ltks = %#v, want non-empty tokenized string", doc["tokenized_content_ltks"])
+	}
+	if _, ok := doc["content"]; ok {
+		t.Fatalf("content must not be stored verbatim, got %#v", doc)
+	}
+
+	// Untouched fields pass through.
+	assertEqual(t, doc["id"], "mem-1_42")
+	assertEqual(t, doc["doc_id"], "mem-1")
+	assertEqual(t, doc["message_id"], int64(42))
+	assertEqual(t, doc["agent_id"], "a1")
+	if v, ok := doc["forget_at"]; !ok || v != nil {
+		t.Fatalf("forget_at = %#v, want explicit nil", v)
+	}
+}
+
+// TestMapMemoryMessageESUpdateFieldsRefreshesTokens: writing content via
+// the update path recomputes tokenized_content_ltks before write, same
+// as the Python update path.
+func TestMapMemoryMessageESUpdateFieldsRefreshesTokens(t *testing.T) {
+	doc := mapMemoryMessageESUpdateFields(map[string]interface{}{
+		"content": "fresh content",
+		"status":  0,
+	})
+
+	assertEqual(t, doc["content_ltks"], "fresh content")
+	tokenized, ok := doc["tokenized_content_ltks"].(string)
+	if !ok || tokenized == "" {
+		t.Fatalf("tokenized_content_ltks = %#v, want refreshed tokenized string", doc["tokenized_content_ltks"])
+	}
+	assertEqual(t, doc["status_int"], 0)
+}

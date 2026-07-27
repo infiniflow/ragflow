@@ -153,7 +153,7 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(
 		// downstream extractor can consume the row without
 		// schema changes.
 		rawMessageID := generateRawMessageID()
-		rawMessage := buildRawMessage(rawMessageID, memoryID, mem, msg)
+		rawMessage := buildRawMessage(rawMessageID, memoryID, msg)
 
 		if err := s.embedAndSave(ctx, mem, rawMessage); err != nil {
 			res.Failed = append(res.Failed, MemoryFailure{
@@ -194,40 +194,32 @@ func generateRawMessageID() int64 {
 
 // buildRawMessage constructs the raw_message envelope that gets
 // passed to embed_and_save (and persisted in the message table
-// for the async extractor to read).
+// for the async extractor to read). Only logical message fields
+// are set here, mirroring Python queue_save_to_memory_task; the
+// doc engine maps them to storage fields at insert time
+// (Elasticsearch tokenizes content before write, Infinity
+// tokenizes on save).
 func buildRawMessage(
 	rawMessageID int64,
 	memoryID string,
-	mem *CreateMemoryResponse, // from MemoryService.GetMemoryConfig
 	msg MemoryMessage,
 ) map[string]any {
 	content := fmt.Sprintf("User Input: %s\nAgent Response: %s",
 		msg.UserInput, msg.AgentResponse)
-	out := map[string]any{
-		"message_id":             rawMessageID,
-		"message_type":           "raw",
-		"message_type_kwd":       "raw",
-		"source_id":              0,
-		"memory_id":              memoryID,
-		"user_id":                msg.UserID,
-		"agent_id":               msg.AgentID,
-		"session_id":             msg.SessionID,
-		"content":                content,
-		"content_ltks":           content,
-		"tokenized_content_ltks": content,
-		"valid_at":               time.Now().UTC().Format("2006-01-02 15:04:05"),
-		"invalid_at":             nil,
-		"forget_at":              nil,
-		"status":                 true,
-		"status_int":             1,
+	return map[string]any{
+		"message_id":   rawMessageID,
+		"message_type": "raw",
+		"source_id":    0,
+		"memory_id":    memoryID,
+		"user_id":      msg.UserID,
+		"agent_id":     msg.AgentID,
+		"session_id":   msg.SessionID,
+		"content":      content,
+		"valid_at":     time.Now().UTC().Format("2006-01-02 15:04:05"),
+		"invalid_at":   nil,
+		"forget_at":    nil,
+		"status":       true,
 	}
-	if mem != nil {
-		// The embedder uses the memory's embd_id; keep the
-		// pointer on the envelope so embed_and_save can
-		// pick the right model when it lands.
-		out["_memory_embd_id"] = mem.EmbdID
-	}
-	return out
 }
 
 // buildTaskRow constructs the Task row the async extractor polls.

@@ -34,6 +34,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/tokenizer"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"github.com/json-iterator/go"
@@ -169,7 +170,8 @@ func (e *elasticsearchEngine) InsertChunks(ctx context.Context, chunks []map[str
 		return nil, fmt.Errorf("index name cannot be empty")
 	}
 
-	if strings.HasPrefix(baseName, "memory_") {
+	isMemoryIndex := strings.HasPrefix(baseName, "memory_")
+	if isMemoryIndex {
 		if err := e.ensureMemoryMessageVectorMappingsForDocs(ctx, baseName, chunks); err != nil {
 			return nil, err
 		}
@@ -178,6 +180,11 @@ func (e *elasticsearchEngine) InsertChunks(ctx context.Context, chunks []map[str
 	// Build bulk request body with index operations (upsert behavior: insert if not exists, update if exists)
 	var buf bytes.Buffer
 	for _, doc := range chunks {
+		if isMemoryIndex {
+			// Memory messages arrive with logical fields; map them to
+			// the storage document (tokenization included) before write.
+			doc = mapMemoryMessageToESDoc(doc)
+		}
 		docID, _ := doc["doc_id"].(string)
 		chunkID, _ := doc["id"].(string)
 		if docID == "" || chunkID == "" {
@@ -438,6 +445,11 @@ func mapMemoryMessageESUpdateFields(newValue map[string]interface{}) map[string]
 		default:
 			doc[mapMemoryMessageESField(k, false)] = v
 		}
+	}
+	// Mirror Python memory/utils/es_conn.py update: writing content
+	// refreshes tokenized_content_ltks before write.
+	if content, ok := newValue["content"].(string); ok {
+		doc["tokenized_content_ltks"] = tokenizeMemoryMessageContent(content)
 	}
 	return doc
 }
@@ -1511,6 +1523,56 @@ func sortValuesEqual(a, b []interface{}) bool {
 		}
 	}
 	return true
+}
+
+// mapMemoryMessageToESDoc converts a logical memory message into the
+// Elasticsearch storage document, mirroring Python
+// memory/utils/es_conn.py:map_message_to_es_fields. Elasticsearch has no
+// server-side rag tokenizer, so tokenized_content_ltks is computed here
+// before write; on Infinity the equivalent insert path stores content
+// verbatim and lets Infinity tokenize on save.
+func mapMemoryMessageToESDoc(message map[string]interface{}) map[string]interface{} {
+	doc := make(map[string]interface{}, len(message)+2)
+	for k, v := range message {
+		switch k {
+		case "message_type":
+			doc["message_type_kwd"] = v
+		case "status":
+			doc["status_int"] = memoryMessageStatusInt(v)
+		case "content":
+			content, _ := v.(string)
+			doc["content_ltks"] = content
+			doc["tokenized_content_ltks"] = tokenizeMemoryMessageContent(content)
+		default:
+			doc[k] = v
+		}
+	}
+	return doc
+}
+
+// tokenizeMemoryMessageContent runs the rag tokenizer pipeline
+// (tokenize + fine-grained tokenize) over message content. On tokenizer
+// failure it degrades to the untokenized text so the document stays
+// searchable under the whitespace analyzer.
+func tokenizeMemoryMessageContent(content string) string {
+	tokenized, err := tokenizer.Tokenize(content)
+	if err != nil {
+		common.Warn("memory message tokenize failed, storing raw content", zap.Error(err))
+		return content
+	}
+	fine, err := tokenizer.FineGrainedTokenize(tokenized)
+	if err != nil {
+		common.Warn("memory message fine-grained tokenize failed, storing coarse tokens", zap.Error(err))
+		return tokenized
+	}
+	return fine
+}
+
+func memoryMessageStatusInt(value interface{}) int {
+	if memoryMessageStatusBool(value) {
+		return 1
+	}
+	return 0
 }
 
 func mapMemoryMessageESField(field string, useTokenizedContent bool) string {
@@ -2657,10 +2719,6 @@ func getMemoryMessageMapping(vectorSize int) map[string]interface{} {
 				},
 				"status_int": map[string]interface{}{
 					"type": "integer",
-				},
-				"content": map[string]interface{}{
-					"type":  "text",
-					"index": false,
 				},
 				"content_ltks": map[string]interface{}{
 					"type":     "text",

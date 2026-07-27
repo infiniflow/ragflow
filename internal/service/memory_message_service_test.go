@@ -68,11 +68,11 @@ func TestQueueSaveToMemoryTask_MissingAgentID(t *testing.T) {
 }
 
 // TestBuildRawMessage_EnvelopeShape: the row envelope carries
-// every field the Python extractor reads.
+// every logical field the Python extractor reads. Storage-level
+// fields (message_type_kwd, content_ltks, tokenized_content_ltks,
+// status_int) are the doc engine's concern and must not be set here.
 func TestBuildRawMessage_EnvelopeShape(t *testing.T) {
-	mem := &CreateMemoryResponse{}
-	mem.EmbdID = "embd-1"
-	raw := buildRawMessage(42, "mem-1", mem, MemoryMessage{
+	raw := buildRawMessage(42, "mem-1", MemoryMessage{
 		UserID:        "u1",
 		AgentID:       "a1",
 		SessionID:     "s1",
@@ -81,17 +81,22 @@ func TestBuildRawMessage_EnvelopeShape(t *testing.T) {
 	})
 
 	want := map[string]any{
-		"message_id":      int64(42),
-		"message_type":    "raw",
-		"memory_id":       "mem-1",
-		"user_id":         "u1",
-		"agent_id":        "a1",
-		"session_id":      "s1",
-		"_memory_embd_id": "embd-1",
+		"message_id":   int64(42),
+		"message_type": "raw",
+		"memory_id":    "mem-1",
+		"user_id":      "u1",
+		"agent_id":     "a1",
+		"session_id":   "s1",
+		"status":       true,
 	}
 	for k, want := range want {
 		if got := raw[k]; got != want {
 			t.Errorf("raw[%q] = %v (%T), want %v (%T)", k, got, got, want, want)
+		}
+	}
+	for _, storageField := range []string{"message_type_kwd", "content_ltks", "tokenized_content_ltks", "status_int"} {
+		if _, ok := raw[storageField]; ok {
+			t.Errorf("raw[%q] is a storage field and must not be set by the service layer", storageField)
 		}
 	}
 
@@ -104,20 +109,6 @@ func TestBuildRawMessage_EnvelopeShape(t *testing.T) {
 	}
 	if !strings.Contains(content, "\n") {
 		t.Errorf("content should have user/agent on separate lines: %q", content)
-	}
-}
-
-// TestBuildRawMessage_NilMemory: when the lookup returned nil
-// (e.g. caller already filtered NotFound), buildRawMessage
-// doesn't panic and omits _memory_embd_id.
-func TestBuildRawMessage_NilMemory(t *testing.T) {
-	raw := buildRawMessage(1, "m", nil, MemoryMessage{AgentID: "a"})
-	if _, ok := raw["_memory_embd_id"]; ok {
-		t.Errorf("_memory_embd_id should be absent when mem is nil")
-	}
-	// The other fields still land.
-	if raw["agent_id"] != "a" {
-		t.Errorf("agent_id missing or wrong: %v", raw["agent_id"])
 	}
 }
 
