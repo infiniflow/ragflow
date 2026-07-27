@@ -77,7 +77,7 @@ func (d *SystemSettingsDAO) UpdateByName(ctx context.Context, db *gorm.DB, name 
 		}).Error
 }
 
-// Create create a new system setting
+// Create a new system setting
 // Inserts a new system setting record into database
 func (d *SystemSettingsDAO) Create(ctx context.Context, db *gorm.DB, setting *entity.SystemSettings) error {
 	return db.WithContext(ctx).Create(setting).Error
