@@ -23,21 +23,30 @@
       "max_tokens": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen3-0.6b",
       "max_tokens": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "glm-4.7-flash",
       "max_tokens": 204800,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "BAAI/bge-reranker-v2-m3",

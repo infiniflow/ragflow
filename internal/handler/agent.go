@@ -48,15 +48,13 @@ import (
 // the FileHandler (handler/file.go), not by any agent handler, so
 // the interface deliberately does NOT list it. (Code review CR1.)
 type agentFileService interface {
-	DownloadAgentFile(tenantID, location string) ([]byte, error)
+	DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error)
 	// UploadInfos stores raw bytes in the per-user downloads bucket and
-	// returns lightweight descriptors. Mirrors python FileService.upload_info
-	// (multi-file path) used by the agent upload endpoint.
-	UploadInfos(userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
+	// returns lightweight descriptors.
+	UploadInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error)
 	// UploadFromURL downloads a remote file (with SSRF protection) and
-	// stores it as an info blob. Mirrors python FileService.upload_info
-	// (single-file path with ?url=) used by the agent upload endpoint.
-	UploadFromURL(tenantID, rawURL string) (map[string]interface{}, error)
+	// stores it as an info blob.
+	UploadFromURL(ctx context.Context, tenantID, rawURL string) (map[string]interface{}, error)
 }
 
 // chatAgentService is the subset of AgentService used by the chat-completion

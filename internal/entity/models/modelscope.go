@@ -252,6 +252,7 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	}()
 
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	streamDone, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		lastActiveMu.Lock()
 		lastActive = time.Now()
@@ -267,6 +268,7 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 		}
 
 		if delta, ok := firstChoice["delta"].(map[string]interface{}); ok {
+			accumulateToolCallDeltas(delta, accumulatedToolCalls)
 			if reasoning := modelscopeReasoningFromMap(delta); reasoning != "" {
 				if err := sender(nil, &reasoning); err != nil {
 					return err
@@ -293,6 +295,8 @@ func (m *ModelScopeModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	if !streamDone && !sawTerminal {
 		return fmt.Errorf("modelscope: stream ended before [DONE] or finish_reason")
 	}
+
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	endOfStream := "[DONE]"
 	return sender(&endOfStream, nil)

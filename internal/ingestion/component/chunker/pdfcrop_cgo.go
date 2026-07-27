@@ -21,13 +21,15 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/schema"
+
+	"gorm.io/gorm"
 )
 
 // newPDFEngineFromUpstream re-acquires the source PDF from storage using the
 // same resolution the Parser uses, then opens a native engine. It returns
 // (nil, nil) when no storage reference is present or the bytes are not a PDF,
 // so callers can treat a nil engine as "no cropping".
-func newPDFEngineFromUpstream(ctx context.Context, up schema.ChunkerFromUpstream) (deepdoctype.PDFEngine, error) {
+func newPDFEngineFromUpstream(ctx context.Context, db *gorm.DB, up schema.ChunkerFromUpstream) (deepdoctype.PDFEngine, error) {
 	var data []byte
 	var err error
 	switch {
@@ -35,7 +37,7 @@ func newPDFEngineFromUpstream(ctx context.Context, up schema.ChunkerFromUpstream
 		data, err = component.FetchBinary(ctx, up.Bucket, up.Path)
 	case up.DocID != "":
 		var ref *component.DocumentStorageRef
-		ref, err = component.ResolveDocumentStorage(up.DocID)
+		ref, err = component.ResolveDocumentStorage(ctx, db, up.DocID)
 		if err == nil && ref != nil {
 			data, err = component.FetchBinary(ctx, ref.Bucket, ref.Path)
 		}
@@ -53,7 +55,9 @@ func newPDFEngineFromUpstream(ctx context.Context, up schema.ChunkerFromUpstream
 	return deepdocpdf.NewEngine(data)
 }
 
-// cropImageChunks crops image/table chunks in place. Each spanned page is
+// cropImageChunks crops image/table chunks and renders text previews (for
+// text chunks that carry PDF positions, mirroring Python
+// restore_pdf_text_previews). Each spanned page is
 // rendered at most once. Chunks arrive in document order, so we keep only a
 // sliding window of page images: once we advance past a chunk whose minimum
 // page is P, no later chunk references a page < P, and we evict those entries
@@ -139,9 +143,14 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 	return out
 }
 
+// needsCrop reports whether a chunk should be cropped to a page-region
+// preview from its PDF positions. Image/table chunks get their media region
+// cropped; text chunks with positions get a rendered preview of the text
+// region (Python restore_pdf_text_previews). A pre-existing Image is never
+// re-cropped — cropImageChunks honors that separately.
 func needsCrop(ck schema.ChunkDoc) bool {
 	switch ck.CKType {
-	case "image", "table":
+	case "image", "table", "text":
 		return len(ck.PDFPositions) > 0 || len(ck.Positions) > 0
 	default:
 		return false

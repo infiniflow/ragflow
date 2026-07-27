@@ -80,7 +80,7 @@ type Ingestor struct {
 	// pipeline to stop at the next ctx.Err() check. Defaults to a Redis
 	// cancel-flag lookup that mirrors Python's has_canceled(). Tests may
 	// override this to simulate cancel without Redis.
-	cancelCheck func(taskID string) bool
+	cancelCheck func(ctx context.Context, taskID string) bool
 }
 
 func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
@@ -183,7 +183,7 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 		return
 	}
 
-	task, err := e.ingestionTaskSvc.StartRunning(taskMessage.TaskID)
+	task, err := e.ingestionTaskSvc.StartRunning(e.ctx, taskMessage.TaskID)
 	if err != nil {
 		if errors.Is(err, common.ErrTaskNotFound) {
 			common.Warn(fmt.Sprintf("task %s not found, skipping", taskMessage.TaskID))
@@ -280,12 +280,12 @@ func (e *Ingestor) workerLoop(id int32) {
 			return
 		case taskCtx := <-e.taskChan:
 			common.Info("task context:" + taskCtx.IngestionTask.ID)
-			e.executeTask(taskCtx)
+			e.executeTask(e.ctx, taskCtx)
 		}
 	}
 }
 
-func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
+func (e *Ingestor) executeTask(ctx context.Context, taskCtx *taskpkg.TaskContext) {
 	task := taskCtx.IngestionTask
 	common.Info(fmt.Sprintf("Starting task %s", task.ID))
 
@@ -312,12 +312,12 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 
 	// Synchronous check: if already cancelled (e.g. flag set between MQ
 	// delivery and worker claim), stop before the pipeline even starts.
-	if e.cancelCheck(task.ID) {
+	if e.cancelCheck(ctx, task.ID) {
 		common.Info(fmt.Sprintf("Task %s cancel flag detected before pipeline start, cancelling", task.ID))
 		perTaskCancel()
 	}
 
-	e.settleMessage(taskCtx, func(ctx context.Context) bool {
+	e.settleMessage(ctx, taskCtx, func(ctx context.Context) bool {
 		return e.runTask(ctx, task)
 	})
 }
@@ -326,12 +326,12 @@ func (e *Ingestor) executeTask(taskCtx *taskpkg.TaskContext) {
 // RequestStop to handle RUNNING → STOPPING, then MarkStopped for the final
 // STOPPING → STOPPED transition. Finally it cleans up the Redis cancel flag
 // so that a future retry of the same task does not immediately re-cancel.
-func (e *Ingestor) markStopped(taskID string) bool {
-	if _, err := e.ingestionTaskSvc.RequestStop(taskID); err != nil {
+func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
+	if _, err := e.ingestionTaskSvc.RequestStop(ctx, taskID); err != nil {
 		common.Error(fmt.Sprintf("markStopped: RequestStop task %s: %v", taskID, err), err)
 		return false
 	}
-	if err := e.ingestionTaskSvc.MarkStopped(taskID); err != nil {
+	if err := e.ingestionTaskSvc.MarkStopped(ctx, taskID); err != nil {
 		common.Error(fmt.Sprintf("markStopped: MarkStopped task %s: %v", taskID, err), err)
 		return false
 	}
@@ -346,8 +346,8 @@ func (e *Ingestor) markStopped(taskID string) bool {
 
 // markFailed persists FAILED status for the task and reports whether the
 // terminal status was durably written, so the caller can decide Ack vs Nack.
-func (e *Ingestor) markFailed(taskID string) bool {
-	if uErr := e.ingestionTaskSvc.MarkFailed(taskID); uErr != nil {
+func (e *Ingestor) markFailed(ctx context.Context, taskID string) bool {
+	if uErr := e.ingestionTaskSvc.MarkFailed(ctx, taskID); uErr != nil {
 		common.Error(fmt.Sprintf("Failed to set task %s to FAILED", taskID), uErr)
 		return false
 	}
@@ -362,13 +362,13 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	case <-ctx.Done():
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
 		e.markCancelProgress(task)
-		return e.markStopped(task.ID)
+		return e.markStopped(context.Background(), task.ID)
 	default:
 	}
 
-	if err := e.ingestionTaskSvc.IncrementRunCount(task.ID); err != nil {
+	if err := e.ingestionTaskSvc.IncrementRunCount(ctx, task.ID); err != nil {
 		common.Error(fmt.Sprintf("Failed to increment run count for task %s", task.ID), err)
-		return e.markFailed(task.ID)
+		return e.markFailed(ctx, task.ID)
 	}
 
 	// This is a new run (IncrementRunCount succeeded). Any Redis cancel flag
@@ -389,15 +389,15 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		if errors.Is(err, context.Canceled) {
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
 			e.markCancelProgress(task)
-			return e.markStopped(task.ID)
+			return e.markStopped(ctx, task.ID)
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
 			e.markTimeoutProgress(task)
-			return e.markFailed(task.ID)
+			return e.markFailed(ctx, task.ID)
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
-		return e.markFailed(task.ID)
+		return e.markFailed(ctx, task.ID)
 	}
 
 	if err := e.completeTask(ctx, task.ID); err != nil {
@@ -417,7 +417,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 // terminal state and the caller Acks instead of redelivering.
 func (e *Ingestor) completeTask(ctx context.Context, taskID string) error {
 	_, err := backoff.Retry(ctx, func() (struct{}, error) {
-		return struct{}{}, e.completeOrSettle(taskID)
+		return struct{}{}, e.completeOrSettle(ctx, taskID)
 	}, backoff.WithMaxTries(3))
 	return err
 }
@@ -426,10 +426,10 @@ func (e *Ingestor) completeTask(ctx context.Context, taskID string) error {
 // terminally invalid because the task is no longer RUNNING - settles it to its
 // actual terminal state. Returns nil once the task is in any terminal state;
 // returns a non-terminal (transient) error only for retry-worthy DB failures.
-func (e *Ingestor) completeOrSettle(taskID string) error {
-	if err := e.ingestionTaskSvc.MarkCompleted(taskID); err != nil {
+func (e *Ingestor) completeOrSettle(ctx context.Context, taskID string) error {
+	if err := e.ingestionTaskSvc.MarkCompleted(ctx, taskID); err != nil {
 		if isTerminalTransitionError(err) {
-			return e.settleToTerminal(taskID)
+			return e.settleToTerminal(ctx, taskID)
 		}
 		return err
 	}
@@ -452,14 +452,14 @@ func isTerminalTransitionError(err error) bool {
 // re-cancel); already-terminal states (COMPLETED/STOPPED/FAILED) need no
 // action. An unexpected status returns an error so the caller nacks and
 // redelivery settles it.
-func (e *Ingestor) settleToTerminal(taskID string) error {
-	task, err := e.ingestionTaskSvc.GetTask(taskID)
+func (e *Ingestor) settleToTerminal(ctx context.Context, taskID string) error {
+	task, err := e.ingestionTaskSvc.GetTask(ctx, taskID)
 	if err != nil {
 		return err
 	}
 	switch task.Status {
 	case common.STOPPING:
-		if !e.markStopped(taskID) {
+		if !e.markStopped(ctx, taskID) {
 			return fmt.Errorf("task %s: settle to STOPPED failed", taskID)
 		}
 		return nil
@@ -477,7 +477,7 @@ func (e *Ingestor) settleToTerminal(taskID string) error {
 // Settlement queries the DB for the task's actual status: a terminal state
 // (COMPLETED/STOPPED/FAILED) means Ack; anything else means Nack. The body's
 // return value is advisory only — DB truth is authoritative (BP1).
-func (e *Ingestor) settleMessage(taskCtx *taskpkg.TaskContext, body func(context.Context) bool) (terminal bool) {
+func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskContext, body func(context.Context) bool) (terminal bool) {
 	stop := e.startHeartbeat(taskCtx)
 	defer func() {
 		stop() // stop heartbeat (and wait) before ack/nack
@@ -488,12 +488,12 @@ func (e *Ingestor) settleMessage(taskCtx *taskpkg.TaskContext, body func(context
 			// redelivery. The broker's redelivery limit handles deterministic
 			// poison messages.
 			common.Error(fmt.Sprintf("task %s panicked: %v", taskCtx.IngestionTask.ID, r), fmt.Errorf("%v", r))
-			e.markFailed(taskCtx.IngestionTask.ID)
+			e.markFailed(ctx, taskCtx.IngestionTask.ID)
 			terminal = false
 		}
 		// Settlement authority is the DB, not the in-memory bool (BP1).
 		// Fall back to the in-memory bool only when the DB is unavailable.
-		if dbTerminal, ok := e.safeGetTerminal(taskCtx.IngestionTask.ID); ok {
+		if dbTerminal, ok := e.safeGetTerminal(ctx, taskCtx.IngestionTask.ID); ok {
 			terminal = dbTerminal
 		}
 		e.ackOrNack(taskCtx, terminal)
@@ -506,9 +506,9 @@ func (e *Ingestor) settleMessage(taskCtx *taskpkg.TaskContext, body func(context
 // whether it is terminal (COMPLETED/STOPPED/FAILED). A recover guards
 // against nil-DB panics in test environments — in that case (false, false)
 // is returned so the caller falls back to the in-memory bool.
-func (e *Ingestor) safeGetTerminal(taskID string) (terminal bool, ok bool) {
+func (e *Ingestor) safeGetTerminal(ctx context.Context, taskID string) (terminal bool, ok bool) {
 	defer func() { recover() }()
-	task, err := e.ingestionTaskSvc.GetTask(taskID)
+	task, err := e.ingestionTaskSvc.GetTask(ctx, taskID)
 	if err != nil {
 		return false, false
 	}
@@ -539,14 +539,14 @@ func (e *Ingestor) ackOrNack(taskCtx *taskpkg.TaskContext, terminal bool) {
 // REDIS_CONN.set(f"{task_id}-cancel", "x"). Falls back to checking the
 // task status in DB when Redis is unavailable — a STOPPING status
 // (set by RequestStop) is treated as a cancel signal.
-func (e *Ingestor) defaultCancelCheck(taskID string) bool {
+func (e *Ingestor) defaultCancelCheck(ctx context.Context, taskID string) bool {
 	rc := redis2.Get()
 	if rc != nil {
 		if ok, _ := rc.Exist(fmt.Sprintf("%s-cancel", taskID)); ok {
 			return true
 		}
 	}
-	task, err := e.ingestionTaskSvc.GetTask(taskID)
+	task, err := e.ingestionTaskSvc.GetTask(ctx, taskID)
 	if err != nil {
 		return false
 	}
@@ -566,7 +566,7 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 		result := make(chan bool, 1)
 		go func() {
 			defer func() { recover() }() // goroutine may outlive pollCancel; must not crash process
-			result <- e.cancelCheck(taskID)
+			result <- e.cancelCheck(e.ctx, taskID)
 		}()
 		return result
 	}
@@ -609,7 +609,7 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 // appended timestamped cancel message (progress_msg += cancelMsg).
 func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
 	svc := documentpkg.NewDocumentService()
-	doc, err := svc.GetDocumentByID(task.DocumentID)
+	doc, err := svc.GetDocumentByID(e.ctx, task.DocumentID)
 	if err != nil {
 		common.Error(fmt.Sprintf("markCancelProgress: load document %s: %v", task.DocumentID, err), err)
 		return
@@ -619,7 +619,7 @@ func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
 	if doc.ProgressMsg != nil {
 		existingMsg = *doc.ProgressMsg
 	}
-	_ = svc.UpdateRunProgress(task.DocumentID, -1.0, string(entity.TaskStatusCancel), existingMsg+cancelMsg)
+	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusCancel), existingMsg+cancelMsg)
 }
 
 // markTimeoutProgress writes the timeout-progress markers to the document
@@ -627,7 +627,7 @@ func (e *Ingestor) markCancelProgress(task *entity.IngestionTask) {
 // failure rather than a user-initiated stop.
 func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
 	svc := documentpkg.NewDocumentService()
-	doc, err := svc.GetDocumentByID(task.DocumentID)
+	doc, err := svc.GetDocumentByID(e.ctx, task.DocumentID)
 	if err != nil {
 		common.Error(fmt.Sprintf("markTimeoutProgress: load document %s: %v", task.DocumentID, err), err)
 		return
@@ -637,7 +637,7 @@ func (e *Ingestor) markTimeoutProgress(task *entity.IngestionTask) {
 	if doc.ProgressMsg != nil {
 		existingMsg = *doc.ProgressMsg
 	}
-	_ = svc.UpdateRunProgress(task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+timeoutMsg)
+	_ = svc.UpdateRunProgress(e.ctx, task.DocumentID, -1.0, string(entity.TaskStatusFail), existingMsg+timeoutMsg)
 }
 
 // claimTask registers a worker claim on a task ID. Returns false if another
@@ -697,7 +697,7 @@ func (e *Ingestor) releaseTask(taskID string) {
 }
 
 func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask) error {
-	docTaskCtx, err := taskpkg.LoadFromIngestionTask(ingestionTask)
+	docTaskCtx, err := taskpkg.LoadFromIngestionTask(ctx, ingestionTask)
 	if err != nil {
 		return fmt.Errorf("load task context for %s: %w", ingestionTask.ID, err)
 	}
@@ -732,11 +732,11 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 			return dsl, parserID, nil
 		})
 	}
-	result, err := executor.WithRequireResume().WithProgressSink(newProgressSink(e.ingestionTaskSvc)).Execute(docTaskCtx.Ctx)
+	result, err := executor.WithRequireResume().WithProgressSink(newProgressSink(ctx, e.ingestionTaskSvc)).Execute(docTaskCtx.Ctx)
 	if err != nil {
 		return err
 	}
-	e.docState.apply(result)
+	e.docState.apply(ctx, result)
 	return nil
 }
 

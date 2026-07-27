@@ -703,10 +703,7 @@ func (e *infinityEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		pageSize = 30
 	}
 
-	offset := req.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(req.Offset, 0)
 
 	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
 	if err != nil {

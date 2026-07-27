@@ -286,7 +286,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 				kbIDs = append(kbIDs, id)
 			}
 		}
-		metas, mdErr := s.pipeline.MetadataSvc.GetFlattedMetaByKBs(kbIDs)
+		metas, mdErr := s.pipeline.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
 		if mdErr != nil {
 			s.writeDataError(c, fmt.Errorf("metadata_condition: load metadata: %w", mdErr).Error())
 			return

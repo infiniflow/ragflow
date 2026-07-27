@@ -41,18 +41,18 @@ type MCPRetrievalService interface {
 // MCPServerHandler handles MCP protocol requests (JSON-RPC over HTTP).
 // It exposes RAGFlow capabilities as MCP tools to external AI clients.
 type MCPServerHandler struct {
-	listDatasetsFunc func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
-	listChatsFunc    func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
-	retrievalFunc    func(userID string, req mcp.RetrievalRequest) (string, error)
+	listDatasetsFunc func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
+	listChatsFunc    func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
+	retrievalFunc    func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error)
 }
 
 // NewMCPServerHandler creates a new MCPServerHandler.
 // The service functions are passed as closures to avoid importing the service
 // package directly from the handler layer.
 func NewMCPServerHandler(
-	listDatasetsFunc func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
-	listChatsFunc func(userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
-	retrievalFunc func(userID string, req mcp.RetrievalRequest) (string, error),
+	listDatasetsFunc func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
+	listChatsFunc func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
+	retrievalFunc func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error),
 ) *MCPServerHandler {
 	return &MCPServerHandler{
 		listDatasetsFunc: listDatasetsFunc,
@@ -95,8 +95,9 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 		h.retrievalFunc,
 	)
 
+	ctx := c.Request.Context()
 	server := mcp.NewServer(connector)
-	respBody, hasResponse, err := server.HandleRequest(body)
+	respBody, hasResponse, err := server.HandleRequest(ctx, body)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, "MCP server error: "+err.Error())
 		return
@@ -114,8 +115,8 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 
 // MCPListDatasets wraps DatasetService.ListDatasets for the MCP tool handler,
 // filling in default values for parameters that the MCP tool does not expose.
-func MCPListDatasets(ds *dataset.DatasetService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-	data, total, _, err := ds.ListDatasets(
+func MCPListDatasets(ctx context.Context, ds *dataset.DatasetService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+	data, total, _, err := ds.ListDatasets(ctx,
 		"", "", page, pageSize, orderby, desc,
 		"", nil, "", userID,
 	)
@@ -143,7 +144,7 @@ func MCPListChats(ctx context.Context, chatService *service.ChatService, userID 
 // MCPRetrieval executes a retrieval request on behalf of the MCP tool handler.
 // It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
 // and calls DatasetService.SearchDatasets. The result is serialized as JSON.
-func MCPRetrieval(ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
+func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
 	// Resolve dataset IDs: if none provided, fetch ALL accessible datasets
 	// across all pages (matching Python _fetch_all_datasets behaviour).
 	datasetIDs := req.DatasetIDs
@@ -151,7 +152,7 @@ func MCPRetrieval(ds *dataset.DatasetService, userID string, req mcp.RetrievalRe
 		const maxPageSize = 100
 		page := 1
 		for {
-			data, _, _, err := ds.ListDatasets(
+			data, _, _, err := ds.ListDatasets(ctx,
 				"", "", page, maxPageSize, "create_time", true,
 				"", nil, "", userID,
 			)
@@ -213,7 +214,7 @@ func MCPRetrieval(ds *dataset.DatasetService, userID string, req mcp.RetrievalRe
 		searchReq.Keyword = &v
 	}
 
-	resp, err := ds.SearchDatasets(searchReq, userID)
+	resp, err := ds.SearchDatasets(ctx, searchReq, userID)
 	if err != nil {
 		return "", err
 	}

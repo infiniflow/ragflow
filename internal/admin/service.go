@@ -104,16 +104,16 @@ func (s *Service) Logout(user interface{}) error {
 }
 
 // ListIngestionTasks list all ingestion tasks for admin user
-func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
-	return s.ingestionTaskSvc.ListAllForAdmin()
+func (s *Service) ListIngestionTasks(ctx context.Context) ([]map[string]interface{}, error) {
+	return s.ingestionTaskSvc.ListAllForAdmin(ctx)
 }
 
-func (s *Service) RemoveIngestionTasks(tasks []string) ([]map[string]string, error) {
-	return s.ingestionTaskSvc.RemoveMany(tasks, nil)
+func (s *Service) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
+	return s.ingestionTaskSvc.RemoveMany(ctx, tasks, nil)
 }
 
-func (s *Service) StopIngestionTasks(tasks []string) ([]*entity.IngestionTask, error) {
-	return s.ingestionTaskSvc.RequestStopMany(tasks, nil)
+func (s *Service) StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error) {
+	return s.ingestionTaskSvc.RequestStopMany(ctx, tasks, nil)
 }
 
 // GetUserByToken get user by access token
@@ -170,7 +170,7 @@ func (s *Service) ListUsers(pageIndex, pageSize int, name, status, sort, orderBy
 // Returns:
 //   - map[string]interface{}: user information without password
 //   - error: error message
-func (s *Service) CreateUser(username, password, role string) (map[string]interface{}, error) {
+func (s *Service) CreateUser(ctx context.Context, username, password, role string) (map[string]interface{}, error) {
 	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
 	if !emailRegex.MatchString(username) {
 		return nil, fmt.Errorf("invalid email address: %s", username)
@@ -285,7 +285,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	}
 
 	// 4. Create tenant LLM configurations
-	tenantLLMs, err := s.getInitTenantLLM(userID)
+	tenantLLMs, err := s.getInitTenantLLM(ctx, userID)
 	if err != nil {
 		common.Warn("failed to get init tenant LLM configs", zap.Error(err))
 		// Continue without LLM configs - not a critical error
@@ -333,7 +333,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 
 // getInitTenantLLM gets initial tenant LLM configurations
 // This matches Python's get_init_tenant_llm function
-func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
+func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entity.TenantLLM, error) {
 	cfg := server.GetConfig()
 	if cfg == nil {
 		return nil, fmt.Errorf("config not initialized")
@@ -366,7 +366,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 
 	// Get LLMs for each unique factory
 	for _, factoryConfig := range uniqueFactories {
-		models, err := s.llmDAO.GetByFactory(factoryConfig.Factory)
+		models, err := s.llmDAO.GetByFactory(ctx, dao.DB, factoryConfig.Factory)
 		if err != nil {
 			common.Warn("failed to get LLMs for factory", zap.String("factory", factoryConfig.Factory), zap.Error(err))
 			continue
@@ -494,7 +494,7 @@ type DeleteUserResult struct {
 // Returns:
 //   - *DeleteUserResult
 //   - error: error message
-func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
+func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserResult, error) {
 	result := &DeleteUserResult{
 		Username:       username,
 		DeletedDetails: []string{fmt.Sprintf("Drop user: %s", username)},
@@ -552,14 +552,14 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 	// Delete owned tenant data
 	if ownedTenantID != "" {
 		// 1. Get knowledge base IDs
-		kbIDs, err := s.kbDAO.GetKBIDsByTenantIDSimple(ownedTenantID)
+		kbIDs, err := s.kbDAO.GetKBIDsByTenantIDSimple(ctx, tx, ownedTenantID)
 		if err != nil {
 			common.Warn("failed to get knowledge base IDs", zap.Error(err))
 		}
 
 		if len(kbIDs) > 0 {
 			// 2. Get document IDs
-			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(kbIDs)
+			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(ctx, tx, kbIDs)
 			if err != nil {
 				common.Warn("failed to get document IDs", zap.Error(err))
 			}

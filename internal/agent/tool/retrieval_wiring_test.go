@@ -17,7 +17,6 @@
 package tool
 
 import (
-	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -31,7 +30,8 @@ func TestRetrievalTool_StubReturnsServiceMissing(t *testing.T) {
 	// Ensure stub is the active service.
 	SetRetrievalService(nil)
 	tool := NewRetrievalTool()
-	_, err := tool.InvokableRun(context.Background(), `{"query":"hi"}`)
+	ctx := t.Context()
+	_, err := tool.InvokableRun(ctx, `{"query":"hi"}`)
 	if !errors.Is(err, ErrRetrievalServiceMissing) {
 		t.Errorf("err=%v, want ErrRetrievalServiceMissing", err)
 	}
@@ -45,8 +45,8 @@ func TestRetrievalTool_SimpleServiceReturnsChunks(t *testing.T) {
 	SetSimpleRetrievalService()
 
 	tool := NewRetrievalTool()
-	out, err := tool.InvokableRun(context.Background(),
-		`{"query":"hello world","top_n":2}`)
+	ctx := t.Context()
+	out, err := tool.InvokableRun(ctx, `{"query":"hello world","top_n":2}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -64,7 +64,8 @@ func TestRetrievalTool_SimpleServiceReturnsChunks(t *testing.T) {
 // TestSimpleRetrievalService_EmptyQuery: empty query → no chunks,
 // no error.
 func TestSimpleRetrievalService_EmptyQuery(t *testing.T) {
-	chunks, err := simpleRetrievalService{}.Search(context.Background(), RetrievalRequest{Query: ""})
+	ctx := t.Context()
+	chunks, err := simpleRetrievalService{}.Search(ctx, nil, RetrievalRequest{Query: ""})
 	if err != nil {
 		t.Errorf("err: %v", err)
 	}
@@ -76,7 +77,8 @@ func TestSimpleRetrievalService_EmptyQuery(t *testing.T) {
 // TestSimpleRetrievalService_RespectsTopN: top_n=1 → exactly 1
 // chunk.
 func TestSimpleRetrievalService_RespectsTopN(t *testing.T) {
-	chunks, err := simpleRetrievalService{}.Search(context.Background(), RetrievalRequest{
+	ctx := t.Context()
+	chunks, err := simpleRetrievalService{}.Search(ctx, nil, RetrievalRequest{
 		Query: "x",
 		TopN:  1,
 	})

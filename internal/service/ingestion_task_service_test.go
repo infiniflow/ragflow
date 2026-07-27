@@ -31,7 +31,8 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	resp, err := svc.CreateForDocuments("kb-1", "user-1", []string{"doc-1"})
+	ctx := t.Context()
+	resp, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
@@ -48,7 +49,7 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	if msg.TaskType != common.TaskTypeIngestionTask {
 		t.Fatalf("task type = %q, want %q", msg.TaskType, common.TaskTypeIngestionTask)
 	}
-	task, err := dao.NewIngestionTaskDAO().GetByID(msg.TaskID)
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, msg.TaskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -66,7 +67,8 @@ func TestIngestionTaskServiceListByUserFiltersDataset(t *testing.T) {
 
 	svc := NewIngestionTaskService()
 	datasetID := "kb-1"
-	tasks, err := svc.ListByUser("user-1", &datasetID, 0, 0)
+	ctx := t.Context()
+	tasks, err := svc.ListByUser(ctx, "user-1", &datasetID, 0, 0)
 	if err != nil {
 		t.Fatalf("ListByUser failed: %v", err)
 	}
@@ -83,9 +85,10 @@ func TestIngestionTaskServiceRequestStopManyStopsOwnedTasks(t *testing.T) {
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
+	ctx := t.Context()
 	userID := "user-1"
 	svc := NewIngestionTaskService()
-	tasks, err := svc.RequestStopMany([]string{"task-1"}, &userID)
+	tasks, err := svc.RequestStopMany(ctx, []string{"task-1"}, &userID)
 	if err != nil {
 		t.Fatalf("RequestStopMany failed: %v", err)
 	}
@@ -102,12 +105,13 @@ func TestIngestionTaskServiceRequestStopManyRejectsOtherUsersTask(t *testing.T) 
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
+	ctx := t.Context()
 	userID := "user-2"
 	svc := NewIngestionTaskService()
-	if _, err := svc.RequestStopMany([]string{"task-1"}, &userID); err == nil {
+	if _, err := svc.RequestStopMany(ctx, []string{"task-1"}, &userID); err == nil {
 		t.Fatal("expected RequestStopMany to reject non-owner")
 	}
-	task, err := dao.NewIngestionTaskDAO().GetByID("task-1")
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -121,8 +125,9 @@ func TestIngestionTaskServiceRequestStopManyAllowsAdmin(t *testing.T) {
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
+	ctx := t.Context()
 	svc := NewIngestionTaskService()
-	tasks, err := svc.RequestStopMany([]string{"task-1"}, nil)
+	tasks, err := svc.RequestStopMany(ctx, []string{"task-1"}, nil)
 	if err != nil {
 		t.Fatalf("RequestStopMany admin failed: %v", err)
 	}
@@ -139,16 +144,17 @@ func TestIngestionTaskServiceRemoveManyRemovesOwnedTasks(t *testing.T) {
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
+	ctx := t.Context()
 	userID := "user-1"
 	svc := NewIngestionTaskService()
-	result, err := svc.RemoveMany([]string{"task-1"}, &userID)
+	result, err := svc.RemoveMany(ctx, []string{"task-1"}, &userID)
 	if err != nil {
 		t.Fatalf("RemoveMany failed: %v", err)
 	}
 	if len(result) != 1 || result[0]["remove"] != "success" {
 		t.Fatalf("unexpected remove result: %+v", result)
 	}
-	if _, err := dao.NewIngestionTaskDAO().GetByID("task-1"); err == nil {
+	if _, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1"); err == nil {
 		t.Fatal("task should be removed")
 	}
 }
@@ -176,8 +182,9 @@ func TestIngestionTaskServiceListAllForAdminIncludesRunAndUserEmail(t *testing.T
 		t.Fatalf("insert task log: %v", err)
 	}
 
+	ctx := t.Context()
 	svc := NewIngestionTaskService()
-	tasks, err := svc.ListAllForAdmin()
+	tasks, err := svc.ListAllForAdmin(ctx)
 	if err != nil {
 		t.Fatalf("ListAllForAdmin failed: %v", err)
 	}
@@ -204,7 +211,8 @@ func TestIngestionTaskServiceStartRunningTransitionsCreatedTask(t *testing.T) {
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := NewIngestionTaskService()
-	task, err := svc.StartRunning("task-1")
+	ctx := t.Context()
+	task, err := svc.StartRunning(ctx, "task-1")
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
@@ -236,7 +244,8 @@ func TestStartRunningMarksDocumentRunning(t *testing.T) {
 	}
 
 	svc := NewIngestionTaskService()
-	if _, err := svc.StartRunning("task-1"); err != nil {
+	ctx := t.Context()
+	if _, err := svc.StartRunning(ctx, "task-1"); err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
 
@@ -289,7 +298,8 @@ func TestStartRunningLeavesTerminalDocumentUntouched(t *testing.T) {
 	}
 
 	svc := NewIngestionTaskService()
-	task, err := svc.StartRunning("task-1")
+	ctx := t.Context()
+	task, err := svc.StartRunning(ctx, "task-1")
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
@@ -313,9 +323,10 @@ func TestIngestionTaskServiceRequestStopTransitionsCreatedTaskToStopped(t *testi
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	task, err := svc.RequestStop("task-1")
+	task, err := svc.RequestStop(ctx, "task-1")
 	if err != nil {
 		t.Fatalf("RequestStop failed: %v", err)
 	}
@@ -328,12 +339,13 @@ func TestIngestionTaskServiceMarkCompletedRejectsNonRunningTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	if err := svc.MarkCompleted("task-1"); err == nil {
+	if err := svc.MarkCompleted(ctx, "task-1"); err == nil {
 		t.Fatal("expected MarkCompleted to reject non-running task")
 	}
-	task, err := dao.NewIngestionTaskDAO().GetByID("task-1")
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -349,12 +361,13 @@ func TestIngestionTaskServiceMarkCompletedUpdatesTaskStatus(t *testing.T) {
 	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("status", common.RUNNING).Error; err != nil {
 		t.Fatalf("set running status: %v", err)
 	}
+	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	if err := svc.MarkCompleted("task-1"); err != nil {
+	if err := svc.MarkCompleted(ctx, "task-1"); err != nil {
 		t.Fatalf("MarkCompleted failed: %v", err)
 	}
-	task, err := dao.NewIngestionTaskDAO().GetByID("task-1")
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -370,12 +383,13 @@ func TestIngestionTaskServiceMarkFailedUpdatesTaskStatus(t *testing.T) {
 	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("status", common.RUNNING).Error; err != nil {
 		t.Fatalf("set running status: %v", err)
 	}
+	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	if err := svc.MarkFailed("task-1"); err != nil {
+	if err := svc.MarkFailed(ctx, "task-1"); err != nil {
 		t.Fatalf("MarkFailed failed: %v", err)
 	}
-	task, err := dao.NewIngestionTaskDAO().GetByID("task-1")
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -391,9 +405,10 @@ func TestIngestionTaskServiceNewTaskStatusConflictErrorLoadsActualStatus(t *test
 	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("status", common.STOPPING).Error; err != nil {
 		t.Fatalf("set stopping status: %v", err)
 	}
+	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	err := svc.newTaskStatusConflictError("task-1", common.CREATED, common.RUNNING)
+	err := svc.newTaskStatusConflictError(ctx, "task-1", common.CREATED, common.RUNNING)
 	var conflictErr *TaskStatusConflictError
 	if !errors.As(err, &conflictErr) {
 		t.Fatalf("expected TaskStatusConflictError, got %T", err)
@@ -407,9 +422,10 @@ func TestIngestionTaskServiceMarkCompletedReturnsTaskIDInTransitionError(t *test
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	err := svc.MarkCompleted("task-1")
+	err := svc.MarkCompleted(ctx, "task-1")
 	var transitionErr *InvalidTaskTransitionError
 	if !errors.As(err, &transitionErr) {
 		t.Fatalf("expected InvalidTaskTransitionError, got %T", err)
@@ -434,6 +450,7 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 		{name: "stopped", status: common.STOPPED},
 	}
 
+	ctx := t.Context()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			publisher.subject = ""
@@ -446,7 +463,7 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 				t.Fatalf("set terminal status: %v", err)
 			}
 
-			task, err := svc.CreateAndEnqueue(&entity.IngestionTask{
+			task, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{
 				DocumentID: "doc-1",
 				UserID:     "user-1",
 				DatasetID:  "kb-1",
@@ -464,7 +481,7 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 			if len(publisher.messages) != 1 || publisher.messages[0].TaskID != "task-1" {
 				t.Fatalf("unexpected published messages: %+v", publisher.messages)
 			}
-			reloaded, err := dao.NewIngestionTaskDAO().GetByID("task-1")
+			reloaded, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
 			if err != nil {
 				t.Fatalf("reload task: %v", err)
 			}
@@ -483,7 +500,8 @@ func TestIngestionTaskServiceCreateAndEnqueueRejectsActiveExistingTask(t *testin
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	_, err := svc.CreateAndEnqueue(&entity.IngestionTask{DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED})
+	ctx := t.Context()
+	_, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED})
 	if err == nil {
 		t.Fatal("expected CreateAndEnqueue to reject existing created task")
 	}
@@ -499,7 +517,8 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackNewTaskOnPublishFailure(t 
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	_, err := svc.CreateAndEnqueue(&entity.IngestionTask{
+	ctx := t.Context()
+	_, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{
 		DocumentID: "doc-1",
 		UserID:     "user-1",
 		DatasetID:  "kb-1",
@@ -508,7 +527,7 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackNewTaskOnPublishFailure(t 
 	if err == nil || err.Error() != "publish failed" {
 		t.Fatalf("expected publish failure, got %v", err)
 	}
-	task, getErr := dao.NewIngestionTaskDAO().GetByDocumentID("doc-1")
+	task, getErr := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, db, "doc-1")
 	if getErr != nil {
 		t.Fatalf("reload task by document id: %v", getErr)
 	}
@@ -529,7 +548,8 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackRetriedTaskOnPublishFailur
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	_, err := svc.CreateAndEnqueue(&entity.IngestionTask{
+	ctx := t.Context()
+	_, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{
 		DocumentID: "doc-1",
 		UserID:     "user-1",
 		DatasetID:  "kb-1",
@@ -538,7 +558,7 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackRetriedTaskOnPublishFailur
 	if err == nil || err.Error() != "publish failed" {
 		t.Fatalf("expected publish failure, got %v", err)
 	}
-	reloaded, getErr := dao.NewIngestionTaskDAO().GetByID("task-1")
+	reloaded, getErr := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
 	if getErr != nil {
 		t.Fatalf("reload task: %v", getErr)
 	}
@@ -551,17 +571,18 @@ func TestIngestionTaskServiceRemoveDeletesOwnedTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	ctx := t.Context()
 
 	userID := "user-1"
 	svc := NewIngestionTaskService()
-	info, err := svc.Remove("task-1", &userID)
+	info, err := svc.Remove(ctx, "task-1", &userID)
 	if err != nil {
 		t.Fatalf("Remove failed: %v", err)
 	}
 	if info == nil || info.TaskID != "task-1" {
 		t.Fatalf("unexpected task info: %+v", info)
 	}
-	if _, err := dao.NewIngestionTaskDAO().GetByID("task-1"); err == nil {
+	if _, err = dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1"); err == nil {
 		t.Fatal("task should be removed")
 	}
 }
@@ -570,12 +591,13 @@ func TestIngestionTaskServiceUpdateComponentTotalPersistsDenominator(t *testing.
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	if err := svc.UpdateComponentTotal("task-1", 4); err != nil {
+	if err := svc.UpdateComponentTotal(ctx, "task-1", 4); err != nil {
 		t.Fatalf("UpdateComponentTotal failed: %v", err)
 	}
-	task, err := dao.NewIngestionTaskDAO().GetByID("task-1")
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -588,12 +610,13 @@ func TestIngestionTaskServiceRecordComponentProgressAppendsRow(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	if err := svc.RecordComponentProgress("task-1", "Parser", 1, "Parser Done"); err != nil {
+	if err := svc.RecordComponentProgress(ctx, "task-1", "Parser", 1, "Parser Done"); err != nil {
 		t.Fatalf("RecordComponentProgress failed: %v", err)
 	}
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID("task-1")
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(ctx, db, "task-1")
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}
@@ -613,15 +636,16 @@ func TestIngestionTaskServiceAggregateTaskProgressClassifiesByPhase(t *testing.T
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	if err := svc.RecordComponentProgress("task-1", "Parser", 1, "Parser Done"); err != nil {
+	if err := svc.RecordComponentProgress(ctx, "task-1", "Parser", 1, "Parser Done"); err != nil {
 		t.Fatalf("record Parser: %v", err)
 	}
-	if err := svc.RecordComponentProgress("task-1", "Chunker", 0, "Chunker Started"); err != nil {
+	if err := svc.RecordComponentProgress(ctx, "task-1", "Chunker", 0, "Chunker Started"); err != nil {
 		t.Fatalf("record Chunker: %v", err)
 	}
-	agg, err := svc.AggregateTaskProgress("task-1", 2)
+	agg, err := svc.AggregateTaskProgress(ctx, "task-1", 2)
 	if err != nil {
 		t.Fatalf("AggregateTaskProgress failed: %v", err)
 	}
@@ -637,21 +661,22 @@ func TestIngestionTaskServiceIncrementRunCountInitializesAndBumps(t *testing.T) 
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	if err := svc.IncrementRunCount("task-1"); err != nil {
+	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
 		t.Fatalf("IncrementRunCount (first call) failed: %v", err)
 	}
-	run, ok := svc.lastRunCount("task-1")
+	run, ok := svc.lastRunCount(ctx, "task-1")
 	if !ok || run != 1 {
 		t.Fatalf("run_count = %v (ok=%v), want 1", run, ok)
 	}
 
 	// Second call bumps the existing counter to 2.
-	if err := svc.IncrementRunCount("task-1"); err != nil {
+	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
 		t.Fatalf("IncrementRunCount (second call) failed: %v", err)
 	}
-	run, _ = svc.lastRunCount("task-1")
+	run, _ = svc.lastRunCount(ctx, "task-1")
 	if run != 2 {
 		t.Fatalf("run_count after second bump = %v, want 2", run)
 	}
@@ -667,13 +692,14 @@ func TestIngestionTaskServiceIncrementRunCountSkippedCorruptedRunCount(t *testin
 	}).Error; err != nil {
 		t.Fatalf("insert bad task log: %v", err)
 	}
+	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
 	// Corrupted value is skipped; a fresh run_count=1 row is created.
-	if err := svc.IncrementRunCount("task-1"); err != nil {
+	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
 		t.Fatalf("IncrementRunCount should skip corrupted value, got: %v", err)
 	}
-	run, ok := svc.lastRunCount("task-1")
+	run, ok := svc.lastRunCount(ctx, "task-1")
 	if !ok || run != 1 {
 		t.Fatalf("run_count = %v (ok=%v), want 1", run, ok)
 	}
@@ -683,18 +709,19 @@ func TestIngestionTaskServiceIncrementRunCountRecoversFromComponentProgressLog(t
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	ctx := t.Context()
 
 	// Simulate a previous run that created some component-progress logs
 	// but died before recording a run_count row. The latest log has no run_count.
 	svc := NewIngestionTaskService()
-	if err := svc.RecordComponentProgress("task-1", "Parser", 1, "Parser Done"); err != nil {
+	if err := svc.RecordComponentProgress(ctx, "task-1", "Parser", 1, "Parser Done"); err != nil {
 		t.Fatalf("record Parser: %v", err)
 	}
-	if err := svc.RecordComponentProgress("task-1", "Chunker", 1, "Chunker Done"); err != nil {
+	if err := svc.RecordComponentProgress(ctx, "task-1", "Chunker", 1, "Chunker Done"); err != nil {
 		t.Fatalf("record Chunker: %v", err)
 	}
 	// Verify latest log has empty checkpoint (no run_count).
-	latest, err := dao.NewIngestionTaskLogDAO().LatestLogByTaskID("task-1")
+	latest, err := dao.NewIngestionTaskLogDAO().LatestLogByTaskID(ctx, db, "task-1")
 	if err != nil {
 		t.Fatalf("load latest: %v", err)
 	}
@@ -703,17 +730,17 @@ func TestIngestionTaskServiceIncrementRunCountRecoversFromComponentProgressLog(t
 	}
 
 	// IncrementRunCount should create a new row with run_count=1.
-	if err := svc.IncrementRunCount("task-1"); err != nil {
+	if err = svc.IncrementRunCount(ctx, "task-1"); err != nil {
 		t.Fatalf("IncrementRunCount failed: %v", err)
 	}
-	run, ok := svc.lastRunCount("task-1")
+	run, ok := svc.lastRunCount(ctx, "task-1")
 	if !ok || run != 1 {
 		t.Fatalf("run_count = %v (ok=%v), want 1", run, ok)
 	}
 
 	// AggregateProgress should still work (run_count row with component=""
 	// has phase=0, which doesn't affect counts).
-	agg, err := svc.AggregateTaskProgress("task-1", 2)
+	agg, err := svc.AggregateTaskProgress(ctx, "task-1", 2)
 	if err != nil {
 		t.Fatalf("AggregateTaskProgress: %v", err)
 	}
@@ -728,31 +755,32 @@ func TestIngestionTaskServiceIncrementRunCountAccumulatesAcrossRetries(t *testin
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := NewIngestionTaskService()
+	ctx := t.Context()
 
 	// First attempt: IncrementRunCount creates run_count=1.
-	if err := svc.IncrementRunCount("task-1"); err != nil {
+	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
 		t.Fatalf("first IncrementRunCount: %v", err)
 	}
 	// Simulate first run: some components progress, then failure.
-	if err := svc.RecordComponentProgress("task-1", "Parser", 1, "Parser Done"); err != nil {
+	if err := svc.RecordComponentProgress(ctx, "task-1", "Parser", 1, "Parser Done"); err != nil {
 		t.Fatalf("record Parser: %v", err)
 	}
 
 	// Second attempt (retry): should find previous run_count=1 and create row with run_count=2.
-	if err := svc.IncrementRunCount("task-1"); err != nil {
+	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
 		t.Fatalf("second IncrementRunCount: %v", err)
 	}
 	// More progress, then failure.
-	if err := svc.RecordComponentProgress("task-1", "Chunker", 1, "Chunker Done"); err != nil {
+	if err := svc.RecordComponentProgress(ctx, "task-1", "Chunker", 1, "Chunker Done"); err != nil {
 		t.Fatalf("record Chunker: %v", err)
 	}
 
 	// Third attempt (retry): should find previous run_count=2 and create row with run_count=3.
-	if err := svc.IncrementRunCount("task-1"); err != nil {
+	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
 		t.Fatalf("third IncrementRunCount: %v", err)
 	}
 
-	run, ok := svc.lastRunCount("task-1")
+	run, ok := svc.lastRunCount(ctx, "task-1")
 	if !ok || run != 3 {
 		t.Fatalf("run_count = %v (ok=%v), want 3", run, ok)
 	}
@@ -770,7 +798,7 @@ func TestIngestionTaskServiceIncrementRunCountAccumulatesAcrossRetries(t *testin
 	}).Error; err != nil {
 		t.Fatalf("insert user: %v", err)
 	}
-	adminTasks, err := svc.ListAllForAdmin()
+	adminTasks, err := svc.ListAllForAdmin(ctx)
 	if err != nil {
 		t.Fatalf("ListAllForAdmin: %v", err)
 	}
@@ -791,13 +819,14 @@ func TestIngestionTaskServiceMarkStoppedTransitionsStoppingTask(t *testing.T) {
 		Update("status", common.STOPPING).Error; err != nil {
 		t.Fatalf("set task STOPPING: %v", err)
 	}
+	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	if err := svc.MarkStopped("task-1"); err != nil {
+	if err := svc.MarkStopped(ctx, "task-1"); err != nil {
 		t.Fatalf("MarkStopped failed: %v", err)
 	}
 
-	task, err := dao.NewIngestionTaskDAO().GetByID("task-1")
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -816,7 +845,8 @@ func TestIngestionTaskServiceMarkStoppedIdempotentOnAlreadyStopped(t *testing.T)
 	}
 
 	svc := NewIngestionTaskService()
-	if err := svc.MarkStopped("task-1"); err != nil {
+	ctx := t.Context()
+	if err := svc.MarkStopped(ctx, "task-1"); err != nil {
 		t.Fatalf("MarkStopped on already STOPPED task should be idempotent, got: %v", err)
 	}
 }
@@ -831,7 +861,8 @@ func TestIngestionTaskServiceMarkFailedIdempotentOnAlreadyTerminal(t *testing.T)
 	}
 
 	svc := NewIngestionTaskService()
-	if err := svc.MarkFailed("task-1"); err != nil {
+	ctx := t.Context()
+	if err := svc.MarkFailed(ctx, "task-1"); err != nil {
 		t.Fatalf("MarkFailed on already COMPLETED task should be idempotent, got: %v", err)
 	}
 }
@@ -845,8 +876,9 @@ func TestIngestionTaskServiceMarkCompletedIdempotentOnAlreadyTerminal(t *testing
 		t.Fatalf("set task FAILED: %v", err)
 	}
 
+	ctx := t.Context()
 	svc := NewIngestionTaskService()
-	if err := svc.MarkCompleted("task-1"); err != nil {
+	if err := svc.MarkCompleted(ctx, "task-1"); err != nil {
 		t.Fatalf("MarkCompleted on already FAILED task should be idempotent, got: %v", err)
 	}
 }

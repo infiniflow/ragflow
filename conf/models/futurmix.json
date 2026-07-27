@@ -14,7 +14,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gpt-5.4",
@@ -22,7 +25,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gpt-5.4-mini",
@@ -30,7 +36,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gpt-5.4-nano",
@@ -38,7 +47,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "claude-opus-4-7",
@@ -46,7 +58,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "claude-opus-4-6",
@@ -54,7 +69,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "claude-sonnet-4-6",
@@ -62,7 +80,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "claude-haiku-4-5-20251001",
@@ -70,7 +91,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gemini-3.1-pro-preview",
@@ -78,7 +102,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gemini-2.5-pro",
@@ -86,7 +113,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gemini-2.5-flash",
@@ -94,7 +124,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "gemini-2.5-flash-lite",
@@ -102,7 +135,10 @@
       "model_types": [
         "chat",
         "vision"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     }
   ]
 }

@@ -959,10 +959,7 @@ func (e *elasticsearchEngine) Search(ctx context.Context, req *types.SearchReque
 		return nil, fmt.Errorf("index names cannot be empty")
 	}
 
-	offset := req.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(req.Offset, 0)
 	limit := req.Limit
 	if limit <= 0 {
 		limit = 30
@@ -1353,10 +1350,7 @@ func searchAfterPaginate(
 	// Skip phase: walk past `offset` hits without retaining them.
 	remainingSkip := offset
 	for remainingSkip > 0 {
-		batch := remainingSkip
-		if batch > common.SearchAfterBatchSize {
-			batch = common.SearchAfterBatchSize
-		}
+		batch := min(remainingSkip, common.SearchAfterBatchSize)
 
 		resp, err := fetch(ctx, baseQuery, batch, cursor, firstCall)
 		firstCall = false
@@ -1390,10 +1384,7 @@ func searchAfterPaginate(
 	// target) regardless of how many we asked for in this iteration.
 	for collectedTake < limit {
 		want := limit - collectedTake
-		batch := want
-		if batch > common.SearchAfterBatchSize {
-			batch = common.SearchAfterBatchSize
-		}
+		batch := min(want, common.SearchAfterBatchSize)
 
 		resp, err := fetch(ctx, baseQuery, batch, cursor, firstCall)
 		firstCall = false
@@ -2857,10 +2848,7 @@ func calculatePagination(page, size, topK int) (int, int) {
 
 	window := rerankWindow(size, topK)
 
-	offset := (page - 1) * window
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max((page-1)*window, 0)
 
 	return offset, window
 }

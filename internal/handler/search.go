@@ -382,8 +382,8 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 	if searchSvc == nil {
 		searchSvc = service.NewSearchService()
 	}
-
-	plan, code, err := searchSvc.PrepareCompletion(user.ID, c.Param("search_id"), &req)
+	ctx := c.Request.Context()
+	plan, code, err := searchSvc.PrepareCompletion(ctx, user.ID, c.Param("search_id"), &req)
 	if err != nil {
 		if code == common.CodeAuthenticationError {
 			common.ResponseWithCodeData(c, code, false, err.Error())

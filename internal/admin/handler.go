@@ -258,8 +258,9 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	if req.Role == "" {
 		req.Role = "user"
 	}
+	ctx := c.Request.Context()
 
-	userInfo, err := h.service.CreateUser(req.Username, req.Password, req.Role)
+	userInfo, err := h.service.CreateUser(ctx, req.Username, req.Password, req.Role)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -309,7 +310,7 @@ func (h *Handler) DeleteUser(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.DeleteUser(username)
+	result, err := h.service.DeleteUser(c.Request.Context(), username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1019,7 +1020,8 @@ func (h *Handler) RemoveIngestionTasks(c *gin.Context) {
 	}
 
 	if req.Email == nil && req.Status == nil {
-		tasks, err := h.service.RemoveIngestionTasks(req.Tasks)
+		ctx := c.Request.Context()
+		tasks, err := h.service.RemoveIngestionTasks(ctx, req.Tasks)
 		if err != nil {
 			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
 			return
@@ -1050,7 +1052,8 @@ func (h *Handler) StopIngestionTasks(c *gin.Context) {
 	}
 
 	if req.Email == nil && req.Status == nil {
-		tasks, err := h.service.StopIngestionTasks(req.Tasks)
+		ctx := c.Request.Context()
+		tasks, err := h.service.StopIngestionTasks(ctx, req.Tasks)
 		if err != nil {
 			common.ErrorWithCode(c, handler.IngestionTaskErrorCode(err), err.Error())
 			return
@@ -1085,7 +1088,8 @@ func (h *Handler) ListIngestionTasks(c *gin.Context) {
 	var tasks []map[string]interface{}
 	var req ListIngestionTasksRequest
 	if err = c.ShouldBindJSON(&req); err != nil {
-		tasks, err = h.service.ListIngestionTasks()
+		ctx := c.Request.Context()
+		tasks, err = h.service.ListIngestionTasks(ctx)
 	} else {
 		tasks, err = h.service.ListIngestionTasksByCondition(req.Email, req.Status)
 	}

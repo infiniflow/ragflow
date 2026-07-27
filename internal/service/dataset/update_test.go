@@ -18,6 +18,7 @@ package dataset
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -72,7 +73,7 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 		t.Fatalf("expected empty connector list, got %#v", result["connectors"])
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
@@ -358,7 +359,7 @@ func TestDatasetServiceUpdateDatasetRejectsTeamMemberPermissionChange(t *testing
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get dataset: %v", err)
 	}
@@ -516,7 +517,7 @@ func TestDatasetServiceUpdateDatasetAcceptsProviderInstanceEmbedding(t *testing.
 		t.Fatalf("expected embedding model %q, got %#v", embeddingModel, result["embedding_model"])
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
@@ -548,7 +549,7 @@ func TestDatasetServiceUpdateDatasetAcceptsEmbeddingModelID(t *testing.T) {
 		t.Fatalf("expected embedding model %q, got %#v", embeddingModelID, result["embedding_model"])
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
@@ -677,7 +678,7 @@ func TestDatasetServiceUpdateDatasetPreservesUnmodifiedFields(t *testing.T) {
 		t.Fatalf("expected embedding_model preserved, got %#v", result["embedding_model"])
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
@@ -710,7 +711,7 @@ func TestDatasetServiceUpdateDatasetPreservesParserConfigOnEmptyUpdate(t *testin
 		t.Fatalf("expected success code, got %d", code)
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
@@ -727,9 +728,10 @@ func TestDatasetServiceDeleteDatasetsRejectsUnauthorizedID(t *testing.T) {
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "11111111111141118111111111111111", "tenant-1", "Test")
 
+	ctx := t.Context()
 	svc := NewDatasetService()
 	normalizedID := "11111111111141118111111111111111"
-	_, code, err := svc.DeleteDatasets([]string{normalizedID}, false, "tenant-2")
+	_, code, err := svc.DeleteDatasets(ctx, []string{normalizedID}, false, "tenant-2")
 	if err == nil {
 		t.Fatal("expected unauthorized error")
 	}
@@ -745,8 +747,9 @@ func TestDatasetServiceDeleteDatasetsRejectsAllUnauthorized(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 
+	ctx := t.Context()
 	svc := NewDatasetService()
-	_, code, err := svc.DeleteDatasets([]string{"d94a8dc02c9711f0930f7fbc369eab6d"}, false, "tenant-1")
+	_, code, err := svc.DeleteDatasets(ctx, []string{"d94a8dc02c9711f0930f7fbc369eab6d"}, false, "tenant-1")
 	if err == nil {
 		t.Fatal("expected unauthorized error")
 	}
@@ -985,7 +988,7 @@ func TestUpdateDataset_StripsUnknownParam_Builtin(t *testing.T) {
 		t.Fatalf("expected success code, got %d", code)
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
@@ -1025,7 +1028,7 @@ func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
 		t.Fatalf("expected parser_id preserved, got %#v", result["parser_id"])
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}
@@ -1040,6 +1043,103 @@ func TestUpdateDataset_AcceptsValidComponentParams_Builtin(t *testing.T) {
 	pdf, ok := rhyme["pdf"].(map[string]interface{})
 	if !ok || pdf["parse_method"] != "deepdoc" {
 		t.Fatalf("expected pdf setup persisted, got %#v", rhyme)
+	}
+}
+
+func TestUpdateDataset_PreservesIncomingMetadataWhenCleaningParserConfig(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	incomingMetadata := []interface{}{map[string]interface{}{
+		"key":         "author",
+		"type":        "string",
+		"description": "Author",
+	}}
+	incomingBuiltInMetadata := []interface{}{map[string]interface{}{
+		"key":  "document_name",
+		"type": "string",
+	}}
+	parserConfig := map[string]interface{}{
+		"Parser:HipSignsRhyme": map[string]interface{}{
+			"pdf": map[string]interface{}{"parse_method": "deepdoc"},
+		},
+		"metadata":          incomingMetadata,
+		"built_in_metadata": incomingBuiltInMetadata,
+		"enable_metadata":   true,
+	}
+
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserConfig: parserConfig,
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset failed: code=%d err=%v", code, err)
+	}
+
+	ctx := t.Context()
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], incomingMetadata) {
+		t.Fatalf("metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
+	}
+	if !reflect.DeepEqual(persisted.ParserConfig["built_in_metadata"], incomingBuiltInMetadata) {
+		t.Fatalf("built_in_metadata was not preserved: %#v", persisted.ParserConfig["built_in_metadata"])
+	}
+	if persisted.ParserConfig["enable_metadata"] != true {
+		t.Fatalf("enable_metadata was not preserved: %#v", persisted.ParserConfig["enable_metadata"])
+	}
+	if _, ok := persisted.ParserConfig["Parser:HipSignsRhyme"].(map[string]interface{}); !ok {
+		t.Fatalf("component parser_config missing: %#v", persisted.ParserConfig)
+	}
+}
+
+func TestUpdateDataset_PreservesExistingMetadataWhenParserConfigOmitsIt(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	existingMetadata := []interface{}{map[string]interface{}{
+		"key":  "category",
+		"type": "string",
+	}}
+	existingBuiltInMetadata := []interface{}{map[string]interface{}{
+		"key":  "document_name",
+		"type": "string",
+	}}
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("parser_config", entity.JSONMap{
+		"metadata":          existingMetadata,
+		"built_in_metadata": existingBuiltInMetadata,
+		"enable_metadata":   true,
+	}).Error; err != nil {
+		t.Fatalf("seed parser_config: %v", err)
+	}
+
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+		ParserConfig: map[string]interface{}{
+			"Parser:HipSignsRhyme": map[string]interface{}{
+				"pdf": map[string]interface{}{"parse_method": "deepdoc"},
+			},
+		},
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset failed: code=%d err=%v", code, err)
+	}
+
+	ctx := t.Context()
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if !reflect.DeepEqual(persisted.ParserConfig["metadata"], existingMetadata) {
+		t.Fatalf("existing metadata was not preserved: %#v", persisted.ParserConfig["metadata"])
+	}
+	if !reflect.DeepEqual(persisted.ParserConfig["built_in_metadata"], existingBuiltInMetadata) {
+		t.Fatalf("existing built_in_metadata was not preserved: %#v", persisted.ParserConfig["built_in_metadata"])
+	}
+	if persisted.ParserConfig["enable_metadata"] != true {
+		t.Fatalf("existing enable_metadata was not preserved: %#v", persisted.ParserConfig["enable_metadata"])
 	}
 }
 
@@ -1065,7 +1165,7 @@ func TestUpdateDataset_StripsCanvasUnknownParam(t *testing.T) {
 		t.Fatalf("expected success code, got %d", code)
 	}
 
-	persisted, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get updated kb: %v", err)
 	}

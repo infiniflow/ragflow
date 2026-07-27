@@ -120,7 +120,8 @@ func (g *GPUStackModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("invalid message format")
 	}
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -132,6 +133,7 @@ func (g *GPUStackModel) ChatWithMessages(ctx context.Context, modelName string, 
 	return &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}, nil
 }
 
@@ -189,6 +191,7 @@ func (g *GPUStackModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	}
 
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		if apiErr, ok := event["error"]; ok {
 			return fmt.Errorf("gpustack: upstream stream error: %v", apiErr)
@@ -206,6 +209,8 @@ func (g *GPUStackModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		if !ok {
 			return nil
 		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		if r, ok := delta["reasoning_content"].(string); ok && r != "" {
 			if err := sender(nil, &r); err != nil {
@@ -229,6 +234,7 @@ func (g *GPUStackModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 	if !done && !sawTerminal {
 		return fmt.Errorf("gpustack: stream ended before [DONE] or finish_reason")
 	}

@@ -63,7 +63,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 		return
 	}
 
-	user, code, err := h.userService.Register(&req)
+	user, code, err := h.userService.Register(ctx, &req)
 	if err != nil {
 		var data interface{} = false
 		if code == common.CodeExceptionError {

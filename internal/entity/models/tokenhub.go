@@ -127,7 +127,8 @@ func (t *TokenHubModel) ChatWithMessages(ctx context.Context, modelName string, 
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -145,6 +146,7 @@ func (t *TokenHubModel) ChatWithMessages(ctx context.Context, modelName string, 
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
@@ -199,6 +201,7 @@ func (t *TokenHubModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
+	accumulatedToolCalls := make(map[int]map[string]any)
 	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
@@ -214,6 +217,8 @@ func (t *TokenHubModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		if !ok {
 			return nil
 		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if !ok || reasoningContent == "" {
@@ -237,6 +242,7 @@ func (t *TokenHubModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	}); err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"

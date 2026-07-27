@@ -143,7 +143,8 @@ func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, 
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -162,6 +163,7 @@ func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, 
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
@@ -225,6 +227,7 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	}
 
 	// SSE parsing: read line by line
+	accumulatedToolCalls := make(map[int]map[string]any)
 	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
@@ -240,6 +243,8 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		if !ok {
 			return nil
 		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
@@ -259,6 +264,7 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	}); err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"

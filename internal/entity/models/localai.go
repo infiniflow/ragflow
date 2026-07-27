@@ -154,7 +154,8 @@ func (l *LocalAIModel) ChatWithMessages(ctx context.Context, modelName string, m
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -165,6 +166,7 @@ func (l *LocalAIModel) ChatWithMessages(ctx context.Context, modelName string, m
 	return &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}, nil
 }
 
@@ -248,6 +250,7 @@ func (l *LocalAIModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	}()
 
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	streamDone, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		lastActiveMu.Lock()
 		lastActive = time.Now()
@@ -267,6 +270,8 @@ func (l *LocalAIModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		if !ok {
 			return nil
 		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		if reasoning := extractLocalAIReasoning(delta); reasoning != "" {
 			if err := sender(nil, &reasoning); err != nil {
@@ -293,6 +298,7 @@ func (l *LocalAIModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		}
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 	if !streamDone && !sawTerminal {
 		return fmt.Errorf("localai: stream ended before [DONE] or finish_reason")
 	}
