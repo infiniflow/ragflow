@@ -19,14 +19,7 @@ const MindMapSheet = ({ data, hideModal, loading, visible }: IProps) => {
   const { t } = useTranslation();
   const percent = usePendingMindMap();
   return (
-    <Sheet
-      open={visible}
-      onOpenChange={(open) => {
-        if (!open) {
-          hideModal?.();
-        }
-      }}
-    >
+    <Sheet open={visible} modal={false}>
       <SheetContent
         className="top-24 p-0 flex flex-col gap-0 h-auto"
         closeIcon={false}
