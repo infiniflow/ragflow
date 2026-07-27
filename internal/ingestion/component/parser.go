@@ -496,7 +496,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		// images/tables (doc_type_kwd "image"/"table" with non-empty
 		// image field). Mirrors Python's enhance_media_sections_with_vision
 		// in parser.py:_pdf
-		dispatched, _, _ = maybeDispatchPDFVisionEnhancement(ctx, fileTypeExt, dispatched, inputs)
+		dispatched, _, _ = maybeDispatchPDFVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs)
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.

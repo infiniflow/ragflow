@@ -572,6 +572,7 @@ func isMinerUDriver(driver modelModule.ModelDriver) bool {
 // when none is configured — matching Python's try/except pass behaviour.
 func maybeDispatchPDFVisionEnhancement(
 	ctx context.Context,
+	db *gorm.DB,
 	fileType utility.FileType,
 	dispatched parserDispatchResult,
 	inputs map[string]any,
@@ -586,7 +587,7 @@ func maybeDispatchPDFVisionEnhancement(
 	if tenantID == "" {
 		return dispatched, false, nil
 	}
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(tenantID, entity.ModelTypeImage2Text)
+	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 	if err != nil {
 		return dispatched, false, nil
 	}

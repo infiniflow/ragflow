@@ -332,13 +332,14 @@ func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
 	drv := &audioTranscribeDriver{transcription: want}
 	orig := resolveTenantModelByType
 	defer func() { resolveTenantModelByType = orig }()
-	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return drv, "asr-model", &modelModule.APIConfig{}, 0, nil
 	}
 	setups := defaultSetups()
 	// Do NOT set output_format — exercise the default path.
 	res, dispatched, err := maybeDispatchAudio(
 		context.Background(),
+		nil,
 		utility.FileTypeAURAL,
 		"test.mp3",
 		[]byte("fake-audio"),
