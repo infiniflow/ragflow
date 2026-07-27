@@ -48,9 +48,9 @@ Variable Types:
 Files uploaded through the Begin component are only used as workflow input. They will not be automatically saved to knowledge bases, nor use knowledge base parsing, OCR or chunking capabilities. File content can be passed to subsequent components as variables and limited by model context length.
 :::
 
-![Begin Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/begin_component_1.png)
+![Begin Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/begin_component_1.jpg)
 
-![Begin Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/begin_component_2.png)
+![Begin Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/begin_component_2.jpg)
 
 ## Agent Component
 The Agent component invokes LLMs for reasoning, content generation, task planning and tool calling. It can process user questions independently or cooperate with retrieval, HTTP requests, code, databases and sub-agents to complete multi-step tasks.
@@ -104,13 +104,13 @@ Two output types are supported:
 1. **content**: Default natural language text returned by Agent
 2. **structured**: Structured data output. After enabling Structured output, define the format with JSON Schema to standardize returned fields for Code, HTTP Request, SQL and conditional judgment nodes.
 
-![Agent Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_component_1.png)
+![Agent Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_component_1.jpg)
 
-![Agent Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_component_2.png)
+![Agent Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_component_2.jpg)
 
-![Agent Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_component_3.png)
+![Agent Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_component_3.jpg)
 
-![Agent Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_component_4.png)
+![Agent Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/agent_component_4.jpg)
 
 
 ## Retrieval Component
@@ -141,9 +141,9 @@ Initial Configuration Reference:
 | Similarity threshold | 0.5 | General Q&A | Default starting value |
 | Similarity threshold | 0.8 | Strict precise matching | Scenarios requiring exact terminology matching |
 
-![Knowledge Retrieval Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/knowledge_retrieval_component_1.png)
+![Knowledge Retrieval Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/knowledge_retrieval_component_1.jpg)
 
-![Knowledge Retrieval Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/knowledge_retrieval_component_2.png)
+![Knowledge Retrieval Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/knowledge_retrieval_component_2.jpg)
 
 
 ## Message Component
@@ -155,6 +155,6 @@ When Begin uses Webhook mode with Final response as response method, the Message
 
 Applicable scenarios: Output final answers, branch hints, fallback replies or display intermediate processing results. Output content will be sent to dialogue windows, webhook responses or embedded pages.
 
-![Reply Message Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/reply_message_component_1.png)
+![Reply Message Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/reply_message_component_1.jpg)
 
-![Reply Message Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/reply_message_component_2.png)
+![Reply Message Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/reply_message_component_2.jpg)

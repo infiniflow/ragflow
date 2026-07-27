@@ -43,8 +43,8 @@ Chained connection:
 
 - When chaining **Transformer** components, if variables are referenced correctly, the second **Transformer** component processes the output of the first one, for example, generating keywords from a summary.
 
-![Configure The Transformer Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_transformer_component_1.png)
+![Configure The Transformer Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_transformer_component_1.jpg)
 
-![Configure The Transformer Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_transformer_component_2.png)
+![Configure The Transformer Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_transformer_component_2.jpg)
 
-![Configure The Transformer Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_transformer_component_3.png)
+![Configure The Transformer Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_transformer_component_3.jpg)

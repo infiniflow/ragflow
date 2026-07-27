@@ -33,4 +33,4 @@ Operation Steps:
 6. After selection, the variable will be automatically inserted into the input box.
 7. Save component configuration and run the Agent to verify data transmission.
 
-![Use Variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/use_variables.png)
+![Use Variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/use_variables.jpg)

@@ -15,9 +15,9 @@ In the **Files** list of a knowledge base, each document row provides a key icon
 
 Use this dialog to configure collaborator permissions for the selected document.
 
-![Configure Operations](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_operations_1.png)
+![Configure Operations](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_operations_1.jpg)
 
-![Configure Operations](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_operations_2.png)
+![Configure Operations](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_operations_2.jpg)
 
 
 ### Document permission levels

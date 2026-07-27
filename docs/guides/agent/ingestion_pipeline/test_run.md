@@ -10,4 +10,4 @@ sidebar_custom_props: {
 
 On the pipeline canvas, click **Run** to upload a sample file and view step-by-step results.
 
-![Test Run](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/test_run.png)
+![Test Run](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/test_run.jpg)

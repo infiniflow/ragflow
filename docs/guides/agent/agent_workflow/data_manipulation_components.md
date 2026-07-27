@@ -17,7 +17,7 @@ Configuration:
 2. **Code**: Select Python or JavaScript and write business logic.
 3. **Return Value**: Define output data returned to downstream components.
 
-![Code Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/code_component.png)
+![Code Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/code_component.jpg)
 
 
 ## Text Processing Component
@@ -29,7 +29,7 @@ Processing Modes:
 
 Configure script content with variables inserted via `/`. Output results can be referenced by subsequent nodes.
 
-![Text Processing Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/text_processing_component.png)
+![Text Processing Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/text_processing_component.jpg)
 
 
 ## Data Operation Component
@@ -55,7 +55,7 @@ Supported Operations:
 | Remove keys | Delete specified fields | Remove unnecessary sensitive or unused fields |
 | Rename keys | Rename object field keys | Unify field naming standards |
 
-![Data Operation Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/data_operation_component.png)
+![Data Operation Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/data_operation_component.jpg)
 
 
 ## Variable Assignor Component
@@ -71,7 +71,7 @@ Supported Operations:
 | Set | Yes | Assign fixed constant value to target variable |
 | Clear | No | Empty the target variable |
 
-![Variable Assigner Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/variable_assigner_component.png)
+![Variable Assigner Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/variable_assigner_component.jpg)
 
 
 ## List Operation Component
@@ -104,4 +104,4 @@ Configuration:
 
 Output: Variables inside each group can be referenced via group name such as `Group0`.
 
-![Variable Aggregation Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/variable_aggregation_component.png)
+![Variable Aggregation Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/variable_aggregation_component.jpg)

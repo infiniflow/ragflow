@@ -41,6 +41,6 @@ For text and markup (HTML/MD):
 
 - Formatting tags are automatically removed and clean text is output.
 
-![Configure The Parser Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_parser_component_1.png)
+![Configure The Parser Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_parser_component_1.jpg)
 
-![Configure The Parser Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_parser_component_2.png)
+![Configure The Parser Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_parser_component_2.jpg)
