@@ -19,6 +19,7 @@ package component
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,6 +28,8 @@ import (
 	eschema "github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 )
 
@@ -817,3 +820,58 @@ func TestResolveExtractorChatTarget_NoDriver(t *testing.T) {
 		t.Errorf("modelName = %q, want plain-name", modelName)
 	}
 }
+
+// TestResolveExtractorChatConfig_CompositeFallback verifies that when the
+// template-pinned composite model ("model@provider") cannot be resolved
+// (the tenant has no matching provider instance), the Extractor falls back
+// to the tenant's default chat LLM instead of failing. This is the bug
+// behind the resume-template crash: the template hardcodes
+// "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW", and tenants that haven't
+// provisioned a SILICONFLOW instance named "default" hit
+// `instance "default" lookup failed: record not found`.
+func TestResolveExtractorChatConfig_CompositeFallback(t *testing.T) {
+	origComposite := resolveExtractorCompositeModel
+	origDefault := resolveTenantModelByType
+	defer func() {
+		resolveExtractorCompositeModel = origComposite
+		resolveTenantModelByType = origDefault
+	}()
+
+	// Simulate the tenant lacking the pinned model's provider instance:
+	// the composite resolver fails as the real DAO would.
+	resolveExtractorCompositeModel = func(tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return nil, "", nil, 0, fmt.Errorf("instance %q lookup failed: record not found", "default")
+	}
+	fallbackDriver := &modelModule.DummyModel{}
+	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		if modelType != entity.ModelTypeChat {
+			return nil, "", nil, 0, fmt.Errorf("unexpected model type: %s", modelType)
+		}
+		apiConfig := &modelModule.APIConfig{ApiKey: ptr("fallback-key"), BaseURL: ptr("https://fallback.example.com")}
+		return fallbackDriver, "tenant-default-chat", apiConfig, 0, nil
+	}
+
+	ctx := runtime.WithState(context.Background(), runtime.NewCanvasState("run-1", "task-1"))
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil {
+		t.Fatalf("GetStateFromContext: %v", err)
+	}
+	state.SetGlobal("tenant_id", "tenant-1")
+
+	cfg, err := resolveExtractorChatConfig(ctx, "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW")
+	if err != nil {
+		t.Fatalf("expected fallback success, got error: %v", err)
+	}
+	if cfg.modelName != "tenant-default-chat" {
+		t.Errorf("modelName = %q, want tenant-default-chat (fallback)", cfg.modelName)
+	}
+	if cfg.apiKey != "fallback-key" {
+		t.Errorf("apiKey = %q, want fallback-key (fallback)", cfg.apiKey)
+	}
+	if cfg.baseURL != "https://fallback.example.com" {
+		t.Errorf("baseURL = %q, want https://fallback.example.com (fallback)", cfg.baseURL)
+	}
+}
+
+// ptr is a small helper for building *string test fixtures.
+func ptr(s string) *string { return &s }

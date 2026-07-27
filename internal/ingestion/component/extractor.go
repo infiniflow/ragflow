@@ -84,6 +84,15 @@ import (
 
 const componentNameExtractor = "Extractor"
 
+// resolveExtractorCompositeModel resolves a composite "model@provider"
+// llm_id into driver / model / apiConfig. It is a test seam: production
+// delegates to the shared resolveModelConfig dispatcher; unit tests swap
+// it to inject failures without a live DB (the real dispatcher hits the
+// DAO layer and panics under testing.Main's no-DB harness).
+var resolveExtractorCompositeModel = func(tenantID string, modelType entity.ModelType, modelRef string) (models.ModelDriver, string, *models.APIConfig, int, error) {
+	return resolveModelConfig(tenantID, modelType, modelRef)
+}
+
 // extractorTimeout bounds one LLM chat call. Matches the python
 // `@timeout(60)` default at rag/flow/base.py:60. The pipeline
 // orchestrator (Phase 3) overrides this if a stage-level ceiling
@@ -798,9 +807,21 @@ func resolveExtractorChatConfig(ctx context.Context, compositeLLMID string) (ext
 		}
 	} else {
 		// Composite "model@provider" path: delegate to the shared dispatcher.
-		driver, modelName, apiConfig, _, err = resolveModelConfig(tid, entity.ModelTypeChat, compositeLLMID)
+		driver, modelName, apiConfig, _, err = resolveExtractorCompositeModel(tid, entity.ModelTypeChat, compositeLLMID)
 		if err != nil {
-			return extractorChatConfig{}, fmt.Errorf("extractor: resolve model %q: %w", compositeLLMID, err)
+			// The template may pin a specific model (e.g. the resume
+			// template's "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW") that
+			// this tenant hasn't configured an instance for. Fall back
+			// to the tenant's default chat LLM instead of failing the
+			// whole pipeline — mirrors the Python side's graceful
+			// handling in chunk_post_processor._resolve_template_chat_llm_id.
+			fallbackDriver, fallbackName, fallbackAPI, _, fbErr := resolveTenantModelByType(tid, entity.ModelTypeChat)
+			if fbErr != nil {
+				return extractorChatConfig{}, fmt.Errorf("extractor: resolve model %q: %w (tenant default also failed: %v)", compositeLLMID, err, fbErr)
+			}
+			driver = fallbackDriver
+			modelName = fallbackName
+			apiConfig = fallbackAPI
 		}
 	}
 
