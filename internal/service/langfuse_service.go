@@ -69,17 +69,17 @@ func NewLangfuseService() *LangfuseService {
 
 // SetAPIKey validates and stores (insert or update) the Langfuse credentials
 // for a tenant.
-func (s *LangfuseService) SetAPIKey(tenantID, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
+func (s *LangfuseService) SetAPIKey(ctx context.Context, tenantID, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
 	if secretKey == "" || publicKey == "" || host == "" {
-		return nil, common.CodeDataError, errors.New("Missing required fields")
+		return nil, common.CodeDataError, errors.New("missing required fields")
 	}
 
-	ok, err := s.verifier.AuthCheck(context.Background(), host, publicKey, secretKey)
+	ok, err := s.verifier.AuthCheck(ctx, host, publicKey, secretKey)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
 	if !ok {
-		return nil, common.CodeDataError, errors.New("Invalid Langfuse keys")
+		return nil, common.CodeDataError, errors.New("invalid Langfuse keys")
 	}
 
 	row := &entity.TenantLangfuse{
@@ -89,7 +89,7 @@ func (s *LangfuseService) SetAPIKey(tenantID, secretKey, publicKey, host string)
 		Host:      host,
 	}
 
-	if err := s.langfuseDAO.SaveByTenantID(row); err != nil {
+	if err = s.langfuseDAO.SaveByTenantID(ctx, dao.DB, row); err != nil {
 		return nil, common.CodeServerError, err
 	}
 
@@ -98,8 +98,8 @@ func (s *LangfuseService) SetAPIKey(tenantID, secretKey, publicKey, host string)
 
 // GetAPIKey returns the stored credentials enriched with the Langfuse project
 // id/name.
-func (s *LangfuseService) GetAPIKey(tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
-	row, err := s.langfuseDAO.GetByTenantID(tenantID)
+func (s *LangfuseService) GetAPIKey(ctx context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
+	row, err := s.langfuseDAO.GetByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, common.CodeServerError, "", err
 	}
@@ -107,7 +107,7 @@ func (s *LangfuseService) GetAPIKey(tenantID string) (*entity.LangfuseInfoRespon
 		return nil, common.CodeSuccess, "Have not record any Langfuse keys.", nil
 	}
 
-	projectID, projectName, err := s.verifier.GetProject(context.Background(), row.Host, row.PublicKey, row.SecretKey)
+	projectID, projectName, err := s.verifier.GetProject(ctx, row.Host, row.PublicKey, row.SecretKey)
 	if err != nil {
 		if errors.Is(err, ErrLangfuseUnauthorized) {
 			return nil, common.CodeDataError, "Invalid Langfuse keys loaded", err
@@ -130,8 +130,8 @@ func (s *LangfuseService) GetAPIKey(tenantID string) (*entity.LangfuseInfoRespon
 }
 
 // DeleteAPIKey removes the stored credentials for a tenant.
-func (s *LangfuseService) DeleteAPIKey(tenantID string) (bool, common.ErrorCode, string, error) {
-	if err := s.langfuseDAO.DeleteExistingByTenantID(tenantID); err != nil {
+func (s *LangfuseService) DeleteAPIKey(ctx context.Context, tenantID string) (bool, common.ErrorCode, string, error) {
+	if err := s.langfuseDAO.DeleteExistingByTenantID(ctx, dao.DB, tenantID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, common.CodeSuccess, "Have not record any Langfuse keys.", nil
 		}

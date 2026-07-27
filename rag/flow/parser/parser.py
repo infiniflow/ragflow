@@ -35,6 +35,9 @@ from api.db.joint_services.tenant_model_service import (
     resolve_model_config,
     get_tenant_default_model_by_type,
 )
+from api.db.services.tenant_model_instance_service import TenantModelInstanceService
+from api.db.services.tenant_model_provider_service import TenantModelProviderService
+from api.db.services.tenant_model_service import TenantModelService
 from common import settings
 from common.constants import LLMType
 from common.misc_utils import get_uuid, thread_pool_exec
@@ -254,7 +257,7 @@ class ParserParam(ProcessParamBase):
             pdf_parse_method = pdf_config.get("parse_method", "")
             self.check_empty(pdf_parse_method, "Parse method abnormal.")
 
-            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark"]:
+            if pdf_parse_method.lower() not in ["deepdoc", "plain_text", "mineru", "docling", "opendataloader", "tcadp parser", "paddleocr", "somark", "mistral ocr"]:
                 self.check_empty(pdf_config.get("lang", ""), "PDF VLM language")
 
             pdf_output_format = pdf_config.get("output_format", "")
@@ -337,6 +340,17 @@ class Parser(ProcessBase):
 
         # Normalize parser selection and optional provider-specific model name.
         raw_parse_method = conf.get("parse_method", "")
+        # If raw_parse_method is a tenant_model ID, resolve it to
+        # model_name@instance_name@provider_name so the provider-specific
+        # branches below can match the per-provider suffix.
+        if isinstance(raw_parse_method, str) and raw_parse_method:
+            exist, model_obj = TenantModelService.get_by_id(raw_parse_method)
+            if exist:
+                provider_ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+                instance_ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+                if provider_ok and instance_ok:
+                    raw_parse_method = f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_obj.provider_name}"
+
         parser_model_name = None
         parse_method = raw_parse_method
         parse_method = parse_method or ""
@@ -355,6 +369,9 @@ class Parser(ProcessBase):
                 # downstream requires all three segments.
                 parser_model_name = raw_parse_method
                 parse_method = "SoMark"
+            elif lowered.endswith("@mistral ocr"):
+                parser_model_name = raw_parse_method
+                parse_method = "Mistral OCR"
 
         # DeepDOC returns structured page boxes directly.
         if parse_method.lower() == "deepdoc":
@@ -521,6 +538,52 @@ class Parser(ProcessBase):
             parser_model_name = resolve_somark_llm_name()
             if not parser_model_name:
                 raise RuntimeError("SoMark model not configured. Please add SoMark in Model Providers or set SOMARK_* env.")
+
+            tenant_id = self._canvas._tenant_id
+            ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)
+            ocr_model = LLMBundle(tenant_id, ocr_model_config)
+            pdf_parser = ocr_model.mdl
+
+            lines, _ = pdf_parser.parse_pdf(
+                filepath=name,
+                binary=blob,
+                callback=self.callback,
+                parse_method="pipeline",
+            )
+            bboxes = []
+            for item in lines or []:
+                if not isinstance(item, tuple) or len(item) < 3:
+                    continue
+                text, layout_type, poss = item[0], item[1], item[2]
+                box = {
+                    "text": text,
+                    "layout_type": layout_type or "text",
+                }
+                if isinstance(poss, str) and poss:
+                    positions = [[pos[0][-1] + 1, *pos[1:]] for pos in pdf_parser.extract_positions(poss)]
+                    if positions:
+                        box["positions"] = positions
+                    image = pdf_parser.crop(poss, 1)
+                    if image is not None:
+                        box["image"] = image
+                bboxes.append(box)
+
+        elif parse_method.lower() == "mistral ocr":
+
+            def resolve_mistral_ocr_llm_name():
+                configured = parser_model_name or conf.get("mistral_ocr_llm_name")
+                if configured:
+                    return configured
+                tenant_id = self._canvas._tenant_id
+                if not tenant_id:
+                    return None
+                from api.db.joint_services.tenant_model_service import ensure_mistral_ocr_from_env
+
+                return ensure_mistral_ocr_from_env(tenant_id)
+
+            parser_model_name = resolve_mistral_ocr_llm_name()
+            if not parser_model_name:
+                raise RuntimeError("Mistral OCR model not configured. Please add Mistral OCR in Model Providers or set MISTRAL_OCR_* env.")
 
             tenant_id = self._canvas._tenant_id
             ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, parser_model_name)

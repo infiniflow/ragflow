@@ -326,7 +326,7 @@ func (p *AliyunCodeInterpreterProvider) ExecuteCode(
 		} `json:"results"`
 		ContextID string `json:"contextId"`
 	}
-	if err := json.Unmarshal(respBody, &parsed); err != nil {
+	if err = json.Unmarshal(respBody, &parsed); err != nil {
 		return nil, fmt.Errorf("aliyun: decode execute response: %w", err)
 	}
 

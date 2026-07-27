@@ -15,6 +15,7 @@
   <a href="./README_pt_br.md"><img alt="Português(Brasil)" src="https://img.shields.io/badge/Português(Brasil)-DFE0E5"></a>
   <a href="./README_ar.md"><img alt="README in Arabic" src="https://img.shields.io/badge/Arabic-DFE0E5"></a>
   <a href="./README_tr.md"><img alt="Türkçe README" src="https://img.shields.io/badge/Türkçe-DFE0E5"></a>
+  <a href="./README_ru.md"><img alt="Русская версия README" src="https://img.shields.io/badge/Русский-DFE0E5"></a>
 </p>
 
 <p align="center">
@@ -46,7 +47,7 @@
 </h4>
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
+<img alt="RAGFlow in the GitHub Octoverse" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/ragflow-octoverse.png" width="1200"/>
 </div>
 
 <div align="center">
@@ -81,8 +82,8 @@
 Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
+<img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
+<img alt="Agentic workflow demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/agentic-dark.gif" width="1200"/>
 </div>
 
 ## 🔥 Dernières mises à jour
@@ -105,7 +106,7 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 ⭐️ Mettez une étoile à notre dépôt pour rester informé des nouvelles fonctionnalités et améliorations passionnantes ! Recevez des notifications instantanées pour les nouvelles versions ! 🌟
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
+<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
 </div>
 
 ## 🌟 Fonctionnalités clés
@@ -139,7 +140,7 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 ## 🔎 Architecture du système
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
+<img alt="RAGFlow system architecture" src="https://github.com/user-attachments/assets/31b0dd6f-ca4f-445a-9457-70cb44a381b2" width="1000"/>
 </div>
 
 ## 🎬 Auto-hébergement
@@ -163,14 +164,14 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
    > Pour vérifier la valeur de `vm.max_map_count` :
    >
    > ```bash
-   > $ sysctl vm.max_map_count
+   > sysctl vm.max_map_count
    > ```
    >
    > Réinitialisez `vm.max_map_count` à une valeur d'au moins 262144 si ce n'est pas le cas.
    >
    > ```bash
    > # Dans ce cas, nous le définissons à 262144 :
-   > $ sudo sysctl -w vm.max_map_count=262144
+   > sudo sysctl -w vm.max_map_count=262144
    > ```
    >
    > Ce changement sera réinitialisé après un redémarrage du système. Pour que votre modification reste permanente, ajoutez ou mettez à jour la valeur `vm.max_map_count` dans **/etc/sysctl.conf** :
@@ -182,7 +183,7 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 2. Clonez le dépôt :
 
    ```bash
-   $ git clone https://github.com/infiniflow/ragflow.git
+   git clone https://github.com/infiniflow/ragflow.git
    ```
 3. Démarrez le serveur en utilisant les images Docker préconstruites :
 
@@ -193,14 +194,14 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 > La commande ci-dessous télécharge l'édition `v0.26.4` de l'image Docker RAGFlow. Consultez le tableau suivant pour les descriptions des différentes éditions de RAGFlow. Pour télécharger une édition de RAGFlow différente de `v0.26.4`, mettez à jour la variable `RAGFLOW_IMAGE` dans **docker/.env** avant d'utiliser `docker compose` pour démarrer le serveur.
 
 ```bash
-   $ cd ragflow/docker
+   cd ragflow/docker
 
    git checkout v0.26.4
    # Optionnel : utiliser un tag stable (voir les versions : https://github.com/infiniflow/ragflow/releases)
    # Cette étape garantit que le fichier **entrypoint.sh** dans le code correspond à la version de l'image Docker.
 
    # Use CPU for DeepDoc tasks:
-   $ docker compose -f docker-compose.yml up -d
+   docker compose -f docker-compose.yml up -d
 
    # To use GPU to accelerate DeepDoc tasks:
    # sed -i '1i DEVICE=gpu' .env
@@ -219,7 +220,7 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 4. Vérifiez l'état du serveur après son démarrage :
 
    ```bash
-   $ docker logs -f docker-ragflow-cpu-1
+   docker logs -f docker-ragflow-cpu-1
    ```
 
    _La sortie suivante confirme un lancement réussi du système :_
@@ -263,7 +264,7 @@ Pour mettre à jour le port HTTP de service par défaut (80), accédez à [docke
 Les mises à jour des configurations ci-dessus nécessitent un redémarrage de tous les conteneurs pour prendre effet :
 
 > ```bash
-> $ docker compose -f docker-compose.yml up -d
+> docker compose -f docker-compose.yml up -d
 > ```
 
 ### Passer du moteur de documents Elasticsearch à Infinity
@@ -273,7 +274,7 @@ RAGFlow utilise Elasticsearch par défaut pour stocker le texte intégral et les
 1. Arrêtez tous les conteneurs en cours d'exécution :
 
    ```bash
-   $ docker compose -f docker/docker-compose.yml down -v
+   docker compose -f docker/docker-compose.yml down -v
    ```
 
 > [!WARNING]
@@ -283,7 +284,7 @@ RAGFlow utilise Elasticsearch par défaut pour stocker le texte intégral et les
 3. Démarrez les conteneurs :
 
    ```bash
-   $ docker compose -f docker-compose.yml up -d
+   docker compose -f docker/docker-compose.yml up -d
    ```
 
 > [!WARNING]
@@ -334,7 +335,7 @@ docker build --platform linux/amd64 \
 
    Ajoutez la ligne suivante à `/etc/hosts` pour résoudre tous les hôtes spécifiés dans **docker/.env** vers `127.0.0.1` :
 
-   ```
+   ```text
    127.0.0.1       es01 infinity mysql minio redis sandbox-executor-manager
    ```
 4. Si vous ne pouvez pas accéder à HuggingFace, définissez la variable d'environnement `HF_ENDPOINT` pour utiliser un site miroir :
@@ -352,7 +353,7 @@ docker build --platform linux/amd64 \
    # OpenSUSE
    sudo zypper install jemalloc
    # macOS
-   sudo brew install jemalloc
+   brew install jemalloc
    ```
 6. Lancez le service back-end :
 
@@ -375,7 +376,7 @@ docker build --platform linux/amd64 \
 
    _La sortie suivante confirme un lancement réussi du système :_
 
-   ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
+   ![RAGFlow web interface](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 9. Arrêtez les services front-end et back-end de RAGFlow une fois le développement terminé :
 
    ```bash

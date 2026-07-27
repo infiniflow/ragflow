@@ -51,7 +51,8 @@ func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
 	)
 
 	// Execute the task - this should NOT panic or fatal exit (this is our main validation!)
-	ingestor.executeTask(taskCtx)
+	ctx := t.Context()
+	ingestor.executeTask(ctx, taskCtx)
 
 	// Corrupted run_count values are skipped by IncrementRunCount, so the task
 	// proceeds to runDocumentTask and completes normally.
@@ -60,7 +61,7 @@ func TestExecuteTask_CheckpointParseFailureDoesNotKillProcess(t *testing.T) {
 	}
 
 	// Verify task status was set to COMPLETED
-	finalTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	finalTask, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load final ingestion task: %v", err)
 	}
@@ -173,7 +174,8 @@ func TestExecuteTask_RunsDocumentTask(t *testing.T) {
 		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
 	)
 
-	ingestor.executeTask(taskCtx)
+	ctx := t.Context()
+	ingestor.executeTask(ctx, taskCtx)
 
 	if !runDocumentTaskCalled {
 		t.Fatal("expected executeTask to run runDocumentTask")
@@ -181,7 +183,7 @@ func TestExecuteTask_RunsDocumentTask(t *testing.T) {
 	if gotTaskID != taskID {
 		t.Fatalf("runDocumentTask got task ID %q, want %q", gotTaskID, taskID)
 	}
-	finalTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	finalTask, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load final ingestion task: %v", err)
 	}
@@ -211,7 +213,7 @@ func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 	)
 
 	ingestor := NewIngestor("test", 1, []string{"pdf"})
-	ingestor.cancelCheck = func(taskID string) bool { return true }
+	ingestor.cancelCheck = func(ctx context.Context, taskID string) bool { return true }
 
 	var runDocumentTaskCalled bool
 	ingestor.runDocumentTask = func(ctx context.Context, ingestionTask *entity.IngestionTask) error {
@@ -223,13 +225,14 @@ func TestExecuteTask_CancelBeforePipeline(t *testing.T) {
 		context.Background(),
 		&entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING},
 	)
-	ingestor.executeTask(taskCtx)
+	ctx := t.Context()
+	ingestor.executeTask(ctx, taskCtx)
 
 	if runDocumentTaskCalled {
 		t.Fatal("expected runDocumentTask to NOT be called when cancel is detected before pipeline")
 	}
 
-	doc, err := dao.NewDocumentDAO().GetByID(docID)
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, docID)
 	if err != nil {
 		t.Fatalf("load document: %v", err)
 	}

@@ -31,9 +31,9 @@ class TestChatAssistantCreate:
             ("valid_name", ""),
             pytest.param("a" * (CHAT_ASSISTANT_NAME_LIMIT + 1), "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param(1, "", marks=pytest.mark.skip(reason="issues/")),
-            ("", "`name` is required."),
-            ("duplicated_name", "Duplicated chat name in creating chat."),
-            ("case insensitive", "Duplicated chat name in creating chat."),
+            ("", "`name` is required"),
+            ("duplicated_name", "duplicated chat name in creating chat"),
+            ("case insensitive", "duplicated chat name in creating chat"),
         ],
     )
     def test_name(self, client, name, expected_message):

@@ -99,9 +99,10 @@ func TestDatasetServiceDeleteIndexGraphWipeFalseOnlyCancelsTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertDeleteIndexKB(t, "graph", "graph-task")
+	ctx := t.Context()
 
 	docEngine := &deleteIndexDocEngine{}
-	code, err := testDatasetServiceForDeleteIndex(docEngine).DeleteIndex("user-1", "kb-1", "graph", false)
+	code, err := testDatasetServiceForDeleteIndex(docEngine).DeleteIndex(ctx, "user-1", "kb-1", "graph", false)
 	if err != nil {
 		t.Fatalf("DeleteIndex failed: %v", err)
 	}
@@ -126,9 +127,10 @@ func TestDatasetServiceDeleteIndexGraphWipeTrueDeletesArtefacts(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertDeleteIndexKB(t, "graph", "graph-task")
+	ctx := t.Context()
 
 	docEngine := &deleteIndexDocEngine{}
-	code, err := testDatasetServiceForDeleteIndex(docEngine).DeleteIndex("user-1", "kb-1", "graph", true)
+	code, err := testDatasetServiceForDeleteIndex(docEngine).DeleteIndex(ctx, "user-1", "kb-1", "graph", true)
 	if err != nil {
 		t.Fatalf("DeleteIndex failed: %v", err)
 	}
@@ -154,9 +156,10 @@ func TestDatasetServiceDeleteIndexRaptorWipeTrueDeletesRaptorArtefacts(t *testin
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertDeleteIndexKB(t, "raptor", "raptor-task")
+	ctx := t.Context()
 
 	docEngine := &deleteIndexDocEngine{}
-	code, err := testDatasetServiceForDeleteIndex(docEngine).DeleteIndex("user-1", "kb-1", "raptor", true)
+	code, err := testDatasetServiceForDeleteIndex(docEngine).DeleteIndex(ctx, "user-1", "kb-1", "raptor", true)
 	if err != nil {
 		t.Fatalf("DeleteIndex failed: %v", err)
 	}
@@ -186,9 +189,10 @@ func TestDatasetServiceDeleteIndexMindmapDoesNotDeleteDocStore(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertDeleteIndexKB(t, "mindmap", "mindmap-task")
+	ctx := t.Context()
 
 	docEngine := &deleteIndexDocEngine{}
-	code, err := testDatasetServiceForDeleteIndex(docEngine).DeleteIndex("user-1", "kb-1", "mindmap", true)
+	code, err := testDatasetServiceForDeleteIndex(docEngine).DeleteIndex(ctx, "user-1", "kb-1", "mindmap", true)
 	if err != nil {
 		t.Fatalf("DeleteIndex failed: %v", err)
 	}
@@ -212,8 +216,9 @@ func TestDatasetServiceDeleteIndexMindmapDoesNotDeleteDocStore(t *testing.T) {
 func TestDatasetServiceDeleteIndexRejectsInvalidType(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	ctx := t.Context()
 
-	code, err := testDatasetServiceForDeleteIndex(&deleteIndexDocEngine{}).DeleteIndex("user-1", "kb-1", "invalid", true)
+	code, err := testDatasetServiceForDeleteIndex(&deleteIndexDocEngine{}).DeleteIndex(ctx, "user-1", "kb-1", "invalid", true)
 	if err == nil {
 		t.Fatal("expected invalid index type error")
 	}

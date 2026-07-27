@@ -55,6 +55,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewVolcEngine(baseURL, urlSuffix), nil
 	case "vllm":
 		return NewVllmModel(baseURL, urlSuffix), nil
+	case "openai-api-compatible":
+		return NewOpenAIAPICompatibleModel(baseURL, urlSuffix), nil
 	case "xai":
 		return NewXAIModel(baseURL, urlSuffix), nil
 	case "lm-studio":
@@ -155,6 +157,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewQiniuModel(baseURL, urlSuffix), nil
 	case "xiaomi":
 		return NewXiaomiModel(baseURL, urlSuffix), nil
+	case "funasr":
+		return NewFunASRModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

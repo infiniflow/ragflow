@@ -258,3 +258,12 @@ export const useFetchAllCompilationTemplateGroups = () => {
 
   return { groups: data ?? [], loading };
 };
+
+export const useCompilationTemplateGroupOptions = () => {
+  const { groups } = useFetchAllCompilationTemplateGroups();
+
+  return useMemo(
+    () => groups.map((group) => ({ label: group.name, value: group.id })),
+    [groups],
+  );
+};

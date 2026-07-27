@@ -55,7 +55,7 @@ func TestRetrieval_DelegatesToRealWrapper(t *testing.T) {
 		t.Errorf("Retrieval c.Name() = %q, want %q", got, componentNameRetrieval)
 	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{"query": "ragflow"})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{"query": "ragflow"})
 	if err != nil {
 		t.Fatalf("Retrieval Invoke errored: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestSearchMyDataset_AliasDelegatesToRealWrapper(t *testing.T) {
 		t.Errorf("SearchMyDataset alias c.Name() = %q, want %q (canonical)", got, componentNameRetrieval)
 	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{"query": "kb"})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{"query": "kb"})
 	if err != nil {
 		t.Fatalf("SearchMyDataset Invoke errored: %v", err)
 	}

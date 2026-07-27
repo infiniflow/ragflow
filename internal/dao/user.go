@@ -36,7 +36,7 @@ func (dao *UserDAO) Create(user *entity.User) error {
 }
 
 // GetByID get user by ID
-func (dao *UserDAO) GetByID(id uint) (*entity.User, error) {
+func (dao *UserDAO) GetByID(ctx context.Context, id uint) (*entity.User, error) {
 	var user entity.User
 	err := DB.First(&user, id).Error
 	if err != nil {

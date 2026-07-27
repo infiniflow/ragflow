@@ -102,8 +102,11 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 		desc = descStr != "false"
 	}
 
+	ownerIDs := getOwnerIDs(c)
+	ctx := c.Request.Context()
+
 	// List chats - default to valid status "1" (same as Python StatusEnum.VALID.value)
-	result, err := h.chatService.ListChats(userID, "1", keywords, page, pageSize, orderby, desc)
+	result, err := h.chatService.ListChats(ctx, userID, "1", keywords, page, pageSize, orderby, desc, ownerIDs)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
@@ -139,7 +142,8 @@ func (h *ChatHandler) Create(c *gin.Context) {
 		req = map[string]interface{}{}
 	}
 
-	result, code, err := h.chatService.Create(user.ID, req)
+	ctx := c.Request.Context()
+	result, code, err := h.chatService.Create(ctx, user.ID, req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -174,6 +178,7 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	searchConfig := map[string]interface{}{}
 	modelTenantID := user.ID
 	if req.SearchID != "" {
@@ -181,7 +186,7 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 			jsonInternalError(c, fmt.Errorf("search service not configured"))
 			return
 		}
-		detail, err := h.searchSvc.GetDetail(req.SearchID)
+		detail, err := h.searchSvc.GetDetail(ctx, req.SearchID)
 		if err != nil {
 			jsonInternalError(c, err)
 			return
@@ -198,7 +203,7 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		return
 	}
 
-	mindMap, err := runMindMap(mindMapRunConfig{
+	mindMap, err := runMindMap(ctx, mindMapRunConfig{
 		Question:      req.Question,
 		KbIDs:         kbIDs,
 		SearchID:      req.SearchID,
@@ -230,7 +235,8 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 		return
 	}
 
-	if err := h.chatService.DeleteChat(userID, chatID); err != nil {
+	ctx := c.Request.Context()
+	if err := h.chatService.DeleteChat(ctx, userID, chatID); err != nil {
 		if err.Error() == "no authorization" {
 			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
 			return
@@ -261,9 +267,10 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	if len(req.IDs) == 0 && !req.DeleteAll {
 		if req.ChatID != "" {
-			if err := h.chatService.DeleteChat(userID, req.ChatID); err != nil {
+			if err := h.chatService.DeleteChat(ctx, userID, req.ChatID); err != nil {
 				if err.Error() == "no authorization" {
 					common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
 					return
@@ -280,7 +287,7 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 		return
 	}
 
-	result, err := h.chatService.BulkDeleteChats(userID, &req)
+	result, err := h.chatService.BulkDeleteChats(ctx, userID, &req)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
@@ -325,7 +332,8 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 	}
 
 	// Get chat detail with permission check
-	chat, err := h.chatService.GetChat(userID, chatID)
+	ctx := c.Request.Context()
+	chat, err := h.chatService.GetChat(ctx, userID, chatID)
 	if err != nil {
 		errMsg := err.Error()
 		// Check if it's an authorization error
@@ -402,14 +410,13 @@ func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
 		return
 	}
 
-	var (
-		result map[string]interface{}
-		err    error
-	)
+	var result map[string]interface{}
+	var err error
+	ctx := c.Request.Context()
 	if patch {
-		result, err = h.chatService.PatchChat(user.ID, chatID, req)
+		result, err = h.chatService.PatchChat(ctx, user.ID, chatID, req)
 	} else {
-		result, err = h.chatService.UpdateChat(user.ID, chatID, req)
+		result, err = h.chatService.UpdateChat(ctx, user.ID, chatID, req)
 	}
 	if err != nil {
 		if err.Error() == "no authorization" {

@@ -50,6 +50,20 @@ func insertDatasetMetadataConfigKB(t *testing.T, datasetID, tenantID string) {
 	}
 }
 
+func insertDatasetMetadataConfigTeamMember(t *testing.T, userID, tenantID string) {
+	t.Helper()
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:        userID + "-" + tenantID,
+		UserID:    userID,
+		TenantID:  tenantID,
+		Role:      "normal",
+		InvitedBy: tenantID,
+		Status:    sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("insert user tenant: %v", err)
+	}
+}
+
 func insertDatasetMetadataConfigDoc(t *testing.T, docID, datasetID string, parserConfig entity.JSONMap) {
 	t.Helper()
 	doc := &entity.Document{
@@ -74,8 +88,10 @@ func TestDatasetServiceUpdateDocumentMetadataConfig(t *testing.T) {
 	insertDatasetMetadataConfigKB(t, "kb-1", "user-1")
 	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{"pages": []interface{}{1, 2}})
 
+	ctx := t.Context()
 	metadata := map[string]interface{}{"author": "Alice", "year": float64(2026)}
 	doc, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
+		ctx,
 		"user-1",
 		"kb-1",
 		"doc-1",
@@ -102,7 +118,7 @@ func TestDatasetServiceUpdateDocumentMetadataConfig(t *testing.T) {
 		t.Fatalf("unexpected metadata: %#v", updatedMetadata)
 	}
 
-	persisted, err := dao.NewDocumentDAO().GetByID("doc-1")
+	persisted, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("failed to fetch persisted document: %v", err)
 	}
@@ -117,7 +133,9 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRequiresMetadata(t *testing.T
 	insertDatasetMetadataConfigKB(t, "kb-1", "user-1")
 	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{})
 
+	ctx := t.Context()
 	_, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
+		ctx,
 		"user-1",
 		"kb-1",
 		"doc-1",
@@ -140,7 +158,9 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRejectsNonOwner(t *testing.T)
 	insertDatasetMetadataConfigKB(t, "kb-1", "owner-1")
 	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{})
 
+	ctx := t.Context()
 	_, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
+		ctx,
 		"user-1",
 		"kb-1",
 		"doc-1",
@@ -154,5 +174,36 @@ func TestDatasetServiceUpdateDocumentMetadataConfigRejectsNonOwner(t *testing.T)
 	}
 	if err.Error() != "You don't own the dataset." {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDatasetServiceUpdateDocumentMetadataConfigAllowsTeamMember(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetMetadataConfigKB(t, "kb-1", "owner-1")
+	if err := dao.DB.Model(&entity.Knowledgebase{}).
+		Where("id = ?", "kb-1").
+		Update("permission", string(entity.TenantPermissionTeam)).Error; err != nil {
+		t.Fatalf("update kb permission: %v", err)
+	}
+	insertDatasetMetadataConfigTeamMember(t, "user-1", "owner-1")
+	insertDatasetMetadataConfigDoc(t, "doc-1", "kb-1", entity.JSONMap{})
+
+	ctx := t.Context()
+	doc, code, err := testDatasetServiceForDocumentMetadataConfig(t).UpdateDocumentMetadataConfig(
+		ctx,
+		"user-1",
+		"kb-1",
+		"doc-1",
+		map[string]interface{}{"metadata": map[string]interface{}{"author": "Alice"}},
+	)
+	if err != nil {
+		t.Fatalf("UpdateDocumentMetadataConfig failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if doc.ParserConfig["metadata"] == nil {
+		t.Fatalf("metadata was not updated: %#v", doc.ParserConfig)
 	}
 }

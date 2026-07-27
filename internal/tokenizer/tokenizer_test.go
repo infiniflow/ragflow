@@ -19,7 +19,14 @@ package tokenizer
 import (
 	"strings"
 	"testing"
+	"time"
 )
+
+type languageDifferentiator struct {
+	input   string
+	english string
+	dutch   string
+}
 
 // saveEngineType saves the current engineTypeProvider and returns a function
 // to restore it. Use this when a test modifies the engine type to avoid
@@ -221,6 +228,79 @@ func TestGetTermTag_PoolNotInitialized(t *testing.T) {
 	if got != "" {
 		t.Errorf("expected empty string when pool is not initialized, got %q", got)
 	}
+}
+
+func TestTokenize_DefaultLanguageResetsAnalyzerState(t *testing.T) {
+	restore := saveEngineType()
+	defer restore()
+	RegisterEngineType(func() string { return "" })
+
+	if err := Init(&PoolConfig{
+		DictPath:       "",
+		MinSize:        1,
+		MaxSize:        1,
+		IdleTimeout:    5 * time.Second,
+		AcquireTimeout: 5 * time.Second,
+	}); err != nil {
+		t.Fatalf("Failed to initialize pool: %v", err)
+	}
+	defer Close()
+
+	sample := findEnglishDutchDifferentiator(t)
+
+	dutchGot, err := New("Dutch").Tokenize(sample.input)
+	if err != nil {
+		t.Fatalf("Tokenize(Dutch, %q) unexpected error: %v", sample.input, err)
+	}
+	if dutchGot != sample.dutch {
+		t.Fatalf("Tokenize(Dutch, %q) = %q, want %q", sample.input, dutchGot, sample.dutch)
+	}
+
+	defaultGot, err := Tokenize(sample.input)
+	if err != nil {
+		t.Fatalf("Tokenize(default, %q) unexpected error: %v", sample.input, err)
+	}
+	if defaultGot != sample.english {
+		t.Fatalf("Tokenize(default, %q) = %q, want explicit English result %q", sample.input, defaultGot, sample.english)
+	}
+	if defaultGot == dutchGot {
+		t.Fatalf("Tokenize(default, %q) unexpectedly inherited Dutch analyzer state: %q", sample.input, defaultGot)
+	}
+}
+
+func findEnglishDutchDifferentiator(t *testing.T) languageDifferentiator {
+	t.Helper()
+
+	candidates := []string{
+		"running",
+		"jumps",
+		"ponies",
+		"studies",
+		"wolves",
+		"relational",
+		"conditionally",
+	}
+
+	for _, input := range candidates {
+		english, err := New("English").Tokenize(input)
+		if err != nil {
+			t.Fatalf("Tokenize(English, %q) unexpected error: %v", input, err)
+		}
+		dutch, err := New("Dutch").Tokenize(input)
+		if err != nil {
+			t.Fatalf("Tokenize(Dutch, %q) unexpected error: %v", input, err)
+		}
+		if english != dutch {
+			return languageDifferentiator{
+				input:   input,
+				english: english,
+				dutch:   dutch,
+			}
+		}
+	}
+
+	t.Skip("no differentiating tokenizer sample found for English vs Dutch")
+	return languageDifferentiator{}
 }
 
 // ---------------------------------------------------------------------------

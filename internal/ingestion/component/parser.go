@@ -64,10 +64,12 @@
 //     side-effect component (out of scope for Phase 2.2).
 //
 //   - The Python _param.check() business validation
-//     (parse_method whitelist, output_format whitelist, etc.) is
-//     not replicated. The component trusts the param block
-//     passed in at construction time; invalid values surface as
-//     runtime errors in the chosen parser branch.
+//     (parse_method whitelist, conditional lang checks) is mirrored
+//     by (*ParserComponent).Check() below, which NewParserComponent
+//     runs at construction time. The Python flow check() also
+//     validates audio/video vlm.llm_id, but Go media_dispatch uses
+//     tenant default models (resolveTenantModelByType) rather than
+//     setup["vlm"]["llm_id"], so that check is intentionally omitted.
 //
 //   - NO PERSISTENCE: parsed pages live only in the per-run
 //     output map, exactly as the schema.Page type is intended.
@@ -81,7 +83,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
+	"gorm.io/gorm"
+
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
@@ -163,7 +169,70 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 		}
 		p.AllowedOutputFormat = allowed
 	}
-	return &ParserComponent{Setups: s, Param: p}, nil
+	pc := &ParserComponent{Setups: s, Param: p}
+	if err := pc.Check(); err != nil {
+		return nil, fmt.Errorf("Parser: %w", err)
+	}
+	return pc, nil
+}
+
+// Check mirrors the applicable subset of Python ParserParam.check()
+// (rag/flow/parser/parser.py:251-321). Runs at construction time so
+// a malformed DSL surfaces as a canvas compile failure rather than a
+// mid-run error. Returns the first validation error encountered
+// (Python raises ValueError on the first failure).
+//
+// NOT covered here (intentional):
+//   - output_format whitelist: already enforced at Invoke time by
+//     resolveOutputFormat (parser_dispatch.go:100-122).
+//   - audio/video vlm.llm_id: Go media_dispatch uses tenant default
+//     models (resolveTenantModelByType), not setup["vlm"]["llm_id"].
+//     The Python flow check() for vlm.llm_id does not apply — Go
+//     never reads that field, and validating it would block every
+//     valid audio/video pipeline (see ingestion_pipeline_audio.json).
+func (c *ParserComponent) Check() error {
+	// PDF family (parser.py:252-261).
+	if pdf, ok := c.Setups["pdf"]; ok {
+		pm, _ := pdf["parse_method"].(string)
+		if pm == "" {
+			return errors.New("Parse method abnormal. does not support empty value.")
+		}
+		pmLower := strings.ToLower(pm)
+		pdfWhitelist := []string{
+			"deepdoc", "plain_text", "mineru", "docling",
+			"opendataloader", "tcadp parser", "paddleocr", "somark",
+		}
+		if !containsString(pdfWhitelist, pmLower) {
+			// Non-whitelist parse_method is treated as a VLM method,
+			// which requires lang (Python parser.py:257-258).
+			if lang, _ := pdf["lang"].(string); lang == "" {
+				return errors.New("PDF VLM language does not support empty value.")
+			}
+		}
+	}
+	// image family (parser.py:283-287).
+	if img, ok := c.Setups["image"]; ok {
+		pm, _ := img["parse_method"].(string)
+		// OCR mode does not need a VLM language; any other value does.
+		if pm != "ocr" {
+			if lang, _ := img["lang"].(string); lang == "" {
+				return errors.New("Image VLM language does not support empty value.")
+			}
+		}
+	}
+	return nil
+}
+
+// containsString reports whether s is in list. Used by Check() for
+// whitelist membership tests; kept unexported and local to this file
+// to avoid polluting the package namespace.
+func containsString(list []string, s string) bool {
+	for _, v := range list {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 func defaultSetups() map[string]schema.ParserSetup {
@@ -234,7 +303,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"from", "to", "cc", "bcc", "date", "subject",
 				"body", "attachments", "metadata",
 			},
-			"output_format": "text",
+			"output_format": "json",
 		},
 		"audio": {
 			"suffix": []string{
@@ -295,6 +364,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 		"pages":         "[]schema.Page: parsed pages sorted by PageNumber.",
 		"name":          "string: the upstream file/document name (or doc_id when no name is available).",
 		"output_format": "string: the active output format (\"text\" when emitting text pages).",
+		"lang":          "string: the language for tokenization (e.g. English, Dutch, Chinese).",
 		"_ERROR":        "string: set on short-circuit errors.",
 	}
 }
@@ -307,6 +377,7 @@ func (c *ParserComponent) Outputs() map[string]string {
 //	  "pages":          []schema.Page (sorted by PageNumber),
 //	  "name":           string (from inputs["doc_id"]),
 //	  "output_format": "text",
+//	  "lang":           string (from inputs["lang"]; e.g. English, Dutch),
 //	  "_created_time":  RFC3339Nano (via TrackElapsed),
 //	  "_elapsed_time":  float64 seconds (via TrackElapsed),
 //	}
@@ -322,9 +393,9 @@ func (c *ParserComponent) Outputs() map[string]string {
 // that downstream Chunker / Tokenizer rely on for stable chunk
 // IDs (chunks that span pages must reference adjacent PageNumbers
 // in input order).
-func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// 1. Decode the binary input.
-	binary, err := readParserBinary(ctx, inputs)
+	binary, err := readParserBinary(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -372,7 +443,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		}
 	}
 
-	dispatched, handledVision, visionErr := maybeDispatchPDFVision(fileTypeExt, filename, binary, inputs, c.Setups)
+	dispatched, handledVision, visionErr := maybeDispatchPDFVision(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
 	if visionErr != nil {
 		return nil, visionErr
 	}
@@ -381,7 +452,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	if !handledVision {
 		// Video dispatch: IMAGE2TEXT vision chat.
 		// Mirrors Python's _video().
-		dispatched, handledMedia, visionErr = maybeDispatchVideo(fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledMedia, visionErr = maybeDispatchVideo(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -390,7 +461,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	if !handledVision && !handledMedia {
 		// Image/Picture dispatch: OCR + IMAGE2TEXT vision describe.
 		// Mirrors Python's rag/app/picture.py:chunk() image branch.
-		dispatched, handledImage, visionErr = maybeDispatchImage(fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -399,25 +470,26 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	if !handledVision && !handledMedia && !handledImage {
 		// Audio dispatch: SPEECH2TEXT transcription.
 		// Mirrors Python's rag/app/audio.py:chunk().
-		dispatched, handledAudio, visionErr = maybeDispatchAudio(fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledAudio, visionErr = maybeDispatchAudio(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
 	}
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
-		dispatched = dispatchParse(fileTypeExt, filename, binary, c.Setups)
+		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, c.Setups)
 		dispatched = hydrateEmptyDispatchPayload(dispatched, binary)
 
-		// DOCX vision figure enhancement: enrich the markdown
-		// with LLM-generated descriptions of embedded images.
-		// Mirrors Python's vision_figure_parser_docx_wrapper_naive.
-		dispatched, _, _ = maybeDispatchDOCXVision(fileTypeExt, dispatched, inputs, c.Setups)
+		// DOCX vision figure enhancement: on the JSON output path,
+		// append vision-model descriptions to embedded image items
+		// (doc_type_kwd "image"). Mirrors Python's
+		// enhance_media_sections_with_vision in parser.py:_doc.
+		dispatched, _, _ = maybeDispatchDOCXVision(ctx, fileTypeExt, dispatched, inputs, c.Setups)
 
 		// Markdown vision figure enhancement: enrich parsed
 		// markdown JSON items with LLM-generated descriptions of
 		// referenced images (![alt](url)). Mirrors Python's
 		// enhance_media_sections_with_vision in _markdown.
-		dispatched, _, _ = maybeDispatchMarkdownVision(fileTypeExt, dispatched, inputs)
+		dispatched, _, _ = maybeDispatchMarkdownVision(ctx, fileTypeExt, dispatched, inputs)
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.
@@ -467,7 +539,8 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		return nil, fmt.Errorf("Parser: %w", err)
 	}
 	sortPagesByNumber(parsed)
-	out := buildParserOutputs(parsed, dispatched, filename, fileTypeExt)
+	lang, _ := getString(inputs, "lang")
+	out := buildParserOutputs(parsed, dispatched, filename, fileTypeExt, lang)
 	// Forward the storage references so a downstream chunker can
 	// re-acquire the source PDF and crop section images on demand,
 	// instead of carrying the binary across the component boundary.
@@ -486,6 +559,19 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 	// forwards only this explicit output to the next node, so shared
 	// fields must live in Globals.
 	globals.PublishGlobals(ctx, out)
+	// Debug log: summarize parser output for pipeline debugging.
+	if dispatched.OutputFormat == "json" {
+		common.Debug("parser stage output",
+			zap.String("component", "Parser"),
+			zap.String("output_format", "json"),
+			zap.Int("json_items", len(dispatched.JSON)),
+		)
+	} else if dispatched.OutputFormat != "" {
+		common.Debug("parser stage output",
+			zap.String("component", "Parser"),
+			zap.String("output_format", dispatched.OutputFormat),
+		)
+	}
 	// Progress (_created_time / _elapsed_time stamping, start/done
 	// callbacks) is owned by the canvas framework (realComponentBody),
 	// not by this component, so we return the work result directly.
@@ -533,7 +619,7 @@ func buildPagesFromBytes(ctx context.Context, pages [][]byte, docType string) ([
 // A non-UTF-8 string is rejected with a clear error so a caller
 // that mistakenly hands a base64 string sees the failure
 // immediately (mirrors pipeline_chunker's "no try-base64" rule).
-func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error) {
+func readParserBinary(ctx context.Context, db *gorm.DB, inputs map[string]any) ([]byte, error) {
 	if inputs == nil {
 		return nil, nil
 	}
@@ -543,8 +629,8 @@ func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error
 	if s, ok := inputs["binary"].(string); ok {
 		if !utf8.ValidString(s) {
 			return nil, errors.New(
-				"Parser: binary string is not valid UTF-8. " +
-					"Text-page mode only accepts UTF-8 text input.")
+				"parser: binary string is not valid UTF-8. " +
+					"Text-page mode only accepts UTF-8 text input")
 		}
 		return []byte(s), nil
 	}
@@ -554,7 +640,7 @@ func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error
 		return FetchBinary(ctx, bucket, path)
 	}
 	if docID, ok := getString(inputs, "doc_id"); ok && docID != "" {
-		ref, err := ResolveDocumentStorage(docID)
+		ref, err := ResolveDocumentStorage(ctx, db, docID)
 		if err != nil {
 			return nil, fmt.Errorf("Parser: resolve doc_id %q: %w", docID, err)
 		}

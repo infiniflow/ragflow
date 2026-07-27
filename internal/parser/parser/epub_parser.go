@@ -31,6 +31,7 @@ package parser
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -53,7 +54,7 @@ func (p *EPUBParser) String() string {
 // ParseWithResult implements ParseResultProducer. It extracts XHTML
 // content from the EPUB spine and emits one JSON item per spine entry
 // with {text, doc_type_kwd:"text"}.
-func (p *EPUBParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	if len(data) == 0 {
 		return ParseResult{
 			OutputFormat: "json",

@@ -55,7 +55,7 @@ export default {
       submit: 'إرسال',
       clear: 'مسح',
       embedIntoSite: 'تضمين في صفحة الويب',
-      openInNewTab: 'الدردشة في علامة تبويب جديدة',
+      openInNewTab: 'فتح في علامة تبويب جديدة',
       previousPage: 'سابق',
       nextPage: 'التالي',
       add: 'يضيف',

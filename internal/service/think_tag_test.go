@@ -301,3 +301,39 @@ func TestStreamThinkTagDelta_DeferredClose(t *testing.T) {
 		t.Errorf("second marker = %q", markers[1])
 	}
 }
+
+// TestReasoningChannelWrapsThinkTags verifies that model-level reasoning
+// (arriving through a separate reason channel rather than <think> tags in
+// the text) is bracketed by <think></think> in fullText. This prevents the
+// reasoning content from leaking into the final visible answer.
+func TestReasoningChannelWrapsThinkTags(t *testing.T) {
+	state := &ThinkStreamState{}
+
+	if !state.EnterReasoning() {
+		t.Fatal("EnterReasoning should return true on first call")
+	}
+	// Simulate the chat pipeline feeding reasoning chunks through NextThinkDelta.
+	deltas := NextThinkDelta(state, "reasoning step 1", 0)
+	if len(deltas) != 1 || deltas[0].Value != "reasoning step 1" {
+		t.Fatalf("unexpected reasoning deltas: %+v", deltas)
+	}
+	deltas = NextThinkDelta(state, " reasoning step 2", 0)
+	if len(deltas) != 1 || deltas[0].Value != " reasoning step 2" {
+		t.Fatalf("unexpected reasoning deltas: %+v", deltas)
+	}
+
+	if state.ExitReasoning() != true {
+		t.Fatal("ExitReasoning should return true when reasoning was active")
+	}
+
+	// Visible answer arrives after reasoning ends.
+	deltas = BufferAnswerDelta(state, "visible answer", 0)
+	if len(deltas) != 1 || deltas[0].Value != "visible answer" {
+		t.Fatalf("unexpected answer deltas: %+v", deltas)
+	}
+
+	wantVisible := "visible answer"
+	if got := ExtractVisibleAnswer(state.fullText); got != wantVisible {
+		t.Errorf("ExtractVisibleAnswer(%q) = %q, want %q", state.fullText, got, wantVisible)
+	}
+}

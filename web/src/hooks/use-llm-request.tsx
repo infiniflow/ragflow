@@ -310,6 +310,7 @@ export const useVerifyProviderConnection = () => {
       base_url?: string;
       region?: string;
       model_info?: IModelInfo[];
+      instance_id?: string;
     }) => {
       const { data } = await llmService.verifyProviderConnection(params);
       return data;

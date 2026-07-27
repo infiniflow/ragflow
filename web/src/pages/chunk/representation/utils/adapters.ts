@@ -30,6 +30,7 @@ function buildTreeDataItems(
   entities: IStructureGraphEntity[],
   relations: IStructureGraphRelation[],
   relationTypes: string[],
+  showEntityType = false,
 ): TreeDataItem[] {
   const normalized = entities
     .map(normalizeEntity)
@@ -40,6 +41,7 @@ function buildTreeDataItems(
       {
         id: entity.id,
         name: entity.name,
+        entityType: showEntityType ? entity.type : undefined,
         source_chunk_ids: entity.source_chunk_ids,
       },
     ]),
@@ -48,6 +50,11 @@ function buildTreeDataItems(
 
   for (const relation of relations) {
     if (!relationTypes.includes(relation.type ?? '')) continue;
+    // Self-referencing relation (same entity as its own child) creates
+    // an infinite recursion in the tree renderer.  This is a backend
+    // data integrity issue (duplicate entity names) but we defend
+    // against it in the frontend so the UI never hangs.
+    if (relation.from === relation.to) continue;
 
     const parent = map.get(relation.from);
     const child = map.get(relation.to);
@@ -83,6 +90,7 @@ function buildUniqueTreeDataItems(
       {
         id: entity.id,
         name: entity.name,
+        entityType: entity.type,
         source_chunk_ids: entity.source_chunk_ids,
       },
     ]),
@@ -126,7 +134,12 @@ function buildUniqueTreeDataItems(
 export function adaptPageIndexToTreeData(
   template: IStructureGraphTemplate,
 ): TreeDataItem[] {
-  return buildTreeDataItems(template.entities, template.relations, ['include']);
+  return buildTreeDataItems(
+    template.entities,
+    template.relations,
+    ['include'],
+    true,
+  );
 }
 
 export function adaptTreeToTreeData(

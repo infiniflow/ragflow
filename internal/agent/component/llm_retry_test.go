@@ -16,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // scriptedInvoker fails the first failTimes calls then succeeds.
@@ -27,7 +29,7 @@ type scriptedInvoker struct {
 	calls     int32
 }
 
-func (s *scriptedInvoker) Invoke(_ context.Context, _ ChatInvokeRequest) (*ChatInvokeResponse, error) {
+func (s *scriptedInvoker) Invoke(_ context.Context, _ *gorm.DB, _ ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	n := atomic.AddInt32(&s.calls, 1)
 	if n <= atomic.LoadInt32(&s.failTimes) {
 		return nil, s.err
@@ -44,7 +46,7 @@ type alwaysFailInvoker struct {
 	calls int32
 }
 
-func (a *alwaysFailInvoker) Invoke(_ context.Context, _ ChatInvokeRequest) (*ChatInvokeResponse, error) {
+func (a *alwaysFailInvoker) Invoke(_ context.Context, _ *gorm.DB, _ ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	atomic.AddInt32(&a.calls, 1)
 	return nil, a.err
 }
@@ -59,7 +61,7 @@ func TestRetryInvoker_SucceedsOnSecondAttempt(t *testing.T) {
 	inner := &scriptedInvoker{failTimes: 1, err: errors.New("transient"), resp: want}
 	r := newRetryInvoker(inner, 3, time.Millisecond)
 
-	resp, err := r.Invoke(context.Background(), ChatInvokeRequest{ModelName: "m"})
+	resp, err := r.Invoke(context.Background(), nil, ChatInvokeRequest{ModelName: "m"})
 	if err != nil {
 		t.Fatalf("Invoke: unexpected err: %v", err)
 	}
@@ -79,7 +81,7 @@ func TestRetryInvoker_ExhaustsRetries(t *testing.T) {
 	inner := &alwaysFailInvoker{err: sentinel}
 	r := newRetryInvoker(inner, 3, time.Millisecond)
 
-	_, err := r.Invoke(context.Background(), ChatInvokeRequest{ModelName: "m"})
+	_, err := r.Invoke(context.Background(), nil, ChatInvokeRequest{ModelName: "m"})
 	if err == nil {
 		t.Fatal("expected error after exhaustion")
 	}
@@ -127,7 +129,7 @@ func TestRetryInvoker_HonorsContextCancellation(t *testing.T) {
 		cancel()
 	}()
 
-	_, err := r.Invoke(ctx, ChatInvokeRequest{ModelName: "m"})
+	_, err := r.Invoke(ctx, nil, ChatInvokeRequest{ModelName: "m"})
 
 	if err == nil {
 		t.Fatal("expected error from cancelled context")
@@ -162,7 +164,7 @@ func TestRetryInvoker_ExponentialBackoff(t *testing.T) {
 	r := newRetryInvoker(inner, 3, initial)
 
 	start := time.Now()
-	_, _ = r.Invoke(context.Background(), ChatInvokeRequest{ModelName: "m"})
+	_, _ = r.Invoke(context.Background(), nil, ChatInvokeRequest{ModelName: "m"})
 	elapsed := time.Since(start)
 
 	// 20 + 40 + 80 = 140ms of backoff (3 retries, 4 attempts total).
@@ -183,7 +185,7 @@ func TestRetryInvoker_NoRetriesWhenZero(t *testing.T) {
 	inner := &alwaysFailInvoker{err: errors.New("nope")}
 	r := newRetryInvoker(inner, 0, 50*time.Millisecond)
 
-	_, err := r.Invoke(context.Background(), ChatInvokeRequest{ModelName: "m"})
+	_, err := r.Invoke(context.Background(), nil, ChatInvokeRequest{ModelName: "m"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -196,7 +198,7 @@ func TestRetryInvoker_NoRetriesWhenZero(t *testing.T) {
 // should not panic when constructed with nil inner.
 func TestRetryInvoker_NilInner(t *testing.T) {
 	r := newRetryInvoker(nil, 3, time.Millisecond)
-	_, err := r.Invoke(context.Background(), ChatInvokeRequest{ModelName: "m"})
+	_, err := r.Invoke(context.Background(), nil, ChatInvokeRequest{ModelName: "m"})
 	if err == nil {
 		t.Fatal("expected error for nil inner")
 	}
@@ -218,7 +220,7 @@ func TestLLMParam_RespectsMaxRetries(t *testing.T) {
 	// zero-value default is 2s, which would make this test slow.
 	c.param.DelayAfterError = time.Millisecond
 
-	_, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected error from exhausted retries")
 	}
@@ -247,7 +249,7 @@ func TestLLMParam_ZeroRetriesMeansOneAttempt(t *testing.T) {
 	// with maxRetries=0.
 	c.param.DelayAfterError = time.Millisecond
 
-	_, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -278,7 +280,7 @@ func TestLLMParam_DefaultRetries(t *testing.T) {
 	SetDefaultChatInvoker(newRetryInvoker(fastInner, 2, time.Millisecond))
 	t.Cleanup(func() { SetDefaultChatInvoker(nil) })
 
-	_, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected error after default retries")
 	}
@@ -362,7 +364,7 @@ func TestLLM_ParamOverride_AbsoluteCount_NotStacked(t *testing.T) {
 	// Force a tiny delay so the test runs fast.
 	c.param.DelayAfterError = time.Millisecond
 
-	_, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected error from exhausted retries")
 	}
@@ -392,7 +394,7 @@ func TestLLM_NoParamOverride_StackingPreserved(t *testing.T) {
 	// No param override: MaxRetries=0 AND DelayAfterError=0.
 	c := NewLLMComponent(LLMParam{ModelID: "m"})
 
-	_, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected error from exhausted retries")
 	}

@@ -1,12 +1,12 @@
 import { Operator } from '@/constants/agent';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import ExtractorForm from '@/pages/agent/form/extractor-form';
+import ParserForm from '@/pages/agent/form/parser-form';
+import TitleChunkerForm from '@/pages/agent/form/title-chunker-form';
+import TokenChunkerForm from '@/pages/agent/form/token-chunker-form';
+import TokenizerForm from '@/pages/agent/form/tokenizer-form';
+import { getOperatorType } from '@/utils/pipeline-operator';
 import { memo, useCallback } from 'react';
-import ExtractorForm from '../../agent/form/extractor-form';
-import ParserForm from '../../agent/form/parser-form';
-import TitleChunkerForm from '../../agent/form/title-chunker-form';
-import TokenChunkerForm from '../../agent/form/token-chunker-form';
-import TokenizerForm from '../../agent/form/tokenizer-form';
-import { getOperatorType } from './utils';
 
 type PipelineOperatorFormProps = {
   node: RAGFlowNodeType;

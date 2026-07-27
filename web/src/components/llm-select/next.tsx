@@ -14,7 +14,6 @@ export interface NextInnerLLMSelectProps {
   onChange?: (value: string) => void;
   disabled?: boolean;
   filter?: string;
-  showSpeech2TextModel?: boolean;
   triggerTestId?: string;
   optionTestIdPrefix?: string;
   ownerTenantId?: string;
@@ -29,7 +28,6 @@ const NextInnerLLMSelect = forwardRef<
       value,
       disabled,
       filter,
-      showSpeech2TextModel = false,
       triggerTestId,
       optionTestIdPrefix,
       ownerTenantId,
@@ -39,19 +37,15 @@ const NextInnerLLMSelect = forwardRef<
     const { t } = useTranslation();
     const [isPopoverOpen, setIsPopoverOpen] = useState(false);
 
-    const ttsModel = useMemo(() => {
-      return showSpeech2TextModel ? ['tts'] : [];
-    }, [showSpeech2TextModel]);
-
     const modelTypes = useMemo(() => {
       if (filter === LlmModelType.Chat) {
         return ['chat'];
       } else if (filter === LlmModelType.Image2text) {
-        return ['vision', ...ttsModel];
+        return ['vision'];
       } else {
-        return ['chat', 'vision', ...ttsModel];
+        return ['chat', 'vision'];
       }
-    }, [filter, ttsModel]);
+    }, [filter]);
 
     return (
       <Select disabled={disabled} value={value}>

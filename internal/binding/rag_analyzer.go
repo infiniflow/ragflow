@@ -96,6 +96,17 @@ func (a *Analyzer) SetEnablePosition(enablePosition bool) {
 	C.RAGAnalyzer_SetEnablePosition(a.handle, C.bool(enablePosition))
 }
 
+// SetLanguage configures the Snowball stemmer for the given language (e.g. "English", "Dutch").
+// Falls back to the English Porter stemmer for unmapped languages.
+func (a *Analyzer) SetLanguage(language string) {
+	if a.handle == nil {
+		return
+	}
+	cLang := C.CString(language)
+	defer C.free(unsafe.Pointer(cLang))
+	C.RAGAnalyzer_SetLanguage(a.handle, cLang)
+}
+
 // Analyze analyzes the input text and returns all tokens
 func (a *Analyzer) Analyze(text string) ([]Token, error) {
 	if a.handle == nil {
