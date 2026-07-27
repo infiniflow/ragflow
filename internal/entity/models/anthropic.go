@@ -109,7 +109,7 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	setAnthropicHeaders(req, apiKey)
+	setAnthropicHeaders(req, apiKey, false)
 
 	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -153,9 +153,13 @@ func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *C
 	}
 }
 
-func setAnthropicHeaders(req *http.Request, apiKey string) {
+func setAnthropicHeaders(req *http.Request, apiKey string, streaming bool) {
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	if streaming {
+		req.Header.Set("Accept", "text/event-stream")
+	} else {
+		req.Header.Set("Accept", "application/json")
+	}
 	req.Header.Set("x-api-key", apiKey)
 	req.Header.Set("anthropic-version", anthropicVersion)
 }
@@ -393,7 +397,7 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	setAnthropicHeaders(req, apiKey)
+	setAnthropicHeaders(req, apiKey, false)
 
 	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -482,7 +486,7 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
-	setAnthropicHeaders(req, apiKey)
+	setAnthropicHeaders(req, apiKey, true)
 
 	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
