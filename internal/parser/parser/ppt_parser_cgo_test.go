@@ -3,6 +3,12 @@
 package parser
 
 import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	officeOxide "github.com/yfedoseev/office_oxide/go"
@@ -63,8 +69,8 @@ func TestPPTParser_ParseWithResult_CGO(t *testing.T) {
 	}
 }
 
-// TestPPTParser_TCADPFileType covers : when a .ppt file
-// is routed through PPTParser with parse_method="tcadp", the underlying
+// TestPPTParser_TCADPFileType verifies that when a .ppt file is routed
+// through PPTParser with parse_method="tcadp", the underlying
 // PPTXParser must pass "PPT" as the file_type to TCADP, not "PPTX".
 // This test verifies format propagation from PPTParser through
 // ConfigureFromSetup to the embedded PPTXParser.
@@ -90,7 +96,7 @@ func TestPPTParser_TCADPFileType(t *testing.T) {
 	}
 }
 
-// TestPPTXParser_TCADPFileType covers : PPTXParser
+// TestPPTXParser_TCADPFileType verifies that a PPTXParser
 // with format="pptx" must derive fileType "PPTX" for TCADP calls.
 func TestPPTXParser_TCADPFileType(t *testing.T) {
 	p := NewPPTXParser()
@@ -104,6 +110,111 @@ func TestPPTXParser_TCADPFileType(t *testing.T) {
 	p.ConfigureFromSetup(setup)
 	if p.ParseMethod != "tcadp" {
 		t.Errorf("ParseMethod = %q, want tcadp", p.ParseMethod)
+	}
+}
+
+// TestPPTParser_TCADPIntegration drives the end-to-end TCADP path for a
+// .ppt file: PPTParser must POST file_type="PPT" to the reconstruct
+// endpoint and then process the returned ZIP artifact into JSON items.
+func TestPPTParser_TCADPIntegration(t *testing.T) {
+	testPresentationTCADPIntegration(t, NewPPTParser(), "PPT", "presentation.ppt")
+}
+
+// TestPPTXParser_TCADPIntegration drives the end-to-end TCADP path for a
+// .pptx file: PPTXParser must POST file_type="PPTX" to the reconstruct
+// endpoint and then process the returned ZIP artifact into JSON items.
+func TestPPTXParser_TCADPIntegration(t *testing.T) {
+	testPresentationTCADPIntegration(t, NewPPTXParser(), "PPTX", "presentation.pptx")
+}
+
+// tcadpPresentationParser is the shared contract of PPTParser and
+// PPTXParser used by the TCADP integration helper below.
+type tcadpPresentationParser interface {
+	ConfigureFromSetup(setup map[string]any)
+	ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult
+}
+
+func testPresentationTCADPIntegration(t *testing.T, p tcadpPresentationParser, wantFileType, filename string) {
+	t.Helper()
+	zipPayload := tcadpZipFixture(t)
+	var gotFileType string
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/reconstruct_document":
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Errorf("read reconstruct request: %v", err)
+			} else {
+				var req struct {
+					FileType string `json:"file_type"`
+				}
+				if err := json.Unmarshal(body, &req); err != nil {
+					t.Errorf("decode reconstruct request: %v", err)
+				}
+				gotFileType = req.FileType
+			}
+			_, _ = w.Write([]byte(`{"DocumentRecognizeResultUrl":"` + server.URL + `/download.zip"}`))
+		case "/download.zip":
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(zipPayload)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	p.ConfigureFromSetup(map[string]any{
+		"parse_method":    "tcadp",
+		"output_format":   "json",
+		"tcadp_apiserver": server.URL,
+	})
+	ctx := t.Context()
+	res := p.ParseWithResult(ctx, filename, []byte("dummy-presentation-bytes"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if gotFileType != wantFileType {
+		t.Errorf("TCADP request file_type = %q, want %q", gotFileType, wantFileType)
+	}
+	if res.OutputFormat != "json" {
+		t.Errorf("OutputFormat = %q, want json", res.OutputFormat)
+	}
+	if len(res.JSON) == 0 {
+		t.Fatalf("JSON items = 0, want the fixture's parsed content")
+	}
+}
+
+// TestPPTXParser_TCADPDownloadHTTPError verifies that a non-2xx response
+// from the TCADP download endpoint is surfaced as an explicit error rather
+// than parsed as a (malformed) ZIP artifact.
+func TestPPTXParser_TCADPDownloadHTTPError(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/reconstruct_document":
+			_, _ = w.Write([]byte(`{"DocumentRecognizeResultUrl":"` + server.URL + `/download.zip"}`))
+		case "/download.zip":
+			http.Error(w, "upstream failure", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	p := NewPPTXParser()
+	p.ConfigureFromSetup(map[string]any{
+		"parse_method":    "tcadp",
+		"output_format":   "json",
+		"tcadp_apiserver": server.URL,
+	})
+	ctx := t.Context()
+	res := p.ParseWithResult(ctx, "a.pptx", []byte("dummy"))
+	if res.Err == nil {
+		t.Fatal("ParseWithResult: want error for non-2xx download, got nil")
+	}
+	if !strings.Contains(res.Err.Error(), "download HTTP") {
+		t.Errorf("err = %v, want error mentioning 'download HTTP'", res.Err)
 	}
 }
 

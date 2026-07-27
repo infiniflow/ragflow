@@ -134,9 +134,8 @@ func TestTagChunker_HTMLTable(t *testing.T) {
 	}
 }
 
-// TestTagChunk_TopInt covers Chunker-1.8: each tag-pair row must carry
-// the 0-based source row index as top_int, matching Python
-// tag.py:33 beAdoc(row_num=i).
+// TestTagChunk_TopInt verifies each tag-pair row carries the 0-based
+// source row index as top_int, matching Python tag.py:33 beAdoc(row_num=i).
 func TestTagChunk_TopInt(t *testing.T) {
 	chunks := tagChunksOf(t, map[string]any{
 		"name":          "tags.txt",
@@ -146,19 +145,11 @@ func TestTagChunk_TopInt(t *testing.T) {
 	if len(chunks) != 2 {
 		t.Fatalf("want 2 chunks, got %d", len(chunks))
 	}
-	if ti, ok := chunks[0]["top_int"]; !ok {
-		t.Error("chunk 0: top_int missing")
-	} else if arr, ok2 := ti.([]any); !ok2 {
-		t.Errorf("chunk 0: top_int has unexpected type %T: %v", ti, ti)
-	} else if len(arr) != 1 {
-		t.Errorf("chunk 0: top_int = %v, want [0]", arr)
+	if ti, ok := chunks[0]["top_int"].([]any); !ok || len(ti) != 1 || ti[0] != float64(0) {
+		t.Errorf("chunk 0: top_int = %v, want [0]", chunks[0]["top_int"])
 	}
-	if ti, ok := chunks[1]["top_int"]; !ok {
-		t.Error("chunk 1: top_int missing")
-	} else if arr, ok2 := ti.([]any); !ok2 {
-		t.Errorf("chunk 1: top_int has unexpected type %T: %v", ti, ti)
-	} else if len(arr) != 1 {
-		t.Errorf("chunk 1: top_int = %v, want [1]", arr)
+	if ti, ok := chunks[1]["top_int"].([]any); !ok || len(ti) != 1 || ti[0] != float64(1) {
+		t.Errorf("chunk 1: top_int = %v, want [1]", chunks[1]["top_int"])
 	}
 }
 

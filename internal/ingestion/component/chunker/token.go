@@ -254,7 +254,7 @@ func stripChunkerRuntimeTimestamps(inputs map[string]any) map[string]any {
 
 // cropTitleChunks crops image/table/text previews for chunks produced by
 // the Title/Group/Hierarchy chunkers, mirroring the TokenChunker JSON path
-// (cropImageChunks at token.go:513, diff residual A). A nil engine — or an
+// (cropImageChunks at token.go:513). A nil engine — or an
 // empty chunk list — leaves chunks unchanged (best-effort, matching the
 // on-demand PDF crop contract used by the TokenChunker path).
 func cropTitleChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks []map[string]any) []map[string]any {
@@ -334,8 +334,7 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 // naive_merge, which includes ASCII "!" and "?" as well as the CJK
 // punctuation "。；！？". It deliberately does NOT include an English
 // ". " fallback: Python's production delimiter has no "\.\s", so adding
-// it would diverge from Python's chunk boundaries. (Chunker-2.1 correctly
-// kept ASCII !?, but the trailing "\.\s" was a mistake.)
+// it would diverge from Python's chunk boundaries.
 var sentenceDelimiter = regexp.MustCompile(`(\n|[!?。；！？])`)
 
 // mergeByTokenSize implements exact token-based chunk merging that mirrors
@@ -363,26 +362,25 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 	// naive_merge (rag/nlp/__init__.py:1166) runs
 	//   text = text.replace("\r\n", "\n").replace("\r", "\n")
 	// so CRLF/CR input must segment and split exactly like LF input.
-	// Without this, Go preserved stray "\r" inside chunks (diff 2.7),
-	// diverging from Python.
+	// Without this, stray "\r" would survive inside chunks, diverging
+	// from Python.
 	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
 
 	// Treat the whole payload as a single section, mirroring Python's
 	// naive_merge (rag/nlp/__init__.py:1157) which wraps the input string
-	// as a one-element list. Go used to pre-split on blank lines
-	// (splitIntoSections, Chunker-2.7); flow naive_merge does NOT, and
-	// because "\n" is itself a delimiter it is dropped (blank lines
-	// collapse), exactly as Python does. CRLF/CR normalization already
-	// happened above.
+	// as a one-element list. naive_merge does NOT pre-split on blank
+	// lines, and because "\n" is itself a delimiter it is dropped (blank
+	// lines collapse), exactly as Python does. CRLF/CR normalization
+	// already happened above.
 	sections := []string{text}
 	if len(sections) == 0 {
 		return emptyOutputs()
 	}
 
 	// Sentence/clause-boundary regex for splitting oversized sections.
-	// Matches Python's default delimiter "\n。；！？" plus English ". "
-	// fallback. The ASCII "!" and "?" are included to match Python's
-	// full delimiter set
+	// Mirrors Python's production delimiter (rag/app/naive.py:1285 passes
+	// "\n!?。；！？") — ASCII "!" and "?" plus the CJK punctuation, with no
+	// English ". " fallback.
 	sentenceDelim := sentenceDelimiter
 
 	var cks []string // chunk texts
@@ -470,7 +468,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 
 	docs := make([]schema.ChunkDoc, 0, len(cks))
 	for _, ch := range cks {
-		// Strip parser position tags from the final text (diff residual B):
+		// Strip parser position tags from the final text:
 		// the merge paths may carry @@...## markers that must not leak into
 		// indexed/embedded chunk text.
 		ch = removeTag(strings.TrimSpace(ch))
@@ -544,7 +542,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 
 	out := make([]schema.ChunkDoc, 0, len(flat))
 	for _, m := range flat {
-		// Strip parser position tags from the final text (diff residual B):
+		// Strip parser position tags from the final text:
 		// the merge paths may carry @@...## markers that must not leak into
 		// indexed/embedded chunk text. Crop above reads positions, not text,
 		// so the ordering is safe.

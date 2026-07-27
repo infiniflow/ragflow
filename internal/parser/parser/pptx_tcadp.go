@@ -84,6 +84,9 @@ func parsePresentationWithTCADP(ctx context.Context, filename string, data []byt
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP read zip: %w", err)}
 	}
+	if downloadResp.StatusCode >= 300 {
+		return ParseResult{Err: fmt.Errorf("parser: TCADP download HTTP %d: %s", downloadResp.StatusCode, string(zipBytes))}
+	}
 	items, pageCount, err := tcadpItemsFromZip(zipBytes)
 	if err != nil {
 		return ParseResult{Err: err}

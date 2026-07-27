@@ -248,9 +248,9 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 		zap.Bool("plain_text", isPlainTextFormat(inputs)),
 	)
 
-	// On-demand PDF preview cropping for image/table/text chunks (diff
-	// residual A), mirroring the TokenChunker JSON path (token.go:513).
-	// Best-effort: a missing or unreadable PDF simply skips cropping.
+	// On-demand PDF preview cropping for image/table/text chunks,
+	// mirroring the TokenChunker JSON path (token.go:513). Best-effort:
+	// a missing or unreadable PDF simply skips cropping.
 	if upstream, uErr := decodeChunkerFromUpstream(inputs); uErr == nil {
 		engine, eErr := newPDFEngineFromUpstream(parentCtx, db, upstream)
 		if eErr != nil {

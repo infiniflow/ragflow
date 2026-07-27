@@ -103,9 +103,9 @@ import (
 const ComponentNameTokenizer = "Tokenizer"
 
 // tokenizerTimeout returns the per-batch timeout for embedding API calls.
-// Reads COMPONENT_EXEC_TIMEOUT_TOKENIZER env var (seconds); defaults to 600s
-// (10 min) to match the canvas-level component timeout default.
-// Invalid / non-positive values fall back to the default.
+// Reads COMPONENT_EXEC_TIMEOUT_TOKENIZER env var (seconds); defaults to 60s
+// to match Python's @timeout(60). Invalid / non-positive values fall back
+// to the default.
 func tokenizerTimeout() time.Duration {
 	if v := os.Getenv("COMPONENT_EXEC_TIMEOUT_TOKENIZER"); v != "" {
 		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
@@ -575,10 +575,10 @@ func chunksFromTokenizerUpstream(in schema.TokenizerFromUpstream) []schema.Chunk
 	default:
 		raw = cloneChunkDocs(in.JSONResult)
 	}
-	// Diff Omission-2: discard zero-value ChunkDocs (no text, no
-	// content_with_weight, no image) so they don't produce phantom
-	// embeddings downstream. Python's pipeline filters none-chunks
-	// before the tokenizer.
+	// Discard zero-value ChunkDocs (no text, no content_with_weight, no
+	// image, no summary) so they don't produce phantom embeddings
+	// downstream. Python's pipeline filters none-chunks before the
+	// tokenizer.
 	filtered := raw[:0]
 	for _, ck := range raw {
 		if isPhantomChunk(ck) {
@@ -589,11 +589,12 @@ func chunksFromTokenizerUpstream(in schema.TokenizerFromUpstream) []schema.Chunk
 	return filtered
 }
 
-// isPhantomChunk returns true when a ChunkDoc has no usable content
-// for downstream tokenization or embedding. Mirrors Python's
-// none-chunk filtering (diff Tokenizer Omission-2).
+// isPhantomChunk returns true when a ChunkDoc has no usable content for
+// downstream tokenization or embedding. A chunk carrying only a Summary
+// (no Text/Image/ContentWithWeight) is kept — tokenizeChunks tokenizes the
+// Summary in that case. Mirrors Python's none-chunk filtering.
 func isPhantomChunk(ck schema.ChunkDoc) bool {
-	return ck.Text == "" && ck.Image == "" && ck.ContentWithWeight == ""
+	return ck.Text == "" && ck.Image == "" && ck.ContentWithWeight == "" && ck.Summary == ""
 }
 
 func textPayloadToChunks(payload *string) []schema.ChunkDoc {

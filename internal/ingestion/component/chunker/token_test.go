@@ -521,8 +521,8 @@ func TestTokenChunkerParam_ValidateOverlappedRange(t *testing.T) {
 	}
 }
 
-// TestMergeByTokenSize_CRLFNormalization covers Chunker-2.7 (aligned to
-// flow naive_merge): Python naive_merge normalises line endings
+// TestMergeByTokenSize_CRLFNormalization verifies that, like Python
+// naive_merge, line endings are normalised
 // (replace("\r\n","\n").replace("\r","\n")) before splitting, so CRLF/CR
 // input must segment and split exactly like the equivalent LF input, and
 // no carriage return may survive into a produced chunk.
@@ -559,7 +559,7 @@ func TestMergeByTokenSize_CRLFNormalization(t *testing.T) {
 	})
 
 	t.Run("CRLF equals LF", func(t *testing.T) {
-		// After Chunker-2.7a removes blank-line pre-splitting, CRLF is
+		// With no blank-line pre-splitting, CRLF is
 		// normalised to LF and the blank-line run is preserved (not
 		// collapsed), so equal newline counts must yield equal chunks.
 		crlf := chunkTexts(t, "Para A\r\nPara B\r\nPara C")
@@ -570,11 +570,9 @@ func TestMergeByTokenSize_CRLFNormalization(t *testing.T) {
 	})
 }
 
-// TestMergeByTokenSize_PreservesBlankLines covers Chunker-2.7a: flow
-// naive_merge treats the whole payload as a single section and does NOT
-// split on blank lines, so an original blank-line run must survive in the
-// produced chunk — the old splitIntoSections(\n\s*\n) path collapsed
-// "A\n\n\nB" into "A\nB".
+// TestMergeByTokenSize_PreservesBlankLines verifies that an original
+// blank-line run survives in the produced chunk: naive_merge treats the
+// whole payload as a single section and does NOT split on blank lines.
 func TestMergeByTokenSize_PreservesBlankLines(t *testing.T) {
 	c := &TokenChunkerComponent{}
 	c.param.ChunkTokenSize = 128
@@ -595,8 +593,8 @@ func TestMergeByTokenSize_PreservesBlankLines(t *testing.T) {
 	}
 }
 
-// TestMergeByTokenSize_OversizeDropsDelimiters covers Chunker-2.7b: when a
-// section exceeds chunk_token_size, flow naive_merge splits on sentence
+// TestMergeByTokenSize_OversizeDropsDelimiters verifies that when a
+// section exceeds chunk_token_size, naive_merge splits on sentence
 // delimiters with a capturing-group re.split but then SKIPS any segment
 // that is a pure delimiter (re.fullmatch(dels, sub_sec)), so the
 // delimiter character ("。") is DROPPED from the produced chunk text

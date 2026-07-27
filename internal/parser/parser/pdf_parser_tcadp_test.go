@@ -116,11 +116,6 @@ func TestTCADPAnyToItems_PropagatesPageNumber(t *testing.T) {
 			wantPos: []float64{1, 0, 0, 0, 0},
 		},
 		{
-			name:    "nested array of elements keeps each page",
-			raw:     []any{map[string]any{"content": "p1", "type": "text", "page_number": 1}, map[string]any{"content": "p7", "type": "text", "page_number": 7}},
-			wantPos: []float64{0, 0, 0, 0, 0}, // first element, page 1 -> [0,...]
-		},
-		{
 			name:    "element without page number gets no positions",
 			raw:     map[string]any{"content": "no page", "type": "text"},
 			wantPos: nil,
@@ -153,6 +148,37 @@ func TestTCADPAnyToItems_PropagatesPageNumber(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestTCADPAnyToItems_NestedArrayKeepsEachPage verifies that a nested
+// array of TCADP elements produces one item per element, each carrying
+// its own page-derived positions — not just the first element.
+func TestTCADPAnyToItems_NestedArrayKeepsEachPage(t *testing.T) {
+	raw := []any{
+		map[string]any{"content": "p1", "type": "text", "page_number": 1},
+		map[string]any{"content": "p7", "type": "text", "page_number": 7},
+	}
+	items := tcadpAnyToItems(raw)
+	if len(items) != 2 {
+		t.Fatalf("items = %d, want 2", len(items))
+	}
+	want := [][]float64{{0, 0, 0, 0, 0}, {6, 0, 0, 0, 0}} // page 1 -> [0,...], page 7 -> [6,...]
+	for i, w := range want {
+		got, ok := items[i]["positions"].([]float64)
+		if !ok {
+			t.Errorf("items[%d].positions missing, want %v", i, w)
+			continue
+		}
+		if len(got) != len(w) {
+			t.Errorf("items[%d].positions = %v, want len %d", i, got, len(w))
+			continue
+		}
+		for j := range w {
+			if got[j] != w[j] {
+				t.Errorf("items[%d].positions[%d] = %v, want %v", i, j, got[j], w[j])
+			}
+		}
 	}
 }
 

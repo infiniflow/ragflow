@@ -352,8 +352,9 @@ func TestChunkDocsToMaps_PreservesPDFPositions(t *testing.T) {
 	}
 }
 
-// TestIsPhantomChunk covers Tokenizer Omission-2: zero-value ChunkDocs
-// (no Text, no Image, no ContentWithWeight) must be identified as phantom.
+// TestIsPhantomChunk verifies that zero-value ChunkDocs (no Text, no
+// Image, no ContentWithWeight, no Summary) are identified as phantom,
+// while any one of those fields being present keeps the chunk.
 func TestIsPhantomChunk(t *testing.T) {
 	if !isPhantomChunk(schema.ChunkDoc{}) {
 		t.Error("empty ChunkDoc must be phantom")
@@ -369,6 +370,9 @@ func TestIsPhantomChunk(t *testing.T) {
 	}
 	if isPhantomChunk(schema.ChunkDoc{ContentWithWeight: "weight"}) {
 		t.Error("ChunkDoc with ContentWithWeight must not be phantom")
+	}
+	if isPhantomChunk(schema.ChunkDoc{Summary: "a summary"}) {
+		t.Error("ChunkDoc with Summary must not be phantom")
 	}
 }
 
