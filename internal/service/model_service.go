@@ -3895,7 +3895,8 @@ func (m *ModelProviderService) getModelConfig(ctx context.Context, tenantID, com
 	// Check if provider exists (skip for Builtin provider)
 	var providerID string
 	if providerName != "Builtin" {
-		provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
+		var provider *entity.TenantModelProvider
+		provider, err = m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 		if err != nil {
 			return nil, "", nil, 0, err
 		}
@@ -3919,6 +3920,7 @@ func (m *ModelProviderService) getModelConfig(ctx context.Context, tenantID, com
 		}
 		common.Debug("getModelConfig instance found", zap.String("instanceName", instanceName))
 	}
+
 	// TODO: if provider name is Builtin, HOW TO?
 
 	var extra map[string]string

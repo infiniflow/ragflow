@@ -538,17 +538,17 @@ func browserOpenAICompatibleBaseURL(baseURL, provider string) string {
 // TODO(v2): this helper can move to `internal/dao` so the LLM
 // component (`llm.go`) and other future components can share it.
 func resolveTenantLLM(ctx context.Context, db *gorm.DB, tenantID, modelName, factory string) (apiKey, baseURL string, err error) {
-	dao := dao.NewTenantLLMDAO()
+	llmDAO := dao.NewTenantLLMDAO()
 	var (
 		row *entity.TenantLLM
 	)
 	if factory != "" {
-		row, err = dao.GetByTenantFactoryAndModelName(ctx, db, tenantID, factory, modelName)
+		row, err = llmDAO.GetByTenantFactoryAndModelName(ctx, db, tenantID, factory, modelName)
 	} else {
 		// No factory suffix on llm_id; fall back to a single-key
 		// lookup (errors if the model is registered under multiple
 		// factories — caller must use the explicit form).
-		row, err = dao.GetByTenantAndModelName(ctx, db, tenantID, "", modelName)
+		row, err = llmDAO.GetByTenantAndModelName(ctx, db, tenantID, "", modelName)
 	}
 	if err != nil {
 		return "", "", err

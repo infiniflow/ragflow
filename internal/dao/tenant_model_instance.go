@@ -81,7 +81,7 @@ func (dao *TenantModelInstanceDAO) GetByProviderIDs(ctx context.Context, db *gor
 
 func (dao *TenantModelInstanceDAO) GetInstanceByApiKey(ctx context.Context, db *gorm.DB, apiKey, providerID string) (*entity.TenantModelInstance, error) {
 	var instance entity.TenantModelInstance
-	err := db.WithContext(ctx).Where("api_key = ? && provider_id = ?", apiKey, providerID).First(&instance).Error
+	err := db.WithContext(ctx).Where("api_key = ? AND provider_id = ?", apiKey, providerID).First(&instance).Error
 	if err != nil {
 		return nil, err
 	}
