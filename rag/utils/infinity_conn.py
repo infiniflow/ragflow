@@ -215,7 +215,7 @@ class InfinityConnection(InfinityConnectionBase):
                     self.logger.error(f"No valid tables found for indexNames {index_names} and knowledgebaseIds {knowledgebase_ids}")
                     return pd.DataFrame(), 0
 
-            vector_similarity_weight = _vector_similarity_weight(match_expressions)
+            # vector_similarity_weight = _vector_similarity_weight(match_expressions)
             for matchExpr in match_expressions:
                 if isinstance(matchExpr, MatchTextExpr):
                     if filter_cond and "filter" not in matchExpr.extra_options:
@@ -246,9 +246,11 @@ class InfinityConnection(InfinityConnectionBase):
                             matchExpr.extra_options[k] = str(v)
                     self.logger.debug(f"INFINITY search MatchTextExpr: {json.dumps(matchExpr.__dict__)}")
                 elif isinstance(matchExpr, MatchDenseExpr):
-                    dense_filter = _build_dense_filter(filter_cond, filter_fulltext, vector_similarity_weight)
-                    if dense_filter and "filter" not in matchExpr.extra_options:
-                        matchExpr.extra_options.update({"filter": dense_filter})
+                    if filter_fulltext and "filter" not in matchExpr.extra_options:
+                        matchExpr.extra_options.update({"filter": filter_fulltext})
+                    # dense_filter = _build_dense_filter(filter_cond, filter_fulltext, vector_similarity_weight)
+                    # if dense_filter and "filter" not in matchExpr.extra_options:
+                    #    matchExpr.extra_options.update({"filter": dense_filter})
                     for k, v in matchExpr.extra_options.items():
                         if not isinstance(v, str):
                             matchExpr.extra_options[k] = str(v)
