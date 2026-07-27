@@ -49,7 +49,7 @@ func (s *DocumentService) GetDocumentArtifact(ctx context.Context, filename, use
 		return nil, ErrArtifactInvalidFileType
 	}
 
-	if !s.sandboxArtifactAccessible(basename, userID) {
+	if !s.sandboxArtifactAccessible(ctx, basename, userID) {
 		// Same error as "object does not exist" to avoid leaking
 		// whether the artifact exists for a different user/agent.
 		return nil, ErrArtifactNotFound
@@ -145,7 +145,7 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(filename, userID strin
 // UserCanvasDAO.Accessible (owner or team permission, with the
 // latter scoped to the caller's tenant membership — PR review
 // round 5).
-func (s *DocumentService) sandboxArtifactAccessible(filename, userID string) bool {
+func (s *DocumentService) sandboxArtifactAccessible(ctx context.Context, filename, userID string) bool {
 	if userID == "" {
 		return false
 	}
@@ -155,12 +155,12 @@ func (s *DocumentService) sandboxArtifactAccessible(filename, userID string) boo
 	// (callers without tenant data) is safe — it effectively disables
 	// the team branch, so the only matches are canvases the caller
 	// directly owns.
-	tenantIDs, terr := dao.NewUserTenantDAO().GetTenantIDsByUserID(userID)
+	tenantIDs, terr := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
 	if terr != nil {
 		tenantIDs = nil
 	}
 	for _, dialogID := range s.sandboxArtifactDialogIDsForUser(filename, userID) {
-		if s.canvasDAO.Accessible(dialogID, userID, tenantIDs) {
+		if s.canvasDAO.Accessible(ctx, dao.DB, dialogID, userID, tenantIDs) {
 			return true
 		}
 	}

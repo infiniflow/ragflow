@@ -169,7 +169,7 @@ func (s *UserService) OAuthCallback(ctx context.Context, channel, code, callback
 		return nil, common.CodeDataError, ErrOAuthEmailMissing
 	}
 
-	existing, err := s.userDAO.GetByEmail(info.Email)
+	existing, err := s.userDAO.GetByEmail(ctx, dao.DB, info.Email)
 	if err == nil && existing != nil {
 		if existing.IsActive == "0" {
 			return nil, common.CodeForbidden, ErrOAuthUserInactive
@@ -178,8 +178,8 @@ func (s *UserService) OAuthCallback(ctx context.Context, channel, code, callback
 		existing.AccessToken = &newToken
 		now := time.Now().Truncate(time.Second)
 		existing.LastLoginTime = &now
-		if uerr := s.userDAO.Update(existing); uerr != nil {
-			return nil, common.CodeServerError, fmt.Errorf("update user: %w", uerr)
+		if err = s.userDAO.Update(ctx, dao.DB, existing); err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("update user: %w", err)
 		}
 		return &OAuthCallbackResult{User: existing, IsNewUser: false}, common.CodeSuccess, nil
 	}
@@ -260,22 +260,22 @@ func (s *UserService) registerOAuthUser(ctx context.Context, channel string, inf
 	userTenantDAO := dao.NewUserTenantDAO()
 	fileDAO := dao.NewFileDAO()
 
-	if err := s.userDAO.Create(user); err != nil {
+	if err := s.userDAO.Create(ctx, dao.DB, user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("Failed to register %s: %w", info.Email, err)
 	}
 	if err := tenantDAO.Create(ctx, dao.DB, tenant); err != nil {
-		_ = s.userDAO.DeleteByID(userID)
+		_ = s.userDAO.DeleteByID(ctx, dao.DB, userID)
 		return nil, common.CodeServerError, fmt.Errorf("Failed to register %s: %w", info.Email, err)
 	}
-	if err := userTenantDAO.Create(userTenant); err != nil {
-		_ = s.userDAO.DeleteByID(userID)
+	if err := userTenantDAO.Create(ctx, dao.DB, userTenant); err != nil {
+		_ = s.userDAO.DeleteByID(ctx, dao.DB, userID)
 		_ = tenantDAO.Delete(ctx, dao.DB, userID)
 		return nil, common.CodeServerError, fmt.Errorf("Failed to register %s: %w", info.Email, err)
 	}
 	if err := fileDAO.Create(ctx, dao.DB, rootFile); err != nil {
-		_ = s.userDAO.DeleteByID(userID)
+		_ = s.userDAO.DeleteByID(ctx, dao.DB, userID)
 		_ = tenantDAO.Delete(ctx, dao.DB, userID)
-		_ = userTenantDAO.Delete(userTenantID)
+		_ = userTenantDAO.Delete(ctx, dao.DB, userTenantID)
 		return nil, common.CodeServerError, fmt.Errorf("Failed to register %s: %w", info.Email, err)
 	}
 	return user, common.CodeSuccess, nil

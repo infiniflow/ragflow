@@ -110,7 +110,7 @@ func (s *ChatChannelService) accessible(ctx context.Context, userID, channelID s
 		return channel, true, nil
 	}
 
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, false, err
 	}

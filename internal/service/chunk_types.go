@@ -135,7 +135,7 @@ func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkRespon
 	ctx := context.Background()
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -354,7 +354,7 @@ func (s *ChunkService) List(ctx context.Context, req *ListChunksRequest, userID 
 	}
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -525,7 +525,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *UpdateChunkRequest,
 	}
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -726,7 +726,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *RemoveChunksReques
 	}
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get user tenants: %w", err)
 	}

@@ -216,12 +216,12 @@ type boxOAuthTokenResponse struct {
 }
 
 // canAccessConnector Test Authentication
-func (s *ConnectorService) canAccessConnector(connector *entity.Connector, userID string) bool {
+func (s *ConnectorService) canAccessConnector(ctx context.Context, connector *entity.Connector, userID string) bool {
 	if connector.TenantID == userID {
 		return true
 	}
 
-	_, err := s.userTenantDAO.FilterByUserIDAndTenantID(userID, connector.TenantID)
+	_, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, connector.TenantID)
 	return err == nil
 }
 
@@ -289,7 +289,7 @@ func (s *ConnectorService) GetConnector(ctx context.Context, connectorID, userID
 		return connector, common.CodeSuccess, nil
 	}
 
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -332,7 +332,7 @@ func (s *ConnectorService) accessible(ctx context.Context, connectorID, userID s
 		return true, nil
 	}
 
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return false, err
 	}
@@ -841,7 +841,7 @@ func (s *ConnectorService) DeleteConnector(ctx context.Context, connectorID, use
 		return false, common.CodeServerError, err
 	}
 
-	if !s.canAccessConnector(connector, userID) {
+	if !s.canAccessConnector(ctx, connector, userID) {
 		return false, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
 
@@ -877,7 +877,7 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 		return nil, common.CodeServerError, err
 	}
 
-	if !s.canAccessConnector(connector, userID) {
+	if !s.canAccessConnector(ctx, connector, userID) {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
 
@@ -960,7 +960,7 @@ func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, us
 		return false, common.CodeServerError, err
 	}
 
-	if !s.canAccessConnector(connector, userID) {
+	if !s.canAccessConnector(ctx, connector, userID) {
 		return false, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
 
@@ -1003,7 +1003,7 @@ func (s *ConnectorService) ListLog(ctx context.Context, connectorID, userID stri
 		return nil, 0, common.CodeServerError, err
 	}
 
-	if !s.canAccessConnector(connector, userID) {
+	if !s.canAccessConnector(ctx, connector, userID) {
 		return nil, 0, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
 

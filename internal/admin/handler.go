@@ -144,7 +144,8 @@ func (h *Handler) Logout(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.Logout(user); err != nil {
+	ctx := c.Request.Context()
+	if err := h.service.Logout(ctx, user); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -217,8 +218,8 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	var users []map[string]interface{}
 	switch common.GetRAGFlowType() {
 	case common.OpenSourceVersion:
-
-		users, err = h.service.ListUsers(pageInt, pageSizeInt, name, status, sort, orderBy)
+		ctx := c.Request.Context()
+		users, err = h.service.ListUsers(ctx, pageInt, pageSizeInt, name, status, sort, orderBy)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
@@ -337,12 +338,13 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 	}
 
 	var req ChangePasswordHTTPRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err = c.ShouldBindJSON(&req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, "New password is required")
 		return
 	}
 
-	if err := h.service.ChangePassword(username, req.NewPassword); err != nil {
+	ctx := c.Request.Context()
+	if err = h.service.ChangePassword(ctx, username, req.NewPassword); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -363,7 +365,7 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 	}
 
 	var req UpdateActivateStatusHTTPRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err = c.ShouldBindJSON(&req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Activation status is required")
 		return
 	}
@@ -374,7 +376,8 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 	}
 
 	isActive := req.ActivateStatus == "on"
-	if err := h.service.UpdateUserActivateStatus(username, isActive); err != nil {
+	ctx := c.Request.Context()
+	if err = h.service.UpdateUserActivateStatus(ctx, username, isActive); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -396,7 +399,8 @@ func (h *Handler) GrantAdmin(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.GrantAdmin(username); err != nil {
+	ctx := c.Request.Context()
+	if err = h.service.GrantAdmin(ctx, username); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -418,7 +422,8 @@ func (h *Handler) RevokeAdmin(c *gin.Context) {
 		return
 	}
 
-	if err = h.service.RevokeAdmin(username); err != nil {
+	ctx := c.Request.Context()
+	if err = h.service.RevokeAdmin(ctx, username); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
