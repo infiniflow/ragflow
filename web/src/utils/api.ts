@@ -159,6 +159,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/ingestions/summary`,
   artifactsList: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts`,
+  artifactsAlteration: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/alteration`,
   artifactsTopicList: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts_topics`,
   getArtifactPage: (datasetId: string, pageType: string, slug: string) =>

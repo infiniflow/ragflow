@@ -43,9 +43,11 @@ export function LlmWikiView() {
 
   const { data: artifactRunData } = useTraceRunData(GenerateType.Artifact);
   const { status: artifactStatus } = useGenerateStatus(artifactRunData);
+  const [updateSheetOpen, setUpdateSheetOpen] = useState(false);
 
   useEffect(() => {
     if (artifactStatus === GenerateStatus.completed) {
+      setUpdateSheetOpen(false);
       queryClient.invalidateQueries({
         queryKey: ArtifactKeys.listByDataset(id!),
       });
@@ -88,6 +90,9 @@ export function LlmWikiView() {
             onSelectArtifact={handleSelectArtifact}
             onClearArtifact={clearSelectedArtifact}
             onClearWiki={clearSelectedArtifact}
+            updateSheetOpen={updateSheetOpen}
+            onUpdateSheetOpenChange={setUpdateSheetOpen}
+            traceData={artifactRunData}
           />
         </ResizablePanel>
         <ResizableHandle withHandle />

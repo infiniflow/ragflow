@@ -51,7 +51,7 @@ export function WikiNavBar({
   } = useCreateDirectory();
 
   return (
-    <div className="size-full flex flex-col gap-3 px-3">
+    <div className="size-full flex flex-col gap-3">
       <SearchInput
         placeholder={t('common.search')}
         value={searchString}

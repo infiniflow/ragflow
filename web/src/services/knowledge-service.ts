@@ -419,6 +419,9 @@ export const getArtifactGraph = (
   params?: IFetchArtifactGraphRequestParams,
 ) => request.get(api.getArtifactGraph(datasetId), { params });
 
+export const getArtifactsAlteration = (datasetId: string) =>
+  request.get(api.artifactsAlteration(datasetId));
+
 export const getArtifactsStructure = (
   datasetId: string,
   kind: string,

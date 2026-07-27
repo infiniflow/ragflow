@@ -18,7 +18,7 @@ enum DatasetKey {
 
 const PollIntervalMs = 5000;
 
-const DatasetGenerateKeys = {
+export const DatasetGenerateKeys = {
   trace: (type: GenerateType, id?: string, open?: boolean) =>
     [type, id, open] as const,
   traceById: (type: GenerateType, id?: string) => [type, id] as const,

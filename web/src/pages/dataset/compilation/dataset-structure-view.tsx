@@ -20,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 
 import { StructureKind, ViewMode, ViewModeGenerateTypeMap } from './constants';
 import CompilationEmptyState from './empty-state';
+import { CompilationLoadingCard } from './loading-card';
 
 interface DatasetStructureViewProps {
   kind: StructureKind;
@@ -88,13 +89,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
   const canGenerate = (knowledgeBase?.chunk_count ?? 0) > 0;
 
   if (loading && !data) {
-    return (
-      <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
-        <div className="flex items-center justify-center flex-1 text-text-secondary">
-          {t('common.loading', 'Loading...')}
-        </div>
-      </Card>
-    );
+    return <CompilationLoadingCard />;
   }
 
   if (!template && !graphKeywords) {

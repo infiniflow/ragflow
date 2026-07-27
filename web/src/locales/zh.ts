@@ -414,6 +414,10 @@ export default {
       clearWikiTitle: '清空 Wiki',
       clearWikiDescription:
         '确定要清空该数据集下的所有 Wiki 页面吗？此操作无法撤销。',
+      update: '更新',
+      updateTooltip:
+        '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档。点击编译并合并到当前 Wiki。',
+      updateSheetTitle: '更新 Wiki',
       noSkills: '暂无技能',
       processingType: '处理类型',
       dataPipeline: '切换或配置 ingestion pipeline。',

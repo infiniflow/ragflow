@@ -65,7 +65,6 @@ function Representation({ onNodeClick }: RepresentationProps) {
               onChange={handleSelectEntity}
               placeholder={t('knowledgeDetails.searchEntity')}
               allowClear
-              triggerClassName="w-60 max-w-full"
               onNoMatchEnter={handleNoMatchEnter}
               disableAutoSelectOnEnter
             />
