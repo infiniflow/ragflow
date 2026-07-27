@@ -7,8 +7,8 @@ export enum ViewMode {
   Graph = 'graph',
   MindMap = 'mindmap',
   Timeline = 'timeline',
-  SessionEssence = 'session_essence',
-  SessionGraph = 'session_graph',
+  // SessionEssence = 'session_essence',
+  // SessionGraph = 'session_graph',
 }
 
 export enum LeftPanelTab {
@@ -20,8 +20,8 @@ export const StructureKinds = [
   ViewMode.Graph,
   ViewMode.MindMap,
   ViewMode.Timeline,
-  ViewMode.SessionEssence,
-  ViewMode.SessionGraph,
+  // ViewMode.SessionEssence,
+  // ViewMode.SessionGraph,
 ] as const;
 
 export type StructureKind = (typeof StructureKinds)[number];
@@ -35,6 +35,6 @@ export const ViewModeGenerateTypeMap: Record<GenerableViewMode, GenerateType> =
     [ViewMode.Graph]: GenerateType.KnowledgeGraph,
     [ViewMode.MindMap]: GenerateType.MindMap,
     [ViewMode.Timeline]: GenerateType.Timeline,
-    [ViewMode.SessionEssence]: GenerateType.SessionEssence,
-    [ViewMode.SessionGraph]: GenerateType.SessionGraph,
+    // [ViewMode.SessionEssence]: GenerateType.SessionEssence,
+    // [ViewMode.SessionGraph]: GenerateType.SessionGraph,
   };

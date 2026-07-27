@@ -49,14 +49,14 @@ export default function Compilation() {
         value: ViewMode.Timeline,
         label: t('knowledgeDetails.structureTimeline'),
       },
-      {
-        value: ViewMode.SessionEssence,
-        label: t('knowledgeDetails.structureSessionEssence'),
-      },
-      {
-        value: ViewMode.SessionGraph,
-        label: t('knowledgeDetails.structureSessionGraph'),
-      },
+      // {
+      //   value: ViewMode.SessionEssence,
+      //   label: t('knowledgeDetails.structureSessionEssence'),
+      // },
+      // {
+      //   value: ViewMode.SessionGraph,
+      //   label: t('knowledgeDetails.structureSessionGraph'),
+      // },
     ];
   }, [t]);
 
@@ -90,7 +90,7 @@ export default function Compilation() {
             options={viewOptions}
             value={viewMode}
             onChange={handleViewModeChange}
-            triggerClassName="w-60"
+            triggerClassName="w-96"
           />
         </section>
       </header>

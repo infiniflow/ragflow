@@ -33,8 +33,8 @@ const TitleKeyMap: Record<EmptyStateType, string> = {
   [ViewMode.Graph]: 'knowledgeDetails.noStructureGraph',
   [ViewMode.MindMap]: 'knowledgeDetails.noStructureMindmap',
   [ViewMode.Timeline]: 'knowledgeDetails.noStructureTimeline',
-  [ViewMode.SessionEssence]: 'knowledgeDetails.noStructureSessionEssence',
-  [ViewMode.SessionGraph]: 'knowledgeDetails.noStructureSessionGraph',
+  // [ViewMode.SessionEssence]: 'knowledgeDetails.noStructureSessionEssence',
+  // [ViewMode.SessionGraph]: 'knowledgeDetails.noStructureSessionGraph',
 };
 
 const LabelKeyMap: Record<EmptyStateType, string> = {
@@ -43,8 +43,8 @@ const LabelKeyMap: Record<EmptyStateType, string> = {
   [ViewMode.Graph]: 'knowledgeDetails.structureGraph',
   [ViewMode.MindMap]: 'knowledgeDetails.structureMindmap',
   [ViewMode.Timeline]: 'knowledgeDetails.structureTimeline',
-  [ViewMode.SessionEssence]: 'knowledgeDetails.structureSessionEssence',
-  [ViewMode.SessionGraph]: 'knowledgeDetails.structureSessionGraph',
+  // [ViewMode.SessionEssence]: 'knowledgeDetails.structureSessionEssence',
+  // [ViewMode.SessionGraph]: 'knowledgeDetails.structureSessionGraph',
 };
 
 export function CompilationEmptyState({

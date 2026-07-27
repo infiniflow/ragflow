@@ -91,6 +91,7 @@ export function WikiNavBar({
               variant="secondary"
               size="icon-xs"
               onClick={handleShowCreateDialog}
+              className="hidden"
             >
               <Plus className="size-4" />
             </Button>
