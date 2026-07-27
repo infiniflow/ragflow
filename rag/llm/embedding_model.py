@@ -31,7 +31,7 @@ from zai import ZhipuAiClient
 from common import settings
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
-from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.key_utils import _normalize_replicate_key, _resolve_azure_credentials
 from rag.utils.url_utils import ensure_v1
 import logging
 import base64
@@ -302,17 +302,6 @@ class LocalAIEmbed(Base):
     def encode_queries(self, text):
         vectors, token_count = self._batched_encode([text], self._call, batch_size=16)
         return vectors[0], token_count
-
-
-def _resolve_azure_credentials(key):
-    try:
-        key_obj = json.loads(key)
-        if isinstance(key_obj, dict):
-            return key_obj.get("api_key", ""), key_obj.get("api_version", "2024-02-01")
-        logging.warning("Azure credential payload parsed as JSON but is not an object; using raw api_key string")
-    except (json.JSONDecodeError, TypeError):
-        logging.warning("Azure credential payload is not valid JSON; using raw api_key string")
-    return key, "2024-02-01"
 
 
 class AzureEmbed(OpenAIEmbed):
