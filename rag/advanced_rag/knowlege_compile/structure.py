@@ -331,7 +331,7 @@ def _struct_hypergraph_prompts(parser_config: dict, language: str = "en") -> Tup
     if rel_desc:
         edge_parts.append(f"## Relation Description:\n{rel_desc}")
     edge_parts.append(f"## Relation Fields:\n{rel_fields_text}")
-    edge_parts.append("## Known Entities:\nSee the source text below.")
+    edge_parts.append("## Known Entities:\n{known_nodes}")
     edge_parts.append(
         "## Response Format:\n"
         "Reply with a single JSON object of the form: "
@@ -782,16 +782,10 @@ async def compile_structure_from_text(
     if not isinstance(template_kind, str) or not template_kind.strip():
         template_kind = autotype
 
-    # NOTE: page_index templates are normally routed through the OpenFable-style
-    # tree builder (page_index_tree_builder.py) by runner.py. This per-chunk
-    # fallback remains for callers that invoke compile_structure_from_text directly
-    # with a page_index config — it should be removed once all call sites route
-    # through the tree builder.
     packed_batches, _info = _build_chunk_batches(
         chunks,
         chat_mdl,
         prompt_overhead_tokens=prompt_overhead,
-        batch_size_cap=1 if str(template_kind).strip().lower().replace("-", "_") in {"page_index", "pageindex"} else None,
     )
     if not packed_batches:
         return []

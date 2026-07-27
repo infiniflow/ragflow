@@ -42,9 +42,7 @@ from api.db.services.compilation_template_group_service import (
 )
 from api.db.services.llm_service import LLMBundle
 from common.exceptions import TaskCanceledException
-from rag.advanced_rag.knowlege_compile.page_index_tree_builder import (
-    build_page_index_tree,
-)
+from common.token_utils import num_tokens_from_string
 from rag.advanced_rag.knowlege_compile.structure import (
     LLMCallPool,
     MERGE_SCOPE_DATASET,
@@ -59,8 +57,15 @@ from rag.advanced_rag.knowlege_compile.structure import (
 
 # ----- tunables ------------------------------------------------------
 # Bound how many source chunks are handed to a single
-# ``compile_structure_from_text`` invocation.
+# ``compile_structure_from_text`` invocation for regular templates.
 DOC_STRUCTURE_COMPILE_BATCH_CHUNKS = 4
+
+# PageIndex keeps the original extraction call but uses a small dynamic chunk
+# budget. ``compile_structure_from_text`` applies the exact prompt-aware
+# packing again before the LLM call.
+PAGE_INDEX_CONTEXT_FRACTION = 0.1
+PAGE_INDEX_CONTEXT_MAX_TOKENS = 2048
+PAGE_INDEX_DEFAULT_CONTEXT = 100_000
 
 # Bound the number of batch/template extraction calls in flight. Results are
 # committed in submission order so accumulator updates and merge flushes stay
@@ -312,7 +317,6 @@ async def run_structure_compile_over_batches(
     flush_tasks: set[asyncio.Task[None]] = set()
     doc_storage_condition = asyncio.Condition()
     next_doc_storage_sequence = 0
-    all_chunks: list[dict] = []  # accumulated for page_index tree builder
 
     async def _flush(template_id: str) -> None:
         nonlocal flush_sequence
@@ -420,6 +424,12 @@ async def run_structure_compile_over_batches(
     completed: dict[int, tuple[int, int, str, list[dict]]] = {}
     submit_sequence = 0
     commit_sequence = 0
+    page_index_buffers: dict[str, list[dict]] = {template_id: [] for template_id, cfg in active_templates if _is_page_index_template(cfg)}
+    page_index_buffer_tokens: dict[str, int] = {template_id: 0 for template_id in page_index_buffers}
+
+    def _page_index_budget(template_id: str) -> int:
+        max_length = getattr(chat_mdl_by_tid[template_id], "max_length", None) or PAGE_INDEX_DEFAULT_CONTEXT
+        return max(1, min(int(max_length * PAGE_INDEX_CONTEXT_FRACTION), PAGE_INDEX_CONTEXT_MAX_TOKENS))
 
     async def _commit_ready() -> None:
         nonlocal commit_sequence
@@ -458,25 +468,58 @@ async def run_structure_compile_over_batches(
     async def _submit_batches() -> None:
         nonlocal submit_sequence
         batch_no = 0
+
+        async def _submit_one(batch: list[dict], template_id: str, parser_cfg: dict) -> None:
+            nonlocal submit_sequence, batch_no
+            if not batch:
+                return
+            batch_no += 1
+            task = asyncio.create_task(_compile_batch(batch_no, batch, template_id, parser_cfg))
+            inflight[task] = (submit_sequence, batch_no, len(batch), template_id)
+            submit_sequence += 1
+            if len(inflight) + len(completed) >= DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT:
+                await _reap_one()
+
         try:
-            async for batch in chunk_batches:
-                batch_no += 1
-                for chunk in batch:
+            async for incoming_batch in chunk_batches:
+                for chunk in incoming_batch:
                     cid = chunk.get("id")
                     if isinstance(cid, str) and cid not in chunks_by_id:
                         text = chunk.get("content_with_weight") or chunk.get("text") or ""
                         chunks_by_id[cid] = text if isinstance(text, str) else ""
-                all_chunks.extend(batch)
                 for template_id, parser_cfg in active_templates:
-                    if _is_page_index_template(parser_cfg):
-                        continue  # page_index handled by tree builder after all batches collected
                     if cancel_check():
                         raise TaskCanceledException("Task was cancelled during document knowledge compilation")
-                    task = asyncio.create_task(_compile_batch(batch_no, batch, template_id, parser_cfg))
-                    inflight[task] = (submit_sequence, batch_no, len(batch), template_id)
-                    submit_sequence += 1
-                    if len(inflight) + len(completed) >= DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT:
-                        await _reap_one()
+                    if not _is_page_index_template(parser_cfg):
+                        await _submit_one(incoming_batch, template_id, parser_cfg)
+                        continue
+
+                    buffer = page_index_buffers[template_id]
+                    budget = _page_index_budget(template_id)
+                    buffer_tokens = page_index_buffer_tokens[template_id]
+                    for chunk in incoming_batch:
+                        text = chunk.get("content_with_weight") or chunk.get("text") or ""
+                        chunk_tokens = num_tokens_from_string(text if isinstance(text, str) else "")
+                        if buffer and buffer_tokens + chunk_tokens > budget:
+                            await _submit_one(buffer, template_id, parser_cfg)
+                            buffer = []
+                            buffer_tokens = 0
+                        buffer.append(chunk)
+                        buffer_tokens += chunk_tokens
+                        if buffer_tokens >= budget:
+                            await _submit_one(buffer, template_id, parser_cfg)
+                            buffer = []
+                            buffer_tokens = 0
+                    page_index_buffers[template_id] = buffer
+                    page_index_buffer_tokens[template_id] = buffer_tokens
+
+            for template_id, buffer in page_index_buffers.items():
+                if cancel_check():
+                    raise TaskCanceledException("Task was cancelled during document knowledge compilation")
+                parser_cfg = dict(active_templates)[template_id]
+                await _submit_one(buffer, template_id, parser_cfg)
+                page_index_buffers[template_id] = []
+                page_index_buffer_tokens[template_id] = 0
         except BaseException:
             await _cancel_pending()
             raise
@@ -489,47 +532,6 @@ async def run_structure_compile_over_batches(
             raise TaskCanceledException("Task was cancelled during document knowledge compilation")
         await _reap_one()
     await _commit_ready()
-
-    # ── Page_index tree builder ─────────────────────────────────────────
-    # page_index templates are handled by the OpenFable-style tree builder
-    # instead of the per-chunk batch loop. The tree builder sees all chunks
-    # (or coherent partitions for long docs) and builds a complete table-of-
-    # contents tree in one pass, then converts it to entity+relation ES rows.
-    page_index_template_ids = [tid for tid, cfg in active_templates if _is_page_index_template(cfg)]
-    if page_index_template_ids and all_chunks:
-        for template_id in page_index_template_ids:
-            parser_cfg = dict(active_templates).get(template_id) or {}
-            if cancel_check():
-                raise TaskCanceledException("Task was cancelled before page_index tree build")
-            progress_cb(msg=f"  building page_index tree ({len(all_chunks)} chunks) for template ({template_ids_by_id[template_id]}/{total})")
-            try:
-                tree_chat_mdl = llm_pool.wrap(
-                    chat_mdl_by_tid[template_id],
-                    priority=30,
-                    label=f"page_index_tree:{template_id}",
-                    context=f"{doc_id}:{template_id}:page-index-tree",
-                )
-                es_docs = await build_page_index_tree(
-                    all_chunks,
-                    tree_chat_mdl,
-                    embedding_model,
-                    doc_id,
-                    parser_config=parser_cfg,
-                    compilation_template_id=template_id,
-                )
-                if es_docs:
-                    accumulators[template_id].extend(es_docs)
-                    progress_cb(
-                        msg=f"  page_index tree done: {len(es_docs)} docs "
-                        f"({sum(1 for d in es_docs if d.get('knowledge_graph_kwd') == 'entity')} entities, "
-                        f"{sum(1 for d in es_docs if d.get('knowledge_graph_kwd') == 'relation')} relations)"
-                    )
-            except Exception:
-                logging.exception(
-                    "page_index tree builder failed for template %s doc %s",
-                    template_id,
-                    doc_id,
-                )
 
     for template_id, _ in active_templates:
         if cancel_check():
