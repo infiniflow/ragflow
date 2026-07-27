@@ -51,6 +51,7 @@ export const typeMap = {
   textProcessing: t('flow.logTimeline.textProcessing'),
   tavilySearch: t('flow.logTimeline.tavilySearch'),
   tavilyExtract: t('flow.logTimeline.tavilyExtract'),
+  queritSearch: t('flow.logTimeline.queritSearch'),
   exeSQL: t('flow.logTimeline.exeSQL'),
   google: t('flow.logTimeline.google'),
   duckDuckGo: t('flow.logTimeline.google'),

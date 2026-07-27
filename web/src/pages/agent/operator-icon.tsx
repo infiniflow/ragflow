@@ -51,6 +51,7 @@ export const SVGIconMap = {
   [Operator.KeenableSearch]: 'keenable',
   [Operator.TavilyExtract]: 'tavily',
   [Operator.TavilySearch]: 'tavily',
+  [Operator.QueritSearch]: 'querit',
   [Operator.Wikipedia]: 'wikipedia',
   [Operator.YahooFinance]: 'yahoo-finance',
   [Operator.WenCai]: 'wencai',
