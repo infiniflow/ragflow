@@ -1516,11 +1516,11 @@ func ResolveTenantModelDisplayName(ctx context.Context, db *gorm.DB, tenantModel
 	if err != nil {
 		return displayName
 	}
-	instance, err := dao.NewTenantModelInstanceDAO().GetByID(model.InstanceID)
+	instance, err := dao.NewTenantModelInstanceDAO().GetByID(ctx, db, model.InstanceID)
 	if err != nil {
 		return displayName
 	}
-	provider, err := dao.NewTenantModelProviderDAO().GetByID(model.ProviderID)
+	provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, model.ProviderID)
 	if err != nil {
 		return displayName
 	}

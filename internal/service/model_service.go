@@ -166,7 +166,7 @@ type CheckConnectionRequest struct {
 	ModelInfo  []CheckConnectionModelInfo `json:"model_info"`
 }
 
-func (m *ModelProviderService) AddModelProvider(providerName, userID string) (common.ErrorCode, error) {
+func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerName, userID string) (common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -180,7 +180,7 @@ func (m *ModelProviderService) AddModelProvider(providerName, userID string) (co
 
 	tenantID := tenants[0].TenantID
 
-	existing, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	existing, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return common.CodeServerError, err
 	}
@@ -195,14 +195,14 @@ func (m *ModelProviderService) AddModelProvider(providerName, userID string) (co
 		ProviderName: providerName,
 		TenantID:     tenantID,
 	}
-	err = m.modelProviderDAO.Create(tenantModelProvider)
+	err = m.modelProviderDAO.Create(ctx, dao.DB, tenantModelProvider)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("fail to create model provider: %s", err.Error())
 	}
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ListProvidersOfTenant(userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+func (m *ModelProviderService) ListProvidersOfTenant(ctx context.Context, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 	if err != nil {
@@ -215,7 +215,7 @@ func (m *ModelProviderService) ListProvidersOfTenant(userID string) ([]map[strin
 
 	tenantID := tenants[0].TenantID
 
-	providerNames, err := m.modelProviderDAO.ListByID(tenantID)
+	providerNames, err := m.modelProviderDAO.ListByID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -247,7 +247,7 @@ func (m *ModelProviderService) ListProvidersOfTenant(userID string) ([]map[strin
 		// Set has_instance flag. Mirrors Python's:
 		//   provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, name)
 		//   has_instance = bool(provider_obj and TenantModelInstanceService.get_all_by_provider_id(provider_obj.id))
-		provider["has_instance"] = m.providerHasInstance(tenantID, providerName)
+		provider["has_instance"] = m.providerHasInstance(ctx, tenantID, providerName)
 
 		result = append(result, provider)
 	}
@@ -260,12 +260,12 @@ func (m *ModelProviderService) ListProvidersOfTenant(userID string) ([]map[strin
 //
 //	provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, name)
 //	has_instance = bool(provider_obj and TenantModelInstanceService.get_all_by_provider_id(provider_obj.id))
-func (m *ModelProviderService) providerHasInstance(tenantID, providerName string) bool {
-	providerObj, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+func (m *ModelProviderService) providerHasInstance(ctx context.Context, tenantID, providerName string) bool {
+	providerObj, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return false
 	}
-	instances, err := m.modelInstanceDAO.GetAllInstancesByProviderID(providerObj.ID)
+	instances, err := m.modelInstanceDAO.GetAllInstancesByProviderID(ctx, dao.DB, providerObj.ID)
 	if err != nil {
 		return false
 	}
@@ -294,13 +294,13 @@ func (m *ModelProviderService) DeleteModelProvider(ctx context.Context, userID, 
 	tenantID := tenants[0].TenantID
 
 	// Find the provider first.
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return common.CodeNotFound, fmt.Errorf("provider %s not found", providerName)
 	}
 
 	// Delete all models and instances under this provider.
-	instances, err := m.modelInstanceDAO.GetAllInstancesByProviderID(provider.ID)
+	instances, err := m.modelInstanceDAO.GetAllInstancesByProviderID(ctx, dao.DB, provider.ID)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -312,12 +312,12 @@ func (m *ModelProviderService) DeleteModelProvider(ctx context.Context, userID, 
 		if _, err = m.modelDAO.DeleteByInstanceIDs(ctx, dao.DB, instanceIDs); err != nil {
 			return common.CodeServerError, err
 		}
-		if _, err = m.modelInstanceDAO.DeleteByProviderID(provider.ID); err != nil {
+		if _, err = m.modelInstanceDAO.DeleteByProviderID(ctx, dao.DB, provider.ID); err != nil {
 			return common.CodeServerError, err
 		}
 	}
 
-	_, err = m.modelProviderDAO.DeleteByTenantIDAndProviderName(tenantID, providerName)
+	_, err = m.modelProviderDAO.DeleteByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -341,12 +341,12 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 	tenantID := tenants[0].TenantID
 
 	// Check if provider exists
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return nil, err
 	}
 
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -407,12 +407,12 @@ type CreateInstanceModelInfo struct {
 	Extra      map[string]interface{} `json:"extra"`
 }
 
-func (m *ModelProviderService) getProviderByIDOrName(tenantID, providerIDOrName string) (*entity.TenantModelProvider, error) {
-	provider, err := m.modelProviderDAO.GetByID(providerIDOrName)
+func (m *ModelProviderService) getProviderByIDOrName(ctx context.Context, tenantID, providerIDOrName string) (*entity.TenantModelProvider, error) {
+	provider, err := m.modelProviderDAO.GetByID(ctx, dao.DB, providerIDOrName)
 	if err == nil && provider.TenantID == tenantID {
 		return provider, nil
 	}
-	return m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, strings.TrimSpace(providerIDOrName))
+	return m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, strings.TrimSpace(providerIDOrName))
 }
 
 func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, providerIDOrName, instanceName, apiKey, baseURL, region, userID string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
@@ -430,7 +430,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 
 	tenantID := tenants[0].TenantID
 
-	provider, err := m.getProviderByIDOrName(tenantID, providerIDOrName)
+	provider, err := m.getProviderByIDOrName(ctx, tenantID, providerIDOrName)
 	if err != nil {
 		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerIDOrName)
 	}
@@ -465,7 +465,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 		Status:       "active",
 		Extra:        extraStr,
 	}
-	err = m.modelInstanceDAO.Create(tenantModelInstance)
+	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
 	}
@@ -531,7 +531,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 
 // CreateNameOnlyProviderInstance creates a provider instance with only a name,
 // skipping API key validation and model creation.
-func (m *ModelProviderService) CreateNameOnlyProviderInstance(providerIDOrName, instanceName, userID string) (common.ErrorCode, error) {
+func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Context, providerIDOrName, instanceName, userID string) (common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
 	if instanceName == "default" {
@@ -547,7 +547,7 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(providerIDOrName, 
 	}
 	tenantID := tenants[0].TenantID
 
-	provider, err := m.getProviderByIDOrName(tenantID, providerIDOrName)
+	provider, err := m.getProviderByIDOrName(ctx, tenantID, providerIDOrName)
 	if err != nil {
 		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerIDOrName)
 	}
@@ -562,7 +562,7 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(providerIDOrName, 
 		Status:       "active",
 		Extra:        "{}",
 	}
-	err = m.modelInstanceDAO.Create(tenantModelInstance)
+	err = m.modelInstanceDAO.Create(ctx, dao.DB, tenantModelInstance)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("fail to create model instance: %s", err.Error())
 	}
@@ -624,12 +624,12 @@ func (m *ModelProviderService) verifyProviderAPIKey(ctx context.Context, provide
 
 // addModelToInstance creates a single model under the given provider instance.
 func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID, providerName, instanceName string, model CreateInstanceModelInfo) error {
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return fmt.Errorf("no provider found for provider '%s'", providerName)
 	}
 
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
 		return fmt.Errorf("no instance found for provider '%s' and instance '%s'", providerName, instanceName)
 	}
@@ -681,7 +681,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 	return nil
 }
 
-func (m *ModelProviderService) ListProviderInstances(providerIDOrName, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+func (m *ModelProviderService) ListProviderInstances(ctx context.Context, providerIDOrName, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
 	// Get tenant ID from user
@@ -697,13 +697,13 @@ func (m *ModelProviderService) ListProviderInstances(providerIDOrName, userID st
 	tenantID := tenants[0].TenantID
 
 	// Check if provider exists — try by ID first, then by name.
-	provider, err := m.getProviderByIDOrName(tenantID, providerIDOrName)
+	provider, err := m.getProviderByIDOrName(ctx, tenantID, providerIDOrName)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("no provider found for provider '%s'", providerIDOrName)
 	}
 
 	// Check if provider exists
-	instances, err := m.modelInstanceDAO.GetAllInstancesByProviderID(provider.ID)
+	instances, err := m.modelInstanceDAO.GetAllInstancesByProviderID(ctx, dao.DB, provider.ID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -741,7 +741,7 @@ func (m *ModelProviderService) ListProviderInstances(providerIDOrName, userID st
 	return result, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ShowProviderInstance(providerName, instanceIDOrName, userID string) (map[string]interface{}, common.ErrorCode, error) {
+func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, providerName, instanceIDOrName, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
 	providerName = strings.ToLower(providerName)
 
@@ -761,7 +761,7 @@ func (m *ModelProviderService) ShowProviderInstance(providerName, instanceIDOrNa
 	//   provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_id(tenant_id, provider_id_or_name)
 	//   if not provider_obj:
 	//       provider_obj = TenantModelProviderService.get_by_tenant_id_and_provider_name(tenant_id, provider_id_or_name)
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("no provider found for provider '%s'", providerName)
 	}
@@ -773,9 +773,9 @@ func (m *ModelProviderService) ShowProviderInstance(providerName, instanceIDOrNa
 	//   if not instance_obj:
 	//       instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_id, instance_id_or_name)
 	var instance *entity.TenantModelInstance
-	instance, err = m.modelInstanceDAO.GetByID(instanceIDOrName)
+	instance, err = m.modelInstanceDAO.GetByID(ctx, dao.DB, instanceIDOrName)
 	if err != nil || instance.ProviderID != provider.ID {
-		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceIDOrName)
+		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceIDOrName)
 	}
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("no instance found for provider '%s' and instance '%s'", providerName, instanceIDOrName)
@@ -821,12 +821,12 @@ func (m *ModelProviderService) ShowInstanceBalance(ctx context.Context, provider
 	tenantID := tenants[0].TenantID
 
 	// Check if provider exists
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
 
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -926,7 +926,7 @@ func (m *ModelProviderService) updateModelVerifyResults(ctx context.Context, use
 	tenantID := userTenants[0].TenantID
 
 	// Resolve provider DB record from tenant + provider name.
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return fmt.Errorf("provider %s not found for tenant %s: %w", providerName, tenantID, err)
 	}
@@ -1232,12 +1232,12 @@ func (m *ModelProviderService) CheckInstanceConnection(ctx context.Context, prov
 	tenantID := tenants[0].TenantID
 
 	// Check if provider exists
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return common.CodeServerError, err
 	}
 
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -1292,12 +1292,12 @@ func (m *ModelProviderService) ListTasks(ctx context.Context, providerName, inst
 	tenantID := tenants[0].TenantID
 
 	// Check if provider exists
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
 
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1353,12 +1353,12 @@ func (m *ModelProviderService) ShowTask(ctx context.Context, providerName, insta
 	tenantID := tenants[0].TenantID
 
 	// Check if provider exists
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
 
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1451,7 +1451,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 		modelTypeFilterBin = entity.ModelTypeFromString(modelTypeFilter)
 	}
 
-	providers, err := m.modelProviderDAO.GetByTenantID(tenantID)
+	providers, err := m.modelProviderDAO.GetByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1466,7 +1466,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 		providerInfoByID[p.ID] = p
 	}
 
-	instances, err := m.modelInstanceDAO.GetByProviderIDs(providerIDs)
+	instances, err := m.modelInstanceDAO.GetByProviderIDs(ctx, dao.DB, providerIDs)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1754,7 +1754,7 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 	}
 
 	// 1. Find or create the provider.
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		if !dao.IsNotFoundErr(err) {
 			return fmt.Errorf("failed to get provider %s: %w", providerName, err)
@@ -1765,7 +1765,7 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 			TenantID:     tenantID,
 			ProviderName: providerName,
 		}
-		if err = m.modelProviderDAO.Create(provider); err != nil {
+		if err = m.modelProviderDAO.Create(ctx, dao.DB, provider); err != nil {
 			return fmt.Errorf("failed to create provider %s: %w", providerName, err)
 		}
 	}
@@ -1777,7 +1777,7 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 	}
 	apiKey := string(apiKeyBytes)
 
-	instance, err := m.modelInstanceDAO.GetInstanceByApiKey(apiKey, provider.ID)
+	instance, err := m.modelInstanceDAO.GetInstanceByApiKey(ctx, dao.DB, apiKey, provider.ID)
 	if err != nil {
 		if !dao.IsNotFoundErr(err) {
 			return fmt.Errorf("failed to get instance for %s: %w", providerName, err)
@@ -1790,7 +1790,7 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 			APIKey:       apiKey,
 			Extra:        "{}",
 		}
-		if err = m.modelInstanceDAO.Create(instance); err != nil {
+		if err = m.modelInstanceDAO.Create(ctx, dao.DB, instance); err != nil {
 			return fmt.Errorf("failed to create instance for %s: %w", providerName, err)
 		}
 	}
@@ -1843,16 +1843,16 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 	}
 	tenantID := tenants[0].TenantID
 
-	provider, err := m.getProviderByIDOrName(tenantID, providerIDOrName)
+	provider, err := m.getProviderByIDOrName(ctx, tenantID, providerIDOrName)
 	if err != nil {
 		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerIDOrName)
 	}
 	providerName := provider.ProviderName
 
 	// Find the instance — try by ID first, then by name.
-	instance, err := m.modelInstanceDAO.GetByID(instanceIDOrName)
+	instance, err := m.modelInstanceDAO.GetByID(ctx, dao.DB, instanceIDOrName)
 	if err != nil || instance.ProviderID != provider.ID {
-		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceIDOrName)
+		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceIDOrName)
 	}
 	if err != nil {
 		return common.CodeNotFound, fmt.Errorf("no instance found for provider '%s' and instance '%s'", providerName, instanceIDOrName)
@@ -1899,7 +1899,7 @@ func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID
 		return common.CodeServerError, err
 	}
 	instanceUpdates["extra"] = string(extraBytes)
-	if err = m.modelInstanceDAO.UpdateByID(instance.ID, instanceUpdates); err != nil {
+	if err = m.modelInstanceDAO.UpdateByID(ctx, dao.DB, instance.ID, instanceUpdates); err != nil {
 		return common.CodeServerError, fmt.Errorf("fail to update instance: %s", err.Error())
 	}
 
@@ -2019,7 +2019,7 @@ func (m *ModelProviderService) DropProviderInstances(ctx context.Context, provid
 	tenantID := tenants[0].TenantID
 
 	// Find provider by ID or name
-	provider, err := m.getProviderByIDOrName(tenantID, providerIDOrName)
+	provider, err := m.getProviderByIDOrName(ctx, tenantID, providerIDOrName)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return common.CodeNotFound, fmt.Errorf("no provider found for provider %q", providerIDOrName)
@@ -2036,7 +2036,7 @@ func (m *ModelProviderService) DropProviderInstances(ctx context.Context, provid
 		var instance *entity.TenantModelInstance
 		// Try by ID first, then by name — same as Python.
 		if idOrName != "" {
-			instance, err = m.modelInstanceDAO.GetByID(idOrName)
+			instance, err = m.modelInstanceDAO.GetByID(ctx, dao.DB, idOrName)
 			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 				return common.CodeServerError, err
 			}
@@ -2045,7 +2045,7 @@ func (m *ModelProviderService) DropProviderInstances(ctx context.Context, provid
 			}
 		}
 		if instance == nil {
-			instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, idOrName)
+			instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, idOrName)
 			if err != nil {
 				if errors.Is(err, gorm.ErrRecordNotFound) {
 					notExistInstances = append(notExistInstances, idOrName)
@@ -2067,7 +2067,7 @@ func (m *ModelProviderService) DropProviderInstances(ctx context.Context, provid
 	if _, err = m.modelDAO.DeleteByInstanceIDs(ctx, dao.DB, instanceIDs); err != nil {
 		return common.CodeServerError, err
 	}
-	if _, err = m.modelInstanceDAO.DeleteByIDs(instanceIDs); err != nil {
+	if _, err = m.modelInstanceDAO.DeleteByIDs(ctx, dao.DB, instanceIDs); err != nil {
 		return common.CodeServerError, err
 	}
 
@@ -2088,15 +2088,15 @@ func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerI
 	tenantID := tenants[0].TenantID
 
 	// Get provider by ID or name (matches Python's get_by_tenant_id_and_provider_id → get_by_tenant_id_and_provider_name fallback).
-	provider, err := m.getProviderByIDOrName(tenantID, providerIDOrName)
+	provider, err := m.getProviderByIDOrName(ctx, tenantID, providerIDOrName)
 	if err != nil {
 		return common.CodeDataError, fmt.Errorf("no provider found for provider '%s'", providerIDOrName)
 	}
 
 	// Get instance by ID or name (matches Python's get_by_id → get_by_provider_id_and_instance_name fallback).
-	instance, err := m.modelInstanceDAO.GetByID(instanceIDOrName)
+	instance, err := m.modelInstanceDAO.GetByID(ctx, dao.DB, instanceIDOrName)
 	if err != nil || instance.ProviderID != provider.ID {
-		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceIDOrName)
+		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceIDOrName)
 	}
 	if err != nil {
 		return common.CodeDataError, fmt.Errorf("no instance found for provider '%s' and instance '%s'", providerIDOrName, instanceIDOrName)
@@ -2156,15 +2156,15 @@ func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerN
 	tenantID := tenants[0].TenantID
 
 	// Find provider by ID or name
-	provider, err := m.getProviderByIDOrName(tenantID, providerName)
+	provider, err := m.getProviderByIDOrName(ctx, tenantID, providerName)
 	if err != nil {
 		return nil, err
 	}
 
 	// Find instance by ID first, then by name
-	instance, err := m.modelInstanceDAO.GetByID(instanceName)
+	instance, err := m.modelInstanceDAO.GetByID(ctx, dao.DB, instanceName)
 	if err != nil || instance.ProviderID != provider.ID {
-		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 		if err != nil {
 			return nil, err
 		}
@@ -2251,12 +2251,12 @@ func (m *ModelProviderService) AlterModel(ctx context.Context, providerName, ins
 	tenantID := tenants[0].TenantID
 
 	// Check if provider exists
-	provider, err := m.getProviderByIDOrName(tenantID, providerName)
+	provider, err := m.getProviderByIDOrName(ctx, tenantID, providerName)
 	if err != nil {
 		return common.CodeServerError, err
 	}
 
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -2464,12 +2464,12 @@ func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Con
 	tenantID := tenants[0].TenantID
 
 	// Check if provider exists
-	providerEntity, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, *providerName)
+	providerEntity, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, *providerName)
 	if err != nil {
 		return nil, err
 	}
 
-	instanceEntity, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(providerEntity.ID, *instanceName)
+	instanceEntity, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, providerEntity.ID, *instanceName)
 	if err != nil {
 		return nil, err
 	}
@@ -2541,12 +2541,12 @@ func (m *ModelProviderService) getModelInstanceAndProviderByID(ctx context.Conte
 		return nil, err
 	}
 
-	instanceEntity, err := m.modelInstanceDAO.GetByID(modelEntity.InstanceID)
+	instanceEntity, err := m.modelInstanceDAO.GetByID(ctx, dao.DB, modelEntity.InstanceID)
 	if err != nil {
 		return nil, err
 	}
 
-	providerEntity, err := m.modelProviderDAO.GetByID(instanceEntity.ProviderID)
+	providerEntity, err := m.modelProviderDAO.GetByID(ctx, dao.DB, instanceEntity.ProviderID)
 	if err != nil {
 		return nil, err
 	}
@@ -3301,7 +3301,7 @@ func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID st
 		return nil, "", nil, 0, fmt.Errorf("tenant model id=%s cannot be used as %s model", modelID, modelType.String())
 	}
 
-	providerEntity, err := m.modelProviderDAO.GetByID(modelEntity.ProviderID)
+	providerEntity, err := m.modelProviderDAO.GetByID(ctx, dao.DB, modelEntity.ProviderID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, "", nil, 0, fmt.Errorf("provider id=%s not found for model id=%s", modelEntity.ProviderID, modelID)
@@ -3329,7 +3329,7 @@ func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID st
 		}
 	}
 
-	instanceEntity, err := m.modelInstanceDAO.GetByID(modelEntity.InstanceID)
+	instanceEntity, err := m.modelInstanceDAO.GetByID(ctx, dao.DB, modelEntity.InstanceID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, "", nil, 0, fmt.Errorf("instance id=%s not found for model id=%s", modelEntity.InstanceID, modelID)
@@ -3437,7 +3437,7 @@ func (m *ModelProviderService) ResolveModelID(ctx context.Context, tenantID stri
 		return "", nil
 	}
 
-	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return "", fmt.Errorf("provider %q lookup failed: %w", providerName, err)
 	}
@@ -3445,7 +3445,7 @@ func (m *ModelProviderService) ResolveModelID(ctx context.Context, tenantID stri
 		return "", fmt.Errorf("provider %q not found for model %q", providerName, modelName)
 	}
 
-	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, err := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
 		return "", fmt.Errorf("instance %q lookup failed: %w", instanceName, err)
 	}
@@ -3492,7 +3492,7 @@ func (m *ModelProviderService) GetModelTypeByName(ctx context.Context, tenantID,
 	}
 
 	// Direct provider lookup
-	provider, provErr := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, provErr := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if provErr != nil {
 		return nil, fmt.Errorf("provider %q lookup failed: %w", providerName, provErr)
 	}
@@ -3501,7 +3501,7 @@ func (m *ModelProviderService) GetModelTypeByName(ctx context.Context, tenantID,
 	}
 
 	// Direct instance lookup
-	instance, instErr := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, instErr := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if instErr != nil {
 		return nil, fmt.Errorf("instance %q lookup failed: %w", instanceName, instErr)
 	}
@@ -3591,15 +3591,15 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 	tenantID := tenants[0].TenantID
 
 	// Get provider by ID or name (matches Python's get_by_tenant_id_and_provider_id → get_by_tenant_id_and_provider_name fallback).
-	provider, err := m.getProviderByIDOrName(tenantID, request.ProviderName)
+	provider, err := m.getProviderByIDOrName(ctx, tenantID, request.ProviderName)
 	if err != nil {
 		return common.CodeDataError, fmt.Errorf("no provider found for provider '%s'", request.ProviderName)
 	}
 
 	// Get instance by ID or name (matches Python's get_by_id → get_by_provider_id_and_instance_name fallback).
-	instance, err := m.modelInstanceDAO.GetByID(request.InstanceName)
+	instance, err := m.modelInstanceDAO.GetByID(ctx, dao.DB, request.InstanceName)
 	if err != nil || instance.ProviderID != provider.ID {
-		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, request.InstanceName)
+		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, request.InstanceName)
 	}
 	if err != nil {
 		return common.CodeDataError, fmt.Errorf("no instance found for provider '%s' and instance '%s'", request.ProviderName, request.InstanceName)
@@ -3775,7 +3775,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 	}
 
 	// Direct provider lookup
-	provider, provErr := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, provErr := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if provErr != nil {
 		return nil, "", nil, 0, fmt.Errorf("provider %q lookup failed: %w", providerName, provErr)
 	}
@@ -3784,7 +3784,7 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 	}
 
 	// Direct instance lookup
-	instance, instErr := m.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, instErr := m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if instErr != nil {
 		return nil, "", nil, 0, fmt.Errorf("instance %q lookup failed: %w", instanceName, instErr)
 	}
@@ -3895,7 +3895,7 @@ func (m *ModelProviderService) getModelConfig(ctx context.Context, tenantID, com
 	// Check if provider exists (skip for Builtin provider)
 	var providerID string
 	if providerName != "Builtin" {
-		provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+		provider, err := m.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 		if err != nil {
 			return nil, "", nil, 0, err
 		}
@@ -3910,7 +3910,7 @@ func (m *ModelProviderService) getModelConfig(ctx context.Context, tenantID, com
 	// Get instance (skip for Builtin provider since it doesn't use tenant_model_instance)
 	var instance *entity.TenantModelInstance
 	if providerName != "Builtin" {
-		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(providerID, instanceName)
+		instance, err = m.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, providerID, instanceName)
 		if err != nil {
 			return nil, "", nil, 0, err
 		}
@@ -3919,6 +3919,7 @@ func (m *ModelProviderService) getModelConfig(ctx context.Context, tenantID, com
 		}
 		common.Debug("getModelConfig instance found", zap.String("instanceName", instanceName))
 	}
+	// TODO: if provider name is Builtin, HOW TO?
 
 	var extra map[string]string
 	var region string

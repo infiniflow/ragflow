@@ -483,7 +483,7 @@ func resolveTenantModelBrowserLLM(ctx context.Context, db *gorm.DB, tenantID, mo
 		return "", "", "", "", fmt.Errorf("tenant model id=%s cannot be used as %s model", modelID, entity.ModelTypeChat.String())
 	}
 
-	provider, err := dao.NewTenantModelProviderDAO().GetByID(modelRow.ProviderID)
+	provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, modelRow.ProviderID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", "", "", "", fmt.Errorf("provider id=%s not found for model id=%s", modelRow.ProviderID, modelID)
@@ -497,7 +497,7 @@ func resolveTenantModelBrowserLLM(ctx context.Context, db *gorm.DB, tenantID, mo
 		return "", "", "", "", fmt.Errorf("tenant %s has no access to provider owned by tenant %s", tenantID, provider.TenantID)
 	}
 
-	instance, err := dao.NewTenantModelInstanceDAO().GetByID(modelRow.InstanceID)
+	instance, err := dao.NewTenantModelInstanceDAO().GetByID(ctx, db, modelRow.InstanceID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", "", "", "", fmt.Errorf("instance id=%s not found for model id=%s", modelRow.InstanceID, modelID)

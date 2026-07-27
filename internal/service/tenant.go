@@ -186,7 +186,7 @@ func (s *TenantLLMService) SplitModelNameAndFactory(modelName string) (string, s
 // GetAPIKeyFromInstance returns the API key for the given composite model name
 // by looking it up in the tenant_model_instance table. compositeModelName is in
 // "model@instance@provider" or "model@provider" format.
-func (s *TenantLLMService) GetAPIKeyFromInstance(tenantID, compositeModelName string) (string, error) {
+func (s *TenantLLMService) GetAPIKeyFromInstance(ctx context.Context, tenantID, compositeModelName string) (string, error) {
 	parts := strings.Split(compositeModelName, "@")
 	if len(parts) < 2 {
 		return "", fmt.Errorf("invalid model name format: %s", compositeModelName)
@@ -204,7 +204,7 @@ func (s *TenantLLMService) GetAPIKeyFromInstance(tenantID, compositeModelName st
 		return "", fmt.Errorf("invalid model name format: %s", compositeModelName)
 	}
 
-	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return "", fmt.Errorf("provider %q not found: %w", providerName, err)
 	}
@@ -212,7 +212,7 @@ func (s *TenantLLMService) GetAPIKeyFromInstance(tenantID, compositeModelName st
 		return "", fmt.Errorf("provider %q not found", providerName)
 	}
 
-	instance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
 		return "", fmt.Errorf("instance %q not found: %w", instanceName, err)
 	}
@@ -526,13 +526,13 @@ func (s *TenantService) GetModelInfo(ctx context.Context, tenantID string, defau
 	}
 
 	// Check if the provider exists for the tenant.
-	modelProvider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	modelProvider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return nil, nil, nil, false, err
 	}
 
 	// Check if the instance exists.
-	modelInstance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(modelProvider.ID, instanceName)
+	modelInstance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, modelProvider.ID, instanceName)
 	if err != nil {
 		return nil, nil, nil, false, err
 	}
@@ -722,12 +722,12 @@ func (s *TenantService) checkModelAvailable(ctx context.Context, tenantID, provi
 	}
 
 	// Check if the provider and instance exists
-	modelProvider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	modelProvider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
 	if err != nil {
 		return err
 	}
 
-	modelInstance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(modelProvider.ID, instanceName)
+	modelInstance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, modelProvider.ID, instanceName)
 	if err != nil {
 		return err
 	}
@@ -773,11 +773,11 @@ func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, mode
 		if err != nil {
 			return fmt.Errorf("model ID %s is invalid", modelID)
 		}
-		instanceEntity, err := s.modelInstanceDAO.GetByID(modelEntity.InstanceID)
+		instanceEntity, err := s.modelInstanceDAO.GetByID(ctx, dao.DB, modelEntity.InstanceID)
 		if err != nil {
 			return fmt.Errorf("instance for model %s not found: %w", modelID, err)
 		}
-		providerEntity, err := s.modelProviderDAO.GetByID(instanceEntity.ProviderID)
+		providerEntity, err := s.modelProviderDAO.GetByID(ctx, dao.DB, instanceEntity.ProviderID)
 		if err != nil {
 			return fmt.Errorf("provider for model %s not found: %w", modelID, err)
 		}
@@ -812,11 +812,11 @@ func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, mode
 			if modelProvider == "Builtin" {
 				tenantModelID = nil
 			} else {
-				modelProviderEntity, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ownedTenant.TenantID, modelProvider)
+				modelProviderEntity, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, ownedTenant.TenantID, modelProvider)
 				if err != nil {
 					return err
 				}
-				modelInstanceEntity, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(modelProviderEntity.ID, modelInstance)
+				modelInstanceEntity, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, modelProviderEntity.ID, modelInstance)
 				if err != nil {
 					return err
 				}

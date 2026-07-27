@@ -131,11 +131,11 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 	if !entity.ModelType(modelObj.ModelType).Has(modelType) {
 		return nil, "", nil, 0, fmt.Errorf("model %q cannot be used as %s model", modelID, modelType.String())
 	}
-	instance, err := instanceDAO.GetByID(modelObj.InstanceID)
+	instance, err := instanceDAO.GetByID(ctx, db, modelObj.InstanceID)
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
-	provider, err := providerDAO.GetByID(modelObj.ProviderID)
+	provider, err := providerDAO.GetByID(ctx, db, modelObj.ProviderID)
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
@@ -184,11 +184,11 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 	instanceDAO := dao.NewTenantModelInstanceDAO()
 	modelDAO := dao.NewTenantModelDAO()
 
-	provider, err := providerDAO.GetByTenantIDAndProviderName(tenantID, providerName)
+	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
 	if err != nil {
 		return nil, "", nil, 0, fmt.Errorf("provider %q lookup failed: %w", providerName, err)
 	}
-	instance, err := instanceDAO.GetByProviderIDAndInstanceName(provider.ID, instanceName)
+	instance, err := instanceDAO.GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
 	if err != nil {
 		return nil, "", nil, 0, fmt.Errorf("instance %q lookup failed: %w", instanceName, err)
 	}

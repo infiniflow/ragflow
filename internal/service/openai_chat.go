@@ -236,7 +236,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
 			return
 		}
-		apiKey, apiErr := s.tenantLLMSvc.GetAPIKeyFromInstance(dialog.TenantID, req.Model)
+		apiKey, apiErr := s.tenantLLMSvc.GetAPIKeyFromInstance(ctx, dialog.TenantID, req.Model)
 		if apiErr != nil || apiKey == "" {
 			s.writeDataError(c, fmt.Sprintf("Cannot use specified model %s.", req.Model))
 			return
