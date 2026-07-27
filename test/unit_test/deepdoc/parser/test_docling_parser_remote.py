@@ -161,6 +161,68 @@ def test_remote_chunked_request_with_ignored_flag_does_not_log_success(monkeypat
     assert "Server ignored chunking request" in flat
 
 
+def _capture_remote_payloads(monkeypatch, module, reject_chunking: bool = False):
+    """Fake out the remote server and the installation probe so ``parse_pdf`` can
+    be driven end to end. Returns the list of payloads it posts; with
+    ``reject_chunking`` the chunked attempts 422 so the standard fallback
+    payloads are exercised too."""
+    payloads = []
+
+    def fake_post(_url, json, timeout):
+        payloads.append(json)
+        if reject_chunking and json["options"].get("do_chunking"):
+            return _Response(None, status_code=422)
+        return _Response({"document": {"md_content": "body"}})
+
+    monkeypatch.setattr(module.requests, "post", fake_post)
+    monkeypatch.setattr(module.DoclingParser, "check_installation", lambda _self, **_kw: True)
+    return payloads
+
+
+@pytest.mark.p2
+def test_resolve_page_range_translates_ragflow_convention(monkeypatch):
+    """RAGFlow's 0-based/exclusive task range becomes Docling's 1-based/inclusive
+    one; an un-narrowed or empty range asks for the whole document instead."""
+    module = _load_docling_parser(monkeypatch)
+    resolve = module.DoclingParser._resolve_page_range
+
+    assert resolve(0, 13) == (1, 13)
+    assert resolve(144, 157) == (145, 157)
+    assert resolve(0, module.MAXIMUM_PAGE_NUMBER) is None
+    # Docling rejects end < start, so a degenerate range must not be sent.
+    assert resolve(12, 12) is None
+
+
+@pytest.mark.p2
+def test_page_range_is_threaded_into_remote_payload(monkeypatch):
+    """A task that owns pages 145-157 must ask Docling Serve for exactly that
+    window instead of converting the whole document — on every payload variant
+    the fallback chain can reach, not just the first one."""
+    module = _load_docling_parser(monkeypatch)
+    payloads = _capture_remote_payloads(monkeypatch, module, reject_chunking=True)
+
+    parser = module.DoclingParser(docling_server_url="http://docling.local")
+    parser.parse_pdf("sample.pdf", binary=b"%PDF", page_from=144, page_to=157)
+
+    # two rejected chunked attempts, then the standard payload that succeeds
+    assert len(payloads) == 3
+    assert all(payload["options"]["page_range"] == [145, 157] for payload in payloads)
+
+
+@pytest.mark.p2
+def test_full_document_request_omits_page_range(monkeypatch):
+    """An unsplit document sends the request it sent before page ranges were
+    supported, so the whole-document path is untouched."""
+    module = _load_docling_parser(monkeypatch)
+    payloads = _capture_remote_payloads(monkeypatch, module, reject_chunking=True)
+
+    parser = module.DoclingParser(docling_server_url="http://docling.local")
+    parser.parse_pdf("sample.pdf", binary=b"%PDF")
+
+    assert len(payloads) == 3
+    assert all("page_range" not in payload["options"] for payload in payloads)
+
+
 @pytest.mark.p2
 def test_crop_without_page_images_returns_none(monkeypatch):
     """Position tags are emitted even when page rendering failed and left
