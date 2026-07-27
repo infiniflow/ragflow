@@ -37,8 +37,14 @@ export function useBlueprintSelection({
   const useBlueprintPath =
     `templates.${selectedTemplateIndex}.config.use_blueprint` as const;
 
-  const instruction = useWatch({ control: form.control, name: instructionPath });
-  const pageExample = useWatch({ control: form.control, name: pageExamplePath });
+  const instruction = useWatch({
+    control: form.control,
+    name: instructionPath,
+  });
+  const pageExample = useWatch({
+    control: form.control,
+    name: pageExamplePath,
+  });
 
   const matchedPresetId = useMemo(() => {
     const currentInstruction = String(instruction ?? '');

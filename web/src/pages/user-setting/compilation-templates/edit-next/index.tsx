@@ -25,16 +25,10 @@ export default function EditNextCompilationTemplate() {
     navigate(agentsUrl);
   }, [navigate]);
 
-  const {
-    form,
-    kindOptions,
-    builtins,
-    onSubmit,
-    isCreate,
-    isLoading,
-  } = useEditNextCompilationTemplateGroup({
-    onSuccess: navigateToAgents,
-  });
+  const { form, kindOptions, builtins, onSubmit, isCreate, isLoading } =
+    useEditNextCompilationTemplateGroup({
+      onSuccess: navigateToAgents,
+    });
   const { data: group } = useFetchCompilationTemplateGroup();
 
   const selectedKind = useWatch({
@@ -77,11 +71,7 @@ export default function EditNextCompilationTemplate() {
           </TemplateConfiguration>
 
           <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-end gap-5">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={navigateToAgents}
-            >
+            <Button type="button" variant="outline" onClick={navigateToAgents}>
               {t('common.back')}
             </Button>
             <Button type="button" loading={isLoading} onClick={handleSave}>

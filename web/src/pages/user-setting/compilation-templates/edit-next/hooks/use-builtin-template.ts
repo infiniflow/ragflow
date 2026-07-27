@@ -4,10 +4,7 @@ import {
   ICompilationTemplateBuiltin,
   ICompilationTemplateSection,
 } from '@/interfaces/database/compilation-template';
-import {
-  isConfigMetaKey,
-  sortSectionNames,
-} from '../utils';
+import { isConfigMetaKey, sortSectionNames } from '../utils';
 
 export const useBuiltinTemplate = (
   builtins: ICompilationTemplateBuiltin[],
