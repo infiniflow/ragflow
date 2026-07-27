@@ -303,6 +303,16 @@ var sentenceDelimiter = regexp.MustCompile(`(\n|[!?。；！？]|\.\s)`)
 func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *regexp.Regexp) map[string]any {
 	target := c.param.ChunkTokenSize
 	overlapPct := c.param.OverlappedPercent
+	// Clamp to [0,100] so the merge math below never produces a
+	// negative/inverted threshold for an out-of-range value (review:
+	// yuzhichang, PR #17396). c.param.OverlappedPercent is already in
+	// [0,90] via Update/Validate, so this is a defensive no-op in
+	// normal operation.
+	if overlapPct < 0 {
+		overlapPct = 0
+	} else if overlapPct > 100 {
+		overlapPct = 100
+	}
 
 	// Split into paragraph-aligned sections.
 	sections := splitIntoSections(text)
@@ -710,6 +720,14 @@ func takeFromStart(text string, tokens int) string {
 // mergeByTokenSizeFromJSON mirrors `naive_merge` at
 // rag/nlp/__init__.py:1156.
 func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64) [][]schema.ChunkDoc {
+	// overlappedPct is a [0,100] percentage. Clamp so the merge math below
+	// never yields a negative/inverted threshold for out-of-range input
+	// (review: yuzhichang, PR #17396).
+	if overlappedPct < 0 {
+		overlappedPct = 0
+	} else if overlappedPct > 100 {
+		overlappedPct = 100
+	}
 	threshold := float64(chunkTokens) * (100 - overlappedPct) / 100.0
 	for idx := range perItem {
 		chunks := perItem[idx]
