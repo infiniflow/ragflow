@@ -63,7 +63,7 @@ export function DelimiterFormField() {
         }
         return (
           <FormItem className=" items-center space-y-0 ">
-            <div className="flex items-center gap-1">
+            <div className="flex items-start gap-1">
               <FormLabel
                 required
                 tooltip={t('knowledgeDetails.delimiterTip')}
