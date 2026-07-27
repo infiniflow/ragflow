@@ -2089,6 +2089,63 @@ async def _struct_upsert_graph_json(
         await thread_pool_exec(settings.docStoreConn.insert, [row], index, kb_id)
 
 
+async def _struct_upsert_tree_graph_rows(
+    graph: dict,
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    embedding_model,
+    compilation_template_id: str | None = None,
+) -> None:
+    """Persist Pipeline tree entities and child relations as structure rows.
+
+    The tree graph blob remains the compact representation and discovery row;
+    these raw rows provide the entity/relation representation consumed by the
+    structure graph API and its subgraph builder.
+    """
+    from common import settings
+    from rag.nlp import search as _rag_search
+
+    entities = [item for item in graph.get("entities") or [] if isinstance(item, dict)]
+    relations = [item for item in graph.get("relations") or [] if isinstance(item, dict)]
+    index = _rag_search.index_name(tenant_id)
+    payloads = [(entity, "entity") for entity in entities] + [(relation, "relation") for relation in relations]
+    rows = []
+    if payloads:
+        descriptions = [_struct_payload_description(payload) for payload, _ in payloads]
+        vectors = await _struct_embed(embedding_model, descriptions)
+        if len(vectors) != len(payloads):
+            raise ValueError(f"Tree graph embedding count mismatch: {len(vectors)} != {len(payloads)}")
+
+        for (payload, kind), vector in zip(payloads, vectors):
+            source_chunk_ids = payload.get("source_chunk_ids") or [] if kind == "entity" else []
+            rows.append(
+                _struct_to_doc_storage_doc(
+                    payload=payload,
+                    compile_kwd="tree",
+                    doc_id=doc_id,
+                    chunk_ids=source_chunk_ids,
+                    vec=vector,
+                    kind=kind,
+                    src_field="from" if kind == "relation" else None,
+                    target_field="to" if kind == "relation" else None,
+                    compilation_template_id=compilation_template_id,
+                    compilation_template_kind="tree",
+                )
+            )
+
+    template_filter = {"compilation_template_ids": [compilation_template_id]} if compilation_template_id else {"must_not": {"exists": "compilation_template_ids"}}
+    delete_condition = {
+        "doc_id": [doc_id],
+        "compile_kwd": ["tree"],
+        "knowledge_graph_kwd": ["entity", "relation"],
+        **template_filter,
+    }
+    await thread_pool_exec(settings.docStoreConn.delete, delete_condition, index, kb_id)
+    if rows:
+        await thread_pool_exec(settings.docStoreConn.insert, rows, index, kb_id)
+
+
 async def rebuild_structure_graph_json(
     tenant_id: str,
     kb_id: str,
