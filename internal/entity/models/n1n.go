@@ -233,24 +233,51 @@ func (n *N1NModel) ChatStreamlyWithSender(ctx context.Context, modelName string,
 	}
 
 	sawTerminal := false
-	done, err := ParseSSEStream[n1nChatResponse](resp.Body, func(event n1nChatResponse) error {
-		if len(event.Choices) == 0 {
+	accumulatedToolCalls := make(map[int]map[string]interface{})
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+		common.Info(fmt.Sprintf("%v", event))
+
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
+		}
+
+		choices, ok := event["choices"].([]interface{})
+		if !ok || len(choices) == 0 {
 			return nil
 		}
-		choice := event.Choices[0]
-		if choice.Delta.ReasoningContent != "" {
-			r := choice.Delta.ReasoningContent
-			if err := sender(nil, &r); err != nil {
+
+		firstChoice, ok := choices[0].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+
+		delta, ok := firstChoice["delta"].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
+
+		content, ok := delta["content"].(string)
+		if ok && content != "" {
+			if err := sender(&content, nil); err != nil {
 				return err
 			}
 		}
-		if choice.Delta.Content != "" {
-			c := choice.Delta.Content
-			if err := sender(&c, nil); err != nil {
+
+		reasoningContent, ok := delta["reasoning_content"].(string)
+		if ok && reasoningContent != "" {
+			if err := sender(nil, &reasoningContent); err != nil {
 				return err
 			}
 		}
-		if choice.FinishReason != "" {
+
+		finishReason, ok := firstChoice["finish_reason"].(string)
+		if ok && finishReason != "" {
 			sawTerminal = true
 		}
 		return nil
@@ -259,8 +286,10 @@ func (n *N1NModel) ChatStreamlyWithSender(ctx context.Context, modelName string,
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 	if !done && !sawTerminal {
-		return fmt.Errorf("n1n: stream ended before [DONE] or finish_reason")
+		return fmt.Errorf("deepseek: stream ended before [DONE] or finish_reason")
 	}
+
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	endOfStream := "[DONE]"
 	if err := sender(&endOfStream, nil); err != nil {

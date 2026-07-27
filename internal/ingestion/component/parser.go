@@ -84,6 +84,7 @@ import (
 	"unicode/utf8"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -302,7 +303,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"from", "to", "cc", "bcc", "date", "subject",
 				"body", "attachments", "metadata",
 			},
-			"output_format": "text",
+			"output_format": "json",
 		},
 		"audio": {
 			"suffix": []string{
@@ -310,7 +311,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"aiff", "au", "midi", "wma", "realaudio", "vqf",
 				"oggvorbis", "ape",
 			},
-			"output_format": "json",
+			"output_format": "text",
 		},
 		"video": {
 			"suffix":        []string{"mp4", "avi", "mkv"},
@@ -392,9 +393,9 @@ func (c *ParserComponent) Outputs() map[string]string {
 // that downstream Chunker / Tokenizer rely on for stable chunk
 // IDs (chunks that span pages must reference adjacent PageNumbers
 // in input order).
-func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// 1. Decode the binary input.
-	binary, err := readParserBinary(ctx, inputs)
+	binary, err := readParserBinary(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -478,9 +479,10 @@ func (c *ParserComponent) Invoke(ctx context.Context, inputs map[string]any) (ma
 		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, c.Setups)
 		dispatched = hydrateEmptyDispatchPayload(dispatched, binary)
 
-		// DOCX vision figure enhancement: enrich the markdown
-		// with LLM-generated descriptions of embedded images.
-		// Mirrors Python's vision_figure_parser_docx_wrapper_naive.
+		// DOCX vision figure enhancement: on the JSON output path,
+		// append vision-model descriptions to embedded image items
+		// (doc_type_kwd "image"). Mirrors Python's
+		// enhance_media_sections_with_vision in parser.py:_doc.
 		dispatched, _, _ = maybeDispatchDOCXVision(ctx, fileTypeExt, dispatched, inputs, c.Setups)
 
 		// Markdown vision figure enhancement: enrich parsed
@@ -617,7 +619,7 @@ func buildPagesFromBytes(ctx context.Context, pages [][]byte, docType string) ([
 // A non-UTF-8 string is rejected with a clear error so a caller
 // that mistakenly hands a base64 string sees the failure
 // immediately (mirrors pipeline_chunker's "no try-base64" rule).
-func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error) {
+func readParserBinary(ctx context.Context, db *gorm.DB, inputs map[string]any) ([]byte, error) {
 	if inputs == nil {
 		return nil, nil
 	}
@@ -627,8 +629,8 @@ func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error
 	if s, ok := inputs["binary"].(string); ok {
 		if !utf8.ValidString(s) {
 			return nil, errors.New(
-				"Parser: binary string is not valid UTF-8. " +
-					"Text-page mode only accepts UTF-8 text input.")
+				"parser: binary string is not valid UTF-8. " +
+					"Text-page mode only accepts UTF-8 text input")
 		}
 		return []byte(s), nil
 	}
@@ -638,7 +640,7 @@ func readParserBinary(ctx context.Context, inputs map[string]any) ([]byte, error
 		return FetchBinary(ctx, bucket, path)
 	}
 	if docID, ok := getString(inputs, "doc_id"); ok && docID != "" {
-		ref, err := ResolveDocumentStorage(docID)
+		ref, err := ResolveDocumentStorage(ctx, db, docID)
 		if err != nil {
 			return nil, fmt.Errorf("Parser: resolve doc_id %q: %w", docID, err)
 		}

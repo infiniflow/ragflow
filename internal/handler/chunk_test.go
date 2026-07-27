@@ -20,12 +20,12 @@ import (
 // mockChunkSvc implements chunkSvcIface for testing ChunkHandler.
 // Only the methods actually called by the test are set; others panic.
 type mockChunkSvc struct {
-	retrievalTestFn func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
+	retrievalTestFn func(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
 	addChunkFn      func(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error)
-	listFn          func(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error)
-	switchChunksFn  func(userID, datasetID, documentID string, availableInt int, chunkIDs []string) error
-	updateChunkFn   func(req *service.UpdateChunkRequest, userID string) error
-	stopParsingFn   func(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error)
+	listFn          func(ctx context.Context, req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error)
+	switchChunksFn  func(ctx context.Context, userID, datasetID, documentID string, availableInt int, chunkIDs []string) error
+	updateChunkFn   func(ctx context.Context, req *service.UpdateChunkRequest, userID string) error
+	stopParsingFn   func(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error)
 }
 
 type codedTestError struct {
@@ -41,46 +41,46 @@ func (e codedTestError) Code() common.ErrorCode {
 	return e.code
 }
 
-func (m *mockChunkSvc) RetrievalTest(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
+func (m *mockChunkSvc) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
 	if m.retrievalTestFn != nil {
-		return m.retrievalTestFn(req, userID)
+		return m.retrievalTestFn(ctx, req, userID)
 	}
 	return &service.RetrievalTestResponse{
 		Chunks: []map[string]interface{}{{"docnm_kwd": "test", "content_with_weight": "content"}},
 		Total:  1,
 	}, nil
 }
-func (m *mockChunkSvc) Get(*service.GetChunkRequest, string) (*service.GetChunkResponse, error) {
+func (m *mockChunkSvc) Get(context.Context, *service.GetChunkRequest, string) (*service.GetChunkResponse, error) {
 	panic("not implemented")
 }
-func (m *mockChunkSvc) List(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
+func (m *mockChunkSvc) List(ctx context.Context, req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
 	if m.listFn != nil {
-		return m.listFn(req, userID)
+		return m.listFn(ctx, req, userID)
 	}
 	panic("not implemented")
 }
-func (m *mockChunkSvc) SwitchChunks(userID, datasetID, documentID string, availableInt int, chunkIDs []string) error {
+func (m *mockChunkSvc) SwitchChunks(ctx context.Context, userID, datasetID, documentID string, availableInt int, chunkIDs []string) error {
 	if m.switchChunksFn != nil {
-		return m.switchChunksFn(userID, datasetID, documentID, availableInt, chunkIDs)
+		return m.switchChunksFn(ctx, userID, datasetID, documentID, availableInt, chunkIDs)
 	}
 	panic("not implemented")
 }
-func (m *mockChunkSvc) UpdateChunk(req *service.UpdateChunkRequest, userID string) error {
+func (m *mockChunkSvc) UpdateChunk(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
 	if m.updateChunkFn != nil {
-		return m.updateChunkFn(req, userID)
+		return m.updateChunkFn(ctx, req, userID)
 	}
 	panic("not implemented")
 }
-func (m *mockChunkSvc) RemoveChunks(*service.RemoveChunksRequest, string) (int64, error) {
+func (m *mockChunkSvc) RemoveChunks(context.Context, *service.RemoveChunksRequest, string) (int64, error) {
 	panic("not implemented")
 }
-func (m *mockChunkSvc) StopParsing(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+func (m *mockChunkSvc) StopParsing(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
 	if m.stopParsingFn != nil {
-		return m.stopParsingFn(userID, datasetID, req)
+		return m.stopParsingFn(ctx, userID, datasetID, req)
 	}
 	panic("not implemented")
 }
-func (m *mockChunkSvc) Parse(string, string, *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (m *mockChunkSvc) Parse(context.Context, string, string, *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
 	panic("not implemented")
 }
 func (m *mockChunkSvc) AddChunk(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
@@ -139,7 +139,7 @@ func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.GET("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.ListChunks)
 
-	mock.listFn = func(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
+	mock.listFn = func(ctx context.Context, req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
 		if userID != "user-1" {
 			t.Fatalf("userID = %q, want user-1", userID)
 		}
@@ -188,7 +188,7 @@ func TestChunkHandlerListChunksMapsAvailableFalse(t *testing.T) {
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.GET("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.ListChunks)
 
-	mock.listFn = func(req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
+	mock.listFn = func(ctx context.Context, req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
 		if userID != "user-1" {
 			t.Fatalf("userID = %q, want user-1", userID)
 		}
@@ -216,7 +216,7 @@ func TestChunkHandlerSwitchChunksCallsService(t *testing.T) {
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.SwitchChunks)
 
-	mock.switchChunksFn = func(userID, datasetID, documentID string, availableInt int, chunkIDs []string) error {
+	mock.switchChunksFn = func(ctx context.Context, userID, datasetID, documentID string, availableInt int, chunkIDs []string) error {
 		if userID != "user-1" || datasetID != "kb-1" || documentID != "doc-1" {
 			t.Fatalf("ids = %q/%q/%q, want user-1/kb-1/doc-1", userID, datasetID, documentID)
 		}
@@ -267,7 +267,7 @@ func TestChunkHandlerUpdateChunkUsesPathIDs(t *testing.T) {
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
 
-	mock.updateChunkFn = func(req *service.UpdateChunkRequest, userID string) error {
+	mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
 		if userID != "user-1" {
 			t.Fatalf("userID = %q, want user-1", userID)
 		}
@@ -295,7 +295,7 @@ func TestChunkHandlerUpdateChunkValidationErrorIsBadRequest(t *testing.T) {
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
 
-	mock.updateChunkFn = func(req *service.UpdateChunkRequest, userID string) error {
+	mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
 		return codedTestError{code: common.CodeArgumentError, msg: "`tag_feas` values must be finite numbers greater than 0"}
 	}
 
@@ -343,7 +343,7 @@ func TestChunkRetrieval_EmptyQuestion(t *testing.T) {
 
 func TestChunkStopParsing_Success(t *testing.T) {
 	r, mock := setupChunkStopParsingTest("user1")
-	mock.stopParsingFn = func(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+	mock.stopParsingFn = func(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
 		if userID != "user1" {
 			t.Fatalf("expected user1, got %q", userID)
 		}
@@ -378,7 +378,7 @@ func TestChunkStopParsing_Success(t *testing.T) {
 
 func TestChunkStopParsingRouteRequiresDocumentIDs(t *testing.T) {
 	r, mock := setupChunkStopParsingTest("user1")
-	mock.stopParsingFn = func(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+	mock.stopParsingFn = func(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
 		t.Fatal("service should not be called when document_ids is missing")
 		return nil, common.CodeSuccess, nil
 	}
@@ -405,10 +405,10 @@ func TestChunkStopParsingRouteRequiresDocumentIDs(t *testing.T) {
 
 func TestChunkStopParsing_InvalidStateIncludesPythonErrorCode(t *testing.T) {
 	r, mock := setupChunkStopParsingTest("user1")
-	mock.stopParsingFn = func(userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+	mock.stopParsingFn = func(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
 		return &service.StopParsingResponse{
 			Data: map[string]interface{}{"error_code": "DOC_STOP_PARSING_INVALID_STATE"},
-		}, common.CodeDataError, errors.New("Can't stop parsing document that has not started or already completed")
+		}, common.CodeDataError, errors.New("can't stop parsing document that has not started or already completed")
 	}
 
 	w := httptest.NewRecorder()
@@ -433,7 +433,7 @@ func TestChunkStopParsing_InvalidStateIncludesPythonErrorCode(t *testing.T) {
 	if data["error_code"] != "DOC_STOP_PARSING_INVALID_STATE" {
 		t.Fatalf("unexpected error_code: %v", data["error_code"])
 	}
-	if resp["message"] != "Can't stop parsing document that has not started or already completed" {
+	if resp["message"] != "can't stop parsing document that has not started or already completed" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 }
@@ -552,7 +552,7 @@ func TestChunkRetrieval_InvalidJSON(t *testing.T) {
 
 func TestChunkRetrieval_Success(t *testing.T) {
 	_, mock := setupChunkRetrievalTest("user1")
-	mock.retrievalTestFn = func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
+	mock.retrievalTestFn = func(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
 		if userID != "user1" {
 			t.Errorf("expected userID 'user1', got %q", userID)
 		}
@@ -598,7 +598,7 @@ func TestChunkRetrieval_Success(t *testing.T) {
 
 func TestChunkRetrieval_ServiceError(t *testing.T) {
 	_, mock := setupChunkRetrievalTest("user1")
-	mock.retrievalTestFn = func(req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
+	mock.retrievalTestFn = func(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
 		return nil, errors.New("db connection refused")
 	}
 

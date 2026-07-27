@@ -56,6 +56,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 // makeCanvasWithDSL inserts a canvas + tenant + user + a published
@@ -1689,7 +1690,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 
 type categorizeResumeInvoker struct{}
 
-func (i *categorizeResumeInvoker) Invoke(_ context.Context, req component.ChatInvokeRequest) (*component.ChatInvokeResponse, error) {
+func (i *categorizeResumeInvoker) Invoke(_ context.Context, _ *gorm.DB, req component.ChatInvokeRequest) (*component.ChatInvokeResponse, error) {
 	return &component.ChatInvokeResponse{
 		Content: "Retrieval",
 		Model:   req.ModelName,

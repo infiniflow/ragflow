@@ -98,4 +98,5 @@ export const FACTORIES_WITH_BASE_URL = [
   LLMFactory.TongYiQianWen,
   LLMFactory.MiniMax,
   LLMFactory.SILICONFLOW,
+  LLMFactory.TencentHunYuan,
 ];

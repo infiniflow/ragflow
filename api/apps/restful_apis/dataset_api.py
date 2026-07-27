@@ -363,6 +363,20 @@ def list_datasets(tenant_id):
           items:
             type: object
     """
+    if request.args.get("type") == "filter":
+        try:
+            success, result = dataset_api_service.list_dataset_filters(tenant_id)
+            if success:
+                return get_result(data=result)
+            else:
+                return get_error_data_result(message=result)
+        except OperationalError as e:
+            logging.exception(e)
+            return get_error_data_result(message="Database operation failed")
+        except Exception as e:
+            logging.exception(e)
+            return get_error_data_result(message="Internal server error")
+
     args, err = validate_and_parse_request_args(request, ListDatasetReq)
     if err is not None:
         return get_error_argument_result(err)
@@ -647,22 +661,36 @@ async def list_wiki_topics(tenant_id, dataset_id):
 async def get_wiki_graph(tenant_id, dataset_id):
     """Return an incremental slice of the canvas graph for this dataset.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts/graph[?node=<slug>]
+    GET /api/v1/datasets/<dataset_id>/artifacts/graph[?node=<slug>][&keywords=<q>][&top_n=<n>]
     - ``node`` omitted: overview centred on the heaviest-weighted
-      entities, expanded outward until ``MAX_LOADING_ENTITY`` is hit.
+      entities, expanded outward until the entity budget is hit.
     - ``node`` provided: subgraph centred on that entity, including all
       outgoing relations and their ``to`` targets (also capped).
+    - ``keywords`` (overview only; ignored with ``node``): seed the overview
+      from the best BM25 matches instead of the heaviest-weighted entities.
+    - ``top_n`` (a.k.a. ``topN``): override the entity budget (default 128).
 
+    Only entities referenced by at least one relation are returned.
     Success: ``{"code": 0, "data": {"entities":[…],"relations":[…]}}``.
     """
     try:
         node = request.args.get("node", None)
         if isinstance(node, str):
             node = node.strip() or None
+        keywords = request.args.get("keywords", "")
+        top_n_arg = request.args.get("top_n") or request.args.get("topN")
+        top_n = None
+        if top_n_arg is not None:
+            try:
+                top_n = int(top_n_arg)
+            except (TypeError, ValueError):
+                top_n = None
         success, result = await dataset_api_service.get_wiki_graph(
             dataset_id,
             tenant_id,
             node=node,
+            keywords=keywords,
+            top_n=top_n,
         )
         if success:
             return get_result(data=result)
@@ -704,10 +732,12 @@ async def get_dataset_structure(tenant_id, dataset_id):
                 message=f"Unsupported structure kind: {kind!r}. Expected one of: graph, mindmap, timeline, session_essence, session_graph.",
                 code=RetCode.ARGUMENT_ERROR,
             )
+        keywords = request.args.get("keywords", "")
         success, result = await dataset_api_service.get_dataset_structure(
             dataset_id,
             tenant_id,
             kind,
+            keywords=keywords,
         )
         if success:
             return get_result(data=result)

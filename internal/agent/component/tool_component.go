@@ -24,6 +24,8 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+
+	"gorm.io/gorm"
 )
 
 // ToolBackedComponent is the single Canvas adapter for tools that implement
@@ -60,7 +62,7 @@ func (c *ToolBackedComponent) Outputs() map[string]string { return c.spec.Output
 
 func (c *ToolBackedComponent) GetInputForm() map[string]any { return c.spec.InputForm }
 
-func (c *ToolBackedComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *ToolBackedComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	argsJSON, err := json.Marshal(inputs)
 	if err != nil {
 		return nil, fmt.Errorf("canvas: %s: encode inputs: %w", c.name, err)
@@ -95,7 +97,7 @@ func (c *ToolBackedComponent) Invoke(ctx context.Context, inputs map[string]any)
 	return c.tool.BuildComponentOutputs(decoded), nil
 }
 
-func (c *ToolBackedComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+func (c *ToolBackedComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
 	return nil, nil
 }
 

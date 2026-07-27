@@ -144,7 +144,7 @@ def _render_structure(entities: list[dict], relations: list[dict]) -> str:
             if not name:
                 continue
             typ = (e.get("type") or "other").strip()
-            desc = " ".join((e.get("discription") or "").split())
+            desc = " ".join((e.get("description") or "").split())
             lines.append(f"- {name} ({typ})" + (f": {desc}" if desc else ""))
     if relations:
         lines.append("\nRelations:")
@@ -427,7 +427,7 @@ async def dataset_navigate(tools, topic: str, keywords: str = "", doc_scope: lis
                     {
                         "name": node_name,
                         "type": h.get("type") or "dataset_nav",
-                        "discription": h.get("description") or "",
+                        "description": h.get("description") or "",
                     }
                 )
             for did in h.get("doc_ids") or []:
@@ -537,7 +537,7 @@ def _kg_parse_entity(row: dict) -> dict | None:
     return {
         "name": name,
         "type": (payload.get("type") or "other"),
-        "discription": (payload.get("discription") or payload.get("description") or ""),
+        "description": (payload.get("description") or payload.get("description") or ""),
         "aliases": aliases,
         "source_chunk_ids": list(row.get("source_chunk_ids") or []),
         "doc_id": row.get("doc_id") or "",

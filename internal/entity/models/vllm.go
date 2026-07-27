@@ -146,7 +146,8 @@ func (v *VllmModel) ChatWithMessages(ctx context.Context, modelName string, mess
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -164,6 +165,7 @@ func (v *VllmModel) ChatWithMessages(ctx context.Context, modelName string, mess
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
@@ -234,6 +236,7 @@ func (v *VllmModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 	}
 
 	// SSE parsing: read line by line
+	accumulatedToolCalls := make(map[int]map[string]any)
 	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
 
@@ -251,6 +254,8 @@ func (v *VllmModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 		if !ok {
 			return nil
 		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
@@ -270,6 +275,7 @@ func (v *VllmModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 	}); err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"

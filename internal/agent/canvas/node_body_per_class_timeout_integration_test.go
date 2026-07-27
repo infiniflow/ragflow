@@ -35,6 +35,8 @@ import (
 	"time"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 // captureCtxComponent is a runtime.Component that records the
@@ -51,7 +53,7 @@ type captureCtxComponent struct {
 }
 
 func (c *captureCtxComponent) Name() string { return c.name }
-func (c *captureCtxComponent) Invoke(ctx context.Context, _ map[string]any) (map[string]any, error) {
+func (c *captureCtxComponent) Invoke(ctx context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	if dl, ok := ctx.Deadline(); ok {
 		c.deadline.Store(dl.UnixNano())
 		c.timeoutOK.Store(true)

@@ -742,14 +742,14 @@ func startServer(ctx context.Context, config *server.Config) {
 	// (ragflow_retrieval, ragflow_list_datasets, ragflow_list_chats) to
 	// external AI clients via JSON-RPC over HTTP.
 	mcpServerHandler := handler.NewMCPServerHandler(
-		func(userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
-			return handler.MCPListDatasets(datasetsService, userID, page, pageSize, orderBy, desc)
+		func(ctx context.Context, userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
+			return handler.MCPListDatasets(ctx, datasetsService, userID, page, pageSize, orderBy, desc)
 		},
-		func(userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
+		func(ctx context.Context, userID string, page, pageSize int, orderBy string, desc bool) ([]map[string]interface{}, int64, error) {
 			return handler.MCPListChats(ctx, chatService, userID, page, pageSize, orderBy, desc)
 		},
-		func(userID string, req mcp.RetrievalRequest) (string, error) {
-			return handler.MCPRetrieval(datasetsService, userID, req)
+		func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error) {
+			return handler.MCPRetrieval(ctx, datasetsService, userID, req)
 		},
 	)
 	skillSearchHandler := handler.NewSkillSearchHandler(docEngine, documentService)

@@ -232,26 +232,26 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 	}
 
 	db := dao.GetDB()
-	if err := db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(user).Error; err != nil {
+	if err = db.Transaction(func(tx *gorm.DB) error {
+		if err = tx.Create(user).Error; err != nil {
 			return fmt.Errorf("failed to create user: %w", err)
 		}
 
-		if err := tx.Create(tenant).Error; err != nil {
+		if err = tx.Create(tenant).Error; err != nil {
 			return fmt.Errorf("failed to create tenant: %w", err)
 		}
 
-		if err := tx.Create(userTenant).Error; err != nil {
+		if err = tx.Create(userTenant).Error; err != nil {
 			return fmt.Errorf("failed to create user tenant relation: %w", err)
 		}
 
 		if len(tenantLLMs) > 0 {
-			if err := tx.Create(&tenantLLMs).Error; err != nil {
+			if err = tx.Create(&tenantLLMs).Error; err != nil {
 				return fmt.Errorf("failed to create tenant llm: %w", err)
 			}
 		}
 
-		if err := tx.Create(rootFile).Error; err != nil {
+		if err = tx.Create(rootFile).Error; err != nil {
 			return fmt.Errorf("failed to create root folder: %w", err)
 		}
 		return nil

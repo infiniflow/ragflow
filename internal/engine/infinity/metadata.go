@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/utility"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
+	"gorm.io/gorm"
 
 	"go.uber.org/zap"
 )
@@ -583,10 +584,7 @@ func (e *infinityEngine) SearchMetadata(ctx context.Context, req *types.SearchMe
 	if pageSize <= 0 {
 		pageSize = 30
 	}
-	offset := req.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(req.Offset, 0)
 
 	// Build filter from req.Filter
 	var filterStr string
@@ -797,7 +795,7 @@ const metaPushdownMaxSize = 10000
 //	nil        -> push-down was not viable / errored / result overflowed the
 //	              push-down cap (caller should fall back to in-memory)
 //	[]string{} -> push-down succeeded but found 0 matching docs (empty result is definitive)
-func (e *infinityEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kbIDs []string, conditions []map[string]interface{}, logic string) []string {
+func (e *infinityEngine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB, kbIDs []string, conditions []map[string]interface{}, logic string) []string {
 	if len(conditions) == 0 || len(kbIDs) == 0 {
 		return nil
 	}
@@ -809,7 +807,7 @@ func (e *infinityEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kbIDs [
 	}
 
 	// Get tenant ID from first KB
-	tenantID, err := dao.GetTenantIDByKBID(kbIDs[0])
+	tenantID, err := dao.GetTenantIDByKBID(ctx, sqlDB, kbIDs[0])
 	if err != nil {
 		common.Warn("FilterDocIdsByMetaPushdown: failed to get tenant for KB", zap.String("kbID", kbIDs[0]), zap.Error(err))
 		return nil
@@ -839,13 +837,13 @@ func (e *infinityEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kbIDs [
 	whereClause = kbFilter + " AND (" + whereClause + ")"
 
 	// Use Infinity connection to execute query
-	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
-	if err != nil || db == nil {
+	infinityDB, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
+	if err != nil || infinityDB == nil {
 		return nil
 	}
 	defer release()
 
-	table, err := db.GetTable(tableName)
+	table, err := infinityDB.GetTable(tableName)
 	if err != nil || table == nil {
 		return nil
 	}

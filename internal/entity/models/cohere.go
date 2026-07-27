@@ -224,6 +224,7 @@ func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		eventType, ok := event["type"].(string)
 		if !ok {
@@ -240,6 +241,9 @@ func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 			if !ok {
 				return nil
 			}
+
+			accumulateToolCallDeltas(delta, accumulatedToolCalls)
+
 			msg, ok := delta["message"].(map[string]interface{})
 			if !ok {
 				return nil
@@ -269,6 +273,8 @@ func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	if !done && !sawTerminal {
 		return fmt.Errorf("Cohere: stream ended before [DONE] or finish_reason")
 	}
+
+	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
 
 	endOfStream := "[DONE]"
 	return sender(&endOfStream, nil)

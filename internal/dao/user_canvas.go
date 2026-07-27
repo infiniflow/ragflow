@@ -433,8 +433,6 @@ func (dao *UserCanvasDAO) ListTags(ownerIDs []string, userID string, canvasCateg
 
 	if canvasCategory != "" {
 		query = query.Where("user_canvas.canvas_category = ?", canvasCategory)
-	} else {
-		query = query.Where("user_canvas.canvas_category = ?", "agent_canvas")
 	}
 
 	var rows []struct {

@@ -127,7 +127,8 @@ func (x *XunFeiModel) ChatWithMessages(ctx context.Context, modelName string, me
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("no message in response")
 	}
 
@@ -145,6 +146,7 @@ func (x *XunFeiModel) ChatWithMessages(ctx context.Context, modelName string, me
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
@@ -209,6 +211,7 @@ func (x *XunFeiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 
 	// SSE parsing: read line by line
+	accumulatedToolCalls := make(map[int]map[string]any)
 	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		if data, marshalErr := json.Marshal(event); marshalErr == nil {
 			common.Info(string(data))
@@ -229,6 +232,8 @@ func (x *XunFeiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 			return nil
 		}
 
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
+
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
 			if err := sender(nil, &reasoningContent); err != nil {
@@ -247,6 +252,7 @@ func (x *XunFeiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}); err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"

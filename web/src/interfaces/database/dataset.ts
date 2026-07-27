@@ -50,6 +50,14 @@ export interface IDataset {
   connectors: IConnector[];
 }
 
+export type IDatasetFilter = {
+  owner: Array<{
+    id: string;
+    label: string;
+    count: number;
+  }>;
+};
+
 interface Parserconfig {
   auto_keywords: number;
   auto_questions: number;

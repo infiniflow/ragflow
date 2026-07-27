@@ -25,11 +25,6 @@ import (
 	"testing"
 )
 
-func rawJSON(v any) json.RawMessage {
-	data, _ := json.Marshal(v)
-	return json.RawMessage(data)
-}
-
 func TestBuildDOCXJSONSections_Paragraphs(t *testing.T) {
 	ir := `{"sections":[{"title":"","elements":[
 		{"type":"paragraph","content":[{"type":"text","text":"Hello world"}],"style":"Normal"}

@@ -69,7 +69,7 @@ func TestSwitch_AndMatches(t *testing.T) {
 		},
 		"default": "fallback",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestSwitch_OrMatches(t *testing.T) {
 		},
 		"default": "fallback",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestSwitch_DefaultFallback(t *testing.T) {
 		},
 		"default": "fallback_0",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestSwitch_LegacyEndCpnIDsFallback(t *testing.T) {
 		},
 		"end_cpn_ids": []any{"legacy_fallback"},
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -200,7 +200,7 @@ func TestSwitch_ContainsAndEmpty(t *testing.T) {
 		},
 		"default": "x",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestSwitch_LegacyConditionsAndArrayTo(t *testing.T) {
 	state.SetVar("UserFillUp:Menu", "demo", "loop")
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := s.Invoke(ctx, nil)
+	out, err := s.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -267,7 +267,7 @@ func TestSwitch_NilUpstreamContainsEmptyNeedleMatches(t *testing.T) {
 		},
 		"default": "else_target",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -298,7 +298,7 @@ func TestSwitch_NilUpstreamContainsNonEmptyDoesNotMatch(t *testing.T) {
 		},
 		"default": "else_target",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestSwitch_NilValueContainsDoesNotRaise(t *testing.T) {
 		},
 		"default": "else_target",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -372,7 +372,7 @@ func TestSwitch_NilUpstreamStartWithEndWithDoNotCrash(t *testing.T) {
 				},
 				"default": "else_target",
 			}
-			out, err := s.Invoke(ctx, inputs)
+			out, err := s.Invoke(ctx, nil, inputs)
 			if err != nil {
 				t.Fatalf("Invoke: %v", err)
 			}
@@ -411,7 +411,7 @@ func TestSwitch_MultiTargetTo(t *testing.T) {
 		},
 		"default": "Message:Help",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -443,7 +443,7 @@ func TestSwitch_EmptyAndConditionFallsThrough(t *testing.T) {
 		},
 		"default": "DEFAULT",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -476,7 +476,7 @@ func TestSwitch_LegacyEmptyItemsFallsThrough(t *testing.T) {
 		},
 		"default": "DEFAULT",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -510,7 +510,7 @@ func TestSwitch_SatisfiedAndConditionStillRoutes(t *testing.T) {
 		},
 		"default": "DEFAULT",
 	}
-	out, err := s.Invoke(ctx, inputs)
+	out, err := s.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

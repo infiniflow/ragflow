@@ -234,8 +234,8 @@ func (j *JinaModel) Rerank(ctx context.Context, modelName *string, query string,
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Rerank)
 
-	var topN = rerankConfig.TopN
-	if rerankConfig.TopN != 0 {
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
 		topN = rerankConfig.TopN
 	}
 

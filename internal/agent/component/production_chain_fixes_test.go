@@ -214,7 +214,7 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 	})
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "user-1"
-	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), merged)
+	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), db, merged)
 
 	if got, _ := merged["query"].(string); got != "diamond necklace" {
 		t.Fatalf("query = %q, want diamond necklace", got)
@@ -235,7 +235,7 @@ func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
 		t.Fatalf("failed to unwrap sql db: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+	if err = db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate tables: %v", err)
 	}
 	origDB := dao.DB
@@ -243,7 +243,7 @@ func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
 	t.Cleanup(func() { dao.DB = origDB })
 
 	activeStatus := "1"
-	if err := db.Create(&entity.UserTenant{
+	if err = db.Create(&entity.UserTenant{
 		ID:        "ut-1",
 		UserID:    "user-1",
 		TenantID:  "tenant-1",
@@ -253,7 +253,7 @@ func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("failed to seed user_tenant: %v", err)
 	}
-	if err := db.Create(&entity.Knowledgebase{
+	if err = db.Create(&entity.Knowledgebase{
 		ID:         "kb-da1",
 		Name:       "da1",
 		TenantID:   "tenant-1",
@@ -280,7 +280,7 @@ func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
 	})
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "user-1"
-	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), merged)
+	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), db, merged)
 
 	if got, _ := merged["query"].(string); got != "合同" {
 		t.Fatalf("query = %q, want 合同", got)
@@ -324,7 +324,7 @@ func TestRetrieval_ResolveDatasetIDByTenantName(t *testing.T) {
 	state.Sys["tenant_id"] = "tenant-1"
 	ctx := runtime.WithState(context.Background(), state)
 
-	if got := resolveRetrievalDatasetID(ctx, "da1"); got != "kb-da1" {
+	if got := resolveRetrievalDatasetID(ctx, db, "da1"); got != "kb-da1" {
 		t.Fatalf("resolveRetrievalDatasetID = %q, want kb-da1", got)
 	}
 }
@@ -345,7 +345,7 @@ func TestRetrieval_StructuredInputPreservesQueryWhenDatasetIDsAlreadyPresent(t *
 		},
 	})
 
-	consumed := normalizeStructuredRetrievalInputs(context.Background(), merged)
+	consumed := normalizeStructuredRetrievalInputs(context.Background(), nil, merged)
 	if !consumed {
 		t.Fatal("normalizeStructuredRetrievalInputs should consume structured query")
 	}
@@ -387,7 +387,7 @@ func TestRetrieval_KbIDsEndToEndThroughTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(Retrieval): %v", err)
 	}
-	out, err := wrapper.Invoke(context.Background(), map[string]any{"query": "ragflow"})
+	out, err := wrapper.Invoke(context.Background(), nil, map[string]any{"query": "ragflow"})
 	if err != nil {
 		t.Fatalf("Retrieval.Invoke: %v", err)
 	}
@@ -401,7 +401,7 @@ func TestRetrieval_KbIDsEndToEndThroughTool(t *testing.T) {
 // variants must also resolve to the Universe B tool. The Universe
 // B tool registry has always
 // accepted all three spellings (search_my_dataset /
-// search_my_dateset) plus PascalCase; Universe A now mirrors that
+// search_my_dataset) plus PascalCase; Universe A now mirrors that
 // surface so older DSLs don't fail with "unknown component" at
 // buildNodeBody time.
 //
@@ -501,7 +501,7 @@ func TestCodeExec_LegacyDSLWrapperBridgesParamsAndOutputs(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"arguments": map[string]any{
 			"x": 7,
 		},
@@ -573,7 +573,7 @@ func TestCodeExec_LegacyDSLWrapperResolvesArgumentRefsFromState(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"state": map[string]map[string]any{
 			"UserFillUp:CodeInput": {
 				"x": "8",
@@ -625,7 +625,7 @@ func TestCodeExec_LegacyDSLWrapperResolvesSysArgumentRefsFromCanvasState(t *test
 	state := runtime.NewCanvasState("run-codeexec", "task-codeexec")
 	state.Sys["query"] = "532"
 	ctx := runtime.WithState(context.Background(), state)
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("CodeExec.Invoke: %v", err)
 	}
@@ -664,7 +664,7 @@ func TestCodeExec_LegacyDSLWrapperContractMismatchSetsError(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("CodeExec.Invoke: %v", err)
 	}
@@ -704,7 +704,7 @@ func TestCodeExec_LegacyDSLWrapperPreservesExecutionError(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err == nil {
 		t.Fatal("CodeExec.Invoke: want wrapped execution error, got nil")
 	}
@@ -723,7 +723,7 @@ type countingInvoker struct {
 	calls int
 }
 
-func (c *countingInvoker) Invoke(_ context.Context, _ ChatInvokeRequest) (*ChatInvokeResponse, error) {
+func (c *countingInvoker) Invoke(_ context.Context, _ *gorm.DB, _ ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	c.calls++
 	return nil, errLLMRetryTestAlwaysFail
 }
@@ -796,7 +796,7 @@ func TestLLM_RetryStackingSemantics(t *testing.T) {
 			}
 			// The retry chain always returns errLLMRetryTestAlwaysFail
 			// so we can count attempts deterministically.
-			_, _ = comp.Invoke(context.Background(), nil)
+			_, _ = comp.Invoke(context.Background(), nil, nil)
 			if counter.calls < tc.wantMinAttempts {
 				t.Errorf("counter.calls = %d, want >= %d (MaxRetries=%d stacking regression?)",
 					counter.calls, tc.wantMinAttempts, tc.maxRetries)

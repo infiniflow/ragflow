@@ -102,6 +102,7 @@ import (
 	"time"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -160,7 +161,7 @@ type Embedder interface {
 // embeddingModel is the Tokenizer-scoped embedding-model identifier (from the
 // component's setups); an empty value tells the resolver to fall back to the
 // dataset's configured model.
-type EmbedderResolver func(tenantID, kbID, embeddingModel string) (Embedder, error)
+type EmbedderResolver func(ctx context.Context, tenantID, kbID, embeddingModel string) (Embedder, error)
 
 // DefaultEmbedderResolver is the production embedder resolver. It is nil in
 // this leaf package — which must not import internal/service (see the
@@ -323,7 +324,7 @@ func (c *TokenizerComponent) Outputs() map[string]string {
 //     embedding batch (python tokenizer.py:80-82 `if not cleaned_txt:
 //     continue`), but the chunk still carries tokenized fields if
 //     `full_text` is in `search_method`.
-func (c *TokenizerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// Run-level metadata lives in the workflow-wide CanvasState.Globals
 	// bag (seeded at pipeline start, published by the File component),
 	// not in the upstream output map — see GlobalOrInput.
@@ -401,7 +402,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 	if resolver == nil {
 		return nil, 0, fmt.Errorf("Tokenizer: embedding requested but no embedder resolver configured")
 	}
-	embedder, err := resolver(tenantID, kbID, embeddingModel)
+	embedder, err := resolver(ctx, tenantID, kbID, embeddingModel)
 	if err != nil {
 		return nil, 0, fmt.Errorf("Tokenizer: resolve embedder: %w", err)
 	}
@@ -434,7 +435,11 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 	if trimmedName == "" {
 		log.Printf("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
 	} else {
-		titleResults, err := encodeWithTimeout(ctx, embedder, []string{trimmedName})
+		// Encode the raw name (no TrimSpace) to mirror Python
+		// tokenizer.py:95 which passes name verbatim to embedding. The
+		// empty-name guard above still uses TrimSpace, matching Python's
+		// `.strip()==""` check at tokenizer.py:200.
+		titleResults, err := encodeWithTimeout(ctx, embedder, []string{name})
 		if err != nil {
 			return nil, 0, fmt.Errorf("Tokenizer: encode title: %w", err)
 		}

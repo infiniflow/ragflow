@@ -43,6 +43,7 @@ import (
 	"fmt"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -148,7 +149,7 @@ func invokeHierarchy(_ context.Context, inputs map[string]any, p *titleChunkerPa
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
-	ctx := newLevelContext(records, p)
+	ctx := newLevelContext(records, outlineFromInputs(inputs), p)
 	levels := ctx.Levels()
 	// Count heading level distribution for debugging.
 	headingCounts := make(map[int]int)
@@ -286,7 +287,7 @@ func (c *HierarchyTitleChunkerComponent) Outputs() map[string]string {
 	return ChunkerOutputs
 }
 
-func (c *HierarchyTitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *HierarchyTitleChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		inputs = map[string]any{}
 	}

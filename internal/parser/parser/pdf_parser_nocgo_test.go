@@ -9,9 +9,8 @@ import (
 )
 
 func TestPDFParser_ParseWithResult_NoCGO(t *testing.T) {
-	ctx := context.Background()
 	pdf := NewPDFParser()
-
+	ctx := t.Context()
 	empty := pdf.ParseWithResult(ctx, "empty.pdf", nil)
 	if empty.Err != nil {
 		t.Fatalf("empty input: want nil err, got %v", empty.Err)

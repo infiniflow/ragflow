@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -31,20 +32,20 @@ import (
 
 // mockFileCommitSvc implements FileCommitServiceInterface for testing
 type mockFileCommitSvc struct {
-	createCommitFn          func(folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
-	listCommitsFn           func(folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error)
-	getCommitFn             func(commitID string) (*entity.FileCommit, error)
-	listCommitFilesFn       func(commitID string) ([]*entity.FileCommitItem, error)
-	diffCommitsFn           func(fromID, toID string) ([]entity.DiffEntry, error)
-	getUncommittedChangesFn func(folderID string) ([]entity.DiffEntry, error)
-	getCommitTreeFn         func(commitID string) (map[string]interface{}, error)
-	getCommitFileContentFn  func(folderID, commitID, fileID string) ([]byte, error)
-	getFileVersionHistoryFn func(fileID string) ([]entity.VersionEntry, error)
+	createCommitFn          func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error)
+	listCommitsFn           func(ctx context.Context, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error)
+	getCommitFn             func(ctx context.Context, commitID string) (*entity.FileCommit, error)
+	listCommitFilesFn       func(ctx context.Context, commitID string) ([]*entity.FileCommitItem, error)
+	diffCommitsFn           func(ctx context.Context, fromID, toID string) ([]entity.DiffEntry, error)
+	getUncommittedChangesFn func(ctx context.Context, folderID string) ([]entity.DiffEntry, error)
+	getCommitTreeFn         func(ctx context.Context, commitID string) (map[string]interface{}, error)
+	getCommitFileContentFn  func(ctx context.Context, folderID, commitID, fileID string) ([]byte, error)
+	getFileVersionHistoryFn func(ctx context.Context, fileID string) ([]entity.VersionEntry, error)
 }
 
-func (m *mockFileCommitSvc) CreateCommit(folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+func (m *mockFileCommitSvc) CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
 	if m.createCommitFn != nil {
-		return m.createCommitFn(folderID, authorID, message, changes)
+		return m.createCommitFn(ctx, folderID, authorID, message, changes)
 	}
 	return &entity.FileCommit{
 		ID:        "commit-1",
@@ -55,9 +56,9 @@ func (m *mockFileCommitSvc) CreateCommit(folderID, authorID, message string, cha
 	}, nil
 }
 
-func (m *mockFileCommitSvc) ListCommits(folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error) {
+func (m *mockFileCommitSvc) ListCommits(ctx context.Context, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error) {
 	if m.listCommitsFn != nil {
-		return m.listCommitsFn(folderID, page, pageSize, orderBy, desc)
+		return m.listCommitsFn(ctx, folderID, page, pageSize, orderBy, desc)
 	}
 	now := int64(1718200000000)
 	return []*entity.FileCommit{
@@ -66,59 +67,59 @@ func (m *mockFileCommitSvc) ListCommits(folderID string, page, pageSize int, ord
 	}, 2, nil
 }
 
-func (m *mockFileCommitSvc) GetCommit(commitID string) (*entity.FileCommit, error) {
+func (m *mockFileCommitSvc) GetCommit(ctx context.Context, commitID string) (*entity.FileCommit, error) {
 	if m.getCommitFn != nil {
-		return m.getCommitFn(commitID)
+		return m.getCommitFn(ctx, commitID)
 	}
 	return &entity.FileCommit{ID: commitID, FolderID: "folder-1", Message: "test commit", AuthorID: "u1", FileCount: 1}, nil
 }
 
-func (m *mockFileCommitSvc) ListCommitFiles(commitID string) ([]*entity.FileCommitItem, error) {
+func (m *mockFileCommitSvc) ListCommitFiles(ctx context.Context, commitID string) ([]*entity.FileCommitItem, error) {
 	if m.listCommitFilesFn != nil {
-		return m.listCommitFilesFn(commitID)
+		return m.listCommitFilesFn(ctx, commitID)
 	}
 	return []*entity.FileCommitItem{
 		{ID: "i1", CommitID: commitID, FileID: "f1", Operation: "add"},
 	}, nil
 }
 
-func (m *mockFileCommitSvc) DiffCommits(fromID, toID string) ([]entity.DiffEntry, error) {
+func (m *mockFileCommitSvc) DiffCommits(ctx context.Context, fromID, toID string) ([]entity.DiffEntry, error) {
 	if m.diffCommitsFn != nil {
-		return m.diffCommitsFn(fromID, toID)
+		return m.diffCommitsFn(ctx, fromID, toID)
 	}
 	return []entity.DiffEntry{
 		{FileID: "f1", FileName: "file.txt", Operation: "modify"},
 	}, nil
 }
 
-func (m *mockFileCommitSvc) GetUncommittedChanges(folderID string) ([]entity.DiffEntry, error) {
+func (m *mockFileCommitSvc) GetUncommittedChanges(ctx context.Context, folderID string) ([]entity.DiffEntry, error) {
 	if m.getUncommittedChangesFn != nil {
-		return m.getUncommittedChangesFn(folderID)
+		return m.getUncommittedChangesFn(ctx, folderID)
 	}
 	return []entity.DiffEntry{
 		{FileID: "f1", FileName: "new.txt", Operation: "add"},
 	}, nil
 }
 
-func (m *mockFileCommitSvc) GetCommitTree(commitID string) (map[string]interface{}, error) {
+func (m *mockFileCommitSvc) GetCommitTree(ctx context.Context, commitID string) (map[string]interface{}, error) {
 	if m.getCommitTreeFn != nil {
-		return m.getCommitTreeFn(commitID)
+		return m.getCommitTreeFn(ctx, commitID)
 	}
 	return map[string]interface{}{
 		"f1": map[string]interface{}{"name": "file.txt", "hash": "abc123", "size": 100, "status": "1"},
 	}, nil
 }
 
-func (m *mockFileCommitSvc) GetCommitFileContent(folderID, commitID, fileID string) ([]byte, error) {
+func (m *mockFileCommitSvc) GetCommitFileContent(ctx context.Context, folderID, commitID, fileID string) ([]byte, error) {
 	if m.getCommitFileContentFn != nil {
-		return m.getCommitFileContentFn(folderID, commitID, fileID)
+		return m.getCommitFileContentFn(ctx, folderID, commitID, fileID)
 	}
 	return []byte("file content"), nil
 }
 
-func (m *mockFileCommitSvc) GetFileVersionHistory(fileID string) ([]entity.VersionEntry, error) {
+func (m *mockFileCommitSvc) GetFileVersionHistory(ctx context.Context, fileID string) ([]entity.VersionEntry, error) {
 	if m.getFileVersionHistoryFn != nil {
-		return m.getFileVersionHistoryFn(fileID)
+		return m.getFileVersionHistoryFn(ctx, fileID)
 	}
 	now := int64(1718200000000)
 	return []entity.VersionEntry{
@@ -159,7 +160,7 @@ func setupFileCommitTestNoAuth() *gin.Engine {
 
 func TestFileCommit_CreateCommit_Success(t *testing.T) {
 	r, mock := setupFileCommitTest("user-1")
-	mock.createCommitFn = func(folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+	mock.createCommitFn = func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
 		if folderID != "folder-1" {
 			t.Errorf("expected folder-1, got %s", folderID)
 		}
@@ -244,7 +245,7 @@ func TestFileCommit_CreateCommit_InvalidJSON(t *testing.T) {
 
 func TestFileCommit_ListCommits_Success(t *testing.T) {
 	r, mock := setupFileCommitTest("user-1")
-	mock.listCommitsFn = func(folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error) {
+	mock.listCommitsFn = func(ctx context.Context, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error) {
 		if folderID != "folder-1" {
 			t.Errorf("expected folder-1, got %s", folderID)
 		}
@@ -292,7 +293,7 @@ func TestFileCommit_GetCommit_Success(t *testing.T) {
 
 func TestFileCommit_GetCommit_NotFound(t *testing.T) {
 	r, mock := setupFileCommitTest("user-1")
-	mock.getCommitFn = func(commitID string) (*entity.FileCommit, error) {
+	mock.getCommitFn = func(ctx context.Context, commitID string) (*entity.FileCommit, error) {
 		return nil, common.ErrNotFound
 	}
 
@@ -379,7 +380,7 @@ func TestFileCommit_GetCommitTree_Success(t *testing.T) {
 
 func TestFileCommit_GetCommitFileContent_Success(t *testing.T) {
 	r, mock := setupFileCommitTest("user-1")
-	mock.getCommitFileContentFn = func(folderID, commitID, fileID string) ([]byte, error) {
+	mock.getCommitFileContentFn = func(ctx context.Context, folderID, commitID, fileID string) ([]byte, error) {
 		return []byte("hello world"), nil
 	}
 

@@ -72,6 +72,7 @@ import (
 
 	eschema "github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -168,6 +169,13 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			p.SystemPrompt = v
 		}
 		if v, ok := params["prompt"].(string); ok {
+			p.Prompt = v
+		} else if v, ok := params["prompts"].(string); ok && v != "" {
+			// Python agent/component/llm.py:119-120 normalizes a bare-string
+			// prompts into [{"role":"user","content":prompts}]. Mirror that
+			// here so a front-end/template that emits prompts as a string
+			// (the graph.nodes form / dsl testdata) is not silently dropped
+			// by the .([]any) assertion on the list branch below.
 			p.Prompt = v
 		} else if promptsRaw, ok := params["prompts"].([]any); ok && len(promptsRaw) > 0 {
 			if first, ok := promptsRaw[0].(map[string]any); ok {
@@ -516,7 +524,7 @@ func extractorChunkList(v any) ([]map[string]any, bool) {
 //	                                  short-circuits with an error.
 //	_created_time, _elapsed_time    — stamped by the canvas framework
 //	                                 (realComponentBody), not here.
-func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	if err := c.Param.Validate(); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
