@@ -159,7 +159,12 @@ export const useCatchDocumentError = (url: string) => {
       const { data } = await axios.get(url, { headers: httpHeaders });
       // Only treat as error if response is JSON with an error code
       // Binary data (like PDF) won't have a code property
-      if (data && typeof data === 'object' && 'code' in data && data.code !== 0) {
+      if (
+        data &&
+        typeof data === 'object' &&
+        'code' in data &&
+        data.code !== 0
+      ) {
         setError(data?.message || 'Failed to load document');
       }
     } catch (e) {
