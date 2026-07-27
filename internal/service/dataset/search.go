@@ -111,13 +111,22 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	if searchID != "" {
 		if d.searchService == nil {
 			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
-			return nil, fmt.Errorf("Invalid search_id")
+			return nil, fmt.Errorf("invalid search_id")
 		}
-		searchDetail, err := d.searchService.GetDetail(searchID)
-		if err != nil || searchDetail == nil || len(searchDetail) == 0 {
+		searchDetail, err := d.searchService.GetDetail(ctx, searchID)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			common.Warn("Invalid search_id", zap.String("searchID", searchID), zap.Error(err))
-			return nil, fmt.Errorf("Invalid search_id")
-		} else if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
+			return nil, fmt.Errorf("invalid search_id")
+		}
+		if searchDetail == nil || len(searchDetail) == 0 {
+			common.Warn("Invalid search_id", zap.String("searchID", searchID))
+			return nil, fmt.Errorf("invalid search_id")
+		}
+
+		if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
 				metadataFilter = scMetadataFilter
 			}
@@ -155,7 +164,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			chatID, _ = searchConfig["chat_id"].(string)
 		} else {
 			common.Warn("Invalid search_id: search_config missing or invalid", zap.String("searchID", searchID))
-			return nil, fmt.Errorf("Invalid search_id")
+			return nil, fmt.Errorf("invalid search_id")
 		}
 	}
 
@@ -165,7 +174,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		method, _ := metadataFilter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
 			if chatID != "" {
-				driver, modelName, apiConfig, _, err := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeChat, chatID)
+				driver, modelName, apiConfig, _, err := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeChat, chatID)
 				if err != nil {
 					common.Warn("Failed to get chat model config from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(err))
 				} else {
@@ -174,7 +183,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			}
 
 			if chatModelForFilter == nil {
-				driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(tenantIDs[0], entity.ModelTypeChat)
+				driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(ctx, tenantIDs[0], entity.ModelTypeChat)
 				if err != nil {
 					common.Warn("Failed to get tenant default chat model for meta_data_filter", zap.Error(err))
 				} else {
@@ -209,7 +218,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		}
 	}
 	if keyword {
-		driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(tenantIDs[0], entity.ModelTypeChat)
+		driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(ctx, tenantIDs[0], entity.ModelTypeChat)
 		if err != nil {
 			common.Warn("Failed to get default chat model for LLM transformations", zap.Error(err))
 		} else {
@@ -230,7 +239,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// Determine embedding model
 	var embeddingModel *modelModule.EmbeddingModel
 	if kbRecords[0].EmbdID != "" {
-		driver, modelName, apiConfig, maxTokens, embErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeEmbedding, kbRecords[0].EmbdID)
+		driver, modelName, apiConfig, maxTokens, embErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeEmbedding, kbRecords[0].EmbdID)
 		if embErr != nil {
 			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", embErr)
 		}
@@ -240,7 +249,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// Get rerank model if rerankID is specified
 	var rerankModel *modelModule.RerankModel
 	if rerankID != "" {
-		driver, modelName, apiConfig, _, rErr := modelProviderSvc.ResolveModelConfig(tenantIDs[0], entity.ModelTypeRerank, rerankID)
+		driver, modelName, apiConfig, _, rErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, rerankID)
 		if rErr != nil {
 			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", rErr)
 		}

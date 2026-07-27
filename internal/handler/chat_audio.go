@@ -72,7 +72,7 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		return
 	}
 
-	driver, modelName, apiConfig, _, err := h.llm.GetTenantDefaultModelByType(user.ID, entity.ModelTypeTTS)
+	driver, modelName, apiConfig, _, err := h.llm.GetTenantDefaultModelByType(ctx, user.ID, entity.ModelTypeTTS)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
@@ -201,7 +201,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	driver, modelName, apiConfig, _, err := h.llm.GetTenantDefaultModelByType(user.ID, entity.ModelTypeSpeech2Text)
+	driver, modelName, apiConfig, _, err := h.llm.GetTenantDefaultModelByType(ctx, user.ID, entity.ModelTypeSpeech2Text)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
