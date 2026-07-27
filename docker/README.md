@@ -207,6 +207,16 @@ Before setting `DOC_ENGINE=oceanbase`, make sure the host OS allows the file des
     - `host`: The hostname of the OceanBase service.
     - `port`: The port of OceanBase.
 
+- `gaussdb`
+  - `config`:
+    - `host`: The hostname or IP address of the GaussDB instance.
+    - `port`: The GaussDB port.
+    - `database`: The GaussDB database name. Defaults to `postgres`.
+    - `user`: The username for GaussDB.
+    - `password`: The password for GaussDB.
+    - `schema`: Optional schema used by the DocEngine. Defaults to `public`.
+  - RAGFlow does not start or manage GaussDB; set `DOC_ENGINE=gaussdb` only after preparing a GaussDB instance.
+
 - `oss`
   - `access_key`: The access key ID used to authenticate requests to the OSS service.
   - `secret_key`: The secret access key used to authenticate requests to the OSS service.

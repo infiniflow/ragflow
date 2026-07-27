@@ -93,15 +93,22 @@ helm upgrade --install ragflow ./helm -n ragflow -f values.override.yaml
 
 ## Document Engine Selection
 
-Choose one of `infinity` (default), `elasticsearch`, or `opensearch` via `env.DOC_ENGINE`. The chart renders only the selected engine and sets the appropriate host variables.
+Choose one of `infinity` (default), `elasticsearch`, `opensearch`, or `gaussdb` via `env.DOC_ENGINE`. The chart renders only the selected engine and sets the appropriate host variables. The chart does not deploy GaussDB; configure an existing GaussDB instance.
 
 ```yaml
 env:
-  DOC_ENGINE: infinity   # or: elasticsearch | opensearch
+  DOC_ENGINE: infinity   # or: elasticsearch | opensearch | gaussdb
   # For elasticsearch
   ELASTIC_PASSWORD: "<es-pass>"
   # For opensearch
   OPENSEARCH_PASSWORD: "<os-pass>"
+  # For GaussDB
+  GAUSSDB_HOST: "<gaussdb-host>"
+  GAUSSDB_PORT: "<gaussdb-port>"
+  GAUSSDB_DATABASE: postgres
+  GAUSSDB_USER: "<gaussdb-user>"
+  GAUSSDB_PASSWORD: "<gaussdb-pass>"
+  GAUSSDB_SCHEMA: public
 ```
 
 ## Ingress

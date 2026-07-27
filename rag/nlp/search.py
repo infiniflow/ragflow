@@ -207,7 +207,11 @@ class Dealer:
                 if settings.DOC_ENGINE_OCEANBASE:
                     src.append(f"q_{len(q_vec)}_vec")
 
-                fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.001,1"})
+                if settings.DOC_ENGINE_GAUSSDB:
+                    vector_weight = req.get("vector_similarity_weight", 0.3)
+                    fusionExpr = FusionExpr("weighted_sum", topk, {"weights": f"{1 - float(vector_weight)},{float(vector_weight)}"})
+                else:
+                    fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.001,1"})
                 matchExprs = [matchText, matchDense, fusionExpr]
 
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
@@ -586,6 +590,7 @@ class Dealer:
             "topk": top,
             "similarity": similarity_threshold,
             "available_int": 1,
+            "vector_similarity_weight": vector_similarity_weight,
         }
         logging.debug(f"[Search] global_offset={global_offset}, rerank_limit={RERANK_LIMIT}, page_size={page_size}, page={page}")
 
@@ -638,6 +643,12 @@ class Dealer:
                     vector_similarity_weight,
                     rank_feature=rank_feature,
                 )
+            elif settings.DOC_ENGINE_GAUSSDB:
+                # GaussDB Path B returns final SQL-side scores from the adapter.
+                sim = [sres.field[id].get("_score", 0.0) for id in sres.ids]
+                sim = [s if s is not None else 0.0 for s in sim]
+                tsim = sim
+                vsim = sim
             else:
                 # ES path: ask ES for the clean cosine score via a second
                 # KNN-only call filtered by the candidate ids, then merge it

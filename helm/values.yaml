@@ -16,9 +16,11 @@ env:
   # - `elasticsearch` (default)
   # - `infinity` (https://github.com/infiniflow/infinity)
   # - `opensearch` (https://github.com/opensearch-project/OpenSearch)
+  # - `gaussdb` GaussDB Centralized / Distributed DocEngine
   # DOC_ENGINE: elasticsearch
   DOC_ENGINE: infinity
   # DOC_ENGINE: opensearch
+  # DOC_ENGINE: gaussdb
 
   # The version of Elasticsearch.
   STACK_VERSION: "8.11.3"
@@ -29,6 +31,14 @@ env:
   # The password for OpenSearch.
   # At least one uppercase letter, one lowercase letter, one digit, and one special character
   OPENSEARCH_PASSWORD: infini_rag_flow_OS_01
+
+  # GaussDB DocEngine connection. The chart does not deploy GaussDB.
+  GAUSSDB_HOST: ""
+  GAUSSDB_PORT: ""
+  GAUSSDB_DATABASE: postgres
+  GAUSSDB_USER: ""
+  GAUSSDB_PASSWORD: ""
+  GAUSSDB_SCHEMA: public
 
   # The password for MySQL
   MYSQL_PASSWORD: infini_rag_flow_helm
