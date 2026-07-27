@@ -2,6 +2,7 @@ package document
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
@@ -104,6 +105,9 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		if run == string(entity.TaskStatusCancel) {
 			if err = s.CancelDocParse(ctx, doc); err != nil {
 				common.Error(fmt.Sprintf("go side, start to process %s, run is cancel", doc.ID), err)
+				if errors.Is(err, ErrDocumentParseNotRunning) {
+					return common.CodeDataError, errors.New("Cannot cancel a task that is not in RUNNING status")
+				}
 				return common.CodeDataError, err
 			}
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{

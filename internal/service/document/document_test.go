@@ -1233,6 +1233,44 @@ func TestStopParseDocuments_UnfinishedTask(t *testing.T) {
 	}
 }
 
+func TestStopParseDocuments_CompletedDocRejected(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	// Parse already finished: doc DONE with a terminal ingestion task.
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	svc := testDocumentService(t)
+	ctx := t.Context()
+	result, err := svc.StopParseDocuments(ctx, "kb-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("StopParseDocuments failed: %v", err)
+	}
+
+	sc := result["success_count"].(int)
+	if sc != 0 {
+		t.Fatalf("expected success_count=0, got %d", sc)
+	}
+	errs, ok := result["errors"].([]string)
+	if !ok || len(errs) == 0 {
+		t.Fatal("expected errors in result")
+	}
+	if errs[0] != "Can't stop parsing document that has not started or already completed" {
+		t.Fatalf("unexpected error message: %q", errs[0])
+	}
+
+	// A finished parse must not be flipped to CANCEL.
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if doc == nil || doc.Run == nil {
+		t.Fatal("doc not found or run is nil")
+	}
+	if *doc.Run != string(entity.TaskStatusDone) {
+		t.Fatalf("expected run=%q, got %q", string(entity.TaskStatusDone), *doc.Run)
+	}
+}
+
 func TestStopParseDocuments_WrongDataset(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -1981,6 +2019,72 @@ func TestIngest_RerunWithDelete_RejectsBatchWithRunningTask(t *testing.T) {
 	task1, _ := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
 	if task1 == nil {
 		t.Fatal("doc-1 terminal task should not be deleted when batch is rejected")
+	}
+}
+
+// TestIngest_CancelRejectsCompletedDocument verifies that canceling a document
+// whose parse already finished is rejected and the document stays DONE,
+// mirroring the Python "Cannot cancel a task that is not in RUNNING status".
+func TestIngest_CancelRejectsCompletedDocument(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusDone), 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	ctx := t.Context()
+	svc := testDocumentService(t)
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err == nil {
+		t.Fatal("expected error when canceling a completed document, got nil")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+	}
+	if err.Error() != "Cannot cancel a task that is not in RUNNING status" {
+		t.Fatalf("err = %q", err.Error())
+	}
+
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if doc == nil || doc.Run == nil {
+		t.Fatal("doc not found or run is nil")
+	}
+	if *doc.Run != string(entity.TaskStatusDone) {
+		t.Fatalf("expected run=%q, got %q", string(entity.TaskStatusDone), *doc.Run)
+	}
+}
+
+func TestIngest_CancelRunningDocument(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertTestDocWithRun(t, "doc-1", "kb-1", string(entity.TaskStatusRunning), 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
+
+	ctx := t.Context()
+	svc := testDocumentService(t)
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1"},
+		Run:    string(entity.TaskStatusCancel),
+	})
+	if err != nil {
+		t.Fatalf("expected cancel of running document to succeed, got %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("code = %v, want %v", code, common.CodeSuccess)
+	}
+
+	doc, _ := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if doc == nil || doc.Run == nil {
+		t.Fatal("doc not found or run is nil")
+	}
+	if *doc.Run != string(entity.TaskStatusCancel) {
+		t.Fatalf("expected run=%q, got %q", string(entity.TaskStatusCancel), *doc.Run)
 	}
 }
 

@@ -257,6 +257,10 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 	successCount := 0
 	for _, doc := range docs {
 		if cancelErr := s.CancelDocParse(ctx, doc); cancelErr != nil {
+			if errors.Is(cancelErr, ErrDocumentParseNotRunning) {
+				errs = append(errs, "Can't stop parsing document that has not started or already completed")
+				continue
+			}
 			errs = append(errs, cancelErr.Error())
 			continue
 		}
@@ -293,12 +297,28 @@ func (s *DocumentService) validateDocsInDataset(ctx context.Context, docIDs []st
 	return docs, nil
 }
 
+// ErrDocumentParseNotRunning is returned by CancelDocParse when the document
+// is not being parsed (run is neither RUNNING nor CANCEL) and has no
+// unfinished ingestion task. Canceling such a document must be rejected so a
+// completed document is not flipped to CANCEL status.
+var ErrDocumentParseNotRunning = errors.New("document parse is not running")
+
 // CancelDocParse stops the ingestion task for the document by calling
 // RequestStop (STOPPING), then marks the document run status as CANCEL.
 func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Document) error {
 	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get ingestion task for %s: %v", doc.ID, err)
+	}
+
+	docRun := ""
+	if doc.Run != nil {
+		docRun = *doc.Run
+	}
+	hasUnfinishedTask := task != nil &&
+		(task.Status == common.CREATED || task.Status == common.RUNNING || task.Status == common.STOPPING)
+	if docRun != string(entity.TaskStatusRunning) && docRun != string(entity.TaskStatusCancel) && !hasUnfinishedTask {
+		return ErrDocumentParseNotRunning
 	}
 	if task == nil {
 		return fmt.Errorf("no ingestion task found for document %s", doc.ID)
