@@ -60,7 +60,7 @@ type chatPipelineRunner interface {
 }
 
 type chatModelConfigResolver interface {
-	GetChatModelConfig(tenantID, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
+	GetChatModelConfig(ctx context.Context, tenantID, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
 }
 
 // chunkFeedbackApplier is the dispatch seam for chunk-level feedback
@@ -1289,7 +1289,7 @@ func (s *ChatSessionService) Completion(ctx context.Context, userID string, conv
 
 	isEmbedded := llmID != ""
 	if llmID != "" {
-		hasKey, err := s.checkTenantLLMAPIKey(dialog.TenantID, llmID)
+		hasKey, err := s.checkTenantLLMAPIKey(ctx, dialog.TenantID, llmID)
 		if err != nil || !hasKey {
 			return nil, fmt.Errorf("Cannot use specified model %s", llmID)
 		}
@@ -1378,7 +1378,7 @@ func (s *ChatSessionService) CompletionStream(ctx context.Context, userID string
 
 	isEmbedded := llmID != ""
 	if llmID != "" {
-		hasKey, err := s.checkTenantLLMAPIKey(dialog.TenantID, llmID)
+		hasKey, err := s.checkTenantLLMAPIKey(ctx, dialog.TenantID, llmID)
 		if err != nil || !hasKey {
 			errMsg := fmt.Sprintf(`{"code": 500, "message": "Cannot use specified model %s", "data": {"answer": "**ERROR**: Cannot use specified model", "reference": []}}`, llmID)
 			streamChan <- fmt.Sprintf("data: %s\n\n", errMsg)
@@ -1539,7 +1539,7 @@ func (s *ChatSessionService) ChatCompletions(
 		genConfig = map[string]interface{}{}
 	}
 	if llmID != "" {
-		hasKey, err := s.checkTenantLLMAPIKey(dialog.TenantID, llmID)
+		hasKey, err := s.checkTenantLLMAPIKey(ctx, dialog.TenantID, llmID)
 		if err != nil || !hasKey {
 			return fail(fmt.Errorf("cannot use specified model %s", llmID))
 		}
@@ -1952,12 +1952,12 @@ func (s *ChatSessionService) initializeReference(session *entity.ChatSession) []
 	return filtered
 }
 
-func (s *ChatSessionService) checkTenantLLMAPIKey(tenantID, modelName string) (bool, error) {
+func (s *ChatSessionService) checkTenantLLMAPIKey(ctx context.Context, tenantID, modelName string) (bool, error) {
 	resolver := s.modelProviderSvc
 	if resolver == nil {
 		resolver = NewModelProviderService()
 	}
-	_, _, _, _, err := resolver.GetChatModelConfig(tenantID, modelName)
+	_, _, _, _, err := resolver.GetChatModelConfig(ctx, tenantID, modelName)
 	if err != nil {
 		return false, err
 	}

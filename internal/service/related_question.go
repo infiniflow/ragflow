@@ -32,7 +32,7 @@ func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID 
 	if modelProviderSvc == nil {
 		return nil, fmt.Errorf("model provider service not configured")
 	}
-	searchConfig := relatedQuestionsSearchConfig(searchID, searchSvc)
+	searchConfig := relatedQuestionsSearchConfig(ctx, searchID, searchSvc)
 	modelID := relatedQuestionsModelID(tenantID, searchConfig, tenantSvc)
 	prompt, err := LoadPrompt("related_question")
 	if err != nil {
@@ -52,11 +52,11 @@ func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID 
 	return []string{}, nil
 }
 
-func relatedQuestionsSearchConfig(searchID string, searchSvc *SearchService) map[string]interface{} {
+func relatedQuestionsSearchConfig(ctx context.Context, searchID string, searchSvc *SearchService) map[string]interface{} {
 	if searchID == "" || searchSvc == nil {
 		return map[string]interface{}{}
 	}
-	if detail, err := searchSvc.GetDetail(searchID); err == nil && detail != nil {
+	if detail, err := searchSvc.GetDetail(ctx, searchID); err == nil && detail != nil {
 		return relatedQuestionsSearchConfigFromDetail(detail)
 	}
 	return map[string]interface{}{}

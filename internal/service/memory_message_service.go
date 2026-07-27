@@ -154,7 +154,7 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(
 	res := &QueueSaveResult{}
 	for _, memoryID := range memoryIDs {
 		// (1) Look up the memory.
-		mem, err := s.memories.GetMemoryConfig(memoryID)
+		mem, err := s.memories.GetMemoryConfig(ctx, memoryID)
 		if err != nil {
 			res.NotFound = append(res.NotFound, memoryID)
 			continue
@@ -262,7 +262,7 @@ func (s *MemoryMessageService) embedAndSave(ctx context.Context, mem *CreateMemo
 	}
 
 	content, _ := rawMessage["content"].(string)
-	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(ctx, mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
 	if err != nil {
 		return err
 	}

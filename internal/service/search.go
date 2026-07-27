@@ -80,13 +80,13 @@ type SearchShareDetail struct {
 }
 
 // ListSearches list search apps with advanced filtering (equivalent to list_search_app)
-func (s *SearchService) ListSearches(userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string) (*ListSearchAppsResponse, error) {
+func (s *SearchService) ListSearches(ctx context.Context, userID string, keywords string, page, pageSize int, orderby string, desc bool, ownerIDs []string) (*ListSearchAppsResponse, error) {
 	var searches []*entity.SearchListItem
 	var total int64
 	var err error
 
 	if len(ownerIDs) == 0 {
-		searches, total, err = s.searchDAO.ListByTenantIDs(nil, userID, page, pageSize, orderby, desc, keywords)
+		searches, total, err = s.searchDAO.ListByTenantIDs(ctx, dao.DB, nil, userID, page, pageSize, orderby, desc, keywords)
 		if err != nil {
 			return nil, err
 		}
@@ -102,7 +102,7 @@ func (s *SearchService) ListSearches(userID string, keywords string, page, pageS
 			}, nil
 		}
 
-		searches, total, err = s.searchDAO.ListByOwnerIDs(ownerIDs, userID, orderby, desc, keywords)
+		searches, total, err = s.searchDAO.ListByOwnerIDs(ctx, dao.DB, ownerIDs, userID, orderby, desc, keywords)
 		if err != nil {
 			return nil, err
 		}
@@ -207,7 +207,7 @@ type CreateSearchResponse struct {
 // 5. Set fields: id, name, description, tenant_id, created_by
 // 6. Save to database within DB.atomic() transaction
 // 7. Return {search_id: id} on success
-func (s *SearchService) CreateSearch(userID string, name string, description *string) (*CreateSearchResponse, error) {
+func (s *SearchService) CreateSearch(ctx context.Context, userID string, name string, description *string) (*CreateSearchResponse, error) {
 	if err := common.ValidateName(name); err != nil {
 		return nil, err
 	}
@@ -217,7 +217,7 @@ func (s *SearchService) CreateSearch(userID string, name string, description *st
 
 	// Generate unique name (same as Python duplicate_name)
 	uniqueName, err := common.DuplicateName(func(name string, tid string) bool {
-		existing, _ := s.searchDAO.GetByNameAndTenant(name, tid)
+		existing, _ := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, name, tid)
 		return len(existing) > 0
 	}, name, userID)
 
@@ -243,7 +243,7 @@ func (s *SearchService) CreateSearch(userID string, name string, description *st
 	search.Status = &status
 
 	// Save to database
-	if err := s.searchDAO.Create(search); err != nil {
+	if err = s.searchDAO.Create(ctx, dao.DB, search); err != nil {
 		return nil, fmt.Errorf("failed to create search: %w", err)
 	}
 
@@ -252,7 +252,7 @@ func (s *SearchService) CreateSearch(userID string, name string, description *st
 	}, nil
 }
 
-func (s *SearchService) GetSearchDetail(userID string, searchID string) (*entity.Search, error) {
+func (s *SearchService) GetSearchDetail(ctx context.Context, userID string, searchID string) (*entity.Search, error) {
 	// Step 1: Get user tenants (same as Python UserTenantService.query(user_id=current_user.id))
 	tenants, err := s.userTenantDAO.GetByUserID(userID)
 	if err != nil {
@@ -263,8 +263,11 @@ func (s *SearchService) GetSearchDetail(userID string, searchID string) (*entity
 	// Python: for tenant in tenants: if SearchService.query(tenant_id=tenant.tenant_id, id=search_id): break
 	hasPermission := false
 	for _, tenant := range tenants {
-		searches, err := s.searchDAO.QueryByTenantIDAndID(tenant.TenantID, searchID)
+		searches, err := s.searchDAO.QueryByTenantIDAndID(ctx, dao.DB, tenant.TenantID, searchID)
 		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			continue // Try next tenant
 		}
 		if len(searches) > 0 {
@@ -278,7 +281,7 @@ func (s *SearchService) GetSearchDetail(userID string, searchID string) (*entity
 	}
 
 	// Step 3: Get search detail (same as Python SearchService.get_detail(search_id))
-	search, err := s.searchDAO.GetByID(searchID)
+	search, err := s.searchDAO.GetByID(ctx, dao.DB, searchID)
 	if err != nil {
 		return nil, fmt.Errorf("can't find this Search App!")
 	}
@@ -288,12 +291,12 @@ func (s *SearchService) GetSearchDetail(userID string, searchID string) (*entity
 
 // GetSearchShareDetail returns the joined share-detail payload for public
 // searchbot pages after verifying the caller can access the search app.
-func (s *SearchService) GetSearchShareDetail(userID, searchID string) (*SearchShareDetail, error) {
-	if _, err := s.GetSearchDetail(userID, searchID); err != nil {
+func (s *SearchService) GetSearchShareDetail(ctx context.Context, userID, searchID string) (*SearchShareDetail, error) {
+	if _, err := s.GetSearchDetail(ctx, userID, searchID); err != nil {
 		return nil, err
 	}
 
-	detail, err := s.searchDAO.GetDetailByID(searchID)
+	detail, err := s.searchDAO.GetDetailByID(ctx, dao.DB, searchID)
 	if err != nil {
 		return nil, err
 	}
@@ -314,11 +317,11 @@ func (s *SearchService) GetSearchShareDetail(userID, searchID string) (*SearchSh
 }
 
 // DeleteSearch deletes a search app by ID
-func (s *SearchService) DeleteSearch(userID string, searchID string) error {
+func (s *SearchService) DeleteSearch(ctx context.Context, userID string, searchID string) error {
 	// Step 1: Check deletion permission (same as Python SearchService.accessible4deletion)
 	// Python: cls.model.select().where(cls.model.id == search_id, cls.model.created_by == user_id, cls.model.status == StatusEnum.VALID.value).first()
 
-	status, err := s.searchDAO.Accessible4Deletion(searchID, userID)
+	status, err := s.searchDAO.Accessible4Deletion(ctx, dao.DB, searchID, userID)
 	if err != nil {
 		return fmt.Errorf("failed to check deletion permission: %w", err)
 	}
@@ -329,7 +332,7 @@ func (s *SearchService) DeleteSearch(userID string, searchID string) error {
 
 	// Step 2: Execute delete (same as Python SearchService.delete_by_id)
 	// Python: cls.model.delete().where(cls.model.id == pid).execute()
-	if err = s.searchDAO.DeleteByID(userID, searchID); err != nil {
+	if err = s.searchDAO.DeleteByID(ctx, dao.DB, userID, searchID); err != nil {
 		return fmt.Errorf("failed to delete search App %s: %w", searchID, err)
 	}
 
@@ -337,8 +340,8 @@ func (s *SearchService) DeleteSearch(userID string, searchID string) error {
 }
 
 // AccessibleForCompletion check if it is accessible
-func (s *SearchService) AccessibleForCompletion(userID string, searchID string) (bool, error) {
-	return s.searchDAO.Accessible4Deletion(searchID, userID)
+func (s *SearchService) AccessibleForCompletion(ctx context.Context, userID string, searchID string) (bool, error) {
+	return s.searchDAO.Accessible4Deletion(ctx, dao.DB, searchID, userID)
 }
 
 type SearchCompletionPlan struct {
@@ -367,7 +370,7 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 		return nil, common.CodeArgumentError, fmt.Errorf("question is required")
 	}
 
-	accessible, err := s.AccessibleForCompletion(userID, searchID)
+	accessible, err := s.AccessibleForCompletion(ctx, userID, searchID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -375,7 +378,7 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
 
-	searchDetail, err := s.GetDetail(searchID)
+	searchDetail, err := s.GetDetail(ctx, searchID)
 	if err != nil || searchDetail == nil {
 		return nil, common.CodeDataError, fmt.Errorf("cannot find search %s", searchID)
 	}
@@ -466,7 +469,7 @@ func searchConfigMapValue(value interface{}) (map[string]interface{}, bool) {
 	case map[string]interface{}:
 		return typed, true
 	case entity.JSONMap:
-		return map[string]interface{}(typed), true
+		return typed, true
 	default:
 		return nil, false
 	}
@@ -553,12 +556,12 @@ type UpdateSearchRequest struct {
 	Avatar       *string                `json:"avatar,omitempty"`
 }
 
-func (s *SearchService) UpdateSearch(userID string, searchID string, req *UpdateSearchRequest) (*entity.Search, error) {
+func (s *SearchService) UpdateSearch(ctx context.Context, userID string, searchID string, req *UpdateSearchRequest) (*entity.Search, error) {
 	// Step 1: Check update permission (same as delete - uses accessible4deletion)
 	// Only creator can update. A missing or non-owned search is treated as
 	// unauthorized so the contract returns a clear "no authorization" error.
 
-	accessible, err := s.searchDAO.Accessible4Deletion(searchID, userID)
+	accessible, err := s.searchDAO.Accessible4Deletion(ctx, dao.DB, searchID, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check deletion permission: %w", err)
 	}
@@ -568,7 +571,7 @@ func (s *SearchService) UpdateSearch(userID string, searchID string, req *Update
 
 	// Step 2: Get existing search
 	// Python: search_app = SearchService.query(tenant_id=current_user.id, id=search_id)[0]
-	search, err := s.searchDAO.GetByTenantIDAndID(userID, searchID)
+	search, err := s.searchDAO.GetByTenantIDAndID(ctx, dao.DB, userID, searchID)
 	if err != nil {
 		return nil, fmt.Errorf("cannot find search %s", searchID)
 	}
@@ -577,7 +580,7 @@ func (s *SearchService) UpdateSearch(userID string, searchID string, req *Update
 	// Python: if req["name"].lower() != search_app.name.lower() and len(SearchService.query(...)) >= 1
 	trimmedName := req.Name
 	if search.Name != trimmedName {
-		existing, _ := s.searchDAO.GetByNameAndTenant(trimmedName, userID)
+		existing, _ := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, trimmedName, userID)
 		if len(existing) > 0 {
 			return nil, fmt.Errorf("duplicated search name")
 		}
@@ -615,13 +618,13 @@ func (s *SearchService) UpdateSearch(userID string, searchID string, req *Update
 
 	// Step 6: Execute update
 	// Python: SearchService.update_by_id(search_id, req)
-	if err = s.searchDAO.UpdateByID(searchID, updates); err != nil {
+	if err = s.searchDAO.UpdateByID(ctx, dao.DB, searchID, updates); err != nil {
 		return nil, fmt.Errorf("failed to update search: %w", err)
 	}
 
 	// Step 7: Fetch updated search
 	// Python: e, updated_search = SearchService.get_by_id(search_id)
-	updatedSearch, err := s.searchDAO.GetByID(searchID)
+	updatedSearch, err := s.searchDAO.GetByID(ctx, dao.DB, searchID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch updated search: %w", err)
 	}
@@ -630,8 +633,8 @@ func (s *SearchService) UpdateSearch(userID string, searchID string, req *Update
 }
 
 // GetDetail gets search details by ID including search_config
-func (s *SearchService) GetDetail(searchID string) (map[string]interface{}, error) {
-	search, err := s.searchDAO.GetByID(searchID)
+func (s *SearchService) GetDetail(ctx context.Context, searchID string) (map[string]interface{}, error) {
+	search, err := s.searchDAO.GetByID(ctx, dao.DB, searchID)
 
 	if err != nil {
 		return nil, err

@@ -1458,14 +1458,14 @@ func NewAdminException(message string) *AdminException {
 // GetVariable get variable by name
 // Returns the exact system setting with the given name, or settings matching the
 // given name prefix when an exact setting does not exist.
-func (s *Service) GetVariable(varName string) ([]map[string]interface{}, error) {
-	settings, err := s.systemSettingsDAO.GetByName(varName)
+func (s *Service) GetVariable(ctx context.Context, varName string) ([]map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(settings) == 0 {
-		settings, err = s.systemSettingsDAO.GetByNamePrefix(varName)
+		settings, err = s.systemSettingsDAO.GetByNamePrefix(ctx, dao.DB, varName)
 		if err != nil {
 			return nil, err
 		}
@@ -1478,8 +1478,8 @@ func (s *Service) GetVariable(varName string) ([]map[string]interface{}, error) 
 
 // ListAllVariables list all variables
 // Returns all system settings from database
-func (s *Service) ListAllVariables() ([]map[string]interface{}, error) {
-	settings, err := s.systemSettingsDAO.GetAll()
+func (s *Service) ListAllVariables(ctx context.Context) ([]map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetAll(ctx, dao.DB)
 	if err != nil {
 		return nil, err
 	}
@@ -1490,8 +1490,8 @@ func (s *Service) ListAllVariables() ([]map[string]interface{}, error) {
 // SetVariable set variable
 // Creates or updates a system setting
 // If the setting exists, updates it; otherwise creates a new one
-func (s *Service) SetVariable(varName, varValue string) error {
-	settings, err := s.systemSettingsDAO.GetByName(varName)
+func (s *Service) SetVariable(ctx context.Context, varName, varValue string) error {
+	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
 	if err != nil {
 		return err
 	}
@@ -1502,7 +1502,7 @@ func (s *Service) SetVariable(varName, varValue string) error {
 			return err
 		}
 		setting.Value = varValue
-		return s.systemSettingsDAO.UpdateByName(varName, setting)
+		return s.systemSettingsDAO.UpdateByName(ctx, dao.DB, varName, setting)
 	} else if len(settings) > 1 {
 		return NewAdminException("Can't update more than 1 setting: " + varName)
 	}
@@ -1517,7 +1517,7 @@ func (s *Service) SetVariable(varName, varValue string) error {
 	if err = common.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
 		return err
 	}
-	return s.systemSettingsDAO.Create(newSetting)
+	return s.systemSettingsDAO.Create(ctx, dao.DB, newSetting)
 }
 
 // Config methods

@@ -1000,7 +1000,29 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 	}
 
 	if len(modelsToVerify) == 0 {
-		return modelVerifyResult, fmt.Errorf("no models found for provider")
+		// Third fallback: try to fetch remote models via the provider's API,
+		// mirroring Python's get_model_list() fallback in verify_api_key.
+		remoteModels, listErr := driver.ListModels(ctx, apiConfig)
+		if listErr == nil {
+			for _, rm := range remoteModels {
+				modelName := strings.TrimSpace(rm.Name)
+				if modelName == "" {
+					continue
+				}
+				modelTypes := rm.ModelTypes
+				if len(modelTypes) == 0 {
+					modelTypes = modelModule.InferModelTypes(modelName)
+				}
+				modelsToVerify = append(modelsToVerify, &modelModule.Model{
+					Name:       modelName,
+					ModelTypes: modelTypes,
+				})
+			}
+		}
+
+		if len(modelsToVerify) == 0 {
+			return modelVerifyResult, fmt.Errorf("no models found for provider")
+		}
 	}
 
 	var errs []error
@@ -1036,6 +1058,8 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 				err = verifyASRModel(ctx, driver, modelName, apiConfig)
 			case "ocr":
 				err = verifyOCRModel(ctx, driver, modelName, apiConfig)
+			case "doc_parse":
+				err = driver.CheckConnection(ctx, apiConfig)
 			default:
 				continue
 			}
@@ -3190,7 +3214,7 @@ func (m *ModelProviderService) ParseFile(ctx context.Context, providerName, inst
 
 // GetEmbeddingModel returns an EmbeddingModel wrapper for the given tenant
 func (m *ModelProviderService) GetEmbeddingModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.EmbeddingModel, error) {
-	driver, modelName, apiConfig, maxTokens, err := m.ResolveModelConfig(tenantID, entity.ModelTypeEmbedding, compositeModelName)
+	driver, modelName, apiConfig, maxTokens, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
@@ -3199,7 +3223,7 @@ func (m *ModelProviderService) GetEmbeddingModel(ctx context.Context, tenantID, 
 
 // GetChatModel  returns a ChatModel wrapper for the given tenant
 func (m *ModelProviderService) GetChatModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.ChatModel, error) {
-	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(tenantID, entity.ModelTypeChat, compositeModelName)
+	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
@@ -3207,8 +3231,8 @@ func (m *ModelProviderService) GetChatModel(ctx context.Context, tenantID, compo
 }
 
 // GetRerankModel returns a RerankModel wrapper for the given tenant
-func (m *ModelProviderService) GetRerankModel(tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
-	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(tenantID, entity.ModelTypeRerank, compositeModelName)
+func (m *ModelProviderService) GetRerankModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
+	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
@@ -3224,7 +3248,7 @@ type AddModelRequest struct {
 	Extra        map[string]interface{} `json:"extra"`
 }
 
-func (m *ModelProviderService) GetTenantDefaultModelByType(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func (m *ModelProviderService) GetTenantDefaultModelByType(ctx context.Context, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	if modelType == entity.ModelTypeOCR {
 		return nil, "", nil, 0, fmt.Errorf("OCR model name is required")
 	}
@@ -3235,7 +3259,7 @@ func (m *ModelProviderService) GetTenantDefaultModelByType(tenantID string, mode
 	}
 	modelName, modelID := defaultModelRefs(tenant, modelType)
 	if modelID != "" {
-		driver, resolvedName, apiConfig, maxTokens, idErr := m.GetModelConfigByID(tenantID, modelType, modelID)
+		driver, resolvedName, apiConfig, maxTokens, idErr := m.GetModelConfigByID(ctx, tenantID, modelType, modelID)
 		if idErr == nil {
 			return driver, resolvedName, apiConfig, maxTokens, nil
 		}
@@ -3248,11 +3272,11 @@ func (m *ModelProviderService) GetTenantDefaultModelByType(tenantID string, mode
 		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
 	}
 
-	return m.ResolveModelConfig(tenantID, modelType, modelName)
+	return m.ResolveModelConfig(ctx, tenantID, modelType, modelName)
 }
 
 // GetModelConfigByID returns model driver and API config for a tenant_model row by its ID.
-func (m *ModelProviderService) GetModelConfigByID(userID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	common.Debug("GetModelConfigByID",
 		zap.String("userID", userID),
 		zap.String("modelType", modelType.String()),
@@ -3284,7 +3308,7 @@ func (m *ModelProviderService) GetModelConfigByID(userID string, modelType entit
 	}
 
 	if providerEntity.TenantID != userID {
-		userTenants, terr := NewUserTenantService().GetUserTenantRelationByUserID(userID)
+		userTenants, terr := NewUserTenantService().GetUserTenantRelationByUserIDWithContext(ctx, userID)
 		if terr != nil {
 			return nil, "", nil, 0, terr
 		}
@@ -3364,19 +3388,19 @@ func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string
 	}
 }
 
-func (m *ModelProviderService) ResolveModelConfig(tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	if strings.TrimSpace(modelRef) == "" {
 		return nil, "", nil, 0, fmt.Errorf("model ref is required")
 	}
 	if _, err := m.modelDAO.GetByID(modelRef); err == nil {
-		return m.GetModelConfigByID(tenantID, modelType, modelRef)
+		return m.GetModelConfigByID(ctx, tenantID, modelType, modelRef)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, "", nil, 0, err
 	}
 	return m.GetModelConfigFromProviderInstance(tenantID, modelType, modelRef)
 }
 
-func (m *ModelProviderService) ResolveModelID(tenantID string, modelType entity.ModelType, modelName string) (string, error) {
+func (m *ModelProviderService) ResolveModelID(ctx context.Context, tenantID string, modelType entity.ModelType, modelName string) (string, error) {
 	if modelObj, err := m.modelDAO.GetByID(modelName); err == nil {
 		if modelObj.Status != "active" {
 			return "", fmt.Errorf("tenant model id=%s is disabled", modelName)
@@ -3384,7 +3408,7 @@ func (m *ModelProviderService) ResolveModelID(tenantID string, modelType entity.
 		if !entity.ModelType(modelObj.ModelType).Has(modelType) {
 			return "", fmt.Errorf("tenant model id=%s cannot be used as %s model", modelName, modelType.String())
 		}
-		if _, _, _, _, err := m.GetModelConfigByID(tenantID, modelType, modelName); err != nil {
+		if _, _, _, _, err = m.GetModelConfigByID(ctx, tenantID, modelType, modelName); err != nil {
 			return "", err
 		}
 		return modelObj.ID, nil
@@ -4002,13 +4026,13 @@ func (m *ModelProviderService) isImage2TextLLM(tenantID, llmID string) bool {
 // If llmID is empty, falls back to the tenant's default chat model.
 // When the named LLM is registered as an image2text model, returns the
 // IMAGE2TEXT driver/config instead of CHAT.
-func (m *ModelProviderService) GetChatModelConfig(tenantID string, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func (m *ModelProviderService) GetChatModelConfig(ctx context.Context, tenantID string, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	if llmID == "" {
-		return m.GetTenantDefaultModelByType(tenantID, entity.ModelTypeChat)
+		return m.GetTenantDefaultModelByType(ctx, tenantID, entity.ModelTypeChat)
 	}
 	modelType := entity.ModelTypeChat
 	if m.isImage2TextLLM(tenantID, llmID) {
 		modelType = entity.ModelTypeImage2Text
 	}
-	return m.ResolveModelConfig(tenantID, modelType, llmID)
+	return m.ResolveModelConfig(ctx, tenantID, modelType, llmID)
 }

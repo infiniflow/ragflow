@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils';
 import { forwardRef } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { DelimiterPreview } from './delimiter-preview';
 import {
   FormControl,
   FormField,
@@ -74,6 +75,7 @@ export function DelimiterFormField() {
                 <FormControl>
                   <DelimiterInput {...field}></DelimiterInput>
                 </FormControl>
+                <DelimiterPreview value={field.value} />
               </div>
             </div>
             <div className="flex pt-1">
