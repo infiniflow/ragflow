@@ -406,7 +406,7 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 			tenantSvc = NewTenantService()
 		}
 		var defaultModelName string
-		defaultModelName, err = tenantSvc.GetDefaultModelName(userID, entity.ModelTypeChat)
+		defaultModelName, err = tenantSvc.GetDefaultModelName(ctx, userID, entity.ModelTypeChat)
 		if err == nil {
 			modelID = strings.TrimSpace(defaultModelName)
 		}

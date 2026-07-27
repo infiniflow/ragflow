@@ -34,7 +34,7 @@ func (d *DatasetService) GetKnowledgebaseByID(ctx context.Context, datasetID str
 }
 
 // CheckKBTeamPermission checks if a user has team-level permission for the KB.
-func (d *DatasetService) CheckKBTeamPermission(kb *entity.Knowledgebase, userID string) bool {
+func (d *DatasetService) CheckKBTeamPermission(ctx context.Context, kb *entity.Knowledgebase, userID string) bool {
 	if kb == nil {
 		return false
 	}
@@ -44,7 +44,7 @@ func (d *DatasetService) CheckKBTeamPermission(kb *entity.Knowledgebase, userID 
 	if kb.Permission != string(entity.TenantPermissionTeam) {
 		return false
 	}
-	joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(userID)
+	joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return false
 	}

@@ -208,7 +208,7 @@ type CreateChatRequest struct {
 }
 
 func (s *ChatService) Create(ctx context.Context, userID string, req map[string]interface{}) (map[string]interface{}, common.ErrorCode, error) {
-	tenant, err := s.tenantDAO.GetByID(userID)
+	tenant, err := s.tenantDAO.GetByID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
@@ -848,7 +848,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 	if err != nil {
 		return nil, err
 	}
-	if _, err = s.tenantDAO.GetByID(userID); err != nil {
+	if _, err = s.tenantDAO.GetByID(ctx, dao.DB, userID); err != nil {
 		return nil, errors.New("tenant not found")
 	}
 

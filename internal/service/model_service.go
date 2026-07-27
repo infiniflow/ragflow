@@ -1421,8 +1421,8 @@ func (m *ModelProviderService) ShowTask(ctx context.Context, providerName, insta
 // to ListTenantDefaultModels (which only enumerates the 6-7 default
 // tenant fields and returned `[]` for any tenant without defaults),
 // breaking the front-end's "View Models" list entirely.
-func (m *ModelProviderService) ListTenantAddedModels(userID, ownerTenantID, modelTypeFilter string) ([]map[string]interface{}, common.ErrorCode, error) {
-	tenant, code, err := m.resolveModelListTenant(userID, ownerTenantID)
+func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID, ownerTenantID, modelTypeFilter string) ([]map[string]interface{}, common.ErrorCode, error) {
+	tenant, code, err := m.resolveModelListTenant(ctx, userID, ownerTenantID)
 	if err != nil {
 		return nil, code, err
 	}
@@ -1629,7 +1629,7 @@ func (m *ModelProviderService) ListTenantAddedModels(userID, ownerTenantID, mode
 	return added, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) resolveModelListTenant(userID, ownerTenantID string) (*entity.Tenant, common.ErrorCode, error) {
+func (m *ModelProviderService) resolveModelListTenant(ctx context.Context, userID, ownerTenantID string) (*entity.Tenant, common.ErrorCode, error) {
 	if ownerTenantID == "" {
 		tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
 		if err != nil {
@@ -1656,7 +1656,7 @@ func (m *ModelProviderService) resolveModelListTenant(userID, ownerTenantID stri
 		}
 	}
 
-	tenant, err := m.tenantDAO.GetByID(ownerTenantID)
+	tenant, err := m.tenantDAO.GetByID(ctx, dao.DB, ownerTenantID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeNotFound, fmt.Errorf("tenant %s not found", ownerTenantID)
@@ -3253,7 +3253,7 @@ func (m *ModelProviderService) GetTenantDefaultModelByType(ctx context.Context, 
 		return nil, "", nil, 0, fmt.Errorf("OCR model name is required")
 	}
 
-	tenant, err := m.tenantDAO.GetByID(tenantID)
+	tenant, err := m.tenantDAO.GetByID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, "", nil, 0, fmt.Errorf("failed to get tenant: %s type %s: %w", tenantID, modelType, err)
 	}

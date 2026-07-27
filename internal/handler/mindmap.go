@@ -74,7 +74,7 @@ func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, erro
 	// (mirrors Python's gen_mindmap get_tenant_default_model_by_type).
 	ch, streamErr := config.LLM.ChatStream(ctx, modelTenantID, modelID, messages, &modelModule.ChatConfig{})
 	if streamErr != nil && config.TenantSvc != nil {
-		if defaultModel, err := config.TenantSvc.GetDefaultModelName(modelTenantID, entity.ModelTypeChat); err == nil && defaultModel != "" && defaultModel != modelID {
+		if defaultModel, err := config.TenantSvc.GetDefaultModelName(ctx, modelTenantID, entity.ModelTypeChat); err == nil && defaultModel != "" && defaultModel != modelID {
 			ch, streamErr = config.LLM.ChatStream(ctx, modelTenantID, defaultModel, messages, &modelModule.ChatConfig{})
 		}
 	}

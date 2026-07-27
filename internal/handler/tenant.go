@@ -75,7 +75,8 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 		return
 	}
 
-	err := h.tenantService.SetTenantDefaultModels(user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType, req.ModelID)
+	ctx := c.Request.Context()
+	err := h.tenantService.SetTenantDefaultModels(ctx, user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType, req.ModelID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -100,8 +101,9 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
+	ctx := c.Request.Context()
 
-	defaultModels, err := h.tenantService.ListTenantDefaultModels(user.ID)
+	defaultModels, err := h.tenantService.ListTenantDefaultModels(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -132,8 +134,9 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
+	ctx := c.Request.Context()
 
-	tenantInfo, err := h.tenantService.GetTenantInfo(user.ID)
+	tenantInfo, err := h.tenantService.GetTenantInfo(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return

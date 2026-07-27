@@ -263,18 +263,18 @@ func (s *UserService) registerOAuthUser(ctx context.Context, channel string, inf
 	if err := s.userDAO.Create(user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("Failed to register %s: %w", info.Email, err)
 	}
-	if err := tenantDAO.Create(tenant); err != nil {
+	if err := tenantDAO.Create(ctx, dao.DB, tenant); err != nil {
 		_ = s.userDAO.DeleteByID(userID)
 		return nil, common.CodeServerError, fmt.Errorf("Failed to register %s: %w", info.Email, err)
 	}
 	if err := userTenantDAO.Create(userTenant); err != nil {
 		_ = s.userDAO.DeleteByID(userID)
-		_ = tenantDAO.Delete(userID)
+		_ = tenantDAO.Delete(ctx, dao.DB, userID)
 		return nil, common.CodeServerError, fmt.Errorf("Failed to register %s: %w", info.Email, err)
 	}
 	if err := fileDAO.Create(ctx, dao.DB, rootFile); err != nil {
 		_ = s.userDAO.DeleteByID(userID)
-		_ = tenantDAO.Delete(userID)
+		_ = tenantDAO.Delete(ctx, dao.DB, userID)
 		_ = userTenantDAO.Delete(userTenantID)
 		return nil, common.CodeServerError, fmt.Errorf("Failed to register %s: %w", info.Email, err)
 	}

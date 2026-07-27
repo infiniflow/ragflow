@@ -139,7 +139,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, tenantID string, req C
 		return nil, common.CodeDataError, errors.New("invalid url")
 	}
 
-	if _, err = s.tenantDAO.GetByID(tenantID); err != nil {
+	if _, err = s.tenantDAO.GetByID(ctx, dao.DB, tenantID); err != nil {
 		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
 
