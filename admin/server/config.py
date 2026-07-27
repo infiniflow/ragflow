@@ -36,7 +36,6 @@ class BaseConfig(BaseModel):
     def to_dict(self) -> dict[str, Any]:
         return {"id": self.id, "name": self.name, "host": self.host, "port": self.port, "service_type": self.service_type}
 
-
 class ServiceConfigs:
     configs = list[BaseConfig]
 
@@ -102,6 +101,18 @@ class RetrievalConfig(BaseConfig):
             result["extra"] = dict()
         extra_dict = result["extra"].copy()
         extra_dict["retrieval_type"] = self.retrieval_type
+        result["extra"] = extra_dict
+        return result
+
+
+class GaussDBRetrievalConfig(RetrievalConfig):
+    database: str
+    retrieval_schema: str
+
+    def to_dict(self) -> dict[str, Any]:
+        result = super().to_dict()
+        extra_dict = result["extra"].copy()
+        extra_dict.update({"database": self.database, "schema": self.retrieval_schema})
         result["extra"] = extra_dict
         return result
 
@@ -348,6 +359,35 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 password = v.get("password")
                 config = MySQLConfig(
                     id=id_count, name=name, host=host, port=port, username=username, password=password, service_type="meta_data", meta_type="mysql", detail_func_name="get_mysql_status"
+                )
+                configurations.append(config)
+                id_count += 1
+            case "gaussdb":
+                # The gaussdb block in the configuration file belongs to
+                # DocEngine and Memory Store.
+                doc_config = v.get("config", {})
+                host = doc_config.get("host")
+                port = doc_config.get("port")
+                if not host or port in (None, ""):
+                    # service_conf.yaml.template always contains a GaussDB
+                    # placeholder block. Default deployments leave it empty;
+                    # do not let an inactive DocEngine config break Admin.
+                    continue
+                try:
+                    port = int(port)
+                except (TypeError, ValueError):
+                    logging.warning("Ignoring invalid GaussDB DocEngine port in Admin configuration")
+                    continue
+                config = GaussDBRetrievalConfig(
+                    id=id_count,
+                    name="gaussdb",
+                    host=host,
+                    port=port,
+                    database=doc_config.get("database"),
+                    retrieval_schema=doc_config.get("schema") or "public",
+                    service_type="retrieval",
+                    retrieval_type="gaussdb",
+                    detail_func_name="get_gaussdb_status",
                 )
                 configurations.append(config)
                 id_count += 1

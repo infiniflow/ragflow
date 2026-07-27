@@ -55,6 +55,13 @@ oceanbase:
     password: '${OCEANBASE_PASSWORD:-infini_rag_flow}'
     host: '${OCEANBASE_HOST:-oceanbase}'
     port: ${OCEANBASE_PORT:-2881}
+gaussdb:
+  host: '${GAUSSDB_HOST}'
+  port: ${GAUSSDB_PORT}
+  database: '${GAUSSDB_DATABASE:-postgres}'
+  user: '${GAUSSDB_USER}'
+  password: '${GAUSSDB_PASSWORD}'
+  schema: '${GAUSSDB_SCHEMA:-public}'
 seekdb:
   scheme: 'oceanbase' # SeekDB is the lite version of OceanBase
   config:

@@ -30,6 +30,7 @@ import rag.utils.es_conn
 import rag.utils.infinity_conn
 import rag.utils.ob_conn
 import rag.utils.opensearch_conn
+import rag.utils.gaussdb_conn
 from rag.utils.azure_sas_conn import RAGFlowAzureSasBlob
 from rag.utils.azure_spn_conn import RAGFlowAzureSpnBlob
 from rag.utils.gcs_conn import RAGFlowGCS
@@ -85,6 +86,7 @@ OAUTH_CONFIG = None
 DOC_ENGINE = os.getenv("DOC_ENGINE", "elasticsearch")
 DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
 DOC_ENGINE_OCEANBASE = DOC_ENGINE.lower() == "oceanbase"
+DOC_ENGINE_GAUSSDB = DOC_ENGINE.lower() == "gaussdb"
 DOC_ENGINE_SERENEDB = DOC_ENGINE.lower() == "serenedb"
 
 
@@ -124,6 +126,7 @@ OB = {}
 OSS = {}
 OS = {}
 GCS = {}
+GAUSSDB = {}
 SERENEDB = {}
 
 DOC_MAXIMUM_SIZE: int = 128 * 1024 * 1024
@@ -303,10 +306,11 @@ def init_settings():
     FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, DOC_ENGINE_SERENEDB, docStoreConn, ES, OB, OS, INFINITY, SERENEDB
+    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, DOC_ENGINE_GAUSSDB, DOC_ENGINE_SERENEDB, docStoreConn, ES, OB, OS, INFINITY, GAUSSDB, SERENEDB
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch").strip()
     DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
     DOC_ENGINE_OCEANBASE = DOC_ENGINE.lower() == "oceanbase"
+    DOC_ENGINE_GAUSSDB = DOC_ENGINE.lower() == "gaussdb"
     DOC_ENGINE_SERENEDB = DOC_ENGINE.lower() == "serenedb"
     lower_case_doc_engine = DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
@@ -324,6 +328,9 @@ def init_settings():
     elif lower_case_doc_engine == "seekdb":
         OB = get_base_config("seekdb", {})
         docStoreConn = rag.utils.ob_conn.OBConnection()
+    elif lower_case_doc_engine == "gaussdb":
+        GAUSSDB = get_base_config("gaussdb", {})
+        docStoreConn = rag.utils.gaussdb_conn.GaussDBConnection()
     elif lower_case_doc_engine == "serenedb":
         SERENEDB = get_base_config("serenedb", {})
         # Imported lazily so psycopg2/SereneDB is only touched when selected.
