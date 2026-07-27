@@ -82,7 +82,7 @@ export default function SearchHome({
               />
               <button
                 type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 transform rounded-full bg-text-primary p-2 text-bg-base shadow w-12"
+                className="absolute bottom-3 right-3 flex size-9 items-center justify-center rounded-full bg-text-primary text-bg-base shadow transition-opacity hover:opacity-90"
                 onClick={() => {
                   if (canSearch === false) {
                     message.warning(t('search.chooseDataset'));
@@ -91,7 +91,7 @@ export default function SearchHome({
                   setIsSearching(!isSearching);
                 }}
               >
-                <Search size={22} className="m-auto" />
+                <Search size={18} />
               </button>
             </div>
           </div>
