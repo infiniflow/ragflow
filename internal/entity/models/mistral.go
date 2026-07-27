@@ -23,8 +23,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"ragflow/internal/common"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -323,6 +327,16 @@ type mistralEmbeddingData struct {
 	Embedding []float64 `json:"embedding"`
 	Object    string    `json:"object"`
 	Index     int       `json:"index"`
+	Usage     struct {
+		CompletionTokens   int `json:"completion_tokens"`
+		NumCachedTokens    int `json:"num_cached_tokens"`
+		PromptAudioSeconds int `json:"prompt_audio_seconds"`
+		PromptTokenDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		}
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	}
 }
 
 type mistralEmbeddingResponse struct {
@@ -478,10 +492,7 @@ func (m *MistralModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[s
 // CheckConnection runs a lightweight ListModels call to verify the API key.
 func (m *MistralModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
 	_, err := m.ListModels(ctx, apiConfig)
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }
 
 // Rerank calculates similarity scores between query and documents
@@ -491,7 +502,127 @@ func (m *MistralModel) Rerank(ctx context.Context, modelName *string, query stri
 
 // TranscribeAudio transcribe audio
 func (m *MistralModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+
+	if file == nil || *file == "" {
+		return nil, fmt.Errorf("file is missing")
+	}
+
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.ASR)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	// codeql[go/path-injection] False positive: *file is the audio file path the caller passes in to upload. The user (or operator-supplied pipeline) explicitly chose this path, and the OS access check enforces permissions anyway.
+	audioFile, err := os.Open(*file)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open audio file: %w", err)
+	}
+	defer audioFile.Close()
+
+	// create multipart file field
+	part, err := writer.CreateFormFile(
+		"file",
+		filepath.Base(*file),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create multipart file: %w", err)
+	}
+
+	// copy file content
+	if _, err = io.Copy(part, audioFile); err != nil {
+		return nil, fmt.Errorf("failed to copy audio data: %w", err)
+	}
+
+	if err := writer.WriteField("model", strings.TrimSpace(*modelName)); err != nil {
+		return nil, fmt.Errorf("failed to write model field: %w", err)
+	}
+
+	if asrConfig != nil && asrConfig.Params != nil {
+		for key, value := range asrConfig.Params {
+			if err = writeMistralFormField(writer, key, value); err != nil {
+				return nil, fmt.Errorf("failed to write field %s: %w", key, err)
+			}
+		}
+	}
+
+	if err = writer.Close(); err != nil {
+		return nil, fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := m.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Mistral ASR API error: %s, body: %s", resp.Status, string(respBody))
+	}
+
+	var result struct {
+		Text string `json:"text"`
+	}
+
+	if err = json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse Mistral ASR response: %w, body=%s", err, string(respBody))
+	}
+	if result.Text == "" {
+		return nil, fmt.Errorf("Mistral ASR response missing text")
+	}
+
+	return &ASRResponse{Text: result.Text}, nil
+}
+
+func writeMistralFormField(writer *multipart.Writer, key string, value interface{}) error {
+	var fieldValue string
+	switch v := value.(type) {
+	case string:
+		fieldValue = v
+	case bool:
+		fieldValue = strconv.FormatBool(v)
+	case int:
+		fieldValue = strconv.Itoa(v)
+	case int64:
+		fieldValue = strconv.FormatInt(v, 10)
+	case float32:
+		fieldValue = strconv.FormatFloat(float64(v), 'f', -1, 32)
+	case float64:
+		fieldValue = strconv.FormatFloat(v, 'f', -1, 64)
+	default:
+		data, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		fieldValue = string(data)
+	}
+	return writer.WriteField(key, fieldValue)
 }
 
 func (m *MistralModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -500,7 +631,81 @@ func (m *MistralModel) TranscribeAudioWithSender(ctx context.Context, modelName 
 
 // AudioSpeech convert text to audio
 func (m *MistralModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	if audioContent == nil || *audioContent == "" {
+		return nil, fmt.Errorf("text content is empty")
+	}
+
+	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.TTS)
+
+	reqBody := map[string]interface{}{
+		"model": modelName,
+		"input": audioContent,
+	}
+	if ttsConfig != nil && ttsConfig.Params != nil {
+		for key, value := range ttsConfig.Params {
+			reqBody[key] = value
+		}
+	}
+	if ttsConfig != nil && ttsConfig.Format != "" {
+		reqBody["response_format"] = ttsConfig.Format
+	}
+	reqBody["stream"] = false
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
+
+	resp, err := m.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Mistral TTS API error: status %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	var result struct {
+		AudioData string `json:"audio_data"`
+	}
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	// format HEX
+	audioBytes, err := base64.StdEncoding.DecodeString(result.AudioData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode Mistral base64 audio: %w", err)
+	}
+
+	return &TTSResponse{
+		Audio: audioBytes,
+	}, nil
 }
 
 func (m *MistralModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
