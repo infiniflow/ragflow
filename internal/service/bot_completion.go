@@ -270,18 +270,6 @@ func writeSSEJSON(w http.ResponseWriter, payload map[string]any) error {
 	return nil
 }
 
-// AgentbotSSEFrame mirrors ChatbotSSEFrame for the agentbot
-// completion path. The envelope shape is the same; the only
-// difference is that the LLM call goes through the canvas runner
-// (AgentService.RunAgent) instead of the legacy dialog async_chat.
-type AgentbotSSEFrame = ChatbotSSEFrame
-
-// WriteAgentbotFrame is an alias for WriteChatbotFrame — both bot
-// completion paths emit the same python wire shape.
-func WriteAgentbotFrame(w http.ResponseWriter, f ChatbotSSEFrame) error {
-	return WriteChatbotFrame(w, f)
-}
-
 // ChatbotCompletion streams an SSE response for
 // /api/v1/chatbots/<dialog_id>/completions.
 //
