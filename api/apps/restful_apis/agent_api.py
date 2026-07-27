@@ -671,6 +671,12 @@ def prompts():
     )
 
 
+# Synthetic ``canvas_category`` the frontend passes to list compilation template
+# groups through the merged /agents endpoint. Also the ``type`` discriminator
+# stamped on group items in the merged response.
+_COMPILATION_TEMPLATE_GROUP_CATEGORY = "compilation_template_group"
+
+
 @manager.route("/agents", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -701,6 +707,25 @@ def list_agents(tenant_id):
         effective_owner_ids = list(requested_owner_ids)
     else:
         effective_owner_ids = list(authorized_owner_ids)
+
+    # Groups-only: an explicit ``compilation_template_group`` category returns
+    # just the caller's template groups (no agents) via list_saved, so the
+    # frontend can render a dedicated tab. list_saved paginates in Python.
+    if canvas_category == _COMPILATION_TEMPLATE_GROUP_CATEGORY:
+        from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
+
+        try:
+            groups = CompilationTemplateGroupService.list_saved(tenant_id, keywords, "", order_by, desc)
+        except Exception:
+            logging.exception("list_agents: compilation template group list failed for tenant=%s", tenant_id)
+            groups = []
+        for group in groups:
+            group["type"] = _COMPILATION_TEMPLATE_GROUP_CATEGORY
+        total = len(groups)
+        if page_number and items_per_page:
+            start = (page_number - 1) * items_per_page
+            groups = groups[start : start + items_per_page]
+        return get_json_result(data={"canvas": groups, "total": total})
 
     # Merge mode: with no ``canvas_category`` (and no agent-only filters), list
     # the caller's compilation template groups alongside agents, interleaved by
@@ -737,7 +762,8 @@ def list_agents(tenant_id):
             agent["type"] = "agent"
             items.append(agent)
         for group in groups:
-            group["type"] = "compilation_template_group"
+            group["type"] = _COMPILATION_TEMPLATE_GROUP_CATEGORY
+            group["title"] = group["name"]
             items.append(group)
 
         # Interleave by update_time (the requested merge key); items missing the
