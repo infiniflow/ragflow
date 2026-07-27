@@ -61,7 +61,7 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 			{Text: "body", DocType: "text", CKType: "text", TKNums: intPtr(5)},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 128, 0.3)
+	got := mergeByTokenSizeFromJSON(items, 128, 30.0)
 	merged := got[0]
 	if len(merged) != 2 {
 		t.Fatalf("want 2 merged chunks (overlap path), got %d", len(merged))
