@@ -96,6 +96,7 @@ export enum Operator {
   Tool = 'Tool',
   TavilySearch = 'TavilySearch',
   TavilyExtract = 'TavilyExtract',
+  QueritSearch = 'QueritSearch',
   UserFillUp = 'UserFillUp',
   StringTransform = 'StringTransform',
   SearXNG = 'SearXNG',

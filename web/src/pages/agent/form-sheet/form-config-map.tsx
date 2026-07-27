@@ -145,6 +145,9 @@ export const FormConfigMap = {
   [Operator.TavilySearch]: {
     component: TavilyForm,
   },
+  [Operator.QueritSearch]: {
+    component: () => <></>,
+  },
   [Operator.UserFillUp]: {
     component: UserFillUpForm,
   },

@@ -2472,6 +2472,27 @@ Best for: Documents with flowing, contextually connected content — such as boo
       includeImageDescriptions: 'Include image descriptions',
       includeDomains: 'Include domains',
       ExcludeDomains: 'Exclude domains',
+      queritCount: 'Result count',
+      queritCountTip: 'Set the maximum number of search results to return.',
+      queritChunksPerDoc: 'Chunks per document',
+      queritChunksPerDocTip:
+        'Set the number of relevant text chunks returned for each result, from 1 to 3.',
+      queritSiteInclude: 'Sites to include',
+      queritSiteIncludeTip:
+        'Return results only from the specified domains or websites.',
+      queritSiteExclude: 'Sites to exclude',
+      queritSiteExcludeTip:
+        'Exclude results from the specified domains or websites.',
+      queritTimeRange: 'Time range',
+      queritTimeRangeTip:
+        'Use a relative range such as d7, w2, m1, or y1, or an absolute range such as 2026-01-01to2026-01-31.',
+      queritCountryInclude: 'Countries to include',
+      queritCountryIncludeTip:
+        'Return results associated with the specified countries.',
+      queritLanguageInclude: 'Languages to include',
+      queritLanguageIncludeTip:
+        'Return results in the specified language codes.',
+      queritListPlaceholder: 'Enter a value and press Enter',
       Days: 'Days',
       comma: 'Comma',
       semicolon: 'Semicolon',
@@ -3128,6 +3149,9 @@ This process aggregates variables from multiple branches into a single variable 
       codeExec: 'Code',
       tavilySearch: 'Tavily search',
       tavilySearchDescription: 'Search results via Tavily service.',
+      queritSearch: 'Querit search',
+      queritSearchDescription:
+        'Search the web with Querit and return source-backed results for agents.',
       tavilyExtract: 'Tavily extract',
       tavilyExtractDescription: 'Tavily Extract',
       log: 'Log',
@@ -3160,6 +3184,7 @@ This process aggregates variables from multiple branches into a single variable 
         code: 'Running a quick script',
         textProcessing: 'Tidying up text',
         tavilySearch: 'Searching the web',
+        queritSearch: 'Searching the web with Querit',
         tavilyExtract: 'Reading the page',
         exeSQL: 'Querying database',
         google: 'Searching the web',

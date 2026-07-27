@@ -572,6 +572,28 @@ export const initialTavilyValues = {
   },
 };
 
+export const initialQueritValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  count: 10,
+  chunks_per_doc: 3,
+  site_include: [],
+  site_exclude: [],
+  time_range: '',
+  country_include: [],
+  language_include: [],
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: {},
+      type: 'Object',
+    },
+  },
+};
+
 export enum TavilyExtractDepth {
   Basic = 'basic',
   Advanced = 'advanced',
@@ -722,6 +744,7 @@ export const RestrictedUpstreamMap = {
   [Operator.WaitingDialogue]: [Operator.Begin],
   [Operator.Agent]: [Operator.Begin],
   [Operator.TavilySearch]: [Operator.Begin],
+  [Operator.QueritSearch]: [Operator.Begin],
   [Operator.TavilyExtract]: [Operator.Begin],
   [Operator.StringTransform]: [Operator.Begin],
   [Operator.UserFillUp]: [Operator.Begin],
@@ -777,6 +800,7 @@ export const NodeMap = {
   [Operator.Agent]: 'agentNode',
   [Operator.Tool]: 'toolNode',
   [Operator.TavilySearch]: 'ragNode',
+  [Operator.QueritSearch]: 'ragNode',
   [Operator.UserFillUp]: 'ragNode',
   [Operator.StringTransform]: 'ragNode',
   [Operator.TavilyExtract]: 'ragNode',
