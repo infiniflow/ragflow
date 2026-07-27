@@ -255,7 +255,9 @@ def check_s3_alive():
     """
     ok, payload = check_storage()
     if ok:
+        logging.debug("check_s3_alive: ok, elapsed=%s ms", payload.get("elapsed", "?"))
         return {"status": "alive", "message": f"Confirm elapsed: {payload.get('elapsed', '?')} ms."}
+    logging.debug("check_s3_alive: failed, error=%s", payload.get("error", "unknown"))
     return {"status": "timeout", "message": f"error: {payload.get('error', 'unknown')}"}
 
 

@@ -292,12 +292,30 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 name: str = "s3"
                 endpoint_url = v.get("endpoint_url") or ""
                 if endpoint_url:
-                    parsed = urlparse(endpoint_url)
-                    host: str = parsed.hostname or endpoint_url
-                    port: int = parsed.port or (443 if parsed.scheme == "https" else 80)
+                    try:
+                        parsed = urlparse(endpoint_url)
+                        # `parsed.port` raises ValueError on non-numeric or
+                        # out-of-range ports; `urlparse` itself raises
+                        # ValueError on malformed IPv6 URLs. Fall back to
+                        # the raw endpoint as host and the scheme's
+                        # default port so config loading completes.
+                        host: str = parsed.hostname or endpoint_url
+                        port: int = parsed.port or (443 if parsed.scheme == "https" else 80)
+                        logging.debug(
+                            "Selected S3 host=%s port=%d for endpoint %r.",
+                            host, port, endpoint_url,
+                        )
+                    except ValueError:
+                        logging.warning(
+                            "Could not parse S3 endpoint_url %r; using raw value as host with default port.",
+                            endpoint_url,
+                        )
+                        host = endpoint_url
+                        port = 443 if endpoint_url.startswith("https://") else 80
                 else:
                     host: str = "s3.amazonaws.com"
                     port: int = 443
+                    logging.debug("No S3 endpoint_url configured; defaulting to AWS S3 at %s:%d.", host, port)
                 config = FileStoreConfig(
                     id=id_count,
                     name=name,

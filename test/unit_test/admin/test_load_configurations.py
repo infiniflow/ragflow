@@ -160,6 +160,11 @@ class TestLoadS3HandlesBadEndpoint:
             "not a url",
             "://no-scheme",
             "https://",
+            # `parsed.port` raises ValueError on these:
+            "https://s3.example.com:not-a-port",
+            "https://s3.example.com:99999999999999",
+            # `urlparse` itself raises ValueError on malformed IPv6:
+            "https://[::1",
         ],
     )
     def test_malformed_endpoint_does_not_raise(self, endpoint):
