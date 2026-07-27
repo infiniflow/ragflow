@@ -63,9 +63,7 @@ func parseChatCompletionResponse(body []byte, chatConfig *ChatConfig, modelUsage
 		return nil, err
 	}
 
-	if err := collectChatModelUsage(modelUsage, parts.RequestID, parts.Usage); err != nil {
-		common.Error("Failed to collect model usage", err)
-	}
+	recordResponseUsage(modelUsage, parts.RequestID, parts.Usage, "chat")
 
 	return &ChatResponse{
 		Answer:        parts.Content,
@@ -75,14 +73,21 @@ func parseChatCompletionResponse(body []byte, chatConfig *ChatConfig, modelUsage
 	}, nil
 }
 
-// collectChatModelUsage records one completed chat response when the caller
-// supplied a usage sink.
-func collectChatModelUsage(modelUsage *common.ModelUsage, requestID string, usage *TokenUsage) error {
+// recordResponseUsage records the request ID and token usage returned by a
+// completed model response.
+func recordResponseUsage(modelUsage *common.ModelUsage, requestID string, usage *TokenUsage, modelType string) {
 	if modelUsage == nil {
-		return nil
+		modelUsage = &common.ModelUsage{
+			Type:    modelType,
+			StartAt: time.Now(),
+		}
+	} else if modelUsage.Type == "" {
+		modelUsage.Type = modelType
 	}
 	modelUsage.RequestID = requestID
-	return collectModelUsage(modelUsage, usage)
+	if err := collectModelUsage(modelUsage, usage); err != nil {
+		common.Error("Failed to collect model usage", err)
+	}
 }
 
 // collectModelUsage records token usage and response time for one model call.
@@ -124,6 +129,12 @@ func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usa
 	}
 	if chatConfig != nil {
 		chatConfig.UsageResult = usage
+	}
+	if modelUsage == nil {
+		modelUsage = &common.ModelUsage{
+			Type:    "chat",
+			StartAt: time.Now(),
+		}
 	}
 	if err := collectModelUsage(modelUsage, usage); err != nil {
 		common.Error("Failed to collect model usage", err)
