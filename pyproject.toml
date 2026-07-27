@@ -226,6 +226,10 @@ constraint-dependencies = [
     # inscriptis 2.7.0 pins lxml<6.0.0, blocking the lxml CVE fix;
     # 2.7.3 relaxes to <6.2.0. Pulled in transitively via ir-datasets -> ranx
     "inscriptis>=2.7.3",
+    # CVE-2025-14009 (CRITICAL), CVE-2026-0846, CVE-2026-0847, CVE-2026-33231,
+    # CVE-2026-33236, CVE-2026-54293 (HIGH), CVE-2026-33230 (MEDIUM):
+    # nltk < 3.10.0 vulnerable; pulled in transitively via crawl4ai, infinity-sdk
+    "nltk>=3.10.0",
 ]
 exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same
