@@ -2,8 +2,11 @@ import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-f
 import message from '@/components/ui/message';
 import { ParseType } from '@/constants/knowledge';
 import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
+import { GenerateType } from '@/pages/dataset/dataset/generate-button/constants';
+import { DatasetGenerateKeys } from '@/pages/dataset/dataset/generate-button/hook';
 import {
   IArtifact,
+  IArtifactAlteration,
   IArtifactGraph,
   IArtifactPage,
   IArtifactTopic,
@@ -18,6 +21,7 @@ import {
   IWikiCommitDetail,
   IWikiCommitListResponse,
 } from '@/interfaces/database/dataset';
+import { type IStructureGraphResponse } from '@/interfaces/database/document-structure';
 import {
   IFetchArtifactGraphRequestParams,
   ITestRetrievalRequestBody,
@@ -27,8 +31,10 @@ import i18n from '@/locales/config';
 import kbService, {
   clearWiki,
   deleteKnowledgeGraph,
+  getArtifactsAlteration,
   getArtifactGraph,
   getArtifactPage,
+  getArtifactsStructure,
   getKbDetail,
   getKnowledgeGraph,
   getWikiCommit,
@@ -40,10 +46,12 @@ import kbService, {
   listWikiCommits,
   removeTag,
   renameTag,
+  runIndex,
   updateArtifactPage,
   updateKb,
 } from '@/services/knowledge-service';
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useIsMutating,
   useMutation,
@@ -86,6 +94,9 @@ export const enum KnowledgeApiAction {
   FetchKnowledgeList = 'fetchKnowledgeList',
   RemoveKnowledgeGraph = 'removeKnowledgeGraph',
   ClearWiki = 'clearWiki',
+  FetchDatasetStructure = 'fetchDatasetStructure',
+  FetchArtifactAlteration = 'fetchArtifactAlteration',
+  RunArtifactIndex = 'runArtifactIndex',
 }
 
 export const useKnowledgeBaseId = (): string => {
@@ -436,6 +447,28 @@ export const ArtifactTopicKeys = {
     [KnowledgeApiAction.FetchArtifactTopicList, datasetId] as const,
 };
 
+export const ArtifactAlterationKeys = {
+  detail: (datasetId: string) =>
+    [KnowledgeApiAction.FetchArtifactAlteration, datasetId] as const,
+};
+
+export function useFetchArtifactAlteration() {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<IArtifactAlteration | null>({
+    queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId),
+    initialData: null,
+    enabled: !!knowledgeBaseId,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getArtifactsAlteration(knowledgeBaseId);
+      return data?.data ?? null;
+    },
+  });
+
+  return { data, loading };
+}
+
 const wikiCommitKeys = {
   list: (datasetId: string, pageType: string, slug: string) =>
     [KnowledgeApiAction.FetchWikiCommits, datasetId, pageType, slug] as const,
@@ -725,7 +758,13 @@ export function useFetchKnowledgeGraph() {
 
 export const artifactGraphKeys = {
   graph: (datasetId: string, params?: IFetchArtifactGraphRequestParams) =>
-    [KnowledgeApiAction.FetchArtifactGraph, datasetId, params?.node] as const,
+    [
+      KnowledgeApiAction.FetchArtifactGraph,
+      datasetId,
+      params?.node,
+      params?.keywords,
+      params?.top_n,
+    ] as const,
 };
 
 export function useFetchArtifactGraph(
@@ -737,6 +776,7 @@ export function useFetchArtifactGraph(
   const { data, isFetching: loading } = useQuery<IArtifactGraph>({
     queryKey: artifactGraphKeys.graph(knowledgeBaseId, params),
     initialData: { entities: [], relations: [] } as IArtifactGraph,
+    placeholderData: keepPreviousData,
     enabled: !!knowledgeBaseId && (options?.enabled ?? true),
     gcTime: 0,
     queryFn: async () => {
@@ -744,6 +784,51 @@ export function useFetchArtifactGraph(
       return data?.data ?? { entities: [], relations: [] };
     },
   });
+
+  return { data, loading };
+}
+
+export const DatasetStructureKeys = {
+  all: (datasetId: string) =>
+    [KnowledgeApiAction.FetchDatasetStructure, datasetId] as const,
+  kind: (datasetId: string, kind: string) =>
+    [KnowledgeApiAction.FetchDatasetStructure, datasetId, kind] as const,
+  kindWithKeywords: (datasetId: string, kind: string, keywords: string) =>
+    [
+      KnowledgeApiAction.FetchDatasetStructure,
+      datasetId,
+      kind,
+      keywords,
+    ] as const,
+};
+
+export function useFetchDatasetStructureGraph(kind: string, keywords?: string) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const enabled = !!knowledgeBaseId && !!kind;
+  const trimmedKeywords = keywords?.trim();
+
+  const { data, isFetching: loading } =
+    useQuery<IStructureGraphResponse | null>({
+      queryKey: trimmedKeywords
+        ? DatasetStructureKeys.kindWithKeywords(
+            knowledgeBaseId,
+            kind,
+            trimmedKeywords,
+          )
+        : DatasetStructureKeys.kind(knowledgeBaseId, kind),
+      initialData: null,
+      enabled,
+      gcTime: 0,
+      placeholderData: keepPreviousData,
+      queryFn: async () => {
+        const { data } = await getArtifactsStructure(
+          knowledgeBaseId,
+          kind,
+          trimmedKeywords,
+        );
+        return (data?.data as IStructureGraphResponse | null) ?? null;
+      },
+    });
 
   return { data, loading };
 }
@@ -839,6 +924,43 @@ export const useClearWiki = () => {
   });
 
   return { data, loading, clearWiki: mutateAsync };
+};
+
+export const useRunArtifactIndex = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [KnowledgeApiAction.RunArtifactIndex],
+    mutationFn: async () => {
+      const { data } = await runIndex(knowledgeBaseId, 'artifact');
+      if (data?.code === 0) {
+        message.success(i18n.t('message.operated'));
+        queryClient.invalidateQueries({
+          queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: ArtifactKeys.listByDataset(knowledgeBaseId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: ArtifactTopicKeys.listByDataset(knowledgeBaseId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: DatasetGenerateKeys.traceById(
+            GenerateType.Artifact,
+            knowledgeBaseId,
+          ),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, runArtifactIndex: mutateAsync };
 };
 
 const KNOWLEDGE_LIST_PAGE_SIZE = 10;

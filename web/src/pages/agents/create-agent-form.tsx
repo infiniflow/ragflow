@@ -1,29 +1,47 @@
 'use client';
 
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { Button, ButtonLoading } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { DialogFooter } from '@/components/ui/dialog';
 import { Form } from '@/components/ui/form';
 import { TagRenameId } from '@/constants/knowledge';
 import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
-import { BrainCircuit, Check, Route } from 'lucide-react';
+import { Routes } from '@/routes';
+import { BrainCircuit, Check, Route, Shapes } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router';
 import { FlowType } from './constant';
 import { NameFormField, NameFormSchema } from './name-form-field';
 
 export type CreateAgentFormProps = IModalProps<any> & {
-  shouldChooseAgent?: boolean;
+  loading?: boolean;
+  showTypeCards?: boolean;
 };
 
 type FlowTypeCardProps = {
   value?: FlowType;
   onChange?: (value: FlowType) => void;
 };
+
+const FLOW_TYPE_CONFIG: Record<
+  FlowType,
+  { icon: typeof BrainCircuit; labelKey: string }
+> = {
+  [FlowType.Flow]: { icon: Route, labelKey: 'tabList.ingestionPipeline' },
+  [FlowType.Compiler]: {
+    icon: Shapes,
+    labelKey: 'tabList.compilationOperator',
+  },
+  [FlowType.Agent]: { icon: BrainCircuit, labelKey: 'tabList.workflow' },
+};
+
 function FlowTypeCards({ value, onChange }: FlowTypeCardProps) {
   const { t } = useTranslation();
   const handleChange = useCallback(
@@ -35,8 +53,10 @@ function FlowTypeCards({ value, onChange }: FlowTypeCardProps) {
 
   return (
     <section className="flex gap-10">
-      {Object.values(FlowType).map((val) => {
+      {[FlowType.Flow, FlowType.Compiler, FlowType.Agent].map((val) => {
         const isActive = value === val;
+        const config = FLOW_TYPE_CONFIG[val];
+        const Icon = config.icon;
         return (
           <Card
             key={val}
@@ -55,16 +75,8 @@ function FlowTypeCards({ value, onChange }: FlowTypeCardProps) {
               )}
             >
               <div className="flex gap-2">
-                {val === FlowType.Agent ? (
-                  <BrainCircuit className="size-6" />
-                ) : (
-                  <Route className="size-6" />
-                )}
-                <p>
-                  {t(
-                    `flow.${val === FlowType.Agent ? 'createAgent' : 'createPipeline'}`,
-                  )}
-                </p>
+                <Icon className="size-6" />
+                <p>{t(`flow.${config.labelKey}`)}</p>
               </div>
               {isActive && <Check />}
             </CardContent>
@@ -87,14 +99,25 @@ export type FormSchemaType = z.infer<typeof FormSchema>;
 export function CreateAgentForm({
   hideModal,
   onOk,
-  shouldChooseAgent = false,
+  loading,
+  showTypeCards = false,
 }: CreateAgentFormProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
 
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(FormSchema),
     defaultValues: { name: '', type: FlowType.Agent },
   });
+
+  const selectedType = useWatch({ control: form.control, name: 'type' });
+  // Compilation operators are configured on the edit-next page, so the dialog
+  // skips the name field and turns the submit button into a navigation step.
+  const isCompiler = showTypeCards && selectedType === FlowType.Compiler;
+
+  const handleNext = useCallback(() => {
+    navigate(`${Routes.CompilationTemplatesEditNext}?source=agents`);
+  }, [navigate]);
 
   async function onSubmit(data: FormSchemaType) {
     const ret = await onOk?.(data);
@@ -110,7 +133,7 @@ export function CreateAgentForm({
         className="space-y-6"
         id={TagRenameId}
       >
-        {shouldChooseAgent && (
+        {showTypeCards && (
           <RAGFlowFormItem
             required
             name="type"
@@ -119,8 +142,27 @@ export function CreateAgentForm({
             <FlowTypeCards></FlowTypeCards>
           </RAGFlowFormItem>
         )}
-        <NameFormField></NameFormField>
+        {!isCompiler && <NameFormField></NameFormField>}
       </form>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={hideModal}>
+          {t('common.cancel')}
+        </Button>
+        {isCompiler ? (
+          <Button type="button" data-testid="agent-next" onClick={handleNext}>
+            {t('common.next')}
+          </Button>
+        ) : (
+          <ButtonLoading
+            data-testid="agent-save"
+            type="submit"
+            form={TagRenameId}
+            loading={loading}
+          >
+            {t('common.confirm')}
+          </ButtonLoading>
+        )}
+      </DialogFooter>
     </Form>
   );
 }

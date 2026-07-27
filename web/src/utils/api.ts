@@ -159,6 +159,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/ingestions/summary`,
   artifactsList: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts`,
+  artifactsAlteration: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/alteration`,
   artifactsTopicList: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts_topics`,
   getArtifactPage: (datasetId: string, pageType: string, slug: string) =>
@@ -169,6 +171,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/commits/${commitId}`,
   getArtifactGraph: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/graph`,
+  artifactsStructure: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts_structure`,
   clearWiki: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts`,
   getDatasetSkillTree: (datasetId: string) =>

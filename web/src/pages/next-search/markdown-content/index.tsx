@@ -35,7 +35,7 @@ import {
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import classNames from 'classnames';
 import { omit } from 'lodash';
-import { pipe } from 'lodash/fp';
+import pipe from 'lodash/fp/pipe';
 import reactStringReplace from 'react-string-replace';
 
 // Defining Tailwind CSS class name constants

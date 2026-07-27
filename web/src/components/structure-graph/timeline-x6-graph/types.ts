@@ -1,7 +1,4 @@
-import {
-  type TimelineX6EdgeData,
-  type TimelineX6NodeData,
-} from '../../utils/adapters';
+import { type TimelineX6EdgeData, type TimelineX6NodeData } from '../adapters';
 
 export interface TimelineNodeValue {
   id: string;

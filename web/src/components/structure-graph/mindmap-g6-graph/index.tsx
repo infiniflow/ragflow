@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils';
 import { Graph, IElementEvent, NodeEvent, treeToGraphData } from '@antv/g6';
 import { memo, useEffect, useRef, useState } from 'react';
 
-import { adaptMindMapToIndentedTree } from '../../utils/adapters';
+import { adaptMindMapToIndentedTree } from '../adapters';
 import { type MindMapG6GraphProps, type MindMapNodeValue } from './types';
 
 interface MindMapNodeData {
