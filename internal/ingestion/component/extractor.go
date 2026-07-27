@@ -72,6 +72,7 @@ import (
 
 	eschema "github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -523,7 +524,7 @@ func extractorChunkList(v any) ([]map[string]any, bool) {
 //	                                  short-circuits with an error.
 //	_created_time, _elapsed_time    — stamped by the canvas framework
 //	                                 (realComponentBody), not here.
-func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	if err := c.Param.Validate(); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}

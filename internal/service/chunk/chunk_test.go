@@ -756,7 +756,7 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 		t.Fatalf("document chunk_num = %d, want 4", doc.ChunkNum)
 	}
 
-	kb, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get kb: %v", err)
 	}
@@ -858,7 +858,7 @@ func TestDecrementChunkStatsClampsCounters(t *testing.T) {
 		t.Fatalf("document stats token=%d chunk=%d duration=%v, want zeros", doc.TokenNum, doc.ChunkNum, doc.ProcessDuration)
 	}
 
-	kb, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get kb: %v", err)
 	}
@@ -1301,7 +1301,7 @@ func (e *parseTestDocEngine) GetType() string {
 }
 func (e *parseTestDocEngine) SupportsPageRank() bool { return false }
 
-func (e *parseTestDocEngine) FilterDocIdsByMetaPushdown(context.Context, []string, []map[string]interface{}, string) []string {
+func (e *parseTestDocEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {
 	return nil
 }
 
@@ -1475,7 +1475,7 @@ func (m *switchChunksEngineMock) Ping(context.Context) error                    
 func (m *switchChunksEngineMock) Close() error                                        { return nil }
 func (m *switchChunksEngineMock) GetType() string                                     { return "elasticsearch" }
 func (m *switchChunksEngineMock) SupportsPageRank() bool                              { return true }
-func (m *switchChunksEngineMock) FilterDocIdsByMetaPushdown(context.Context, []string, []map[string]interface{}, string) []string {
+func (m *switchChunksEngineMock) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {
 	return nil
 }
 

@@ -63,6 +63,8 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+
+	"gorm.io/gorm"
 )
 
 const ComponentNameTitleChunker = "TitleChunker"
@@ -629,7 +631,7 @@ func (c *TitleChunkerComponent) Inputs() map[string]string { return ChunkerInput
 func (c *TitleChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
 
 // Invoke delegates to the chosen strategy (group or hierarchy).
-func (c *TitleChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *TitleChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		inputs = map[string]any{}
 	}

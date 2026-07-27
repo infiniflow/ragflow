@@ -24,6 +24,8 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 func TestRetrieval_StubsErrorWhenServiceMissing(t *testing.T) {
@@ -307,7 +309,7 @@ type capturingRetrievalService struct {
 	req RetrievalRequest
 }
 
-func (s *capturingRetrievalService) Search(_ context.Context, req RetrievalRequest) ([]RetrievalChunk, error) {
+func (s *capturingRetrievalService) Search(_ context.Context, _ *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error) {
 	s.req = req
 	return []RetrievalChunk{{ID: "ck-1", Content: "answer"}}, nil
 }
@@ -316,6 +318,6 @@ type staticRetrievalService struct {
 	chunks []RetrievalChunk
 }
 
-func (s staticRetrievalService) Search(_ context.Context, _ RetrievalRequest) ([]RetrievalChunk, error) {
+func (s staticRetrievalService) Search(_ context.Context, _ *gorm.DB, _ RetrievalRequest) ([]RetrievalChunk, error) {
 	return s.chunks, nil
 }

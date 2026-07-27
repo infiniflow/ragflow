@@ -102,7 +102,7 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	// ── 2. Validate KBs exist ────────────────────────────────────────────────
 	kbMap := make(map[string]*entity.Knowledgebase, len(req.KbIDs))
 	for _, kbID := range req.KbIDs {
-		kb, err := s.kbDAO.GetByID(kbID)
+		kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
 		if err != nil || kb == nil {
 			return ErrLinkDatasetNotFound
 		}
@@ -222,7 +222,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 			if _, exists := existingKBIDs[kbID]; exists {
 				continue
 			}
-			kb, err := s.kbDAO.GetByID(kbID)
+			kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
 			if err != nil || kb == nil {
 				continue
 			}

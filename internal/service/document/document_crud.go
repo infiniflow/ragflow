@@ -26,7 +26,7 @@ func (s *DocumentService) Accessible(ctx context.Context, docID, userID string) 
 	if err != nil || doc == nil {
 		return false
 	}
-	return s.kbDAO.Accessible(doc.KbID, userID)
+	return s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID)
 }
 
 func (s *DocumentService) GetDocumentStorageAddress(ctx context.Context, doc *entity.Document) (string, string, error) {
@@ -190,7 +190,7 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 //	Returns the number of successfully deleted documents.
 func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
 	// 1. Check dataset is accessible by the user
-	if !s.kbDAO.Accessible(datasetID, userID) {
+	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return 0, fmt.Errorf("you don't own the dataset %s", datasetID)
 	}
 
@@ -333,7 +333,7 @@ func (s *DocumentService) resolveDocAndKB(ctx context.Context, docID string) (*e
 	if err != nil {
 		return nil, nil, fmt.Errorf("document not found: %w", err)
 	}
-	kb, err := s.kbDAO.GetByID(doc.KbID)
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("knowledgebase not found: %w", err)
 	}

@@ -37,6 +37,7 @@ import (
 
 	"github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/parser"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
@@ -81,7 +82,7 @@ func (c *QAChunkerComponent) Inputs() map[string]string { return ChunkerInputs }
 
 func (c *QAChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
 
-func (c *QAChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *QAChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	return c.invoke(ctx, inputs)
 }
 

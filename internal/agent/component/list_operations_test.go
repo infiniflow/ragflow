@@ -40,7 +40,7 @@ func TestListOperations_Head(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2, 3, 4, 5}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestListOperations_TopNLegacyAlias(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2, 3, 4}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestListOperations_Filter(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{"foo", "bar", "foobar"}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -121,7 +121,7 @@ func TestListOperations_DropDuplicates(t *testing.T) {
 	}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestListOperations_Tail(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2, 3, 4, 5}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestListOperations_NthPositive(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{"a", "b", "c", "d"}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -192,7 +192,7 @@ func TestListOperations_SortDesc(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{3, 1, 4, 1, 5, 9, 2, 6}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -239,7 +239,7 @@ func TestListOperations_SortByFieldList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewListOperationsComponent: %v", err)
 	}
-	out, err := cSortDesc.Invoke(ctx, nil)
+	out, err := cSortDesc.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke sort_by=score desc: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestListOperations_SortByFieldList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewListOperationsComponent (legacy): %v", err)
 	}
-	out, err = cLegacy.Invoke(ctx, nil)
+	out, err = cLegacy.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke sort_by=\"\" desc: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestListOperations_SortByFieldList(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewListOperationsComponent (tiebreak): %v", err)
 	}
-	out, err = cTiebreak.Invoke(ctx, nil)
+	out, err = cTiebreak.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke sort_by=score,title asc: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestListOperations_NotAList(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"x": "not-a-list"}
 	ctx := canvas.WithState(context.Background(), state)
 
-	_, err := c.Invoke(ctx, nil)
+	_, err := c.Invoke(ctx, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for non-list input, got nil")
 	}
@@ -364,7 +364,7 @@ func TestListOperations_StrictMode_ReturnsError(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2, 3}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	_, err = c.Invoke(ctx, nil)
+	_, err = c.Invoke(ctx, nil, nil)
 	if err == nil {
 		t.Fatal("expected error from strict-mode nth with n=0, got nil")
 	}
@@ -391,7 +391,7 @@ func TestListOperations_StrictStringCoercion(t *testing.T) {
 		state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2, 3}}
 		ctx := canvas.WithState(context.Background(), state)
 
-		_, err = c.Invoke(ctx, nil)
+		_, err = c.Invoke(ctx, nil, nil)
 		if err == nil {
 			t.Errorf("[strict=%q] expected error from strict-mode nth with n=0, got nil", v)
 		}
@@ -416,7 +416,7 @@ func TestListOperations_StrictFalseStringsIgnored(t *testing.T) {
 		state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2, 3}}
 		ctx := canvas.WithState(context.Background(), state)
 
-		out, err := c.Invoke(ctx, nil)
+		out, err := c.Invoke(ctx, nil, nil)
 		if err != nil {
 			t.Errorf("[strict=%q] expected non-error (coerced to false), got %v", v, err)
 		}
@@ -454,7 +454,7 @@ func TestListOperations_FilterEqBool(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{true, false, true, "True"}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -482,7 +482,7 @@ func TestListOperations_UnknownOp_ReturnsError(t *testing.T) {
 	state.Outputs["cpn_0"] = map[string]any{"xs": []any{1, 2, 3}}
 	ctx := canvas.WithState(context.Background(), state)
 
-	_, err := c.Invoke(ctx, nil)
+	_, err := c.Invoke(ctx, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for unknown operation, got nil")
 	}

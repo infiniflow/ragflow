@@ -65,7 +65,7 @@ func TestDispatch_PDFVisionJSON_RealPDFFixture(t *testing.T) {
 	setups["pdf"]["output_format"] = "json"
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data,
 		"file_type": "pdf",
 		"name":      "Doc1.pdf",

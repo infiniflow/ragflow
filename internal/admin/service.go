@@ -552,7 +552,7 @@ func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserR
 	// Delete owned tenant data
 	if ownedTenantID != "" {
 		// 1. Get knowledge base IDs
-		kbIDs, err := s.kbDAO.GetKBIDsByTenantIDSimple(ownedTenantID)
+		kbIDs, err := s.kbDAO.GetKBIDsByTenantIDSimple(ctx, tx, ownedTenantID)
 		if err != nil {
 			common.Warn("failed to get knowledge base IDs", zap.Error(err))
 		}

@@ -174,7 +174,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	for _, datasetID := range req.Datasets {
 		found := false
 		for _, tenant := range tenants {
-			kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenant.TenantID)
+			kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, tenant.TenantID)
 			if err == nil && kb != nil {
 				common.Debug("Found knowledge base in database",
 					zap.String("datasetID", datasetID),
@@ -269,7 +269,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	if filter != nil {
 		// Get flattened metadata
 		metadataSvc := service.NewMetadataService()
-		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs([]string(req.Datasets))
+		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(ctx, []string(req.Datasets))
 		if err != nil {
 			common.Warn("Failed to get flatted metadata", zap.Error(err))
 		} else {
@@ -336,7 +336,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 
 	// Get tag-based rank features via LabelQuestion
 	metadataSvc := service.NewMetadataService()
-	labels := metadataSvc.LabelQuestion(modifiedQuestion, kbRecords)
+	labels := metadataSvc.LabelQuestion(ctx, modifiedQuestion, kbRecords)
 	common.Debug("LabelQuestion result", zap.Any("labels", labels))
 
 	// Determine embedding model.
@@ -524,7 +524,7 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 	var chunk map[string]interface{}
 	for _, tenant := range tenants {
 		// Get kbIDs for this tenant
-		kbIDs, err := s.kbDAO.GetKBIDsByTenantID(tenant.TenantID)
+		kbIDs, err := s.kbDAO.GetKBIDsByTenantID(ctx, dao.DB, tenant.TenantID)
 		if err != nil {
 			continue
 		}
@@ -604,7 +604,7 @@ func (s *ChunkService) cancelAllTasksOfDoc(ctx context.Context, doc *entity.Docu
 }
 
 func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
-	if !s.kbDAO.Accessible(datasetID, userID) {
+	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset %s", datasetID)
 	}
 
@@ -612,7 +612,7 @@ func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string
 		return nil, common.CodeDataError, fmt.Errorf("`document_ids` is required")
 	}
 
-	_, err := s.kbDAO.GetByID(datasetID)
+	_, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset %s", datasetID)
 	}
@@ -681,18 +681,18 @@ func checkDuplicateIDs(documentIDs []string, idTypes string) ([]string, []string
 	return uniqueDocIDs, duplicateMessages
 }
 
-func (s *ChunkService) accessible(datasetID, userID string) bool {
+func (s *ChunkService) accessible(ctx context.Context, datasetID, userID string) bool {
 	if s.accessibleFunc != nil {
 		return s.accessibleFunc(datasetID, userID)
 	}
-	return s.kbDAO.Accessible(datasetID, userID)
+	return s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID)
 }
 
-func (s *ChunkService) getKnowledgebaseByID(datasetID string) (*entity.Knowledgebase, error) {
+func (s *ChunkService) getKnowledgebaseByID(ctx context.Context, datasetID string) (*entity.Knowledgebase, error) {
 	if s.getKnowledgebaseByIDFunc != nil {
 		return s.getKnowledgebaseByIDFunc(datasetID)
 	}
-	return s.kbDAO.GetByID(datasetID)
+	return s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 }
 
 func (s *ChunkService) getDocumentsByIDs(ctx context.Context, docIDs []string) ([]*entity.Document, error) {
@@ -703,14 +703,14 @@ func (s *ChunkService) getDocumentsByIDs(ctx context.Context, docIDs []string) (
 }
 
 func (s *ChunkService) Parse(ctx context.Context, userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
-	if !s.accessible(datasetID, userID) {
+	if !s.accessible(ctx, datasetID, userID) {
 		return nil, common.CodeOperatingError, fmt.Errorf("you don't own the dataset %s", datasetID)
 	}
 	if req == nil || len(req.DocumentIDs) == 0 {
 		return nil, common.CodeDataError, fmt.Errorf("`document_ids` is required")
 	}
 
-	kb, err := s.getKnowledgebaseByID(datasetID)
+	kb, err := s.getKnowledgebaseByID(ctx, datasetID)
 	if err != nil || kb == nil {
 		return nil, common.CodeDataError, fmt.Errorf("dataset not found")
 	}
@@ -806,7 +806,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	}
 
 	// Get knowledge base to find tenant
-	kb, err := s.kbDAO.GetByID(doc.KbID)
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
 	if err != nil || kb == nil {
 		return nil, fmt.Errorf("knowledge base not found")
 	}
@@ -824,7 +824,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	}
 
 	// Get kbIDs for this tenant
-	kbIDs, err := s.kbDAO.GetKBIDsByTenantID(targetTenantID)
+	kbIDs, err := s.kbDAO.GetKBIDsByTenantID(ctx, dao.DB, targetTenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get kb ids: %w", err)
 	}
@@ -1024,7 +1024,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 	// Find the tenant that owns this dataset
 	var targetTenantID string
 	for _, tenant := range tenants {
-		kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenant.TenantID)
+		kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, tenant.TenantID)
 		if err == nil && kb != nil {
 			targetTenantID = tenant.TenantID
 			break
@@ -1081,7 +1081,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	// Find the tenant that owns this dataset
 	var targetTenantID string
 	for _, tenant := range tenants {
-		kb, err := s.kbDAO.GetByIDAndTenantID(req.DatasetID, tenant.TenantID)
+		kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, req.DatasetID, tenant.TenantID)
 		if err == nil && kb != nil {
 			targetTenantID = tenant.TenantID
 			break
@@ -1227,7 +1227,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 	// Find the tenant that owns this document
 	var targetTenantID string
 	for _, tenant := range tenants {
-		kb, err := s.kbDAO.GetByIDAndTenantID(doc.KbID, tenant.TenantID)
+		kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, doc.KbID, tenant.TenantID)
 		if err == nil && kb != nil {
 			targetTenantID = tenant.TenantID
 			break
@@ -1280,11 +1280,11 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if req == nil {
 		return nil, addChunkError{code: common.CodeDataError, message: "invalid request payload"}
 	}
-	if !s.accessible(req.DatasetID, userID) {
+	if !s.accessible(ctx, req.DatasetID, userID) {
 		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
 	}
 
-	kb, err := s.getKnowledgebaseByID(req.DatasetID)
+	kb, err := s.getKnowledgebaseByID(ctx, req.DatasetID)
 	if err != nil || kb == nil {
 		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
 	}
@@ -1371,7 +1371,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		chunkData["doc_type_kwd"] = "image"
 	}
 
-	embeddingModel, err := s.getEmbeddingModel(kb.TenantID, kb.EmbdID)
+	embeddingModel, err := s.getEmbeddingModel(ctx, kb.TenantID, kb.EmbdID)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("get embedding model: %v", err)}
 	}
@@ -1561,11 +1561,11 @@ func (s *ChunkService) numTokens(text string) int {
 	return tokenizer.NumTokensFromString(text)
 }
 
-func (s *ChunkService) getEmbeddingModel(tenantID, embdID string) (*models.EmbeddingModel, error) {
+func (s *ChunkService) getEmbeddingModel(ctx context.Context, tenantID, embdID string) (*models.EmbeddingModel, error) {
 	if s.getEmbeddingModelFunc != nil {
 		return s.getEmbeddingModelFunc(tenantID, embdID)
 	}
-	return service.NewModelProviderService().GetEmbeddingModel(tenantID, embdID)
+	return service.NewModelProviderService().GetEmbeddingModel(ctx, tenantID, embdID)
 }
 
 func (s *ChunkService) incrementChunkStats(docID, kbID string, tokenNum, chunkNum int64, duration float64) error {

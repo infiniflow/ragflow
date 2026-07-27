@@ -228,7 +228,7 @@ func TestImageUploadDecorator_EndToEnd(t *testing.T) {
 			{"content_with_weight": "a cropped figure", "image": "data:image/png;base64," + pngBase64},
 		},
 	}
-	out, err := decorated.Invoke(context.Background(), inputs)
+	out, err := decorated.Invoke(context.Background(), nil, inputs)
 	if err != nil {
 		t.Fatalf("decorated Invoke: %v", err)
 	}

@@ -94,7 +94,7 @@ func CommitFolderResolver(h *FileCommitHandler, entityType, urlParam string) gin
 }
 
 func (h *FileCommitHandler) resolveDatasetFolderID(ctx context.Context, datasetID string) (string, error) {
-	kb, err := h.kbDAO.GetByID(datasetID)
+	kb, err := h.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		return "", err
 	}

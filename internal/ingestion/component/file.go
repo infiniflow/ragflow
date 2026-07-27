@@ -46,6 +46,8 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/storage"
+
+	"gorm.io/gorm"
 )
 
 const ComponentNameFile = "File"
@@ -128,7 +130,7 @@ func (c *FileComponent) Outputs() map[string]string {
 //     the document name and emit metadata only.
 //  2. doc_id is empty — pull the first file descriptor out of
 //     `file` and use its `name`/`id` directly.
-func (c *FileComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *FileComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// Parse the wire input through the schema type so the
 	// validation errors match the package convention.
 	in, err := parseFileInputs(ctx, inputs)

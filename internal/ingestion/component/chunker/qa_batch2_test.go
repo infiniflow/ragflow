@@ -30,7 +30,7 @@ func qaInvoke(t *testing.T, inputs map[string]any) []map[string]any {
 	if err != nil {
 		t.Fatalf("NewQAChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), inputs)
+	out, err := c.Invoke(context.Background(), nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

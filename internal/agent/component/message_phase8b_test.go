@@ -51,7 +51,7 @@ func TestMessage_OutputFormatParam(t *testing.T) {
 	state := canvas.NewCanvasState("r1", "t1")
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{"text": "hello", "stream": false})
+	out, err := c.Invoke(ctx, nil, map[string]any{"text": "hello", "stream": false})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -71,7 +71,7 @@ func TestMessage_OutputFormatInputOverride(t *testing.T) {
 	state := canvas.NewCanvasState("r1", "t1")
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"text":          "hi",
 		"output_format": "plain",
 	})
@@ -97,7 +97,7 @@ func TestMessage_DownloadsExtraction(t *testing.T) {
 		"mime_type": "text/csv",
 		"url":       "/dl/d-1",
 	}
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"text":   "see attachment",
 		"stream": false,
 		"attach": dl,
@@ -127,7 +127,7 @@ func TestMessage_DownloadJSONStringSuppressesContent(t *testing.T) {
 	ctx := withStateForTest(context.Background(), state)
 	downloadJSON := `{"doc_id":"d-1","filename":"report.md","mime_type":"text/markdown","url":"/api/v1/agents/attachments/d-1/download","include_download_info_in_content":true}`
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"text":   downloadJSON,
 		"stream": false,
 	})
@@ -161,7 +161,7 @@ func TestMessage_AutoPlay_NoEngine(t *testing.T) {
 	state := canvas.NewCanvasState("r1", "t1")
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{"text": "hi", "stream": false})
+	out, err := c.Invoke(ctx, nil, map[string]any{"text": "hi", "stream": false})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestMessage_AutoPlay_Success(t *testing.T) {
 	state := canvas.NewCanvasState("r1", "t1")
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{"text": "hi", "stream": false})
+	out, err := c.Invoke(ctx, nil, map[string]any{"text": "hi", "stream": false})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestMessage_MemorySave_NoService(t *testing.T) {
 	state.Sys["query"] = "what?"
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"text":        "hi",
 		"stream":      false,
 		"memory_save": true,
@@ -259,7 +259,7 @@ func TestMessage_MemorySave_Success(t *testing.T) {
 	state.Sys["query"] = "what?"
 	ctx := withStateForTest(context.Background(), state)
 
-	_, err := c.Invoke(ctx, map[string]any{
+	_, err := c.Invoke(ctx, nil, map[string]any{
 		"text":        "hi",
 		"stream":      false,
 		"memory_save": true,
@@ -308,7 +308,7 @@ func TestMessage_MemorySave_FromDSLParams(t *testing.T) {
 
 	// Inputs simulate what the pipeline actually provides: only upstream
 	// outputs, NO memory_ids or memory_save keys.
-	_, err := c.Invoke(ctx, map[string]any{
+	_, err := c.Invoke(ctx, nil, map[string]any{
 		"text":   "hi",
 		"stream": false,
 	})
@@ -345,7 +345,7 @@ func TestMessage_MemorySave_UserIDVariable(t *testing.T) {
 	state.SetVar("begin", "user_id", "resolved-user-123")
 	ctx := withStateForTest(context.Background(), state)
 
-	_, err := c.Invoke(ctx, map[string]any{
+	_, err := c.Invoke(ctx, nil, map[string]any{
 		"text":        "hi",
 		"stream":      false,
 		"memory_save": true,
@@ -378,7 +378,7 @@ func TestMessage_MemorySave_UserIDLiteral(t *testing.T) {
 	state.Sys["query"] = "hello?"
 	ctx := withStateForTest(context.Background(), state)
 
-	_, err := c.Invoke(ctx, map[string]any{
+	_, err := c.Invoke(ctx, nil, map[string]any{
 		"text":        "hi",
 		"stream":      false,
 		"memory_save": true,

@@ -59,11 +59,11 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		if doc == nil {
 			return common.CodeDataError, fmt.Errorf("document not found")
 		}
-		kb, err := s.kbDAO.GetByID(doc.KbID)
+		kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
 		if err != nil {
 			return common.CodeDataError, fmt.Errorf("dataset not found")
 		}
-		if !s.kbDAO.Accessible(kb.ID, userID) {
+		if !s.kbDAO.Accessible(ctx, dao.DB, kb.ID, userID) {
 			return common.CodeAuthenticationError, fmt.Errorf("no authorization")
 		}
 		validated = append(validated, validatedDoc{doc, kb})

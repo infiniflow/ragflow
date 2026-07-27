@@ -356,12 +356,12 @@ type CreateChunkStoreResponse struct {
 }
 
 // CreateChunkStore creates a chunk store in the document engine for a knowledge base
-func (s *TenantService) CreateChunkStore(req *CreateDatasetTableRequest) (*CreateChunkStoreResponse, common.ErrorCode, error) {
+func (s *TenantService) CreateChunkStore(ctx context.Context, req *CreateDatasetTableRequest) (*CreateChunkStoreResponse, common.ErrorCode, error) {
 	if req == nil {
 		return nil, common.CodeDataError, fmt.Errorf("request is required")
 	}
 	// Get KB to find tenant_id for building table name
-	kb, err := s.kbDAO.GetByID(req.KBID)
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, req.KBID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("knowledge base not found: %s", req.KBID)
@@ -380,7 +380,7 @@ func (s *TenantService) CreateChunkStore(req *CreateDatasetTableRequest) (*Creat
 
 	// Call document engine to create table
 	// Full table name will be built as "{tableName}_{kb_id}"
-	err = s.docEngine.CreateChunkStore(context.Background(), tableName, req.KBID, vecSize, req.ParserID)
+	err = s.docEngine.CreateChunkStore(ctx, tableName, req.KBID, vecSize, req.ParserID)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create dataset: %w", err)
 	}
@@ -393,9 +393,9 @@ func (s *TenantService) CreateChunkStore(req *CreateDatasetTableRequest) (*Creat
 }
 
 // DeleteChunkStore deletes the chunk store in the document engine for a knowledge base
-func (s *TenantService) DeleteChunkStore(kbID string) (common.ErrorCode, error) {
+func (s *TenantService) DeleteChunkStore(ctx context.Context, kbID string) (common.ErrorCode, error) {
 	// Get KB to find tenant_id for building table name
-	kb, err := s.kbDAO.GetByID(kbID)
+	kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return common.CodeDataError, fmt.Errorf("knowledge base not found: %s", kbID)
@@ -404,7 +404,7 @@ func (s *TenantService) DeleteChunkStore(kbID string) (common.ErrorCode, error) 
 	}
 
 	// Call document engine to delete table
-	err = s.docEngine.DropChunkStore(context.Background(), fmt.Sprintf("ragflow_%s", kb.TenantID), kbID)
+	err = s.docEngine.DropChunkStore(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), kbID)
 	if err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to delete table: %w", err)
 	}

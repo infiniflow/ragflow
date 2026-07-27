@@ -74,7 +74,9 @@ func TestDatasetServiceRenameTagSuccess(t *testing.T) {
 	insertRenameTagKB(t, kbID, "user-1", string(entity.TenantPermissionMe))
 
 	docEngine := &renameTagMockEngine{}
-	result, code, err := testDatasetServiceForRenameTag(t, docEngine).RenameTag(kbInput, "user-1", "old-tag ", "new-tag")
+	ctx := t.Context()
+
+	result, code, err := testDatasetServiceForRenameTag(t, docEngine).RenameTag(ctx, kbInput, "user-1", "old-tag ", "new-tag")
 	if err != nil {
 		t.Fatalf("RenameTag failed: %v", err)
 	}
@@ -120,7 +122,9 @@ func TestDatasetServiceRenameTagUnauthorized(t *testing.T) {
 	kbID := strings.ReplaceAll(kbInput, "-", "")
 	insertRenameTagKB(t, kbID, "tenant-9", string(entity.TenantPermissionMe))
 
-	_, code, err := testDatasetServiceForRenameTag(t, &renameTagMockEngine{}).RenameTag(kbInput, "user-1", "old", "new")
+	ctx := t.Context()
+
+	_, code, err := testDatasetServiceForRenameTag(t, &renameTagMockEngine{}).RenameTag(ctx, kbInput, "user-1", "old", "new")
 	if err == nil {
 		t.Fatal("expected unauthorized error")
 	}
@@ -141,7 +145,9 @@ func TestDatasetServiceRenameTagUpdateError(t *testing.T) {
 	insertRenameTagKB(t, kbID, "user-1", string(entity.TenantPermissionMe))
 
 	docEngine := &renameTagMockEngine{updateErr: errors.New("boom")}
-	_, code, err := testDatasetServiceForRenameTag(t, docEngine).RenameTag(kbInput, "user-1", "old", "new")
+	ctx := t.Context()
+
+	_, code, err := testDatasetServiceForRenameTag(t, docEngine).RenameTag(ctx, kbInput, "user-1", "old", "new")
 	if err == nil {
 		t.Fatal("expected update error")
 	}

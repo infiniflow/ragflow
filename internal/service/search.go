@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -349,7 +350,7 @@ type SearchCompletionPlan struct {
 	Options    AskStreamOptions
 }
 
-func (s *SearchService) PrepareCompletion(userID, searchID string, req *SearchCompletionsRequest) (*SearchCompletionPlan, common.ErrorCode, error) {
+func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID string, req *SearchCompletionsRequest) (*SearchCompletionPlan, common.ErrorCode, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return nil, common.CodeBadRequest, fmt.Errorf("user id is required")
@@ -389,7 +390,7 @@ func (s *SearchService) PrepareCompletion(userID, searchID string, req *SearchCo
 	}
 
 	for _, datasetID := range datasetIDs {
-		accessible = s.datasetDAO.Accessible(datasetID, userID)
+		accessible = s.datasetDAO.Accessible(ctx, dao.DB, datasetID, userID)
 		if !accessible {
 			return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization for dataset %s", datasetID)
 		}

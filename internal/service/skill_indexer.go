@@ -922,7 +922,7 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(tenantID, embdID)
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
@@ -960,7 +960,7 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 	}
 
 	common.Info(fmt.Sprintf("Getting embedding model for %s", embdID))
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(tenantID, embdID)
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to get embedding model: %v", err), err)
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
@@ -1018,7 +1018,7 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 		return 0, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(tenantID, embdID)
+	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get embedding model: %w", err)
 	}

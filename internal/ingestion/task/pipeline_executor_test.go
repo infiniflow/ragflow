@@ -432,7 +432,7 @@ func (r *recordingProgressSink) OnComponentProgress(ctx context.Context, ev pipe
 
 type sinkPassthroughStage struct{}
 
-func (sinkPassthroughStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+func (sinkPassthroughStage) Invoke(_ context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	return inputs, nil
 }
 

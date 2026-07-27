@@ -62,7 +62,7 @@ func (e *memoryMessageDocEngine) UpdateChunks(ctx context.Context, condition map
 	return nil
 }
 
-func (e *memoryMessageDocEngine) FilterDocIdsByMetaPushdown(_ context.Context, _ []string, _ []map[string]interface{}, _ string) []string {
+func (e *memoryMessageDocEngine) FilterDocIdsByMetaPushdown(_ context.Context, _ *gorm.DB, _ []string, _ []map[string]interface{}, _ string) []string {
 	return nil
 }
 

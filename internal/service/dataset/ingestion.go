@@ -14,11 +14,11 @@ func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID, use
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
 	}
-	if !d.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("No authorization.")
 	}
 
-	kb, err := d.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("Invalid Dataset ID '%s'", datasetID)
@@ -39,11 +39,11 @@ func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID, use
 	}, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) ListIngestionLogs(datasetID, userID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, logType, keywords string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, logType, keywords string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
 	}
-	if !d.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("No authorization.")
 	}
 
@@ -89,14 +89,14 @@ func (d *DatasetService) ListIngestionLogs(datasetID, userID string, page, pageS
 	}, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) GetIngestionLog(datasetID, userID, logID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, userID, logID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
 	}
 	if logID == "" {
 		return nil, common.CodeDataError, errors.New(`Lack of "Log ID"`)
 	}
-	if !d.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeDataError, errors.New("No authorization.")
 	}
 

@@ -23,6 +23,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
+
+	"gorm.io/gorm"
 )
 
 // DocumentStorageRef is the resolved backing storage location for a document.
@@ -81,23 +83,23 @@ func resolveStorage() storage.Storage {
 // location. It is exported so downstream components can re-acquire the
 // source PDF without threading the raw bytes across the component
 // boundary.
-func ResolveDocumentStorage(ctx context.Context, docID string) (*DocumentStorageRef, error) {
+func ResolveDocumentStorage(ctx context.Context, db *gorm.DB, docID string) (*DocumentStorageRef, error) {
 	if ResolveDocumentStorageOverride != nil {
 		return ResolveDocumentStorageOverride(docID)
 	}
 
-	doc, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, docID)
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, docID)
 	if err != nil {
 		return nil, err
 	}
 	ref := &DocumentStorageRef{Name: documentNameOrID(doc)}
 
-	mappings, err := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, dao.DB, doc.ID)
+	mappings, err := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, doc.ID)
 	if err != nil {
 		return nil, err
 	}
 	if len(mappings) > 0 && mappings[0].FileID != nil && *mappings[0].FileID != "" {
-		file, err := dao.NewFileDAO().GetByID(ctx, dao.DB, *mappings[0].FileID)
+		file, err := dao.NewFileDAO().GetByID(ctx, db, *mappings[0].FileID)
 		if err != nil {
 			return nil, err
 		}

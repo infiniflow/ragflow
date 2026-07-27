@@ -198,7 +198,7 @@ func (fakeChatDocEngine) GetType() string {
 	return "fake"
 }
 func (fakeChatDocEngine) SupportsPageRank() bool { return false }
-func (fakeChatDocEngine) FilterDocIdsByMetaPushdown(context.Context, []string, []map[string]interface{}, string) []string {
+func (fakeChatDocEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []string, []map[string]interface{}, string) []string {
 	return nil
 }
 
@@ -609,7 +609,7 @@ func TestDeleteDocumentFull_Basic(t *testing.T) {
 	}
 
 	// Verify KB counters decremented
-	kb, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("kb not found: %v", err)
 	}
@@ -917,7 +917,7 @@ func TestDeleteDocuments_DeleteAll(t *testing.T) {
 	}
 
 	// KB counters: doc_num 3→0, token_num 100→0, chunk_num 50→0
-	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	kb, _ := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if kb.DocNum != 0 {
 		t.Fatalf("doc_num: expected 0, got %d", kb.DocNum)
 	}
@@ -1077,7 +1077,7 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
 	ctx := t.Context()
 
-	kb, err := svc.kbDAO.GetByID("kb-1")
+	kb, err := svc.kbDAO.GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("load kb: %v", err)
 	}
@@ -1407,7 +1407,7 @@ func TestDeleteDocRecordWithCounters_Success(t *testing.T) {
 	}
 
 	// Counters decremented
-	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	kb, _ := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if kb.DocNum != 2 {
 		t.Fatalf("doc_num: expected 2, got %d", kb.DocNum)
 	}
@@ -1441,7 +1441,7 @@ func TestDeleteDocRecordWithCounters_DocAlreadyDeleted(t *testing.T) {
 	}
 
 	// KB counters should be decremented exactly once: 1→0 for doc_num
-	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	kb, _ := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if kb.DocNum != 0 {
 		t.Fatalf("doc_num: expected 0 (decremented once), got %d", kb.DocNum)
 	}
@@ -1752,7 +1752,7 @@ func TestUpdateDatasetDocumentParserIDResetsForReparse(t *testing.T) {
 	if doc.TokenNum != 0 || doc.ChunkNum != 0 || doc.Progress != 0 {
 		t.Fatalf("doc counters/progress = token:%d chunk:%d progress:%f, want zero", doc.TokenNum, doc.ChunkNum, doc.Progress)
 	}
-	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	kb, _ := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
 		t.Fatalf("kb counters = token:%d chunk:%d, want zero", kb.TokenNum, kb.ChunkNum)
 	}
@@ -1783,7 +1783,7 @@ func TestResetDocumentForReparseSkipsSecondCounterDecrement(t *testing.T) {
 	if doc.TokenNum != 0 || doc.ChunkNum != 0 {
 		t.Fatalf("doc counters = token:%d chunk:%d, want zero", doc.TokenNum, doc.ChunkNum)
 	}
-	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	kb, _ := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
 		t.Fatalf("kb counters = token:%d chunk:%d, want zero after duplicate reset", kb.TokenNum, kb.ChunkNum)
 	}
@@ -1814,7 +1814,7 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	if updatedDoc.TokenNum != 0 || updatedDoc.ChunkNum != 0 {
 		t.Fatalf("doc counters = token:%d chunk:%d, want zero", updatedDoc.TokenNum, updatedDoc.ChunkNum)
 	}
-	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	kb, _ := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
 		t.Fatalf("kb counters = token:%d chunk:%d, want zero", kb.TokenNum, kb.ChunkNum)
 	}
@@ -1855,7 +1855,7 @@ func TestClearDocumentParseResultsIsIdempotentForStaleDocSnapshot(t *testing.T) 
 	if doc.TokenNum != 0 || doc.ChunkNum != 0 {
 		t.Fatalf("doc counters = token:%d chunk:%d, want zero", doc.TokenNum, doc.ChunkNum)
 	}
-	kb, _ := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	kb, _ := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if kb.TokenNum != 0 || kb.ChunkNum != 0 {
 		t.Fatalf("kb counters = token:%d chunk:%d, want zero after duplicate prepare", kb.TokenNum, kb.ChunkNum)
 	}
@@ -2786,7 +2786,7 @@ func TestStartParseDocuments_FailsBeforeClearing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get doc: %v", err)
 	}
-	kb, err := dao.NewKnowledgebaseDAO().GetByID("kb-1")
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get kb: %v", err)
 	}

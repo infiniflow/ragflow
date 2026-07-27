@@ -29,7 +29,7 @@ type datasetPagerankUpdate struct {
 func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	tenantID = strings.TrimSpace(tenantID)
-	if _, err := d.kbDAO.GetByID(datasetID); err != nil {
+	if _, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("dataset not found")
 		}
