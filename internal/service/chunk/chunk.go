@@ -244,7 +244,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 			// If no chatID from search_config, or chatModel not found, use tenant default
 			if chatModelForFilter == nil {
 				tenantSvc := service.NewTenantService()
-				modelName, err := tenantSvc.GetDefaultModelName(tenantIDs[0], entity.ModelTypeChat)
+				modelName, err := tenantSvc.GetDefaultModelName(ctx, tenantIDs[0], entity.ModelTypeChat)
 				if err != nil || modelName == "" {
 					common.Warn("Failed to get tenant default chat model name for meta_data_filter", zap.Error(err))
 				} else {
@@ -290,7 +290,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		tenantSvc := service.NewTenantService()
 		modelProviderSvc := service.NewModelProviderService()
 		var err error
-		llmModelName, err = tenantSvc.GetDefaultModelName(tenantIDs[0], entity.ModelTypeChat)
+		llmModelName, err = tenantSvc.GetDefaultModelName(ctx, tenantIDs[0], entity.ModelTypeChat)
 		if err != nil || llmModelName == "" {
 			common.Warn("Failed to get default chat model name for LLM transformations", zap.Error(err))
 		} else {

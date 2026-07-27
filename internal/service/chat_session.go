@@ -1546,7 +1546,7 @@ func (s *ChatSessionService) ChatCompletions(
 		dialog.LLMID = llmID
 		dialog.LLMSetting = genConfig
 	} else if dialog.LLMID == "" {
-		tenant, err := dao.NewTenantDAO().GetByID(dialog.TenantID)
+		tenant, err := dao.NewTenantDAO().GetByID(ctx, dao.DB, dialog.TenantID)
 		if err != nil || tenant.LLMID == "" {
 			return fail(errors.New("no default chat model for tenant"))
 		}

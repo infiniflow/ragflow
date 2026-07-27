@@ -33,7 +33,7 @@ func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID 
 		return nil, fmt.Errorf("model provider service not configured")
 	}
 	searchConfig := relatedQuestionsSearchConfig(ctx, searchID, searchSvc)
-	modelID := relatedQuestionsModelID(tenantID, searchConfig, tenantSvc)
+	modelID := relatedQuestionsModelID(ctx, tenantID, searchConfig, tenantSvc)
 	prompt, err := LoadPrompt("related_question")
 	if err != nil {
 		return nil, err
@@ -72,12 +72,12 @@ func relatedQuestionsSearchConfigFromDetail(detail map[string]interface{}) map[s
 	return map[string]interface{}{}
 }
 
-func relatedQuestionsModelID(tenantID string, searchConfig map[string]interface{}, tenantSvc *TenantService) string {
+func relatedQuestionsModelID(ctx context.Context, tenantID string, searchConfig map[string]interface{}, tenantSvc *TenantService) string {
 	modelID, _ := searchConfig["chat_id"].(string)
 	if modelID != "" || tenantSvc == nil {
 		return modelID
 	}
-	defaultModel, err := tenantSvc.GetDefaultModelName(tenantID, entity.ModelTypeChat)
+	defaultModel, err := tenantSvc.GetDefaultModelName(ctx, tenantID, entity.ModelTypeChat)
 	if err == nil {
 		modelID = defaultModel
 	}

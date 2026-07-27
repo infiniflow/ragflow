@@ -896,7 +896,7 @@ func (s *UserService) SetTenantInfo(ctx context.Context, userID string, req *Set
 	updates = tenantLLMService.EnsureTenantModelIDForParams(tenantID, updates)
 
 	if len(updates) > 0 {
-		if err := tenantDAO.Update(tenantID, updates); err != nil {
+		if err := tenantDAO.Update(ctx, dao.DB, tenantID, updates); err != nil {
 			return common.CodeExceptionError, err
 		}
 	}

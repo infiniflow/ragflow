@@ -47,12 +47,15 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 // Video dispatch: IMAGE2TEXT vision chat ---
 
 func maybeDispatchVideo(
 	ctx context.Context,
+	db *gorm.DB,
 	fileType utility.FileType,
 	filename string,
 	binary []byte,
@@ -69,14 +72,14 @@ func maybeDispatchVideo(
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	if tenantID == "" {
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: video requires tenant_id")
+			fmt.Errorf("parser: video requires tenant_id")
 	}
 
 	// Resolve the tenant's IMAGE2TEXT model.
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(tenantID, entity.ModelTypeImage2Text)
+	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 	if err != nil {
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: video image2text model: %w", err)
+			fmt.Errorf("parser: video image2text model: %w", err)
 	}
 
 	videoPrompt, _ := setup["prompt"].(string)
@@ -98,7 +101,7 @@ func maybeDispatchVideo(
 	resp, err := driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
 	if err != nil {
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: video describe: %w", err)
+			fmt.Errorf("parser: video describe: %w", err)
 	}
 	txt := ""
 	if resp != nil && resp.Answer != nil {
@@ -126,6 +129,7 @@ func maybeDispatchVideo(
 
 func maybeDispatchImage(
 	ctx context.Context,
+	db *gorm.DB,
 	fileType utility.FileType,
 	filename string,
 	binary []byte,
@@ -142,7 +146,7 @@ func maybeDispatchImage(
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	if tenantID == "" {
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: image requires tenant_id")
+			fmt.Errorf("parser: image requires tenant_id")
 	}
 
 	// --- Phase 1: OCR ---
@@ -196,14 +200,14 @@ func maybeDispatchImage(
 	}
 
 	// Short OCR text (or no text): supplement with VLM describe.
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(tenantID, entity.ModelTypeImage2Text)
+	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 	if err != nil {
-		// If VLM is unavailable but we have OCR text, return it.
+		// If VLM is unavailable, but we have OCR text, return it.
 		if ocrText != "" {
 			return imageDispatchResult(ocrText, dataURI), true, nil
 		}
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: picture image2text model: %w", err)
+			fmt.Errorf("parser: picture image2text model: %w", err)
 	}
 
 	prompt := "Describe this image in detail."
@@ -227,7 +231,7 @@ func maybeDispatchImage(
 			return imageDispatchResult(ocrText, dataURI), true, nil
 		}
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: picture describe: %w", err)
+			fmt.Errorf("parser: picture describe: %w", err)
 	}
 	vlmText := ""
 	if resp != nil && resp.Answer != nil {
@@ -271,6 +275,7 @@ func imageDispatchResult(text, dataURI string) parserDispatchResult {
 
 func maybeDispatchAudio(
 	ctx context.Context,
+	db *gorm.DB,
 	fileType utility.FileType,
 	filename string,
 	binary []byte,
@@ -287,19 +292,19 @@ func maybeDispatchAudio(
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	if tenantID == "" {
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: audio requires tenant_id")
+			fmt.Errorf("parser: audio requires tenant_id")
 	}
 
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(tenantID, entity.ModelTypeSpeech2Text)
+	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
 	if err != nil {
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: audio speech2text model: %w", err)
+			fmt.Errorf("parser: audio speech2text model: %w", err)
 	}
 
 	tmpFile, err := writeTempAudioFile(filename, binary)
 	if err != nil {
 		return parserDispatchResult{}, true,
-			fmt.Errorf("Parser: audio temp file: %w", err)
+			fmt.Errorf("parser: audio temp file: %w", err)
 	}
 	defer os.Remove(tmpFile)
 

@@ -29,7 +29,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(name), entity.DatasetNameLimit)
 	}
 
-	tenant, err := d.tenantDAO.GetByID(tenantID)
+	tenant, err := d.tenantDAO.GetByID(ctx, dao.DB, tenantID)
 	if err != nil || tenant == nil {
 		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
@@ -365,7 +365,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 		}
 	}
 	if len(tenantIDs) == 0 {
-		joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(userID)
+		joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
 		if err != nil {
 			return nil, 0, common.CodeServerError, errors.New("database operation failed")
 		}
@@ -402,8 +402,8 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	return data, total, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) ListDatasetFilters(userID string) (map[string]interface{}, common.ErrorCode, error) {
-	joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(userID)
+func (d *DatasetService) ListDatasetFilters(ctx context.Context, userID string) (map[string]interface{}, common.ErrorCode, error) {
+	joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
