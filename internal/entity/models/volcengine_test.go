@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -109,5 +110,69 @@ func TestVolcEngineListModelsRequiresModelsSuffix(t *testing.T) {
 	_, err := model.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err == nil || !strings.Contains(err.Error(), "models URL suffix is not configured") {
 		t.Fatalf("expected missing models suffix error, got %v", err)
+	}
+}
+
+func TestVolcEngineChatStreamSupportsMaxEffortAndUsage(t *testing.T) {
+	ctx := t.Context()
+	srv := newVolcEngineServer(t, func(t *testing.T, r *http.Request, w http.ResponseWriter) {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if body["reasoning_effort"] != "max" {
+			t.Errorf("reasoning_effort=%v, want max", body["reasoning_effort"])
+		}
+		streamOptions, ok := body["stream_options"].(map[string]interface{})
+		if !ok || streamOptions["include_usage"] != true {
+			t.Errorf("stream_options=%#v, want include_usage=true", body["stream_options"])
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"answer\"},\"finish_reason\":\"stop\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":5,\"total_tokens\":8}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	thinking := true
+	effort := "max"
+	config := &ChatConfig{Thinking: &thinking, Effort: &effort}
+	if err := newVolcEngineForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"doubao-seed-2-0-pro-260215",
+		[]Message{{Role: "user", Content: "hello"}},
+		&APIConfig{ApiKey: &apiKey},
+		config,
+		nil,
+		func(*string, *string) error { return nil },
+	); err != nil {
+		t.Fatalf("ChatStreamlyWithSender: %v", err)
+	}
+	if config.UsageResult == nil || config.UsageResult.TotalTokens != 8 {
+		t.Fatalf("UsageResult=%#v, want total tokens 8", config.UsageResult)
+	}
+}
+
+func TestVolcEngineChatStreamRejectsTruncatedResponse(t *testing.T) {
+	ctx := t.Context()
+	srv := newVolcEngineServer(t, func(t *testing.T, _ *http.Request, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n")
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	err := newVolcEngineForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"doubao-seed-2-0-pro-260215",
+		[]Message{{Role: "user", Content: "hello"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{},
+		nil,
+		func(*string, *string) error { return nil },
+	)
+	if err == nil || !strings.Contains(err.Error(), "stream ended before [DONE] or finish_reason") {
+		t.Fatalf("error=%v, want truncated stream error", err)
 	}
 }

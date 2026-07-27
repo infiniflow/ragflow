@@ -17,6 +17,7 @@ package component
 
 import (
 	"context"
+	"ragflow/internal/dao"
 	"strings"
 	"sync"
 	"testing"
@@ -25,6 +26,8 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 // imagePromptCaptureDriver embeds ModelDriver so it satisfies the interface
@@ -79,7 +82,7 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 	defer func() { resolveTenantModelByType = origResolver }()
 
 	drv := &imagePromptCaptureDriver{}
-	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return drv, "img-model", &modelModule.APIConfig{}, 0, nil
 	}
 
@@ -91,8 +94,10 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 	setups["image"]["prompt"] = "legacy prompt"
 	setups["image"]["system_prompt"] = "自定义视觉提示"
 
+	ctx := t.Context()
 	res, dispatched, err := maybeDispatchImage(
-		context.Background(),
+		ctx,
+		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
 		[]byte("not-a-real-image"),
@@ -139,13 +144,15 @@ func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
 	defer func() { resolveTenantModelByType = origResolver }()
 
 	drv := &imagePromptCaptureDriver{}
-	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return drv, "img-model", &modelModule.APIConfig{}, 0, nil
 	}
 
 	setups := defaultSetups()
+	ctx := t.Context()
 	res, dispatched, err := maybeDispatchImage(
-		context.Background(),
+		ctx,
+		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
 		[]byte("not-a-real-image"),
@@ -187,14 +194,16 @@ func TestMaybeDispatchImage_HardcodesJSONOutput(t *testing.T) {
 	defer func() { resolveTenantModelByType = origResolver }()
 
 	drv := &imagePromptCaptureDriver{}
-	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return drv, "img-model", &modelModule.APIConfig{}, 0, nil
 	}
 
 	setups := defaultSetups()
 	setups["image"]["output_format"] = "text" // legacy/override; must be ignored
+	ctx := t.Context()
 	res, _, err := maybeDispatchImage(
-		context.Background(),
+		ctx,
+		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
 		[]byte("not-a-real-image"),
@@ -235,15 +244,17 @@ func TestMaybeDispatchAudio_JSONCarriesTranscription(t *testing.T) {
 
 	const want = "hello world"
 	drv := &audioTranscribeDriver{transcription: want}
-	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return drv, "asr-model", &modelModule.APIConfig{}, 0, nil
 	}
 
 	setups := defaultSetups()
 	setups["audio"]["output_format"] = "json"
 
+	ctx := t.Context()
 	res, dispatched, err := maybeDispatchAudio(
-		context.Background(),
+		ctx,
+		dao.DB,
 		utility.FileTypeAURAL,
 		"test.mp3",
 		[]byte("fake-audio"),
@@ -279,15 +290,17 @@ func TestMaybeDispatchAudio_TextCarriesTranscription(t *testing.T) {
 
 	const want = "hello world"
 	drv := &audioTranscribeDriver{transcription: want}
-	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return drv, "asr-model", &modelModule.APIConfig{}, 0, nil
 	}
 
 	setups := defaultSetups()
 	setups["audio"]["output_format"] = "text"
 
+	ctx := t.Context()
 	res, dispatched, err := maybeDispatchAudio(
-		context.Background(),
+		ctx,
+		dao.DB,
 		utility.FileTypeAURAL,
 		"test.mp3",
 		[]byte("fake-audio"),
@@ -320,7 +333,7 @@ func TestMaybeDispatchMarkdownVision_EnhancesTables(t *testing.T) {
 	defer func() { resolveTenantModelByType = origResolver }()
 
 	drv := &imagePromptCaptureDriver{}
-	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return drv, "img-model", &modelModule.APIConfig{}, 0, nil
 	}
 
@@ -331,8 +344,10 @@ func TestMaybeDispatchMarkdownVision_EnhancesTables(t *testing.T) {
 		},
 	}
 
+	ctx := t.Context()
 	res, handled, err := maybeDispatchMarkdownVision(
-		context.Background(),
+		ctx,
+		dao.DB,
 		utility.FileTypeMarkdown,
 		dispatched,
 		map[string]any{"tenant_id": "t1"},

@@ -50,6 +50,37 @@ func (h *HuaweiCloudModel) Name() string {
 	return "huaweicloud"
 }
 
+// HuaweiCloudChatResponse captures the OpenAI-compatible fields consumed by RAGFlow.
+type HuaweiCloudChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Logprobs     any    `json:"logprobs"`
+		Message      struct {
+			Content          string           `json:"content"`
+			ReasoningContent string           `json:"reasoning_content"`
+			Role             string           `json:"role"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+	SystemFingerprint string `json:"system_fingerprint"`
+	Usage             struct {
+		CompletionTokens        int `json:"completion_tokens"`
+		PromptTokens            int `json:"prompt_tokens"`
+		TotalTokens             int `json:"total_tokens"`
+		CompletionTokensDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+		PromptTokensDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	} `json:"usage"`
+}
+
 func huaweiCloudRegion(api *APIConfig) string {
 	region := "default"
 	if api != nil && api.Region != nil && *api.Region != "" {
@@ -220,44 +251,44 @@ func (h *HuaweiCloudModel) ChatWithMessages(ctx context.Context, modelName strin
 		return nil, fmt.Errorf("Huawei Cloud chat API error: status %d, body: %s", rep.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result HuaweiCloudChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-	toolCalls := extractToolCalls(messageMap)
-	content, hasContent := messageMap["content"].(string)
-	if !hasContent && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	reasonContent := ""
-	if r, ok := messageMap["reasoning_content"].(string); ok {
-		reasonContent = r
+		choice := &result.Choices[0]
+		content := choice.Message.Content
+		if content == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("invalid content format")
+		}
+		reasonContent := choice.Message.ReasoningContent
+		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking && reasonContent == "" {
+			reasoning, answer := GetThinkingAndAnswer(chatConfig.ModelClass, &content)
+			if reasoning != nil {
+				reasonContent = *reasoning
+				content = *answer
+			}
+		}
 		if reasonContent != "" && reasonContent[0] == '\n' {
 			reasonContent = reasonContent[1:]
 		}
-	}
 
-	return &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}, nil
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &content,
+			ReasonContent: &reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 func (h *HuaweiCloudModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -329,6 +360,14 @@ func (h *HuaweiCloudModel) ChatStreamlyWithSender(ctx context.Context, modelName
 			return fmt.Errorf("huaweicloud: upstream stream error: %v", apiErr)
 		}
 
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
+		}
+
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
 			return nil
@@ -376,10 +415,27 @@ func (h *HuaweiCloudModel) ChatStreamlyWithSender(ctx context.Context, modelName
 }
 
 type huaweiCloudEmbeddingResponse struct {
+	ID   string `json:"id"`
 	Data []struct {
 		Embedding []float64 `json:"embedding"`
 		Index     *int      `json:"index"`
 	} `json:"data"`
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+type huaweiCloudRerankResponse struct {
+	ID      string `json:"id"`
+	Results []struct {
+		Index          int     `json:"index"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 func (h *HuaweiCloudModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
@@ -476,6 +532,10 @@ func (h *HuaweiCloudModel) Embed(ctx context.Context, modelName *string, texts [
 			return nil, fmt.Errorf("missing embedding index %d", i)
 		}
 	}
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "embedding")
 
 	return embeddings, nil
 }
@@ -541,12 +601,7 @@ func (h *HuaweiCloudModel) Rerank(ctx context.Context, modelName *string, query 
 		return nil, fmt.Errorf("Huawei Cloud rerank API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var parsed struct {
-		Results []struct {
-			Index          int     `json:"index"`
-			RelevanceScore float64 `json:"relevance_score"`
-		} `json:"results"`
-	}
+	var parsed huaweiCloudRerankResponse
 	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
@@ -569,6 +624,10 @@ func (h *HuaweiCloudModel) Rerank(ctx context.Context, modelName *string, query 
 			RelevanceScore: item.RelevanceScore,
 		})
 	}
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "rerank")
 
 	return result, nil
 }

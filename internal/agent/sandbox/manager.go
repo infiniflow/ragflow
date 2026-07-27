@@ -45,6 +45,8 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // ProviderManager is the Go equivalent of
@@ -145,7 +147,7 @@ type SystemSetting = entity.SystemSettings
 // *dao.SystemSettingsDAO directly) makes the manager unit-testable
 // without a real MySQL.
 type SettingsReader interface {
-	GetByName(name string) ([]entity.SystemSettings, error)
+	GetByName(ctx context.Context, db *gorm.DB, name string) ([]entity.SystemSettings, error)
 }
 
 // LoadFromSettings resolves the active provider from the admin-panel
@@ -164,14 +166,14 @@ type SettingsReader interface {
 // Subsequent calls are no-ops once a provider is loaded; use
 // Reset + ReloadFromSettings to pick up admin-panel changes.
 func (m *ProviderManager) LoadFromSettings(ctx context.Context) error {
-	return m.LoadFromSettingsWithReader(ctx, dao.NewSystemSettingsDAO())
+	return m.LoadFromSettingsWithReader(ctx, dao.DB, dao.NewSystemSettingsDAO())
 }
 
 // LoadFromSettingsWithReader is the testable seam for
 // LoadFromSettings. Production code calls LoadFromSettings (which
 // uses the real *dao.SystemSettingsDAO); tests inject a fake
 // SettingsReader.
-func (m *ProviderManager) LoadFromSettingsWithReader(ctx context.Context, r SettingsReader) error {
+func (m *ProviderManager) LoadFromSettingsWithReader(ctx context.Context, db *gorm.DB, r SettingsReader) error {
 	m.mu.Lock()
 	if m.loaded && m.provider != nil {
 		m.mu.Unlock()
@@ -179,7 +181,7 @@ func (m *ProviderManager) LoadFromSettingsWithReader(ctx context.Context, r Sett
 	}
 	m.mu.Unlock()
 
-	ptype, cfg, err := loadSettingsConfig(r)
+	ptype, cfg, err := loadSettingsConfig(ctx, db, r)
 	if err != nil {
 		// Soft fall back: settings missing / malformed / DB error
 		// → use env defaults. This keeps boot resilient when the
@@ -208,23 +210,23 @@ func (m *ProviderManager) LoadFromSettingsWithReader(ctx context.Context, r Sett
 // settings. Mirrors Python's `reload_provider()` in
 // `agent/sandbox/client.py` — call after the operator updates the
 // sandbox settings.
-func (m *ProviderManager) ReloadFromSettings(ctx context.Context) error {
-	return m.ReloadFromSettingsWithReader(ctx, dao.NewSystemSettingsDAO())
+func (m *ProviderManager) ReloadFromSettings(ctx context.Context, db *gorm.DB) error {
+	return m.ReloadFromSettingsWithReader(ctx, db, dao.NewSystemSettingsDAO())
 }
 
 // ReloadFromSettingsWithReader is the testable seam for
 // ReloadFromSettings.
-func (m *ProviderManager) ReloadFromSettingsWithReader(ctx context.Context, r SettingsReader) error {
+func (m *ProviderManager) ReloadFromSettingsWithReader(ctx context.Context, db *gorm.DB, r SettingsReader) error {
 	m.Reset()
-	return m.LoadFromSettingsWithReader(ctx, r)
+	return m.LoadFromSettingsWithReader(ctx, db, r)
 }
 
 // loadSettingsConfig reads `sandbox.provider_type` and the
 // matching `sandbox.{type}` JSON config from MySQL. Returns
 // (ProviderType, nil) when the settings table has no rows for
 // these keys (caller falls back to env).
-func loadSettingsConfig(r SettingsReader) (ProviderType, map[string]any, error) {
-	rows, err := r.GetByName("sandbox.provider_type")
+func loadSettingsConfig(ctx context.Context, db *gorm.DB, r SettingsReader) (ProviderType, map[string]any, error) {
+	rows, err := r.GetByName(ctx, db, "sandbox.provider_type")
 	if err != nil {
 		return "", nil, err
 	}
@@ -237,7 +239,7 @@ func loadSettingsConfig(r SettingsReader) (ProviderType, map[string]any, error) 
 		return "", nil, errSettingsNotConfigured
 	}
 
-	cfgRows, err := r.GetByName("sandbox." + string(ptype))
+	cfgRows, err := r.GetByName(ctx, db, "sandbox."+string(ptype))
 	if err != nil {
 		return ptype, nil, err
 	}

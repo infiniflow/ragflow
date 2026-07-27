@@ -349,7 +349,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 	// tenant_model row) — we leave the tenant_*_id fields nil and proceed.
 	modelProvider := NewModelProviderService()
 	if req.LLMID != "" && req.TenantLLMID == nil {
-		tenantLLMID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeChat, req.LLMID)
+		tenantLLMID, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeChat, req.LLMID)
 		if err != nil {
 			slog.Warn("CreateMemory: failed to resolve tenant LLM id", "tenant_id", tenantID, "llm_id", req.LLMID, "err", err)
 		} else if tenantLLMID != "" {
@@ -357,7 +357,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 		}
 	}
 	if req.EmbdID != "" && req.TenantEmbdID == nil {
-		tenantEmbdID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeEmbedding, req.EmbdID)
+		tenantEmbdID, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, req.EmbdID)
 		if err != nil {
 			slog.Warn("CreateMemory: failed to resolve tenant embedding id", "tenant_id", tenantID, "embd_id", req.EmbdID, "err", err)
 		} else if tenantEmbdID != "" {
@@ -497,7 +497,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 	if req.LLMID != nil {
 		updateDict["llm_id"] = *req.LLMID
 		if req.TenantLLMID == nil && *req.LLMID != "" {
-			resolved, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeChat, *req.LLMID)
+			resolved, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeChat, *req.LLMID)
 			if err != nil {
 				slog.Warn("UpdateMemory: failed to resolve tenant LLM id", "tenant_id", tenantID, "llm_id", *req.LLMID, "err", err)
 			} else if resolved != "" {
@@ -509,7 +509,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 	if req.EmbdID != nil {
 		updateDict["embd_id"] = *req.EmbdID
 		if req.TenantEmbdID == nil && *req.EmbdID != "" {
-			resolved, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeEmbedding, *req.EmbdID)
+			resolved, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, *req.EmbdID)
 			if err != nil {
 				slog.Warn("UpdateMemory: failed to resolve tenant embedding id", "tenant_id", tenantID, "embd_id", *req.EmbdID, "err", err)
 			} else if resolved != "" {
@@ -1291,7 +1291,7 @@ func memoryMessageTextExpr(question string, similarityThreshold float64) *engine
 }
 
 func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
-	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(memory.TenantID, entity.ModelTypeEmbedding, memory.EmbdID)
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(ctx, memory.TenantID, entity.ModelTypeEmbedding, memory.EmbdID)
 	if err != nil {
 		return nil, err
 	}
@@ -1444,7 +1444,7 @@ func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantI
 	// If tenantIDs is empty, get all tenants associated with the user
 	if len(tenantIDs) == 0 {
 		userTenantService := NewUserTenantService()
-		userTenants, err := userTenantService.GetUserTenantRelationByUserID(userID)
+		userTenants, err := userTenantService.GetUserTenantRelationByUserIDWithContext(ctx, userID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get user tenants: %w", err)
 		}
@@ -1470,8 +1470,8 @@ func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantI
 		}
 		memoryMap := map[string]interface{}{
 			"id":           resp.ID,
-			"llm_id":       resolveTenantModelDisplayName(ptrStringValue(resp.TenantLLMID), resp.LLMID, modelNameCache),
-			"embd_id":      resolveTenantModelDisplayName(ptrStringValue(resp.TenantEmbdID), resp.EmbdID, modelNameCache),
+			"llm_id":       ResolveTenantModelDisplayName(ptrStringValue(resp.TenantLLMID), resp.LLMID, modelNameCache),
+			"embd_id":      ResolveTenantModelDisplayName(ptrStringValue(resp.TenantEmbdID), resp.EmbdID, modelNameCache),
 			"name":         resp.Name,
 			"avatar":       resp.Avatar,
 			"tenant_id":    resp.TenantID,
@@ -1492,10 +1492,10 @@ func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantI
 	}, nil
 }
 
-// resolveTenantModelDisplayName turns a tenant_model ID into
+// ResolveTenantModelDisplayName turns a tenant_model ID into
 // modelName@instance@provider. rawModelID is the API-facing fallback
-// stored on memory.llm_id / memory.embd_id.
-func resolveTenantModelDisplayName(tenantModelID, rawModelID string, cache map[string]string) string {
+// stored on memory.llm_id / memory.embd_id / knowledgebase.embd_id.
+func ResolveTenantModelDisplayName(tenantModelID, rawModelID string, cache map[string]string) string {
 	tenantModelID = strings.TrimSpace(tenantModelID)
 	rawModelID = strings.TrimSpace(rawModelID)
 	if tenantModelID == "" || strings.Contains(tenantModelID, "@") {

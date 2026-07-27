@@ -162,7 +162,7 @@ func TestPipelineExecutor_Run_RealPDF_ProducesIndexedChunks(t *testing.T) {
 	}
 	templateBytes = disableTokenizerEmbeddingForTaskTemplate(t, templateBytes)
 	var templateDSL entity.JSONMap
-	if err := json.Unmarshal(templateBytes, &templateDSL); err != nil {
+	if err = json.Unmarshal(templateBytes, &templateDSL); err != nil {
 		t.Fatalf("unmarshal template dsl: %v", err)
 	}
 
@@ -184,10 +184,10 @@ func TestPipelineExecutor_Run_RealPDF_ProducesIndexedChunks(t *testing.T) {
 	objectPath := fmt.Sprintf("integration/task/%s/%s", docID, docName)
 
 	mustSeedTaskRealPipelineDocumentBytes(t, realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath, docName, ".pdf", "pdf", pdfBytes)
-	if err := realDB.Model(&entity.Document{}).Where("id = ?", docID).Update("pipeline_id", canvasID).Error; err != nil {
+	if err = realDB.Model(&entity.Document{}).Where("id = ?", docID).Update("pipeline_id", canvasID).Error; err != nil {
 		t.Fatalf("set document pipeline_id: %v", err)
 	}
-	if err := realDB.Create(&entity.UserCanvas{
+	if err = realDB.Create(&entity.UserCanvas{
 		ID:             canvasID,
 		UserID:         tenantID,
 		Permission:     "me",
@@ -227,9 +227,10 @@ func TestPipelineExecutor_Run_RealPDF_ProducesIndexedChunks(t *testing.T) {
 			inserted = append(inserted, deepCopyTaskChunks(chunks))
 			return nil, nil
 		}).
-		WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil })
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil })
 
-	if _, err := svc.Execute(context.Background()); err != nil {
+	ctx := t.Context()
+	if _, err = svc.Execute(ctx); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 
@@ -311,7 +312,8 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 		cleanupTaskRealPipelineDocument(realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath)
 	})
 
-	pipelineOut, err := pipe.Run(context.Background(), map[string]any{
+	ctx := t.Context()
+	pipelineOut, err := pipe.Run(ctx, map[string]any{
 		"doc_id": docID,
 	}, nil)
 	if err != nil {
@@ -345,7 +347,7 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 			return nil, nil
 		})
 
-	if _, err := svc.processOutput(context.Background(), pipelineOut, time.Now()); err != nil {
+	if _, err = svc.processOutput(ctx, pipelineOut, time.Now()); err != nil {
 		t.Fatalf("RunPipeline: %v", err)
 	}
 

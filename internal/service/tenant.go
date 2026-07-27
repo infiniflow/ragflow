@@ -72,8 +72,8 @@ type TenantInfoResponse struct {
 }
 
 // GetTenantInfo get tenant information for the current user (owner tenant)
-func (s *TenantService) GetTenantInfo(userID string) (*TenantInfoResponse, error) {
-	tenantInfos, err := s.tenantDAO.GetInfoByUserID(userID)
+func (s *TenantService) GetTenantInfo(ctx context.Context, userID string) (*TenantInfoResponse, error) {
+	tenantInfos, err := s.tenantDAO.GetInfoByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -463,8 +463,8 @@ func factoryModelTypeName(modelType string) string {
 // GetDefaultModelName returns the full default model ID for a tenant and model type
 // Format: modelName@instanceName@providerName or modelName@providerName
 // Returns empty string if no default model is set
-func (s *TenantService) GetDefaultModelName(tenantID string, modelType entity.ModelType) (string, error) {
-	tenant, err := s.tenantDAO.GetByID(tenantID)
+func (s *TenantService) GetDefaultModelName(ctx context.Context, tenantID string, modelType entity.ModelType) (string, error) {
+	tenant, err := s.tenantDAO.GetByID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return "", err
 	}
@@ -592,9 +592,9 @@ func rsplitN(s, sep string, n int) []string {
 	return result
 }
 
-func (s *TenantService) ListTenantDefaultModels(userID string) ([]ModelItem, error) {
+func (s *TenantService) ListTenantDefaultModels(ctx context.Context, userID string) ([]ModelItem, error) {
 
-	tenantInfos, err := s.tenantDAO.GetInfoByUserID(userID)
+	tenantInfos, err := s.tenantDAO.GetInfoByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -750,9 +750,9 @@ func (s *TenantService) checkModelAvailable(tenantID, providerName, instanceName
 	return nil
 }
 
-func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInstance, modelName, modelType, modelID string) error {
+func (s *TenantService) SetTenantDefaultModels(ctx context.Context, userID, modelProvider, modelInstance, modelName, modelType, modelID string) error {
 
-	tenantInfos, err := s.tenantDAO.GetInfoByUserID(userID)
+	tenantInfos, err := s.tenantDAO.GetInfoByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return err
 	}
@@ -832,14 +832,12 @@ func (s *TenantService) SetTenantDefaultModels(userID, modelProvider, modelInsta
 		return fmt.Errorf("model provider, instance and name must be specified together")
 	}
 
-	if err := s.tenantDAO.Update(ownedTenant.TenantID, map[string]interface{}{
+	err = s.tenantDAO.Update(ctx, dao.DB, ownedTenant.TenantID, map[string]interface{}{
 		modelTypeID:       defaultModel,
 		tenantModelTypeID: tenantModelID,
-	}); err != nil {
-		return fmt.Errorf("failed to update tenant default %s model: %w", modelType, err)
-	}
+	})
 
-	return nil
+	return err
 }
 
 // Tenant member role constants.
