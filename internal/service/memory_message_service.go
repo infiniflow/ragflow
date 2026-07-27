@@ -302,14 +302,14 @@ func embedAndSave(_ context.Context, _ *CreateMemoryResponse, _ map[string]any) 
 	return ErrEmbedderNotWired
 }
 
-func (s *MemoryMessageService) insertTask(_ context.Context, row map[string]any) error {
+func (s *MemoryMessageService) insertTask(ctx context.Context, row map[string]any) error {
 	if s == nil {
 		return errors.New("nil MemoryMessageService")
 	}
 	if s.taskDAO == nil {
 		s.taskDAO = dao.NewTaskDAO()
 	}
-	return s.taskDAO.Create(taskFromRow(row))
+	return s.taskDAO.Create(ctx, dao.DB, taskFromRow(row))
 }
 
 // newUUIDString is a thin wrapper so we can swap in a real UUID

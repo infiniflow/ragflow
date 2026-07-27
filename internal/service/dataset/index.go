@@ -390,7 +390,7 @@ func (d *DatasetService) TraceIndex(ctx context.Context, datasetID, userID, inde
 
 	var task *entity.Task
 	if taskID != "" {
-		task, err = d.taskDAO.GetByID(taskID)
+		task, err = d.taskDAO.GetByID(ctx, dao.DB, taskID)
 		if err != nil {
 			if dao.IsNotFoundErr(err) {
 				return nil, common.CodeSuccess, nil

@@ -197,7 +197,7 @@ class TestDocumentsList:
         # Use a non-existent document ID
         res = list_documents(WebApiAuth, {"kb_id": kb_id, "id": "non_existent_doc_id"})
         assert res["code"] == 102
-        assert "You don't own the document" in res["message"]
+        assert "you don't own the document" in res["message"]
 
     @pytest.mark.p3
     def test_create_time_filter(self, WebApiAuth, add_documents):

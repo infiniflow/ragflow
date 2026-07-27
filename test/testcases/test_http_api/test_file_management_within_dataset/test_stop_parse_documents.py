@@ -69,8 +69,8 @@ class TestDocumentsParseStop:
         [
             pytest.param(None, 102, """AttributeError("\'NoneType\' object has no attribute \'get\'")""", marks=pytest.mark.skip),
             pytest.param({"document_ids": []}, 102, "`document_ids` is required", marks=pytest.mark.p1),
-            pytest.param({"document_ids": ["invalid_id"]}, 102, "You don't own the document invalid_id.", marks=pytest.mark.p3),
-            pytest.param({"document_ids": ["\n!?。；！？\"'"]}, 102, """You don\'t own the document \n!?。；！？"\'.""", marks=pytest.mark.p3),
+            pytest.param({"document_ids": ["invalid_id"]}, 102, "you don't own the document invalid_id", marks=pytest.mark.p3),
+            pytest.param({"document_ids": ["\n!?。；！？\"'"]}, 102, """you don\'t own the document \n!?。；！？"\'""", marks=pytest.mark.p3),
             pytest.param("not json", 102, "AttributeError(\"'str' object has no attribute 'get'\")", marks=pytest.mark.skip),
             pytest.param(lambda r: {"document_ids": r[:1]}, 0, "", marks=pytest.mark.p1),
             pytest.param(lambda r: {"document_ids": r}, 0, "", marks=pytest.mark.p1),
@@ -144,7 +144,7 @@ class TestDocumentsParseStop:
             payload = payload(document_ids)
         res = stop_parse_documents(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 102
-        assert res["message"] == "You don't own the document invalid_id."
+        assert res["message"] == "you don't own the document invalid_id"
 
         validate_document_parse_cancel(HttpApiAuth, dataset_id, document_ids)
 
