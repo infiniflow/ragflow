@@ -28,10 +28,11 @@ import (
 func TestGreenPTListModelsClassifiesSpeech(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
-			t.Fatalf("unexpected path: %s", r.URL.Path)
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"glm-5.2"},{"id":"green-embedding"},{"id":"green-rerank"},{"id":"green-s"}]}`)
+		_, _ = io.WriteString(w, `{"object":"list","data":[{"id":"glm-5.2"},{"id":"green-embedding"},{"id":"green-rerank"},{"id":"green-s"},{"id":"green-s-pro"}]}`)
 	}))
 	defer server.Close()
 
@@ -47,28 +48,44 @@ func TestGreenPTListModelsClassifiesSpeech(t *testing.T) {
 		"green-embedding": "embedding",
 		"green-rerank":    "rerank",
 		"green-s":         "asr",
+		"green-s-pro":     "asr",
+	}
+	if len(models) != len(want) {
+		t.Fatalf("expected %d models, got %d", len(want), len(models))
 	}
 	for _, model := range models {
-		if len(model.ModelTypes) != 1 || model.ModelTypes[0] != want[model.Name] {
+		expectedType, ok := want[model.Name]
+		if !ok {
+			t.Fatalf("unexpected model: %s", model.Name)
+		}
+		if len(model.ModelTypes) != 1 || model.ModelTypes[0] != expectedType {
 			t.Fatalf("%s classified as %v", model.Name, model.ModelTypes)
 		}
+		delete(want, model.Name)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing expected models: %v", want)
 	}
 }
 
 func TestGreenPTTranscribeAudio(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/listen" || r.URL.Query().Get("model") != "green-s" {
-			t.Fatalf("unexpected request URL: %s", r.URL.String())
+			t.Errorf("unexpected request URL: %s", r.URL.String())
+			return
 		}
 		if r.Header.Get("Authorization") != "Token test-key" {
-			t.Fatalf("unexpected authorization header: %s", r.Header.Get("Authorization"))
+			t.Errorf("unexpected authorization header: %s", r.Header.Get("Authorization"))
+			return
 		}
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
-			t.Fatal(err)
+			t.Errorf("failed to read request body: %v", err)
+			return
 		}
 		if string(body) != "audio" {
-			t.Fatalf("unexpected audio body: %q", body)
+			t.Errorf("unexpected audio body: %q", body)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"results":{"channels":[{"alternatives":[{"transcript":"renewable inference"}]}]}}`)

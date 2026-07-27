@@ -16,12 +16,12 @@
 import base64
 import io
 import json
+import logging
 import os
 import re
 import struct
-from abc import ABC
 import tempfile
-import logging
+from abc import ABC
 from urllib.parse import urlparse
 
 import requests
@@ -30,6 +30,8 @@ from openai.lib.azure import AzureOpenAI
 
 from common.token_utils import num_tokens_from_string
 from rag.utils.url_utils import ensure_v1
+
+logger = logging.getLogger(__name__)
 
 
 class Base(ABC):
@@ -125,6 +127,8 @@ class FuturMixSeq2txt(GPTSeq2txt):
 
 
 class GreenPTSeq2txt(Base):
+    """Transcribe audio with GreenPT's Deepgram-compatible endpoint."""
+
     _FACTORY_NAME = "GreenPT"
 
     def __init__(self, key, model_name="green-s", base_url="https://api.greenpt.ai/v1", **kwargs):
@@ -133,22 +137,34 @@ class GreenPTSeq2txt(Base):
         self.base_url = (base_url or "https://api.greenpt.ai/v1").rstrip("/")
 
     def transcription(self, audio_path, **kwargs):
+        """Transcribe audio while logging only non-sensitive request metadata."""
         params = {"model": self.model_name}
         params.update(kwargs)
-        with open(audio_path, "rb") as audio_file:
-            response = requests.post(
-                f"{self.base_url}/listen",
-                headers={"Authorization": f"Token {self.api_key}", "Content-Type": "application/octet-stream"},
-                params=params,
-                data=audio_file,
-                timeout=300,
-            )
-        response.raise_for_status()
+        logger.info("[GreenPT] Starting speech transcription with model %s", self.model_name)
+        try:
+            with open(audio_path, "rb") as audio_file:
+                response = requests.post(
+                    f"{self.base_url}/listen",
+                    headers={"Authorization": f"Token {self.api_key}", "Content-Type": "application/octet-stream"},
+                    params=params,
+                    data=audio_file,
+                    timeout=300,
+                )
+            response.raise_for_status()
+        except (OSError, requests.RequestException):
+            logger.exception("[GreenPT] Speech transcription request failed for model %s", self.model_name)
+            raise
         channels = response.json().get("results", {}).get("channels", [])
         alternatives = channels[0].get("alternatives", []) if channels else []
         if not alternatives:
+            logger.warning("[GreenPT] Speech response has no transcript; status=%s", response.status_code)
             raise ValueError("GreenPT speech response contains no transcript")
         text = alternatives[0].get("transcript", "").strip()
+        logger.info(
+            "[GreenPT] Speech transcription completed; status=%s transcript_available=%s",
+            response.status_code,
+            bool(text),
+        )
         return text, num_tokens_from_string(text)
 
 

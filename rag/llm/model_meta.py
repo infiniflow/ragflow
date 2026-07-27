@@ -18,6 +18,7 @@ import aiohttp
 from abc import ABC
 from urllib.parse import urlparse
 from json.decoder import JSONDecodeError
+from typing import ClassVar
 
 from common.constants import LLMType
 
@@ -459,16 +460,18 @@ class OpenAIAPICompatible(Base):
 
 
 class GreenPT(OpenAIAPICompatible):
+    """Discover and classify GreenPT models from the live catalog."""
+
     _FACTORY_NAME = "GreenPT"
 
-    _MODEL_TYPES = {
+    _MODEL_TYPES: ClassVar[dict[str, list[str]]] = {
         "green-embedding": [LLMType.EMBEDDING.value],
         "qwen3-embedding-8b": [LLMType.EMBEDDING.value],
         "green-rerank": [LLMType.RERANK.value],
         "green-s": [LLMType.ASR.value],
         "green-s-pro": [LLMType.ASR.value],
     }
-    _MAX_TOKENS = {
+    _MAX_TOKENS: ClassVar[dict[str, int]] = {
         "glm-5.2": 1_000_000,
         "kimi-k2.7-code": 262_144,
         "green-embedding": 32_768,
@@ -477,6 +480,7 @@ class GreenPT(OpenAIAPICompatible):
     }
 
     def _format_model_list(self, raw_model_list):
+        """Apply GreenPT capability metadata to discovered models."""
         models = super()._format_model_list(raw_model_list)
         for model in models:
             model["model_types"] = self._MODEL_TYPES.get(model["name"], model["model_types"])

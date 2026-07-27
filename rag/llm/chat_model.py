@@ -1564,6 +1564,8 @@ class AIMLAPIChat(Base):
 
 
 class GreenPTChat(Base):
+    """GreenPT OpenAI-compatible chat adapter."""
+
     _FACTORY_NAME = "GreenPT"
 
     def __init__(self, key, model_name, base_url="https://api.greenpt.ai/v1", **kwargs):

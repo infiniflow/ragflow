@@ -879,6 +879,8 @@ class OpenAI_APIEmbed(OpenAIEmbed):
 
 
 class GreenPTEmbed(OpenAIEmbed):
+    """GreenPT OpenAI-compatible embedding adapter."""
+
     _FACTORY_NAME = "GreenPT"
 
     def __init__(self, key, model_name="green-embedding", base_url="https://api.greenpt.ai/v1"):

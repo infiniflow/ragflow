@@ -117,6 +117,8 @@ class JinaRerank(Base):
 
 
 class GreenPTRerank(JinaRerank):
+    """GreenPT native reranking adapter."""
+
     _FACTORY_NAME = "GreenPT"
 
     def __init__(self, key, model_name="green-rerank", base_url="https://api.greenpt.ai/v1/rerank"):

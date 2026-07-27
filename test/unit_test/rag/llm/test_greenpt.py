@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import logging
 from io import BytesIO
 from unittest.mock import Mock, patch
 
@@ -49,8 +50,10 @@ def test_greenpt_rerank_normalizes_endpoint():
     assert GreenPTRerank("test", base_url="https://example.com/v1").base_url == "https://example.com/v1/rerank"
 
 
-def test_greenpt_transcription_uses_listen_protocol():
+def test_greenpt_transcription_uses_listen_protocol(caplog):
+    caplog.set_level(logging.INFO)
     response = Mock()
+    response.status_code = 200
     response.json.return_value = {
         "results": {"channels": [{"alternatives": [{"transcript": " renewable inference "}]}]}
     }
@@ -66,3 +69,6 @@ def test_greenpt_transcription_uses_listen_protocol():
     assert post.call_args.args[0] == "https://api.greenpt.ai/v1/listen"
     assert post.call_args.kwargs["headers"]["Authorization"] == "Token secret"
     assert post.call_args.kwargs["params"] == {"model": "green-s", "language": "en"}
+    assert "status=200" in caplog.text
+    assert "secret" not in caplog.text
+    assert "sample.wav" not in caplog.text
