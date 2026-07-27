@@ -599,10 +599,11 @@ func (h *Handler) RestartService(c *gin.Context) {
 
 // ListVariables handle list variables
 func (h *Handler) ListVariables(c *gin.Context) {
+	ctx := c.Request.Context()
 	// Check if request has body content
 	if c.Request.ContentLength == 0 || c.Request.ContentLength == -1 {
 		// List all variables
-		variables, err := h.service.ListAllVariables()
+		variables, err := h.service.ListAllVariables(ctx)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
@@ -625,7 +626,7 @@ func (h *Handler) ListVariables(c *gin.Context) {
 		return
 	}
 
-	variable, err := h.service.GetVariable(req.VarName)
+	variable, err := h.service.GetVariable(ctx, req.VarName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -647,7 +648,8 @@ func (h *Handler) ShowVariable(c *gin.Context) {
 		return
 	}
 
-	variable, err := h.service.GetVariable(varName)
+	ctx := c.Request.Context()
+	variable, err := h.service.GetVariable(ctx, varName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -681,7 +683,8 @@ func (h *Handler) SetVariable(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.SetVariable(req.VarName, req.VarValue); err != nil {
+	ctx := c.Request.Context()
+	if err := h.service.SetVariable(ctx, req.VarName, req.VarValue); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}

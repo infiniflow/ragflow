@@ -84,8 +84,14 @@ class Compiler(ProcessBase, LLM):
         chunks. Supply RAPTOR with the same ``(text, vector, chunk_id)`` shape
         from the current pipeline output instead.
         """
-        from rag.advanced_rag.knowlege_compile.structure import _struct_upsert_graph_json
-        from rag.svr.task_executor_refactor.chunk_post_processor import raptor_tree_to_graph
+        from rag.advanced_rag.knowlege_compile.structure import (
+            _struct_upsert_graph_json,
+            _struct_upsert_tree_graph_rows,
+        )
+        from rag.svr.task_executor_refactor.chunk_post_processor import (
+            raptor_tree_to_graph,
+            rewrite_duplicate_tree_names,
+        )
         from rag.svr.task_executor_refactor.raptor_service import RaptorService
 
         tree_inputs = []
@@ -146,9 +152,19 @@ class Compiler(ProcessBase, LLM):
             if bool(raptor_cfg.get("rechunk")):
                 self._compile_progress(msg="Compiler: tree rechunking is not supported for in-memory pipeline chunks; keeping original chunks.")
 
+            await rewrite_duplicate_tree_names(tree, chat_mdl_by_tid[template_id])
+            after_graph = raptor_tree_to_graph(tree)
             try:
+                await _struct_upsert_tree_graph_rows(
+                    after_graph,
+                    tenant_id,
+                    kb_id,
+                    doc_id,
+                    embedding_model,
+                    compilation_template_id=template_id,
+                )
                 await _struct_upsert_graph_json(
-                    raptor_tree_to_graph(tree),
+                    after_graph,
                     tenant_id,
                     kb_id,
                     doc_id,

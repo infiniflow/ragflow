@@ -99,7 +99,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	embdID := tenant.EmbdID
 	tenantEmbdID := ptrStringValue(tenant.TenantEmbdID)
 	if embeddingModel != "" {
-		ok, message := d.verifyEmbeddingAvailability(embeddingModel, tenantID)
+		ok, message := d.verifyEmbeddingAvailability(ctx, embeddingModel, tenantID)
 		if !ok {
 			return nil, common.CodeDataError, errors.New(message)
 		}
@@ -107,7 +107,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		tenantEmbdID = ""
 	}
 	if embdID != "" && tenantEmbdID == "" {
-		resolvedID, err := service.NewModelProviderService().ResolveModelID(tenantID, entity.ModelTypeEmbedding, embdID)
+		resolvedID, err := service.NewModelProviderService().ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 		if err == nil {
 			tenantEmbdID = resolvedID
 		} else {
