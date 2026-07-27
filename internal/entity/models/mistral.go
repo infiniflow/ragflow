@@ -634,6 +634,9 @@ func (m *MistralModel) AudioSpeech(ctx context.Context, modelName *string, audio
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
 	if audioContent == nil || *audioContent == "" {
 		return nil, fmt.Errorf("text content is empty")
 	}
@@ -645,8 +648,8 @@ func (m *MistralModel) AudioSpeech(ctx context.Context, modelName *string, audio
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
-		"model": modelName,
-		"input": audioContent,
+		"model": strings.TrimSpace(*modelName),
+		"input": *audioContent,
 	}
 	if ttsConfig != nil && ttsConfig.Params != nil {
 		for key, value := range ttsConfig.Params {
