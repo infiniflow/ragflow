@@ -18,6 +18,7 @@ import { omit } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router';
+import { MemoryApiAction } from '../memory/constant';
 import {
   CreateMemoryResponse,
   DeleteMemoryProps,
@@ -216,6 +217,9 @@ export const useUpdateMemory = () => {
       message.success(t('message.updated'));
       queryClient.invalidateQueries({
         queryKey: ['memoryDetail', variables.id],
+      });
+      queryClient.invalidateQueries({
+        queryKey: [MemoryApiAction.FetchMemoryDetail],
       });
     },
   });

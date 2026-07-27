@@ -67,67 +67,7 @@ func (r *RAGconModel) chatURL(apiConfig *APIConfig) (string, error) {
 	return fmt.Sprintf("%s/%s", baseURL, r.baseModel.URLSuffix.Chat), nil
 }
 
-func ragconChatMessages(messages []Message) []map[string]interface{} {
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMsg := map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-		if msg.ToolCallID != "" {
-			apiMsg["tool_call_id"] = msg.ToolCallID
-		}
-		if len(msg.ToolCalls) > 0 {
-			apiMsg["tool_calls"] = msg.ToolCalls
-		}
-		apiMessages[i] = apiMsg
-	}
-	return apiMessages
-}
-
-func ragconChatPayload(modelName string, messages []Message, stream bool, chatModelConfig *ChatConfig) map[string]interface{} {
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": ragconChatMessages(messages),
-		"stream":   stream,
-	}
-	if stream {
-		reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
-	}
-
-	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-			tc := "auto"
-			if chatModelConfig.ToolChoice != nil {
-				tc = *chatModelConfig.ToolChoice
-			}
-			reqBody["tool_choice"] = tc
-		}
-	}
-
-	// Qwen3 family: disable thinking by default (mirrors the same policy
-	// applied by the other OpenAI-compatible Go drivers).
-	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
-		reqBody["enable_thinking"] = false
-	}
-
-	return reqBody
-}
-
-func (r *RAGconModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (r *RAGconModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -143,12 +83,16 @@ func (r *RAGconModel) ChatWithMessages(modelName string, messages []Message, api
 		return nil, err
 	}
 
-	jsonData, err := json.Marshal(ragconChatPayload(modelName, messages, false, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
+		reqBody["enable_thinking"] = false
+	}
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -223,7 +167,7 @@ func (r *RAGconModel) ChatWithMessages(modelName string, messages []Message, api
 	return chatResponse, nil
 }
 
-func (r *RAGconModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (r *RAGconModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -245,12 +189,17 @@ func (r *RAGconModel) ChatStreamlyWithSender(modelName string, messages []Messag
 		return err
 	}
 
-	jsonData, err := json.Marshal(ragconChatPayload(modelName, messages, true, chatModelConfig))
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
+	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
+		reqBody["enable_thinking"] = false
+	}
+	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -349,7 +298,7 @@ type ragconEmbeddingResponse struct {
 	} `json:"data"`
 }
 
-func (r *RAGconModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (r *RAGconModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -380,7 +329,7 @@ func (r *RAGconModel) Embed(modelName *string, texts []string, apiConfig *APICon
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -417,7 +366,7 @@ func (r *RAGconModel) Embed(modelName *string, texts []string, apiConfig *APICon
 }
 
 // Rerank POSTs to RAGcon's /rerank endpoint (LiteLLM proxy passthrough).
-func (r *RAGconModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (r *RAGconModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -452,7 +401,7 @@ func (r *RAGconModel) Rerank(modelName *string, query string, documents []string
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -497,7 +446,7 @@ func (r *RAGconModel) Rerank(modelName *string, query string, documents []string
 }
 
 // ListModels returns the model ids visible to the configured API key.
-func (r *RAGconModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (r *RAGconModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -509,7 +458,7 @@ func (r *RAGconModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, err
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, r.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -541,13 +490,13 @@ func (r *RAGconModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, err
 	return ParseListModel(modelList), nil
 }
 
-func (r *RAGconModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := r.ListModels(apiConfig)
+func (r *RAGconModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := r.ListModels(ctx, apiConfig)
 	return err
 }
 
 // Balance is not exposed by RAGcon's LiteLLM proxy.
-func (r *RAGconModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (r *RAGconModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
@@ -623,8 +572,8 @@ func (r *RAGconModel) newASRRequest(ctx context.Context, modelName *string, file
 	return req, responseFormat, nil
 }
 
-func (r *RAGconModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+func (r *RAGconModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, responseFormat, err := r.newASRRequest(ctx, modelName, file, apiConfig, asrConfig, false)
@@ -650,12 +599,12 @@ func (r *RAGconModel) TranscribeAudio(modelName *string, file *string, apiConfig
 	return decodeOpenAIASRResponse(respBody, responseFormat)
 }
 
-func (r *RAGconModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (r *RAGconModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
 
-	req, responseFormat, err := r.newASRRequest(context.Background(), modelName, file, apiConfig, asrConfig, true)
+	req, responseFormat, err := r.newASRRequest(ctx, modelName, file, apiConfig, asrConfig, true)
 	if err != nil {
 		return err
 	}
@@ -786,8 +735,8 @@ func (r *RAGconModel) newTTSRequest(ctx context.Context, modelName *string, audi
 	return req, streamFormat, nil
 }
 
-func (r *RAGconModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+func (r *RAGconModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, _, err := r.newTTSRequest(ctx, modelName, audioContent, apiConfig, ttsConfig, false)
@@ -812,12 +761,12 @@ func (r *RAGconModel) AudioSpeech(modelName *string, audioContent *string, apiCo
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (r *RAGconModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (r *RAGconModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
 
-	req, streamFormat, err := r.newTTSRequest(context.Background(), modelName, audioContent, apiConfig, ttsConfig, true)
+	req, streamFormat, err := r.newTTSRequest(ctx, modelName, audioContent, apiConfig, ttsConfig, true)
 	if err != nil {
 		return err
 	}
@@ -843,19 +792,19 @@ func (r *RAGconModel) AudioSpeechWithSender(modelName *string, audioContent *str
 }
 
 // OCRFile is not offered by RAGcon.
-func (r *RAGconModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (r *RAGconModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
 // ParseFile is not offered by RAGcon.
-func (r *RAGconModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (r *RAGconModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *RAGconModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (r *RAGconModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *RAGconModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (r *RAGconModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }

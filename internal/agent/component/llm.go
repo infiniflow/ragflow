@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/eino/schema"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
@@ -133,7 +134,7 @@ type LLMOutput struct {
 // chat model. The default implementation lives in this file; tests can
 // override the package-level defaultChatInvoker to inject a stub.
 type ChatInvoker interface {
-	Invoke(ctx context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error)
+	Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error)
 }
 
 // ChatInvokeRequest is the minimal surface the LLM component needs to
@@ -204,7 +205,7 @@ func GetDefaultChatInvokerForTest() ChatInvoker {
 type einoChatInvoker struct{}
 
 // Invoke satisfies ChatInvoker.
-func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	if req.ModelName == "" {
 		return nil, fmt.Errorf("component: LLM: model_id is required")
 	}
@@ -312,8 +313,19 @@ func NewLLMComponent(p LLMParam) *LLMComponent {
 func (c *LLMComponent) Name() string { return "LLM" }
 
 // Invoke runs the LLM and returns the output map.
-func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	p := mergeLLMParam(c.param, inputs)
+
+	// Resolve tenant-scoped custom models (and fill missing driver/credentials)
+	// before invoking. Without this, a tenant_model.id or a composite model
+	// reference selected in the agent canvas is passed verbatim to the LLM
+	// driver, causing 400s for custom-added models.
+	var err error
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
+	}
+
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
@@ -482,7 +494,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		// MaxRetries is an absolute count, not a stacked one.
 		inv = newRetryInvoker(unwrapChatInvoker(inv), maxRetries, delay)
 	}
-	resp, err := inv.Invoke(ctx, ChatInvokeRequest{
+	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
 		Driver:           p.Driver,
 		ModelName:        p.ModelID,
 		APIKey:           p.APIKey,
@@ -533,7 +545,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		// deferred to a future phase.
 		parsed, ok := matchOutputStructure(resp.Content, p.OutputStructure)
 		if !ok {
-			retryResp, err := inv.Invoke(ctx, ChatInvokeRequest{
+			retryResp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
 				Driver:           p.Driver,
 				ModelName:        p.ModelID,
 				APIKey:           p.APIKey,
@@ -588,7 +600,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 // is deferred — the public surface here is correct, only the data
 // source needs to be swapped to a real StreamReader consumer in a
 // follow-up.
-func (c *LLMComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
+func (c *LLMComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
 	out := make(chan map[string]any, 16)
 	go func() {
 		defer close(out)
@@ -599,7 +611,7 @@ func (c *LLMComponent) Stream(ctx context.Context, inputs map[string]any) (<-cha
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		result, err := c.Invoke(ctx, inputs)
+		result, err := c.Invoke(ctx, db, inputs)
 		if err != nil {
 			select {
 			case out <- map[string]any{"error": err.Error()}:

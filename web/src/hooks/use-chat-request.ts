@@ -81,7 +81,7 @@ export const useFetchChatList = () => {
         ...pagination,
       },
     ],
-    initialData: { chats: [], total: 0 },
+    placeholderData: (previousData) => previousData ?? { chats: [], total: 0 },
     gcTime: 0,
     refetchOnWindowFocus: false,
     queryFn: async () => {

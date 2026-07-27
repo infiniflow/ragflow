@@ -310,6 +310,18 @@ class KnowledgebaseService(CommonService):
             cls.model.artifact_task_finish_at,
             cls.model.skill_task_id,
             cls.model.skill_task_finish_at,
+            cls.model.structure_graph_task_id,
+            cls.model.structure_graph_task_finish_at,
+            cls.model.structure_mindmap_task_id,
+            cls.model.structure_mindmap_task_finish_at,
+            cls.model.timeline_task_id,
+            cls.model.timeline_task_finish_at,
+            cls.model.session_graph_task_id,
+            cls.model.session_graph_task_finish_at,
+            cls.model.session_essence_task_id,
+            cls.model.session_essence_task_finish_at,
+            cls.model.structure_task_id,
+            cls.model.structure_task_finish_at,
             cls.model.create_time,
             cls.model.update_time,
         ]
@@ -488,6 +500,21 @@ class KnowledgebaseService(CommonService):
         kbs = kbs.paginate(page_number, items_per_page)
 
         return list(kbs.dicts()), total
+
+    @classmethod
+    @DB.connection_context()
+    def get_owner_filter(cls, joined_tenant_ids, user_id):
+        owners = (
+            cls.model.select(
+                cls.model.tenant_id.alias("id"),
+                User.nickname.alias("label"),
+                fn.COUNT(cls.model.id).alias("count"),
+            )
+            .join(User, on=(cls.model.tenant_id == User.id))
+            .where(cls._visibility_and_status_filter(joined_tenant_ids, user_id))
+            .group_by(cls.model.tenant_id, User.nickname)
+        )
+        return list(owners.dicts())
 
     @classmethod
     @DB.connection_context()

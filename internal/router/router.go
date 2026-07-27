@@ -173,7 +173,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
 
 		// searchbots
-		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchbotDetail)
+		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchBotDetail)
 
 		// User login channels endpoint
 		apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)

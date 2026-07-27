@@ -62,7 +62,8 @@ func TestPDFParser_ParseWithResult_PaddleOCRMarkdownIntegration(t *testing.T) {
 		"paddleocr_api_key":  "paddle-secret",
 	})
 
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -98,7 +99,8 @@ func TestPDFParser_ParseWithResult_PaddleOCRJSONIntegration(t *testing.T) {
 		"paddleocr_base_url": server.URL,
 	})
 
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -117,7 +119,8 @@ func TestPDFParser_ParseWithResult_PaddleOCRRequiresBaseURL(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{"parse_method": "PaddleOCR"})
 
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err == nil {
 		t.Fatal("ParseWithResult: want error when paddleocr_base_url is missing, got nil")
 	}

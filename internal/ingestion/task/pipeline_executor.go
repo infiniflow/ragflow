@@ -29,6 +29,8 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+
+	"gorm.io/gorm"
 )
 
 // PipelineResult is the outcome of a pipeline run: chunks have been
@@ -49,7 +51,7 @@ type PipelineExecutor struct {
 	docBulkSize int
 
 	indexWriter     *chunkIndexWriter
-	logCreateFunc   func(log *entity.PipelineOperationLog) error
+	logCreateFunc   func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error
 	loadDSLFunc     func(ctx context.Context, canvasID string) (string, string, error)
 	runPipelineFunc func(ctx context.Context, dsl string) (map[string]any, string, error)
 	progressSink    pipelinepkg.ProgressSink
@@ -113,7 +115,7 @@ func (s *PipelineExecutor) WithInsertFunc(f InsertFunc) *PipelineExecutor {
 	return s
 }
 
-func (s *PipelineExecutor) WithLogCreateFunc(f func(log *entity.PipelineOperationLog) error) *PipelineExecutor {
+func (s *PipelineExecutor) WithLogCreateFunc(f func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error) *PipelineExecutor {
 	s.logCreateFunc = f
 	return s
 }
@@ -168,7 +170,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	if s.taskCtx.Doc.ID == CANVAS_DEBUG_DOC_ID {
-		s.recordPipelineLog(s.taskCtx.Doc.ID, pipelineDSL, "done")
+		s.recordPipelineLog(ctx, dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "done")
 		return nil, nil
 	}
 
@@ -178,7 +180,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	if pipelineDSL != "" {
-		s.recordPipelineLog(s.taskCtx.Doc.ID, pipelineDSL, "done")
+		s.recordPipelineLog(ctx, dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "done")
 	}
 	return result, nil
 }
@@ -224,17 +226,37 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 
+	chunkCount := countDistinctChunkIDs(chunks)
+
 	return &PipelineResult{
 		DocID:            s.taskCtx.Doc.ID,
 		KbID:             s.taskCtx.Doc.KbID,
 		Metadata:         metadata,
-		ChunkCount:       len(chunks),
+		ChunkCount:       chunkCount,
 		TokenConsumption: embeddingTokenConsumption,
 		Duration:         time.Since(start).Seconds(),
 	}, nil
 }
 
-func (s *PipelineExecutor) recordPipelineLog(docID, dsl, status string) {
+// countDistinctChunkIDs returns the number of distinct chunk IDs in the slice.
+// After ProcessChunksForPipeline, every chunk carries an "id" field computed
+// from xxhash(text+docID). Chunks with identical text share the same id and
+// the search engine treats them as upserts, so the effective stored chunk count
+// is the number of unique ids — not len(chunks). Mirrors the index-side
+// deduplication that happens at write time.
+func countDistinctChunkIDs(chunks []map[string]any) int {
+	seen := make(map[string]struct{}, len(chunks))
+	for _, ck := range chunks {
+		id, _ := ck["id"].(string)
+		if id == "" {
+			continue
+		}
+		seen[id] = struct{}{}
+	}
+	return len(seen)
+}
+
+func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
 	var dslMap entity.JSONMap
 	if err := json.Unmarshal([]byte(dsl), &dslMap); err != nil {
 		dslMap = entity.JSONMap{"raw": dsl}
@@ -254,7 +276,7 @@ func (s *PipelineExecutor) recordPipelineLog(docID, dsl, status string) {
 		SourceFrom:      s.taskCtx.Doc.SourceType,
 		OperationStatus: status,
 	}
-	if err := s.logCreateFunc(log); err != nil {
+	if err := s.logCreateFunc(ctx, db, log); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
 	}
 }

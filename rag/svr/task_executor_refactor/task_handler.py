@@ -154,6 +154,10 @@ class TaskHandler:
 
     @staticmethod
     def _is_standard_chunking_task(task_type: str) -> bool:
+        from rag.svr.task_executor_refactor.dataset_structure_merger import (
+            STRUCTURE_MERGE_TASK_TYPES,
+        )
+
         task_type = (task_type or "").lower()
         return task_type not in {
             "memory",
@@ -165,7 +169,7 @@ class TaskHandler:
             "evaluation",
             "reembedding",
             "clone",
-        } and not task_type.startswith("dataflow")
+        } | STRUCTURE_MERGE_TASK_TYPES and not task_type.startswith("dataflow")
 
     async def handle_task(self) -> None:
         try:
@@ -241,6 +245,10 @@ class TaskHandler:
                 return
 
             # Route to appropriate handler
+            from rag.svr.task_executor_refactor.dataset_structure_merger import (
+                is_structure_merge_task,
+            )
+
             if task_type == "raptor":
                 await self._run_raptor(embedding_model, vector_size)
             elif task_type == "graphrag":
@@ -267,6 +275,12 @@ class TaskHandler:
                     embedding_model,
                     self._load_chunks_for_doc,
                 )
+            elif is_structure_merge_task(task_type):
+                from rag.svr.task_executor_refactor.dataset_structure_merger import (
+                    run_structure_merge,
+                )
+
+                await run_structure_merge(self._task_context)
             elif task_type == "evaluation":
                 await self._run_evaluation()
             elif task_type == "reembedding":

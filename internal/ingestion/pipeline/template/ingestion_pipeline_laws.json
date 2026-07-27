@@ -99,6 +99,7 @@
                             "preprocess": [
                                 "main_content"
                             ],
+                            "remove_toc": true,
                             "suffix": [
                                 "pdf"
                             ],

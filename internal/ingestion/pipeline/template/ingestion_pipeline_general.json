@@ -102,7 +102,13 @@
                             "suffix": [
                                 "pdf"
                             ],
-                            "vlm": {}
+                            "vlm": {},
+                            "pages": [
+                                [
+                                    1,
+                                    100000
+                                ]
+                            ]
                         },
                         "spreadsheet": {
                             "flatten_media_to_text": false,

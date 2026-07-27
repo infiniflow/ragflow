@@ -24,6 +24,7 @@
 package component
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"strings"
@@ -138,7 +139,7 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 // re-reading setups. lib_type is no longer threaded through: the
 // Python dispatcher picks a single backend per family and the Go
 // constructors mirror that.
-func dispatchParse(fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parserDispatchResult {
+func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parserDispatchResult {
 	if fileType == utility.FileTypeOTHER {
 		// Unknown / unset family. The component treats the bytes
 		// as text pages; splitIntoPages handles it. We return no
@@ -159,7 +160,7 @@ func dispatchParse(fileType utility.FileType, filename string, data []byte, setu
 	}
 	configureParserFromSetups(p, fileType, setups)
 
-	res := p.ParseWithResult(filename, data)
+	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
 		return parserDispatchResult{Err: fmt.Errorf("Parser: %q: %w", fileType, res.Err)}
 	}
@@ -304,17 +305,17 @@ func pythonFamilyName(raw string) string {
 		"go", "ts", "sh", "cs", "kt", "sql":
 		return "text&code"
 	case "mp4", "avi", "mkv", "mov", "webm", "flv",
-		"mpeg", "mpg", "wmv", "3gp", "3gpp":
+		"mpeg", "mpg", "wmv", "3gp", "3gpp", "video":
 		return "video"
-	case "eml", "msg":
+	case "eml", "msg", "email":
 		return "email"
 	case "da", "wave", "wav", "mp3", "aac", "flac", "ogg",
-		"aiff", "au", "midi", "wma", "ape", "alac", "wv", "opus":
+		"aiff", "au", "midi", "wma", "ape", "alac", "wv", "opus", "aural":
 		return "audio"
 	case "visual", "picture", "image",
 		"png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif",
 		"webp", "svg", "ico", "avif", "heic", "apng":
-		return "picture"
+		return "image"
 	}
 	return ""
 }

@@ -17,6 +17,7 @@
 package admin
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/base64"
@@ -103,16 +104,16 @@ func (s *Service) Logout(user interface{}) error {
 }
 
 // ListIngestionTasks list all ingestion tasks for admin user
-func (s *Service) ListIngestionTasks() ([]map[string]interface{}, error) {
-	return s.ingestionTaskSvc.ListAllForAdmin()
+func (s *Service) ListIngestionTasks(ctx context.Context) ([]map[string]interface{}, error) {
+	return s.ingestionTaskSvc.ListAllForAdmin(ctx)
 }
 
-func (s *Service) RemoveIngestionTasks(tasks []string) ([]map[string]string, error) {
-	return s.ingestionTaskSvc.RemoveMany(tasks, nil)
+func (s *Service) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
+	return s.ingestionTaskSvc.RemoveMany(ctx, tasks, nil)
 }
 
-func (s *Service) StopIngestionTasks(tasks []string) ([]*entity.IngestionTask, error) {
-	return s.ingestionTaskSvc.RequestStopMany(tasks, nil)
+func (s *Service) StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error) {
+	return s.ingestionTaskSvc.RequestStopMany(ctx, tasks, nil)
 }
 
 // GetUserByToken get user by access token
@@ -169,7 +170,7 @@ func (s *Service) ListUsers(pageIndex, pageSize int, name, status, sort, orderBy
 // Returns:
 //   - map[string]interface{}: user information without password
 //   - error: error message
-func (s *Service) CreateUser(username, password, role string) (map[string]interface{}, error) {
+func (s *Service) CreateUser(ctx context.Context, username, password, role string) (map[string]interface{}, error) {
 	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
 	if !emailRegex.MatchString(username) {
 		return nil, fmt.Errorf("invalid email address: %s", username)
@@ -240,7 +241,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	asrModel := ""
 	vlmModel := ""
 	rerankModel := ""
-	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag"
+	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email"
 
 	if cfg != nil {
 		chatModel = cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
@@ -284,7 +285,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 	}
 
 	// 4. Create tenant LLM configurations
-	tenantLLMs, err := s.getInitTenantLLM(userID)
+	tenantLLMs, err := s.getInitTenantLLM(ctx, userID)
 	if err != nil {
 		common.Warn("failed to get init tenant LLM configs", zap.Error(err))
 		// Continue without LLM configs - not a critical error
@@ -332,7 +333,7 @@ func (s *Service) CreateUser(username, password, role string) (map[string]interf
 
 // getInitTenantLLM gets initial tenant LLM configurations
 // This matches Python's get_init_tenant_llm function
-func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
+func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entity.TenantLLM, error) {
 	cfg := server.GetConfig()
 	if cfg == nil {
 		return nil, fmt.Errorf("config not initialized")
@@ -365,7 +366,7 @@ func (s *Service) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
 
 	// Get LLMs for each unique factory
 	for _, factoryConfig := range uniqueFactories {
-		models, err := s.llmDAO.GetByFactory(factoryConfig.Factory)
+		models, err := s.llmDAO.GetByFactory(ctx, dao.DB, factoryConfig.Factory)
 		if err != nil {
 			common.Warn("failed to get LLMs for factory", zap.String("factory", factoryConfig.Factory), zap.Error(err))
 			continue
@@ -493,7 +494,7 @@ type DeleteUserResult struct {
 // Returns:
 //   - *DeleteUserResult
 //   - error: error message
-func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
+func (s *Service) DeleteUser(ctx context.Context, username string) (*DeleteUserResult, error) {
 	result := &DeleteUserResult{
 		Username:       username,
 		DeletedDetails: []string{fmt.Sprintf("Drop user: %s", username)},
@@ -551,14 +552,14 @@ func (s *Service) DeleteUser(username string) (*DeleteUserResult, error) {
 	// Delete owned tenant data
 	if ownedTenantID != "" {
 		// 1. Get knowledge base IDs
-		kbIDs, err := s.kbDAO.GetKBIDsByTenantIDSimple(ownedTenantID)
+		kbIDs, err := s.kbDAO.GetKBIDsByTenantIDSimple(ctx, tx, ownedTenantID)
 		if err != nil {
 			common.Warn("failed to get knowledge base IDs", zap.Error(err))
 		}
 
 		if len(kbIDs) > 0 {
 			// 2. Get document IDs
-			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(kbIDs)
+			docIDs, err := s.documentDAO.GetAllDocIDsByKBIDs(ctx, tx, kbIDs)
 			if err != nil {
 				common.Warn("failed to get document IDs", zap.Error(err))
 			}
@@ -840,7 +841,7 @@ func (s *Service) GetUserAgents(username string) ([]map[string]interface{}, erro
 // API Key methods
 
 // ListUserAPITokens get user API keys
-func (s *Service) ListUserAPITokens(username string) ([]map[string]interface{}, error) {
+func (s *Service) ListUserAPITokens(ctx context.Context, username string) ([]map[string]interface{}, error) {
 	// 1. Get user details
 	user, err := s.userDAO.GetByEmail(username)
 	if err != nil {
@@ -856,7 +857,7 @@ func (s *Service) ListUserAPITokens(username string) ([]map[string]interface{}, 
 	tenantID := userTenants[0].TenantID
 
 	// 3. Get API tokens by tenant ID
-	tokens, err := s.apiTokenDAO.GetByTenantID(tenantID)
+	tokens, err := s.apiTokenDAO.GetByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get API tokens: %w", err)
 	}
@@ -881,7 +882,7 @@ func (s *Service) ListUserAPITokens(username string) ([]map[string]interface{}, 
 }
 
 // GenerateUserAPIToken generate API key for user
-func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{}, error) {
+func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (map[string]interface{}, error) {
 	// 1. Get user details
 	user, err := s.userDAO.GetByEmail(username)
 	if err != nil {
@@ -907,7 +908,7 @@ func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{},
 	}
 
 	// 4. Save API token
-	if err = s.apiTokenDAO.Create(apiToken); err != nil {
+	if err = s.apiTokenDAO.Create(ctx, dao.DB, apiToken); err != nil {
 		return nil, fmt.Errorf("failed to generate API key: %w", err)
 	}
 
@@ -923,7 +924,7 @@ func (s *Service) GenerateUserAPIToken(username string) (map[string]interface{},
 }
 
 // DeleteUserAPIToken delete user API key
-func (s *Service) DeleteUserAPIToken(username, key string) error {
+func (s *Service) DeleteUserAPIToken(ctx context.Context, username, key string) error {
 	// 1. Get user details
 	user, err := s.userDAO.GetByEmail(username)
 	if err != nil {
@@ -939,7 +940,7 @@ func (s *Service) DeleteUserAPIToken(username, key string) error {
 	tenantID := userTenants[0].TenantID
 
 	// 3. Delete API token
-	rowsAffected, err := s.apiTokenDAO.DeleteByTenantIDAndToken(tenantID, key)
+	rowsAffected, err := s.apiTokenDAO.DeleteByTenantIDAndToken(ctx, dao.DB, tenantID, key)
 	if err != nil {
 		return fmt.Errorf("failed to delete API key: %w", err)
 	}
@@ -1457,14 +1458,14 @@ func NewAdminException(message string) *AdminException {
 // GetVariable get variable by name
 // Returns the exact system setting with the given name, or settings matching the
 // given name prefix when an exact setting does not exist.
-func (s *Service) GetVariable(varName string) ([]map[string]interface{}, error) {
-	settings, err := s.systemSettingsDAO.GetByName(varName)
+func (s *Service) GetVariable(ctx context.Context, varName string) ([]map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(settings) == 0 {
-		settings, err = s.systemSettingsDAO.GetByNamePrefix(varName)
+		settings, err = s.systemSettingsDAO.GetByNamePrefix(ctx, dao.DB, varName)
 		if err != nil {
 			return nil, err
 		}
@@ -1477,8 +1478,8 @@ func (s *Service) GetVariable(varName string) ([]map[string]interface{}, error) 
 
 // ListAllVariables list all variables
 // Returns all system settings from database
-func (s *Service) ListAllVariables() ([]map[string]interface{}, error) {
-	settings, err := s.systemSettingsDAO.GetAll()
+func (s *Service) ListAllVariables(ctx context.Context) ([]map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetAll(ctx, dao.DB)
 	if err != nil {
 		return nil, err
 	}
@@ -1489,8 +1490,8 @@ func (s *Service) ListAllVariables() ([]map[string]interface{}, error) {
 // SetVariable set variable
 // Creates or updates a system setting
 // If the setting exists, updates it; otherwise creates a new one
-func (s *Service) SetVariable(varName, varValue string) error {
-	settings, err := s.systemSettingsDAO.GetByName(varName)
+func (s *Service) SetVariable(ctx context.Context, varName, varValue string) error {
+	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
 	if err != nil {
 		return err
 	}
@@ -1501,7 +1502,7 @@ func (s *Service) SetVariable(varName, varValue string) error {
 			return err
 		}
 		setting.Value = varValue
-		return s.systemSettingsDAO.UpdateByName(varName, setting)
+		return s.systemSettingsDAO.UpdateByName(ctx, dao.DB, varName, setting)
 	} else if len(settings) > 1 {
 		return NewAdminException("Can't update more than 1 setting: " + varName)
 	}
@@ -1516,7 +1517,7 @@ func (s *Service) SetVariable(varName, varValue string) error {
 	if err = common.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
 		return err
 	}
-	return s.systemSettingsDAO.Create(newSetting)
+	return s.systemSettingsDAO.Create(ctx, dao.DB, newSetting)
 }
 
 // Config methods

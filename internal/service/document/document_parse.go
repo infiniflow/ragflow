@@ -25,21 +25,21 @@ import (
 // sets it to RUNNING when the worker picks up the task and transitions it from
 // CREATED. Extracted from Ingest so other entry points (e.g. ChunkService.Parse)
 // can reuse the same start-parse flow.
-func (s *DocumentService) StartParseDocuments(doc *entity.Document, kb *entity.Knowledgebase, userID string, opts StartParseOptions) error {
+func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts StartParseOptions) error {
 	// Validate storage first so we don't clear prior results and then fail
 	// because the document can't be read, leaving the document with neither
 	// old nor new parse results.
-	if _, _, err := s.GetDocumentStorageAddress(doc); err != nil {
+	if _, _, err := s.GetDocumentStorageAddress(ctx, doc); err != nil {
 		return err
 	}
 
 	if opts.RerunWithDelete {
-		if err := s.clearDocumentParseResults(doc, kb.TenantID); err != nil {
+		if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID); err != nil {
 			return err
 		}
 	}
 
-	if _, err := s.IngestDocuments(doc.KbID, userID, []string{doc.ID}); err != nil {
+	if _, err := s.IngestDocuments(ctx, doc.KbID, userID, []string{doc.ID}); err != nil {
 		return err
 	}
 	return nil
@@ -49,9 +49,9 @@ func (s *DocumentService) StartParseDocuments(doc *entity.Document, kb *entity.K
 // in-flight (RUNNING/STOPPING) ingestion task. Used as a batch pre-check
 // before re-parsing so a single non-terminal doc rejects the whole request
 // up front instead of partially cleaning some docs then failing.
-func (s *DocumentService) AssertIngestionTasksTerminal(docIDs []string) error {
+func (s *DocumentService) AssertIngestionTasksTerminal(ctx context.Context, docIDs []string) error {
 	for _, docID := range docIDs {
-		task, err := s.ingestionTaskDAO.GetByDocumentID(docID)
+		task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
 		if err != nil {
 			return fmt.Errorf("check ingestion task for %s: %w", docID, err)
 		}
@@ -65,7 +65,7 @@ func (s *DocumentService) AssertIngestionTasksTerminal(docIDs []string) error {
 	return nil
 }
 
-func (s *DocumentService) clearDocumentParseResults(doc *entity.Document, tenantID string) error {
+func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *entity.Document, tenantID string) error {
 	if doc == nil {
 		return fmt.Errorf("document is nil")
 	}
@@ -74,7 +74,7 @@ func (s *DocumentService) clearDocumentParseResults(doc *entity.Document, tenant
 	// (RUNNING) or one mid-stop (STOPPING) would keep writing chunks and
 	// corrupt the new run's results. The caller must stop the task first
 	// and wait for a terminal state (COMPLETED/STOPPED/FAILED) or CREATED.
-	if task, _ := s.ingestionTaskDAO.GetByDocumentID(doc.ID); task != nil {
+	if task, _ := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID); task != nil {
 		if task.Status == common.RUNNING || task.Status == common.STOPPING {
 			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", doc.ID, task.Status)
 		}
@@ -84,7 +84,7 @@ func (s *DocumentService) clearDocumentParseResults(doc *entity.Document, tenant
 	// RUNNING/STOPPING tasks untouched so the check-then-delete window
 	// between GetByDocumentID and the delete above cannot delete a task
 	// that just transitioned to RUNNING.
-	if _, err := s.ingestionTaskDAO.DeleteIfTerminal(doc.ID); err != nil {
+	if _, err := s.ingestionTaskDAO.DeleteIfTerminal(ctx, dao.DB, doc.ID); err != nil {
 		return err
 	}
 
@@ -171,7 +171,7 @@ func (s *DocumentService) clearKBChunkNumWhenRerun(doc *entity.Document) error {
 	}).Error
 }
 
-func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
 	// create document parse id
 	// save to task table
 	// send to message queue
@@ -186,7 +186,7 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 
 	// query database, if the document ids are valid
 	for _, docID := range uniqueDocIDs {
-		doc, err := s.documentDAO.GetByID(docID)
+		doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 		if err != nil {
 			errorMessage := err.Error()
 			responses = append(responses, &service.ParseDocumentResponse{
@@ -242,30 +242,30 @@ func (s *DocumentService) ParseDocuments(datasetID, userID string, docIDs []stri
 // StopParseDocuments stops parsing for the given documents in a dataset.
 // It sets Redis cancel signals for associated tasks and updates doc.run to CANCEL.
 // Returns a map with success_count and optionally errors.
-func (s *DocumentService) StopParseDocuments(datasetID string, docIDs []string) (map[string]interface{}, error) {
+func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID string, docIDs []string) (map[string]interface{}, error) {
 	deduped := common.Deduplicate(docIDs)
 	if len(deduped) == 0 {
 		return nil, fmt.Errorf("no document IDs provided")
 	}
 
-	docs, err := s.validateDocsInDataset(deduped, datasetID)
+	docs, err := s.validateDocsInDataset(ctx, deduped, datasetID)
 	if err != nil {
 		return nil, err
 	}
 
-	var errors []string
+	var errs []string
 	successCount := 0
 	for _, doc := range docs {
-		if cancelErr := s.CancelDocParse(doc); cancelErr != nil {
-			errors = append(errors, cancelErr.Error())
+		if cancelErr := s.CancelDocParse(ctx, doc); cancelErr != nil {
+			errs = append(errs, cancelErr.Error())
 			continue
 		}
 		successCount++
 	}
 
 	result := map[string]interface{}{"success_count": successCount}
-	if len(errors) > 0 {
-		result["errors"] = errors
+	if len(errs) > 0 {
+		result["errors"] = errs
 	}
 	return result, nil
 }
@@ -273,8 +273,8 @@ func (s *DocumentService) StopParseDocuments(datasetID string, docIDs []string) 
 // validateDocsInDataset deduplicates IDs, fetches the documents, and ensures
 // every document exists and belongs to the given dataset. Returns the resolved
 // documents.
-func (s *DocumentService) validateDocsInDataset(docIDs []string, datasetID string) ([]*entity.Document, error) {
-	docs, err := s.documentDAO.GetByIDs(docIDs)
+func (s *DocumentService) validateDocsInDataset(ctx context.Context, docIDs []string, datasetID string) ([]*entity.Document, error) {
+	docs, err := s.documentDAO.GetByIDs(ctx, dao.DB, docIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch documents: %w", err)
 	}
@@ -295,8 +295,8 @@ func (s *DocumentService) validateDocsInDataset(docIDs []string, datasetID strin
 
 // CancelDocParse stops the ingestion task for the document by calling
 // RequestStop (STOPPING), then marks the document run status as CANCEL.
-func (s *DocumentService) CancelDocParse(doc *entity.Document) error {
-	task, err := s.ingestionTaskDAO.GetByDocumentID(doc.ID)
+func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Document) error {
+	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get ingestion task for %s: %v", doc.ID, err)
 	}
@@ -304,17 +304,17 @@ func (s *DocumentService) CancelDocParse(doc *entity.Document) error {
 		return fmt.Errorf("no ingestion task found for document %s", doc.ID)
 	}
 
-	if _, err := s.ingestionTaskSvc.RequestStop(task.ID); err != nil {
+	if _, err = s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
 		return fmt.Errorf("failed to stop ingestion task %s: %v", task.ID, err)
 	}
 
-	if upErr := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"run": string(entity.TaskStatusCancel)}); upErr != nil {
+	if upErr := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"run": string(entity.TaskStatusCancel)}); upErr != nil {
 		return fmt.Errorf("failed to update document %s: %v", doc.ID, upErr)
 	}
 	return nil
 }
 
-func (s *DocumentService) resetDocumentForReparse(doc *entity.Document, tenantID string, parserID *string, pipelineID *string) error {
+func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *entity.Document, tenantID string, parserID *string, pipelineID *string) error {
 	progressMsg := ""
 	run := string(entity.TaskStatusUnstart)
 	updates := map[string]interface{}{
@@ -329,14 +329,14 @@ func (s *DocumentService) resetDocumentForReparse(doc *entity.Document, tenantID
 		updates["pipeline_id"] = *pipelineID
 	}
 
-	if err := s.documentDAO.UpdateByID(doc.ID, updates); err != nil {
-		return errors.New("Document not found!")
+	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, updates); err != nil {
+		return errors.New("document not found")
 	}
 
 	if doc.TokenNum > 0 {
 		decremented, err := s.decrementDocumentAndKBCountersForReparse(doc)
 		if err != nil {
-			return errors.New("Document not found!")
+			return errors.New("document not found")
 		}
 		if !decremented {
 			return nil
@@ -344,7 +344,7 @@ func (s *DocumentService) resetDocumentForReparse(doc *entity.Document, tenantID
 		if s.docEngine != nil {
 			indexName := fmt.Sprintf("ragflow_%s", tenantID)
 			s.deleteChunkImages(doc, indexName)
-			if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+			if _, err = s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
 				return err
 			}
 		}
@@ -446,14 +446,14 @@ func (s *DocumentService) decrementDocumentAndKBCountersForReparse(doc *entity.D
 	return decremented, err
 }
 
-func (s *DocumentService) updateDocumentStatusOnly(doc *entity.Document, kb *entity.Knowledgebase, status int) error {
+func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, status int) error {
 	statusStr := strconv.Itoa(status)
 	if doc.Status != nil && *doc.Status == statusStr {
 		return nil
 	}
 
-	if err := s.documentDAO.UpdateByID(doc.ID, map[string]interface{}{"status": statusStr}); err != nil {
-		return errors.New("Database error (Document update)!")
+	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"status": statusStr}); err != nil {
+		return errors.New("database error (Document update)")
 	}
 
 	if s.docEngine == nil {

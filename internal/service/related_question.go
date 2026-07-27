@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -27,11 +28,11 @@ import (
 )
 
 // GenerateRelatedQuestions generates related search questions for chat/searchbot endpoints.
-func GenerateRelatedQuestions(tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, modelProviderSvc *ModelProviderService) ([]string, error) {
+func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, modelProviderSvc *ModelProviderService) ([]string, error) {
 	if modelProviderSvc == nil {
 		return nil, fmt.Errorf("model provider service not configured")
 	}
-	searchConfig := relatedQuestionsSearchConfig(searchID, searchSvc)
+	searchConfig := relatedQuestionsSearchConfig(ctx, searchID, searchSvc)
 	modelID := relatedQuestionsModelID(tenantID, searchConfig, tenantSvc)
 	prompt, err := LoadPrompt("related_question")
 	if err != nil {
@@ -41,7 +42,7 @@ func GenerateRelatedQuestions(tenantID, question, searchID string, searchSvc *Se
 		{Role: "system", Content: prompt},
 		{Role: "user", Content: "\nKeywords: " + question + "\nRelated search terms:\n    "},
 	}
-	response, err := modelProviderSvc.Chat(tenantID, modelID, messages, relatedQuestionsConfig(searchConfig))
+	response, err := modelProviderSvc.Chat(ctx, tenantID, modelID, messages, relatedQuestionsConfig(searchConfig))
 	if err != nil {
 		return nil, err
 	}
@@ -51,11 +52,11 @@ func GenerateRelatedQuestions(tenantID, question, searchID string, searchSvc *Se
 	return []string{}, nil
 }
 
-func relatedQuestionsSearchConfig(searchID string, searchSvc *SearchService) map[string]interface{} {
+func relatedQuestionsSearchConfig(ctx context.Context, searchID string, searchSvc *SearchService) map[string]interface{} {
 	if searchID == "" || searchSvc == nil {
 		return map[string]interface{}{}
 	}
-	if detail, err := searchSvc.GetDetail(searchID); err == nil && detail != nil {
+	if detail, err := searchSvc.GetDetail(ctx, searchID); err == nil && detail != nil {
 		return relatedQuestionsSearchConfigFromDetail(detail)
 	}
 	return map[string]interface{}{}

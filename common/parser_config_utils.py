@@ -39,5 +39,10 @@ def normalize_layout_recognizer(layout_recognizer_raw: Any) -> tuple[Any, str | 
             # expects all three segments to locate the provider/instance row.
             parser_model_name = layout_recognizer_raw
             layout_recognizer = "SoMark"
+        elif lowered.endswith("@mistral ocr"):
+            # Separate OCR-only factory (never the multi-type "Mistral" factory),
+            # so this suffix cannot collide with pixtral vision models.
+            parser_model_name = layout_recognizer_raw
+            layout_recognizer = "Mistral OCR"
 
     return layout_recognizer, parser_model_name

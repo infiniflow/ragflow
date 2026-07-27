@@ -135,11 +135,10 @@ func TestRealProducerConsumer(t *testing.T) {
 		t.Fatalf("set pipeline_id: %v", err)
 	}
 
-	tc, err := LoadFromIngestionTask(task)
+	tc, err := LoadFromIngestionTask(context.Background(), task)
 	if err != nil {
 		t.Fatalf("LoadFromIngestionTask: %v", err)
 	}
-	tc.Ctx = context.Background()
 	t.Logf("Consumer: Loaded Doc=%s Parser=%s KB=%s Tenant=%s",
 		tc.Doc.ID, tc.Doc.ParserID, tc.KB.ID, tc.Tenant.ID)
 

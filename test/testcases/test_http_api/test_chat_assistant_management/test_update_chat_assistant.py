@@ -43,9 +43,9 @@ class TestChatAssistantUpdate:
             pytest.param({"name": "valid_name"}, 0, "", marks=pytest.mark.p1),
             pytest.param({"name": "a" * (CHAT_ASSISTANT_NAME_LIMIT + 1)}, 102, "", marks=pytest.mark.skip(reason="issues/")),
             pytest.param({"name": 1}, 100, "", marks=pytest.mark.skip(reason="issues/")),
-            pytest.param({"name": ""}, 102, "`name` cannot be empty.", marks=pytest.mark.p3),
-            pytest.param({"name": "test_chat_assistant_1"}, 102, "Duplicated chat name.", marks=pytest.mark.p3),
-            pytest.param({"name": "TEST_CHAT_ASSISTANT_1"}, 102, "Duplicated chat name.", marks=pytest.mark.p3),
+            pytest.param({"name": ""}, 102, "`name` cannot be empty", marks=pytest.mark.p3),
+            pytest.param({"name": "test_chat_assistant_1"}, 102, "duplicated chat name", marks=pytest.mark.p3),
+            pytest.param({"name": "TEST_CHAT_ASSISTANT_1"}, 102, "duplicated chat name", marks=pytest.mark.p3),
         ],
     )
     def test_name(self, HttpApiAuth, add_chat_assistants_func, payload, expected_code, expected_message):
@@ -257,12 +257,12 @@ class TestChatAssistantUpdate:
         # PATCH: empty name
         res = patch_chat_assistant(HttpApiAuth, chat_id, {"name": ""})
         assert res["code"] == 102
-        assert res["message"] == "`name` cannot be empty."
+        assert res["message"] == "`name` cannot be empty"
 
         # PATCH: duplicate name
         res = patch_chat_assistant(HttpApiAuth, chat_id, {"name": "test_chat_assistant_1"})
         assert res["code"] == 102
-        assert res["message"] == "Duplicated chat name."
+        assert res["message"] == "duplicated chat name"
 
         # PATCH: prompt_config without placeholder is allowed
         res = patch_chat_assistant(

@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	iow "ragflow/internal/agent/component/io"
 	"ragflow/internal/agent/runtime"
@@ -196,7 +197,7 @@ func (d *DocsGenerator) Name() string { return d.name }
 
 // Invoke dispatches to the appropriate writer. Input overrides for
 // content / filename are honored.
-func (d *DocsGenerator) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (d *DocsGenerator) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	param := d.param
 	content, err := resolveDocsGeneratorContent(ctx, param.Content, inputs)
 	if err != nil {
@@ -412,8 +413,8 @@ func agentAttachmentDownloadPath(attachmentID, ext, mimeType, filename string) s
 }
 
 // Stream mirrors Invoke; DocsGenerator is a single-shot generator.
-func (d *DocsGenerator) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := d.Invoke(ctx, inputs)
+func (d *DocsGenerator) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := d.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

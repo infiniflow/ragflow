@@ -45,6 +45,7 @@ import (
 	"strings"
 
 	"github.com/xuri/excelize/v2"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 )
@@ -154,7 +155,7 @@ func (e *ExcelProcessorComponent) Name() string { return e.name }
 //	write  — {"rows": [][]any, "sheet_names": []string, "size": <int>,
 //	          "bytes": <[]byte>}
 //	merge  — {"rows": [][]any, "sheet_names": []string, "size": <int>}
-func (e *ExcelProcessorComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (e *ExcelProcessorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// ExcelProcessor does not currently read from canvas state for
 	// binary blobs, but we still pull state so a nil-state error is
 	// surfaced early.
@@ -194,8 +195,8 @@ func (e *ExcelProcessorComponent) Invoke(ctx context.Context, inputs map[string]
 }
 
 // Stream mirrors Invoke; ExcelProcessor is a single-shot transform.
-func (e *ExcelProcessorComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := e.Invoke(ctx, inputs)
+func (e *ExcelProcessorComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := e.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}

@@ -54,6 +54,7 @@ func (h *AgentHandler) DownloadAgentFile(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// IDOR note (security review H1): the Go User struct has no
 	// TenantID field — the project collapses user and tenant in a
 	// single-tenant session model. Python's @add_tenant_id_to_kwargs
@@ -62,7 +63,7 @@ func (h *AgentHandler) DownloadAgentFile(c *gin.Context) {
 	// per-object ownership check, so this port preserves the python
 	// shape. A future per-object ownership check should be added in
 	// both the python and Go code paths.
-	blob, err := h.fileService.DownloadAgentFile(user.ID, fileID)
+	blob, err := h.fileService.DownloadAgentFile(ctx, user.ID, fileID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return

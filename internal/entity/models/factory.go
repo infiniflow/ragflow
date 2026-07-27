@@ -55,6 +55,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewVolcEngine(baseURL, urlSuffix), nil
 	case "vllm":
 		return NewVllmModel(baseURL, urlSuffix), nil
+	case "openai-api-compatible":
+		return NewOpenAIAPICompatibleModel(baseURL, urlSuffix), nil
 	case "xai":
 		return NewXAIModel(baseURL, urlSuffix), nil
 	case "lm-studio":

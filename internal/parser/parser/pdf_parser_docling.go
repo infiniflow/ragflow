@@ -36,7 +36,7 @@ type doclingResponse struct {
 	Results   []doclingResult   `json:"results"`
 }
 
-func parsePDFWithDocling(filename string, data []byte, parser *PDFParser) ParseResult {
+func parsePDFWithDocling(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
@@ -116,7 +116,7 @@ func parsePDFWithDocling(filename string, data []byte, parser *PDFParser) ParseR
 			lastErr = fmt.Errorf("%s: chunked response contained no usable text", candidate.endpoint)
 			continue
 		}
-		if res, ok := parseDoclingStandardResult(filename, body, parser.OutputFormat); ok {
+		if res, ok := parseDoclingStandardResult(ctx, filename, body, parser.OutputFormat); ok {
 			return res
 		}
 		lastErr = fmt.Errorf("%s: standard response contained no parsed document", candidate.endpoint)
@@ -189,7 +189,7 @@ func parseDoclingChunkedResult(filename string, body []byte, outputFormat string
 	return doclingTextsToResult(filename, texts, outputFormat, pageCount), true
 }
 
-func parseDoclingStandardResult(filename string, body []byte, outputFormat string) (ParseResult, bool) {
+func parseDoclingStandardResult(ctx context.Context, filename string, body []byte, outputFormat string) (ParseResult, bool) {
 	var payload doclingResponse
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return ParseResult{}, false
@@ -209,13 +209,13 @@ func parseDoclingStandardResult(filename string, body []byte, outputFormat strin
 	}
 	for _, doc := range docs {
 		if md := strings.TrimSpace(doc.MDContent); md != "" {
-			return parseMinerUMarkdownResult(filename, md, outputFormat, len(docs)), true
+			return parseMinerUMarkdownResult(ctx, filename, md, outputFormat, len(docs)), true
 		}
 		if txt := strings.TrimSpace(doc.TextContent); txt != "" {
 			return doclingTextsToResult(filename, []string{txt}, outputFormat, len(docs)), true
 		}
 		if md, _ := doc.JSONContent["md_content"].(string); strings.TrimSpace(md) != "" {
-			return parseMinerUMarkdownResult(filename, md, outputFormat, len(docs)), true
+			return parseMinerUMarkdownResult(ctx, filename, md, outputFormat, len(docs)), true
 		}
 	}
 	return ParseResult{}, false

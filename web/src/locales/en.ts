@@ -350,6 +350,8 @@ Procedural Memory: Learned skills, habits, and automated procedures.`,
         action: 'Action',
       },
       config: {
+        titleDescription:
+          'Update your memory configuration here, particularly the LLM and prompts.',
         descriptionPlaceholder: 'Describe your memory',
         memorySizeTooltip: `Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes).
 Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.`,
@@ -501,7 +503,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       testing: 'Retrieval testing',
       files: 'files',
       configuration: 'Configuration',
-      nextConfiguration: 'Next configuration',
+      nextConfiguration: 'Dataset configuration',
       knowledgeGraph: 'Knowledge graph',
       compilation: 'Compilation',
       export: 'Export',
@@ -619,11 +621,15 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       topKTip: `Used together with the Rerank model, this setting defines the number of text chunks to be sent to the specified reranking model.`,
       delimiter: `Delimiter for text`,
       delimiterTip:
-        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
+        'A delimiter string is parsed into a list of delimiters. Backticks (` `) are the delimiter-of-delimiters: any matching pair of backticks wraps the characters inside it into one multi-character delimiter; any character outside backticks is itself a delimiter. Delimiters are matched longest-first. Example: \\n`##`; parses to three delimiters — newline (\\n), double hash (##), semicolon (;) — and your text will be split at any of them. Single-char delimiters (e.g. !?; → !, ?, ;) need no backticks; multi-char ones (e.g. ##, END) must be backtick-wrapped.',
       enableChildrenDelimiter: 'Child chunk are used for retrieval',
       childrenDelimiter: 'Delimiter for text',
       childrenDelimiterTip:
-        'A delimiter or separator can consist of one or multiple special characters. If it is multiple characters, ensure they are enclosed in backticks( ``). For example, if you configure your delimiters like this: \\n`##`;, then your texts will be separated at line breaks, double hash symbols (##), and semicolons.',
+        'A delimiter string is parsed into a list of delimiters. Backticks (` `) are the delimiter-of-delimiters: any matching pair of backticks wraps the characters inside it into one multi-character delimiter; any character outside backticks is itself a delimiter. Delimiters are matched longest-first. Example: \\n`##`; parses to three delimiters — newline (\\n), double hash (##), semicolon (;) — and your text will be split at any of them. Single-char delimiters (e.g. !?; → !, ?, ;) need no backticks; multi-char ones (e.g. ##, END) must be backtick-wrapped.',
+      delimiterPreviewLabel: 'Splits at:',
+      delimiterPreviewEmpty:
+        'No delimiters — text will be chunked by size only.',
+      delimiterPreviewCount: '({{count}})',
 
       html4excel: 'Excel to HTML',
       html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dev/enable_excel2html for details.`,
@@ -631,6 +637,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
       autoQuestions: 'Auto-question',
       autoQuestionsTip: `Automatically extract N questions for each chunk to increase their ranking for queries containing those questions. You can check or update the added questions for a chunk from the chunk list. This feature will not disrupt the chunking process if an error occurs, except that it may add an empty result to the original chunk. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. For details, see https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoTags: 'Auto-tags',
       redo: 'Do you want to clear the existing {{chunkNum}} chunks?',
       setMetaData: 'Set metadata',
       pleaseInputJson: 'Please enter JSON',
@@ -1120,6 +1127,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       maxTokensInvalidMessage: 'Please enter a valid number for Max tokens.',
       maxTokensMinMessage: 'Max tokens cannot be less than 0.',
       thinking: 'Thinking',
+      thought: 'Thought',
       thinkingDefault: 'System default',
       thinkingEnabled: 'Enabled',
       thinkingDisabled: 'Disabled',
@@ -1933,6 +1941,7 @@ Example: Virtual Hosted Style`,
       save: 'Save',
       search: 'Search',
       availableModels: 'Available models',
+      recommended: 'Recommended',
       profile: 'Profile',
       avatar: 'Avatar',
       avatarTip: 'This will be displayed on your profile.',
@@ -1988,6 +1997,13 @@ Example: Virtual Hosted Style`,
       apiKeyMessage: 'Please enter the API Key',
       apiKeyTip:
         'The API Key can be obtained by registering the corresponding LLM supplier.',
+      aimlapiGetKey: 'Get API key',
+      aimlapiCheckStatus: 'Check status',
+      aimlapiAwaitingConsent: 'Waiting for approval in the AI/ML API window…',
+      aimlapiKeyAdded: 'Your AI/ML API key has been generated and added above.',
+      aimlapiAuthDenied: 'Authorization was denied. Please try again.',
+      aimlapiAuthExpired: 'The request expired. Please try again.',
+      aimlapiAuthFailed: 'Sign-in failed. Please try again.',
       showMoreModels: 'View models',
       hideModels: 'Hide models',
       baseUrl: 'Base URL',
@@ -2291,7 +2307,7 @@ Example: Virtual Hosted Style`,
       modelMaxTokensMinMessage: 'Max tokens must be at least 0',
     },
     knowledgeCompilation: {
-      builtinTemplates: 'Built-in template',
+      builtinTemplates: 'Template',
     },
     datasetSkill: {
       folders: 'Skills',
@@ -3014,6 +3030,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       systemPrompt: 'System prompt',
       userPrompt: 'User prompt',
       tocDataSource: 'Data source',
+      tagFile: 'Tag file',
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
@@ -3193,9 +3210,9 @@ This process aggregates variables from multiple branches into a single variable 
       extractor: 'Transformer',
       extractorDescription:
         'Use an LLM to extract structured insights from document chunks—such as summaries, classifications, etc.',
-      compiler: 'Compilation',
+      compiler: 'Operator',
       compilerDescription:
-        'Compiles document chunks using knowledge compilation templates into structured artifacts.',
+        'Processes document chunks using operator templates into structured artifacts.',
       outputFormat: 'Output format',
       fileFormats: 'File type',
       fileFormatOptions: {
@@ -3404,6 +3421,9 @@ Important structured information may include: names, dates, locations, events, k
       success: 'Success',
       failed: 'Failed',
       logTitle: 'Title',
+      conversationDetail: 'Conversation detail',
+      user: 'User',
+      assistant: 'Assistant',
     },
     llmTools: {
       bad_calculator: {

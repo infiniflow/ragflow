@@ -18,6 +18,8 @@
 
 package parser
 
+import "context"
+
 type PPTParser struct{}
 
 func NewPPTParser() *PPTParser {
@@ -33,6 +35,6 @@ func (p *PPTParser) String() string {
 // hint (OLE binary). The two file families differ only in the
 // binary container; the python parser.py:slides branch treats
 // them uniformly.
-func (p *PPTParser) ParseWithResult(filename string, data []byte) ParseResult {
-	return (&PPTXParser{format: "ppt"}).ParseWithResult(filename, data)
+func (p *PPTParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	return (&PPTXParser{format: "ppt"}).ParseWithResult(ctx, filename, data)
 }

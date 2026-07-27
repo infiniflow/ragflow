@@ -18,6 +18,7 @@ package parser
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"fmt"
 	"io"
@@ -73,7 +74,7 @@ func (p *EmailParser) ConfigureFromSetup(setup map[string]any) {
 	}
 }
 
-func (p *EmailParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *EmailParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	ext := strings.ToLower(filepath.Ext(filename))
 	if ext == ".msg" {
 		return ParseResult{

@@ -66,9 +66,10 @@ func TestPictureParser_ConfigureFromSetup(t *testing.T) {
 }
 
 func TestPictureParser_ParseWithResult_NilSetup(t *testing.T) {
+	ctx := t.Context()
 	p := NewPictureParser()
 	p.ConfigureFromSetup(nil)
-	res := p.ParseWithResult("photo.png", []byte("\x89PNG"))
+	res := p.ParseWithResult(ctx, "photo.png", []byte("\x89PNG"))
 	if res.Err != nil {
 		t.Errorf("unexpected error for nil setup: %v", res.Err)
 	}
@@ -82,11 +83,12 @@ func TestPictureParser_ParseWithResult_NilSetup(t *testing.T) {
 }
 
 func TestPictureParser_ParseWithResult_ValidExtensions(t *testing.T) {
+	ctx := t.Context()
 	exts := []string{"png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp", "svg", "ico", "avif", "heic", "apng"}
 	p := NewPictureParser()
 	for _, ext := range exts {
 		fn := "img." + ext
-		res := p.ParseWithResult(fn, []byte{1, 2, 3})
+		res := p.ParseWithResult(ctx, fn, []byte{1, 2, 3})
 		if res.Err != nil {
 			t.Errorf("unexpected error for .%s: %v", ext, res.Err)
 		}
@@ -97,8 +99,9 @@ func TestPictureParser_ParseWithResult_ValidExtensions(t *testing.T) {
 }
 
 func TestPictureParser_ParseWithResult_InvalidExtension(t *testing.T) {
+	ctx := t.Context()
 	p := NewPictureParser()
-	res := p.ParseWithResult("sound.mp3", []byte{1})
+	res := p.ParseWithResult(ctx, "sound.mp3", []byte{1})
 	if res.Err == nil {
 		t.Error("expected error for .mp3, got nil")
 	}
@@ -108,8 +111,9 @@ func TestPictureParser_ParseWithResult_InvalidExtension(t *testing.T) {
 }
 
 func TestPictureParser_ParseWithResult_VideoExtension(t *testing.T) {
+	ctx := t.Context()
 	p := NewPictureParser()
-	res := p.ParseWithResult("video.mp4", []byte{1})
+	res := p.ParseWithResult(ctx, "video.mp4", []byte{1})
 	if res.Err == nil {
 		t.Error("expected error for video .mp4, got nil")
 	}
@@ -119,11 +123,12 @@ func TestPictureParser_ParseWithResult_VideoExtension(t *testing.T) {
 }
 
 func TestPictureParser_ParseWithResult_OutputFormat(t *testing.T) {
+	ctx := t.Context()
 	p := NewPictureParser()
 	p.ConfigureFromSetup(map[string]any{
 		"output_format": "json",
 	})
-	res := p.ParseWithResult("photo.jpg", []byte{1, 2, 3})
+	res := p.ParseWithResult(ctx, "photo.jpg", []byte{1, 2, 3})
 	if res.Err != nil {
 		t.Fatalf("unexpected error: %v", res.Err)
 	}

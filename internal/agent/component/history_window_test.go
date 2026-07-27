@@ -131,7 +131,7 @@ func TestLLM_Invoke_HistoryWindow_PrependsFromState(t *testing.T) {
 		MessageHistoryWindowSize: window,
 	})
 	ctx := runtime.WithState(context.Background(), state)
-	_, err := c.Invoke(ctx, map[string]any{})
+	_, err := c.Invoke(ctx, nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestLLM_Invoke_HistoryWindow_DoesNotDuplicateCurrentUser(t *testing.T) {
 		MessageHistoryWindowSize: 5,
 	})
 	ctx := runtime.WithState(context.Background(), state)
-	if _, err := c.Invoke(ctx, map[string]any{}); err != nil {
+	if _, err := c.Invoke(ctx, nil, map[string]any{}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 
@@ -201,7 +201,7 @@ func TestLLM_Invoke_HistoryWindow_ZeroIsNoop(t *testing.T) {
 		// MessageHistoryWindowSize: 0 (default)
 	})
 	ctx := runtime.WithState(context.Background(), state)
-	_, _ = c.Invoke(ctx, map[string]any{})
+	_, _ = c.Invoke(ctx, nil, map[string]any{})
 	if len(stub.captured.Messages) != 1 {
 		t.Errorf("expected only 1 message (no history), got %d", len(stub.captured.Messages))
 	}

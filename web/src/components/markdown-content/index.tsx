@@ -75,12 +75,15 @@ const MarkdownContent = ({
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
+    const thinkSummary = loading
+      ? `${t('chat.thinking')}...`
+      : t('chat.thought');
     return pipe(
-      replaceThinkToSection,
+      (value: string) => replaceThinkToSection(value, thinkSummary),
       replaceRetrievingToSection,
       preprocessLaTeX,
     )(nextText);
-  }, [content, t]);
+  }, [content, loading, t]);
 
   useEffect(() => {
     const docAggs = reference?.doc_aggs;

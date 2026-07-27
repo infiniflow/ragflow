@@ -42,7 +42,7 @@ type mindMapRunConfig struct {
 	TenantSvc     *service.TenantService
 }
 
-func runMindMap(config mindMapRunConfig) (mindMapNode, error) {
+func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, error) {
 	if config.ChunkSvc == nil {
 		return mindMapNode{}, fmt.Errorf("chunk service not configured")
 	}
@@ -54,7 +54,7 @@ func runMindMap(config mindMapRunConfig) (mindMapNode, error) {
 		modelTenantID = config.AuthUserID
 	}
 	retrievalReq := mindMapRetrievalRequest(config.Question, config.KbIDs, config.SearchID, config.SearchConfig)
-	ranks, err := config.ChunkSvc.RetrievalTest(retrievalReq, config.AuthUserID)
+	ranks, err := config.ChunkSvc.RetrievalTest(ctx, retrievalReq, config.AuthUserID)
 	if err != nil {
 		return mindMapNode{}, err
 	}

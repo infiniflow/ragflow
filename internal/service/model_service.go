@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -155,16 +156,6 @@ type CheckConnectionModelInfo struct {
 	ModelTypes []string               `json:"model_type"`
 	MaxTokens  int                    `json:"max_tokens"`
 	Extra      map[string]interface{} `json:"extra"`
-}
-
-func ListModelNames(modelInfo []CheckConnectionModelInfo) []string {
-	names := make([]string, 0, len(modelInfo))
-	for _, mi := range modelInfo {
-		if mi.ModelName != "" {
-			names = append(names, mi.ModelName)
-		}
-	}
-	return names
 }
 
 type CheckConnectionRequest struct {
@@ -334,7 +325,7 @@ func (m *ModelProviderService) DeleteModelProvider(userID, providerName string) 
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, userID string) ([]map[string]interface{}, error) {
+func (m *ModelProviderService) ListSupportedModels(ctx context.Context, providerName, instanceName, userID string) ([]map[string]interface{}, error) {
 	providerName = strings.TrimSpace(providerName)
 
 	// Get tenant ID from user
@@ -390,7 +381,7 @@ func (m *ModelProviderService) ListSupportedModels(providerName, instanceName, u
 		}
 	}
 
-	modelList, err := driver.ListModels(apiConfig)
+	modelList, err := driver.ListModels(ctx, apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -424,7 +415,7 @@ func (m *ModelProviderService) getProviderByIDOrName(tenantID, providerIDOrName 
 	return m.modelProviderDAO.GetByTenantIDAndProviderName(tenantID, strings.TrimSpace(providerIDOrName))
 }
 
-func (m *ModelProviderService) CreateProviderInstance(providerIDOrName, instanceName, apiKey, baseURL, region, userID string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
+func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, providerIDOrName, instanceName, apiKey, baseURL, region, userID string, modelInfo []CreateInstanceModelInfo) (common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
 	// Get tenant ID from user
@@ -453,7 +444,7 @@ func (m *ModelProviderService) CreateProviderInstance(providerIDOrName, instance
 
 	// Verify the API key against the provider.
 	// Mirrors Python's verify_api_key (provider_api_service.py:596).
-	modelVerifyResult := m.verifyProviderAPIKey(providerName, apiKey, region, baseURL, modelInfo)
+	modelVerifyResult := m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
 
 	instanceID := utility.GenerateToken()
 
@@ -582,7 +573,7 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(providerIDOrName, 
 // verifyProviderAPIKey verifies the API key against the provider by calling
 // the driver's CheckConnection. It returns a map from model name to verify
 // status (success/fail/unknown).
-func (m *ModelProviderService) verifyProviderAPIKey(providerName, apiKey, region, baseURL string, modelInfo []CreateInstanceModelInfo) map[string]string {
+func (m *ModelProviderService) verifyProviderAPIKey(ctx context.Context, providerName, apiKey, region, baseURL string, modelInfo []CreateInstanceModelInfo) map[string]string {
 	result := make(map[string]string)
 
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
@@ -619,7 +610,7 @@ func (m *ModelProviderService) verifyProviderAPIKey(providerName, apiKey, region
 		BaseURL: &baseURL,
 	}
 
-	verifyErr := driver.CheckConnection(apiConfig)
+	verifyErr := driver.CheckConnection(ctx, apiConfig)
 	verifyStatus := entity.ModelVerifySuccess
 	if verifyErr != nil {
 		verifyStatus = entity.ModelVerifyFail
@@ -815,7 +806,7 @@ func (m *ModelProviderService) ShowProviderInstance(providerName, instanceIDOrNa
 	return result, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ShowInstanceBalance(providerName, instanceName, userID string) (map[string]interface{}, common.ErrorCode, error) {
+func (m *ModelProviderService) ShowInstanceBalance(ctx context.Context, providerName, instanceName, userID string) (map[string]interface{}, common.ErrorCode, error) {
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -863,14 +854,14 @@ func (m *ModelProviderService) ShowInstanceBalance(providerName, instanceName, u
 	apiConfig.BaseURL = &baseURL
 
 	var result map[string]interface{}
-	result, err = providerInfo.ModelDriver.Balance(apiConfig)
+	result, err = providerInfo.ModelDriver.Balance(ctx, apiConfig)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
 	return result, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) CheckConnection(providerName, apiKey, region, baseURL, instanceID, userID string, modelInfo []string) (common.ErrorCode, error) {
+func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName, apiKey, region, baseURL, instanceID, userID string, modelInfo []CheckConnectionModelInfo) (common.ErrorCode, error) {
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 	if providerInfo == nil {
 		return common.CodeServerError, fmt.Errorf("provider %s not found", providerName)
@@ -897,18 +888,14 @@ func (m *ModelProviderService) CheckConnection(providerName, apiKey, region, bas
 	}
 
 	apiConfig := &modelModule.APIConfig{
-		ApiKey: &apiKey,
-		Region: &region,
-	}
-
-	err := driver.CheckConnection(apiConfig)
-	if err != nil {
-		return common.CodeServerError, err
+		ApiKey:  &apiKey,
+		Region:  &region,
+		BaseURL: &baseURL,
 	}
 
 	// Mirror Python verify_api_key: verify each model by making a real
 	// lightweight API request.  Returns per-model verify results.
-	modelVerifyResult, verifyErr := verifyProviderModel(driver, providerInfo.Models, apiConfig, modelInfo)
+	modelVerifyResult, verifyErr := verifyProviderModel(ctx, driver, providerInfo.Models, apiConfig, modelInfo)
 
 	// When instanceID is provided (frontend passes it), persist the verify
 	// results to the database — mirrors Python's per-model update_model calls
@@ -975,33 +962,67 @@ func (m *ModelProviderService) updateModelVerifyResults(userID, providerName, in
 }
 
 // verifyProviderModel mirrors Python verify_api_key's model-level verification.
-// It tries each model registered for the provider in the factory JSON config
-// and returns a map of modelName → verify status ("success"/"fail") so the
-// caller can persist the results to the database.  A nil error means at least
-// one model passed verification.
-func verifyProviderModel(driver modelModule.ModelDriver, providerModels []*modelModule.Model, apiConfig *modelModule.APIConfig, modelInfo []string) (map[string]string, error) {
+// It tries each model and returns a map of modelName → verify status
+// ("success"/"fail") so the caller can persist the results to the database.
+// A nil error means at least one model passed verification.
+//
+// When modelInfo is provided (non-empty), it is used directly as the source of
+// models to verify — each entry carries model_name and model_type ([]string).
+// When modelInfo is empty, the function falls back to the provider's static
+// model catalog (providerModels).
+func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, providerModels []*modelModule.Model, apiConfig *modelModule.APIConfig, modelInfo []CheckConnectionModelInfo) (map[string]string, error) {
 	modelVerifyResult := make(map[string]string)
 
 	// Determine which models to verify: prefer the caller-supplied modelInfo
-	// list; fall back to the full provider model catalog.
+	// list; fall back to the full provider model catalog.  Mirrors Python’s
+	// verify_api_key ll. 656–671.
 	var modelsToVerify []*modelModule.Model
 	if len(modelInfo) > 0 {
-		providerModelMap := make(map[string]*modelModule.Model, len(providerModels))
-		for _, m := range providerModels {
-			providerModelMap[m.Name] = m
-		}
-		for _, name := range modelInfo {
-			name = strings.TrimSpace(name)
-			if m, ok := providerModelMap[name]; ok {
-				modelsToVerify = append(modelsToVerify, m)
+		for _, mi := range modelInfo {
+			modelName := strings.TrimSpace(mi.ModelName)
+			if modelName == "" {
+				continue
 			}
+			modelTypes := mi.ModelTypes
+			if len(modelTypes) == 0 {
+				// When the caller didn't supply model types, infer them from the
+				// model name using the same hint heuristics as Python's
+				// OpenAIAPICompatible._infer_model_types.
+				modelTypes = modelModule.InferModelTypes(modelName)
+			}
+			modelsToVerify = append(modelsToVerify, &modelModule.Model{
+				Name:       modelName,
+				ModelTypes: modelTypes,
+			})
 		}
 	} else {
 		modelsToVerify = providerModels
 	}
 
 	if len(modelsToVerify) == 0 {
-		return modelVerifyResult, fmt.Errorf("no models found for provider")
+		// Third fallback: try to fetch remote models via the provider's API,
+		// mirroring Python's get_model_list() fallback in verify_api_key.
+		remoteModels, listErr := driver.ListModels(ctx, apiConfig)
+		if listErr == nil {
+			for _, rm := range remoteModels {
+				modelName := strings.TrimSpace(rm.Name)
+				if modelName == "" {
+					continue
+				}
+				modelTypes := rm.ModelTypes
+				if len(modelTypes) == 0 {
+					modelTypes = modelModule.InferModelTypes(modelName)
+				}
+				modelsToVerify = append(modelsToVerify, &modelModule.Model{
+					Name:       modelName,
+					ModelTypes: modelTypes,
+				})
+			}
+		}
+
+		if len(modelsToVerify) == 0 {
+			return modelVerifyResult, fmt.Errorf("no models found for provider")
+		}
 	}
 
 	var errs []error
@@ -1025,18 +1046,20 @@ func verifyProviderModel(driver modelModule.ModelDriver, providerModels []*model
 			switch mtLower {
 			case "chat", "vision":
 				msg := []modelModule.Message{{Role: "user", Content: "Hi"}}
-				_, err = driver.ChatWithMessages(modelName, msg, apiConfig, nil, nil)
+				_, err = driver.ChatWithMessages(ctx, modelName, msg, apiConfig, nil, nil)
 			case "embedding":
-				_, err = driver.Embed(&modelName, []string{"test"}, apiConfig, nil, nil)
+				_, err = driver.Embed(ctx, &modelName, []string{"test"}, apiConfig, nil, nil)
 			case "rerank":
-				_, err = driver.Rerank(&modelName, "test", []string{"test"}, apiConfig, &modelModule.RerankConfig{}, nil)
+				_, err = driver.Rerank(ctx, &modelName, "test", []string{"test"}, apiConfig, &modelModule.RerankConfig{}, nil)
 			case "tts":
 				content := "hello"
-				_, err = driver.AudioSpeech(&modelName, &content, apiConfig, nil, nil)
+				_, err = driver.AudioSpeech(ctx, &modelName, &content, apiConfig, nil, nil)
 			case "asr":
-				err = verifyASRModel(driver, modelName, apiConfig)
+				err = verifyASRModel(ctx, driver, modelName, apiConfig)
 			case "ocr":
-				err = verifyOCRModel(driver, modelName, apiConfig)
+				err = verifyOCRModel(ctx, driver, modelName, apiConfig)
+			case "doc_parse":
+				err = driver.CheckConnection(ctx, apiConfig)
 			default:
 				continue
 			}
@@ -1136,7 +1159,7 @@ func generateTestWAV() []byte {
 // verifyASRModel mirrors Python sequence2txt_model.py's check_available:
 // generates a minimal test WAV, writes it to a temp file, calls
 // TranscribeAudio, and checks the result for errors.
-func verifyASRModel(driver modelModule.ModelDriver, modelName string, apiConfig *modelModule.APIConfig) error {
+func verifyASRModel(ctx context.Context, driver modelModule.ModelDriver, modelName string, apiConfig *modelModule.APIConfig) error {
 	wavData := generateTestWAV()
 
 	tmpFile, err := os.CreateTemp("", "ragflow-asr-verify-*.wav")
@@ -1152,7 +1175,7 @@ func verifyASRModel(driver modelModule.ModelDriver, modelName string, apiConfig 
 	}
 	tmpFile.Close()
 
-	resp, err := driver.TranscribeAudio(&modelName, &tmpPath, apiConfig, nil, nil)
+	resp, err := driver.TranscribeAudio(ctx, &modelName, &tmpPath, apiConfig, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -1166,11 +1189,11 @@ func verifyASRModel(driver modelModule.ModelDriver, modelName string, apiConfig 
 // minimal PNG (1×1 pixel white) through the OCR pipeline.  Most OCR
 // providers return an error or empty text for such a trivial image;
 // we accept any non-error response as a successful connectivity check.
-func verifyOCRModel(driver modelModule.ModelDriver, modelName string, apiConfig *modelModule.APIConfig) error {
+func verifyOCRModel(ctx context.Context, driver modelModule.ModelDriver, modelName string, apiConfig *modelModule.APIConfig) error {
 	// Send a minimal 1×1 white PNG through the OCR pipeline to verify
 	// connectivity. Most OCRModel drivers only check server reachability
 	// rather than performing full document parsing.
-	_, err := driver.OCRFile(&modelName, minimalPNG(), nil, apiConfig, nil, nil)
+	_, err := driver.OCRFile(ctx, &modelName, minimalPNG(), nil, apiConfig, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -1192,7 +1215,7 @@ func minimalPNG() []byte {
 	}
 }
 
-func (m *ModelProviderService) CheckInstanceConnection(providerName, instanceName, userID string) (common.ErrorCode, error) {
+func (m *ModelProviderService) CheckInstanceConnection(ctx context.Context, providerName, instanceName, userID string) (common.ErrorCode, error) {
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -1245,14 +1268,14 @@ func (m *ModelProviderService) CheckInstanceConnection(providerName, instanceNam
 		}
 	}
 
-	err = driver.CheckConnection(apiConfig)
+	err = driver.CheckConnection(ctx, apiConfig)
 	if err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ListTasks(providerName, instanceName, userID string) ([]modelModule.ListTaskStatus, common.ErrorCode, error) {
+func (m *ModelProviderService) ListTasks(ctx context.Context, providerName, instanceName, userID string) ([]modelModule.ListTaskStatus, common.ErrorCode, error) {
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -1306,14 +1329,14 @@ func (m *ModelProviderService) ListTasks(providerName, instanceName, userID stri
 	}
 
 	var listTaskResponse []modelModule.ListTaskStatus
-	listTaskResponse, err = driver.ListTasks(apiConfig)
+	listTaskResponse, err = driver.ListTasks(ctx, apiConfig)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
 	return listTaskResponse, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ShowTask(providerName, instanceName, taskID, userID string) (*modelModule.TaskResponse, common.ErrorCode, error) {
+func (m *ModelProviderService) ShowTask(ctx context.Context, providerName, instanceName, taskID, userID string) (*modelModule.TaskResponse, common.ErrorCode, error) {
 
 	// Get tenant ID from user
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -1367,7 +1390,7 @@ func (m *ModelProviderService) ShowTask(providerName, instanceName, taskID, user
 	}
 
 	var taskResponse *modelModule.TaskResponse
-	taskResponse, err = driver.ShowTask(taskID, apiConfig)
+	taskResponse, err = driver.ShowTask(ctx, taskID, apiConfig)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1803,7 +1826,7 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(tenantID, providerName, 
 	return nil
 }
 
-func (m *ModelProviderService) AlterProviderInstance(userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo, verify bool) (common.ErrorCode, error) {
+func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo, verify bool) (common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
@@ -1838,7 +1861,7 @@ func (m *ModelProviderService) AlterProviderInstance(userID, providerIDOrName, i
 	// Verify API key if requested.
 	modelVerifyResult := make(map[string]string)
 	if verify {
-		modelVerifyResult = m.verifyProviderAPIKey(providerName, apiKey, region, baseURL, modelInfo)
+		modelVerifyResult = m.verifyProviderAPIKey(ctx, providerName, apiKey, region, baseURL, modelInfo)
 	}
 
 	// Update instance record.
@@ -2571,7 +2594,7 @@ func (m *ModelProviderService) getModelInstanceAndProviderByID(modelID *string, 
 }
 
 // ChatToModelWithMessages sends messages to the model with messages array
-func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, modelUsage *common.ModelUsage) (*modelModule.ChatResponse, common.ErrorCode, error) {
+func (m *ModelProviderService) ChatToModelWithMessages(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, modelUsage *common.ModelUsage) (*modelModule.ChatResponse, common.ErrorCode, error) {
 
 	var err error
 	var info *ModelInstanceAndProviderInfo
@@ -2630,7 +2653,7 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 	modelUsage.InstanceID = info.InstanceEntity.ID
 	modelUsage.APIKey = info.InstanceEntity.APIKey
 
-	response, err = modelDriver.ChatWithMessages(resolvedModelName, messages, info.APIConfig, modelConfig, modelUsage)
+	response, err = modelDriver.ChatWithMessages(ctx, resolvedModelName, messages, info.APIConfig, modelConfig, modelUsage)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2642,7 +2665,7 @@ func (m *ModelProviderService) ChatToModelWithMessages(providerName, instanceNam
 }
 
 // ChatToModelStreamWithSender streams chat response directly via sender function ( the best performance, no channel)
-func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) (common.ErrorCode, error) {
+func (m *ModelProviderService) ChatToModelStreamWithSender(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) (common.ErrorCode, error) {
 
 	var err error
 	var info *ModelInstanceAndProviderInfo
@@ -2697,7 +2720,7 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(providerName, instanc
 	modelUsage.InstanceID = info.InstanceEntity.ID
 	modelUsage.APIKey = info.InstanceEntity.APIKey
 
-	err = modelDriver.ChatStreamlyWithSender(resolvedModelName, messages, info.APIConfig, modelConfig, modelUsage, sender)
+	err = modelDriver.ChatStreamlyWithSender(ctx, resolvedModelName, messages, info.APIConfig, modelConfig, modelUsage, sender)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -2735,7 +2758,7 @@ func validateEmbeddingDimension(model *modelModule.Model, requested int) error {
 }
 
 // EmbedText sends texts to the embedding model
-func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, modelID *string, userID string, texts []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, common.ErrorCode, error) {
+func (m *ModelProviderService) EmbedText(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, texts []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, common.ErrorCode, error) {
 
 	var err error
 	var info *ModelInstanceAndProviderInfo
@@ -2789,7 +2812,7 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 	}
 
 	var response []modelModule.EmbeddingData
-	response, err = modelDriver.Embed(&resolvedModelName, texts, info.APIConfig, modelConfig, nil)
+	response, err = modelDriver.Embed(ctx, &resolvedModelName, texts, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2801,7 +2824,7 @@ func (m *ModelProviderService) EmbedText(providerName, instanceName, modelName, 
 }
 
 // RerankDocument sends texts to the embedding model
-func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelName, modelID *string, userID, query string, documents []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.RerankConfig) (*modelModule.RerankResponse, common.ErrorCode, error) {
+func (m *ModelProviderService) RerankDocument(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID, query string, documents []string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.RerankConfig) (*modelModule.RerankResponse, common.ErrorCode, error) {
 
 	var err error
 	var info *ModelInstanceAndProviderInfo
@@ -2851,7 +2874,7 @@ func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelN
 	}
 
 	var response *modelModule.RerankResponse
-	response, err = modelDriver.Rerank(&resolvedModelName, query, documents, info.APIConfig, modelConfig, nil)
+	response, err = modelDriver.Rerank(ctx, &resolvedModelName, query, documents, info.APIConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2860,7 +2883,7 @@ func (m *ModelProviderService) RerankDocument(providerName, instanceName, modelN
 }
 
 // TranscribeAudio transcribe audio file to text
-func (m *ModelProviderService) TranscribeAudio(providerName, instanceName, modelName, modelID *string, userID string, audioFile *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ASRConfig) (*modelModule.ASRResponse, common.ErrorCode, error) {
+func (m *ModelProviderService) TranscribeAudio(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, audioFile *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ASRConfig) (*modelModule.ASRResponse, common.ErrorCode, error) {
 
 	var err error
 	var info *ModelInstanceAndProviderInfo
@@ -2905,7 +2928,7 @@ func (m *ModelProviderService) TranscribeAudio(providerName, instanceName, model
 	}
 
 	var response *modelModule.ASRResponse
-	response, err = modelDriver.TranscribeAudio(modelName, audioFile, apiConfig, modelConfig, nil)
+	response, err = modelDriver.TranscribeAudio(ctx, modelName, audioFile, apiConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -2917,7 +2940,7 @@ func (m *ModelProviderService) TranscribeAudio(providerName, instanceName, model
 }
 
 // TranscribeAudioStream transcribe audio file to text stream directly via sender function ( the best performance, no channel)
-func (m *ModelProviderService) TranscribeAudioStream(providerName, instanceName, modelName, modelID *string, userID string, audioFile *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ASRConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
+func (m *ModelProviderService) TranscribeAudioStream(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, audioFile *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ASRConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
 
 	var err error
 	var info *ModelInstanceAndProviderInfo
@@ -2961,7 +2984,7 @@ func (m *ModelProviderService) TranscribeAudioStream(providerName, instanceName,
 		}
 	}
 
-	err = modelDriver.TranscribeAudioWithSender(modelName, audioFile, apiConfig, modelConfig, nil, sender)
+	err = modelDriver.TranscribeAudioWithSender(ctx, modelName, audioFile, apiConfig, modelConfig, nil, sender)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -2970,7 +2993,7 @@ func (m *ModelProviderService) TranscribeAudioStream(providerName, instanceName,
 }
 
 // AudioSpeech convert audio to speech
-func (m *ModelProviderService) AudioSpeech(providerName, instanceName, modelName, modelID *string, userID string, audioContent *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.TTSConfig) (*modelModule.TTSResponse, common.ErrorCode, error) {
+func (m *ModelProviderService) AudioSpeech(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, audioContent *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.TTSConfig) (*modelModule.TTSResponse, common.ErrorCode, error) {
 
 	var err error
 	var info *ModelInstanceAndProviderInfo
@@ -3015,7 +3038,7 @@ func (m *ModelProviderService) AudioSpeech(providerName, instanceName, modelName
 	}
 
 	var response *modelModule.TTSResponse
-	response, err = modelDriver.AudioSpeech(modelName, audioContent, apiConfig, modelConfig, nil)
+	response, err = modelDriver.AudioSpeech(ctx, modelName, audioContent, apiConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -3026,7 +3049,7 @@ func (m *ModelProviderService) AudioSpeech(providerName, instanceName, modelName
 	return response, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, modelName, modelID *string, userID string, audioContent *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.TTSConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
+func (m *ModelProviderService) AudioSpeechStream(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, audioContent *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.TTSConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
 
 	var err error
 	var info *ModelInstanceAndProviderInfo
@@ -3070,7 +3093,7 @@ func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, mod
 		}
 	}
 
-	err = modelDriver.AudioSpeechWithSender(modelName, audioContent, apiConfig, modelConfig, nil, sender)
+	err = modelDriver.AudioSpeechWithSender(ctx, modelName, audioContent, apiConfig, modelConfig, nil, sender)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -3078,7 +3101,7 @@ func (m *ModelProviderService) AudioSpeechStream(providerName, instanceName, mod
 	return common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, modelID *string, userID string, content []byte, url *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.OCRConfig) (*modelModule.OCRFileResponse, common.ErrorCode, error) {
+func (m *ModelProviderService) OCRFile(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, content []byte, url *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.OCRConfig) (*modelModule.OCRFileResponse, common.ErrorCode, error) {
 
 	var err error
 	var info *ModelInstanceAndProviderInfo
@@ -3123,7 +3146,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, mo
 	}
 
 	var response *modelModule.OCRFileResponse
-	response, err = modelDriver.OCRFile(modelName, content, url, apiConfig, modelConfig, nil)
+	response, err = modelDriver.OCRFile(ctx, modelName, content, url, apiConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -3134,7 +3157,7 @@ func (m *ModelProviderService) OCRFile(providerName, instanceName, modelName, mo
 	return response, common.CodeSuccess, nil
 }
 
-func (m *ModelProviderService) ParseFile(providerName, instanceName, modelName, modelID *string, userID string, content []byte, url *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ParseFileConfig) (*modelModule.ParseFileResponse, common.ErrorCode, error) {
+func (m *ModelProviderService) ParseFile(ctx context.Context, providerName, instanceName, modelName, modelID *string, userID string, content []byte, url *string, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ParseFileConfig) (*modelModule.ParseFileResponse, common.ErrorCode, error) {
 
 	var err error
 	var info *ModelInstanceAndProviderInfo
@@ -3178,7 +3201,7 @@ func (m *ModelProviderService) ParseFile(providerName, instanceName, modelName, 
 	}
 
 	var response *modelModule.ParseFileResponse
-	response, err = modelDriver.ParseFile(modelName, content, url, apiConfig, modelConfig, nil)
+	response, err = modelDriver.ParseFile(ctx, modelName, content, url, apiConfig, modelConfig, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -3190,8 +3213,8 @@ func (m *ModelProviderService) ParseFile(providerName, instanceName, modelName, 
 }
 
 // GetEmbeddingModel returns an EmbeddingModel wrapper for the given tenant
-func (m *ModelProviderService) GetEmbeddingModel(tenantID, compositeModelName string) (*modelModule.EmbeddingModel, error) {
-	driver, modelName, apiConfig, maxTokens, err := m.ResolveModelConfig(tenantID, entity.ModelTypeEmbedding, compositeModelName)
+func (m *ModelProviderService) GetEmbeddingModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.EmbeddingModel, error) {
+	driver, modelName, apiConfig, maxTokens, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
@@ -3199,8 +3222,8 @@ func (m *ModelProviderService) GetEmbeddingModel(tenantID, compositeModelName st
 }
 
 // GetChatModel  returns a ChatModel wrapper for the given tenant
-func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string) (*modelModule.ChatModel, error) {
-	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(tenantID, entity.ModelTypeChat, compositeModelName)
+func (m *ModelProviderService) GetChatModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.ChatModel, error) {
+	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
@@ -3208,8 +3231,8 @@ func (m *ModelProviderService) GetChatModel(tenantID, compositeModelName string)
 }
 
 // GetRerankModel returns a RerankModel wrapper for the given tenant
-func (m *ModelProviderService) GetRerankModel(tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
-	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(tenantID, entity.ModelTypeRerank, compositeModelName)
+func (m *ModelProviderService) GetRerankModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.RerankModel, error) {
+	driver, modelName, apiConfig, _, err := m.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, compositeModelName)
 	if err != nil {
 		return nil, err
 	}
@@ -3225,7 +3248,7 @@ type AddModelRequest struct {
 	Extra        map[string]interface{} `json:"extra"`
 }
 
-func (m *ModelProviderService) GetTenantDefaultModelByType(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func (m *ModelProviderService) GetTenantDefaultModelByType(ctx context.Context, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	if modelType == entity.ModelTypeOCR {
 		return nil, "", nil, 0, fmt.Errorf("OCR model name is required")
 	}
@@ -3236,7 +3259,7 @@ func (m *ModelProviderService) GetTenantDefaultModelByType(tenantID string, mode
 	}
 	modelName, modelID := defaultModelRefs(tenant, modelType)
 	if modelID != "" {
-		driver, resolvedName, apiConfig, maxTokens, idErr := m.GetModelConfigByID(tenantID, modelType, modelID)
+		driver, resolvedName, apiConfig, maxTokens, idErr := m.GetModelConfigByID(ctx, tenantID, modelType, modelID)
 		if idErr == nil {
 			return driver, resolvedName, apiConfig, maxTokens, nil
 		}
@@ -3249,11 +3272,11 @@ func (m *ModelProviderService) GetTenantDefaultModelByType(tenantID string, mode
 		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
 	}
 
-	return m.ResolveModelConfig(tenantID, modelType, modelName)
+	return m.ResolveModelConfig(ctx, tenantID, modelType, modelName)
 }
 
 // GetModelConfigByID returns model driver and API config for a tenant_model row by its ID.
-func (m *ModelProviderService) GetModelConfigByID(userID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID string, modelType entity.ModelType, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	common.Debug("GetModelConfigByID",
 		zap.String("userID", userID),
 		zap.String("modelType", modelType.String()),
@@ -3269,7 +3292,7 @@ func (m *ModelProviderService) GetModelConfigByID(userID string, modelType entit
 	if modelEntity.Status != "active" {
 		return nil, "", nil, 0, fmt.Errorf("tenant model id=%s is disabled", modelID)
 	}
-	if modelType != 0 && !entity.ModelType(modelEntity.ModelType).Has(modelType) {
+	if !entity.ModelType(modelEntity.ModelType).Has(modelType) {
 		return nil, "", nil, 0, fmt.Errorf("tenant model id=%s cannot be used as %s model", modelID, modelType.String())
 	}
 
@@ -3285,7 +3308,7 @@ func (m *ModelProviderService) GetModelConfigByID(userID string, modelType entit
 	}
 
 	if providerEntity.TenantID != userID {
-		userTenants, terr := NewUserTenantService().GetUserTenantRelationByUserID(userID)
+		userTenants, terr := NewUserTenantService().GetUserTenantRelationByUserIDWithContext(ctx, userID)
 		if terr != nil {
 			return nil, "", nil, 0, terr
 		}
@@ -3365,19 +3388,19 @@ func defaultModelRefs(tenant *entity.Tenant, modelType entity.ModelType) (string
 	}
 }
 
-func (m *ModelProviderService) ResolveModelConfig(tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	if strings.TrimSpace(modelRef) == "" {
 		return nil, "", nil, 0, fmt.Errorf("model ref is required")
 	}
 	if _, err := m.modelDAO.GetByID(modelRef); err == nil {
-		return m.GetModelConfigByID(tenantID, modelType, modelRef)
+		return m.GetModelConfigByID(ctx, tenantID, modelType, modelRef)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, "", nil, 0, err
 	}
 	return m.GetModelConfigFromProviderInstance(tenantID, modelType, modelRef)
 }
 
-func (m *ModelProviderService) ResolveModelID(tenantID string, modelType entity.ModelType, modelName string) (string, error) {
+func (m *ModelProviderService) ResolveModelID(ctx context.Context, tenantID string, modelType entity.ModelType, modelName string) (string, error) {
 	if modelObj, err := m.modelDAO.GetByID(modelName); err == nil {
 		if modelObj.Status != "active" {
 			return "", fmt.Errorf("tenant model id=%s is disabled", modelName)
@@ -3385,7 +3408,7 @@ func (m *ModelProviderService) ResolveModelID(tenantID string, modelType entity.
 		if !entity.ModelType(modelObj.ModelType).Has(modelType) {
 			return "", fmt.Errorf("tenant model id=%s cannot be used as %s model", modelName, modelType.String())
 		}
-		if _, _, _, _, err := m.GetModelConfigByID(tenantID, modelType, modelName); err != nil {
+		if _, _, _, _, err = m.GetModelConfigByID(ctx, tenantID, modelType, modelName); err != nil {
 			return "", err
 		}
 		return modelObj.ID, nil
@@ -4003,13 +4026,13 @@ func (m *ModelProviderService) isImage2TextLLM(tenantID, llmID string) bool {
 // If llmID is empty, falls back to the tenant's default chat model.
 // When the named LLM is registered as an image2text model, returns the
 // IMAGE2TEXT driver/config instead of CHAT.
-func (m *ModelProviderService) GetChatModelConfig(tenantID string, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func (m *ModelProviderService) GetChatModelConfig(ctx context.Context, tenantID string, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	if llmID == "" {
-		return m.GetTenantDefaultModelByType(tenantID, entity.ModelTypeChat)
+		return m.GetTenantDefaultModelByType(ctx, tenantID, entity.ModelTypeChat)
 	}
 	modelType := entity.ModelTypeChat
 	if m.isImage2TextLLM(tenantID, llmID) {
 		modelType = entity.ModelTypeImage2Text
 	}
-	return m.ResolveModelConfig(tenantID, modelType, llmID)
+	return m.ResolveModelConfig(ctx, tenantID, modelType, llmID)
 }

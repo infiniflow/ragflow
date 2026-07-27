@@ -213,6 +213,10 @@ type ParserConfig struct {
 	SeparateTablesFigs bool
 	SortByTop          bool
 	SkipOCR            bool
+	// Pages restricts parsing to these 1-indexed inclusive page ranges.
+	// nil/empty means parse all pages. Ranges beyond the document are clamped
+	// at parse time; fully out-of-range ranges are skipped.
+	Pages [][]int
 }
 
 // DefaultParserConfig returns a ParserConfig with sensible defaults.
