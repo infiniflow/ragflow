@@ -74,7 +74,7 @@ func (s *LangfuseService) SetAPIKey(ctx context.Context, tenantID, secretKey, pu
 		return nil, common.CodeDataError, errors.New("missing required fields")
 	}
 
-	ok, err := s.verifier.AuthCheck(context.Background(), host, publicKey, secretKey)
+	ok, err := s.verifier.AuthCheck(ctx, host, publicKey, secretKey)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -107,7 +107,7 @@ func (s *LangfuseService) GetAPIKey(ctx context.Context, tenantID string) (*enti
 		return nil, common.CodeSuccess, "Have not record any Langfuse keys.", nil
 	}
 
-	projectID, projectName, err := s.verifier.GetProject(context.Background(), row.Host, row.PublicKey, row.SecretKey)
+	projectID, projectName, err := s.verifier.GetProject(ctx, row.Host, row.PublicKey, row.SecretKey)
 	if err != nil {
 		if errors.Is(err, ErrLangfuseUnauthorized) {
 			return nil, common.CodeDataError, "Invalid Langfuse keys loaded", err
