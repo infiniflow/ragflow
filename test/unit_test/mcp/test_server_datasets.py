@@ -40,7 +40,7 @@ class _FakeResponse:
 
 
 def _datasets(count):
-    return [{"id": f"dataset-{idx}", "description": f"description-{idx}"} for idx in range(count)]
+    return [{"id": f"dataset-{idx}", "name": f"name-{idx}", "description": f"description-{idx}"} for idx in range(count)]
 
 
 @pytest.fixture()
@@ -72,6 +72,7 @@ async def test_list_datasets_default_fetches_all_with_rest_page_size_limit(monke
 
     rows = [json.loads(line) for line in result.splitlines()]
     assert [row["id"] for row in rows] == [f"dataset-{idx}" for idx in range(250)]
+    assert [row["name"] for row in rows] == [f"name-{idx}" for idx in range(250)]
     assert [request["params"]["page"] for request in requests] == [1, 2, 3]
     assert all(request["path"] == "/datasets" for request in requests)
     assert all(request["params"]["page_size"] == 100 for request in requests)
@@ -80,7 +81,7 @@ async def test_list_datasets_default_fetches_all_with_rest_page_size_limit(monke
 @pytest.mark.asyncio
 async def test_resolve_dataset_ids_fetches_all_pages_and_deduplicates(monkeypatch, mcp_server):
     connector = mcp_server.RAGFlowConnector(base_url=mcp_server.BASE_URL)
-    datasets = _datasets(101) + [{"id": "dataset-100", "description": "duplicate"}]
+    datasets = _datasets(101) + [{"id": "dataset-100", "name": "name-100", "description": "duplicate"}]
     requests = _stub_dataset_pages(monkeypatch, connector, datasets)
 
     result = await connector.resolve_dataset_ids(api_key="unit-key")
@@ -115,3 +116,27 @@ async def test_list_datasets_clamps_explicit_page_size_to_rest_limit_and_preserv
         "id": "dataset-1",
         "name": "target",
     }
+
+
+@pytest.mark.asyncio
+async def test_list_datasets_includes_name_field(monkeypatch, mcp_server):
+    """MCP list_datasets must surface dataset name (#17133)."""
+    connector = mcp_server.RAGFlowConnector(base_url=mcp_server.BASE_URL)
+    _stub_dataset_pages(
+        monkeypatch,
+        connector,
+        [
+            {
+                "id": "46ea1644813211f1bc41abcb1d4727a4",
+                "name": "B3 Documentation",
+                "description": None,
+            }
+        ],
+    )
+
+    result = await connector.list_datasets(api_key="unit-key")
+    row = json.loads(result.splitlines()[0])
+    assert row["id"] == "46ea1644813211f1bc41abcb1d4727a4"
+    assert row["name"] == "B3 Documentation"
+    assert row["description"] is None or row["description"] == ""
+

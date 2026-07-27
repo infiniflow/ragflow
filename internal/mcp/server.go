@@ -27,7 +27,7 @@ import (
 // either in-process service calls or out-of-process HTTP calls.
 type Connector interface {
 	// ListDatasets returns newline-delimited JSON lines, each containing
-	// at minimum {"id": "...", "description": "..."}.
+	// at minimum {"id": "...", "name": "...", "description": "..."}.
 	ListDatasets(page, pageSize int, orderby string, desc bool) (string, error)
 
 	// ListChats returns newline-delimited JSON lines, each containing
