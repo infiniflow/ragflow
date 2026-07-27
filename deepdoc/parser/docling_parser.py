@@ -136,16 +136,20 @@ class DoclingParser(RAGFlowPdfParser):
         """Translate RAGFlow's task page range into Docling's ``page_range``.
 
         RAGFlow is 0-based with ``page_to`` exclusive (Python slice stop); Docling
-        is 1-based with both bounds inclusive and rejects a range whose end
-        precedes its start. Returns ``None`` when the caller did not narrow the
-        range, so a document that was never split sends exactly the request it
-        sent before page ranges were supported.
+        is 1-based with both bounds inclusive and rejects a range whose start is
+        below 1 or whose end precedes its start. Bounds are clamped first, since
+        ``parse_pdf`` is public and its callers are not required to pre-clamp.
+
+        Returns ``None`` for a range that covers the whole document, and for an
+        empty one; both mean "convert everything".
         """
-        if page_from <= 0 and page_to >= MAXIMUM_PAGE_NUMBER:
+        start = max(0, page_from)
+        end = min(page_to, MAXIMUM_PAGE_NUMBER)
+        if start == 0 and end >= MAXIMUM_PAGE_NUMBER:
             return None
-        if page_to <= page_from:
+        if end <= start:
             return None
-        return (page_from + 1, page_to)
+        return (start + 1, end)
 
     def __images__(self, fnm, zoomin: int = 1, page_from=0, page_to=MAXIMUM_PAGE_NUMBER, callback=None):
         self.page_from = page_from
@@ -170,10 +174,15 @@ class DoclingParser(RAGFlowPdfParser):
         if bbox is None:
             return ""
         x0, x1, top, bott = bbox.x0, bbox.x1, bbox.y0, bbox.y1
-        if hasattr(self, "page_images") and self.page_images and len(self.page_images) >= bbox.page_no:
-            _, page_height = self.page_images[bbox.page_no - 1].size
+        # Docling numbers pages from the start of the document while page_images
+        # only holds the rendered window, and crop() adds page_from back when it
+        # turns a tag into a position. Emit window-relative page numbers, like
+        # cropout_docling_table already indexes by.
+        page_no = bbox.page_no - getattr(self, "page_from", 0)
+        if hasattr(self, "page_images") and self.page_images and 0 < page_no <= len(self.page_images):
+            _, page_height = self.page_images[page_no - 1].size
             top, bott = page_height - top, page_height - bott
-        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(bbox.page_no, x0, x1, top, bott)
+        return "@@{}\t{:.1f}\t{:.1f}\t{:.1f}\t{:.1f}##".format(page_no, x0, x1, top, bott)
 
     @staticmethod
     def extract_positions(txt: str) -> list[tuple[list[int], float, float, float, float]]:
@@ -451,9 +460,8 @@ class DoclingParser(RAGFlowPdfParser):
         # docling-serve's ConvertDocumentsOptions.page_range is Docling's own field
         # (docling.datamodel.service.options): 1-based, both bounds inclusive.
         # Docling still numbers the pages it returns from the start of the
-        # document, so nothing downstream needs rebasing. Empty for a task that
-        # covers the whole document, leaving those requests byte-for-byte as they
-        # were.
+        # document, so nothing downstream needs rebasing. A task covering the
+        # whole document omits the field entirely.
         range_opt = {"page_range": list(page_range)} if page_range else {}
 
         # Standard payloads
@@ -643,7 +651,13 @@ class DoclingParser(RAGFlowPdfParser):
             callback(0.1, f"[Docling] Converting: {src_path}")
 
         try:
-            self.__images__(str(src_path), zoomin=1)
+            # Render the same window the conversion covers, so a page-split task
+            # does not pay the whole document's rasterisation cost, and so
+            # page_from matches the images the position logic indexes into.
+            if page_range:
+                self.__images__(str(src_path), zoomin=1, page_from=page_range[0] - 1, page_to=page_range[1])
+            else:
+                self.__images__(str(src_path), zoomin=1)
         except Exception as e:
             self.logger.warning(f"[Docling] render pages failed: {e}")
 
