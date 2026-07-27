@@ -410,7 +410,7 @@ func TestGoogleGenerateContentConfigConvertsTools(t *testing.T) {
 			},
 		}},
 		ToolChoice: &toolChoice,
-	})
+	}, nil)
 	if cfg == nil || len(cfg.Tools) != 1 || len(cfg.Tools[0].FunctionDeclarations) != 1 {
 		t.Fatalf("tools = %#v, want one function declaration", cfg)
 	}
@@ -461,6 +461,43 @@ func TestGoogleChatContentsConvertsToolHistory(t *testing.T) {
 	}
 	if functionResponse.Response["output"] != "flower result" {
 		t.Fatalf("response = %#v", functionResponse.Response)
+	}
+}
+
+func TestGoogleSystemInstructionExtractedFromMessages(t *testing.T) {
+	messages := []Message{
+		{Role: "system", Content: "You are a helpful assistant."},
+		{Role: "user", Content: "Hello"},
+	}
+
+	contents := googleChatContents(messages)
+	if len(contents) != 1 {
+		t.Fatalf("contents len = %d, want 1 (system message must be excluded)", len(contents))
+	}
+	if contents[0].Role != genai.RoleUser {
+		t.Fatalf("contents[0].Role = %s, want user", contents[0].Role)
+	}
+
+	systemInstruction := googleSystemInstruction(messages)
+	if systemInstruction == nil || len(systemInstruction.Parts) != 1 {
+		t.Fatalf("systemInstruction = %#v, want one part", systemInstruction)
+	}
+	if systemInstruction.Parts[0].Text != "You are a helpful assistant." {
+		t.Fatalf("systemInstruction text = %q", systemInstruction.Parts[0].Text)
+	}
+
+	cfg := googleGenerateContentConfig(nil, systemInstruction)
+	if cfg == nil || cfg.SystemInstruction != systemInstruction {
+		t.Fatalf("cfg.SystemInstruction = %#v, want %#v", cfg, systemInstruction)
+	}
+}
+
+func TestGoogleSystemInstructionNilWhenNoSystemMessage(t *testing.T) {
+	if got := googleSystemInstruction([]Message{{Role: "user", Content: "Hello"}}); got != nil {
+		t.Fatalf("systemInstruction = %#v, want nil", got)
+	}
+	if cfg := googleGenerateContentConfig(nil, nil); cfg != nil {
+		t.Fatalf("cfg = %#v, want nil", cfg)
 	}
 }
 

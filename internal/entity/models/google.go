@@ -120,12 +120,28 @@ func (g *GoogleModel) baseURL(apiConfig *APIConfig) string {
 	return strings.TrimSpace(baseURL)
 }
 
+func googleSystemInstruction(messages []Message) *genai.Content {
+	var parts []*genai.Part
+	for _, msg := range messages {
+		if msg.Role != "system" {
+			continue
+		}
+		parts = append(parts, googleMessageParts(msg.Content)...)
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	return &genai.Content{Parts: parts}
+}
+
 func googleChatContents(messages []Message) []*genai.Content {
 	var contents []*genai.Content
 	toolCallNames := make(map[string]string)
 
 	for _, msg := range messages {
 		switch msg.Role {
+		case "system":
+			continue
 		case "tool":
 			name := toolCallNames[msg.ToolCallID]
 			if name == "" {
@@ -230,34 +246,32 @@ func googleFunctionResponse(content interface{}) map[string]any {
 	}
 }
 
-func googleGenerateContentConfig(chatModelConfig *ChatConfig) *genai.GenerateContentConfig {
-	if chatModelConfig == nil {
-		return nil
-	}
-
-	cfg := &genai.GenerateContentConfig{}
-	if chatModelConfig.Temperature != nil {
-		value := float32(*chatModelConfig.Temperature)
-		cfg.Temperature = &value
-	}
-	if chatModelConfig.TopP != nil {
-		value := float32(*chatModelConfig.TopP)
-		cfg.TopP = &value
-	}
-	if chatModelConfig.MaxTokens != nil {
-		cfg.MaxOutputTokens = int32(*chatModelConfig.MaxTokens)
-	}
-	if chatModelConfig.Stop != nil {
-		cfg.StopSequences = *chatModelConfig.Stop
-	}
-	if tools := googleTools(chatModelConfig.Tools); len(tools) > 0 {
-		cfg.Tools = tools
-		cfg.ToolConfig = &genai.ToolConfig{
-			FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: googleFunctionCallingMode(chatModelConfig.ToolChoice)},
+func googleGenerateContentConfig(chatModelConfig *ChatConfig, systemInstruction *genai.Content) *genai.GenerateContentConfig {
+	cfg := &genai.GenerateContentConfig{SystemInstruction: systemInstruction}
+	if chatModelConfig != nil {
+		if chatModelConfig.Temperature != nil {
+			value := float32(*chatModelConfig.Temperature)
+			cfg.Temperature = &value
+		}
+		if chatModelConfig.TopP != nil {
+			value := float32(*chatModelConfig.TopP)
+			cfg.TopP = &value
+		}
+		if chatModelConfig.MaxTokens != nil {
+			cfg.MaxOutputTokens = int32(*chatModelConfig.MaxTokens)
+		}
+		if chatModelConfig.Stop != nil {
+			cfg.StopSequences = *chatModelConfig.Stop
+		}
+		if tools := googleTools(chatModelConfig.Tools); len(tools) > 0 {
+			cfg.Tools = tools
+			cfg.ToolConfig = &genai.ToolConfig{
+				FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: googleFunctionCallingMode(chatModelConfig.ToolChoice)},
+			}
 		}
 	}
 
-	if cfg.Temperature == nil && cfg.TopP == nil && cfg.MaxOutputTokens == 0 && len(cfg.StopSequences) == 0 && len(cfg.Tools) == 0 {
+	if cfg.SystemInstruction == nil && cfg.Temperature == nil && cfg.TopP == nil && cfg.MaxOutputTokens == 0 && len(cfg.StopSequences) == 0 && len(cfg.Tools) == 0 {
 		return nil
 	}
 	return cfg
@@ -372,9 +386,10 @@ func (g *GoogleModel) ChatWithMessages(ctx context.Context, modelName string, me
 	}
 
 	contents := googleChatContents(messages)
+	systemInstruction := googleSystemInstruction(messages)
 
 	// Generate content (non-streaming)
-	response, err := client.Models.GenerateContent(ctx, modelName, contents, googleGenerateContentConfig(chatModelConfig))
+	response, err := client.Models.GenerateContent(ctx, modelName, contents, googleGenerateContentConfig(chatModelConfig, systemInstruction))
 	if err != nil {
 		return nil, err
 	}
@@ -407,13 +422,14 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 
 	contents := googleChatContents(messages)
+	systemInstruction := googleSystemInstruction(messages)
 	var toolCalls []map[string]interface{}
 
 	for response, err := range client.Models.GenerateContentStream(
 		ctx,
 		modelName,
 		contents,
-		googleGenerateContentConfig(chatModelConfig),
+		googleGenerateContentConfig(chatModelConfig, systemInstruction),
 	) {
 		if err != nil {
 			return err
