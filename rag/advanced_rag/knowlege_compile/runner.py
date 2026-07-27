@@ -42,6 +42,7 @@ from api.db.services.compilation_template_group_service import (
 )
 from api.db.services.llm_service import LLMBundle
 from common.exceptions import TaskCanceledException
+from common.token_utils import num_tokens_from_string
 from rag.advanced_rag.knowlege_compile.structure import (
     LLMCallPool,
     MERGE_SCOPE_DATASET,
@@ -56,8 +57,14 @@ from rag.advanced_rag.knowlege_compile.structure import (
 
 # ----- tunables ------------------------------------------------------
 # Bound how many source chunks are handed to a single
-# ``compile_structure_from_text`` invocation.
+# ``compile_structure_from_text`` invocation for regular templates.
 DOC_STRUCTURE_COMPILE_BATCH_CHUNKS = 4
+
+# Structure compilation packs chunks up to half of the model context.
+# ``compile_structure_from_text`` applies the exact prompt-aware packing again
+# before the LLM call.
+STRUCTURE_CONTEXT_FRACTION = 0.5
+STRUCTURE_DEFAULT_CONTEXT = 100_000
 
 # Bound the number of batch/template extraction calls in flight. Results are
 # committed in submission order so accumulator updates and merge flushes stay
@@ -416,6 +423,12 @@ async def run_structure_compile_over_batches(
     completed: dict[int, tuple[int, int, str, list[dict]]] = {}
     submit_sequence = 0
     commit_sequence = 0
+    dynamic_buffers: dict[str, list[dict]] = {template_id: [] for template_id, _ in active_templates}
+    dynamic_buffer_tokens: dict[str, int] = {template_id: 0 for template_id in dynamic_buffers}
+
+    def _dynamic_batch_budget(template_id: str) -> int:
+        max_length = getattr(chat_mdl_by_tid[template_id], "max_length", None) or STRUCTURE_DEFAULT_CONTEXT
+        return max(int(max_length * STRUCTURE_CONTEXT_FRACTION), 1024)
 
     async def _commit_ready() -> None:
         nonlocal commit_sequence
@@ -454,10 +467,21 @@ async def run_structure_compile_over_batches(
     async def _submit_batches() -> None:
         nonlocal submit_sequence
         batch_no = 0
+
+        async def _submit_one(batch: list[dict], template_id: str, parser_cfg: dict) -> None:
+            nonlocal submit_sequence, batch_no
+            if not batch:
+                return
+            batch_no += 1
+            task = asyncio.create_task(_compile_batch(batch_no, batch, template_id, parser_cfg))
+            inflight[task] = (submit_sequence, batch_no, len(batch), template_id)
+            submit_sequence += 1
+            if len(inflight) + len(completed) >= DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT:
+                await _reap_one()
+
         try:
-            async for batch in chunk_batches:
-                batch_no += 1
-                for chunk in batch:
+            async for incoming_batch in chunk_batches:
+                for chunk in incoming_batch:
                     cid = chunk.get("id")
                     if isinstance(cid, str) and cid not in chunks_by_id:
                         text = chunk.get("content_with_weight") or chunk.get("text") or ""
@@ -465,11 +489,35 @@ async def run_structure_compile_over_batches(
                 for template_id, parser_cfg in active_templates:
                     if cancel_check():
                         raise TaskCanceledException("Task was cancelled during document knowledge compilation")
-                    task = asyncio.create_task(_compile_batch(batch_no, batch, template_id, parser_cfg))
-                    inflight[task] = (submit_sequence, batch_no, len(batch), template_id)
-                    submit_sequence += 1
-                    if len(inflight) + len(completed) >= DOC_STRUCTURE_COMPILE_MAX_IN_FLIGHT:
-                        await _reap_one()
+                    if template_kinds[template_id] == "knowledge_graph":
+                        await _submit_one(incoming_batch, template_id, parser_cfg)
+                        continue
+                    buffer = dynamic_buffers[template_id]
+                    budget = _dynamic_batch_budget(template_id)
+                    buffer_tokens = dynamic_buffer_tokens[template_id]
+                    for chunk in incoming_batch:
+                        text = chunk.get("content_with_weight") or chunk.get("text") or ""
+                        chunk_tokens = num_tokens_from_string(text if isinstance(text, str) else "")
+                        if buffer and buffer_tokens + chunk_tokens > budget:
+                            await _submit_one(buffer, template_id, parser_cfg)
+                            buffer = []
+                            buffer_tokens = 0
+                        buffer.append(chunk)
+                        buffer_tokens += chunk_tokens
+                        if buffer_tokens >= budget:
+                            await _submit_one(buffer, template_id, parser_cfg)
+                            buffer = []
+                            buffer_tokens = 0
+                    dynamic_buffers[template_id] = buffer
+                    dynamic_buffer_tokens[template_id] = buffer_tokens
+
+            for template_id, buffer in dynamic_buffers.items():
+                if cancel_check():
+                    raise TaskCanceledException("Task was cancelled during document knowledge compilation")
+                parser_cfg = dict(active_templates)[template_id]
+                await _submit_one(buffer, template_id, parser_cfg)
+                dynamic_buffers[template_id] = []
+                dynamic_buffer_tokens[template_id] = 0
         except BaseException:
             await _cancel_pending()
             raise

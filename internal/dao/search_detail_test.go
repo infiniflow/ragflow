@@ -75,7 +75,8 @@ func TestSearchDAOGetDetailByID(t *testing.T) {
 		t.Fatalf("failed to create search: %v", err)
 	}
 
-	detail, err := NewSearchDAO().GetDetailByID("search-1")
+	ctx := t.Context()
+	detail, err := NewSearchDAO().GetDetailByID(ctx, db, "search-1")
 	if err != nil {
 		t.Fatalf("GetDetailByID failed: %v", err)
 	}
@@ -128,7 +129,8 @@ func TestSearchDAOGetDetailByIDReturnsNilWhenJoinedUserIsInactive(t *testing.T) 
 		t.Fatalf("failed to create search: %v", err)
 	}
 
-	detail, err := NewSearchDAO().GetDetailByID("search-1")
+	ctx := t.Context()
+	detail, err := NewSearchDAO().GetDetailByID(ctx, db, "search-1")
 	if err != nil {
 		t.Fatalf("GetDetailByID failed: %v", err)
 	}

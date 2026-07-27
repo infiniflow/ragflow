@@ -55,6 +55,38 @@ func (s *SiliconflowModel) Name() string {
 	return "SILICONFLOW"
 }
 
+// SiliconflowChatResponse mirrors the response returned by SiliconFlow's
+// POST /chat/completions endpoint. SiliconFlow uses the OpenAI-compatible
+// schema and includes reasoning and cache token details when available.
+type SiliconflowChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Message      struct {
+			Content          string           `json:"content"`
+			ReasoningContent string           `json:"reasoning_content"`
+			Role             string           `json:"role"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+	SystemFingerprint string `json:"system_fingerprint"`
+	Usage             struct {
+		CompletionTokens        int `json:"completion_tokens"`
+		PromptTokens            int `json:"prompt_tokens"`
+		TotalTokens             int `json:"total_tokens"`
+		CompletionTokensDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+		PromptTokensDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	} `json:"usage"`
+}
+
 // ChatWithMessages sends multiple messages with roles and returns response
 func (s *SiliconflowModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -114,58 +146,48 @@ func (s *SiliconflowModel) ChatWithMessages(ctx context.Context, modelName strin
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result SiliconflowChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
+		choice := &result.Choices[0]
+		content := choice.Message.Content
+		if content == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("invalid content format")
+		}
 
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	toolCalls := extractToolCalls(messageMap)
-	content, hasContent := messageMap["content"].(string)
-	if !hasContent && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			// If reasoning_content not in response, try parsing from content tags
-			reasoning, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
-			if reasoning != nil {
-				reasonContent = *reasoning
-				content = *answer
+		reasonContent := ""
+		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
+			reasonContent = choice.Message.ReasoningContent
+			if reasonContent == "" {
+				reasoning, answer := GetThinkingAndAnswer(chatConfig.ModelClass, &content)
+				if reasoning != nil {
+					reasonContent = *reasoning
+					content = *answer
+				}
 			}
-		} else {
-			// if first char of reasonContent is \n remove the '\n'
 			if reasonContent != "" && reasonContent[0] == '\n' {
 				reasonContent = reasonContent[1:]
 			}
 		}
-	}
 
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}
-
-	return chatResponse, nil
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &content,
+			ReasonContent: &reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -186,8 +208,12 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 	if chatModelConfig != nil {
 		chatModelConfig.ToolCallsResult = nil
+		if chatModelConfig.Thinking != nil {
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
+		}
 	}
 	if strings.Contains(strings.ToLower(modelName), "qwen3") && (chatModelConfig == nil || chatModelConfig.Thinking == nil) {
 		reqBody["enable_thinking"] = false
@@ -225,6 +251,14 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName
 	accumulatedToolCalls := make(map[int]map[string]interface{})
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
+
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
+		}
 
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
@@ -281,22 +315,18 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName
 }
 
 type siliconflowEmbeddingResponse struct {
-	Object string                     `json:"object"`
-	Model  string                     `json:"model"`
-	Data   []siliconflowEmbeddingData `json:"data"`
-	Usage  siliconflowUsage           `json:"usage"`
-}
-
-type siliconflowEmbeddingData struct {
-	Object    string    `json:"object"`
-	Embedding []float64 `json:"embedding"`
-	Index     int       `json:"index"`
-}
-
-type siliconflowUsage struct {
-	PromptTokens     int `json:"prompt_tokens"`
-	CompletionTokens int `json:"completion_tokens"`
-	TotalTokens      int `json:"total_tokens"`
+	ID     string `json:"id"`
+	Object string `json:"object"`
+	Model  string `json:"model"`
+	Data   []struct {
+		Object    string    `json:"object"`
+		Embedding []float64 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // siliconflowMaxBatchSize is the per-request input limit documented at
@@ -381,6 +411,10 @@ func (s *SiliconflowModel) Embed(ctx context.Context, modelName *string, texts [
 		embeddingData.Index = dataElem.Index
 		embeddings = append(embeddings, embeddingData)
 	}
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "embedding")
 
 	return embeddings, nil
 }
@@ -572,12 +606,15 @@ func (s *SiliconflowModel) Rerank(ctx context.Context, modelName *string, query 
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
+	if modelName == nil || *modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
 
 	apiKey := *apiConfig.ApiKey
 
-	var topN = rerankConfig.TopN
-	if rerankConfig.TopN == 0 {
-		topN = len(documents)
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 {
+		topN = rerankConfig.TopN
 	}
 
 	reqBody := SiliconflowRerankRequest{
@@ -639,6 +676,11 @@ func (s *SiliconflowModel) Rerank(ctx context.Context, modelName *string, query 
 			RelevanceScore: result.RelevanceScore,
 		})
 	}
+	recordResponseUsage(modelUsage, siliconflowRerankResp.ID, &TokenUsage{
+		PromptTokens:     siliconflowRerankResp.Meta.Tokens.InputTokens,
+		CompletionTokens: siliconflowRerankResp.Meta.Tokens.OutputTokens,
+		TotalTokens:      siliconflowRerankResp.Meta.Tokens.InputTokens + siliconflowRerankResp.Meta.Tokens.OutputTokens,
+	}, "rerank")
 	return &rerankResponse, nil
 }
 

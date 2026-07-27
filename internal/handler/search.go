@@ -128,7 +128,8 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 	}
 
 	// List search apps with filtering
-	result, err := h.searchService.ListSearches(userID, keywords, page, pageSize, orderby, desc, ownerIDs)
+	ctx := c.Request.Context()
+	result, err := h.searchService.ListSearches(ctx, userID, keywords, page, pageSize, orderby, desc, ownerIDs)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
@@ -174,7 +175,8 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 	}
 
 	// Create search (same as Python SearchService.save within DB.atomic())
-	result, err := h.searchService.CreateSearch(userID, req.Name, req.Description)
+	ctx := c.Request.Context()
+	result, err := h.searchService.CreateSearch(ctx, userID, req.Name, req.Description)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, err.Error())
 		return
@@ -210,7 +212,8 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	}
 
 	// Get search detail with permission check
-	search, err := h.searchService.GetSearchDetail(userID, searchID)
+	ctx := c.Request.Context()
+	search, err := h.searchService.GetSearchDetail(ctx, userID, searchID)
 	if err != nil {
 		// Check if it's a permission error
 		if err.Error() == "has no permission for this operation" {
@@ -268,7 +271,8 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	}
 
 	// Delete search with permission check
-	err := h.searchService.DeleteSearch(userID, searchID)
+	ctx := c.Request.Context()
+	err := h.searchService.DeleteSearch(ctx, userID, searchID)
 	if err != nil {
 		// Check if it's an authorization error
 		if err.Error() == "no authorization" {
@@ -324,7 +328,8 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	}
 
 	// Update search
-	updatedSearch, err := h.searchService.UpdateSearch(userID, searchID, &req)
+	ctx := c.Request.Context()
+	updatedSearch, err := h.searchService.UpdateSearch(ctx, userID, searchID, &req)
 	if err != nil {
 		errMsg := err.Error()
 		switch errMsg {
