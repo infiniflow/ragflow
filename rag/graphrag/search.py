@@ -32,6 +32,24 @@ from common import settings
 from common.doc_store.doc_store_base import OrderByExpr
 
 
+def _string_keywords(value: object, limit: int | None = None) -> list[str]:
+    if not isinstance(value, list):
+        return []
+
+    keywords = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+    return keywords[:limit] if limit is not None else keywords
+
+
+def _query_rewrite_keywords(value: object) -> tuple[list[str], list[str]]:
+    if not isinstance(value, dict):
+        return [], []
+
+    return (
+        _string_keywords(value.get("answer_type_keywords", [])),
+        _string_keywords(value.get("entities_from_query", []), limit=5),
+    )
+
+
 class KGSearch(Dealer):
     async def _chat(self, llm_bdl, system, history, gen_conf):
         response = get_llm_cache(llm_bdl.llm_name, system, history, gen_conf)
@@ -49,17 +67,13 @@ class KGSearch(Dealer):
         result = await self._chat(llm, hint_prompt, [{"role": "user", "content": "Output:"}], {})
         try:
             keywords_data = json_repair.loads(result)
-            type_keywords = keywords_data.get("answer_type_keywords", [])
-            entities_from_query = keywords_data.get("entities_from_query", [])[:5]
-            return type_keywords, entities_from_query
-        except json_repair.JSONDecodeError:
+            return _query_rewrite_keywords(keywords_data)
+        except json.JSONDecodeError:
             try:
                 result = result.replace(hint_prompt[:-1], "").replace("user", "").replace("model", "").strip()
                 result = "{" + result.split("{")[1].split("}")[0] + "}"
                 keywords_data = json_repair.loads(result)
-                type_keywords = keywords_data.get("answer_type_keywords", [])
-                entities_from_query = keywords_data.get("entities_from_query", [])[:5]
-                return type_keywords, entities_from_query
+                return _query_rewrite_keywords(keywords_data)
             # Handle parsing error
             except Exception as e:
                 logging.exception(f"JSON parsing error: {result} -> {e}")
@@ -164,6 +178,10 @@ class KGSearch(Dealer):
             logging.exception(e)
             ents = [qst]
             pass
+
+        if not ents:
+            logging.warning("Query rewrite returned no valid string entities; falling back to the original question")
+            ents = [qst]
 
         ents_from_query = self.get_relevant_ents_by_keywords(ents, filters, idxnms, kb_ids, emb_mdl, ent_sim_threshold)
         ents_from_types = self.get_relevant_ents_by_types(ty_kwds, filters, idxnms, kb_ids, 10000)
