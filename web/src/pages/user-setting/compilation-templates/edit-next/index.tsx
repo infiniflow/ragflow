@@ -15,14 +15,14 @@ import { useEditNextCompilationTemplateGroup } from './hooks/use-edit-next-compi
 
 const SelectedTemplateIndex = 0;
 
-const agentsCompilerUrl = `${Routes.Agents}?tab=compiler`;
+const agentsUrl = Routes.Agents;
 
 export default function EditNextCompilationTemplate() {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
-  const navigateToAgentsCompiler = useCallback(() => {
-    navigate(agentsCompilerUrl);
+  const navigateToAgents = useCallback(() => {
+    navigate(agentsUrl);
   }, [navigate]);
 
   const {
@@ -33,7 +33,7 @@ export default function EditNextCompilationTemplate() {
     isCreate,
     isLoading,
   } = useEditNextCompilationTemplateGroup({
-    onSuccess: navigateToAgentsCompiler,
+    onSuccess: navigateToAgents,
   });
   const { data: group } = useFetchCompilationTemplateGroup();
 
@@ -52,7 +52,7 @@ export default function EditNextCompilationTemplate() {
   return (
     <section className="h-full flex flex-col bg-bg-base">
       <header className="shrink-0 px-5 py-4 border-b border-border-button flex gap-3 items-center">
-        <BackButton to={agentsCompilerUrl} />
+        <BackButton to={agentsUrl} />
         <h2 className="font-medium text-text-secondary">
           {isCreate
             ? t('setting.addTemplateGroup')
@@ -80,7 +80,7 @@ export default function EditNextCompilationTemplate() {
             <Button
               type="button"
               variant="outline"
-              onClick={navigateToAgentsCompiler}
+              onClick={navigateToAgents}
             >
               {t('common.back')}
             </Button>

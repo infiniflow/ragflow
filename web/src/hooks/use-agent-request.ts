@@ -133,11 +133,14 @@ const buildAgentListParams = ({
   return params;
 };
 
-export const useFetchAgentListByPage = (canvasCategory?: AgentCategory) => {
+export const useFetchAgentListByPage = () => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
+  const canvasCategory = Array.isArray(filterValue.canvasCategory)
+    ? (filterValue.canvasCategory[0] as string | undefined)
+    : undefined;
   const owner = filterValue.owner;
   const tags = Array.isArray(filterValue.tags) ? filterValue.tags : undefined;
 
@@ -160,7 +163,6 @@ export const useFetchAgentListByPage = (canvasCategory?: AgentCategory) => {
         debouncedSearchString,
         ...pagination,
         filterValue,
-        canvasCategory,
       },
     ],
     placeholderData: (previousData) => {
@@ -195,7 +197,7 @@ export const useFetchAgentListByPage = (canvasCategory?: AgentCategory) => {
     loading,
     searchString,
     handleInputChange: onInputChange,
-    pagination: { ...pagination, total: data?.total },
+    pagination: { ...pagination, total: data?.total ?? 0 },
     setPagination,
     filterValue,
     handleFilterSubmit,

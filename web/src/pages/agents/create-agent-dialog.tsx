@@ -1,13 +1,10 @@
-import { ButtonLoading } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import { AgentCategory } from '@/constants/agent';
-import { TagRenameId } from '@/constants/knowledge';
 import { BrainCircuit, Route } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { CreateAgentForm, CreateAgentFormProps } from './create-agent-form';
@@ -27,7 +24,9 @@ export function CreateAgentDialog({
   const dialogTitle =
     canvasCategory === AgentCategory.DataflowCanvas
       ? t('flow.createIngestionPipeline')
-      : t('flow.createWorkflow');
+      : canvasCategory === AgentCategory.AgentCanvas
+        ? t('flow.createWorkflow')
+        : t('common.create');
 
   const DialogIcon =
     canvasCategory === AgentCategory.DataflowCanvas
@@ -48,17 +47,9 @@ export function CreateAgentDialog({
         <CreateAgentForm
           hideModal={hideModal}
           onOk={onOk}
+          loading={loading}
+          showTypeCards={!canvasCategory}
         ></CreateAgentForm>
-        <DialogFooter>
-          <ButtonLoading
-            data-testid="agent-save"
-            type="submit"
-            form={TagRenameId}
-            loading={loading}
-          >
-            {t('common.save')}
-          </ButtonLoading>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

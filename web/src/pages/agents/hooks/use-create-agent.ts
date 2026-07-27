@@ -4,9 +4,10 @@ import { useSetAgent } from '@/hooks/use-agent-request';
 
 import { initialEmptyDsl } from '@/pages/agent/utils/dsl-bridge';
 import { useCallback } from 'react';
+import { FlowType } from '../constant';
 import { FormSchemaType } from '../create-agent-form';
 
-export function useCreateAgentOrPipeline(canvasCategory: AgentCategory) {
+export function useCreateAgentOrPipeline() {
   const { loading, setAgent } = useSetAgent();
   const {
     visible: creatingVisible,
@@ -16,18 +17,20 @@ export function useCreateAgentOrPipeline(canvasCategory: AgentCategory) {
 
   const handleCreateAgentOrPipeline = useCallback(
     async (data: FormSchemaType) => {
-      const isAgent = canvasCategory === AgentCategory.AgentCanvas;
+      const isAgent = data.type === FlowType.Agent;
       const ret = await setAgent({
         title: data.name,
         dsl: initialEmptyDsl(isAgent),
-        canvas_category: canvasCategory,
+        canvas_category: isAgent
+          ? AgentCategory.AgentCanvas
+          : AgentCategory.DataflowCanvas,
       });
 
       if (ret.code === 0) {
         hideCreatingModal();
       }
     },
-    [hideCreatingModal, setAgent, canvasCategory],
+    [hideCreatingModal, setAgent],
   );
 
   return {
