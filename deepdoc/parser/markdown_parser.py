@@ -55,16 +55,11 @@ class RAGFlowMarkdownParser:
                 table_list.append(raw_table)
                 if separate_tables:
                     # Skip this match (i.e., remove it)
-                    new_text += working_text[last_end : match.start()] + "\n\n"
+                    new_text += working_text[last_end : match.start()] + "\n"
                 else:
                     # Replace with rendered HTML
                     html_table = markdown(raw_table, extensions=["markdown.extensions.tables"]) if render else raw_table
-                    next_start = match.end()
-                    while next_start < len(working_text) and working_text[next_start] in "\r\n":
-                        next_start += 1
-                    new_text += working_text[last_end : match.start()] + html_table.rstrip() + "\n"
-                    last_end = next_start
-                    continue
+                    new_text += working_text[last_end : match.start()] + html_table + "\n"
                 last_end = match.end()
             new_text += working_text[last_end:]
             return new_text
@@ -144,14 +139,9 @@ class RAGFlowMarkdownParser:
                     raw_table = match.group()
                     tables.append(raw_table)
                     if separate_tables:
-                        new_text += working_text[last_end : match.start()] + "\n\n"
+                        new_text += working_text[last_end : match.start()] + "\n"
                     else:
-                        next_start = match.end()
-                        while next_start < len(working_text) and working_text[next_start] in "\r\n":
-                            next_start += 1
-                        new_text += working_text[last_end : match.start()] + raw_table.rstrip() + "\n"
-                        last_end = next_start
-                        continue
+                        new_text += working_text[last_end : match.start()] + raw_table + "\n"
                     last_end = match.end()
                 new_text += working_text[last_end:]
                 working_text = new_text
