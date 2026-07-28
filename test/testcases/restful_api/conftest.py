@@ -80,8 +80,6 @@ GO_ONLY_SKIPS = {
         "test_session_update_name_and_param_contract",
         "test_session_update_requires_auth_and_invalid_target_contract",
         "test_chat_completion_validation_errors",
-        # Go response data omits the `audio_binary` key that the contract asserts.
-        "test_chat_completion_nonstream_with_session",
         "test_search_completion_sse_shape_when_kb_ids_provided",
         "test_system_tokens_auth_and_crud",
         # Go rejects a missing `question` with the Gin validator message
