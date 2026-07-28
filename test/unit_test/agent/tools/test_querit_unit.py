@@ -343,6 +343,27 @@ def test_network_errors_are_retried_until_success(monkeypatch):
     assert outputs["json"] == {"results": {"result": []}}
 
 
+def test_invalid_json_response_is_not_retried(monkeypatch):
+    calls = []
+
+    class _InvalidJSONResponse(_FakeResponse):
+        def json(self):
+            raise querit_module.requests.JSONDecodeError("invalid JSON", "not-json", 0)
+
+    def fake_post(*args, **kwargs):
+        calls.append((args, kwargs))
+        return _InvalidJSONResponse(None)
+
+    monkeypatch.setattr(querit_module.requests, "post", fake_post)
+    tool, _, outputs = _make_tool()
+
+    result = tool._invoke(query="AI news")
+
+    assert len(calls) == 1
+    assert "invalid JSON" in result
+    assert "invalid JSON" in outputs["_ERROR"]
+
+
 def test_persistent_retryable_error_stops_after_three_attempts(monkeypatch):
     calls = []
 
@@ -372,6 +393,33 @@ def test_non_object_response_is_rejected(monkeypatch):
 
     assert "JSON object" in result
     assert "JSON object" in outputs["_ERROR"]
+
+
+@pytest.mark.parametrize(
+    ("raw_response", "expected_error"),
+    [
+        ({"results": []}, "results must be an object"),
+        ({"results": None}, "results must be an object"),
+        ({"results": {"result": {}}}, "results.result must be an array"),
+        ({"results": {"result": None}}, "results.result must be an array"),
+    ],
+)
+def test_invalid_result_container_types_are_rejected(
+    monkeypatch,
+    raw_response,
+    expected_error,
+):
+    monkeypatch.setattr(
+        querit_module.requests,
+        "post",
+        lambda *args, **kwargs: _FakeResponse(raw_response),
+    )
+    tool, _, outputs = _make_tool()
+
+    result = tool._invoke(query="AI news")
+
+    assert expected_error in result
+    assert expected_error in outputs["_ERROR"]
 
 
 def test_results_with_missing_optional_fields_do_not_fail(monkeypatch):

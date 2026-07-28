@@ -32,4 +32,61 @@ describe('clearSensitiveFields', () => {
     });
     expect(dsl.tools[0].params.api_key).toBe('querit-secret');
   });
+
+  it('clears a standalone Querit Canvas key from graph and components', () => {
+    const dsl = {
+      graph: {
+        nodes: [
+          {
+            data: {
+              label: Operator.QueritSearch,
+              form: {
+                api_key: 'graph-secret',
+                count: 5,
+              },
+            },
+          },
+        ],
+      },
+      components: {
+        querit: {
+          obj: {
+            component_name: Operator.QueritSearch,
+            params: {
+              api_key: 'component-secret',
+              count: 5,
+            },
+          },
+        },
+      },
+    };
+
+    const sanitized = clearSensitiveFields(dsl);
+
+    expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+    expect(sanitized.graph.nodes[0].data.form.count).toBe(5);
+    expect(sanitized.components.querit.obj.params.api_key).toBe('');
+    expect(sanitized.components.querit.obj.params.count).toBe(5);
+    expect(dsl.graph.nodes[0].data.form.api_key).toBe('graph-secret');
+    expect(dsl.components.querit.obj.params.api_key).toBe('component-secret');
+  });
+
+  it('does not change standalone graph export behavior for other tools', () => {
+    const dsl = {
+      graph: {
+        nodes: [
+          {
+            data: {
+              label: Operator.TavilySearch,
+              form: {
+                api_key: 'existing-tavily-key',
+              },
+            },
+          },
+        ],
+      },
+    };
+
+    expect(clearSensitiveFields(dsl)).toEqual(dsl);
+  });
 });

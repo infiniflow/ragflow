@@ -161,10 +161,10 @@ class QueritSearch(ToolBase, ABC):
             if not isinstance(response_data, dict):
                 raise TypeError("Querit API response must be a JSON object.")
 
-            result_container = response_data.get("results") or {}
+            result_container = response_data.get("results", {})
             if not isinstance(result_container, dict):
                 raise TypeError("Querit API response field results must be an object.")
-            results = result_container.get("result") or []
+            results = result_container.get("result", [])
             if not isinstance(results, list):
                 raise TypeError("Querit API response field results.result must be an array.")
 
@@ -202,6 +202,8 @@ class QueritSearch(ToolBase, ABC):
                     continue
                 response.raise_for_status()
                 return response.json()
+            except requests.JSONDecodeError:
+                raise
             except requests.HTTPError:
                 raise
             except requests.RequestException:

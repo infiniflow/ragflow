@@ -2490,9 +2490,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       queritCountryIncludeTip:
         'Return results associated with the specified countries.',
       queritLanguageInclude: 'Languages to include',
-      queritLanguageIncludeTip:
-        'Return results in the specified language codes.',
-      queritListPlaceholder: 'Enter a value and press Enter',
+      queritLanguageIncludeTip: 'Return results in the specified languages.',
+      queritListPlaceholder: 'Enter a value',
       Days: 'Days',
       comma: 'Comma',
       semicolon: 'Semicolon',
