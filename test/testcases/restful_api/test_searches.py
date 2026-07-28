@@ -150,4 +150,3 @@ def test_search_completion_sse_shape_when_kb_ids_provided(rest_client, search_re
     payload = res.json()
     assert payload["code"] == 102, payload
     assert "You don't own the dataset nonexistent_dataset" in payload["message"], payload
-
