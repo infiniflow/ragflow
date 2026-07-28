@@ -1421,6 +1421,11 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "`document_ids` is required")
 		return
 	}
+	// Gin's `required` accepts an empty non-nil slice; reject it explicitly.
+	if len(req.DocumentIDs) == 0 {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "`document_ids` is required")
+		return
+	}
 
 	userID := c.GetString("user_id")
 	ctx := c.Request.Context()
@@ -1529,12 +1534,12 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 
 	var req StopParseDocumentRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.ErrorWithCode(c, common.CodeDataError, "`document_ids` is required")
 		return
 	}
 
 	if len(req.DocumentIDs) == 0 {
-		common.ErrorWithCode(c, common.CodeBadRequest, "`document_ids` is required")
+		common.ErrorWithCode(c, common.CodeDataError, "`document_ids` is required")
 		return
 	}
 

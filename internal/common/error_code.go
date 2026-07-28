@@ -89,6 +89,20 @@ func (e ErrorCode) Message() string {
 	return "Unknown error"
 }
 
+// CodedError pairs a business ErrorCode with a message so handlers can return
+// the established {code, message} contract (HTTP 200) instead of a generic
+// HTTP 500 for expected domain failures.
+type CodedError struct {
+	Code    ErrorCode
+	Message string
+}
+
+func (e *CodedError) Error() string { return e.Message }
+
+func NewCodedError(code ErrorCode, message string) *CodedError {
+	return &CodedError{Code: code, Message: message}
+}
+
 var (
 	ErrInvalidToken = errors.New("invalid token")
 	ErrNotAdmin     = errors.New("user is not admin")

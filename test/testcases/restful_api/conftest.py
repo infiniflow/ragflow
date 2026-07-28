@@ -45,7 +45,6 @@ GO_ONLY_SKIPS = {
         "test_dataset_update_pagerank_contract",
         "test_dataset_update_pagerank_set_to_zero_contract",
         "test_dataset_update_content_type_and_payload_contract",
-        "test_dataset_update_identifier_validation_contract",
         "test_dataset_update_parser_config_invalid_contract",
         "test_dataset_update_field_unset_and_unsupported_contract",
         "test_dataset_update_name_invalid_and_duplicate_contract",
@@ -79,13 +78,7 @@ GO_ONLY_SKIPS = {
         "test_session_list_page_and_sort_contract",
         "test_session_update_name_and_param_contract",
         "test_session_update_requires_auth_and_invalid_target_contract",
-        "test_chat_completion_validation_errors",
         "test_search_completion_sse_shape_when_kb_ids_provided",
-        "test_system_tokens_auth_and_crud",
-        # Go rejects a missing `question` with the Gin validator message
-        # ("Key: 'SearchBotRequest.Question' ...") instead of the established
-        # message containing lowercase "question".
-        "test_related_questions_contract",
         # --- exposed after meta_fields skip guard removal ---
         "test_chunk_add_keyword_question_and_tag_contract",
         "test_chunk_add_repeated_and_deleted_document_contract",

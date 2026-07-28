@@ -231,6 +231,11 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 			false, nil,
 		)
 		if err != nil {
+			var codedErr *common.CodedError
+			if errors.As(err, &codedErr) {
+				common.ErrorWithCode(c, codedErr.Code, codedErr.Message)
+				return
+			}
 			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 			return
 		}

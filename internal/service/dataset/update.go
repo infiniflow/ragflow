@@ -31,7 +31,9 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	tenantID = strings.TrimSpace(tenantID)
 	if _, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("dataset not found")
+			// Match Python: nonexistent and not-owned datasets share the
+			// "lacks permission" error so existence is not revealed (IDOR).
+			return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
 		}
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}

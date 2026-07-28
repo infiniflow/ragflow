@@ -218,6 +218,11 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "dataset id is required")
 		return
 	}
+	// Mirror the pydantic UUID validation of Python's UpdateDatasetReq.
+	if _, err := dataset.NormalizeDatasetID(datasetID); err != nil {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		return
+	}
 
 	bodyBytes, err := c.GetRawData()
 	if err != nil {

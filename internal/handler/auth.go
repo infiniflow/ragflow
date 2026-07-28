@@ -60,7 +60,7 @@ func NewAuthHandler() *AuthHandler {
 //  1. Beta API token         → GetUserByBetaAPIToken
 //  2. JWT (regular session) → existing UserService.GetUserByToken
 //  3. API token              → GetUserByAPIToken
-//  4. Fall through           → 401
+//  4. Fall through           → code 102 "Authorization is not valid!"
 //
 // IMPORTANT: the regular-user branch is NOT gated on a "Bearer "
 // prefix. UserService.GetUserByToken accepts the raw Authorization
@@ -79,7 +79,9 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		}
 
 		if auth == "" {
-			common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "Authorization required")
+			// Mirror Python's login_required(auth_types=AUTH_BETA): any auth
+			// failure on beta endpoints is a business error, not an HTTP 401.
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Authorization is not valid!")
 			c.Abort()
 			return
 		}
@@ -105,7 +107,8 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "Invalid auth credentials")
+		// Mirror Python's login_required(auth_types=AUTH_BETA).
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Authorization is not valid!")
 		c.Abort()
 	}
 }

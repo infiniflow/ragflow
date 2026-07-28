@@ -161,6 +161,13 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 	return nil
 }
 
+// NormalizeDatasetID validates the dataset ID format and returns its
+// dash-less UUID form. Exported so HTTP handlers can mirror the pydantic
+// UUID validation of the Python request models (error code 101).
+func NormalizeDatasetID(id string) (string, error) {
+	return normalizeDatasetID(id)
+}
+
 func normalizeDatasetID(id string) (string, error) {
 	parsedUUID, err := uuid.Parse(id)
 	if err != nil {

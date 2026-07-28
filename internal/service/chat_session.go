@@ -1479,12 +1479,12 @@ func (s *ChatSessionService) ChatCompletions(
 	// --- 1. Normalize messages ---
 	requestMessages, requestMsg, messageID, err := s.normalizeCompletionMessages(messages, question, files)
 	if err != nil {
-		return fail(err)
+		return fail(common.NewCodedError(common.CodeArgumentError, err.Error()))
 	}
 
 	// --- 2. Validate ---
 	if sessionID != "" && chatID == "" {
-		return fail(errors.New("`chat_id` is required when `session_id` is provided."))
+		return fail(common.NewCodedError(common.CodeDataError, "`chat_id` is required when `session_id` is provided."))
 	}
 
 	// --- 3. Resolve dialog and session ---
@@ -1492,19 +1492,19 @@ func (s *ChatSessionService) ChatCompletions(
 	var session *entity.ChatSession
 	if chatID != "" {
 		if err = s.checkDialogOwnership(ctx, userID, chatID); err != nil {
-			return fail(err)
+			return fail(common.NewCodedError(common.CodeAuthenticationError, "No authorization."))
 		}
 		dialog, err = s.chatSessionDAO.GetDialogByID(ctx, dao.DB, chatID)
 		if err != nil {
-			return fail(errors.New("Chat not found!"))
+			return fail(common.NewCodedError(common.CodeDataError, "Chat not found!"))
 		}
 		if sessionID != "" {
 			session, err = s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
 			if err != nil {
-				return fail(errors.New("Session not found!"))
+				return fail(common.NewCodedError(common.CodeDataError, "Session not found!"))
 			}
 			if session.DialogID != chatID {
-				return fail(errors.New("Session does not belong to this chat!"))
+				return fail(common.NewCodedError(common.CodeDataError, "Session does not belong to this chat!"))
 			}
 		} else {
 			session, err = s.createSessionForCompletion(ctx, chatID, dialog, userID)
@@ -1541,7 +1541,7 @@ func (s *ChatSessionService) ChatCompletions(
 	if llmID != "" {
 		hasKey, err := s.checkTenantLLMAPIKey(ctx, dialog.TenantID, llmID)
 		if err != nil || !hasKey {
-			return fail(fmt.Errorf("cannot use specified model %s", llmID))
+			return fail(common.NewCodedError(common.CodeDataError, fmt.Sprintf("Cannot use specified model %s.", llmID)))
 		}
 		dialog.LLMID = llmID
 		dialog.LLMSetting = genConfig
