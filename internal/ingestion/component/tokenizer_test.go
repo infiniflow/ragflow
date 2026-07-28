@@ -395,31 +395,6 @@ func (c *countMismatchedEmbedder) Encode(ctx context.Context, texts []string) ([
 	return out, nil
 }
 
-// TestTokenizerComponent_Invoke_HonorsTimeout installs an
-// embedder that blocks past a (test-shrunk) tokenizerTimeout and
-// asserts the component returns context.DeadlineExceeded.
-func TestTokenizerComponent_Invoke_HonorsTimeout(t *testing.T) {
-	requireTokenizerPool(t)
-	t.Setenv("COMPONENT_EXEC_TIMEOUT_TOKENIZER", "1")
-
-	c, stub := withStubEmbedder(t, 4)
-	stub.delay = 2 * time.Second
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := c.Invoke(ctx, nil, map[string]any{
-		"output_format": "chunks",
-		"chunks":        []map[string]any{{"text": "alpha"}},
-	})
-	if err == nil {
-		t.Fatal("expected timeout error, got nil")
-	}
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("expected context.DeadlineExceeded, got %v", err)
-	}
-}
-
 // TestTokenizerComponent_Smoke_EndToEnd is the BLOCKER smoke test
 // (plan §8 R3). Drives 1 chunk of ~1000 tokens through the real
 // tokenizer and a stub embedder with no artificial latency, then
@@ -435,7 +410,7 @@ func TestTokenizerComponent_Invoke_HonorsTimeout(t *testing.T) {
 // production path against a real embedding API was not exercised
 // in this CI sandbox; the helper `withStubEmbedder` deliberately
 // avoids the network round-trip while still exercising the full
-// wiring (TrackElapsed, WithTimeout, batched Encode, vector
+// wiring (TrackElapsed, batched Encode, vector
 // stamping).
 
 func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {

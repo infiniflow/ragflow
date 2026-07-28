@@ -61,8 +61,8 @@
 //     Drivers that need to chunk internally can do so — the wire
 //     call is one round-trip.
 //
-//   - TRACKING: WithTimeout (60s, matches python `@timeout(60)` on
-//     `batch_encode`), TrackProgress, TrackElapsed. See
+//   - TRACKING: TrackProgress, TrackElapsed. See
+//     `internal/agent/runtime/helpers.go` (plan Â§1 Phase 1).
 //     `internal/agent/runtime/helpers.go` (plan §1 Phase 1).
 //
 //   - WHAT IS NOT PORTED:
@@ -87,7 +87,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -101,21 +100,6 @@ import (
 )
 
 const ComponentNameTokenizer = "Tokenizer"
-
-// tokenizerTimeout returns the per-batch timeout for embedding API calls.
-// Reads COMPONENT_EXEC_TIMEOUT_TOKENIZER env var (seconds); defaults to 60s
-// to match Python's @timeout(60). Invalid / non-positive values fall back
-// to the default.
-func tokenizerTimeout() time.Duration {
-	if v := os.Getenv("COMPONENT_EXEC_TIMEOUT_TOKENIZER"); v != "" {
-		if secs, err := strconv.Atoi(v); err == nil && secs > 0 {
-			return time.Duration(secs) * time.Second
-		}
-	}
-	return defaultTokenizerTimeout
-}
-
-var defaultTokenizerTimeout = 60 * time.Second // : matches Python @timeout(60)
 
 // embeddingBatchSize returns the embedding batch size, matching Python's
 // settings.EMBEDDING_BATCH_SIZE. Reads TOKENIZER_EMBEDDING_BATCH_SIZE env
@@ -445,7 +429,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 		// tokenizer.py:95 which passes name verbatim to embedding. The
 		// empty-name guard above still uses TrimSpace, matching Python's
 		// `.strip()==""` check at tokenizer.py:200.
-		titleResults, err := encodeWithTimeout(ctx, embedder, []string{name})
+		titleResults, err := embedder.Encode(ctx, []string{name})
 		if err != nil {
 			return nil, 0, fmt.Errorf("Tokenizer: encode title: %w", err)
 		}
@@ -463,7 +447,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 		if end > len(texts) {
 			end = len(texts)
 		}
-		batchResults, err := encodeWithTimeout(ctx, embedder, texts[start:end])
+		batchResults, err := embedder.Encode(ctx, texts[start:end])
 		if err != nil {
 			return nil, 0, fmt.Errorf("Tokenizer: encode: %w", err)
 		}
@@ -490,21 +474,6 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 		}
 	}
 	return chunks, tokenCount, nil
-}
-
-func encodeWithTimeout(ctx context.Context, embedder Embedder, texts []string) ([]EmbeddingResult, error) {
-	var (
-		results []EmbeddingResult
-		encErr  error
-	)
-	timeoutErr := runtime.WithTimeout(ctx, tokenizerTimeout(), func(timeoutCtx context.Context) error {
-		results, encErr = embedder.Encode(ctx, texts)
-		return encErr
-	})
-	if timeoutErr != nil {
-		return nil, timeoutErr
-	}
-	return results, nil
 }
 
 // truncateForEmbedding truncates text to fit within maxTokens,

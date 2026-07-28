@@ -26,6 +26,7 @@ func applyPDFPostProcess(result *deepdoctype.ParseResult, opts pdfPostProcessOpt
 	if result == nil {
 		return
 	}
+	sortSectionsByPosition(result)
 	if opts.enableMultiColumn && opts.pageWidth > 0 {
 		reorderPDFMultiColumn(result, opts.pageWidth, opts.zoom)
 	}
@@ -81,6 +82,28 @@ func assignPDFDocTypeKeywords(result *deepdoctype.ParseResult, flatten bool) {
 			section.DocTypeKwd = "text"
 		}
 	}
+}
+
+// sortSectionsByPosition reorders sections into reading order: page number,
+// then vertical position (top), then horizontal position (left). The DeepDoc
+// layout engine does not guarantee reading order in its output, so this sort
+// ensures the downstream chunker receives items in document order regardless
+// of the engine's internal extraction sequence.
+func sortSectionsByPosition(result *deepdoctype.ParseResult) {
+	if result == nil || len(result.Sections) < 2 {
+		return
+	}
+	sort.SliceStable(result.Sections, func(i, j int) bool {
+		pi, pj := firstSectionPage(result.Sections[i]), firstSectionPage(result.Sections[j])
+		if pi != pj {
+			return pi < pj
+		}
+		ti, tj := firstSectionTop(result.Sections[i]), firstSectionTop(result.Sections[j])
+		if math.Abs(ti-tj) > 1e-6 {
+			return ti < tj
+		}
+		return firstSectionLeft(result.Sections[i]) < firstSectionLeft(result.Sections[j])
+	})
 }
 
 // applyRemoveTOC mirrors Python parser.py:663-681 three-way dispatch:

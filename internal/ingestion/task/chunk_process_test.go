@@ -296,7 +296,8 @@ func TestProcessChunksForPipeline_PreservesContentWithWeight(t *testing.T) {
 
 func TestProcessChunkPositions_FlatFloat64(t *testing.T) {
 	chunk := map[string]any{
-		"positions": []float64{0, 100, 50, 200, 150},
+		// positions is 1-indexed (parser normalized before we see it)
+		"positions": []float64{1, 100, 50, 200, 150},
 	}
 	processChunkPositions(chunk)
 
@@ -312,8 +313,8 @@ func TestProcessChunkPositions_FlatFloat64(t *testing.T) {
 func TestProcessChunkPositions_2DFloat64(t *testing.T) {
 	chunk := map[string]any{
 		"positions": [][]float64{
-			{0, 100, 50, 200, 150},
-			{1, 200, 60, 300, 250},
+			{1, 100, 50, 200, 150},
+			{2, 200, 60, 300, 250},
 		},
 	}
 	processChunkPositions(chunk)

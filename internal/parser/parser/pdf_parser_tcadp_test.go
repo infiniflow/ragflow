@@ -88,12 +88,12 @@ func TestPDFParser_ParseWithResult_TCADPRequiresAPIServer(t *testing.T) {
 
 // TestTCADPAnyToItems_PropagatesPageNumber verifies the fix for migration
 // : per-slide page numbers present in the raw TCADP response
-// must be attached to each chunk item as "positions" (a 0-indexed 5-tuple
-// [page-1, 0, 0, 0, 0]). The shared ingestion pipeline
-// (processChunkPositions -> AddPositions) later derives top_int=[0],
-// position_int=[[page,0,0,0,0]] and page_num_int=[page] from this field,
-// matching Python presentation.py:148-149. Elements without a page number
-// (e.g. spreadsheet TCADP) must NOT receive a positions field.
+// must be attached to each chunk item as "positions" (a 1-indexed 5-tuple
+// [page, 0, 0, 0, 0]). The shared ingestion pipeline
+// (processChunkPositions -> AddPositions, a passthrough) derives
+// top_int=[0], position_int=[[page,0,0,0,0]] and page_num_int=[page] from
+// this field. Elements without a page number (e.g. spreadsheet TCADP)
+// must NOT receive a positions field.
 func TestTCADPAnyToItems_PropagatesPageNumber(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -103,17 +103,17 @@ func TestTCADPAnyToItems_PropagatesPageNumber(t *testing.T) {
 		{
 			name:    "text element with page_number",
 			raw:     map[string]any{"content": "slide text", "type": "text", "page_number": 3},
-			wantPos: []float64{2, 0, 0, 0, 0}, // 3-1 (0-indexed)
+			wantPos: []float64{3, 0, 0, 0, 0}, // 1-indexed
 		},
 		{
 			name:    "image element with page_number",
 			raw:     map[string]any{"caption": "fig", "type": "image", "page_number": 5},
-			wantPos: []float64{4, 0, 0, 0, 0},
+			wantPos: []float64{5, 0, 0, 0, 0},
 		},
 		{
 			name:    "table element with page_number",
 			raw:     map[string]any{"type": "table", "table_data": map[string]any{"rows": []any{[]any{"a", "b"}}}, "page_number": 2},
-			wantPos: []float64{1, 0, 0, 0, 0},
+			wantPos: []float64{2, 0, 0, 0, 0},
 		},
 		{
 			name:    "element without page number gets no positions",
@@ -163,7 +163,7 @@ func TestTCADPAnyToItems_NestedArrayKeepsEachPage(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("items = %d, want 2", len(items))
 	}
-	want := [][]float64{{0, 0, 0, 0, 0}, {6, 0, 0, 0, 0}} // page 1 -> [0,...], page 7 -> [6,...]
+	want := [][]float64{{1, 0, 0, 0, 0}, {7, 0, 0, 0, 0}} // page 1 -> [1,...], page 7 -> [7,...] (1-indexed)
 	for i, w := range want {
 		got, ok := items[i]["positions"].([]float64)
 		if !ok {

@@ -150,14 +150,11 @@ func tcadpAnyToItems(raw any) []map[string]any {
 		emit := func(text, docType, layout string) []map[string]any {
 			m := map[string]any{"text": text, "doc_type_kwd": docType, "layout": layout}
 			if page > 0 {
-				// 0-indexed 5-tuple (page-1). The ingestion pipeline
-				// (processChunkPositions -> AddPositions,
-				// internal/ingestion/task/position.go) converts this to
-				// page_num_int=[page], top_int=[0] and
-				// position_int=[[page,0,0,0,0]], mirroring Python
-				// presentation.py:148-149. Fixes migration
-				// (presentation TCADP items dropped slide page location).
-				m["positions"] = []float64{float64(page - 1), 0, 0, 0, 0}
+				// 1-indexed 5-tuple. AddPositions is a passthrough so
+				// the final position_int / page_num_int carry the same
+				// 1-indexed page number the caller passes. Mirrors
+				// Python presentation.py:148-149.
+				m["positions"] = []float64{float64(page), 0, 0, 0, 0}
 			}
 			return []map[string]any{m}
 		}
