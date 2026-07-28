@@ -127,14 +127,10 @@ class TestResolveVolcengineCredentials:
         """Non-string ``ep_id`` / ``endpoint_id`` (e.g. JSON number 12345
         or explicit null) must not raise TypeError when concatenated for
         the derived model_name. Coerce to str instead."""
-        out = _resolve_volcengine_credentials(
-            json.dumps({"ark_api_key": "abc123", "ep_id": 12345})
-        )
+        out = _resolve_volcengine_credentials(json.dumps({"ark_api_key": "abc123", "ep_id": 12345}))
         assert out == {"ark_api_key": "abc123", "model_name": "12345"}
 
-        out = _resolve_volcengine_credentials(
-            json.dumps({"ark_api_key": "abc123", "endpoint_id": -250115})
-        )
+        out = _resolve_volcengine_credentials(json.dumps({"ark_api_key": "abc123", "endpoint_id": -250115}))
         assert out == {"ark_api_key": "abc123", "model_name": "-250115"}
 
     def test_json_array_raises_model_exception(self):
