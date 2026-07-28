@@ -96,7 +96,7 @@ pre-commit:
               fi
           - name: web-oxlint
             glob: "web/**/*.{js,jsx,ts,tsx}"
-            exclude: ["web/node_modules/**", "web/.next/**", "web/dist/**"]
+            exclude: ["web/**/*.min.js", "web/node_modules/**", "web/.next/**", "web/dist/**"]
             root: "web/"
             stage_fixed: true
             run: |
