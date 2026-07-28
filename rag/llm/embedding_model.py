@@ -32,7 +32,7 @@ from common import settings
 from common.aimlapi_utils import attribution_headers
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
-from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.key_utils import _normalize_replicate_key, _resolve_openrouter_credentials
 from rag.utils.url_utils import ensure_v1
 import logging
 import base64
@@ -1352,18 +1352,17 @@ class OpenRouterEmbed(Base):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
         self.base_url = ensure_v1(base_url)
-        try:
-            payload = json.loads(key)
-        except (JSONDecodeError, TypeError):
-            api_key = key
-            provider_order = ""
-        else:
-            if isinstance(payload, dict):
-                api_key = payload.get("api_key", "")
-                provider_order = payload.get("provider_order", "")
-            else:
-                api_key = key
-                provider_order = ""
+        # Parse the key via the shared helper. The helper handles plain
+        # (non-JSON) keys, JSON dicts, and JSON top-level non-objects
+        # (e.g. "[1,2,3]" or "42"). Pre-fix, the embedding site had an
+        # explicit isinstance(payload, dict) check that silently used
+        # the raw JSON string as api_key on JSON non-object input --
+        # that path then failed auth at the OpenAI client with a
+        # less-actionable 401. The helper instead raises a clear
+        # ModelException for the user. See #17458.
+        resolved = _resolve_openrouter_credentials(key)
+        api_key = resolved["api_key"]
+        provider_order = resolved["provider_order"]
         self.client = OpenAI(api_key=api_key, base_url=self.base_url)
         self.model_name = model_name
         self.provider_order = provider_order

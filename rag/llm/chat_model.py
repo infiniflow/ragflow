@@ -36,7 +36,7 @@ from common.misc_utils import thread_pool_exec
 from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
-from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.key_utils import _normalize_replicate_key, _resolve_openrouter_credentials
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 from rag.utils.url_utils import ensure_v1
@@ -1633,12 +1633,15 @@ class LiteLLMBase(ABC):
 
         # Factory specific fields
         if self.provider == SupportedLiteLLMProvider.OpenRouter:
-            try:
-                self.api_key = json.loads(key).get("api_key", "")
-                self.provider_order = json.loads(key).get("provider_order", "")
-            except JSONDecodeError:
-                self.api_key = key
-                self.provider_order = ""
+            # Parse the key via the shared helper. The helper handles plain
+            # (non-JSON) keys, JSON dicts, and JSON top-level non-objects
+            # (e.g. "[1,2,3]" or "42") which would otherwise raise
+            # AttributeError on the .get() call. The pre-existing
+            # try/except JSONDecodeError (PR #15776) only caught the
+            # parse failure. See #17458.
+            resolved = _resolve_openrouter_credentials(key)
+            self.api_key = resolved["api_key"]
+            self.provider_order = resolved["provider_order"]
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
             self.api_key = json.loads(key).get("api_key", "")
             self.api_version = json.loads(key).get("api_version", "2024-02-01")
