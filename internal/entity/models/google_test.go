@@ -521,11 +521,12 @@ func TestGoogleSystemInstructionExtractedFromMessages(t *testing.T) {
 	messages := []Message{
 		{Role: "system", Content: "You are a helpful assistant."},
 		{Role: "user", Content: "Hello"},
+		{Role: "system", Content: "Always answer in pirate speak."},
 	}
 
 	contents := googleChatContents(messages)
 	if len(contents) != 1 {
-		t.Fatalf("contents len = %d, want 1 (system message must be excluded)", len(contents))
+		t.Fatalf("contents len = %d, want 1 (both system messages must be excluded)", len(contents))
 	}
 	if contents[0].Role != genai.RoleUser {
 		t.Fatalf("contents[0].Role = %s, want user", contents[0].Role)
@@ -535,11 +536,14 @@ func TestGoogleSystemInstructionExtractedFromMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("googleSystemInstruction error = %v", err)
 	}
-	if systemInstruction == nil || len(systemInstruction.Parts) != 1 {
-		t.Fatalf("systemInstruction = %#v, want one part", systemInstruction)
+	if systemInstruction == nil || len(systemInstruction.Parts) != 2 {
+		t.Fatalf("systemInstruction = %#v, want two parts", systemInstruction)
 	}
 	if systemInstruction.Parts[0].Text != "You are a helpful assistant." {
-		t.Fatalf("systemInstruction text = %q", systemInstruction.Parts[0].Text)
+		t.Fatalf("systemInstruction first part text = %q", systemInstruction.Parts[0].Text)
+	}
+	if systemInstruction.Parts[1].Text != "Always answer in pirate speak." {
+		t.Fatalf("systemInstruction second part text = %q", systemInstruction.Parts[1].Text)
 	}
 
 	cfg, err := googleGenerateContentConfig(nil, systemInstruction)
