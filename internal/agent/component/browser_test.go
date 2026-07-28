@@ -26,6 +26,8 @@ import (
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // mockStagehandInvoker captures RunExtract requests and returns a
@@ -188,7 +190,7 @@ func TestBrowser_DispatchesToRuntime(t *testing.T) {
 	withMockRuntime(t, mock)
 
 	prevLookup := browserLLMLookupForTest
-	browserLLMLookupForTest = func(tenantID, llmID string) (string, string, string, string, error) {
+	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
 		return "", "", "", "", errors.New("fake: tenant LLM not found")
 	}
 	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
@@ -303,7 +305,7 @@ func TestBrowser_PropagatesRuntimeError(t *testing.T) {
 	// Override the tenant LLM lookup so the test doesn't need a
 	// real DB.
 	prevLookup := browserLLMLookupForTest
-	browserLLMLookupForTest = func(tenantID, llmID string) (string, string, string, string, error) {
+	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
 		return "OpenAI", "gpt-4o", "sk-test", "https://api.openai.com/v1", nil
 	}
 	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
@@ -421,7 +423,7 @@ func TestBrowser_RunExtractRequestShape(t *testing.T) {
 	withMockRuntime(t, mock)
 
 	prevLookup := browserLLMLookupForTest
-	browserLLMLookupForTest = func(tenantID, llmID string) (string, string, string, string, error) {
+	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
 		return "OpenAI", "gpt-4o", "sk-test", "https://api.openai.com/v1", nil
 	}
 	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
@@ -463,7 +465,7 @@ func TestBrowser_HeadlessPropagates(t *testing.T) {
 	withMockRuntime(t, mock)
 
 	prevLookup := browserLLMLookupForTest
-	browserLLMLookupForTest = func(tenantID, llmID string) (string, string, string, string, error) {
+	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
 		return "OpenAI", "gpt-4o", "sk-test", "", nil
 	}
 	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
@@ -495,7 +497,7 @@ func TestBrowser_OutputsShape(t *testing.T) {
 	withMockRuntime(t, mock)
 
 	prevLookup := browserLLMLookupForTest
-	browserLLMLookupForTest = func(tenantID, llmID string) (string, string, string, string, error) {
+	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
 		return "OpenAI", "gpt-4o", "sk-test", "", nil
 	}
 	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })

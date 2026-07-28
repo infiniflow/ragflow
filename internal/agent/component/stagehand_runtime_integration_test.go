@@ -54,6 +54,8 @@ import (
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 // TestStagehandRuntime_Extract is the single happy-path integration
@@ -207,7 +209,7 @@ func TestBrowser_E2E_Extract(t *testing.T) {
 
 	// Override tenant LLM lookup so the test doesn't need a real DB.
 	prevLookup := browserLLMLookupForTest
-	browserLLMLookupForTest = func(_, _ string) (string, string, string, string, error) {
+	browserLLMLookupForTest = func(_ context.Context, _ *gorm.DB, _, _ string) (string, string, string, string, error) {
 		return "OpenAI", model, apiKey, baseURL, nil
 	}
 	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })

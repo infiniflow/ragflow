@@ -423,12 +423,12 @@ func (b *BrowserComponent) Outputs() map[string]string {
 // Tests override the lookup via `browserLLMLookupForTest` (a package-level
 // function variable) so they don't need a real DB. Production code leaves the
 // variable unset.
-func resolveBrowserLLM(tenantID, llmID string) (providerName, modelName, apiKey, baseURL string, err error) {
+func resolveBrowserLLM(ctx context.Context, db *gorm.DB, tenantID, llmID string) (providerName, modelName, apiKey, baseURL string, err error) {
 	if browserLLMLookupForTest != nil {
-		return browserLLMLookupForTest(tenantID, llmID)
+		return browserLLMLookupForTest(ctx, db, tenantID, llmID)
 	}
 
-	providerName, modelName, apiKey, baseURL, err = resolveTenantModelBrowserLLM(tenantID, llmID)
+	providerName, modelName, apiKey, baseURL, err = resolveTenantModelBrowserLLM(ctx, db, tenantID, llmID)
 	if err != nil {
 		return "", "", "", "", fmt.Errorf("tenant model lookup (%q): %w", llmID, err)
 	}
@@ -502,7 +502,7 @@ func browserOpenAICompatibleBaseURL(baseURL, provider string) string {
 // browserLLMLookupForTest is the test seam for `resolveBrowserLLM`.
 // When non-nil, it's called instead of the real DAO lookup.
 // Production leaves this nil; tests set it via `defer ... = nil`.
-var browserLLMLookupForTest func(tenantID, llmID string) (providerName, modelName, apiKey, baseURL string, err error)
+var browserLLMLookupForTest func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (providerName, modelName, apiKey, baseURL string, err error)
 
 func init() {
 	Register(componentNameBrowser, NewBrowserComponent)
