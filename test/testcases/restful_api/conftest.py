@@ -80,9 +80,14 @@ GO_ONLY_SKIPS = {
         "test_session_update_name_and_param_contract",
         "test_session_update_requires_auth_and_invalid_target_contract",
         "test_chat_completion_validation_errors",
+        # Go response data omits the `audio_binary` key that the contract asserts.
         "test_chat_completion_nonstream_with_session",
         "test_search_completion_sse_shape_when_kb_ids_provided",
         "test_system_tokens_auth_and_crud",
+        # Go rejects a missing `question` with the Gin validator message
+        # ("Key: 'SearchBotRequest.Question' ...") instead of the established
+        # message containing lowercase "question".
+        "test_related_questions_contract",
         # --- exposed after meta_fields skip guard removal ---
         "test_chunk_add_keyword_question_and_tag_contract",
         "test_chunk_add_repeated_and_deleted_document_contract",
@@ -99,9 +104,6 @@ GO_ONLY_SKIPS = {
         "test_documents_delete_contract_matrix",
         "test_documents_delete_invalid_dataset_partial_duplicate_repeat_and_cross_dataset",
         "test_documents_delete_concurrent_and_bulk_contract",
-    },
-    "Go LLM setup cannot exercise the configured model": {
-        "test_related_questions_contract",
     },
     "Go ingestion pipeline does not complete document parsing within the test timeout": {
         "test_chat_list_concurrent_and_dataset_delete_contract",
