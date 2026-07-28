@@ -316,8 +316,8 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 		saveErr := saver.Save(ctx, MemorySaveRequest{
 			MemoryIDs:     memIDs,
 			UserID:        userID,
-			AgentID:       state.TaskID,
-			SessionID:     state.RunID,
+			AgentID:       memoryAgentID(state),
+			SessionID:     memorySessionID(state),
 			UserInput:     stringFromStateSys(state, "query"),
 			AgentResponse: rendered,
 		})
@@ -328,6 +328,26 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 	}
 
 	return out, nil
+}
+
+func memoryAgentID(state *runtime.CanvasState) string {
+	if agentID := stringFromStateSys(state, "canvas_id"); agentID != "" {
+		return agentID
+	}
+	if state == nil {
+		return ""
+	}
+	return state.TaskID
+}
+
+func memorySessionID(state *runtime.CanvasState) string {
+	if sessionID := stringFromStateSys(state, "session_id"); sessionID != "" {
+		return sessionID
+	}
+	if state == nil {
+		return ""
+	}
+	return state.RunID
 }
 
 // resolveDeferredTemplate resolves a Message template while consuming any

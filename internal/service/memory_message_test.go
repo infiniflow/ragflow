@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -238,6 +239,54 @@ func seedMemoryMessages(t *testing.T) {
 		if err := dao.DB.Create(memory).Error; err != nil {
 			t.Fatalf("seed memory %s: %v", memory.ID, err)
 		}
+	}
+}
+
+func TestSaveAgentMessageBypassesRequestAccessFilter(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+
+	if err := dao.DB.Create(&entity.Memory{
+		ID:               "mem-owned",
+		Name:             "Owned",
+		TenantID:         "user-1",
+		MemoryType:       dao.MemoryTypeRaw,
+		StorageType:      "table",
+		EmbdID:           "embd-1",
+		LLMID:            "llm-1",
+		Permissions:      string(TenantPermissionMe),
+		ForgettingPolicy: string(ForgettingPolicyFIFO),
+	}).Error; err != nil {
+		t.Fatalf("seed memory: %v", err)
+	}
+
+	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO()}
+	msg := MemoryMessage{
+		AgentID:       "agent-1",
+		SessionID:     "session-1",
+		UserInput:     "hi",
+		AgentResponse: "hello",
+	}
+
+	ok, detail, err := svc.AddMessage(context.Background(), "", []string{"mem-owned"}, msg)
+	if err != nil {
+		t.Fatalf("AddMessage: %v", err)
+	}
+	if ok || detail != "Memory not found." {
+		t.Fatalf("AddMessage with empty current user = (%v, %q), want permission-filtered not found", ok, detail)
+	}
+
+	ok, detail, err = svc.saveAgentMessage(context.Background(), []string{"mem-owned"}, msg)
+	if err != nil {
+		t.Fatalf("saveAgentMessage: %v", err)
+	}
+	if ok {
+		t.Fatal("saveAgentMessage unexpectedly succeeded without a message store")
+	}
+	if strings.Contains(detail, "Memory not found") {
+		t.Fatalf("saveAgentMessage was filtered by request user: %q", detail)
+	}
+	if !strings.Contains(detail, "message store is not initialized") {
+		t.Fatalf("saveAgentMessage detail = %q, want message-store failure after memory lookup", detail)
 	}
 }
 
