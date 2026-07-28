@@ -15,6 +15,7 @@
 #
 from datetime import datetime
 import json
+import logging
 import os
 import requests
 from timeit import default_timer as timer

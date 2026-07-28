@@ -303,7 +303,9 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                         port: int = parsed.port or (443 if parsed.scheme == "https" else 80)
                         logging.debug(
                             "Selected S3 host=%s port=%d for endpoint %r.",
-                            host, port, endpoint_url,
+                            host,
+                            port,
+                            endpoint_url,
                         )
                     except ValueError:
                         logging.warning(
