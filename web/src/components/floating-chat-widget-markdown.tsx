@@ -307,7 +307,7 @@ const FloatingChatWidgetMarkdown = ({
             'custom-typography': ({ children }: { children: string }) =>
               renderReference(children),
             code(props: any) {
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              // oxlint-disable-next-line typescript/no-unused-vars
               const { children, className, node, ...rest } = props;
               const match = /language-(\w+)/.exec(className || '');
               return match ? (
