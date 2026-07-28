@@ -629,12 +629,7 @@ func runSyncer(ctx context.Context, args *serverArgs) error {
 		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping file syncer %s ...", *args.name))
 	}
 
-	// Create context with timeout for graceful shutdown
-	_, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
 	fileSyncer.Stop()
-
 	common.Info(fmt.Sprintf("File syncer %s shutdown complete", *args.name))
 
 	return nil
