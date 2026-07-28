@@ -106,12 +106,16 @@ func TestRetrieval_EmptyArgsIsHandled(t *testing.T) {
 	t.Parallel()
 
 	rt := NewRetrievalTool()
-	// Empty arguments should still return a stub error (not panic) — the
-	// Python tool defaults to empty_response in this case. Without
-	// wiring, the Go side surfaces the service-missing error.
-	_, err := rt.InvokableRun(context.Background(), "")
-	if !errors.Is(err, ErrRetrievalServiceMissing) {
-		t.Fatalf("err = %v, want ErrRetrievalServiceMissing", err)
+	out, err := rt.InvokableRun(context.Background(), "")
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	var result retrievalResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if result.FormalizedContent != "" {
+		t.Fatalf("FormalizedContent = %q, want empty default", result.FormalizedContent)
 	}
 }
 
