@@ -234,9 +234,9 @@ func TestLongCatChatAcceptsReasoningOnlyResponse(t *testing.T) {
 	ctx := t.Context()
 	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"id":      "cmpl_reasoning_only",
-			"object":  "chat.completion",
-			"model":   "LongCat-2.0",
+			"id":     "cmpl_reasoning_only",
+			"object": "chat.completion",
+			"model":  "LongCat-2.0",
 			"choices": []map[string]interface{}{{
 				"index": 0,
 				"message": map[string]interface{}{
@@ -263,13 +263,19 @@ func TestLongCatChatAcceptsReasoningOnlyResponse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Chat: %v (should not error on reasoning-only response)", err)
 	}
-	if resp.Answer == nil || *resp.Answer != "" {
+	if resp.Answer == nil {
+		t.Error("Answer must be non-nil")
+	} else if *resp.Answer != "" {
 		t.Errorf("Answer=%q, want empty string", *resp.Answer)
 	}
-	if resp.ReasonContent == nil || *resp.ReasonContent != "The answer is 4." {
+	if resp.ReasonContent == nil {
+		t.Error("ReasonContent must be non-nil")
+	} else if *resp.ReasonContent != "The answer is 4." {
 		t.Errorf("ReasonContent=%q, want 'The answer is 4.'", *resp.ReasonContent)
 	}
-	if resp.Usage == nil || resp.Usage.TotalTokens != 15 {
+	if resp.Usage == nil {
+		t.Error("Usage must be non-nil")
+	} else if resp.Usage.TotalTokens != 15 {
 		t.Errorf("Usage=%#v, want total=15", resp.Usage)
 	}
 }
