@@ -16,7 +16,7 @@ import * as React from 'react';
 
 import { FileIcon } from '@/components/icon-font';
 import { RenameDialog } from '@/components/rename-dialog';
-import { TableEmpty, TableSkeleton } from '@/components/table-skeleton';
+import { TableEmpty } from '@/components/table-skeleton';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
@@ -362,7 +362,9 @@ export function FilesTable({
           </TableHeader>
           <TableBody className="max-h-96 overflow-y-auto">
             {loading ? (
-              <TableSkeleton columnsLength={columns.length}></TableSkeleton>
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-24" />
+              </TableRow>
             ) : table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow

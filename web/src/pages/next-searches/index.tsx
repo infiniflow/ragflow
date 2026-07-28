@@ -21,6 +21,7 @@ export default function SearchList() {
   // const [isEdit, setIsEdit] = useState(false);
   const {
     data: list,
+    isLoading: loading,
     pagination,
     searchString,
     handleInputChange,
@@ -72,7 +73,9 @@ export default function SearchList() {
 
   return (
     <>
-      {list?.data?.search_apps?.length || searchString ? (
+      {loading && !list?.data?.search_apps?.length ? (
+        <article className="size-full" data-testid="search-list"></article>
+      ) : list?.data?.search_apps?.length || searchString ? (
         <article
           className="size-full min-w-0 flex flex-col"
           data-testid="search-list"
