@@ -14,6 +14,7 @@
 #  limitations under the License.
 import logging
 import random
+import re
 from copy import deepcopy
 from types import SimpleNamespace
 
@@ -26,6 +27,8 @@ from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.task_service import has_canceled
 from common.constants import LLMType
+from common.token_utils import num_tokens_from_string
+from rag.nlp import naive_merge
 from rag.advanced_rag.knowlege_compile.runner import (
     DOC_STRUCTURE_COMPILE_BATCH_CHUNKS,
     load_active_templates,
@@ -58,6 +61,117 @@ class CompilerParam(ProcessParamBase, LLMParam):
 
 class Compiler(ProcessBase, LLM):
     component_name = "Compiler"
+    _PARSER_TEXT_CHUNK_TOKEN_SIZE = 512
+    _PARSER_CANDIDATE_TOKEN_SIZE = 128
+    _PARSER_MIN_SPLIT_CHARACTERS = 24
+
+    @classmethod
+    def _split_slumber_level(cls, text: str, delimiters: list[str]) -> list[str]:
+        """Split at boundaries while keeping delimiters with the previous part."""
+        if not text:
+            return []
+        pattern = "|".join(re.escape(delimiter) for delimiter in sorted(delimiters, key=len, reverse=True))
+        if not pattern:
+            return [text]
+
+        parts = []
+        start = 0
+        for match in re.finditer(pattern, text, flags=re.DOTALL):
+            end = match.end()
+            if end - start >= cls._PARSER_MIN_SPLIT_CHARACTERS:
+                parts.append(text[start:end])
+                start = end
+        if start < len(text):
+            parts.append(text[start:])
+
+        # Keep very short delimiter fragments with their neighbour, matching
+        # Chonkie's min_chars behavior instead of producing tiny candidates.
+        merged = []
+        for part in parts:
+            if merged and len(part.strip()) < cls._PARSER_MIN_SPLIT_CHARACTERS:
+                merged[-1] += part
+            else:
+                merged.append(part)
+        return [part for part in merged if part.strip()]
+
+    @classmethod
+    def _slumber_candidates(cls, text: str, level: int = 0) -> list[str]:
+        """Apply Slumber's paragraph→sentence→pause→word→token hierarchy."""
+        levels = [
+            ["\n\n", "\r\n", "\n", "\r"],
+            [". ", "! ", "? ", "。", "！", "？", "；", ";"],
+            ["{", "}", '"', "[", "]", "<", ">", "(", ")", ":", "：", ";", "，", ",", "—", "|", "~", "-", "...", "`", "'"],
+            [" "],
+        ]
+        if not text.strip():
+            return []
+        if level >= len(levels):
+            return [part for part in naive_merge(text, cls._PARSER_TEXT_CHUNK_TOKEN_SIZE, "", 0) if part.strip()]
+
+        splits = cls._split_slumber_level(text, levels[level])
+        if len(splits) <= 1 and level < len(levels) - 1:
+            return cls._slumber_candidates(text, level + 1)
+
+        candidates = []
+        for split in splits:
+            if num_tokens_from_string(split) > cls._PARSER_CANDIDATE_TOKEN_SIZE:
+                candidates.extend(cls._slumber_candidates(split, level + 1))
+            else:
+                candidates.append(split)
+        return candidates
+
+    @staticmethod
+    def _is_atomic_json_record(record: dict) -> bool:
+        """Keep structured or position-bound Parser records intact."""
+        doc_type = str(record.get("doc_type_kwd") or "").strip().lower()
+        layout_type = str(record.get("layout_type") or "").strip().lower()
+        return bool(doc_type in {"table", "image"} or record.get("img_id") or record.get("image") or layout_type in {"figure", "table"} or record.get("bbox"))
+
+    @classmethod
+    def _normalize_upstream_chunks(cls, upstream: dict, split_json_text: bool = False) -> list[dict]:
+        """Normalize direct Parser output into Compiler chunks.
+
+        Parser JSON is already a list of chunk-like records, so preserve each
+        record and its metadata. Textual Parser outputs need a lightweight
+        token split before they enter the existing compilation pipeline.
+        """
+        output_format = upstream.get("output_format")
+        if output_format == "chunks":
+            chunks = upstream.get("chunks") or []
+            return deepcopy(chunks) if isinstance(chunks, list) else []
+
+        if output_format == "json":
+            records = upstream.get("json") or upstream.get("json_result") or []
+            if not isinstance(records, list):
+                return []
+            chunks = []
+            for record in records:
+                if not isinstance(record, dict):
+                    continue
+                chunk = deepcopy(record)
+                text = chunk.get("text")
+                if not isinstance(text, str):
+                    text = chunk.get("content_with_weight")
+                if isinstance(text, str) and text.strip():
+                    if Compiler._is_atomic_json_record(chunk) or not split_json_text:
+                        chunk["text"] = text
+                        chunks.append(chunk)
+                    else:
+                        for part in Compiler._slumber_candidates(text):
+                            split_chunk = deepcopy(chunk)
+                            split_chunk["text"] = part
+                            chunks.append(split_chunk)
+            return chunks
+
+        if output_format in {"markdown", "text", "html"}:
+            text = upstream.get(output_format)
+            if not isinstance(text, str):
+                text = upstream.get(f"{output_format}_result")
+            if not isinstance(text, str) or not text.strip():
+                return []
+            return [{"text": part} for part in cls._slumber_candidates(text) if part.strip()]
+
+        return []
 
     def _compile_progress(self, prog=None, msg=""):
         """Adapt the knowledge-compile ``callback`` protocol to the flow
@@ -210,11 +324,7 @@ class Compiler(ProcessBase, LLM):
         # kwargs. Do not call LLM.get_input_elements() here: it resolves the
         # inherited prompt variables through Canvas.globals, while Pipeline
         # is a Graph and has no globals.
-        chunks = deepcopy(kwargs.get("chunks") or [])
-        if not chunks:
-            for val in kwargs.values():
-                if isinstance(val, list):
-                    chunks = deepcopy(val)
+        chunks = self._normalize_upstream_chunks(kwargs)
 
         tenant_id = self._canvas.get_tenant_id()
         doc_id = self._canvas._doc_id
@@ -224,10 +334,6 @@ class Compiler(ProcessBase, LLM):
         if not chunks:
             self.set_output("chunks", chunks)
             return
-
-        for ck in chunks:
-            ck["doc_id"] = doc_id
-            ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
 
         # Resolve the configured template groups to concrete, active
         # (non-artifact) structure-compilation templates.
@@ -282,6 +388,25 @@ class Compiler(ProcessBase, LLM):
             self.set_output("chunks", chunks)
             return
         active_templates = filtered_templates
+
+        def _template_requests_rechunk(cfg: dict) -> bool:
+            if not isinstance(cfg, dict):
+                return False
+            if bool(cfg.get("rechunk")):
+                return True
+            raptor_cfg = cfg.get("raptor")
+            return isinstance(raptor_cfg, dict) and bool(raptor_cfg.get("rechunk"))
+
+        should_split_json = any(_template_requests_rechunk(cfg) for _, cfg in active_templates)
+        if should_split_json and kwargs.get("output_format") == "json":
+            chunks = self._normalize_upstream_chunks(kwargs, split_json_text=True)
+            if not chunks:
+                self.set_output("chunks", chunks)
+                return
+
+        for ck in chunks:
+            ck["doc_id"] = doc_id
+            ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
 
         if self._canvas._kb_id:
             e, kb = KnowledgebaseService.get_by_id(self._canvas._kb_id)
