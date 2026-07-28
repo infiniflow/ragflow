@@ -593,7 +593,7 @@ def test_documents_update_invalid_dataset_and_document_contract(rest_client, cre
     assert invalid_document_res.status_code == 200
     invalid_document_body = invalid_document_res.json()
     assert invalid_document_body["code"] == 102, invalid_document_body
-    assert invalid_document_body["message"] == "The dataset doesn't own the document.", invalid_document_body
+    assert invalid_document_body["message"] == "the dataset doesn't own the document", invalid_document_body
 
 
 @pytest.mark.p2
@@ -681,7 +681,7 @@ def test_documents_update_meta_fields_contract(rest_client, create_dataset, tmp_
     assert invalid_meta_doc_res.status_code == 200
     invalid_meta_doc_body = invalid_meta_doc_res.json()
     assert invalid_meta_doc_body["code"] == 102, invalid_meta_doc_body
-    assert "The dataset doesn't own the document." in invalid_meta_doc_body["message"], invalid_meta_doc_body
+    assert "the dataset doesn't own the document" in invalid_meta_doc_body["message"], invalid_meta_doc_body
 
 
 @pytest.mark.p2

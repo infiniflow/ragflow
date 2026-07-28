@@ -32,7 +32,7 @@ func (s *FileService) DeleteFiles(ctx context.Context, uid string, fileIDs []str
 
 		// 3. Permission check
 		if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
-			return false, "No authorization."
+			return false, "no authorization"
 		}
 
 		// 4. Skip dataset source files

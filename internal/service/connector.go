@@ -74,7 +74,7 @@ var (
 var (
 	// ErrConnectorNotFound mirrors Python's "Can't find this Connector!".
 	ErrConnectorNotFound = errors.New("can't find this Connector")
-	// ErrConnectorNoAuth mirrors Python's "No authorization." denial.
+	// ErrConnectorNoAuth mirrors Python's "no authorization" denial.
 	ErrConnectorNoAuth = errors.New("no authorization")
 	// ErrConnectorTestUnsupported is returned for connector sources whose
 	// validation path is not yet ported to Go.

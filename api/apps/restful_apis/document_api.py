@@ -223,7 +223,7 @@ async def update_document(tenant_id, dataset_id, document_id):
     # Prepare data for validation
     docs = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not docs:
-        return get_error_data_result(message="The dataset doesn't own the document.")
+        return get_error_data_result(message="the dataset doesn't own the document")
 
     # Validate document update request parameters
     try:

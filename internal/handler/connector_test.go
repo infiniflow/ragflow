@@ -292,10 +292,10 @@ func TestConnectorHandlerDeleteConnector(t *testing.T) {
 		},
 		{
 			name:     "unauthorized",
-			service:  fakeConnectorService{code: common.CodeAuthenticationError, err: fmt.Errorf("No authorization.")},
+			service:  fakeConnectorService{code: common.CodeAuthenticationError, err: fmt.Errorf("no authorization")},
 			wantCode: common.CodeAuthenticationError,
 			wantData: nil,
-			wantMsg:  "No authorization.",
+			wantMsg:  "no authorization",
 		},
 	}
 
@@ -386,9 +386,9 @@ func TestConnectorHandlerListLogs(t *testing.T) {
 		},
 		{
 			name:     "unauthorized",
-			service:  fakeConnectorService{code: common.CodeAuthenticationError, err: fmt.Errorf("No authorization.")},
+			service:  fakeConnectorService{code: common.CodeAuthenticationError, err: fmt.Errorf("no authorization")},
 			wantCode: common.CodeAuthenticationError,
-			wantMsg:  "No authorization.",
+			wantMsg:  "no authorization",
 		},
 	}
 

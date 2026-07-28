@@ -260,7 +260,7 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 	ctx := c.Request.Context()
 	// Check authorization - user must have access to this kb
 	if !h.datasetService.Accessible(ctx, req.KBID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
@@ -308,7 +308,7 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 
 	// Check authorization
 	if !h.datasetService.Accessible(ctx, req.KBID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 

@@ -388,7 +388,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 		return nil, "", common.CodeServerError, err
 	}
 	if !ok {
-		return false, "No authorization.", common.CodeAuthenticationError, errors.New("no authorization")
+		return false, "no authorization", common.CodeAuthenticationError, errors.New("no authorization")
 	}
 
 	if len(req) == 0 {
