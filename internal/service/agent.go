@@ -1492,7 +1492,12 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		if uid, ok := root["user_id"].(string); ok && uid != "" {
 			state.Sys["user_id"] = uid
 		}
-		state.Sys["agent_id"] = canvasID
+		if canvasID != "" {
+			state.Sys["canvas_id"] = canvasID
+		}
+		if sessionID != "" {
+			state.Sys["session_id"] = sessionID
+		}
 		if tid, ok := root["tenant_id"].(string); ok && tid != "" {
 			state.Sys["tenant_id"] = tid
 		}
