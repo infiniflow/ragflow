@@ -159,7 +159,7 @@ func sortedToolNames() []string {
 	known := []string{
 		"akshare", "arxiv", "code_exec", "crawler", "deepl", "duckduckgo",
 		"email", "execute_sql", "exesql", "github", "google", "google_scholar",
-		"jin10", "pubmed", "qweather", "retrieval", "search_my_dataset",
+		"jin10", "pubmed", "qweather", "querit", "querit_search", "queritsearch", "retrieval", "search_my_dataset",
 		"search_my_dateset", "searxng", "tavily", "tushare", "wencai",
 		"web_crawler", "wikipedia", "yahoo_finance",
 	}

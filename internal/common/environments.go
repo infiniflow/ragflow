@@ -108,6 +108,7 @@ const (
 	EnvSSHEnableAPIURL                   = "SSH_ENABLE_API_URL"
 	EnvAllowAnyHost                      = "ALLOW_ANY_HOST"
 	EnvTavilyApiKey                      = "TAVILY_API_KEY"
+	EnvQueritAPIKey                      = "QUERIT_API_KEY"
 	EnvHome                              = "HOME"
 	EnvUserProfile                       = "USERPROFILE"
 	EnvHttpHTTPProxy                     = "http_proxy"
