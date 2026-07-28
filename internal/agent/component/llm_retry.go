@@ -127,5 +127,10 @@ func (r *retryInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRe
 		resp = r
 		return e
 	})
-	return resp, err
+	// On failure, return nil (not the last partial response) so callers
+	// that check err first never dereference a half-formed resp.
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
 }

@@ -63,6 +63,7 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -438,6 +439,12 @@ type extractorInputs struct {
 	prompt       string
 	lang         string
 	chunks       []map[string]any
+	// temperature overrides the LLM temperature for this call. A
+	// nil value leaves the request's Temperature unset so the model
+	// (or the chat-model default) decides, matching Python's generic
+	// Extractor path. The keyword/question helpers set it to
+	// extractorTemperature (0.2) to mirror generator.py.
+	temperature *float64
 }
 
 // resolveInputs overlays per-call inputs on top of the
@@ -575,30 +582,25 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			}
 
 			if c.Param.AutoKeywords > 0 && c.Param.AutoQuestions > 0 {
-				// Check early-exit conditions before spawning
-				// goroutines to avoid concurrent read+write on the
-				// same map (Go maps are not safe for concurrent
-				// access even on different keys).
-				_, hasKW := ck["important_kwd"]
-				_, hasQ := ck["question_kwd"]
+				// Run keyword and question extraction concurrently
+				// per chunk (mirrors Python's ThreadPoolExecutor:
+				// task_executor.py:444-448). The shared chunk map is
+				// guarded by mu inside runAutoKeywords/runAutoQuestions,
+				// which also short-circuit when the key already exists.
 				var kwErr, qErr error
 				var mu sync.Mutex
 				var wg sync.WaitGroup
 				wg.Add(2)
 				go func() {
 					defer wg.Done()
-					if !hasKW {
-						if err := c.runAutoKeywordsLocked(timeoutCtx, db, in, ck, text, &mu); err != nil {
-							kwErr = err
-						}
+					if err := c.runAutoKeywords(timeoutCtx, db, in, ck, text, &mu); err != nil {
+						kwErr = err
 					}
 				}()
 				go func() {
 					defer wg.Done()
-					if !hasQ {
-						if err := c.runAutoQuestionsLocked(timeoutCtx, db, in, ck, text, &mu); err != nil {
-							qErr = err
-						}
+					if err := c.runAutoQuestions(timeoutCtx, db, in, ck, text, &mu); err != nil {
+						qErr = err
 					}
 				}()
 				wg.Wait()
@@ -610,12 +612,12 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 				}
 			} else {
 				if c.Param.AutoKeywords > 0 {
-					if err := c.runAutoKeywords(timeoutCtx, db, in, ck, text); err != nil {
+					if err := c.runAutoKeywords(timeoutCtx, db, in, ck, text, nil); err != nil {
 						return fmt.Errorf("chunk %d keywords: %w", i, err)
 					}
 				}
 				if c.Param.AutoQuestions > 0 {
-					if err := c.runAutoQuestions(timeoutCtx, db, in, ck, text); err != nil {
+					if err := c.runAutoQuestions(timeoutCtx, db, in, ck, text, nil); err != nil {
 						return fmt.Errorf("chunk %d questions: %w", i, err)
 					}
 				}
@@ -628,7 +630,18 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 				callIn := in
 				callIn.prompt = substituteChunkPlaceholders(in.prompt, ck, text)
 				callIn.systemPrompt = substituteChunkPlaceholders(in.systemPrompt, ck, text)
-				ans, callErr := c.call(timeoutCtx, db, callIn, text)
+				// buildExtractorMessages appends chunkText to the user
+				// message unconditionally. When the chunk text was already
+				// embedded via a {text}/{chunks} placeholder above, passing
+				// it again would duplicate the content in the final prompt.
+				// Suppress the automatic append in that case (the keyword/
+				// question helper paths do the same by passing "").
+				callChunkText := text
+				if strings.Contains(in.prompt, "{text}") || strings.Contains(in.prompt, "{chunks}") ||
+					strings.Contains(in.systemPrompt, "{text}") || strings.Contains(in.systemPrompt, "{chunks}") {
+					callChunkText = ""
+				}
+				ans, callErr := c.call(timeoutCtx, db, callIn, callChunkText)
 				if callErr != nil {
 					return fmt.Errorf("chunk %d: %w", i, callErr)
 				}
@@ -649,14 +662,30 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	}, nil
 }
 
-func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
-	if _, exists := ck["important_kwd"]; exists {
+// runAutoKeywords extracts keywords for the current chunk and stores
+// them on ck["important_kwd"]. mu may be nil (sequential path); when
+// non-nil it serializes the shared chunk-map accesses so concurrent
+// keyword/question goroutines stay race-free. The existence check and
+// the map writes are both guarded by mu. Keyword extraction pins
+// temperature to extractorTemperature (0.2) to mirror generator.py.
+func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string, mu *sync.Mutex) error {
+	if mu != nil {
+		mu.Lock()
+	}
+	_, exists := ck["important_kwd"]
+	if mu != nil {
+		mu.Unlock()
+	}
+	if exists {
 		return nil
 	}
-	kwIn := in
-	kwIn.prompt = "Output: "
-	kwIn.systemPrompt = fmt.Sprintf(autoKeywordPrompt, c.Param.AutoKeywords, chunkText)
-	kwIn.fieldName = ""
+	kwTemp := extractorTemperature
+	kwIn := extractorInputs{
+		llmID:        in.llmID,
+		systemPrompt: fmt.Sprintf(autoKeywordPrompt, c.Param.AutoKeywords, chunkText),
+		prompt:       "Output: ",
+		temperature:  &kwTemp,
+	}
 	result, err := c.call(ctx, db, kwIn, "")
 	if err != nil {
 		return err
@@ -670,23 +699,42 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	if len(kwds) == 0 {
 		return nil
 	}
-	ck["important_kwd"] = kwds
 	tok := tokenizer.New(in.lang)
 	tks, tkErr := tok.Tokenize(strings.Join(kwds, " "))
+	if mu != nil {
+		mu.Lock()
+	}
+	ck["important_kwd"] = kwds
 	if tkErr == nil {
 		ck["important_tks"] = tks
+	}
+	if mu != nil {
+		mu.Unlock()
 	}
 	return nil
 }
 
-func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
-	if _, exists := ck["question_kwd"]; exists {
+// runAutoQuestions extracts questions for the current chunk and stores
+// them on ck["question_kwd"]. See runAutoKeywords for the mu contract
+// and the temperature pin.
+func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string, mu *sync.Mutex) error {
+	if mu != nil {
+		mu.Lock()
+	}
+	_, exists := ck["question_kwd"]
+	if mu != nil {
+		mu.Unlock()
+	}
+	if exists {
 		return nil
 	}
-	qIn := in
-	qIn.prompt = "Output: "
-	qIn.systemPrompt = fmt.Sprintf(autoQuestionPrompt, c.Param.AutoQuestions, chunkText)
-	qIn.fieldName = ""
+	qTemp := extractorTemperature
+	qIn := extractorInputs{
+		llmID:        in.llmID,
+		systemPrompt: fmt.Sprintf(autoQuestionPrompt, c.Param.AutoQuestions, chunkText),
+		prompt:       "Output: ",
+		temperature:  &qTemp,
+	}
 	result, err := c.call(ctx, db, qIn, "")
 	if err != nil {
 		return err
@@ -708,11 +756,17 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	if len(filtered) == 0 {
 		return nil
 	}
-	ck["question_kwd"] = filtered
 	tok := tokenizer.New(in.lang)
 	tks, tkErr := tok.Tokenize(strings.Join(filtered, "\n"))
+	if mu != nil {
+		mu.Lock()
+	}
+	ck["question_kwd"] = filtered
 	if tkErr == nil {
 		ck["question_tks"] = tks
+	}
+	if mu != nil {
+		mu.Unlock()
 	}
 	return nil
 }
@@ -745,83 +799,33 @@ func splitKeywords(s string) []string {
 	return result
 }
 
-// runAutoKeywordsLocked mirrors runAutoKeywords but skips the
-// early-exit check (already done by the caller) and serializes
-// map writes under mu so concurrent goroutines don't trip the
-// Go race detector on the shared chunk map. Uses a fresh
-// extractorInputs with nil chunks to avoid reading from the
-// shared in.chunks slice under concurrent access.
-func (c *ExtractorComponent) runAutoKeywordsLocked(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string, mu *sync.Mutex) error {
-	kwIn := extractorInputs{
-		llmID:        in.llmID,
-		systemPrompt: fmt.Sprintf(autoKeywordPrompt, c.Param.AutoKeywords, chunkText),
-		prompt:       "Output: ",
+// isRetryableLLMError classifies an LLM chat error as worth
+// retrying. The production chat invoker returns opaque errors:
+// configuration failures (missing model/driver) before any API
+// call, and the provider SDK's raw error after the call. We treat
+// context cancellation/deadline as terminal, plus a lightweight
+// substring heuristic for non-transient API/auth errors. Anything
+// unrecognized defaults to retryable so genuinely transient 5xx /
+// 429 / network blips keep retrying (matching the prior blind-retry
+// behavior).
+func isRetryableLLMError(err error) bool {
+	if err == nil {
+		return true
 	}
-	result, err := c.call(ctx, db, kwIn, "")
-	if err != nil {
-		return err
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
 	}
-	resultStr, _ := result.(string)
-	resultStr = cleanExtractionResult(resultStr)
-	if resultStr == "" {
-		return nil
-	}
-	kwds := splitKeywords(resultStr)
-	if len(kwds) == 0 {
-		return nil
-	}
-	tok := tokenizer.New(in.lang)
-	tks, tkErr := tok.Tokenize(strings.Join(kwds, " "))
-	mu.Lock()
-	ck["important_kwd"] = kwds
-	if tkErr == nil {
-		ck["important_tks"] = tks
-	}
-	mu.Unlock()
-	return nil
-}
-
-// runAutoQuestionsLocked mirrors runAutoQuestions but skips the
-// early-exit check (already done by the caller) and serializes
-// map writes under mu so concurrent goroutines don't trip the
-// Go race detector on the shared chunk map. Uses a fresh
-// extractorInputs with nil chunks to avoid reading from the
-// shared in.chunks slice under concurrent access.
-func (c *ExtractorComponent) runAutoQuestionsLocked(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string, mu *sync.Mutex) error {
-	qIn := extractorInputs{
-		llmID:        in.llmID,
-		systemPrompt: fmt.Sprintf(autoQuestionPrompt, c.Param.AutoQuestions, chunkText),
-		prompt:       "Output: ",
-	}
-	result, err := c.call(ctx, db, qIn, "")
-	if err != nil {
-		return err
-	}
-	resultStr, _ := result.(string)
-	resultStr = cleanExtractionResult(resultStr)
-	if resultStr == "" {
-		return nil
-	}
-	qs := strings.Split(resultStr, "\n")
-	var filtered []string
-	for _, q := range qs {
-		q = strings.TrimSpace(q)
-		if q != "" {
-			filtered = append(filtered, q)
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{
+		"401", "403", "unauthorized", "authentication", "api key",
+		"400", "bad request", "404", "not found", "model not found", "content filter",
+		"no driver resolved", "model_name is required", "resolve driver",
+	} {
+		if strings.Contains(msg, s) {
+			return false
 		}
 	}
-	if len(filtered) == 0 {
-		return nil
-	}
-	tok := tokenizer.New(in.lang)
-	tks, tkErr := tok.Tokenize(strings.Join(filtered, "\n"))
-	mu.Lock()
-	ck["question_kwd"] = filtered
-	if tkErr == nil {
-		ck["question_tks"] = tks
-	}
-	mu.Unlock()
-	return nil
+	return true
 }
 
 // call dispatches one LLM chat call for the supplied chunk text
@@ -835,21 +839,27 @@ func (c *ExtractorComponent) call(ctx context.Context, db *gorm.DB, in extractor
 	}
 	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, chunkText, in.chunks)
 	inv := getExtractorChatInvoker()
-	temp := extractorTemperature
 	req := extractorChatRequest{
-		Driver:      driver,
-		ModelName:   modelName,
-		APIKey:      apiKey,
-		BaseURL:     baseURL,
-		Messages:    msgs,
-		Temperature: &temp,
+		Driver:    driver,
+		ModelName: modelName,
+		APIKey:    apiKey,
+		BaseURL:   baseURL,
+		Messages:  msgs,
+	}
+	// Only override the temperature when the caller set one. A nil
+	// Temperature lets the model / chat-model default decide, matching
+	// Python's generic Extractor path; keyword/question helpers set
+	// extractorTemperature (0.2) to mirror generator.py.
+	if in.temperature != nil {
+		temp := *in.temperature
+		req.Temperature = &temp
 	}
 	var resp *extractorChatResponse
 	if err := common.RetryWithBackoff(ctx, extractorRetryMax, extractorRetryDelay, func() error {
 		r, e := inv.Chat(ctx, req)
 		resp = r
 		return e
-	}); err != nil {
+	}, isRetryableLLMError); err != nil {
 		return nil, err
 	}
 	raw := strings.TrimSpace(resp.Content)

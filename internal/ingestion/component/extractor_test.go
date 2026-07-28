@@ -879,17 +879,18 @@ func TestResolveExtractorChatTarget_NoDriver(t *testing.T) {
 	}
 }
 
-// TestExtractorComponent_Invoke_TemperatureSet verifies the LLM chat call
-// receives Temperature=0.2, matching Python's keyword_extraction and
-// question_proposal defaults (generator.py:230,245).
+// TestExtractorComponent_Invoke_TemperatureSet verifies the keyword
+// extraction LLM chat call receives Temperature=0.2, matching Python's
+// keyword_extraction and question_proposal defaults (generator.py:230,245).
+// Field extraction intentionally runs on a separate call and uses the
+// model default (see TestExtractorComponent_Invoke_FieldNameTemperatureDefault),
+// so this test enables only AutoKeywords to assert the 0.2 pin directly.
 func TestExtractorComponent_Invoke_TemperatureSet(t *testing.T) {
 	stub := withStubChatInvoker(t,
 		stubResponse{Content: "keyword, extraction"},
-		stubResponse{Content: "answer"},
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		FieldName:    "summary",
 		LLMID:        "gpt-4o-mini",
 		AutoKeywords: 3,
 	}}
@@ -908,8 +909,35 @@ func TestExtractorComponent_Invoke_TemperatureSet(t *testing.T) {
 	if *stub.lastReq.Temperature != 0.2 {
 		t.Errorf("Temperature = %v, want 0.2", *stub.lastReq.Temperature)
 	}
-	if stub.calls.Load() < 2 {
-		t.Errorf("expected at least 2 LLM calls (keyword + extraction), got %d", stub.calls.Load())
+	if stub.calls.Load() != 1 {
+		t.Errorf("expected exactly 1 LLM call (keyword), got %d", stub.calls.Load())
+	}
+}
+
+// TestExtractorComponent_Invoke_FieldNameTemperatureDefault verifies
+// that the generic field-extraction path leaves Temperature unset
+// (model/default), unlike keyword/question which pin 0.2 — matching
+// Python's generic Extractor behavior.
+func TestExtractorComponent_Invoke_FieldNameTemperatureDefault(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "extracted"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "summary",
+		LLMID:     "gpt-4o-mini",
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "document content"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	if stub.lastReq.Temperature != nil {
+		t.Errorf("Temperature = %v, want nil (field extraction uses model default)", *stub.lastReq.Temperature)
 	}
 }
 
@@ -1064,6 +1092,12 @@ func TestExtractorComponent_Invoke_SubstitutesPlaceholders(t *testing.T) {
 	if !strings.Contains(userContent, "the document content") {
 		t.Errorf("prompt missing chunk text: %q", userContent)
 	}
+	// Regression guard: when the prompt embeds {text}, the chunk text
+	// must appear exactly once — buildExtractorMessages must not append
+	// it a second time (placeholder duplication bug).
+	if n := strings.Count(userContent, "the document content"); n != 1 {
+		t.Errorf("chunk text appears %d times, want 1: %q", n, userContent)
+	}
 }
 
 // TestExtractorComponent_Invoke_PlaceholderChunksAlias verifies that
@@ -1099,5 +1133,42 @@ func TestExtractorComponent_Invoke_PlaceholderChunksAlias(t *testing.T) {
 	}
 	if !strings.Contains(userContent, "weighted doc") {
 		t.Errorf("prompt missing chunk text: %q", userContent)
+	}
+	// Regression guard: {chunks} must not duplicate the chunk text.
+	if n := strings.Count(userContent, "weighted doc"); n != 1 {
+		t.Errorf("chunk text appears %d times, want 1: %q", n, userContent)
+	}
+}
+
+// TestExtractorComponent_Invoke_AppendsChunkTextWhenNoPlaceholder verifies
+// that when the prompt has no {text}/{chunks} placeholder, the chunk text is
+// still automatically appended by buildExtractorMessages exactly once.
+func TestExtractorComponent_Invoke_AppendsChunkTextWhenNoPlaceholder(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "answer"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "summary",
+		Prompt:    "Summarize the above:",
+		LLMID:     "gpt-4o-mini",
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "the document content"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	var userContent string
+	for _, msg := range stub.lastReq.Messages {
+		if msg.Role == eschema.User {
+			userContent = msg.Content
+		}
+	}
+	if n := strings.Count(userContent, "the document content"); n != 1 {
+		t.Errorf("chunk text appears %d times, want 1: %q", n, userContent)
 	}
 }

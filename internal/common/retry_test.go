@@ -119,3 +119,39 @@ func TestRetryWithBackoff_NegativeMaxRetries(t *testing.T) {
 		t.Errorf("calls = %d, want 1 (negative → single attempt)", calls.Load())
 	}
 }
+
+// TestRetryWithBackoff_NonRetryableStops verifies that when a
+// shouldRetry predicate returns false, RetryWithBackoff aborts
+// immediately instead of burning the remaining retries/backoff.
+func TestRetryWithBackoff_NonRetryableStops(t *testing.T) {
+	var calls atomic.Int32
+	sentinel := errors.New("auth failure")
+	err := RetryWithBackoff(t.Context(), 3, 10*time.Second, func() error {
+		calls.Add(1)
+		return sentinel
+	}, func(err error) bool {
+		return !errors.Is(err, sentinel)
+	})
+	if !errors.Is(err, sentinel) {
+		t.Errorf("expected sentinel, got %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Errorf("calls = %d, want 1 (non-retryable → single attempt)", calls.Load())
+	}
+}
+
+// TestRetryWithBackoff_NilPredicateRetriesAll confirms that omitting
+// the predicate preserves the original blind-retry behavior.
+func TestRetryWithBackoff_NilPredicateRetriesAll(t *testing.T) {
+	var calls atomic.Int32
+	err := RetryWithBackoff(t.Context(), 2, time.Millisecond, func() error {
+		calls.Add(1)
+		return errors.New("transient")
+	})
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if calls.Load() != 3 {
+		t.Errorf("calls = %d, want 3 (all retries attempted)", calls.Load())
+	}
+}

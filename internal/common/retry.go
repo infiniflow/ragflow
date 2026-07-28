@@ -31,9 +31,22 @@ const (
 // RetryWithBackoff retries fn on error with exponential backoff.
 // Returns nil on the first successful attempt. Returns the last
 // error wrapped with the retry count when all attempts fail.
-func RetryWithBackoff(ctx context.Context, maxRetries int, initialDelay time.Duration, fn func() error) error {
+//
+// An optional shouldRetry predicate lets callers abort on
+// non-transient errors: when supplied and it returns false for a
+// given error, RetryWithBackoff stops immediately and returns that
+// error without further backoff. A nil predicate (or a nil function
+// in the slice) retries on every error, preserving the original
+// behavior.
+func RetryWithBackoff(ctx context.Context, maxRetries int, initialDelay time.Duration, fn func() error, shouldRetry ...func(error) bool) error {
 	if maxRetries <= 0 {
 		return fn()
+	}
+	canRetry := func(err error) bool {
+		if len(shouldRetry) == 0 || shouldRetry[0] == nil {
+			return true
+		}
+		return shouldRetry[0](err)
 	}
 	delay := initialDelay
 	var lastErr error
@@ -43,6 +56,9 @@ func RetryWithBackoff(ctx context.Context, maxRetries int, initialDelay time.Dur
 			return nil
 		}
 		lastErr = err
+		if !canRetry(err) {
+			return err
+		}
 		if attempt == maxRetries {
 			break
 		}
