@@ -57,7 +57,8 @@ type CohereChatResponse struct {
 	ID           string `json:"id"`
 	FinishReason string `json:"finish_reason"`
 	Message      struct {
-		Role string `json:"role"`
+		Role      string           `json:"role"`
+		ToolCalls []map[string]any `json:"tool_calls"`
 
 		Content []struct {
 			Type     string `json:"type"`
@@ -89,6 +90,14 @@ func decodeCohereStreamUsage(event map[string]interface{}) (*TokenUsage, bool, e
 		return nil, false, nil
 	}
 	var parsed struct {
+		Delta struct {
+			Usage struct {
+				Tokens struct {
+					InputTokens  float64 `json:"input_tokens"`
+					OutputTokens float64 `json:"output_tokens"`
+				} `json:"tokens"`
+			} `json:"usage"`
+		} `json:"delta"`
 		Usage struct {
 			Tokens struct {
 				InputTokens  float64 `json:"input_tokens"`
@@ -112,6 +121,9 @@ func decodeCohereStreamUsage(event map[string]interface{}) (*TokenUsage, bool, e
 		return nil, false, err
 	}
 	tokens := parsed.Response.Usage.Tokens
+	if tokens.InputTokens == 0 && tokens.OutputTokens == 0 {
+		tokens = parsed.Delta.Usage.Tokens
+	}
 	if tokens.InputTokens == 0 && tokens.OutputTokens == 0 {
 		tokens = parsed.Usage.Tokens
 	}
@@ -193,7 +205,7 @@ func (c *CoHereModel) ChatWithMessages(ctx context.Context, modelName string, me
 		if err := json.Unmarshal(body, &result); err != nil {
 			return chatResponseParts{}, fmt.Errorf("failed to unmarshal response: %w", err)
 		}
-		if len(result.Message.Content) == 0 {
+		if len(result.Message.Content) == 0 && len(result.Message.ToolCalls) == 0 {
 			return chatResponseParts{}, fmt.Errorf("content is not an array in Cohere response")
 		}
 
@@ -211,6 +223,7 @@ func (c *CoHereModel) ChatWithMessages(ctx context.Context, modelName string, me
 			RequestID:     result.ID,
 			Content:       &fullContent,
 			ReasonContent: &reasonContent,
+			ToolCalls:     result.Message.ToolCalls,
 			Usage:         buildCohereTokenUsage(result.Usage.Tokens.InputTokens, result.Usage.Tokens.OutputTokens),
 		}, nil
 	})
@@ -287,12 +300,17 @@ func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 			return nil
 		}
 
-		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		tokenUsage, found, usageErr := decodeCohereStreamUsage(event)
 		if usageErr != nil {
 			return usageErr
 		}
 		if found {
 			applyStreamUsage(modelConfig, modelUsage, tokenUsage)
+		}
+
+		if eventType == "message-end" {
+			sawTerminal = true
+			return nil
 		}
 
 		if eventType == "content-delta" {
