@@ -18,14 +18,14 @@ package task
 
 // AddPositions adds position fields to a chunk map.
 // Input positions is a flat []float64 grouped as [pn, left, right, top, bottom]
-// every 5 elements. pn is 0-indexed; output is 1-indexed.
+// every 5 elements. pn is ALREADY 1-indexed — the 0→1 conversion happens
+// once, at the parser boundary (normalizePDFPageNumber for the DeepDoc PDF
+// path; TCADP writes 1-indexed directly). This function is a passthrough: it
+// must NOT add +1, otherwise the PDF path (which already normalized) would
+// double-increment page numbers.
 //
-// Mirrors Python: rag.nlp.add_positions()
-//
-//	for pn, left, right, top, bottom in poss:
-//	    page_num_int.append(int(pn + 1))
-//	    top_int.append(int(top))
-//	    position_int.append((int(pn + 1), int(left), int(right), int(top), int(bottom)))
+// Mirrors Python: rag.nlp.add_positions() (Python adds +1 because its
+// callers feed 0-indexed values; the Go pipeline normalizes earlier).
 func AddPositions(chunk map[string]any, positions []float64) {
 	if len(positions) == 0 || len(positions)%5 != 0 {
 		return
@@ -36,7 +36,7 @@ func AddPositions(chunk map[string]any, positions []float64) {
 	positionInt := make([][]int, 0, n)
 
 	for i := 0; i < len(positions); i += 5 {
-		pn := int(positions[i]) + 1 // 0-indexed → 1-indexed
+		pn := int(positions[i]) // already 1-indexed
 		left := int(positions[i+1])
 		right := int(positions[i+2])
 		top := int(positions[i+3])

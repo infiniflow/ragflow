@@ -13,7 +13,14 @@ import (
 	models "ragflow/internal/entity/models"
 )
 
-func parseSpreadsheetWithTCADP(filename string, data []byte, fileType string, tcadpAPIServer, tcadpAPIKey, tableResultType, markdownImageResponseType string, outputFormat string) ParseResult {
+// parsePresentationWithTCADP sends binary presentation (PPTX/PPT) data
+// to the TCADP cloud reconstruction service and returns the structured
+// parse result. Mirrors the spreadsheet-family parseSpreadsheetWithTCADP
+// in xls_tcadp.go
+func parsePresentationWithTCADP(ctx context.Context, filename string, data []byte, fileType string,
+	tcadpAPIServer, tcadpAPIKey, tableResultType, markdownImageResponseType string,
+	outputFormat string,
+) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
@@ -38,7 +45,8 @@ func parseSpreadsheetWithTCADP(filename string, data []byte, fileType string, tc
 			"MarkdownImageResponseType": markdownImageResponseType,
 		},
 	}
-	resp, err := models.PostJSONRequest(context.Background(), models.NewDriverHTTPClient(), strings.TrimRight(baseURL, "/")+"/reconstruct_document", bearer(apiKey), requestBody)
+	resp, err := models.PostJSONRequest(ctx, models.NewDriverHTTPClient(),
+		strings.TrimRight(baseURL, "/")+"/reconstruct_document", bearer(apiKey), requestBody)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP submit: %w", err)}
 	}
@@ -59,7 +67,8 @@ func parseSpreadsheetWithTCADP(filename string, data []byte, fileType string, tc
 	if payload.DocumentRecognizeResultURL == "" {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP returned no DocumentRecognizeResultUrl")}
 	}
-	downloadReq, err := http.NewRequestWithContext(context.Background(), http.MethodGet, payload.DocumentRecognizeResultURL, nil)
+	downloadReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		payload.DocumentRecognizeResultURL, nil)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP download request: %w", err)}
 	}

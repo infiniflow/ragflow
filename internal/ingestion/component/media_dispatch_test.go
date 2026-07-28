@@ -324,6 +324,39 @@ func TestMaybeDispatchAudio_TextCarriesTranscription(t *testing.T) {
 	}
 }
 
+// TestMaybeDispatchAudio_DefaultOutputFormatJson covers Parser 2.11:
+// the default audio output_format must be "json" (matching Python
+// parser.py:232 and AllowedOutputFormat["audio"]={"json"}).
+func TestMaybeDispatchAudio_DefaultOutputFormatJson(t *testing.T) {
+	const want = "hello world"
+	drv := &audioTranscribeDriver{transcription: want}
+	orig := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = orig }()
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return drv, "asr-model", &modelModule.APIConfig{}, 0, nil
+	}
+	setups := defaultSetups()
+	// Do NOT set output_format — exercise the default path.
+	res, dispatched, err := maybeDispatchAudio(
+		context.Background(),
+		nil,
+		utility.FileTypeAURAL,
+		"test.mp3",
+		[]byte("fake-audio"),
+		map[string]any{"tenant_id": "t1"},
+		setups,
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchAudio: %v", err)
+	}
+	if !dispatched {
+		t.Fatal("expected dispatched=true for AURAL file")
+	}
+	if res.OutputFormat != "json" {
+		t.Fatalf("default OutputFormat = %q, want json", res.OutputFormat)
+	}
+}
+
 // TestMaybeDispatchMarkdownVision_EnhancesTables pins diff 2.5: markdown
 // vision enhancement must also process items whose doc_type_kwd is "table"
 // (Python checks {"image","table"} in parser/utils.py:181), not only "image".
