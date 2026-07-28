@@ -14,11 +14,13 @@
 #  limitations under the License.
 #
 import json
+import logging
 import aiohttp
 from abc import ABC
 from urllib.parse import urlparse
 from json.decoder import JSONDecodeError
 
+from common.aimlapi_utils import attribution_headers
 from common.constants import LLMType
 
 
@@ -561,6 +563,23 @@ class AIMLAPI(Base):
         "vision",
         "-vl",
     )
+
+    # aiohttp defaults to a 5-minute total timeout, long enough for a stalled catalog
+    # request to hold the task; 60s matches the timeout the other providers here use.
+    _MODEL_LIST_TIMEOUT = aiohttp.ClientTimeout(total=60)
+
+    async def _get_raw_model_list(self):
+        url = self._get_model_list_url()
+        if not url:
+            logging.warning("[aimlapi.com] Model list skipped: no base URL configured")
+            return None
+        headers = {"Authorization": f"Bearer {self._get_api_key()}", **attribution_headers()}
+        async with aiohttp.ClientSession(timeout=self._MODEL_LIST_TIMEOUT) as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    logging.warning("[aimlapi.com] Model list request to %s failed with HTTP %s", url, resp.status)
+                    return None
+                return await resp.json()
 
     def _format_model_list(self, raw_model_list):
         models = raw_model_list.get("data") if isinstance(raw_model_list, dict) else raw_model_list
