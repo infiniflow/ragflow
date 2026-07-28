@@ -431,6 +431,9 @@ export const getArtifactsStructure = (
     params: keywords ? { kind, keywords } : { kind },
   });
 
+export const deleteArtifactsStructure = (datasetId: string, kind: string) =>
+  request.delete(api.artifactsStructure(datasetId), { params: { kind } });
+
 export const updateArtifactPage = (
   datasetId: string,
   pageType: string,
