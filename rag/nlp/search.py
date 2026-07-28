@@ -21,8 +21,9 @@ from collections import OrderedDict, defaultdict
 from dataclasses import dataclass
 
 from rag.nlp import rag_tokenizer, query
+from rag.nlp.fusion import build_fusion_expr
 import numpy as np
-from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByExpr, DocStoreConnection
+from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr, DocStoreConnection
 from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
@@ -207,7 +208,9 @@ class Dealer:
                 if settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
                     src.append(f"q_{len(q_vec)}_vec")
 
-                if settings.DOC_ENGINE_GAUSSDB:
+                if settings.DOC_ENGINE_INFINITY:
+                    fusionExpr = build_fusion_expr(topk, float(req.get("vector_similarity_weight", 0.3)))
+                elif settings.DOC_ENGINE_GAUSSDB:
                     vector_weight = req.get("vector_similarity_weight", 0.3)
                     fusionExpr = FusionExpr("weighted_sum", topk, {"weights": f"{1 - float(vector_weight)},{float(vector_weight)}"})
                 else:
