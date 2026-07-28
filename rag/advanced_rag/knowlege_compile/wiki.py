@@ -2115,10 +2115,6 @@ async def _wiki_planning_call(
                 if slug and slug not in seen_slugs:
                     seen_slugs.add(slug)
                     merged_pages.append(page)
-                    if len(merged_pages) >= max_page_count:
-                        break
-            if len(merged_pages) >= max_page_count:
-                break
         logging.info(
             "wiki_plan: batched planning items=%d batches=%d merged_pages=%d",
             total_items,
