@@ -2974,7 +2974,7 @@ _WIKI_COMPILE_KWDS = (
 _WIKI_GRAPH_ENTITY_KWD = "artifact_entity"
 _WIKI_GRAPH_RELATION_KWD = "artifact_relation"
 _WIKI_GRAPH_ENTITY_PAGE_SIZE = 32
-_WIKI_GRAPH_MAX_LOADING_ENTITY = 128
+_WIKI_GRAPH_MAX_LOADING_ENTITY = 512
 
 
 def _wiki_entity_payload(row: dict) -> dict | None:
