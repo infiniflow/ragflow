@@ -1677,6 +1677,9 @@ func (s *ChatSessionService) ChatCompletions(
 	} else {
 		var answer strings.Builder
 		var finalRef map[string]interface{}
+		var audioBinary interface{}
+		var prompt string
+		var createdAt float64
 		for result := range resultChan {
 			if result.Final && result.Answer != "" {
 				// The final event carries the complete (decorated) answer;
@@ -1689,11 +1692,27 @@ func (s *ChatSessionService) ChatCompletions(
 			if result.Reference != nil {
 				finalRef = result.Reference
 			}
+			if result.AudioBinary != nil {
+				audioBinary = result.AudioBinary
+			}
+			if result.Prompt != "" {
+				prompt = result.Prompt
+			}
+			if result.CreatedAt != 0 {
+				createdAt = result.CreatedAt
+			}
 		}
+		// Mirror Python's non-stream response shape: decorate_answer's
+		// {answer, reference, prompt, created_at} plus audio_binary.
 		ans := map[string]interface{}{
-			"answer":    answer.String(),
-			"reference": finalRef,
-			"final":     true,
+			"answer":       answer.String(),
+			"reference":    finalRef,
+			"audio_binary": audioBinary,
+			"prompt":       prompt,
+			"final":        true,
+		}
+		if createdAt != 0 {
+			ans["created_at"] = createdAt
 		}
 		if session != nil {
 			result := s.structureAnswerWithConv(session, ans, messageID, sessionID, reference)
