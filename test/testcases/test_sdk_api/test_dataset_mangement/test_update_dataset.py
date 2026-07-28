@@ -127,7 +127,7 @@ class TestDatasetUpdate:
         [
             ("", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
             ("data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+            ("invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
             ("data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],

@@ -22,7 +22,7 @@ import (
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
 	kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, userID)
 	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset.")
+		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset")
 	}
 	statusInt, convErr := strconv.Atoi(status)
 	if convErr != nil {

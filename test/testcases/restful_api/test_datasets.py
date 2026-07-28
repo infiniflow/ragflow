@@ -730,7 +730,7 @@ def test_dataset_update_avatar_invalid_and_none_contract(rest_client, clear_data
     invalid_prefix_cases = [
         ("", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
         ("data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-        ("invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+        ("invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
         ("data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
     ]
     for prefix, expected_message in invalid_prefix_cases:
@@ -1589,7 +1589,7 @@ def test_dataset_create_avatar_contract(rest_client, clear_datasets, tmp_path):
     invalid_prefix_cases = [
         ("empty_prefix", "", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
         ("missing_comma", "data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-        ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+        ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
         ("invalid_mine_type", "data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
     ]
     for name, prefix, expected_message in invalid_prefix_cases:

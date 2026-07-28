@@ -572,7 +572,7 @@ class CreateDatasetReq(Base):
         Raises:
             PydanticCustomError: For structural errors in these cases:
                 - Missing MIME prefix header
-                - Invalid MIME prefix format
+                - invalid MIME prefix format
                 - Unsupported image MIME type
 
         Example:
@@ -591,7 +591,7 @@ class CreateDatasetReq(Base):
         if "," in v:
             prefix, _ = v.split(",", 1)
             if not prefix.startswith("data:"):
-                raise PydanticCustomError("format_invalid", "Invalid MIME prefix format. Must start with 'data:'")
+                raise PydanticCustomError("format_invalid", "invalid MIME prefix format. Must start with 'data:'")
 
             mime_type = prefix[5:].split(";")[0]
             supported_mime_types = ["image/jpeg", "image/png"]
