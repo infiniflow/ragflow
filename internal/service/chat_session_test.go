@@ -1570,3 +1570,67 @@ func TestChunksFormat_UnsupportedTypeReturnsEmpty(t *testing.T) {
 		t.Fatalf("expected empty for string type, got %d", len(result))
 	}
 }
+
+func drainResults(events []AsyncChatResult) <-chan AsyncChatResult {
+	ch := make(chan AsyncChatResult, len(events))
+	for _, e := range events {
+		ch <- e
+	}
+	close(ch)
+	return ch
+}
+
+func TestAccumulateNonStreamAnswer_MetadataFromFinalEventOnly(t *testing.T) {
+	// Intermediate events carry conflicting metadata; the response must
+	// reflect only the final event's values.
+	ans := accumulateNonStreamAnswer(drainResults([]AsyncChatResult{
+		{Answer: "partial ", AudioBinary: "intermediate-audio", Prompt: "intermediate-prompt", CreatedAt: 111},
+		{Answer: "answer", Final: true, AudioBinary: "final-audio", Prompt: "final-prompt", CreatedAt: 222},
+	}))
+	if ans["audio_binary"] != "final-audio" {
+		t.Fatalf("audio_binary=%v, want final-audio", ans["audio_binary"])
+	}
+	if ans["prompt"] != "final-prompt" {
+		t.Fatalf("prompt=%v, want final-prompt", ans["prompt"])
+	}
+	if ans["created_at"] != float64(222) {
+		t.Fatalf("created_at=%v, want 222", ans["created_at"])
+	}
+	if ans["answer"] != "answer" {
+		t.Fatalf("answer=%v, want final decorated answer", ans["answer"])
+	}
+}
+
+func TestAccumulateNonStreamAnswer_FinalEventOmitsMetadata(t *testing.T) {
+	// The final event omits metadata; it must be assigned as-is (nil/zero)
+	// rather than leaking values from intermediate events.
+	ans := accumulateNonStreamAnswer(drainResults([]AsyncChatResult{
+		{Answer: "partial ", AudioBinary: "intermediate-audio", Prompt: "intermediate-prompt", CreatedAt: 111},
+		{Answer: "full answer", Final: true},
+	}))
+	if ans["audio_binary"] != nil {
+		t.Fatalf("audio_binary=%v, want nil", ans["audio_binary"])
+	}
+	if ans["prompt"] != "" {
+		t.Fatalf("prompt=%v, want empty", ans["prompt"])
+	}
+	if _, ok := ans["created_at"]; ok {
+		t.Fatalf("created_at should be omitted, got %v", ans["created_at"])
+	}
+}
+
+func TestAccumulateNonStreamAnswer_AccumulatesDeltasUntilFinal(t *testing.T) {
+	ans := accumulateNonStreamAnswer(drainResults([]AsyncChatResult{
+		{Answer: "Hello, "},
+		{Answer: "world"},
+	}))
+	if ans["answer"] != "Hello, world" {
+		t.Fatalf("answer=%v, want accumulated deltas", ans["answer"])
+	}
+	if ans["final"] != true {
+		t.Fatalf("final=%v, want true", ans["final"])
+	}
+	if ref, _ := ans["reference"].(map[string]interface{}); ref != nil {
+		t.Fatalf("reference=%v, want nil", ref)
+	}
+}

@@ -1675,45 +1675,7 @@ func (s *ChatSessionService) ChatCompletions(
 			s.updateSessionMessages(ctx, session, s.getSessionMessagesAsSlice(session), reference)
 		}
 	} else {
-		var answer strings.Builder
-		var finalRef map[string]interface{}
-		var audioBinary interface{}
-		var prompt string
-		var createdAt float64
-		for result := range resultChan {
-			if result.Final && result.Answer != "" {
-				// The final event carries the complete (decorated) answer;
-				// it replaces any accumulated deltas rather than appending.
-				answer.Reset()
-				answer.WriteString(result.Answer)
-			} else if result.Answer != "" {
-				answer.WriteString(result.Answer)
-			}
-			if result.Reference != nil {
-				finalRef = result.Reference
-			}
-			if result.AudioBinary != nil {
-				audioBinary = result.AudioBinary
-			}
-			if result.Prompt != "" {
-				prompt = result.Prompt
-			}
-			if result.CreatedAt != 0 {
-				createdAt = result.CreatedAt
-			}
-		}
-		// Mirror Python's non-stream response shape: decorate_answer's
-		// {answer, reference, prompt, created_at} plus audio_binary.
-		ans := map[string]interface{}{
-			"answer":       answer.String(),
-			"reference":    finalRef,
-			"audio_binary": audioBinary,
-			"prompt":       prompt,
-			"final":        true,
-		}
-		if createdAt != 0 {
-			ans["created_at"] = createdAt
-		}
+		ans := accumulateNonStreamAnswer(resultChan)
 		if session != nil {
 			result := s.structureAnswerWithConv(session, ans, messageID, sessionID, reference)
 			if chatID != "" {
@@ -1734,6 +1696,53 @@ func (s *ChatSessionService) ChatCompletions(
 }
 
 // --- Helpers for ChatCompletions ---
+
+// accumulateNonStreamAnswer drains the pipeline result channel of a non-stream
+// completion and builds the response answer map.
+//
+// Response metadata (audio_binary, prompt, created_at) is captured only from
+// the final event, assigned as-is. Intermediate events may carry conflicting
+// or placeholder metadata; accepting it would mix values from different events
+// into one response. This mirrors the stream path, which reads these fields
+// from result.Final.
+func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]interface{} {
+	var answer strings.Builder
+	var finalRef map[string]interface{}
+	var audioBinary interface{}
+	var prompt string
+	var createdAt float64
+	for result := range resultChan {
+		if result.Final {
+			// The final event carries the complete (decorated) answer;
+			// it replaces any accumulated deltas rather than appending.
+			if result.Answer != "" {
+				answer.Reset()
+				answer.WriteString(result.Answer)
+			}
+			audioBinary = result.AudioBinary
+			prompt = result.Prompt
+			createdAt = result.CreatedAt
+		} else if result.Answer != "" {
+			answer.WriteString(result.Answer)
+		}
+		if result.Reference != nil {
+			finalRef = result.Reference
+		}
+	}
+	// Mirror Python's non-stream response shape: decorate_answer's
+	// {answer, reference, prompt, created_at} plus audio_binary.
+	ans := map[string]interface{}{
+		"answer":       answer.String(),
+		"reference":    finalRef,
+		"audio_binary": audioBinary,
+		"prompt":       prompt,
+		"final":        true,
+	}
+	if createdAt != 0 {
+		ans["created_at"] = createdAt
+	}
+	return ans
+}
 
 // normalizeCompletionMessages mirrors Python _normalize_completion_messages.
 func (s *ChatSessionService) normalizeCompletionMessages(
