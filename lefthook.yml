@@ -70,42 +70,43 @@ pre-commit:
         else
           gofmt -w {staged_files}
         fi
-    - name: web-oxfmt
-      glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
-      exclude:
-        - "web/**/*.min.js"
-        - "web/**/*.min.css"
-        - "web/node_modules/**"
-        - "web/.next/**"
-        - "web/dist/**"
-      root: "web/"
-      stage_fixed: true
-      run: |
-        if ! command -v node_modules/.hookbin/node_modules/.bin/oxfmt >/dev/null 2>&1; then
-          exit 0
-        fi
-        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
-          node_modules/.hookbin/node_modules/.bin/oxfmt --check {staged_files}
-        else
-          node_modules/.hookbin/node_modules/.bin/oxfmt {staged_files}
-        fi
-    - name: web-oxlint
-      glob: "web/**/*.{js,jsx,ts,tsx}"
-      exclude:
-        - "web/node_modules/**"
-        - "web/.next/**"
-        - "web/dist/**"
-      root: "web/"
-      stage_fixed: true
-      run: |
-        if ! command -v node_modules/.hookbin/node_modules/.bin/oxlint >/dev/null 2>&1; then
-          exit 0
-        fi
-        if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
-          node_modules/.hookbin/node_modules/.bin/oxlint {staged_files}
-        else
-          node_modules/.hookbin/node_modules/.bin/oxlint --fix {staged_files}
-        fi
+    - name: web-checks
+      group:
+        piped: true
+        jobs:
+          - name: web-deps
+            glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
+            run: |
+              TOOL=web/node_modules/.hookbin/node_modules/.bin
+              if [ ! -x "$TOOL/oxfmt" ] || [ ! -x "$TOOL/oxlint" ]; then
+                exit 0
+              fi
+          - name: web-oxfmt
+            glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
+            exclude: ["web/**/*.min.js", "web/**/*.min.css", "web/node_modules/**", "web/.next/**", "web/dist/**"]
+            root: "web/"
+            stage_fixed: true
+            run: |
+              OXFMT=node_modules/.hookbin/node_modules/.bin/oxfmt
+              if ! [ -x "$OXFMT" ]; then exit 0; fi
+              if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
+                "$OXFMT" --check {staged_files}
+              else
+                "$OXFMT" {staged_files}
+              fi
+          - name: web-oxlint
+            glob: "web/**/*.{js,jsx,ts,tsx}"
+            exclude: ["web/node_modules/**", "web/.next/**", "web/dist/**"]
+            root: "web/"
+            stage_fixed: true
+            run: |
+              OXLINT=node_modules/.hookbin/node_modules/.bin/oxlint
+              if ! [ -x "$OXLINT" ]; then exit 0; fi
+              if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
+                "$OXLINT" {staged_files}
+              else
+                "$OXLINT" --fix {staged_files}
+              fi
     - name: check-yaml
       run: python3 tools/hooks/check_files.py yaml
     - name: check-json
