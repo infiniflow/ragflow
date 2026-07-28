@@ -1074,7 +1074,7 @@ class Parser(ProcessBase):
         sections, tables, section_images = markdown_parser(
             name,
             blob,
-            separate_tables=True,
+            separate_tables=False,
             delimiter=conf.get("delimiter"),
             return_section_images=True,
         )
