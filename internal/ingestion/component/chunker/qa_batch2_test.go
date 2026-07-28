@@ -41,7 +41,7 @@ func qaInvoke(t *testing.T, inputs map[string]any) []map[string]any {
 	return chunks
 }
 
-// TestQAChunker_DefaultLangIsChinese exercises migration diff Chunker-2.13:
+// TestQAChunker_DefaultLangIsChinese exercises migration :
 // when no language is supplied, Python defaults to Chinese prefixes
 // ("问题："/"回答："); the legacy Go code defaulted to English.
 func TestQAChunker_DefaultLangIsChinese(t *testing.T) {
@@ -79,7 +79,7 @@ func TestRmQAPrefixStripsMultipleSeparators(t *testing.T) {
 	}
 }
 
-// TestQAChunker_SetsTopInt exercises migration diff Chunker-1.8 (top_int):
+// TestQAChunker_SetsTopInt exercises migration  (top_int):
 // each QA chunk must carry the source row index in `top_int`, matching
 // Python beAdoc(..., row_num=i).
 func TestQAChunker_SetsTopInt(t *testing.T) {

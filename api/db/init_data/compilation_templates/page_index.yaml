@@ -4,50 +4,74 @@ config:
   kind: page_index
   entity:
     description: >-
-      You are a robust table-of-contents extractor with source-grounded
-      compressed descriptions. Extract each heading as an entity. The
-      entity's `name` must be the exact clean heading text. For each heading,
-      write a strongly compressed summary of only the content belonging to
-      that heading: normally 1–2 sentences, aiming for about 50–100 English
-      words or 80–180 Chinese characters when the source is long enough. Keep
-      only the 2–4 most important facts, prioritizing key
-      numbers, dates, names, locations, and conclusions. Do not copy long
-      passages verbatim and do not reduce the description to a generic label.
-      For detailed lists, give the overall result and only the most important
-      examples. Do not write meta descriptions such as `heading for ...`,
-      `section heading`, or `subheading for ...`. Do not include image
-      captions, `Main article` links, or unrelated tables and lists unless
-      they are the actual content of the heading. If a parent heading has no
-      direct body before the next child heading, generate a short higher-level
-      overview from the available child-section content; do not copy the child
-      description verbatim. This parent overview is needed for later
-      cross-chunk merging. Only use an empty description when there is no
-      usable source content at all. Do not invent content.
+      You are a source-grounded document index extractor. First extract every
+      supported heading in source order, then extract the important information
+      belonging to each heading. Headings form the hierarchy; facts, dates,
+      numbers, names, and conclusions are detail information that should be
+      captured in concise `fact` or `conclusion` entities attached below the
+      nearest relevant heading through `include` relations. Do not omit a
+      heading because its section is short, and do not return only headings.
+
+      A title entity's `name` must be the exact clean heading text. A detail
+      entity's `name` must be a concise, source-grounded label or statement,
+      and its `description` must preserve the useful compressed information.
+      Keep detail entities atomic: do not combine unrelated facts, dates,
+      numbers, names, or conclusions into one item. Preserve important values,
+      units, dates, qualifiers, and conclusions. Do not invent content.
+
+      For each title, write a strongly compressed summary of the content
+      belonging to that heading: normally 1–2 sentences, aiming for about
+      50–100 English words or 80–180 Chinese characters when the source is
+      long enough. For detailed lists, give the overall result and only the
+      most important examples. Do not copy long passages verbatim and do not
+      reduce descriptions to generic labels. Do not write meta descriptions
+      such as `heading for ...`, `section heading`, or `subheading for ...`.
+      Do not include image captions, `Main article` links, or unrelated tables
+      and lists unless they are actual content of the heading. If a parent
+      heading has no direct body before the next child heading, generate a
+      short higher-level overview from the available child-section content;
+      do not copy the child description verbatim. Only use an empty
+      description when there is no usable source content at all.
     fields:
       - type: title
         description: the heading text (clean, no page numbers or leader dots)
         rule: |
-          - Length restriction:
-              • Chinese heading: ≤25 characters
-              • English heading: ≤80 characters
-          - "title" must be non-empty (or exactly "-1").
-          - If any part of a chunk has no valid heading, output that part as {"title":"-1", ...}.
-          - If a chunk contains multiple headings, expand them in order:
-              - Each heading → {"title":"...","chunk_id":"<chunk_ID>","description":"a compact summary of only that heading's section"}.
-          - A parent heading with no direct body must still receive a short higher-level overview based on its child-section content for later merging; do not copy a child's summary verbatim.
-          - Prefer 1–2 concise sentences, aiming for about 50–100 English words or 80–180 Chinese characters when the source is long enough; preserve only the most important facts, dates, numbers, names, and conclusions.
-          - When ambiguous, prefer `-1` unless the text strongly looks like a heading.
-          - Keep language of "title" the same as the input.
-          - Prefix like following must be titles: 第x章, 第N条, 第N节, 1, 1.1, 1.1.1 ...
+          - Chinese titles ≤25 characters; English titles ≤80. Use clean heading text.
+          - The title must be non-empty; use `-1` only when no heading is supported.
+          - Extract every supported heading in source order; do not skip major or short sections.
+          - For multiple headings, preserve source order and summarize each section separately.
+          - Write 1–2 compressed sentences, retaining key facts, dates, numbers, names, locations, and conclusions.
+          - Summarize parent content from its children when it has no direct body; do not copy a child verbatim.
+          - Exclude captions, navigation links, and unrelated lists. Preserve numbering, language, and source meaning.
+      - type: fact
+        description: a concise source-grounded factual statement belonging to a title
+        rule: |
+          - Preserve important dates, numbers, names, units, qualifiers, and values.
+          - Do not merge unrelated facts into one entity.
+      - type: conclusion
+        description: a source-supported finding, outcome, or conclusion belonging to a title
+        rule: |
+          - State the conclusion concisely and do not add unsupported interpretation.
   relation:
     description: >-
-      You are an expert logical reasoning assistant specializing in hierarchical titles.
+      You are an expert logical reasoning assistant specializing in document
+      hierarchy and source-grounded detail attachment. Build relations only
+      from the entities in the current output. Preserve the title hierarchy
+      and attach every fact, date, number, named entity, and conclusion to the
+      nearest relevant title.
     fields:
       - type: include
         description: Upper-level title includes lower-level title.
         rule: |
           - "-1" is an invalid title; it does not belong to or include any other titles.
           - Must follow the hierarchical index/numbering (e.g., "1", "2.1", "3.2.5") when present.
+          - A title may include a child title or a detail entity.
+          - Every entity with type `fact` or `conclusion` must have exactly one nearest-title parent.
+          - Detail entities must not be attached directly to another detail entity.
+          - Do not create relations between unrelated detail entities.
+          - Every `from` and `to` value must exactly match an entity `name` in the current output.
+          - Never use a source heading as an endpoint unless that heading was also emitted as a `title` entity.
+          - Before returning, remove any relation whose endpoint is missing and verify that every detail entity has one parent relation.
           - Keep language of "title" the same as the input.
           - 第N章 must include 第N条 or 第N节.
   global_rules: ''

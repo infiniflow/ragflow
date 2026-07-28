@@ -137,7 +137,7 @@ func createDatasetIndexTaskInTx(tx *gorm.DB, task *entity.Task, queueDocID strin
 func enqueueDatasetIndexTask(priority int, queueMessage map[string]interface{}) error {
 	redisClient := redisengine.Get()
 	if redisClient == nil || !redisClient.QueueProduct(datasetIndexQueueName(priority), queueMessage) {
-		return errors.New("Can't access Redis. Please check the Redis' status")
+		return errors.New("can't access Redis. Please check the Redis' status")
 	}
 	return nil
 }
@@ -358,44 +358,44 @@ func (d *DatasetService) getDocumentsByDatasetForIndex(ctx context.Context, data
 	documents, _, err := d.documentDAO.GetByKBID(ctx, dao.DB, datasetID)
 	if err != nil {
 		common.Warn("Failed to load dataset documents for index", zap.String("dataset_id", datasetID), zap.Error(err))
-		return nil, common.CodeDataError, errors.New("Internal server error")
+		return nil, common.CodeDataError, errors.New("internal server error")
 	}
 	if len(documents) == 0 {
-		return nil, common.CodeDataError, fmt.Errorf("No documents in Dataset %s", datasetID)
+		return nil, common.CodeDataError, fmt.Errorf("no documents in Dataset %s", datasetID)
 	}
 	return documents, common.CodeSuccess, nil
 }
 
 func (d *DatasetService) TraceIndex(ctx context.Context, datasetID, userID, indexType string) (*entity.Task, common.ErrorCode, error) {
 	if !checkType(indexType) {
-		return nil, common.CodeDataError, fmt.Errorf("Invalid index type '%s'. Must be one of %v", indexType, validIndexTypes)
+		return nil, common.CodeDataError, fmt.Errorf("invalid index type '%s'. Must be one of %v", indexType, validIndexTypes)
 	}
 
 	if datasetID == "" {
-		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
+		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
 	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("No authorization.")
+		return nil, common.CodeDataError, errors.New("no authorization")
 	}
 
 	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+			return nil, common.CodeDataError, errors.New("invalid Dataset ID")
 		}
-		return nil, common.CodeDataError, errors.New("Internal server error")
+		return nil, common.CodeDataError, errors.New("internal server error")
 	}
 
 	taskID := datasetIndexTaskID(kb, indexType)
 
 	var task *entity.Task
 	if taskID != "" {
-		task, err = d.taskDAO.GetByID(taskID)
+		task, err = d.taskDAO.GetByID(ctx, dao.DB, taskID)
 		if err != nil {
 			if dao.IsNotFoundErr(err) {
 				return nil, common.CodeSuccess, nil
 			}
-			return nil, common.CodeServerError, errors.New("Internal server error")
+			return nil, common.CodeServerError, errors.New("internal server error")
 		}
 		if task == nil {
 			return nil, common.CodeSuccess, nil
@@ -421,32 +421,32 @@ type embeddingCheckSample struct {
 
 func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID string, req *service.CheckEmbeddingRequest) (*service.EmbeddingCheckResponse, common.ErrorCode, error) {
 	if datasetID == "" {
-		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
+		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
 	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("No authorization.")
+		return nil, common.CodeDataError, errors.New("no authorization")
 	}
 
 	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("Invalid Dataset ID")
+			return nil, common.CodeDataError, errors.New("invalid Dataset ID")
 		}
-		return nil, common.CodeServerError, errors.New("Internal server error")
+		return nil, common.CodeServerError, errors.New("internal server error")
 	}
 
 	if req == nil || strings.TrimSpace(req.EmbeddingID) == "" {
-		return nil, common.CodeDataError, errors.New("`embd_id` is required.")
+		return nil, common.CodeDataError, errors.New("`embd_id` is required")
 	}
 	embeddingID := strings.TrimSpace(req.EmbeddingID)
-	if ok, message := d.verifyEmbeddingAvailability(embeddingID, userID); !ok {
+	if ok, message := d.verifyEmbeddingAvailability(ctx, embeddingID, kb.TenantID); !ok {
 		return nil, common.CodeDataError, errors.New(message)
 	}
 	if d.docEngine == nil {
 		return nil, common.CodeServerError, errors.New("doc engine not initialized")
 	}
 
-	driver, modelName, apiConfig, maxTokens, err := service.NewModelProviderService().ResolveModelConfig(kb.TenantID, entity.ModelTypeEmbedding, embeddingID)
+	driver, modelName, apiConfig, maxTokens, err := service.NewModelProviderService().ResolveModelConfig(ctx, kb.TenantID, entity.ModelTypeEmbedding, embeddingID)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -654,8 +654,8 @@ func (d *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 	return samples, nil
 }
 
-func (d *DatasetService) verifyEmbeddingAvailability(embdID string, tenantID string) (bool, string) {
-	_, _, _, _, err := service.NewModelProviderService().ResolveModelConfig(tenantID, entity.ModelTypeEmbedding, embdID)
+func (d *DatasetService) verifyEmbeddingAvailability(ctx context.Context, embdID string, tenantID string) (bool, string) {
+	_, _, _, _, err := service.NewModelProviderService().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return false, err.Error()
 	}
@@ -664,23 +664,23 @@ func (d *DatasetService) verifyEmbeddingAvailability(embdID string, tenantID str
 
 func (d *DatasetService) DeleteIndex(ctx context.Context, userID, datasetID, indexType string, wipe bool) (common.ErrorCode, error) {
 	if !checkType(indexType) {
-		return common.CodeArgumentError, fmt.Errorf("Invalid index type '%s'", indexType)
+		return common.CodeArgumentError, fmt.Errorf("invalid index type '%s'", indexType)
 	}
 
 	if datasetID == "" {
-		return common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
+		return common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
 
 	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return common.CodeDataError, errors.New("No authorization.")
+		return common.CodeDataError, errors.New("no authorization")
 	}
 
 	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return common.CodeDataError, errors.New("Invalid Dataset ID")
+			return common.CodeDataError, errors.New("invalid Dataset ID")
 		}
-		return common.CodeDataError, errors.New("Internal server error")
+		return common.CodeDataError, errors.New("internal server error")
 	}
 
 	taskFinishAtField := datasetIndexTaskFinishAtColumn(indexType)
@@ -695,13 +695,13 @@ func (d *DatasetService) DeleteIndex(ctx context.Context, userID, datasetID, ind
 		}
 		if err := dao.DB.Unscoped().Where("id = ?", taskID).Delete(&entity.Task{}).Error; err != nil {
 			common.Warn("Failed to delete dataset index task", zap.String("dataset_id", datasetID), zap.String("task_id", taskID), zap.Error(err))
-			return common.CodeDataError, errors.New("Internal server error")
+			return common.CodeDataError, errors.New("internal server error")
 		}
 	}
 
 	if wipe && indexType == "graph" {
 		if d.docEngine == nil {
-			return common.CodeServerError, errors.New("Document engine is not initialized")
+			return common.CodeServerError, errors.New("document engine is not initialized")
 		}
 		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 		_, err = d.docEngine.DeleteChunks(ctx, map[string]interface{}{
@@ -710,13 +710,13 @@ func (d *DatasetService) DeleteIndex(ctx context.Context, userID, datasetID, ind
 		}, indexName, datasetID)
 		if err != nil {
 			common.Warn("Failed to delete GraphRAG artefacts", zap.String("dataset_id", datasetID), zap.Error(err))
-			return common.CodeDataError, errors.New("Internal server error")
+			return common.CodeDataError, errors.New("internal server error")
 		}
 		clearGraphPhaseMarkers(redisengine.Get(), datasetID)
 		common.Info("delete_index: cleared GraphRAG artefacts and phase markers", zap.String("dataset_id", datasetID))
 	} else if wipe && indexType == "raptor" {
 		if d.docEngine == nil {
-			return common.CodeServerError, errors.New("Document engine is not initialized")
+			return common.CodeServerError, errors.New("document engine is not initialized")
 		}
 		indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 		_, err = d.docEngine.DeleteChunks(ctx, map[string]interface{}{
@@ -725,7 +725,7 @@ func (d *DatasetService) DeleteIndex(ctx context.Context, userID, datasetID, ind
 		}, indexName, datasetID)
 		if err != nil {
 			common.Warn("Failed to delete RAPTOR artefacts", zap.String("dataset_id", datasetID), zap.Error(err))
-			return common.CodeDataError, errors.New("Internal server error")
+			return common.CodeDataError, errors.New("internal server error")
 		}
 	}
 

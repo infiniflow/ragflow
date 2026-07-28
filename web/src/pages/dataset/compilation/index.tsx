@@ -1,13 +1,17 @@
 import BackButton from '@/components/back-button';
+import {
+  SelectWithSearch,
+  type SelectWithSearchFlagOptionType,
+} from '@/components/originui/select-with-search';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import { Button } from '@/components/ui/button';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
-import { ViewMode } from './constants';
+import { StructureKinds, ViewMode } from './constants';
+import { DatasetStructureView } from './dataset-structure-view';
 import { LlmWikiView } from './llm-wiki-view';
 import { NavTreeView } from './nav-tree-view';
 import { SkillsView } from './skills-view';
@@ -19,17 +23,48 @@ export default function Compilation() {
   const { data: knowledgeBase } = useFetchKnowledgeBaseConfiguration();
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.LlmWiki);
 
-  const handleSwitchToLlmWiki = useCallback(() => {
-    setViewMode(ViewMode.LlmWiki);
+  const viewOptions = useMemo<SelectWithSearchFlagOptionType[]>(() => {
+    return [
+      {
+        value: ViewMode.LlmWiki,
+        label: t('knowledgeDetails.llmWiki'),
+      },
+      {
+        value: ViewMode.Skills,
+        label: t('knowledgeDetails.skills', 'To Skills'),
+      },
+      {
+        value: ViewMode.Tree,
+        label: t('knowledgeDetails.navTree'),
+      },
+      {
+        value: ViewMode.Graph,
+        label: t('knowledgeDetails.structureGraph'),
+      },
+      {
+        value: ViewMode.MindMap,
+        label: t('knowledgeDetails.structureMindmap'),
+      },
+      {
+        value: ViewMode.Timeline,
+        label: t('knowledgeDetails.structureTimeline'),
+      },
+      // {
+      //   value: ViewMode.SessionEssence,
+      //   label: t('knowledgeDetails.structureSessionEssence'),
+      // },
+      // {
+      //   value: ViewMode.SessionGraph,
+      //   label: t('knowledgeDetails.structureSessionGraph'),
+      // },
+    ];
+  }, [t]);
+
+  const handleViewModeChange = useCallback((value: string) => {
+    setViewMode(value as ViewMode);
   }, []);
 
-  const handleSwitchToSkills = useCallback(() => {
-    setViewMode(ViewMode.Skills);
-  }, []);
-
-  const handleSwitchToTree = useCallback(() => {
-    setViewMode(ViewMode.Tree);
-  }, []);
+  const structureKind = StructureKinds.find((kind) => kind === viewMode);
 
   return (
     <section className="flex flex-col p-4 gap-4 h-full">
@@ -51,37 +86,19 @@ export default function Compilation() {
             </h2>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              variant={viewMode === ViewMode.LlmWiki ? 'default' : 'outline'}
-              size="sm"
-              onClick={handleSwitchToLlmWiki}
-            >
-              {t('knowledgeDetails.llmWiki')}
-            </Button>
-
-            <Button
-              variant={viewMode === ViewMode.Skills ? 'default' : 'outline'}
-              size="sm"
-              onClick={handleSwitchToSkills}
-            >
-              To Skills
-            </Button>
-
-            <Button
-              variant={viewMode === ViewMode.Tree ? 'default' : 'outline'}
-              size="sm"
-              onClick={handleSwitchToTree}
-            >
-              {t('knowledgeDetails.navTree')}
-            </Button>
-          </div>
+          <SelectWithSearch
+            options={viewOptions}
+            value={viewMode}
+            onChange={handleViewModeChange}
+            triggerClassName="w-96"
+          />
         </section>
       </header>
 
       {viewMode === ViewMode.LlmWiki && <LlmWikiView />}
       {viewMode === ViewMode.Skills && <SkillsView />}
       {viewMode === ViewMode.Tree && <NavTreeView />}
+      {structureKind && <DatasetStructureView kind={structureKind} />}
     </section>
   );
 }

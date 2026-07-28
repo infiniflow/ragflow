@@ -20,14 +20,25 @@ package parser
 
 import "context"
 
-type PPTParser struct{}
+// PPTParser delegates to PPTXParser which handles both OLE binary
+// (.ppt) and OOXML (.pptx) containers uniformly
+type PPTParser struct {
+	pptx PPTXParser
+}
 
 func NewPPTParser() *PPTParser {
-	return &PPTParser{}
+	return &PPTParser{pptx: PPTXParser{format: "ppt"}}
 }
 
 func (p *PPTParser) String() string {
 	return "PPTParser"
+}
+
+// ConfigureFromSetup forwards the slides-family setup map to the
+// underlying PPTXParser so both .ppt and .pptx containers share
+// the same TCADP configuration
+func (p *PPTParser) ConfigureFromSetup(setup map[string]any) {
+	p.pptx.ConfigureFromSetup(setup)
 }
 
 // ParseWithResult delegates to PPTXParser's structured output
@@ -36,5 +47,5 @@ func (p *PPTParser) String() string {
 // binary container; the python parser.py:slides branch treats
 // them uniformly.
 func (p *PPTParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	return (&PPTXParser{format: "ppt"}).ParseWithResult(ctx, filename, data)
+	return p.pptx.ParseWithResult(ctx, filename, data)
 }

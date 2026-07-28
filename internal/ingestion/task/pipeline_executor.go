@@ -29,6 +29,8 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+
+	"gorm.io/gorm"
 )
 
 // PipelineResult is the outcome of a pipeline run: chunks have been
@@ -49,7 +51,7 @@ type PipelineExecutor struct {
 	docBulkSize int
 
 	indexWriter     *chunkIndexWriter
-	logCreateFunc   func(log *entity.PipelineOperationLog) error
+	logCreateFunc   func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error
 	loadDSLFunc     func(ctx context.Context, canvasID string) (string, string, error)
 	runPipelineFunc func(ctx context.Context, dsl string) (map[string]any, string, error)
 	progressSink    pipelinepkg.ProgressSink
@@ -113,7 +115,7 @@ func (s *PipelineExecutor) WithInsertFunc(f InsertFunc) *PipelineExecutor {
 	return s
 }
 
-func (s *PipelineExecutor) WithLogCreateFunc(f func(log *entity.PipelineOperationLog) error) *PipelineExecutor {
+func (s *PipelineExecutor) WithLogCreateFunc(f func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error) *PipelineExecutor {
 	s.logCreateFunc = f
 	return s
 }
@@ -168,7 +170,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	if s.taskCtx.Doc.ID == CANVAS_DEBUG_DOC_ID {
-		s.recordPipelineLog(s.taskCtx.Doc.ID, pipelineDSL, "done")
+		s.recordPipelineLog(ctx, dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "done")
 		return nil, nil
 	}
 
@@ -178,7 +180,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	if pipelineDSL != "" {
-		s.recordPipelineLog(s.taskCtx.Doc.ID, pipelineDSL, "done")
+		s.recordPipelineLog(ctx, dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "done")
 	}
 	return result, nil
 }
@@ -254,7 +256,7 @@ func countDistinctChunkIDs(chunks []map[string]any) int {
 	return len(seen)
 }
 
-func (s *PipelineExecutor) recordPipelineLog(docID, dsl, status string) {
+func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
 	var dslMap entity.JSONMap
 	if err := json.Unmarshal([]byte(dsl), &dslMap); err != nil {
 		dslMap = entity.JSONMap{"raw": dsl}
@@ -274,7 +276,7 @@ func (s *PipelineExecutor) recordPipelineLog(docID, dsl, status string) {
 		SourceFrom:      s.taskCtx.Doc.SourceType,
 		OperationStatus: status,
 	}
-	if err := s.logCreateFunc(log); err != nil {
+	if err := s.logCreateFunc(ctx, db, log); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
 	}
 }

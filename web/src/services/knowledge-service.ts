@@ -1,5 +1,6 @@
 import { IRenameTag } from '@/interfaces/database/dataset';
 import {
+  IFetchArtifactGraphRequestParams,
   IFetchArtifactListRequestParams,
   IFetchArtifactTopicListRequestParams,
   IFetchDocumentListRequestBody,
@@ -415,8 +416,20 @@ export const getArtifactPage = (
 
 export const getArtifactGraph = (
   datasetId: string,
-  params?: { node?: string },
+  params?: IFetchArtifactGraphRequestParams,
 ) => request.get(api.getArtifactGraph(datasetId), { params });
+
+export const getArtifactsAlteration = (datasetId: string) =>
+  request.get(api.artifactsAlteration(datasetId));
+
+export const getArtifactsStructure = (
+  datasetId: string,
+  kind: string,
+  keywords?: string,
+) =>
+  request.get(api.artifactsStructure(datasetId), {
+    params: keywords ? { kind, keywords } : { kind },
+  });
 
 export const updateArtifactPage = (
   datasetId: string,

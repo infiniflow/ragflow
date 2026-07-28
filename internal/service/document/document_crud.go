@@ -2,6 +2,7 @@ package document
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"ragflow/internal/common"
@@ -276,10 +277,15 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	if err != nil {
 		return err
 	}
-	if _, delErr := s.taskDAO.DeleteByDocIDs([]string{docID}); delErr != nil {
+	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
 		common.Logger.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
 	}
-	s.deleteDocEngineData(docID, kb.TenantID, doc.KbID)
+	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
+		if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
+			return fmt.Errorf("RemoveDocumentKeepFile: failed to delete tasks for %s: %w", docID, delErr)
+		}
+		common.Logger.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
+	}
 	return s.deleteDocRecordWithCounters(ctx, doc, kb.ID)
 }
 

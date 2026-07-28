@@ -33,6 +33,8 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/service/nlp"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -349,7 +351,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 	// tenant_model row) — we leave the tenant_*_id fields nil and proceed.
 	modelProvider := NewModelProviderService()
 	if req.LLMID != "" && req.TenantLLMID == nil {
-		tenantLLMID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeChat, req.LLMID)
+		tenantLLMID, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeChat, req.LLMID)
 		if err != nil {
 			slog.Warn("CreateMemory: failed to resolve tenant LLM id", "tenant_id", tenantID, "llm_id", req.LLMID, "err", err)
 		} else if tenantLLMID != "" {
@@ -357,7 +359,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 		}
 	}
 	if req.EmbdID != "" && req.TenantEmbdID == nil {
-		tenantEmbdID, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeEmbedding, req.EmbdID)
+		tenantEmbdID, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, req.EmbdID)
 		if err != nil {
 			slog.Warn("CreateMemory: failed to resolve tenant embedding id", "tenant_id", tenantID, "embd_id", req.EmbdID, "err", err)
 		} else if tenantEmbdID != "" {
@@ -497,7 +499,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 	if req.LLMID != nil {
 		updateDict["llm_id"] = *req.LLMID
 		if req.TenantLLMID == nil && *req.LLMID != "" {
-			resolved, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeChat, *req.LLMID)
+			resolved, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeChat, *req.LLMID)
 			if err != nil {
 				slog.Warn("UpdateMemory: failed to resolve tenant LLM id", "tenant_id", tenantID, "llm_id", *req.LLMID, "err", err)
 			} else if resolved != "" {
@@ -509,7 +511,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 	if req.EmbdID != nil {
 		updateDict["embd_id"] = *req.EmbdID
 		if req.TenantEmbdID == nil && *req.EmbdID != "" {
-			resolved, err := modelProvider.ResolveModelID(tenantID, entity.ModelTypeEmbedding, *req.EmbdID)
+			resolved, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, *req.EmbdID)
 			if err != nil {
 				slog.Warn("UpdateMemory: failed to resolve tenant embedding id", "tenant_id", tenantID, "embd_id", *req.EmbdID, "err", err)
 			} else if resolved != "" {
@@ -774,22 +776,23 @@ func sameStringSet(a, b []string) bool {
 	return true
 }
 
-// DeleteMemory deletes a memory by ID
-// It also deletes associated message indexes before removing the memory record
+// DeleteMemory deletes a memory by ID after verifying the caller's access.
+// It also deletes associated message indexes before removing the memory record.
 //
 // Parameters:
+//   - userID: The ID of the user requesting the deletion (access control)
 //   - memoryID: The ID of the memory to delete
 //
 // Returns:
-//   - error: Error if memory not found or deletion fails
+//   - error: Error if memory not found, access denied, or deletion fails
 //
 // Example:
 //
-//	err := service.DeleteMemory("memory456")
-func (s *MemoryService) DeleteMemory(ctx context.Context, memoryID string) error {
-	_, err := s.memoryDAO.GetByID(ctx, dao.DB, memoryID)
-	if err != nil {
-		return fmt.Errorf("memory '%s' not found", memoryID)
+//	err := service.DeleteMemory(ctx, "user123", "memory456")
+func (s *MemoryService) DeleteMemory(ctx context.Context, userID, memoryID string) error {
+	// Verify the caller has access to this memory
+	if _, err := s.requireMemoryAccess(ctx, userID, memoryID); err != nil {
+		return err
 	}
 
 	// TODO: Delete associated message index - Implementation pending MessageService
@@ -800,7 +803,7 @@ func (s *MemoryService) DeleteMemory(ctx context.Context, memoryID string) error
 	// }
 
 	// Delete memory record
-	if err = s.memoryDAO.DeleteByID(ctx, dao.DB, memoryID); err != nil {
+	if err := s.memoryDAO.DeleteByID(ctx, dao.DB, memoryID); err != nil {
 		return errors.New("failed to delete memory")
 	}
 
@@ -1290,7 +1293,7 @@ func memoryMessageTextExpr(question string, similarityThreshold float64) *engine
 }
 
 func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
-	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(memory.TenantID, entity.ModelTypeEmbedding, memory.EmbdID)
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(ctx, memory.TenantID, entity.ModelTypeEmbedding, memory.EmbdID)
 	if err != nil {
 		return nil, err
 	}
@@ -1443,7 +1446,7 @@ func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantI
 	// If tenantIDs is empty, get all tenants associated with the user
 	if len(tenantIDs) == 0 {
 		userTenantService := NewUserTenantService()
-		userTenants, err := userTenantService.GetUserTenantRelationByUserID(userID)
+		userTenants, err := userTenantService.GetUserTenantRelationByUserIDWithContext(ctx, userID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get user tenants: %w", err)
 		}
@@ -1469,8 +1472,8 @@ func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantI
 		}
 		memoryMap := map[string]interface{}{
 			"id":           resp.ID,
-			"llm_id":       resolveTenantModelDisplayName(ptrStringValue(resp.TenantLLMID), resp.LLMID, modelNameCache),
-			"embd_id":      resolveTenantModelDisplayName(ptrStringValue(resp.TenantEmbdID), resp.EmbdID, modelNameCache),
+			"llm_id":       ResolveTenantModelDisplayName(ctx, dao.DB, ptrStringValue(resp.TenantLLMID), resp.LLMID, modelNameCache),
+			"embd_id":      ResolveTenantModelDisplayName(ctx, dao.DB, ptrStringValue(resp.TenantEmbdID), resp.EmbdID, modelNameCache),
 			"name":         resp.Name,
 			"avatar":       resp.Avatar,
 			"tenant_id":    resp.TenantID,
@@ -1491,10 +1494,10 @@ func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantI
 	}, nil
 }
 
-// resolveTenantModelDisplayName turns a tenant_model ID into
+// ResolveTenantModelDisplayName turns a tenant_model ID into
 // modelName@instance@provider. rawModelID is the API-facing fallback
-// stored on memory.llm_id / memory.embd_id.
-func resolveTenantModelDisplayName(tenantModelID, rawModelID string, cache map[string]string) string {
+// stored on memory.llm_id / memory.embd_id / knowledgebase.embd_id.
+func ResolveTenantModelDisplayName(ctx context.Context, db *gorm.DB, tenantModelID, rawModelID string, cache map[string]string) string {
 	tenantModelID = strings.TrimSpace(tenantModelID)
 	rawModelID = strings.TrimSpace(rawModelID)
 	if tenantModelID == "" || strings.Contains(tenantModelID, "@") {
@@ -1510,15 +1513,15 @@ func resolveTenantModelDisplayName(tenantModelID, rawModelID string, cache map[s
 		cache[tenantModelID] = displayName
 	}()
 
-	model, err := dao.NewTenantModelDAO().GetByID(tenantModelID)
+	model, err := dao.NewTenantModelDAO().GetByID(ctx, db, tenantModelID)
 	if err != nil {
 		return displayName
 	}
-	instance, err := dao.NewTenantModelInstanceDAO().GetByID(model.InstanceID)
+	instance, err := dao.NewTenantModelInstanceDAO().GetByID(ctx, db, model.InstanceID)
 	if err != nil {
 		return displayName
 	}
-	provider, err := dao.NewTenantModelProviderDAO().GetByID(model.ProviderID)
+	provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, model.ProviderID)
 	if err != nil {
 		return displayName
 	}
@@ -1527,19 +1530,30 @@ func resolveTenantModelDisplayName(tenantModelID, rawModelID string, cache map[s
 	return displayName
 }
 
-// GetMemoryConfig retrieves the full configuration of a memory by ID
+// GetMemoryConfig retrieves the full configuration of a memory by ID after
+// verifying the caller's access.
 //
 // Parameters:
+//   - userID: The ID of the user requesting the configuration (access control)
 //   - memoryID: The ID of the memory to retrieve
 //
 // Returns:
 //   - *CreateMemoryResponse: The memory configuration details
-//   - error: Error if memory not found
+//   - error: Error if memory not found or access denied
 //
 // Example:
 //
-//	resp, err := service.GetMemoryConfig("memory456")
-func (s *MemoryService) GetMemoryConfig(ctx context.Context, memoryID string) (*CreateMemoryResponse, error) {
+//	resp, err := service.GetMemoryConfig(ctx, "user123", "memory456")
+func (s *MemoryService) GetMemoryConfig(ctx context.Context, userID, memoryID string) (*CreateMemoryResponse, error) {
+	if _, err := s.requireMemoryAccess(ctx, userID, memoryID); err != nil {
+		return nil, err
+	}
+	return s.getMemoryConfig(ctx, memoryID)
+}
+
+// getMemoryConfig retrieves the full configuration of a memory without access
+// control checks. This is for trusted internal callers such as queue processing.
+func (s *MemoryService) getMemoryConfig(ctx context.Context, memoryID string) (*CreateMemoryResponse, error) {
 	memory, err := s.memoryDAO.GetWithOwnerNameByID(ctx, dao.DB, memoryID)
 	if err != nil {
 		return nil, fmt.Errorf("memory '%s' not found", memoryID)

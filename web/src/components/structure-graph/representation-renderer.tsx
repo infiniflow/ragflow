@@ -1,7 +1,10 @@
 import ArtifactForceGraph from '@/components/artifact-force-graph';
 import { TreeView, type TreeDataItem } from '@/components/ui/tree-view';
 import { CompilationTemplateKind } from '@/constants/compilation';
-import { type IArtifactGraphEntity } from '@/interfaces/database/dataset';
+import {
+  type IArtifactGraph,
+  type IArtifactGraphEntity,
+} from '@/interfaces/database/dataset';
 import {
   type IStructureGraphTemplate,
   type StructureTemplateKind,
@@ -14,7 +17,7 @@ import {
   adaptTimelineToX6Data,
   adaptTreeToTreeData,
   filterTreeDataByKeyword,
-} from '../utils/adapters';
+} from './adapters';
 import MindMapG6Graph from './mindmap-g6-graph';
 import TimelineX6Graph from './timeline-x6-graph';
 
@@ -24,10 +27,13 @@ export interface ClickableNode {
   source_chunk_ids?: string[];
 }
 
+const EmptyForceGraphData: IArtifactGraph = { entities: [], relations: [] };
+
 interface RepresentationRendererProps {
   template?: IStructureGraphTemplate;
   searchKeyword?: string;
   onNodeClick?: (node: ClickableNode) => void;
+  highlightNodeId?: string | null;
 }
 
 function UnsupportedPlaceholder({ kind }: { kind: StructureTemplateKind }) {
@@ -47,6 +53,7 @@ export function RepresentationRenderer({
   template,
   searchKeyword = '',
   onNodeClick,
+  highlightNodeId,
 }: RepresentationRendererProps) {
   const handleTreeItemClick = useCallback(
     (item: TreeDataItem | undefined) => {
@@ -114,6 +121,16 @@ export function RepresentationRenderer({
     return [];
   }, [template, searchKeyword]);
 
+  // Keep a stable reference across re-renders so the memoized ArtifactForceGraph
+  // does not restart its force simulation when only highlightNodeId changes
+  const forceGraphData = useMemo<IArtifactGraph>(
+    () =>
+      template
+        ? adaptKnowledgeGraphToForceGraph(template)
+        : EmptyForceGraphData,
+    [template],
+  );
+
   if (!template) {
     return null;
   }
@@ -143,10 +160,11 @@ export function RepresentationRenderer({
       return (
         <div className="mt-6 flex-1 min-h-0">
           <ArtifactForceGraph
-            data={adaptKnowledgeGraphToForceGraph(template)}
+            data={forceGraphData}
             show
             getNodeId={getArtifactNodeName}
             onNodeClick={handleArtifactNodeClick}
+            highlightNodeId={highlightNodeId}
           />
         </div>
       );
@@ -174,7 +192,7 @@ export function RepresentationRenderer({
       return (
         <div className="mt-6 flex-1 min-h-0">
           <ArtifactForceGraph
-            data={adaptKnowledgeGraphToForceGraph(template)}
+            data={forceGraphData}
             show
             getNodeId={getArtifactNodeName}
             onNodeClick={handleArtifactNodeClick}
@@ -195,7 +213,7 @@ export function RepresentationRenderer({
       return (
         <div className="mt-6 flex-1 min-h-0">
           <ArtifactForceGraph
-            data={adaptKnowledgeGraphToForceGraph(template)}
+            data={forceGraphData}
             show
             getNodeId={getArtifactNodeName}
             onNodeClick={handleArtifactNodeClick}

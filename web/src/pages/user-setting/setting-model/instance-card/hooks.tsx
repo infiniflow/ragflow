@@ -232,21 +232,21 @@ export function useProviderInitialValues(
  */
 export function useLazyInstanceDetails(
   providerName: string,
-  instanceName: string,
+  instanceId: string,
   isDraft: boolean,
   open: boolean,
 ) {
   const { data: instanceDetails, refetch: refetchInstanceDetails } =
     useFetchProviderInstance(
       isDraft ? '' : providerName,
-      isDraft ? '' : instanceName,
+      isDraft ? '' : instanceId,
     );
 
   useEffect(() => {
-    if (!isDraft && open && providerName && instanceName) {
+    if (!isDraft && open && providerName && instanceId) {
       refetchInstanceDetails();
     }
-  }, [isDraft, open, providerName, instanceName, refetchInstanceDetails]);
+  }, [isDraft, open, providerName, instanceId, refetchInstanceDetails]);
 
   return { instanceDetails, refetchInstanceDetails };
 }
@@ -590,9 +590,14 @@ export function useInstanceSaveState({
   // `getSavePayload()` is the imperative entry point the parent calls
   // when the user clicks the top Save button. For drafts it always
   // returns a payload (provided the name is non-empty); for saved
-  // cards it returns `null` when the current signature matches the
-  // baseline, so the parent skips the no-op PUT.
+  // cards it returns `null` when the card hasn't been touched by the
+  // user, so the parent skips both validation and the no-op PUT.
   const getSavePayload = useCallback((): InstanceSavePayload | null => {
+    if (!isDraft) {
+      const formDirty = formRef.current?.isDirty() ?? false;
+      const renamed = editedNameRef.current !== instanceName;
+      if (!formDirty && !renamed) return null;
+    }
     const payload = buildPayload();
     if (!payload) return null;
     if (!isDraft) {
@@ -610,7 +615,7 @@ export function useInstanceSaveState({
       // `IUpdateProviderInstanceRequestBody`).
       apiKind: isDraft ? 'add' : 'update',
     };
-  }, [buildPayload, isDraft, instanceName]);
+  }, [buildPayload, isDraft, instanceName, formRef]);
 
   // After a successful save the parent calls `markSaved()` so the
   // baseline catches up to the just-persisted values. Without this,
@@ -699,7 +704,7 @@ export function useFormFields(
       {}) as Record<string, any>;
     void _ignored;
     return rest;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [defaultValuesKey]);
 
   return { formFields, formDefaultValues };

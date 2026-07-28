@@ -153,8 +153,8 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(
 
 	res := &QueueSaveResult{}
 	for _, memoryID := range memoryIDs {
-		// (1) Look up the memory.
-		mem, err := s.memories.GetMemoryConfig(ctx, memoryID)
+		// (1) Look up the memory (no access control — trusted internal queue processing).
+		mem, err := s.memories.getMemoryConfig(ctx, memoryID)
 		if err != nil {
 			res.NotFound = append(res.NotFound, memoryID)
 			continue
@@ -262,7 +262,7 @@ func (s *MemoryMessageService) embedAndSave(ctx context.Context, mem *CreateMemo
 	}
 
 	content, _ := rawMessage["content"].(string)
-	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(ctx, mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
 	if err != nil {
 		return err
 	}
@@ -302,14 +302,14 @@ func embedAndSave(_ context.Context, _ *CreateMemoryResponse, _ map[string]any) 
 	return ErrEmbedderNotWired
 }
 
-func (s *MemoryMessageService) insertTask(_ context.Context, row map[string]any) error {
+func (s *MemoryMessageService) insertTask(ctx context.Context, row map[string]any) error {
 	if s == nil {
 		return errors.New("nil MemoryMessageService")
 	}
 	if s.taskDAO == nil {
 		s.taskDAO = dao.NewTaskDAO()
 	}
-	return s.taskDAO.Create(taskFromRow(row))
+	return s.taskDAO.Create(ctx, dao.DB, taskFromRow(row))
 }
 
 // newUUIDString is a thin wrapper so we can swap in a real UUID

@@ -2,7 +2,7 @@ import { useCompilationTemplateGroupOptions } from '@/hooks/use-compilation-temp
 import { IRagNode } from '@/interfaces/database/agent';
 import { NodeProps } from '@xyflow/react';
 import { get } from 'lodash';
-import { LabelCard, LLMLabelCard } from './card';
+import { LabelCard } from './card';
 import { RagNode } from './index';
 import { useTranslation } from 'react-i18next';
 
@@ -17,7 +17,6 @@ export function CompilationNode({ ...props }: NodeProps<IRagNode>) {
   return (
     <RagNode {...props}>
       <section className="flex flex-col gap-2">
-        <LLMLabelCard llmId={get(data, 'form.llm_id')}></LLMLabelCard>
         <LabelCard className="text-text-primary flex justify-between flex-col gap-1">
           <span className="text-text-secondary">
             {t('knowledgeConfiguration.compilationTemplate')}

@@ -4,6 +4,7 @@ import message from '@/components/ui/message';
 import { AgentCategory, AgentGlobals } from '@/constants/agent';
 import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import {
+  AgentListItem,
   IAgentLogResponse,
   IAgentLogsRequest,
   IAgentLogsResponse,
@@ -139,8 +140,8 @@ export const useFetchAgentListByPage = () => {
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
   const canvasCategory = Array.isArray(filterValue.canvasCategory)
-    ? filterValue.canvasCategory
-    : [];
+    ? (filterValue.canvasCategory[0] as string | undefined)
+    : undefined;
   const owner = filterValue.owner;
   const tags = Array.isArray(filterValue.tags) ? filterValue.tags : undefined;
 
@@ -148,13 +149,13 @@ export const useFetchAgentListByPage = () => {
     page: pagination.current,
     pageSize: pagination.pageSize,
     keywords: debouncedSearchString,
-    canvasCategory: canvasCategory.length === 1 ? canvasCategory[0] : undefined,
+    canvasCategory,
     ownerIds: Array.isArray(owner) ? owner : undefined,
     tags,
   });
 
   const { data, isFetching: loading } = useQuery<{
-    canvas: IFlow[];
+    canvas: AgentListItem[];
     total: number;
   }>({
     queryKey: [
@@ -197,7 +198,7 @@ export const useFetchAgentListByPage = () => {
     loading,
     searchString,
     handleInputChange: onInputChange,
-    pagination: { ...pagination, total: data?.total },
+    pagination: { ...pagination, total: data?.total ?? 0 },
     setPagination,
     filterValue,
     handleFilterSubmit,
@@ -205,7 +206,7 @@ export const useFetchAgentListByPage = () => {
 };
 
 export function useFetchAllAgentList() {
-  const { data, isFetching: loading } = useQuery<IFlow[]>({
+  const { data, isFetching: loading } = useQuery<AgentListItem[]>({
     queryKey: [AgentApiAction.FetchAllAgentList],
     queryFn: async () => {
       const { data } = await agentService.listAgents(
@@ -853,7 +854,7 @@ export const useFetchAgentList = ({
   canvas_category,
 }: IPipeLineListRequest) => {
   const { data, isFetching: loading } = useQuery<{
-    canvas: IFlow[];
+    canvas: AgentListItem[];
     total: number;
   }>({
     queryKey: [AgentApiAction.FetchAgentList],
