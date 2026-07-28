@@ -419,6 +419,8 @@ export default {
       updateTooltip:
         '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档。点击编译并合并到当前 Wiki。',
       updateSheetTitle: '更新 Wiki',
+      viewUpdateLogs: '查看更新日志',
+      log: '日志',
       noSkills: '暂无技能',
       processingType: '处理类型',
       dataPipeline: '切换或配置 ingestion pipeline。',
