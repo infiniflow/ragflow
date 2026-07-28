@@ -649,7 +649,7 @@ func TestAgent_NewAcceptsCanvasToolObjects(t *testing.T) {
 	if agent.param.ToolParams["retrieval"] == nil {
 		t.Fatalf("agent.param.ToolParams missing retrieval: %#v", agent.param.ToolParams)
 	}
-	if _, err := buildAgentTools(agent.param); err != nil {
+	if _, err := buildAgentTools(t.Context(), agent.param); err != nil {
 		t.Fatalf("buildAgentTools: %v", err)
 	}
 }
@@ -698,7 +698,7 @@ func TestAgent_CanCreateReactAgentWithAllRegisteredTools(t *testing.T) {
 		},
 		MaxRounds: 1,
 	}
-	tools, err := buildAgentTools(p)
+	tools, err := buildAgentTools(t.Context(), p)
 	if err != nil {
 		t.Fatalf("buildAgentTools: %v", err)
 	}
@@ -760,7 +760,7 @@ func TestAgent_CanvasSubAgentToolBuildsDynamicTool(t *testing.T) {
 		t.Fatalf("sub agents = %d, want 1", len(agent.param.SubAgents))
 	}
 
-	tools, err := buildAgentTools(agent.param)
+	tools, err := buildAgentTools(t.Context(), agent.param)
 	if err != nil {
 		t.Fatalf("buildAgentTools: %v", err)
 	}
@@ -810,7 +810,7 @@ func TestAgent_CanvasSubAgentToolNamesAreUniqueAfterNormalization(t *testing.T) 
 		t.Fatalf("New(Agent) returned %T, want *AgentComponent", c)
 	}
 
-	tools, err := buildAgentTools(agent.param)
+	tools, err := buildAgentTools(t.Context(), agent.param)
 	if err != nil {
 		t.Fatalf("buildAgentTools: %v", err)
 	}

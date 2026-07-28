@@ -767,7 +767,7 @@ func TestRunAgent_StorageErrorFromCanvasAccess(t *testing.T) {
 // contract at the loadCanvasForUser level (not just through
 // RunAgent). loadCanvasForUser is shared by GetAgent, UpdateAgent,
 // DeleteAgent, PublishAgent, ListVersions, GetVersion, and
-// CancelAgent — sanitising its DAO errors closes the leak in all
+// Session cancellation — sanitising its DAO errors closes the leak in all
 // eight call sites.
 func TestLoadCanvasForUser_StorageErrorWrap(t *testing.T) {
 	testDB := setupServiceTestDB(t)

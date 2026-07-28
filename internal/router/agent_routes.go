@@ -51,7 +51,6 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	g.PUT("/:canvas_id", h.UpdateAgent)
 	g.DELETE("/:canvas_id", h.DeleteAgent)
 	g.POST("/:canvas_id/run", h.RunAgent)
-	g.DELETE("/:canvas_id/run", h.CancelAgent)
 	g.POST("/:canvas_id/publish", h.PublishAgent)
 	g.PUT("/:canvas_id/tags", h.UpdateAgentTags)
 	g.POST("/:canvas_id/reset", h.ResetAgent)
@@ -99,6 +98,16 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	g.POST("/chat/completions", h.AgentChatCompletions)
 	g.POST("/rerun", h.RerunAgent)
 	g.POST("/test_db_connection", h.TestDBConnection)
+}
+
+// RegisterAgentCancelRoutes registers ordinary Agent session cancellation on
+// the existing /api/v1/tasks URI. The path is retained for clients, while the
+// parameter and all runtime semantics are session-scoped.
+func RegisterAgentCancelRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
+	if g == nil || h == nil {
+		return
+	}
+	g.POST("/:session_id/cancel", h.CancelSessionRun)
 }
 
 // registerAnyMethod mirrors the Python
