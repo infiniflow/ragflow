@@ -257,6 +257,8 @@ func TestMessage_MemorySave_Success(t *testing.T) {
 	c, _ := NewMessageComponent(map[string]any{"text": "hi"})
 	state := canvas.NewCanvasState("run-y", "session-y")
 	state.Sys["query"] = "what?"
+	state.Sys["canvas_id"] = "canvas-y"
+	state.Sys["session_id"] = "session-y"
 	state.Sys["agent_id"] = "agent-y"
 	ctx := withStateForTest(context.Background(), state)
 
@@ -283,6 +285,37 @@ func TestMessage_MemorySave_Success(t *testing.T) {
 	}
 	if saved.AgentResponse != "hi" {
 		t.Errorf("AgentResponse: got %q, want hi", saved.AgentResponse)
+	}
+}
+
+func TestMessage_MemorySave_FallbackIDs(t *testing.T) {
+	var saved MemorySaveRequest
+	saveFn := memSaverFunc(func(_ context.Context, req MemorySaveRequest) error {
+		saved = req
+		return nil
+	})
+	SetMemorySaver(&saveFn)
+	defer SetMemorySaver(nil)
+
+	c, _ := NewMessageComponent(map[string]any{"text": "hi"})
+	state := canvas.NewCanvasState("run-fallback", "task-fallback")
+	state.Sys["query"] = "what?"
+	ctx := withStateForTest(context.Background(), state)
+
+	_, err := c.Invoke(ctx, nil, map[string]any{
+		"text":        "hi",
+		"stream":      false,
+		"memory_save": true,
+		"memory_ids":  []string{"m1"},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if saved.AgentID != "task-fallback" {
+		t.Errorf("AgentID fallback: got %q, want task-fallback", saved.AgentID)
+	}
+	if saved.SessionID != "run-fallback" {
+		t.Errorf("SessionID fallback: got %q, want run-fallback", saved.SessionID)
 	}
 }
 
