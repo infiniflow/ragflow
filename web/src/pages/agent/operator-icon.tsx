@@ -1,5 +1,6 @@
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
+import queritLogo from '@/assets/querit.png';
 import { cn } from '@/lib/utils';
 import {
   Columns3Cog,
@@ -93,6 +94,16 @@ const OperatorIcon = ({ name, className }: IProps) => {
   const Icon = OperatorIconMap[name as keyof typeof OperatorIconMap];
   const svgIcon = SVGIconMap[name as keyof typeof SVGIconMap];
   const LucideIcon = LucideIconMap[name as keyof typeof LucideIconMap];
+
+  if (name === Operator.QueritSearch) {
+    return (
+      <img
+        src={queritLogo}
+        alt=""
+        className={cn('size-5 object-contain', className)}
+      />
+    );
+  }
 
   if (name === Operator.Begin) {
     return (
