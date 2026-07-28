@@ -33,7 +33,7 @@ import { useLoadingPause } from '@/hooks/use-loading-pause';
 import { cn } from '@/lib/utils';
 import classNames from 'classnames';
 import { omit } from 'lodash';
-import { pipe } from 'lodash/fp';
+import pipe from 'lodash/fp/pipe';
 import reactStringReplace from 'react-string-replace';
 import { LoadingDots } from '../loading-dots';
 import { Button } from '../ui/button';

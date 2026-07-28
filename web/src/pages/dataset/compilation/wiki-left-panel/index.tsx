@@ -1,26 +1,25 @@
-import ArtifactForceGraph from '@/components/artifact-force-graph';
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import {
-  SelectWithSearch,
-  SelectWithSearchFlagOptionType,
-} from '@/components/originui/select-with-search';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useFetchArtifactGraph } from '@/hooks/use-knowledge-request';
-import { IArtifact, IArtifactGraphEntity } from '@/interfaces/database/dataset';
-import { Trash2 } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { IArtifact } from '@/interfaces/database/dataset';
+import { ITraceInfo } from '@/pages/dataset/dataset/generate-button/hook';
+import { Trash2, WandSparkles } from 'lucide-react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { LeftPanelTab } from '../constants';
 import { useWikiClear } from './hooks/use-wiki-clear';
+import { useWikiUpdate } from './hooks/use-wiki-update';
+import { WikiGraphPanel } from './wiki-graph-panel';
 import { WikiNavBar } from './wiki-nav-bar';
-
-const mapNodeToValue = (node: IArtifactGraphEntity) => ({
-  slug: node.slug,
-  title: node.name,
-  page_type: node.type,
-});
+import { WikiUpdateSheet } from './wiki-update-sheet';
 
 type WikiLeftPanelProps = {
   tab: LeftPanelTab;
@@ -29,6 +28,9 @@ type WikiLeftPanelProps = {
   onSelectArtifact: (artifact: IArtifact) => void;
   onClearArtifact: () => void;
   onClearWiki?: () => void;
+  updateSheetOpen: boolean;
+  onUpdateSheetOpenChange: (open: boolean) => void;
+  traceData?: ITraceInfo;
 };
 
 export function WikiLeftPanel({
@@ -38,59 +40,66 @@ export function WikiLeftPanel({
   onSelectArtifact,
   onClearArtifact,
   onClearWiki,
+  updateSheetOpen,
+  onUpdateSheetOpenChange,
+  traceData,
 }: WikiLeftPanelProps) {
   const { t } = useTranslation();
-  const { data } = useFetchArtifactGraph(undefined, {
-    enabled: tab === LeftPanelTab.Graph,
-  });
+
   const { open, setOpen, handleConfirm, loading } = useWikiClear({
     onClearWiki,
   });
 
-  const entityOptions = useMemo<SelectWithSearchFlagOptionType[]>(
-    () =>
-      data.entities.map((entity) => ({
-        label: entity.name,
-        value: entity.slug,
-        keywords: [entity.name, ...entity.aliases],
-      })),
-    [data.entities],
-  );
+  const {
+    hasChanges,
+    newlyUploaded,
+    removed,
+    handleUpdate,
+    loading: updateLoading,
+  } = useWikiUpdate();
 
-  // Only refill the select when selectedArtifact is a graph entity, to avoid showing the raw slug
-  const selectedEntitySlug = data.entities.some(
-    (entity) => entity.slug === selectedArtifact?.slug,
-  )
-    ? (selectedArtifact?.slug ?? '')
-    : '';
-
-  const handleSelectEntity = useCallback(
-    (slug: string) => {
-      if (!slug) {
-        onClearArtifact();
-        return;
-      }
-      const entity = data.entities.find((item) => item.slug === slug);
-      if (entity) {
-        onSelectArtifact(mapNodeToValue(entity));
-      }
-    },
-    [data.entities, onSelectArtifact, onClearArtifact],
-  );
+  const handleUpdateClick = useCallback(async () => {
+    onUpdateSheetOpenChange(true);
+    await handleUpdate();
+  }, [handleUpdate, onUpdateSheetOpenChange]);
 
   return (
     <aside className="size-full flex flex-col p-5">
-      <section className="flex items-center justify-between pb-5">
-        <Tabs value={tab} onValueChange={onTabChange}>
-          <TabsList className="grid grid-cols-2 w-80">
-            <TabsTrigger value={LeftPanelTab.Contents}>
-              {t('knowledgeDetails.contents')}
-            </TabsTrigger>
-            <TabsTrigger value={LeftPanelTab.Graph}>
-              {t('knowledgeDetails.graph')}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
+      <div className="flex items-center justify-between pb-5">
+        {hasChanges && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={'outline'}
+                  onClick={handleUpdateClick}
+                  disabled={updateLoading}
+                >
+                  {t('knowledgeDetails.update', { defaultValue: 'Update' })}
+                  {newlyUploaded > 0 && (
+                    <Badge variant="success" className="ml-1">
+                      {newlyUploaded}
+                    </Badge>
+                  )}
+                  {removed > 0 && (
+                    <Badge variant="destructive" className="ml-1">
+                      {removed}
+                    </Badge>
+                  )}
+                  <WandSparkles />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t('knowledgeDetails.updateTooltip', {
+                  newlyUploaded,
+                  removed,
+                  defaultValue:
+                    '{{newlyUploaded}} new, {{removed}} removed documents found. Click to compile and merge into current Wiki.',
+                })}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
         <ConfirmDeleteDialog
           open={open}
           onOpenChange={setOpen}
@@ -107,7 +116,17 @@ export function WikiLeftPanel({
             <Trash2 className="size-[1em]" />
           </Button>
         </ConfirmDeleteDialog>
-      </section>
+      </div>
+      <Tabs value={tab} onValueChange={onTabChange} className="pb-5">
+        <TabsList className="grid grid-cols-2 w-80">
+          <TabsTrigger value={LeftPanelTab.Contents}>
+            {t('knowledgeDetails.contents')}
+          </TabsTrigger>
+          <TabsTrigger value={LeftPanelTab.Graph}>
+            {t('knowledgeDetails.graph')}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
 
       <div className="flex-1 min-h-0 relative">
         {tab === LeftPanelTab.Contents && (
@@ -117,25 +136,19 @@ export function WikiLeftPanel({
           />
         )}
         {tab === LeftPanelTab.Graph && (
-          <div className="flex h-full flex-col gap-3">
-            <SelectWithSearch
-              options={entityOptions}
-              value={selectedEntitySlug}
-              onChange={handleSelectEntity}
-              placeholder={t('knowledgeDetails.searchEntity')}
-              allowClear
-              triggerClassName="w-96 max-w-full"
-            />
-            <ArtifactForceGraph
-              data={data}
-              show
-              mapNodeToValue={mapNodeToValue}
-              onNodeClick={onSelectArtifact}
-              highlightNodeId={selectedArtifact?.slug}
-            />
-          </div>
+          <WikiGraphPanel
+            selectedArtifact={selectedArtifact}
+            onSelectArtifact={onSelectArtifact}
+            onClearArtifact={onClearArtifact}
+          />
         )}
       </div>
+
+      <WikiUpdateSheet
+        open={updateSheetOpen}
+        onOpenChange={onUpdateSheetOpenChange}
+        data={traceData}
+      />
     </aside>
   );
 }

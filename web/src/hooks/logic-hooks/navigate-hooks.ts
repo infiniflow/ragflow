@@ -223,6 +223,17 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToCompilationTemplateEditNext = useCallback(
+    (id?: string) => () => {
+      if (id && id !== 'create') {
+        navigate(`${Routes.CompilationTemplatesEditNext}/${id}`);
+      } else {
+        navigate(Routes.CompilationTemplatesEditNext);
+      }
+    },
+    [navigate],
+  );
+
   return {
     navigateToDatasetList,
     navigateToDataset,
@@ -253,5 +264,6 @@ export const useNavigatePage = () => {
     navigateToModelSetting,
     navigateToCompilationTemplates,
     navigateToCompilationTemplate,
+    navigateToCompilationTemplateEditNext,
   };
 };

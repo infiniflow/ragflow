@@ -540,7 +540,7 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	if err := runtime.WithTimeout(ctx, extractorTimeout, func(timeoutCtx context.Context) error {
 		// Tag phase: run when auto_tags > 0 and we have chunks.
 		if c.Param.AutoTags > 0 && len(in.chunks) > 0 {
-			tagged, tagErr := c.runAutoTags(timeoutCtx, in)
+			tagged, tagErr := c.runAutoTags(timeoutCtx, db, in)
 			if tagErr != nil {
 				return tagErr
 			}
@@ -548,7 +548,7 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		}
 
 		if len(in.chunks) == 0 {
-			ans, callErr := c.call(timeoutCtx, in, "")
+			ans, callErr := c.call(timeoutCtx, db, in, "")
 			if callErr != nil {
 				return callErr
 			}
@@ -562,18 +562,18 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 			}
 
 			if c.Param.AutoKeywords > 0 {
-				if err := c.runAutoKeywords(timeoutCtx, in, ck, text); err != nil {
+				if err := c.runAutoKeywords(timeoutCtx, db, in, ck, text); err != nil {
 					return fmt.Errorf("chunk %d keywords: %w", i, err)
 				}
 			}
 			if c.Param.AutoQuestions > 0 {
-				if err := c.runAutoQuestions(timeoutCtx, in, ck, text); err != nil {
+				if err := c.runAutoQuestions(timeoutCtx, db, in, ck, text); err != nil {
 					return fmt.Errorf("chunk %d questions: %w", i, err)
 				}
 			}
 
 			if in.fieldName != "" {
-				ans, callErr := c.call(timeoutCtx, in, text)
+				ans, callErr := c.call(timeoutCtx, db, in, text)
 				if callErr != nil {
 					return fmt.Errorf("chunk %d: %w", i, callErr)
 				}
@@ -594,7 +594,7 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	}, nil
 }
 
-func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, in extractorInputs, ck map[string]any, chunkText string) error {
+func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
 	if _, exists := ck["important_kwd"]; exists {
 		return nil
 	}
@@ -602,7 +602,7 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, in extractorIn
 	kwIn.prompt = "Output: "
 	kwIn.systemPrompt = fmt.Sprintf(autoKeywordPrompt, c.Param.AutoKeywords, chunkText)
 	kwIn.fieldName = ""
-	result, err := c.call(ctx, kwIn, "")
+	result, err := c.call(ctx, db, kwIn, "")
 	if err != nil {
 		return err
 	}
@@ -624,7 +624,7 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, in extractorIn
 	return nil
 }
 
-func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, in extractorInputs, ck map[string]any, chunkText string) error {
+func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
 	if _, exists := ck["question_kwd"]; exists {
 		return nil
 	}
@@ -632,7 +632,7 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, in extractorI
 	qIn.prompt = "Output: "
 	qIn.systemPrompt = fmt.Sprintf(autoQuestionPrompt, c.Param.AutoQuestions, chunkText)
 	qIn.fieldName = ""
-	result, err := c.call(ctx, qIn, "")
+	result, err := c.call(ctx, db, qIn, "")
 	if err != nil {
 		return err
 	}
@@ -694,8 +694,8 @@ func splitKeywords(s string) []string {
 // (empty string in the no-chunk fast path). The result is the
 // raw string from the model — JSON parsing happens here so
 // callers can rely on a structured value downstream.
-func (c *ExtractorComponent) call(ctx context.Context, in extractorInputs, chunkText string) (any, error) {
-	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, in.llmID)
+func (c *ExtractorComponent) call(ctx context.Context, db *gorm.DB, in extractorInputs, chunkText string) (any, error) {
+	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
 	if err != nil {
 		return nil, err
 	}
@@ -731,14 +731,14 @@ func (c *ExtractorComponent) call(ctx context.Context, in extractorInputs, chunk
 // api_key / base_url. The llm_id may be a bare tenant_model UUID or
 // a composite "model@provider" string. Errors from DAO resolution are
 // propagated so the caller sees the real failure reason.
-func resolveExtractorChatTarget(ctx context.Context, llmID string) (driver, modelName, apiKey, baseURL string, err error) {
+func resolveExtractorChatTarget(ctx context.Context, db *gorm.DB, llmID string) (driver, modelName, apiKey, baseURL string, err error) {
 	if override := getExtractorChatTargetResolverOverride(); override != nil {
 		if driver, modelName, apiKey, baseURL, ok := override(llmID); ok {
 			return driver, modelName, apiKey, baseURL, nil
 		}
 	}
 
-	cfg, cfgErr := resolveExtractorChatConfig(ctx, llmID)
+	cfg, cfgErr := resolveExtractorChatConfig(ctx, db, llmID)
 	if cfgErr != nil {
 		return "", "", "", "", cfgErr
 	}
@@ -773,7 +773,7 @@ type extractorChatConfig struct {
 //
 // Returns nil error when there is no canvas state (unit tests) —
 // the caller's @ split fallback handles that case.
-func resolveExtractorChatConfig(ctx context.Context, compositeLLMID string) (extractorChatConfig, error) {
+func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID string) (extractorChatConfig, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil || state == nil {
 		return extractorChatConfig{}, nil
@@ -792,13 +792,13 @@ func resolveExtractorChatConfig(ctx context.Context, compositeLLMID string) (ext
 		// returns a clear error if the record doesn't exist.  No need
 		// for a separate pre-check — resolveModelConfig's redundant
 		// GetByID dispatch check is also bypassed.
-		driver, modelName, apiConfig, _, err = resolveModelConfigByID(tid, entity.ModelTypeChat, compositeLLMID)
+		driver, modelName, apiConfig, _, err = resolveModelConfigByID(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
 		if err != nil {
 			return extractorChatConfig{}, fmt.Errorf("extractor: tenant model %q not found or not usable: %w", compositeLLMID, err)
 		}
 	} else {
 		// Composite "model@provider" path: delegate to the shared dispatcher.
-		driver, modelName, apiConfig, _, err = resolveModelConfig(tid, entity.ModelTypeChat, compositeLLMID)
+		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
 		if err != nil {
 			return extractorChatConfig{}, fmt.Errorf("extractor: resolve model %q: %w", compositeLLMID, err)
 		}

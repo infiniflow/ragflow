@@ -1721,6 +1721,13 @@ _DATASET_STRUCTURE_KIND_ALIASES = {
     "session_essence": "session_essence",
     "session_graph": "session_graph",
 }
+_DATASET_STRUCTURE_KIND_TO_INDEX_TYPE = {
+    "knowledge_graph": "structure_graph",
+    "mind_map": "structure_mindmap",
+    "timeline": "timeline",
+    "session_essence": "session_essence",
+    "session_graph": "session_graph",
+}
 
 
 def _resolve_dataset_structure_kind(kind) -> str | None:
@@ -1728,6 +1735,15 @@ def _resolve_dataset_structure_kind(kind) -> str | None:
     if not isinstance(kind, str):
         return None
     return _DATASET_STRUCTURE_KIND_ALIASES.get(kind.strip().lower().replace("-", "_"))
+
+
+def delete_dataset_structure(dataset_id: str, tenant_id: str, kind: str, wipe: bool = True):
+    """Delete the merged KB-wide structure rows for one artifacts_structure kind."""
+    resolved_kind = _resolve_dataset_structure_kind(kind)
+    if not resolved_kind:
+        return False, f"Unsupported structure kind: {kind!r}. Expected one of: graph, mindmap, timeline, session_essence, session_graph."
+    index_type = _DATASET_STRUCTURE_KIND_TO_INDEX_TYPE[resolved_kind]
+    return delete_index(dataset_id, tenant_id, index_type, wipe=wipe)
 
 
 async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keywords: str = ""):
