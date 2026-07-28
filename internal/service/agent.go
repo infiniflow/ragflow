@@ -713,16 +713,10 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
 	}
 
-	_, err = s.canvasDAO.UpdateFields(canvasID, updates)
-	if err != nil {
-		if dao.IsDuplicateKeyErr(err) {
-			if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
-				return agentTitleAlreadyExistsError(title)
-			}
-			return errors.New("agent title already exists")
-		}
-		return fmt.Errorf("update agent %s: %w", canvasID, err)
-	}
+	// Build the version options up front (it only reads the user nickname)
+	// so the canvas row update and the version save can share one
+	// transaction below.
+	var versionOpts *dao.SaveOrReplaceLatestVersionOptions
 	if dslValue, ok := updates["dsl"]; ok {
 		dsl, ok := dslValue.(entity.JSONMap)
 		if !ok {
@@ -734,9 +728,33 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		} else if canvasInstance.Title != nil {
 			title = *canvasInstance.Title
 		}
-		if _, err := s.saveOrReplaceVersion(ctx, userID, canvasID, dsl, title, nil, release); err != nil {
-			return fmt.Errorf("update agent %s: save version: %w", canvasID, err)
+		opts := s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, title, nil, release)
+		versionOpts = &opts
+	}
+
+	// The canvas release/DSL update and the version save must commit
+	// atomically: if the version write fails after the canvas row is
+	// committed, the canvas is left published (or unpublished) without a
+	// matching version state.
+	err = dao.DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := s.canvasDAO.UpdateFieldsTx(tx, canvasID, updates); err != nil {
+			return err
 		}
+		if versionOpts != nil {
+			if _, err := s.versionDAO.SaveOrReplaceLatestTx(tx, *versionOpts); err != nil {
+				return fmt.Errorf("save version: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		if dao.IsDuplicateKeyErr(err) {
+			if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
+				return agentTitleAlreadyExistsError(title)
+			}
+			return errors.New("agent title already exists")
+		}
+		return fmt.Errorf("update agent %s: %w", canvasID, err)
 	}
 	return nil
 }
@@ -860,10 +878,6 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 		return nil, err
 	}
 	return row, nil
-}
-
-func (s *AgentService) saveOrReplaceVersion(ctx context.Context, userID, canvasID string, dsl entity.JSONMap, title string, description *string, release bool) (*entity.UserCanvasVersion, error) {
-	return s.versionDAO.SaveOrReplaceLatest(s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, title, description, release))
 }
 
 func (s *AgentService) saveOrReplaceVersionOptions(ctx context.Context, userID, canvasID string, dsl entity.JSONMap, title string, description *string, release bool) dao.SaveOrReplaceLatestVersionOptions {

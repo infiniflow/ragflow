@@ -493,6 +493,14 @@ func (dao *UserCanvasDAO) UpdateFields(canvasID string, fields map[string]interf
 	return result.RowsAffected, result.Error
 }
 
+// UpdateFieldsTx is the transactional variant of UpdateFields. Used by
+// service.AgentService.UpdateAgent so the canvas row update and the
+// version-row save commit atomically in one transaction.
+func (dao *UserCanvasDAO) UpdateFieldsTx(tx *gorm.DB, canvasID string, fields map[string]interface{}) (int64, error) {
+	result := tx.Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Updates(fields)
+	return result.RowsAffected, result.Error
+}
+
 // UpdateTags updates a canvas's comma-separated tags by canvas ID.
 func (dao *UserCanvasDAO) UpdateTags(canvasID, tags string) (int64, error) {
 	result := DB.Model(&entity.UserCanvas{}).Where("id = ?", canvasID).Update("tags", tags)
