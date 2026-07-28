@@ -212,7 +212,7 @@ export const BedrockInstanceCard = forwardRef<
   useEffect(() => {
     // Reset form when initial values change (e.g. instance details load).
     form.reset(initialValues);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [initialValues]);
 
   const authMode = useWatch({ control: form.control, name: 'auth_mode' });

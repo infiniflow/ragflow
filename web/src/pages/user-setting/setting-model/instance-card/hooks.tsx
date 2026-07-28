@@ -699,7 +699,7 @@ export function useFormFields(
       {}) as Record<string, any>;
     void _ignored;
     return rest;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [defaultValuesKey]);
 
   return { formFields, formDefaultValues };
