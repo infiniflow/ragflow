@@ -120,7 +120,7 @@ def test_session_update_blocks_messages_and_reference(rest_client, create_chat):
     assert ref_res.status_code == 200
     ref_payload = ref_res.json()
     assert ref_payload["code"] == 102, ref_payload
-    assert "`reference` cannot be changed." in ref_payload["message"], ref_payload
+    assert "`reference` cannot be changed" in ref_payload["message"], ref_payload
 
 
 @pytest.mark.p1

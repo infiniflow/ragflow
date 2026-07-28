@@ -845,7 +845,7 @@ async def update_session(chat_id, session_id):
         if "message" in req or "messages" in req:
             return get_data_error_result(message="`messages` cannot be changed")
         if "reference" in req:
-            return get_data_error_result(message="`reference` cannot be changed.")
+            return get_data_error_result(message="`reference` cannot be changed")
         name = req.get("name")
         if name is not None:
             if not isinstance(name, str) or not name.strip():

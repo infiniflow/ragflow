@@ -919,7 +919,7 @@ def test_chat_session_create_and_update_guard_matrix_unit(monkeypatch):
 
     _set_request_json(monkeypatch, module, {"reference": []})
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
-    assert "`reference` cannot be changed." in res["message"]
+    assert "`reference` cannot be changed" in res["message"]
 
     _set_request_json(monkeypatch, module, {"name": ""})
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
