@@ -26,6 +26,12 @@ export const StructureKinds = [
 
 export type StructureKind = (typeof StructureKinds)[number];
 
+export const StructureKindLabelKeyMap: Record<StructureKind, string> = {
+  [ViewMode.Graph]: 'knowledgeDetails.structureGraph',
+  [ViewMode.MindMap]: 'knowledgeDetails.structureMindmap',
+  [ViewMode.Timeline]: 'knowledgeDetails.structureTimeline',
+};
+
 export type GenerableViewMode = Exclude<ViewMode, ViewMode.Tree>;
 
 export const ViewModeGenerateTypeMap: Record<GenerableViewMode, GenerateType> =

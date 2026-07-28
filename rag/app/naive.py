@@ -899,7 +899,7 @@ class Markdown(MarkdownParser):
                 txt = f.read()
 
         remainder, tables = self.extract_tables_and_remainder(f"{txt}\n", separate_tables=separate_tables)
-        parsing_text = remainder if separate_tables else txt
+        parsing_text = remainder
         extractor = MarkdownElementExtractor(parsing_text)
         image_refs = self.extract_image_urls_with_lines(parsing_text)
         element_sections = extractor.extract_elements(delimiter, include_meta=True)
@@ -922,8 +922,9 @@ class Markdown(MarkdownParser):
             section_images.append(combined_image)
 
         tbls = []
-        for table in tables:
-            tbls.append(((None, markdown(table, extensions=["markdown.extensions.tables"])), ""))
+        if separate_tables:
+            for table in tables:
+                tbls.append(((None, markdown(table, extensions=["markdown.extensions.tables"])), ""))
         if return_section_images:
             return sections, tbls, section_images
         return sections, tbls
@@ -1128,7 +1129,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         sections, tables, section_images = markdown_parser(
             filename,
             binary,
-            separate_tables=True,
+            separate_tables=False,
             delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
             return_section_images=True,
         )

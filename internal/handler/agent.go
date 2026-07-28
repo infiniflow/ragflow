@@ -37,6 +37,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
+	"ragflow/internal/utility"
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
@@ -200,8 +201,9 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 // mapAgentError normalises service-layer errors onto the existing
 // {code, data, message} response envelope used by every other handler.
 //
-// Three classes:
+// Four classes:
 //   - service.ErrAgentNotOwner  -> "Only the owner..."        (DELETE only, 103)
+//   - service.ErrAgentSessionBusy -> "session already running" (103)
 //   - dao.ErrUserCanvasNotFound -> "Make sure you have permission..."  (103)
 //   - service.ErrAgentStorageError -> "Internal storage error"  (500)
 //
@@ -218,6 +220,9 @@ func mapAgentError(err error) (common.ErrorCode, string) {
 	}
 	if errors.Is(err, service.ErrAgentNotOwner) {
 		return common.CodeOperatingError, "Only the owner of the agent is authorized for this operation."
+	}
+	if errors.Is(err, service.ErrAgentSessionBusy) {
+		return common.CodeOperatingError, "This agent session is already running."
 	}
 	if errors.Is(err, dao.ErrUserCanvasNotFound) ||
 		errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
@@ -390,6 +395,11 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	version := c.Query("version")
 	sessionID := c.Query("session_id")
+	if sessionID == "" {
+		// Allocate the ordinary-Agent session identity at the HTTP boundary.
+		// Persistence of the session record remains owned by AgentService.RunAgent.
+		sessionID = utility.GenerateToken()
+	}
 	userInput := readUserInput(c)
 
 	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput, nil)
@@ -469,21 +479,24 @@ func sanitiseRunEventError(data string) string {
 	return data
 }
 
-// CancelAgent signals the in-flight run to stop.
-// @Summary Cancel Agent Run
+// CancelSessionRun cancels one ordinary Agent run by session id.
+// @Summary Cancel Agent Session Run
 // @Tags agents
 // @Produce json
-// @Param canvas_id path string true "canvas id"
+// @Param session_id path string true "session id"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/agents/{canvas_id}/run [delete]
-func (h *AgentHandler) CancelAgent(c *gin.Context) {
+// @Router /api/v1/tasks/{session_id}/cancel [post]
+func (h *AgentHandler) CancelSessionRun(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
 		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
-	canvasID := c.Param("canvas_id")
-	if err := h.agentService.CancelAgent(c.Request.Context(), user.ID, canvasID); err != nil {
+	if h.agentService == nil {
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, "agent service unavailable")
+		return
+	}
+	if err := h.agentService.CancelSessionRun(c.Request.Context(), user.ID, c.Param("session_id")); err != nil {
 		ec, em := mapAgentError(err)
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return
@@ -1007,6 +1020,12 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 			zap.String("session_id", req.SessionID),
 		}, userInputMeta(userInput)...)...,
 	)
+	if req.SessionID == "" {
+		// Keep the effective session available to the non-stream response and
+		// to the task_id=session_id wire alias even when the canvas emits no
+		// events (for example an empty query).
+		req.SessionID = utility.GenerateToken()
+	}
 
 	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput, req.Files)
 	if err != nil {
@@ -1044,7 +1063,6 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 				zap.String("session_id", req.SessionID),
 				zap.String("event_type", ev.Type),
 				zap.String("message_id", ev.MessageID),
-				zap.String("task_id", ev.TaskID),
 			)
 			if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
 				common.Debug("agent chat completions: client disconnected",
@@ -1183,7 +1201,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		"data":       ansData,
 		"message_id": finalAns.MessageID,
 		"created_at": finalAns.CreatedAt,
-		"task_id":    finalAns.TaskID,
+		"task_id":    finalAns.SessionID,
 		"session_id": finalAns.SessionID,
 	}
 	common.SuccessWithData(c, result, "success")

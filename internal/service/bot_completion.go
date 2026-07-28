@@ -181,8 +181,8 @@ func WriteDoneFrame(w http.ResponseWriter) error {
 // WriteChatbotRunEvent translates one canvas.RunEvent into the flat
 // Python agent-canvas SSE envelope:
 //
-//	data: {"event":"message","message_id":"...","task_id":"...",
-//	  "session_id":"...","created_at":123,"data":{"content":"..."}}\n\n
+//	data: {"event":"message","message_id":"...","task_id":"session-id",
+//	  "session_id":"session-id","created_at":123,"data":{"content":"..."}}\n\n
 //
 // This is intentionally different from WriteChatbotFrame's legacy
 // chatbot `{code,data:{answer:"..."}}` shape. The agent React page's
@@ -228,6 +228,13 @@ func WriteChatbotRunEvent(w http.ResponseWriter, ev canvas.RunEvent) error {
 			"message": msg,
 			"data":    false,
 		}
+		// Keep the error envelope wire-compatible while still correlating the
+		// failed run. task_id is only the legacy alias; both values are the
+		// same session identity used by the Go runtime and cancel endpoint.
+		if ev.SessionID != "" {
+			payload["task_id"] = ev.SessionID
+			payload["session_id"] = ev.SessionID
+		}
 		return writeSSEJSON(w, payload)
 	}
 
@@ -241,10 +248,11 @@ func WriteChatbotRunEvent(w http.ResponseWriter, ev canvas.RunEvent) error {
 	if ev.MessageID != "" {
 		payload["message_id"] = ev.MessageID
 	}
-	if ev.TaskID != "" {
-		payload["task_id"] = ev.TaskID
-	}
 	if ev.SessionID != "" {
+		// task_id is retained only as a wire-compatible alias for existing Go
+		// Agent clients. It carries session_id and has no independent runtime,
+		// Redis, or cancellation identity.
+		payload["task_id"] = ev.SessionID
 		payload["session_id"] = ev.SessionID
 	}
 	return writeSSEJSON(w, payload)
