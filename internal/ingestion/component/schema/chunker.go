@@ -188,7 +188,7 @@ type TokenChunkerParam struct {
 	// OverlappedPercent is the overlap percentage in [0, 90]. Mirrors
 	// Python common/float_utils.py:50-58 — an integer-like float in the
 	// same range so DSL templates written for the Python pipeline work
-	// out of the box (diff Chunker-2.6). A [0,1) fraction input is also
+	// out of the box  A [0,1) fraction input is also
 	// accepted and normalized to this scale by tokenChunkerParam.Update
 	// (via normalizeOverlappedPercent).
 	OverlappedPercent float64 `json:"overlapped_percent"`
