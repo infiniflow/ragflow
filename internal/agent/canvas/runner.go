@@ -66,19 +66,20 @@ import (
 // The handler converts each RunEvent into one SSE frame in the
 // Python-shaped envelope:
 //
-//	data:{"event":"<Type>","message_id":"<MessageID>","created_at":<CreatedAt>,"task_id":"<TaskID>","session_id":"<SessionID>","data":<Data>}
+//	data:{"event":"<Type>","message_id":"<MessageID>","created_at":<CreatedAt>,"session_id":"<SessionID>","data":<Data>}
 //
 // Type is the event tag; Data is the JSON payload string (already
 // serialised — handler does not re-marshal). The handler wraps Data
 // into the "data" field of the outer envelope so the front-end's
 // use-send-message.ts parser sees a flat {event, message_id,
-// created_at, task_id, session_id, data} object on every frame.
+// created_at, session_id, data} object on every frame.
+// WriteChatbotRunEvent may additionally expose task_id=session_id as a wire
+// alias for existing clients; RunEvent itself has only one run identity.
 type RunEvent struct {
 	Type      string
 	Data      string
 	MessageID string
 	CreatedAt int64
-	TaskID    string
 	SessionID string
 }
 
@@ -153,18 +154,14 @@ type RunFunc func(ctx context.Context, root map[string]any) (*CanvasState, error
 
 // Runner is the ordinary-Agent execution runtime. It owns the
 // interrupt-id map (V1 in-memory persistence keyed by
-// (canvasID, sessionID)) and the task-scoped context cancellation registry.
+// (canvasID, sessionID)). The service owns the run context and cancellation.
 //
 // Concurrency: Runner methods are safe for concurrent use. The
-// output channel is owned by the goroutine that started a run; Cancel(taskID)
-// cancels the same context passed to the RunFunc.
+// output channel is owned by the goroutine that started a run.
 type Runner struct {
 	mu           sync.Mutex
 	interruptIDs map[string]string // key = canvasID + "|" + sessionID; value = eino interrupt id
-	runCancels   map[string]*runCancel
 }
-
-type runCancel struct{ cancel context.CancelFunc }
 
 // NewRunner returns a fresh Runner with the in-memory interrupt-id
 // map initialised. The Runner has no background goroutines; it is
@@ -172,7 +169,6 @@ type runCancel struct{ cancel context.CancelFunc }
 func NewRunner() *Runner {
 	return &Runner{
 		interruptIDs: make(map[string]string),
-		runCancels:   make(map[string]*runCancel),
 	}
 }
 
@@ -214,8 +210,8 @@ func (r *Runner) getInterruptID(canvasID, sessionID string) string {
 // four-outcome flow. The channel is always closed on return so the
 // handler's for-range loop terminates.
 //
-// Metadata injection: the output channel, message_id, task_id, and
-// session_id are injected into root so the RunFunc (buildRunFunc in
+// Metadata injection: the output channel, message_id, and session_id are
+// injected into root so the RunFunc (buildRunFunc in
 // service/agent.go) can emit intermediate events (workflow_started,
 // node_started, node_finished, workflow_finished) during execution
 // rather than only after the invoke completes. The key names follow
@@ -231,32 +227,10 @@ func (r *Runner) Run(
 	out := make(chan RunEvent, 8)
 
 	if run == nil {
-		pushErr(out, "canvas: nil RunFunc")
+		pushErr(out, "canvas: nil RunFunc", sessionID)
 		close(out)
 		return out
 	}
-
-	// Ordinary Agent Canvas uses session_id as task_id. The service pre-seeds
-	// it after acquiring its session lock; direct callers follow the same
-	// convention whenever a session id is available.
-	taskID, _ := root["__task_id__"].(string)
-	if taskID == "" {
-		taskID = sessionID
-	}
-	if taskID == "" {
-		taskID = utility.GenerateToken()
-		root["__task_id__"] = taskID
-	}
-	runCtx, cancel := context.WithCancel(ctx)
-	registration := &runCancel{cancel: cancel}
-	// A freshly generated task id should not inherit a stale marker when a
-	// test or an upstream caller deliberately reuses one.
-	if reset, _ := root["__cancel_key_reset__"].(bool); !reset {
-		clearCancelBestEffort(taskID)
-	}
-	r.mu.Lock()
-	r.runCancels[taskID] = registration
-	r.mu.Unlock()
 
 	// Generate the message identifier the RunFunc and SSE envelope need.
 	messageID := utility.GenerateToken()
@@ -266,19 +240,9 @@ func (r *Runner) Run(
 	// node_finished, etc.).
 	root["__events__"] = out
 	root["__message_id__"] = messageID
-	root["__task_id__"] = taskID
 	root["__session_id__"] = sessionID
 
 	go func() {
-		defer func() {
-			r.mu.Lock()
-			if r.runCancels[taskID] == registration {
-				delete(r.runCancels, taskID)
-			}
-			r.mu.Unlock()
-			cancel()
-			clearCancelBestEffort(taskID)
-		}()
 		defer close(out)
 		// Panic sentinel (temporary diagnostic — see plan):
 		// a panic anywhere in the run goroutine used to silently
@@ -309,21 +273,9 @@ func (r *Runner) Run(
 			}
 		}
 
-		// Redis cancellation is a second-instance signal. A local cancel
-		// always uses the same child context, so Eino/HTTP calls receive the
-		// cancellation rather than merely letting the outer runner return.
-		go WatchCancel(runCtx, taskID, func() {
-			if onCancel, ok := root["__on_cancel__"].(func()); ok {
-				onCancel()
-			}
-			cancel()
-		})
-		_, runErr := safeInvoke(runCtx, run, root)
+		_, runErr := safeInvoke(ctx, run, root)
 		if runErr != nil {
 			if errors.Is(runErr, context.Canceled) {
-				if onCancel, ok := root["__on_cancel__"].(func()); ok {
-					onCancel()
-				}
 				return
 			}
 			if ctxs := ExtractInterruptContexts(runErr); len(ctxs) > 0 {
@@ -336,7 +288,6 @@ func (r *Runner) Run(
 				common.Info("canvas runner interrupt",
 					zap.String("canvas", canvasID),
 					zap.String("session", sessionID),
-					zap.String("task", taskID),
 					zap.String("contexts", formatInterruptContexts(ctxs)),
 					zap.String("display", displayID),
 					zap.String("resume", resumeID))
@@ -352,7 +303,7 @@ func (r *Runner) Run(
 						}
 					}
 				}
-				push(out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(waiting), MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
+				push(out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(waiting), MessageID: messageID, CreatedAt: nowUnix(), SessionID: sessionID})
 				return
 			}
 			if IsInterruptError(runErr) {
@@ -361,33 +312,15 @@ func (r *Runner) Run(
 				// without a cpn id — the front-end falls back to
 				// the first paused session it knows about.
 				r.saveInterruptID(canvasID, sessionID, runErr.Error())
-				push(out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(WaitingForUserEvent{CpnID: runErr.Error()}), MessageID: messageID, CreatedAt: nowUnix(), TaskID: taskID, SessionID: sessionID})
+				push(out, RunEvent{Type: "waiting_for_user", Data: safeEventJSON(WaitingForUserEvent{CpnID: runErr.Error()}), MessageID: messageID, CreatedAt: nowUnix(), SessionID: sessionID})
 				return
 			}
-			pushErr(out, runErr.Error())
+			pushErr(out, runErr.Error(), sessionID)
 			return
 		}
 	}()
 
 	return out
-}
-
-func clearCancelBestEffort(taskID string) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	_ = ClearCancel(ctx, taskID)
-}
-
-// Cancel signals the in-flight run for the given task id to stop.
-// Safe to call when no run is active.
-func (r *Runner) Cancel(taskID string) {
-	r.mu.Lock()
-	registration, ok := r.runCancels[taskID]
-	r.mu.Unlock()
-	if !ok {
-		return
-	}
-	registration.cancel()
 }
 
 // Peek reports whether a paused interrupt id is held for the given
@@ -458,7 +391,7 @@ func push(out chan<- RunEvent, ev RunEvent) {
 }
 
 // pushErr serialises an ErrorEvent and pushes it on the channel.
-func pushErr(out chan<- RunEvent, msg string) {
+func pushErr(out chan<- RunEvent, msg, sessionID string) {
 	payload, err := json.Marshal(ErrorEvent{Message: msg})
 	if err != nil {
 		common.Warn("runner: pushErr json.Marshal failed, falling back",
@@ -467,7 +400,7 @@ func pushErr(out chan<- RunEvent, msg string) {
 		// Fall back to a hard-coded minimal JSON.
 		payload = []byte(`{"message":"event serialization failed"}`)
 	}
-	push(out, RunEvent{Type: "error", Data: string(payload)})
+	push(out, RunEvent{Type: "error", Data: string(payload), SessionID: sessionID, CreatedAt: nowUnix()})
 }
 
 // safeEventJSON marshals v to a JSON string, falling back to

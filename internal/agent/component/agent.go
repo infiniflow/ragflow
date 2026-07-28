@@ -161,7 +161,7 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	if err != nil {
 		return nil, fmt.Errorf("build model: %w", err)
 	}
-	tools, err := buildAgentTools(p)
+	tools, err := buildAgentTools(ctx, p)
 	if err != nil {
 		return nil, fmt.Errorf("build tools: %w", err)
 	}
@@ -420,13 +420,16 @@ func chunksFromState(ctx context.Context) []prompts.CitationSource {
 // are skipped silently.
 func (c *AgentComponent) GetInputForm() map[string]any {
 	out := extractAgentPromptInputForm(c.param.SystemPrompt, c.param.UserPrompt)
-	tools, err := buildAgentTools(c.param)
+	// GetInputForm is metadata introspection outside a Canvas run and its
+	// interface has no context. Runtime tool construction uses the run ctx in
+	// runEinoReActAgent above.
+	metadataCtx := context.Background()
+	tools, err := buildAgentTools(metadataCtx, c.param)
 	if err != nil {
 		return out
 	}
-	ctx := context.Background()
 	for _, t := range tools {
-		info, ierr := t.Info(ctx)
+		info, ierr := t.Info(metadataCtx)
 		name := ""
 		if ierr == nil && info != nil {
 			name = info.Name
@@ -480,7 +483,9 @@ func sortedAgentPromptInputKeys(systemPrompt, userPrompt string) []string {
 // interface. Mirrors Python's per-tool reset() — useful for clearing
 // per-invocation state (caches, scratch buffers) between calls.
 func (c *AgentComponent) Reset() {
-	tools, err := buildAgentTools(c.param)
+	// Reset is a context-free lifecycle hook and does not execute a tool.
+	// Runtime tool construction receives the Canvas run context.
+	tools, err := buildAgentTools(context.Background(), c.param)
 	if err != nil {
 		return
 	}
@@ -546,14 +551,14 @@ func optimizeMultiTurnQuestion(ctx context.Context, db *gorm.DB, p AgentParam, h
 	return strings.TrimSpace(resp.Content), nil
 }
 
-func buildAgentTools(p AgentParam) ([]einotool.BaseTool, error) {
+func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, error) {
 	tools, err := agenttool.BuildAll(p.Tools, p.ToolParams)
 	if err != nil {
 		return nil, err
 	}
 	toolNames := make(map[string]struct{}, len(tools)+len(p.SubAgents))
 	for _, tool := range tools {
-		info, err := tool.Info(context.Background())
+		info, err := tool.Info(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("agent tool info: %w", err)
 		}

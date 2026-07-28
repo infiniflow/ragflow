@@ -10,34 +10,50 @@ import (
 	"testing"
 )
 
-func TestCancelTaskLocalPermissionAndIdempotency(t *testing.T) {
+func TestCancelSessionRunLocalPermissionAndIdempotency(t *testing.T) {
 	svc := NewAgentServiceWithOptions(nil, nil, nil)
-	active := &activeAgentRun{taskID: "task-1", userID: "user-a"}
+	active := &activeAgentRun{sessionID: "session-1", userID: "user-a"}
 	var calls atomic.Int32
-	active.cancel = func() {
-		active.cancelRequested.Store(true)
+	active.cancelRun = func() {
 		calls.Add(1)
 	}
-	svc.activeRuns[active.taskID] = active
+	svc.activeSessions[active.sessionID] = active
 
-	if err := svc.CancelTask(t.Context(), "user-b", "task-1"); !errors.Is(err, ErrAgentNotOwner) {
+	if err := svc.CancelSessionRun(t.Context(), "user-b", "session-1"); !errors.Is(err, ErrAgentNotOwner) {
 		t.Fatalf("other user cancel error = %v, want ErrAgentNotOwner", err)
 	}
 	if calls.Load() != 0 {
 		t.Fatal("unauthorized cancel invoked the active cancel func")
 	}
-	if err := svc.CancelTask(t.Context(), "user-a", "task-1"); err != nil {
-		t.Fatalf("owner CancelTask: %v", err)
+	if err := svc.CancelSessionRun(t.Context(), "user-a", "session-1"); err != nil {
+		t.Fatalf("owner CancelSessionRun: %v", err)
 	}
 	if calls.Load() != 1 || !active.cancelRequested.Load() {
 		t.Fatalf("local cancel calls=%d requested=%v", calls.Load(), active.cancelRequested.Load())
 	}
 
-	delete(svc.activeRuns, "task-1")
-	if err := svc.CancelTask(t.Context(), "user-a", "task-1"); err != nil {
-		t.Fatalf("finished task cancel must be idempotent: %v", err)
+	delete(svc.activeSessions, "session-1")
+	if err := svc.CancelSessionRun(t.Context(), "user-a", "session-1"); err != nil {
+		t.Fatalf("finished session cancel must be idempotent: %v", err)
 	}
-	if err := svc.CancelTask(t.Context(), "user-a", "unknown"); err != nil {
-		t.Fatalf("unknown task cancel must be idempotent: %v", err)
+	if err := svc.CancelSessionRun(t.Context(), "user-a", "unknown"); err != nil {
+		t.Fatalf("unknown session cancel must be idempotent: %v", err)
+	}
+}
+
+func TestCancelSessionRunDoesNotAffectAnotherSession(t *testing.T) {
+	svc := NewAgentServiceWithOptions(nil, nil, nil)
+	var callsA, callsB atomic.Int32
+	svc.activeSessions["session-a"] = &activeAgentRun{
+		userID: "user-a", sessionID: "session-a", cancelRun: func() { callsA.Add(1) },
+	}
+	svc.activeSessions["session-b"] = &activeAgentRun{
+		userID: "user-a", sessionID: "session-b", cancelRun: func() { callsB.Add(1) },
+	}
+	if err := svc.CancelSessionRun(t.Context(), "user-a", "session-a"); err != nil {
+		t.Fatalf("CancelSessionRun: %v", err)
+	}
+	if callsA.Load() != 1 || callsB.Load() != 0 {
+		t.Fatalf("cancel calls A=%d B=%d; want 1, 0", callsA.Load(), callsB.Load())
 	}
 }

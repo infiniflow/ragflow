@@ -189,64 +189,115 @@ func TestRunTracker_NilClient(t *testing.T) {
 	}
 }
 
-func TestRunTracker_TaskMetadata(t *testing.T) {
+func TestRunTrackerActiveSessionRegistration(t *testing.T) {
 	tracker, mr := newTestTracker(t, time.Hour)
 	ctx := context.Background()
-	if err := tracker.StartTask(ctx, "task-1", "user-1", "canvas-1", "session-1", "run-1"); err != nil {
-		t.Fatalf("StartTask: %v", err)
+	if err := tracker.client.Set(ctx, cancelKey("session-1"), "x", time.Hour).Err(); err != nil {
+		t.Fatalf("seed cancel marker: %v", err)
 	}
-	meta, err := tracker.GetTask(ctx, "task-1")
-	if err != nil {
-		t.Fatalf("GetTask: %v", err)
+	active := ActiveSession{
+		SessionID: "session-1", Token: "owner-a", UserID: "user-1",
+		CanvasID: "canvas-1", RunID: "run-1",
 	}
-	if meta["user_id"] != "user-1" || meta["run_id"] != "run-1" || meta["status"] != "running" {
-		t.Fatalf("unexpected task metadata: %#v", meta)
+	registered, err := tracker.RegisterActiveSession(ctx, active)
+	if err != nil || !registered {
+		t.Fatalf("RegisterActiveSession = %v, %v; want true, nil", registered, err)
 	}
-	if ttl := mr.TTL(taskKey("task-1")); ttl <= 0 {
-		t.Fatalf("task metadata TTL = %v, want finite positive TTL", ttl)
+	if !mr.Exists(cancelKey("session-1")) {
+		t.Fatal("registration erased a cancellation marker that raced startup")
 	}
-	if err := tracker.MarkTask(ctx, "task-1", "cancelled", true); err != nil {
-		t.Fatalf("MarkTask: %v", err)
+	got, err := tracker.GetActiveSession(ctx, "session-1")
+	if err != nil || got == nil {
+		t.Fatalf("GetActiveSession = %#v, %v", got, err)
 	}
-	meta, _ = tracker.GetTask(ctx, "task-1")
-	if meta["status"] != "cancelled" || meta["cancel_requested"] != "1" {
-		t.Fatalf("unexpected terminal task metadata: %#v", meta)
+	if got.UserID != "user-1" || got.CanvasID != "canvas-1" || got.RunID != "run-1" || got.Token != "owner-a" {
+		t.Fatalf("unexpected active session: %#v", got)
 	}
-	if err := tracker.DeleteTask(ctx, "task-1"); err != nil {
-		t.Fatalf("DeleteTask: %v", err)
+	if ttl := mr.TTL(activeSessionKey("session-1")); ttl <= 0 {
+		t.Fatalf("active session TTL = %v, want finite positive TTL", ttl)
 	}
-	meta, _ = tracker.GetTask(ctx, "task-1")
-	if len(meta) != 0 {
-		t.Fatalf("task metadata not cleaned up: %#v", meta)
+	registered, err = tracker.RegisterActiveSession(ctx, ActiveSession{SessionID: "session-1", Token: "owner-b"})
+	if err != nil || registered {
+		t.Fatalf("second RegisterActiveSession = %v, %v; want false, nil", registered, err)
+	}
+	registered, err = tracker.RegisterActiveSession(ctx, ActiveSession{SessionID: "session-2", Token: "owner-b"})
+	if err != nil || !registered {
+		t.Fatalf("different-session RegisterActiveSession = %v, %v; want true, nil", registered, err)
 	}
 }
 
-func TestRunTrackerSessionLock(t *testing.T) {
-	tracker, mr := newTestTracker(t, time.Hour)
+func TestRunTrackerActiveSessionTokenProtectsRefreshAndRelease(t *testing.T) {
+	tracker, _ := newTestTracker(t, time.Hour)
 	ctx := context.Background()
-	locked, err := tracker.TryLockSession(ctx, "session-1", "owner-a")
-	if err != nil || !locked {
-		t.Fatalf("first TryLockSession = %v, %v; want true, nil", locked, err)
+	registered, err := tracker.RegisterActiveSession(ctx, ActiveSession{SessionID: "session-1", Token: "owner-a"})
+	if err != nil || !registered {
+		t.Fatalf("RegisterActiveSession = %v, %v", registered, err)
 	}
-	if ttl := mr.TTL(sessionLockKey("session-1")); ttl <= 0 {
-		t.Fatalf("session lock TTL = %v, want finite positive TTL", ttl)
+	owned, err := tracker.RefreshActiveSession(ctx, "session-1", "owner-b")
+	if err != nil || owned {
+		t.Fatalf("foreign RefreshActiveSession = %v, %v; want false, nil", owned, err)
 	}
-	locked, err = tracker.TryLockSession(ctx, "session-1", "owner-b")
-	if err != nil || locked {
-		t.Fatalf("second TryLockSession = %v, %v; want false, nil", locked, err)
+	released, err := tracker.ReleaseActiveSession(ctx, "session-1", "owner-b")
+	if err != nil || released {
+		t.Fatalf("foreign ReleaseActiveSession = %v, %v; want false, nil", released, err)
 	}
-	if err := tracker.UnlockSession(ctx, "session-1", "owner-b"); err != nil {
-		t.Fatalf("foreign UnlockSession: %v", err)
+	if got, _ := tracker.GetActiveSession(ctx, "session-1"); got == nil {
+		t.Fatal("foreign release removed active session")
 	}
-	locked, err = tracker.TryLockSession(ctx, "session-1", "owner-b")
-	if err != nil || locked {
-		t.Fatalf("foreign unlock released lock: %v, %v", locked, err)
+	if err := tracker.client.Set(ctx, cancelKey("session-1"), "x", time.Hour).Err(); err != nil {
+		t.Fatalf("seed cancel marker: %v", err)
 	}
-	if err := tracker.UnlockSession(ctx, "session-1", "owner-a"); err != nil {
-		t.Fatalf("owner UnlockSession: %v", err)
+	released, err = tracker.ReleaseActiveSession(ctx, "session-1", "owner-a")
+	if err != nil || !released {
+		t.Fatalf("owner ReleaseActiveSession = %v, %v; want true, nil", released, err)
 	}
-	locked, err = tracker.TryLockSession(ctx, "session-1", "owner-b")
-	if err != nil || !locked {
-		t.Fatalf("TryLockSession after release = %v, %v; want true, nil", locked, err)
+	if got, _ := tracker.GetActiveSession(ctx, "session-1"); got != nil {
+		t.Fatalf("active session remains after release: %#v", got)
+	}
+	if tracker.client.Exists(ctx, cancelKey("session-1")).Val() != 0 {
+		t.Fatal("release did not clear session cancel marker")
+	}
+}
+
+func TestRunTrackerActiveSessionTokenProtectsCancel(t *testing.T) {
+	tracker, _ := newTestTracker(t, time.Hour)
+	ctx := context.Background()
+	registered, err := tracker.RegisterActiveSession(ctx, ActiveSession{SessionID: "session-1", Token: "owner-a"})
+	if err != nil || !registered {
+		t.Fatalf("RegisterActiveSession = %v, %v", registered, err)
+	}
+	requested, err := tracker.RequestCancelActiveSession(ctx, "session-1", "owner-b")
+	if err != nil || requested {
+		t.Fatalf("foreign RequestCancelActiveSession = %v, %v; want false, nil", requested, err)
+	}
+	if tracker.client.Exists(ctx, cancelKey("session-1")).Val() != 0 {
+		t.Fatal("foreign cancel created a marker")
+	}
+	requested, err = tracker.RequestCancelActiveSession(ctx, "session-1", "owner-a")
+	if err != nil || !requested {
+		t.Fatalf("owner RequestCancelActiveSession = %v, %v; want true, nil", requested, err)
+	}
+	if tracker.client.Exists(ctx, cancelKey("session-1")).Val() != 1 {
+		t.Fatal("owner cancel did not create a marker")
+	}
+}
+
+func TestRunTrackerWatchActiveSessionCancelsWhenLeaseOwnershipIsLost(t *testing.T) {
+	tracker, _ := newTestTracker(t, 90*time.Millisecond)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	registered, err := tracker.RegisterActiveSession(ctx, ActiveSession{SessionID: "session-1", Token: "owner-a"})
+	if err != nil || !registered {
+		t.Fatalf("RegisterActiveSession = %v, %v", registered, err)
+	}
+	lost := make(chan struct{})
+	go tracker.WatchActiveSession(ctx, "session-1", "owner-a", func() { close(lost) })
+	if err := tracker.client.HSet(ctx, activeSessionKey("session-1"), "token", "owner-b").Err(); err != nil {
+		t.Fatalf("replace lease owner: %v", err)
+	}
+	select {
+	case <-lost:
+	case <-time.After(time.Second):
+		t.Fatal("lease watcher did not cancel after ownership changed")
 	}
 }

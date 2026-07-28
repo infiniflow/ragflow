@@ -37,6 +37,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
+	"ragflow/internal/utility"
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
@@ -394,6 +395,11 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	version := c.Query("version")
 	sessionID := c.Query("session_id")
+	if sessionID == "" {
+		// Allocate the ordinary-Agent session identity at the HTTP boundary.
+		// Persistence of the session record remains owned by AgentService.RunAgent.
+		sessionID = utility.GenerateToken()
+	}
 	userInput := readUserInput(c)
 
 	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, canvasID, sessionID, version, userInput, nil)
@@ -473,25 +479,14 @@ func sanitiseRunEventError(data string) string {
 	return data
 }
 
-// CancelAgent rejects the obsolete canvas-scoped cancellation API.
-// @Summary Obsolete Agent Cancel API
+// CancelSessionRun cancels one ordinary Agent run by session id.
+// @Summary Cancel Agent Session Run
 // @Tags agents
 // @Produce json
-// @Param canvas_id path string true "canvas id"
+// @Param session_id path string true "session id"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/agents/{canvas_id}/run [delete]
-func (h *AgentHandler) CancelAgent(c *gin.Context) {
-	common.ResponseWithCodeData(c, common.CodeParamError, nil, "use POST /api/v1/tasks/{task_id}/cancel")
-}
-
-// CancelTask cancels one ordinary Agent run by its per-run task id.
-// @Summary Cancel Agent Task
-// @Tags agents
-// @Produce json
-// @Param task_id path string true "task id"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/tasks/{task_id}/cancel [post]
-func (h *AgentHandler) CancelTask(c *gin.Context) {
+// @Router /api/v1/tasks/{session_id}/cancel [post]
+func (h *AgentHandler) CancelSessionRun(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
 		common.ResponseWithCodeData(c, code, nil, msg)
@@ -501,7 +496,7 @@ func (h *AgentHandler) CancelTask(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, "agent service unavailable")
 		return
 	}
-	if err := h.agentService.CancelTask(c.Request.Context(), user.ID, c.Param("task_id")); err != nil {
+	if err := h.agentService.CancelSessionRun(c.Request.Context(), user.ID, c.Param("session_id")); err != nil {
 		ec, em := mapAgentError(err)
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return
@@ -1025,6 +1020,12 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 			zap.String("session_id", req.SessionID),
 		}, userInputMeta(userInput)...)...,
 	)
+	if req.SessionID == "" {
+		// Keep the effective session available to the non-stream response and
+		// to the task_id=session_id wire alias even when the canvas emits no
+		// events (for example an empty query).
+		req.SessionID = utility.GenerateToken()
+	}
 
 	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput, req.Files)
 	if err != nil {
@@ -1062,7 +1063,6 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 				zap.String("session_id", req.SessionID),
 				zap.String("event_type", ev.Type),
 				zap.String("message_id", ev.MessageID),
-				zap.String("task_id", ev.TaskID),
 			)
 			if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
 				common.Debug("agent chat completions: client disconnected",
@@ -1201,7 +1201,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		"data":       ansData,
 		"message_id": finalAns.MessageID,
 		"created_at": finalAns.CreatedAt,
-		"task_id":    finalAns.TaskID,
+		"task_id":    finalAns.SessionID,
 		"session_id": finalAns.SessionID,
 	}
 	common.SuccessWithData(c, result, "success")

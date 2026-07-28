@@ -26,10 +26,12 @@ package canvas
 import (
 	"context"
 	"errors"
-	redis2 "ragflow/internal/engine/redis"
+	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	redis2 "ragflow/internal/engine/redis"
 )
 
 // runKeyPrefix is the Redis Hash key namespace for run metadata.
@@ -51,13 +53,21 @@ const runFieldInterruptID = "interrupt_id"
 
 func runKey(runID string) string { return runKeyPrefix + runID }
 
-const taskKeyPrefix = "agent:task:"
+const activeSessionKeyPrefix = "agent:active-session:"
 
-func taskKey(taskID string) string { return taskKeyPrefix + taskID }
+const activeSessionLeaseTTL = 30 * time.Second
 
-const sessionLockKeyPrefix = "agent:session-lock:"
+func activeSessionKey(sessionID string) string { return activeSessionKeyPrefix + sessionID }
 
-func sessionLockKey(sessionID string) string { return sessionLockKeyPrefix + sessionID }
+// ActiveSession is the distributed ordinary-Agent run registration. Token is
+// an internal lease owner token; it is never exposed as a business run id.
+type ActiveSession struct {
+	SessionID string
+	Token     string
+	UserID    string
+	CanvasID  string
+	RunID     string
+}
 
 // RunTracker manages canvas-run metadata (canvas_id, status, checkpoint
 // link, resume chain, ...) on a Redis Hash. Operations are explicit — the
@@ -211,75 +221,136 @@ func (t *RunTracker) MarkCancelled(ctx context.Context, runID string) error {
 	return err
 }
 
-// StartTask records the session-scoped task owner and runtime identity used
-// by /tasks/{task_id}/cancel. It intentionally lives separately from the
-// stable session checkpoint run hash.
-func (t *RunTracker) StartTask(ctx context.Context, taskID, userID, canvasID, sessionID, runID string) error {
-	if t == nil || t.client == nil {
-		return errors.New("run tracker: redis client not initialized")
-	}
-	key := taskKey(taskID)
-	pipe := t.client.Pipeline()
-	pipe.HSet(ctx, key, map[string]any{
-		"task_id": taskID, "user_id": userID, "canvas_id": canvasID,
-		"session_id": sessionID, "run_id": runID, "status": "running",
-		"started_at": time.Now().UnixMilli(), "cancel_requested": 0,
-	})
-	pipe.Expire(ctx, key, t.ttl)
-	_, err := pipe.Exec(ctx)
-	return err
-}
-
-// GetTask returns task metadata; an empty map means the task is unknown.
-func (t *RunTracker) GetTask(ctx context.Context, taskID string) (map[string]string, error) {
-	if t == nil || t.client == nil {
-		return nil, errors.New("run tracker: redis client not initialized")
-	}
-	return t.client.HGetAll(ctx, taskKey(taskID)).Result()
-}
-
-func (t *RunTracker) MarkTask(ctx context.Context, taskID, status string, cancelRequested bool) error {
-	if t == nil || t.client == nil {
-		return errors.New("run tracker: redis client not initialized")
-	}
-	return t.client.HSet(ctx, taskKey(taskID), map[string]any{
-		"status": status, "cancel_requested": boolInt(cancelRequested),
-		"finished_at": time.Now().UnixMilli(),
-	}).Err()
-}
-
-func (t *RunTracker) DeleteTask(ctx context.Context, taskID string) error {
-	if t == nil || t.client == nil {
-		return errors.New("run tracker: redis client not initialized")
-	}
-	return t.client.Del(ctx, taskKey(taskID)).Err()
-}
-
-// TryLockSession acquires the distributed ordinary-Agent run lock for one
-// session. The caller supplies a unique token so an older run can never
-// release a newer lock after a TTL expiry. Its TTL is the tracker TTL (24h
-// in production), preventing a crashed server from leaving a permanent lock.
-func (t *RunTracker) TryLockSession(ctx context.Context, sessionID, token string) (bool, error) {
+// RegisterActiveSession atomically acquires the distributed active-run lease
+// for sessionID. It deliberately does not delete the session cancel marker:
+// a marker written just before registration is a valid cancellation request
+// and must survive until the owner observes it or releases the lease. A false
+// result means another instance already owns the session.
+func (t *RunTracker) RegisterActiveSession(ctx context.Context, active ActiveSession) (bool, error) {
 	if t == nil || t.client == nil {
 		return false, errors.New("run tracker: redis client not initialized")
 	}
-	return t.client.SetNX(ctx, sessionLockKey(sessionID), token, t.ttl).Result()
+	const script = `
+if redis.call("EXISTS", KEYS[1]) == 1 then return 0 end
+redis.call("HSET", KEYS[1],
+  "session_id", ARGV[1], "token", ARGV[2], "user_id", ARGV[3],
+  "canvas_id", ARGV[4], "run_id", ARGV[5], "started_at", ARGV[6])
+redis.call("PEXPIRE", KEYS[1], ARGV[7])
+return 1`
+	result, err := t.client.Eval(ctx, script,
+		[]string{activeSessionKey(active.SessionID)},
+		active.SessionID, active.Token, active.UserID, active.CanvasID, active.RunID,
+		strconv.FormatInt(time.Now().UnixMilli(), 10), strconv.FormatInt(t.leaseTTL().Milliseconds(), 10),
+	).Int64()
+	return result == 1, err
 }
 
-// UnlockSession releases a session lock only when it is still owned by token.
-func (t *RunTracker) UnlockSession(ctx context.Context, sessionID, token string) error {
+// GetActiveSession returns the distributed active run for sessionID. A nil
+// result means the session is not running.
+func (t *RunTracker) GetActiveSession(ctx context.Context, sessionID string) (*ActiveSession, error) {
 	if t == nil || t.client == nil {
-		return errors.New("run tracker: redis client not initialized")
+		return nil, errors.New("run tracker: redis client not initialized")
 	}
-	const unlockScript = `if redis.call("GET", KEYS[1]) == ARGV[1] then return redis.call("DEL", KEYS[1]) end return 0`
-	return t.client.Eval(ctx, unlockScript, []string{sessionLockKey(sessionID)}, token).Err()
+	fields, err := t.client.HGetAll(ctx, activeSessionKey(sessionID)).Result()
+	if err != nil || len(fields) == 0 {
+		return nil, err
+	}
+	return &ActiveSession{
+		SessionID: fields["session_id"],
+		Token:     fields["token"],
+		UserID:    fields["user_id"],
+		CanvasID:  fields["canvas_id"],
+		RunID:     fields["run_id"],
+	}, nil
 }
 
-func boolInt(v bool) int {
-	if v {
-		return 1
+// RefreshActiveSession extends the lease only while token still owns it.
+func (t *RunTracker) RefreshActiveSession(ctx context.Context, sessionID, token string) (bool, error) {
+	if t == nil || t.client == nil {
+		return false, errors.New("run tracker: redis client not initialized")
 	}
-	return 0
+	const script = `if redis.call("HGET", KEYS[1], "token") == ARGV[1] then return redis.call("PEXPIRE", KEYS[1], ARGV[2]) end return 0`
+	result, err := t.client.Eval(ctx, script, []string{activeSessionKey(sessionID)}, token,
+		strconv.FormatInt(t.leaseTTL().Milliseconds(), 10)).Int64()
+	return result == 1, err
+}
+
+// ReleaseActiveSession deletes the registration and cancel marker only when
+// token still owns the session, preventing stale cleanup from touching a newer
+// run.
+func (t *RunTracker) ReleaseActiveSession(ctx context.Context, sessionID, token string) (bool, error) {
+	if t == nil || t.client == nil {
+		return false, errors.New("run tracker: redis client not initialized")
+	}
+	const script = `
+if redis.call("HGET", KEYS[1], "token") ~= ARGV[1] then return 0 end
+redis.call("DEL", KEYS[2])
+redis.call("DEL", KEYS[1])
+return 1`
+	result, err := t.client.Eval(ctx, script,
+		[]string{activeSessionKey(sessionID), cancelKey(sessionID)}, token).Int64()
+	return result == 1, err
+}
+
+// RequestCancelActiveSession publishes a cancel marker only while token still
+// owns the active session lease. This prevents a stale owner from cancelling
+// a newer run after its lease has been replaced or released.
+func (t *RunTracker) RequestCancelActiveSession(ctx context.Context, sessionID, token string) (bool, error) {
+	if t == nil || t.client == nil {
+		return false, errors.New("run tracker: redis client not initialized")
+	}
+	const script = `
+if redis.call("HGET", KEYS[1], "token") ~= ARGV[1] then return 0 end
+redis.call("SET", KEYS[2], "x", "PX", ARGV[2])
+return 1`
+	result, err := t.client.Eval(ctx, script,
+		[]string{activeSessionKey(sessionID), cancelKey(sessionID)}, token,
+		strconv.FormatInt(RequestCancelTTL.Milliseconds(), 10)).Int64()
+	return result == 1, err
+}
+
+// WatchActiveSession keeps the distributed lease alive for the lifetime of
+// ctx. It invokes onLost if another owner replaces the lease or Redis cannot
+// confirm ownership before the current lease can expire.
+func (t *RunTracker) WatchActiveSession(ctx context.Context, sessionID, token string, onLost func()) {
+	if t == nil || t.client == nil {
+		return
+	}
+	leaseTTL := t.leaseTTL()
+	interval := leaseTTL / 3
+	if interval > 10*time.Second {
+		interval = 10 * time.Second
+	}
+	if interval < 10*time.Millisecond {
+		interval = 10 * time.Millisecond
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	lastConfirmed := time.Now()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			owned, err := t.RefreshActiveSession(ctx, sessionID, token)
+			switch {
+			case err == nil && owned:
+				lastConfirmed = time.Now()
+			case err == nil && !owned, time.Since(lastConfirmed) >= leaseTTL*2/3:
+				if onLost != nil {
+					onLost()
+				}
+				return
+			}
+		}
+	}
+}
+
+func (t *RunTracker) leaseTTL() time.Duration {
+	if t.ttl > 0 && t.ttl < activeSessionLeaseTTL {
+		return t.ttl
+	}
+	return activeSessionLeaseTTL
 }
 
 // MarkWaiting records a normal UserFillUp pause. It is not a failure.
