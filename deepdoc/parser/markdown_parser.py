@@ -59,7 +59,12 @@ class RAGFlowMarkdownParser:
                 else:
                     # Replace with rendered HTML
                     html_table = markdown(raw_table, extensions=["markdown.extensions.tables"]) if render else raw_table
-                    new_text += working_text[last_end : match.start()] + html_table + "\n\n"
+                    next_start = match.end()
+                    while next_start < len(working_text) and working_text[next_start] in "\r\n":
+                        next_start += 1
+                    new_text += working_text[last_end : match.start()] + html_table.rstrip() + "\n"
+                    last_end = next_start
+                    continue
                 last_end = match.end()
             new_text += working_text[last_end:]
             return new_text
@@ -75,7 +80,7 @@ class RAGFlowMarkdownParser:
             """,
                 re.VERBOSE,
             )
-            working_text = replace_tables_with_rendered_html(border_table_pattern, tables, render=separate_tables)
+            working_text = replace_tables_with_rendered_html(border_table_pattern, tables)
 
             # Borderless Markdown table
             no_border_table_pattern = re.compile(
@@ -87,7 +92,7 @@ class RAGFlowMarkdownParser:
                 """,
                 re.VERBOSE,
             )
-            working_text = replace_tables_with_rendered_html(no_border_table_pattern, tables, render=separate_tables)
+            working_text = replace_tables_with_rendered_html(no_border_table_pattern, tables)
 
         # Replace any TAGS e.g. <table ...> to <table>
         TAGS = ["table", "td", "tr", "th", "tbody", "thead", "div"]
@@ -141,7 +146,12 @@ class RAGFlowMarkdownParser:
                     if separate_tables:
                         new_text += working_text[last_end : match.start()] + "\n\n"
                     else:
-                        new_text += working_text[last_end : match.start()] + raw_table + "\n\n"
+                        next_start = match.end()
+                        while next_start < len(working_text) and working_text[next_start] in "\r\n":
+                            next_start += 1
+                        new_text += working_text[last_end : match.start()] + raw_table.rstrip() + "\n"
+                        last_end = next_start
+                        continue
                     last_end = match.end()
                 new_text += working_text[last_end:]
                 working_text = new_text
