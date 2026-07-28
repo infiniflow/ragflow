@@ -58,7 +58,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 		protected := admin.Group("")
 		protected.Use(r.handler.AuthMiddleware())
 		{
-			protected.GET("/logout", r.handler.Logout)
 			protected.POST("/logout", r.handler.Logout)
 			// Auth
 			protected.GET("/auth", r.handler.AuthCheck)
