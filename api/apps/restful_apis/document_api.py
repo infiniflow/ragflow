@@ -1221,7 +1221,7 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     # Verify document exists in the dataset
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        msg = f"Document {document_id} not found in dataset {dataset_id}"
+        msg = f"document {document_id} not found in dataset {dataset_id}"
         return get_error_data_result(message=msg)
     doc = doc[0]
 

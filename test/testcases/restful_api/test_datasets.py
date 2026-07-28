@@ -742,7 +742,7 @@ def test_dataset_update_avatar_invalid_and_none_contract(rest_client, clear_data
         payload = res.json()
         assert payload["code"] == ARGUMENT_ERROR_CODE, payload
         if IS_GO_PROXY and expected_message.startswith("Unsupported MIME type"):
-            expected_message = "Unsupported MIME type. Allowed: [image/jpeg image/png]"
+            expected_message = "unsupported MIME type. Allowed: [image/jpeg image/png]"
         assert expected_message in payload["message"], payload
 
     none_res = rest_client.put(f"/datasets/{dataset_id}", json={"avatar": None})
@@ -1601,7 +1601,7 @@ def test_dataset_create_avatar_contract(rest_client, clear_datasets, tmp_path):
         payload = res.json()
         assert payload["code"] == ARGUMENT_ERROR_CODE, payload
         if IS_GO_PROXY and expected_message.startswith("Unsupported MIME type"):
-            expected_message = "Unsupported MIME type. Allowed: [image/jpeg image/png]"
+            expected_message = "unsupported MIME type. Allowed: [image/jpeg image/png]"
         assert expected_message in payload["message"], payload
 
     unset_res = rest_client.post("/datasets", json={"name": "avatar_unset"})

@@ -1021,7 +1021,7 @@ def test_document_metadata_config_contract(rest_client, create_document):
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"Document {INVALID_ID_32} not found in dataset {dataset_id}", invalid_document_payload
+    assert invalid_document_payload["message"] == f"document {INVALID_ID_32} not found in dataset {dataset_id}", invalid_document_payload
 
     update_payload = {"metadata": {"author": "alice", "tags": ["one", "two"]}}
     update_res = rest_client.put(
