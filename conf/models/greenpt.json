@@ -1,6 +1,5 @@
 {
   "name": "GreenPT",
-  "rank": 50,
   "url": {
     "default": "https://api.greenpt.ai"
   },
