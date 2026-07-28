@@ -97,7 +97,7 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 	case err == nil:
 		return false
 	case errors.Is(err, service.ErrConnectorNoAuth):
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 	case errors.Is(err, service.ErrConnectorNotFound):
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Connector!")
 	case errors.Is(err, service.ErrConnectorTestUnsupported):

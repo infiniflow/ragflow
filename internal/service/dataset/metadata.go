@@ -17,15 +17,15 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userI
 	userID = strings.TrimSpace(userID)
 	datasetID = strings.TrimSpace(datasetID)
 	if !d.Accessible(ctx, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("You don't own the dataset.")
+		return nil, common.CodeDataError, errors.New("you don't own the dataset")
 	}
 
 	doc, err := d.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, documentID, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, fmt.Errorf("Document %s not found in dataset %s", documentID, datasetID)
+			return nil, common.CodeDataError, fmt.Errorf("document %s not found in dataset %s", documentID, datasetID)
 		}
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 
 	metadata, ok := req["metadata"]
@@ -40,12 +40,12 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userI
 	parserConfig["metadata"] = metadata
 
 	if err = d.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 
 	doc, err = d.documentDAO.GetByID(ctx, dao.DB, doc.ID)
 	if err != nil {
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 	return doc, common.CodeSuccess, nil
 }
@@ -55,18 +55,18 @@ func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID, tenan
 	datasetID = strings.TrimSpace(datasetID)
 	tenantID = strings.TrimSpace(tenantID)
 	if !d.Accessible(ctx, datasetID, tenantID) {
-		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
 	}
 
 	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("Dataset not found")
+			return nil, common.CodeDataError, errors.New("dataset not found")
 		}
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 	if kb == nil {
-		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
 	}
 
 	return map[string]interface{}{
@@ -81,18 +81,18 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	tenantID = strings.TrimSpace(tenantID)
 
 	if !d.Accessible(ctx, datasetID, tenantID) {
-		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
 	}
 
 	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("Dataset not found")
+			return nil, common.CodeDataError, errors.New("dataset not found")
 		}
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 	if kb == nil {
-		return nil, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
 	}
 
 	if req == nil {
@@ -116,7 +116,7 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 	parserConfig["built_in_metadata"] = builtInMetadata
 
 	if err = d.kbDAO.UpdateByID(ctx, dao.DB, kb.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
-		return nil, common.CodeServerError, errors.New("Update auto-metadata error.(Database error)")
+		return nil, common.CodeServerError, errors.New("update auto-metadata error.(Database error)")
 	}
 
 	return map[string]interface{}{

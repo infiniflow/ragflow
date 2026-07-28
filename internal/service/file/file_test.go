@@ -118,7 +118,7 @@ func TestFileService_GetFileContents_NotAccessible(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected authorization error")
 	}
-	if err.Error() != "No authorization." {
+	if err.Error() != "no authorization" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(texts) != 0 || len(images) != 0 {

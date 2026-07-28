@@ -107,7 +107,7 @@ func (d *DatasetService) ListTags(ctx context.Context, datasetID, userID string)
 	}
 	datasetID = normalizedID
 	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("No authorization.")
+		return nil, common.CodeDataError, errors.New("no authorization")
 	}
 	if d.docEngine == nil {
 		return nil, common.CodeServerError, errors.New("Document engine is not initialized")
@@ -200,7 +200,7 @@ func (d *DatasetService) RenameTag(ctx context.Context, datasetID, userID, fromT
 		return nil, common.CodeDataError, errors.New("Lack of \"Dataset ID\"")
 	}
 	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("No authorization.")
+		return nil, common.CodeDataError, errors.New("no authorization")
 	}
 	if d.docEngine == nil {
 		return nil, common.CodeServerError, errors.New("Document engine is not initialized")
