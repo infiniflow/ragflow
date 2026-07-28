@@ -214,7 +214,7 @@ func printHelp(args *serverArgs) {
 }
 
 func main() {
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer cancel()
 
 	arguments, err := parseArgs()
@@ -540,7 +540,6 @@ func runIngestor(ctx context.Context, args *serverArgs, config *server.Config) e
 				local.SetAdminStatus(0, "")
 			} else {
 				local.SetAdminStatus(1, err.Error())
-				//logger.Warn(fmt.Sprintf(err.Error()))
 			}
 		})
 		heartbeatReporter.Start()
@@ -611,7 +610,6 @@ func runSyncer(ctx context.Context, args *serverArgs, config *server.Config) err
 				local.SetAdminStatus(0, "")
 			} else {
 				local.SetAdminStatus(1, err.Error())
-				//logger.Warn(fmt.Sprintf(err.Error()))
 			}
 		})
 		heartbeatReporter.Start()
@@ -834,8 +832,7 @@ func startServer(ctx context.Context, config *server.Config) {
 		componentsHandler,
 		pipelineHandler)
 
-	// Create Gin enginegit diff
-
+	// Create Gin engine
 	ginEngine := gin.New()
 
 	// Middleware
@@ -898,7 +895,6 @@ func startServer(ctx context.Context, config *server.Config) {
 				local.SetAdminStatus(0, "")
 			} else {
 				local.SetAdminStatus(1, err.Error())
-				//logger.Warn(fmt.Sprintf(err.Error()))
 			}
 		})
 		heartbeatReporter.Start()
