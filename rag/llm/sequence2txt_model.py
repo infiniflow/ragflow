@@ -16,12 +16,13 @@
 import base64
 import io
 import json
+import logging
 import os
 import re
 import struct
-from abc import ABC
 import tempfile
-import logging
+from abc import ABC
+from collections.abc import Mapping, Sequence
 from urllib.parse import urlparse
 
 import requests
@@ -30,6 +31,8 @@ from openai.lib.azure import AzureOpenAI
 
 from common.token_utils import num_tokens_from_string
 from rag.utils.url_utils import ensure_v1
+
+logger = logging.getLogger(__name__)
 
 
 class Base(ABC):
@@ -122,6 +125,67 @@ class FuturMixSeq2txt(GPTSeq2txt):
             base_url = "https://futurmix.ai/v1"
         super().__init__(key, model_name=model_name, base_url=base_url, **kwargs)
         logging.info("[FuturMix] Speech2Text initialized with model %s", model_name)
+
+
+class GreenPTSeq2txt(Base):
+    """Transcribe audio with GreenPT's Deepgram-compatible endpoint."""
+
+    _FACTORY_NAME = "GreenPT"
+
+    def __init__(self, key, model_name="green-s", base_url="https://api.greenpt.ai/v1", **kwargs):
+        self.api_key = key
+        self.model_name = model_name
+        self.base_url = (base_url or "https://api.greenpt.ai/v1").rstrip("/")
+
+    def transcription(self, audio_path, **kwargs):
+        """Transcribe audio while logging only non-sensitive request metadata."""
+        params = {"model": self.model_name}
+        params.update(kwargs)
+        logger.info("[GreenPT] Starting speech transcription with model %s", self.model_name)
+        try:
+            with open(audio_path, "rb") as audio_file:
+                response = requests.post(
+                    f"{self.base_url}/listen",
+                    headers={"Authorization": f"Token {self.api_key}", "Content-Type": "application/octet-stream"},
+                    params=params,
+                    data=audio_file,
+                    timeout=300,
+                )
+            response.raise_for_status()
+        except (OSError, requests.RequestException):
+            logger.exception("[GreenPT] Speech transcription request failed for model %s", self.model_name)
+            raise
+        try:
+            payload = response.json()
+            if not isinstance(payload, Mapping):
+                raise TypeError("response root must be an object")
+            results = payload.get("results")
+            if not isinstance(results, Mapping):
+                raise TypeError("results must be an object")
+            channels = results.get("channels")
+            if not isinstance(channels, Sequence) or isinstance(channels, (str, bytes)) or not channels:
+                raise TypeError("channels must be a non-empty array")
+            channel = channels[0]
+            if not isinstance(channel, Mapping):
+                raise TypeError("channel must be an object")
+            alternatives = channel.get("alternatives")
+            if not isinstance(alternatives, Sequence) or isinstance(alternatives, (str, bytes)) or not alternatives:
+                raise TypeError("alternatives must be a non-empty array")
+            alternative = alternatives[0]
+            if not isinstance(alternative, Mapping):
+                raise TypeError("alternative must be an object")
+            transcript = alternative.get("transcript")
+            if not isinstance(transcript, str) or not (text := transcript.strip()):
+                raise TypeError("transcript must be a non-empty string")
+        except (TypeError, ValueError) as exc:
+            logger.warning("[GreenPT] Invalid speech response; model=%s status=%s", self.model_name, response.status_code)
+            raise ValueError("GreenPT speech response contains no valid transcript") from exc
+        logger.info(
+            "[GreenPT] Speech transcription completed; status=%s transcript_available=%s",
+            response.status_code,
+            bool(text),
+        )
+        return text, num_tokens_from_string(text)
 
 
 class QWenSeq2txt(Base):
