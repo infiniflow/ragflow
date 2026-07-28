@@ -114,7 +114,7 @@ def test_session_update_blocks_messages_and_reference(rest_client, create_chat):
     assert msg_res.status_code == 200
     msg_payload = msg_res.json()
     assert msg_payload["code"] == 102, msg_payload
-    assert "`messages` cannot be changed." in msg_payload["message"], msg_payload
+    assert "`messages` cannot be changed" in msg_payload["message"], msg_payload
 
     ref_res = rest_client.patch(f"/chats/{chat_id}/sessions/{session_id}", json={"reference": []})
     assert ref_res.status_code == 200

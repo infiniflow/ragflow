@@ -915,7 +915,7 @@ def test_chat_session_create_and_update_guard_matrix_unit(monkeypatch):
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
     _set_request_json(monkeypatch, module, {"message": []})
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
-    assert "`messages` cannot be changed." in res["message"]
+    assert "`messages` cannot be changed" in res["message"]
 
     _set_request_json(monkeypatch, module, {"reference": []})
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
