@@ -32,6 +32,7 @@ from openai import OpenAI, AsyncOpenAI
 from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
+from rag.llm.key_utils import _resolve_google_service_account_key
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 from rag.utils.url_utils import ensure_v1
@@ -1312,10 +1313,18 @@ class GoogleCV(AnthropicCV, GeminiCV):
 
         from google.oauth2 import service_account
 
-        key = json.loads(key)
-        access_token = json.loads(base64.b64decode(key.get("google_service_account_key", "")))
-        project_id = key.get("google_project_id", "")
-        region = key.get("google_region", "")
+        # Parse the key via the shared helper. Pre-fix, the bare
+        # ``json.loads(key).get(...)`` calls crashed with
+        # AttributeError on any non-JSON or JSON non-object input (e.g.
+        # "[1,2,3]", "42", "null"). The provider REQUIRES a JSON object
+        # so the helper raises a clear ModelException instead. The chat
+        # counterpart (GoogleChat in chat_model.py) is owned by another
+        # contributor (PR #15994); this fix is scoped to the CV side
+        # only. See #17463.
+        resolved = _resolve_google_service_account_key(key)
+        project_id = resolved["google_project_id"]
+        region = resolved["google_region"]
+        access_token = json.loads(base64.b64decode(resolved["google_service_account_key"]))
 
         scopes = ["https://www.googleapis.com/auth/cloud-platform"]
         self.model_name = model_name
