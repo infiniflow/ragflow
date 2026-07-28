@@ -331,13 +331,16 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 }
 
 func memoryAgentID(state *runtime.CanvasState) string {
-	if agentID := stringFromStateSys(state, "canvas_id"); agentID != "" {
+	if agentID := stringFromStateSys(state, "agent_id"); agentID != "" {
 		return agentID
+	}
+	if canvasID := stringFromStateSys(state, "canvas_id"); canvasID != "" {
+		return canvasID
 	}
 	if state == nil {
 		return ""
 	}
-	return state.TaskID
+	return state.SessionID
 }
 
 func memorySessionID(state *runtime.CanvasState) string {
