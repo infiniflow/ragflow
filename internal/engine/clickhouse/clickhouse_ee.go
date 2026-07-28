@@ -19,8 +19,6 @@ package clickhouse
 import (
 	"ragflow/internal/common"
 	"sync"
-
-	"go.uber.org/zap"
 )
 
 var (
@@ -37,9 +35,9 @@ func GetDriver() *Driver {
 }
 
 func (d *Driver) CollectModelUsage(modelUsage *common.ModelUsage) error {
-	if modelUsage != nil {
-		common.Info("CollectModelUsage", zap.Any("modelUsage", modelUsage.String()))
-	}
+	//if modelUsage != nil {
+	//	common.Info("CollectModelUsage", zap.Any("modelUsage", modelUsage.String()))
+	//}
 	return nil
 }
 
