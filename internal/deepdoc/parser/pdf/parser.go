@@ -273,10 +273,11 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 //   - Clean embedded chars (count > 0 and not garbled):
 //     use ocrMergeChars, which detect-merges chars into boxes and falls
 //     back to single-image OCR recognize for empty boxes.
-//   - Garbled or empty chars: use ocrDetectAndRecognize for full OCR,
-//     then fall back to ocrMergeChars if detect succeeds but recognize
-//     produced no useful output. Synthetic chars are appended to support
-//     subsequent median calculations.
+//   - Garbled or empty chars: use ocrDetectAndRecognize for full OCR.
+//     Synthetic chars are appended to support subsequent median
+//     calculations. When OCR cannot recover a garbled page the embedded
+//     chars are dropped outright (matching Python DeepDOC, which clears
+//     page chars) so U+FFFD garbage never reaches the output.
 //
 // updatedChars includes synthetic OCR chars when detect+recognize was
 // used; callers must use the returned slice instead of the original.
@@ -307,9 +308,10 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 ) ([]pdf.TextBox, []pdf.TextChar, bool) {
 	var ocrBoxes []pdf.TextBox
 	ocrUsed := false
+	garbledPage := len(chars) > 0 && util.IsGarbledPage(chars)
 
 	if !p.Config.SkipOCR && renderErr == nil && pageImg != nil {
-		hasCleanChars := len(chars) > 0 && !isScanNoise && !util.IsGarbledPage(chars)
+		hasCleanChars := len(chars) > 0 && !isScanNoise && !garbledPage
 		if hasCleanChars {
 			ocrBoxes = p.ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg)
 			ocrUsed = ocrBoxes != nil
@@ -328,6 +330,12 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 						break
 					}
 				}
+			} else if garbledPage {
+				// OCR could not recover the page. Drop the garbled embedded
+				// chars instead of emitting U+FFFD garbage (Python DeepDOC
+				// clears page chars the same way).
+				slog.Warn("processPageBoxes: dropping garbled embedded chars after OCR failure", "page", pg)
+				chars = nil
 			} else if len(chars) > 0 {
 				// Detect failed but chars exist: try the merge path.
 				ocrBoxes = p.ocrMergeChars(ctx, pageImg, chars, docAnalyzer, pg)
@@ -336,7 +344,7 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 		}
 	}
 
-	if !ocrUsed && len(chars) > 0 {
+	if !ocrUsed && len(chars) > 0 && !garbledPage {
 		if ocrBoxes == nil {
 			ocrBoxes = lyt.CharsToBoxes(chars, pg, p.Config.SortByTop)
 		}

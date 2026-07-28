@@ -238,7 +238,41 @@ func TestOCR_FallbackIntegration_NoDeepDoc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Garbled embedded chars must be dropped when OCR cannot recover them
+	// (Python DeepDOC clears page chars); they must never leak into sections.
+	for i, s := range result.Sections {
+		if strings.Contains(s.Text, "\ufffd") {
+			t.Errorf("section %d contains U+FFFD garbage: %q", i, s.Text)
+		}
+	}
 	t.Logf("garbled Chars: %d sections", len(result.Sections))
+}
+
+func TestNoDeepDoc_ReplacementCharPage_Dropped(t *testing.T) {
+	// pdf_oxide emits U+FFFD for unmappable CID glyphs (subset font without
+	// a usable ToUnicode CMap). With no DeepDoc OCR backend the page must
+	// produce no text instead of leaking replacement characters.
+	chars := make([]pdf.TextChar, 30)
+	for i := range chars {
+		chars[i] = pdf.TextChar{
+			X0: 50 + float64(i*10), X1: 58 + float64(i*10),
+			Top: 100, Bottom: 112,
+			Text: "\ufffd", FontName: "ABCDEF+SimSun", PageNumber: 0,
+		}
+	}
+	mockEng := &MockEngine{Chars: map[int][]pdf.TextChar{0: chars}, NumPages: 1}
+	mockDLA := &MockDocAnalyzer{Healthy: true}
+
+	p := NewParser(pdf.DefaultParserConfig())
+	result, err := p.ParseRaw(context.Background(), mockEng, mockDLA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, s := range result.Sections {
+		if strings.Contains(s.Text, "\ufffd") {
+			t.Errorf("section %d contains U+FFFD garbage: %q", i, s.Text)
+		}
+	}
 }
 
 func TestNoDeepDoc_PdfOxideUnmapped_KeepsChars(t *testing.T) {
