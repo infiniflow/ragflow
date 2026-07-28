@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 
 from common.exceptions import ModelException
 
@@ -79,6 +80,10 @@ def _resolve_volcengine_credentials(key):
             # the ``model_name`` parameter it passed in. Preserve.
             return {"ark_api_key": key, "model_name": None}
     else:
+        logging.error(
+            "VolcEngine key must be a string or dict, got %s",
+            type(key).__name__,
+        )
         raise ModelException(
             f"VolcEngine key must be a string or dict, got {type(key).__name__}. See conf/models/volcengine.json for the full schema.",
             retryable=False,
@@ -89,6 +94,10 @@ def _resolve_volcengine_credentials(key):
         # code did ``payload.get("ark_api_key", "")`` here and crashed with
         # AttributeError on lists/strings/numbers/booleans/null. Surface a
         # clear error naming the actual type and the required schema.
+        logging.error(
+            "VolcEngine key JSON top-level type must be an object, got %s",
+            type(payload).__name__,
+        )
         raise ModelException(
             f"VolcEngine key must be a JSON object, got {type(payload).__name__}. "
             "Expected an object with 'ark_api_key' (and optionally 'ep_id' / 'endpoint_id'); "
@@ -97,7 +106,11 @@ def _resolve_volcengine_credentials(key):
         )
 
     ark_api_key = payload.get("ark_api_key", "")
-    model_name = payload.get("ep_id", "") + payload.get("endpoint_id", "")
+    # Coerce ep_id / endpoint_id to str before concat: JSON values like
+    # 12345 or null would otherwise raise TypeError when concatenated.
+    ep_id = payload.get("ep_id", "")
+    endpoint_id = payload.get("endpoint_id", "")
+    model_name = (str(ep_id) if ep_id is not None else "") + (str(endpoint_id) if endpoint_id is not None else "")
     return {"ark_api_key": ark_api_key, "model_name": model_name or None}
 
 
