@@ -52,6 +52,29 @@ func (n *NovitaModel) Name() string {
 	return "NovitaAI"
 }
 
+type NovitaChatResponse struct {
+	ID      string `json:"id"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Message      struct {
+			Content          string           `json:"content"`
+			ReasoningContent string           `json:"reasoning_content"`
+			Role             string           `json:"role"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+		Logprobs interface{} `json:"logprobs"`
+	} `json:"choices"`
+	Created int    `json:"created"`
+	Model   string `json:"model"`
+	Object  string `json:"object"`
+	Usage   struct {
+		CompletionTokens int `json:"completion_tokens"`
+		PromptTokens     int `json:"prompt_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
 const (
 	novitaThinkOpen  = "<think>"
 	novitaThinkClose = "</think>"
@@ -235,58 +258,50 @@ func (n *NovitaModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result NovitaChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
+		choice := &result.Choices[0]
+		if choice.Message.Content == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("invalid content format")
+		}
 
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	rawContent, ok := messageMap["content"].(string)
-	toolCalls := extractToolCalls(messageMap)
-	if !ok && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	// Novita emits chain-of-thought in two different shapes depending
-	// on the model and on enable_thinking:
-	//   - qwen3-* and other inline-style models: chain-of-thought is
-	//     embedded inside content as <think>...</think> tags.
-	//   - deepseek-v3.1 / glm-4.5 (and any model with separate
-	//     reasoning enabled): chain-of-thought arrives in a separate
-	//     `reasoning_content` field, with `content` already cleaned.
-	// Handle both so the visible Answer is always tag-free and any
-	// reasoning the upstream supplied is preserved.
-	visible, reasoning := "", ""
-	if ok {
-		visible, reasoning = splitNovitaThink(rawContent)
-		if r, ok := messageMap["reasoning_content"].(string); ok && r != "" {
+		// Novita emits chain-of-thought in two different shapes depending
+		// on the model and on enable_thinking:
+		//   - qwen3-* and other inline-style models: chain-of-thought is
+		//     embedded inside content as <think>...</think> tags.
+		//   - deepseek-v3.1 / glm-4.5 (and any model with separate
+		//     reasoning enabled): chain-of-thought arrives in a separate
+		//     `reasoning_content` field, with `content` already cleaned.
+		// Handle both so the visible Answer is always tag-free and any
+		// reasoning the upstream supplied is preserved.
+		visible, reasoning := splitNovitaThink(choice.Message.Content)
+		if choice.Message.ReasoningContent != "" {
 			if reasoning != "" {
-				reasoning += "\n" + r
+				reasoning += "\n" + choice.Message.ReasoningContent
 			} else {
-				reasoning = r
+				reasoning = choice.Message.ReasoningContent
 			}
 		}
-	}
 
-	return &ChatResponse{
-		Answer:        &visible,
-		ReasonContent: &reasoning,
-		ToolCalls:     toolCalls,
-	}, nil
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &visible,
+			ReasonContent: &reasoning,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 // ChatStreamlyWithSender sends messages and streams the response via
@@ -352,6 +367,14 @@ func (n *NovitaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	extractor := &novitaThinkExtractor{}
 	sawTerminal := false
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
+		}
+
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
 			return nil
@@ -493,9 +516,14 @@ type novitaEmbeddingData struct {
 }
 
 type novitaEmbeddingResponse struct {
+	ID     string                `json:"id"`
 	Data   []novitaEmbeddingData `json:"data"`
 	Model  string                `json:"model"`
 	Object string                `json:"object"`
+	Usage  struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // Embed turns a list of texts into embedding vectors using the Novita
@@ -585,6 +613,10 @@ func (n *NovitaModel) Embed(ctx context.Context, modelName *string, texts []stri
 			return nil, fmt.Errorf("novita: missing embedding for input index %d", i)
 		}
 	}
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "embedding")
 
 	return embeddings, nil
 }
@@ -598,7 +630,13 @@ type novitaRerankResult struct {
 }
 
 type novitaRerankResponse struct {
+	ID      string               `json:"id"`
 	Results []novitaRerankResult `json:"results"`
+	Usage   struct {
+		CompletionTokens int `json:"completion_tokens"`
+		PromptTokens     int `json:"prompt_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // Rerank scores documents against the query using the Novita
@@ -690,6 +728,11 @@ func (n *NovitaModel) Rerank(ctx context.Context, modelName *string, query strin
 		})
 		seen[item.Index] = true
 	}
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens:     parsed.Usage.PromptTokens,
+		CompletionTokens: parsed.Usage.CompletionTokens,
+		TotalTokens:      parsed.Usage.TotalTokens,
+	}, "rerank")
 
 	return &rerankResponse, nil
 }
