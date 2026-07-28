@@ -391,17 +391,17 @@ func main() {
 			os.Exit(1)
 		}
 	case "admin":
-		if err = runAdmin(arguments); err != nil {
+		if err = runAdmin(ctx, arguments); err != nil {
 			fmt.Printf("Failed to start ADMIN server: %v\n", err)
 			os.Exit(1)
 		}
 	case "ingestor":
-		if err = runIngestor(arguments); err != nil {
+		if err = runIngestor(ctx, arguments); err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
 			os.Exit(1)
 		}
 	case "syncer":
-		if err = runSyncer(arguments); err != nil {
+		if err = runSyncer(ctx, arguments); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
 			os.Exit(1)
 		}
@@ -411,7 +411,7 @@ func main() {
 	}
 }
 
-func runAdmin(args *serverArgs) error {
+func runAdmin(ctx context.Context, args *serverArgs) error {
 
 	// Create HTTP server
 	config := server.GetConfig()
@@ -471,12 +471,10 @@ func runAdmin(args *serverArgs) error {
 		}
 	}()
 
-	// Wait for interrupt signal to gracefully shutdown
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
-	sig := <-quit
+	// Wait for shutdown signal from main's signal.NotifyContext
+	<-ctx.Done()
 
-	common.Info("Received signal", zap.String("signal", sig.String()))
+	common.Info("Received shutdown signal")
 	common.Info("Shutting down RAGFlow HTTP server...")
 
 	// Create context with timeout for graceful shutdown
@@ -492,7 +490,7 @@ func runAdmin(args *serverArgs) error {
 	return nil
 }
 
-func runIngestor(args *serverArgs) error {
+func runIngestor(ctx context.Context, args *serverArgs) error {
 	// Initialize tokenizer (rag_analyzer)
 	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
 	if err := tokenizer.Init(&tokenizer.PoolConfig{}); err != nil {
@@ -509,9 +507,6 @@ func runIngestor(args *serverArgs) error {
 			return
 		}
 	}()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
 
 	common.Info("\n    ____                      __  _\n" +
 		"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +
@@ -553,10 +548,10 @@ func runIngestor(args *serverArgs) error {
 		defer heartbeatReporter.Stop()
 	}
 
-	// Wait for either an OS signal or a shutdown command from the admin
+	// Wait for either an OS shutdown signal or a shutdown command from the admin
 	select {
-	case sig := <-quit:
-		common.Info("Received signal", zap.String("signal", sig.String()))
+	case <-ctx.Done():
+		common.Info("Received shutdown signal")
 		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", *args.name))
 	case <-ingestor.ShutdownCh:
 		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", *args.name))
@@ -573,7 +568,7 @@ func runIngestor(args *serverArgs) error {
 	return nil
 }
 
-func runSyncer(args *serverArgs) error {
+func runSyncer(ctx context.Context, args *serverArgs) error {
 	config := server.GetConfig()
 	fileSyncer := syncer.NewSyncer(config.FileSyncer.MaxConcurrentSyncs, time.Duration(config.FileSyncer.SyncInterval)*time.Second)
 
@@ -584,9 +579,6 @@ func runSyncer(args *serverArgs) error {
 			return
 		}
 	}()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
 
 	common.Info("\n     _______ __        _____\n" +
 		"    / ____(_) /__     / ___/__  ______  ________  _____\n" +
@@ -628,10 +620,10 @@ func runSyncer(args *serverArgs) error {
 		defer heartbeatReporter.Stop()
 	}
 
-	// Wait for either an OS signal or a shutdown command from the admin
+	// Wait for either an OS shutdown signal or a shutdown command from the admin
 	select {
-	case sig := <-quit:
-		common.Info("Received signal", zap.String("signal", sig.String()))
+	case <-ctx.Done():
+		common.Info("Received shutdown signal")
 		common.Info(fmt.Sprintf("Shutting down RAGFlow file syncer %s ...", *args.name))
 	case <-fileSyncer.ShutdownCh:
 		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping file syncer %s ...", *args.name))
@@ -921,20 +913,18 @@ func startServer(ctx context.Context, config *server.Config) {
 		defer heartbeatReporter.Stop()
 	}
 
-	// Wait for interrupt signal to gracefully shutdown
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, syscall.SIGUSR2)
-	sig := <-quit
+	// Wait for shutdown signal from main's signal.NotifyContext
+	<-ctx.Done()
 
-	common.Info(fmt.Sprintf("Receives %s signal to shutdown server", strings.ToUpper(sig.String())))
+	common.Info(fmt.Sprintf("Receives shutdown signal"))
 	common.Info("Shutting down server...")
 
 	// Create context with timeout for graceful shutdown
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
 
 	// Shutdown server
-	if err = srv.Shutdown(ctx); err != nil {
+	if err = srv.Shutdown(shutdownCtx); err != nil {
 		common.Fatal("Server forced to shutdown", zap.Error(err))
 	}
 }
