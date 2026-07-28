@@ -224,7 +224,7 @@ const SkillsPage: React.FC = () => {
 
   useEffect(() => {
     loadSpaces();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, []);
 
   // Function to load skills with pagination and sorting
@@ -259,14 +259,14 @@ const SkillsPage: React.FC = () => {
     fetchConfig(undefined, selectedSpaceId);
     // Use search API with pagination and sorting
     loadSkills();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [selectedSpaceId, selectedSpaceName]);
 
   // Load skills when pagination or sorting changes
   useEffect(() => {
     if (!selectedSpaceId || !selectedSpaceName || hasSearched) return;
     loadSkills();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [currentPage, sortBy, sortOrder]);
 
   const handleViewSkill = useCallback(

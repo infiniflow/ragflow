@@ -50,7 +50,7 @@ export function useWikiDetailContent({
     if (!currentEntry || !pageData) return;
     if (currentEntry.slug !== pageData.slug) return;
     updateCurrentTitle(pageData.title);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [currentEntry?.slug, pageData?.slug, pageData?.title, updateCurrentTitle]);
 
   // When selectedArtifact changes from the left panel (not from our own
@@ -66,7 +66,7 @@ export function useWikiDetailContent({
       title: selectedArtifact.title,
       pageType: selectedArtifact.page_type ?? '',
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [
     isVersionView,
     selectedArtifact?.slug,
