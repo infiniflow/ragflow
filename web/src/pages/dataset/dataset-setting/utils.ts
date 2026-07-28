@@ -9,6 +9,7 @@ export const ImageMap = {
   manual: getImageName('manual', 4),
   picture: getImageName('media', 2),
   naive: getImageName('naive', 2),
+  general: getImageName('naive', 2),
   paper: getImageName('paper', 2),
   presentation: getImageName('presentation', 2),
   qa: getImageName('qa', 2),
