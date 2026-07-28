@@ -2190,14 +2190,26 @@ func (s *AgentService) CancelSessionRun(ctx context.Context, userID, sessionID s
 			return nil
 		}
 	}
-	// Publish a session-scoped tombstone even when no active registration is
-	// visible. This is the linearization point for Cancel racing a new Run:
-	// registration deliberately preserves the marker and the owner performs an
-	// immediate check before starting Compile/Invoke. Unknown/finished cancels
-	// remain idempotent successes; a best-effort marker is bounded by its TTL
-	// and is removed by the next owner cleanup.
+	// No active registration is visible, so authorize against the persisted
+	// conversation before publishing a marker. This preserves cancellation of
+	// an owner's run during the registration race without allowing another user
+	// to pre-cancel a session whose ID they learned. Missing sessions remain
+	// idempotent successes and do not create tombstones.
+	if s.api4ConversationDAO == nil || dao.DB == nil {
+		return nil
+	}
+	session, err := s.api4ConversationDAO.GetByID(ctx, dao.DB, sessionID)
+	if err != nil {
+		return fmt.Errorf("agent cancel: load session owner: %w: %w", err, ErrAgentStorageError)
+	}
+	if session == nil {
+		return nil
+	}
+	if session.UserID != userID {
+		return ErrAgentNotOwner
+	}
 	if err := canvas.RequestCancel(ctx, sessionID); err != nil {
-		common.Warn("agent cancel: publish unknown-session marker failed",
+		common.Warn("agent cancel: publish session marker failed",
 			zap.String("session_id", sessionID), zap.Error(err))
 	}
 	return nil

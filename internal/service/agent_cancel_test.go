@@ -5,9 +5,12 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"sync/atomic"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 func TestCancelSessionRunLocalPermissionAndIdempotency(t *testing.T) {
@@ -55,5 +58,30 @@ func TestCancelSessionRunDoesNotAffectAnotherSession(t *testing.T) {
 	}
 	if callsA.Load() != 1 || callsB.Load() != 0 {
 		t.Fatalf("cancel calls A=%d B=%d; want 1, 0", callsA.Load(), callsB.Load())
+	}
+}
+
+func TestCancelSessionRunAuthorizesPersistedSessionBeforeTombstone(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	pushServiceDB(t, testDB)
+	if err := testDB.Create(&entity.API4Conversation{
+		ID:        "session-persisted",
+		DialogID:  "agent-1",
+		UserID:    "user-a",
+		Message:   json.RawMessage(`[]`),
+		Reference: json.RawMessage(`[]`),
+	}).Error; err != nil {
+		t.Fatalf("create conversation: %v", err)
+	}
+
+	svc := NewAgentServiceWithOptions(nil, nil, nil)
+	if err := svc.CancelSessionRun(t.Context(), "user-b", "session-persisted"); !errors.Is(err, ErrAgentNotOwner) {
+		t.Fatalf("other user cancel error = %v, want ErrAgentNotOwner", err)
+	}
+	if err := svc.CancelSessionRun(t.Context(), "user-a", "session-persisted"); err != nil {
+		t.Fatalf("owner cancel error = %v", err)
+	}
+	if err := svc.CancelSessionRun(t.Context(), "user-a", "missing-session"); err != nil {
+		t.Fatalf("missing session cancel must be idempotent: %v", err)
 	}
 }

@@ -164,6 +164,23 @@ func TestRunTracker_TTLRefresh(t *testing.T) {
 	if len(got) == 0 {
 		t.Fatal("run key expired before refreshed TTL elapsed")
 	}
+
+	// A wait-for-user pause must also keep the run metadata alive for the
+	// full tracker TTL so the next request can resume it.
+	mr.FastForward(500 * time.Millisecond)
+	if err := tracker.MarkWaiting(ctx, "run_ttl"); err != nil {
+		t.Fatalf("MarkWaiting: %v", err)
+	}
+	if d := mr.TTL(runKey("run_ttl")); d < 1500*time.Millisecond {
+		t.Fatalf("TTL after MarkWaiting = %v, want >= 1.5s", d)
+	}
+	got, err = tracker.Get(ctx, "run_ttl")
+	if err != nil {
+		t.Fatalf("Get after MarkWaiting: %v", err)
+	}
+	if got["status"] != runStatusWaiting {
+		t.Fatalf("status after MarkWaiting = %q, want %q", got["status"], runStatusWaiting)
+	}
 }
 
 func TestRunTracker_NilClient(t *testing.T) {
@@ -183,6 +200,9 @@ func TestRunTracker_NilClient(t *testing.T) {
 	}
 	if err := tracker.MarkCancelled(ctx, "x"); err == nil {
 		t.Fatal("MarkCancelled with nil client: err = nil, want error")
+	}
+	if err := tracker.MarkWaiting(ctx, "x"); err == nil {
+		t.Fatal("MarkWaiting with nil client: err = nil, want error")
 	}
 	if _, err := tracker.Get(ctx, "x"); err == nil {
 		t.Fatal("Get with nil client: err = nil, want error")

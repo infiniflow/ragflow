@@ -358,7 +358,12 @@ func (t *RunTracker) MarkWaiting(ctx context.Context, runID string) error {
 	if t == nil || t.client == nil {
 		return errors.New("run tracker: redis client not initialized")
 	}
-	return t.client.HSet(ctx, runKey(runID), "status", runStatusWaiting).Err()
+	key := runKey(runID)
+	pipe := t.client.Pipeline()
+	pipe.HSet(ctx, key, "status", runStatusWaiting)
+	pipe.Expire(ctx, key, t.ttl)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 // Get returns all hash fields for a run. The empty map (not nil) plus a
