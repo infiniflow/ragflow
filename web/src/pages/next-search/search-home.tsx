@@ -56,7 +56,7 @@ export default function SearchHome({
                 ref={searchInputRef}
                 rows={1}
                 placeholder={t('search.searchGreeting')}
-                className="w-full rounded-3xl py-4 px-4 pr-14 text-text-primary text-lg bg-bg-base delay-700 border border-border-button resize-none overflow-y-auto scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50"
+                className="w-full rounded-3xl py-4 px-4 pr-14 text-text-primary text-lg bg-bg-base delay-700 border border-border-button resize-none scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50"
                 value={searchText}
                 onKeyDown={(e) => {
                   if (

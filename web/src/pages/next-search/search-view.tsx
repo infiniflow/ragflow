@@ -111,7 +111,7 @@ export default function SearchingView({
                 rows={1}
                 placeholder={t('search.searchGreeting')}
                 className={cn(
-                  'w-full rounded-3xl py-4 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base border border-border-button resize-none overflow-y-auto scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50 disabled:cursor-not-allowed disabled:opacity-50',
+                  'w-full rounded-3xl py-4 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base border border-border-button resize-none scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50 disabled:cursor-not-allowed disabled:opacity-50',
                 )}
                 value={searchText}
                 onChange={(e) => {
