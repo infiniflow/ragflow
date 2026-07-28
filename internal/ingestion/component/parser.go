@@ -311,7 +311,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"aiff", "au", "midi", "wma", "realaudio", "vqf",
 				"oggvorbis", "ape",
 			},
-			"output_format": "text",
+			"output_format": "json",
 		},
 		"video": {
 			"suffix":        []string{"mp4", "avi", "mkv"},
@@ -490,6 +490,13 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		// referenced images (![alt](url)). Mirrors Python's
 		// enhance_media_sections_with_vision in _Markdown.
 		dispatched, _, _ = maybeDispatchMarkdownVision(ctx, db, fileTypeExt, dispatched, inputs)
+
+		// PDF vision figure enhancement: enrich parsed PDF JSON
+		// items with vision-model descriptions of embedded
+		// images/tables (doc_type_kwd "image"/"table" with non-empty
+		// image field). Mirrors Python's enhance_media_sections_with_vision
+		// in parser.py:_pdf
+		dispatched, _, _ = maybeDispatchPDFVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs)
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.
