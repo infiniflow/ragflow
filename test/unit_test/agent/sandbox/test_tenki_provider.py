@@ -248,7 +248,7 @@ def test_tenki_provider_config_schema_and_validation():
 
 
 def test_tenki_provider_supported_languages():
-    assert TenkiProvider().get_supported_languages() == ["python", "javascript", "nodejs"]
+    assert TenkiProvider().get_supported_languages() == ["python", "javascript"]
 
 
 def test_tenki_provider_initialize_maps_auth_error(monkeypatch):

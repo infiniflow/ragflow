@@ -272,7 +272,7 @@ class TenkiProvider(SandboxProvider):
             return False
 
     def get_supported_languages(self) -> List[str]:
-        return ["python", "javascript", "nodejs"]
+        return ["python", "javascript"]
 
     @staticmethod
     def get_config_schema() -> Dict[str, Dict]:

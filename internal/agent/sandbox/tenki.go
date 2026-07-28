@@ -139,7 +139,7 @@ func (p *TenkiProvider) Initialize(ctx context.Context) error {
 // SupportedLanguages returns the languages the default Tenki image can
 // run. The default image ships with python3 and node.
 func (p *TenkiProvider) SupportedLanguages() []string {
-	return []string{"python", "nodejs", "javascript"}
+	return []string{"python", "javascript"}
 }
 
 // CreateInstance provisions a fresh Tenki sandbox. As with the e2b

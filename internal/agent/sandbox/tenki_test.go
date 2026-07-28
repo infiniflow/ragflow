@@ -33,7 +33,7 @@ func TestTenkiProvider_ProviderTypeAndLanguages(t *testing.T) {
 		t.Errorf("ProviderType = %q, want %q", p.ProviderType(), ProviderTenki)
 	}
 	langs := p.SupportedLanguages()
-	want := map[string]bool{"python": true, "nodejs": true, "javascript": true}
+	want := map[string]bool{"python": true, "javascript": true}
 	got := map[string]bool{}
 	for _, l := range langs {
 		if !want[l] {
