@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"ragflow/internal/common"
 	"strings"
 
@@ -251,7 +252,7 @@ func googleFunctionResponse(content interface{}) map[string]any {
 	}
 }
 
-func googleGenerateContentConfig(chatModelConfig *ChatConfig, systemInstruction *genai.Content) *genai.GenerateContentConfig {
+func googleGenerateContentConfig(chatModelConfig *ChatConfig, systemInstruction *genai.Content) (*genai.GenerateContentConfig, error) {
 	cfg := &genai.GenerateContentConfig{SystemInstruction: systemInstruction}
 	if chatModelConfig != nil {
 		if chatModelConfig.Temperature != nil {
@@ -263,6 +264,9 @@ func googleGenerateContentConfig(chatModelConfig *ChatConfig, systemInstruction 
 			cfg.TopP = &value
 		}
 		if chatModelConfig.MaxTokens != nil {
+			if *chatModelConfig.MaxTokens < 0 || *chatModelConfig.MaxTokens > math.MaxInt32 {
+				return nil, fmt.Errorf("gemini: max_tokens %d is out of range for int32", *chatModelConfig.MaxTokens)
+			}
 			cfg.MaxOutputTokens = int32(*chatModelConfig.MaxTokens)
 		}
 		if chatModelConfig.Stop != nil {
@@ -277,9 +281,9 @@ func googleGenerateContentConfig(chatModelConfig *ChatConfig, systemInstruction 
 	}
 
 	if cfg.SystemInstruction == nil && cfg.Temperature == nil && cfg.TopP == nil && cfg.MaxOutputTokens == 0 && len(cfg.StopSequences) == 0 && len(cfg.Tools) == 0 {
-		return nil
+		return nil, nil
 	}
-	return cfg
+	return cfg, nil
 }
 
 func googleFunctionCallingMode(toolChoice *string) genai.FunctionCallingConfigMode {
@@ -398,9 +402,13 @@ func (g *GoogleModel) ChatWithMessages(ctx context.Context, modelName string, me
 	if err != nil {
 		return nil, err
 	}
+	generateContentConfig, err := googleGenerateContentConfig(chatModelConfig, systemInstruction)
+	if err != nil {
+		return nil, err
+	}
 
 	// Generate content (non-streaming)
-	response, err := client.Models.GenerateContent(ctx, modelName, contents, googleGenerateContentConfig(chatModelConfig, systemInstruction))
+	response, err := client.Models.GenerateContent(ctx, modelName, contents, generateContentConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -440,13 +448,17 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	if err != nil {
 		return err
 	}
+	generateContentConfig, err := googleGenerateContentConfig(chatModelConfig, systemInstruction)
+	if err != nil {
+		return err
+	}
 	var toolCalls []map[string]interface{}
 
 	for response, err := range client.Models.GenerateContentStream(
 		ctx,
 		modelName,
 		contents,
-		googleGenerateContentConfig(chatModelConfig, systemInstruction),
+		generateContentConfig,
 	) {
 		if err != nil {
 			return err

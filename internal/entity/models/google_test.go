@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -423,7 +424,7 @@ func TestCollectGoogleModelNamesReturnsPageError(t *testing.T) {
 
 func TestGoogleGenerateContentConfigConvertsTools(t *testing.T) {
 	toolChoice := "required"
-	cfg := googleGenerateContentConfig(&ChatConfig{
+	cfg, err := googleGenerateContentConfig(&ChatConfig{
 		Tools: []map[string]interface{}{{
 			"type": "function",
 			"function": map[string]interface{}{
@@ -440,6 +441,9 @@ func TestGoogleGenerateContentConfigConvertsTools(t *testing.T) {
 		}},
 		ToolChoice: &toolChoice,
 	}, nil)
+	if err != nil {
+		t.Fatalf("googleGenerateContentConfig error = %v", err)
+	}
 	if cfg == nil || len(cfg.Tools) != 1 || len(cfg.Tools[0].FunctionDeclarations) != 1 {
 		t.Fatalf("tools = %#v, want one function declaration", cfg)
 	}
@@ -455,6 +459,26 @@ func TestGoogleGenerateContentConfigConvertsTools(t *testing.T) {
 	}
 	if cfg.ToolConfig.FunctionCallingConfig.Mode != genai.FunctionCallingConfigModeAny {
 		t.Fatalf("mode = %s, want ANY", cfg.ToolConfig.FunctionCallingConfig.Mode)
+	}
+}
+
+func TestGoogleGenerateContentConfigRejectsMaxTokensOverflow(t *testing.T) {
+	overflow := int(math.MaxInt32) + 1
+	cfg, err := googleGenerateContentConfig(&ChatConfig{MaxTokens: &overflow}, nil)
+	if err == nil {
+		t.Fatalf("expected an error for max_tokens overflowing int32, got cfg = %#v", cfg)
+	}
+	if cfg != nil {
+		t.Fatalf("cfg = %#v, want nil on error", cfg)
+	}
+
+	maxInt32 := int(math.MaxInt32)
+	cfg, err = googleGenerateContentConfig(&ChatConfig{MaxTokens: &maxInt32}, nil)
+	if err != nil {
+		t.Fatalf("googleGenerateContentConfig error = %v", err)
+	}
+	if cfg == nil || cfg.MaxOutputTokens != math.MaxInt32 {
+		t.Fatalf("cfg.MaxOutputTokens = %#v, want %d", cfg, int32(math.MaxInt32))
 	}
 }
 
@@ -518,7 +542,10 @@ func TestGoogleSystemInstructionExtractedFromMessages(t *testing.T) {
 		t.Fatalf("systemInstruction text = %q", systemInstruction.Parts[0].Text)
 	}
 
-	cfg := googleGenerateContentConfig(nil, systemInstruction)
+	cfg, err := googleGenerateContentConfig(nil, systemInstruction)
+	if err != nil {
+		t.Fatalf("googleGenerateContentConfig error = %v", err)
+	}
 	if cfg == nil || cfg.SystemInstruction != systemInstruction {
 		t.Fatalf("cfg.SystemInstruction = %#v, want %#v", cfg, systemInstruction)
 	}
@@ -532,7 +559,11 @@ func TestGoogleSystemInstructionNilWhenNoSystemMessage(t *testing.T) {
 	if got != nil {
 		t.Fatalf("systemInstruction = %#v, want nil", got)
 	}
-	if cfg := googleGenerateContentConfig(nil, nil); cfg != nil {
+	cfg, err := googleGenerateContentConfig(nil, nil)
+	if err != nil {
+		t.Fatalf("googleGenerateContentConfig error = %v", err)
+	}
+	if cfg != nil {
 		t.Fatalf("cfg = %#v, want nil", cfg)
 	}
 }
