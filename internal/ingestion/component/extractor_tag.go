@@ -166,12 +166,12 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 		matched := matchAndTagChunk(d, indexed.examples, indexed.tagTokens, indexed.allTags, topN)
 		if matched != nil {
 			examples = append(examples, *matched)
-		} else if in.llmID != "" {
+		} else {
 			docsToTag = append(docsToTag, d)
 		}
 	}
 
-	if len(docsToTag) > 0 && in.llmID != "" {
+	if len(docsToTag) > 0 {
 		driver, model, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
 		if err != nil {
 			common.Warn("extractor tag: resolve model failed, skipping LLM tagging", zap.Error(err))
@@ -728,7 +728,7 @@ func buildTaggerPrompt(topN int, tagSetStr string, examples []schema.TaggedChunk
 
 func parseTaggerResponse(raw string, topN int) map[string]int {
 	raw = strings.TrimSpace(raw)
-	if idx := strings.Index(raw, "</think>"); idx >= 0 {
+	if idx := strings.LastIndex(raw, "</think>"); idx >= 0 {
 		raw = strings.TrimSpace(raw[idx+len("</think>"):])
 	}
 	if strings.Contains(raw, "**ERROR**") {
