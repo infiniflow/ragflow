@@ -482,6 +482,7 @@ export default {
       noStructureTimeline: '暂无时间线',
       noStructureSessionEssence: '暂无会话摘要',
       noStructureSessionGraph: '暂无会话图谱',
+      deleteStructureConfirm: '确定要删除{{name}}吗？',
       contents: '导航',
       topics: '主题',
       concept: '概念',
