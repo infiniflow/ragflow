@@ -58,6 +58,8 @@ export interface IFetchArtifactTopicListRequestParams {
 
 export interface IFetchArtifactGraphRequestParams {
   node?: string;
+  keywords?: string;
+  top_n?: number;
 }
 
 export interface IUpdateArtifactPageRequestBody {

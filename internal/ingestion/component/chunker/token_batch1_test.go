@@ -69,7 +69,7 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 	}
 	// The overlap prefix is prepended to the SECOND chunk. The original
 	// first chunk legitimately keeps its own parser tag; only the overlap
-	// region (merged[1]) must be tag-free (diff Chunker-2.2).
+	// region (merged[1]) must be tag-free. .
 	if strings.Contains(merged[1].Text, "@@") || strings.Contains(merged[1].Text, "##") {
 		t.Errorf("overlap prefix leaked parser tag into chunk 1: %q", merged[1].Text)
 	}
@@ -81,20 +81,36 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 // threshold. Out-of-range values must not panic and must behave identically to
 // their clamped-in-range equivalent (150 == 100, -5 == 0, and the same for
 // huge magnitudes that would otherwise overflow the float->int slice index).
-func TestMergeByTokenSizeFromJSON_ClampsOverlappedPct(t *testing.T) {
-	items := [][]schema.ChunkDoc{
+// clampOverlapFixture returns a fresh input for mergeByTokenSizeFromJSON.
+// A new slice must be built per invocation: mergeByTokenSizeFromJSON mutates
+// its perItem argument in place (token.go: perItem[idx] = merged) and returns
+// the same backing array. Reusing one fixture across calls lets later calls
+// reprocess already-merged chunks, and — because the result aliases the input
+// — silently overwrites earlier results, making the clamp assertions vacuous
+// (see code review on PR #17396).
+//
+// The first chunk carries TKNums 130 — just above chunk_token_size 128 — so
+// the two clamp directions are both exercised: at pct=0 (threshold 128) the
+// chunks stay split, while an UNCLAMPED negative pct raises the threshold
+// (e.g. -5 -> 134.4) and merges them. With TKNums=100 both cases merge
+// identically, so the lower-clamp assertions would pass even if the clamp
+// were removed (review: coderabbitai on PR #17416).
+func clampOverlapFixture() [][]schema.ChunkDoc {
+	return [][]schema.ChunkDoc{
 		{
-			{Text: strings.Repeat("word ", 20), DocType: "text", CKType: "text", TKNums: intPtr(100)},
+			{Text: strings.Repeat("word ", 20), DocType: "text", CKType: "text", TKNums: intPtr(130)},
 			{Text: "body", DocType: "text", CKType: "text", TKNums: intPtr(5)},
 		},
 	}
+}
 
-	at100 := mergeByTokenSizeFromJSON(items, 128, 100)
+func TestMergeByTokenSizeFromJSON_ClampsOverlappedPct(t *testing.T) {
+	at100 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 100)
 	if at100 == nil || len(at100) == 0 {
 		t.Fatalf("overlappedPct=100: nil/empty result")
 	}
-	at150 := mergeByTokenSizeFromJSON(items, 128, 150)
-	atHuge := mergeByTokenSizeFromJSON(items, 128, 1e300)
+	at150 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 150)
+	atHuge := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 1e300)
 	if !reflect.DeepEqual(at100, at150) {
 		t.Errorf("overlappedPct=150 should clamp to 100; output differs from 100")
 	}
@@ -102,12 +118,12 @@ func TestMergeByTokenSizeFromJSON_ClampsOverlappedPct(t *testing.T) {
 		t.Errorf("overlappedPct=1e300 should clamp to 100; output differs from 100")
 	}
 
-	at0 := mergeByTokenSizeFromJSON(items, 128, 0)
+	at0 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 0)
 	if at0 == nil || len(at0) == 0 {
 		t.Fatalf("overlappedPct=0: nil/empty result")
 	}
-	atNeg := mergeByTokenSizeFromJSON(items, 128, -5)
-	atNegHuge := mergeByTokenSizeFromJSON(items, 128, -1e300)
+	atNeg := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -5)
+	atNegHuge := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -1e300)
 	if !reflect.DeepEqual(at0, atNeg) {
 		t.Errorf("overlappedPct=-5 should clamp to 0; output differs from 0")
 	}
@@ -139,7 +155,7 @@ func TestMergeByTokenSizeFromJSON_EmptyPrevKeepsChunk(t *testing.T) {
 }
 
 // TestTakeFromEndRespectsTokenCount and TestTakeFromStartRespectsTokenCount
-// exercise migration diff Chunker-2.4: takeFromEnd/takeFromStart used a
+// covers takeFromEnd/takeFromStart used a
 // fixed 4-bytes-per-token heuristic which badly over-counts for CJK text
 // (≈3 bytes/char, 1-2 tokens/char). They must now count tokens exactly via
 // tokenizeStr so the returned slice is close to the requested token budget.

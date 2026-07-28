@@ -2,7 +2,7 @@ import { DagreLayout } from '@antv/layout';
 import { Graph, type EdgeMetadata, type NodeMetadata } from '@antv/x6';
 import { useEffect, useRef } from 'react';
 
-import { type TimelineX6NodeData } from '../../../utils/adapters';
+import { type TimelineX6NodeData } from '../../adapters';
 import { type TimelineNodeValue, type TimelineX6GraphProps } from '../types';
 
 export function useX6Graph(

@@ -29,7 +29,12 @@ import kbService, {
 } from '@/services/knowledge-service';
 import { restAPIv1 } from '@/utils/api';
 import { buildChunkHighlights } from '@/utils/document-util';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { get } from 'lodash';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -82,6 +87,17 @@ export const DocumentStructureKeys = {
       DocumentStructureApiAction.FetchDocumentStructureGraph,
       datasetId,
       documentId,
+    ] as const,
+  graphWithKeywords: (
+    datasetId: string,
+    documentId: string,
+    keywords: string,
+  ) =>
+    [
+      DocumentStructureApiAction.FetchDocumentStructureGraph,
+      datasetId,
+      documentId,
+      keywords,
     ] as const,
 };
 
@@ -718,21 +734,30 @@ export const useFetchDocumentThumbnailsByIds = () => {
   return { data, setDocumentIds };
 };
 
-export function useFetchDocumentStructureGraph() {
+export function useFetchDocumentStructureGraph(keywords?: string) {
   const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
   const enabled = !!datasetId && !!documentId;
+  const trimmedKeywords = keywords?.trim();
 
   const { data, isFetching: loading } =
     useQuery<IStructureGraphResponse | null>({
-      queryKey: DocumentStructureKeys.graph(datasetId, documentId),
+      queryKey: trimmedKeywords
+        ? DocumentStructureKeys.graphWithKeywords(
+            datasetId,
+            documentId,
+            trimmedKeywords,
+          )
+        : DocumentStructureKeys.graph(datasetId, documentId),
       enabled,
       initialData: null,
       gcTime: 0,
+      placeholderData: keepPreviousData,
       queryFn: async () => {
         const { data } =
           await documentStructureService.getDocumentStructureGraph(
             datasetId,
             documentId,
+            trimmedKeywords,
           );
         return data?.data ?? null;
       },

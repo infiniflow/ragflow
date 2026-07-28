@@ -219,7 +219,7 @@ func (p *browserParam) AsDict() map[string]any {
 }
 
 // BrowserComponent is the canvas Browser node. Owns its static
-// param; delegates the multi-step agent run to StagehandInvoker.
+// param; delegates the multistep agent run to StagehandInvoker.
 type BrowserComponent struct {
 	name  string
 	param browserParam
@@ -229,10 +229,10 @@ type BrowserComponent struct {
 func NewBrowserComponent(params map[string]any) (Component, error) {
 	p := &browserParam{}
 	if err := p.Update(params); err != nil {
-		return nil, fmt.Errorf("Browser: param update: %w", err)
+		return nil, fmt.Errorf("browser: param update: %w", err)
 	}
 	if err := p.Check(); err != nil {
-		return nil, fmt.Errorf("Browser: param check: %w", err)
+		return nil, fmt.Errorf("browser: param check: %w", err)
 	}
 	return &BrowserComponent{
 		name:  componentNameBrowser,
@@ -264,15 +264,15 @@ func (b *BrowserComponent) Name() string { return b.name }
 func (b *BrowserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
-		return nil, fmt.Errorf("Browser: %w", err)
+		return nil, fmt.Errorf("browser: %w", err)
 	}
 	if state == nil {
-		return nil, errors.New("Browser: nil canvas state")
+		return nil, errors.New("browser: nil canvas state")
 	}
 
 	tenantID, _ := state.Sys["tenant_id"].(string)
 	if tenantID == "" {
-		return nil, errors.New("Browser: tenant_id missing from canvas state (state.Sys[\"tenant_id\"])")
+		return nil, errors.New("browser: tenant_id missing from canvas state (state.Sys[\"tenant_id\"])")
 	}
 
 	// 1. Resolve prompts template.
@@ -282,13 +282,13 @@ func (b *BrowserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 	}
 	resolvedPrompts, err := runtime.ResolveTemplate(prompts, state)
 	if err != nil {
-		return nil, fmt.Errorf("Browser: resolve prompts template: %w", err)
+		return nil, fmt.Errorf("browser: resolve prompts template: %w", err)
 	}
 
 	// 2. Look up tenant model config.
-	providerName, modelName, apiKey, baseURL, err := resolveBrowserLLM(tenantID, b.param.LLMID)
+	providerName, modelName, apiKey, baseURL, err := resolveBrowserLLM(ctx, db, tenantID, b.param.LLMID)
 	if err != nil {
-		return nil, fmt.Errorf("Browser: tenant llm lookup (%q): %w", b.param.LLMID, err)
+		return nil, fmt.Errorf("browser: tenant llm lookup (%q): %w", b.param.LLMID, err)
 	}
 	baseURL = strings.TrimSpace(baseURL)
 
@@ -308,14 +308,14 @@ func (b *BrowserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 	invoker := getDefaultStagehandInvoker()
 	rawJSON, err := invoker.RunExtract(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("Browser: stagehand extract (model=%q, base_url=%s): %w",
+		return nil, fmt.Errorf("browser: stagehand extract (model=%q, base_url=%s): %w",
 			req.ModelName, browserBaseURLForLog(req.BaseURL), err)
 	}
 
 	// 5. Unmarshal the JSON-string result to get the plain text.
 	var content string
-	if err := json.Unmarshal([]byte(rawJSON), &content); err != nil {
-		return nil, fmt.Errorf("Browser: unmarshal extract result: %w", err)
+	if err = json.Unmarshal([]byte(rawJSON), &content); err != nil {
+		return nil, fmt.Errorf("browser: unmarshal extract result: %w", err)
 	}
 
 	// 6. Build the output map.
@@ -436,8 +436,8 @@ func resolveBrowserLLM(tenantID, llmID string) (providerName, modelName, apiKey,
 	return providerName, modelName, apiKey, baseURL, nil
 }
 
-func resolveTenantModelBrowserLLM(tenantID, modelID string) (providerName, modelName, apiKey, baseURL string, err error) {
-	modelRow, err := dao.NewTenantModelDAO().GetByID(modelID)
+func resolveTenantModelBrowserLLM(ctx context.Context, db *gorm.DB, tenantID, modelID string) (providerName, modelName, apiKey, baseURL string, err error) {
+	modelRow, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", "", "", "", err
@@ -451,7 +451,7 @@ func resolveTenantModelBrowserLLM(tenantID, modelID string) (providerName, model
 		return "", "", "", "", fmt.Errorf("tenant model id=%s cannot be used as %s model", modelID, entity.ModelTypeChat.String())
 	}
 
-	provider, err := dao.NewTenantModelProviderDAO().GetByID(modelRow.ProviderID)
+	provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, modelRow.ProviderID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", "", "", "", fmt.Errorf("provider id=%s not found for model id=%s", modelRow.ProviderID, modelID)
@@ -465,7 +465,7 @@ func resolveTenantModelBrowserLLM(tenantID, modelID string) (providerName, model
 		return "", "", "", "", fmt.Errorf("tenant %s has no access to provider owned by tenant %s", tenantID, provider.TenantID)
 	}
 
-	instance, err := dao.NewTenantModelInstanceDAO().GetByID(modelRow.InstanceID)
+	instance, err := dao.NewTenantModelInstanceDAO().GetByID(ctx, db, modelRow.InstanceID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", "", "", "", fmt.Errorf("instance id=%s not found for model id=%s", modelRow.InstanceID, modelID)
@@ -479,7 +479,7 @@ func resolveTenantModelBrowserLLM(tenantID, modelID string) (providerName, model
 	apiKey = instance.APIKey
 	if strings.TrimSpace(instance.Extra) != "" {
 		var extra map[string]string
-		if err := json.Unmarshal([]byte(instance.Extra), &extra); err != nil {
+		if err = json.Unmarshal([]byte(instance.Extra), &extra); err != nil {
 			return "", "", "", "", err
 		}
 		baseURL = extra["base_url"]

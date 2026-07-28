@@ -153,8 +153,8 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(
 
 	res := &QueueSaveResult{}
 	for _, memoryID := range memoryIDs {
-		// (1) Look up the memory.
-		mem, err := s.memories.GetMemoryConfig(ctx, memoryID)
+		// (1) Look up the memory (no access control — trusted internal queue processing).
+		mem, err := s.memories.getMemoryConfig(ctx, memoryID)
 		if err != nil {
 			res.NotFound = append(res.NotFound, memoryID)
 			continue

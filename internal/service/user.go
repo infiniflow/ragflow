@@ -893,7 +893,7 @@ func (s *UserService) SetTenantInfo(ctx context.Context, userID string, req *Set
 	}
 
 	tenantLLMService := NewTenantLLMService()
-	updates = tenantLLMService.EnsureTenantModelIDForParams(tenantID, updates)
+	updates = tenantLLMService.EnsureTenantModelIDForParams(ctx, tenantID, updates)
 
 	if len(updates) > 0 {
 		if err := tenantDAO.Update(ctx, dao.DB, tenantID, updates); err != nil {

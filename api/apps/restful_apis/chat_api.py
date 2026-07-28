@@ -94,7 +94,7 @@ _DEFAULT_PROMPT_CONFIG = {
         "      The above is the knowledge base."
     ),
     "prologue": "Hi! I'm your assistant. What can I do for you?",
-    "parameters": [{"key": "knowledge", "optional": False}],
+    "parameters": [{"key": "knowledge", "optional": False}, {"key": "date", "optional": True}],
     "empty_response": "Sorry! No relevant content was found in the knowledge base!",
     "quote": True,
     "tts": False,
@@ -353,6 +353,8 @@ def _apply_prompt_defaults(req):
 
     if req.get("kb_ids") and not prompt_config.get("parameters") and "{knowledge}" in prompt_config.get("system", ""):
         prompt_config["parameters"] = [{"key": "knowledge", "optional": False}]
+    if not any(p.get("key") == "date" for p in prompt_config.get("parameters", [])):
+        prompt_config.setdefault("parameters", []).append({"key": "date", "optional": True})
 
 
 @manager.route("/chats", methods=["POST"])  # noqa: F821

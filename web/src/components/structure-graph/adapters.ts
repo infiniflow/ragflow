@@ -16,9 +16,13 @@ declare module '@/components/ui/tree-view' {
   }
 }
 
+export function getEntityDisplayName(entity: IStructureGraphEntity) {
+  return entity.name ?? entity.id ?? '';
+}
+
 function normalizeEntity(entity: IStructureGraphEntity) {
   const id = entity.id ?? entity.name ?? '';
-  const name = entity.name ?? entity.id ?? '';
+  const name = getEntityDisplayName(entity);
   return { ...entity, id, name };
 }
 
@@ -208,6 +212,7 @@ export function adaptKnowledgeGraphToForceGraph(
       .map((relation) => ({
         from: relation.from,
         to: relation.to,
+        type: relation.type ?? '',
       })),
   };
 }

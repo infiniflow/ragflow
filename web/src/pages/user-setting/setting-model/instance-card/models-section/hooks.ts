@@ -188,7 +188,7 @@ export function useModelsCatalog({
     if (!credsReady) return;
     hasAutoFetchedRef.current = true;
     handleListModels();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [providerName, instanceName, hideActions, credsReady]);
 
   // Mark `hasFetched` true once the per-instance query resolves — even if
@@ -592,6 +592,7 @@ export function useModelMutations({
     const { apiKey, baseUrl } = resolveCreds();
     await updateProviderInstance({
       provider_name: providerName,
+      id: instance!.id,
       instance_name: instanceName,
       api_key: apiKey,
       base_url: baseUrl,

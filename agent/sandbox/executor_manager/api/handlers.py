@@ -29,7 +29,7 @@ async def healthz_handler():
     return {"status": "ok"}
 
 
-@limiter.limit("5/second")
+@limiter.limit("60/second")
 async def run_code_handler(req: CodeExecutionRequest, request: Request):
     logger.info("🟢 Received /run request")
 
