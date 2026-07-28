@@ -316,8 +316,8 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 		saveErr := saver.Save(ctx, MemorySaveRequest{
 			MemoryIDs:     memIDs,
 			UserID:        userID,
-			AgentID:       state.TaskID,
-			SessionID:     state.RunID,
+			AgentID:       stringFromStateSys(state, "agent_id"),
+			SessionID:     state.SessionID,
 			UserInput:     stringFromStateSys(state, "query"),
 			AgentResponse: rendered,
 		})

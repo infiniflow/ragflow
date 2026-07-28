@@ -30,6 +30,7 @@ import {
 import i18n from '@/locales/config';
 import kbService, {
   clearWiki,
+  deleteArtifactsStructure,
   deleteKnowledgeGraph,
   getArtifactsAlteration,
   getArtifactGraph,
@@ -95,6 +96,7 @@ export const enum KnowledgeApiAction {
   RemoveKnowledgeGraph = 'removeKnowledgeGraph',
   ClearWiki = 'clearWiki',
   FetchDatasetStructure = 'fetchDatasetStructure',
+  DeleteDatasetStructure = 'deleteDatasetStructure',
   FetchArtifactAlteration = 'fetchArtifactAlteration',
   RunArtifactIndex = 'runArtifactIndex',
 }
@@ -832,6 +834,31 @@ export function useFetchDatasetStructureGraph(kind: string, keywords?: string) {
 
   return { data, loading };
 }
+
+export const useDeleteDatasetStructure = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [KnowledgeApiAction.DeleteDatasetStructure],
+    mutationFn: async (kind: string) => {
+      const { data } = await deleteArtifactsStructure(knowledgeBaseId, kind);
+      if (data?.code === 0) {
+        message.success(i18n.t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: DatasetStructureKeys.all(knowledgeBaseId),
+        });
+      }
+      return data?.code;
+    },
+  });
+
+  return { data, loading, deleteDatasetStructure: mutateAsync };
+};
 
 export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
   const { data, isFetching: loading } = useQuery<
