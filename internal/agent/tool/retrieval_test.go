@@ -242,6 +242,16 @@ func TestRetrieval_UsesEmptyResponseForEmptyQuery(t *testing.T) {
 	}
 }
 
+func TestRetrieval_OmitsUnsetEmptyResponseFromArguments(t *testing.T) {
+	arguments, err := json.Marshal(retrievalArgs{Query: "love"})
+	if err != nil {
+		t.Fatalf("marshal arguments: %v", err)
+	}
+	if strings.Contains(string(arguments), `"empty_response"`) {
+		t.Fatalf("arguments unexpectedly include empty_response: %s", arguments)
+	}
+}
+
 func TestRetrieval_UsesEmptyResponseWhenSearchHasNoChunks(t *testing.T) {
 	prev := GetRetrievalService()
 	SetRetrievalService(staticRetrievalService{})

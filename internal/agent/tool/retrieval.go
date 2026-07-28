@@ -64,7 +64,7 @@ type retrievalArgs struct {
 	KeywordsSimilarityWeight *float64 `json:"keywords_similarity_weight,omitempty"`
 	UseKG                    bool     `json:"use_kg,omitempty"`
 	SimilarityThreshold      float64  `json:"similarity_threshold,omitempty"`
-	EmptyResponse            string   `json:"empty_response"`
+	EmptyResponse            string   `json:"empty_response,omitempty"`
 }
 
 // retrievalResult is the JSON shape returned to the model. The `_ERROR`
