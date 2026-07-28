@@ -878,6 +878,15 @@ class OpenAI_APIEmbed(OpenAIEmbed):
         self.model_name = model_name.split("___")[0]
 
 
+class GreenPTEmbed(OpenAIEmbed):
+    """GreenPT OpenAI-compatible embedding adapter."""
+
+    _FACTORY_NAME = "GreenPT"
+
+    def __init__(self, key, model_name="green-embedding", base_url="https://api.greenpt.ai/v1"):
+        super().__init__(key, model_name=model_name, base_url=base_url or "https://api.greenpt.ai/v1")
+
+
 class CoHereEmbed(Base):
     _FACTORY_NAME = "Cohere"
 
