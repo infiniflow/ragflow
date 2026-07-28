@@ -428,10 +428,10 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 	}
 
 	// Read the JSON file
+	// codeql[go/path-injection] False positive: req.FilePath is the
 	// path the operator configured (tenant import flow). The
 	// OS access check enforces permissions, and the handler is gated
 	// to admin/owner roles upstream.
-	// codeql[go/path-injection] False positive: req.FilePath is the
 	data, err := os.ReadFile(req.FilePath)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to read file: "+err.Error())

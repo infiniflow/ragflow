@@ -109,7 +109,7 @@ func (dao *UserCanvasVersionDAO) Delete(ctx context.Context, db *gorm.DB, id str
 // service.AgentService.DeleteVersion so the version-row removal and the
 // (future) parent-canvas stat update land in one atomic write.
 func (dao *UserCanvasVersionDAO) DeleteTx(ctx context.Context, tx *gorm.DB, id string) error {
-	return tx.Where("id = ?", id).Delete(&entity.UserCanvasVersion{}).Error
+	return tx.WithContext(ctx).Where("id = ?", id).Delete(&entity.UserCanvasVersion{}).Error
 }
 
 // DeleteByCanvasID removes every version of the given canvas. Called from
@@ -124,13 +124,13 @@ func (dao *UserCanvasVersionDAO) DeleteByCanvasID(ctx context.Context, db *gorm.
 // Used by service.AgentService.DeleteAgent so the cascade runs atomically
 // with the parent canvas row removal.
 func (dao *UserCanvasVersionDAO) DeleteByCanvasIDTx(ctx context.Context, tx *gorm.DB, canvasID string) (int64, error) {
-	res := tx.Where("user_canvas_id = ?", canvasID).Delete(&entity.UserCanvasVersion{})
+	res := tx.WithContext(ctx).Where("user_canvas_id = ?", canvasID).Delete(&entity.UserCanvasVersion{})
 	return res.RowsAffected, res.Error
 }
 
 // CreateTx is the transactional variant of Create.
 func (dao *UserCanvasVersionDAO) CreateTx(ctx context.Context, tx *gorm.DB, v *entity.UserCanvasVersion) error {
-	return tx.Create(v).Error
+	return tx.WithContext(ctx).Create(v).Error
 }
 
 // SaveOrReplaceLatest inserts a new version or refreshes the latest matching
@@ -215,7 +215,7 @@ func (dao *UserCanvasVersionDAO) SaveOrReplaceLatestTx(ctx context.Context, tx *
 		Release:      opts.Release,
 		DSL:          opts.DSL,
 	}
-	if err = tx.Create(row).Error; err != nil {
+	if err = tx.WithContext(ctx).Create(row).Error; err != nil {
 		return nil, err
 	}
 	return row, dao.deleteAllUnpublishedExcessTx(ctx, tx, opts.UserCanvasID, opts.KeepUnpublished)
@@ -243,5 +243,5 @@ func (dao *UserCanvasVersionDAO) deleteAllUnpublishedExcessTx(ctx context.Contex
 		return nil
 	}
 	ids = ids[keep:]
-	return tx.Where("id IN ?", ids).Delete(&entity.UserCanvasVersion{}).Error
+	return tx.WithContext(ctx).Where("id IN ?", ids).Delete(&entity.UserCanvasVersion{}).Error
 }

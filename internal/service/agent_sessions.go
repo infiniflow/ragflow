@@ -27,8 +27,6 @@ import (
 	"strings"
 	"time"
 
-	"gorm.io/gorm"
-
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -700,6 +698,9 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 
 	ok, err := s.CheckCanvasAccess(ctx, req.UserID, req.AgentID)
 	if err != nil {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
+			return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
+		}
 		return nil, common.CodeServerError, fmt.Errorf("check canvas access: %w", err)
 	}
 	if !ok {
@@ -719,7 +720,7 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 	if len(dsl) == 0 {
 		canvas, gErr := s.canvasDAO.GetByID(ctx, dao.DB, req.AgentID)
 		if gErr != nil {
-			if errors.Is(gErr, gorm.ErrRecordNotFound) {
+			if errors.Is(gErr, dao.ErrUserCanvasNotFound) {
 				return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
 			}
 			return nil, common.CodeServerError, fmt.Errorf("load canvas dsl: %w", gErr)
