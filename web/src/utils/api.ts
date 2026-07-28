@@ -49,11 +49,11 @@ export default {
     `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
   showProviderInstance: ({
     provider_name,
-    instance_name,
+    id,
   }: {
     provider_name: string;
-    instance_name: string;
-  }) => `${restAPIv1}/providers/${provider_name}/instances/${instance_name}`,
+    id: string;
+  }) => `${restAPIv1}/providers/${provider_name}/instances/${id}`,
   addInstanceModel: ({
     provider_name,
     instance_name,
@@ -74,11 +74,11 @@ export default {
     `${restAPIv1}/providers/${provider_name}/instances`,
   updateProviderInstance: ({
     provider_name,
-    instance_name,
+    id,
   }: {
     provider_name: string;
-    instance_name: string;
-  }) => `${restAPIv1}/providers/${provider_name}/instances/${instance_name}`,
+    id: string;
+  }) => `${restAPIv1}/providers/${provider_name}/instances/${id}`,
   updateModelStatus: ({
     provider_name,
     instance_name,

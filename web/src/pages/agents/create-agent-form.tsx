@@ -13,11 +13,11 @@ import { TagRenameId } from '@/constants/knowledge';
 import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
-import { BrainCircuit, Check, Route, Shapes } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
-import { FlowType } from './constant';
+import { FlowType, FlowTypeConfig } from './constant';
 import { NameFormField, NameFormSchema } from './name-form-field';
 
 export type CreateAgentFormProps = IModalProps<any> & {
@@ -28,18 +28,6 @@ export type CreateAgentFormProps = IModalProps<any> & {
 type FlowTypeCardProps = {
   value?: FlowType;
   onChange?: (value: FlowType) => void;
-};
-
-const FLOW_TYPE_CONFIG: Record<
-  FlowType,
-  { icon: typeof BrainCircuit; labelKey: string }
-> = {
-  [FlowType.Flow]: { icon: Route, labelKey: 'tabList.ingestionPipeline' },
-  [FlowType.Compiler]: {
-    icon: Shapes,
-    labelKey: 'tabList.compilationOperator',
-  },
-  [FlowType.Agent]: { icon: BrainCircuit, labelKey: 'tabList.workflow' },
 };
 
 function FlowTypeCards({ value, onChange }: FlowTypeCardProps) {
@@ -55,7 +43,7 @@ function FlowTypeCards({ value, onChange }: FlowTypeCardProps) {
     <section className="flex gap-10">
       {[FlowType.Flow, FlowType.Compiler, FlowType.Agent].map((val) => {
         const isActive = value === val;
-        const config = FLOW_TYPE_CONFIG[val];
+        const config = FlowTypeConfig[val];
         const Icon = config.icon;
         return (
           <Card

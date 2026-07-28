@@ -101,7 +101,7 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 
 	qPrefix, aPrefix := "问题：", "回答："
 	// Python qa.py defaults to Chinese when no language is supplied; only
-	// an explicit "english" switches to English prefixes (diff Chunker-2.13).
+	// an explicit "english" switches to English prefixes
 	eng := strings.EqualFold(c.param.Lang, "english")
 	if eng {
 		qPrefix, aPrefix = "Question: ", "Answer: "
@@ -137,7 +137,7 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 			ContentLtks:       contentLTKS,
 			ContentSmLtks:     contentSMLTKS,
 		}
-		// Restore metadata lost before diff Chunker-1.8: top_int (row
+		//
 		// index), image id + coordinates carried from the source item.
 		if pair.RowNum >= 0 {
 			chunk.TopInt = []int{pair.RowNum}
@@ -172,14 +172,14 @@ type qaPair struct {
 	RowNum int
 	// Image and positions are carried from the upstream item so the QA
 	// chunk preserves metadata that Python sets via beAdocPdf/beAdocDocx
-	// (diff Chunker-1.8).
+	//
 	Image        string
 	PDFPositions json.RawMessage
 	Positions    json.RawMessage
 }
 
 // rmQAPrefixRe mirrors Python qa.py:241 `[\t:： ]+` — one-or-more separator
-// chars, so "Q:: answer" is fully stripped (diff Chunker-2.12).
+// chars, so "Q:: answer" is fully stripped
 var rmQAPrefixRe = regexp.MustCompile(`(?i)^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[\t:： ]+`)
 
 func rmQAPrefix(txt string) string {
@@ -424,7 +424,7 @@ func extractQAJSON(items []schema.ChunkDoc) []qaPair {
 		}
 		tmp := extractQAText(txt)
 		// Preserve the source item's image id and coordinates on each
-		// extracted pair (diff Chunker-1.8).
+		// extracted pair
 		for _, p := range tmp {
 			p.Image = item.Image
 			p.PDFPositions = item.PDFPositions

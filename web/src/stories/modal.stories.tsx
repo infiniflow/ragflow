@@ -169,7 +169,7 @@ export const Default: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
 
     return (
@@ -228,7 +228,7 @@ export const Small: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
 
     return (
@@ -297,7 +297,7 @@ export const Large: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
 
     return (
@@ -364,7 +364,7 @@ export const WithCustomFooter: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
 
     return (
@@ -448,7 +448,7 @@ export const WithoutFooter: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
 
     return (
@@ -515,7 +515,7 @@ export const FullScreen: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
 
     return (
@@ -581,9 +581,9 @@ export const LoadingState: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [loading, setLoading] = useState(false);
 
     const handleOk = () => {
@@ -668,7 +668,7 @@ export const Interactive: Story = {
     ),
   },
   render: (args) => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [open, setOpen] = useState(false);
 
     return (

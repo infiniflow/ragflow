@@ -4,24 +4,24 @@
     "es2021": true,
     "node": true
   },
-  "plugins": ["@typescript-eslint", "react", "react-hooks"],
+  "plugins": ["typescript", "react"],
   "settings": {
     "react": {
       "version": "18.2.0"
     }
   },
   "rules": {
-    "@typescript-eslint/no-use-before-define": [
+    "typescript/no-use-before-define": [
       "warn",
       {
         "functions": false,
         "variables": true
       }
     ],
-    "@typescript-eslint/no-explicit-any": "off",
-    "@typescript-eslint/ban-ts-comment": "off",
-    "@typescript-eslint/no-empty-function": "off",
-    "@typescript-eslint/no-non-null-assertion": "off",
+    "typescript/no-explicit-any": "off",
+    "typescript/ban-ts-comment": "off",
+    "typescript/no-empty-function": "off",
+    "typescript/no-non-null-assertion": "off",
     "react/react-in-jsx-scope": "off",
     "react/no-unescaped-entities": "warn",
     "no-console": ["warn", { "allow": ["warn", "error"] }]

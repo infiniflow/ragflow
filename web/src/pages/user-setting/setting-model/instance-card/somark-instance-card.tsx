@@ -169,7 +169,7 @@ export const SoMarkInstanceCard = forwardRef<
   const { data: instanceDetails, refetch: refetchInstanceDetails } =
     useFetchProviderInstance(
       isDraft ? '' : providerName,
-      isDraft ? '' : instance.instance_name,
+      isDraft ? '' : instance.id,
     );
 
   // Lazily fetch full instance details only when the card is open.
@@ -239,7 +239,7 @@ export const SoMarkInstanceCard = forwardRef<
   useEffect(() => {
     // Reset form when initial values change (e.g. instance details load).
     form.reset(initialValues);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [initialValues]);
 
   const imageFormatOptions = useMemo(
@@ -398,6 +398,7 @@ export const SoMarkInstanceCard = forwardRef<
       };
     }
     const values = form.getValues();
+    if (!form.formState.isDirty) return null;
     const payload = buildPayload(values, instance.instance_name);
     const finalPayload = {
       ...payload,

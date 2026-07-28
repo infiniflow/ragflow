@@ -255,10 +255,11 @@ func TestMessage_MemorySave_Success(t *testing.T) {
 	defer SetMemorySaver(nil)
 
 	c, _ := NewMessageComponent(map[string]any{"text": "hi"})
-	state := canvas.NewCanvasState("run-y", "task-y")
+	state := canvas.NewCanvasState("run-y", "session-y")
 	state.Sys["query"] = "what?"
 	state.Sys["canvas_id"] = "canvas-y"
 	state.Sys["session_id"] = "session-y"
+	state.Sys["agent_id"] = "agent-y"
 	ctx := withStateForTest(context.Background(), state)
 
 	_, err := c.Invoke(ctx, nil, map[string]any{
@@ -273,8 +274,8 @@ func TestMessage_MemorySave_Success(t *testing.T) {
 	if len(saved.MemoryIDs) != 2 || saved.MemoryIDs[0] != "m1" || saved.MemoryIDs[1] != "m2" {
 		t.Errorf("MemoryIDs: %+v", saved.MemoryIDs)
 	}
-	if saved.AgentID != "canvas-y" {
-		t.Errorf("AgentID: got %q, want canvas-y", saved.AgentID)
+	if saved.AgentID != "agent-y" {
+		t.Errorf("AgentID: got %q, want agent-y", saved.AgentID)
 	}
 	if saved.SessionID != "session-y" {
 		t.Errorf("SessionID: got %q, want session-y", saved.SessionID)

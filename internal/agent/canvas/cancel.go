@@ -14,25 +14,28 @@
 //  limitations under the License.
 //
 
-// cancel.go implements the cross-process cancel signal. See plan §4.9 —
-// a Go canvas run goroutine polls Redis for "{taskID}-cancel"; when the
-// HTTP handler sets the key, the watcher fires onCancel. The Redis key
-// naming is deliberately identical to the Python task_service.py
-// protocol (line 521-523) so Go and Python canvas runs in the same
-// tenant can signal each other.
+// cancel.go implements the cross-process cancel signal for ordinary Agent
+// sessions. A canvas run polls Redis for "{sessionID}-cancel"; when the HTTP
+// handler sets the key, the watcher cancels the same context used by the
+// workflow.
 package canvas
 
 import (
 	"context"
 	"errors"
-	redis2 "ragflow/internal/engine/redis"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
+	redis2 "ragflow/internal/engine/redis"
 )
 
-// cancelKeySuffix is appended to the task id to form the Redis key.
+// cancelKeySuffix is appended to the session id to form the Redis key.
 const cancelKeySuffix = "-cancel"
+
+func cancelKey(sessionID string) string { return sessionID + cancelKeySuffix }
 
 // cancelPollInterval is the gap between Redis Get polls. 500ms keeps
 // cancel latency p99 ≤ 500ms while staying cheap (one GET every half-
@@ -60,30 +63,24 @@ var cancelClientFn = func() (*redis.Client, error) {
 }
 
 // WatchCancel blocks until either ctx is cancelled or the Redis
-// "{taskID}-cancel" key is set to a non-empty value. When fired, it
-// calls onCancel exactly once and returns. Polling interval is fixed
+// "{sessionID}-cancel" key contains a non-empty value. When fired, it calls
+// onCancel exactly once and returns. Polling interval is fixed
 // at 500ms (see plan §4.9 — revised 2026-06-03 from 1s to 500ms).
 //
-// WatchCancel is intended to run as a side goroutine; the run-loop
-// goroutine calls it with onCancel wired to the eino graph interrupt
-// callback:
+// WatchCancel is intended to run as a side goroutine with onCancel wired to
+// the cancel function for the workflow context:
 //
-//	go func() {
-//	    canvas.WatchCancel(ctx, taskID, func() {
-//	        interrupt(compose.WithGraphInterruptTimeout(30*time.Second))
-//	    })
-//	}()
-func WatchCancel(ctx context.Context, taskID string, onCancel func()) {
+//	go canvas.WatchCancel(ctx, sessionID, cancelRun)
+func WatchCancel(ctx context.Context, sessionID string, onCancel func()) {
 	c, err := cancelClientFn()
 	if err != nil {
-		// Without Redis the watcher can do nothing. Returning silently
-		// matches the rest of the canvas layer: a missing cache is a
-		// deployment error surfaced at startup, not at every call.
+		common.Warn("agent cancel watcher unavailable", zap.String("session_id", sessionID), zap.Error(err))
 		return
 	}
-	key := taskID + cancelKeySuffix
+	key := cancelKey(sessionID)
 	ticker := time.NewTicker(cancelPollInterval)
 	defer ticker.Stop()
+	readFailureLogged := false
 
 	for {
 		select {
@@ -92,11 +89,13 @@ func WatchCancel(ctx context.Context, taskID string, onCancel func()) {
 		case <-ticker.C:
 			v, err := c.Get(ctx, key).Result()
 			if err != nil && !errors.Is(err, redis.Nil) {
-				// Transient Redis error — log by skipping this tick; the
-				// next tick will retry. Avoid spinning on persistent
-				// failure.
+				if !readFailureLogged {
+					common.Warn("agent cancel watcher redis read failed", zap.String("session_id", sessionID), zap.Error(err))
+					readFailureLogged = true
+				}
 				continue
 			}
+			readFailureLogged = false
 			if v != "" {
 				if onCancel != nil {
 					onCancel()
@@ -107,14 +106,42 @@ func WatchCancel(ctx context.Context, taskID string, onCancel func()) {
 	}
 }
 
-// RequestCancel publishes a cancel signal for the given task. The
-// 24h TTL matches the Python task_service.py protocol so a flag set
-// during one run is still observable by a resume that arrives hours
-// later (e.g. after a long client-side wait).
-func RequestCancel(ctx context.Context, taskID string) error {
+// RequestCancel publishes a cancel signal for the given session. The marker
+// is cleared atomically when the owning run releases its active lease.
+func RequestCancel(ctx context.Context, sessionID string) error {
 	c, err := cancelClientFn()
 	if err != nil {
 		return err
 	}
-	return c.Set(ctx, taskID+cancelKeySuffix, "x", RequestCancelTTL).Err()
+	return c.Set(ctx, cancelKey(sessionID), "x", RequestCancelTTL).Err()
+}
+
+// CancelRequested reports whether a cancellation marker is currently
+// published for sessionID. Registration uses this as an immediate check after
+// acquiring the lease so a cancel that wins the startup race cannot be erased
+// before the polling watcher gets its first tick.
+func CancelRequested(ctx context.Context, sessionID string) (bool, error) {
+	c, err := cancelClientFn()
+	if err != nil {
+		return false, err
+	}
+	v, err := c.Get(ctx, cancelKey(sessionID)).Result()
+	if errors.Is(err, redis.Nil) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return v != "", nil
+}
+
+// ClearCancel removes a session cancel marker. Production run registration
+// and release perform this operation atomically with active-session ownership;
+// this helper remains useful for Redis-degraded and focused test paths.
+func ClearCancel(ctx context.Context, sessionID string) error {
+	c, err := cancelClientFn()
+	if err != nil {
+		return err
+	}
+	return c.Del(ctx, cancelKey(sessionID)).Err()
 }
