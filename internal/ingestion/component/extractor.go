@@ -799,12 +799,22 @@ func splitKeywords(s string) []string {
 	return result
 }
 
+// nonRetryableStatusRE matches HTTP client-error status codes that
+// signal a permanent (non-transient) condition and therefore must
+// NOT be retried. The word boundaries are essential: a bare
+// substring check on "400" would wrongly flag phrasing such as
+// "context deadline exceeded after 400ms" (a transient timeout,
+// retryable) as non-retryable. \b ensures we only match a standalone
+// 3-digit status token, so "400ms" / "4000" do not match. 429 and
+// 5xx are deliberately absent — they stay retryable.
+var nonRetryableStatusRE = regexp.MustCompile(`\b(?:400|401|403|404|405|422)\b`)
+
 // isRetryableLLMError classifies an LLM chat error as worth
 // retrying. The production chat invoker returns opaque errors:
 // configuration failures (missing model/driver) before any API
 // call, and the provider SDK's raw error after the call. We treat
 // context cancellation/deadline as terminal, plus a lightweight
-// substring heuristic for non-transient API/auth errors. Anything
+// heuristic for non-transient auth/client errors. Anything
 // unrecognized defaults to retryable so genuinely transient 5xx /
 // 429 / network blips keep retrying (matching the prior blind-retry
 // behavior).
@@ -817,13 +827,16 @@ func isRetryableLLMError(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	for _, s := range []string{
-		"401", "403", "unauthorized", "authentication", "api key",
-		"400", "bad request", "404", "not found", "model not found", "content filter",
+		"unauthorized", "authentication", "api key",
+		"bad request", "not found", "model not found", "content filter",
 		"no driver resolved", "model_name is required", "resolve driver",
 	} {
 		if strings.Contains(msg, s) {
 			return false
 		}
+	}
+	if nonRetryableStatusRE.MatchString(msg) {
+		return false
 	}
 	return true
 }

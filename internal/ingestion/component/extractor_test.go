@@ -941,6 +941,44 @@ func TestExtractorComponent_Invoke_FieldNameTemperatureDefault(t *testing.T) {
 	}
 }
 
+// TestIsRetryableLLMError locks in the retry-classification heuristic,
+// especially the word-boundary guard that prevents a transient timeout
+// message ("...after 400ms") from being misclassified as a permanent
+// HTTP 400 and dropped.
+func TestIsRetryableLLMError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil is retryable", err: nil, want: true},
+		{name: "context canceled is terminal", err: context.Canceled, want: false},
+		{name: "deadline exceeded is terminal", err: context.DeadlineExceeded, want: false},
+		{
+			name: "wrapped deadline with 400ms must stay retryable",
+			err:  errors.New("context deadline exceeded after 400ms"),
+			want: true,
+		},
+		{name: "429 stays retryable", err: errors.New("429 Too Many Requests"), want: true},
+		{name: "503 stays retryable", err: errors.New("503 Service Unavailable"), want: true},
+		{name: "401 unauthorized is terminal", err: errors.New("HTTP 401 Unauthorized"), want: false},
+		{name: "403 forbidden is terminal", err: errors.New("403 forbidden"), want: false},
+		{name: "404 not found is terminal", err: errors.New("HTTP 404 Not Found"), want: false},
+		{name: "405 method not allowed is terminal", err: errors.New("405 Method Not Allowed"), want: false},
+		{name: "422 unprocessable is terminal", err: errors.New("422 Unprocessable Entity"), want: false},
+		{name: "bad request is terminal", err: errors.New("400 Bad Request: malformed"), want: false},
+		{name: "api key phrase is terminal", err: errors.New("invalid api key"), want: false},
+		{name: "no driver phrase is terminal", err: errors.New("no driver resolved for llm_id"), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isRetryableLLMError(tt.err); got != tt.want {
+				t.Errorf("isRetryableLLMError(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestCleanExtractionResult_LastThinkTag verifies that when the LLM
 // response contains multiple </think> tags, cleanExtractionResult strips
 // up to the LAST one (greedy, matching Python's re.sub), not just the
