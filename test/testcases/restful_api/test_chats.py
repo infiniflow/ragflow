@@ -1192,7 +1192,7 @@ def test_chat_create_allows_default_knowledge_placeholder_without_sources_unit(m
     assert res["code"] == 0
     assert saved["kb_ids"] == []
     assert saved["prompt_config"]["system"].find("{knowledge}") >= 0
-    assert saved["prompt_config"]["parameters"] == [{"key": "knowledge", "optional": False}]
+    assert saved["prompt_config"]["parameters"] == [{"key": "knowledge", "optional": False}, {"key": "date", "optional": True}]
 
 
 @pytest.mark.p2
