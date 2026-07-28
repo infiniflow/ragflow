@@ -161,37 +161,6 @@ func TestPPIOChatHappyPath(t *testing.T) {
 	assertModelUsage(t, usage, 3, 5, 8)
 }
 
-func TestPPIOChatUsesReasoningFallback(t *testing.T) {
-	ctx := t.Context()
-	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"choices": []map[string]interface{}{{
-				"message": map[string]interface{}{
-					"content":   "pong",
-					"reasoning": "fallback reasoning",
-				},
-			}},
-		})
-	})
-	defer srv.Close()
-
-	apiKey := "test-key"
-	resp, err := newPPIOForTest(srv.URL).ChatWithMessages(
-		ctx,
-		"deepseek/deepseek-r1",
-		[]Message{{Role: "user", Content: "ping"}},
-		&APIConfig{ApiKey: &apiKey},
-		nil,
-		nil,
-	)
-	if err != nil {
-		t.Fatalf("ChatWithMessages: %v", err)
-	}
-	if *resp.ReasonContent != "fallback reasoning" {
-		t.Errorf("ReasonContent=%q", *resp.ReasonContent)
-	}
-}
-
 func TestPPIOChatRequiresModelName(t *testing.T) {
 	ctx := t.Context()
 	apiKey := "test-key"
@@ -259,7 +228,6 @@ func TestPPIOStreamHappyPath(t *testing.T) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w,
 			`data: {"choices":[{"delta":{"reasoning_content":"think "}}]}`+"\n"+
-				`data: {"choices":[{"delta":{"reasoning":"fallback "}}]}`+"\n"+
 				`data: {"choices":[{"delta":{"content":"Hello"}}]}`+"\n"+
 				`data: {"choices":[{"delta":{"content":" world"},"finish_reason":"stop"}]}`+"\n"+
 				`data: {"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8}}`+"\n",
@@ -293,7 +261,7 @@ func TestPPIOStreamHappyPath(t *testing.T) {
 	if strings.Join(content, "") != "Hello world[DONE]" {
 		t.Errorf("content=%q", strings.Join(content, ""))
 	}
-	if strings.Join(reasoning, "") != "think fallback " {
+	if strings.Join(reasoning, "") != "think " {
 		t.Errorf("reasoning=%q", strings.Join(reasoning, ""))
 	}
 	if len(content) == 0 || content[len(content)-1] != "[DONE]" {

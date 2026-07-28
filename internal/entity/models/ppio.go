@@ -81,7 +81,6 @@ func (p *PPIOModel) endpoint(apiConfig *APIConfig, suffix string) (string, error
 type ppioChatMessage struct {
 	Content          string `json:"content"`
 	ReasoningContent string `json:"reasoning_content"`
-	Reasoning        string `json:"reasoning"`
 }
 
 type ppioChatChoice struct {
@@ -199,6 +198,7 @@ func (p *PPIOModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 	}
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
@@ -245,9 +245,6 @@ func (p *PPIOModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 
 		choice := event.Choices[0]
 		reasoning := choice.Delta.ReasoningContent
-		if reasoning == "" {
-			reasoning = choice.Delta.Reasoning
-		}
 		if reasoning != "" {
 			if err := sender(nil, &reasoning); err != nil {
 				return err
