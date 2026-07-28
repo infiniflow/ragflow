@@ -222,23 +222,23 @@ func (t *RunTracker) MarkCancelled(ctx context.Context, runID string) error {
 }
 
 // RegisterActiveSession atomically acquires the distributed active-run lease
-// for sessionID. It deliberately does not delete the session cancel marker:
-// a marker written just before registration is a valid cancellation request
-// and must survive until the owner observes it or releases the lease. A false
-// result means another instance already owns the session.
+// for sessionID. A cancel marker found without an active lease belongs to an
+// older run and is removed before the new owner is registered. A false result
+// means another instance already owns the session.
 func (t *RunTracker) RegisterActiveSession(ctx context.Context, active ActiveSession) (bool, error) {
 	if t == nil || t.client == nil {
 		return false, errors.New("run tracker: redis client not initialized")
 	}
 	const script = `
 if redis.call("EXISTS", KEYS[1]) == 1 then return 0 end
+redis.call("DEL", KEYS[2])
 redis.call("HSET", KEYS[1],
   "session_id", ARGV[1], "token", ARGV[2], "user_id", ARGV[3],
   "canvas_id", ARGV[4], "run_id", ARGV[5], "started_at", ARGV[6])
 redis.call("PEXPIRE", KEYS[1], ARGV[7])
 return 1`
 	result, err := t.client.Eval(ctx, script,
-		[]string{activeSessionKey(active.SessionID)},
+		[]string{activeSessionKey(active.SessionID), cancelKey(active.SessionID)},
 		active.SessionID, active.Token, active.UserID, active.CanvasID, active.RunID,
 		strconv.FormatInt(time.Now().UnixMilli(), 10), strconv.FormatInt(t.leaseTTL().Milliseconds(), 10),
 	).Int64()

@@ -223,8 +223,8 @@ func TestRunTrackerActiveSessionRegistration(t *testing.T) {
 	if err != nil || !registered {
 		t.Fatalf("RegisterActiveSession = %v, %v; want true, nil", registered, err)
 	}
-	if !mr.Exists(cancelKey("session-1")) {
-		t.Fatal("registration erased a cancellation marker that raced startup")
+	if mr.Exists(cancelKey("session-1")) {
+		t.Fatal("registration preserved a cancellation marker from an older run")
 	}
 	got, err := tracker.GetActiveSession(ctx, "session-1")
 	if err != nil || got == nil {
@@ -239,6 +239,17 @@ func TestRunTrackerActiveSessionRegistration(t *testing.T) {
 	registered, err = tracker.RegisterActiveSession(ctx, ActiveSession{SessionID: "session-1", Token: "owner-b"})
 	if err != nil || registered {
 		t.Fatalf("second RegisterActiveSession = %v, %v; want false, nil", registered, err)
+	}
+	requested, err := tracker.RequestCancelActiveSession(ctx, "session-1", "owner-a")
+	if err != nil || !requested {
+		t.Fatalf("RequestCancelActiveSession = %v, %v; want true, nil", requested, err)
+	}
+	registered, err = tracker.RegisterActiveSession(ctx, ActiveSession{SessionID: "session-1", Token: "owner-b"})
+	if err != nil || registered {
+		t.Fatalf("registration racing active cancel = %v, %v; want false, nil", registered, err)
+	}
+	if !mr.Exists(cancelKey("session-1")) {
+		t.Fatal("failed registration erased the active owner's cancel marker")
 	}
 	registered, err = tracker.RegisterActiveSession(ctx, ActiveSession{SessionID: "session-2", Token: "owner-b"})
 	if err != nil || !registered {
@@ -299,6 +310,17 @@ func TestRunTrackerActiveSessionTokenProtectsCancel(t *testing.T) {
 	}
 	if tracker.client.Exists(ctx, cancelKey("session-1")).Val() != 1 {
 		t.Fatal("owner cancel did not create a marker")
+	}
+	released, err := tracker.ReleaseActiveSession(ctx, "session-1", "owner-a")
+	if err != nil || !released {
+		t.Fatalf("owner ReleaseActiveSession = %v, %v; want true, nil", released, err)
+	}
+	requested, err = tracker.RequestCancelActiveSession(ctx, "session-1", "owner-a")
+	if err != nil || requested {
+		t.Fatalf("late RequestCancelActiveSession = %v, %v; want false, nil", requested, err)
+	}
+	if tracker.client.Exists(ctx, cancelKey("session-1")).Val() != 0 {
+		t.Fatal("late cancel recreated a marker after active-session release")
 	}
 }
 

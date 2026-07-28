@@ -970,6 +970,114 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if sessionID == "" {
 		sessionID = utility.GenerateToken()
 	}
+	runID := runIDFor(canvasID, map[string]any{"session_id": sessionID})
+	lockToken := utility.GenerateToken()
+	runCtx, cancelRun := context.WithCancel(ctx)
+	active := &activeAgentRun{
+		userID:     userID,
+		canvasID:   canvasID,
+		sessionID:  sessionID,
+		leaseToken: lockToken,
+		cancelRun:  cancelRun,
+	}
+	releaseLocal := func() {
+		s.runMu.Lock()
+		if s.activeSessions[sessionID] == active {
+			delete(s.activeSessions, sessionID)
+		}
+		s.runMu.Unlock()
+	}
+	// Make the distributed lease the first run-lifecycle mutation after canvas
+	// access is authorized. All version, session, and DSL initialization happens
+	// only after other instances can observe and cancel this starting run.
+	if s.runTracker != nil {
+		registered, registerErr := s.runTracker.RegisterActiveSession(ctx, canvas.ActiveSession{
+			SessionID: sessionID,
+			Token:     lockToken,
+			UserID:    userID,
+			CanvasID:  canvasID,
+			RunID:     runID,
+		})
+		if registerErr != nil {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+			_, _ = s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
+			cleanupCancel()
+			releaseLocal()
+			cancelRun()
+			return nil, fmt.Errorf("RunAgent: register active session: %w: %w", registerErr, ErrAgentStorageError)
+		}
+		if !registered {
+			releaseLocal()
+			cancelRun()
+			return nil, ErrAgentSessionBusy
+		}
+	}
+
+	s.runMu.Lock()
+	if _, exists := s.activeSessions[sessionID]; exists {
+		s.runMu.Unlock()
+		if s.runTracker != nil {
+			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+			_, _ = s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
+			cleanupCancel()
+		}
+		cancelRun()
+		return nil, ErrAgentSessionBusy
+	}
+	s.activeSessions[sessionID] = active
+	s.runMu.Unlock()
+
+	if s.runTracker == nil {
+		// Without the distributed registry, clear a marker left by a prior
+		// local run before starting the watcher. A concurrent local Cancel also
+		// calls cancelRun directly, so this cleanup cannot lose that signal.
+		clearCtx, cancelClear := context.WithTimeout(ctx, time.Second)
+		_ = canvas.ClearCancel(clearCtx, sessionID)
+		cancelClear()
+	}
+
+	releaseRegistration := func() {
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+		if s.runTracker != nil {
+			_, releaseErr := s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
+			if releaseErr != nil {
+				common.Warn("agent run: release active session failed", zap.String("session_id", sessionID), zap.Error(releaseErr))
+			}
+		} else {
+			_ = canvas.ClearCancel(cleanupCtx, sessionID)
+		}
+		cleanupCancel()
+		releaseLocal()
+	}
+
+	// Start cancellation and lease watchers as soon as the active registration
+	// is visible. This keeps the lease alive during initialization and preserves
+	// a cancel marker published before Compile/Invoke begins.
+	watchCtx, cancelWatch := context.WithCancel(context.WithoutCancel(ctx))
+	go canvas.WatchCancel(watchCtx, sessionID, active.requestCancel)
+	if s.runTracker != nil {
+		go s.runTracker.WatchActiveSession(watchCtx, sessionID, lockToken, active.requestCancel)
+	}
+	checkCtx, cancelCheck := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+	if requested, checkErr := canvas.CancelRequested(checkCtx, sessionID); checkErr != nil {
+		common.Warn("agent run: initial cancel check failed",
+			zap.String("session_id", sessionID), zap.Error(checkErr))
+	} else if requested {
+		active.requestCancel()
+	}
+	cancelCheck()
+
+	// Until the Runner goroutine takes ownership, every initialization error
+	// must release the active lease and any marker written for this token.
+	registrationHandedOff := false
+	defer func() {
+		if registrationHandedOff {
+			return
+		}
+		cancelWatch()
+		cancelRun()
+		releaseRegistration()
+	}()
 
 	// Load the version row up front so the run is bound to a real DSL.
 	//
@@ -1082,7 +1190,6 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	}
 
 	run := s.buildRunFunc(canvasID, versionRow, dsl)
-	runID := runIDFor(canvasID, map[string]any{"session_id": sessionID})
 
 	root := map[string]any{
 		"canvas_id":  canvasID,
@@ -1148,83 +1255,12 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		zap.Any("tenantID", root["tenant_id"]),
 		zap.Any("userInput", root["user_input"]))
 
-	lockToken := utility.GenerateToken()
-	runCtx, cancelRun := context.WithCancel(ctx)
-	active := &activeAgentRun{
-		userID:     userID,
-		canvasID:   canvasID,
-		sessionID:  sessionID,
-		leaseToken: lockToken,
-		cancelRun:  cancelRun,
-	}
-	s.runMu.Lock()
-	if _, exists := s.activeSessions[sessionID]; exists {
-		s.runMu.Unlock()
-		cancelRun()
-		return nil, ErrAgentSessionBusy
-	}
-	s.activeSessions[sessionID] = active
-	s.runMu.Unlock()
-
-	releaseLocal := func() {
-		s.runMu.Lock()
-		if s.activeSessions[sessionID] == active {
-			delete(s.activeSessions, sessionID)
-		}
-		s.runMu.Unlock()
-	}
-	if s.runTracker != nil {
-		registered, registerErr := s.runTracker.RegisterActiveSession(ctx, canvas.ActiveSession{
-			SessionID: sessionID,
-			Token:     lockToken,
-			UserID:    userID,
-			CanvasID:  canvasID,
-			RunID:     runID,
-		})
-		if registerErr != nil {
-			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-			_, _ = s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
-			cleanupCancel()
-			releaseLocal()
-			cancelRun()
-			return nil, fmt.Errorf("RunAgent: register active session: %w: %w", registerErr, ErrAgentStorageError)
-		}
-		if !registered {
-			releaseLocal()
-			cancelRun()
-			return nil, ErrAgentSessionBusy
-		}
-	} else {
-		// Without the distributed registry, clear a marker left by a prior
-		// local run before starting the watcher. A concurrent local Cancel also
-		// calls cancelRun directly, so this cleanup cannot lose that signal.
-		clearCtx, cancelClear := context.WithTimeout(ctx, time.Second)
-		_ = canvas.ClearCancel(clearCtx, sessionID)
-		cancelClear()
-	}
-
 	// Cancellation of the HTTP request must reach the workflow, but it must
 	// not stop the Redis watchers while the real Runner goroutine is still
 	// unwinding. Otherwise a non-cooperative external call can outlive the
 	// lease, allowing a second process to acquire the same session. The
 	// detached watcher context is cancelled only after inner has closed and
 	// cleanup has taken ownership of the lease release.
-	watchCtx, cancelWatch := context.WithCancel(context.WithoutCancel(ctx))
-	go canvas.WatchCancel(watchCtx, sessionID, active.requestCancel)
-	if s.runTracker != nil {
-		go s.runTracker.WatchActiveSession(watchCtx, sessionID, lockToken, active.requestCancel)
-	}
-	// Close the startup/cancel race synchronously. CancelSessionRun publishes
-	// the same session marker even when registration was not visible yet;
-	// this check makes that marker effective before Compile/Invoke starts.
-	checkCtx, cancelCheck := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-	if requested, checkErr := canvas.CancelRequested(checkCtx, sessionID); checkErr != nil {
-		common.Warn("agent run: initial cancel check failed",
-			zap.String("session_id", sessionID), zap.Error(checkErr))
-	} else if requested {
-		active.requestCancel()
-	}
-	cancelCheck()
 	lifecycleDone := make(chan struct{})
 	go func() {
 		select {
@@ -1256,17 +1292,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 					}
 				}
 			}
-			cleanupCtx, cleanupCancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
-			if s.runTracker != nil {
-				_, err := s.runTracker.ReleaseActiveSession(cleanupCtx, sessionID, lockToken)
-				if err != nil {
-					common.Warn("agent run: release active session failed", zap.String("session_id", sessionID), zap.Error(err))
-				}
-			} else {
-				_ = canvas.ClearCancel(cleanupCtx, sessionID)
-			}
-			cleanupCancel()
-			releaseLocal()
+			releaseRegistration()
 		}()
 		for ev := range inner {
 			if ev.SessionID == "" {
@@ -1280,6 +1306,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 			}
 		}
 	}()
+	registrationHandedOff = true
 	return out, nil
 }
 
@@ -2190,27 +2217,9 @@ func (s *AgentService) CancelSessionRun(ctx context.Context, userID, sessionID s
 			return nil
 		}
 	}
-	// No active registration is visible, so authorize against the persisted
-	// conversation before publishing a marker. This preserves cancellation of
-	// an owner's run during the registration race without allowing another user
-	// to pre-cancel a session whose ID they learned. Missing sessions remain
-	// idempotent successes and do not create tombstones.
-	if s.api4ConversationDAO == nil || dao.DB == nil {
-		return nil
-	}
-	session, err := s.api4ConversationDAO.GetByID(ctx, dao.DB, sessionID)
-	if err != nil {
-		return fmt.Errorf("agent cancel: load session owner: %w: %w", err, ErrAgentStorageError)
-	}
-	if session == nil {
-		return nil
-	}
-	if session.UserID != userID {
-		return ErrAgentNotOwner
-	}
-	if err := canvas.RequestCancel(ctx, sessionID); err != nil {
-		common.Warn("agent cancel: publish session marker failed",
-			zap.String("session_id", sessionID), zap.Error(err))
-	}
+	// A persisted conversation is not evidence of an active run. Once both the
+	// local registration and the distributed lease are absent, cancellation is
+	// an idempotent no-op. Publishing a session-scoped marker here would race
+	// completed-run cleanup and could cancel a later run that reuses sessionID.
 	return nil
 }
