@@ -5,7 +5,7 @@ go 1.26.4
 require (
 	cloud.google.com/go/storage v1.63.0
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/TenkiCloud/tenki-sdk-go/sandbox v0.3.3
+	github.com/LuxorLabs/tenki-sdk-go/sandbox v0.5.2
 	github.com/alibabacloud-go/agentrun-20250910/v5 v5.8.4
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.2.1
 	github.com/alicebob/miniredis/v2 v2.38.0

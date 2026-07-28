@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	tenkisdk "github.com/TenkiCloud/tenki-sdk-go/sandbox"
+	tenkisdk "github.com/LuxorLabs/tenki-sdk-go/sandbox"
 )
 
 func TestTenkiProvider_ProviderTypeAndLanguages(t *testing.T) {
@@ -52,7 +52,7 @@ func TestTenkiProvider_ProviderTypeAndLanguages(t *testing.T) {
 // TENKI_* so the test is independent of the host environment. Cannot
 // use t.Parallel with t.Setenv.
 func TestTenkiProvider_Defaults(t *testing.T) {
-	for _, k := range []string{"TENKI_PROJECT_ID", "TENKI_IMAGE", "TENKI_TIMEOUT", "TENKI_ALLOW_OUTBOUND"} {
+	for _, k := range []string{"TENKI_IMAGE", "TENKI_TIMEOUT", "TENKI_ALLOW_OUTBOUND"} {
 		t.Setenv(k, "")
 	}
 	p := newTenkiProviderFromEnv()
@@ -68,14 +68,10 @@ func TestTenkiProvider_Defaults(t *testing.T) {
 }
 
 func TestTenkiProvider_EnvOverride(t *testing.T) {
-	t.Setenv("TENKI_PROJECT_ID", "proj-123")
 	t.Setenv("TENKI_IMAGE", "custom-image")
 	t.Setenv("TENKI_TIMEOUT", "120")
 	t.Setenv("TENKI_ALLOW_OUTBOUND", "true")
 	p := newTenkiProviderFromEnv()
-	if p.projectID != "proj-123" {
-		t.Errorf("projectID = %q, want %q", p.projectID, "proj-123")
-	}
 	if p.image != "custom-image" {
 		t.Errorf("image = %q, want %q", p.image, "custom-image")
 	}

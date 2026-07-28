@@ -27,9 +27,10 @@
 // Like the Go e2b provider, this port does not collect run artifacts
 // (artifact collection lives only in the local/ssh providers).
 //
-// SDK: github.com/TenkiCloud/tenki-sdk-go/sandbox (MIT). The auth
-// token and API URL are read from env by Initialize; project id,
-// image and tunables come from the admin-panel config map.
+// SDK: github.com/LuxorLabs/tenki-sdk-go/sandbox (MIT). The auth
+// token and API URL are read from env by Initialize; image and
+// tunables come from the admin-panel config map. Sandbox scope is
+// inferred from the API key by the SDK.
 
 package sandbox
 
@@ -41,7 +42,7 @@ import (
 	"sync"
 	"time"
 
-	tenkisdk "github.com/TenkiCloud/tenki-sdk-go/sandbox"
+	tenkisdk "github.com/LuxorLabs/tenki-sdk-go/sandbox"
 )
 
 // tenkiDefaultSandboxTimeout bounds a single CodeExec call. A fresh
@@ -54,7 +55,6 @@ type TenkiProvider struct {
 	client         *tenkisdk.Client
 	apiKey         string
 	apiURL         string
-	projectID      string
 	image          string
 	allowOutbound  bool
 	sandboxTimeout time.Duration
@@ -75,7 +75,6 @@ func tenkiConfigFromEnv() map[string]any {
 	return map[string]any{
 		"API_KEY":        common.GetEnv(common.EnvTenkiApiKey),
 		"API_URL":        common.GetEnv(common.EnvTenkiAPIURL),
-		"PROJECT_ID":     common.GetEnv(common.EnvTenkiProjectID),
 		"IMAGE":          common.GetEnv(common.EnvTenkiImage),
 		"TIMEOUT":        common.GetEnv(common.EnvTenkiTimeout),
 		"ALLOW_OUTBOUND": common.GetEnv(common.EnvTenkiAllowOutbound),
@@ -86,10 +85,9 @@ func tenkiConfigFromEnv() map[string]any {
 // map (admin-panel settings or the env-backed map above).
 func newTenkiProviderFromConfig(cfg map[string]any) *TenkiProvider {
 	p := &TenkiProvider{
-		apiKey:    configString(cfg, "API_KEY"),
-		apiURL:    configString(cfg, "API_URL"),
-		projectID: configString(cfg, "PROJECT_ID"),
-		image:     configString(cfg, "IMAGE"),
+		apiKey: configString(cfg, "API_KEY"),
+		apiURL: configString(cfg, "API_URL"),
+		image:  configString(cfg, "IMAGE"),
 		// Outbound network is opt-in: sandboxed code has no egress
 		// unless ALLOW_OUTBOUND is explicitly "true". This matches
 		// the self_managed sandbox, which treats network access as an
@@ -160,9 +158,6 @@ func (p *TenkiProvider) CreateInstance(ctx context.Context, template string) (*S
 		tenkisdk.WithAllowOutbound(p.allowOutbound),
 		tenkisdk.WithMaxDuration(p.sandboxTimeout),
 		tenkisdk.WithWaitTimeout(p.sandboxTimeout),
-	}
-	if p.projectID != "" {
-		opts = append(opts, tenkisdk.WithProjectID(p.projectID))
 	}
 	if p.image != "" {
 		opts = append(opts, tenkisdk.WithImage(p.image))

@@ -64,7 +64,6 @@ const (
 	EnvE2BDomain                         = "E2B_DOMAIN"
 	EnvTenkiApiKey                       = "TENKI_API_KEY"
 	EnvTenkiAPIURL                       = "TENKI_API_URL"
-	EnvTenkiProjectID                    = "TENKI_PROJECT_ID"
 	EnvTenkiImage                        = "TENKI_IMAGE"
 	EnvTenkiTimeout                      = "TENKI_TIMEOUT"
 	EnvTenkiAllowOutbound                = "TENKI_ALLOW_OUTBOUND"
