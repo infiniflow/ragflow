@@ -35,6 +35,7 @@ from common.aimlapi_utils import attribution_headers
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
+from rag.llm.key_utils import _resolve_volcengine_credentials
 from rag.utils.url_utils import ensure_v1
 
 
@@ -619,13 +620,13 @@ class VolcEngineCV(GptV4):
         if not base_url:
             base_url = "https://ark.cn-beijing.volces.com/api/v3"
 
-        try:
-            api_key = json.loads(key).get("ark_api_key", "")
-            llm_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
-
-        except JSONDecodeError:
-            api_key = key
-            llm_name = model_name
+        # Parse the key via the shared helper. The helper handles plain
+        # (non-JSON) keys, JSON dicts, and JSON top-level non-objects
+        # (e.g. "[1,2,3]" or "42") which would otherwise raise
+        # AttributeError on the .get() call. See #17456.
+        resolved = _resolve_volcengine_credentials(key)
+        api_key = resolved["ark_api_key"]
+        llm_name = resolved["model_name"] or model_name
         self.base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=api_key, base_url=self.base_url)
         self.async_client = AsyncOpenAI(api_key=api_key, base_url=self.base_url)

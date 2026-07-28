@@ -32,7 +32,7 @@ from common import settings
 from common.aimlapi_utils import attribution_headers
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
-from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.key_utils import _normalize_replicate_key, _resolve_volcengine_credentials
 from rag.utils.url_utils import ensure_v1
 import logging
 import base64
@@ -1108,11 +1108,12 @@ class VolcEngineEmbed(Base):
             base_url = "https://ark.cn-beijing.volces.com/api/v3"
         self.base_url = base_url
 
-        try:
-            cfg = json.loads(key)
-            self.ark_api_key = cfg.get("ark_api_key", "")
-        except JSONDecodeError:
-            self.ark_api_key = key
+        # Parse the key via the shared helper. The helper handles plain
+        # (non-JSON) keys, JSON dicts, and JSON top-level non-objects
+        # (e.g. "[1,2,3]" or "42") which would otherwise raise
+        # AttributeError on the .get() call. See #17456.
+        resolved = _resolve_volcengine_credentials(key)
+        self.ark_api_key = resolved["ark_api_key"]
         self.model_name = model_name
 
     @staticmethod

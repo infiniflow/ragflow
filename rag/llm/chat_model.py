@@ -36,7 +36,7 @@ from common.misc_utils import thread_pool_exec
 from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
-from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.key_utils import _normalize_replicate_key, _resolve_volcengine_credentials
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 from rag.utils.url_utils import ensure_v1
@@ -973,12 +973,17 @@ class VolcEngineChat(Base):
         model_name is for display only
         """
         base_url = base_url if base_url else "https://ark.cn-beijing.volces.com/api/v3"
-        try:
-            ark_api_key = json.loads(key).get("ark_api_key", "")
-            model_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
-            super().__init__(ark_api_key, model_name, base_url, **kwargs)
-        except JSONDecodeError:
-            super().__init__(key, model_name, base_url, **kwargs)
+        # Parse the key via the shared helper. The helper handles plain
+        # (non-JSON) keys, JSON dicts, and JSON top-level non-objects
+        # (e.g. "[1,2,3]" or "42") which would otherwise raise
+        # AttributeError on the .get() call. See #17456.
+        resolved = _resolve_volcengine_credentials(key)
+        super().__init__(
+            resolved["ark_api_key"],
+            resolved["model_name"] or model_name,
+            base_url,
+            **kwargs,
+        )
 
 
 class MistralChat(Base):
