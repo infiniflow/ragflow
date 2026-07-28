@@ -71,10 +71,14 @@ type retrievalArgs struct {
 // field matches the Python tool's output convention; downstream components
 // can pattern-match on it.
 type retrievalResult struct {
-	FormalizedContent string         `json:"formalized_content,omitempty"`
-	Chunks            []chunkPayload `json:"chunks,omitempty"`
-	Stub              bool           `json:"stub,omitempty"`
-	Error             string         `json:"_ERROR,omitempty"`
+	FormalizedContent string `json:"formalized_content,omitempty"`
+	// Chunks deliberately has no omitempty: a successful search always
+	// carries the field (empty array for zero hits) so downstream
+	// consumers can distinguish a confirmed empty-result envelope
+	// ({"chunks": []}) from unrelated shapes such as {} or raw output.
+	Chunks []chunkPayload `json:"chunks"`
+	Stub   bool           `json:"stub,omitempty"`
+	Error  string         `json:"_ERROR,omitempty"`
 }
 
 // chunkPayload is the minimal chunk shape we surface. We don't try to

@@ -184,6 +184,11 @@ func TestBegin_SingleInputFallsBackToSysQuery(t *testing.T) {
 	if got := out["color"]; got != "红色" {
 		t.Errorf("outputs[color] = %v, want 红色 (sys.query fallback)", got)
 	}
+	// The fallback must also land in the reserved "begin" namespace so
+	// {begin@color} references resolve even with node ids like begin_0.
+	if got, _ := state.GetVar("begin@color"); got != "红色" {
+		t.Errorf("begin@color = %v, want 红色 (sys.query fallback)", got)
+	}
 }
 
 // TestBegin_SeededInputsWinOverFallback: when the service layer

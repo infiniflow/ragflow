@@ -183,11 +183,32 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	// Match Python's Retrieval component: when the search yields no
 	// chunks, the node still surfaces `formalized_content` carrying
 	// the configured empty_response so downstream prompts see the
-	// fallback text instead of an empty output map.
-	if fc, _ := decoded["formalized_content"].(string); strings.TrimSpace(fc) == "" && c.params.EmptyResponse != "" {
-		decoded["formalized_content"] = c.params.EmptyResponse
+	// fallback text instead of an empty output map. The fallback only
+	// applies to a confirmed empty-result envelope — raw non-JSON
+	// output, error stubs, envelopes with chunks but no rendered
+	// text, and unrelated empty objects ({}) are left untouched.
+	if c.params.EmptyResponse != "" && isEmptyRetrievalEnvelope(decoded) {
+		if fc, _ := decoded["formalized_content"].(string); strings.TrimSpace(fc) == "" {
+			decoded["formalized_content"] = c.params.EmptyResponse
+		}
 	}
 	return decoded, nil
+}
+
+// isEmptyRetrievalEnvelope reports whether decoded is a confirmed
+// zero-result retrieval envelope: a parsed JSON object (no "_raw"
+// fallback wrapper) whose "chunks" field is present as an empty
+// array. A missing/null "chunks" field (error stubs, {}), non-empty
+// chunks, or non-object envelopes do not qualify.
+func isEmptyRetrievalEnvelope(decoded map[string]any) bool {
+	if decoded == nil {
+		return false
+	}
+	if _, raw := decoded["_raw"]; raw {
+		return false
+	}
+	chunks, ok := decoded["chunks"].([]any)
+	return ok && len(chunks) == 0
 }
 
 func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {

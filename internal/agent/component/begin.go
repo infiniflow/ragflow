@@ -115,6 +115,10 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 	mapsCopy(out, inputs)
 	if fallbackKey != "" {
 		out[fallbackKey] = fallbackValue
+		// Persist into the reserved "begin" namespace the same way
+		// request-supplied inputs are seeded, so {begin@<key>} refs
+		// resolve even when the DSL node id is e.g. begin_0.
+		state.SetVar("begin", fallbackKey, fallbackValue)
 	}
 	return out, nil
 }
