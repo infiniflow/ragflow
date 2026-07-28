@@ -14,26 +14,15 @@
 #  limitations under the License.
 #
 
+import importlib.util
+import logging
+from pathlib import Path
 import sys
 import types
-import importlib.util
-from pathlib import Path
 
 import pytest
 
 from common.doc_store.doc_store_base import MatchTextExpr, FusionExpr
-
-
-fake_rag_nlp = types.ModuleType("rag.nlp")
-fake_rag_nlp.__path__ = []
-
-fake_tokenizer = types.ModuleType("rag.nlp.rag_tokenizer")
-fake_tokenizer.fine_grained_tokenize = lambda text: text
-fake_rag_nlp.rag_tokenizer = fake_tokenizer
-sys.modules["rag.nlp"] = fake_rag_nlp
-sys.modules["rag.nlp.rag_tokenizer"] = fake_tokenizer
-
-fake_query = types.ModuleType("rag.nlp.query")
 
 
 class _DummyFulltextQueryer:
@@ -41,37 +30,53 @@ class _DummyFulltextQueryer:
         return MatchTextExpr(fields=["content_ltks"], matching_text=text, topn=10, extra_options={}), ["keyword"]
 
 
-fake_query.FulltextQueryer = _DummyFulltextQueryer
-fake_rag_nlp.query = fake_query
-sys.modules["rag.nlp.query"] = fake_query
-
-fake_settings = types.ModuleType("common.settings")
-fake_settings.DOC_ENGINE_OCEANBASE = False
-sys.modules.setdefault("common.settings", fake_settings)
-
-fake_token_utils = types.ModuleType("common.token_utils")
-fake_token_utils.num_tokens_from_string = lambda text: len(text.split())
-sys.modules.setdefault("common.token_utils", fake_token_utils)
-
-from common import settings as rag_settings  # noqa: E402
-
 _ROOT = Path(__file__).parents[3]
-_FUSION_SPEC = importlib.util.spec_from_file_location("rag.nlp.fusion", _ROOT / "rag" / "nlp" / "fusion.py")
-_FUSION_MODULE = importlib.util.module_from_spec(_FUSION_SPEC)
-assert _FUSION_SPEC.loader is not None
-sys.modules["rag.nlp.fusion"] = _FUSION_MODULE
-_FUSION_SPEC.loader.exec_module(_FUSION_MODULE)
-fake_rag_nlp.fusion = _FUSION_MODULE
 
-_SEARCH_SPEC = importlib.util.spec_from_file_location("rag.nlp.search", _ROOT / "rag" / "nlp" / "search.py")
-_SEARCH_MODULE = importlib.util.module_from_spec(_SEARCH_SPEC)
-assert _SEARCH_SPEC.loader is not None
-sys.modules["rag.nlp.search"] = _SEARCH_MODULE
-_SEARCH_SPEC.loader.exec_module(_SEARCH_MODULE)
-Dealer = _SEARCH_MODULE.Dealer
 
-rag_settings.DOC_ENGINE_OCEANBASE = False
-rag_settings.DOC_ENGINE_INFINITY = True
+@pytest.fixture
+def search_environment(monkeypatch):
+    fake_rag_nlp = types.ModuleType("rag.nlp")
+    fake_rag_nlp.__path__ = []
+
+    fake_tokenizer = types.ModuleType("rag.nlp.rag_tokenizer")
+    fake_tokenizer.fine_grained_tokenize = lambda text: text
+    fake_rag_nlp.rag_tokenizer = fake_tokenizer
+
+    fake_query = types.ModuleType("rag.nlp.query")
+    fake_query.FulltextQueryer = _DummyFulltextQueryer
+    fake_rag_nlp.query = fake_query
+
+    fake_settings = types.ModuleType("common.settings")
+    fake_settings.DOC_ENGINE_OCEANBASE = False
+    fake_settings.DOC_ENGINE_INFINITY = True
+
+    fake_token_utils = types.ModuleType("common.token_utils")
+    fake_token_utils.num_tokens_from_string = lambda text: len(text.split())
+
+    import common
+
+    monkeypatch.setattr(common, "settings", fake_settings, raising=False)
+    monkeypatch.setattr(common, "token_utils", fake_token_utils, raising=False)
+    monkeypatch.setitem(sys.modules, "common.settings", fake_settings)
+    monkeypatch.setitem(sys.modules, "common.token_utils", fake_token_utils)
+    monkeypatch.setitem(sys.modules, "rag.nlp", fake_rag_nlp)
+    monkeypatch.setitem(sys.modules, "rag.nlp.rag_tokenizer", fake_tokenizer)
+    monkeypatch.setitem(sys.modules, "rag.nlp.query", fake_query)
+
+    fusion_spec = importlib.util.spec_from_file_location("rag.nlp.fusion", _ROOT / "rag" / "nlp" / "fusion.py")
+    fusion_module = importlib.util.module_from_spec(fusion_spec)
+    assert fusion_spec.loader is not None
+    monkeypatch.setitem(sys.modules, "rag.nlp.fusion", fusion_module)
+    fusion_spec.loader.exec_module(fusion_module)
+    fake_rag_nlp.fusion = fusion_module
+
+    search_spec = importlib.util.spec_from_file_location("rag.nlp.search", _ROOT / "rag" / "nlp" / "search.py")
+    search_module = importlib.util.module_from_spec(search_spec)
+    assert search_spec.loader is not None
+    monkeypatch.setitem(sys.modules, "rag.nlp.search", search_module)
+    search_spec.loader.exec_module(search_module)
+
+    return search_module.Dealer
 
 
 class _FakeEmbeddingModel:
@@ -111,9 +116,10 @@ class _CapturingDataStore:
 
 
 @pytest.mark.asyncio
-async def test_dealer_retrieval_passes_vector_similarity_weight_to_fusion_expr():
+async def test_dealer_retrieval_passes_vector_similarity_weight_to_fusion_expr(search_environment, caplog):
+    caplog.set_level(logging.DEBUG)
     data_store = _CapturingDataStore()
-    dealer = Dealer(data_store)
+    dealer = search_environment(data_store)
 
     await dealer.retrieval(
         question="test question",
@@ -133,3 +139,5 @@ async def test_dealer_retrieval_passes_vector_similarity_weight_to_fusion_expr()
     fusion_expr = data_store.match_expressions[2]
     assert isinstance(fusion_expr, FusionExpr)
     assert fusion_expr.fusion_params["weights"] == "0.2,0.8"
+    assert "Dealer.search fusion" in caplog.text
+    assert "vector_similarity_weight=0.8" in caplog.text

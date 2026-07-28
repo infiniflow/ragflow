@@ -209,7 +209,13 @@ class Dealer:
                     src.append(f"q_{len(q_vec)}_vec")
 
                 if settings.DOC_ENGINE_INFINITY:
-                    fusionExpr = build_fusion_expr(topk, float(req.get("vector_similarity_weight", 0.3)))
+                    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+                    logging.debug(
+                        "Dealer.search fusion: topk=%s vector_similarity_weight=%s",
+                        topk,
+                        vector_similarity_weight,
+                    )
+                    fusionExpr = build_fusion_expr(topk, vector_similarity_weight)
                 elif settings.DOC_ENGINE_GAUSSDB:
                     vector_weight = req.get("vector_similarity_weight", 0.3)
                     fusionExpr = FusionExpr("weighted_sum", topk, {"weights": f"{1 - float(vector_weight)},{float(vector_weight)}"})
