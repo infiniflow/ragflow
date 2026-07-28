@@ -157,12 +157,11 @@ dependencies = [
     #    "xxhash>=3.5.0,<4.0.0",
     #    "trio>=0.17.0,<0.29.0",
     #    "click>=8.1.8",
-    # 1.88.0 ships a broken `litellm.integrations.custom_logger`
-    # (imports `AgenticLoopPlan` from a sibling types module where the
-    # symbol is missing — see PR #15952 CI run 27414495913), and the
-    # 1.82.6/1.82.7/1.82.8 minors have a broken `litellm.caching.caching`
-    # import chain. Pin to a single known-good 1.82.x release.
-    "litellm==1.82.5",
+    # litellm < 1.84.0 vulnerable to multiple CVE's. Previously pinned to 1.82.5 due to broken
+    # imports in 1.82.6–1.82.8 (caching) and 1.88.0 (custom_logger); both
+    # issues are resolved in 1.84.0. Exact pin retained due to litellm's
+    # history of introducing regressions on minor bumps.
+    "litellm==1.84.0",
     #    "pip>=25.2",
     #    "imageio-ffmpeg>=0.6.0",
     #    "cryptography==46.0.3",
@@ -226,6 +225,10 @@ constraint-dependencies = [
     # inscriptis 2.7.0 pins lxml<6.0.0, blocking the lxml CVE fix;
     # 2.7.3 relaxes to <6.2.0. Pulled in transitively via ir-datasets -> ranx
     "inscriptis>=2.7.3",
+    # CVE-2025-14009 (CRITICAL), CVE-2026-0846, CVE-2026-0847, CVE-2026-33231,
+    # CVE-2026-33236, CVE-2026-54293 (HIGH), CVE-2026-33230 (MEDIUM):
+    # nltk < 3.10.0 vulnerable; pulled in transitively via crawl4ai, infinity-sdk
+    "nltk>=3.10.0",
 ]
 exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same

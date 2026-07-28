@@ -16,9 +16,13 @@ declare module '@/components/ui/tree-view' {
   }
 }
 
+export function getEntityDisplayName(entity: IStructureGraphEntity) {
+  return entity.name ?? entity.id ?? '';
+}
+
 function normalizeEntity(entity: IStructureGraphEntity) {
   const id = entity.id ?? entity.name ?? '';
-  const name = entity.name ?? entity.id ?? '';
+  const name = getEntityDisplayName(entity);
   return { ...entity, id, name };
 }
 
@@ -30,6 +34,7 @@ function buildTreeDataItems(
   entities: IStructureGraphEntity[],
   relations: IStructureGraphRelation[],
   relationTypes: string[],
+  showEntityType = false,
 ): TreeDataItem[] {
   const normalized = entities
     .map(normalizeEntity)
@@ -40,6 +45,7 @@ function buildTreeDataItems(
       {
         id: entity.id,
         name: entity.name,
+        entityType: showEntityType ? entity.type : undefined,
         source_chunk_ids: entity.source_chunk_ids,
       },
     ]),
@@ -88,6 +94,7 @@ function buildUniqueTreeDataItems(
       {
         id: entity.id,
         name: entity.name,
+        entityType: entity.type,
         source_chunk_ids: entity.source_chunk_ids,
       },
     ]),
@@ -131,7 +138,12 @@ function buildUniqueTreeDataItems(
 export function adaptPageIndexToTreeData(
   template: IStructureGraphTemplate,
 ): TreeDataItem[] {
-  return buildTreeDataItems(template.entities, template.relations, ['include']);
+  return buildTreeDataItems(
+    template.entities,
+    template.relations,
+    ['include'],
+    true,
+  );
 }
 
 export function adaptTreeToTreeData(
@@ -200,6 +212,7 @@ export function adaptKnowledgeGraphToForceGraph(
       .map((relation) => ({
         from: relation.from,
         to: relation.to,
+        type: relation.type ?? '',
       })),
   };
 }

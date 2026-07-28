@@ -238,7 +238,8 @@ func TestSetTenantDefaultModels_WithModelID(t *testing.T) {
 	// 4. Run SetTenantDefaultModels
 	s := NewTenantService()
 	// Set chat model using modelID, explicitly passing "default" as instance name to bypass pre-existing checkModelAvailable panic
-	err = s.SetTenantDefaultModels(userID, "", "default", "", "chat", modelID)
+	ctx := t.Context()
+	err = s.SetTenantDefaultModels(ctx, userID, "", "default", "", "chat", modelID)
 	if err != nil {
 		t.Fatalf("SetTenantDefaultModels failed: %v", err)
 	}

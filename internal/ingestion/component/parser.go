@@ -311,7 +311,7 @@ func defaultSetups() map[string]schema.ParserSetup {
 				"aiff", "au", "midi", "wma", "realaudio", "vqf",
 				"oggvorbis", "ape",
 			},
-			"output_format": "text",
+			"output_format": "json",
 		},
 		"video": {
 			"suffix":        []string{"mp4", "avi", "mkv"},
@@ -443,7 +443,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		}
 	}
 
-	dispatched, handledVision, visionErr := maybeDispatchPDFVision(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
+	dispatched, handledVision, visionErr := maybeDispatchPDFVision(ctx, db, fileTypeExt, filename, binary, inputs, c.Setups)
 	if visionErr != nil {
 		return nil, visionErr
 	}
@@ -452,7 +452,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if !handledVision {
 		// Video dispatch: IMAGE2TEXT vision chat.
 		// Mirrors Python's _video().
-		dispatched, handledMedia, visionErr = maybeDispatchVideo(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledMedia, visionErr = maybeDispatchVideo(ctx, db, fileTypeExt, filename, binary, inputs, c.Setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -461,7 +461,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if !handledVision && !handledMedia {
 		// Image/Picture dispatch: OCR + IMAGE2TEXT vision describe.
 		// Mirrors Python's rag/app/picture.py:chunk() image branch.
-		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, c.Setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -470,7 +470,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if !handledVision && !handledMedia && !handledImage {
 		// Audio dispatch: SPEECH2TEXT transcription.
 		// Mirrors Python's rag/app/audio.py:chunk().
-		dispatched, handledAudio, visionErr = maybeDispatchAudio(ctx, fileTypeExt, filename, binary, inputs, c.Setups)
+		dispatched, handledAudio, visionErr = maybeDispatchAudio(ctx, db, fileTypeExt, filename, binary, inputs, c.Setups)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -483,13 +483,20 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		// append vision-model descriptions to embedded image items
 		// (doc_type_kwd "image"). Mirrors Python's
 		// enhance_media_sections_with_vision in parser.py:_doc.
-		dispatched, _, _ = maybeDispatchDOCXVision(ctx, fileTypeExt, dispatched, inputs, c.Setups)
+		dispatched, _, _ = maybeDispatchDOCXVision(ctx, db, fileTypeExt, dispatched, inputs, c.Setups)
 
 		// Markdown vision figure enhancement: enrich parsed
-		// markdown JSON items with LLM-generated descriptions of
+		// Markdown JSON items with LLM-generated descriptions of
 		// referenced images (![alt](url)). Mirrors Python's
-		// enhance_media_sections_with_vision in _markdown.
-		dispatched, _, _ = maybeDispatchMarkdownVision(ctx, fileTypeExt, dispatched, inputs)
+		// enhance_media_sections_with_vision in _Markdown.
+		dispatched, _, _ = maybeDispatchMarkdownVision(ctx, db, fileTypeExt, dispatched, inputs)
+
+		// PDF vision figure enhancement: enrich parsed PDF JSON
+		// items with vision-model descriptions of embedded
+		// images/tables (doc_type_kwd "image"/"table" with non-empty
+		// image field). Mirrors Python's enhance_media_sections_with_vision
+		// in parser.py:_pdf
+		dispatched, _, _ = maybeDispatchPDFVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs)
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.
@@ -536,7 +543,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	//    downstream chunker / tokenizer get stable chunk IDs.
 	parsed, err := buildPagesFromBytes(ctx, pages, dispatched.DocType)
 	if err != nil {
-		return nil, fmt.Errorf("Parser: %w", err)
+		return nil, fmt.Errorf("parser: %w", err)
 	}
 	sortPagesByNumber(parsed)
 	lang, _ := getString(inputs, "lang")
@@ -613,7 +620,7 @@ func buildPagesFromBytes(ctx context.Context, pages [][]byte, docType string) ([
 // map. The accepted shapes are:
 //
 //	[]byte          — the in-process caller's normal form
-//	string          — UTF-8 text (json callers' normal form)
+//	string          — UTF-8 text (JSON callers' normal form)
 //	nil / absent    — returns an empty page (not an error)
 //
 // A non-UTF-8 string is rejected with a clear error so a caller
@@ -642,7 +649,7 @@ func readParserBinary(ctx context.Context, db *gorm.DB, inputs map[string]any) (
 	if docID, ok := getString(inputs, "doc_id"); ok && docID != "" {
 		ref, err := ResolveDocumentStorage(ctx, db, docID)
 		if err != nil {
-			return nil, fmt.Errorf("Parser: resolve doc_id %q: %w", docID, err)
+			return nil, fmt.Errorf("parser: resolve doc_id %q: %w", docID, err)
 		}
 		return FetchBinary(ctx, ref.Bucket, ref.Path)
 	}

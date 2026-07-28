@@ -62,7 +62,7 @@ func (s *LLMService) GetMyLLMs(ctx context.Context, tenantID string, includeDeta
 	result := make(map[string]MyLLMFactory)
 
 	if includeDetails {
-		objs, err := s.tenantLLMDAO.ListAllByTenant(tenantID)
+		objs, err := s.tenantLLMDAO.ListAllByTenant(ctx, dao.DB, tenantID)
 		if err != nil {
 			return nil, err
 		}
@@ -108,7 +108,7 @@ func (s *LLMService) GetMyLLMs(ctx context.Context, tenantID string, includeDeta
 			result[llmFactory] = factory
 		}
 	} else {
-		objs, err := s.tenantLLMDAO.GetMyLLMs(tenantID)
+		objs, err := s.tenantLLMDAO.GetMyLLMs(ctx, dao.DB, tenantID)
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +171,7 @@ func (s *LLMService) ListLLMs(ctx context.Context, tenantID string, modelType st
 		"ModelScope": true,
 	}
 
-	objs, err := s.tenantLLMDAO.ListAllByTenant(tenantID)
+	objs, err := s.tenantLLMDAO.ListAllByTenant(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -374,14 +374,14 @@ func (s *LLMService) SetAPIKey(ctx context.Context, tenantID string, req *SetAPI
 		}
 		llmConfig["max_tokens"] = maxTokens
 
-		existingLLM, _ := s.tenantLLMDAO.GetByTenantFactoryAndModelName(tenantID, factory, llm.LLMName)
+		existingLLM, _ := s.tenantLLMDAO.GetByTenantFactoryAndModelName(ctx, dao.DB, tenantID, factory, llm.LLMName)
 		if existingLLM != nil {
 			updates := map[string]interface{}{
 				"api_key":    req.APIKey,
 				"api_base":   baseURL,
 				"max_tokens": maxTokens,
 			}
-			dao.DB.Model(&entity.TenantLLM{}).
+			dao.DB.WithContext(ctx).Model(&entity.TenantLLM{}).
 				Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?", tenantID, factory, llm.LLMName).
 				Updates(updates)
 		} else {
@@ -397,7 +397,7 @@ func (s *LLMService) SetAPIKey(ctx context.Context, tenantID string, req *SetAPI
 				MaxTokens:  maxTokens,
 				Status:     "1",
 			}
-			s.tenantLLMDAO.Create(tenantLLM)
+			s.tenantLLMDAO.Create(ctx, dao.DB, tenantLLM)
 		}
 	}
 

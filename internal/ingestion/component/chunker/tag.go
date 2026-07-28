@@ -125,6 +125,7 @@ func (c *TagChunkerComponent) invoke(_ context.Context, inputs map[string]any) (
 			ContentLtks:       contentLTKS,
 			ContentSmLtks:     contentSMLTKS,
 			TagKwd:            splitTagKwd(pair.Tags),
+			TopInt:            []int{pair.RowNum},
 		}
 		chunks = append(chunks, chunk)
 	}
@@ -133,9 +134,13 @@ func (c *TagChunkerComponent) invoke(_ context.Context, inputs map[string]any) (
 }
 
 // tagPair is a (content, tags) row extracted from the upstream payload.
+// RowNum is the 0-based record START line (the first physical source
+// line of the record), used by every extractor consistently and mapped
+// to Python's top_int in beAdoc(tag.py:33).
 type tagPair struct {
 	Content string
 	Tags    string
+	RowNum  int
 }
 
 // extractTagText ports tag.py:60-89 (txt) and tag.py:91-113 (csv).
@@ -157,9 +162,13 @@ func extractTagText(text string) []tagPair {
 func extractTagTextTab(lines []string) []tagPair {
 	var pairs []tagPair
 	content := ""
-	for _, line := range lines {
+	contentStart := -1
+	for i, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
+		}
+		if contentStart < 0 {
+			contentStart = i
 		}
 		parts := strings.Split(line, "\t")
 		if len(parts) != 2 {
@@ -167,8 +176,9 @@ func extractTagTextTab(lines []string) []tagPair {
 			continue
 		}
 		content += "\n" + parts[0]
-		pairs = append(pairs, tagPair{Content: content, Tags: parts[1]})
+		pairs = append(pairs, tagPair{Content: content, Tags: parts[1], RowNum: contentStart})
 		content = ""
+		contentStart = -1
 	}
 	return pairs
 }
@@ -202,6 +212,7 @@ func extractTagTextCSV(text string, lines []string) []tagPair {
 		for curLine < len(lineStarts) && lineStarts[curLine] < endOff {
 			curLine++
 		}
+		startLine := prevLine
 		raw := strings.Join(lines[prevLine:curLine], "\n")
 		prevLine = curLine
 
@@ -210,7 +221,10 @@ func extractTagTextCSV(text string, lines []string) []tagPair {
 			continue
 		}
 		content += "\n" + record[0]
-		pairs = append(pairs, tagPair{Content: content, Tags: record[1]})
+		// RowNum is the 0-based record START line, kept consistent with
+		// extractTagTextTab (line i) and extractTagTable (<tr> i) so every
+		// tag-pair source uses the same row-index convention.
+		pairs = append(pairs, tagPair{Content: content, Tags: record[1], RowNum: startLine})
 		content = ""
 	}
 	return pairs
@@ -226,7 +240,7 @@ func extractTagTable(htmlStr string) []tagPair {
 	}
 	rows := htmlTR.FindAllStringSubmatch(htmlStr, -1)
 	pairs := make([]tagPair, 0, len(rows))
-	for _, row := range rows {
+	for i, row := range rows {
 		cells := htmlTD.FindAllStringSubmatch(row[1], -1)
 		var texts []string
 		for _, cell := range cells {
@@ -237,7 +251,7 @@ func extractTagTable(htmlStr string) []tagPair {
 			}
 		}
 		if len(texts) >= 2 {
-			pairs = append(pairs, tagPair{Content: texts[0], Tags: texts[1]})
+			pairs = append(pairs, tagPair{Content: texts[0], Tags: texts[1], RowNum: i})
 		}
 	}
 	return pairs

@@ -603,7 +603,7 @@ func TestDeleteDocumentFull_Basic(t *testing.T) {
 	}
 
 	// Verify tasks deleted
-	tasks, _ := dao.NewTaskDAO().GetAllTasks()
+	tasks, _ := dao.NewTaskDAO().GetAllTasks(ctx, db)
 	if len(tasks) != 0 {
 		t.Fatalf("expected 0 tasks, got %d", len(tasks))
 	}
@@ -1122,7 +1122,7 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 		t.Fatalf("ingestion task status = %q, want %q", ingestionTask.Status, common.CREATED)
 	}
 
-	tasks, err := svc.taskDAO.GetByDocID("doc-1")
+	tasks, err := svc.taskDAO.GetByDocID(ctx, db, "doc-1")
 	if err != nil {
 		t.Fatalf("load legacy tasks: %v", err)
 	}

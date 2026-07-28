@@ -397,6 +397,12 @@ func TestChatbotCompletion_SessionTenantMismatch(t *testing.T) {
 // ----- AgentbotCompletion tests (criteria 17, 18, 19, 20) -----
 
 // TestAgentbotCompletion_StreamsSSE covers criterion 17.
+//
+// The shared/embedded agent chat page parses the stream with the
+// same use-send-message.ts parser as the in-app agent chat, so the
+// handler must forward the agent canvas envelope ({event,
+// message_id, session_id, data}) — NOT the chatbot {code,
+// data:{answer}} envelope — terminated by [DONE].
 func TestAgentbotCompletion_StreamsSSE(t *testing.T) {
 	stub := &stubBotService{
 		agentbotCompleteFn: func(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
@@ -415,20 +421,34 @@ func TestAgentbotCompletion_StreamsSSE(t *testing.T) {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
 	frames := parseBotSSEFrames(t, w.Body.Bytes())
-	if len(frames) < 2 {
-		t.Fatalf("expected >= 2 frames, got %d", len(frames))
+	if len(frames) < 3 {
+		t.Fatalf("expected >= 3 frames, got %d", len(frames))
 	}
 	// The last frame must be [DONE].
 	if frames[len(frames)-1] != "[DONE]" {
 		t.Errorf("last frame = %q, want [DONE]", frames[len(frames)-1])
 	}
-	// First frame is the data envelope.
+	// First frame is the agent canvas message envelope.
 	var env map[string]any
 	if err := json.Unmarshal([]byte(frames[0]), &env); err != nil {
 		t.Fatalf("bad JSON: %v", err)
 	}
-	if env["code"].(float64) != 0 {
-		t.Errorf("frame code = %v, want 0", env["code"])
+	if env["event"] != "message" {
+		t.Errorf("frame event = %v, want message", env["event"])
+	}
+	if env["session_id"] != "s1" {
+		t.Errorf("frame session_id = %v, want s1", env["session_id"])
+	}
+	if env["data"] != "hello" {
+		t.Errorf("frame data = %v, want hello", env["data"])
+	}
+	// Second frame forwards the message_end terminator event.
+	var endEnv map[string]any
+	if err := json.Unmarshal([]byte(frames[1]), &endEnv); err != nil {
+		t.Fatalf("bad JSON: %v", err)
+	}
+	if endEnv["event"] != "message_end" {
+		t.Errorf("frame event = %v, want message_end", endEnv["event"])
 	}
 }
 
@@ -1075,12 +1095,16 @@ func parseBotSSEFrames(t *testing.T, body []byte) []string {
 		if line == "" {
 			continue
 		}
-		if line == "data: [DONE]" {
+		// Both "data: ..." (chatbot frames) and "data:..." (agent
+		// canvas frames via writeSSEJSON) are valid SSE; the wire
+		// allows an optional single space after the colon.
+		payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if payload == "[DONE]" {
 			frames = append(frames, "[DONE]")
 			continue
 		}
-		if strings.HasPrefix(line, "data: ") {
-			frames = append(frames, strings.TrimPrefix(line, "data: "))
+		if strings.HasPrefix(line, "data:") {
+			frames = append(frames, payload)
 		} else {
 			t.Logf("ignoring unparseable SSE line: %q", line)
 		}

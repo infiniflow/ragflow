@@ -43,6 +43,8 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 type captureSetupConfigurer struct {
@@ -424,7 +426,7 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
 		}, nil
 	}
-	pdfVisionModelResolver = func(tenantID string, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	pdfVisionModelResolver = func(ctx context.Context, db *gorm.DB, tenantID string, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 		if tenantID != "tenant-1" || modelID != "CustomVLM" {
 			return nil, "", nil, fmt.Errorf("resolver got tenant/model %q/%q", tenantID, modelID)
 		}
@@ -504,7 +506,7 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
 		}, nil
 	}
-	pdfVisionModelResolver = func(string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	pdfVisionModelResolver = func(ctx context.Context, db *gorm.DB, tenantID string, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 		return nil, "resolved-vlm", nil, nil
 	}
 	call := 0
@@ -562,7 +564,7 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	defer func() { resolveTenantModelByType = origResolver }()
 	baseURL := server.URL
 	apiKey := ""
-	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return &mineruTestDriver{}, "mineru-model", &modelModule.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
 	}
 

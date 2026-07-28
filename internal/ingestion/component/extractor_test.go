@@ -19,6 +19,7 @@ package component
 import (
 	"context"
 	"errors"
+	"ragflow/internal/dao"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -786,8 +787,9 @@ func TestIsBareTenantModelID(t *testing.T) {
 // TestResolveExtractorChatTarget_AtSplitFallback verifies the @ split
 // fallback path works without canvas state (unit test compatibility).
 func TestResolveExtractorChatTarget_AtSplitFallback(t *testing.T) {
+	ctx := t.Context()
 	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(
-		context.Background(), "gpt-4o-mini@openai")
+		ctx, dao.DB, "gpt-4o-mini@openai")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -805,8 +807,9 @@ func TestResolveExtractorChatTarget_AtSplitFallback(t *testing.T) {
 // TestResolveExtractorChatTarget_NoDriver verifies a non-@ plain string
 // without canvas state returns no driver (passes through to Chat()).
 func TestResolveExtractorChatTarget_NoDriver(t *testing.T) {
+	ctx := t.Context()
 	driver, modelName, _, _, err := resolveExtractorChatTarget(
-		context.Background(), "plain-name")
+		ctx, dao.DB, "plain-name")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

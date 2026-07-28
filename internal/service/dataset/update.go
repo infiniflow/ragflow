@@ -212,13 +212,13 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			} else {
 				tenantEmbdID = ""
 			}
-			ok, message := d.verifyEmbeddingAvailability(effectiveEmbdID, tenantID)
+			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, tenantID)
 			if !ok {
 				txCode = common.CodeDataError
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				resolvedID, err := service.NewModelProviderService().ResolveModelID(tenantID, entity.ModelTypeEmbedding, effectiveEmbdID)
+				resolvedID, err := service.NewModelProviderService().ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
 					tenantEmbdID = resolvedID
 				}

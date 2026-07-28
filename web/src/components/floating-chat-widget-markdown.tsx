@@ -24,7 +24,7 @@ import classNames from 'classnames';
 import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import { omit } from 'lodash';
-import { pipe } from 'lodash/fp';
+import pipe from 'lodash/fp/pipe';
 import { Info } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';

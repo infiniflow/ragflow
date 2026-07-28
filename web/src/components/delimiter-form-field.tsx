@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils';
 import { forwardRef } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { DelimiterPreview } from './delimiter-preview';
 import {
   FormControl,
   FormField,
@@ -62,7 +63,7 @@ export function DelimiterFormField() {
         }
         return (
           <FormItem className=" items-center space-y-0 ">
-            <div className="flex items-center gap-1">
+            <div className="flex items-start gap-1">
               <FormLabel
                 required
                 tooltip={t('knowledgeDetails.delimiterTip')}
@@ -74,6 +75,7 @@ export function DelimiterFormField() {
                 <FormControl>
                   <DelimiterInput {...field}></DelimiterInput>
                 </FormControl>
+                <DelimiterPreview value={field.value} />
               </div>
             </div>
             <div className="flex pt-1">

@@ -139,8 +139,8 @@ export const useFetchAgentListByPage = () => {
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
   const canvasCategory = Array.isArray(filterValue.canvasCategory)
-    ? filterValue.canvasCategory
-    : [];
+    ? (filterValue.canvasCategory[0] as string | undefined)
+    : undefined;
   const owner = filterValue.owner;
   const tags = Array.isArray(filterValue.tags) ? filterValue.tags : undefined;
 
@@ -148,7 +148,7 @@ export const useFetchAgentListByPage = () => {
     page: pagination.current,
     pageSize: pagination.pageSize,
     keywords: debouncedSearchString,
-    canvasCategory: canvasCategory.length === 1 ? canvasCategory[0] : undefined,
+    canvasCategory,
     ownerIds: Array.isArray(owner) ? owner : undefined,
     tags,
   });
@@ -197,7 +197,7 @@ export const useFetchAgentListByPage = () => {
     loading,
     searchString,
     handleInputChange: onInputChange,
-    pagination: { ...pagination, total: data?.total },
+    pagination: { ...pagination, total: data?.total ?? 0 },
     setPagination,
     filterValue,
     handleFilterSubmit,

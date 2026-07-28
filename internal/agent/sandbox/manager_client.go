@@ -56,7 +56,7 @@ func (c *ManagerClient) ExecuteCode(ctx context.Context, req agenttool.SandboxRe
 	if result.Metadata != nil {
 		if structured, ok := result.Metadata["structured_result"].(map[string]any); ok {
 			resp.StructuredResult = structured
-		} else if structured, ok := result.Metadata["result"].(map[string]any); ok {
+		} else if structured, ok = result.Metadata["result"].(map[string]any); ok {
 			resp.StructuredResult = structured
 		}
 	}

@@ -169,7 +169,7 @@ func (s *ChatPipelineService) AsyncChat(
 	}
 	lastMsg := messages[len(messages)-1]
 	if role, _ := lastMsg["role"].(string); role != "user" {
-		return nil, fmt.Errorf("The last content of this conversation is not from user.")
+		return nil, fmt.Errorf("the last content of this conversation is not from user")
 	}
 
 	// No KBs & no web search → fast-path to LLM-only chat.
@@ -205,7 +205,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// === Phase 2: Resolve LLM Model Config + max_tokens ===
 		common.Info("Phase 2: Resolve LLM Model Config + max_tokens")
 		timer.Enter(common.PhaseCheckLLM)
-		llmModelConfig, _, _, _, err := s.getLLMModelConfig(chat)
+		llmModelConfig, _, _, _, err := s.getLLMModelConfig(ctx, chat)
 		if err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -1009,7 +1009,7 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Bool("stream", stream),
 			zap.Int("llm_messages_count", len(llmMessages)))
 		timer.Enter(common.PhaseGenerateAnswer)
-		chatDriver := s.buildChatDriver(chat, chatModel)
+		chatDriver := s.buildChatDriver(ctx, chat, chatModel)
 		if chatDriver == nil {
 			out <- AsyncChatResult{
 				Answer: "**ERROR**: No chat model available for this chat.",
@@ -1329,7 +1329,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 1b. Resolve LLM model config (needed early for model_type dispatch).
-		llmModelConfig, _, _, _, err := s.getLLMModelConfig(chat)
+		llmModelConfig, _, _, _, err := s.getLLMModelConfig(ctx, chat)
 		factoryName := ""
 		if err == nil && llmModelConfig != nil {
 			factoryName, _ = llmModelConfig["llm_factory"].(string)
@@ -1383,7 +1383,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		}
 
 		// 4. Build the chat model wrapper.
-		driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(chat.TenantID, chat.LLMID)
+		driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
 		if err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -1398,7 +1398,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		if promptConfig != nil {
 			if useTTS, _ := promptConfig["tts"].(bool); useTTS {
 				ttsDriver, ttsName, ttsConfig, _, ttsErr := s.ModelProviderSvc.GetTenantDefaultModelByType(
-					chat.TenantID, entity.ModelTypeTTS,
+					ctx, chat.TenantID, entity.ModelTypeTTS,
 				)
 				if ttsErr != nil {
 					common.Warn("AsyncChatSolo: TTS lookup failed; proceeding without TTS",
@@ -1876,11 +1876,11 @@ func tokenizeText(text string) string {
 // The returned `cfg` map's "model_type" field carries the chosen type
 // so downstream code (e.g. the multimodal-conversion guard in AsyncChat
 // at async_chat.go:632) can skip chat-only logic for image2text dialogs.
-func (s *ChatPipelineService) getLLMModelConfig(chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
+func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
 	if chat.LLMID == "" {
 		// Branch 3: no explicit LLM → tenant default chat model.
 		return s.buildLLMModelConfig(
-			s.ModelProviderSvc.GetTenantDefaultModelByType(chat.TenantID, entity.ModelTypeChat),
+			s.ModelProviderSvc.GetTenantDefaultModelByType(ctx, chat.TenantID, entity.ModelTypeChat),
 		)
 	}
 
@@ -1888,7 +1888,7 @@ func (s *ChatPipelineService) getLLMModelConfig(chat *entity.Chat) (map[string]i
 	// when the LLM is registered as such, otherwise CHAT.
 	modelType := entity.ModelTypeChat
 	modelTypeStr := "chat"
-	if modelTypes, mtErr := s.ModelProviderSvc.ResolveModelType(chat.TenantID, chat.LLMID); mtErr == nil {
+	if modelTypes, mtErr := s.ModelProviderSvc.ResolveModelType(ctx, chat.TenantID, chat.LLMID); mtErr == nil {
 		for _, mt := range modelTypes {
 			if mt == entity.ModelTypeImage2Text {
 				modelType = entity.ModelTypeImage2Text
@@ -1898,7 +1898,7 @@ func (s *ChatPipelineService) getLLMModelConfig(chat *entity.Chat) (map[string]i
 		}
 	}
 	cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
-		s.ModelProviderSvc.ResolveModelConfig(chat.TenantID, modelType, chat.LLMID),
+		s.ModelProviderSvc.ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID),
 	)
 	if err != nil {
 		return nil, "", "", "", err
@@ -1978,7 +1978,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 		if kbs[0].EmbdID != "" {
 			embdTenantID := kbs[0].TenantID
 			driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.ResolveModelConfig(
-				embdTenantID, entity.ModelTypeEmbedding, kbs[0].EmbdID,
+				ctx, embdTenantID, entity.ModelTypeEmbedding, kbs[0].EmbdID,
 			)
 			if err != nil {
 				common.Warn("Failed to get embedding model for chat retrieval",
@@ -1992,7 +1992,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	}
 
 	// Chat model.
-	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(chat.TenantID, chat.LLMID)
+	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
 	var chatModel *modelModule.ChatModel
 	if err == nil {
 		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
@@ -2002,7 +2002,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
 		rerankDriver, rerankName, rerankConfig, _, err := s.ModelProviderSvc.ResolveModelConfig(
-			chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
+			ctx, chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
 		)
 		if err == nil {
 			rerankModel = modelModule.NewRerankModel(rerankDriver, &rerankName, rerankConfig)
@@ -2014,7 +2014,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	if chat.PromptConfig != nil {
 		if useTTS, _ := chat.PromptConfig["tts"].(bool); useTTS {
 			ttsDriver, ttsName, ttsConfig, _, err := s.ModelProviderSvc.GetTenantDefaultModelByType(
-				chat.TenantID, entity.ModelTypeTTS,
+				ctx, chat.TenantID, entity.ModelTypeTTS,
 			)
 			if err == nil {
 				ttsModel = modelModule.NewChatModel(ttsDriver, &ttsName, ttsConfig)
@@ -2554,11 +2554,11 @@ func (s *ChatPipelineService) buildChatMessages(systemContent string, messages [
 }
 
 // buildChatDriver creates a ChatModel wrapper from the chat.
-func (s *ChatPipelineService) buildChatDriver(chat *entity.Chat, chatModel *modelModule.ChatModel) *modelModule.ChatModel {
+func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.Chat, chatModel *modelModule.ChatModel) *modelModule.ChatModel {
 	if chatModel != nil {
 		return chatModel
 	}
-	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(chat.TenantID, chat.LLMID)
+	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
 	if err != nil {
 		return nil
 	}
@@ -3710,7 +3710,7 @@ func removeRedundantSpaces(s string) string {
 // dialog_service.py:1309. Matches `T13:24:55|` or `T13:24:55.123Z|`.
 var isoTimestampCellRe = regexp.MustCompile(`T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+Z)?\|`)
 
-// stripISOTimestamps removes ISO-8601 timestamps that end a markdown
+// stripISOTimestamps removes ISO-8601 timestamps that end a Markdown
 // table cell. Operates on the full joined rows string (not per-cell).
 func stripISOTimestamps(rows string) string {
 	return isoTimestampCellRe.ReplaceAllString(rows, "|")

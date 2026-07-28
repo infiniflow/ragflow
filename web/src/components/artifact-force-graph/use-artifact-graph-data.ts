@@ -51,6 +51,7 @@ export const useArtifactGraphData = ({
       (relation) => ({
         source: relation.from,
         target: relation.to,
+        type: relation.type,
       }),
     );
 

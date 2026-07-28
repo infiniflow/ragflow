@@ -142,7 +142,7 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 
 	// ── 5. Validate KB permissions ────────────────────────────────────────────
 	for _, kb := range kbMap {
-		if !service.HasKBTeamPermission(kb, userID, dao.NewTenantDAO()) {
+		if !service.HasKBTeamPermission(ctx, kb, userID, dao.NewTenantDAO()) {
 			return ErrLinkNoAuthorization
 		}
 	}

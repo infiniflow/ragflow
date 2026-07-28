@@ -30,6 +30,7 @@ from common.constants import PAGERANK_FLD, TAG_FLD
 ATTEMPT_TIME = 2
 MAX_RESULT_WINDOW = 10000
 SEARCH_AFTER_BATCH_SIZE = 1000
+KNN_QUERY_STRING_FILTER_WEIGHT_THRESHOLD = 0.8
 
 # Single-document atomic pagerank_fea adjust (chunk feedback). Clamps using params.min_w / max_w;
 # removes field at zero for rank_feature compatibility.
@@ -56,6 +57,43 @@ if (nw <= 0.0) {
   ctx._source[params.pf] = nw;
 }
 """
+
+
+def _is_query_string_clause(clause: dict) -> bool:
+    return isinstance(clause, dict) and "query_string" in clause
+
+
+def _remove_query_string_must_clauses(must_clauses):
+    if isinstance(must_clauses, list):
+        return [copy.deepcopy(clause) for clause in must_clauses if not _is_query_string_clause(clause)]
+    if _is_query_string_clause(must_clauses):
+        return []
+    return [copy.deepcopy(must_clauses)] if must_clauses else []
+
+
+def _build_knn_filter_query(bool_query, vector_similarity_weight: float):
+    if bool_query is None:
+        return None
+
+    query = bool_query.to_dict()
+    if vector_similarity_weight <= KNN_QUERY_STRING_FILTER_WEIGHT_THRESHOLD:
+        return query
+
+    query = copy.deepcopy(query)
+    bool_part = query.get("bool")
+    if not isinstance(bool_part, dict):
+        return query
+
+    if "must" in bool_part:
+        must_clauses = _remove_query_string_must_clauses(bool_part["must"])
+        if must_clauses:
+            bool_part["must"] = must_clauses
+        else:
+            bool_part.pop("must", None)
+
+    if not any(bool_part.get(key) for key in ("must", "filter", "must_not", "should")):
+        return None
+    return query
 
 
 @singleton
@@ -217,7 +255,7 @@ class ESConnection(ESConnectionBase):
                     m.topn,
                     m.topn * 2,
                     query_vector=list(m.embedding_data),
-                    filter=bool_query.to_dict(),
+                    filter=bool_query.to_dict(),  # filter=_build_knn_filter_query(bool_query, vector_similarity_weight),
                     similarity=similarity,
                 )
 
