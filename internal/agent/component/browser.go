@@ -45,7 +45,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"regexp"
+
 	"strings"
 
 	"ragflow/internal/agent/runtime"
@@ -123,27 +123,6 @@ type browserParam struct {
 	// test file; not used by the stagehand path).
 	URL     string `json:"url"`
 	Timeout int    `json:"timeout"`
-}
-
-// llmIDPattern matches `ModelName@Factory`. The factory part is
-// optional; when absent, the caller's tenant lookup will be
-// `GetByTenantAndModelName` instead of
-// `GetByTenantFactoryAndModelName`.
-var llmIDPattern = regexp.MustCompile(`^(.+)@(.+)$`)
-
-// resolveLLMID splits `llm_id` (e.g. "deepseek-v4-pro@DeepSeek") into
-// `(modelName, factory)`. When no `@` is present, factory is empty
-// and the caller must use a single-key lookup.
-//
-// Mirrors the contract of `dao.splitModelNameAndFactory` (private);
-// re-implemented here to keep the component free of an import
-// dependency on a DB-validating private helper.
-func resolveLLMID(llmID string) (modelName, factory string) {
-	m := llmIDPattern.FindStringSubmatch(strings.TrimSpace(llmID))
-	if m == nil {
-		return strings.TrimSpace(llmID), ""
-	}
-	return strings.TrimSpace(m[1]), strings.TrimSpace(m[2])
 }
 
 // Update copies a fresh param map into the receiver. The
@@ -437,35 +416,24 @@ func (b *BrowserComponent) Outputs() map[string]string {
 	}
 }
 
-// resolveBrowserLLM resolves the Browser's selected model into the model name
-// and credentials required by the stagehand runtime. It first tries a
-// tenant_model.id lookup, then model@factory parsing via resolveTenantLLM.
+// resolveBrowserLLM resolves tenant model credentials exclusively through the
+// model_provider series tables (tenant_model → tenant_model_provider →
+// tenant_model_instance). It no longer falls back to the legacy tenant_llm path.
 //
-// Tests override the lookup via `tenantLLMLookupForTest` (a
-// package-level function variable) so they don't need a real DB.
-// Production code leaves the variable unset.
+// Tests override the lookup via `browserLLMLookupForTest` (a package-level
+// function variable) so they don't need a real DB. Production code leaves the
+// variable unset.
 func resolveBrowserLLM(ctx context.Context, db *gorm.DB, tenantID, llmID string) (providerName, modelName, apiKey, baseURL string, err error) {
-	if tenantLLMLookupForTest != nil {
-		oldModelName, factory := resolveLLMID(llmID)
-		apiKey, baseURL, err = tenantLLMLookupForTest(tenantID, oldModelName, factory)
-		baseURL = browserOpenAICompatibleBaseURL(baseURL, factory)
-		return factory, oldModelName, apiKey, baseURL, err
+	if browserLLMLookupForTest != nil {
+		return browserLLMLookupForTest(ctx, db, tenantID, llmID)
 	}
 
 	providerName, modelName, apiKey, baseURL, err = resolveTenantModelBrowserLLM(ctx, db, tenantID, llmID)
-	if err == nil {
-		baseURL = browserOpenAICompatibleBaseURL(baseURL, providerName)
-		return providerName, modelName, apiKey, baseURL, nil
+	if err != nil {
+		return "", "", "", "", fmt.Errorf("tenant model lookup (%q): %w", llmID, err)
 	}
-	modelErr := err
-
-	oldModelName, factory := resolveLLMID(llmID)
-	apiKey, baseURL, oldErr := resolveTenantLLM(ctx, db, tenantID, oldModelName, factory)
-	if oldErr == nil {
-		baseURL = browserOpenAICompatibleBaseURL(baseURL, factory)
-		return factory, oldModelName, apiKey, baseURL, nil
-	}
-	return "", "", "", "", fmt.Errorf("tenant_model lookup: %v; tenant_llm fallback: %w", modelErr, oldErr)
+	baseURL = browserOpenAICompatibleBaseURL(baseURL, providerName)
+	return providerName, modelName, apiKey, baseURL, nil
 }
 
 func resolveTenantModelBrowserLLM(ctx context.Context, db *gorm.DB, tenantID, modelID string) (providerName, modelName, apiKey, baseURL string, err error) {
@@ -531,44 +499,10 @@ func browserOpenAICompatibleBaseURL(baseURL, provider string) string {
 	return browserFactoryDefaultBaseURL[strings.ToLower(provider)]
 }
 
-// resolveTenantLLM looks up the legacy tenant_llm config and returns
-// (apiKey, baseURL). baseURL may be empty when the tenant's provider doesn't
-// configure a custom endpoint.
-//
-// TODO(v2): this helper can move to `internal/dao` so the LLM
-// component (`llm.go`) and other future components can share it.
-func resolveTenantLLM(ctx context.Context, db *gorm.DB, tenantID, modelName, factory string) (apiKey, baseURL string, err error) {
-	llmDAO := dao.NewTenantLLMDAO()
-	var (
-		row *entity.TenantLLM
-	)
-	if factory != "" {
-		row, err = llmDAO.GetByTenantFactoryAndModelName(ctx, db, tenantID, factory, modelName)
-	} else {
-		// No factory suffix on llm_id; fall back to a single-key
-		// lookup (errors if the model is registered under multiple
-		// factories — caller must use the explicit form).
-		row, err = llmDAO.GetByTenantAndModelName(ctx, db, tenantID, "", modelName)
-	}
-	if err != nil {
-		return "", "", err
-	}
-	if row == nil {
-		return "", "", fmt.Errorf("tenant LLM not found")
-	}
-	if row.APIKey != nil {
-		apiKey = *row.APIKey
-	}
-	if row.APIBase != nil {
-		baseURL = *row.APIBase
-	}
-	return apiKey, baseURL, nil
-}
-
-// tenantLLMLookupForTest is the test seam for `resolveTenantLLM`.
+// browserLLMLookupForTest is the test seam for `resolveBrowserLLM`.
 // When non-nil, it's called instead of the real DAO lookup.
 // Production leaves this nil; tests set it via `defer ... = nil`.
-var tenantLLMLookupForTest func(tenantID, modelName, factory string) (apiKey, baseURL string, err error)
+var browserLLMLookupForTest func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (providerName, modelName, apiKey, baseURL string, err error)
 
 func init() {
 	Register(componentNameBrowser, NewBrowserComponent)

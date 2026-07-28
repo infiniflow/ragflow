@@ -28,7 +28,7 @@ import { useState } from 'react';
 
 function MyComponent() {
   const [date, setDate] = useState<Date | undefined>(new Date());
-  
+
   return (
     <Calendar
       mode="single"

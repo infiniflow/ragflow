@@ -537,6 +537,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       noStructureTimeline: 'No timeline yet',
       noStructureSessionEssence: 'No session essence yet',
       noStructureSessionGraph: 'No session graph yet',
+      deleteStructureConfirm: 'Are you sure you want to delete the {{name}}?',
       contents: 'Navigation',
       topics: 'Topics',
       concept: 'Concept',
