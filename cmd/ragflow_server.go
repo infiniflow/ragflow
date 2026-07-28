@@ -388,22 +388,22 @@ func main() {
 
 	switch *arguments.mode {
 	case "api":
-		if err = runAPI(ctx, arguments); err != nil {
+		if err = runAPI(ctx, arguments, config); err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
 			os.Exit(1)
 		}
 	case "admin":
-		if err = runAdmin(ctx, arguments); err != nil {
+		if err = runAdmin(ctx, arguments, config); err != nil {
 			fmt.Printf("Failed to start ADMIN server: %v\n", err)
 			os.Exit(1)
 		}
 	case "ingestor":
-		if err = runIngestor(ctx, arguments); err != nil {
+		if err = runIngestor(ctx, arguments, config); err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
 			os.Exit(1)
 		}
 	case "syncer":
-		if err = runSyncer(ctx, arguments); err != nil {
+		if err = runSyncer(ctx, arguments, config); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
 			os.Exit(1)
 		}
@@ -413,10 +413,7 @@ func main() {
 	}
 }
 
-func runAdmin(ctx context.Context, args *serverArgs) error {
-
-	// Create HTTP server
-	config := server.GetConfig()
+func runAdmin(ctx context.Context, args *serverArgs, config *server.Config) error {
 
 	// Set Gin mode
 	if config.Server.Mode == "release" {
@@ -492,7 +489,7 @@ func runAdmin(ctx context.Context, args *serverArgs) error {
 	return nil
 }
 
-func runIngestor(ctx context.Context, args *serverArgs) error {
+func runIngestor(ctx context.Context, args *serverArgs, config *server.Config) error {
 	// Initialize tokenizer (rag_analyzer)
 	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
 	if err := tokenizer.Init(&tokenizer.PoolConfig{}); err != nil {
@@ -537,8 +534,8 @@ func runIngestor(ctx context.Context, args *serverArgs) error {
 	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
 		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
 	} else {
-		// Start heartbeat reporter with 30 seconds interval
-		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
+		// Start heartbeat reporter with configured interval
+		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", config.General.HeartbeatInterval*time.Second, func() {
 			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
 				local.SetAdminStatus(0, "")
 			} else {
@@ -570,8 +567,7 @@ func runIngestor(ctx context.Context, args *serverArgs) error {
 	return nil
 }
 
-func runSyncer(ctx context.Context, args *serverArgs) error {
-	config := server.GetConfig()
+func runSyncer(ctx context.Context, args *serverArgs, config *server.Config) error {
 	fileSyncer := syncer.NewSyncer(config.FileSyncer.MaxConcurrentSyncs, time.Duration(config.FileSyncer.SyncInterval)*time.Second)
 
 	go func() {
@@ -610,7 +606,7 @@ func runSyncer(ctx context.Context, args *serverArgs) error {
 		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
 	} else {
 		// Start heartbeat reporter with 30 seconds interval
-		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
+		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", config.General.HeartbeatInterval*time.Second, func() {
 			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
 				local.SetAdminStatus(0, "")
 			} else {
@@ -637,7 +633,7 @@ func runSyncer(ctx context.Context, args *serverArgs) error {
 	return nil
 }
 
-func runAPI(ctx context.Context, args *serverArgs) error {
+func runAPI(ctx context.Context, args *serverArgs, config *server.Config) error {
 	// Initialize admin status (default: unavailable=1)
 	local.InitAdminStatus(1, "admin server not connected")
 
@@ -656,7 +652,6 @@ func runAPI(ctx context.Context, args *serverArgs) error {
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
-	config := server.GetConfig()
 	startServer(ctx, config)
 
 	common.Info("Server exited")
@@ -898,7 +893,7 @@ func startServer(ctx context.Context, config *server.Config) {
 		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
 	} else {
 		// Start heartbeat reporter with 30 seconds interval
-		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", 3*time.Second, func() {
+		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", config.General.HeartbeatInterval*time.Second, func() {
 			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
 				local.SetAdminStatus(0, "")
 			} else {
