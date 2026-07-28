@@ -2066,6 +2066,20 @@ async def _wiki_planning_call(
         reverse=True,
     )
 
+    model_context = int(getattr(chat_mdl, "max_length", 8192) or 8192)
+    output_tokens = min(
+        _WIKI_PLAN_MAX_OUTPUT_TOKENS,
+        max(1024, int(model_context * 0.4)),
+    )
+    output_page_capacity = max(
+        1,
+        (output_tokens - _WIKI_PLAN_OUTPUT_SAFETY_TOKENS) // _WIKI_PLAN_PAGE_TOKEN_ESTIMATE,
+    )
+    max_page_count = min(
+        output_page_capacity,
+        max(target_page_count + 8, target_page_count * 2),
+    )
+
     all_items = [("entity", item) for item in sorted_entities] + [("concept", item) for item in sorted_concepts]
     if _batch_depth == 0 and len(all_items) > _WIKI_PLAN_ITEMS_PER_BATCH:
         batches = [all_items[offset : offset + _WIKI_PLAN_ITEMS_PER_BATCH] for offset in range(0, len(all_items), _WIKI_PLAN_ITEMS_PER_BATCH)]
@@ -2101,6 +2115,16 @@ async def _wiki_planning_call(
                 if slug and slug not in seen_slugs:
                     seen_slugs.add(slug)
                     merged_pages.append(page)
+                    if len(merged_pages) >= max_page_count:
+                        break
+            if len(merged_pages) >= max_page_count:
+                break
+        logging.info(
+            "wiki_plan: batched planning items=%d batches=%d merged_pages=%d",
+            total_items,
+            len(batches),
+            len(merged_pages),
+        )
         return {
             "pages": merged_pages,
             "estimated_page_count": len(merged_pages),
@@ -2117,20 +2141,6 @@ async def _wiki_planning_call(
             kb_lines.append(f"  - UPDATE: {name} → {rec['page_slug']} (sim={rec.get('similarity', 0.0):.2f})")
     kb_reconciliation = "\n".join(kb_lines) if kb_lines else "  (all items are new)"
 
-    model_context = int(getattr(chat_mdl, "max_length", 8192) or 8192)
-    output_tokens = min(
-        _WIKI_PLAN_MAX_OUTPUT_TOKENS,
-        max(1024, int(model_context * 0.4)),
-    )
-    output_page_capacity = max(
-        1,
-        (output_tokens - _WIKI_PLAN_OUTPUT_SAFETY_TOKENS) // _WIKI_PLAN_PAGE_TOKEN_ESTIMATE,
-    )
-    max_page_count = min(
-        output_page_capacity,
-        max(target_page_count + 8, target_page_count * 2),
-    )
-
     user_prompt = WIKI_PLAN_USER_TEMPLATE.format(
         kb_name=kb_name or "(unspecified)",
         kb_description=kb_description or "(no description)",
@@ -2138,7 +2148,7 @@ async def _wiki_planning_call(
         concepts_summary=concepts_summary,
         topics_summary=topics_summary,
         kb_reconciliation=kb_reconciliation,
-        target_page_count=max_page_count,
+        target_page_count=target_page_count,
         max_page_count=max_page_count,
     )
 
@@ -2186,6 +2196,12 @@ async def _wiki_planning_call(
             continue
         if page_type not in {"entity", "concept", "topic"}:
             logging.warning("wiki_plan: dropped page with invalid page_type slug=%s", slug)
+            continue
+        if slug.split("/", 1)[0] != page_type:
+            logging.warning("wiki_plan: dropped page with mismatched page_type slug=%s page_type=%s", slug, page_type)
+            continue
+        if action == "UPDATE" and not any(rec.get("action") == "UPDATE" and rec.get("page_slug") == slug for rec in reconciliation.values()):
+            logging.warning("wiki_plan: dropped UPDATE for unreconciled slug=%s", slug)
             continue
         if not isinstance(topic, str) or not topic.strip():
             logging.warning("wiki_plan: dropped page with missing topic slug=%s", slug)
@@ -3816,6 +3832,15 @@ async def wiki_refine_from_plan(
         page["content_md_rendered"] = rendered
         page["outlinks"] = outlinks
         page["summary"] = _wiki_extract_summary(rendered) or page.get("title") or page.get("slug") or ""
+        try:
+            await _wiki_persist_draft(
+                page,
+                tenant_id,
+                kb_id,
+                plan_input_hash=plan_input_hash,
+            )
+        except Exception:
+            logging.exception("wiki_refine: persist cleaned draft failed for slug=%s", page.get("slug"))
 
     logging.info(
         "wiki_refine: kb=%s done — pages written=%d (cached=%d new=%d)",
