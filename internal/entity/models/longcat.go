@@ -51,6 +51,31 @@ func (l *LongCatModel) Name() string {
 	return "longcat"
 }
 
+// LongCatChatResponse mirrors the OpenAI-compatible response returned by
+// LongCat's POST /openai/v1/chat/completions endpoint. Usage is always
+// present on a successful response.
+type LongCatChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Index        int    `json:"index"`
+		FinishReason string `json:"finish_reason"`
+		Message      struct {
+			Role             string           `json:"role"`
+			Content          string           `json:"content"`
+			ReasoningContent string           `json:"reasoning_content"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (l *LongCatModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := l.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -102,47 +127,48 @@ func (l *LongCatModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result LongCatChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
+		choice := &result.Choices[0]
+		content := choice.Message.Content
+		// LongCat-Flash-Thinking may emit all output as reasoning_content
+		// with content left null/empty. That is a valid response — only
+		// reject when there is neither content, reasoning, nor tool calls.
+		if content == "" && choice.Message.ReasoningContent == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("invalid content format")
+		}
 
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
+		// LongCat 2.0 returns the chain-of-thought in a
+		// `reasoning_content` field on the message (OpenAI o-series shape,
+		// also used by kimi-k2.6 and DeepSeek-R1). The field is typically
+		// prefixed with a leading newline — trim it so callers see clean
+		// reasoning. Absent or empty means no reasoning was emitted.
+		reasonContent := choice.Message.ReasoningContent
+		if reasonContent != "" && reasonContent[0] == '\n' {
+			reasonContent = reasonContent[1:]
+		}
 
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
+		usage := &TokenUsage{
+			PromptTokens:     result.Usage.PromptTokens,
+			CompletionTokens: result.Usage.CompletionTokens,
+			TotalTokens:      result.Usage.TotalTokens,
+		}
 
-	content, ok := messageMap["content"].(string)
-	toolCalls := extractToolCalls(messageMap)
-	if !ok && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	// LongCat-Flash-Thinking returns the chain-of-thought in a
-	// `reasoning_content` field on the message (OpenAI o-series shape,
-	// also used by kimi-k2.6 and DeepSeek-R1). Pass it through when
-	// present so callers can surface reasoning to the UI. Absent or
-	// non-string means no reasoning was emitted — leave it empty.
-	reasonContent := ""
-	if r, ok := messageMap["reasoning_content"].(string); ok {
-		reasonContent = r
-	}
-
-	return &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}, nil
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &content,
+			ReasonContent: &reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage:         usage,
+		}, nil
+	})
 }
 
 // ChatStreamlyWithSender sends messages and streams the response via the
@@ -167,13 +193,14 @@ func (l *LongCatModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	delete(reqBody, "stop")
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
 	if chatModelConfig != nil {
 		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
-
-		// Only documented fields are forwarded; see ChatWithMessages.
+		chatModelConfig.ToolCallsResult = nil
+		chatModelConfig.UsageResult = nil
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -206,6 +233,14 @@ func (l *LongCatModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		if apiErr, ok := event["error"]; ok {
 			return fmt.Errorf("longcat: upstream stream error: %v", apiErr)
+		}
+
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
 		}
 
 		choices, ok := event["choices"].([]interface{})
