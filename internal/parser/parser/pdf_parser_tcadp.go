@@ -77,6 +77,9 @@ func parsePDFWithTCADP(filename string, data []byte, parser *PDFParser) ParseRes
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP read zip: %w", err)}
 	}
+	if downloadResp.StatusCode >= 300 {
+		return ParseResult{Err: fmt.Errorf("parser: TCADP download HTTP %d: %s", downloadResp.StatusCode, string(zipBytes))}
+	}
 	items, pageCount, err := tcadpItemsFromZip(zipBytes)
 	if err != nil {
 		return ParseResult{Err: err}
@@ -143,6 +146,18 @@ func tcadpAnyToItems(raw any) []map[string]any {
 	case map[string]any:
 		text := strings.TrimSpace(stringValue(v["content"]))
 		contentType := strings.ToLower(strings.TrimSpace(stringValue(v["type"])))
+		page := extractTCADPPage(v)
+		emit := func(text, docType, layout string) []map[string]any {
+			m := map[string]any{"text": text, "doc_type_kwd": docType, "layout": layout}
+			if page > 0 {
+				// 1-indexed 5-tuple. AddPositions is a passthrough so
+				// the final position_int / page_num_int carry the same
+				// 1-indexed page number the caller passes. Mirrors
+				// Python presentation.py:148-149.
+				m["positions"] = []float64{float64(page), 0, 0, 0, 0}
+			}
+			return []map[string]any{m}
+		}
 		switch contentType {
 		case "table":
 			if text == "" {
@@ -151,26 +166,40 @@ func tcadpAnyToItems(raw any) []map[string]any {
 			if text == "" {
 				return nil
 			}
-			return []map[string]any{{"text": text, "doc_type_kwd": "table", "layout": "table"}}
+			return emit(text, "table", "table")
 		case "image":
 			caption := strings.TrimSpace(stringValue(v["caption"]))
 			if caption == "" {
 				caption = "[Image]"
 			}
-			return []map[string]any{{"text": caption, "doc_type_kwd": "image", "layout": "figure"}}
+			return emit(caption, "image", "figure")
 		case "equation":
 			if text == "" {
 				return nil
 			}
-			return []map[string]any{{"text": "$$" + text + "$$", "doc_type_kwd": "text", "layout": "equation"}}
+			return emit("$$"+text+"$$", "text", "equation")
 		default:
 			if text == "" {
 				return nil
 			}
-			return []map[string]any{{"text": text, "doc_type_kwd": "text", "layout": "text"}}
+			return emit(text, "text", "text")
 		}
 	}
 	return nil
+}
+
+// extractTCADPPage returns the 1-indexed page number carried by a raw TCADP
+// element, using the same key set collectPDFPageNumbers walks
+// (pdf_parser_remote_common.go). It returns 0 when the element has no page
+// information (e.g. spreadsheet TCADP), so callers can skip position emission
+// and remain parity-correct with Python (table.py sets no page either).
+func extractTCADPPage(v map[string]any) int {
+	for _, key := range []string{"page_number", "page_num", "page_no", "page_index", "page_idx", "page"} {
+		if page := int(numberValue(v[key])); page > 0 {
+			return page
+		}
+	}
+	return 0
 }
 
 func tcadpTableRowsText(raw any) string {

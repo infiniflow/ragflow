@@ -764,9 +764,9 @@ func (c *TitleChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs 
 	}
 	switch c.param.Method {
 	case "hierarchy":
-		return invokeHierarchy(ctx, inputs, &c.param)
+		return invokeHierarchy(ctx, db, inputs, &c.param)
 	case "group":
-		return invokeGroup(ctx, inputs, &c.param)
+		return invokeGroup(ctx, db, inputs, &c.param)
 	default:
 		return map[string]any{
 			"output_format": "chunks",

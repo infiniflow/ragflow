@@ -201,7 +201,7 @@ export const useSkills = () => {
 
       if (versionFolders.length === 0) {
         // No version folders found - fallback to legacy structure
-        // eslint-disable-next-line @typescript-eslint/no-use-before-define
+        // oxlint-disable-next-line typescript/no-use-before-define
         return fetchSkillDetailsLegacy(folderId, folderName, skillItems);
       }
 
@@ -598,7 +598,7 @@ export const useSkills = () => {
         return { skills: [], total: 0 };
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
     [ensureSkillSpaceFolder],
   );
 
@@ -697,7 +697,7 @@ export const useSkills = () => {
         }
 
         // Search returned empty, fall back to file system
-        // eslint-disable-next-line no-console
+        // oxlint-disable-next-line no-console
         console.log(
           '[Skills] Search returned empty, falling back to file system',
         );
@@ -714,7 +714,7 @@ export const useSkills = () => {
         setLoading(false);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
     [t, fetchSkillsFromFileSystem],
   );
 
@@ -1045,18 +1045,18 @@ export const useSkills = () => {
         // Delete search index for all versions
         // Backend uses skillName_version as doc_id (replacing '/' with '_')
         // We need to delete each version's index separately
-        // eslint-disable-next-line no-console
+        // oxlint-disable-next-line no-console
         console.log(
           `[deleteSkill] Starting index deletion for skillId: ${skillId}, spaceId: ${normalizedSpaceId}`,
         );
-        // eslint-disable-next-line no-console
+        // oxlint-disable-next-line no-console
         console.log(`[deleteSkill] versionsToDelete:`, versionsToDelete);
 
         for (const version of versionsToDelete) {
           const indexId =
             version === 'latest' ? skillId : `${skillId}/${version}`;
           try {
-            // eslint-disable-next-line no-console
+            // oxlint-disable-next-line no-console
             console.log(
               `[deleteSkill] Deleting index: ${indexId} for space: ${normalizedSpaceId}`,
             );
@@ -1064,10 +1064,10 @@ export const useSkills = () => {
               indexId,
               normalizedSpaceId,
             );
-            // eslint-disable-next-line no-console
+            // oxlint-disable-next-line no-console
             console.log(`[deleteSkill] Successfully deleted index: ${indexId}`);
           } catch (indexError: any) {
-            // eslint-disable-next-line no-console
+            // oxlint-disable-next-line no-console
             console.warn(
               `[deleteSkill] Error deleting skill index for ${indexId}:`,
               indexError?.message || indexError,
@@ -1082,7 +1082,7 @@ export const useSkills = () => {
           for (const version of commonVersions) {
             const indexId = `${skillId}/${version}`;
             try {
-              // eslint-disable-next-line no-console
+              // oxlint-disable-next-line no-console
               console.log(
                 `[deleteSkill] Trying to delete index with version: ${indexId}`,
               );
@@ -1090,7 +1090,7 @@ export const useSkills = () => {
                 indexId,
                 normalizedSpaceId,
               );
-              // eslint-disable-next-line no-console
+              // oxlint-disable-next-line no-console
               console.log(
                 `[deleteSkill] Successfully deleted index: ${indexId}`,
               );
@@ -1116,7 +1116,7 @@ export const useSkills = () => {
         return false;
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
     [t, fetchSkills, ensureSkillSpaceFolder, skills],
   );
 
@@ -1361,7 +1361,7 @@ export const useSkills = () => {
     async (folderId: string, folderName: string): Promise<Skill | null> => {
       return await fetchSkillDetails(folderId, folderName);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
     [],
   );
 
