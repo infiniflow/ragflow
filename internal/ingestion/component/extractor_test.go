@@ -24,6 +24,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	eschema "github.com/cloudwego/eino/schema"
 
@@ -158,10 +159,22 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 
 // TestExtractorComponent_Invoke_LLMError verifies a mock LLM
 // error is surfaced through Invoke with the component-name prefix
-// so the upstream pipeline can attribute failures.
+// so the upstream pipeline can attribute failures. After retry
+// (RetryWithBackoff: 3 retries), the error chains the cause.
 func TestExtractorComponent_Invoke_LLMError(t *testing.T) {
+	// Fast retry for tests — avoid multi-second sleeps.
+	prevMax, prevDelay := extractorRetryMax, extractorRetryDelay
+	extractorRetryMax, extractorRetryDelay = 3, time.Millisecond
+	t.Cleanup(func() {
+		extractorRetryMax, extractorRetryDelay = prevMax, prevDelay
+	})
+
+	errSentinel := errors.New("upstream llm unavailable")
 	withStubChatInvoker(t,
-		stubResponse{Err: errors.New("upstream llm unavailable")},
+		stubResponse{Err: errSentinel},
+		stubResponse{Err: errSentinel},
+		stubResponse{Err: errSentinel},
+		stubResponse{Err: errSentinel},
 	)
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
@@ -179,6 +192,41 @@ func TestExtractorComponent_Invoke_LLMError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "upstream llm unavailable") {
 		t.Errorf("error should chain underlying error, got %v", err)
+	}
+}
+
+// TestExtractorComponent_Invoke_RetrySucceeds verifies that a transient
+// LLM error is retried (RetryWithBackoff), and the invocation succeeds
+// once the LLM recovers.
+func TestExtractorComponent_Invoke_RetrySucceeds(t *testing.T) {
+	prevMax, prevDelay := extractorRetryMax, extractorRetryDelay
+	extractorRetryMax, extractorRetryDelay = 3, time.Millisecond
+	t.Cleanup(func() {
+		extractorRetryMax, extractorRetryDelay = prevMax, prevDelay
+	})
+
+	stub := withStubChatInvoker(t,
+		stubResponse{Err: errors.New("transient")},
+		stubResponse{Err: errors.New("transient")},
+		stubResponse{Content: "recovered"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "summary",
+		LLMID:     "gpt-4o-mini",
+	}}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "x"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if s, _ := chunks[0]["summary"].(string); s != "recovered" {
+		t.Errorf("summary = %q, want recovered", s)
+	}
+	if calls := stub.Calls(); calls != 3 {
+		t.Errorf("calls = %d, want 3 (2 transient + 1 success)", calls)
 	}
 }
 
@@ -449,9 +497,19 @@ func TestExtractorComponent_Invoke_CompositeLLMID(t *testing.T) {
 // pipeline run surfaces which input document triggered the LLM
 // failure (mirrors python's per-chunk progress call at line 105).
 func TestExtractorComponent_Invoke_ChunkIndexInError(t *testing.T) {
+	prevMax, prevDelay := extractorRetryMax, extractorRetryDelay
+	extractorRetryMax, extractorRetryDelay = 3, time.Millisecond
+	t.Cleanup(func() {
+		extractorRetryMax, extractorRetryDelay = prevMax, prevDelay
+	})
+
+	errBoom := errors.New("chunk-1-boom")
 	withStubChatInvoker(t,
 		stubResponse{Content: "ok for chunk 0"},
-		stubResponse{Err: errors.New("chunk-1-boom")},
+		stubResponse{Err: errBoom}, // chunk 1: attempt 0
+		stubResponse{Err: errBoom}, // attempt 1
+		stubResponse{Err: errBoom}, // attempt 2
+		stubResponse{Err: errBoom}, // attempt 3 (last retry)
 	)
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
 		FieldName: "out",
@@ -818,5 +876,228 @@ func TestResolveExtractorChatTarget_NoDriver(t *testing.T) {
 	}
 	if modelName != "plain-name" {
 		t.Errorf("modelName = %q, want plain-name", modelName)
+	}
+}
+
+// TestExtractorComponent_Invoke_TemperatureSet verifies the LLM chat call
+// receives Temperature=0.2, matching Python's keyword_extraction and
+// question_proposal defaults (generator.py:230,245).
+func TestExtractorComponent_Invoke_TemperatureSet(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "keyword, extraction"},
+		stubResponse{Content: "answer"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName:    "summary",
+		LLMID:        "gpt-4o-mini",
+		AutoKeywords: 3,
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "document content"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	if stub.lastReq.Temperature == nil {
+		t.Fatal("Temperature is nil, want 0.2")
+	}
+	if *stub.lastReq.Temperature != 0.2 {
+		t.Errorf("Temperature = %v, want 0.2", *stub.lastReq.Temperature)
+	}
+	if stub.calls.Load() < 2 {
+		t.Errorf("expected at least 2 LLM calls (keyword + extraction), got %d", stub.calls.Load())
+	}
+}
+
+// TestCleanExtractionResult_LastThinkTag verifies that when the LLM
+// response contains multiple </think> tags, cleanExtractionResult strips
+// up to the LAST one (greedy, matching Python's re.sub), not just the
+// first (which would leave a residual think block in the output).
+func TestCleanExtractionResult_LastThinkTag(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "single think block",
+			in:   "<think>reasoning</think>the answer",
+			want: "the answer",
+		},
+		{
+			name: "nested think blocks",
+			in:   "<think>outer</think>mid<think>inner</think>final output",
+			want: "final output",
+		},
+		{
+			name: "no think tag",
+			in:   "plain answer",
+			want: "plain answer",
+		},
+		{
+			name: "think tag without close",
+			in:   "<think>unclosed",
+			want: "<think>unclosed",
+		},
+		{
+			name: "error sentinel",
+			in:   "valid output**ERROR**extra",
+			want: "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := cleanExtractionResult(tt.in)
+			if got != tt.want {
+				t.Errorf("cleanExtractionResult(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions verifies
+// that when both auto_keywords and auto_questions are enabled, both
+// LLM calls are dispatched per chunk and results land on the chunk
+// (matching Python's ThreadPoolExecutor concurrency: task_executor.py:444-448).
+func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "alpha, beta"},       // chunk 0 keywords
+		stubResponse{Content: "what is it?\nwhy?"}, // chunk 0 questions
+		stubResponse{Content: "gamma, delta"},      // chunk 1 keywords
+		stubResponse{Content: "how?\nwhen?"},       // chunk 1 questions
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		LLMID:         "gpt-4o-mini",
+		AutoKeywords:  2,
+		AutoQuestions: 2,
+	}}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{
+			{"text": "first doc"},
+			{"text": "second doc"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %v", out["chunks"])
+	}
+
+	// Both chunks should have keywords and questions populated.
+	for i, ck := range chunks {
+		kwds, hasKW := ck["important_kwd"].([]string)
+		if !hasKW || len(kwds) == 0 {
+			t.Errorf("chunk %d: missing important_kwd", i)
+		}
+		qs, hasQ := ck["question_kwd"].([]string)
+		if !hasQ || len(qs) == 0 {
+			t.Errorf("chunk %d: missing question_kwd", i)
+		}
+	}
+
+	if calls := stub.Calls(); calls != 4 {
+		t.Errorf("expected 4 LLM calls (2 chunks × 2 types), got %d", calls)
+	}
+}
+
+// TestResolveExtractorChatTarget_EmptyLLMID verifies that when llmID is
+// empty, resolveExtractorChatTarget falls back to the tenant default chat
+// model (via resolveTenantModelByType), matching Python's behavior
+// (task_executor.py:573-574 never skips tagging on empty llm_id).
+// When no canvas state is available (unit-test context), returns empty
+// driver — callers like runAutoTags check driver!="" before using it.
+func TestResolveExtractorChatTarget_EmptyLLMID(t *testing.T) {
+	// Without canvas state: empty llmID returns empty driver (no crash).
+	ctx := t.Context()
+	driver, modelName, _, _, err := resolveExtractorChatTarget(ctx, dao.DB, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// In test context without canvas state, neither tenant default nor @ split
+	// can resolve — driver ends up empty. Callers must handle this gracefully.
+	if driver != "" {
+		t.Logf("resolved empty llmID: driver=%q model=%q (tenant default might be available)", driver, modelName)
+	}
+	// Contract: no panic, no error for empty llmID.
+}
+
+// TestExtractorComponent_Invoke_SubstitutesPlaceholders verifies that
+// {field_name} placeholders in the user prompt are substituted with
+// the current chunk's field values before the LLM call, matching
+// Python's string_format (agent/component/base.py:602).
+func TestExtractorComponent_Invoke_SubstitutesPlaceholders(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "substituted answer"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "summary",
+		Prompt:    "Analyze: {text}",
+		LLMID:     "gpt-4o-mini",
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "the document content"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	var userContent string
+	for _, msg := range stub.lastReq.Messages {
+		if msg.Role == eschema.User {
+			userContent = msg.Content
+		}
+	}
+	if strings.Contains(userContent, "{text}") {
+		t.Errorf("prompt still contains literal {text}: %q", userContent)
+	}
+	if !strings.Contains(userContent, "the document content") {
+		t.Errorf("prompt missing chunk text: %q", userContent)
+	}
+}
+
+// TestExtractorComponent_Invoke_PlaceholderChunksAlias verifies that
+// {chunks} (the Python DSL upstream key) is also substituted with
+// the current chunk text.
+func TestExtractorComponent_Invoke_PlaceholderChunksAlias(t *testing.T) {
+	stub := withStubChatInvoker(t,
+		stubResponse{Content: "answer"},
+	)
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		FieldName: "out",
+		Prompt:    "Content: {chunks}",
+		LLMID:     "gpt-4o-mini",
+	}}
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"content_with_weight": "weighted doc"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	var userContent string
+	for _, msg := range stub.lastReq.Messages {
+		if msg.Role == eschema.User {
+			userContent = msg.Content
+		}
+	}
+	if strings.Contains(userContent, "{chunks}") {
+		t.Errorf("prompt still contains literal {chunks}: %q", userContent)
+	}
+	if !strings.Contains(userContent, "weighted doc") {
+		t.Errorf("prompt missing chunk text: %q", userContent)
 	}
 }

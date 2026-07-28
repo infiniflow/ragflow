@@ -22,8 +22,10 @@
 // Unlike TokenChunker (which merges slides into a single chunk) or
 // OneChunker (which collapses many slides into one), PresentationChunker
 // keeps each slide as the unit of chunking. The upstream parser produces
-// one structured record per slide with text, image, page_number, and
-// position information; this chunker passes each through unchanged.
+// one record per slide with text and slide_number; this chunker passes
+// each through unchanged. Note that the PPTX/PPT path does not emit image
+// or position information (unlike the PDF path), so slide chunks carry no
+// image and no bbox-based preview positioning.
 package chunker
 
 import (

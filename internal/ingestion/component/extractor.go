@@ -90,6 +90,19 @@ const componentNameExtractor = "Extractor"
 // is configured.
 const extractorTimeout = 600 * time.Second
 
+// extractorRetryMax and extractorRetryDelay are package-level vars
+// so tests can override them (extractorRetryDelay → time.Millisecond)
+// to avoid multi-second retry sleeps. Production defaults match
+// common.RetryWithBackoff defaults (3 retries, 2s initial delay).
+var (
+	extractorRetryMax   = common.DefaultRetryMax
+	extractorRetryDelay = common.DefaultRetryDelay
+)
+
+// extractorTemperature mirrors Python's 0.2 default for keyword
+// and question extraction calls (generator.py:230,245).
+const extractorTemperature = 0.2
+
 const (
 	autoKeywordPrompt = `## Role
 You are a text analyzer.
@@ -561,19 +574,61 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 				text, _ = ck["text"].(string)
 			}
 
-			if c.Param.AutoKeywords > 0 {
-				if err := c.runAutoKeywords(timeoutCtx, db, in, ck, text); err != nil {
-					return fmt.Errorf("chunk %d keywords: %w", i, err)
+			if c.Param.AutoKeywords > 0 && c.Param.AutoQuestions > 0 {
+				// Check early-exit conditions before spawning
+				// goroutines to avoid concurrent read+write on the
+				// same map (Go maps are not safe for concurrent
+				// access even on different keys).
+				_, hasKW := ck["important_kwd"]
+				_, hasQ := ck["question_kwd"]
+				var kwErr, qErr error
+				var mu sync.Mutex
+				var wg sync.WaitGroup
+				wg.Add(2)
+				go func() {
+					defer wg.Done()
+					if !hasKW {
+						if err := c.runAutoKeywordsLocked(timeoutCtx, db, in, ck, text, &mu); err != nil {
+							kwErr = err
+						}
+					}
+				}()
+				go func() {
+					defer wg.Done()
+					if !hasQ {
+						if err := c.runAutoQuestionsLocked(timeoutCtx, db, in, ck, text, &mu); err != nil {
+							qErr = err
+						}
+					}
+				}()
+				wg.Wait()
+				if kwErr != nil {
+					return fmt.Errorf("chunk %d keywords: %w", i, kwErr)
 				}
-			}
-			if c.Param.AutoQuestions > 0 {
-				if err := c.runAutoQuestions(timeoutCtx, db, in, ck, text); err != nil {
-					return fmt.Errorf("chunk %d questions: %w", i, err)
+				if qErr != nil {
+					return fmt.Errorf("chunk %d questions: %w", i, qErr)
+				}
+			} else {
+				if c.Param.AutoKeywords > 0 {
+					if err := c.runAutoKeywords(timeoutCtx, db, in, ck, text); err != nil {
+						return fmt.Errorf("chunk %d keywords: %w", i, err)
+					}
+				}
+				if c.Param.AutoQuestions > 0 {
+					if err := c.runAutoQuestions(timeoutCtx, db, in, ck, text); err != nil {
+						return fmt.Errorf("chunk %d questions: %w", i, err)
+					}
 				}
 			}
 
 			if in.fieldName != "" {
-				ans, callErr := c.call(timeoutCtx, db, in, text)
+				// Substitute {field_name} placeholders with current
+				// chunk field values, mirroring Python's
+				// string_format at extractor.py:103.
+				callIn := in
+				callIn.prompt = substituteChunkPlaceholders(in.prompt, ck, text)
+				callIn.systemPrompt = substituteChunkPlaceholders(in.systemPrompt, ck, text)
+				ans, callErr := c.call(timeoutCtx, db, callIn, text)
 				if callErr != nil {
 					return fmt.Errorf("chunk %d: %w", i, callErr)
 				}
@@ -665,7 +720,7 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 // cleanExtractionResult strips `</think>` tags and rejects `**ERROR**` responses,
 // matching Python's keyword_extraction and question_proposal post-processing.
 func cleanExtractionResult(s string) string {
-	if i := strings.Index(s, "</think>"); i >= 0 {
+	if i := strings.LastIndex(s, "</think>"); i >= 0 {
 		s = s[i+len("</think>"):]
 	}
 	s = strings.TrimSpace(s)
@@ -690,6 +745,85 @@ func splitKeywords(s string) []string {
 	return result
 }
 
+// runAutoKeywordsLocked mirrors runAutoKeywords but skips the
+// early-exit check (already done by the caller) and serializes
+// map writes under mu so concurrent goroutines don't trip the
+// Go race detector on the shared chunk map. Uses a fresh
+// extractorInputs with nil chunks to avoid reading from the
+// shared in.chunks slice under concurrent access.
+func (c *ExtractorComponent) runAutoKeywordsLocked(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string, mu *sync.Mutex) error {
+	kwIn := extractorInputs{
+		llmID:        in.llmID,
+		systemPrompt: fmt.Sprintf(autoKeywordPrompt, c.Param.AutoKeywords, chunkText),
+		prompt:       "Output: ",
+	}
+	result, err := c.call(ctx, db, kwIn, "")
+	if err != nil {
+		return err
+	}
+	resultStr, _ := result.(string)
+	resultStr = cleanExtractionResult(resultStr)
+	if resultStr == "" {
+		return nil
+	}
+	kwds := splitKeywords(resultStr)
+	if len(kwds) == 0 {
+		return nil
+	}
+	tok := tokenizer.New(in.lang)
+	tks, tkErr := tok.Tokenize(strings.Join(kwds, " "))
+	mu.Lock()
+	ck["important_kwd"] = kwds
+	if tkErr == nil {
+		ck["important_tks"] = tks
+	}
+	mu.Unlock()
+	return nil
+}
+
+// runAutoQuestionsLocked mirrors runAutoQuestions but skips the
+// early-exit check (already done by the caller) and serializes
+// map writes under mu so concurrent goroutines don't trip the
+// Go race detector on the shared chunk map. Uses a fresh
+// extractorInputs with nil chunks to avoid reading from the
+// shared in.chunks slice under concurrent access.
+func (c *ExtractorComponent) runAutoQuestionsLocked(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string, mu *sync.Mutex) error {
+	qIn := extractorInputs{
+		llmID:        in.llmID,
+		systemPrompt: fmt.Sprintf(autoQuestionPrompt, c.Param.AutoQuestions, chunkText),
+		prompt:       "Output: ",
+	}
+	result, err := c.call(ctx, db, qIn, "")
+	if err != nil {
+		return err
+	}
+	resultStr, _ := result.(string)
+	resultStr = cleanExtractionResult(resultStr)
+	if resultStr == "" {
+		return nil
+	}
+	qs := strings.Split(resultStr, "\n")
+	var filtered []string
+	for _, q := range qs {
+		q = strings.TrimSpace(q)
+		if q != "" {
+			filtered = append(filtered, q)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	tok := tokenizer.New(in.lang)
+	tks, tkErr := tok.Tokenize(strings.Join(filtered, "\n"))
+	mu.Lock()
+	ck["question_kwd"] = filtered
+	if tkErr == nil {
+		ck["question_tks"] = tks
+	}
+	mu.Unlock()
+	return nil
+}
+
 // call dispatches one LLM chat call for the supplied chunk text
 // (empty string in the no-chunk fast path). The result is the
 // raw string from the model — JSON parsing happens here so
@@ -701,14 +835,21 @@ func (c *ExtractorComponent) call(ctx context.Context, db *gorm.DB, in extractor
 	}
 	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, chunkText, in.chunks)
 	inv := getExtractorChatInvoker()
-	resp, err := inv.Chat(ctx, extractorChatRequest{
-		Driver:    driver,
-		ModelName: modelName,
-		APIKey:    apiKey,
-		BaseURL:   baseURL,
-		Messages:  msgs,
-	})
-	if err != nil {
+	temp := extractorTemperature
+	req := extractorChatRequest{
+		Driver:      driver,
+		ModelName:   modelName,
+		APIKey:      apiKey,
+		BaseURL:     baseURL,
+		Messages:    msgs,
+		Temperature: &temp,
+	}
+	var resp *extractorChatResponse
+	if err := common.RetryWithBackoff(ctx, extractorRetryMax, extractorRetryDelay, func() error {
+		r, e := inv.Chat(ctx, req)
+		resp = r
+		return e
+	}); err != nil {
 		return nil, err
 	}
 	raw := strings.TrimSpace(resp.Content)
@@ -735,6 +876,14 @@ func resolveExtractorChatTarget(ctx context.Context, db *gorm.DB, llmID string) 
 	if override := getExtractorChatTargetResolverOverride(); override != nil {
 		if driver, modelName, apiKey, baseURL, ok := override(llmID); ok {
 			return driver, modelName, apiKey, baseURL, nil
+		}
+	}
+
+	// When llmID is empty, try tenant default chat model
+	// (mirrors Python task_executor.py:573-574 fallback).
+	if llmID == "" {
+		if cfg := resolveExtractorChatDefaultConfig(ctx, db); cfg.driver != "" {
+			return cfg.driver, cfg.modelName, cfg.apiKey, cfg.baseURL, nil
 		}
 	}
 
@@ -820,6 +969,43 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 		apiKey:    apiKey,
 		baseURL:   baseURL,
 	}, nil
+}
+
+// resolveExtractorChatDefaultConfig resolves the tenant's default chat
+// model when no explicit llm_id is provided. Returns empty config when
+// no canvas state or tenant_id is available (unit-test context).
+func resolveExtractorChatDefaultConfig(ctx context.Context, db *gorm.DB) extractorChatConfig {
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return extractorChatConfig{}
+	}
+	tidVal, _ := state.GetGlobal("tenant_id")
+	tid, _ := tidVal.(string)
+	if tid == "" {
+		return extractorChatConfig{}
+	}
+
+	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tid, entity.ModelTypeChat)
+	if err != nil || driver == nil {
+		return extractorChatConfig{}
+	}
+
+	apiKey := ""
+	baseURL := ""
+	if apiConfig != nil {
+		if apiConfig.ApiKey != nil {
+			apiKey = *apiConfig.ApiKey
+		}
+		if apiConfig.BaseURL != nil {
+			baseURL = *apiConfig.BaseURL
+		}
+	}
+	return extractorChatConfig{
+		driver:    strings.ToLower(driver.Name()),
+		modelName: modelName,
+		apiKey:    apiKey,
+		baseURL:   baseURL,
+	}
 }
 
 // isBareTenantModelID reports whether s is a 32-character hex string
@@ -929,6 +1115,39 @@ func substitutePromptPlaceholders(prompt string, chunks []map[string]any) string
 // the @chunks variant but kept so the regex rejects arbitrary
 // placeholders (a future per-component substitution extends here).
 var placeholderRE = regexp.MustCompile(`\{[A-Za-z0-9_]+:[A-Za-z0-9_]+@chunks\}`)
+
+// simplePlaceholderRE matches simple {field_name} placeholders
+// (no colons, no @chunks). Used by substituteChunkPlaceholders to
+// replace {text}, {content_with_weight}, etc. with the current
+// chunk's field values, mirroring Python's string_format
+// (agent/component/base.py:602-609).
+var simplePlaceholderRE = regexp.MustCompile(`\{[A-Za-z_][A-Za-z0-9_]*\}`)
+
+// substituteChunkPlaceholders replaces {field_name} placeholders in
+// the prompt with values from the current chunk map. The special
+// alias "chunks" maps to chunkText (the current chunk's primary
+// text), matching Python's `args[chunks_key] = ck["text"]` at
+// extractor.py:102. Unmatched placeholders are left as-is.
+func substituteChunkPlaceholders(prompt string, ck map[string]any, chunkText string) string {
+	if prompt == "" || ck == nil {
+		return prompt
+	}
+	// Build lookup: chunk fields + "chunks" alias
+	lookup := make(map[string]string, len(ck)+1)
+	for k, v := range ck {
+		lookup[k] = fmt.Sprintf("%v", v)
+	}
+	if _, has := lookup["chunks"]; !has {
+		lookup["chunks"] = chunkText
+	}
+	return simplePlaceholderRE.ReplaceAllStringFunc(prompt, func(match string) string {
+		key := match[1 : len(match)-1] // strip { }
+		if val, ok := lookup[key]; ok {
+			return val
+		}
+		return match // leave unknown placeholders as-is
+	})
+}
 
 // tryParseJSONObject tries to parse s as a JSON object. Returns
 // (parsed, true) on success; (nil, false) on parse error or when
