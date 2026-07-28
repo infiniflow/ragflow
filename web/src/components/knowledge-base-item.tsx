@@ -152,7 +152,6 @@ export function KnowledgeBaseFormField({
                 icon: () => (
                   <RAGFlowAvatar
                     className="size-4 mr-2"
-                    avatar={String(x.label ?? '')}
                     name={String(x.label ?? '')}
                   />
                 ),

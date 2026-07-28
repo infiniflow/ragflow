@@ -171,7 +171,7 @@ func (s *BotService) AgentbotCompletion(
 		userInput["question"] = req.Question
 	}
 	ch, err := s.agentService.RunAgent(ctx, tenantID, agentID,
-		req.SessionID, "", userInput, req.Files)
+		req.SessionID, "", userInput, nil, req.Files)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}

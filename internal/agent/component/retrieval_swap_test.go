@@ -96,6 +96,63 @@ func TestSearchMyDataset_AliasDelegatesToRealWrapper(t *testing.T) {
 	}
 }
 
+// TestRetrieval_EmptyResultFillsEmptyResponse pins the Python
+// parity fix: when the search returns no chunks, the component must
+// still surface `formalized_content` carrying the configured
+// empty_response — previously the output map was empty (only the
+// canvas-injected _created_time/_elapsed_time showed in the log),
+// and the downstream Agent concluded the knowledge base had no
+// relevant content without any visible reason.
+func TestRetrieval_EmptyResultFillsEmptyResponse(t *testing.T) {
+	prev := agenttool.GetRetrievalService()
+	agenttool.SetSimpleRetrievalService()
+	t.Cleanup(func() { agenttool.SetRetrievalService(prev) })
+
+	c, err := New(componentNameRetrieval, map[string]any{
+		"kb_ids":         []any{"kb-1"},
+		"empty_response": "no hits found",
+	})
+	if err != nil {
+		t.Fatalf("New(Retrieval): %v", err)
+	}
+	// Empty query → the service returns no chunks.
+	out, err := c.Invoke(context.Background(), nil, map[string]any{"query": ""})
+	if err != nil {
+		t.Fatalf("Retrieval Invoke errored: %v", err)
+	}
+	if fc, _ := out["formalized_content"].(string); fc != "no hits found" {
+		t.Errorf("formalized_content = %q, want empty_response %q", fc, "no hits found")
+	}
+}
+
+// TestIsEmptyRetrievalEnvelope pins the gating for the empty_response
+// fallback: only a confirmed zero-result envelope (parsed object with
+// an empty chunks array) qualifies. Raw non-JSON output, error stubs,
+// envelopes with chunks but no rendered text, and bare {} objects
+// must not be labeled as empty results.
+func TestIsEmptyRetrievalEnvelope(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		decoded map[string]any
+		want    bool
+	}{
+		{"nil envelope", nil, false},
+		{"raw non-JSON output", map[string]any{"_raw": "not json at all"}, false},
+		{"bare empty object", map[string]any{}, false},
+		{"error stub with null chunks", map[string]any{"stub": true, "_ERROR": "boom", "chunks": nil}, false},
+		{"confirmed empty result", map[string]any{"chunks": []any{}}, true},
+		{"chunks without rendered text", map[string]any{"chunks": []any{map[string]any{"id": "ck-1"}}}, false},
+		{"empty result with blank formalized_content", map[string]any{"chunks": []any{}, "formalized_content": ""}, true},
+	}
+	for _, tc := range cases {
+		if got := isEmptyRetrievalEnvelope(tc.decoded); got != tc.want {
+			t.Errorf("%s: isEmptyRetrievalEnvelope = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 // TestRetrieval_InputsSurfaceMatchesStub guards against accidental
 // regression in the Inputs() description surface when swapping from
 // the stub to the wrapper. The v1 DSL fixture set uses these keys

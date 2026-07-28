@@ -1020,6 +1020,22 @@ export const useFetchKnowledgeList = (
       : all;
   }, [data, shouldFilterListWithoutDocument]);
 
+  // Server-side pagination + client-side chunk_count filtering can
+  // filter out an entire page (e.g. the newest datasets are all
+  // empty), leaving an empty, unscrollable list that never triggers
+  // handleScroll. Auto-fetch the next page until the filtered list
+  // has something to show or the pages run out.
+  const shouldAutoLoadNextPage =
+    shouldFilterListWithoutDocument &&
+    list.length === 0 &&
+    hasNextPage &&
+    !isFetching;
+  useEffect(() => {
+    if (shouldAutoLoadNextPage) {
+      fetchNextPage();
+    }
+  }, [shouldAutoLoadNextPage, fetchNextPage]);
+
   const handleScroll = useCallback(
     (e: React.UIEvent<HTMLDivElement>) => {
       const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;

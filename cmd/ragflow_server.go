@@ -715,6 +715,9 @@ func startServer(ctx context.Context, config *server.Config) {
 	docEngine := engine.Get()
 	documentDAO := dao.NewDocumentDAO()
 	agenttool.SetRetrievalService(agenttool.NewNLPRetrievalAdapterFromDeps(docEngine, documentDAO))
+	// Wire the model provider so agent retrieval resolves each kb's
+	// embedding model (hybrid search) and the node's rerank model.
+	agenttool.SetRetrievalModelProvider(modelProviderService)
 	common.Info("agent: retrieval service adapter installed")
 
 	// Initialize handler layer

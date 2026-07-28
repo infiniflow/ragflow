@@ -64,16 +64,21 @@ type retrievalArgs struct {
 	KeywordsSimilarityWeight *float64 `json:"keywords_similarity_weight,omitempty"`
 	UseKG                    bool     `json:"use_kg,omitempty"`
 	SimilarityThreshold      float64  `json:"similarity_threshold,omitempty"`
+	RerankID                 string   `json:"rerank_id,omitempty"`
 }
 
 // retrievalResult is the JSON shape returned to the model. The `_ERROR`
 // field matches the Python tool's output convention; downstream components
 // can pattern-match on it.
 type retrievalResult struct {
-	FormalizedContent string         `json:"formalized_content,omitempty"`
-	Chunks            []chunkPayload `json:"chunks,omitempty"`
-	Stub              bool           `json:"stub,omitempty"`
-	Error             string         `json:"_ERROR,omitempty"`
+	FormalizedContent string `json:"formalized_content,omitempty"`
+	// Chunks deliberately has no omitempty: a successful search always
+	// carries the field (empty array for zero hits) so downstream
+	// consumers can distinguish a confirmed empty-result envelope
+	// ({"chunks": []}) from unrelated shapes such as {} or raw output.
+	Chunks []chunkPayload `json:"chunks"`
+	Stub   bool           `json:"stub,omitempty"`
+	Error  string         `json:"_ERROR,omitempty"`
 }
 
 // chunkPayload is the minimal chunk shape we surface. We don't try to
@@ -170,6 +175,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		KeywordsSimilarityWeight: args.KeywordsSimilarityWeight,
 		UseKG:                    args.UseKG,
 		SimilarityThreshold:      args.SimilarityThreshold,
+		RerankID:                 args.RerankID,
 		TenantID:                 retrievalTenantID(ctx),
 	})
 	if err != nil {
@@ -229,6 +235,9 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 	}
 	if args.SimilarityThreshold <= 0 {
 		args.SimilarityThreshold = r.defaults.SimilarityThreshold
+	}
+	if args.RerankID == "" {
+		args.RerankID = r.defaults.RerankID
 	}
 	args.UseKG = args.UseKG || r.defaults.UseKG
 	return args

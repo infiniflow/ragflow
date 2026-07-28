@@ -715,7 +715,7 @@ type stubChatRunner struct {
 	err    error
 }
 
-func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _ string, _ any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (s *stubChatRunner) RunAgent(_ context.Context, _, _, _, _ string, _ any, _ map[string]any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -941,7 +941,7 @@ type captureChatRunner struct {
 	capturedFiles *[]map[string]interface{}
 }
 
-func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _, _ string, userInput any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
+func (c *captureChatRunner) RunAgent(_ context.Context, _, _, _, _ string, userInput any, _ map[string]any, files []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	*c.captured = userInput
 	if c.capturedFiles != nil {
 		*c.capturedFiles = files

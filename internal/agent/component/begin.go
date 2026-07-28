@@ -47,13 +47,15 @@ const componentNameBegin = "Begin"
 // ParamBase surface is intentionally omitted for P0 — Begin is trivial
 // and needs no validation beyond what the State writes perform.
 type BeginComponent struct {
-	name string
+	name   string
+	params map[string]any
 }
 
-// NewBeginComponent constructs a Begin component. It accepts the DSL params
-// map but does not retain it (Begin has no per-instance configuration).
-func NewBeginComponent(_ map[string]any) (Component, error) {
-	return &BeginComponent{name: componentNameBegin}, nil
+// NewBeginComponent constructs a Begin component. It retains the DSL
+// params so Invoke can apply the single-input sys.query fallback
+// (mirroring Python Begin._merge_runtime_inputs).
+func NewBeginComponent(params map[string]any) (Component, error) {
+	return &BeginComponent{name: componentNameBegin, params: params}, nil
 }
 
 // Name returns the registered component name. Used by the registry and
@@ -77,6 +79,20 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 	query, _ := inputs["query"].(string)
 	state.Sys["query"] = query
 
+	// Custom-input fallback (mirrors Python Begin._merge_runtime_inputs):
+	// when the request carried no runtime inputs (nothing seeded into
+	// Outputs["begin"] by the service layer) and the DSL declares
+	// exactly one input field, sys.query becomes that field's value so
+	// downstream {begin@<key>} references resolve.
+	var fallbackKey, fallbackValue string
+	if beginBucketEmpty(state) {
+		if fieldKey, ok := b.singleDeclaredInputKey(); ok {
+			if q, _ := state.Sys["query"].(string); q != "" {
+				fallbackKey, fallbackValue = fieldKey, q
+			}
+		}
+	}
+
 	// Optional user_id — present in interactive chat flows, absent in
 	// background jobs. Always a string when set; cast failure silently
 	// drops the value (mirrors Python's getattr fallback).
@@ -95,9 +111,39 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 	}
 
 	// Passthrough: a shallow copy keeps the caller's map un-aliased.
-	out := make(map[string]any, len(inputs))
+	out := make(map[string]any, len(inputs)+1)
 	mapsCopy(out, inputs)
+	if fallbackKey != "" {
+		out[fallbackKey] = fallbackValue
+		// Persist into the reserved "begin" namespace the same way
+		// request-supplied inputs are seeded, so {begin@<key>} refs
+		// resolve even when the DSL node id is e.g. begin_0.
+		state.SetVar("begin", fallbackKey, fallbackValue)
+	}
 	return out, nil
+}
+
+// beginBucketEmpty reports whether no begin outputs have been seeded
+// for this run (i.e. the request did not carry runtime inputs).
+func beginBucketEmpty(state *runtime.CanvasState) bool {
+	if state == nil || state.Outputs == nil {
+		return true
+	}
+	return len(state.Outputs["begin"]) == 0
+}
+
+// singleDeclaredInputKey returns the sole declared custom input key
+// from the DSL params ("inputs" map), or false when the node declares
+// zero or multiple fields.
+func (b *BeginComponent) singleDeclaredInputKey() (string, bool) {
+	declared, ok := b.params["inputs"].(map[string]any)
+	if !ok || len(declared) != 1 {
+		return "", false
+	}
+	for key := range declared {
+		return key, true
+	}
+	return "", false
 }
 
 // Stream is a synchronous facade over Invoke for P0. SSE streaming of
