@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import json
+import logging
 
 from common.exceptions import ModelException
 
@@ -81,6 +82,10 @@ def _resolve_openrouter_credentials(key):
             # to empty. Preserve.
             return {"api_key": key, "provider_order": ""}
     else:
+        logging.error(
+            "OpenRouter key must be a string or dict, got %s",
+            type(key).__name__,
+        )
         raise ModelException(
             f"OpenRouter key must be a string or dict, got {type(key).__name__}. See conf/models/openrouter.json for the full schema.",
             retryable=False,
@@ -91,6 +96,10 @@ def _resolve_openrouter_credentials(key):
         # code did ``payload.get("api_key", "")`` here and crashed with
         # AttributeError on lists/strings/numbers/booleans/null. Surface a
         # clear error naming the actual type and the required schema.
+        logging.error(
+            "OpenRouter key JSON top-level type must be an object, got %s",
+            type(payload).__name__,
+        )
         raise ModelException(
             f"OpenRouter key must be a JSON object, got {type(payload).__name__}. "
             "Expected an object with 'api_key' (and optionally 'provider_order'); "
