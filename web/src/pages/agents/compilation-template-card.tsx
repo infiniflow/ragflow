@@ -1,16 +1,16 @@
-import { MoreButton } from "@/components/more-button";
-import { RAGFlowAvatar } from "@/components/ragflow-avatar";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { ICompilationTemplateGroup } from "@/interfaces/database/compilation-template";
-import { formatDate } from "@/utils/date";
-import { useMemo } from "react";
-import { useTranslation } from "react-i18next";
+import { MoreButton } from '@/components/more-button';
+import { RAGFlowAvatar } from '@/components/ragflow-avatar';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-template';
+import { formatDate } from '@/utils/date';
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 
-import { formatKindLabel } from "@/utils/compilation-template-util";
-import { CompilationTemplateDropdown } from "./compilation-template-dropdown";
-import { FlowType, FlowTypeConfig } from "./constant";
+import { formatKindLabel } from '@/utils/compilation-template-util';
+import { CompilationTemplateDropdown } from './compilation-template-dropdown';
+import { FlowType, FlowTypeConfig } from './constant';
 
 type CompilationTemplateCardProps = {
   data: ICompilationTemplateGroup;
@@ -68,7 +68,7 @@ export function CompilationTemplateCard({
           </div>
 
           <div className="flex items-center gap-2 mt-1 min-w-0 text-sm text-text-secondary">
-            <span className="whitespace-nowrap">{t("flow.lastSavedAt")}:</span>
+            <span className="whitespace-nowrap">{t('flow.lastSavedAt')}:</span>
             <p className="truncate">{formatDate(data.update_time)}</p>
           </div>
         </div>
