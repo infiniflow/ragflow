@@ -10,12 +10,12 @@ SEARCH_PHASES = {
     "locate": {
         "goal": "Locate documents or regions that may contain the answer.",
         "tools_priority": [
-            "dataset_navigate",
-            "catalog_navigate",
+            "dataset_navigation_by_tree",
+            "ontology_navigate",
             "mindmap_navigate",
-            "wiki_query",
             "hybrid_search",
             "bm25_search",
+            "wiki_query",
         ],
         "max_returned": 5,
         "tool_hint": "Prefer navigation tools to locate document regions before directly searching keywords.",
@@ -74,9 +74,9 @@ def tool_fits_context(tool_name: str, context: OrchestratorContext) -> bool:
     """Check if a tool is sensible given current search context."""
     if tool_name.startswith("inspector_") and not context.has_any_chunks():
         return False
-    if tool_name == "catalog_navigate" and not context.current_claim:
+    if tool_name == "ontology_navigate" and not context.current_claim:
         return False
-    if tool_name == "dataset_navigate" and not context.current_claim:
+    if tool_name == "dataset_navigation_by_tree" and not context.current_claim:
         return False
     if tool_name == "graph_explore" and not context.last_entity:
         return False

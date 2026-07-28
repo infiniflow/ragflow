@@ -339,7 +339,7 @@ def _fmt_tool_result(result: ToolResult) -> str:
     if result.error:
         return f"[tool error] {result.error}"
     parts: list[str] = []
-    # Some tools (catalog_navigate, structured_query) answer directly rather than
+    # Some tools (ontology_navigate, structured_query) answer directly rather than
     # only returning passages — surface that, or the agent never sees it.
     answer = (result.metadata or {}).get("answer") if isinstance(result.metadata, dict) else ""
     if answer:
