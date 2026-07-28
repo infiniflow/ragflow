@@ -94,10 +94,9 @@ class TestResolveGoogleServiceAccountKey:
             "google_service_account_key": "eyJ0eXBl...base64...",
         }
 
-    def test_json_dict_missing_google_project_id(self):
-        """A dict without ``google_project_id`` is still a valid dict;
-        the helper returns an empty ``google_project_id`` rather than
-        raising."""
+    def test_json_dict_with_only_google_region(self):
+        """Only ``google_region`` is set; the helper defaults the other
+        two fields to empty strings rather than raising."""
         out = _resolve_google_service_account_key(json.dumps({"google_region": "us-central1"}))
         assert out == {
             "google_project_id": "",
@@ -105,7 +104,9 @@ class TestResolveGoogleServiceAccountKey:
             "google_service_account_key": "",
         }
 
-    def test_json_dict_missing_google_region(self):
+    def test_json_dict_with_only_google_project_id(self):
+        """Only ``google_project_id`` is set; the helper defaults the
+        other two fields to empty strings rather than raising."""
         out = _resolve_google_service_account_key(json.dumps({"google_project_id": "p"}))
         assert out == {
             "google_project_id": "p",
@@ -113,12 +114,15 @@ class TestResolveGoogleServiceAccountKey:
             "google_service_account_key": "",
         }
 
-    def test_json_dict_missing_google_service_account_key(self):
-        out = _resolve_google_service_account_key(json.dumps({"google_project_id": "p"}))
+    def test_json_dict_with_only_google_service_account_key(self):
+        """Only ``google_service_account_key`` is set; the helper
+        defaults the other two fields to empty strings rather than
+        raising."""
+        out = _resolve_google_service_account_key(json.dumps({"google_service_account_key": "k"}))
         assert out == {
-            "google_project_id": "p",
+            "google_project_id": "",
             "google_region": "",
-            "google_service_account_key": "",
+            "google_service_account_key": "k",
         }
 
     def test_json_dict_empty(self):

@@ -67,11 +67,11 @@ def _resolve_google_service_account_key(key):
     elif isinstance(key, str):
         try:
             payload = json.loads(key)
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError) as exc:
             raise ModelException(
                 "Google Vertex AI key is not valid JSON. Expected an object with 'google_project_id', 'google_region', and 'google_service_account_key' (see api/apps/llm_app.py:291 for the schema).",
                 retryable=False,
-            )
+            ) from exc
     else:
         raise ModelException(
             f"Google Vertex AI key must be a string or dict, got {type(key).__name__}. "
