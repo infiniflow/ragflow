@@ -425,6 +425,10 @@ func runAdmin(ctx context.Context, args *serverArgs, config *server.Config) erro
 	adminService := admin.NewService()
 	adminHandler := admin.NewHandler(adminService)
 
+	if err := admin.InitLicense(); err != nil {
+		common.Warn("Failed to initialize license", zap.Error(err))
+	}
+
 	if args.initSuperUser {
 		// Initialize default admin user
 		if err := adminService.InitDefaultAdmin(); err != nil {
