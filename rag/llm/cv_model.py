@@ -34,6 +34,7 @@ from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
+from rag.llm.key_utils import _resolve_openrouter_credentials
 from rag.utils.url_utils import ensure_v1
 
 
@@ -694,12 +695,15 @@ class OpenRouterCV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="https://openrouter.ai/api/v1", **kwargs):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
-        try:
-            api_key = json.loads(key).get("api_key", "")
-            provider_order = json.loads(key).get("provider_order", "")
-        except JSONDecodeError:
-            api_key = key
-            provider_order = ""
+        # Parse the key via the shared helper. The helper handles plain
+        # (non-JSON) keys, JSON dicts, and JSON top-level non-objects
+        # (e.g. "[1,2,3]" or "42") which would otherwise raise
+        # AttributeError on the .get() call. The pre-existing
+        # try/except JSONDecodeError (PR #15776) only caught the parse
+        # failure. See #17458.
+        resolved = _resolve_openrouter_credentials(key)
+        api_key = resolved["api_key"]
+        provider_order = resolved["provider_order"]
         self.base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=api_key, base_url=self.base_url)
         self.async_client = AsyncOpenAI(api_key=api_key, base_url=self.base_url)
