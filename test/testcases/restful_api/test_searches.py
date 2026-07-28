@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 
-import json
 import uuid
 
 import pytest
