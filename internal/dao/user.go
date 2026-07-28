@@ -59,7 +59,7 @@ func (dao *UserDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenantID str
 // GetNicknameByID returns a user's nickname by string id.
 func (dao *UserDAO) GetNicknameByID(ctx context.Context, db *gorm.DB, id string) (string, error) {
 	var nickname string
-	err := db.WithContext(ctx).WithContext(ctx).
+	err := db.WithContext(ctx).
 		Model(&entity.User{}).
 		Where("id = ?", id).
 		Select("nickname").

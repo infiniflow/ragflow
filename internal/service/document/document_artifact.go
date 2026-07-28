@@ -17,7 +17,7 @@ import (
 func (s *DocumentService) GetDocumentImage(ctx context.Context, imageID string) ([]byte, error) {
 	parts := strings.SplitN(imageID, "-", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return nil, fmt.Errorf("Image not found.")
+		return nil, fmt.Errorf("image not found")
 	}
 
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -92,7 +92,7 @@ func (s *DocumentService) GetDocumentArtifact(ctx context.Context, filename, use
 // `LIKE '%...%'` which is fine here because the storage path is
 // short and indexed lookup on (user_id, exp_user_id) keeps the
 // scan narrow.
-func (s *DocumentService) sandboxArtifactDialogIDsForUser(filename, userID string) []string {
+func (s *DocumentService) sandboxArtifactDialogIDsForUser(ctx context.Context, filename, userID string) []string {
 	if filename == "" || userID == "" {
 		return nil
 	}
@@ -114,7 +114,7 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(filename, userID strin
 	filenamePattern := "%" + filenameSafe + "%"
 	artifactRefPattern := "%" + artifactRefSafe + "%"
 	dialogIDs := make(map[string]struct{})
-	rows, err := dao.DB.Model(&entity.API4Conversation{}).
+	rows, err := dao.DB.WithContext(ctx).Model(&entity.API4Conversation{}).
 		Select("dialog_id").
 		Where("user_id = ? OR exp_user_id = ?", userID, userID).
 		Where(`message LIKE ? ESCAPE '!' OR message LIKE ? ESCAPE '!'`,
@@ -127,7 +127,7 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(filename, userID strin
 	defer rows.Close()
 	for rows.Next() {
 		var d string
-		if err := rows.Scan(&d); err == nil && d != "" {
+		if err = rows.Scan(&d); err == nil && d != "" {
 			dialogIDs[d] = struct{}{}
 		}
 	}
@@ -159,7 +159,7 @@ func (s *DocumentService) sandboxArtifactAccessible(ctx context.Context, filenam
 	if terr != nil {
 		tenantIDs = nil
 	}
-	for _, dialogID := range s.sandboxArtifactDialogIDsForUser(filename, userID) {
+	for _, dialogID := range s.sandboxArtifactDialogIDsForUser(ctx, filename, userID) {
 		if s.canvasDAO.Accessible(ctx, dao.DB, dialogID, userID, tenantIDs) {
 			return true
 		}

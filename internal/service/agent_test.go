@@ -17,7 +17,6 @@
 package service
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/netip"
@@ -307,8 +306,9 @@ func TestListVersions_Success(t *testing.T) {
 		},
 	})
 
+	ctx := t.Context()
 	svc := NewAgentService()
-	versions, err := svc.ListVersions(context.Background(), "user-1", "canvas-1")
+	versions, err := svc.ListVersions(ctx, "user-1", "canvas-1")
 	if err != nil {
 		t.Fatalf("ListVersions failed: %v", err)
 	}
@@ -351,8 +351,9 @@ func TestListVersions_Empty(t *testing.T) {
 		Title:  sptr("Empty Agent"),
 	})
 
+	ctx := t.Context()
 	svc := NewAgentService()
-	versions, err := svc.ListVersions(context.Background(), "user-1", "canvas-empty")
+	versions, err := svc.ListVersions(ctx, "user-1", "canvas-empty")
 	if err != nil {
 		t.Fatalf("ListVersions failed: %v", err)
 	}
@@ -418,8 +419,9 @@ func TestGetVersion_Success(t *testing.T) {
 		DSL:          entity.JSONMap{"model": "gpt-4"},
 	})
 
+	ctx := t.Context()
 	svc := NewAgentService()
-	v, err := svc.GetVersion(context.Background(), "user-1", "canvas-1", "v1")
+	v, err := svc.GetVersion(ctx, "user-1", "canvas-1", "v1")
 	if err != nil {
 		t.Fatalf("GetVersion failed: %v", err)
 	}
@@ -451,8 +453,9 @@ func TestGetVersion_WrongCanvas(t *testing.T) {
 		Title:        sptr("version-1"),
 	})
 
+	ctx := t.Context()
 	svc := NewAgentService()
-	_, err := svc.GetVersion(context.Background(), "user-other", "canvas-other", "v1")
+	_, err := svc.GetVersion(ctx, "user-other", "canvas-other", "v1")
 	if err == nil {
 		t.Error("expected error for version belonging to another canvas")
 	}
@@ -475,8 +478,9 @@ func TestGetVersion_NotFound(t *testing.T) {
 	dao.DB = testDB
 	t.Cleanup(func() { dao.DB = orig })
 
+	ctx := t.Context()
 	svc := NewAgentService()
-	_, err := svc.GetVersion(context.Background(), "user-1", "canvas-1", "non-existent")
+	_, err := svc.GetVersion(ctx, "user-1", "canvas-1", "non-existent")
 	if err == nil {
 		t.Error("expected error for non-existent version")
 	}
@@ -529,9 +533,10 @@ func TestRunAgent_VersionBelongsToOtherCanvas(t *testing.T) {
 		DSL:          entity.JSONMap{"components": map[string]any{}},
 	})
 
+	ctx := t.Context()
 	svc := NewAgentService()
 	_, err := svc.RunAgent(
-		context.Background(),
+		ctx,
 		"user-1",
 		"canvas-1",      // we're running canvas-1…
 		"",              // session ID auto-generated
@@ -575,9 +580,10 @@ func TestRunAgent_VersionNotFound(t *testing.T) {
 		Title:  sptr("Canvas 1"),
 	})
 
+	ctx := t.Context()
 	svc := NewAgentService()
 	_, err := svc.RunAgent(
-		context.Background(),
+		ctx,
 		"user-1",
 		"canvas-1",
 		"",
@@ -632,9 +638,10 @@ func TestRunAgent_NoVersionPublishedPlaceholder(t *testing.T) {
 		Title:  sptr("Canvas With No Version"),
 	})
 
+	ctx := t.Context()
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
-		context.Background(),
+		ctx,
 		"user-1",
 		"canvas-empty",
 		"test-session",
@@ -741,9 +748,10 @@ func TestRunAgent_StorageErrorFromCanvasAccess(t *testing.T) {
 		t.Fatalf("failed to close sql.DB: %v", cErr)
 	}
 
+	ctx := t.Context()
 	svc := NewAgentService()
 	_, err := svc.RunAgent(
-		context.Background(),
+		ctx,
 		"user-1",
 		"canvas-1",
 		"",
@@ -795,8 +803,9 @@ func TestLoadCanvasForUser_StorageErrorWrap(t *testing.T) {
 		t.Fatalf("failed to close sql.DB: %v", cErr)
 	}
 
+	ctx := t.Context()
 	svc := NewAgentService()
-	_, err := svc.loadCanvasForUser(context.Background(), "user-1", "canvas-1")
+	_, err := svc.loadCanvasForUser(ctx, "user-1", "canvas-1")
 	if err == nil {
 		t.Fatal("expected storage error from closed DB")
 	}
@@ -1427,7 +1436,8 @@ func TestResetAgentServiceClearsPerRunState(t *testing.T) {
 func TestResetAgentServiceNotFound(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
-	_, err := NewAgentService().ResetAgent(context.Background(), "user-1", "missing")
+	ctx := t.Context()
+	_, err := NewAgentService().ResetAgent(ctx, "user-1", "missing")
 	if err == nil {
 		t.Fatal("expected error for missing canvas")
 	}
@@ -1462,7 +1472,7 @@ func TestUpdateAgentSettingsPreservesDSL(t *testing.T) {
 		t.Fatalf("failed to seed canvas: %v", err)
 	}
 
-	err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-settings", map[string]interface{}{
+	err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-settings", map[string]interface{}{
 		"description": "new description",
 	})
 	if err != nil {
@@ -1531,7 +1541,7 @@ func TestUpdateAgentRejectsDuplicateTitleInDestinationCategory(t *testing.T) {
 		t.Fatalf("failed to seed duplicate canvas: %v", err)
 	}
 
-	err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-source-category", map[string]interface{}{
+	err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-source-category", map[string]interface{}{
 		"title":           "Duplicate Title",
 		"canvas_category": "dataflow_canvas",
 	})
@@ -1562,7 +1572,8 @@ func TestUpdateAgentRejectsCategoryOnlyDuplicateTitleInDestinationCategory(t *te
 		t.Fatalf("failed to seed duplicate canvas: %v", err)
 	}
 
-	err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-category-only-source", map[string]interface{}{
+	ctx := t.Context()
+	err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-category-only-source", map[string]interface{}{
 		"canvas_category": "dataflow_canvas",
 	})
 	if err == nil || err.Error() != "Shared Title already exists." {
@@ -1584,7 +1595,7 @@ func TestUpdateAgentPersistsDSLAsJSONMap(t *testing.T) {
 		t.Fatalf("failed to seed canvas: %v", err)
 	}
 
-	err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-dsl-update", map[string]interface{}{
+	err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-dsl-update", map[string]interface{}{
 		"dsl": map[string]interface{}{
 			"graph": map[string]interface{}{
 				"nodes": []interface{}{map[string]interface{}{"id": "begin"}},
@@ -1641,14 +1652,14 @@ func TestUpdateAgentDSLCreatesAndReplacesDraftVersion(t *testing.T) {
 			},
 		},
 	}
-	if err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-version-draft", patch); err != nil {
+	if err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-version-draft", patch); err != nil {
 		t.Fatalf("first UpdateAgent failed: %v", err)
 	}
 	secondPatch := map[string]interface{}{
 		"title": "Renamed Agent",
 		"dsl":   patch["dsl"],
 	}
-	if err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-version-draft", secondPatch); err != nil {
+	if err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-version-draft", secondPatch); err != nil {
 		t.Fatalf("second UpdateAgent failed: %v", err)
 	}
 
@@ -1704,7 +1715,7 @@ func TestPublishAgentUpdatesCanvasAndReleasedVersion(t *testing.T) {
 			},
 		},
 	}
-	row, err := NewAgentService().PublishAgent(context.Background(), "user-1", "canvas-publish", &PublishAgentRequest{
+	row, err := NewAgentService().PublishAgent(ctx, "user-1", "canvas-publish", &PublishAgentRequest{
 		Title:       &publishTitle,
 		Description: &description,
 		DSL:         publishDSL,
@@ -1799,7 +1810,7 @@ func TestUpdateAgentDSLDoesNotOverwriteLatestReleasedVersion(t *testing.T) {
 		t.Fatalf("failed to seed released version: %v", err)
 	}
 
-	if err := NewAgentService().UpdateAgent(context.Background(), "user-1", "canvas-released-latest", map[string]interface{}{"dsl": map[string]interface{}(dsl)}); err != nil {
+	if err := NewAgentService().UpdateAgent(ctx, "user-1", "canvas-released-latest", map[string]interface{}{"dsl": map[string]interface{}(dsl)}); err != nil {
 		t.Fatalf("UpdateAgent failed: %v", err)
 	}
 
@@ -1836,7 +1847,8 @@ func TestResetAgentServiceOtherTenant(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 	createAgentSessionTestCanvas(t, "canvas-1", "user-2")
 
-	_, err := NewAgentService().ResetAgent(context.Background(), "user-1", "canvas-1")
+	ctx := t.Context()
+	_, err := NewAgentService().ResetAgent(ctx, "user-1", "canvas-1")
 	if !errors.Is(err, dao.ErrUserCanvasNotFound) {
 		t.Errorf("expected ErrUserCanvasNotFound for cross-tenant access, got %v", err)
 	}

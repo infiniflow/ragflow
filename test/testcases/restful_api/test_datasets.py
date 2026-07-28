@@ -436,13 +436,13 @@ def test_dataset_update_embedding_model_contract(rest_client, clear_datasets, em
 @pytest.mark.parametrize(
     "name, embedding_model, expected_fragment",
     [
-        ("empty", "", "Embedding model identifier must follow <model_name>@<provider> format"),
-        ("space", " ", "Embedding model identifier must follow <model_name>@<provider> format"),
-        ("missing_at", "BAAI/bge-small-en-v1.5Builtin", "Embedding model identifier must follow <model_name>@<provider> format"),
-        ("missing_model_name", "@Builtin", "Both model_name and provider must be non-empty strings"),
-        ("missing_provider", "BAAI/bge-small-en-v1.5@", "Both model_name and provider must be non-empty strings"),
-        ("whitespace_only_model_name", " @Builtin", "Both model_name and provider must be non-empty strings"),
-        ("whitespace_only_provider", "BAAI/bge-small-en-v1.5@ ", "Both model_name and provider must be non-empty strings"),
+        ("empty", "", "embedding model identifier must follow <model_name>@<provider> format"),
+        ("space", " ", "embedding model identifier must follow <model_name>@<provider> format"),
+        ("missing_at", "BAAI/bge-small-en-v1.5Builtin", "embedding model identifier must follow <model_name>@<provider> format"),
+        ("missing_model_name", "@Builtin", "both model_name and provider must be non-empty strings"),
+        ("missing_provider", "BAAI/bge-small-en-v1.5@", "both model_name and provider must be non-empty strings"),
+        ("whitespace_only_model_name", " @Builtin", "both model_name and provider must be non-empty strings"),
+        ("whitespace_only_provider", "BAAI/bge-small-en-v1.5@ ", "both model_name and provider must be non-empty strings"),
     ],
     ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
 )
@@ -728,8 +728,8 @@ def test_dataset_update_avatar_invalid_and_none_contract(rest_client, clear_data
     image_path = create_image_file(tmp_path / "dataset_update_avatar_invalid.png")
     encoded_avatar = encode_avatar(image_path)
     invalid_prefix_cases = [
-        ("", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-        ("data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+        ("", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+        ("data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
         ("invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
         ("data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
     ]
@@ -916,7 +916,7 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
         elif IS_GO_PROXY and chunk_method == "":
             assert payload["message"] == "parser_id is required when parse_type is BuiltIn", payload
         elif IS_GO_PROXY:
-            assert payload["message"].startswith("Input should be 'audio', 'book'") and payload["message"].endswith("or 'table'"), payload
+            assert payload["message"].startswith("input should be 'audio', 'book'") and payload["message"].endswith("or 'table'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 
@@ -926,7 +926,7 @@ def test_dataset_update_chunk_method_invalid_contract(rest_client, clear_dataset
     _skip_go_ignored_null(none_payload, PARSER_ID_FIELD)
     assert none_payload["code"] == ARGUMENT_ERROR_CODE, none_payload
     if IS_GO_PROXY:
-        assert none_payload["message"].startswith("Input should be 'audio', 'book'") and none_payload["message"].endswith("or 'table'"), none_payload
+        assert none_payload["message"].startswith("input should be 'audio', 'book'") and none_payload["message"].endswith("or 'table'"), none_payload
     else:
         assert expected_chunk_message in none_payload["message"], none_payload
 
@@ -1131,7 +1131,7 @@ def test_dataset_create_name_validation(rest_client, clear_datasets, name, expec
         if not name:
             expected_fragment = "failed on the 'required' tag"
         elif not name.strip():
-            expected_fragment = "Dataset name can't be empty."
+            expected_fragment = "dataset name can't be empty"
         else:
             expected_fragment = f"Dataset name length is {len(name)} which is large than {DATASET_NAME_LIMIT}"
     assert expected_fragment in payload["message"], payload
@@ -1272,13 +1272,13 @@ def test_dataset_create_embedding_model_contract(rest_client, clear_datasets, na
 @pytest.mark.parametrize(
     "name, embedding_model, expected_fragment",
     [
-        ("empty", "", "Embedding model identifier must follow <model_name>@<provider> format"),
-        ("space", " ", "Embedding model identifier must follow <model_name>@<provider> format"),
-        ("missing_at", "BAAI/bge-small-en-v1.5Builtin", "Embedding model identifier must follow <model_name>@<provider> format"),
-        ("missing_model_name", "@Builtin", "Both model_name and provider must be non-empty strings"),
-        ("missing_provider", "BAAI/bge-small-en-v1.5@", "Both model_name and provider must be non-empty strings"),
-        ("whitespace_only_model_name", " @Builtin", "Both model_name and provider must be non-empty strings"),
-        ("whitespace_only_provider", "BAAI/bge-small-env1.5@ ", "Both model_name and provider must be non-empty strings"),
+        ("empty", "", "embedding model identifier must follow <model_name>@<provider> format"),
+        ("space", " ", "embedding model identifier must follow <model_name>@<provider> format"),
+        ("missing_at", "BAAI/bge-small-en-v1.5Builtin", "embedding model identifier must follow <model_name>@<provider> format"),
+        ("missing_model_name", "@Builtin", "both model_name and provider must be non-empty strings"),
+        ("missing_provider", "BAAI/bge-small-en-v1.5@", "both model_name and provider must be non-empty strings"),
+        ("whitespace_only_model_name", " @Builtin", "both model_name and provider must be non-empty strings"),
+        ("whitespace_only_provider", "BAAI/bge-small-env1.5@ ", "both model_name and provider must be non-empty strings"),
     ],
     ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
 )
@@ -1587,8 +1587,8 @@ def test_dataset_create_avatar_contract(rest_client, clear_datasets, tmp_path):
     image_path = create_image_file(tmp_path / "ragflow_test.png")
     encoded_avatar = encode_avatar(image_path)
     invalid_prefix_cases = [
-        ("empty_prefix", "", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-        ("missing_comma", "data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+        ("empty_prefix", "", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+        ("missing_comma", "data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
         ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
         ("invalid_mine_type", "data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
     ]
@@ -1693,7 +1693,7 @@ def test_dataset_create_permission_and_chunk_method_contract(rest_client, clear_
         elif IS_GO_PROXY and chunk_method == "":
             assert payload["message"] == "parser_id is required when parse_type is BuiltIn", payload
         elif IS_GO_PROXY:
-            assert payload["message"].startswith("Input should be 'audio', 'book'") and payload["message"].endswith("or 'table'"), payload
+            assert payload["message"].startswith("input should be 'audio', 'book'") and payload["message"].endswith("or 'table'"), payload
         else:
             assert expected_chunk_message in payload["message"], payload
 

@@ -351,7 +351,7 @@ def test_get_file_content_checks_permission(monkeypatch):
 
     ok, message = module.get_file_content("tenant1", "file1")
     assert ok is False
-    assert message == "No authorization."
+    assert message == "no authorization"
 
     monkeypatch.setattr(module, "check_file_team_permission", lambda *_args, **_kwargs: True)
     ok, file = module.get_file_content("tenant1", "file1")

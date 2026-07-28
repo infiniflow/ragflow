@@ -61,7 +61,7 @@ func (dao *UserTenantDAO) Delete(ctx context.Context, db *gorm.DB, id string) er
 // GetByUserID gets active user tenant relationships by user ID with context.
 func (dao *UserTenantDAO) GetByUserID(ctx context.Context, db *gorm.DB, userID string) ([]*entity.UserTenant, error) {
 	var relations []*entity.UserTenant
-	err := db.WithContext(ctx).WithContext(ctx).Where("user_id = ? AND status = ?", userID, "1").Find(&relations).Error
+	err := db.WithContext(ctx).Where("user_id = ? AND status = ?", userID, "1").Find(&relations).Error
 	return relations, err
 }
 

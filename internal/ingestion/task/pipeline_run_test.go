@@ -17,7 +17,6 @@
 package task
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -40,7 +39,7 @@ func TestPipelineExecutor_DefaultLoadDSL_UsesUserCanvas(t *testing.T) {
 
 	taskCtx := makeTaskCtx()
 	svc := mustNewPipelineExecutor(t, taskCtx, "canvas-1", 0)
-	gotDSL, correctedID, err := svc.loadDSLFunc(context.Background(), "canvas-1")
+	gotDSL, correctedID, err := svc.loadDSLFunc(ctx, "canvas-1")
 	if err != nil {
 		t.Fatalf("loadDSLFunc: %v", err)
 	}
