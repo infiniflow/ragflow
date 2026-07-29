@@ -392,17 +392,17 @@ func main() {
 			return
 		}
 	case "admin":
-		if err = runAdmin(ctx, arguments, config); err != nil {
+		if err = runAdmin(ctx, cancel, arguments, config); err != nil {
 			fmt.Printf("Failed to start ADMIN server: %v\n", err)
 			return
 		}
 	case "ingestor":
-		if err = runIngestor(ctx, arguments, config); err != nil {
+		if err = runIngestor(ctx, cancel, arguments, config); err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
 			return
 		}
 	case "syncer":
-		if err = runSyncer(ctx, arguments, config); err != nil {
+		if err = runSyncer(ctx, cancel, arguments, config); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
 			return
 		}
@@ -412,7 +412,7 @@ func main() {
 	}
 }
 
-func runAdmin(ctx context.Context, args *serverArgs, config *server.Config) error {
+func runAdmin(ctx context.Context, cancel context.CancelFunc, args *serverArgs, config *server.Config) error {
 
 	// Set Gin mode
 	if config.Server.Mode == "release" {
@@ -492,7 +492,39 @@ func runAdmin(ctx context.Context, args *serverArgs, config *server.Config) erro
 	return nil
 }
 
-func runIngestor(ctx context.Context, args *serverArgs, config *server.Config) error {
+// startHeartbeat initializes and starts the heartbeat reporter to the admin server.
+// It is shared by API, ingestion, and syncer server modes.
+// The caller must defer the returned *utility.ScheduledTask's Stop() method.
+func startHeartbeat(serverType common.ServerType, serverID string, port int, config *server.Config) *utility.ScheduledTask {
+	localIP, err := utility.GetLocalIP()
+	if err != nil {
+		common.Fatal("fail to get local ip address")
+	}
+
+	service.AdminServiceClient = service.NewAdminClient(
+		common.Logger,
+		serverType,
+		serverID,
+		localIP,
+		port,
+	)
+	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
+		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
+		return nil
+	}
+
+	heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", config.General.HeartbeatInterval*time.Second, func() {
+		if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
+			local.SetAdminStatus(0, "")
+		} else {
+			local.SetAdminStatus(1, err.Error())
+		}
+	})
+	heartbeatReporter.Start()
+	return heartbeatReporter
+}
+
+func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArgs, config *server.Config) error {
 	// Initialize tokenizer (rag_analyzer)
 	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
 	if err := tokenizer.Init(&tokenizer.PoolConfig{}); err != nil {
@@ -520,33 +552,14 @@ func runIngestor(ctx context.Context, args *serverArgs, config *server.Config) e
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", common.GetRAGFlowVersion()))
 
-	// Get local IP address for heartbeat reporting
-	localIP, err := utility.GetLocalIP()
-	if err != nil {
-		common.Fatal("fail to get local ip address")
-	}
-
-	// Initialize and start heartbeat reporter to admin server
-	service.AdminServiceClient = service.NewAdminClient(
-		common.Logger,
+	// Start heartbeat reporter to admin server
+	if hb := startHeartbeat(
 		common.ServerTypeIngestion,
 		fmt.Sprintf("ingestor-%s", ingestor.ID()),
-		localIP,
 		-1,
-	)
-	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
-		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
-	} else {
-		// Start heartbeat reporter with configured interval
-		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", config.General.HeartbeatInterval*time.Second, func() {
-			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
-				local.SetAdminStatus(0, "")
-			} else {
-				local.SetAdminStatus(1, err.Error())
-			}
-		})
-		heartbeatReporter.Start()
-		defer heartbeatReporter.Stop()
+		config,
+	); hb != nil {
+		defer hb.Stop()
 	}
 
 	// Wait for either an OS shutdown signal or a shutdown command from the admin
@@ -556,6 +569,7 @@ func runIngestor(ctx context.Context, args *serverArgs, config *server.Config) e
 		common.Info(fmt.Sprintf("Shutting down RAGFlow ingestor %s ...", *args.name))
 	case <-ingestor.ShutdownCh:
 		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping ingestor %s ...", *args.name))
+		cancel()
 	}
 
 	// Create context with timeout for graceful shutdown
@@ -569,7 +583,7 @@ func runIngestor(ctx context.Context, args *serverArgs, config *server.Config) e
 	return nil
 }
 
-func runSyncer(ctx context.Context, args *serverArgs, config *server.Config) error {
+func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs, config *server.Config) error {
 	fileSyncer := syncer.NewSyncer(config.FileSyncer.MaxConcurrentSyncs, time.Duration(config.FileSyncer.SyncInterval)*time.Second)
 
 	go func() {
@@ -590,33 +604,14 @@ func runSyncer(ctx context.Context, args *serverArgs, config *server.Config) err
 	// Print RAGFlow version
 	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", common.GetRAGFlowVersion()))
 
-	// Get local IP address for heartbeat reporting
-	localIP, err := utility.GetLocalIP()
-	if err != nil {
-		common.Fatal("fail to get local ip address")
-	}
-
-	// Initialize and start heartbeat reporter to admin server
-	service.AdminServiceClient = service.NewAdminClient(
-		common.Logger,
+	// Start heartbeat reporter to admin server
+	if hb := startHeartbeat(
 		common.ServerTypeFileSyncer,
 		fmt.Sprintf("syncer-%s", fileSyncer.ID()),
-		localIP,
 		-1,
-	)
-	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
-		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
-	} else {
-		// Start heartbeat reporter with configured interval
-		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", config.General.HeartbeatInterval*time.Second, func() {
-			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
-				local.SetAdminStatus(0, "")
-			} else {
-				local.SetAdminStatus(1, err.Error())
-			}
-		})
-		heartbeatReporter.Start()
-		defer heartbeatReporter.Stop()
+		config,
+	); hb != nil {
+		defer hb.Stop()
 	}
 
 	// Wait for either an OS shutdown signal or a shutdown command from the admin
@@ -626,6 +621,7 @@ func runSyncer(ctx context.Context, args *serverArgs, config *server.Config) err
 		common.Info(fmt.Sprintf("Shutting down RAGFlow file syncer %s ...", *args.name))
 	case <-fileSyncer.ShutdownCh:
 		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping file syncer %s ...", *args.name))
+		cancel()
 	}
 
 	fileSyncer.Stop()
@@ -874,33 +870,14 @@ func startServer(ctx context.Context, config *server.Config) {
 		}
 	}()
 
-	// Get local IP address for heartbeat reporting
-	localIP, err := utility.GetLocalIP()
-	if err != nil {
-		common.Fatal("fail to get local ip address")
-	}
-
-	// Initialize and start heartbeat reporter to admin server
-	service.AdminServiceClient = service.NewAdminClient(
-		common.Logger,
+	// Start heartbeat reporter to admin server
+	if hb := startHeartbeat(
 		common.ServerTypeAPI,
 		fmt.Sprintf("ragflow-server-%d", config.Server.Port),
-		localIP,
 		config.Server.Port,
-	)
-	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
-		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
-	} else {
-		// Start heartbeat reporter with configured interval
-		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", config.General.HeartbeatInterval*time.Second, func() {
-			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
-				local.SetAdminStatus(0, "")
-			} else {
-				local.SetAdminStatus(1, err.Error())
-			}
-		})
-		heartbeatReporter.Start()
-		defer heartbeatReporter.Stop()
+		config,
+	); hb != nil {
+		defer hb.Stop()
 	}
 
 	// Wait for shutdown signal from main's signal.NotifyContext
@@ -914,7 +891,7 @@ func startServer(ctx context.Context, config *server.Config) {
 	defer shutdownCancel()
 
 	// Shutdown server
-	if err = srv.Shutdown(shutdownCtx); err != nil {
+	if err := srv.Shutdown(shutdownCtx); err != nil {
 		common.Fatal("Server forced to shutdown", zap.Error(err))
 	}
 }
