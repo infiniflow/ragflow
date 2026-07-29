@@ -472,14 +472,14 @@ type outlineEntry struct {
 // matches Python's code-point indexing (str[i] is a Unicode character, not
 // a byte). The right-hand bigram set is capped at min(len(left), len(right)-1)
 // characters, exactly as the Python range() does.
-func outlineSimilarity(left, right string) float64 {
-	lr := []rune(left)
+//
+// The left string is supplied as a precomputed preparedOutline (its bigram
+// set and rune length), so the repeated left-side work is done once per
+// outline entry instead of once per (record × outline) comparison — see
+// resolveOutlineLevels.
+func outlineSimilarity(left preparedOutline, right string) float64 {
 	rr := []rune(right)
-	leftPairs := make(map[string]struct{}, max(0, len(lr)-1))
-	for i := 0; i+1 < len(lr); i++ {
-		leftPairs[string(lr[i])+string(lr[i+1])] = struct{}{}
-	}
-	n := len(lr)
+	n := left.runeLen
 	if m := len(rr) - 1; m < n {
 		n = m
 	}
@@ -490,7 +490,7 @@ func outlineSimilarity(left, right string) float64 {
 	for i := 0; i < n; i++ {
 		rightPairs[string(rr[i])+string(rr[i+1])] = struct{}{}
 	}
-	denom := len(leftPairs)
+	denom := len(left.bigrams)
 	if len(rightPairs) > denom {
 		denom = len(rightPairs)
 	}
@@ -498,12 +498,31 @@ func outlineSimilarity(left, right string) float64 {
 		return 0
 	}
 	inter := 0
-	for k := range leftPairs {
+	for k := range left.bigrams {
 		if _, ok := rightPairs[k]; ok {
 			inter++
 		}
 	}
 	return float64(inter) / float64(denom)
+}
+
+// preparedOutline is an outline entry with its bigram set precomputed, so
+// resolveOutlineLevels does not rebuild it for every record comparison.
+type preparedOutline struct {
+	entry   outlineEntry
+	bigrams map[string]struct{}
+	runeLen int
+}
+
+// prepareOutline builds the character-bigram set of the entry title exactly
+// as outlineSimilarity's left side did: full length, no cap.
+func prepareOutline(o outlineEntry) preparedOutline {
+	lr := []rune(o.title)
+	bigrams := make(map[string]struct{}, max(0, len(lr)-1))
+	for i := 0; i+1 < len(lr); i++ {
+		bigrams[string(lr[i])+string(lr[i+1])] = struct{}{}
+	}
+	return preparedOutline{entry: o, bigrams: bigrams, runeLen: len(lr)}
 }
 
 // resolveOutlineLevels mirrors common.py:resolve_outline_levels. Each text
@@ -526,6 +545,12 @@ func resolveOutlineLevels(records []lineRecord, outline []outlineEntry) (levels 
 			maxLevel = o.level
 		}
 	}
+	// Precompute each outline entry's bigram set once, instead of rebuilding
+	// it for every (record × outline) comparison below.
+	prepared := make([]preparedOutline, len(outline))
+	for i, o := range outline {
+		prepared[i] = prepareOutline(o)
+	}
 	levels = make([]int, len(records))
 	for i, rec := range records {
 		if !rec.isText() {
@@ -533,9 +558,9 @@ func resolveOutlineLevels(records []lineRecord, outline []outlineEntry) (levels 
 			continue
 		}
 		matched := 0
-		for _, o := range outline {
-			if outlineSimilarity(o.title, rec.text) > 0.8 {
-				matched = o.level + 1
+		for _, po := range prepared {
+			if outlineSimilarity(po, rec.text) > 0.8 {
+				matched = po.entry.level + 1
 				break
 			}
 		}
