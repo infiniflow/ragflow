@@ -15,9 +15,9 @@
 #
 
 import asyncio
-from copy import deepcopy
 import importlib.util
 import sys
+from copy import deepcopy
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
