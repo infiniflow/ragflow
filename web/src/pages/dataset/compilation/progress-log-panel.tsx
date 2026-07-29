@@ -1,10 +1,10 @@
-import { Logs } from "lucide-react";
-import { useLayoutEffect, useMemo, useRef } from "react";
-import { useTranslation } from "react-i18next";
+import { Logs } from 'lucide-react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 
-import { cn } from "@/lib/utils";
+import { cn } from '@/lib/utils';
 
-import { parseProgressMsg } from "./utils/parse-progress-msg";
+import { parseProgressMsg } from './utils/parse-progress-msg';
 
 interface IProgressLogPanelProps {
   progressMsg?: string;
@@ -29,10 +29,10 @@ export function ProgressLogPanel({
   }, [progressMsg]);
 
   return (
-    <div className={cn("flex min-h-0 flex-col gap-2", className)}>
+    <div className={cn('flex min-h-0 flex-col gap-2', className)}>
       <div className="flex items-center gap-2 text-text-primary">
         <Logs className="size-5" />
-        <span>{t("knowledgeDetails.log")}</span>
+        <span>{t('knowledgeDetails.log')}</span>
       </div>
       <div
         ref={listRef}
@@ -45,8 +45,8 @@ export function ProgressLogPanel({
           >
             <span
               className={cn(
-                "size-2 shrink-0 rounded-full",
-                entry.isError ? "bg-state-error" : "bg-state-success",
+                'size-2 shrink-0 rounded-full',
+                entry.isError ? 'bg-state-error' : 'bg-state-success',
               )}
             />
             <span className="break-all text-sm text-text-primary">
