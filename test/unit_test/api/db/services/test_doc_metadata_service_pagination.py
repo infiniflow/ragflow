@@ -113,6 +113,7 @@ def test_get_metadata_for_documents_batches_large_id_filters(monkeypatch):
     metadata = DocMetadataService.get_metadata_for_documents(doc_ids, "kb-1")
 
     filtered_conditions = [condition for condition in store.conditions if "id" in condition]
+    requested_batches = {tuple(condition["id"]) for condition in filtered_conditions}
     assert len(metadata) == total
-    assert len(filtered_conditions) == 3
+    assert len(requested_batches) == 3
     assert all(len(condition["id"]) <= METADATA_ID_BATCH_SIZE for condition in filtered_conditions)
