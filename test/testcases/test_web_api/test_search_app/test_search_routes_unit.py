@@ -171,6 +171,10 @@ def _load_search_api(monkeypatch):
     services_pkg.duplicate_name = lambda _checker, **kwargs: kwargs.get("name", "")
     monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
 
+    knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
+    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod)
+
     search_service_mod = ModuleType("api.db.services.search_service")
 
     class _SearchService:
