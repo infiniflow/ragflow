@@ -79,8 +79,7 @@ export default function SearchingView({
     setSearchText(searchStr);
   }, [searchStr, setSearchText]);
 
-  useAutoResizeTextarea(searchInputRef, searchText);
-
+  const isMultiLine = useAutoResizeTextarea(searchInputRef, searchText);
   return (
     <section
       className={cn(
@@ -111,7 +110,8 @@ export default function SearchingView({
                 rows={1}
                 placeholder={t('search.searchGreeting')}
                 className={cn(
-                  'w-full rounded-3xl py-4 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base border border-border-button resize-none scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50 disabled:cursor-not-allowed disabled:opacity-50',
+                  'w-full rounded-full py-4 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base border border-border-button resize-none scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50 disabled:cursor-not-allowed disabled:opacity-50',
+                  isMultiLine ? 'rounded-3xl' : 'rounded-full',
                 )}
                 value={searchText}
                 onChange={(e) => {
@@ -129,7 +129,12 @@ export default function SearchingView({
                   }
                 }}
               />
-              <div className="absolute bottom-3 right-3 flex items-center gap-3">
+              <div
+                className={cn(
+                  'absolute  right-3 flex items-center gap-3',
+                  isMultiLine ? 'bottom-3' : 'top-1/2 -translate-y-1/2',
+                )}
+              >
                 {searchText && (
                   <X
                     className="text-text-secondary cursor-pointer opacity-80 hover:opacity-100"

@@ -1817,6 +1817,9 @@ def migrate_db():
         ("tenant_model_instance", "idx_api_key_provider_id"),
         ("tenant_model_instance", "tenantmodelinstance_api_key_provider_id"),
         ("tenant_model", "idx_provider_model_instance"),
+        ("compilation_template", "compilationtemplate_tenant_id_name_is_builtin_status"),
+        ("compilation_template", "compilation_template_tenant_id_name_is_builtin_status"),
+        ("compilation_template", "idx_compilation_template_tenant_id_name_is_builtin_status"),
     ]
     for table_name, index_name in legacy_indexes:
         try:

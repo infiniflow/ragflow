@@ -10,12 +10,12 @@ SEARCH_PHASES = {
     "locate": {
         "goal": "Locate documents or regions that may contain the answer.",
         "tools_priority": [
-            "dataset_navigate",
-            "catalog_navigate",
+            "dataset_navigation_by_tree",
+            "ontology_navigate",
             "mindmap_navigate",
-            "wiki_query",
             "hybrid_search",
             "bm25_search",
+            "wiki_query",
         ],
         "max_returned": 5,
         "tool_hint": "Prefer navigation tools to locate document regions before directly searching keywords.",
@@ -70,17 +70,15 @@ def compilation_available(tool_name: str, compilation_map: dict) -> bool:
     return any(bool(comp_types & set(comps)) for comps in compilation_map.values())
 
 
-def tool_fits_context(tool_name: str, context: OrchestratorContext) -> bool:
+def tool_fits_context(tool_name: str, context: OrchestratorContext, has_routed_scope: bool = False) -> bool:
     """Check if a tool is sensible given current search context."""
     if tool_name.startswith("inspector_") and not context.has_any_chunks():
         return False
-    if tool_name == "catalog_navigate" and not context.current_claim:
+    if tool_name in {"ontology_navigate", "mindmap_navigate"} and not has_routed_scope:
         return False
-    if tool_name == "dataset_navigate" and not context.current_claim:
+    if tool_name == "dataset_navigation_by_tree" and not context.current_claim:
         return False
     if tool_name == "graph_explore" and not context.last_entity:
-        return False
-    if tool_name == "mindmap_navigate" and not context.current_claim:
         return False
     return True
 
@@ -90,6 +88,7 @@ def get_gated_tools(
     available_tools: list[str],
     compilation_map: dict[str, set[str]],
     context: OrchestratorContext,
+    has_routed_scope: bool = False,
 ) -> list[dict]:
     """Filter, sort, and gate tools by phase priority and context."""
     phase_config = SEARCH_PHASES.get(phase)
@@ -102,7 +101,7 @@ def get_gated_tools(
             continue
         if not compilation_available(tool_name, compilation_map):
             continue
-        if not tool_fits_context(tool_name, context):
+        if not tool_fits_context(tool_name, context, has_routed_scope):
             continue
         sorted_tools.append(tool_name)
 

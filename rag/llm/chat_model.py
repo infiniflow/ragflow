@@ -1835,7 +1835,11 @@ class LiteLLMBase(ABC):
             logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
             await asyncio.sleep(delay)
             return None
-        msg = f"{ERROR_PREFIX}: {error_code} - {str(e)}"
+        error_detail = str(e)
+        if self.provider == SupportedLiteLLMProvider.Nvidia and "function" in error_detail.lower() and "not found for account" in error_detail.lower():
+            model_name = self.model_name.removeprefix(self.prefix)
+            error_detail = f"NVIDIA hosted endpoint '{model_name}' is unavailable or deprecated; refresh the provider model list and select an active Free Endpoint. Original error: {error_detail}"
+        msg = f"{ERROR_PREFIX}: {error_code} - {error_detail}"
         logging.error(f"async_chat_streamly giving up: {msg}")
         return msg
 
@@ -2227,9 +2231,12 @@ class LiteLLMBase(ABC):
             "model": self.model_name,
             "messages": history,
             "api_key": self.api_key,
-            "num_retries": self.max_retries,
             **kwargs,
         }
+        if self.provider == SupportedLiteLLMProvider.Nvidia:
+            completion_args["num_retries"] = 0
+        else:
+            completion_args.setdefault("num_retries", self.max_retries)
         # Forward the originating session/user as the OpenAI-standard `user` field so
         # providers (OpenAI, OpenRouter, ...) receive it in the request body and
         # upstream activity can be correlated back to the session. An explicit
