@@ -277,6 +277,9 @@ func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 		if !ok {
 			return nil
 		}
+		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
 		delta, ok := choice["delta"].(map[string]any)
 		if !ok {
 			return nil
@@ -321,9 +324,6 @@ func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 			}
 		}
 
-		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
-			sawTerminal = true
-		}
 		return nil
 	})
 	if err != nil {

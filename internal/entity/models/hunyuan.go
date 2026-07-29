@@ -249,6 +249,9 @@ func (h *HunyuanModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		if !ok {
 			return nil
 		}
+		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
 		delta, ok := choice["delta"].(map[string]any)
 		if !ok {
 			return nil
@@ -268,9 +271,6 @@ func (h *HunyuanModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 			if err := sender(&content, nil); err != nil {
 				return err
 			}
-		}
-		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
-			sawTerminal = true
 		}
 		return nil
 	})
