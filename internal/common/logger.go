@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
@@ -108,7 +107,7 @@ func Init(level string, file FileOutput, serviceName string) error {
 		TimeKey:       "timestamp",
 		LevelKey:      "level",
 		NameKey:       "service",
-		CallerKey:     "",
+		CallerKey:     "caller",
 		FunctionKey:   "",
 		MessageKey:    "msg",
 		StacktraceKey: "stacktrace",
@@ -174,14 +173,10 @@ func SyncLog() {
 	}
 }
 
-// Fatal logs a fatal message using zap with caller info, then calls os.Exit(1).
+// Fatal logs a fatal message using zap, then calls os.Exit(1).
 func Fatal(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		panic("logger not initialized")
-	}
-	_, file, line, ok := runtime.Caller(1)
-	if ok {
-		fields = append(fields, zap.String("caller", fmt.Sprintf("%s:%d", file, line)))
 	}
 	Logger.Fatal(msg, fields...)
 }
