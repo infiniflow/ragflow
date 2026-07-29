@@ -65,6 +65,10 @@ const (
 	// ProviderSSH runs the user's code on a remote host via
 	// SSH. Matches Python's SSHProvider.
 	ProviderSSH ProviderType = "ssh"
+
+	// ProviderTenki runs each execution in a disposable Tenki
+	// microVM (TenkiCloud Go SDK). Matches Python's TenkiProvider.
+	ProviderTenki ProviderType = "tenki"
 )
 
 // ErrE2BProviderNotImplemented is returned when an operator configures

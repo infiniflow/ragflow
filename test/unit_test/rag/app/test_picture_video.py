@@ -41,6 +41,7 @@ def _load_picture_module(tokenized_texts):
     tenant_model_service = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_service.get_tenant_default_model_by_type = lambda *args, **kwargs: {}
     tenant_model_service.get_first_provider_model_name = lambda *args, **kwargs: None
+    tenant_model_service.get_composite_model_name_by_id = lambda model_id: model_id
     tenant_model_service.resolve_model_config = lambda *args, **kwargs: {}
     tenant_model_service.ensure_paddleocr_from_env = lambda *args, **kwargs: None
 

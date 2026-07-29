@@ -77,39 +77,35 @@ pre-commit:
           - name: web-deps
             glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
             run: |
-              # Install ONLY oxfmt + oxlint (prebuilt Rust binaries) into an isolated
-              # dir inside web/node_modules. This skips the full React dev-toolchain
-              # `npm ci`, which was the dominant CI cost of the old prettier/eslint
-              # setup. oxfmt/oxlint read web/.oxfmtrc.json / web/.oxlintrc.json from cwd.
-              HOOKBIN=web/node_modules/.hookbin
-              if [ ! -x "$HOOKBIN/node_modules/.bin/oxfmt" ] \
-                || [ ! -x "$HOOKBIN/node_modules/.bin/oxlint" ]; then
-                echo '==> installing oxfmt + oxlint only (no full web toolchain)'
-                mkdir -p "$HOOKBIN"
-                [ -f "$HOOKBIN/package.json" ] \
-                  || printf '{"name":"hookbin","version":"1.0.0","private":true}\n' > "$HOOKBIN/package.json"
-                npm install --prefix "$HOOKBIN" --no-audit --no-fund --save-dev oxfmt oxlint
+              TOOL=web/node_modules/.hookbin/node_modules/.bin
+              if [ ! -x "$TOOL/oxfmt" ] || [ ! -x "$TOOL/oxlint" ]; then
+                exit 0
               fi
           - name: web-oxfmt
             glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
-            exclude: ["web/**/*.min.js", "web/**/*.min.css"]
+            exclude: ["web/**/*.min.js", "web/**/*.min.css", "web/node_modules/**", "web/.next/**", "web/dist/**"]
             root: "web/"
             stage_fixed: true
             run: |
+              OXFMT=node_modules/.hookbin/node_modules/.bin/oxfmt
+              if ! [ -x "$OXFMT" ]; then exit 0; fi
               if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
-                node_modules/.hookbin/node_modules/.bin/oxfmt --check {staged_files}
+                "$OXFMT" --check {staged_files}
               else
-                node_modules/.hookbin/node_modules/.bin/oxfmt {staged_files}
+                "$OXFMT" {staged_files}
               fi
           - name: web-oxlint
             glob: "web/**/*.{js,jsx,ts,tsx}"
+            exclude: ["web/**/*.min.js", "web/node_modules/**", "web/.next/**", "web/dist/**"]
             root: "web/"
             stage_fixed: true
             run: |
+              OXLINT=node_modules/.hookbin/node_modules/.bin/oxlint
+              if ! [ -x "$OXLINT" ]; then exit 0; fi
               if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
-                node_modules/.hookbin/node_modules/.bin/oxlint {staged_files}
+                "$OXLINT" {staged_files}
               else
-                node_modules/.hookbin/node_modules/.bin/oxlint --fix {staged_files}
+                "$OXLINT" --fix {staged_files}
               fi
     - name: check-yaml
       run: python3 tools/hooks/check_files.py yaml

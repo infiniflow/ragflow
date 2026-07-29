@@ -500,6 +500,26 @@ def ensure_somark_from_env(tenant_id: str) -> str | None:
     )
 
 
+def get_composite_model_name_by_id(model_id: str) -> str:
+    """Convert a tenant_model.id to the composite model name string
+    ``model_name@instance_name@provider_name``.
+    Raises LookupError if the model, instance, or provider is not found.
+    """
+    exist, model_obj = TenantModelService.get_by_id(model_id)
+    if not exist:
+        raise LookupError(f"TenantModel id={model_id} not found.")
+
+    ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+    if not ok:
+        raise LookupError(f"Instance id={model_obj.instance_id} not found for model id={model_id}.")
+
+    ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+    if not ok:
+        raise LookupError(f"Provider id={model_obj.provider_id} not found for model id={model_id}.")
+
+    return f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_obj.provider_name}"
+
+
 def ensure_mistral_ocr_from_env(tenant_id: str) -> str | None:
     return _ensure_ocr_provider_from_env(
         tenant_id,
