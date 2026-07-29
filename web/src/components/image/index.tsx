@@ -193,12 +193,7 @@ export const AuthenticatedImg = ({
   if (!authenticatedSrc) return fallback ?? null;
 
   return (
-    <img
-      src={authenticatedSrc}
-      alt={alt}
-      className={className}
-      {...props}
-    />
+    <img src={authenticatedSrc} alt={alt} className={className} {...props} />
   );
 };
 

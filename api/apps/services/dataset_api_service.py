@@ -458,6 +458,13 @@ def list_datasets(tenant_id: str, args: dict):
     return True, {"data": response_data_list, "total": total}
 
 
+def list_dataset_filters(tenant_id: str):
+    tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+    tenant_ids = [m["tenant_id"] for m in tenants]
+    owners = KnowledgebaseService.get_owner_filter(tenant_ids, tenant_id)
+    return True, {"filter": {"owner": owners}, "total": sum(owner["count"] for owner in owners)}
+
+
 async def get_knowledge_graph(dataset_id: str, tenant_id: str):
     """
     Get knowledge graph for a dataset.
@@ -467,7 +474,7 @@ async def get_knowledge_graph(dataset_id: str, tenant_id: str):
     :return: (success, result) or (success, error_message)
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     req = {"kb_id": [dataset_id], "knowledge_graph_kwd": ["graph"]}
@@ -508,7 +515,7 @@ def delete_knowledge_graph(dataset_id: str, tenant_id: str):
     :return: (success, result) or (success, error_message)
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
     from rag.nlp import search
     from rag.graphrag.phase_markers import clear_phase_markers
@@ -540,7 +547,7 @@ def run_index(dataset_id: str, tenant_id: str, index_type: str):
     if not dataset_id:
         return False, 'Lack of "Dataset ID"'
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
@@ -600,7 +607,7 @@ def trace_index(dataset_id: str, tenant_id: str, index_type: str):
         return False, 'Lack of "Dataset ID"'
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
@@ -630,7 +637,7 @@ def list_tags(dataset_id: str, tenant_id: str):
         return False, 'Lack of "Dataset ID"'
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
 
     tenants = UserTenantService.get_tenants_by_user_id(tenant_id)
     tags = []
@@ -740,7 +747,7 @@ def delete_tags(dataset_id: str, tenant_id: str, tags: list[str]):
         return False, 'Lack of "Dataset ID"'
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
@@ -787,7 +794,7 @@ def list_ingestion_logs(
         return False, 'Lack of "Dataset ID"'
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
 
     from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 
@@ -830,7 +837,7 @@ def get_ingestion_log(dataset_id: str, tenant_id: str, log_id: str):
         return False, 'Lack of "Dataset ID"'
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
 
     from api.db.services.pipeline_operation_log_service import PipelineOperationLogService
 
@@ -871,7 +878,7 @@ def delete_index(dataset_id: str, tenant_id: str, index_type: str, wipe: bool = 
         return False, 'Lack of "Dataset ID"'
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
@@ -940,7 +947,7 @@ def rename_tag(dataset_id: str, tenant_id: str, from_tag: str, to_tag: str):
         return False, 'Lack of "Dataset ID"'
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
@@ -1246,7 +1253,7 @@ def check_embedding(dataset_id: str, tenant_id: str, req: dict):
         return False, 'Lack of "Dataset ID"'
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
 
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
@@ -1668,7 +1675,7 @@ async def has_any_wiki(dataset_id: str, tenant_id: str):
     auth failure. Runs a ``limit=1`` search and reads only the total.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
@@ -1714,6 +1721,13 @@ _DATASET_STRUCTURE_KIND_ALIASES = {
     "session_essence": "session_essence",
     "session_graph": "session_graph",
 }
+_DATASET_STRUCTURE_KIND_TO_INDEX_TYPE = {
+    "knowledge_graph": "structure_graph",
+    "mind_map": "structure_mindmap",
+    "timeline": "timeline",
+    "session_essence": "session_essence",
+    "session_graph": "session_graph",
+}
 
 
 def _resolve_dataset_structure_kind(kind) -> str | None:
@@ -1721,6 +1735,15 @@ def _resolve_dataset_structure_kind(kind) -> str | None:
     if not isinstance(kind, str):
         return None
     return _DATASET_STRUCTURE_KIND_ALIASES.get(kind.strip().lower().replace("-", "_"))
+
+
+def delete_dataset_structure(dataset_id: str, tenant_id: str, kind: str, wipe: bool = True):
+    """Delete the merged KB-wide structure rows for one artifacts_structure kind."""
+    resolved_kind = _resolve_dataset_structure_kind(kind)
+    if not resolved_kind:
+        return False, f"Unsupported structure kind: {kind!r}. Expected one of: graph, mindmap, timeline, session_essence, session_graph."
+    index_type = _DATASET_STRUCTURE_KIND_TO_INDEX_TYPE[resolved_kind]
+    return delete_index(dataset_id, tenant_id, index_type, wipe=wipe)
 
 
 async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keywords: str = ""):
@@ -1742,7 +1765,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     ``(False, message)`` on auth/validation failure.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
 
     resolved_kind = _resolve_dataset_structure_kind(kind)
     if not resolved_kind:
@@ -1943,7 +1966,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
 async def get_wiki_alteration(dataset_id: str, tenant_id: str):
     """Return doc-level drift between current dataset docs and compiled wiki provenance."""
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
         return False, "Invalid Dataset ID"
@@ -2052,7 +2075,7 @@ async def list_wiki_pages(
     pages of the same type grouped together visually.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
@@ -2137,7 +2160,7 @@ async def list_wiki_topics(
 ):
     """List wiki topics for the dataset Artifact tab."""
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
@@ -2238,7 +2261,7 @@ async def get_wiki_page(
     Returns ``(True, page_dict)`` or ``(True, None)`` when no row matches.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
@@ -2312,7 +2335,7 @@ async def get_wiki_page(
 async def has_any_skill(dataset_id: str, tenant_id: str):
     """Fast existence probe for the dataset Skills sidebar entry."""
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     pack = _skill_index_or_none(kb.tenant_id, dataset_id)
@@ -2345,7 +2368,7 @@ async def has_any_skill(dataset_id: str, tenant_id: str):
 async def get_skill_tree(dataset_id: str, tenant_id: str):
     """Fetch the one-shot recursive skill tree for this dataset."""
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     pack = _skill_index_or_none(kb.tenant_id, dataset_id)
@@ -2393,7 +2416,7 @@ async def delete_skills(dataset_id: str, tenant_id: str):
     not exist yet there is nothing to delete, so it succeeds with ``0``.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     pack = _skill_index_or_none(kb.tenant_id, dataset_id)
@@ -2429,7 +2452,7 @@ async def delete_skill(dataset_id: str, tenant_id: str, skill_kwd: str):
     left untouched. Returns ``(True, {"deleted": <n>})``.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     pack = _skill_index_or_none(kb.tenant_id, dataset_id)
@@ -2453,7 +2476,7 @@ async def delete_skill(dataset_id: str, tenant_id: str, skill_kwd: str):
 async def get_skill_page(dataset_id: str, tenant_id: str, skill_kwd: str):
     """Fetch the full markdown body for a single skill node."""
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     pack = _skill_index_or_none(kb.tenant_id, dataset_id)
@@ -2562,7 +2585,7 @@ def _nav_item(row: dict) -> dict:
 async def _nav_search(dataset_id: str, tenant_id: str, condition: dict, page: int, page_size: int):
     """Run one nav-tree search and shape the hits into UI nodes."""
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
@@ -2637,7 +2660,7 @@ async def delete_nav(dataset_id: str, tenant_id: str):
     index yet.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
@@ -2671,7 +2694,7 @@ async def delete_nav_node(dataset_id: str, tenant_id: str, name: str):
     name = name.strip()
 
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
@@ -2680,50 +2703,98 @@ async def delete_nav_node(dataset_id: str, tenant_id: str, name: str):
     index_nm, _ = pack
 
     from common.doc_store.doc_store_base import OrderByExpr
+    from rag.advanced_rag.knowlege_compile.dataset_nav import (
+        _LOCK_BLOCKING_TIMEOUT_S,
+        _LOCK_TIMEOUT_S,
+        _nav_lock_key,
+        _remove_dataset_nav_doc_locked,
+    )
+    from rag.utils.redis_conn import RedisDistributedLock
 
-    # Collect the node plus every descendant, level by level via parent_kwd.
-    names: set[str] = {name}
-    frontier: list[str] = [name]
-    for _ in range(64):  # depth guard against a malformed (cyclic) tree
-        if not frontier:
-            break
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                ["name"],
-                [],
-                {"compile_kwd": [_NAV_COMPILE_KWD], "parent_kwd": frontier},
-                [],
-                OrderByExpr(),
-                0,
-                10000,
-                index_nm,
-                [dataset_id],
-            )
-            rows = settings.docStoreConn.get_fields(res, ["name"]) or {}
-        except Exception:
-            logging.exception("delete_nav_node: subtree scan failed for kb=%s name=%s", dataset_id, name)
-            break
-        nxt: list[str] = []
-        for row in rows.values():
-            child = row.get("name")
-            if isinstance(child, str) and child and child not in names:
-                names.add(child)
-                nxt.append(child)
-        frontier = nxt
+    async def search_rows(condition):
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["id", "name", "type_kwd", "parent_kwd", "doc_id"],
+            [],
+            condition,
+            [],
+            OrderByExpr(),
+            0,
+            10000,
+            index_nm,
+            [dataset_id],
+        )
+        return list((settings.docStoreConn.get_fields(res, ["id", "name", "type_kwd", "parent_kwd", "doc_id"]) or {}).values())
+
+    lock = RedisDistributedLock(
+        _nav_lock_key(dataset_id),
+        timeout=_LOCK_TIMEOUT_S,
+        blocking_timeout=_LOCK_BLOCKING_TIMEOUT_S,
+    )
+    try:
+        await lock.spin_acquire()
+    except Exception:
+        logging.exception("delete_nav_node: lock acquire failed for kb=%s", dataset_id)
+        return False, "Failed to acquire the navigation tree lock."
 
     try:
-        deleted = await thread_pool_exec(
-            settings.docStoreConn.delete,
-            {"compile_kwd": [_NAV_COMPILE_KWD], "name": list(names)},
-            index_nm,
-            dataset_id,
-        )
-    except Exception:
-        logging.exception("delete_nav_node: docStore delete failed for kb=%s name=%s", dataset_id, name)
-        return False, "Failed to delete the navigation node."
+        # ES requires the keyword subfield for exact node-name matching. Infinity
+        # has a scalar varchar name field, while parent_kwd is exact-matchable.
+        name_field = "name.keyword" if settings.DOC_ENGINE.lower() in {"elasticsearch", "opensearch"} else "name"
+        target_condition = {"compile_kwd": [_NAV_COMPILE_KWD], name_field: [name]}
+        rows = await search_rows(target_condition)
+        if not rows and name_field != "name":
+            # Keep this fallback for installations with an older/missing mapping.
+            rows = [row for row in await search_rows({"compile_kwd": [_NAV_COMPILE_KWD]}) if row.get("name") == name]
+        if not rows:
+            return True, {"deleted": 0}
 
-    return True, {"deleted": int(deleted or 0)}
+        # Collect the target and descendants by stable row IDs, not by names.
+        # Names are display values and may collide across malformed/old data.
+        rows_by_id = {row.get("id"): row for row in rows if row.get("id")}
+        frontier = [row.get("name") for row in rows if row.get("name")]
+        for _ in range(64):
+            if not frontier:
+                break
+            children = await search_rows(
+                {"compile_kwd": [_NAV_COMPILE_KWD], "parent_kwd": frontier},
+            )
+            frontier = []
+            for child in children:
+                row_id = child.get("id")
+                child_name = child.get("name")
+                if row_id and row_id not in rows_by_id:
+                    rows_by_id[row_id] = child
+                    if child_name:
+                        frontier.append(child_name)
+
+        deleted = 0
+        # Reuse the existing document-removal path so direct parents are
+        # updated and empty ancestor clusters are cleaned consistently.
+        for row in rows_by_id.values():
+            if row.get("type_kwd") == "nav_doc" and row.get("doc_id"):
+                await _remove_dataset_nav_doc_locked(tenant_id, dataset_id, row["doc_id"])
+                deleted += 1
+
+        cluster_ids = [row_id for row_id, row in rows_by_id.items() if row.get("type_kwd") == "nav_cluster" and row_id]
+        if cluster_ids:
+            deleted_rows = await thread_pool_exec(
+                settings.docStoreConn.delete,
+                {"compile_kwd": [_NAV_COMPILE_KWD], "id": cluster_ids},
+                index_nm,
+                dataset_id,
+            )
+            deleted += int(deleted_rows or 0)
+
+        return True, {"deleted": deleted}
+    except Exception:
+        logging.exception("delete_nav_node: deletion failed for kb=%s name=%s", dataset_id, name)
+        return False, "Failed to delete the navigation node."
+    finally:
+        try:
+            lock.release()
+        except Exception:
+            logging.exception("delete_nav_node: lock release failed for kb=%s", dataset_id)
 
 
 async def update_wiki_page(
@@ -2760,7 +2831,7 @@ async def update_wiki_page(
     ``(False, message)`` on authorization failure.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
@@ -2903,7 +2974,7 @@ _WIKI_COMPILE_KWDS = (
 _WIKI_GRAPH_ENTITY_KWD = "artifact_entity"
 _WIKI_GRAPH_RELATION_KWD = "artifact_relation"
 _WIKI_GRAPH_ENTITY_PAGE_SIZE = 32
-_WIKI_GRAPH_MAX_LOADING_ENTITY = 128
+_WIKI_GRAPH_MAX_LOADING_ENTITY = 512
 
 
 def _wiki_entity_payload(row: dict) -> dict | None:
@@ -3119,7 +3190,7 @@ async def get_wiki_graph(
     ``(False, message)`` on authorization failure.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     empty = {"entities": [], "relations": []}
@@ -3372,7 +3443,7 @@ async def clear_wiki(dataset_id: str, tenant_id: str):
     ``(False, str)`` on auth failure.
     """
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "No authorization."
+        return False, "no authorization"
     _, kb = KnowledgebaseService.get_by_id(dataset_id)
 
     pack = _wiki_index_or_none(kb.tenant_id, dataset_id)

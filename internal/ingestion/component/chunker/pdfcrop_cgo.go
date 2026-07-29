@@ -21,13 +21,15 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/schema"
+
+	"gorm.io/gorm"
 )
 
 // newPDFEngineFromUpstream re-acquires the source PDF from storage using the
 // same resolution the Parser uses, then opens a native engine. It returns
 // (nil, nil) when no storage reference is present or the bytes are not a PDF,
 // so callers can treat a nil engine as "no cropping".
-func newPDFEngineFromUpstream(ctx context.Context, up schema.ChunkerFromUpstream) (deepdoctype.PDFEngine, error) {
+func newPDFEngineFromUpstream(ctx context.Context, db *gorm.DB, up schema.ChunkerFromUpstream) (deepdoctype.PDFEngine, error) {
 	var data []byte
 	var err error
 	switch {
@@ -35,7 +37,7 @@ func newPDFEngineFromUpstream(ctx context.Context, up schema.ChunkerFromUpstream
 		data, err = component.FetchBinary(ctx, up.Bucket, up.Path)
 	case up.DocID != "":
 		var ref *component.DocumentStorageRef
-		ref, err = component.ResolveDocumentStorage(ctx, up.DocID)
+		ref, err = component.ResolveDocumentStorage(ctx, db, up.DocID)
 		if err == nil && ref != nil {
 			data, err = component.FetchBinary(ctx, ref.Bucket, ref.Path)
 		}

@@ -308,8 +308,8 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found!")
 		return
 	}
-	if !h.datasetService.Accessible(doc.KbID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
@@ -361,8 +361,8 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found!")
 		return
 	}
-	if !h.datasetService.Accessible(doc.KbID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
@@ -505,7 +505,8 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 
-	if !h.datasetService.Accessible(datasetID, userID) {
+	ctx := c.Request.Context()
+	if !h.datasetService.Accessible(ctx, datasetID, userID) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
 		return
 	}
@@ -528,7 +529,6 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
 	if c.Query("type") == "filter" {
 		filters, total, err := h.documentService.GetDocumentFiltersByDatasetID(ctx, opts)
 		if err != nil {
@@ -830,13 +830,14 @@ func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 	datasetID := c.Param("dataset_id")
 	uploadType := strings.ToLower(c.DefaultQuery("type", "local"))
 
-	kb, err := h.datasetService.GetKnowledgebaseByID(datasetID)
+	ctx := c.Request.Context()
+	kb, err := h.datasetService.GetKnowledgebaseByID(ctx, datasetID)
 	if err != nil || kb == nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("Can't find the dataset with ID %s!", datasetID))
 		return
 	}
-	if !h.datasetService.CheckKBTeamPermission(kb, tenantID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+	if !h.datasetService.CheckKBTeamPermission(ctx, kb, tenantID) {
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
@@ -1236,8 +1237,8 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found")
 		return
 	}
-	if !h.datasetService.Accessible(doc.KbID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
@@ -1331,8 +1332,8 @@ func (h *DocumentHandler) DeleteMeta(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found")
 		return
 	}
-	if !h.datasetService.Accessible(doc.KbID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
@@ -1392,13 +1393,13 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 
 	var parseResult []*entity.IngestionTask
 	var err error
+	ctx := c.Request.Context()
 	if req.DatasetID != nil {
-		if !h.datasetService.Accessible(*req.DatasetID, userID) {
+		if !h.datasetService.Accessible(ctx, *req.DatasetID, userID) {
 			common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization to access the dataset.")
 			return
 		}
 	}
-	ctx := c.Request.Context()
 	parseResult, err = h.documentService.ListIngestionTasks(ctx, userID, req.DatasetID, 0, 0)
 	if err != nil {
 		common.ResponseWithCodeData(c, IngestionTaskErrorCode(err), nil, err.Error())
@@ -1422,12 +1423,12 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	if !h.datasetService.Accessible(datasetID, userID) {
+	ctx := c.Request.Context()
+	if !h.datasetService.Accessible(ctx, datasetID, userID) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
 		return
 	}
-	ctx := c.Request.Context()
+
 	parseResult, err := h.documentService.IngestDocuments(ctx, datasetID, userID, req.DocumentIDs)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
@@ -1505,12 +1506,12 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	if !h.datasetService.Accessible(datasetID, userID) {
+	ctx := c.Request.Context()
+	if !h.datasetService.Accessible(ctx, datasetID, userID) {
 		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization to access the dataset.")
 		return
 	}
-	ctx := c.Request.Context()
+
 	parseResult, err := h.documentService.ParseDocuments(ctx, datasetID, userID, req.Documents)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
@@ -1538,12 +1539,12 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-
-	if !h.datasetService.Accessible(datasetID, userID) {
+	ctx := c.Request.Context()
+	if !h.datasetService.Accessible(ctx, datasetID, userID) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
 		return
 	}
-	ctx := c.Request.Context()
+
 	result, err := h.documentService.StopParseDocuments(ctx, datasetID, req.DocumentIDs)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
@@ -1564,7 +1565,8 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeServerError, "dataset_id is required")
 		return
 	}
-	if !h.datasetService.Accessible(datasetID, user.ID) {
+	ctx := c.Request.Context()
+	if !h.datasetService.Accessible(ctx, datasetID, user.ID) {
 		common.ErrorWithCode(c, common.CodeServerError, "You don't own the dataset "+datasetID)
 		return
 	}
@@ -1573,7 +1575,7 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 	if docIDsParam := c.Query("doc_ids"); docIDsParam != "" {
 		docIDS = strings.Split(docIDsParam, ",")
 	}
-	ctx := c.Request.Context()
+
 	summary, err := h.documentService.GetMetadataSummary(ctx, datasetID, docIDS)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, "Failed to get metadata summary"+err.Error())
@@ -1710,7 +1712,8 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_id is required")
 		return
 	}
-	if !h.datasetService.Accessible(datasetID, user.ID) {
+	ctx := c.Request.Context()
+	if !h.datasetService.Accessible(ctx, datasetID, user.ID) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "You don't own the dataset "+datasetID+".")
 		return
 	}
@@ -1742,7 +1745,7 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 		Updates:  updates,
 		Deletes:  deletes,
 	}
-	ctx := c.Request.Context()
+
 	resp, code, err := h.documentService.BatchUpdateDocumentMetadatas(ctx, datasetID, req.Selector, req.Updates, req.Deletes)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())

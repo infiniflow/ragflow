@@ -1,20 +1,25 @@
-import { CirclePause, Logs, WandSparkles } from 'lucide-react';
+import { CircleX, WandSparkles } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { IconFontFill } from '@/components/icon-font';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import { GenerateType } from '@/pages/dataset/dataset/generate-button/constants';
 import {
   ITraceInfo,
   useDatasetGenerate,
 } from '@/pages/dataset/dataset/generate-button/hook';
 import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
-import { replaceText } from '@/pages/dataset/process-log-modal';
-import { toFixed } from '@/utils/common-util';
 
-type EmptyStateType = 'llm-wiki' | 'skills';
+import {
+  GenerableViewMode,
+  ViewMode,
+  ViewModeGenerateTypeMap,
+  ViewModeLabelKeyMap,
+} from './constants';
+import { ProgressLogPanel } from './progress-log-panel';
+import { ProgressRing } from './progress-ring';
+
+type EmptyStateType = GenerableViewMode;
 
 interface ICompilationEmptyStateProps {
   type: EmptyStateType;
@@ -22,19 +27,14 @@ interface ICompilationEmptyStateProps {
   data?: ITraceInfo;
 }
 
-const DefaultGenerateTypeMap: Record<EmptyStateType, GenerateType> = {
-  'llm-wiki': GenerateType.Artifact,
-  skills: GenerateType.ToSkills,
-};
-
 const TitleKeyMap: Record<EmptyStateType, string> = {
-  'llm-wiki': 'knowledgeDetails.noWikiPages',
-  skills: 'knowledgeDetails.noSkills',
-};
-
-const LabelKeyMap: Record<EmptyStateType, string> = {
-  'llm-wiki': 'knowledgeDetails.artifact',
-  skills: 'knowledgeDetails.toSkills',
+  [ViewMode.LlmWiki]: 'knowledgeDetails.noWikiPages',
+  [ViewMode.Skills]: 'knowledgeDetails.noSkills',
+  [ViewMode.Graph]: 'knowledgeDetails.noStructureGraph',
+  [ViewMode.MindMap]: 'knowledgeDetails.noStructureMindmap',
+  [ViewMode.Timeline]: 'knowledgeDetails.noStructureTimeline',
+  // [ViewMode.SessionEssence]: 'knowledgeDetails.noStructureSessionEssence',
+  // [ViewMode.SessionGraph]: 'knowledgeDetails.noStructureSessionGraph',
 };
 
 export function CompilationEmptyState({
@@ -43,7 +43,7 @@ export function CompilationEmptyState({
   data,
 }: ICompilationEmptyStateProps) {
   const { t } = useTranslation();
-  const generateType = DefaultGenerateTypeMap[type];
+  const generateType = ViewModeGenerateTypeMap[type];
   const { runGenerate, pauseGenerate } = useDatasetGenerate();
   const { status, percent } = useGenerateStatus(data);
 
@@ -74,48 +74,32 @@ export function CompilationEmptyState({
           </Button>
         </div>
       ) : (
-        <div className="w-full max-w-md p-6 flex flex-col gap-4">
-          <div className="flex items-center gap-2 text-text-primary">
-            <Logs className="size-5" />
-            <span>{t(LabelKeyMap[type])}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div
-              className={cn('bg-border-button h-1 rounded-full', {
-                'w-[calc(100%-100px)]': status === 'running',
-                'w-[calc(100%-50px)]': status === 'failed',
-              })}
-            >
-              <div
-                className={cn('h-1 rounded-full', {
-                  'bg-state-error': status === 'failed',
-                  'bg-accent-primary': status === 'running',
-                })}
-                style={{ width: `${toFixed(percent)}%` }}
-              />
+        <div className="grid h-full w-full grid-cols-[1fr_auto_1fr] items-center gap-8 p-6">
+          <div />
+          <div className="flex flex-col items-center gap-5">
+            <ProgressRing percent={percent} failed={status === 'failed'} />
+            <div className="flex items-center gap-2 text-text-primary">
+              <span>{t(ViewModeLabelKeyMap[type])}</span>
+              {status === 'failed' && (
+                <span className="cursor-pointer" onClick={handleGenerate}>
+                  <IconFontFill
+                    name="reparse"
+                    className="text-accent-primary"
+                  />
+                </span>
+              )}
+              {status !== 'failed' && (
+                <span
+                  className="text-state-error cursor-pointer"
+                  onClick={handlePause}
+                >
+                  <CircleX className="size-5 text-state-error" />
+                </span>
+              )}
             </div>
-            {status === 'running' && (
-              <span>{(toFixed(percent) as string) + '%'}</span>
-            )}
-            {status === 'failed' && (
-              <span
-                className="text-state-error cursor-pointer"
-                onClick={handleGenerate}
-              >
-                <IconFontFill name="reparse" className="text-accent-primary" />
-              </span>
-            )}
-            {status !== 'failed' && (
-              <span
-                className="text-state-error cursor-pointer"
-                onClick={handlePause}
-              >
-                <CirclePause />
-              </span>
-            )}
           </div>
-          <div className="whitespace-pre-line text-wrap rounded-lg max-h-[350px] overflow-y-auto scrollbar-auto p-2 bg-bg-base text-sm text-text-secondary">
-            {replaceText(data?.progress_msg || '')}
+          <div className="flex min-h-0 h-full justify-end">
+            <ProgressLogPanel progressMsg={data?.progress_msg} />
           </div>
         </div>
       )}

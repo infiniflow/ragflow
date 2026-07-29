@@ -23,6 +23,7 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -90,8 +91,10 @@ func (s *stubEmbedder) Encode(ctx context.Context, texts []string) ([]EmbeddingR
 }
 
 // newStubEmbedder returns a stub embedder for instance-level resolver injection.
+// maxTokens defaults to 2048 so truncateForEmbedding (Diff 14: maxTokens <= 10 -> "")
+// does not empty the content text; tests that exercise truncation set maxTokens explicitly.
 func newStubEmbedder(dim int) *stubEmbedder {
-	return &stubEmbedder{dim: dim}
+	return &stubEmbedder{dim: dim, maxTokens: 2048}
 }
 
 // withStubEmbedder constructs a TokenizerComponent with an instance-scoped
@@ -101,7 +104,7 @@ func newStubEmbedder(dim int) *stubEmbedder {
 func withStubEmbedder(t *testing.T, dim int) (*TokenizerComponent, *stubEmbedder) {
 	t.Helper()
 	stub := newStubEmbedder(dim)
-	comp, err := NewTokenizerComponentWithResolver(nil, func(_, _, _ string) (Embedder, error) { return stub, nil })
+	comp, err := NewTokenizerComponentWithResolver(nil, func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil })
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
@@ -135,12 +138,8 @@ func TestTokenizerComponent_Registered(t *testing.T) {
 func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 	c, stub := withStubEmbedder(t, 4)
 	_ = stub
-	var err error
-	if err != nil {
-		t.Fatalf("NewTokenizerComponent: %v", err)
-	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{},
 	})
@@ -168,7 +167,7 @@ func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
 	c, stub := withStubEmbedder(t, 4)
 	_ = stub
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"output_format": "chunks",
 	})
 	if err != nil {
@@ -183,13 +182,13 @@ func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
 func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
 	cIntf, err := NewTokenizerComponentWithResolver(map[string]any{
 		"search_method": []any{"embedding"},
-	}, func(_, _, _ string) (Embedder, error) {
+	}, func(ctx context.Context, _, _, _ string) (Embedder, error) {
 		return newStubEmbedder(4), nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
-	out, err := cIntf.(*TokenizerComponent).Invoke(context.Background(), map[string]any{
+	out, err := cIntf.(*TokenizerComponent).Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha bravo"}},
@@ -216,7 +215,7 @@ func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
 // empty chunk list, so tokenizeChunks is a no-op and the C++ pool is not needed.
 func TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero(t *testing.T) {
 	c, stub := withStubEmbedder(t, 2)
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{},
@@ -350,5 +349,149 @@ func TestChunkDocsToMaps_PreservesPDFPositions(t *testing.T) {
 	// to page_num_int (the executor owns that step).
 	if int(got[0][0]) != 1 {
 		t.Errorf("positions page already converted; want raw 1-indexed page 1, got %v", got[0][0])
+	}
+}
+
+// TestIsPhantomChunk verifies that zero-value ChunkDocs (no Text, no
+// Image, no ContentWithWeight, no Summary) are identified as phantom,
+// while any one of those fields being present keeps the chunk.
+func TestIsPhantomChunk(t *testing.T) {
+	if !isPhantomChunk(schema.ChunkDoc{}) {
+		t.Error("empty ChunkDoc must be phantom")
+	}
+	if !isPhantomChunk(schema.ChunkDoc{Text: ""}) {
+		t.Error("ChunkDoc with empty Text only must be phantom")
+	}
+	if isPhantomChunk(schema.ChunkDoc{Text: "hello"}) {
+		t.Error("ChunkDoc with Text must not be phantom")
+	}
+	if isPhantomChunk(schema.ChunkDoc{Image: "data:image/png;base64,abc"}) {
+		t.Error("ChunkDoc with Image must not be phantom")
+	}
+	if isPhantomChunk(schema.ChunkDoc{ContentWithWeight: "weight"}) {
+		t.Error("ChunkDoc with ContentWithWeight must not be phantom")
+	}
+	if isPhantomChunk(schema.ChunkDoc{Summary: "a summary"}) {
+		t.Error("ChunkDoc with Summary must not be phantom")
+	}
+}
+
+// TestTruncateForEmbedding_SmallMaxTokens covers Tokenizer Diff-14: when
+// maxTokens <= 10, Go must truncate to empty, matching Python's
+// truncation-to-empty behaviour (common/token_utils.py:183-185).
+func TestTruncateForEmbedding_SmallMaxTokens(t *testing.T) {
+	long := strings.Repeat("a", 100)
+	if got := truncateForEmbedding(long, 5); got != "" {
+		t.Errorf("truncateForEmbedding(maxTokens=5) = %q, want %q", got, "")
+	}
+	if got := truncateForEmbedding(long, 10); got != "" {
+		t.Errorf("truncateForEmbedding(maxTokens=10) = %q, want %q", got, "")
+	}
+	// Normal path: maxTokens > 10 should truncate (not return empty).
+	if got := truncateForEmbedding(long, 50); got == "" {
+		t.Error("truncateForEmbedding(maxTokens=50) returned empty, want truncated text")
+	}
+}
+
+// TestEmbeddingBatchSizeEnvVar covers Tokenizer Omission-3: the batch size
+// must be configurable via TOKENIZER_EMBEDDING_BATCH_SIZE env var, matching
+// Python's configurable settings.EMBEDDING_BATCH_SIZE.
+func TestEmbeddingBatchSizeEnvVar(t *testing.T) {
+	if got := embeddingBatchSize(); got != 16 {
+		t.Errorf("embeddingBatchSize() default = %d, want 16", got)
+	}
+	os.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "32")
+	t.Cleanup(func() { os.Unsetenv("TOKENIZER_EMBEDDING_BATCH_SIZE") })
+	if got := embeddingBatchSize(); got != 32 {
+		t.Errorf("embeddingBatchSize() after env = %d, want 32", got)
+	}
+	// Invalid value falls back to default.
+	os.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "bad")
+	if got := embeddingBatchSize(); got != 16 {
+		t.Errorf("embeddingBatchSize() invalid env = %d, want 16", got)
+	}
+}
+
+// TestChunkOrderInt_EmbeddingOnly covers Tokenizer Diff-8: chunk_order_int
+// must be set even when search_method does not include "full_text" (i.e.
+// embedding-only path). tokenizeChunks previously only set it for the
+// full_text branch.
+func TestChunkOrderInt_EmbeddingOnly(t *testing.T) {
+	stub := newStubEmbedder(3)
+	comp, err := NewTokenizerComponentWithResolver(
+		map[string]any{"search_method": []string{"embedding"}, "fields": []string{"text"}},
+		func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+	)
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	inputs := map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "first chunk", "doc_type_kwd": "text"},
+			{"text": "second chunk", "doc_type_kwd": "text"},
+		},
+	}
+	out, err := comp.Invoke(context.Background(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	if len(chunks) != 2 {
+		t.Fatalf("want 2 chunks, got %d", len(chunks))
+	}
+	for i, ck := range chunks {
+		coi, ok := ck["chunk_order_int"]
+		if !ok {
+			t.Errorf("chunk %d: chunk_order_int missing (embedding-only path must set it)", i)
+		}
+		if coi == nil {
+			t.Errorf("chunk %d: chunk_order_int is nil", i)
+		}
+	}
+}
+
+// TestChunksFromTokenizerUpstream_FiltersPhantomChunks covers Tokenizer
+// Omission-2 at the pipeline level: when upstream input contains a
+// zero-value ChunkDoc (no Text, no Image, no ContentWithWeight), it must
+// be silently dropped from the output before tokenization and embedding.
+// This mirrors Python's `if not text and not d.get("image"): continue`
+// in tokenizer.py:80-82.
+func TestChunksFromTokenizerUpstream_FiltersPhantomChunks(t *testing.T) {
+	// JSON path: three items, the middle one is a phantom.
+	items := []map[string]any{
+		{"text": "valid chunk", "doc_type_kwd": "text"},
+		{}, // phantom: no text, no image, no content_with_weight
+		{"text": "another valid", "doc_type_kwd": "text"},
+	}
+	// Use embedding-only mode to avoid CGo tokenizer dependency.
+	stub := newStubEmbedder(3)
+	comp, err := NewTokenizerComponentWithResolver(
+		map[string]any{"search_method": []string{"embedding"}, "fields": []string{"text"}},
+		func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+	)
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	out, err := comp.Invoke(context.Background(), nil, map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "json",
+		"json":          items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	// Must drop the phantom — only 2 valid chunks remain.
+	if len(chunks) != 2 {
+		t.Fatalf("want 2 chunks (phantom filtered), got %d", len(chunks))
+	}
+	// Verify the surviving chunks are the valid ones.
+	if chunks[0]["text"] != "valid chunk" {
+		t.Errorf("chunk 0 text = %q, want %q", chunks[0]["text"], "valid chunk")
+	}
+	if chunks[1]["text"] != "another valid" {
+		t.Errorf("chunk 1 text = %q, want %q", chunks[1]["text"], "another valid")
 	}
 }

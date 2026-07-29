@@ -14,11 +14,14 @@
 #  limitations under the License.
 #
 import json
+import logging
 import aiohttp
 from abc import ABC
 from urllib.parse import urlparse
 from json.decoder import JSONDecodeError
+from typing import ClassVar
 
+from common.aimlapi_utils import attribution_headers
 from common.constants import LLMType
 
 
@@ -458,6 +461,37 @@ class OpenAIAPICompatible(Base):
         return model_list
 
 
+class GreenPT(OpenAIAPICompatible):
+    """Discover and classify GreenPT models from the live catalog."""
+
+    _FACTORY_NAME = "GreenPT"
+
+    _MODEL_TYPES: ClassVar[dict[str, list[str]]] = {
+        "green-embedding": [LLMType.EMBEDDING.value],
+        "qwen3-embedding-8b": [LLMType.EMBEDDING.value],
+        "green-rerank": [LLMType.RERANK.value],
+        "green-s": [LLMType.ASR.value],
+        "green-s-pro": [LLMType.ASR.value],
+    }
+    _MAX_TOKENS: ClassVar[dict[str, int]] = {
+        "glm-5.2": 1_000_000,
+        "kimi-k2.7-code": 262_144,
+        "green-embedding": 32_768,
+        "qwen3-embedding-8b": 32_768,
+        "green-rerank": 32_768,
+    }
+
+    def _format_model_list(self, raw_model_list):
+        """Apply GreenPT capability metadata to discovered models."""
+        models = super()._format_model_list(raw_model_list)
+        for model in models:
+            model["model_types"] = self._MODEL_TYPES.get(model["name"], model["model_types"])
+            model["max_tokens"] = self._MAX_TOKENS.get(model["name"], model["max_tokens"])
+            if model["model_types"] == [LLMType.CHAT.value]:
+                model["features"] = ["is_tools"]
+        return models
+
+
 class FunASR(Base):
     _FACTORY_NAME = "FunASR"
 
@@ -561,6 +595,23 @@ class AIMLAPI(Base):
         "vision",
         "-vl",
     )
+
+    # aiohttp defaults to a 5-minute total timeout, long enough for a stalled catalog
+    # request to hold the task; 60s matches the timeout the other providers here use.
+    _MODEL_LIST_TIMEOUT = aiohttp.ClientTimeout(total=60)
+
+    async def _get_raw_model_list(self):
+        url = self._get_model_list_url()
+        if not url:
+            logging.warning("[aimlapi.com] Model list skipped: no base URL configured")
+            return None
+        headers = {"Authorization": f"Bearer {self._get_api_key()}", **attribution_headers()}
+        async with aiohttp.ClientSession(timeout=self._MODEL_LIST_TIMEOUT) as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    logging.warning("[aimlapi.com] Model list request to %s failed with HTTP %s", url, resp.status)
+                    return None
+                return await resp.json()
 
     def _format_model_list(self, raw_model_list):
         models = raw_model_list.get("data") if isinstance(raw_model_list, dict) else raw_model_list

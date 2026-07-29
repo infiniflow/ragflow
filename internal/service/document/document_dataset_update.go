@@ -20,9 +20,9 @@ import (
 )
 
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
-	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, userID)
+	kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, userID)
 	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset.")
+		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset")
 	}
 	statusInt, convErr := strconv.Atoi(status)
 	if convErr != nil {
@@ -110,10 +110,10 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 
 func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
 	tenantID := userID
-	kb, err := s.kbDAO.GetByIDAndTenantID(datasetID, tenantID)
+	kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, tenantID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("You don't own the dataset.")
+			return nil, common.CodeDataError, errors.New("you don't own the dataset")
 		}
 		return nil, common.CodeDataError, errors.New("can't find this dataset")
 	}
@@ -121,7 +121,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	doc, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, documentID, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("The dataset doesn't own the document.")
+			return nil, common.CodeDataError, errors.New("the dataset doesn't own the document")
 		}
 		return nil, common.CodeServerError, err
 	}
@@ -157,7 +157,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			return nil, common.CodeDataError, err
 		}
 		var dslJSON []byte
-		dslJSON, err = service.LoadPipelineDSL(isPipeline, effParserID, effPipelineID)
+		dslJSON, err = service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
 		if err != nil {
 			common.Warn("cleanAndUpdateDocumentParserConfig: failed to load DSL, falling back to merge",
 				zap.Error(err))

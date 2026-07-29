@@ -17,7 +17,6 @@
 package chunker
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -114,7 +113,7 @@ func TestGroupTitleChunker_InvokeEmptyInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewGroupTitleChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -138,7 +137,7 @@ func TestGroupTitleChunker_Headings_ASCII(t *testing.T) {
 		t.Fatalf("NewGroupTitleChunker: %v", err)
 	}
 	input := "# Heading One\nBody line under H1.\nAnother body line.\n# Heading Two\nBody under second H1."
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name": "doc.md",
 		"text": input,
 	})
@@ -161,7 +160,7 @@ func TestGroupTitleChunker_RootChunkAsHeading_StillSingleGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewGroupTitleChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name": "doc.md",
 		"text": "Body without any heading here.\nMore body.",
 	})
@@ -208,7 +207,7 @@ func TestGroupChunker_StructuredMetadata(t *testing.T) {
 		{"text": "body line", "doc_type_kwd": "text"},
 		{"text": "an image caption", "doc_type_kwd": "image", "img_id": "img-9"},
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc",
 		"output_format": "chunks",
 		"chunks":        items,
@@ -249,7 +248,7 @@ func TestGroupChunker_MergesPDFPositionsAndRemovesTags(t *testing.T) {
 		{"text": "body one @@1\t10.0\t20.0\t30.0\t40.0## tail", "doc_type_kwd": "text", "positions": [][]float64{{1, 10, 20, 30, 40}}},
 		{"text": "body two @@2\t15.0\t25.0\t35.0\t45.0## tail", "doc_type_kwd": "text", "positions": [][]float64{{2, 15, 25, 35, 45}}},
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc",
 		"output_format": "chunks",
 		"chunks":        items,
@@ -301,7 +300,7 @@ func TestGroupTitleChunker_InvokeDeterministic(t *testing.T) {
 	var firstLen int
 	var firstTexts []string
 	for run := 0; run < 10; run++ {
-		out, err := c.Invoke(context.Background(), inputs)
+		out, err := c.Invoke(t.Context(), nil, inputs)
 		if err != nil {
 			t.Fatalf("Invoke run %d: %v", run, err)
 		}

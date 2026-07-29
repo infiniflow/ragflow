@@ -192,7 +192,6 @@ export function ModelsSection(props: ModelsSectionProps) {
   } = useModelEdit({
     providerName,
     instanceName,
-    setCatalog,
   });
 
   // Add-custom-model dialog open state (local UI state).

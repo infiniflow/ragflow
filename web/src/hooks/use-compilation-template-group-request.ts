@@ -22,6 +22,7 @@ import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import { AgentApiAction } from './use-agent-request';
 
 export const enum CompilationTemplateGroupApiAction {
   FetchCompilationTemplateGroups = 'fetchCompilationTemplateGroups',
@@ -224,6 +225,10 @@ export const useDeleteCompilationTemplateGroup = () => {
           queryKey: [
             CompilationTemplateGroupApiAction.FetchCompilationTemplateGroups,
           ],
+        });
+        // The agents page lists groups merged into /agents results.
+        queryClient.invalidateQueries({
+          queryKey: [AgentApiAction.FetchAgentListByPage],
         });
       }
       return data?.data ?? true;

@@ -91,7 +91,7 @@ function TemplateSidebarItem({
         </span>
         {template?.kind && (
           <span className="ml-2 shrink-0 text-text-secondary">
-            {formatKindLabel(template.kind)}
+            {formatKindLabel(t, template.kind)}
           </span>
         )}
       </div>

@@ -35,7 +35,7 @@ export default function SearchHome({
     <section className="relative w-full flex transition-all justify-center items-center mt-[15vh]">
       <div className="relative z-10 px-8 pt-8 flex  text-transparent flex-col justify-center items-center w-[780px]">
         <RAGFlowLogo showEmbedIcon={showEmbedLogo}></RAGFlowLogo>
-        <div className="rounded-lg  text-primary text-xl sticky flex justify-center w-full transform scale-100 mt-8 p-6 h-[240px] border">
+        <div className="rounded-lg  text-primary text-xl sticky flex justify-center w-full transform scale-100 mt-8 p-6 min-h-[240px] border">
           {!isSearching && <Spotlight className="z-0" />}
           <div className="flex flex-col justify-center items-center  w-2/3">
             {!isSearching && (
@@ -56,7 +56,7 @@ export default function SearchHome({
                 ref={searchInputRef}
                 rows={1}
                 placeholder={t('search.searchGreeting')}
-                className="w-full rounded-3xl py-4 px-4 pr-14 text-text-primary text-lg bg-bg-base delay-700 border border-border-button resize-none overflow-y-auto scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50"
+                className="w-full rounded-3xl py-4 px-4 pr-14 text-text-primary text-lg bg-bg-base delay-700 border border-border-button resize-none scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50"
                 value={searchText}
                 onKeyDown={(e) => {
                   if (
@@ -82,7 +82,7 @@ export default function SearchHome({
               />
               <button
                 type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 transform rounded-full bg-text-primary p-2 text-bg-base shadow w-12"
+                className="absolute bottom-3 right-3 flex size-9 items-center justify-center rounded-full bg-text-primary text-bg-base shadow transition-opacity hover:opacity-90"
                 onClick={() => {
                   if (canSearch === false) {
                     message.warning(t('search.chooseDataset'));
@@ -91,7 +91,7 @@ export default function SearchHome({
                   setIsSearching(!isSearching);
                 }}
               >
-                <Search size={22} className="m-auto" />
+                <Search size={18} />
               </button>
             </div>
           </div>

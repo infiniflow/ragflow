@@ -242,7 +242,7 @@ class TestDocumentsList:
                 {"name": "unknown.txt"},
                 102,
                 0,
-                "You don't own the document unknown.txt.",
+                "you don't own the document unknown.txt",
             ),
         ],
     )
@@ -273,7 +273,7 @@ class TestDocumentsList:
             (None, 0, 5, ""),
             ("", 0, 5, ""),
             (lambda r: r[0], 0, 1, ""),
-            ("unknown.txt", 102, 0, "You don't own the document unknown.txt."),
+            ("unknown.txt", 102, 0, "you don't own the document unknown.txt"),
         ],
     )
     def test_id(
@@ -308,13 +308,13 @@ class TestDocumentsList:
         [
             (lambda r: r[0], "ragflow_test_upload_0.txt", 0, 1, ""),
             (lambda r: r[0], "ragflow_test_upload_1.txt", 0, 0, ""),
-            (lambda r: r[0], "unknown", 102, 0, "You don't own the document unknown."),
+            (lambda r: r[0], "unknown", 102, 0, "you don't own the document unknown"),
             (
                 "id",
                 "ragflow_test_upload_0.txt",
                 102,
                 0,
-                "You don't own the document id.",
+                "you don't own the document id",
             ),
         ],
     )

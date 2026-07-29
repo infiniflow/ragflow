@@ -17,6 +17,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"ragflow/internal/entity"
 	"strconv"
@@ -57,17 +58,17 @@ type MyLLMFactory struct {
 }
 
 // GetMyLLMs get my LLMs for a tenant
-func (s *LLMService) GetMyLLMs(tenantID string, includeDetails bool) (map[string]MyLLMFactory, error) {
+func (s *LLMService) GetMyLLMs(ctx context.Context, tenantID string, includeDetails bool) (map[string]MyLLMFactory, error) {
 	result := make(map[string]MyLLMFactory)
 
 	if includeDetails {
-		objs, err := s.tenantLLMDAO.ListAllByTenant(tenantID)
+		objs, err := s.tenantLLMDAO.ListAllByTenant(ctx, dao.DB, tenantID)
 		if err != nil {
 			return nil, err
 		}
 
 		factoryDAO := dao.NewLLMFactoryDAO()
-		factories, err := factoryDAO.GetAllValid()
+		factories, err := factoryDAO.GetAllValid(ctx, dao.DB)
 		if err != nil {
 			return nil, err
 		}
@@ -107,7 +108,7 @@ func (s *LLMService) GetMyLLMs(tenantID string, includeDetails bool) (map[string
 			result[llmFactory] = factory
 		}
 	} else {
-		objs, err := s.tenantLLMDAO.GetMyLLMs(tenantID)
+		objs, err := s.tenantLLMDAO.GetMyLLMs(ctx, dao.DB, tenantID)
 		if err != nil {
 			return nil, err
 		}
@@ -159,7 +160,7 @@ type LLMListItem struct {
 type ListLLMsResponse map[string][]LLMListItem
 
 // ListLLMs lists LLMs for a tenant with availability info
-func (s *LLMService) ListLLMs(tenantID string, modelType string) (ListLLMsResponse, error) {
+func (s *LLMService) ListLLMs(ctx context.Context, tenantID string, modelType string) (ListLLMsResponse, error) {
 	selfDeployed := map[string]bool{
 		"FastEmbed":  true,
 		"Ollama":     true,
@@ -170,7 +171,7 @@ func (s *LLMService) ListLLMs(tenantID string, modelType string) (ListLLMsRespon
 		"ModelScope": true,
 	}
 
-	objs, err := s.tenantLLMDAO.ListAllByTenant(tenantID)
+	objs, err := s.tenantLLMDAO.ListAllByTenant(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +192,7 @@ func (s *LLMService) ListLLMs(tenantID string, modelType string) (ListLLMsRespon
 		tenantLLMMapping[key] = int64ToString(o.ID)
 	}
 
-	allLLMs, err := s.llmDAO.GetAllValid()
+	allLLMs, err := s.llmDAO.GetAllValid(ctx, dao.DB)
 	if err != nil {
 		return nil, err
 	}
@@ -337,7 +338,7 @@ type SetAPIKeyResult struct {
 }
 
 // SetAPIKey sets API key for a LLM factory
-func (s *LLMService) SetAPIKey(tenantID string, req *SetAPIKeyRequest) (*SetAPIKeyResult, error) {
+func (s *LLMService) SetAPIKey(ctx context.Context, tenantID string, req *SetAPIKeyRequest) (*SetAPIKeyResult, error) {
 	factory := req.LLMFactory
 	baseURL := req.BaseURL
 	sourceFactory := req.SourceFID
@@ -345,7 +346,7 @@ func (s *LLMService) SetAPIKey(tenantID string, req *SetAPIKeyRequest) (*SetAPIK
 		sourceFactory = factory
 	}
 
-	sourceLLMs, err := s.llmDAO.GetByFactory(sourceFactory)
+	sourceLLMs, err := s.llmDAO.GetByFactory(ctx, dao.DB, sourceFactory)
 	if err != nil || len(sourceLLMs) == 0 {
 		msg := "No models configured for " + factory + " (source: " + sourceFactory + ")."
 		if req.Verify {
@@ -373,14 +374,14 @@ func (s *LLMService) SetAPIKey(tenantID string, req *SetAPIKeyRequest) (*SetAPIK
 		}
 		llmConfig["max_tokens"] = maxTokens
 
-		existingLLM, _ := s.tenantLLMDAO.GetByTenantFactoryAndModelName(tenantID, factory, llm.LLMName)
+		existingLLM, _ := s.tenantLLMDAO.GetByTenantFactoryAndModelName(ctx, dao.DB, tenantID, factory, llm.LLMName)
 		if existingLLM != nil {
 			updates := map[string]interface{}{
 				"api_key":    req.APIKey,
 				"api_base":   baseURL,
 				"max_tokens": maxTokens,
 			}
-			dao.DB.Model(&entity.TenantLLM{}).
+			dao.DB.WithContext(ctx).Model(&entity.TenantLLM{}).
 				Where("tenant_id = ? AND llm_factory = ? AND llm_name = ?", tenantID, factory, llm.LLMName).
 				Updates(updates)
 		} else {
@@ -396,7 +397,7 @@ func (s *LLMService) SetAPIKey(tenantID string, req *SetAPIKeyRequest) (*SetAPIK
 				MaxTokens:  maxTokens,
 				Status:     "1",
 			}
-			s.tenantLLMDAO.Create(tenantLLM)
+			s.tenantLLMDAO.Create(ctx, dao.DB, tenantLLM)
 		}
 	}
 

@@ -136,11 +136,7 @@ func NewMemoryMessageService(memories *MemoryService) *MemoryMessageService {
 // the per-memory outcomes. The outer error is reserved for
 // call-level failures (e.g. invalid input); per-memory failures
 // go into Failed, mirroring the Python tuple shape.
-func (s *MemoryMessageService) QueueSaveToMemoryTask(
-	ctx context.Context,
-	memoryIDs []string,
-	msg MemoryMessage,
-) (*QueueSaveResult, error) {
+func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memoryIDs []string, msg MemoryMessage) (*QueueSaveResult, error) {
 	if len(memoryIDs) == 0 {
 		return &QueueSaveResult{}, nil
 	}
@@ -153,8 +149,8 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(
 
 	res := &QueueSaveResult{}
 	for _, memoryID := range memoryIDs {
-		// (1) Look up the memory.
-		mem, err := s.memories.GetMemoryConfig(memoryID)
+		// (1) Look up the memory (no access control — trusted internal queue processing).
+		mem, err := s.memories.getMemoryConfig(ctx, memoryID)
 		if err != nil {
 			res.NotFound = append(res.NotFound, memoryID)
 			continue
@@ -206,12 +202,7 @@ func generateRawMessageID() int64 {
 // buildRawMessage constructs the raw_message envelope that gets
 // passed to embed_and_save (and persisted in the message table
 // for the async extractor to read).
-func buildRawMessage(
-	rawMessageID int64,
-	memoryID string,
-	mem *CreateMemoryResponse, // from MemoryService.GetMemoryConfig
-	msg MemoryMessage,
-) map[string]any {
+func buildRawMessage(rawMessageID int64, memoryID string, mem *CreateMemoryResponse, msg MemoryMessage) map[string]any {
 	content := fmt.Sprintf("User Input: %s\nAgent Response: %s",
 		msg.UserInput, msg.AgentResponse)
 	out := map[string]any{
@@ -244,12 +235,13 @@ func buildRawMessage(
 // buildTaskRow constructs the Task row the async extractor polls.
 func buildTaskRow(rawMessageID int64, memoryID string) map[string]any {
 	return map[string]any{
-		"id":        newUUIDString(),
-		"doc_id":    memoryID,
-		"task_type": "memory",
-		"progress":  0.0,
-		"begin_at":  time.Now(),
-		"digest":    fmt.Sprintf("%d", rawMessageID),
+		"id":           newUUIDString(),
+		"doc_id":       memoryID,
+		"task_type":    "memory",
+		"progress":     0.0,
+		"progress_msg": "",
+		"begin_at":     time.Now(),
+		"digest":       fmt.Sprintf("%d", rawMessageID),
 	}
 }
 
@@ -262,7 +254,7 @@ func (s *MemoryMessageService) embedAndSave(ctx context.Context, mem *CreateMemo
 	}
 
 	content, _ := rawMessage["content"].(string)
-	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
+	driver, modelName, apiConfig, maxTokens, err := NewModelProviderService().ResolveModelConfig(ctx, mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
 	if err != nil {
 		return err
 	}
@@ -302,14 +294,14 @@ func embedAndSave(_ context.Context, _ *CreateMemoryResponse, _ map[string]any) 
 	return ErrEmbedderNotWired
 }
 
-func (s *MemoryMessageService) insertTask(_ context.Context, row map[string]any) error {
+func (s *MemoryMessageService) insertTask(ctx context.Context, row map[string]any) error {
 	if s == nil {
 		return errors.New("nil MemoryMessageService")
 	}
 	if s.taskDAO == nil {
 		s.taskDAO = dao.NewTaskDAO()
 	}
-	return s.taskDAO.Create(taskFromRow(row))
+	return s.taskDAO.Create(ctx, dao.DB, taskFromRow(row))
 }
 
 // newUUIDString is a thin wrapper so we can swap in a real UUID
@@ -321,18 +313,20 @@ func newUUIDString() string {
 
 func taskFromRow(row map[string]any) *entity.Task {
 	digest := fmt.Sprint(row["digest"])
+	progressMsg := fmt.Sprint(row["progress_msg"])
 	beginAt, _ := row["begin_at"].(time.Time)
 	if beginAt.IsZero() {
 		now := time.Now()
 		beginAt = now
 	}
 	return &entity.Task{
-		ID:       fmt.Sprint(row["id"]),
-		DocID:    fmt.Sprint(row["doc_id"]),
-		TaskType: fmt.Sprint(row["task_type"]),
-		Progress: 0,
-		BeginAt:  &beginAt,
-		Digest:   &digest,
+		ID:          fmt.Sprint(row["id"]),
+		DocID:       fmt.Sprint(row["doc_id"]),
+		TaskType:    fmt.Sprint(row["task_type"]),
+		Progress:    0,
+		ProgressMsg: &progressMsg,
+		BeginAt:     &beginAt,
+		Digest:      &digest,
 	}
 }
 

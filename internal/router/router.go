@@ -580,6 +580,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Agent routes
 			agents := v1.Group("/agents")
 			RegisterAgentRoutes(agents, r.agentHandler)
+			// Keep the established /tasks URI while using session_id as the
+			// ordinary Agent run and cancellation identity.
+			RegisterAgentCancelRoutes(v1.Group("/tasks"), r.agentHandler)
 
 			// Plugin routes
 			plugin := v1.Group("/plugin")

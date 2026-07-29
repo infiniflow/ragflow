@@ -4,6 +4,16 @@ export const defaultMapNodeToValue = <TNode extends IArtifactGraphEntity>(
   node: TNode,
 ): TNode => node;
 
+export const getBaseLinkColor = (element?: HTMLElement | null): string => {
+  if (typeof window === 'undefined' || !element) {
+    return '#b2b5b7';
+  }
+  return window
+    .getComputedStyle(element)
+    .getPropertyValue('--border-default')
+    .trim();
+};
+
 export const withAlpha = (color: string, alpha: number): string => {
   if (color.length === 7 && color.startsWith('#')) {
     return (

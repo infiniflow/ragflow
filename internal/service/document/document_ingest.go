@@ -2,6 +2,7 @@ package document
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
@@ -59,11 +60,11 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		if doc == nil {
 			return common.CodeDataError, fmt.Errorf("document not found")
 		}
-		kb, err := s.kbDAO.GetByID(doc.KbID)
+		kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
 		if err != nil {
 			return common.CodeDataError, fmt.Errorf("dataset not found")
 		}
-		if !s.kbDAO.Accessible(kb.ID, userID) {
+		if !s.kbDAO.Accessible(ctx, dao.DB, kb.ID, userID) {
 			return common.CodeAuthenticationError, fmt.Errorf("no authorization")
 		}
 		validated = append(validated, validatedDoc{doc, kb})
@@ -127,7 +128,12 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		}
 
 		if req.Delete {
-			_, _ = s.taskDAO.DeleteIngestionTasksByDocIDs([]string{doc.ID})
+			if _, delErr := s.taskDAO.DeleteIngestionTasksByDocIDs(ctx, dao.DB, []string{doc.ID}); delErr != nil {
+				if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
+					return common.CodeExceptionError, fmt.Errorf("delete ingestion tasks: %w", delErr)
+				}
+				common.Error(fmt.Sprintf("go side, doc %s, DeleteIngestionTasksByDocIDs failed", doc.ID), delErr)
+			}
 			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 			if s.docEngine != nil {
 				exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, doc.KbID)

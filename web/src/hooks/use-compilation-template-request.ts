@@ -1,4 +1,5 @@
 import message from '@/components/ui/message';
+import { CompilationTemplateKind } from '@/constants/compilation';
 import {
   ICompilationTemplate,
   ICompilationTemplateBuiltin,
@@ -51,6 +52,11 @@ export const CompilationTemplateKeys = {
   all: () => [CompilationTemplateApiAction.FetchCompilationTemplates] as const,
   wikiPresets: () => [CompilationTemplateApiAction.FetchWikiPresets] as const,
 };
+
+const ExcludedBuiltinKinds: string[] = [
+  CompilationTemplateKind.SessionEssence,
+  CompilationTemplateKind.SessionGraph,
+];
 
 export const useFetchCompilationTemplatesByPage = () => {
   const { searchString, handleInputChange } = useHandleSearchChange();
@@ -129,7 +135,9 @@ export const useFetchBuiltinCompilationTemplates = () => {
       gcTime: 0,
       queryFn: async () => {
         const { data } = await listBuiltinCompilationTemplates();
-        return (data?.data ?? []) as ICompilationTemplateBuiltin[];
+        return ((data?.data ?? []) as ICompilationTemplateBuiltin[]).filter(
+          (template) => !ExcludedBuiltinKinds.includes(template.kind),
+        );
       },
     },
   );

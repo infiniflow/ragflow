@@ -19,12 +19,14 @@ from rag.advanced_rag.harness.tools.navigation import catalog_navigate, dataset_
 # catalog_navigate covers both the tree/TOC outline and the page index.
 register_tool(
     "catalog_navigate",
-    _navigate_schema("catalog_navigate", "Answer from the document's compiled catalog (table of contents / page index)"),
+    _navigate_schema("catalog_navigate", "Get question-related chunks from the document's catalog (table of contents / page index)"),
     catalog_navigate,
     requires_compilation=True,
     compilation_type=("toc", "page_index"),
 )
-register_tool("mindmap_navigate", _navigate_schema("mindmap_navigate", "Navigate by mindmap"), mindmap_navigate, requires_compilation=True, compilation_type="mindmap")
+register_tool(
+    "mindmap_navigate", _navigate_schema("mindmap_navigate", "Get question-related chunks from the document's  mindmap"), mindmap_navigate, requires_compilation=True, compilation_type="mindmap"
+)
 register_tool(
     "dataset_navigate",
     _navigate_schema("dataset_navigate", "Find the most relevant documents via the dataset map, then search within them"),

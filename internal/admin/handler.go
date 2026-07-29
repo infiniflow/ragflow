@@ -144,7 +144,8 @@ func (h *Handler) Logout(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.Logout(user); err != nil {
+	ctx := c.Request.Context()
+	if err := h.service.Logout(ctx, user); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -217,8 +218,8 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	var users []map[string]interface{}
 	switch common.GetRAGFlowType() {
 	case common.OpenSourceVersion:
-
-		users, err = h.service.ListUsers(pageInt, pageSizeInt, name, status, sort, orderBy)
+		ctx := c.Request.Context()
+		users, err = h.service.ListUsers(ctx, pageInt, pageSizeInt, name, status, sort, orderBy)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
@@ -258,8 +259,9 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	if req.Role == "" {
 		req.Role = "user"
 	}
+	ctx := c.Request.Context()
 
-	userInfo, err := h.service.CreateUser(req.Username, req.Password, req.Role)
+	userInfo, err := h.service.CreateUser(ctx, req.Username, req.Password, req.Role)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -336,12 +338,13 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 	}
 
 	var req ChangePasswordHTTPRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err = c.ShouldBindJSON(&req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, "New password is required")
 		return
 	}
 
-	if err := h.service.ChangePassword(username, req.NewPassword); err != nil {
+	ctx := c.Request.Context()
+	if err = h.service.ChangePassword(ctx, username, req.NewPassword); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -362,7 +365,7 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 	}
 
 	var req UpdateActivateStatusHTTPRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err = c.ShouldBindJSON(&req); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, "Activation status is required")
 		return
 	}
@@ -373,7 +376,8 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 	}
 
 	isActive := req.ActivateStatus == "on"
-	if err := h.service.UpdateUserActivateStatus(username, isActive); err != nil {
+	ctx := c.Request.Context()
+	if err = h.service.UpdateUserActivateStatus(ctx, username, isActive); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -395,7 +399,8 @@ func (h *Handler) GrantAdmin(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.GrantAdmin(username); err != nil {
+	ctx := c.Request.Context()
+	if err = h.service.GrantAdmin(ctx, username); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -417,7 +422,8 @@ func (h *Handler) RevokeAdmin(c *gin.Context) {
 		return
 	}
 
-	if err = h.service.RevokeAdmin(username); err != nil {
+	ctx := c.Request.Context()
+	if err = h.service.RevokeAdmin(ctx, username); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
@@ -598,10 +604,11 @@ func (h *Handler) RestartService(c *gin.Context) {
 
 // ListVariables handle list variables
 func (h *Handler) ListVariables(c *gin.Context) {
+	ctx := c.Request.Context()
 	// Check if request has body content
 	if c.Request.ContentLength == 0 || c.Request.ContentLength == -1 {
 		// List all variables
-		variables, err := h.service.ListAllVariables()
+		variables, err := h.service.ListAllVariables(ctx)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
@@ -624,7 +631,7 @@ func (h *Handler) ListVariables(c *gin.Context) {
 		return
 	}
 
-	variable, err := h.service.GetVariable(req.VarName)
+	variable, err := h.service.GetVariable(ctx, req.VarName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -646,7 +653,8 @@ func (h *Handler) ShowVariable(c *gin.Context) {
 		return
 	}
 
-	variable, err := h.service.GetVariable(varName)
+	ctx := c.Request.Context()
+	variable, err := h.service.GetVariable(ctx, varName)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -680,7 +688,8 @@ func (h *Handler) SetVariable(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.SetVariable(req.VarName, req.VarValue); err != nil {
+	ctx := c.Request.Context()
+	if err := h.service.SetVariable(ctx, req.VarName, req.VarValue); err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}

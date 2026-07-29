@@ -160,7 +160,8 @@ func TestModelProviderServiceAlterModelStatusByID(t *testing.T) {
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
 
-	code, err := NewModelProviderService().AlterModel("OpenAI", "default", "", "user-1", "model-1", map[string]interface{}{"status": "inactive"})
+	ctx := t.Context()
+	code, err := NewModelProviderService().AlterModel(ctx, "OpenAI", "default", "", "user-1", "model-1", map[string]interface{}{"status": "inactive"})
 	if err != nil {
 		t.Fatalf("AlterModel() error = %v", err)
 	}
@@ -182,7 +183,8 @@ func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
 
-	driver, modelName, apiConfig, _, err := NewModelProviderService().GetModelConfigByID("user-1", entity.ModelTypeChat, "model-1")
+	ctx := t.Context()
+	driver, modelName, apiConfig, _, err := NewModelProviderService().GetModelConfigByID(ctx, "user-1", entity.ModelTypeChat, "model-1")
 	if err != nil {
 		t.Fatalf("GetModelConfigByID() error = %v", err)
 	}
@@ -198,7 +200,8 @@ func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
 }
 
 func TestModelProviderServiceAlterModelRejectsInvalidStatus(t *testing.T) {
-	code, err := NewModelProviderService().AlterModel("OpenAI", "default", "", "user-1", "model-1", map[string]interface{}{"status": "disabled"})
+	ctx := t.Context()
+	code, err := NewModelProviderService().AlterModel(ctx, "OpenAI", "default", "", "user-1", "model-1", map[string]interface{}{"status": "disabled"})
 	if err == nil {
 		t.Fatalf("AlterModel() error = nil, want invalid status error")
 	}
@@ -211,7 +214,8 @@ func TestModelProviderServiceAlterModelRejectsInvalidStatus(t *testing.T) {
 }
 
 func TestModelProviderServiceAlterModelRejectsMissingModelSelector(t *testing.T) {
-	code, err := NewModelProviderService().AlterModel("OpenAI", "default", "", "user-1", "", map[string]interface{}{"status": "active"})
+	ctx := t.Context()
+	code, err := NewModelProviderService().AlterModel(ctx, "OpenAI", "default", "", "user-1", "", map[string]interface{}{"status": "active"})
 	if err == nil {
 		t.Fatalf("AlterModel() error = nil, want missing model selector error")
 	}
@@ -231,7 +235,8 @@ func TestModelProviderServiceAlterModelRejectsWrongScopedModelID(t *testing.T) {
 		t.Fatalf("failed to seed second instance: %v", err)
 	}
 
-	code, err := NewModelProviderService().AlterModel("OpenAI", "other", "", "user-1", "model-1", map[string]interface{}{"status": "inactive"})
+	ctx := t.Context()
+	code, err := NewModelProviderService().AlterModel(ctx, "OpenAI", "other", "", "user-1", "model-1", map[string]interface{}{"status": "inactive"})
 	if err == nil {
 		t.Fatalf("AlterModel() error = nil, want not found error")
 	}

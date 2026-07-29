@@ -31,15 +31,16 @@ func makeEmbeddingModelForResolver() *models.EmbeddingModel {
 func TestEmbedderResolver_UsesKBEmbdID(t *testing.T) {
 	var gotTenantID, gotEmbdID string
 	resolver := newEmbedderResolver(
-		func(kbID string) (string, error) {
+		func(ctx context.Context, kbID string) (string, error) {
 			return "kb-embd-1", nil
 		},
-		func(tenantID, embdID string) (*models.EmbeddingModel, error) {
+		func(ctx context.Context, tenantID, embdID string) (*models.EmbeddingModel, error) {
 			gotTenantID, gotEmbdID = tenantID, embdID
 			return makeEmbeddingModelForResolver(), nil
 		},
 	)
-	emb, err := resolver("tenant-1", "kb-1", "should-be-ignored")
+	ctx := t.Context()
+	emb, err := resolver(ctx, "tenant-1", "kb-1", "should-be-ignored")
 	if err != nil {
 		t.Fatalf("resolver: %v", err)
 	}
@@ -53,15 +54,16 @@ func TestEmbedderResolver_UsesKBEmbdID(t *testing.T) {
 
 func TestEmbedderResolver_EmptyKBEmbdIDReturnsNil(t *testing.T) {
 	resolver := newEmbedderResolver(
-		func(kbID string) (string, error) {
+		func(ctx context.Context, kbID string) (string, error) {
 			return "", nil
 		},
-		func(string, string) (*models.EmbeddingModel, error) {
+		func(context.Context, string, string) (*models.EmbeddingModel, error) {
 			t.Fatal("model resolver should not be called when kb embd_id is empty")
 			return nil, nil
 		},
 	)
-	emb, err := resolver("tenant-1", "kb-1", "ignored")
+	ctx := t.Context()
+	emb, err := resolver(ctx, "tenant-1", "kb-1", "ignored")
 	if err != nil {
 		t.Fatalf("resolver: %v", err)
 	}

@@ -50,6 +50,14 @@ export interface IDataset {
   connectors: IConnector[];
 }
 
+export type IDatasetFilter = {
+  owner: Array<{
+    id: string;
+    label: string;
+    count: number;
+  }>;
+};
+
 interface Parserconfig {
   auto_keywords: number;
   auto_questions: number;
@@ -281,9 +289,19 @@ export interface IArtifactGraphEntity {
   source_chunk_ids?: string[];
 }
 
+export interface IArtifactAlteration {
+  removed: number;
+  newly_uploaded: number;
+  removed_doc_ids: string[];
+  newly_uploaded_doc_ids: string[];
+  involved_doc_ids: string[];
+  eligible_doc_ids: string[];
+}
+
 export interface IArtifactGraphRelation {
   from: string;
   to: string;
+  type?: string;
 }
 
 export interface IArtifactGraph {

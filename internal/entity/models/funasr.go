@@ -38,9 +38,10 @@ type FunASR struct {
 func NewFunASRModel(baseURL map[string]string, urlSuffix URLSuffix) *FunASR {
 	return &FunASR{
 		baseModel: BaseModel{
-			BaseURL:    baseURL,
-			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			BaseURL:          baseURL,
+			URLSuffix:        urlSuffix,
+			AllowEmptyAPIKey: true,
+			httpClient:       NewDriverHTTPClient(),
 		},
 	}
 }
@@ -77,6 +78,10 @@ func (f *FunASR) TranscribeAudio(ctx context.Context, modelName *string, file *s
 	if file == nil || *file == "" {
 		return nil, fmt.Errorf("file is missing")
 	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is missing")
+	}
+	model := strings.TrimSpace(*modelName)
 
 	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -109,7 +114,7 @@ func (f *FunASR) TranscribeAudio(ctx context.Context, modelName *string, file *s
 	}
 
 	// model field
-	if err := writer.WriteField("model", *modelName); err != nil {
+	if err := writer.WriteField("model", model); err != nil {
 		return nil, fmt.Errorf("failed to write model field: %w", err)
 	}
 
@@ -155,7 +160,9 @@ func (f *FunASR) TranscribeAudio(ctx context.Context, modelName *string, file *s
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Accept", "application/json")
 
@@ -210,8 +217,6 @@ func (f *FunASR) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListMo
 	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
-
 	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
@@ -226,7 +231,9 @@ func (f *FunASR) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListMo
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := f.baseModel.httpClient.Do(req)

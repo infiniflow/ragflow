@@ -77,38 +77,35 @@ pre-commit:
           - name: web-deps
             glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
             run: |
-              # Ensure web/node_modules includes the tooling needed by the hook jobs.
-              # CI runners don't run `npm install` before lefthook, and `npx` without
-              # local node_modules fetches the latest packages from the registry - which
-              # breaks because the pinned prettier plugins
-              # (prettier-plugin-organize-imports, prettier-plugin-packagejson) aren't
-              # auto-resolved and ESLint 10 requires eslint.config.js.
-              if [ ! -f web/node_modules/.package-lock.json ] \
-                || [ ! -d web/node_modules/prettier-plugin-organize-imports ] \
-                || [ ! -d web/node_modules/@typescript-eslint/eslint-plugin ]; then
-                echo '==> web/node_modules missing required hook dependencies; running npm ci --prefix web --include=dev'
-                rm -rf web/node_modules
-                npm ci --prefix web --include=dev --no-audit --no-fund
+              TOOL=web/node_modules/.hookbin/node_modules/.bin
+              if [ ! -x "$TOOL/oxfmt" ] || [ ! -x "$TOOL/oxlint" ]; then
+                exit 0
               fi
-          - name: web-prettier
+          - name: web-oxfmt
             glob: "web/**/*.{css,less,json,js,jsx,ts,tsx}"
+            exclude: ["web/**/*.min.js", "web/**/*.min.css", "web/node_modules/**", "web/.next/**", "web/dist/**"]
             root: "web/"
             stage_fixed: true
             run: |
+              OXFMT=node_modules/.hookbin/node_modules/.bin/oxfmt
+              if ! [ -x "$OXFMT" ]; then exit 0; fi
               if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
-                npx prettier --check --ignore-unknown {staged_files}
+                "$OXFMT" --check {staged_files}
               else
-                npx prettier --write --ignore-unknown {staged_files}
+                "$OXFMT" {staged_files}
               fi
-          - name: web-eslint
+          - name: web-oxlint
             glob: "web/**/*.{js,jsx,ts,tsx}"
+            exclude: ["web/**/*.min.js", "web/node_modules/**", "web/.next/**", "web/dist/**"]
             root: "web/"
             stage_fixed: true
             run: |
+              OXLINT=node_modules/.hookbin/node_modules/.bin/oxlint
+              if ! [ -x "$OXLINT" ]; then exit 0; fi
               if [ "${LEFTHOOK_CHECK_ONLY:-}" = "1" ]; then
-                npx eslint {staged_files}
+                "$OXLINT" {staged_files}
               else
-                npx eslint --fix {staged_files}
+                "$OXLINT" --fix {staged_files}
               fi
     - name: check-yaml
       run: python3 tools/hooks/check_files.py yaml

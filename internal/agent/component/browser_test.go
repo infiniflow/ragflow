@@ -26,6 +26,8 @@ import (
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // mockStagehandInvoker captures RunExtract requests and returns a
@@ -187,11 +189,11 @@ func TestBrowser_DispatchesToRuntime(t *testing.T) {
 	mock := &mockStagehandInvoker{rawJSON: `"agent result text"`}
 	withMockRuntime(t, mock)
 
-	prevLookup := tenantLLMLookupForTest
-	tenantLLMLookupForTest = func(tenantID, modelName, factory string) (string, string, error) {
-		return "", "", errors.New("fake: tenant LLM not found")
+	prevLookup := browserLLMLookupForTest
+	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
+		return "", "", "", "", errors.New("fake: tenant LLM not found")
 	}
-	t.Cleanup(func() { tenantLLMLookupForTest = prevLookup })
+	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
 
 	c, _ := NewBrowserComponent(map[string]any{
 		"llm_id":  "deepseek-v4-pro@DeepSeek",
@@ -199,7 +201,7 @@ func TestBrowser_DispatchesToRuntime(t *testing.T) {
 	})
 	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
-	_, err := c.Invoke(ctx, nil)
+	_, err := c.Invoke(ctx, nil, nil)
 	if err == nil {
 		t.Fatal("expected tenant LLM lookup error, got nil")
 	}
@@ -245,11 +247,12 @@ func TestResolveBrowserLLM_ResolvesTenantModelID(t *testing.T) {
 		t.Fatalf("create model: %v", err)
 	}
 
-	prevLookup := tenantLLMLookupForTest
-	tenantLLMLookupForTest = nil
-	t.Cleanup(func() { tenantLLMLookupForTest = prevLookup })
+	prevLookup := browserLLMLookupForTest
+	browserLLMLookupForTest = nil
+	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
 
-	provider, model, apiKey, baseURL, err := resolveBrowserLLM("tenant-1", "tenant-model-1")
+	ctx := t.Context()
+	provider, model, apiKey, baseURL, err := resolveBrowserLLM(ctx, db, "tenant-1", "tenant-model-1")
 	if err != nil {
 		t.Fatalf("resolveBrowserLLM: %v", err)
 	}
@@ -281,7 +284,7 @@ func TestBrowser_MissingTenant(t *testing.T) {
 	state := canvas.NewCanvasState("run-1", "task-1")
 	ctx := canvas.WithState(context.Background(), state)
 
-	_, err := c.Invoke(ctx, nil)
+	_, err := c.Invoke(ctx, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "tenant_id") {
 		t.Errorf("expected tenant_id error, got %v", err)
 	}
@@ -301,11 +304,11 @@ func TestBrowser_PropagatesRuntimeError(t *testing.T) {
 
 	// Override the tenant LLM lookup so the test doesn't need a
 	// real DB.
-	prevLookup := tenantLLMLookupForTest
-	tenantLLMLookupForTest = func(tenantID, modelName, factory string) (string, string, error) {
-		return "sk-test", "https://api.openai.com/v1", nil
+	prevLookup := browserLLMLookupForTest
+	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
+		return "OpenAI", "gpt-4o", "sk-test", "https://api.openai.com/v1", nil
 	}
-	t.Cleanup(func() { tenantLLMLookupForTest = prevLookup })
+	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
 
 	c, _ := NewBrowserComponent(map[string]any{
 		"llm_id":  "gpt-4o@OpenAI",
@@ -313,7 +316,7 @@ func TestBrowser_PropagatesRuntimeError(t *testing.T) {
 	})
 	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
-	_, err := c.Invoke(ctx, nil)
+	_, err := c.Invoke(ctx, nil, nil)
 	if err == nil {
 		t.Fatal("expected runtime error, got nil")
 	}
@@ -419,11 +422,11 @@ func TestBrowser_RunExtractRequestShape(t *testing.T) {
 	mock := &mockStagehandInvoker{rawJSON: `"ok"`}
 	withMockRuntime(t, mock)
 
-	prevLookup := tenantLLMLookupForTest
-	tenantLLMLookupForTest = func(tenantID, modelName, factory string) (string, string, error) {
-		return "sk-test", "https://api.openai.com/v1", nil
+	prevLookup := browserLLMLookupForTest
+	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
+		return "OpenAI", "gpt-4o", "sk-test", "https://api.openai.com/v1", nil
 	}
-	t.Cleanup(func() { tenantLLMLookupForTest = prevLookup })
+	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
 
 	c, _ := NewBrowserComponent(map[string]any{
 		"llm_id":  "gpt-4o@OpenAI",
@@ -431,7 +434,7 @@ func TestBrowser_RunExtractRequestShape(t *testing.T) {
 	})
 	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err := c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	req := mock.lastRequest(t)
@@ -461,11 +464,11 @@ func TestBrowser_HeadlessPropagates(t *testing.T) {
 	mock := &mockStagehandInvoker{rawJSON: `"ok"`}
 	withMockRuntime(t, mock)
 
-	prevLookup := tenantLLMLookupForTest
-	tenantLLMLookupForTest = func(tenantID, modelName, factory string) (string, string, error) {
-		return "sk-test", "", nil
+	prevLookup := browserLLMLookupForTest
+	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
+		return "OpenAI", "gpt-4o", "sk-test", "", nil
 	}
-	t.Cleanup(func() { tenantLLMLookupForTest = prevLookup })
+	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
 
 	c, _ := NewBrowserComponent(map[string]any{
 		"llm_id":   "gpt-4o@OpenAI",
@@ -474,7 +477,7 @@ func TestBrowser_HeadlessPropagates(t *testing.T) {
 	})
 	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err := c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	req := mock.lastRequest(t)
@@ -493,11 +496,11 @@ func TestBrowser_OutputsShape(t *testing.T) {
 	mock := &mockStagehandInvoker{rawJSON: `"the agent's final message"`}
 	withMockRuntime(t, mock)
 
-	prevLookup := tenantLLMLookupForTest
-	tenantLLMLookupForTest = func(tenantID, modelName, factory string) (string, string, error) {
-		return "sk-test", "", nil
+	prevLookup := browserLLMLookupForTest
+	browserLLMLookupForTest = func(ctx context.Context, db *gorm.DB, tenantID, llmID string) (string, string, string, string, error) {
+		return "OpenAI", "gpt-4o", "sk-test", "", nil
 	}
-	t.Cleanup(func() { tenantLLMLookupForTest = prevLookup })
+	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
 
 	c, _ := NewBrowserComponent(map[string]any{
 		"llm_id":  "gpt-4o@OpenAI",
@@ -505,7 +508,7 @@ func TestBrowser_OutputsShape(t *testing.T) {
 	})
 	ctx := stateWith(t, map[string]any{"tenant_id": "tenant-1"})
 
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

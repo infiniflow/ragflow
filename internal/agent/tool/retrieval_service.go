@@ -25,6 +25,8 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	"gorm.io/gorm"
 )
 
 // RetrievalChunk is the minimal shape RetrievalService returns. The
@@ -65,7 +67,7 @@ type RetrievalRequest struct {
 // Today only the stub impl exists; production code can register
 // a real impl via SetRetrievalService during boot.
 type RetrievalService interface {
-	Search(ctx context.Context, req RetrievalRequest) ([]RetrievalChunk, error)
+	Search(ctx context.Context, db *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error)
 }
 
 // KGRetrievalService is the GraphRAG retrieval surface. The
@@ -77,7 +79,7 @@ type RetrievalService interface {
 // adapter can be tested in isolation and wired independently
 // at boot.
 type KGRetrievalService interface {
-	Search(ctx context.Context, req RetrievalRequest) ([]RetrievalChunk, error)
+	Search(ctx context.Context, db *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error)
 }
 
 // ErrRetrievalServiceMissing is declared in retrieval.go (kept
@@ -108,7 +110,7 @@ func GetRetrievalService() RetrievalService {
 
 type stubRetrievalService struct{}
 
-func (stubRetrievalService) Search(_ context.Context, _ RetrievalRequest) ([]RetrievalChunk, error) {
+func (stubRetrievalService) Search(_ context.Context, _ *gorm.DB, _ RetrievalRequest) ([]RetrievalChunk, error) {
 	return nil, ErrRetrievalServiceMissing
 }
 
@@ -119,7 +121,7 @@ func (stubRetrievalService) Search(_ context.Context, _ RetrievalRequest) ([]Ret
 // SetRetrievalService.
 type simpleRetrievalService struct{}
 
-func (simpleRetrievalService) Search(_ context.Context, req RetrievalRequest) ([]RetrievalChunk, error) {
+func (simpleRetrievalService) Search(_ context.Context, _ *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error) {
 	if req.Query == "" {
 		return nil, nil
 	}
@@ -199,6 +201,6 @@ func GetKGRetrievalService() KGRetrievalService {
 
 type stubKGRetrievalService struct{}
 
-func (stubKGRetrievalService) Search(_ context.Context, _ RetrievalRequest) ([]RetrievalChunk, error) {
+func (stubKGRetrievalService) Search(_ context.Context, _ *gorm.DB, _ RetrievalRequest) ([]RetrievalChunk, error) {
 	return nil, ErrKGRetrievalServiceMissing
 }

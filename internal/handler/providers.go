@@ -74,9 +74,10 @@ func (h *ProviderHandler) ListProviders(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
+	ctx := c.Request.Context()
 
 	// list tenant providers
-	providers, errorCode, err := h.modelProviderService.ListProvidersOfTenant(userID)
+	providers, errorCode, err := h.modelProviderService.ListProvidersOfTenant(ctx, userID)
 	if err != nil {
 		common.ResponseWithCodeData(c, errorCode, nil, err.Error())
 		return
@@ -99,8 +100,9 @@ func (h *ProviderHandler) AddProvider(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
+	ctx := c.Request.Context()
 
-	errorCode, err := h.modelProviderService.AddModelProvider(req.ProviderName, userID)
+	errorCode, err := h.modelProviderService.AddModelProvider(ctx, req.ProviderName, userID)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -117,8 +119,9 @@ func (h *ProviderHandler) DeleteProvider(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
+	ctx := c.Request.Context()
 
-	errorCode, err := h.modelProviderService.DeleteModelProvider(userID, providerName)
+	errorCode, err := h.modelProviderService.DeleteModelProvider(ctx, userID, providerName)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -265,7 +268,7 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 	// instance without API key validation or model creation.
 	// Mirrors Python's provider_api.py:349 — set(data.keys()) == {"instance_name"}.
 	if req.APIKey == "" && req.BaseURL == "" && req.Region == "" && len(req.ModelInfo) == 0 {
-		code, err := h.modelProviderService.CreateNameOnlyProviderInstance(providerName, req.InstanceName, userID)
+		code, err := h.modelProviderService.CreateNameOnlyProviderInstance(ctx, providerName, req.InstanceName, userID)
 		if err != nil {
 			common.ErrorWithCode(c, code, err.Error())
 			return
@@ -291,8 +294,9 @@ func (h *ProviderHandler) ListProviderInstances(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
+	ctx := c.Request.Context()
 
-	instances, errorCode, err := h.modelProviderService.ListProviderInstances(providerName, userID)
+	instances, errorCode, err := h.modelProviderService.ListProviderInstances(ctx, providerName, userID)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -315,8 +319,9 @@ func (h *ProviderHandler) ShowProviderInstance(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
+	ctx := c.Request.Context()
 
-	instance, errorCode, err := h.modelProviderService.ShowProviderInstance(providerName, instanceIDOrName, userID)
+	instance, errorCode, err := h.modelProviderService.ShowProviderInstance(ctx, providerName, instanceIDOrName, userID)
 	if err != nil {
 		common.ErrorWithCode(c, errorCode, err.Error())
 		return
@@ -388,10 +393,9 @@ func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Instance name is required")
 		return
 	}
-
 	userID := c.GetString("user_id")
 
-	instanceInfo, code, err := h.modelProviderService.ShowProviderInstance(providerName, instanceName, userID)
+	instanceInfo, code, err := h.modelProviderService.ShowProviderInstance(ctx, providerName, instanceName, userID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -535,8 +539,9 @@ func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
+	ctx := c.Request.Context()
 
-	code, err := h.modelProviderService.DropProviderInstances(providerName, userID, req.Instances)
+	code, err := h.modelProviderService.DropProviderInstances(ctx, providerName, userID, req.Instances)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -578,7 +583,7 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 		return
 	}
 
-	modelInstances, err := h.modelProviderService.ListInstanceModels(providerName, instanceName, c.GetString("user_id"))
+	modelInstances, err := h.modelProviderService.ListInstanceModels(ctx, providerName, instanceName, c.GetString("user_id"))
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeNotFound, err.Error())
 		return
@@ -648,7 +653,8 @@ func (h *ProviderHandler) AlterModel(c *gin.Context) {
 		return
 	}
 
-	code, err := h.modelProviderService.AlterModel(providerName, instanceName, modelName, userID, modelID, updateDict)
+	ctx := c.Request.Context()
+	code, err := h.modelProviderService.AlterModel(ctx, providerName, instanceName, modelName, userID, modelID, updateDict)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -659,19 +665,19 @@ func (h *ProviderHandler) AlterModel(c *gin.Context) {
 
 func prepareProviderInstance(providerName, instanceName, reqProviderName, reqInstanceName string) error {
 	if providerName == "" {
-		return errors.New("Provider name is required")
+		return errors.New("provider name is required")
 	}
 
 	if instanceName == "" {
-		return errors.New("Instance name is required")
+		return errors.New("instance name is required")
 	}
 
 	if reqProviderName != "" && !strings.EqualFold(reqProviderName, providerName) {
-		return errors.New("Provider name does not match path")
+		return errors.New("provider name does not match path")
 	}
 
 	if reqInstanceName != "" && !strings.EqualFold(reqInstanceName, instanceName) {
-		return errors.New("Instance name does not match path")
+		return errors.New("instance name does not match path")
 	}
 
 	return nil
@@ -704,8 +710,9 @@ func (h *ProviderHandler) AddModel(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
+	ctx := c.Request.Context()
 
-	code, err := h.modelProviderService.AddModel(&req, userID)
+	code, err := h.modelProviderService.AddModel(ctx, &req, userID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -741,8 +748,9 @@ func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
+	ctx := c.Request.Context()
 
-	code, err := h.modelProviderService.DropInstanceModels(providerName, instanceName, userID, req.ModelNames)
+	code, err := h.modelProviderService.DropInstanceModels(ctx, providerName, instanceName, userID, req.ModelNames)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -1425,8 +1433,9 @@ func (h *ProviderHandler) ListTenantAddedModels(c *gin.Context) {
 
 	modelType := c.Query("type")
 	ownerTenantID := c.Query("owner_tenant_id")
+	ctx := c.Request.Context()
 
-	addedModels, code, err := h.modelProviderService.ListTenantAddedModels(user.ID, ownerTenantID, modelType)
+	addedModels, code, err := h.modelProviderService.ListTenantAddedModels(ctx, user.ID, ownerTenantID, modelType)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

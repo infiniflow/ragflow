@@ -74,6 +74,8 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/service/nlp"
+
+	"gorm.io/gorm"
 )
 
 // NLPRetrievalAdapter wraps *nlp.RetrievalService behind the
@@ -87,7 +89,7 @@ type NLPRetrievalAdapter struct {
 }
 
 type knowledgebaseLookup interface {
-	GetByIDs(ids []string) ([]*entity.Knowledgebase, error)
+	GetByIDs(ctx context.Context, sqlDB *gorm.DB, ids []string) ([]*entity.Knowledgebase, error)
 }
 
 // NewNLPRetrievalAdapter wraps an already-constructed
@@ -115,7 +117,7 @@ func NewNLPRetrievalAdapterFromDeps(docEngine engine.DocEngine, documentDAO *dao
 
 // Search implements RetrievalService. The translation rules live
 // at the top of this file.
-func (a *NLPRetrievalAdapter) Search(ctx context.Context, req RetrievalRequest) ([]RetrievalChunk, error) {
+func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error) {
 	if a == nil || a.svc == nil {
 		return nil, ErrRetrievalServiceMissing
 	}
@@ -135,7 +137,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, req RetrievalRequest) 
 		topN = 8
 	}
 
-	tenantIDs, err := a.resolveTenantIDs(req)
+	tenantIDs, err := a.resolveTenantIDs(ctx, db, req)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +183,7 @@ func nlpRequestFromRetrieval(req RetrievalRequest, tenantIDs []string, topN int)
 	return nlpReq
 }
 
-func (a *NLPRetrievalAdapter) resolveTenantIDs(req RetrievalRequest) ([]string, error) {
+func (a *NLPRetrievalAdapter) resolveTenantIDs(ctx context.Context, db *gorm.DB, req RetrievalRequest) ([]string, error) {
 	seen := map[string]struct{}{}
 	tenantIDs := make([]string, 0, 1)
 	appendTenantID := func(tenantID string) {
@@ -202,7 +204,7 @@ func (a *NLPRetrievalAdapter) resolveTenantIDs(req RetrievalRequest) ([]string, 
 		return tenantIDs, nil
 	}
 
-	kbs, err := a.kbDAO.GetByIDs(datasetIDs)
+	kbs, err := a.kbDAO.GetByIDs(ctx, db, datasetIDs)
 	if err != nil {
 		return nil, fmt.Errorf("retrieval: resolve dataset tenants: %w", err)
 	}

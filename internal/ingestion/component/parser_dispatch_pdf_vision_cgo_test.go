@@ -12,6 +12,8 @@ import (
 
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+
+	"gorm.io/gorm"
 )
 
 func TestDispatch_PDFVisionJSON_RealPDFFixture(t *testing.T) {
@@ -27,7 +29,7 @@ func TestDispatch_PDFVisionJSON_RealPDFFixture(t *testing.T) {
 	pdfVisionPromptLoader = func(name string) (string, error) {
 		return "Describe page {{ page }}.", nil
 	}
-	pdfVisionModelResolver = func(tenantID string, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	pdfVisionModelResolver = func(ctx context.Context, db *gorm.DB, tenantID string, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 		if tenantID != "tenant-vision" || modelID != "CustomVLM" {
 			t.Fatalf("resolver got tenant/model %q/%q", tenantID, modelID)
 		}
@@ -65,7 +67,7 @@ func TestDispatch_PDFVisionJSON_RealPDFFixture(t *testing.T) {
 	setups["pdf"]["output_format"] = "json"
 	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data,
 		"file_type": "pdf",
 		"name":      "Doc1.pdf",

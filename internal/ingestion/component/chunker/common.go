@@ -62,31 +62,6 @@ func newChunkerByName(name string, params map[string]any) (runtime.Component, er
 // numeric / list conversion helpers (shared across chunker variants)
 // ---------------------------------------------------------------------------
 
-// numericFromAny normalises JSON-decoded ints to float64 so the
-// schema-defaults-vs-Param-Update convention doesn't depend on the
-// encoding source (yaml/toml/json all behave the same).
-func numericFromAny(v any) (float64, bool) {
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case float32:
-		return float64(x), true
-	case int:
-		return float64(x), true
-	case int32:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	case uint:
-		return float64(x), true
-	case uint32:
-		return float64(x), true
-	case uint64:
-		return float64(x), true
-	}
-	return 0, false
-}
-
 func stringListFromAny(in []any) []string {
 	out := make([]string, 0, len(in))
 	for _, x := range in {

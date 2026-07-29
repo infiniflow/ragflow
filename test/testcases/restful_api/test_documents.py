@@ -255,28 +255,28 @@ def test_documents_list_error_and_sorting_contract(rest_client, create_dataset, 
             f"/datasets/{dataset_id}/documents",
             {"name": "unknown.txt"},
             102,
-            "You don't own the document unknown.txt.",
+            "you don't own the document unknown.txt",
         ),
         (
             "id unknown",
             f"/datasets/{dataset_id}/documents",
             {"id": "unknown.txt"},
             102,
-            "You don't own the document unknown.txt.",
+            "you don't own the document unknown.txt",
         ),
         (
             "name+id unknown name",
             f"/datasets/{dataset_id}/documents",
             {"id": first_id, "name": "unknown"},
             102,
-            "You don't own the document unknown.",
+            "you don't own the document unknown",
         ),
         (
             "name+id unknown id",
             f"/datasets/{dataset_id}/documents",
             {"id": "id", "name": "ragflow_test_upload_0.txt"},
             102,
-            "You don't own the document id.",
+            "you don't own the document id",
         ),
         (
             "run invalid",
@@ -584,7 +584,7 @@ def test_documents_update_invalid_dataset_and_document_contract(rest_client, cre
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_body = invalid_dataset_res.json()
     assert invalid_dataset_body["code"] == 102, invalid_dataset_body
-    assert "You don't own the dataset." in invalid_dataset_body["message"], invalid_dataset_body
+    assert "you don't own the dataset" in invalid_dataset_body["message"], invalid_dataset_body
 
     invalid_document_res = rest_client.patch(
         f"/datasets/{dataset_id}/documents/{INVALID_ID_32}",
@@ -593,7 +593,7 @@ def test_documents_update_invalid_dataset_and_document_contract(rest_client, cre
     assert invalid_document_res.status_code == 200
     invalid_document_body = invalid_document_res.json()
     assert invalid_document_body["code"] == 102, invalid_document_body
-    assert invalid_document_body["message"] == "The dataset doesn't own the document.", invalid_document_body
+    assert invalid_document_body["message"] == "the dataset doesn't own the document", invalid_document_body
 
 
 @pytest.mark.p2
@@ -681,7 +681,7 @@ def test_documents_update_meta_fields_contract(rest_client, create_dataset, tmp_
     assert invalid_meta_doc_res.status_code == 200
     invalid_meta_doc_body = invalid_meta_doc_res.json()
     assert invalid_meta_doc_body["code"] == 102, invalid_meta_doc_body
-    assert "The dataset doesn't own the document." in invalid_meta_doc_body["message"], invalid_meta_doc_body
+    assert "the dataset doesn't own the document" in invalid_meta_doc_body["message"], invalid_meta_doc_body
 
 
 @pytest.mark.p2
@@ -1012,7 +1012,7 @@ def test_document_metadata_config_contract(rest_client, create_document):
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_payload = invalid_dataset_res.json()
     assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
-    assert invalid_dataset_payload["message"] == "You don't own the dataset.", invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "you don't own the dataset", invalid_dataset_payload
 
     invalid_document_res = rest_client.put(
         f"/datasets/{dataset_id}/documents/{INVALID_ID_32}/metadata/config",
@@ -1021,7 +1021,7 @@ def test_document_metadata_config_contract(rest_client, create_document):
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"Document {INVALID_ID_32} not found in dataset {dataset_id}", invalid_document_payload
+    assert invalid_document_payload["message"] == f"document {INVALID_ID_32} not found in dataset {dataset_id}", invalid_document_payload
 
     update_payload = {"metadata": {"author": "alice", "tags": ["one", "two"]}}
     update_res = rest_client.put(

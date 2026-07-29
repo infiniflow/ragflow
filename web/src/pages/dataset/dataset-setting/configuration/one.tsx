@@ -11,7 +11,9 @@ export function OneConfiguration() {
   const ownerTenantId = useKnowledgeBaseContext().knowledgeBase?.tenant_id;
   return (
     <ConfigurationFormContainer>
-      <LayoutRecognizeFormField ownerTenantId={ownerTenantId}></LayoutRecognizeFormField>
+      <LayoutRecognizeFormField
+        ownerTenantId={ownerTenantId}
+      ></LayoutRecognizeFormField>
       <>
         <AutoMetadata />
         <AutoKeywordsFormField></AutoKeywordsFormField>
