@@ -18,8 +18,9 @@ package dao
 
 import (
 	"context"
-
 	"ragflow/internal/entity"
+
+	"github.com/pkg/errors"
 
 	"gorm.io/gorm"
 )
@@ -73,7 +74,7 @@ func (dao *UserDAO) GetByEmail(ctx context.Context, db *gorm.DB, email string) (
 	query := db.WithContext(ctx).Where("email = ?", email)
 	err := query.First(&user).Error
 	if err != nil {
-		return nil, err
+		return nil, errors.Errorf("%+v", err)
 	}
 	return &user, nil
 }

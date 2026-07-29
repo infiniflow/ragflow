@@ -17,12 +17,13 @@
 package common
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -173,7 +174,6 @@ func SyncLog() {
 	}
 }
 
-// Fatal logs a fatal message using zap, then calls os.Exit(1).
 func Fatal(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		panic("logger not initialized")
@@ -181,7 +181,6 @@ func Fatal(msg string, fields ...zap.Field) {
 	Logger.Fatal(msg, fields...)
 }
 
-// Info logs an info message.
 func Info(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -189,19 +188,18 @@ func Info(msg string, fields ...zap.Field) {
 	Logger.Info(msg, fields...)
 }
 
-// Error logs an error message. err may be nil; if non-nil it is appended as
-// a zap.Error field. Additional fields follow.
 func Error(msg string, err error, fields ...zap.Field) {
 	if Logger == nil {
 		return
 	}
-	if err != nil {
-		fields = append(fields, zap.Error(err))
+
+	if IsDebugEnabled() {
+		Logger.Error(fmt.Sprintf("%s, %+v", msg, err), fields...)
+	} else {
+		Logger.Error(fmt.Sprintf("%s, %v", msg, err), fields...)
 	}
-	Logger.Error(msg, fields...)
 }
 
-// Debug logs a debug message.
 func Debug(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -209,7 +207,6 @@ func Debug(msg string, fields ...zap.Field) {
 	Logger.Debug(msg, fields...)
 }
 
-// Warn logs a warning message.
 func Warn(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -222,13 +219,13 @@ func IsDebugEnabled() bool {
 	return atomicLevel.Enabled(zapcore.DebugLevel)
 }
 
-// GetLevel returns the current log level.
-func GetLevel() string {
+// GetLogLevel returns the current log level.
+func GetLogLevel() string {
 	return atomicLevel.String()
 }
 
-// SetLevel sets the log level at runtime.
-func SetLevel(level string) error {
+// SetLogLevel sets the log level at runtime.
+func SetLogLevel(level string) error {
 	zapLevel, err := parseZapLevel(level)
 	if err != nil {
 		return err

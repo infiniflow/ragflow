@@ -865,7 +865,7 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 
 // GetLogLevel returns the current log level
 func (h *Handler) GetLogLevel(c *gin.Context) {
-	level := common.GetLevel()
+	level := common.GetLogLevel()
 	common.SuccessWithData(c, gin.H{"level": level}, "SUCCESS")
 }
 
@@ -882,7 +882,7 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 		return
 	}
 
-	if err := common.SetLevel(req.Level); err != nil {
+	if err := common.SetLogLevel(req.Level); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
