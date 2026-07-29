@@ -183,6 +183,9 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	if err != nil {
 		return nil, fmt.Errorf("create react agent: %w", err)
 	}
+	if chatModel.Inner().ModelDriver.Name() == "jina" {
+		return agent.Generate(ctx, input)
+	}
 
 	opt, future := react.WithMessageFuture()
 	ctx = setArtifactCollector(ctx, future)
@@ -200,10 +203,6 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 			break
 		}
 		if err != nil {
-			<-emitDone
-			if len(chunks) == 0 && !runtime.AgentMessageEventsEmitted(ctx) && ctx.Err() == nil {
-				return agent.Generate(ctx, input)
-			}
 			return nil, err
 		}
 		if chunk == nil {
@@ -212,9 +211,6 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		chunks = append(chunks, chunk)
 	}
 	if emitErr := <-emitDone; emitErr != nil {
-		if len(chunks) == 0 && !runtime.AgentMessageEventsEmitted(ctx) && ctx.Err() == nil {
-			return agent.Generate(ctx, input)
-		}
 		return nil, emitErr
 	}
 	if len(chunks) == 0 {
