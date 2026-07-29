@@ -111,7 +111,7 @@ export default function SearchingView({
                 rows={1}
                 placeholder={t('search.searchGreeting')}
                 className={cn(
-                  'w-full rounded-3xl py-4 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base border border-border-button resize-none overflow-y-auto scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50 disabled:cursor-not-allowed disabled:opacity-50',
+                  'w-full rounded-3xl py-4 pl-4 !pr-[8rem] text-primary text-lg bg-bg-base border border-border-button resize-none scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50 disabled:cursor-not-allowed disabled:opacity-50',
                 )}
                 value={searchText}
                 onChange={(e) => {
@@ -129,19 +129,21 @@ export default function SearchingView({
                   }
                 }}
               />
-              <div className="absolute right-2 top-1/2 -translate-y-1/2 transform flex items-center gap-1">
-                <X
-                  className="text-text-secondary cursor-pointer opacity-80"
-                  size={14}
-                  onClick={() => {
-                    setSearchText('');
-                    handleClickRelatedQuestion('');
-                  }}
-                />
-                <span className="text-text-secondary opacity-20 ml-4">|</span>
+              <div className="absolute bottom-3 right-3 flex items-center gap-3">
+                {searchText && (
+                  <X
+                    className="text-text-secondary cursor-pointer opacity-80 hover:opacity-100"
+                    size={16}
+                    onClick={() => {
+                      setSearchText('');
+                      handleClickRelatedQuestion('');
+                    }}
+                  />
+                )}
+                <span className="h-4 w-px bg-border-button" aria-hidden />
                 <button
                   type="button"
-                  className="rounded-full bg-text-primary p-1 text-bg-base shadow w-12 h-8 ml-4"
+                  className="flex size-9 items-center justify-center rounded-full bg-text-primary text-bg-base shadow transition-opacity hover:opacity-90"
                   onClick={() => {
                     if (sendingLoading) {
                       stopOutputMessage();
@@ -151,10 +153,9 @@ export default function SearchingView({
                   }}
                 >
                   {sendingLoading ? (
-                    // <Square size={22} className="m-auto" />
-                    <div className="w-2 h-2 bg-bg-base m-auto"></div>
+                    <div className="size-2 bg-bg-base"></div>
                   ) : (
-                    <Search size={22} className="m-auto" />
+                    <Search size={18} />
                   )}
                 </button>
               </div>
@@ -333,14 +334,12 @@ export default function SearchingView({
             )}
         </div>
         {mindMapVisible && (
-          <div className="flex-1 h-[88dvh] z-30 ml-32 mt-5">
-            <MindMapSheet
-              visible={mindMapVisible}
-              hideModal={hideMindMapModal}
-              data={mindMap}
-              loading={mindMapLoading}
-            ></MindMapSheet>
-          </div>
+          <MindMapSheet
+            visible={mindMapVisible}
+            hideModal={hideMindMapModal}
+            data={mindMap}
+            loading={mindMapLoading}
+          ></MindMapSheet>
         )}
       </div>
 

@@ -29,6 +29,7 @@ from openai import OpenAI
 from zai import ZhipuAiClient
 
 from common import settings
+from common.aimlapi_utils import attribution_headers
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from rag.llm.key_utils import _normalize_replicate_key
@@ -362,6 +363,7 @@ class AIMLAPIEmbed(OpenAIEmbed):
     def __init__(self, key, model_name="text-embedding-3-small", base_url=""):
         base_url = base_url or os.environ.get("AIMLAPI_API_URL", "https://api.aimlapi.com/v1")
         super().__init__(key, model_name, base_url)
+        self.client = self.client.with_options(default_headers=attribution_headers())
         logging.info("[aimlapi.com] Embedding initialized with model %s", model_name)
 
 
