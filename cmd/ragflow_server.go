@@ -220,24 +220,24 @@ func main() {
 	arguments, err := parseArgs()
 	if err != nil {
 		fmt.Printf("Failed to parse arguments: %v\n", err)
-		return
+		os.Exit(1)
 	}
 
 	if arguments.helpFlag || arguments.mode == nil {
 		printHelp(arguments)
-		return
+		os.Exit(1)
 	}
 
 	if arguments.versionFlag {
 		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
-		return
+		os.Exit(1)
 	}
 
 	// Initialize local variables (runtime variables from Redis)
 	err = server.InitLocalVariables()
 	if err != nil {
 		fmt.Printf("Failed to start %s server: %v\n", *arguments.mode, err)
-		return
+		os.Exit(1)
 	}
 
 	// Temporary logger initialization
@@ -267,7 +267,7 @@ func main() {
 
 	if err = server.Init(configPath); err != nil {
 		common.Error("Failed to initialize configuration", err)
-		return
+		os.Exit(1)
 	}
 
 	config := server.GetConfig()
@@ -275,10 +275,10 @@ func main() {
 	// override default port if provided
 	switch *arguments.mode {
 	case "api":
-		port := config.Server.Port
+		port := config.APIServer.Port
 		if arguments.port != nil {
 			port = *arguments.port
-			config.Server.Port = port
+			config.APIServer.Port = port
 		}
 		if arguments.name == nil {
 			serverName = fmt.Sprintf("api_server_%d", port)
@@ -303,8 +303,9 @@ func main() {
 			serverName = fmt.Sprintf("syncer_server_%s", uuid)
 		}
 	default:
-		common.Error("invalid server mode", errors.New(*arguments.mode))
-		return
+		err = errors.New(*arguments.mode)
+		common.Error("invalid server mode", err)
+		os.Exit(1)
 	}
 
 	// set server name and log file path
@@ -333,6 +334,8 @@ func main() {
 	if config.Log.Path != "" {
 		fileOut.Path = config.Log.Path
 	}
+
+	common.SyncLog()
 	if err = common.Init(logLevel, fileOut, serverName); err != nil {
 		common.Error("Failed to reinitialize logger with configured level", err)
 	}
@@ -340,7 +343,7 @@ func main() {
 	server.SetLogger(common.Logger)
 
 	// Print all configuration settings
-	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, config.Server.Mode))
+	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, config.General.Mode))
 	server.PrintAll()
 
 	// Initialize database
@@ -377,7 +380,7 @@ func main() {
 
 	if err = server.StartServer(ctx, cancel, serverName); err != nil {
 		common.Error("Failed to start EE server", err)
-		return
+		os.Exit(1)
 	}
 	defer server.ShutdownServer(ctx)
 
@@ -389,36 +392,36 @@ func main() {
 	case "api":
 		if err = runAPI(ctx, arguments, config); err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
-			return
+			os.Exit(1)
 		}
 	case "admin":
-		if err = runAdmin(ctx, cancel, arguments, config); err != nil {
+		if err = runAdmin(ctx, arguments, config); err != nil {
 			fmt.Printf("Failed to start ADMIN server: %v\n", err)
-			return
+			os.Exit(1)
 		}
 	case "ingestor":
 		if err = runIngestor(ctx, cancel, arguments, config); err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
-			return
+			os.Exit(1)
 		}
 	case "syncer":
 		if err = runSyncer(ctx, cancel, arguments, config); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
-			return
+			os.Exit(1)
 		}
 	default:
 		fmt.Printf("Invalid server mode: %s\n", *arguments.mode)
-		return
+		os.Exit(1)
 	}
 }
 
-func runAdmin(ctx context.Context, cancel context.CancelFunc, args *serverArgs, config *server.Config) error {
+func runAdmin(ctx context.Context, args *serverArgs, config *server.Config) error {
 
 	// Set Gin mode
-	if config.Server.Mode == "release" {
-		gin.SetMode(gin.ReleaseMode)
-	} else {
+	if config.General.Mode == "debug" {
 		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
 	}
 
 	adminService := admin.NewService()
@@ -659,10 +662,10 @@ func runAPI(ctx context.Context, args *serverArgs, config *server.Config) error 
 func startServer(ctx context.Context, config *server.Config) {
 
 	// Set Gin mode
-	if config.Server.Mode == "release" {
-		gin.SetMode(gin.ReleaseMode)
-	} else {
+	if config.General.Mode == "debug" {
 		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
 	}
 
 	// Initialize service layer
@@ -844,7 +847,7 @@ func startServer(ctx context.Context, config *server.Config) {
 	r.Setup(ginEngine)
 
 	// Create HTTP server with timeouts to prevent slow clients from blocking shutdown
-	addr := fmt.Sprintf(":%d", config.Server.Port)
+	addr := fmt.Sprintf(":%d", config.APIServer.Port)
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           ginEngine,
@@ -864,7 +867,7 @@ func startServer(ctx context.Context, config *server.Config) {
 				"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
 		)
 		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
-		common.Info(fmt.Sprintf("Server starting on port: %d", config.Server.Port))
+		common.Info(fmt.Sprintf("Server starting on port: %d", config.APIServer.Port))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			common.Fatal("Failed to start server", zap.Error(err))
 		}
@@ -873,8 +876,8 @@ func startServer(ctx context.Context, config *server.Config) {
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeAPI,
-		fmt.Sprintf("ragflow-server-%d", config.Server.Port),
-		config.Server.Port,
+		fmt.Sprintf("ragflow-server-%d", config.APIServer.Port),
+		config.APIServer.Port,
 		config,
 	); hb != nil {
 		defer hb.Stop()
