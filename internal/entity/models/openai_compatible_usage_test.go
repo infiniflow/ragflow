@@ -58,6 +58,34 @@ func TestOpenAICompatibleProvidersExtractStreamingUsage(t *testing.T) {
 			},
 			path: "/chat/completions",
 		},
+		{
+			name: "gitee",
+			new: func(baseURL string) ModelDriver {
+				return NewGiteeModel(map[string]string{"default": baseURL}, URLSuffix{Chat: "chat/completions"})
+			},
+			path: "/chat/completions",
+		},
+		{
+			name: "openrouter",
+			new: func(baseURL string) ModelDriver {
+				return NewOpenRouterModel(map[string]string{"default": baseURL}, URLSuffix{Chat: "chat/completions"})
+			},
+			path: "/chat/completions",
+		},
+		{
+			name: "jiekouai",
+			new: func(baseURL string) ModelDriver {
+				return NewJieKouAIModel(map[string]string{"default": baseURL}, URLSuffix{Chat: "openai/v1/chat/completions"})
+			},
+			path: "/openai/v1/chat/completions",
+		},
+		{
+			name: "hunyuan",
+			new: func(baseURL string) ModelDriver {
+				return NewHunyuanModel(map[string]string{"default": baseURL}, URLSuffix{Chat: "chat/completions"})
+			},
+			path: "/chat/completions",
+		},
 	}
 
 	for _, provider := range providers {
