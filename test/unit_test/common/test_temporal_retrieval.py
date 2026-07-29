@@ -19,6 +19,8 @@ from common.temporal_utils import (
 )
 from common.temporal_validation import (
     merge_temporal_retrieval_config as merge_config,
+)
+from common.temporal_validation import (
     validate_half_life_days,
     validate_temporal_retrieval_config,
 )
