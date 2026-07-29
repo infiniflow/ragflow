@@ -185,7 +185,7 @@ def get_parent_folder(file_id: str, user_id: str = None):
 
     # Permission check
     if user_id and not check_file_team_permission(file, user_id):
-        return False, "No authorization."
+        return False, "no authorization"
 
     parent_folder = FileService.get_parent_folder(file_id)
     return True, {"parent_folder": parent_folder.to_json()}
@@ -207,7 +207,7 @@ def get_all_parent_folders(file_id: str, user_id: str = None):
 
     # Permission check
     if user_id and not check_file_team_permission(file, user_id):
-        return False, "No authorization."
+        return False, "no authorization"
 
     parent_folders = FileService.get_all_parent_folders(file_id)
     return True, {"parent_folders": [pf.to_json() for pf in parent_folders]}
@@ -479,7 +479,7 @@ async def move_files(uid: str, src_file_ids: list, dest_file_id: str = None, new
         if not file.tenant_id:
             return False, "Tenant not found!"
         if not check_file_team_permission(file, uid):
-            return False, "No authorization."
+            return False, "no authorization"
 
     dest_folder = None
     if dest_file_id:
@@ -603,5 +603,5 @@ def get_file_content(uid: str, file_id: str):
     if not e:
         return False, "Document not found!"
     if not check_file_team_permission(file, uid):
-        return False, "No authorization."
+        return False, "no authorization"
     return True, file

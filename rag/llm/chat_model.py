@@ -31,6 +31,7 @@ import openai
 from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
+from common.aimlapi_utils import attribution_headers
 from common.misc_utils import thread_pool_exec
 from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
@@ -1560,7 +1561,19 @@ class AIMLAPIChat(Base):
     def __init__(self, key, model_name, base_url="", **kwargs):
         base_url = base_url or os.environ.get("AIMLAPI_API_URL", "https://api.aimlapi.com/v1")
         super().__init__(key, model_name, base_url, **kwargs)
+        headers = attribution_headers()
+        self.client = self.client.with_options(default_headers=headers)
+        self.async_client = self.async_client.with_options(default_headers=headers)
         logging.info("[aimlapi.com] Chat initialized with model %s", model_name)
+
+
+class GreenPTChat(Base):
+    """GreenPT OpenAI-compatible chat adapter."""
+
+    _FACTORY_NAME = "GreenPT"
+
+    def __init__(self, key, model_name, base_url="https://api.greenpt.ai/v1", **kwargs):
+        super().__init__(key, model_name, base_url or "https://api.greenpt.ai/v1", **kwargs)
 
 
 class LiteLLMBase(ABC):
@@ -1822,7 +1835,11 @@ class LiteLLMBase(ABC):
             logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
             await asyncio.sleep(delay)
             return None
-        msg = f"{ERROR_PREFIX}: {error_code} - {str(e)}"
+        error_detail = str(e)
+        if self.provider == SupportedLiteLLMProvider.Nvidia and "function" in error_detail.lower() and "not found for account" in error_detail.lower():
+            model_name = self.model_name.removeprefix(self.prefix)
+            error_detail = f"NVIDIA hosted endpoint '{model_name}' is unavailable or deprecated; refresh the provider model list and select an active Free Endpoint. Original error: {error_detail}"
+        msg = f"{ERROR_PREFIX}: {error_code} - {error_detail}"
         logging.error(f"async_chat_streamly giving up: {msg}")
         return msg
 
@@ -2214,9 +2231,12 @@ class LiteLLMBase(ABC):
             "model": self.model_name,
             "messages": history,
             "api_key": self.api_key,
-            "num_retries": self.max_retries,
             **kwargs,
         }
+        if self.provider == SupportedLiteLLMProvider.Nvidia:
+            completion_args["num_retries"] = 0
+        else:
+            completion_args.setdefault("num_retries", self.max_retries)
         # Forward the originating session/user as the OpenAI-standard `user` field so
         # providers (OpenAI, OpenRouter, ...) receive it in the request body and
         # upstream activity can be correlated back to the session. An explicit

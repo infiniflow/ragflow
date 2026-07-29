@@ -26,6 +26,17 @@ export const StructureKinds = [
 
 export type StructureKind = (typeof StructureKinds)[number];
 
+export const ViewModeLabelKeyMap: Record<ViewMode, string> = {
+  [ViewMode.LlmWiki]: 'knowledgeDetails.llmWiki',
+  [ViewMode.Skills]: 'knowledgeDetails.skills',
+  [ViewMode.Tree]: 'knowledgeDetails.navTree',
+  [ViewMode.Graph]: 'knowledgeDetails.structureGraph',
+  [ViewMode.MindMap]: 'knowledgeDetails.structureMindmap',
+  [ViewMode.Timeline]: 'knowledgeDetails.structureTimeline',
+  // [ViewMode.SessionEssence]: 'knowledgeDetails.structureSessionEssence',
+  // [ViewMode.SessionGraph]: 'knowledgeDetails.structureSessionGraph',
+};
+
 export type GenerableViewMode = Exclude<ViewMode, ViewMode.Tree>;
 
 export const ViewModeGenerateTypeMap: Record<GenerableViewMode, GenerateType> =

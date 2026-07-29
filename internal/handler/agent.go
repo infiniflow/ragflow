@@ -177,8 +177,10 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 			}
 		}
 	}
+	ctx := c.Request.Context()
 
 	result, code, err := h.agentService.ListAgents(
+		ctx,
 		user.ID,
 		keywords,
 		page,
@@ -672,8 +674,8 @@ func (h *AgentHandler) ListAgentTags(c *gin.Context) {
 		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
-
-	rows, errCode, err := h.agentService.ListAgentTags(user.ID, strings.TrimSpace(c.Query("canvas_category")))
+	ctx := c.Request.Context()
+	rows, errCode, err := h.agentService.ListAgentTags(ctx, user.ID, strings.TrimSpace(c.Query("canvas_category")))
 	if err != nil {
 		common.ResponseWithCodeData(c, errCode, nil, err.Error())
 		return
@@ -697,7 +699,8 @@ func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
-	ok, errCode, errMsg := h.agentService.UpdateAgentTags(user.ID, canvasID, body.Tags)
+	ctx := c.Request.Context()
+	ok, errCode, errMsg := h.agentService.UpdateAgentTags(ctx, user.ID, canvasID, body.Tags)
 	if !ok {
 		common.ResponseWithCodeData(c, errCode, nil, errMsg.Error())
 		return
@@ -1332,7 +1335,8 @@ func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 		return
 	}
 	canvasID := c.Param("canvas_id")
-	ok, err := h.agentService.CheckCanvasAccess(user.ID, canvasID)
+	ctx := c.Request.Context()
+	ok, err := h.agentService.CheckCanvasAccess(ctx, user.ID, canvasID)
 	if err != nil || !ok {
 		// CheckCanvasAccess now surfaces ErrUserCanvasNotFound when
 		// the canvas row is missing; the Python envelope is
@@ -1357,7 +1361,8 @@ func (h *AgentHandler) GetAgentWebhookLogs(c *gin.Context) {
 // the access-denied envelope with the same shape the existing
 // loadCanvasForUser-based handlers use.
 func (h *AgentHandler) checkCanvasAccessForHandler(c *gin.Context, userID, canvasID string) (bool, common.ErrorCode, string) {
-	ok, err := h.agentService.CheckCanvasAccess(userID, canvasID)
+	ctx := c.Request.Context()
+	ok, err := h.agentService.CheckCanvasAccess(ctx, userID, canvasID)
 	if err != nil {
 		// The Python agent API uses @_require_canvas_access_async on
 		// /sessions and /logs/:message_id, which folds "canvas does

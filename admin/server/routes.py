@@ -52,7 +52,7 @@ def login():
         return error_response(str(e), 500)
 
 
-@admin_bp.route("/logout", methods=["GET"])
+@admin_bp.route("/logout", methods=["POST"])
 @login_required
 def logout():
     try:

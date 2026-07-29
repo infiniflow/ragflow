@@ -47,12 +47,22 @@ export const useArtifactGraphData = ({
       __radius: getNodeRadius(entity, minWeight, maxWeight),
     }));
 
-    const links: ArtifactGraphLink[] = (data.relations || []).map(
-      (relation) => ({
-        source: relation.from,
-        target: relation.to,
-        type: relation.type,
-      }),
+    const nodesBySlug = new Map(nodes.map((node) => [node.slug, node]));
+    // ForceLink throws when a relation references an entity omitted from the
+    // current graph slice, so only pass relations with two loaded endpoints.
+    const links: ArtifactGraphLink[] = (data.relations || []).flatMap(
+      (relation) => {
+        const source = nodesBySlug.get(relation.from);
+        const target = nodesBySlug.get(relation.to);
+        if (!source || !target) return [];
+        return [
+          {
+            source: source.id,
+            target: target.id,
+            type: relation.type,
+          },
+        ];
+      },
     );
 
     // cross-link node objects for hover highlighting

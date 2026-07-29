@@ -123,7 +123,7 @@ type ErrorCoder interface {
 }
 
 // Get retrieves a chunk by ID
-func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkResponse, error) {
+func (s *ChunkService) Get(ctx context.Context, req *GetChunkRequest, userID string) (*GetChunkResponse, error) {
 	if s.docEngine == nil {
 		return nil, fmt.Errorf("doc engine not initialized")
 	}
@@ -132,10 +132,8 @@ func (s *ChunkService) Get(req *GetChunkRequest, userID string) (*GetChunkRespon
 		return nil, fmt.Errorf("chunk_id is required")
 	}
 
-	ctx := context.Background()
-
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -354,7 +352,7 @@ func (s *ChunkService) List(ctx context.Context, req *ListChunksRequest, userID 
 	}
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -525,7 +523,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *UpdateChunkRequest,
 	}
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -715,7 +713,7 @@ type RemoveChunksRequest struct {
 
 // RemoveChunks removes chunks from the dataset table.
 // If ChunkIDs is empty and DeleteAll is true, removes all chunks for the document.
-// Otherwise removes only the specified chunks.
+// Otherwise, removes only the specified chunks.
 func (s *ChunkService) RemoveChunks(ctx context.Context, req *RemoveChunksRequest, userID string) (int64, error) {
 	if s.docEngine == nil {
 		return 0, fmt.Errorf("doc engine not initialized")
@@ -726,7 +724,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *RemoveChunksReques
 	}
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get user tenants: %w", err)
 	}

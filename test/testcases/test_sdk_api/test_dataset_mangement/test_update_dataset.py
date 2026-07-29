@@ -125,9 +125,9 @@ class TestDatasetUpdate:
     @pytest.mark.parametrize(
         "avatar_prefix, expected_message",
         [
-            ("", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+            ("", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
             ("data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
@@ -230,9 +230,9 @@ class TestDatasetUpdate:
         if IS_GO_PROXY and name in ["empty", "space"]:
             assert "lookup failed: record not found" in error_msg, error_msg
         elif name in ["empty", "space", "missing_at"]:
-            assert "Embedding model identifier must follow <model_name>@<provider> format" in error_msg, error_msg
+            assert "embedding model identifier must follow <model_name>@<provider> format" in error_msg, error_msg
         else:
-            assert "Both model_name and provider must be non-empty strings" in error_msg, error_msg
+            assert "both model_name and provider must be non-empty strings" in error_msg, error_msg
 
     @pytest.mark.p2
     def test_embedding_model_none(self, client, add_dataset_func):
