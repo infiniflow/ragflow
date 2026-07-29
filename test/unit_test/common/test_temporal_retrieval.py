@@ -156,6 +156,36 @@ async def test_apply_meta_data_filter_extra_conditions_scope_base_doc_ids():
 
 @pytest.mark.p1
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "meta_data_filter",
+    [
+        {"method": "auto"},
+        {"method": "semi_auto", "semi_auto": ["topic"]},
+    ],
+)
+async def test_apply_meta_data_filter_preserves_temporal_conditions_when_generated_filter_misses(monkeypatch, meta_data_filter):
+    generator_mod = types.ModuleType("rag.prompts.generator")
+
+    async def _gen_meta_filter(*_args, **_kwargs):
+        return {"conditions": [{"key": "topic", "op": "=", "value": "missing"}], "logic": "and"}
+
+    generator_mod.gen_meta_filter = _gen_meta_filter
+    monkeypatch.setitem(sys.modules, "rag.prompts.generator", generator_mod)
+
+    doc_ids = await apply_meta_data_filter(
+        meta_data_filter,
+        {
+            "topic": {"news": ["doc-1"]},
+            "post_date": {"2025-01-01": ["doc-1"], "2026-06-15": ["doc-2"]},
+        },
+        extra_conditions=[{"key": "post_date", "op": "≥", "value": "2026-01-01"}],
+    )
+
+    assert doc_ids == ["doc-2"]
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
 async def test_apply_meta_data_filter_base_doc_ids_none_is_unscoped():
     metas = {"topic": {"news": ["doc-1", "doc-2"]}}
 

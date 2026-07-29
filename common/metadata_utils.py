@@ -183,8 +183,9 @@ async def apply_meta_data_filter(
     ``get_flatted_meta_by_kbs`` round-trip entirely.
 
     Returns:
-        list of doc_ids, ["-999"] when manual filters yield no result, or None
-        when auto/semi_auto filters return empty.
+        list of doc_ids, ["-999"] when a required filter yields no result, or
+        None when auto/semi_auto user filters return empty without temporal
+        conditions.
     """
     if base_doc_ids is not None:
         base_doc_ids = list(base_doc_ids)
@@ -292,7 +293,9 @@ async def apply_meta_data_filter(
         logging.debug(f"Metadata filter(auto) generated: {filters}")
         doc_ids = _run_user_and_extra(filters["conditions"], filters.get("logic", "and"))
         if not doc_ids:
-            return None
+            if not extra_conditions:
+                return None
+            doc_ids = _run_user_and_extra([], "and") or ["-999"]
     elif method == "semi_auto":
         doc_ids = list(base_doc_ids) if base_doc_ids is not None else None
         selected_keys = []
@@ -317,7 +320,9 @@ async def apply_meta_data_filter(
                 logging.debug(f"Metadata filter(semi_auto) generated: {filters}")
                 doc_ids = _run_user_and_extra(filters["conditions"], filters.get("logic", "and"))
                 if not doc_ids:
-                    return None
+                    if not extra_conditions:
+                        return None
+                    doc_ids = _run_user_and_extra([], "and") or ["-999"]
             elif extra_conditions:
                 doc_ids = _run_user_and_extra([], "and")
         elif extra_conditions:
