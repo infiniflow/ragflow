@@ -31,9 +31,9 @@ type ToolInvoker interface {
 // ComponentSpec describes the Canvas-facing surface of a tool. It is kept
 // separate from Info(), whose schema contains only model-emitted arguments.
 type ComponentSpec struct {
-	Inputs              map[string]string
-	Outputs             map[string]string
-	InputForm           map[string]any
+	Inputs    map[string]string
+	Outputs   map[string]string
+	InputForm map[string]any
 	// PreserveJSONNumbers keeps numeric response tokens as json.Number when
 	// Canvas must expose the upstream JSON without float64 precision loss.
 	PreserveJSONNumbers bool

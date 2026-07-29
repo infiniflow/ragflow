@@ -71,6 +71,15 @@ describe('Querit form contract', () => {
       }).success,
     ).toBe(false);
   });
+
+  it.each(['', '   '])('rejects an empty query %p', (query) => {
+    expect(
+      QueritFormSchema.safeParse({
+        ...validValues,
+        query,
+      }).success,
+    ).toBe(false);
+  });
 });
 
 describe('Querit form persistence', () => {

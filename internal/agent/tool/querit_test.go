@@ -114,6 +114,31 @@ func TestQueritBuildsFiltersAndMergesRuntimeOverrides(t *testing.T) {
 	}
 }
 
+func TestQueritUsesNodeQueryWhenRuntimeQueryIsOmitted(t *testing.T) {
+	var gotBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		_ = json.NewDecoder(request.Body).Decode(&gotBody)
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"results":{"result":[]}}`))
+	}))
+	defer server.Close()
+
+	helper := NewHTTPHelper().WithClient(&http.Client{Transport: rewriteQueritHostTransport(server.URL)})
+	querit := newQueritTool(
+		helper,
+		func() string { return "" },
+		queritParams{APIKey: "stored-key", Query: "node query"},
+		nil,
+	)
+	out, err := querit.InvokableRun(context.Background(), `{}`)
+	if err != nil || strings.Contains(out, "_ERROR") {
+		t.Fatalf("InvokableRun = %s, %v", out, err)
+	}
+	if gotBody["query"] != "node query" {
+		t.Fatalf("request query = %#v, want node query", gotBody["query"])
+	}
+}
+
 func TestQueritAPIKeyResolutionAndEmptyQuery(t *testing.T) {
 	var calls atomic.Int32
 	var authorization string

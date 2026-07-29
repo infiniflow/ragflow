@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -476,9 +477,9 @@ func TestToolBackedComponentTavilyIntegration(t *testing.T) {
 }
 
 func TestToolBackedComponentQueritIntegration(t *testing.T) {
-	serverCalls := 0
+	var serverCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		serverCalls++
+		serverCalls.Add(1)
 		writer.Header().Set("Content-Type", "application/json")
 		_, _ = writer.Write([]byte(`{"results":{"result":[{"title":"RAGFlow","url":"https://ragflow.io","snippet":"RAG article","custom":"preserved"}]},"search_id":11099848653006015581,"query_context":{"rewritten":"rag flow"}}`))
 	}))
@@ -501,8 +502,8 @@ func TestToolBackedComponentQueritIntegration(t *testing.T) {
 		t.Fatalf("Invoke(empty query): %v", err)
 	}
 	emptyJSON, emptyJSONOK := empty["json"].(map[string]any)
-	if serverCalls != 0 || empty["formalized_content"] != "" || !emptyJSONOK || len(emptyJSON) != 0 {
-		t.Fatalf("empty query result = %#v, server calls = %d", empty, serverCalls)
+	if serverCalls.Load() != 0 || empty["formalized_content"] != "" || !emptyJSONOK || len(emptyJSON) != 0 {
+		t.Fatalf("empty query result = %#v, server calls = %d", empty, serverCalls.Load())
 	}
 	out, err := component.Invoke(runtime.WithState(context.Background(), state), nil, map[string]any{"query": "ragflow"})
 	if err != nil {

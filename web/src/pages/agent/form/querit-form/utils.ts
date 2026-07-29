@@ -11,7 +11,7 @@ const dynamicStringListSchema = z.array(
 
 export const QueritFormSchema = z.object({
   api_key: z.string(),
-  query: z.string(),
+  query: z.string().trim().min(1),
   count: z.coerce.number().int().min(1),
   chunks_per_doc: z.coerce.number().int().min(1).max(3),
   site_include: dynamicStringListSchema,

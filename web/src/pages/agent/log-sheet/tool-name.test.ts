@@ -14,4 +14,11 @@ describe('getToolOperatorName', () => {
       expect(getToolOperatorName(toolName)).toBe(Operator.QueritSearch);
     },
   );
+
+  it.each([undefined, null, ''])(
+    'returns an empty name for the missing value %p',
+    (toolName) => {
+      expect(getToolOperatorName(toolName)).toBe('');
+    },
+  );
 });

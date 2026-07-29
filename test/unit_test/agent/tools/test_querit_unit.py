@@ -518,7 +518,7 @@ def test_non_string_reference_fields_match_go_string_coercion(monkeypatch):
 
 
 def test_api_key_is_redacted_from_errors_and_logs(monkeypatch, caplog):
-    secret = "secret-test-key"
+    secret = f"secret-test-key-{id(caplog)}"
 
     def fake_post(*args, **kwargs):
         raise querit_module.requests.ConnectionError(f"connection failed for {secret}")

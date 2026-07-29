@@ -15,7 +15,7 @@ describe('getQueritAgentInitialValues', () => {
         language_include: [],
         outputs: {
           formalized_content: { value: '', type: 'string' },
-          json: { value: {}, type: 'Object' },
+          json: { value: {}, type: 'object' },
         },
       }),
     ).toEqual({

@@ -212,18 +212,23 @@ func (q *QueritTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 		return queritErrorJSON(fmt.Errorf("parse arguments: %w", err)), nil
 	}
 	queryJSON, hasQuery := provided["query"]
-	if !hasQuery || strings.TrimSpace(string(queryJSON)) == "null" {
-		return queritErrorJSON(fmt.Errorf("query must be provided as a string")), nil
-	}
-	var query string
-	if err := json.Unmarshal(queryJSON, &query); err != nil {
-		return queritErrorJSON(fmt.Errorf("query must be provided as a string")), nil
+	if hasQuery {
+		if strings.TrimSpace(string(queryJSON)) == "null" {
+			return queritErrorJSON(fmt.Errorf("query must be provided as a string")), nil
+		}
+		var query string
+		if err := json.Unmarshal(queryJSON, &query); err != nil {
+			return queritErrorJSON(fmt.Errorf("query must be provided as a string")), nil
+		}
 	}
 	var runtimeParams queritParams
 	if err := json.Unmarshal([]byte(argsJSON), &runtimeParams); err != nil {
 		return queritErrorJSON(fmt.Errorf("parse arguments: %w", err)), nil
 	}
 	params := mergeQueritParams(q.defaults, runtimeParams, provided)
+	if !hasQuery && strings.TrimSpace(params.Query) == "" {
+		return queritErrorJSON(fmt.Errorf("query must be provided as a string")), nil
+	}
 	if params.Query == "" {
 		return `{}`, nil
 	}

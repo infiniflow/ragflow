@@ -589,7 +589,7 @@ export const initialQueritValues = {
     },
     json: {
       value: {},
-      type: 'Object',
+      type: 'object',
     },
   },
 };
