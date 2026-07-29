@@ -5,7 +5,7 @@ import {
   UserInfo,
 } from '@/constants/authorization';
 import { getSearchValue } from './common-util';
-const KeySet = [Authorization, Token, UserInfo, ThinkingLevel];
+const KeySet = [Authorization, Token, UserInfo];
 
 const storage = {
   getAuthorization: () => {
