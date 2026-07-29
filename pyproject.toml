@@ -236,6 +236,10 @@ constraint-dependencies = [
     # CVE-2026-59939: httplib2 < 0.32.0 vulnerable; pulled in transitively via
     # google-api-python-client, google-auth-httplib2
     "httplib2>=0.32.0",
+    # CVE-2025-67221: orjson < 3.11.6 vulnerable; pulled in transitively via
+    # langgraph-sdk, langsmith, ranx. Previously blocked by mistralai==0.4.2
+    # pinning orjson<3.11
+    "orjson>=3.11.6",
 ]
 exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same
