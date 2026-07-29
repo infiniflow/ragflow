@@ -6,7 +6,7 @@ import {
   useFetchKnowledgeMetadataKeys,
   useFetchTemporalMetadataProfile,
 } from '@/hooks/use-knowledge-request';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -87,11 +87,11 @@ export function TemporalRetrieval({ prefix = '' }: TemporalRetrievalProps) {
     [t],
   );
 
-  const clearDerivedProfileFields = () => {
+  const clearDerivedProfileFields = useCallback(() => {
     for (const field of DERIVED_PROFILE_FIELDS) {
       form.setValue(prefix + `temporal_retrieval.${field}`, undefined);
     }
-  };
+  }, [form, prefix]);
 
   useEffect(() => {
     if (!enabled) {
