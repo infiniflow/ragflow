@@ -173,8 +173,8 @@ export function PipelineAccordionOperators({
       ...restrictSingleOperatorOnCanvas([Operator.Parser, Operator.Tokenizer]),
     ];
     list.push(Operator.Extractor);
-    if (getOperatorTypeFromId(nodeId) !== Operator.Compilation) {
-      list.push(Operator.Compilation);
+    if (getOperatorTypeFromId(nodeId) !== Operator.Compiler) {
+      list.push(Operator.Compiler);
     }
     return list;
   }, [getOperatorTypeFromId, nodeId, restrictSingleOperatorOnCanvas]);
@@ -191,7 +191,7 @@ export function PipelineAccordionOperators({
   const showChunker = useMemo(() => {
     return (
       getOperatorTypeFromId(nodeId) !== Operator.Extractor &&
-      getOperatorTypeFromId(nodeId) !== Operator.Compilation &&
+      getOperatorTypeFromId(nodeId) !== Operator.Compiler &&
       chunkerOperators.length > 0
     );
   }, [chunkerOperators.length, getOperatorTypeFromId, nodeId]);

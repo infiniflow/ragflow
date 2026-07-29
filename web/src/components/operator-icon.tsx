@@ -9,9 +9,15 @@ import {
   HousePlus,
   Infinity as InfinityIcon,
   LogOut,
+  LucideBlocks,
+  LucideFile,
+  LucideFilePlay,
+  LucideFileStack,
+  LucideHeading,
+  LucideListPlus,
 } from 'lucide-react';
 import { Component } from 'react';
-import { Operator } from './constant';
+import { Operator } from '../constants/agent';
 
 interface IProps {
   name: Operator;
@@ -62,7 +68,13 @@ export const LucideIconMap = {
   [Operator.ExitLoop]: LogOut,
   [Operator.DocGenerator]: FileText,
   [Operator.Browser]: Globe,
-  [Operator.Compilation]: Columns3Cog,
+  [Operator.Compiler]: Columns3Cog,
+  [Operator.File]: LucideFile,
+  [Operator.Parser]: LucideFilePlay,
+  [Operator.Tokenizer]: LucideListPlus,
+  [Operator.TokenChunker]: LucideBlocks,
+  [Operator.TitleChunker]: LucideHeading,
+  [Operator.Extractor]: LucideFileStack,
 };
 
 const Empty = () => {

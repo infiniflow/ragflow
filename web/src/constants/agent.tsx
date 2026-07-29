@@ -113,7 +113,7 @@ export enum Operator {
   TokenChunker = 'TokenChunker',
   TitleChunker = 'TitleChunker',
   Extractor = 'Extractor',
-  Compilation = 'Compiler',
+  Compiler = 'Compiler',
   Loop = 'Loop',
   LoopStart = 'LoopItem',
   ExitLoop = 'ExitLoop',
