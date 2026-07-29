@@ -1,3 +1,14 @@
+jest.mock('@/constants/agent', () => ({
+  Operator: {
+    TavilySearch: 'TavilySearch',
+    TavilyExtract: 'TavilyExtract',
+    Google: 'Google',
+    KeenableSearch: 'KeenableSearch',
+    BGPT: 'Bing',
+    QueritSearch: 'QueritSearch',
+  },
+}));
+
 import { Operator } from '@/constants/agent';
 import { clearSensitiveFields } from './clear-sensitive-fields';
 

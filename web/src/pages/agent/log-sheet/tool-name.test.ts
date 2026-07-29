@@ -1,3 +1,9 @@
+jest.mock('@/constants/agent', () => ({
+  Operator: {
+    QueritSearch: 'QueritSearch',
+  },
+}));
+
 import { Operator } from '@/constants/agent';
 import { getToolOperatorName } from './tool-name';
 
