@@ -31,8 +31,9 @@ from api.db.joint_services.tenant_model_service import (
     resolve_model_config,
     get_tenant_default_model_by_type,
 )
-from api.db.db_models import DB, Document, Task
+from api.db.db_models import Document, Task
 from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.document_counter_service import release_reparse_counters
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -180,25 +181,15 @@ def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=No
 
 
 def _release_doc_counters(doc):
-    """Roll back the document's chunk, token, and duration counters, and the
-    knowledgebase's chunk/token totals, so a re-parse starts from zero. Callers
-    that delete a document's chunks must do this, otherwise the removed counts
-    stay in the knowledgebase total.
-
-    The counters are re-read under a row lock in the same transaction as the
-    decrement: stop_parsing cancels the worker asynchronously, so it may still
-    be incrementing this document's counters, and decrementing by a snapshot
-    taken earlier in the request would leave residual counts behind. Returns an
-    error result if the document is gone, else None.
+    """Roll back the document's and knowledgebase's chunk/token/duration counters
+    so a re-parse starts from zero. Callers that delete a document's chunks must
+    do this, otherwise the removed counts stay in the knowledgebase total. The
+    release re-reads the row under a lock (see release_reparse_counters) so it is
+    safe against a worker still parsing the document. Returns an error result if
+    the document is gone, else None.
     """
     try:
-        with DB.atomic():
-            fresh = Document.select().where(Document.id == doc.id).for_update().first()
-            if fresh is None:
-                raise LookupError
-            if not (fresh.token_num or fresh.chunk_num or fresh.process_duration):
-                return None
-            DocumentService.increment_chunk_num(fresh.id, fresh.kb_id, -fresh.token_num, -fresh.chunk_num, -fresh.process_duration)
+        release_reparse_counters(doc.id)
     except LookupError:
         logging.exception("Failed to release counters for document %s in knowledgebase %s", doc.id, doc.kb_id)
         return get_error_data_result(message=f"Document {doc.id} not found")

@@ -426,6 +426,10 @@ def _load_chunk_module(monkeypatch):
     task_service_mod.queue_tasks = lambda *_args, **_kwargs: None
     monkeypatch.setitem(sys.modules, "api.db.services.task_service", task_service_mod)
 
+    document_counter_service_mod = ModuleType("api.db.services.document_counter_service")
+    document_counter_service_mod.release_reparse_counters = lambda *_args, **_kwargs: None
+    monkeypatch.setitem(sys.modules, "api.db.services.document_counter_service", document_counter_service_mod)
+
     document_service_mod = ModuleType("api.db.services.document_service")
 
     class _DocumentService:

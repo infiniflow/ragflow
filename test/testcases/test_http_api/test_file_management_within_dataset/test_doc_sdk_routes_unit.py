@@ -605,6 +605,11 @@ def _load_doc_module(monkeypatch, module_basename="chunk_api"):
         sgc_mod.build_bucket = _sgc_build_bucket
         monkeypatch.setitem(sys.modules, "api.apps.services.structure_graph_common", sgc_mod)
 
+    # document_counter_service is a real module (release_reparse_counters); evict
+    # any cached copy so it re-imports against this test's freshly-stubbed
+    # db_models / document_service rather than a prior test's stubs.
+    monkeypatch.delitem(sys.modules, "api.db.services.document_counter_service", raising=False)
+
     module_path = repo_root / "api" / "apps" / "restful_apis" / f"{module_basename}.py"
     spec = importlib.util.spec_from_file_location("test_doc_sdk_routes_unit", module_path)
     module = importlib.util.module_from_spec(spec)
@@ -944,6 +949,7 @@ class TestDocRoutesUnit:
         module = _load_doc_module(monkeypatch, module_basename="document_api")
         updated = []
         deleted = []
+        decrements = []
 
         monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
         monkeypatch.setattr(module, "get_request_json", lambda: _AwaitableValue({"document_ids": ["doc-1"]}))
@@ -956,6 +962,14 @@ class TestDocRoutesUnit:
         )
         monkeypatch.setattr(module.TaskService, "query", lambda **_kwargs: [SimpleNamespace(progress=0.5)])
         monkeypatch.setattr(module, "cancel_all_task_of", lambda *_args, **_kwargs: None)
+        # release_reparse_counters re-reads the row under lock and decrements the
+        # KB by the document's partial counts before chunk_num is zeroed below.
+        monkeypatch.setattr(
+            sys.modules["api.db.db_models"].Document,
+            "fresh_doc",
+            SimpleNamespace(id="doc-1", kb_id="kb-1", token_num=70, chunk_num=7, process_duration=1.5),
+        )
+        monkeypatch.setattr(module.DocumentService, "increment_chunk_num", lambda *args: decrements.append(args))
         monkeypatch.setattr(
             module.DocumentService,
             "update_by_id",
@@ -977,9 +991,14 @@ class TestDocRoutesUnit:
         assert updated_doc_id == "doc-1"
         assert updated_info["run"] == str(module.TaskStatus.CANCEL.value)
         assert updated_info["progress"] == 0
-        assert updated_info["chunk_num"] == 0
+        # release_reparse_counters is the sole counter adjustment; the status
+        # update must not set chunk_num itself (that would strand KB counts).
+        assert "chunk_num" not in updated_info
         # progress_msg carries a timestamped cancellation marker, so match loosely.
         assert "Task stopped by user." in updated_info["progress_msg"]
+        # The partial chunk/token counts are released from the KB aggregate via the
+        # row re-read under lock.
+        assert decrements == [("doc-1", "kb-1", -70, -7, -1.5)]
         assert deleted == [({"doc_id": "doc-1"}, module.search.index_name("tenant-1"), "kb-1")]
 
         deleted.clear()
