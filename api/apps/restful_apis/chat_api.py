@@ -406,14 +406,9 @@ async def create():
             # if err:
             #     return get_data_error_result(message=err)
         if "temporal_retrieval" in req:
-            temporal_retrieval = merge_temporal_retrieval_config(
-                current_chat.get("temporal_retrieval", {}),
-                req.get("temporal_retrieval"),
-            )
-            err = _validate_temporal_retrieval(temporal_retrieval)
+            err = _validate_temporal_retrieval(req.get("temporal_retrieval"))
             if err:
                 return get_data_error_result(message=err)
-            req["temporal_retrieval"] = temporal_retrieval
 
         req.setdefault("kb_ids", [])
         req.setdefault("llm_id", tenant.tenant_llm_id)
@@ -587,9 +582,14 @@ async def update_chat(chat_id):
             # if err:
             #     return get_data_error_result(message=err)
         if "temporal_retrieval" in req:
-            err = _validate_temporal_retrieval(req.get("temporal_retrieval"))
+            temporal_retrieval = merge_temporal_retrieval_config(
+                current_chat.get("temporal_retrieval", {}),
+                req.get("temporal_retrieval"),
+            )
+            err = _validate_temporal_retrieval(temporal_retrieval)
             if err:
                 return get_data_error_result(message=err)
+            req["temporal_retrieval"] = temporal_retrieval
 
         # prompt_config = req.get("prompt_config", {})
         # if not prompt_config:
