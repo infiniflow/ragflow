@@ -320,6 +320,16 @@ func pythonFamilyName(raw string) string {
 	return ""
 }
 
+// ParserFileFamily normalises a free-form file-type/extension hint to the
+// python-side family identifier used as the key into a Parser component's
+// setups (e.g. "pdf", "docx", "slides", "text&code"). It is the exported
+// entry point for callers outside this package (e.g. the ingestion task
+// executor that injects the debug page cap into override_params) that need
+// to build the canonical ParserConfig[cpnID][family]["pages"] shape.
+func ParserFileFamily(ext string) string {
+	return pythonFamilyName(ext)
+}
+
 // jsonItemsToPages reshapes a parsed JSON payload into the
 // schema.Page layout the chunker side consumes. Each JSON item
 // becomes one page carrying `text`, `doc_type_kwd`, and any

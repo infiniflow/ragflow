@@ -28,6 +28,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 
@@ -41,6 +43,7 @@ type PipelineResult struct {
 	DocID            string
 	KbID             string
 	Metadata         map[string]any
+	Chunks           []map[string]any // populated only in debug (non-persist) mode
 	ChunkCount       int
 	TokenConsumption int
 	Duration         float64 // pipeline wall-clock seconds
@@ -66,14 +69,24 @@ func validateTaskContext(taskCtx *TaskContext) error {
 	if taskCtx.Doc.ID == "" {
 		return fmt.Errorf("pipeline executor: empty document id")
 	}
-	if taskCtx.Doc.KbID == "" {
-		return fmt.Errorf("pipeline executor: empty document knowledgebase id")
+	// A canvas-debug (dataflow dry-run) runs against the synthetic
+	// CANVAS_DEBUG_DOC_ID with no persistent document row and no
+	// knowledgebase association. The kb_id is optional there: parse and
+	// chunk work without it, and only embedding resolution needs it (and
+	// only when the canvas does not carry an explicit embedding model).
+	// This mirrors the Python dataflow-debug path, which does not pass a
+	// kb_id to queue_dataflow. Relaxing the check here lets webhook /
+	// chat/completions DataFlow triggers run debug without supplying kb_id.
+	if taskCtx.Doc.ID != CANVAS_DEBUG_DOC_ID {
+		if taskCtx.Doc.KbID == "" {
+			return fmt.Errorf("pipeline executor: empty document knowledgebase id")
+		}
+		if taskCtx.KB.ID == "" {
+			return fmt.Errorf("pipeline executor: empty knowledgebase id")
+		}
 	}
 	if taskCtx.Doc.Name == nil || *taskCtx.Doc.Name == "" {
 		return fmt.Errorf("pipeline executor: empty document name")
-	}
-	if taskCtx.KB.ID == "" {
-		return fmt.Errorf("pipeline executor: empty knowledgebase id")
 	}
 	if taskCtx.Tenant.ID == "" {
 		return fmt.Errorf("pipeline executor: empty tenant id")
@@ -157,6 +170,13 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 		return nil, err
 	}
 
+	// A non-persist run (Doc.ID == CANVAS_DEBUG_DOC_ID) must not produce any
+	// persistent side effect. The flag is threaded through the pipeline run
+	// context so components can gate their writes; the branch below also
+	// short-circuits before the persist stage (log/index/metadata).
+	persist := s.taskCtx.Doc.ID != CANVAS_DEBUG_DOC_ID
+	ctx = globals.WithPersist(ctx, persist)
+
 	dsl, correctedID, err := s.loadDSLFunc(ctx, s.canvasID)
 	if err != nil {
 		return nil, err
@@ -170,9 +190,8 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 		return nil, err
 	}
 
-	if s.taskCtx.Doc.ID == CANVAS_DEBUG_DOC_ID {
-		s.recordPipelineLog(ctx, dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "done")
-		return nil, nil
+	if !persist {
+		return s.collectDebugOutput(ctx, pipelineOutput, start)
 	}
 
 	result, err := s.processOutput(ctx, pipelineOutput, start)
@@ -185,6 +204,22 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	return result, nil
+}
+
+// collectDebugOutput builds a PipelineResult for a non-persist (debug) run.
+// It surfaces the pipeline's chunks so a debug endpoint can render them, but
+// performs no DB/index writes — the embedding vectors already computed by the
+// pipeline run are left on the chunks. This keeps debug runs side-effect free.
+func (s *PipelineExecutor) collectDebugOutput(ctx context.Context, pipelineOutput map[string]any, start time.Time) (*PipelineResult, error) {
+	chunks := NormalizeChunks(pipelineOutput)
+	return &PipelineResult{
+		DocID:            s.taskCtx.Doc.ID,
+		KbID:             s.taskCtx.Doc.KbID,
+		Chunks:           chunks,
+		ChunkCount:       countDistinctChunkIDs(chunks),
+		TokenConsumption: GetEmbeddingTokenConsumption(pipelineOutput),
+		Duration:         time.Since(start).Seconds(),
+	}, nil
 }
 
 func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map[string]any, start time.Time) (*PipelineResult, error) {
@@ -375,6 +410,12 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	}
 
 	parserConfig := map[string]interface{}(s.taskCtx.Doc.ParserConfig)
+	if parserConfig == nil {
+		// Debug (dataflow dry-run) contexts intentionally carry no
+		// ParserConfig; start from an empty map so the debug page cap can be
+		// injected in place below without a nil-map assignment panic.
+		parserConfig = map[string]interface{}{}
+	}
 	common.InjectExtractorLLMID(parserConfig, s.taskCtx.Tenant.LLMID)
 	// When the dataset enables auto-metadata, ensure the Extractor node(s)
 	// carry the enable_metadata mode + field schema so the LLM extraction fires
@@ -404,13 +445,49 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	if s.taskCtx.Doc.ID != "" {
 		inputs["doc_id"] = s.taskCtx.Doc.ID
 	}
-	if s.taskCtx.File != nil {
-		inputs["file"] = s.taskCtx.File
-	}
+	// Run-level metadata shared by both persist and debug (dataflow
+	// dry-run) runs. For debug, KB.ID is the kb_id supplied by the caller
+	// (seeded in NewDebugTaskContext); for persist it is the document's own
+	// KB. Either way the Tokenizer reads it from CanvasState.Globals.
 	inputs["tenant_id"] = s.taskCtx.Tenant.ID
 	inputs["kb_id"] = s.taskCtx.KB.ID
 	if s.taskCtx.KB.Language != nil {
 		inputs["lang"] = *s.taskCtx.KB.Language
+	}
+
+	// File delivery and doc metadata differ between the two run modes.
+	debug := s.taskCtx.Doc.ID == CANVAS_DEBUG_DOC_ID
+	if debug {
+		// A debug (non-persist) run has no DB document row, so the parser
+		// cannot resolve its bytes via doc_id → storage. Deliver the
+		// uploaded bytes directly as `binary` (what the parser actually
+		// reads) and surface the doc name/type so family detection works.
+		if s.taskCtx.File != nil {
+			inputs["file"] = s.taskCtx.File
+			inputs["binary"] = s.taskCtx.File
+		}
+		if s.taskCtx.Doc.Name != nil && *s.taskCtx.Doc.Name != "" {
+			inputs["name"] = *s.taskCtx.Doc.Name
+		}
+		if s.taskCtx.Doc.Type != "" {
+			inputs["file_type"] = s.taskCtx.Doc.Type
+		}
+	} else {
+		if s.taskCtx.File != nil {
+			inputs["file"] = s.taskCtx.File
+		}
+	}
+
+	// A canvas-debug (dataflow dry-run) must return a fast preview, so it
+	// caps the parser to the first few pages. The cap is delivered through
+	// override_params (Run's 3rd argument) — the SAME channel the
+	// production ParserConfig uses — keyed by the Parser component's cpnID
+	// and the document's filetype family. It is NOT passed through pipeline
+	// inputs: the parser selects pages from ParserConfig[cpnID][family]
+	// ["pages"] (a list of 1-indexed inclusive ranges), exactly mirroring
+	// NormalizeParserConfigPages / pdf_pages_test.go. See injectDebugPageCap.
+	if s.taskCtx.Doc.ID == CANVAS_DEBUG_DOC_ID {
+		injectDebugPageCap(dsl, parserConfig, s.taskCtx.Doc.Type)
 	}
 
 	// Component params from Doc.ParserConfig — including the tenant LLM id
@@ -426,4 +503,87 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		return nil, dsl, err
 	}
 	return payload, dsl, nil
+}
+
+// debugPageCapPages is the number of leading pages a canvas-debug
+// (dataflow dry-run) parses. The debug preview must return fast, so we cap
+// the parser to the first few pages. The cap is expressed as the 1-indexed
+// inclusive range [1, debugPageCapPages], matching the production
+// ParserConfig[cpnID][filetype]["pages"] shape (see NormalizeParserConfigPages).
+const debugPageCapPages = 2
+
+// injectDebugPageCap wires the canvas-debug page cap into parserConfig using
+// the SAME channel the production ParserConfig travels through: Run's
+// override_params (the 3rd argument), keyed by the Parser component's cpnID
+// and the document's filetype family. It must NOT be passed as a pipeline
+// input — the parser selects pages from ParserConfig[cpnID][family]["pages"],
+// which the deepdoc/pdf parser consumes as a list of page ranges.
+//
+// dsl is the raw pipeline DSL (used only to discover the Parser component's
+// cpnID); docType is the uploaded file's extension (e.g. "pdf"). When no
+// Parser component can be found, or the docType yields no known family, the
+// call is a no-op (the run parses everything, which is safe).
+//
+// dsl arrives as the canvas ENVELOPE ({ "dsl": { "components": ... } }) in
+// production (loadDSLFromCanvas marshals canvas.DSL), so it is unwrapped the
+// same way NewPipelineFromDSL does before ExtractAllComponentParams runs.
+// An explicit page cap already present in parserConfig (keyed by cpnID +
+// family) is respected and left untouched — the debug default is only a
+// fallback, so a debug run can honour a narrower or wider caller-supplied cap.
+func injectDebugPageCap(dsl string, parserConfig map[string]any, docType string) {
+	// Unwrap the canvas envelope to the inner components map.
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(dsl), &raw); err != nil {
+		return
+	}
+	if env, ok := raw["dsl"].(map[string]any); ok && len(env) > 0 {
+		raw = env
+	}
+	inner, err := json.Marshal(raw)
+	if err != nil {
+		return
+	}
+	schemas, err := pipelinepkg.ExtractAllComponentParams(inner)
+	if err != nil {
+		return
+	}
+	var parserCpnID string
+	for _, s := range schemas {
+		if s.ComponentName == component.ComponentNameParser {
+			parserCpnID = s.CpnID
+			break
+		}
+	}
+	if parserCpnID == "" {
+		return
+	}
+	family := component.ParserFileFamily(docType)
+	if family == "" {
+		return
+	}
+	// Respect an explicit page cap already present under cpnID + family.
+	if cpnEntry, ok := parserConfig[parserCpnID].(map[string]any); ok {
+		if famEntry, ok := cpnEntry[family].(map[string]any); ok {
+			if _, has := famEntry["pages"]; has {
+				return
+			}
+		}
+	}
+	cpnEntry, ok := parserConfig[parserCpnID].(map[string]any)
+	if !ok {
+		cpnEntry = map[string]any{}
+		parserConfig[parserCpnID] = cpnEntry
+	}
+	famEntry, ok := cpnEntry[family].(map[string]any)
+	if !ok {
+		famEntry = map[string]any{}
+		cpnEntry[family] = famEntry
+	}
+	// pages is delivered as a JSON-decoded map — the very shape a ParserConfig
+	// arrives in from the API/storage JSON round-trip: a []any of [from,to]
+	// pairs. The deepdoc/pdf parser's NormalizePDFPages requires this
+	// []any-of-[]any form (not a Go [][]int), so it is built explicitly here.
+	// The shallow override_params merge in applyOverrideParams preserves this
+	// shape all the way to ConfigureFromSetup, so the cap is honoured.
+	famEntry["pages"] = []any{[]any{1, debugPageCapPages}}
 }

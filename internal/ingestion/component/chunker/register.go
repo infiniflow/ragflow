@@ -30,6 +30,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/globals"
 
 	"gorm.io/gorm"
 )
@@ -82,8 +83,16 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 		ck["id"] = common.ChunkID(docID, text)
 	}
 
-	if err := uploadChunkImages(ctx, chunks, ChunkImageUploader, kbID); err != nil {
-		return nil, err
+	if globals.IsPersist(ctx, inputs) {
+		if err := uploadChunkImages(ctx, chunks, ChunkImageUploader, kbID); err != nil {
+			return nil, err
+		}
+	} else {
+		// Non-persist run (debug/dry-run): drop raw image bytes so they are
+		// not held in memory until a persist stage that will never run.
+		for _, ck := range chunks {
+			delete(ck, "image")
+		}
 	}
 	return out, nil
 }

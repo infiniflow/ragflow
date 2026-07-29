@@ -35,6 +35,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/task"
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
 	"ragflow/internal/utility"
@@ -91,6 +92,11 @@ type AgentHandler struct {
 	// tenant-only authorization (i.e. cannot verify the doc, so the
 	// check is skipped — same shape as the pre-port behaviour).
 	documentService documentAccessChecker
+	// debugRunner, when non-nil, overrides the real dataflow-debug
+	// execution. Handler tests inject a stub so the chat/completions and
+	// webhook DataFlow paths can be exercised without a real ingestion
+	// pipeline (mirrors the chatRunner injection pattern).
+	debugRunner func(ctx context.Context, user *entity.User, kbID, canvasID, fileName string, fileData []byte) (*task.PipelineResult, error)
 }
 
 // WithDocumentService injects the document service used by
@@ -484,6 +490,84 @@ func readUserInput(c *gin.Context) string {
 		}
 	}
 	return c.Query("user_input")
+}
+
+// runDataflowDebug runs a canvas in dataflow dry-run (debug) mode: it builds
+// an in-memory debug TaskContext and executes the pipeline synchronously,
+// returning the produced chunks. It performs no persistence (no MinIO upload,
+// index insert, or pipeline_log) because the debug context carries
+// CANVAS_DEBUG_DOC_ID, which disables the executor's persist gate.
+//
+// The kb_id is optional and mirrors the Python dataflow-debug path, which
+// passes no kb_id to queue_dataflow: parse and chunk work without it, and only
+// embedding resolution needs it (and only when the canvas does not carry an
+// explicit embedding model). Callers extract the (fileName, fileData) pair
+// from their own request shape and pass them in.
+func (h *AgentHandler) runDataflowDebug(ctx context.Context, user *entity.User,
+	kbID, canvasID, fileName string, fileData []byte) (*task.PipelineResult, error) {
+	if h.debugRunner != nil {
+		return h.debugRunner(ctx, user, kbID, canvasID, fileName, fileData)
+	}
+	taskCtx := task.NewDebugTaskContext(user.ID, kbID, canvasID, fileName, fileData)
+
+	exec, err := task.NewPipelineExecutor(taskCtx, canvasID, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	return exec.Execute(ctx)
+}
+
+// respondWithDebugResult writes the outcome of a dataflow debug run: on
+// error it surfaces a server error; otherwise it returns the chunks inline
+// (empty slices become `[]` rather than `null`). It is the single wire-shape
+// helper for the chat/completions DataFlow debug entry point.
+func respondWithDebugResult(c *gin.Context, result *task.PipelineResult, err error) {
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+		return
+	}
+	if result == nil || len(result.Chunks) == 0 {
+		common.SuccessWithData(c, []map[string]any{}, "success")
+		return
+	}
+	common.SuccessWithData(c, result.Chunks, "success")
+}
+
+// extractChatDebugFile pulls the first uploaded file from a chat/completions
+// request into (fileName, bytes) for a dataflow debug run. Unlike a debug
+// multipart upload, chat/completions `files` are storage references
+// (id/name/created_by); the raw bytes are fetched from the per-user downloads
+// bucket via the file service. When no usable file is present it returns a
+// default name and a nil slice so the pipeline can still run file-less.
+func (h *AgentHandler) extractChatDebugFile(ctx context.Context, files [][]map[string]interface{}, user *entity.User) (string, []byte) {
+	if len(files) == 0 {
+		return "debug", nil
+	}
+	fileList := files[0]
+	if len(fileList) == 0 {
+		return "debug", nil
+	}
+	fd := fileList[0]
+	name, _ := fd["name"].(string)
+	id, _ := fd["id"].(string)
+	if id == "" {
+		if name == "" {
+			return "debug", nil
+		}
+		return name, nil
+	}
+	data, err := h.fileService.DownloadAgentFile(ctx, user.ID, id)
+	if err != nil || len(data) == 0 {
+		if name == "" {
+			return "debug", nil
+		}
+		return name, nil
+	}
+	if name == "" {
+		name = "debug"
+	}
+	return name, data
 }
 
 // sanitiseRunEventError passes through the error event payload
@@ -889,7 +973,21 @@ type agentChatCompletionsRequest struct {
 	Model        string                   `json:"model"`
 	Messages     []map[string]interface{} `json:"messages"`
 	ReturnTrace  bool                     `json:"return_trace"`
-	Files        []map[string]interface{} `json:"files"`
+	// Files carries the uploaded file references for a run. The RAGFlow web
+	// front-end wraps the file list one extra level (a list of per-turn file
+	// lists), so the wire shape is `[[{id, name, ...}]]`. This mirrors the
+	// Python agent_api.py:1611 contract `queue_dataflow(..., files[0], 0)`,
+	// where `files[0]` (the first inner list) is the set of files for this
+	// run. The dataflow debug extractor and the agent run path both unwrap
+	// the outer layer: `Files[0]` reaches the file dicts. The web contract
+	// is 2D, so a plain 1D `[]map[string]interface{}` would fail to decode
+	// and 400 the whole request.
+	Files [][]map[string]interface{} `json:"files"`
+	// KbID is optional for a dataflow debug (dry-run) trigger. It is not
+	// required: parse and chunk run without it, and only embedding
+	// resolution needs it (mirrors the Python dataflow-debug path, which
+	// passes no kb_id). When empty the debug run still executes.
+	KbID string `json:"kb_id"`
 }
 
 // extractLastUserContent returns the content of the last message in
@@ -1028,6 +1126,36 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		return
 	}
 
+	// DataFlow canvas: run a synchronous, side-effect-free debug (dry-run)
+	// and return the parsed chunks inline — reusing this existing
+	// chat/completions endpoint instead of a dedicated dataflow/debug route.
+	// This mirrors the Python agent_api.py:1569 DataFlow branch, which is
+	// reached only on the non-openai, non-session path (openai-compatible
+	// requests return their choices shape above and never enter debug). The
+	// kb_id is optional (see runDataflowDebug); the canvas is loaded only to
+	// read its category, and the debug path is skipped when the loader is
+	// absent or the canvas is not a DataFlow.
+	if h.loader != nil {
+		if cv, lerr := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, req.AgentID); lerr == nil && cv.CanvasCategory == "dataflow_canvas" {
+			kbID := req.KbID
+			if kbID == "" {
+				kbID = c.Query("kb_id")
+			}
+			common.Debug("dataflow debug request kb_id",
+				zap.String("req_kb_id", req.KbID),
+				zap.String("query_kb_id", c.Query("kb_id")),
+				zap.String("resolved_kb_id", kbID))
+			fileName, fileData := h.extractChatDebugFile(c.Request.Context(), req.Files, user)
+			if len(fileData) == 0 {
+				common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataflow debug requires an uploaded file")
+				return
+			}
+			result, derr := h.runDataflowDebug(c.Request.Context(), user, kbID, req.AgentID, fileName, fileData)
+			respondWithDebugResult(c, result, derr)
+			return
+		}
+	}
+
 	// Real canvas run — derive userInput from `query` first, then fall
 	// back to the last user message (covers the front-end that posts
 	// running_hint_text without a top-level `query`).
@@ -1052,7 +1180,16 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		req.SessionID = utility.GenerateToken()
 	}
 
-	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput, req.Files)
+	// The web contract wraps `files` one level ([[{...}]]); unwrap the
+	// outer layer so RunAgent receives the inner 1D file list, matching the
+	// Python canvas file component's `kwargs.get("file")[0]` unwrap. When no
+	// files are present (the common agent-chat case) pass nil so RunAgent's
+	// `len(files) > 0` guard sees an empty run.
+	var chatFiles []map[string]interface{}
+	if len(req.Files) > 0 {
+		chatFiles = req.Files[0]
+	}
+	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput, chatFiles)
 	if err != nil {
 		common.Warn("agent chat completions: RunAgent failed",
 			append([]zap.Field{
