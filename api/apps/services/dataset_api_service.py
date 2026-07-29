@@ -1846,7 +1846,9 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     has_templateless = False
     offset = 0
     page_size = 1000
+    pages = 0
     while True:
+        pages += 1
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
@@ -1881,6 +1883,36 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         if len(meta_rows) < page_size:
             break
         offset += page_size
+
+    # Detect datasets that have ONLY the legacy dataset_graph blob (no
+    # entity/relation rows yet) so the fallback path below handles them.
+    if not kind_template_ids and not has_templateless:
+        try:
+            legacy_check = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id"],
+                [],
+                {"knowledge_graph_kwd": [_DATASET_STRUCTURE_ROW_KWD]},
+                [],
+                OrderByExpr(),
+                0,
+                1,
+                index_nm,
+                [dataset_id],
+            )
+            legacy_fm = settings.docStoreConn.get_fields(legacy_check, ["id"]) or {}
+            if legacy_fm:
+                has_templateless = True
+        except Exception:
+            pass
+
+    logging.debug(
+        "get_dataset_structure: discovered %d template(s) in %d page(s) for kb=%s kind=%s",
+        len(kind_template_ids),
+        pages,
+        dataset_id,
+        resolved_kind,
+    )
 
     # ── keywords mode: global KNN across the kind → top-1's focused subgraph. ──
     if keywords:

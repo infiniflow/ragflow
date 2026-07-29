@@ -335,16 +335,19 @@ async def _merge_relations(
     kb_id: str,
     compile_kwd: str,
     template_id: str | None,
-    relation_rows: list[dict],
+    rel_bucket_rows: list[dict],
+    embd_mdl,
     structure_kind: str | None = None,
 ) -> list[dict]:
     """Group doc-graph relation rows by (src, rel_type, tgt) and merge.
 
     Each group produces one dataset-scoped relation row.  Duplicate
     ``source_chunk_ids`` and ``doc_ids`` are deduplicated per group.
+    When *embd_mdl* is provided the best description is re-embedded and
+    stored as ``q_<dim>_vec``, matching the entity path.
     """
     groups: dict[tuple[str, str, str], list[dict]] = {}
-    for row in relation_rows:
+    for row in rel_bucket_rows:
         payload = json.loads(row.get("content_with_weight") or "{}")
         src = (payload.get("from") or row.get("from_entity_kwd") or "").strip().lower()
         tgt = (payload.get("to") or row.get("to_entity_kwd") or "").strip().lower()
@@ -394,6 +397,12 @@ async def _merge_relations(
             row["compilation_template_ids"] = [template_id]
         if structure_kind:
             row["compilation_template_kind_kwd"] = str(structure_kind)
+        # Re-embed (matching _merge_bucket)
+        if embd_mdl:
+            vecs = await _encode(embd_mdl, [best_desc])
+            if vecs and len(vecs[0]) > 0:
+                dim = len(vecs[0])
+                row[f"q_{dim}_vec"] = list(vecs[0])
         rows_out.append(row)
 
     return rows_out
@@ -687,7 +696,7 @@ async def _do_build(
     limit = _PAGE_SIZE
     offset = 0
     buckets: list[list] = [[] for _ in range(_BUCKET_COUNT)]
-    relation_rows: list[dict] = []
+    rel_buckets: list[list] = [[] for _ in range(_BUCKET_COUNT)]
 
     last_page = False
     while not last_page:
@@ -720,7 +729,14 @@ async def _do_build(
                     continue
             is_rel = row.get("knowledge_graph_kwd") == "relation" or "from_entity_kwd" in row
             if is_rel:
-                relation_rows.append(row)
+                # Bucketize relations by stable hash of src/type/tgt
+                payload = json.loads(row.get("content_with_weight") or "{}")
+                rsrc = (payload.get("from") or row.get("from_entity_kwd") or "").strip().lower()
+                rtgt = (payload.get("to") or row.get("to_entity_kwd") or "").strip().lower()
+                rtype = (payload.get("type") or "related").strip().lower()
+                rbid = _bucket_id(f"{rsrc}:{rtype}:{rtgt}")
+                if rbid < _BUCKET_COUNT:
+                    rel_buckets[rbid].append(row)
             else:
                 name = row.get("name_kwd", "")
                 if not name:
@@ -749,19 +765,21 @@ async def _do_build(
                 for start in range(0, len(out), _BUCKET_FLUSH_THRESHOLD):
                     await _index_insert(tenant_id, kb_id, out[start : start + _BUCKET_FLUSH_THRESHOLD])
 
-    # Merge relation rows into dataset rows
-    if relation_rows:
-        rel_out = await _merge_relations(
-            tenant_id,
-            kb_id,
-            compile_kwd,
-            template_id,
-            relation_rows,
-            structure_kind,
-        )
-        if rel_out:
-            for start in range(0, len(rel_out), _BUCKET_FLUSH_THRESHOLD):
-                await _index_insert(tenant_id, kb_id, rel_out[start : start + _BUCKET_FLUSH_THRESHOLD])
+    # Merge relation buckets into dataset rows
+    for bi in range(_BUCKET_COUNT):
+        if rel_buckets[bi]:
+            rel_out = await _merge_relations(
+                tenant_id,
+                kb_id,
+                compile_kwd,
+                template_id,
+                rel_buckets[bi],
+                embd_mdl,
+                structure_kind,
+            )
+            if rel_out:
+                for start in range(0, len(rel_out), _BUCKET_FLUSH_THRESHOLD):
+                    await _index_insert(tenant_id, kb_id, rel_out[start : start + _BUCKET_FLUSH_THRESHOLD])
 
     # ── Save build timestamp ─────────────────────────────────────────
     import datetime
