@@ -87,3 +87,10 @@ class TenantModelService(CommonService):
     @DB.connection_context()
     def delete_by_instance_ids(cls, instance_ids):
         return cls.model.delete().where(cls.model.instance_id.in_(instance_ids)).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def delete_by_ids(cls, model_ids):
+        if not model_ids:
+            return 0
+        return cls.model.delete().where(cls.model.id.in_(model_ids)).execute()

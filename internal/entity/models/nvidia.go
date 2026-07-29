@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
+	"sort"
 	"strings"
 )
 
@@ -521,12 +522,7 @@ func (n NvidiaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 	if err != nil {
 		return nil, err
 	}
-	baseURL := resolvedBaseURL
-	if baseURL == "" {
-		baseURL = resolvedBaseURL
-	}
-
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Models)
+	url := fmt.Sprintf("%s/%s", strings.TrimRight(resolvedBaseURL, "/"), strings.TrimLeft(n.baseModel.URLSuffix.Models, "/"))
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -537,6 +533,7 @@ func (n NvidiaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 	}
 
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := n.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -562,7 +559,61 @@ func (n NvidiaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 		return nil, fmt.Errorf("invalid models list format")
 	}
 
-	return ParseListModel(modelList), nil
+	var provider *Provider
+	if pm := GetProviderManager(); pm != nil {
+		provider = pm.FindProvider("NVIDIA")
+	}
+	models := parseNvidiaModelList(modelList, provider)
+	if len(models) == 0 {
+		return nil, fmt.Errorf("Nvidia models API returned no usable models")
+	}
+	return models, nil
+}
+
+func parseNvidiaModelList(modelList ModelList, provider *Provider) []ListModelResponse {
+	const defaultMaxTokens = 8192
+
+	models := make([]ListModelResponse, 0, len(modelList.Models))
+	seen := make(map[string]struct{}, len(modelList.Models))
+	for _, item := range modelList.Models {
+		modelName := strings.TrimSpace(item.ID)
+		if modelName == "" {
+			continue
+		}
+		if _, ok := seen[modelName]; ok {
+			continue
+		}
+		seen[modelName] = struct{}{}
+
+		response := ListModelResponse{Name: modelName}
+		var preset *Model
+		if provider != nil {
+			for _, model := range provider.Models {
+				if strings.EqualFold(model.Name, modelName) {
+					preset = model
+					break
+				}
+			}
+		}
+		if preset != nil {
+			response.MaxTokens = preset.MaxTokens
+			response.ModelTypes = append([]string(nil), preset.ModelTypes...)
+			response.Thinking = preset.Thinking
+			response.MaxDimension = preset.MaxDimension
+			response.Dimensions = append([]int(nil), preset.Dimensions...)
+		} else {
+			maxTokens := defaultMaxTokens
+			response.MaxTokens = &maxTokens
+			response.ModelTypes = InferModelTypes(modelName)
+		}
+
+		models = append(models, response)
+	}
+
+	sort.Slice(models, func(i, j int) bool {
+		return models[i].Name < models[j].Name
+	})
+	return models
 }
 
 func (n NvidiaModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {

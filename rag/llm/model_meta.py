@@ -458,6 +458,21 @@ class OpenAIAPICompatible(Base):
         return model_list
 
 
+class NVIDIA(OpenAIAPICompatible):
+    _FACTORY_NAME = "NVIDIA"
+
+    def _format_model_list(self, raw_model_list):
+        models = super()._format_model_list(raw_model_list)
+        unique_models = {}
+        for model in models:
+            model_name = model["name"].strip()
+            if not model_name or model_name in unique_models:
+                continue
+            model["name"] = model_name
+            unique_models[model_name] = model
+        return [unique_models[name] for name in sorted(unique_models)]
+
+
 class FunASR(Base):
     _FACTORY_NAME = "FunASR"
 
