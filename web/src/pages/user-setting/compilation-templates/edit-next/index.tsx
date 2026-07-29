@@ -55,7 +55,7 @@ export default function EditNextCompilationTemplate() {
       </header>
 
       <Form {...form}>
-        <form className="flex-1 min-h-0 flex flex-col">
+        <form className="flex-1 min-h-0 flex flex-col" onSubmit={handleSave}>
           <TemplateConfiguration
             form={form}
             builtins={builtins}
@@ -74,7 +74,7 @@ export default function EditNextCompilationTemplate() {
             <Button type="button" variant="outline" onClick={navigateToAgents}>
               {t('common.back')}
             </Button>
-            <Button type="button" loading={isLoading} onClick={handleSave}>
+            <Button type="submit" loading={isLoading}>
               {t('common.save')}
             </Button>
           </footer>
