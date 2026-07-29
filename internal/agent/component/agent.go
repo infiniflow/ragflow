@@ -200,6 +200,10 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 			break
 		}
 		if err != nil {
+			<-emitDone
+			if len(chunks) == 0 && !runtime.AgentMessageEventsEmitted(ctx) && ctx.Err() == nil {
+				return agent.Generate(ctx, input)
+			}
 			return nil, err
 		}
 		if chunk == nil {
