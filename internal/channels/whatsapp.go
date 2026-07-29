@@ -41,8 +41,12 @@ const (
 	defaultTimeout        = 30 * time.Second
 	startTimeout          = 2 * time.Minute
 	wsHandshakeTimeout    = 2 * time.Minute
+	wsReadTimeout         = 2 * time.Minute
+	wsPingInterval        = 30 * time.Second
 	defaultReconnect      = 3 * time.Second
 	messageTTL            = time.Hour
+	messageQueueSize      = 64
+	chatWorkerIdle        = 5 * time.Minute
 )
 
 type whatsappAccount struct {
@@ -83,6 +87,11 @@ type whatsappChannel struct {
 	sessionID      string
 	eventCursor    int64
 	seen           map[string]time.Time
+	workers        map[string]*whatsappChatWorker
+}
+
+type whatsappChatWorker struct {
+	queue chan core.IncomingMessage
 }
 
 var liveWhatsAppChannels sync.Map
@@ -103,6 +112,7 @@ func newWhatsAppChannel(account whatsappAccount) *whatsappChannel {
 		client:  &http.Client{Timeout: account.Timeout},
 		status:  "stopped",
 		seen:    map[string]time.Time{},
+		workers: map[string]*whatsappChatWorker{},
 	}
 }
 
@@ -194,6 +204,7 @@ func (c *whatsappChannel) Stop(ctx context.Context) error {
 	c.sessionID = ""
 	c.eventCursor = 0
 	c.seen = map[string]time.Time{}
+	c.workers = map[string]*whatsappChatWorker{}
 	c.mu.Unlock()
 
 	if cancel != nil {
@@ -248,7 +259,9 @@ func (c *whatsappChannel) Snapshot() *whatsappRuntimeSnapshot {
 // run starts the gateway session and reconnects the websocket event stream when needed.
 func (c *whatsappChannel) run(ctx context.Context) {
 	if err := c.startSession(ctx); err != nil {
-		c.setError(err)
+		if ctx.Err() == nil {
+			c.setError(err)
+		}
 		return
 	}
 
@@ -300,9 +313,30 @@ func (c *whatsappChannel) runEvents(ctx context.Context) error {
 		<-ctx.Done()
 		_ = conn.Close()
 	}()
+	_ = conn.SetReadDeadline(time.Now().Add(wsReadTimeout))
 	conn.SetPongHandler(func(string) error {
-		return conn.SetReadDeadline(time.Now().Add(2 * wsHandshakeTimeout))
+		return conn.SetReadDeadline(time.Now().Add(wsReadTimeout))
 	})
+	pingDone := make(chan struct{})
+	defer close(pingDone)
+	go func() {
+		ticker := time.NewTicker(wsPingInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-pingDone:
+				return
+			case <-ticker.C:
+				deadline := time.Now().Add(10 * time.Second)
+				if err := conn.WriteControl(websocket.PingMessage, nil, deadline); err != nil {
+					_ = conn.Close()
+					return
+				}
+			}
+		}
+	}()
 
 	for ctx.Err() == nil {
 		_, payload, err := conn.ReadMessage()
@@ -352,7 +386,7 @@ func (c *whatsappChannel) handleWSPayload(ctx context.Context, payload []byte) {
 	}
 }
 
-// handleEvent converts a WhatsApp message event into the shared channel message format.
+// handleEvent converts a WhatsApp message event and queues it for ordered processing.
 func (c *whatsappChannel) handleEvent(ctx context.Context, item map[string]any) {
 	if fmt.Sprint(item["kind"]) != "message" {
 		return
@@ -371,6 +405,68 @@ func (c *whatsappChannel) handleEvent(ctx context.Context, item map[string]any) 
 		Text:      fmt.Sprint(item["text"]),
 		Raw:       item,
 	}
+	c.enqueueIncoming(ctx, incoming)
+}
+
+// enqueueIncoming schedules message handling without blocking the websocket reader.
+func (c *whatsappChannel) enqueueIncoming(ctx context.Context, incoming core.IncomingMessage) {
+	worker := c.chatWorker(ctx, incoming.ChatID)
+	select {
+	case worker.queue <- incoming:
+	case <-ctx.Done():
+	default:
+		log.Printf("[whatsapp:%s] dropping message %s for chat %s: queue is full", c.account.AccountID, incoming.MessageID, incoming.ChatID)
+	}
+}
+
+// chatWorker returns the ordered worker for one external chat.
+func (c *whatsappChannel) chatWorker(ctx context.Context, chatID string) *whatsappChatWorker {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.workers == nil {
+		c.workers = map[string]*whatsappChatWorker{}
+	}
+	if worker := c.workers[chatID]; worker != nil {
+		return worker
+	}
+	worker := &whatsappChatWorker{queue: make(chan core.IncomingMessage, messageQueueSize)}
+	c.workers[chatID] = worker
+	go c.runChatWorker(ctx, chatID, worker)
+	return worker
+}
+
+// runChatWorker processes one chat's inbound messages sequentially.
+func (c *whatsappChannel) runChatWorker(ctx context.Context, chatID string, worker *whatsappChatWorker) {
+	idle := time.NewTimer(chatWorkerIdle)
+	defer idle.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case msg := <-worker.queue:
+			if ctx.Err() != nil {
+				return
+			}
+			c.handleIncoming(ctx, msg)
+			resetTimer(idle, chatWorkerIdle)
+		case <-idle.C:
+			c.removeChatWorker(chatID, worker)
+			return
+		}
+	}
+}
+
+// removeChatWorker forgets an idle per-chat worker if it is still current.
+func (c *whatsappChannel) removeChatWorker(chatID string, worker *whatsappChatWorker) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.workers[chatID] == worker {
+		delete(c.workers, chatID)
+	}
+}
+
+// handleIncoming invokes the installed RAGFlow bridge for one queued message.
+func (c *whatsappChannel) handleIncoming(ctx context.Context, incoming core.IncomingMessage) {
 	c.mu.Lock()
 	handler := c.handler
 	c.mu.Unlock()
@@ -559,4 +655,15 @@ func floatPtr(value float64) *float64 {
 		return nil
 	}
 	return &value
+}
+
+// resetTimer restarts a timer after draining any pending tick.
+func resetTimer(timer *time.Timer, delay time.Duration) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
+	timer.Reset(delay)
 }

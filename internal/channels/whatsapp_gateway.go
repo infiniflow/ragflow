@@ -100,11 +100,17 @@ func gatewayWorkdir() string {
 func (r *gatewayRuntime) start(ctx context.Context) error {
 	r.mu.Lock()
 	if r.process != nil {
+		process := r.process
 		select {
-		case <-r.process.done:
+		case <-process.done:
 			r.process = nil
 		default:
 			r.mu.Unlock()
+			if err := waitForGateway(ctx, gatewayStartTimeout); err != nil {
+				r.clearProcess(process)
+				_ = stopGatewayProcess(process)
+				return err
+			}
 			return nil
 		}
 	}
@@ -146,7 +152,12 @@ func (r *gatewayRuntime) start(ctx context.Context) error {
 			log.Printf("whatsapp gateway exited: %v", err)
 		}
 	}()
-	return waitForGateway(ctx, gatewayStartTimeout)
+	if err := waitForGateway(ctx, gatewayStartTimeout); err != nil {
+		r.clearProcess(process)
+		_ = stopGatewayProcess(process)
+		return err
+	}
+	return nil
 }
 
 // stop terminates the gateway process if this runtime started one.
@@ -155,6 +166,20 @@ func (r *gatewayRuntime) stop() error {
 	process := r.process
 	r.process = nil
 	r.mu.Unlock()
+	return stopGatewayProcess(process)
+}
+
+// clearProcess removes process from the runtime if it is still the current managed process.
+func (r *gatewayRuntime) clearProcess(process *gatewayProcess) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.process == process {
+		r.process = nil
+	}
+}
+
+// stopGatewayProcess terminates one owned gateway process and waits for it to exit.
+func stopGatewayProcess(process *gatewayProcess) error {
 	if process == nil || process.cmd == nil || process.cmd.Process == nil {
 		return nil
 	}
