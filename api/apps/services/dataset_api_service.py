@@ -427,12 +427,18 @@ def list_datasets(tenant_id: str, args: dict):
         kbs = KnowledgebaseService.get_kb_by_name(name, tenant_id)
         if not kbs:
             return False, f"User '{tenant_id}' lacks permission for dataset '{name}'"
-    if ext_fields.get("owner_ids", []):
-        tenant_ids = ext_fields["owner_ids"]
+    owner_ids = [owner_id.strip() for owner_id in ext_fields.get("owner_ids", []) if isinstance(owner_id, str) and owner_id.strip()]
+    if owner_ids:
+        tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+        allowed_tenant_ids = {m["tenant_id"] for m in tenants}
+        allowed_tenant_ids.add(tenant_id)
+        tenant_ids = [owner_id for owner_id in owner_ids if owner_id in allowed_tenant_ids]
+        query_user_id = tenant_id if tenant_id in tenant_ids else ""
     else:
         tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
         tenant_ids = [m["tenant_id"] for m in tenants]
-    kbs, total = KnowledgebaseService.get_list(tenant_ids, tenant_id, page, page_size, orderby, desc, kb_id, name, keywords, parser_id)
+        query_user_id = tenant_id
+    kbs, total = KnowledgebaseService.get_list(tenant_ids, query_user_id, page, page_size, orderby, desc, kb_id, name, keywords, parser_id)
     users = UserService.get_by_ids([m["tenant_id"] for m in kbs])
     user_map = {m.id: m.to_dict() for m in users}
 
