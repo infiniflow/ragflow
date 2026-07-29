@@ -172,10 +172,10 @@ func NormalizeDatasetID(id string) (string, error) {
 func normalizeDatasetID(id string) (string, error) {
 	parsedUUID, err := uuid.Parse(id)
 	if err != nil {
-		return "", errors.New("invalid UUID format")
+		return "", errors.New("Invalid UUID format")
 	}
 	if parsedUUID == (uuid.UUID{}) {
-		return "", errors.New("invalid UUID format")
+		return "", errors.New("Invalid UUID format")
 	}
 	return strings.ReplaceAll(parsedUUID.String(), "-", ""), nil
 }

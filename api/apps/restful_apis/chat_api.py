@@ -39,7 +39,6 @@ from api.db.services.user_service import TenantService, UserTenantService
 from api.utils.api_utils import (
     check_duplicate_ids,
     get_data_error_result,
-    get_error_argument_result,
     get_json_result,
     get_request_json,
     server_error_response,
@@ -457,7 +456,7 @@ async def list_chats():
         keywords = ""
 
     if orderby not in ("create_time", "update_time", "name"):
-        return get_error_argument_result(message=f"invalid orderby field: {orderby}")
+        return get_data_error_result(message=f"invalid orderby field: {orderby}")
 
     try:
         # Invalid or negative pagination values fall back to defaults
@@ -823,7 +822,7 @@ async def list_sessions(chat_id):
         items_per_page = validate_rest_api_page_size(parsed_page_size)
         orderby = request.args.get("orderby", "create_time")
         if orderby not in ("create_time", "update_time", "name"):
-            return get_error_argument_result(message=f"invalid orderby field: {orderby}")
+            return get_data_error_result(message=f"invalid orderby field: {orderby}")
         desc = request.args.get("desc", "true").lower() != "false"
         session_id = request.args.get("id")
         name = request.args.get("name")
@@ -898,7 +897,7 @@ async def delete_sessions(chat_id):
         try:
             req = await get_request_json()
         except BadRequest:
-            return get_error_argument_result("Malformed JSON syntax: Missing commas/brackets or invalid encoding")
+            return get_data_error_result("Malformed JSON syntax: Missing commas/brackets or invalid encoding")
         if not req:
             return get_json_result(data={})
 
