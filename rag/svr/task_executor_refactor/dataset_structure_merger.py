@@ -458,7 +458,7 @@ async def run_structure_merge(ctx: TaskContext) -> None:
     try:
         from api.db.services.llm_service import LLMBundle
         from api.apps.services.dataset_api_service import resolve_model_config
-        from api.db import LLMType
+        from common.constants import LLMType
 
         kb = None
         from api.db.services.knowledgebase_service import KnowledgebaseService
