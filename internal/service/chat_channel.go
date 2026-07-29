@@ -18,6 +18,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+
+	"ragflow/internal/channels/whatsapp"
 	"ragflow/internal/utility"
 
 	"ragflow/internal/common"
@@ -29,6 +32,7 @@ type ChatChannelService struct {
 	chatChannelDAO *dao.ChatChannelDAO
 	chatDAO        *dao.ChatDAO
 	userTenantDAO  *dao.UserTenantDAO
+	chatSessionSvc *ChatSessionService
 }
 
 func NewChatChannelService() *ChatChannelService {
@@ -36,7 +40,18 @@ func NewChatChannelService() *ChatChannelService {
 		chatChannelDAO: dao.NewChatChannel(),
 		chatDAO:        dao.NewChatDAO(),
 		userTenantDAO:  dao.NewUserTenantDAO(),
+		chatSessionSvc: NewChatSessionService(),
 	}
+}
+
+type ChatChannelIncomingMessage struct {
+	Channel   string
+	AccountID string
+	ChatID    string
+	ChatType  string
+	MessageID string
+	SenderID  string
+	Text      string
 }
 
 func (s *ChatChannelService) Insert(ctx context.Context, channel *entity.ChatChannel) error {
@@ -216,6 +231,87 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 	return updated, common.CodeSuccess, nil
 }
 
+// GetChatChannelRuntime returns the live runtime metadata for a WhatsApp chat channel.
+func (s *ChatChannelService) GetChatChannelRuntime(ctx context.Context, userID, channelID string) (map[string]any, common.ErrorCode, error) {
+	conn, ok, err := s.accessible(ctx, userID, channelID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if !ok {
+		return nil, common.CodeAuthenticationError, errors.New("no authorization")
+	}
+	if conn == nil {
+		return nil, common.CodeDataError, errors.New("can't find this chat channel")
+	}
+
+	if conn.Channel != "whatsapp" {
+		return nil, common.CodeDataError, errors.New("runtime snapshot is only available for WhatsApp")
+	}
+
+	snapshot, ok := whatsapp.GetRuntimeSnapshot(channelID)
+	if !ok {
+		waiting := whatsapp.WaitingSnapshot(channelID)
+		return runtimeSnapshotMap(waiting), common.CodeSuccess, nil
+	}
+	return runtimeSnapshotMap(*snapshot), common.CodeSuccess, nil
+}
+
+// HandleIncomingMessage routes one external channel message through the bound RAGFlow dialog.
+func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage) (string, error) {
+	if strings.TrimSpace(msg.Text) == "" {
+		return "", nil
+	}
+
+	channel, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, msg.AccountID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	if channel.ChatID == nil || strings.TrimSpace(*channel.ChatID) == "" {
+		return "", nil
+	}
+
+	dialog, err := s.chatDAO.GetByID(ctx, dao.DB, *channel.ChatID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	session, err := s.chatSessionSvc.GetOrCreateForChannel(ctx, dialog.ID, channel.ID, msg.ChatID)
+	if err != nil {
+		return "", err
+	}
+
+	result, err := s.chatSessionSvc.ChatCompletions(
+		ctx,
+		dialog.TenantID,
+		dialog.ID,
+		session.ID,
+		[]map[string]interface{}{{"role": "user", "content": msg.Text}},
+		"",
+		nil,
+		"",
+		nil,
+		map[string]interface{}{"quote": false},
+		false,
+		false,
+		false,
+		nil,
+	)
+	if err != nil {
+		return fmt.Sprintf("**ERROR**: %s", err.Error()), nil
+	}
+	if result == nil {
+		return "", nil
+	}
+	answer, _ := result["answer"].(string)
+	return answer, nil
+}
+
 func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, userID, channelID string) (bool, common.ErrorCode, error) {
 	channel, ok, err := s.accessible(ctx, userID, channelID)
 	if err != nil {
@@ -232,4 +328,21 @@ func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, userID, chan
 		return false, common.CodeDataError, err
 	}
 	return true, common.CodeSuccess, nil
+}
+
+// runtimeSnapshotMap converts a WhatsApp snapshot into the Python-compatible API payload.
+func runtimeSnapshotMap(snapshot whatsapp.RuntimeSnapshot) map[string]any {
+	return map[string]any{
+		"account_id":       snapshot.AccountID,
+		"session_key":      snapshot.SessionKey,
+		"status":           snapshot.Status,
+		"connected_at":     snapshot.ConnectedAt,
+		"qr_updated_at":    snapshot.QRUpdatedAt,
+		"qr_data_url":      snapshot.QRDataURL,
+		"last_error":       snapshot.LastError,
+		"session_id":       snapshot.SessionID,
+		"last_snapshot_at": snapshot.LastSnapshotAt,
+		"gateway_base_url": snapshot.GatewayBaseURL,
+		"event_cursor":     snapshot.EventCursor,
+	}
 }

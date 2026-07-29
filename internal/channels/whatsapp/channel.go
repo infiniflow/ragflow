@@ -1,0 +1,564 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package whatsapp
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gorilla/websocket"
+
+	"ragflow/internal/channels/core"
+)
+
+const (
+	defaultGatewayBaseURL = "http://127.0.0.1:3005"
+	defaultTimeout        = 30 * time.Second
+	startTimeout          = 2 * time.Minute
+	wsHandshakeTimeout    = 2 * time.Minute
+	defaultReconnect      = 3 * time.Second
+	messageTTL            = time.Hour
+)
+
+type Account struct {
+	AccountID      string
+	GatewayBaseURL string
+	GatewayToken   string
+	SessionKey     string
+	Timeout        time.Duration
+}
+
+type RuntimeSnapshot struct {
+	AccountID      string   `json:"account_id"`
+	SessionKey     string   `json:"session_key"`
+	Status         string   `json:"status"`
+	ConnectedAt    *float64 `json:"connected_at"`
+	QRUpdatedAt    *float64 `json:"qr_updated_at"`
+	QRDataURL      *string  `json:"qr_data_url"`
+	LastError      *string  `json:"last_error"`
+	SessionID      *string  `json:"session_id"`
+	LastSnapshotAt *float64 `json:"last_snapshot_at"`
+	GatewayBaseURL *string  `json:"gateway_base_url"`
+	EventCursor    int64    `json:"event_cursor"`
+}
+
+type Channel struct {
+	account Account
+
+	mu             sync.Mutex
+	cancel         context.CancelFunc
+	handler        core.MessageHandler
+	client         *http.Client
+	status         string
+	lastErr        string
+	qrDataURL      string
+	qrUpdatedAt    float64
+	connectedAt    float64
+	lastSnapshotAt float64
+	sessionID      string
+	eventCursor    int64
+	seen           map[string]time.Time
+}
+
+var liveChannels sync.Map
+
+// NewChannel creates a WhatsApp channel instance with default runtime settings filled in.
+func NewChannel(account Account) *Channel {
+	if account.GatewayBaseURL == "" {
+		account.GatewayBaseURL = defaultGatewayBaseURL
+	}
+	if account.SessionKey == "" {
+		account.SessionKey = account.AccountID
+	}
+	if account.Timeout <= 0 {
+		account.Timeout = defaultTimeout
+	}
+	return &Channel{
+		account: account,
+		client:  &http.Client{Timeout: account.Timeout},
+		status:  "stopped",
+		seen:    map[string]time.Time{},
+	}
+}
+
+// NewChannelFromConfig builds a WhatsApp channel from chat_channel.config.credential.
+func NewChannelFromConfig(accountID string, cfg map[string]any) (*Channel, error) {
+	timeout := defaultTimeout
+	if raw, ok := cfg["timeout_secs"]; ok {
+		switch v := raw.(type) {
+		case float64:
+			timeout = time.Duration(v) * time.Second
+		case int:
+			timeout = time.Duration(v) * time.Second
+		case string:
+			if n, err := strconv.Atoi(v); err == nil {
+				timeout = time.Duration(n) * time.Second
+			}
+		}
+	}
+	baseURL := firstString(cfg, "gateway_base_url", "gateway_url", "control_url")
+	token := firstString(cfg, "gateway_token", "token")
+	sessionKey := firstString(cfg, "session_key", "session_id")
+	if sessionKey == "" {
+		sessionKey = accountID
+	}
+	return NewChannel(Account{
+		AccountID:      accountID,
+		GatewayBaseURL: baseURL,
+		GatewayToken:   token,
+		SessionKey:     sessionKey,
+		Timeout:        timeout,
+	}), nil
+}
+
+// GetRuntimeSnapshot returns the in-memory runtime snapshot for a live WhatsApp channel.
+func GetRuntimeSnapshot(accountID string) (*RuntimeSnapshot, bool) {
+	raw, ok := liveChannels.Load(accountID)
+	if !ok {
+		return nil, false
+	}
+	return raw.(*Channel).Snapshot(), true
+}
+
+// WaitingSnapshot returns the API fallback snapshot for a WhatsApp channel not yet running.
+func WaitingSnapshot(accountID string) RuntimeSnapshot {
+	return RuntimeSnapshot{
+		AccountID:   accountID,
+		SessionKey:  accountID,
+		Status:      "waiting",
+		EventCursor: 0,
+	}
+}
+
+// ChannelID returns the platform identifier used by the chat-channel runtime.
+func (c *Channel) ChannelID() string {
+	return "whatsapp"
+}
+
+// AccountID returns the chat_channel.id bound to this WhatsApp runtime instance.
+func (c *Channel) AccountID() string {
+	return c.account.AccountID
+}
+
+// SetMessageHandler installs the RAGFlow bridge invoked for inbound WhatsApp messages.
+func (c *Channel) SetMessageHandler(handler core.MessageHandler) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.handler = handler
+}
+
+// Start begins the WhatsApp gateway session and event websocket loop.
+func (c *Channel) Start(ctx context.Context) error {
+	c.mu.Lock()
+	if c.cancel != nil {
+		c.mu.Unlock()
+		return nil
+	}
+	runCtx, cancel := context.WithCancel(ctx)
+	c.cancel = cancel
+	c.status = "connecting"
+	c.lastErr = ""
+	c.mu.Unlock()
+
+	liveChannels.Store(c.account.AccountID, c)
+	go c.run(runCtx)
+	return nil
+}
+
+// Stop cancels the WhatsApp event loop and asks the gateway to stop the session.
+func (c *Channel) Stop(ctx context.Context) error {
+	c.mu.Lock()
+	cancel := c.cancel
+	c.cancel = nil
+	c.status = "stopped"
+	c.lastErr = ""
+	c.qrDataURL = ""
+	c.qrUpdatedAt = 0
+	c.connectedAt = 0
+	c.lastSnapshotAt = 0
+	c.sessionID = ""
+	c.eventCursor = 0
+	c.seen = map[string]time.Time{}
+	c.mu.Unlock()
+
+	if cancel != nil {
+		cancel()
+	}
+	liveChannels.Delete(c.account.AccountID)
+	_ = c.requestJSON(ctx, http.MethodPost, fmt.Sprintf("whatsapp/%s/stop", url.PathEscape(c.sessionKey())), map[string]any{
+		"account_id":  c.account.AccountID,
+		"session_key": c.sessionKey(),
+	}, nil)
+	return nil
+}
+
+// Send posts an outgoing RAGFlow answer to the WhatsApp gateway.
+func (c *Channel) Send(ctx context.Context, msg core.OutgoingMessage) error {
+	if strings.TrimSpace(msg.ChatID) == "" {
+		return errors.New("chat_id is required")
+	}
+	payload := map[string]any{
+		"account_id":          c.account.AccountID,
+		"session_key":         c.sessionKey(),
+		"chat_id":             msg.ChatID,
+		"text":                msg.Text,
+		"reply_to_message_id": nil,
+	}
+	if msg.ReplyToMessageID != "" {
+		payload["reply_to_message_id"] = msg.ReplyToMessageID
+	}
+	return c.requestJSON(ctx, http.MethodPost, fmt.Sprintf("whatsapp/%s/send", url.PathEscape(c.sessionKey())), payload, nil)
+}
+
+// Snapshot copies the current WhatsApp runtime state for the runtime API.
+func (c *Channel) Snapshot() *RuntimeSnapshot {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	baseURL := strings.TrimRight(c.account.GatewayBaseURL, "/")
+	return &RuntimeSnapshot{
+		AccountID:      c.account.AccountID,
+		SessionKey:     c.sessionKey(),
+		Status:         c.status,
+		ConnectedAt:    floatPtr(c.connectedAt),
+		QRUpdatedAt:    floatPtr(c.qrUpdatedAt),
+		QRDataURL:      stringPtr(c.qrDataURL),
+		LastError:      stringPtr(c.lastErr),
+		SessionID:      stringPtr(c.sessionID),
+		LastSnapshotAt: floatPtr(c.lastSnapshotAt),
+		GatewayBaseURL: stringPtr(baseURL),
+		EventCursor:    c.eventCursor,
+	}
+}
+
+// run starts the gateway session and reconnects the websocket event stream when needed.
+func (c *Channel) run(ctx context.Context) {
+	if err := c.startSession(ctx); err != nil {
+		c.setError(err)
+		return
+	}
+
+	for ctx.Err() == nil {
+		if err := c.runEvents(ctx); err != nil && ctx.Err() == nil {
+			c.setError(err)
+			log.Printf("[whatsapp:%s] event loop error: %v", c.account.AccountID, err)
+			time.Sleep(defaultReconnect)
+		}
+	}
+}
+
+// startSession asks the gateway to start the session and accepts an already-created session after timeout.
+func (c *Channel) startSession(ctx context.Context) error {
+	err := c.requestJSONWithTimeout(ctx, startTimeout, http.MethodPost, fmt.Sprintf("whatsapp/%s/start", url.PathEscape(c.sessionKey())), map[string]any{
+		"account_id":       c.account.AccountID,
+		"session_key":      c.sessionKey(),
+		"gateway_base_url": strings.TrimRight(c.account.GatewayBaseURL, "/"),
+	}, nil)
+	if err == nil {
+		return c.waitForStatus(ctx)
+	}
+	if statusErr := c.waitForStatus(ctx); statusErr == nil {
+		log.Printf("[whatsapp:%s] start request returned error after gateway created the session: %v", c.account.AccountID, err)
+		return nil
+	}
+	return err
+}
+
+// runEvents reads gateway websocket messages until the connection closes or the context ends.
+func (c *Channel) runEvents(ctx context.Context) error {
+	wsURL, err := c.eventsURL()
+	if err != nil {
+		return err
+	}
+	header := http.Header{}
+	if auth := c.authHeader(); auth != "" {
+		header.Set("Authorization", auth)
+	}
+	dialer := *websocket.DefaultDialer
+	dialer.HandshakeTimeout = wsHandshakeTimeout
+	conn, _, err := dialer.DialContext(ctx, wsURL, header)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	for ctx.Err() == nil {
+		_, payload, err := conn.ReadMessage()
+		if err != nil {
+			return err
+		}
+		c.handleWSPayload(ctx, payload)
+	}
+	return ctx.Err()
+}
+
+// waitForStatus waits briefly until the gateway exposes the started session status.
+func (c *Channel) waitForStatus(ctx context.Context) error {
+	deadline := time.Now().Add(startTimeout)
+	for ctx.Err() == nil {
+		var response map[string]any
+		if err := c.requestJSON(ctx, http.MethodGet, fmt.Sprintf("whatsapp/%s/status", url.PathEscape(c.sessionKey())), nil, &response); err == nil {
+			if data, ok := response["data"].(map[string]any); ok {
+				c.applySnapshot(data)
+			}
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("WhatsApp session status did not become available within %s", startTimeout)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(defaultReconnect):
+		}
+	}
+	return ctx.Err()
+}
+
+// handleWSPayload dispatches a gateway websocket payload to snapshot or event handling.
+func (c *Channel) handleWSPayload(ctx context.Context, payload []byte) {
+	var obj map[string]any
+	if err := json.Unmarshal(payload, &obj); err != nil {
+		return
+	}
+	data, _ := obj["data"].(map[string]any)
+	switch strings.TrimSpace(fmt.Sprint(obj["type"])) {
+	case "snapshot":
+		c.applySnapshot(data)
+	case "event":
+		c.handleEvent(ctx, data)
+	}
+}
+
+// handleEvent converts a WhatsApp message event into the shared channel message format.
+func (c *Channel) handleEvent(ctx context.Context, item map[string]any) {
+	if fmt.Sprint(item["kind"]) != "message" {
+		return
+	}
+	messageID := strings.TrimSpace(fmt.Sprint(item["message_id"]))
+	if messageID == "" || c.isSeen(messageID) {
+		return
+	}
+	incoming := core.IncomingMessage{
+		Channel:   c.ChannelID(),
+		AccountID: c.account.AccountID,
+		ChatID:    fmt.Sprint(item["chat_id"]),
+		ChatType:  valueOrDefault(item["chat_type"], "p2p"),
+		MessageID: messageID,
+		SenderID:  fmt.Sprint(item["sender_id"]),
+		Text:      fmt.Sprint(item["text"]),
+		Raw:       item,
+	}
+	c.mu.Lock()
+	handler := c.handler
+	c.mu.Unlock()
+	if handler == nil {
+		return
+	}
+	if err := handler(ctx, incoming); err != nil {
+		log.Printf("[whatsapp:%s] message handler error: %v", c.account.AccountID, err)
+	}
+}
+
+// isSeen records and filters duplicate WhatsApp message IDs for a bounded time window.
+func (c *Channel) isSeen(messageID string) bool {
+	now := time.Now()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for key, ts := range c.seen {
+		if now.Sub(ts) > messageTTL {
+			delete(c.seen, key)
+		}
+	}
+	if _, ok := c.seen[messageID]; ok {
+		return true
+	}
+	c.seen[messageID] = now
+	return false
+}
+
+// applySnapshot updates the cached connection and QR-code state from the gateway.
+func (c *Channel) applySnapshot(snapshot map[string]any) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lastSnapshotAt = float64(time.Now().Unix())
+	c.status = valueOrDefault(snapshot["status"], "connecting")
+	c.lastErr = valueOrDefault(snapshot["last_error"], "")
+	c.qrDataURL = valueOrDefault(snapshot["qr_data_url"], "")
+	c.qrUpdatedAt = numeric(snapshot["qr_updated_at"])
+	c.connectedAt = numeric(snapshot["connected_at"])
+	c.sessionID = valueOrDefault(snapshot["session_id"], c.sessionID)
+	if cursor := int64(numeric(snapshot["event_cursor"])); cursor > c.eventCursor {
+		c.eventCursor = cursor
+	}
+	if c.status == "connected" {
+		c.lastErr = ""
+	}
+}
+
+// setError records a runtime failure in the snapshot exposed to the API.
+func (c *Channel) setError(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.status = "error"
+	c.lastErr = err.Error()
+	c.lastSnapshotAt = float64(time.Now().Unix())
+}
+
+// requestJSON sends an authenticated JSON request to the WhatsApp gateway.
+func (c *Channel) requestJSON(ctx context.Context, method, path string, body map[string]any, out any) error {
+	return c.requestJSONWithClient(ctx, c.client, method, path, body, out)
+}
+
+// requestJSONWithTimeout sends a JSON request with a one-off timeout override.
+func (c *Channel) requestJSONWithTimeout(ctx context.Context, timeout time.Duration, method, path string, body map[string]any, out any) error {
+	client := *c.client
+	client.Timeout = timeout
+	return c.requestJSONWithClient(ctx, &client, method, path, body, out)
+}
+
+// requestJSONWithClient sends an authenticated JSON request using the provided HTTP client.
+func (c *Channel) requestJSONWithClient(ctx context.Context, client *http.Client, method, path string, body map[string]any, out any) error {
+	payload, _ := json.Marshal(body)
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.account.GatewayBaseURL, "/")+"/"+strings.TrimLeft(path, "/"), bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if auth := c.authHeader(); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("status: %d, response: %s", resp.StatusCode, string(respBody))
+	}
+	if out != nil && len(bytes.TrimSpace(respBody)) > 0 {
+		return json.Unmarshal(respBody, out)
+	}
+	return nil
+}
+
+// sessionKey returns the configured WhatsApp gateway session key.
+func (c *Channel) sessionKey() string {
+	if strings.TrimSpace(c.account.SessionKey) == "" {
+		return "default"
+	}
+	return c.account.SessionKey
+}
+
+// authHeader formats the optional gateway token as an Authorization header.
+func (c *Channel) authHeader() string {
+	token := strings.TrimSpace(c.account.GatewayToken)
+	if token == "" {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToLower(token), "bearer ") {
+		return token
+	}
+	return "Bearer " + token
+}
+
+// eventsURL builds the websocket URL used to consume gateway events after the cursor.
+func (c *Channel) eventsURL() (string, error) {
+	base, err := url.Parse(strings.TrimRight(c.account.GatewayBaseURL, "/"))
+	if err != nil {
+		return "", err
+	}
+	switch base.Scheme {
+	case "http":
+		base.Scheme = "ws"
+	case "https":
+		base.Scheme = "wss"
+	}
+	base.Path = strings.TrimRight(base.Path, "/") + "/whatsapp/" + url.PathEscape(c.sessionKey()) + "/events/ws"
+	q := base.Query()
+	c.mu.Lock()
+	q.Set("after", strconv.FormatInt(c.eventCursor, 10))
+	c.mu.Unlock()
+	base.RawQuery = q.Encode()
+	return base.String(), nil
+}
+
+// firstString returns the first non-empty string value among several config keys.
+func firstString(cfg map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(fmt.Sprint(cfg[key])); value != "" && value != "<nil>" {
+			return value
+		}
+	}
+	return ""
+}
+
+// valueOrDefault converts a snapshot value to string with an empty-value fallback.
+func valueOrDefault(value any, fallback string) string {
+	text := strings.TrimSpace(fmt.Sprint(value))
+	if text == "" || text == "<nil>" {
+		return fallback
+	}
+	return text
+}
+
+// numeric converts gateway numeric fields from common JSON-decoded Go types.
+func numeric(value any) float64 {
+	switch v := value.(type) {
+	case float64:
+		return v
+	case int:
+		return float64(v)
+	case int64:
+		return float64(v)
+	case json.Number:
+		n, _ := v.Float64()
+		return n
+	case string:
+		n, _ := strconv.ParseFloat(v, 64)
+		return n
+	default:
+		return 0
+	}
+}
+
+// stringPtr converts an empty string to nil for Python-compatible JSON null fields.
+func stringPtr(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+// floatPtr converts zero timestamps to nil for Python-compatible JSON null fields.
+func floatPtr(value float64) *float64 {
+	if value == 0 {
+		return nil
+	}
+	return &value
+}
