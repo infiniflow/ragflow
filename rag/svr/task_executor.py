@@ -800,7 +800,7 @@ async def run_dataflow(task: dict):
     if not chunks:
         get_recording_context().record("pipeline_output_count", 0)
         get_recording_context().record("pipeline_output_type", "empty")
-        ret = PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
+        ret = PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=pipeline.to_operation_log_json())
         get_recording_context().save_func_return_value("PipelineOperationLogService.create", ret)
         return
 
@@ -830,7 +830,7 @@ async def run_dataflow(task: dict):
 
     # An empty normalized payload means "nothing parsed", so stop before embedding/indexing.
     if not chunks:
-        ret = PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
+        ret = PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=pipeline.to_operation_log_json())
         get_recording_context().save_func_return_value("PipelineOperationLogService.create", ret)
         return
 
@@ -878,7 +878,7 @@ async def run_dataflow(task: dict):
             raise
         except Exception as e:
             set_progress(task_id, prog=-1, msg=f"[ERROR]: {e}")
-            ret = PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
+            ret = PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=pipeline.to_operation_log_json())
             get_recording_context().save_func_return_value("PipelineOperationLogService.create", ret)
             return
 
@@ -928,7 +928,7 @@ async def run_dataflow(task: dict):
     set_progress(task_id, prog=0.82, msg="[DOC Engine]:\nStart to index...")
     e = await insert_chunks(task_id, task["tenant_id"], task["kb_id"], chunks, partial(set_progress, task_id, 0, 100000000))
     if not e:
-        ret = PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
+        ret = PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=pipeline.to_operation_log_json())
         get_recording_context().save_func_return_value("PipelineOperationLogService.create", ret)
         return
 
@@ -939,7 +939,7 @@ async def run_dataflow(task: dict):
     get_recording_context().save_func_return_value("DocumentService.increment_chunk_num", ret)
     logging.info("[Done], chunks({}), token({}), elapsed:{:.2f}".format(len(chunks), embedding_token_consumption, task_time_cost))
     get_recording_context().record("dataflow_chunks", chunks)
-    ret = PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
+    ret = PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=pipeline.to_operation_log_json())
     get_recording_context().save_func_return_value("PipelineOperationLogService.create", ret)
 
 

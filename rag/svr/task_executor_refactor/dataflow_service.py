@@ -358,7 +358,7 @@ class DataflowService:
         if self._task_context.write_interceptor:
             self._task_context.write_interceptor.intercept("PipelineOperationLogService.create")
         else:
-            PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=str(pipeline))
+            PipelineOperationLogService.create(document_id=doc_id, pipeline_id=dataflow_id, task_type=PipelineTaskType.PARSE, dsl=pipeline.to_operation_log_json())
 
     @classmethod
     def _get_kb_by_id(cls, kb_id: str):

@@ -44,6 +44,22 @@ from rag.utils.redis_conn import REDIS_CONN
 from rag.utils.tts_cache import synthesize_with_cache
 
 _logger = logging.getLogger(__name__)
+_DENSE_VECTOR_FIELD_RE = re.compile(r"^q_\d+_vec$")
+
+
+def _strip_dense_vector_fields(value):
+    if isinstance(value, dict):
+        return {key: _strip_dense_vector_fields(item) for key, item in value.items() if not (isinstance(key, str) and _DENSE_VECTOR_FIELD_RE.match(key))}
+    if isinstance(value, list):
+        return [_strip_dense_vector_fields(item) for item in value]
+    return value
+
+
+def _serialize_default(obj):
+    if callable(obj):
+        return None
+    logging.warning("Graph.__str__: JSON fallback via str() for type=%s", type(obj).__name__)
+    return str(obj)
 
 
 class Graph:
@@ -116,7 +132,15 @@ class Graph:
 
         self.path = self.dsl["path"]
 
-    def __str__(self):
+    def _component_to_dict(self, component, scrub_vectors=False):
+        if scrub_vectors and hasattr(component, "_param") and hasattr(component._param, "as_dict"):
+            return {
+                "component_name": component.component_name,
+                "params": _strip_dense_vector_fields(component._param.as_dict()),
+            }
+        return json.loads(str(component))
+
+    def to_dsl_dict(self, *, scrub_vectors=False):
         self.dsl["path"] = self.path
         self.dsl["task_id"] = self.task_id
         dsl = {"components": {}}
@@ -134,7 +158,7 @@ class Graph:
                 dsl["components"][k] = {}
             for c in cpn.keys():
                 if c == "obj":
-                    dsl["components"][k][c] = json.loads(str(cpn["obj"]))
+                    dsl["components"][k][c] = self._component_to_dict(cpn["obj"], scrub_vectors=scrub_vectors)
                     continue
                 try:
                     dsl["components"][k][c] = deepcopy(cpn[c])
@@ -142,13 +166,19 @@ class Graph:
                     logging.warning("Graph.__str__: deepcopy failed for component '%s' key '%s' (type=%s): %s. Using shallow reference.", k, c, type(cpn[c]).__name__, e)
                     dsl["components"][k][c] = cpn[c]
 
-        def _serialize_default(obj):
-            if callable(obj):
-                return None
-            logging.warning("Graph.__str__: JSON fallback via str() for type=%s", type(obj).__name__)
-            return str(obj)
+        if scrub_vectors:
+            dsl = _strip_dense_vector_fields(dsl)
+        return dsl
 
+    def to_dsl_json(self, *, scrub_vectors=False):
+        dsl = self.to_dsl_dict(scrub_vectors=scrub_vectors)
         return json.dumps(dsl, ensure_ascii=False, default=_serialize_default)
+
+    def to_operation_log_json(self):
+        return self.to_dsl_json(scrub_vectors=True)
+
+    def __str__(self):
+        return self.to_dsl_json()
 
     def reset(self):
         self.path = []
