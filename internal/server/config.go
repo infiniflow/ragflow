@@ -728,6 +728,12 @@ func FromConfigFile(configPath string) error {
 		}
 	}
 
+	if globalConfig.APIServer.Port == 0 {
+		globalConfig.APIServer.Port = 9384
+	} else {
+		globalConfig.APIServer.Port += 4
+	}
+
 	// Map redis section to RedisConfig
 	if globalConfig != nil && globalConfig.Redis.Host != "" {
 		if v.IsSet("redis") {
