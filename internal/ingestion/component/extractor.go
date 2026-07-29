@@ -122,7 +122,7 @@ type extractorJob func() error
 // extractorPool is the process-wide bounded worker pool that drives
 // cross-chunk concurrency for auto-keywords / auto-questions /
 // auto-metadata extraction. It mirrors the parser/structure/mindmap
-// common.NewPool usage, but is held globally so every Extractor
+// WorkerPool usage, but is held globally so every Extractor
 // invocation shares one rate limiter instead of spinning up one pool
 // per batch. The pool only bounds concurrency (it is never StopWait'd),
 // so per-invocation completion is tracked by runAutoExtractions with its

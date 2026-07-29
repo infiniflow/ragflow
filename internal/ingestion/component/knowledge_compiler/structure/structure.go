@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/utility"
 )
 
 // structureBatchTokenBudget caps one extraction batch's packed chunk tokens.
@@ -53,10 +54,16 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// ---- MAP ----
 	batches := common.PackBatches(inputs.Chunks, structureBatchTokenBudget, deps.Tokenizer)
 	perBatch := make([][]common.Product, len(batches))
-	pool := common.NewPool(param.MaxWorkers)
+	n := param.MaxWorkers
+	if n <= 0 {
+		n = 1
+	}
+	wp := utility.NewWorkerPool[func() error, struct{}](n, n,
+		func(_ context.Context, fn func() error) (struct{}, error) { return struct{}{}, fn() })
+	var futs []utility.WorkerPoolFuture[func() error, struct{}]
 	for i, batch := range batches {
 		i, batch := i, batch
-		pool.Go(func() error {
+		f, err := wp.Submit(ctx, func() error {
 			packed, batchIDs := PackBatch(batch)
 			if len(batchIDs) == 0 {
 				return nil
@@ -72,9 +79,17 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			perBatch[i] = rows
 			return nil
 		})
+		if err != nil {
+			wp.StopWait()
+			return common.Outputs{}, err
+		}
+		futs = append(futs, f)
 	}
-	if err := pool.Wait(); err != nil {
-		return common.Outputs{}, err
+	wp.StopWait()
+	for _, f := range futs {
+		if res, _ := f.Wait(ctx); res.Err != nil {
+			return common.Outputs{}, res.Err
+		}
 	}
 
 	// ---- DEDUP ----

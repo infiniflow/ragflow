@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/utility"
 )
 
 // Run executes the mindmap variant.
@@ -34,10 +35,17 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// One LLM task per token-budget batch (mirrors __call__'s task fan-out).
 	batches := packSections(sections, deps.Tokenizer)
 	results := make([]omap, len(batches))
-	pool := common.NewPool(param.MaxWorkers)
+	// One LLM task per token-budget batch (mirrors __call__'s task fan-out).
+	n := param.MaxWorkers
+	if n <= 0 {
+		n = 1
+	}
+	wp := utility.NewWorkerPool[func() error, struct{}](n, n,
+		func(_ context.Context, fn func() error) (struct{}, error) { return struct{}{}, fn() })
+	var futs []utility.WorkerPoolFuture[func() error, struct{}]
 	for i, text := range batches {
 		i, text := i, text
-		pool.Go(func() error {
+		f, err := wp.Submit(ctx, func() error {
 			resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
 				LLMID:        llmID,
 				SystemPrompt: renderPrompt(text),
@@ -49,9 +57,17 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			results[i] = todict(dictify(StripFences(resp.Content)))
 			return nil
 		})
+		if err != nil {
+			wp.StopWait()
+			return common.Outputs{}, err
+		}
+		futs = append(futs, f)
 	}
-	if err := pool.Wait(); err != nil {
-		return common.Outputs{}, err
+	wp.StopWait()
+	for _, f := range futs {
+		if res, _ := f.Wait(ctx); res.Err != nil {
+			return common.Outputs{}, res.Err
+		}
 	}
 
 	// Merge batch dicts in batch order (mirrors reduce(self._merge, res)) and
