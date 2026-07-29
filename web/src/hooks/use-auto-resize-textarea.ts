@@ -15,6 +15,12 @@ export function useAutoResizeTextarea(
     const el = ref.current;
     if (!el) return;
     el.style.height = 'auto';
+    // scrollHeight excludes borders while height is border-box, so the
+    // content box ends up a couple of pixels short and overflow-y-auto
+    // would show a scrollbar even for a single line. Hide it until the
+    // content actually exceeds the max height.
+    const overflowing = el.scrollHeight > maxHeight;
+    el.style.overflowY = overflowing ? 'auto' : 'hidden';
     el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
   }, [ref, value, maxHeight]);
 }
