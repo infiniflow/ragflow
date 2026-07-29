@@ -123,6 +123,7 @@ async def research_agent_loop(
         available_tools=mode.available_tools,
         compilation_map=compilation_map,
         context=context,
+        has_routed_scope=bool(getattr(pipeline, "_routed_docs", None)),
     )
 
     # Deep-copy so binding tools never leaks onto the shared chat model.

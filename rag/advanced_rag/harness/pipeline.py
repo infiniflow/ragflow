@@ -12,7 +12,7 @@ _LOG = logging.getLogger(__name__)
 # Tools that retrieve *within* a set of documents. When a routing tool
 # (``dataset_navigation_by_tree``) has produced a relevant-document set, these
 # inherit it as their ``doc_scope`` unless the caller passed one explicitly.
-_DOC_SCOPE_CONSUMERS = {"ontology_navigate", "graph_explore"}
+_DOC_SCOPE_CONSUMERS = {"ontology_navigate", "mindmap_navigate", "graph_explore"}
 
 
 class Pipeline:

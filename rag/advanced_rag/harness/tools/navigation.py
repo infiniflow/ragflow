@@ -454,6 +454,11 @@ async def _collect_nav_leaves(dataset_api_service, clusters: list[dict]) -> list
     return leaves
 
 
+def _nav_cluster_names(clusters: list[dict]) -> str:
+    names = [str(c.get("name") or "").strip() for c in clusters]
+    return ", ".join(n for n in names if n) or "none"
+
+
 async def dataset_navigation_by_tree(tools, topic: str, keywords: str = "", doc_scope: list[str] | None = None) -> list[str]:
     """Return the ``doc_id``s most relevant to the question / keywords by walking
     the dataset nav tree with the chat model.
@@ -509,13 +514,13 @@ async def dataset_navigation_by_tree(tools, topic: str, keywords: str = "", doc_
     # 3. Descend the selected clusters to their document leaves.
     leaves = await _collect_nav_leaves(dataset_api_service, selected_clusters)
     if not leaves:
-        _LOG.info(f"[Dataset navigation] no leaf under selected cluster {selected_clusters}.")
+        _LOG.info("[Dataset navigation] no leaf under selected cluster %s.", _nav_cluster_names(selected_clusters))
         return []
 
     # 4. Ask the model which documents to look into. Nothing relevant → [].
     selected_docs = await _ask_nav_select(tools, query, leaves, "documents", _NAV_TREE_MAX_LEAVES)
     if not selected_docs:
-        _LOG.info(f"[Dataset navigation] no doc selected under cluster {selected_clusters}.")
+        _LOG.info("[Dataset navigation] no doc selected under cluster %s.", _nav_cluster_names(selected_clusters))
         return []
 
     routed: list[str] = []
