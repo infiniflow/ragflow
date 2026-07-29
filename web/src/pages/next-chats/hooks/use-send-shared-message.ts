@@ -67,7 +67,7 @@ export const useSendSharedMessage = () => {
     async (
       message: Message,
       id?: string,
-      enableThinking?: boolean,
+      enableThinking?: string,
       enableInternet?: boolean,
     ) => {
       const res = await send(completionUrl, {
@@ -75,7 +75,7 @@ export const useSendSharedMessage = () => {
         quote: true,
         question: message.content,
         session_id: get(derivedMessages, '0.session_id'),
-        reasoning: enableThinking,
+        reasoning: Number(enableThinking),
         internet: enableInternet,
         ...(chatInfo?.llm_id ? { model_name: chatInfo.llm_id } : {}),
       });
@@ -100,7 +100,7 @@ export const useSendSharedMessage = () => {
   const handleSendMessage = useCallback(
     async (
       message: Message,
-      enableThinking?: boolean,
+      enableThinking?: string,
       enableInternet?: boolean,
     ) => {
       sendMessage(message, undefined, enableThinking, enableInternet);

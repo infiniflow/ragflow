@@ -35,6 +35,7 @@ from api.db.joint_services.tenant_model_service import (
     ensure_mineru_from_env,
     ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
+    get_composite_model_name_by_id,
     get_first_provider_model_name,
     resolve_model_config,
     get_tenant_default_model_by_type,
@@ -154,17 +155,17 @@ def by_mineru(
                 ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
                 pdf_parser = ocr_model.mdl
 
-                # Closes #14869: when the tenant has an IMAGE2TEXT model
+                # Closes #14869: when the tenant has a VISION model
                 # configured, let the MinerU parser enrich image chunks with
                 # VLM-generated semantic descriptions (parity with deepdoc's
                 # VisionFigureParser). Best-effort — fall back silently if
                 # no vision model is available.
                 if "vision_model" not in kwargs:
                     try:
-                        vision_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.IMAGE2TEXT)
+                        vision_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.VISION)
                         kwargs["vision_model"] = LLMBundle(tenant_id=tenant_id, model_config=vision_model_config, lang=lang)
                     except Exception as vlm_err:
-                        logging.info(f"[MinerU] no IMAGE2TEXT model for tenant; skipping image VLM enhancement: {vlm_err}")
+                        logging.info(f"[MinerU] no VISION model for tenant; skipping image VLM enhancement: {vlm_err}")
 
                 sections, tables = pdf_parser.parse_pdf(
                     filepath=filename,
@@ -172,6 +173,8 @@ def by_mineru(
                     callback=callback,
                     parse_method=parse_method,
                     lang=lang,
+                    page_from=from_page,
+                    page_to=min(to_page, MAXIMUM_PAGE_NUMBER),
                     **kwargs,
                 )
                 return sections, tables, pdf_parser
@@ -348,6 +351,64 @@ def by_somark(
     return None, None, None
 
 
+def by_mistral_ocr(
+    filename,
+    binary=None,
+    from_page=0,
+    to_page=MAXIMUM_PAGE_NUMBER,
+    lang="Chinese",
+    callback=None,
+    pdf_cls=None,
+    parse_method: str = "raw",
+    mistral_ocr_llm_name: str | None = None,
+    tenant_id: str | None = None,
+    **kwargs,
+):
+    pdf_parser = None
+    if tenant_id:
+        if not mistral_ocr_llm_name:
+            try:
+                from api.db.joint_services.tenant_model_service import ensure_mistral_ocr_from_env
+
+                mistral_ocr_llm_name = ensure_mistral_ocr_from_env(tenant_id)
+            except Exception as e:
+                logging.warning(f"fallback to env mistral ocr: {e}")
+
+        if mistral_ocr_llm_name:
+            try:
+                ocr_model_config = resolve_model_config(tenant_id, LLMType.OCR, mistral_ocr_llm_name)
+                ocr_model = LLMBundle(tenant_id=tenant_id, model_config=ocr_model_config, lang=lang)
+                pdf_parser = ocr_model.mdl
+                # Best-effort figure description: hand the parser the tenant's
+                # vision model so Mistral OCR's extracted images get VLM captions
+                # (parity with MinerU/deepdoc). Skip silently if none is configured.
+                if "vision_model" not in kwargs:
+                    try:
+                        vision_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.VISION)
+                        kwargs["vision_model"] = LLMBundle(tenant_id=tenant_id, model_config=vision_model_config, lang=lang)
+                    except Exception as vlm_err:
+                        logging.info(f"[Mistral OCR] no vision model for tenant; skipping figure description: {vlm_err}")
+                sections, tables = pdf_parser.parse_pdf(
+                    filepath=filename,
+                    binary=binary,
+                    callback=callback,
+                    parse_method=parse_method,
+                    from_page=from_page,
+                    to_page=to_page,
+                    **kwargs,
+                )
+                return sections, tables, pdf_parser
+            except Exception as e:
+                logging.error(f"Failed to parse pdf via LLMBundle Mistral OCR ({mistral_ocr_llm_name}): {e}")
+                if callback:
+                    callback(-1, f"Failed to parse pdf via Mistral OCR ({mistral_ocr_llm_name}): {e}")
+                return None, None, None
+
+    if callback:
+        callback(-1, "Mistral OCR not found.")
+    return None, None, None
+
+
 def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, callback=None, **kwargs):
     layout_recognizer = (kwargs.get("layout_recognizer") or "").strip()
     if (not layout_recognizer) or (layout_recognizer == "Plain Text"):
@@ -356,7 +417,7 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER
         tenant_id = kwargs.get("tenant_id")
         if not tenant_id:
             raise ValueError("tenant_id is required when using vision layout recognizer")
-        vision_model_config = resolve_model_config(tenant_id, LLMType.IMAGE2TEXT, layout_recognizer)
+        vision_model_config = resolve_model_config(tenant_id, LLMType.VISION, layout_recognizer)
         vision_model = LLMBundle(
             tenant_id,
             model_config=vision_model_config,
@@ -376,6 +437,7 @@ PARSERS = {
     "tcadp parser": by_tcadp,
     "paddleocr": by_paddleocr,
     "somark": by_somark,
+    "mistral ocr": by_mistral_ocr,
     "plaintext": by_plaintext,  # default
 }
 
@@ -838,7 +900,7 @@ class Markdown(MarkdownParser):
                 txt = f.read()
 
         remainder, tables = self.extract_tables_and_remainder(f"{txt}\n", separate_tables=separate_tables)
-        parsing_text = remainder if separate_tables else txt
+        parsing_text = remainder
         extractor = MarkdownElementExtractor(parsing_text)
         image_refs = self.extract_image_urls_with_lines(parsing_text)
         element_sections = extractor.extract_elements(delimiter, include_meta=True)
@@ -861,8 +923,9 @@ class Markdown(MarkdownParser):
             section_images.append(combined_image)
 
         tbls = []
-        for table in tables:
-            tbls.append(((None, markdown(table, extensions=["markdown.extensions.tables"])), ""))
+        if separate_tables:
+            for table in tables:
+                tbls.append(((None, markdown(table, extensions=["markdown.extensions.tables"])), ""))
         if return_section_images:
             return sections, tbls, section_images
         return sections, tbls
@@ -976,7 +1039,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        layout_recognize_raw = parser_config.get("layout_recognize", "DeepDOC")
+        tenant_id = kwargs.get("tenant_id")
+        if tenant_id and isinstance(layout_recognize_raw, str):
+            try:
+                layout_recognize_raw = get_composite_model_name_by_id(layout_recognize_raw)
+            except LookupError:
+                pass
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize_raw)
         opendataloader_llm_name = kwargs.pop("opendataloader_llm_name", None)
         if layout_recognizer == "OpenDataLoader" and parser_model_name:
             opendataloader_llm_name = parser_model_name
@@ -1003,6 +1073,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             paddleocr_llm_name=parser_model_name,
             opendataloader_llm_name=opendataloader_llm_name,
             somark_llm_name=parser_model_name,
+            mistral_ocr_llm_name=parser_model_name,
             **kwargs,
         )
         sections = _normalize_section_text_for_rtl_presentation_forms(sections)
@@ -1013,7 +1084,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if table_context_size or image_context_size:
             tables = append_context2table_image4pdf(sections, tables, image_context_size)
 
-        if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader", "somark"]:
+        if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader", "somark", "mistral ocr"]:
             if int(parser_config.get("chunk_token_num", 0)) <= 0:
                 parser_config["chunk_token_num"] = 0
 
@@ -1066,7 +1137,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         sections, tables, section_images = markdown_parser(
             filename,
             binary,
-            separate_tables=True,
+            separate_tables=False,
             delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
             return_section_images=True,
         )
@@ -1075,7 +1146,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         is_markdown = True
 
         try:
-            vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.IMAGE2TEXT)
+            vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.VISION)
             vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
             callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
         except Exception as e:

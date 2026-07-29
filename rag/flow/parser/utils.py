@@ -170,9 +170,9 @@ def enhance_media_sections_with_vision(
 
     try:
         try:
-            vision_model_config = resolve_model_config(tenant_id, LLMType.IMAGE2TEXT, vlm_conf["llm_id"])
+            vision_model_config = resolve_model_config(tenant_id, LLMType.VISION, vlm_conf["llm_id"])
         except Exception:
-            vision_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.IMAGE2TEXT)
+            vision_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.VISION)
         vision_model = LLMBundle(tenant_id, vision_model_config)
     except Exception:
         return sections

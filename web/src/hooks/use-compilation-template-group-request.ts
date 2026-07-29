@@ -12,14 +12,17 @@ import {
   getCompilationTemplateGroup,
   updateCompilationTemplateGroup,
 } from '@/services/compilation-template-group-service';
+import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { useCallback, useMemo } from 'react';
+import { useParams } from 'react-router';
 
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import { AgentApiAction } from './use-agent-request';
 
 export const enum CompilationTemplateGroupApiAction {
   FetchCompilationTemplateGroups = 'fetchCompilationTemplateGroups',
@@ -98,15 +101,18 @@ export const useFetchCompilationTemplateGroupsByPage = () => {
   };
 };
 
-export const useFetchCompilationTemplateGroup = (id?: string) => {
+export const useFetchCompilationTemplateGroup = () => {
+  const { id } = useParams<{ id: string }>();
+  const isCreate = isCreateCompilationTemplateGroup(id);
+
   const { data, isFetching: loading } = useQuery<
     ICompilationTemplateGroup | undefined
   >({
     queryKey: CompilationTemplateGroupKeys.detail(id),
-    enabled: !!id && id !== 'create',
+    enabled: !isCreate,
     gcTime: 0,
     queryFn: async () => {
-      if (!id || id === 'create') return undefined;
+      if (isCreate) return undefined;
       const { data } = await getCompilationTemplateGroup(id);
       return data?.data as ICompilationTemplateGroup | undefined;
     },
@@ -220,6 +226,10 @@ export const useDeleteCompilationTemplateGroup = () => {
             CompilationTemplateGroupApiAction.FetchCompilationTemplateGroups,
           ],
         });
+        // The agents page lists groups merged into /agents results.
+        queryClient.invalidateQueries({
+          queryKey: [AgentApiAction.FetchAgentListByPage],
+        });
       }
       return data?.data ?? true;
     },
@@ -252,4 +262,13 @@ export const useFetchAllCompilationTemplateGroups = () => {
   });
 
   return { groups: data ?? [], loading };
+};
+
+export const useCompilationTemplateGroupOptions = () => {
+  const { groups } = useFetchAllCompilationTemplateGroups();
+
+  return useMemo(
+    () => groups.map((group) => ({ label: group.name, value: group.id })),
+    [groups],
+  );
 };

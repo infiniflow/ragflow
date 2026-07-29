@@ -214,8 +214,8 @@ def _load_chunk_module(monkeypatch):
         EMBEDDING = SimpleNamespace(value="embedding")
         CHAT = SimpleNamespace(value="chat")
         RERANK = SimpleNamespace(value="rerank")
-        SPEECH2TEXT = SimpleNamespace(value="speech2text")
-        IMAGE2TEXT = SimpleNamespace(value="image2text")
+        ASR = SimpleNamespace(value="asr")
+        VISION = SimpleNamespace(value="vision")
         TTS = SimpleNamespace(value="tts")
         OCR = SimpleNamespace(value="ocr")
 
@@ -598,7 +598,7 @@ def test_restful_chunk_guard_branches_unit(monkeypatch):
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda **_kwargs: True)
     monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [])
     res = _run(_route_core(module.list_chunks)("tenant-1", "kb-1", "doc-1"))
-    assert res["message"] == "You don't own the document doc-1.", res
+    assert res["message"] == "you don't own the document doc-1", res
 
     monkeypatch.setattr(module.DocumentService, "query", lambda **_kwargs: [_DummyDoc()])
     module.request = SimpleNamespace(args={"id": "chunk-1"}, headers={})

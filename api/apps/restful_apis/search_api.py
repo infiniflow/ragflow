@@ -25,6 +25,7 @@ from api.apps import current_user, login_required
 from api.constants import DATASET_NAME_LIMIT
 from api.db.db_models import DB
 from api.db.services import duplicate_name
+from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
 from common.misc_utils import get_uuid
@@ -135,7 +136,7 @@ async def update(search_id):
         return get_data_error_result(message="Authorized identity.")
 
     if not SearchService.accessible4deletion(search_id, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         search_app = SearchService.query(tenant_id=current_user.id, id=search_id)[0]
@@ -180,7 +181,7 @@ async def update(search_id):
 @login_required
 def delete_search(search_id):
     if not SearchService.accessible4deletion(search_id, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         if not SearchService.delete_by_id(search_id):
@@ -198,7 +199,7 @@ async def completion(search_id):
     if not SearchService.accessible4deletion(search_id, current_user.id):
         return get_json_result(
             data=False,
-            message="No authorization.",
+            message="no authorization",
             code=RetCode.AUTHENTICATION_ERROR,
         )
 
@@ -219,6 +220,11 @@ async def completion(search_id):
     kb_ids = search_config.get("kb_ids") or req.get("kb_ids") or []
     if not kb_ids:
         return get_data_error_result(message="`kb_ids` is required.")
+
+    # check if the kb_ids is accessible for this user
+    for kb_id in kb_ids:
+        if not KnowledgebaseService.accessible(kb_id=kb_id, user_id=uid):
+            return get_data_error_result(message=f"You don't own the dataset {kb_id}")
 
     async def stream():
         nonlocal req, uid, kb_ids, search_config

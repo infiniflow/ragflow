@@ -351,8 +351,14 @@ class ComponentParamBase(ABC):
 class ComponentBase(ABC):
     component_name: str
     thread_limiter = asyncio.Semaphore(int(os.environ.get("MAX_CONCURRENT_CHATS", 10)))
-    variable_ref_patt = r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
+    # Match `cpn_id@var_nm` / `sys.var_nm` / `env.var_nm` style template refs.
+    # `cpn_id` allows underscores (frontend ids like `userfillup_abc`,
+    # `retrieval_xyz`) and colons (legacy DSL ids like `UserFillUp:CateInput`,
+    # `Retrieval:KBSearch`).
+    variable_ref_patt = r"\{* *\{([a-zA-Z0-9_:]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*"
+    variable_ref_patt_re = re.compile(variable_ref_patt, flags=re.IGNORECASE | re.DOTALL)
     iteration_alias_patt = r"\{* *\{(item|index|result)\} *\}*"
+    iteration_alias_patt_re = re.compile(iteration_alias_patt, flags=re.IGNORECASE | re.DOTALL)
 
     def __str__(self):
         """
@@ -481,7 +487,7 @@ class ComponentBase(ABC):
                 resolved = self._canvas.get_variable_value(v)
                 self.set_input_value(var, resolved)
                 _logger.debug("[Base]   var '%s': resolved ref '%s' -> %s", var, v, json.dumps(resolved, ensure_ascii=False, default=str)[:200])
-            elif isinstance(v, str) and re.search(self.variable_ref_patt, v):
+            elif isinstance(v, str) and self.variable_ref_patt_re.search(v):
                 elements = self.get_input_elements_from_text(v)
                 kv = {k: e.get("value", "") for k, e in elements.items()}
                 self.set_input_value(var, self.string_format(v, kv))
@@ -517,7 +523,7 @@ class ComponentBase(ABC):
 
     def get_input_elements_from_text(self, txt: str) -> dict[str, dict[str, str]]:
         res = {}
-        for r in re.finditer(self.variable_ref_patt, txt, flags=re.IGNORECASE | re.DOTALL):
+        for r in self.variable_ref_patt_re.finditer(txt):
             exp = r.group(1)
             # Use maxsplit=1 to be defensive: although `exp` here comes
             # from `variable_ref_patt` (which constrains `var_nm` to
@@ -531,7 +537,7 @@ class ComponentBase(ABC):
                 "_retrieval": self._canvas.get_variable_value(f"{cpn_id}@_references") if cpn_id else None,
                 "_cpn_id": cpn_id,
             }
-        for r in re.finditer(self.iteration_alias_patt, txt, flags=re.IGNORECASE | re.DOTALL):
+        for r in self.iteration_alias_patt_re.finditer(txt):
             exp = r.group(1)
             if exp in res:
                 continue

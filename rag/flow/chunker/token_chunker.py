@@ -344,7 +344,7 @@ class TokenChunker(ProcessBase):
             return
 
         # json
-        json_result = from_upstream.json_result or []
+        json_result = (from_upstream.chunks if from_upstream.output_format == "chunks" else from_upstream.json_result) or []
         if self._param.delimiter_mode == "one":
             sections = []
             for item in json_result:

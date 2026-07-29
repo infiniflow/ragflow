@@ -375,7 +375,7 @@ def _load_user_app(monkeypatch):
     settings_mod.EMBEDDING_MDL = "embd-mdl"
     settings_mod.ASR_MDL = "asr-mdl"
     settings_mod.PARSERS = []
-    settings_mod.IMAGE2TEXT_MDL = "img-mdl"
+    settings_mod.VISION_MDL = "img-mdl"
     settings_mod.RERANK_MDL = "rerank-mdl"
     settings_mod.REGISTER_ENABLED = True
     monkeypatch.setitem(sys.modules, "common.settings", settings_mod)

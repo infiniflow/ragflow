@@ -67,7 +67,7 @@ export function TreeSelect({
   const selectedNode = useMemo(() => {
     const find = (nodes: TreeSelectNode[]): TreeSelectNode | undefined => {
       for (const node of nodes) {
-        if (node.id === value) return node;
+        if (node.id === value && value) return node;
         if (node.children) {
           const found = find(node.children);
           if (found) return found;

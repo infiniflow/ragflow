@@ -31,6 +31,7 @@ import openai
 from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
+from common.aimlapi_utils import attribution_headers
 from common.misc_utils import thread_pool_exec
 from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
@@ -593,7 +594,7 @@ class Base(ABC):
             try:
                 for _round in range(self.max_rounds + 1):
                     reasoning_start = False
-                    logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
+                    logging.info(f"[Tool loop] Deciding what to do next (step {_round + 1}); available tools: {', '.join(t['function']['name'] for t in tools)}")
 
                     response = await self.async_client.chat.completions.create(
                         model=self.model_name, messages=history, stream=True, tools=tools, tool_choice="auto", **gen_conf, **extra_request_kwargs
@@ -653,7 +654,7 @@ class Base(ABC):
                     _commit_round(round_usage, round_estimate)
 
                     if answer and not final_tool_calls:
-                        logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
+                        logging.info(f"[Tool loop] Answering directly at step {_round + 1} — no tool needed.")
                         yield total_tokens
                         return
 
@@ -673,14 +674,28 @@ class Base(ABC):
                             return tc, name, {}, None, e
 
                     tcs = list(final_tool_calls.values())
-                    logging.info(f"[ToolLoop] round={_round} executing {len(tcs)} tool(s): {[tc.function.name for tc in tcs]}")
+                    logging.info(f"[Tool loop] Step {_round + 1}: running {', '.join(tc.function.name for tc in tcs)}...")
                     for tc in tcs:
                         try:
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
+                        yield f"<think>Running the {tc.function.name} tool...</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
+
+                    # Terminal-tool short-circuit: stream a terminal tool's
+                    # result (already the final answer) and stop the loop.
+                    _terminal = getattr(self, "terminal_tools", None)
+                    if _terminal:
+                        for tc, name, args, result, err in results:
+                            if name in _terminal and not err:
+                                logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
+                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                                if out:
+                                    yield out
+                                yield total_tokens
+                                return
+
                     history = self._append_history_batch(history, results)
                     for tc, name, args, result, err in results:
                         yield self._verbose_tool_use(name, args, err if err else result)
@@ -1540,6 +1555,27 @@ class FuturMixChat(Base):
         logging.info("[FuturMix] Chat initialized with model %s", model_name)
 
 
+class AIMLAPIChat(Base):
+    _FACTORY_NAME = "aimlapi.com"
+
+    def __init__(self, key, model_name, base_url="", **kwargs):
+        base_url = base_url or os.environ.get("AIMLAPI_API_URL", "https://api.aimlapi.com/v1")
+        super().__init__(key, model_name, base_url, **kwargs)
+        headers = attribution_headers()
+        self.client = self.client.with_options(default_headers=headers)
+        self.async_client = self.async_client.with_options(default_headers=headers)
+        logging.info("[aimlapi.com] Chat initialized with model %s", model_name)
+
+
+class GreenPTChat(Base):
+    """GreenPT OpenAI-compatible chat adapter."""
+
+    _FACTORY_NAME = "GreenPT"
+
+    def __init__(self, key, model_name, base_url="https://api.greenpt.ai/v1", **kwargs):
+        super().__init__(key, model_name, base_url or "https://api.greenpt.ai/v1", **kwargs)
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1799,7 +1835,11 @@ class LiteLLMBase(ABC):
             logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
             await asyncio.sleep(delay)
             return None
-        msg = f"{ERROR_PREFIX}: {error_code} - {str(e)}"
+        error_detail = str(e)
+        if self.provider == SupportedLiteLLMProvider.Nvidia and "function" in error_detail.lower() and "not found for account" in error_detail.lower():
+            model_name = self.model_name.removeprefix(self.prefix)
+            error_detail = f"NVIDIA hosted endpoint '{model_name}' is unavailable or deprecated; refresh the provider model list and select an active Free Endpoint. Original error: {error_detail}"
+        msg = f"{ERROR_PREFIX}: {error_code} - {error_detail}"
         logging.error(f"async_chat_streamly giving up: {msg}")
         return msg
 
@@ -1925,7 +1965,7 @@ class LiteLLMBase(ABC):
             history = deepcopy(hist)
             try:
                 for _ in range(self.max_rounds + 1):
-                    logging.info(f"{self.tools=}")
+                    logging.info(f"HAS TOOL:{len(self.tools)}\n{history=}")
 
                     completion_args = self._construct_completion_args(history=history, stream=False, tools=True, **gen_conf)
                     response = await litellm.acompletion(
@@ -2029,7 +2069,7 @@ class LiteLLMBase(ABC):
                 for _round in range(self.max_rounds + 1):
                     reasoning_start = False
                     reasoning_content = ""
-                    logging.info(f"[ToolLoop] round={_round} model={self.model_name} tools={[t['function']['name'] for t in tools]}")
+                    logging.info(f"[Tool loop] Deciding what to do next (step {_round + 1}); available tools: {', '.join(t['function']['name'] for t in tools)}")
 
                     completion_args = self._construct_completion_args(history=history, stream=True, tools=True, **gen_conf)
                     # Request authoritative usage on the final streaming chunk.
@@ -2096,7 +2136,7 @@ class LiteLLMBase(ABC):
                     _commit_round(round_usage, round_estimate)
 
                     if answer and not final_tool_calls:
-                        logging.info(f"[ToolLoop] round={_round} completed with text response, exiting")
+                        logging.info(f"[Tool loop] Answering directly at step {_round + 1} — no tool needed.")
                         yield total_tokens
                         return
 
@@ -2116,14 +2156,29 @@ class LiteLLMBase(ABC):
                             return tc, name, {}, None, e
 
                     tcs = list(final_tool_calls.values())
-                    logging.info(f"[ToolLoop] round={_round} executing {len(tcs)} tool(s): {[tc.function.name for tc in tcs]}")
+                    logging.info(f"[Tool loop] Step {_round + 1}: running {', '.join(tc.function.name for tc in tcs)}...")
                     for tc in tcs:
                         try:
                             args = json_repair.loads(tc.function.arguments)
                         except Exception:
                             args = {}
-                        yield self._verbose_tool_use(tc.function.name, args, "Begin to call...")
+                        yield f"<think>Running the {tc.function.name} tool...</think>"
                     results = await asyncio.gather(*[_exec_tool(tc) for tc in tcs])
+
+                    # Terminal-tool short-circuit: a terminal tool already
+                    # produces the final answer, so stream its result and stop
+                    # instead of feeding it back for another LLM round.
+                    _terminal = getattr(self, "terminal_tools", None)
+                    if _terminal:
+                        for tc, name, args, result, err in results:
+                            if name in _terminal and not err:
+                                logging.info(f"[Tool loop] The {name} tool produced the final answer — done.")
+                                out = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+                                if out:
+                                    yield out
+                                yield total_tokens
+                                return
+
                     history = self._append_history_batch(
                         history,
                         results,
@@ -2176,9 +2231,12 @@ class LiteLLMBase(ABC):
             "model": self.model_name,
             "messages": history,
             "api_key": self.api_key,
-            "num_retries": self.max_retries,
             **kwargs,
         }
+        if self.provider == SupportedLiteLLMProvider.Nvidia:
+            completion_args["num_retries"] = 0
+        else:
+            completion_args.setdefault("num_retries", self.max_retries)
         # Forward the originating session/user as the OpenAI-standard `user` field so
         # providers (OpenAI, OpenRouter, ...) receive it in the request body and
         # upstream activity can be correlated back to the session. An explicit

@@ -64,7 +64,8 @@ func TestPDFParser_ParseWithResult_SoMarkJSONIntegration(t *testing.T) {
 		"somark_base_url": server.URL,
 		"somark_api_key":  "somark-secret",
 	})
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -94,7 +95,8 @@ func TestPDFParser_ParseWithResult_SoMarkMarkdownIntegration(t *testing.T) {
 		"output_format":   "markdown",
 		"somark_base_url": server.URL,
 	})
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -107,7 +109,8 @@ func TestPDFParser_ParseWithResult_SoMarkRequiresBaseURL(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{"parse_method": "SoMark"})
 	pdf.SoMarkBaseURL = ""
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err == nil || !strings.Contains(res.Err.Error(), "somark_base_url") {
 		t.Fatalf("error = %v, want somark_base_url context", res.Err)
 	}

@@ -94,7 +94,7 @@ func (f *waitFakeAgentService) DeleteAgent(context.Context, string, string) erro
 // RunAgent mimics service.AgentService.RunAgent for the test
 // driver. It loads the canvas (a no-op in tests), builds a RunFunc
 // from the supplied stub, and hands off to the orchestrator.
-func (f *waitFakeAgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any) (<-chan canvas.RunEvent, error) {
+func (f *waitFakeAgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID, version string, userInput any, _ []map[string]interface{}) (<-chan canvas.RunEvent, error) {
 	_ = ctx
 	_ = userID
 	_ = version
@@ -114,7 +114,6 @@ func (f *waitFakeAgentService) RunAgent(ctx context.Context, userID, canvasID, s
 	}), nil
 }
 
-func (f *waitFakeAgentService) CancelAgent(context.Context, string, string) error { return nil }
 func (f *waitFakeAgentService) PublishAgent(context.Context, string, string, *service.PublishAgentRequest) (*entity.UserCanvasVersion, error) {
 	return &entity.UserCanvasVersion{}, nil
 }
@@ -151,7 +150,7 @@ func waitForUserRoutes(svc *waitFakeAgentService) *gin.Engine {
 		canvasID := c.Param("canvas_id")
 		sessionID := c.Query("session_id")
 		userInput := c.Query("user_input")
-		events, err := svc.RunAgent(c.Request.Context(), "user-wait", canvasID, sessionID, "", userInput)
+		events, err := svc.RunAgent(c.Request.Context(), "user-wait", canvasID, sessionID, "", userInput, nil)
 		if err != nil {
 			// We never expect a non-nil err from the fake,
 			// but be defensive.

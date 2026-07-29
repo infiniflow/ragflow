@@ -1,11 +1,26 @@
 import { type IArtifactGraphEntity } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
-import isEmpty from 'lodash/isEmpty';
 import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import ForceGraph2D, { type ForceGraphMethods } from 'react-force-graph-2d';
-import { type ArtifactForceGraphProps } from './types';
+import {
+  getNodeColor as defaultGetNodeColor,
+  getNodeRadius as defaultGetNodeRadius,
+  MinNodeRadius,
+} from './node-style';
+import {
+  type ArtifactForceGraphProps,
+  type ArtifactGraphLink,
+  type ArtifactGraphNode,
+} from './types';
+import { useArtifactGraphData } from './use-artifact-graph-data';
+import { useCenterGravity } from './use-center-gravity';
 import { useContainerDimensions } from './use-container-dimensions';
-import { defaultMapNodeToValue, renderNodeLabel } from './utils';
+import { useGraphHighlight } from './use-graph-highlight';
+import { defaultMapNodeToValue } from './utils';
+
+const defaultGetNodeId = (node: IArtifactGraphEntity) => node.slug;
+
+const nodeCanvasObjectMode = () => 'after' as const;
 
 function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   data,
@@ -14,36 +29,49 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
   mapNodeToValue = defaultMapNodeToValue as (
     node: IArtifactGraphEntity,
   ) => TNodeValue,
-  getNodeId = (node) => node.slug,
+  getNodeId = defaultGetNodeId,
+  getNodeColor = defaultGetNodeColor,
+  getNodeRadius = defaultGetNodeRadius,
+  highlightNodeId,
 }: ArtifactForceGraphProps<TNodeValue>) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const fgRef = useRef<ForceGraphMethods<IArtifactGraphEntity> | undefined>(
+  const fgRef = useRef<ForceGraphMethods<ArtifactGraphNode> | undefined>(
     undefined,
   );
   const hasFittedRef = useRef(false);
   const dimensions = useContainerDimensions(containerRef, show);
+  const hasDimensions = dimensions.width > 0 && dimensions.height > 0;
 
-  const graphData = useMemo(() => {
-    if (isEmpty(data) || !data) {
-      return { nodes: [], links: [] };
-    }
+  const graphData = useArtifactGraphData({
+    data,
+    getNodeId,
+    getNodeColor,
+    getNodeRadius,
+  });
 
-    const nodes = (data.entities || []).map((entity) => ({
-      ...entity,
-      id: getNodeId(entity),
-    }));
+  // Resolve the controlled id back to a node object reference (highlighting relies on the node's __neighbors/__links)
+  const pinnedNode = useMemo(
+    () =>
+      highlightNodeId
+        ? ((graphData.nodes.find((node) => node.id === highlightNodeId) ??
+            null) as ArtifactGraphNode | null)
+        : null,
+    [graphData, highlightNodeId],
+  );
 
-    const links = (data.relations || []).map((relation) => ({
-      source: relation.from,
-      target: relation.to,
-    }));
-
-    return { nodes, links };
-  }, [data, getNodeId]);
+  const {
+    handleNodeHover,
+    getNodeColor: nodeColor,
+    getLinkColor,
+    getLinkWidth,
+    paintNode,
+  } = useGraphHighlight(containerRef, pinnedNode);
 
   useEffect(() => {
     hasFittedRef.current = false;
   }, [graphData]);
+
+  useCenterGravity(fgRef, hasDimensions);
 
   const handleEngineStop = useCallback(() => {
     if (!hasFittedRef.current && fgRef.current) {
@@ -59,24 +87,48 @@ function ArtifactForceGraph<TNodeValue = IArtifactGraphEntity>({
     [onNodeClick, mapNodeToValue],
   );
 
+  const nodeVal = useCallback(
+    (node: ArtifactGraphNode) => node.__radius ?? MinNodeRadius,
+    [],
+  );
+
+  // Hover tooltip shows the entity description; empty string hides it
+  const getNodeLabel = useCallback(
+    (node: ArtifactGraphNode) => node.description ?? '',
+    [],
+  );
+
+  // Empty label hides the tooltip, so relations without a type show nothing
+  const getLinkLabel = useCallback(
+    (link: ArtifactGraphLink) => link.type ?? '',
+    [],
+  );
+
   return (
     <div
       ref={containerRef}
       className={cn('flex-1 min-h-0 h-full', !show && 'hidden')}
     >
-      {dimensions.width > 0 && dimensions.height > 0 && (
+      {hasDimensions && (
         <ForceGraph2D
           ref={fgRef}
           width={dimensions.width}
           height={dimensions.height}
           graphData={graphData}
-          nodeAutoColorBy="type"
+          nodeRelSize={1}
+          nodeColor={nodeColor}
+          nodeVal={nodeVal}
           cooldownTicks={100}
-          nodeLabel={''}
+          nodeLabel={getNodeLabel}
+          autoPauseRedraw={false}
           onEngineStop={handleEngineStop}
           onNodeClick={handleNodeClick}
-          nodeCanvasObject={renderNodeLabel}
-          nodeCanvasObjectMode={() => 'after'}
+          onNodeHover={handleNodeHover}
+          nodeCanvasObject={paintNode}
+          nodeCanvasObjectMode={nodeCanvasObjectMode}
+          linkColor={getLinkColor}
+          linkWidth={getLinkWidth}
+          linkLabel={getLinkLabel}
         />
       )}
     </div>

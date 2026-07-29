@@ -11,10 +11,11 @@ import (
 // read from plan §2.11.10 — P0 (8) + P1 (5) + P2 (4) + P3 (2) + P4 (3) = 22
 // at plan completion, plus v1 fixture wrappers/stubs (including Retrieval,
 // TavilySearch, TavilyExtract, ExeSQL, CodeExec, Google, BGPT, YahooFinance,
-// Wikipedia, GoogleScholar, PubMed, DuckDuckGo, Generate, Answer, Iteration,
-// and IterationItem) registered by fixture_stubs.go to keep the dsl-examples
-// and canvas tool surface compiling. The test allows counts between 12 (P0+P1
-// minus the removed ExitLoop) and 55 to roll forward as subsequent batches land.
+// Wikipedia, GoogleScholar, ArXiv, PubMed, DuckDuckGo, Generate, Answer,
+// Iteration, and IterationItem) registered by fixture_stubs.go to keep the
+// dsl-examples and canvas tool surface compiling. The test allows counts
+// between 12 (P0+P1 minus the removed ExitLoop) and 55 to roll forward as
+// subsequent batches land.
 //
 // Note: ExitLoop is intentionally NOT in the registry anymore. The
 // canvas engine (internal/agent/canvas/canvas.go's legacyNoOpNames)

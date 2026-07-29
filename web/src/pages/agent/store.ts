@@ -672,7 +672,7 @@ const useGraphStore = create<RFState>()(
         id: string,
         nodeOrNodeId?: RAGFlowNodeType | string,
       ) => {
-         
+        // oxlint-disable-next-line eqeqeq
         const tools =
           nodeOrNodeId != null
             ? getAgentNodeTools(

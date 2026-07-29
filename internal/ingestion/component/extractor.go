@@ -31,10 +31,9 @@
 //     response. We DO NOT panic: errors are surfaced as a clean
 //     "no driver for %q" wrap that callers can log and route.
 //
-//   - LLM CALL SHAPE: one chat call per chunk (no batching). Plan
-//     §AD-5a locks Parallelism at 1 because "LLM call is inherently
-//     serial"; sequential per-chunk processing keeps test ordering
-//     deterministic under -race.
+//   - LLM CALL SHAPE: one chat call per chunk (no batching). LLM
+//     calls are inherently serial; sequential per-chunk processing
+//     keeps test ordering deterministic under -race.
 //
 //   - TIMEOUT / ELAPSED: the call is wrapped in
 //     runtime.WithTimeout(60s) and runtime.TrackElapsed so the
@@ -64,6 +63,7 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -72,10 +72,15 @@ import (
 	"time"
 
 	eschema "github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/tokenizer"
 )
 
 const componentNameExtractor = "Extractor"
@@ -84,7 +89,58 @@ const componentNameExtractor = "Extractor"
 // `@timeout(60)` default at rag/flow/base.py:60. The pipeline
 // orchestrator (Phase 3) overrides this if a stage-level ceiling
 // is configured.
-const extractorTimeout = 60 * time.Second
+const extractorTimeout = 600 * time.Second
+
+// extractorRetryMax and extractorRetryDelay are package-level vars
+// so tests can override them (extractorRetryDelay → time.Millisecond)
+// to avoid multi-second retry sleeps. Production defaults match
+// common.RetryWithBackoff defaults (3 retries, 2s initial delay).
+var (
+	extractorRetryMax   = common.DefaultRetryMax
+	extractorRetryDelay = common.DefaultRetryDelay
+)
+
+// extractorTemperature mirrors Python's 0.2 default for keyword
+// and question extraction calls (generator.py:230,245).
+const extractorTemperature = 0.2
+
+const (
+	autoKeywordPrompt = `## Role
+You are a text analyzer.
+
+## Task
+Extract the most important keywords/phrases of a given piece of text content.
+
+## Requirements
+- Summarize the text content, and give the top %d important keywords/phrases.
+- The keywords MUST be in the same language as the given piece of text content.
+- The keywords are delimited by ENGLISH COMMA.
+- Output keywords ONLY.
+
+---
+
+## Text Content
+%s`
+
+	autoQuestionPrompt = `## Role
+You are a text analyzer.
+
+## Task
+Propose questions about a given piece of text content.
+
+## Requirements
+- Understand and summarize the text content, and propose the top %d important questions.
+- The questions SHOULD NOT have overlapping meanings.
+- The questions SHOULD cover the main content of the text as much as possible.
+- The questions MUST be in the same language as the given piece of text content.
+- One question per line.
+- Output questions ONLY.
+
+---
+
+## Text Content
+%s`
+)
 
 // ExtractorComponent performs LLM-based extraction over a chunk
 // list (or a single empty call when no chunks are wired in).
@@ -99,14 +155,12 @@ type ExtractorComponent struct {
 }
 
 // NewExtractorComponent constructs an Extractor from a DSL param
-// map. Missing keys fall back to schema.ExtractorParam.Defaults();
-// an empty FieldName is rejected (matches python
-// `check_empty(self.field_name, "Result Destination")`).
+// map. Missing keys fall back to schema.ExtractorParam.Defaults().
 //
 // Param map shape (all keys optional; missing → Defaults()):
 //
 //	{
-//	  "field_name":     string,           — required; key the extraction lands under
+//	  "field_name":     string,           — optional; key the extraction lands under
 //	  "llm_id":         string,           — optional; resolves via models.NewModelFactory
 //	  "system_prompt":  string,           — optional override
 //	  "prompt":         string,           — optional user prompt
@@ -125,9 +179,36 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 		}
 		if v, ok := params["system_prompt"].(string); ok {
 			p.SystemPrompt = v
+		} else if v, ok := params["sys_prompt"].(string); ok {
+			p.SystemPrompt = v
 		}
 		if v, ok := params["prompt"].(string); ok {
 			p.Prompt = v
+		} else if v, ok := params["prompts"].(string); ok && v != "" {
+			// Python agent/component/llm.py:119-120 normalizes a bare-string
+			// prompts into [{"role":"user","content":prompts}]. Mirror that
+			// here so a front-end/template that emits prompts as a string
+			// (the graph.nodes form / dsl testdata) is not silently dropped
+			// by the .([]any) assertion on the list branch below.
+			p.Prompt = v
+		} else if promptsRaw, ok := params["prompts"].([]any); ok && len(promptsRaw) > 0 {
+			if first, ok := promptsRaw[0].(map[string]any); ok {
+				if content, ok := first["content"].(string); ok {
+					p.Prompt = content
+				}
+			}
+		}
+		if v, ok := params["auto_keywords"]; ok {
+			p.AutoKeywords = mapInt(v)
+		}
+		if v, ok := params["auto_questions"]; ok {
+			p.AutoQuestions = mapInt(v)
+		}
+		if v, ok := params["auto_tags"]; ok {
+			p.AutoTags = mapInt(v)
+		}
+		if v, ok := params["tag_file_id"].(string); ok {
+			p.TagFileID = v
 		}
 	}
 	if err := p.Validate(); err != nil {
@@ -170,12 +251,6 @@ func (c *ExtractorComponent) Outputs() map[string]string {
 	}
 }
 
-// Parallelism is locked at 1 (plan §AD-5a: "Extractor: 1 (LLM call
-// is inherently serial)"). The pipeline runner uses this to decide
-// fan-out degree; sequential per-chunk processing keeps test
-// ordering deterministic under -race.
-func (c *ExtractorComponent) Parallelism() int { return 1 }
-
 // extractorChatInvoker is the seam the Extractor uses to dispatch
 // its chat call. The production implementation
 // (einoExtractorChatInvoker below) mirrors
@@ -198,11 +273,12 @@ type extractorChatInvoker interface {
 // "model@provider". APIKey / BaseURL are passed through so the
 // driver can authenticate without re-reading the tenant config.
 type extractorChatRequest struct {
-	Driver    string
-	ModelName string
-	APIKey    string
-	BaseURL   string
-	Messages  []eschema.Message
+	Driver      string
+	ModelName   string
+	APIKey      string
+	BaseURL     string
+	Messages    []eschema.Message
+	Temperature *float64
 }
 
 // extractorChatResponse holds the LLM's text answer. Token /
@@ -277,43 +353,43 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 	driver := strings.ToLower(strings.TrimSpace(req.Driver))
 	modelName := req.ModelName
 	if driver == "" && modelName != "" {
-		if bare, provider, ok := splitExtractorLLID(modelName); ok {
+		if bare, provider, ok := splitExtractorLLIDPair(modelName); ok {
 			driver = provider
 			modelName = bare
 		}
 	}
 	if driver == "" {
-		driver = "dummy"
+		return nil, fmt.Errorf("extractor: chat: no driver resolved for model %q", modelName)
 	}
-	var baseURL map[string]string
-	if req.BaseURL != "" {
-		baseURL = map[string]string{"default": req.BaseURL}
-	}
-	urlSuffix := extractorChatURLSuffixFor(driver)
-	d, err := models.NewModelFactory().CreateModelDriver(driver, baseURL, urlSuffix)
+	common.Info(fmt.Sprintf("extractor: chat: driver=%s modelName=%s baseUrl=%s", driver, modelName, req.BaseURL))
+	d, err := models.GetPreconfiguredDriver(driver, req.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("extractor: resolve driver %q: %w", driver, err)
-	}
-	if d == nil {
-		return nil, fmt.Errorf("extractor: no driver for %q", driver)
 	}
 	apiKey := req.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
 	cm := models.NewChatModel(d, &modelName, cfg)
-	wrapper := models.NewEinoChatModel(cm, nil)
+	var chatCfg *models.ChatConfig
+	if req.Temperature != nil {
+		temp := *req.Temperature
+		chatCfg = &models.ChatConfig{Temperature: &temp}
+	}
+	wrapper := models.NewEinoChatModel(cm, chatCfg)
 	// Honour ctx cancel up front so the caller's WithTimeout(...)
 	// is observed even when the driver layer doesn't take a ctx.
+	common.Info(fmt.Sprintf("try to chat with message: %v", req.Messages))
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	out, err := wrapper.Generate(ctx, toExtractorEinoMessages(req.Messages))
 	if err != nil {
+		common.Error(fmt.Sprintf("error when chat with message: %v", req.Messages), err)
 		return nil, err
 	}
 	return &extractorChatResponse{Content: out.Content}, nil
 }
 
-// splitExtractorLLID parses a composite llm_id "model@provider"
+// splitExtractorLLIDPair parses a composite llm_id "model@provider"
 // mirroring agent/component/llm_credentials.go:parseLLMIDParts
 // (the canonical composite form throughout the codebase). Returns
 // ok=false when no "@" is present or the id is malformed.
@@ -323,26 +399,13 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 //
 // Kept local so the ingestion package doesn't import
 // agent/component.
-func splitExtractorLLID(s string) (modelName, provider string, ok bool) {
+func splitExtractorLLIDPair(s string) (modelName, provider string, ok bool) {
 	parts := strings.Split(strings.TrimSpace(s), "@")
 	switch len(parts) {
 	case 2:
 		return parts[0], parts[1], true
 	default:
 		return s, "", false
-	}
-}
-
-// extractorChatURLSuffixFor matches
-// internal/agent/component/llm.go:chatURLSuffixFor — anthropic
-// uses v1/messages, everything else falls through to the openai-
-// compatible chat/completions default.
-func extractorChatURLSuffixFor(driver string) models.URLSuffix {
-	switch strings.ToLower(driver) {
-	case "anthropic":
-		return models.URLSuffix{Chat: "v1/messages"}
-	default:
-		return models.URLSuffix{Chat: "chat/completions"}
 	}
 }
 
@@ -374,7 +437,14 @@ type extractorInputs struct {
 	llmID        string
 	systemPrompt string
 	prompt       string
+	lang         string
 	chunks       []map[string]any
+	// temperature overrides the LLM temperature for this call. A
+	// nil value leaves the request's Temperature unset so the model
+	// (or the chat-model default) decides, matching Python's generic
+	// Extractor path. The keyword/question helpers set it to
+	// extractorTemperature (0.2) to mirror generator.py.
+	temperature *float64
 }
 
 // resolveInputs overlays per-call inputs on top of the
@@ -402,6 +472,11 @@ func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInput
 	}
 	if v, ok := inputs["system_prompt"].(string); ok && v != "" {
 		out.systemPrompt = v
+	} else if v, ok := inputs["sys_prompt"].(string); ok && v != "" {
+		out.systemPrompt = v
+	}
+	if v, ok := inputs["lang"].(string); ok && v != "" {
+		out.lang = v
 	}
 	for _, key := range extractorChunkInputOrder(inputs) {
 		if chunks, ok := extractorChunkList(inputs[key]); ok {
@@ -469,26 +544,31 @@ func extractorChunkList(v any) ([]map[string]any, bool) {
 //	                                  short-circuits with an error.
 //	_created_time, _elapsed_time    — stamped by the canvas framework
 //	                                 (realComponentBody), not here.
-func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	if err := c.Param.Validate(); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
 	in := c.resolveInputs(inputs)
+	common.Debug("extractor stage",
+		zap.String("component", "Extractor"),
+		zap.Int("input_chunks", len(in.chunks)),
+	)
 	if in.fieldName == "toc" {
-		// TODO(parity-gap): _build_TOC is not ported yet — surface
-		// a clear error rather than silently emitting empty chunks.
 		return nil, fmt.Errorf("extractor: field_name %q requires the TOC prompt generator which is not yet ported to Go", "toc")
 	}
 
-	// Progress (_created_time / _elapsed_time stamping, start/done
-	// callbacks) is owned by the canvas framework (realComponentBody),
-	// not by this component. The per-chunk LLM timeout below is a
-	// business concern that stays here.
 	if err := runtime.WithTimeout(ctx, extractorTimeout, func(timeoutCtx context.Context) error {
+		// Tag phase: run when auto_tags > 0 and we have chunks.
+		if c.Param.AutoTags > 0 && len(in.chunks) > 0 {
+			tagged, tagErr := c.runAutoTags(timeoutCtx, db, in)
+			if tagErr != nil {
+				return tagErr
+			}
+			in.chunks = tagged
+		}
+
 		if len(in.chunks) == 0 {
-			// Fast path (python _invoke line 108): one
-			// call with the resolved args directly.
-			ans, callErr := c.call(timeoutCtx, in, "")
+			ans, callErr := c.call(timeoutCtx, db, in, "")
 			if callErr != nil {
 				return callErr
 			}
@@ -496,43 +576,303 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, inputs map[string]any) 
 			return nil
 		}
 		for i, ck := range in.chunks {
-			text, _ := ck["text"].(string)
-			ans, callErr := c.call(timeoutCtx, in, text)
-			if callErr != nil {
-				return fmt.Errorf("chunk %d: %w", i, callErr)
+			text, _ := ck["content_with_weight"].(string)
+			if strings.TrimSpace(text) == "" {
+				text, _ = ck["text"].(string)
 			}
-			ck[in.fieldName] = ans
-			in.chunks[i] = ck
+
+			if c.Param.AutoKeywords > 0 && c.Param.AutoQuestions > 0 {
+				// Run keyword and question extraction concurrently
+				// per chunk (mirrors Python's ThreadPoolExecutor:
+				// task_executor.py:444-448). The shared chunk map is
+				// guarded by mu inside runAutoKeywords/runAutoQuestions,
+				// which also short-circuit when the key already exists.
+				var kwErr, qErr error
+				var mu sync.Mutex
+				var wg sync.WaitGroup
+				wg.Add(2)
+				go func() {
+					defer wg.Done()
+					if err := c.runAutoKeywords(timeoutCtx, db, in, ck, text, &mu); err != nil {
+						kwErr = err
+					}
+				}()
+				go func() {
+					defer wg.Done()
+					if err := c.runAutoQuestions(timeoutCtx, db, in, ck, text, &mu); err != nil {
+						qErr = err
+					}
+				}()
+				wg.Wait()
+				if kwErr != nil {
+					return fmt.Errorf("chunk %d keywords: %w", i, kwErr)
+				}
+				if qErr != nil {
+					return fmt.Errorf("chunk %d questions: %w", i, qErr)
+				}
+			} else {
+				if c.Param.AutoKeywords > 0 {
+					if err := c.runAutoKeywords(timeoutCtx, db, in, ck, text, nil); err != nil {
+						return fmt.Errorf("chunk %d keywords: %w", i, err)
+					}
+				}
+				if c.Param.AutoQuestions > 0 {
+					if err := c.runAutoQuestions(timeoutCtx, db, in, ck, text, nil); err != nil {
+						return fmt.Errorf("chunk %d questions: %w", i, err)
+					}
+				}
+			}
+
+			if in.fieldName != "" {
+				// Substitute {field_name} placeholders with current
+				// chunk field values, mirroring Python's
+				// string_format at extractor.py:103.
+				callIn := in
+				callIn.prompt = substituteChunkPlaceholders(in.prompt, ck, text)
+				callIn.systemPrompt = substituteChunkPlaceholders(in.systemPrompt, ck, text)
+				// buildExtractorMessages appends chunkText to the user
+				// message unconditionally. When the chunk text was already
+				// embedded via a {text}/{chunks} placeholder above, passing
+				// it again would duplicate the content in the final prompt.
+				// Suppress the automatic append in that case (the keyword/
+				// question helper paths do the same by passing "").
+				callChunkText := text
+				if strings.Contains(in.prompt, "{text}") || strings.Contains(in.prompt, "{chunks}") ||
+					strings.Contains(in.systemPrompt, "{text}") || strings.Contains(in.systemPrompt, "{chunks}") {
+					callChunkText = ""
+				}
+				ans, callErr := c.call(timeoutCtx, db, callIn, callChunkText)
+				if callErr != nil {
+					return fmt.Errorf("chunk %d: %w", i, callErr)
+				}
+				ck[in.fieldName] = ans
+			}
 		}
 		return nil
 	}); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
-	// Run-level metadata (name, tenant_id, kb_id, ...) is read by
-	// downstream components from the workflow-wide CanvasState.Globals
-	// bag (seeded at pipeline start), so it is not re-emitted here.
+	common.Debug("extractor stage",
+		zap.String("component", "Extractor"),
+		zap.Int("output_chunks", len(in.chunks)),
+	)
 	return map[string]any{
 		"chunks":        in.chunks,
 		"output_format": "chunks",
 	}, nil
 }
 
+// runAutoKeywords extracts keywords for the current chunk and stores
+// them on ck["important_kwd"]. mu may be nil (sequential path); when
+// non-nil it serializes the shared chunk-map accesses so concurrent
+// keyword/question goroutines stay race-free. The existence check and
+// the map writes are both guarded by mu. Keyword extraction pins
+// temperature to extractorTemperature (0.2) to mirror generator.py.
+func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string, mu *sync.Mutex) error {
+	if mu != nil {
+		mu.Lock()
+	}
+	_, exists := ck["important_kwd"]
+	if mu != nil {
+		mu.Unlock()
+	}
+	if exists {
+		return nil
+	}
+	kwTemp := extractorTemperature
+	kwIn := extractorInputs{
+		llmID:        in.llmID,
+		systemPrompt: fmt.Sprintf(autoKeywordPrompt, c.Param.AutoKeywords, chunkText),
+		prompt:       "Output: ",
+		temperature:  &kwTemp,
+	}
+	result, err := c.call(ctx, db, kwIn, "")
+	if err != nil {
+		return err
+	}
+	resultStr, _ := result.(string)
+	resultStr = cleanExtractionResult(resultStr)
+	if resultStr == "" {
+		return nil
+	}
+	kwds := splitKeywords(resultStr)
+	if len(kwds) == 0 {
+		return nil
+	}
+	tok := tokenizer.New(in.lang)
+	tks, tkErr := tok.Tokenize(strings.Join(kwds, " "))
+	if mu != nil {
+		mu.Lock()
+	}
+	ck["important_kwd"] = kwds
+	if tkErr == nil {
+		ck["important_tks"] = tks
+	}
+	if mu != nil {
+		mu.Unlock()
+	}
+	return nil
+}
+
+// runAutoQuestions extracts questions for the current chunk and stores
+// them on ck["question_kwd"]. See runAutoKeywords for the mu contract
+// and the temperature pin.
+func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string, mu *sync.Mutex) error {
+	if mu != nil {
+		mu.Lock()
+	}
+	_, exists := ck["question_kwd"]
+	if mu != nil {
+		mu.Unlock()
+	}
+	if exists {
+		return nil
+	}
+	qTemp := extractorTemperature
+	qIn := extractorInputs{
+		llmID:        in.llmID,
+		systemPrompt: fmt.Sprintf(autoQuestionPrompt, c.Param.AutoQuestions, chunkText),
+		prompt:       "Output: ",
+		temperature:  &qTemp,
+	}
+	result, err := c.call(ctx, db, qIn, "")
+	if err != nil {
+		return err
+	}
+	resultStr, _ := result.(string)
+	resultStr = cleanExtractionResult(resultStr)
+	if resultStr == "" {
+		return nil
+	}
+	qs := strings.Split(resultStr, "\n")
+	// Filter empty lines
+	var filtered []string
+	for _, q := range qs {
+		q = strings.TrimSpace(q)
+		if q != "" {
+			filtered = append(filtered, q)
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	tok := tokenizer.New(in.lang)
+	tks, tkErr := tok.Tokenize(strings.Join(filtered, "\n"))
+	if mu != nil {
+		mu.Lock()
+	}
+	ck["question_kwd"] = filtered
+	if tkErr == nil {
+		ck["question_tks"] = tks
+	}
+	if mu != nil {
+		mu.Unlock()
+	}
+	return nil
+}
+
+// cleanExtractionResult strips `</think>` tags and rejects `**ERROR**` responses,
+// matching Python's keyword_extraction and question_proposal post-processing.
+func cleanExtractionResult(s string) string {
+	if i := strings.LastIndex(s, "</think>"); i >= 0 {
+		s = s[i+len("</think>"):]
+	}
+	s = strings.TrimSpace(s)
+	if strings.Contains(s, "**ERROR**") {
+		return ""
+	}
+	return s
+}
+
+// splitKeywords splits a comma-delimited keyword string.
+func splitKeywords(s string) []string {
+	parts := strings.FieldsFunc(s, func(r rune) bool {
+		return r == ',' || r == '，' || r == ';' || r == '；' || r == '、' || r == '\r' || r == '\n'
+	})
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
+}
+
+// nonRetryableStatusRE matches HTTP client-error status codes that
+// signal a permanent (non-transient) condition and therefore must
+// NOT be retried. The word boundaries are essential: a bare
+// substring check on "400" would wrongly flag phrasing such as
+// "context deadline exceeded after 400ms" (a transient timeout,
+// retryable) as non-retryable. \b ensures we only match a standalone
+// 3-digit status token, so "400ms" / "4000" do not match. 429 and
+// 5xx are deliberately absent — they stay retryable.
+var nonRetryableStatusRE = regexp.MustCompile(`\b(?:400|401|403|404|405|422)\b`)
+
+// isRetryableLLMError classifies an LLM chat error as worth
+// retrying. The production chat invoker returns opaque errors:
+// configuration failures (missing model/driver) before any API
+// call, and the provider SDK's raw error after the call. We treat
+// context cancellation/deadline as terminal, plus a lightweight
+// heuristic for non-transient auth/client errors. Anything
+// unrecognized defaults to retryable so genuinely transient 5xx /
+// 429 / network blips keep retrying (matching the prior blind-retry
+// behavior).
+func isRetryableLLMError(err error) bool {
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{
+		"unauthorized", "authentication", "api key",
+		"bad request", "not found", "model not found", "content filter",
+		"no driver resolved", "model_name is required", "resolve driver",
+	} {
+		if strings.Contains(msg, s) {
+			return false
+		}
+	}
+	if nonRetryableStatusRE.MatchString(msg) {
+		return false
+	}
+	return true
+}
+
 // call dispatches one LLM chat call for the supplied chunk text
 // (empty string in the no-chunk fast path). The result is the
 // raw string from the model — JSON parsing happens here so
 // callers can rely on a structured value downstream.
-func (c *ExtractorComponent) call(ctx context.Context, in extractorInputs, chunkText string) (any, error) {
-	driver, modelName, apiKey, baseURL := resolveExtractorChatTarget(in.llmID)
+func (c *ExtractorComponent) call(ctx context.Context, db *gorm.DB, in extractorInputs, chunkText string) (any, error) {
+	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
+	if err != nil {
+		return nil, err
+	}
 	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, chunkText, in.chunks)
 	inv := getExtractorChatInvoker()
-	resp, err := inv.Chat(ctx, extractorChatRequest{
+	req := extractorChatRequest{
 		Driver:    driver,
 		ModelName: modelName,
 		APIKey:    apiKey,
 		BaseURL:   baseURL,
 		Messages:  msgs,
-	})
-	if err != nil {
+	}
+	// Only override the temperature when the caller set one. A nil
+	// Temperature lets the model / chat-model default decide, matching
+	// Python's generic Extractor path; keyword/question helpers set
+	// extractorTemperature (0.2) to mirror generator.py.
+	if in.temperature != nil {
+		temp := *in.temperature
+		req.Temperature = &temp
+	}
+	var resp *extractorChatResponse
+	if err := common.RetryWithBackoff(ctx, extractorRetryMax, extractorRetryDelay, func() error {
+		r, e := inv.Chat(ctx, req)
+		resp = r
+		return e
+	}, isRetryableLLMError); err != nil {
 		return nil, err
 	}
 	raw := strings.TrimSpace(resp.Content)
@@ -551,29 +891,159 @@ func (c *ExtractorComponent) call(ctx context.Context, in extractorInputs, chunk
 	return raw, nil
 }
 
-// resolveExtractorChatTarget splits a composite llm_id
-// "model@provider" or "openai/model@provider" into driver /
-// model / api_key / base_url. Today the Extractor has no tenant-
-// scoped credential lookup — credentials are read from the
-// per-call inputs map only. Future iterations can fill that gap
-// with the same pattern internal/agent/component/llm_credentials.go
-// uses (resolveTenantLLMConfig). For Phase 2.5 the test seam
-// (SetExtractorChatInvoker) carries the wire-level signals.
-func resolveExtractorChatTarget(llmID string) (driver, modelName, apiKey, baseURL string) {
+// resolveExtractorChatTarget resolves the llm_id into driver / model /
+// api_key / base_url. The llm_id may be a bare tenant_model UUID or
+// a composite "model@provider" string. Errors from DAO resolution are
+// propagated so the caller sees the real failure reason.
+func resolveExtractorChatTarget(ctx context.Context, db *gorm.DB, llmID string) (driver, modelName, apiKey, baseURL string, err error) {
 	if override := getExtractorChatTargetResolverOverride(); override != nil {
 		if driver, modelName, apiKey, baseURL, ok := override(llmID); ok {
-			return driver, modelName, apiKey, baseURL
+			return driver, modelName, apiKey, baseURL, nil
 		}
 	}
+
+	// When llmID is empty, try tenant default chat model
+	// (mirrors Python task_executor.py:573-574 fallback).
 	if llmID == "" {
-		return "", "", "", ""
+		if cfg := resolveExtractorChatDefaultConfig(ctx, db); cfg.driver != "" {
+			return cfg.driver, cfg.modelName, cfg.apiKey, cfg.baseURL, nil
+		}
 	}
-	modelName = llmID
-	if bare, provider, ok := splitExtractorLLID(llmID); ok {
-		modelName = bare
-		driver = strings.ToLower(provider)
+
+	cfg, cfgErr := resolveExtractorChatConfig(ctx, db, llmID)
+	if cfgErr != nil {
+		return "", "", "", "", cfgErr
 	}
-	return driver, modelName, "", ""
+	if cfg.driver != "" {
+		return cfg.driver, cfg.modelName, cfg.apiKey, cfg.baseURL, nil
+	}
+
+	// Fallback: when tenant credentials are not available
+	// (no canvas state / no DB), fall back to the basic @ split
+	// so callers can still use model@provider format in tests.
+	if bare, provider, ok := splitExtractorLLIDPair(llmID); ok {
+		return strings.ToLower(provider), bare, "", "", nil
+	}
+	// Nothing left to try — let Chat() surface a clear error when
+	// the driver ends up empty.
+	return "", llmID, "", "", nil
+}
+
+// extractorChatConfig holds the resolved chat model configuration.
+type extractorChatConfig struct {
+	driver    string // llm_factory
+	modelName string // llm_name
+	apiKey    string
+	baseURL   string // api_base
+}
+
+// resolveExtractorChatConfig resolves tenant-scoped credentials for
+// the given llm_id via the shared resolveModelConfig helper.
+//
+//   - Bare UUID → DAO lookup via resolveModelConfigByID.
+//   - "model@provider" → parsed via resolveModelConfigFromProviderInstance.
+//
+// Returns nil error when there is no canvas state (unit tests) —
+// the caller's @ split fallback handles that case.
+func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID string) (extractorChatConfig, error) {
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return extractorChatConfig{}, nil
+	}
+	tidVal, _ := state.GetGlobal("tenant_id")
+	tid, _ := tidVal.(string)
+	if tid == "" {
+		return extractorChatConfig{}, nil
+	}
+
+	var driver models.ModelDriver
+	var modelName string
+	var apiConfig *models.APIConfig
+	if isBareTenantModelID(compositeLLMID) {
+		// UUID path: resolveModelConfigByID does a single GetByID and
+		// returns a clear error if the record doesn't exist.  No need
+		// for a separate pre-check — resolveModelConfig's redundant
+		// GetByID dispatch check is also bypassed.
+		driver, modelName, apiConfig, _, err = resolveModelConfigByID(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
+		if err != nil {
+			return extractorChatConfig{}, fmt.Errorf("extractor: tenant model %q not found or not usable: %w", compositeLLMID, err)
+		}
+	} else {
+		// Composite "model@provider" path: delegate to the shared dispatcher.
+		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
+		if err != nil {
+			return extractorChatConfig{}, fmt.Errorf("extractor: resolve model %q: %w", compositeLLMID, err)
+		}
+	}
+
+	apiKey := ""
+	baseURL := ""
+	if apiConfig != nil {
+		if apiConfig.ApiKey != nil {
+			apiKey = *apiConfig.ApiKey
+		}
+		if apiConfig.BaseURL != nil {
+			baseURL = *apiConfig.BaseURL
+		}
+	}
+	return extractorChatConfig{
+		driver:    strings.ToLower(driver.Name()),
+		modelName: modelName,
+		apiKey:    apiKey,
+		baseURL:   baseURL,
+	}, nil
+}
+
+// resolveExtractorChatDefaultConfig resolves the tenant's default chat
+// model when no explicit llm_id is provided. Returns empty config when
+// no canvas state or tenant_id is available (unit-test context).
+func resolveExtractorChatDefaultConfig(ctx context.Context, db *gorm.DB) extractorChatConfig {
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return extractorChatConfig{}
+	}
+	tidVal, _ := state.GetGlobal("tenant_id")
+	tid, _ := tidVal.(string)
+	if tid == "" {
+		return extractorChatConfig{}
+	}
+
+	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tid, entity.ModelTypeChat)
+	if err != nil || driver == nil {
+		return extractorChatConfig{}
+	}
+
+	apiKey := ""
+	baseURL := ""
+	if apiConfig != nil {
+		if apiConfig.ApiKey != nil {
+			apiKey = *apiConfig.ApiKey
+		}
+		if apiConfig.BaseURL != nil {
+			baseURL = *apiConfig.BaseURL
+		}
+	}
+	return extractorChatConfig{
+		driver:    strings.ToLower(driver.Name()),
+		modelName: modelName,
+		apiKey:    apiKey,
+		baseURL:   baseURL,
+	}
+}
+
+// isBareTenantModelID reports whether s is a 32-character hex string
+// (a tenant_model primary key), as opposed to a composite "model@provider".
+func isBareTenantModelID(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) != 32 {
+		return false
+	}
+	for _, r := range s {
+		if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
+			return false
+		}
+	}
+	return true
 }
 
 // buildExtractorMessages assembles system + user messages for
@@ -646,6 +1116,9 @@ func substitutePromptPlaceholders(prompt string, chunks []map[string]any) string
 	for i, ck := range chunks {
 		t, _ := ck["text"].(string)
 		if t == "" {
+			t, _ = ck["content_with_weight"].(string)
+		}
+		if t == "" {
 			continue
 		}
 		if i > 0 {
@@ -665,6 +1138,39 @@ func substitutePromptPlaceholders(prompt string, chunks []map[string]any) string
 // the @chunks variant but kept so the regex rejects arbitrary
 // placeholders (a future per-component substitution extends here).
 var placeholderRE = regexp.MustCompile(`\{[A-Za-z0-9_]+:[A-Za-z0-9_]+@chunks\}`)
+
+// simplePlaceholderRE matches simple {field_name} placeholders
+// (no colons, no @chunks). Used by substituteChunkPlaceholders to
+// replace {text}, {content_with_weight}, etc. with the current
+// chunk's field values, mirroring Python's string_format
+// (agent/component/base.py:602-609).
+var simplePlaceholderRE = regexp.MustCompile(`\{[A-Za-z_][A-Za-z0-9_]*\}`)
+
+// substituteChunkPlaceholders replaces {field_name} placeholders in
+// the prompt with values from the current chunk map. The special
+// alias "chunks" maps to chunkText (the current chunk's primary
+// text), matching Python's `args[chunks_key] = ck["text"]` at
+// extractor.py:102. Unmatched placeholders are left as-is.
+func substituteChunkPlaceholders(prompt string, ck map[string]any, chunkText string) string {
+	if prompt == "" || ck == nil {
+		return prompt
+	}
+	// Build lookup: chunk fields + "chunks" alias
+	lookup := make(map[string]string, len(ck)+1)
+	for k, v := range ck {
+		lookup[k] = fmt.Sprintf("%v", v)
+	}
+	if _, has := lookup["chunks"]; !has {
+		lookup["chunks"] = chunkText
+	}
+	return simplePlaceholderRE.ReplaceAllStringFunc(prompt, func(match string) string {
+		key := match[1 : len(match)-1] // strip { }
+		if val, ok := lookup[key]; ok {
+			return val
+		}
+		return match // leave unknown placeholders as-is
+	})
+}
 
 // tryParseJSONObject tries to parse s as a JSON object. Returns
 // (parsed, true) on success; (nil, false) on parse error or when
@@ -696,6 +1202,23 @@ func tryParseJSONObject(s string) (map[string]any, bool) {
 		return nil, false
 	}
 	return out, true
+}
+
+// init registers Extractor under CategoryIngestion (per plan §4
+// Phase 2.5). Metadata is derived from the Inputs()/Outputs()
+// methods on ExtractorComponent so the API layer (Phase 4) can
+// enumerate the catalog without instantiating the component.
+// mapInt converts a JSON-compatible value to int.
+func mapInt(v interface{}) int {
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case int64:
+		return int(n)
+	}
+	return 0
 }
 
 // init registers Extractor under CategoryIngestion (per plan §4

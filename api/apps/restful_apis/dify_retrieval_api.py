@@ -285,7 +285,7 @@ async def retrieval(tenant_id):
                 tenant_id,
                 kb_id,
             )
-            return build_error_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+            return build_error_result(message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
         model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, model_config)
         temporal_ctx = await resolve_temporal_retrieval_context(
@@ -343,7 +343,7 @@ async def retrieval(tenant_id):
     except Exception as e:
         if "not_found" in str(e):
             return build_error_result(message="No chunk found! Check the chunk status please!", code=RetCode.NOT_FOUND)
-        logging.exception(e)
+        logger.exception(e)
         return build_error_result(message=str(e), code=RetCode.SERVER_ERROR)
 
 

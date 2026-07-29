@@ -20,7 +20,7 @@ With multiple datasets, you can build more flexible, diversified question answer
 
 ![create dataset](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_knowledge_base.jpg)
 
-_Each time a dataset is created, a folder with the same name is generated in the **root/.knowledgebase** directory._
+_Each time a dataset is created and a file is uploaded to it, a folder with the same name is generated in the **root/.knowledgebase** directory._
 
 ## Configure dataset
 

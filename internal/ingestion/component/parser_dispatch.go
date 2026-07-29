@@ -24,6 +24,7 @@
 package component
 
 import (
+	"context"
 	"fmt"
 	"maps"
 	"strings"
@@ -47,6 +48,7 @@ import (
 // contract (see internal/parser/parser/parse_result.go).
 type parserDispatchResult struct {
 	OutputFormat string
+	DocType      string // doc_type_kwd for media dispatch ("image", "video", "audio")
 	File         map[string]any
 	JSON         []map[string]any
 	Markdown     string
@@ -137,7 +139,7 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 // re-reading setups. lib_type is no longer threaded through: the
 // Python dispatcher picks a single backend per family and the Go
 // constructors mirror that.
-func dispatchParse(fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parserDispatchResult {
+func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parserDispatchResult {
 	if fileType == utility.FileTypeOTHER {
 		// Unknown / unset family. The component treats the bytes
 		// as text pages; splitIntoPages handles it. We return no
@@ -158,7 +160,7 @@ func dispatchParse(fileType utility.FileType, filename string, data []byte, setu
 	}
 	configureParserFromSetups(p, fileType, setups)
 
-	res := p.ParseWithResult(filename, data)
+	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
 		return parserDispatchResult{Err: fmt.Errorf("Parser: %q: %w", fileType, res.Err)}
 	}
@@ -204,11 +206,23 @@ func fileTypeFromInputs(inputs map[string]any) utility.FileType {
 		return utility.FileTypeOTHER
 	}
 	if raw, ok := inputs["file_type"].(string); ok && raw != "" {
-		if ft := familyToExt(pythonFamilyName(strings.ToLower(raw))); ft != utility.FileTypeOTHER {
+		lower := strings.ToLower(raw)
+		// csv is a spreadsheet-family member but uses its own
+		// dedicated parser rather than the xlsx/xls path.
+		if lower == "csv" {
+			return utility.FileTypeCSV
+		}
+		// Direct extension match first — handles exact hints like
+		// "xls", "ppt", "doc", "docx", etc. This must run before
+		// the family look-up so that legacy binary extensions
+		// aren't collapsed to OOXML types (e.g. "xls" → XLSX).
+		if ft := utility.GetFileType("x." + lower); ft != utility.FileTypeOTHER {
 			return ft
 		}
-		// Direct extension match — handles "md", "docx", etc.
-		if ft := utility.GetFileType("x." + strings.ToLower(raw)); ft != utility.FileTypeOTHER {
+		// Family-name lookup catches python-side family identifiers
+		// ("slides", "spreadsheet", "text&code") that aren't valid
+		// file extensions.
+		if ft := familyToExt(pythonFamilyName(lower)); ft != utility.FileTypeOTHER {
 			return ft
 		}
 	}
@@ -235,15 +249,29 @@ func familyToExt(family string) utility.FileType {
 	case "docx":
 		return utility.FileTypeDOCX
 	case "slides":
-		return utility.FileTypePPTX // pptx arm picks the slide parser
+		return utility.FileTypePPTX
 	case "spreadsheet":
 		return utility.FileTypeXLSX
+	case "csv":
+		return utility.FileTypeCSV
 	case "html":
 		return utility.FileTypeHTML
 	case "markdown":
 		return utility.FileTypeMarkdown
 	case "text&code":
 		return utility.FileTypeTXT
+	case "epub":
+		return utility.FileTypeEPUB
+	case "json":
+		return utility.FileTypeJSON
+	case "video":
+		return utility.FileTypeVIDEO
+	case "email":
+		return utility.FileTypeEMAIL
+	case "audio":
+		return utility.FileTypeAURAL
+	case "picture", "image", "visual":
+		return utility.FileTypeVISUAL
 	}
 	return utility.FileTypeOTHER
 }
@@ -259,13 +287,9 @@ func pythonFamilyName(raw string) string {
 		return "doc"
 	case "docx":
 		return "docx"
-	case "ppt":
+	case "ppt", "pptx", "slides":
 		return "slides"
-	case "pptx":
-		return "slides"
-	case "xls":
-		return "spreadsheet"
-	case "xlsx":
+	case "xls", "xlsx", "spreadsheet":
 		return "spreadsheet"
 	case "csv":
 		return "spreadsheet"
@@ -273,19 +297,25 @@ func pythonFamilyName(raw string) string {
 		return "html"
 	case "md", "markdown", "mdx":
 		return "markdown"
-	case "jpg", "jpeg", "png", "gif":
-		return "image"
-	case "eml", "msg":
-		return "email"
 	case "epub":
 		return "epub"
+	case "json", "jsonl", "ldjson":
+		return "json"
 	case "txt", "py", "js", "java", "c", "cpp", "h", "php",
 		"go", "ts", "sh", "cs", "kt", "sql":
 		return "text&code"
-	case "mp4", "avi", "mkv":
+	case "mp4", "avi", "mkv", "mov", "webm", "flv",
+		"mpeg", "mpg", "wmv", "3gp", "3gpp", "video":
 		return "video"
-	case "wav", "mp3", "aac", "flac", "ogg":
+	case "eml", "msg", "email":
+		return "email"
+	case "da", "wave", "wav", "mp3", "aac", "flac", "ogg",
+		"aiff", "au", "midi", "wma", "ape", "alac", "wv", "opus", "aural":
 		return "audio"
+	case "visual", "picture", "image",
+		"png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif",
+		"webp", "svg", "ico", "avif", "heic", "apng":
+		return "image"
 	}
 	return ""
 }
@@ -353,10 +383,13 @@ func pagesFromDispatch(pages []schema.Page) [][]byte {
 // at rag/flow/parser/parser.py:_invoke — the downstream chunker
 // / tokenizer / extractor components read the matching family
 // key, with "pages" as the universal fallback shape.
-func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, name string, fileType utility.FileType) map[string]any {
+func buildParserOutputs(parsed []schema.Page, dispatched parserDispatchResult, name string, fileType utility.FileType, lang string) map[string]any {
 	out := map[string]any{
 		"pages": toAnyPages(parsed),
 		"name":  name,
+	}
+	if lang != "" {
+		out["lang"] = lang
 	}
 	if dispatched.Err == nil && dispatched.OutputFormat != "" {
 		out["output_format"] = dispatched.OutputFormat

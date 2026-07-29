@@ -5,7 +5,7 @@ import {
   ICompilationTemplateBuiltin,
   ICompilationTemplateSection,
 } from '@/interfaces/database/compilation-template';
-import { FormSchemaType } from '@/pages/user-setting/compilation-templates/edit-template/schema';
+import { FormSchemaType } from '@/pages/user-setting/compilation-templates/create-next/schema';
 
 export const useTemplateSectionData = (
   form: UseFormReturn<FormSchemaType>,

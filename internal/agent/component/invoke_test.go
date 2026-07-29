@@ -49,8 +49,7 @@ func setupAllowAnyHost(t *testing.T, enabled bool) {
 }
 
 // TestInvoke_GET exercises the happy path: a GET request to a stub
-// server returns the canned body, and the response map carries the
-// expected status / body / headers.
+// server returns the canned body as the Python-compatible result output.
 func TestInvoke_GET(t *testing.T) {
 	setupAllowAnyHost(t, true)
 
@@ -58,29 +57,30 @@ func TestInvoke_GET(t *testing.T) {
 		if r.Method != http.MethodGet {
 			t.Errorf("server: got method %q, want GET", r.Method)
 		}
-		w.Header().Set("X-Test", "ok")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("hello"))
 	}))
 	defer srv.Close()
 
 	c, _ := NewInvokeComponent(nil)
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"method": "GET",
 		"url":    srv.URL,
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if status, _ := out["status"].(int); status != http.StatusOK {
-		t.Errorf("status: got %d, want 200", status)
+	if got, _ := out["result"].(string); got != "hello" {
+		t.Errorf("result: got %q, want hello", got)
 	}
-	if body, _ := out["body"].(string); body != "hello" {
-		t.Errorf("body: got %q, want %q", body, "hello")
+	if len(out) != 3 {
+		t.Errorf("output = %#v, want result and timing fields", out)
 	}
-	hdr, _ := out["headers"].(map[string]string)
-	if hdr["X-Test"] != "ok" {
-		t.Errorf("headers[X-Test]: got %q, want %q", hdr["X-Test"], "ok")
+	if _, ok := out["_created_time"].(float64); !ok {
+		t.Errorf("_created_time = %#v, want float64", out["_created_time"])
+	}
+	if elapsed, ok := out["_elapsed_time"].(float64); !ok || elapsed < 0 {
+		t.Errorf("_elapsed_time = %#v, want non-negative float64", out["_elapsed_time"])
 	}
 }
 
@@ -101,7 +101,7 @@ func TestInvoke_POST(t *testing.T) {
 	defer srv.Close()
 
 	c, _ := NewInvokeComponent(nil)
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"method": "POST",
 		"url":    srv.URL,
 		"body":   `{"k":"v"}`,
@@ -109,17 +109,64 @@ func TestInvoke_POST(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if status, _ := out["status"].(int); status != http.StatusCreated {
-		t.Errorf("status: got %d, want 201", status)
-	}
 	if seenCT != "application/json" {
 		t.Errorf("server saw Content-Type %q, want application/json (default)", seenCT)
 	}
 	if seenBody != `{"k":"v"}` {
 		t.Errorf("server saw body %q, want %q", seenBody, `{"k":"v"}`)
 	}
-	if body, _ := out["body"].(string); body != `echo:{"k":"v"}` {
-		t.Errorf("body: got %q, want %q", body, `echo:{"k":"v"}`)
+	if got, _ := out["result"].(string); got != `echo:{"k":"v"}` {
+		t.Errorf("result: got %q, want %q", got, `echo:{"k":"v"}`)
+	}
+}
+
+func TestInvoke_UsesNodeParams(t *testing.T) {
+	setupAllowAnyHost(t, true)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Configured"); got != "yes" {
+			t.Errorf("X-Configured = %q, want yes", got)
+		}
+		_, _ = w.Write([]byte("configured"))
+	}))
+	defer srv.Close()
+
+	c, err := NewInvokeComponent(map[string]any{
+		"method":  "GET",
+		"url":     srv.URL,
+		"headers": `{"X-Configured":"yes"}`,
+	})
+	if err != nil {
+		t.Fatalf("NewInvokeComponent: %v", err)
+	}
+	out, err := c.Invoke(context.Background(), nil, map[string]any{})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["result"].(string); got != "configured" {
+		t.Errorf("result = %q, want configured", got)
+	}
+}
+
+func TestInvoke_GetInputForm(t *testing.T) {
+	c, err := NewInvokeComponent(map[string]any{
+		"variables": []any{
+			map[string]any{"key": "Search query", "ref": "sys.query"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewInvokeComponent: %v", err)
+	}
+	getter, ok := c.(interface{ GetInputForm() map[string]any })
+	if !ok {
+		t.Fatal("Invoke does not expose GetInputForm")
+	}
+	field, ok := getter.GetInputForm()["sys.query"].(map[string]any)
+	if !ok {
+		t.Fatalf("GetInputForm()[sys.query] = %#v, want field", getter.GetInputForm()["sys.query"])
+	}
+	if field["type"] != "line" || field["name"] != "Search query" {
+		t.Errorf("field = %#v, want line Search query", field)
 	}
 }
 
@@ -129,7 +176,7 @@ func TestInvoke_BadMethod(t *testing.T) {
 	setupAllowAnyHost(t, true)
 
 	c, _ := NewInvokeComponent(nil)
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(context.Background(), nil, map[string]any{
 		"method": "PATCH",
 		"url":    "http://localhost:1",
 	})
@@ -146,7 +193,7 @@ func TestInvoke_MissingURL(t *testing.T) {
 	setupAllowAnyHost(t, true)
 
 	c, _ := NewInvokeComponent(nil)
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(context.Background(), nil, map[string]any{
 		"method": "GET",
 	})
 	if err == nil {
@@ -175,7 +222,7 @@ func TestInvoke_SSRFGuard_BlocksLoopback(t *testing.T) {
 	defer srv.Close()
 
 	c, _ := NewInvokeComponent(nil)
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"method": "GET",
 		"url":    srv.URL,
 	})
@@ -188,8 +235,8 @@ func TestInvoke_SSRFGuard_BlocksLoopback(t *testing.T) {
 	if got, _ := out["_ERROR"].(string); got != "URL not valid" {
 		t.Errorf("_ERROR = %q, want %q", got, "URL not valid")
 	}
-	if status, _ := out["status"].(int); status != 0 {
-		t.Errorf("status = %d, want 0 on SSRF block", status)
+	if result, exists := out["result"]; !exists || result != nil {
+		t.Errorf("result = %#v, want nil result on SSRF block", result)
 	}
 }
 
@@ -205,7 +252,7 @@ func TestInvoke_SSRFGuard_BlocksMetadataIP(t *testing.T) {
 	defer srv.Close()
 
 	c, _ := NewInvokeComponent(nil)
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"method": "GET",
 		"url":    "http://169.254.169.254/latest/meta-data/",
 	})
@@ -241,7 +288,7 @@ func TestInvoke_SSRFGuard_BlocksProxy(t *testing.T) {
 	// (without a side-effect on the local server) is still
 	// caught. PR review round 5 / duplicate fix from the
 	// serverHit-only assertion in the earlier review.
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"method": "GET",
 		"url":    "https://example.com/api",
 		"proxy":  "http://127.0.0.1:8080",
@@ -273,19 +320,15 @@ func TestInvoke_NoRedirects_NotFollowed(t *testing.T) {
 	defer srv.Close()
 
 	c, _ := NewInvokeComponent(nil)
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"method": "GET",
 		"url":    srv.URL,
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if status, _ := out["status"].(int); status != http.StatusFound {
-		t.Errorf("status = %d, want 302 (no follow)", status)
-	}
-	hdr, _ := out["headers"].(map[string]string)
-	if hdr["Location"] != "http://127.0.0.1:1/secret" {
-		t.Errorf("Location header not preserved: %v", hdr)
+	if got, _ := out["result"].(string); got != "" {
+		t.Errorf("result = %q, want empty 302 response body", got)
 	}
 }
 
@@ -360,7 +403,7 @@ func TestInvoke_ProxyDNSPin(t *testing.T) {
 	c, _ := NewInvokeComponent(nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	_, err = c.Invoke(ctx, map[string]any{
+	_, err = c.Invoke(ctx, nil, map[string]any{
 		"method":  "GET",
 		"url":     "http://8.8.8.8/api",
 		"proxy":   "http://proxy.test.invalid:" + proxyPort,
@@ -386,7 +429,7 @@ func TestInvoke_ProxyRejectsHostnameTarget(t *testing.T) {
 	setupAllowAnyHost(t, false)
 
 	c, _ := NewInvokeComponent(nil)
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"method": "GET",
 		"url":    "http://example.com/api",
 		"proxy":  "http://proxy.example.invalid:9999",

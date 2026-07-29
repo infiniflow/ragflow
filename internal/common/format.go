@@ -24,6 +24,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cespare/xxhash/v2"
 )
 
 // PtrString formats a pointer value as a string for debug/log output.
@@ -107,10 +109,7 @@ func FormatNumber(n int64) string {
 	s := fmt.Sprintf("%d", n)
 	parts := []string{}
 	for i := len(s); i > 0; i -= 3 {
-		start := i - 3
-		if start < 0 {
-			start = 0
-		}
+		start := max(i-3, 0)
 		parts = append([]string{s[start:i]}, parts...)
 	}
 	return strings.Join(parts, ",")
@@ -158,4 +157,18 @@ func FormatTime(t *int64) string {
 func IsValidString(v interface{}) bool {
 	str, ok := v.(string)
 	return ok && str != ""
+}
+
+// ChunkID generates a deterministic chunk identifier matching Python's:
+//
+//	xxhash.xxh64((content_with_weight + str(doc_id)).encode("utf-8", "surrogatepass")).hexdigest()
+//
+// The concatenation inside the hash is text+docID (matching Python); the
+// parameter order is (docID, text) so the scope/identity argument comes first.
+// This is the single shared implementation used by the ingestion pipeline (for
+// image object keys and index document ids) and by the API (for directly
+// created chunks), so the two paths always produce the same id from the same
+// (docID, text) pair.
+func ChunkID(docID, text string) string {
+	return fmt.Sprintf("%016x", xxhash.Sum64String(text+docID))
 }

@@ -412,7 +412,7 @@ class LLMBundle(LLM4Tenant):
         return queue
 
     async def async_chat(self, system: str, history: list, gen_conf: dict = {}, **kwargs):
-        if self.is_tools and getattr(self.mdl, "is_tools", False) and hasattr(self.mdl, "async_chat_with_tools"):
+        if self.is_tools and hasattr(self.mdl, "async_chat_with_tools"):
             base_fn = self.mdl.async_chat_with_tools
         elif hasattr(self.mdl, "async_chat"):
             base_fn = self.mdl.async_chat

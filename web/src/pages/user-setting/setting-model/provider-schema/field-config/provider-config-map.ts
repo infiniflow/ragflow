@@ -39,7 +39,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         validation: { message: 'instanceNameMessage' },
       },
       {
-        name: 'api_base',
+        name: 'base_url',
         label: 'addLlmBaseUrl',
         type: 'inputSelect',
         required: true,
@@ -50,7 +50,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       {
         name: 'api_key',
         label: 'apiKey',
-        type: FormFieldType.Text,
+        type: FormFieldType.Password,
         required: false,
         placeholder: 'apiKeyMessage',
         shouldRender: 'hideWhenInstanceExists',
@@ -67,17 +67,21 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
     ],
     verifyTransform: (values) => ({
       apiKey: values.api_key,
-      baseUrl: values.api_base,
+      baseUrl: values.base_url,
       modelInfo: [],
     }),
-    submitTransform: (values) => ({
-      instance_name: values.instance_name,
-      llm_factory: LLMFactory.AzureOpenAI,
-      api_base: values.api_base,
-      api_key: values.api_key,
-      api_version: values.api_version,
-      model_info: [],
-    }),
+    submitTransform: (values) => {
+      const apiKey = values.api_version
+        ? { api_key: values.api_key ?? '', api_version: values.api_version }
+        : (values.api_key ?? '');
+      return {
+        instance_name: values.instance_name,
+        llm_factory: LLMFactory.AzureOpenAI,
+        base_url: values.base_url,
+        api_key: apiKey,
+        model_info: [],
+      };
+    },
   },
 
   // ============ VolcEngine ============
@@ -99,7 +103,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       {
         name: 'api_key',
         label: 'addArkApiKey',
-        type: FormFieldType.Text,
+        type: FormFieldType.Password,
         required: true,
         placeholder: 'ArkApiKeyMessage',
         shouldRender: 'hideWhenInstanceExists',
@@ -153,7 +157,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       {
         name: 'google_service_account_key',
         label: 'addGoogleServiceAccountKey',
-        type: FormFieldType.Text,
+        type: FormFieldType.Password,
         required: true,
         placeholder: 'GoogleServiceAccountKeyMessage',
         shouldRender: 'hideWhenInstanceExists',
@@ -246,7 +250,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       {
         name: 'spark_api_password',
         label: 'addSparkAPIPassword',
-        type: FormFieldType.Text,
+        type: FormFieldType.Password,
         required: true,
         placeholder: 'SparkAPIPasswordMessage',
         shouldRender: 'hideWhenInstanceExists',
@@ -429,7 +433,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       {
         name: 'opendataloader_api_key',
         label: 'apiKey',
-        type: FormFieldType.Text,
+        type: FormFieldType.Password,
         required: false,
         placeholder: 'apiKeyPlaceholder',
       },
@@ -460,7 +464,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         instance_name: values.instance_name,
         llm_factory: LLMFactory.OpenDataLoader,
         api_key: cfg,
-        api_base: '',
+        base_url: '',
         model_info: [],
       };
     },
@@ -491,7 +495,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       {
         name: 'paddleocr_access_token',
         label: 'paddleocrAccessToken',
-        type: FormFieldType.Text,
+        type: FormFieldType.Password,
         required: false,
         placeholder: 'paddleocrAccessTokenPlaceholder',
         validation: { message: 'paddleocrAccessTokenMessage' },
@@ -539,7 +543,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         instance_name: values.instance_name,
         llm_factory: LLMFactory.PaddleOCR,
         api_key: cfg,
-        api_base: '',
+        base_url: '',
         model_info: [],
       };
     },
@@ -634,7 +638,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         instance_name: values.instance_name,
         llm_factory: LLMFactory.MinerU,
         api_key: cfg,
-        api_base: '',
+        base_url: '',
         model_info: [],
       };
     },

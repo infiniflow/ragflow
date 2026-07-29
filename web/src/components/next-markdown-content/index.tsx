@@ -29,11 +29,13 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
+import { useLoadingPause } from '@/hooks/use-loading-pause';
 import { cn } from '@/lib/utils';
 import classNames from 'classnames';
 import { omit } from 'lodash';
-import { pipe } from 'lodash/fp';
+import pipe from 'lodash/fp/pipe';
 import reactStringReplace from 'react-string-replace';
+import { LoadingDots } from '../loading-dots';
 import { Button } from '../ui/button';
 import {
   HoverCard,
@@ -159,6 +161,7 @@ function MarkdownContent({
   reference,
   clickDocumentButton,
   content,
+  loading,
 }: {
   content: string;
   loading: boolean;
@@ -178,12 +181,15 @@ function MarkdownContent({
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
+    const thinkSummary = loading
+      ? `${t('chat.thinking')}...`
+      : t('chat.thought');
     return pipe(
-      replaceThinkToSection,
+      (value: string) => replaceThinkToSection(value, thinkSummary),
       replaceRetrievingToSection,
       preprocessLaTeX,
     )(nextText);
-  }, [content, t]);
+  }, [content, loading, t]);
 
   useEffect(() => {
     const docAggs = reference?.doc_aggs;
@@ -353,6 +359,7 @@ function MarkdownContent({
   );
 
   const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+  const showLoadingDots = useLoadingPause(loading, content);
 
   return (
     <div dir={dir} className={styles.markdownContentWrapper}>
@@ -435,6 +442,9 @@ function MarkdownContent({
       >
         {contentWithCursor}
       </Markdown>
+      {showLoadingDots && (
+        <LoadingDots className="ml-1 inline-block text-text-secondary" />
+      )}
     </div>
   );
 }

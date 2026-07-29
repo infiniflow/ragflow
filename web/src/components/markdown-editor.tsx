@@ -7,19 +7,23 @@ interface MarkdownEditorProps {
   content: string;
   onChange?: (content: string) => void;
   readOnly?: boolean;
+  onWikiLinkClick?: (pageType: 'concept' | 'entity', slug: string) => void;
 }
 
 export default function MarkdownEditor({
   content,
   onChange,
   readOnly = false,
+  onWikiLinkClick,
 }: MarkdownEditorProps) {
   const [showSource, setShowSource] = useState(false);
   const [rawContent, setRawContent] = useState(content);
   const contentRef = useRef(content);
 
   useEffect(() => {
-    contentRef.current = content;
+    if (content === contentRef.current) {
+      return;
+    }
     if (showSource) setRawContent(content);
   }, [showSource, content]);
 
@@ -61,6 +65,7 @@ export default function MarkdownEditor({
             placeholder={readOnly ? '' : 'Start writing...'}
             onToggleSource={toggleSource}
             showSource={showSource}
+            onWikiLinkClick={onWikiLinkClick}
           />
         </div>
         <div

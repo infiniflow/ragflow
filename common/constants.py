@@ -86,18 +86,18 @@ class ActiveEnum(Enum):
 class LLMType(StrEnum):
     CHAT = "chat"
     EMBEDDING = "embedding"
-    SPEECH2TEXT = "speech2text"
-    IMAGE2TEXT = "image2text"
+    ASR = "asr"
+    VISION = "vision"
     RERANK = "rerank"
     TTS = "tts"
     OCR = "ocr"
 
 
 class ModelTypeBinary(Enum):
-    CHAT = 0b0000001      # 1 << 0 = 1
+    CHAT = 0b0000001  # 1 << 0 = 1
     EMBEDDING = 0b0000010  # 1 << 1 = 2
-    SPEECH2TEXT = 0b0000100  # 1 << 2 = 4
-    IMAGE2TEXT = 0b0001000  # 1 << 3 = 8
+    ASR = 0b0000100  # 1 << 2 = 4
+    VISION = 0b0001000  # 1 << 3 = 8
     RERANK = 0b0010000  # 1 << 4 = 16
     TTS = 0b0100000  # 1 << 5 = 32
     OCR = 0b1000000  # 1 << 6 = 64
@@ -187,6 +187,13 @@ class PipelineTaskType(StrEnum):
     MEMORY = "Memory"
     ARTIFACT = "Artifact"
     SKILL = "Skill"
+    # KB-wide structure-graph merge tasks (rebuild_dataset_structure_graph_json).
+    STRUCTURE_GRAPH = "StructureGraph"
+    STRUCTURE_MINDMAP = "StructureMindmap"
+    TIMELINE = "Timeline"
+    SESSION_GRAPH = "SessionGraph"
+    SESSION_ESSENCE = "SessionEssence"
+    STRUCTURE = "Structure"
 
 
 VALID_PIPELINE_TASK_TYPES = {
@@ -197,6 +204,12 @@ VALID_PIPELINE_TASK_TYPES = {
     PipelineTaskType.MINDMAP,
     PipelineTaskType.ARTIFACT,
     PipelineTaskType.SKILL,
+    PipelineTaskType.STRUCTURE_GRAPH,
+    PipelineTaskType.STRUCTURE_MINDMAP,
+    PipelineTaskType.TIMELINE,
+    PipelineTaskType.SESSION_GRAPH,
+    PipelineTaskType.SESSION_ESSENCE,
+    PipelineTaskType.STRUCTURE,
 }
 
 
@@ -345,7 +358,7 @@ SOMARK_ENV_KEYS = [
     "SOMARK_KEEP_HEADER_FOOTER",
 ]
 SOMARK_DEFAULT_CONFIG = {
-    "SOMARK_BASE_URL": "https://somark.tech/api/v1",
+    "SOMARK_BASE_URL": "https://somark.cn/api/v1",
     "SOMARK_API_KEY": "",
     "SOMARK_IMAGE_FORMAT": "url",
     "SOMARK_FORMULA_FORMAT": "latex",
@@ -358,4 +371,16 @@ SOMARK_DEFAULT_CONFIG = {
     "SOMARK_ENABLE_TABLE_IMAGE": 1,
     "SOMARK_ENABLE_IMAGE_UNDERSTANDING": 1,
     "SOMARK_KEEP_HEADER_FOOTER": 0,
+}
+MISTRAL_OCR_ENV_KEYS = [
+    "MISTRAL_OCR_BASE_URL",
+    "MISTRAL_OCR_API_KEY",
+    "MISTRAL_OCR_TABLE_FORMAT",
+    "MISTRAL_OCR_KEEP_HEADER_FOOTER",
+]
+MISTRAL_OCR_DEFAULT_CONFIG = {
+    "MISTRAL_OCR_BASE_URL": "https://api.mistral.ai/v1",
+    "MISTRAL_OCR_API_KEY": "",
+    "MISTRAL_OCR_TABLE_FORMAT": "html",
+    "MISTRAL_OCR_KEEP_HEADER_FOOTER": 0,
 }

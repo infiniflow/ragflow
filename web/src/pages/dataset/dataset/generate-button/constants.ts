@@ -12,6 +12,10 @@ export enum GenerateType {
   Raptor = 'Raptor',
   Artifact = 'Artifact',
   ToSkills = 'ToSkills',
+  MindMap = 'MindMap',
+  Timeline = 'Timeline',
+  SessionEssence = 'SessionEssence',
+  SessionGraph = 'SessionGraph',
 }
 
 export enum TraceType {
@@ -19,6 +23,10 @@ export enum TraceType {
   Raptor = 'raptor',
   Artifact = 'artifact',
   Skill = 'skill',
+  MindMap = 'mindmap',
+  Timeline = 'timeline',
+  SessionEssence = 'session_essence',
+  SessionGraph = 'session_graph',
 }
 
 export const GenerateTypeMap = {
@@ -26,11 +34,8 @@ export const GenerateTypeMap = {
   [GenerateType.Raptor]: ProcessingType.raptor,
   [GenerateType.Artifact]: ProcessingType.artifact,
   [GenerateType.ToSkills]: ProcessingType.skill,
-};
-
-export const IconKeyMap = {
-  KnowledgeGraph: 'knowledgegraph',
-  Raptor: 'dataflow-01',
-  Artifact: 'book-open-01',
-  ToSkills: 'spark',
+  [GenerateType.MindMap]: ProcessingType.mindmap,
+  [GenerateType.Timeline]: ProcessingType.timeline,
+  [GenerateType.SessionEssence]: ProcessingType.sessionEssence,
+  [GenerateType.SessionGraph]: ProcessingType.sessionGraph,
 };

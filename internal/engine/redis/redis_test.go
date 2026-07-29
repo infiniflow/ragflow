@@ -25,10 +25,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// newStrictTestClient wires a miniredis-backed RedisClient for
+// newStrictTestClient wires a miniredis-backed Client for
 // EvalTokenBucketStrict tests. Each call gets its own miniredis instance so
 // tests do not share state via the package-level globalClient.
-func newStrictTestClient(t *testing.T) (*RedisClient, *miniredis.Miniredis) {
+func newStrictTestClient(t *testing.T) (*Client, *miniredis.Miniredis) {
 	t.Helper()
 	mr, err := miniredis.Run()
 	if err != nil {
@@ -39,7 +39,7 @@ func newStrictTestClient(t *testing.T) (*RedisClient, *miniredis.Miniredis) {
 	rdb := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = rdb.Close() })
 
-	return &RedisClient{
+	return &Client{
 		client:           rdb,
 		luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
 		luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
@@ -96,7 +96,7 @@ func TestEvalTokenBucketStrict_RedisDownFailsClosed(t *testing.T) {
 // The uninitialised-Redis case must NOT silently pass; it must return
 // (false, error) so the webhook handler can surface 102.
 func TestEvalTokenBucketStrict_NilClient(t *testing.T) {
-	var r *RedisClient
+	var r *Client
 	ok, err := r.EvalTokenBucketStrict(context.Background(), "tb:webhook", 1, 1)
 	if err == nil {
 		t.Fatalf("expected error on nil client, got nil")

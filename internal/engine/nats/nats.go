@@ -253,3 +253,7 @@ func (m *NatsMessageHandle) Ack() error {
 func (m *NatsMessageHandle) Nack() error {
 	return m.message.Nak()
 }
+
+func (m *NatsMessageHandle) InProgress() error {
+	return m.message.InProgress()
+}

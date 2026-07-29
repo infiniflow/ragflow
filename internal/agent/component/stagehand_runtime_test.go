@@ -69,6 +69,39 @@ func TestStagehandRuntime_ValidatesRequiredFields(t *testing.T) {
 	}
 }
 
+func TestStagehandRuntime_RunExtractModelConfig(t *testing.T) {
+	model := stagehandExtractModelConfig(RunExtractRequest{
+		ModelName: "openai/gpt-4o",
+		BaseURL:   "https://example.test/v1",
+		APIKey:    "sk-test",
+	})
+
+	if got := model.GetModelName(); got == nil || *got != "openai/gpt-4o" {
+		t.Fatalf("modelName = %v, want openai/gpt-4o", got)
+	}
+	if got := model.GetAPIKey(); got == nil || *got != "sk-test" {
+		t.Fatalf("apiKey = %v, want sk-test", got)
+	}
+	if got := model.GetBaseURL(); got == nil || *got != "https://example.test/v1" {
+		t.Fatalf("baseURL = %v, want https://example.test/v1", got)
+	}
+	if got := model.GetProvider(); got == nil || *got != "openai" {
+		t.Fatalf("provider = %v, want openai", got)
+	}
+}
+
+func TestStagehandRuntime_RunExtractModelConfigOmitsEmptyBaseURL(t *testing.T) {
+	model := stagehandExtractModelConfig(RunExtractRequest{
+		ModelName: "openai/gpt-4o",
+		BaseURL:   " \t\n ",
+		APIKey:    "sk-test",
+	})
+
+	if got := model.GetBaseURL(); got != nil {
+		t.Fatalf("baseURL = %q, want omitted", *got)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Cache hit / miss / key formula
 // ---------------------------------------------------------------------------

@@ -31,6 +31,15 @@ export interface ModelsSectionProps {
    */
   hideActions?: boolean;
   /**
+   * True once the lazy-loaded instance details (which carry `api_key` /
+   * `base_url` - the list endpoint omits them) have resolved. Providers
+   * whose upstream model-list endpoint requires an api_key (e.g.
+   * VolcEngine) use this to defer the auto-fetch until the credential
+   * is available in the host form, instead of firing a request that is
+   * guaranteed to fail and then refusing to retry.
+   */
+  instanceDetailsLoaded?: boolean;
+  /**
    * If true, the section renders nothing once the first catalog fetch
    * completes and no models are available. Used by draft instances to
    * avoid showing an empty list.
@@ -38,13 +47,32 @@ export interface ModelsSectionProps {
   hideIfEmpty?: boolean;
   /**
    * Optional getter returning the host card's current form values
-   * (`api_key`, `base_url` / `api_base`, region-specific fields, ...).
+   * (`api_key`, `base_url`, region-specific fields, ...).
    * When provided, ModelsSection prefers these over the persisted
    * `instance` props when calling listProviderModels / verifyProviderConnection,
    * so the user can verify with values they are still editing (before
    * blur-save persists them to the backend).
    */
   getFormValues?: () => Record<string, any>;
+  /**
+   * Optional provider-specific transform used to build the verify
+   * payload's `api_key` / `base_url` / `region` from the host card's
+   * current form values. Providers whose credential field names don't
+   * map directly onto `api_key` / `base_url` (e.g. PaddleOCR's nested
+   * `paddleocr_api_url` / `paddleocr_access_token` / `paddleocr_algorithm`)
+   * supply this so the per-model verify can forward the structured
+   * `api_key` object the backend expects. When absent the generic
+   * `values.api_key` / `values.base_url` mapping is used.
+   *
+   * `modelInfo` returned by the transform is ignored for per-model
+   * verify - the single model being verified always overrides it.
+   */
+  verifyTransform?: (values: Record<string, any>) => {
+    apiKey: string | object | Record<string, any>;
+    baseUrl?: string;
+    region?: string;
+    modelInfo?: IModelInfo[];
+  };
   /**
    * Notifies the host that ModelsSection has opened (or closed) a modal
    * dialog whose contents live in a React Portal outside the host's

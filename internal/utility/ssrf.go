@@ -63,7 +63,7 @@ func allowAnyHost() bool {
 // prevent rebinding between validation and the actual TCP connection.
 //
 // Mirrors common/ssrf_guard.py:assert_url_is_safe.
-func AssertURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
+var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
 		return "", "", fmt.Errorf("invalid url")
@@ -176,7 +176,7 @@ func allZero(b []byte) bool {
 // outbound dial for hostname:port to resolvedIP:port, closing the TOCTOU
 // window between AssertURLSafe and the actual TCP connection. Pins are
 // scoped to this client only.
-func PinnedHTTPClient(hostname, resolvedIP string, timeout time.Duration) *http.Client {
+var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 	dialer := &net.Dialer{
 		Timeout:   timeout,
 		KeepAlive: 30 * time.Second,

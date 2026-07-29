@@ -27,6 +27,7 @@ export interface ICompilationTemplateConfig {
   [section: string]:
     | ICompilationTemplateSection
     | ICompilationTemplateRaptorConfig
+    | Record<string, unknown>
     | string
     | boolean
     | undefined;

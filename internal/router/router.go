@@ -17,10 +17,10 @@
 package router
 
 import (
-	"github.com/gin-gonic/gin"
-
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
+
+	"github.com/gin-gonic/gin"
 )
 
 type Router struct {
@@ -30,6 +30,7 @@ type Router struct {
 	documentHandler      *handler.DocumentHandler
 	datasetsHandler      *handler.DatasetsHandler
 	systemHandler        *handler.SystemHandler
+	statsHandler         *handler.StatsHandler
 	chunkHandler         *handler.ChunkHandler
 	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
@@ -53,6 +54,7 @@ type Router struct {
 	fileCommitHandler    *handler.FileCommitHandler
 	botHandler           *handler.BotHandler
 	componentsHandler    *handler.ComponentsHandler
+	pipelineHandler      *handler.PipelineHandler
 }
 
 // NewRouter create router
@@ -63,6 +65,7 @@ func NewRouter(
 	documentHandler *handler.DocumentHandler,
 	datasetsHandler *handler.DatasetsHandler,
 	systemHandler *handler.SystemHandler,
+	statsHandler *handler.StatsHandler,
 	chunkHandler *handler.ChunkHandler,
 	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
@@ -86,6 +89,7 @@ func NewRouter(
 	openaiChatHandler *handler.OpenAIChatHandler,
 	botHandler *handler.BotHandler,
 	componentsHandler *handler.ComponentsHandler,
+	pipelineHandler *handler.PipelineHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -94,6 +98,7 @@ func NewRouter(
 		documentHandler:      documentHandler,
 		datasetsHandler:      datasetsHandler,
 		systemHandler:        systemHandler,
+		statsHandler:         statsHandler,
 		chunkHandler:         chunkHandler,
 		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
@@ -117,11 +122,14 @@ func NewRouter(
 		fileCommitHandler:    fileCommitHandler,
 		botHandler:           botHandler,
 		componentsHandler:    componentsHandler,
+		pipelineHandler:      pipelineHandler,
 	}
 }
 
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
+	SetupEERouter(engine)
+
 	// Mark all responses from Go with a header for debugging.
 	engine.Use(func(c *gin.Context) {
 		c.Header("X-API-Source", "go")
@@ -153,9 +161,19 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/system/config", r.systemHandler.GetConfig)
 		apiNoAuth.GET("/system/version", r.systemHandler.GetVersion)
 		apiNoAuth.GET("/system/healthz", r.systemHandler.Healthz)
+		// Backend runtime language detection. The front end calls this once
+		// to choose between Go and Python code paths.
+		apiNoAuth.GET("/language", r.systemHandler.Language)
+
+		// Pipeline catalog. Public static data (shipped with the binary),
+		// no auth required. The front end uses it to populate the parser
+		// picker without hard-coding the parser_id list.
+		// Query: ?type=builtin returns built-in templates (default).
+		apiNoAuth.GET("/pipelines", r.pipelineHandler.ListPipelines)
+		apiNoAuth.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
 
 		// searchbots
-		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchbotDetail)
+		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchBotDetail)
 
 		// User login channels endpoint
 		apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)
@@ -168,7 +186,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// /auth/login/channels to GetLoginChannels and other values to
 		// OAuthLogin without conflict.
 		apiNoAuth.GET("/auth/login/:channel", r.userHandler.OAuthLogin)
-		apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthCallback)
+		apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthChannelCallback)
 
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
@@ -187,6 +205,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.POST("/auth/password/reset", r.userHandler.ForgotResetPassword)
 
 		apiNoAuth.GET("/dify/retrieval/health", r.difyRetrievalHandler.HealthCheck)
+
+		RegisterEENoAuthRouter(apiNoAuth, r)
 	}
 
 	// Beta-token routes. Mirrors python's
@@ -200,13 +220,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 		searchBotGroup.POST("/ask", r.searchBotHandler.Ask)
 		searchBotGroup.POST("/mindmap", r.searchBotHandler.MindMap)
 
-		if r.botHandler != nil {
-			chatbotGroup := apiBetaAuth.Group("/chatbots")
-			betaMW := r.authHandler.BetaAuthMiddleware()
-			RegisterChatbotRoutes(chatbotGroup, betaMW, r.botHandler)
-			agentbotGroup := apiBetaAuth.Group("/agentbots")
-			RegisterAgentbotRoutes(agentbotGroup, betaMW, r.botHandler)
-		}
+		chatBotGroup := apiBetaAuth.Group("/chatbots")
+		chatBotGroup.POST("/:dialog_id/completions", r.botHandler.ChatbotCompletion)
+		chatBotGroup.GET("/:dialog_id/info", r.botHandler.ChatbotInfo)
+
+		agentBotGroup := apiBetaAuth.Group("/agentbots")
+		agentBotGroup.POST("/:agent_id/completions", r.botHandler.AgentbotCompletion)
+		agentBotGroup.GET("/:agent_id/inputs", r.botHandler.AgentbotInputs)
+		agentBotGroup.GET("/:agent_id/logs/:message_id", r.botHandler.GetAgentbotLogs)
+
 		// Public bot endpoints (authenticated with an SDK beta token, not a session)
 		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
 		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
@@ -215,9 +237,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// MCP server endpoint — exposes RAGFlow capabilities as MCP tools.
 		// Uses BetaAuthMiddleware to resolve the user from the
 		// Authorization header.
-		if r.mcpServerHandler != nil {
-			apiBetaAuth.POST("/mcp", r.mcpServerHandler.HandleMCP)
-		}
+		apiBetaAuth.POST("/mcp", r.mcpServerHandler.HandleMCP)
 	}
 
 	// Protected routes
@@ -257,6 +277,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 				users.GET("/me/models", r.tenantHandler.TenantInfo)
 				// User set tenant info endpoint
 				users.PATCH("/me/models", r.userHandler.SetTenantInfo)
+
+				// For EE
+				users.GET("/me/admin", r.userHandler.IsAdmin)
+				users.GET("/me/meta", r.userHandler.GetMeta)
+			}
+
+			user := v1.Group("/settings")
+			{
+				user.GET("/enable-admin", r.systemHandler.GetEnableAdmin)
 			}
 
 			tenants := v1.Group("/tenants")
@@ -283,7 +312,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Document routes
 			documents := v1.Group("/documents")
 			{
-				documents.POST("", r.documentHandler.CreateDocument)
 				documents.POST("/upload", r.documentHandler.UploadInfo)
 				documents.GET("", r.documentHandler.ListDocuments)
 				documents.GET("/artifact/:filename", r.documentHandler.GetDocumentArtifact)
@@ -317,6 +345,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				chat.POST("/completions", r.chatSessionHandler.ChatCompletions)
 				chat.POST("/mindmap", r.chatHandler.MindMap)
 				chat.POST("/recommendation", r.chatHandler.Recommendation)
+				chat.POST("/audio/speech", r.chatHandler.ChatAudioSpeech)
+				chat.POST("/audio/transcription", r.chatHandler.ChatAudioTranscription)
 			}
 			v1.POST("/openai/:chat_id/chat/completions", r.openaiChatHandler.OpenAIChatCompletions)
 
@@ -331,7 +361,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/tags", r.datasetsHandler.ListTags)
 				datasets.PUT("/:dataset_id/tags", r.datasetsHandler.RenameTag)
 				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
-				datasets.POST("/:dataset_id/embedding", r.datasetsHandler.RunEmbedding)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
 				datasets.GET("/:dataset_id/index", r.datasetsHandler.TraceIndex)
@@ -370,11 +399,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.POST("/:dataset_id/chunks", r.chunkHandler.Parse)
 				datasets.PATCH("/:dataset_id/documents/:document_id/chunks/:chunk_id", r.chunkHandler.UpdateChunk)
 				datasets.POST("/:dataset_id/documents/parse", r.documentHandler.StartIngestionTask)
+				datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.GET("/ingestion/tasks", r.documentHandler.ListIngestionTasks)
 				datasets.PUT("/ingestion/tasks", r.documentHandler.StopIngestionTasks)
 				datasets.DELETE("/ingestion/tasks", r.documentHandler.RemoveIngestionTasks)
 				//datasets.POST("/:dataset_id/documents/parse", r.documentHandler.ParseDocuments)
-				//datasets.POST("/:dataset_id/documents/stop", r.documentHandler.StopParseDocuments)
 				datasets.DELETE("/:dataset_id/chunks", r.chunkHandler.StopParsing)
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
@@ -502,8 +531,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// provider pool route group
 			provider := v1.Group("/providers")
 			{
-				provider.GET("/", r.providerHandler.ListProviders)
-				provider.PUT("/", r.providerHandler.AddProvider)
+				provider.GET("", r.providerHandler.ListProviders)
+				provider.PUT("", r.providerHandler.AddProvider)
 				provider.GET("/:provider_name", r.providerHandler.ShowProvider)
 				provider.DELETE("/:provider_name", r.providerHandler.DeleteProvider)
 				provider.GET("/:provider_name/models", r.providerHandler.ListModels)
@@ -519,7 +548,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.PUT("/:provider_name/instances/:instance_name", r.providerHandler.AlterProviderInstance)
 				provider.DELETE("/:provider_name/instances", r.providerHandler.DropProviderInstance)
 				provider.GET("/:provider_name/instances/:instance_name/models", r.providerHandler.ListInstanceModels)
-				provider.PATCH("/:provider_name/instances/:instance_name/models/*model_name", r.providerHandler.EnableOrDisableModel)
+				provider.PATCH("/:provider_name/instances/:instance_name/models/*model_name", r.providerHandler.AlterModel)
 				provider.POST("/:provider_name/instances/:instance_name/models", r.providerHandler.AddModel)
 				provider.DELETE("/:provider_name/instances/:instance_name/models", r.providerHandler.DropInstanceModels)
 				v1.POST("/chat/to_model", r.providerHandler.ChatToModel)
@@ -535,8 +564,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				// GET /models returns the tenant's added models across
 				// all instances. Front-end useFetchAllAddedModels consumes this.
-				model.GET("/", r.providerHandler.ListTenantAddedModels)
-				model.PATCH("/", r.tenantHandler.SetModels)
+				model.GET("", r.providerHandler.ListTenantAddedModels)
+				model.PATCH("", r.tenantHandler.SetModels)
 				// Tenant default-model selection (used by the agent page's useFetchDefaultModels hook)
 				model.GET("/default", r.tenantHandler.GetDefaultModels)
 				model.PATCH("/default", r.tenantHandler.SetDefaultModels)
@@ -551,6 +580,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Agent routes
 			agents := v1.Group("/agents")
 			RegisterAgentRoutes(agents, r.agentHandler)
+			// Keep the established /tasks URI while using session_id as the
+			// ordinary Agent run and cancellation identity.
+			RegisterAgentCancelRoutes(v1.Group("/tasks"), r.agentHandler)
 
 			// Plugin routes
 			plugin := v1.Group("/plugin")
@@ -563,14 +595,12 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// ?category=ingestion,agent,shared filter; defaults to
 			// all categories. The data source is
 			// runtime.DefaultRegistry.
-			if r.componentsHandler != nil {
-				v1.GET("/components", r.componentsHandler.Get)
-			}
+			v1.GET("/components", r.componentsHandler.Get)
 
 			connectors := v1.Group("/connectors")
 			{
-				connectors.GET("/", r.connectorHandler.ListConnectors)
-				connectors.POST("/", r.connectorHandler.CreateConnector)
+				connectors.GET("", r.connectorHandler.ListConnectors)
+				connectors.POST("", r.connectorHandler.CreateConnector)
 				connectors.POST("/google/oauth/web/start", r.connectorHandler.StartGoogleWebOAuth)
 				connectors.POST("/google/oauth/web/result", r.connectorHandler.PollGoogleWebOAuthResult)
 				connectors.POST("/box/oauth/web/start", r.connectorHandler.StartBoxWebOAuth)
@@ -607,7 +637,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			{
 				system.GET("/configs", r.systemHandler.GetConfigs)
 				system.GET("/status", r.systemHandler.GetStatus)
-				system.GET("/stats", r.systemHandler.GetStats)
+				system.GET("/stats", r.statsHandler.GetStats) // TODO: need to reconsider this endpoint and function
 
 				config := system.Group("/config")
 				{
@@ -661,13 +691,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 
 			// Chat Channel
-			chanChannel := v1.Group("/chat-channels")
+			chatChannel := v1.Group("/chat-channels")
 			{
-				chanChannel.POST("", r.chatChannelHandler.CreateChatChannel)
-				chanChannel.GET("", r.chatChannelHandler.ListChatChannel)
-				chanChannel.GET("/:channel_id", r.chatChannelHandler.GetChatChannel)
-				chanChannel.PATCH("/:channel_id", r.chatChannelHandler.UpdateChatChannel)
-				chanChannel.DELETE("/:channel_id", r.chatChannelHandler.DeleteChatChannel)
+				chatChannel.POST("", r.chatChannelHandler.CreateChatChannel)
+				chatChannel.GET("", r.chatChannelHandler.ListChatChannel)
+				chatChannel.GET("/:channel_id", r.chatChannelHandler.GetChatChannel)
+				chatChannel.PATCH("/:channel_id", r.chatChannelHandler.UpdateChatChannel)
+				chatChannel.DELETE("/:channel_id", r.chatChannelHandler.DeleteChatChannel)
+				chatChannel.GET("/:channel_id/runtime", r.chatChannelHandler.GetChatChannelRuntime)
 			}
 
 			// Langfuse tracing keys

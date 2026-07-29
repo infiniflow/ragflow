@@ -169,6 +169,23 @@ func TestExtractDownloads_Empty(t *testing.T) {
 	}
 }
 
+func TestExtractDownloads_JSONString(t *testing.T) {
+	value := `{"doc_id":"d1","filename":"report.md","mime_type":"text/markdown","download":"/api/v1/agents/attachments/d1/download","preview_url":"/api/v1/agents/attachments/d1/preview"}`
+	dls := ExtractDownloads(value)
+	if len(dls) != 1 {
+		t.Fatalf("expected 1 download, got %d", len(dls))
+	}
+	if dls[0].DocID != "d1" || dls[0].Filename != "report.md" {
+		t.Fatalf("unexpected download: %+v", dls[0])
+	}
+	if dls[0].URL != "/api/v1/agents/attachments/d1/download" {
+		t.Fatalf("URL = %q, want download URL", dls[0].URL)
+	}
+	if dls[0].PreviewURL != "/api/v1/agents/attachments/d1/preview" {
+		t.Fatalf("PreviewURL = %q, want preview URL", dls[0].PreviewURL)
+	}
+}
+
 // TestExtractDownloads_NestedList: nested list-of-lists is
 // flattened (the recursive walk).
 func TestExtractDownloads_NestedList(t *testing.T) {

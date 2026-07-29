@@ -36,7 +36,7 @@ def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
         return None
 
     model_type = (llm_setting or {}).get("model_type")
-    if model_type not in {"chat", "image2text"}:
+    if model_type not in {"chat", "vision"}:
         model_type = "chat"
 
     try:

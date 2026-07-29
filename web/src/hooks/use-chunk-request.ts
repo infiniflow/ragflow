@@ -20,7 +20,7 @@ export interface IChunkListResult {
   searchString?: string;
   handleInputChange?: React.ChangeEventHandler<HTMLInputElement>;
   pagination: PaginationProps;
-  setPagination?: (pagination: { page: number; pageSize: number }) => void;
+  setPagination?: (pagination: { page: number; pageSize?: number }) => void;
   available: number | undefined;
   handleSetAvailable: (available: number | undefined) => void;
   dataUpdatedAt?: number; // Timestamp when data was last updated - useful for cache busting

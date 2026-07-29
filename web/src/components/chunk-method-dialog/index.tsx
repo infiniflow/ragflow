@@ -24,7 +24,6 @@ import {
   ChunkMethodItem,
   EnableTocToggle,
   ImageContextWindow,
-  ParseTypeItem,
 } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { zodResolver } from '@hookform/resolvers/zod';
 import omit from 'lodash/omit';
@@ -37,7 +36,6 @@ import {
   AutoQuestionsFormField,
 } from '../auto-keywords-form-field';
 import { ChildrenDelimiterForm } from '../children-delimiter-form';
-import { CompilationTemplateFormField } from '../compilation-template-form-field';
 import { DataFlowSelect } from '../data-pipeline-select';
 import { DelimiterFormField } from '../delimiter-form-field';
 import { EntityTypesFormField } from '../entity-types-form-field';
@@ -45,6 +43,7 @@ import { ExcelToHtmlFormField } from '../excel-to-html-form-field';
 import { LayoutRecognizeFormField } from '../layout-recognize-form-field';
 import { MaxTokenNumberFormField } from '../max-token-number-from-field';
 import { MinerUOptionsFormField } from '../mineru-options-form-field';
+import { ParseTypeItem } from '../parse-type-form-field';
 import { ButtonLoading } from '../ui/button';
 import { Input } from '../ui/input';
 import { DynamicPageRange } from './dynamic-page-range';
@@ -142,6 +141,20 @@ export function ChunkMethodDialog({
         entity_types: z.array(z.string()).optional(),
         pages: z
           .array(z.object({ from: z.coerce.number(), to: z.coerce.number() }))
+          .refine(
+            (ranges) =>
+              ranges.every(
+                (r) =>
+                  Number.isInteger(r.from) &&
+                  Number.isInteger(r.to) &&
+                  r.from >= 1 &&
+                  r.from <= r.to,
+              ),
+            {
+              message:
+                'page range invalid: from/to must be integers, from >= 1, from <= to',
+            },
+          )
           .optional(),
         metadata: z.any().optional(),
         built_in_metadata: z
@@ -153,7 +166,6 @@ export function ChunkMethodDialog({
           )
           .optional(),
         enable_metadata: z.boolean().optional(),
-        compilation_template_group_id: z.array(z.string()).optional(),
       }),
     })
     .superRefine((data, ctx) => {
@@ -301,10 +313,6 @@ export function ChunkMethodDialog({
             <div className="space-y-6">
               <ParseTypeItem />
               {parseType === ParseType.BuiltIn && <ChunkMethodItem />}
-
-              {parseType === ParseType.BuiltIn && (
-                <CompilationTemplateFormField></CompilationTemplateFormField>
-              )}
 
               {showPages && parseType === ParseType.BuiltIn && (
                 <DynamicPageRange />

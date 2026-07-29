@@ -50,7 +50,7 @@ What is stored in the memory:
 
 ### Memory size
 
-The default capacity allocated to the memory and the corresponding embeddings in bytes. Defaults to `5242880` (5MB). 
+The default capacity allocated to the memory and the corresponding embeddings in bytes. Defaults to `5242880` (5MB).
 
 :::tip NOTE
 A 1KB message with a 1024-dimension embedding occupies approximately 9KB of memory (1KB + 1024 x 8Bytes = 9KB). With a default limit of 5 MB, the system can store roughly 500 such messages.
@@ -74,9 +74,9 @@ Manually forgotten memory entries are completely excluded from the results retur
 
 When the Memory reaches its storage limit and the automatic forgetting policy is applied, entries that were previously forgotten manually are also prioritized for removal. This allows the system to reclaim capacity more intelligently while respecting earlier user curation decisions.
 
-## Enhance Agent context 
+## Enhance Agent context
 
-Under [Retrieval](../agent/agent_component_reference/retrieval.mdx) and [Message](../agent/agent_component_reference/message.mdx) component settings, a new Memory invocation capability is available. In the Message component, users can configure the Agent to write selected data into a designated Memory, while the Retrieval component can be set to read from that same Memory to answer future queries.  This enables a simple Q&A bot Agent to accumulate context over time and respond with richer, memory-aware answers.
+Under [Retrieval](../agent/agent_component_reference/retrieval.mdx) and [Message](../agent/agent_component_reference/message.md) component settings, a new Memory invocation capability is available. In the Message component, users can configure the Agent to write selected data into a designated Memory, while the Retrieval component can be set to read from that same Memory to answer future queries.  This enables a simple Q&A bot Agent to accumulate context over time and respond with richer, memory-aware answers.
 
 ### Retrieve from memory
 

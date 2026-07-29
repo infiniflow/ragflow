@@ -84,7 +84,7 @@ func TestParserComponent_InputsOutputs_NonEmpty(t *testing.T) {
 // not asserted here.
 func TestParserComponent_Invoke_TextInput(t *testing.T) {
 	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"binary": "hello world",
 	})
 	if err != nil {
@@ -107,7 +107,7 @@ func TestParserComponent_Invoke_TextInput(t *testing.T) {
 // pages, in input order, with text intact.
 func TestParserComponent_Invoke_PageRangeFilter(t *testing.T) {
 	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"binary": "pageA\fpageB\fpageC",
 	})
 	if err != nil {
@@ -146,7 +146,7 @@ func TestParserComponent_Invoke_DeterministicMerge(t *testing.T) {
 	input := "p1\fp2\fp3\fp4\fp5\fp6\fp7\fp8"
 
 	// First call: produce the canonical bytes.
-	first, err := c.Invoke(context.Background(), map[string]any{
+	first, err := c.Invoke(context.Background(), nil, map[string]any{
 		"binary": input,
 	})
 	if err != nil {
@@ -159,7 +159,7 @@ func TestParserComponent_Invoke_DeterministicMerge(t *testing.T) {
 
 	// Subsequent calls: must produce the same bytes.
 	for i := 0; i < 5; i++ {
-		got, err := c.Invoke(context.Background(), map[string]any{
+		got, err := c.Invoke(context.Background(), nil, map[string]any{
 			"binary": input,
 		})
 		if err != nil {
@@ -196,14 +196,12 @@ func TestParserComponent_New_Defaults(t *testing.T) {
 }
 
 // TestParserComponent_New_Overrides verifies that a non-nil
-// param map with a "setups" entry is layered on top of the
+// param map with a file-type entry is layered on top of the
 // defaults.
 func TestParserComponent_New_Overrides(t *testing.T) {
 	c, err := NewParserComponent(map[string]any{
-		"setups": map[string]any{
-			"text&code": map[string]any{
-				"chunk_token_num": 256,
-			},
+		"text&code": map[string]any{
+			"chunk_token_size": 256,
 		},
 	})
 	if err != nil {
@@ -213,15 +211,15 @@ func TestParserComponent_New_Overrides(t *testing.T) {
 	if !ok {
 		t.Fatalf("NewParserComponent returned %T", c)
 	}
-	setup, ok := pc.Param.Setups["text&code"]
+	setup, ok := pc.Setups["text&code"]
 	if !ok {
 		t.Fatalf("Setups[text&code] missing after override")
 	}
-	if got, _ := setup["chunk_token_num"].(int); got != 256 {
-		t.Errorf("Setups[text&code][chunk_token_num] = %v, want 256", setup["chunk_token_num"])
+	if got, _ := setup["chunk_token_size"].(int); got != 256 {
+		t.Errorf("Setups[text&code][chunk_token_size] = %v, want 256", setup["chunk_token_size"])
 	}
 	// Defaults must still be present for other file types.
-	if _, ok := pc.Param.Setups["pdf"]; !ok {
+	if _, ok := pc.Setups["pdf"]; !ok {
 		t.Errorf("Setups[pdf] missing; override should not erase defaults")
 	}
 }
@@ -230,7 +228,7 @@ func TestParserComponent_New_Overrides(t *testing.T) {
 // doc_id input flows through to the "name" output.
 func TestParserComponent_Invoke_DocIDCarried(t *testing.T) {
 	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"binary": "x",
 		"doc_id": "doc-123",
 	})
@@ -265,7 +263,7 @@ func TestParserComponent_Invoke_ResolvesBinaryFromDocID(t *testing.T) {
 	}
 
 	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
-	out, err := c.Invoke(context.Background(), map[string]any{"doc_id": "doc-parser"})
+	out, err := c.Invoke(context.Background(), db, map[string]any{"doc_id": "doc-parser"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -288,7 +286,7 @@ func TestParserComponent_Invoke_ResolvesBinaryFromBucketPath(t *testing.T) {
 	}
 
 	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"bucket": "bucket-1",
 		"path":   "docs/explicit.txt",
 	})
@@ -311,7 +309,7 @@ func TestParserComponent_Invoke_ResolvesBinaryFromBucketPath(t *testing.T) {
 // without decoding it).
 func TestParserComponent_Invoke_RejectsInvalidUTF8(t *testing.T) {
 	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(context.Background(), nil, map[string]any{
 		// 0xFF alone is not valid UTF-8 start byte.
 		"binary": string([]byte{0xFF, 0xFE, 0xFD}),
 	})
@@ -328,7 +326,7 @@ func TestParserComponent_Invoke_RejectsInvalidUTF8(t *testing.T) {
 // string.
 func TestParserComponent_Invoke_AcceptsBytes(t *testing.T) {
 	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"binary": []byte("alpha\fbeta"),
 	})
 	if err != nil {
@@ -354,7 +352,7 @@ func TestBuildPagesFromBytes_FormatAgnostic(t *testing.T) {
 	got, err := buildPagesFromBytes(context.Background(), [][]byte{
 		[]byte("first page from dispatch"),
 		[]byte("<table>second page from html dispatch</table>"),
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("buildPagesFromBytes: %v", err)
 	}

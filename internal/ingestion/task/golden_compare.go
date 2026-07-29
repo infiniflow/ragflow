@@ -20,35 +20,38 @@ import (
 	"time"
 )
 
-// GoldenDataflowResult is the structured output used by the local golden tools.
-type GoldenDataflowResult struct {
+// GoldenCompareResult is the structured output used by the local golden tools.
+type GoldenCompareResult struct {
 	NormalizedChunks []map[string]any `json:"normalized_chunks"`
 	ProcessedChunks  []map[string]any `json:"processed_chunks"`
 	MergedMetadata   map[string]any   `json:"merged_metadata"`
 }
 
-// ProcessPipelineOutputForGolden replays the deterministic dataflow post-processing
+// ProcessPipelineOutputForGolden replays the deterministic pipeline post-processing
 // steps from a pipeline.run()-style output without embedding or external writes.
 func ProcessPipelineOutputForGolden(
 	pipelineOutput map[string]any,
 	docID string,
 	kbID string,
 	docName string,
-) GoldenDataflowResult {
+) (GoldenCompareResult, error) {
 	normalized := NormalizeChunks(pipelineOutput)
 	if normalized == nil {
 		normalized = []map[string]any{}
 	}
 
 	processed := deepCopyChunks(normalized)
-	metadata := ProcessChunksForDataflow(processed, docID, kbID, docName, time.Now())
+	metadata, err := ProcessChunksForPipeline(processed, docID, kbID, docName, time.Now())
+	if err != nil {
+		return GoldenCompareResult{}, err
+	}
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
 
-	return GoldenDataflowResult{
+	return GoldenCompareResult{
 		NormalizedChunks: normalized,
 		ProcessedChunks:  processed,
 		MergedMetadata:   metadata,
-	}
+	}, nil
 }

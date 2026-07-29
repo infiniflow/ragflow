@@ -78,7 +78,7 @@ export function useSendSingleMessage({
               : (derivedMessages ?? [])),
             message,
           ],
-          reasoning: enableThinking,
+          reasoning: Number(enableThinking),
           internet: enableInternet,
           ...params,
           pass_all_history_messages: true,
@@ -157,6 +157,7 @@ export function useSendSingleMessage({
     removeMessageById,
     removeMessagesAfterCurrentMessage,
     handlePressEnter,
+    sendMessage,
     sendLoading: !done,
   };
 }

@@ -22,8 +22,14 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 type mockCanvasStage struct {
@@ -32,7 +38,7 @@ type mockCanvasStage struct {
 	calls  int
 }
 
-func (m *mockCanvasStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+func (m *mockCanvasStage) Invoke(_ context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	m.called = true
 	m.calls++
 	out := cloneMapOrEmpty(inputs)
@@ -41,10 +47,27 @@ func (m *mockCanvasStage) Invoke(_ context.Context, inputs map[string]any) (map[
 	}
 	return out, nil
 }
-
-func (m *mockCanvasStage) Parallelism() int           { return 1 }
 func (m *mockCanvasStage) Inputs() map[string]string  { return map[string]string{"name": "string"} }
 func (m *mockCanvasStage) Outputs() map[string]string { return map[string]string{"output": "any"} }
+
+// oneShotErrStage errors on the first Invoke (simulating a component crash
+// mid-run), then delegates to the embedded mock on subsequent calls. Used to
+// test that a second pipeline Run on the same taskID resumes past non-terminal
+// checkpoints instead of re-executing completed components.
+type oneShotErrStage struct {
+	mockCanvasStage
+	n int
+}
+
+func (s *oneShotErrStage) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	s.n++
+	if s.n == 1 {
+		return nil, errors.New("simulated crash")
+	}
+	return s.mockCanvasStage.Invoke(ctx, db, inputs)
+}
+func (s *oneShotErrStage) Inputs() map[string]string  { return s.mockCanvasStage.Inputs() }
+func (s *oneShotErrStage) Outputs() map[string]string { return s.mockCanvasStage.Outputs() }
 
 func TestPipelineRunHappyPath(t *testing.T) {
 	stageA := &mockCanvasStage{output: map[string]any{"a": 1}}
@@ -76,7 +99,7 @@ func TestPipelineRunHappyPath(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-canvas"})
+	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-canvas"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -97,7 +120,7 @@ func TestPipelineRunHappyPath(t *testing.T) {
 
 func TestPipelineRunNilPipeline(t *testing.T) {
 	var p *Pipeline
-	if _, err := p.Run(context.Background(), nil); err == nil {
+	if _, err := p.Run(context.Background(), nil, nil); err == nil {
 		t.Fatal("expected error for nil pipeline")
 	}
 }
@@ -122,7 +145,7 @@ func TestPipelineRunStageErrorBubbles(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	if _, err := pipe.Run(context.Background(), map[string]any{"name": "x"}); err == nil {
+	if _, err := pipe.Run(context.Background(), map[string]any{"name": "x"}, nil); err == nil {
 		t.Fatal("expected stage error")
 	}
 }
@@ -149,10 +172,9 @@ func TestNewPipelineFromDSLUnwrapsTemplateDSL(t *testing.T) {
 
 type errCanvasStage struct{}
 
-func (e *errCanvasStage) Invoke(_ context.Context, _ map[string]any) (map[string]any, error) {
+func (e *errCanvasStage) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	return nil, &stageError{Stage: "p.RunErrStage", Reason: "intentional"}
 }
-func (e *errCanvasStage) Parallelism() int           { return 1 }
 func (e *errCanvasStage) Inputs() map[string]string  { return nil }
 func (e *errCanvasStage) Outputs() map[string]string { return nil }
 
@@ -160,7 +182,7 @@ type factorySentinelStage struct {
 	marker string
 }
 
-func (s *factorySentinelStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+func (s *factorySentinelStage) Invoke(_ context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	out := cloneMapOrEmpty(inputs)
 	out["marker"] = s.marker
 	return out, nil
@@ -169,8 +191,9 @@ func (s *factorySentinelStage) Invoke(_ context.Context, inputs map[string]any) 
 // memCheckpointStore is a thread-safe in-memory canvas.CheckPointStore used
 // to exercise the resumable run path without Redis.
 type memCheckpointStore struct {
-	mu   sync.Mutex
-	data map[string][]byte
+	mu      sync.Mutex
+	data    map[string][]byte
+	deleted int // number of times Delete was called
 }
 
 func newMemCheckpointStore() *memCheckpointStore {
@@ -197,7 +220,14 @@ func (s *memCheckpointStore) Delete(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.data, id)
+	s.deleted++
 	return nil
+}
+
+func (s *memCheckpointStore) deleteCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deleted
 }
 
 // TestPipelineRun_InstanceFactoryOverridesDefaultFactory verifies that a
@@ -221,7 +251,7 @@ func TestPipelineRun_InstanceFactoryOverridesDefaultFactory(t *testing.T) {
 		return &factorySentinelStage{marker: "instance"}, nil
 	})
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"})
+	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -275,7 +305,7 @@ func TestPipelineRun_TaskScopedFactoriesDoNotLeakAcrossConcurrentPipelines(t *te
 	results := make(chan result, 2)
 	run := func(pipe *Pipeline) {
 		defer wg.Done()
-		out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"})
+		out, err := pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 		if err != nil {
 			results <- result{err: err}
 			return
@@ -335,7 +365,7 @@ func TestPipelineRunResumableAutoResumes(t *testing.T) {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
 
-	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-resume"})
+	out, err := pipe.Run(context.Background(), map[string]any{"name": "doc-resume"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -351,8 +381,314 @@ func TestPipelineRunResumableAutoResumes(t *testing.T) {
 	}
 }
 
-// TestPipelineRun_RequireResumeRejectsWithoutStore verifies M4 (plan §6.a
-// 方案 A): with WithRequireResume set and no checkpoint store resolvable (no
+// TestPipelineRunResumableCrossRunResume validates crash-recovery resume
+// across two Run calls: when the terminal component errors mid-run (simulated
+// crash), non-terminal checkpoints + interrupt state persist. The second Run
+// on the same taskID resumes past completed non-terminal components instead of
+// re-executing them. A non-terminal stage (A) runs exactly once across both runs; the
+// terminal stage (B, a oneShotErrStage) errors on run 1 and succeeds on run 2.
+func TestPipelineRunResumableCrossRunResume(t *testing.T) {
+	mockA := &mockCanvasStage{output: map[string]any{"a": 1}}
+	mockB := &mockCanvasStage{output: map[string]any{"b": 2}}
+	termStage := &oneShotErrStage{mockCanvasStage: *mockB}
+
+	const (
+		nameA = "p.XRunStageA"
+		nameB = "p.XRunStageB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return mockA, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return termStage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	store := newMemCheckpointStore()
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	const taskID = "task-cross-run-resume"
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+
+	// Run 1: terminal B errors (oneShotErrStage n=1), simulating a crash.
+	// Non-terminal A's checkpoint + interrupt persist because the error path
+	// does not call ClearInterruptID or store.Delete.
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc-cross-run"}, nil)
+	if err == nil {
+		t.Fatal("Run 1: expected error from simulated crash, got nil")
+	}
+	if mockA.calls != 1 {
+		t.Fatalf("Run 1: expected A to run once, got %d", mockA.calls)
+	}
+	// oneShotErrStage did not delegate to its embedded mock on the first call.
+	if termStage.calls != 0 {
+		t.Fatalf("Run 1: expected B (embedded mock) calls=0 (error before delegate), got %d", termStage.calls)
+	}
+
+	// Run 2: resume from after A via tracker.GetInterruptID. A is skipped;
+	// B's oneShotErrStage (n=2) delegates to its embedded mock successfully.
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc-cross-run"}, nil)
+	if err != nil {
+		t.Fatalf("Run 2: expected recovery success, got error: %v", err)
+	}
+	if mockA.calls != 1 {
+		t.Fatalf("Run 2: expected A to still have calls=1 (was skipped by resume), got %d", mockA.calls)
+	}
+	if termStage.calls != 1 {
+		t.Fatalf("Run 2: expected B (embedded mock) calls=1 (delegated once), got %d", termStage.calls)
+	}
+}
+
+// TestPipelineRunResumableDSLChanged discards a stale checkpoint when the DSL
+// is edited between the failed run and the resume. Run 1 fails on the terminal
+// stage, persisting a checkpoint keyed by taskID. Run 2 re-runs the SAME
+// taskID but with a modified DSL (a param edit, enough to change the
+// fingerprint). The guard must detect the mismatch, discard the checkpoint,
+// and start fresh — so every stage re-executes (A runs on both runs) instead
+// of erroring while resuming an incompatible graph (the original bug).
+func TestPipelineRunResumableDSLChanged(t *testing.T) {
+	mockA := &mockCanvasStage{output: map[string]any{"a": 1}}
+	termStage := &oneShotErrStage{mockCanvasStage: mockCanvasStage{output: map[string]any{"b": 2}}}
+
+	const (
+		nameA = "p.DSLChangedA"
+		nameB = "p.DSLChangedB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return mockA, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return termStage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	const taskID = "task-dsl-changed"
+
+	// Shared store + tracker across both runs (same taskID).
+	store := newMemCheckpointStore()
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	// Run 1: original DSL; terminal B errors (oneShotErrStage n=1), leaving a
+	// checkpoint + interrupt for the original DSL fingerprint.
+	pipe1, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL (run 1): %v", err)
+	}
+	if _, err := pipe1.Run(context.Background(), map[string]any{"name": "doc-dsl-changed"}, nil); err == nil {
+		t.Fatal("Run 1: expected error from simulated crash, got nil")
+	}
+	if mockA.calls != 1 {
+		t.Fatalf("Run 1: expected A to run once, got %d", mockA.calls)
+	}
+
+	// Run 2: SAME taskID, but a modified DSL (param added to "a" → different
+	// fingerprint). Without the guard this would resume the stale checkpoint
+	// against an incompatible graph and error; with the guard it discards and
+	// re-runs from scratch.
+	pipe2, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {"chunk_size": 128}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL (run 2): %v", err)
+	}
+	if _, err := pipe2.Run(context.Background(), map[string]any{"name": "doc-dsl-changed"}, nil); err != nil {
+		t.Fatalf("Run 2: expected fresh run to succeed after DSL edit, got error: %v", err)
+	}
+
+	// Fresh run re-executed A (and B, which now delegates successfully at n=2).
+	if mockA.calls != 2 {
+		t.Fatalf("Run 2: expected A to run again (fresh run), got A.calls=%d", mockA.calls)
+	}
+	if termStage.calls != 1 {
+		t.Fatalf("Run 2: expected B to delegate once, got %d", termStage.calls)
+	}
+	if store.deleteCount() < 1 {
+		t.Fatalf("expected the stale checkpoint to be deleted on DSL change, got deleteCount=%d", store.deleteCount())
+	}
+}
+
+// TestClassifyDSLChange is the table-driven unit test for the mismatch-reason
+// classifier used by the warning log. It isolates the "DSL file changed vs
+// runtime override changed" decision from the Run/resume plumbing so the
+// diagnostic label can be verified directly (the log text itself is not
+// asserted by capture).
+func TestClassifyDSLChange(t *testing.T) {
+	const (
+		dsl = "dslfp"
+		ovf = "ovrfp"
+	)
+	cases := []struct {
+		name       string
+		storedDsl  string
+		storedOvf  string
+		dslFP      string
+		ovfFP      string
+		wantReason string
+	}{
+		{"no change", dsl, ovf, dsl, ovf, ""},
+		{"dsl file changed", dsl + "x", ovf, dsl, ovf, "DSL/template changed"},
+		{"override changed", dsl, ovf + "x", dsl, ovf, "runtime override/parser-config changed"},
+		{"both changed", dsl + "x", ovf + "x", dsl, ovf, "DSL/template changed"},
+		// Caller only invokes classify when a checkpoint exists; a missing
+		// fingerprint is treated as "changed" (safe: discard + fresh run).
+		{"missing stored fingerprint", "", "", dsl, ovf, "DSL/template changed"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := classifyDSLChange(c.storedDsl, c.storedOvf, c.dslFP, c.ovfFP)
+			if got != c.wantReason {
+				t.Fatalf("classifyDSLChange = %q, want %q", got, c.wantReason)
+			}
+		})
+	}
+}
+
+// errCheckpointStore fails every Get with getErr and records whether Set was
+// ever called. It lets us assert that guardDSLChange does NOT overwrite the
+// DSL/override fingerprints after a failed checkpoint lookup (which would mask
+// a real stale-checkpoint mismatch on a later resume).
+type errCheckpointStore struct {
+	getErr    error
+	setCalled bool
+}
+
+func (s *errCheckpointStore) Get(_ context.Context, _ string) ([]byte, bool, error) {
+	return nil, false, s.getErr
+}
+func (s *errCheckpointStore) Set(_ context.Context, _ string, _ []byte) error {
+	s.setCalled = true
+	return nil
+}
+func (s *errCheckpointStore) Delete(_ context.Context, _ string) error { return nil }
+
+// TestGuardDSLChange_CheckpointLookupErrorSkipsOverwrite verifies the
+// CodeRabbit finding: when store.Get(cpID) returns an error, guardDSLChange
+// bails out entirely and must NOT call Set on the fingerprint keys.
+func TestGuardDSLChange_CheckpointLookupErrorSkipsOverwrite(t *testing.T) {
+	const taskID = "task-lookup-err"
+	store := &errCheckpointStore{getErr: errors.New("redis temporarily unavailable")}
+	p := &Pipeline{
+		taskID: taskID,
+		rawDSL: []byte(`{"dsl":{"components":{"begin":{"obj":{"component_name":"Begin","params":{}}}}}}`),
+	}
+	// tracker is nil-safe (only used on the delete branch, which is skipped).
+	p.guardDSLChange(context.Background(), store, nil, taskID, map[string]any{"k": "v"})
+	if store.setCalled {
+		t.Fatal("guardDSLChange must not overwrite fingerprints after a failed checkpoint lookup")
+	}
+}
+
+// TestPipelineRunResumableOverrideChanged verifies that editing ONLY the
+// runtime override_params (same DSL file) between the failed run and the
+// resume is detected as a change and forces a fresh run (the checkpoint is
+// discarded) — it must NOT resume against stale override state. This is the
+// "runtime override/parser-config changed" branch of guardDSLChange.
+func TestPipelineRunResumableOverrideChanged(t *testing.T) {
+	mockA := &mockCanvasStage{output: map[string]any{"a": 1}}
+	termStage := &oneShotErrStage{mockCanvasStage: mockCanvasStage{output: map[string]any{"b": 2}}}
+
+	const (
+		nameA = "p.OvfChangedA"
+		nameB = "p.OvfChangedB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return mockA, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return termStage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	const taskID = "task-override-changed"
+
+	store := newMemCheckpointStore()
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	dsl := `{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "` + nameA + `", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "` + nameB + `", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`
+
+	// Run 1: override v1; terminal B errors (oneShotErrStage n=1), leaving a
+	// checkpoint + interrupt. The DSL file fingerprint is recorded too.
+	pipe1, err := NewPipelineFromDSL([]byte(dsl), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL (run 1): %v", err)
+	}
+	if _, err := pipe1.Run(context.Background(), map[string]any{"name": "doc-ovf-changed"}, map[string]any{"k": "v1"}); err == nil {
+		t.Fatal("Run 1: expected error from simulated crash, got nil")
+	}
+	if mockA.calls != 1 {
+		t.Fatalf("Run 1: expected A to run once, got %d", mockA.calls)
+	}
+
+	// Run 2: SAME DSL file, but override changed to v2. The guard must detect
+	// the override change, discard the stale checkpoint, and re-run from
+	// scratch (A runs again).
+	pipe2, err := NewPipelineFromDSL([]byte(dsl), taskID, WithCheckPointStore(store), WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL (run 2): %v", err)
+	}
+	if _, err := pipe2.Run(context.Background(), map[string]any{"name": "doc-ovf-changed"}, map[string]any{"k": "v2"}); err != nil {
+		t.Fatalf("Run 2: expected fresh run to succeed after override edit, got error: %v", err)
+	}
+	if mockA.calls != 2 {
+		t.Fatalf("Run 2: expected A to run again (fresh run on override change), got A.calls=%d", mockA.calls)
+	}
+	if termStage.calls != 1 {
+		t.Fatalf("Run 2: expected B to delegate once, got %d", termStage.calls)
+	}
+	if store.deleteCount() < 1 {
+		t.Fatalf("expected the stale checkpoint to be deleted on override change, got deleteCount=%d", store.deleteCount())
+	}
+}
+
+// TestPipelineRun_RequireResumeRejectsWithoutStore verifies that with
+// WithRequireResume set and no checkpoint store resolvable (no
 // injected store, no global Redis in unit scope), Run must refuse to start
 // and return ErrResumeUnavailable — a clear, distinguishable signal — rather
 // than silently degrading to a non-resumable runPlain. The reject fires
@@ -371,8 +707,205 @@ func TestPipelineRun_RequireResumeRejectsWithoutStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"})
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
 	if !errors.Is(err, ErrResumeUnavailable) {
 		t.Fatalf("expected ErrResumeUnavailable, got %v", err)
+	}
+}
+
+// recordingSink captures OnComponentTotal / OnComponentProgress calls so tests
+// can assert the pipeline forwards progress to the sink instead of writing
+// the DAO layer directly.
+type recordingSink struct {
+	mu       sync.Mutex
+	total    int
+	totalSet bool
+	events   []ProgressEvent
+}
+
+func (r *recordingSink) OnComponentTotal(ctx context.Context, taskID string, total int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.total = total
+	r.totalSet = true
+}
+
+func (r *recordingSink) OnComponentProgress(ctx context.Context, ev ProgressEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, ev)
+}
+
+// TestPipelineRunForwardsProgressToSink verifies the pipeline reports the
+// component-total denominator once via OnComponentTotal and each component
+// lifecycle event to the injected ProgressSink.
+func TestPipelineRunForwardsProgressToSink(t *testing.T) {
+	stageA := &mockCanvasStage{output: map[string]any{"a": 1}}
+	stageB := &mockCanvasStage{output: map[string]any{"b": 2}}
+	const (
+		nameA = "p.SinkStageA"
+		nameB = "p.SinkStageB"
+	)
+	runtime.MustRegister(nameA, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return stageA, nil },
+		runtime.Metadata{Version: "1.0.0"})
+	runtime.MustRegister(nameB, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return stageB, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	sink := &recordingSink{}
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+nameA+`", "params": {}}, "upstream": ["begin"], "downstream": ["b"]},
+				"b": {"obj": {"component_name": "`+nameB+`", "params": {}}, "upstream": ["a"]}
+			},
+			"path": ["begin", "a", "b"],
+			"graph": {"nodes": []}
+		}
+	}`), "task-sink", WithProgressSink(sink), WithDocumentID("doc-sink"))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+	if _, err := pipe.Run(context.Background(), map[string]any{"name": "doc-sink"}, nil); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	sink.mu.Lock()
+	defer sink.mu.Unlock()
+	if !sink.totalSet || sink.total != 3 {
+		t.Fatalf("OnComponentTotal = (%d, set=%v), want 3", sink.total, sink.totalSet)
+	}
+	if len(sink.events) == 0 {
+		t.Fatal("expected progress events, got none")
+	}
+	seen := map[string]bool{}
+	for _, ev := range sink.events {
+		if ev.TaskID != "task-sink" {
+			t.Fatalf("event TaskID = %q, want task-sink", ev.TaskID)
+		}
+		if ev.DocumentID != "doc-sink" {
+			t.Fatalf("event DocumentID = %q, want doc-sink", ev.DocumentID)
+		}
+		seen[ev.Component] = true
+	}
+	for _, want := range []string{"a", "b"} {
+		if !seen[want] {
+			t.Fatalf("expected progress event for component %q, seen=%v", want, seen)
+		}
+	}
+}
+
+// =============================================================================
+// cleanupCheckpoint — direct unit test
+// =============================================================================
+
+func TestCleanupCheckpoint_DeletesStoreAndClearsTracker(t *testing.T) {
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+
+	store := newMemCheckpointStore()
+	if err := store.Set(context.Background(), "cp-1", []byte("data")); err != nil {
+		t.Fatalf("store.Set: %v", err)
+	}
+	// Fingerprint keys must share the checkpoint's lifecycle on cleanup.
+	if err := store.Set(context.Background(), "cp-1"+dslKeySuffix, []byte("dslfp")); err != nil {
+		t.Fatalf("store.Set dsl: %v", err)
+	}
+	if err := store.Set(context.Background(), "cp-1"+ovfKeySuffix, []byte("ovrfp")); err != nil {
+		t.Fatalf("store.Set ovf: %v", err)
+	}
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+	if err := tracker.AttachInterrupt(context.Background(), "cp-1", "interrupt-1"); err != nil {
+		t.Fatalf("AttachInterrupt: %v", err)
+	}
+
+	p := &Pipeline{}
+	p.cleanupCheckpoint(context.Background(), store, tracker, "cp-1")
+
+	// checkpoint + dsl fingerprint + ovf fingerprint = 3 deletes.
+	if store.deleteCount() != 3 {
+		t.Fatalf("expected 3 store deletes (checkpoint + 2 fingerprints), got %d", store.deleteCount())
+	}
+	for _, k := range []string{"cp-1", "cp-1" + dslKeySuffix, "cp-1" + ovfKeySuffix} {
+		if _, found, _ := store.Get(context.Background(), k); found {
+			t.Fatalf("expected key %q to be deleted", k)
+		}
+	}
+	id, ok, err := tracker.GetInterruptID(context.Background(), "cp-1")
+	if err != nil {
+		t.Fatalf("GetInterruptID: %v", err)
+	}
+	if ok && id != "" {
+		t.Fatalf("interrupt id should be cleared, got %q", id)
+	}
+}
+
+// =============================================================================
+// runPlain — tracker integration with miniredis
+// =============================================================================
+
+func TestRunPlain_WithTracker_Success(t *testing.T) {
+	stage := &mockCanvasStage{output: map[string]any{"result": "ok"}}
+	const name = "p.RunPlainSuccess"
+	runtime.MustRegister(name, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return stage, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["a"]},
+				"a": {"obj": {"component_name": "`+name+`", "params": {}}, "upstream": ["begin"]}
+			},
+			"path": ["begin", "a"],
+			"graph": {"nodes": []}
+		}
+	}`), "task-tracker-ok", WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestRunPlain_WithTracker_Error(t *testing.T) {
+	const name = "p.RunPlainErr"
+	runtime.MustRegister(name, runtime.CategoryIngestion,
+		func(_ string, _ map[string]any) (runtime.Component, error) { return &errCanvasStage{}, nil },
+		runtime.Metadata{Version: "1.0.0"})
+
+	mr := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { client.Close() })
+	tracker := canvas.NewRunTrackerWithClient(client, time.Hour)
+
+	pipe, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["err"]},
+				"err": {"obj": {"component_name": "`+name+`", "params": {}}, "upstream": ["begin"]}
+			},
+			"path": ["begin", "err"],
+			"graph": {"nodes": []}
+		}
+	}`), "task-tracker-err", WithRunTracker(tracker))
+	if err != nil {
+		t.Fatalf("NewPipelineFromDSL: %v", err)
+	}
+
+	_, err = pipe.Run(context.Background(), map[string]any{"name": "doc"}, nil)
+	if err == nil {
+		t.Fatal("expected stage error, got nil")
 	}
 }

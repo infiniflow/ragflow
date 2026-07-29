@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -30,22 +31,23 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/service"
+	dataset "ragflow/internal/service/dataset"
 )
 
 // DatasetsHandler handles the RESTful dataset endpoints.
 type DatasetsHandler struct {
-	datasetsService       *service.DatasetService
+	datasetsService       *dataset.DatasetService
 	metadataService       *service.MetadataService
 	searchDatasetsService searchDatasetsService
 	searchDatasetService  searchDatasetService
 }
 
 type searchDatasetsService interface {
-	SearchDatasets(req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error)
+	SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error)
 }
 
 type searchDatasetService interface {
-	SearchDataset(datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error)
+	SearchDataset(ctx context.Context, datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error)
 }
 
 type listDatasetsExt struct {
@@ -54,8 +56,8 @@ type listDatasetsExt struct {
 	ParserID string   `json:"parser_id,omitempty"`
 }
 
-// NewDatasetsHandler creates a new datasets handler.
-func NewDatasetsHandler(datasetsService *service.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
+// NewDatasetsHandler creates a new datasets' handler.
+func NewDatasetsHandler(datasetsService *dataset.DatasetService, metadataService *service.MetadataService) *DatasetsHandler {
 	h := &DatasetsHandler{
 		datasetsService: datasetsService,
 		metadataService: metadataService,
@@ -72,6 +74,17 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	if c.Query("type") == "filter" {
+		ctx := c.Request.Context()
+		data, code, err := h.datasetsService.ListDatasetFilters(ctx, user.ID)
+		if err != nil {
+			common.ErrorWithCode(c, code, err.Error())
+			return
+		}
+		common.SuccessNoMessage(c, data)
 		return
 	}
 
@@ -115,7 +128,9 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		ownerIDs = ext.OwnerIDs
 	}
 
+	ctx := c.Request.Context()
 	data, total, code, err := h.datasetsService.ListDatasets(
+		ctx,
 		c.Query("id"),
 		c.Query("name"),
 		page,
@@ -153,7 +168,9 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.datasetsService.CreateDataset(&req, user.ID)
+	ctx := c.Request.Context()
+
+	result, code, err := h.datasetsService.CreateDataset(ctx, &req, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -170,8 +187,10 @@ func (h *DatasetsHandler) GetDataset(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	datasetID := c.Param("dataset_id")
-	result, code, err := h.datasetsService.GetDataset(datasetID, user.ID)
+	result, code, err := h.datasetsService.GetDataset(ctx, datasetID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -200,13 +219,28 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 		return
 	}
 
-	var req service.UpdateDatasetRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	bodyBytes, err := c.GetRawData()
+	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
-	result, code, err := h.datasetsService.UpdateDataset(datasetID, userID, req)
+	var req service.UpdateDatasetRequest
+	if err = json.Unmarshal(bodyBytes, &req); err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		return
+	}
+
+	// Detect an explicitly provided parser_config key (even {} or null) so it is not
+	// rejected as "no properties were modified", mirroring the Python contract.
+	var providedFields map[string]json.RawMessage
+	if err = json.Unmarshal(bodyBytes, &providedFields); err == nil {
+		_, req.ParserConfigProvided = providedFields["parser_config"]
+	}
+
+	ctx := c.Request.Context()
+
+	result, code, err := h.datasetsService.UpdateDataset(ctx, datasetID, userID, req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -226,8 +260,10 @@ func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	datasetID := c.Param("dataset_id")
-	result, code, err := h.datasetsService.GetMetadataConfig(datasetID, user.ID)
+	result, code, err := h.datasetsService.GetMetadataConfig(ctx, datasetID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -250,7 +286,9 @@ func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.datasetsService.UpdateMetadataConfig(datasetID, user.ID, &req)
+	ctx := c.Request.Context()
+
+	result, code, err := h.datasetsService.UpdateMetadataConfig(ctx, datasetID, user.ID, &req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -266,9 +304,9 @@ func (h *DatasetsHandler) GetIngestionSummary(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
-
+	ctx := c.Request.Context()
 	datasetID := c.Param("dataset_id")
-	result, code, err := h.datasetsService.GetIngestionSummary(datasetID, user.ID)
+	result, code, err := h.datasetsService.GetIngestionSummary(ctx, datasetID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -318,7 +356,9 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	logType := c.DefaultQuery("log_type", "dataset")
 	keywords := c.Query("keywords")
 
-	result, code, err := h.datasetsService.ListIngestionLogs(datasetID, user.ID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, logType, keywords)
+	ctx := c.Request.Context()
+
+	result, code, err := h.datasetsService.ListIngestionLogs(ctx, datasetID, user.ID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, logType, keywords)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -335,9 +375,11 @@ func (h *DatasetsHandler) GetIngestionLog(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	datasetID := c.Param("dataset_id")
 	logID := c.Param("log_id")
-	result, code, err := h.datasetsService.GetIngestionLog(datasetID, user.ID, logID)
+	result, code, err := h.datasetsService.GetIngestionLog(ctx, datasetID, user.ID, logID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -370,7 +412,9 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 		ids = *req.IDs
 	}
 
-	result, code, err := h.datasetsService.DeleteDatasets(ids, req.DeleteAll, user.ID)
+	ctx := c.Request.Context()
+
+	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -393,13 +437,14 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		return
 	}
 
-	dataset, code, err := h.datasetsService.GetDataset(datasetID, user.ID)
+	ctx := c.Request.Context()
+	datasetInstance, code, err := h.datasetsService.GetDataset(ctx, datasetID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
-	tenantID, _ := dataset["tenant_id"].(string)
+	tenantID, _ := datasetInstance["tenant_id"].(string)
 	if tenantID == "" {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "tenant_id is required")
 		return
@@ -456,7 +501,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	}
 
 	var graphData map[string]interface{}
-	if err := json.Unmarshal([]byte(contentWithWeight), &graphData); err != nil {
+	if err = json.Unmarshal([]byte(contentWithWeight), &graphData); err != nil {
 		common.SuccessWithData(c, result, "success")
 		return
 	}
@@ -494,8 +539,10 @@ func (h *DatasetsHandler) ListTags(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
-	result, code, err := h.datasetsService.ListTags(datasetID, user.ID)
+	result, code, err := h.datasetsService.ListTags(ctx, datasetID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -540,7 +587,9 @@ func (h *DatasetsHandler) RenameTag(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.datasetsService.RenameTag(datasetID, user.ID, req.FromTag, req.ToTag)
+	ctx := c.Request.Context()
+
+	result, code, err := h.datasetsService.RenameTag(ctx, datasetID, user.ID, req.FromTag, req.ToTag)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -563,13 +612,14 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 		return
 	}
 
-	dataset, code, err := h.datasetsService.GetDataset(datasetID, user.ID)
+	ctx := c.Request.Context()
+	datasetInstance, code, err := h.datasetsService.GetDataset(ctx, datasetID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
-	tenantID, _ := dataset["tenant_id"].(string)
+	tenantID, _ := datasetInstance["tenant_id"].(string)
 	if tenantID == "" {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "tenant_id is required")
 		return
@@ -597,8 +647,6 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 // @Summary Remove Tags
 // @Description Remove tags from a dataset
 // @Tags datasets
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Param dataset_id path string true "Dataset ID"
 // @Param request body object{tags []string} true "tags to remove"
@@ -617,13 +665,14 @@ func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
 		return
 	}
 
-	dataset, code, err := h.datasetsService.GetDataset(datasetID, user.ID)
+	ctx := c.Request.Context()
+	datasetInstance, code, err := h.datasetsService.GetDataset(ctx, datasetID, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
 
-	tenantID, _ := dataset["tenant_id"].(string)
+	tenantID, _ := datasetInstance["tenant_id"].(string)
 	if tenantID == "" {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "tenant_id is required")
 		return
@@ -663,35 +712,6 @@ func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
 	common.SuccessWithData(c, true, "success")
 }
 
-// RunEmbedding Run embedding for all documents in a dataset.
-func (h *DatasetsHandler) RunEmbedding(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "user_id is required")
-		return
-	}
-
-	datasetID := strings.TrimSpace(c.Param("dataset_id"))
-	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
-		return
-	}
-
-	result, errorCode, err := h.datasetsService.RunEmbedding(userID, datasetID)
-	if err != nil {
-		common.ResponseWithCodeData(c, errorCode, nil, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, result, "success")
-}
-
 // CheckEmbedding Check embedding model compatibility by sampling random chunks,
 // re-embedding them with the new model, and computing cosine similarity.
 func (h *DatasetsHandler) CheckEmbedding(c *gin.Context) {
@@ -723,7 +743,8 @@ func (h *DatasetsHandler) CheckEmbedding(c *gin.Context) {
 		return
 	}
 
-	data, code, err := h.datasetsService.CheckEmbedding(userID, datasetID, &req)
+	ctx := c.Request.Context()
+	data, code, err := h.datasetsService.CheckEmbedding(ctx, userID, datasetID, &req)
 	if err != nil {
 		if code == common.CodeNotEffective {
 			common.ResponseWithCodeData(c, code, data, err.Error())
@@ -765,7 +786,9 @@ func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.datasetsService.AggregateTags(datasetIDs, user.ID)
+	ctx := c.Request.Context()
+
+	result, code, err := h.datasetsService.AggregateTags(ctx, datasetIDs, user.ID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -793,8 +816,9 @@ func (h *DatasetsHandler) RunIndex(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	indexType := strings.ToLower(strings.TrimSpace(c.Query("type")))
-	data, code, err := h.datasetsService.RunIndex(userID, datasetID, indexType)
+	data, code, err := h.datasetsService.RunIndex(ctx, userID, datasetID, indexType)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -823,8 +847,10 @@ func (h *DatasetsHandler) TraceIndex(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
+
 	indexType := strings.ToLower(strings.TrimSpace(c.Query("type")))
-	result, code, err := h.datasetsService.TraceIndex(datasetID, userID, indexType)
+	result, code, err := h.datasetsService.TraceIndex(ctx, datasetID, userID, indexType)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -869,7 +895,9 @@ func (h *DatasetsHandler) DeleteIndex(c *gin.Context) {
 		wipe = false
 	}
 
-	code, err := h.datasetsService.DeleteIndex(userID, datasetID, indexType, wipe)
+	ctx := c.Request.Context()
+
+	code, err := h.datasetsService.DeleteIndex(ctx, userID, datasetID, indexType, wipe)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -913,15 +941,16 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Check access for each dataset
 	for _, datasetID := range datasetIDs {
-		if !h.datasetsService.Accessible(datasetID, user.ID) {
+		if !h.datasetsService.Accessible(ctx, datasetID, user.ID) {
 			common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization for dataset: "+datasetID)
 			return
 		}
 	}
 
-	flattenedMeta, err := h.metadataService.GetFlattedMetaByKBs(datasetIDs)
+	flattenedMeta, err := h.metadataService.GetFlattedMetaByKBs(ctx, datasetIDs)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to get metadata: "+err.Error())
 		return
@@ -959,7 +988,8 @@ func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
 		return
 	}
 
-	data, code, err := h.datasetsService.UpdateDocumentMetadataConfig(userID, datasetID, documentID, req)
+	ctx := c.Request.Context()
+	data, code, err := h.datasetsService.UpdateDocumentMetadataConfig(ctx, userID, datasetID, documentID, req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -972,8 +1002,6 @@ func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
 // @Summary Search Datasets
 // @Description Search for relevant chunks across one or more datasets based on a question
 // @Tags datasets
-// @Accept json
-// @Produce json
 // @Param request body service.SearchDatasetsRequest true "search parameters"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/datasets/search [post]
@@ -1035,7 +1063,9 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 
-	resp, err := searchService.SearchDatasets(&req, user.ID)
+	ctx := c.Request.Context()
+
+	resp, err := searchService.SearchDatasets(ctx, &req, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
@@ -1048,8 +1078,6 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 // @Summary Search Dataset
 // @Description Search for relevant chunks within one dataset based on a question
 // @Tags datasets
-// @Accept json
-// @Produce json
 // @Param dataset_id path string true "dataset id"
 // @Param request body service.SearchDatasetRequest true "search parameters"
 // @Success 200 {object} map[string]interface{}
@@ -1091,7 +1119,9 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		return
 	}
 
-	resp, err := searchService.SearchDataset(datasetID, user.ID, &req)
+	ctx := c.Request.Context()
+
+	resp, err := searchService.SearchDataset(ctx, datasetID, user.ID, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return

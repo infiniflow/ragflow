@@ -12,14 +12,20 @@
       "max_tokens": 1048576,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "mimo-v2.5",
       "max_tokens": 1048576,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "mimo-v2.5-asr",

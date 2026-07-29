@@ -17,7 +17,10 @@
 package dao
 
 import (
+	"context"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // FileCommitDAO file commit data access object
@@ -29,9 +32,9 @@ func NewFileCommitDAO() *FileCommitDAO {
 }
 
 // GetByID gets a file commit by ID
-func (dao *FileCommitDAO) GetByID(id string) (*entity.FileCommit, error) {
+func (dao *FileCommitDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.FileCommit, error) {
 	var commit entity.FileCommit
-	err := DB.Where("id = ?", id).First(&commit).Error
+	err := db.WithContext(ctx).Where("id = ?", id).First(&commit).Error
 	if err != nil {
 		return nil, err
 	}
@@ -39,19 +42,19 @@ func (dao *FileCommitDAO) GetByID(id string) (*entity.FileCommit, error) {
 }
 
 // Create creates a new file commit record
-func (dao *FileCommitDAO) Create(commit *entity.FileCommit) error {
-	return DB.Create(commit).Error
+func (dao *FileCommitDAO) Create(ctx context.Context, db *gorm.DB, commit *entity.FileCommit) error {
+	return db.WithContext(ctx).Create(commit).Error
 }
 
 // UpdateTreeState updates the tree_state field for a commit
-func (dao *FileCommitDAO) UpdateTreeState(id string, treeState string) error {
-	return DB.Model(&entity.FileCommit{}).Where("id = ?", id).Update("tree_state", treeState).Error
+func (dao *FileCommitDAO) UpdateTreeState(ctx context.Context, db *gorm.DB, id string, treeState string) error {
+	return db.WithContext(ctx).Model(&entity.FileCommit{}).Where("id = ?", id).Update("tree_state", treeState).Error
 }
 
 // GetLatestByFolderID gets the latest (most recent) commit for a folder
-func (dao *FileCommitDAO) GetLatestByFolderID(folderID string) (*entity.FileCommit, error) {
+func (dao *FileCommitDAO) GetLatestByFolderID(ctx context.Context, db *gorm.DB, folderID string) (*entity.FileCommit, error) {
 	var commit entity.FileCommit
-	err := DB.Where("folder_id = ?", folderID).
+	err := db.WithContext(ctx).Where("folder_id = ?", folderID).
 		Order("create_time DESC").
 		First(&commit).Error
 	if err != nil {
@@ -70,11 +73,11 @@ var allowedFileCommitSorts = map[string]string{
 }
 
 // ListByFolderID lists commits for a folder with pagination
-func (dao *FileCommitDAO) ListByFolderID(folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error) {
+func (dao *FileCommitDAO) ListByFolderID(ctx context.Context, db *gorm.DB, folderID string, page, pageSize int, orderBy string, desc bool) ([]*entity.FileCommit, int64, error) {
 	var commits []*entity.FileCommit
 	var total int64
 
-	query := DB.Model(&entity.FileCommit{}).Where("folder_id = ?", folderID)
+	query := db.WithContext(ctx).Model(&entity.FileCommit{}).Where("folder_id = ?", folderID)
 
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -116,28 +119,28 @@ func NewFileCommitItemDAO() *FileCommitItemDAO {
 }
 
 // Create creates a new file commit item record
-func (dao *FileCommitItemDAO) Create(item *entity.FileCommitItem) error {
-	return DB.Create(item).Error
+func (dao *FileCommitItemDAO) Create(ctx context.Context, db *gorm.DB, item *entity.FileCommitItem) error {
+	return db.WithContext(ctx).Create(item).Error
 }
 
 // ListByCommitID lists all items for a commit
-func (dao *FileCommitItemDAO) ListByCommitID(commitID string) ([]*entity.FileCommitItem, error) {
+func (dao *FileCommitItemDAO) ListByCommitID(ctx context.Context, db *gorm.DB, commitID string) ([]*entity.FileCommitItem, error) {
 	var items []*entity.FileCommitItem
-	err := DB.Where("commit_id = ?", commitID).Order("create_time ASC").Find(&items).Error
+	err := db.WithContext(ctx).Where("commit_id = ?", commitID).Order("create_time ASC").Find(&items).Error
 	return items, err
 }
 
 // ListByFileID lists all commit items for a specific file (for version history)
-func (dao *FileCommitItemDAO) ListByFileID(fileID string) ([]*entity.FileCommitItem, error) {
+func (dao *FileCommitItemDAO) ListByFileID(ctx context.Context, db *gorm.DB, fileID string) ([]*entity.FileCommitItem, error) {
 	var items []*entity.FileCommitItem
-	err := DB.Where("file_id = ?", fileID).Order("create_time DESC").Find(&items).Error
+	err := db.WithContext(ctx).Where("file_id = ?", fileID).Order("create_time DESC").Find(&items).Error
 	return items, err
 }
 
 // GetByCommitIDAndFileID gets a single commit item by commit and file ID
-func (dao *FileCommitItemDAO) GetByCommitIDAndFileID(commitID, fileID string) (*entity.FileCommitItem, error) {
+func (dao *FileCommitItemDAO) GetByCommitIDAndFileID(ctx context.Context, db *gorm.DB, commitID, fileID string) (*entity.FileCommitItem, error) {
 	var item entity.FileCommitItem
-	err := DB.Where("commit_id = ? AND file_id = ?", commitID, fileID).First(&item).Error
+	err := db.WithContext(ctx).Where("commit_id = ? AND file_id = ?", commitID, fileID).First(&item).Error
 	if err != nil {
 		return nil, err
 	}

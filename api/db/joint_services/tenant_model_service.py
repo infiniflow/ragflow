@@ -24,6 +24,8 @@ from common.constants import (
     ModelTypeBinary,
     MINERU_DEFAULT_CONFIG,
     MINERU_ENV_KEYS,
+    MISTRAL_OCR_DEFAULT_CONFIG,
+    MISTRAL_OCR_ENV_KEYS,
     OPENDATALOADER_DEFAULT_CONFIG,
     OPENDATALOADER_ENV_KEYS,
     PADDLEOCR_DEFAULT_CONFIG,
@@ -171,10 +173,10 @@ def get_tenant_default_model_by_type(tenant_id: str, model_type: str | enum.Enum
         case LLMType.EMBEDDING.value:
             model_id = tenant.tenant_embd_id
             model_name = tenant.embd_id
-        case LLMType.SPEECH2TEXT.value:
+        case LLMType.ASR.value:
             model_id = tenant.tenant_asr_id
             model_name = tenant.asr_id
-        case LLMType.IMAGE2TEXT.value:
+        case LLMType.VISION.value:
             model_id = tenant.tenant_img2txt_id
             model_name = tenant.img2txt_id
         case LLMType.CHAT.value:
@@ -403,8 +405,8 @@ _MODEL_NAME_TO_ID_FIELD_MAP: dict[str, tuple[str, str]] = {
     "llm_id": (LLMType.CHAT, "tenant_llm_id"),
     "embd_id": (LLMType.EMBEDDING, "tenant_embd_id"),
     "rerank_id": (LLMType.RERANK, "tenant_rerank_id"),
-    "asr_id": (LLMType.SPEECH2TEXT, "tenant_asr_id"),
-    "img2txt_id": (LLMType.IMAGE2TEXT, "tenant_img2txt_id"),
+    "asr_id": (LLMType.ASR, "tenant_asr_id"),
+    "img2txt_id": (LLMType.VISION, "tenant_img2txt_id"),
     "tts_id": (LLMType.TTS, "tenant_tts_id"),
 }
 
@@ -433,6 +435,37 @@ def ensure_tenant_model_ids_for_params(tenant_id: str, params: dict) -> dict:
 
 
 def get_api_key(tenant_id: str, model_name: str):
+    # Try direct model ID (UUID) lookup first
+    exist, model_obj = TenantModelService.get_by_id(model_name)
+    if exist:
+        # Verify tenant ownership through the provider chain
+        ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+        if not ok:
+            raise LookupError(f"Provider id={model_obj.provider_id} not found for model {model_name}.")
+        if tenant_id != provider_obj.tenant_id:
+            joined_tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
+            joined_tenant_ids = [t["tenant_id"] for t in joined_tenants]
+            if provider_obj.tenant_id not in joined_tenant_ids:
+                raise LookupError(f"Tenant {tenant_id} has no access to provider owned by tenant {provider_obj.tenant_id}.")
+
+        exist_inst, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+        if not exist_inst:
+            logger.warning(
+                "Direct-ID resolution: instance not found | tenant_id=%s model_id=%s instance_id=%s",
+                tenant_id,
+                model_name,
+                model_obj.instance_id,
+            )
+            raise LookupError(f"Instance {model_obj.instance_id} not found for model {model_name}.")
+        logger.debug(
+            "Direct-ID resolution: resolved | tenant_id=%s model_id=%s instance_id=%s",
+            tenant_id,
+            model_name,
+            model_obj.instance_id,
+        )
+        return instance_obj.api_key
+
+    # Fall back to name-based resolution: model[@instance]@provider
     _, instance_name, provider_name = split_model_name(model_name)
 
     if not provider_name:
@@ -495,4 +528,33 @@ def ensure_somark_from_env(tenant_id: str) -> str | None:
         "SoMark",
         "somark-from-env",
         _collect_env_config(SOMARK_ENV_KEYS, SOMARK_DEFAULT_CONFIG),
+    )
+
+
+def get_composite_model_name_by_id(model_id: str) -> str:
+    """Convert a tenant_model.id to the composite model name string
+    ``model_name@instance_name@provider_name``.
+    Raises LookupError if the model, instance, or provider is not found.
+    """
+    exist, model_obj = TenantModelService.get_by_id(model_id)
+    if not exist:
+        raise LookupError(f"TenantModel id={model_id} not found.")
+
+    ok, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+    if not ok:
+        raise LookupError(f"Instance id={model_obj.instance_id} not found for model id={model_id}.")
+
+    ok, provider_obj = TenantModelProviderService.get_by_id(model_obj.provider_id)
+    if not ok:
+        raise LookupError(f"Provider id={model_obj.provider_id} not found for model id={model_id}.")
+
+    return f"{model_obj.model_name}@{instance_obj.instance_name}@{provider_obj.provider_name}"
+
+
+def ensure_mistral_ocr_from_env(tenant_id: str) -> str | None:
+    return _ensure_ocr_provider_from_env(
+        tenant_id,
+        "Mistral OCR",
+        "mistral-ocr-latest",
+        _collect_env_config(MISTRAL_OCR_ENV_KEYS, MISTRAL_OCR_DEFAULT_CONFIG),
     )

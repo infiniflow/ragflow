@@ -332,6 +332,7 @@ class CompilationTemplateGroupService(CommonService):
                     config = CompilationTemplateService.fill_config_default_llm(config, tenant_id)
                     duplicate_query = CompilationTemplate.select().where(
                         CompilationTemplate.tenant_id == tenant_id,
+                        CompilationTemplate.group_id == group_id,
                         CompilationTemplate.name == name,
                         ~CompilationTemplate.is_builtin,
                         CompilationTemplate.status == StatusEnum.VALID.value,
@@ -415,6 +416,7 @@ class CompilationTemplateGroupService(CommonService):
         config = CompilationTemplateService.fill_config_default_llm(config, tenant_id)
         duplicate = CompilationTemplate.select().where(
             CompilationTemplate.tenant_id == tenant_id,
+            CompilationTemplate.group_id == group_id,
             CompilationTemplate.name == name,
             ~CompilationTemplate.is_builtin,
             CompilationTemplate.status == StatusEnum.VALID.value,

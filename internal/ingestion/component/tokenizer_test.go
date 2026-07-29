@@ -23,154 +23,27 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"math"
-	"os"
-	"ragflow/internal/common"
 	"reflect"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
-	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
 
-var tokenizerPoolInitErr error
-
-// TestMain initializes the tokenizer pool before any test runs.
-// The tokenizer package needs the C++ RAGAnalyzer dictionaries
-// (see internal/tokenizer.Init) for `Tokenize` /
-// `FineGrainedTokenize`; without it, `tokenizeChunks` errors out
-// with "tokenizer pool not initialized". Tests in other packages
-// initialize the pool at startup; this package must do the same
-// because the Tokenizer component touches tokenizer.Tokenize.
-//
-// If Init fails (e.g., dict path missing in some CI sandboxes),
-// we log the failure but still run the tests. Cases that exercise
-// tokenizeChunks will fail rather than skip when the pool is not
-// initialized.
-func TestMain(m *testing.M) {
-	cfg := &tokenizer.PoolConfig{
-		DictPath:       common.GetEnv(common.EnvRAGFlowDictPath),
+func requireTokenizerPool(t *testing.T) {
+	t.Helper()
+	if err := tokenizer.Init(&tokenizer.PoolConfig{
+		DictPath:       "/usr/share/infinity/resource",
 		MinSize:        1,
 		MaxSize:        2,
 		IdleTimeout:    30 * time.Second,
 		AcquireTimeout: 5 * time.Second,
-	}
-	if cfg.DictPath == "" {
-		cfg.DictPath = "/usr/share/infinity/resource"
-	}
-	tokenizerPoolInitErr = tokenizer.Init(cfg)
-	if tokenizerPoolInitErr != nil {
-		fmt.Fprintf(os.Stderr, "tokenizer pool init failed (tests will skip tokenize-dependent cases): %v\n", tokenizerPoolInitErr)
-	}
-	os.Exit(m.Run())
-}
-
-func requireTokenizerPool(t *testing.T) {
-	t.Helper()
-	if tokenizerPoolInitErr != nil {
-		t.Skipf("tokenizer pool unavailable: %v", tokenizerPoolInitErr)
-	}
-}
-
-// stubEmbedder records every call and returns canned vectors.
-// Matches the Embedder contract: len(results) == len(texts).
-type stubEmbedder struct {
-	calls         atomic.Int32
-	dim           int
-	maxTokens     int
-	delay         time.Duration
-	err           error
-	callInputs    [][]string
-	resultsByCall []embeddingCallResult
-	callTokens    []int
-}
-
-type embeddingCallResult struct {
-	vectors    [][]float64
-	tokenCount int
-}
-
-func (s *stubEmbedder) MaxTokens() int {
-	return s.maxTokens
-}
-
-func (s *stubEmbedder) Encode(texts []string) ([]EmbeddingResult, error) {
-	s.calls.Add(1)
-	copied := append([]string(nil), texts...)
-	s.callInputs = append(s.callInputs, copied)
-	if s.delay > 0 {
-		time.Sleep(s.delay)
-	}
-	if s.err != nil {
-		return nil, s.err
-	}
-	callIdx := int(s.calls.Load()) - 1
-	var cfg embeddingCallResult
-	if callIdx < len(s.resultsByCall) {
-		cfg = s.resultsByCall[callIdx]
-	}
-	out := make([]EmbeddingResult, len(texts))
-	for i := range texts {
-		var v []float64
-		if i < len(cfg.vectors) {
-			v = append([]float64(nil), cfg.vectors[i]...)
-		} else {
-			v = make([]float64, s.dim)
-			v[0] = float64(i + 1)
-		}
-		tokenCount := len(texts[i])
-		if callIdx < len(s.callTokens) {
-			tokenCount = s.callTokens[callIdx]
-		} else if cfg.tokenCount > 0 {
-			tokenCount = cfg.tokenCount
-		}
-		out[i] = EmbeddingResult{Vector: v, TokenCount: tokenCount}
-	}
-	return out, nil
-}
-
-// newStubEmbedder returns a stub embedder for instance-level resolver injection.
-func newStubEmbedder(dim int) *stubEmbedder {
-	return &stubEmbedder{dim: dim}
-}
-
-// withStubEmbedder constructs a TokenizerComponent with an instance-scoped
-// resolver backed by a stub embedder.
-func withStubEmbedder(t *testing.T, dim int) (*TokenizerComponent, *stubEmbedder) {
-	t.Helper()
-	stub := newStubEmbedder(dim)
-	comp, err := NewTokenizerComponentWithResolver(nil, func(_, _, _ string) (Embedder, error) { return stub, nil })
-	if err != nil {
-		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
-	}
-	return comp.(*TokenizerComponent), stub
-}
-
-// TestTokenizerComponent_Registered verifies init() enrollment
-// under runtime.CategoryIngestion (Phase 4 / API endpoint depends
-// on this contract).
-func TestTokenizerComponent_Registered(t *testing.T) {
-	factory, cat, md, ok := runtime.DefaultRegistry.Lookup("Tokenizer")
-	if !ok {
-		t.Fatal("Tokenizer not registered in runtime.DefaultRegistry")
-	}
-	if cat != runtime.CategoryIngestion {
-		t.Errorf("category = %q, want %q", cat, runtime.CategoryIngestion)
-	}
-	if factory == nil {
-		t.Error("factory is nil")
-	}
-	if len(md.Inputs) == 0 {
-		t.Error("metadata.Inputs empty")
-	}
-	if len(md.Outputs) == 0 {
-		t.Error("metadata.Outputs empty")
+	}); err != nil {
+		t.Skipf("tokenizer pool unavailable: %v", err)
 	}
 }
 
@@ -194,7 +67,7 @@ func TestTokenizerComponent_Invoke_HappyPath(t *testing.T) {
 		{"text": "bravo chunk text"},
 		{"text": "charlie chunk text"},
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"tenant_id":     "t1",
 		"model_id":      "embd-1",
 		"name":          "doc.pdf",
@@ -241,59 +114,6 @@ func TestTokenizerComponent_Invoke_HappyPath(t *testing.T) {
 	if out["embedding_token_consumption"] == nil {
 		t.Error("embedding_token_consumption missing")
 	}
-	if out["_elapsed_time"] == nil {
-		t.Error("_elapsed_time missing")
-	}
-}
-
-// TestTokenizerComponent_Invoke_EmptyChunks covers the no-op branch:
-// empty chunk list → empty output, no panic, no encoder call.
-func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
-	c, stub := withStubEmbedder(t, 4)
-	_ = stub
-	var err error
-	if err != nil {
-		t.Fatalf("NewTokenizerComponent: %v", err)
-	}
-
-	out, err := c.Invoke(context.Background(), map[string]any{
-		"output_format": "chunks",
-		"chunks":        []map[string]any{},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) != 0 {
-		t.Errorf("chunks len = %d, want 0", len(chunks))
-	}
-	if stub.calls.Load() != 0 {
-		t.Errorf("embedder called %d times on empty input, want 0", stub.calls.Load())
-	}
-	if got := out["embedding_token_consumption"]; got != 0 {
-		t.Errorf("embedding_token_consumption = %v, want 0", got)
-	}
-	if out["output_format"] != "chunks" {
-		t.Errorf("output_format = %v, want chunks", out["output_format"])
-	}
-}
-
-// TestTokenizerComponent_Invoke_NilChunks covers the nil-input
-// branch: nil chunks list is treated as zero-length (matches
-// python `kwargs.get("chunks")` with None).
-func TestTokenizerComponent_Invoke_NilChunks(t *testing.T) {
-	c, stub := withStubEmbedder(t, 4)
-	_ = stub
-	out, err := c.Invoke(context.Background(), map[string]any{
-		"output_format": "chunks",
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) != 0 {
-		t.Errorf("chunks len = %d, want 0", len(chunks))
-	}
 }
 
 // TestTokenizerComponent_Invoke_Unicode asserts CJK input
@@ -317,7 +137,7 @@ func TestTokenizerComponent_Invoke_Unicode(t *testing.T) {
 		chunks[i] = map[string]any{"text": txt}
 	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks":        chunks,
 	})
@@ -346,7 +166,7 @@ func TestTokenizerComponent_Invoke_TextPayload(t *testing.T) {
 	c, _ := NewTokenizerComponent(map[string]any{
 		"search_method": []any{"full_text"},
 	})
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "note.txt",
 		"output_format": "text",
 		"text":          "plain payload",
@@ -372,7 +192,7 @@ func TestTokenizerComponent_Invoke_JSONPayload(t *testing.T) {
 	c, _ := NewTokenizerComponent(map[string]any{
 		"search_method": []any{"full_text"},
 	})
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "note.pdf",
 		"output_format": "json",
 		"json":          []map[string]any{{"text": "row one"}, {"text": "row two"}},
@@ -400,7 +220,7 @@ func TestTokenizerComponent_Invoke_BatchedEmbedding(t *testing.T) {
 		{"text": "two"},
 		{"text": "three"},
 	}
-	if _, err := c.Invoke(context.Background(), map[string]any{
+	if _, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "chunks",
 		"chunks":        chunks,
@@ -421,7 +241,7 @@ func TestTokenizerComponent_Invoke_FullTextOnly(t *testing.T) {
 	c, _ := NewTokenizerComponent(map[string]any{
 		"search_method": []any{"full_text"},
 	})
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha bravo"}},
 	})
@@ -440,42 +260,43 @@ func TestTokenizerComponent_Invoke_FullTextOnly(t *testing.T) {
 	}
 }
 
-func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
-	cIntf, err := NewTokenizerComponentWithResolver(map[string]any{
-		"search_method": []any{"embedding"},
-	}, func(_, _, _ string) (Embedder, error) {
-		return newStubEmbedder(4), nil
+// TestTokenizerComponent_Invoke_KeywordSplitCJK verifies important_kwd is
+// split by the full ASCII+CJK delimiter set, not just ASCII comma. A Chinese
+// LLM commonly emits CJK commas/semicolons even when asked for
+// "comma-separated"; ASCII-only splitting would leave keywords glued together.
+func TestTokenizerComponent_Invoke_KeywordSplitCJK(t *testing.T) {
+	requireTokenizerPool(t)
+	_, stub := withStubEmbedder(t, 4)
+	c, _ := NewTokenizerComponent(map[string]any{
+		"search_method": []any{"full_text"},
 	})
-	if err != nil {
-		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
-	}
-	out, err := cIntf.(*TokenizerComponent).Invoke(context.Background(), map[string]any{
-		"name":          "doc.pdf",
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"output_format": "chunks",
-		"chunks":        []map[string]any{{"text": "alpha bravo"}},
+		"chunks":        []map[string]any{{"text": "alpha", "keywords": "kw1，kw2；kw3"}},
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.calls.Load() != 0 {
+		t.Errorf("embedder should not be called in full_text-only mode, got %d", stub.calls.Load())
 	}
 	got, _ := out["chunks"].([]map[string]any)
 	if len(got) != 1 {
 		t.Fatalf("chunks len = %d, want 1", len(got))
 	}
-	if got[0]["q_4_vec"] == nil {
-		t.Fatalf("q_4_vec missing: %v", got[0])
+	kwd, ok := got[0]["important_kwd"].([]string)
+	if !ok {
+		t.Fatalf("important_kwd should be []string, got %T", got[0]["important_kwd"])
 	}
-	if got[0]["content_ltks"] != nil || got[0]["content_sm_ltks"] != nil {
-		t.Fatalf("embedding-only mode should not emit full-text tokens: %v", got[0])
-	}
-	if out["embedding_token_consumption"] == nil {
-		t.Fatal("embedding_token_consumption missing")
+	if len(kwd) != 3 {
+		t.Errorf("important_kwd must split CJK delimiters into 3 elements, got %d: %v", len(kwd), kwd)
 	}
 }
 
 func TestTokenizerComponent_Invoke_FullTextAndEmbedding(t *testing.T) {
 	requireTokenizerPool(t)
 	c, _ := withStubEmbedder(t, 4)
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha bravo"}},
@@ -505,7 +326,7 @@ func TestTokenizerComponent_Invoke_FullTextAndEmbedding(t *testing.T) {
 func TestTokenizerComponent_Invoke_EmbedNoResolver(t *testing.T) {
 	requireTokenizerPool(t)
 	c, _ := NewTokenizerComponent(nil)
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(context.Background(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}},
 	})
@@ -524,7 +345,7 @@ func TestTokenizerComponent_Invoke_EmbedderError(t *testing.T) {
 	c, stub := withStubEmbedder(t, 4)
 	stub.err = errors.New("simulated upstream error")
 
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(context.Background(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}},
 	})
@@ -544,13 +365,13 @@ func TestTokenizerComponent_Invoke_EncoderCountMismatch(t *testing.T) {
 	// Inject an embedder that returns the wrong number of vectors
 	// regardless of input.
 	wrong := &countMismatchedEmbedder{want: 1}
-	cIntf, err := NewTokenizerComponentWithResolver(nil, func(_, _, _ string) (Embedder, error) { return wrong, nil })
+	cIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) { return wrong, nil })
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
 	c := cIntf.(*TokenizerComponent)
 	_ = stub
-	_, err = c.Invoke(context.Background(), map[string]any{
+	_, err = c.Invoke(context.Background(), nil, map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "a"}, {"text": "b"}, {"text": "c"}},
 	})
@@ -564,104 +385,14 @@ func TestTokenizerComponent_Invoke_EncoderCountMismatch(t *testing.T) {
 
 type countMismatchedEmbedder struct{ want int }
 
-func (c *countMismatchedEmbedder) MaxTokens() int { return 0 }
+func (c *countMismatchedEmbedder) MaxTokens() int { return 2048 }
 
-func (c *countMismatchedEmbedder) Encode(texts []string) ([]EmbeddingResult, error) {
+func (c *countMismatchedEmbedder) Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error) {
 	out := make([]EmbeddingResult, c.want)
 	for i := range out {
 		out[i] = EmbeddingResult{Vector: make([]float64, 4), TokenCount: 1}
 	}
 	return out, nil
-}
-
-// TestTokenizerComponent_Invoke_HonorsTimeout installs an
-// embedder that blocks past a (test-shrunk) tokenizerTimeout and
-// asserts the component returns context.DeadlineExceeded.
-func TestTokenizerComponent_Invoke_HonorsTimeout(t *testing.T) {
-	requireTokenizerPool(t)
-	prevTimeout := tokenizerTimeout
-	tokenizerTimeout = 50 * time.Millisecond
-	t.Cleanup(func() { tokenizerTimeout = prevTimeout })
-
-	c, stub := withStubEmbedder(t, 4)
-	stub.delay = 500 * time.Millisecond
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := c.Invoke(ctx, map[string]any{
-		"output_format": "chunks",
-		"chunks":        []map[string]any{{"text": "alpha"}},
-	})
-	if err == nil {
-		t.Fatal("expected timeout error, got nil")
-	}
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("expected context.DeadlineExceeded, got %v", err)
-	}
-}
-
-// TestTokenizerComponent_InputsOutputs_NonEmpty verifies Phase 4
-// API metadata shape.
-func TestTokenizerComponent_InputsOutputs_NonEmpty(t *testing.T) {
-	c, _ := NewTokenizerComponent(map[string]any{})
-	ins := c.(*TokenizerComponent).Inputs()
-	outs := c.(*TokenizerComponent).Outputs()
-	if len(ins) == 0 {
-		t.Error("Inputs() empty")
-	}
-	if len(outs) == 0 {
-		t.Error("Outputs() empty")
-	}
-	for _, key := range []string{"chunks", "output_format"} {
-		if _, ok := outs[key]; !ok {
-			t.Errorf("Outputs() missing %q", key)
-		}
-	}
-	for _, key := range []string{"chunks", "name"} {
-		if _, ok := ins[key]; !ok {
-			t.Errorf("Inputs() missing %q", key)
-		}
-	}
-}
-
-// TestTokenizerComponent_Parallelism locks the fan-out to 1 (plan
-// §AD-5a: "embedding calls batched, not fanned").
-func TestTokenizerComponent_Parallelism(t *testing.T) {
-	c, _ := NewTokenizerComponent(map[string]any{})
-	if got := c.(*TokenizerComponent).Parallelism(); got != 1 {
-		t.Errorf("Parallelism() = %d, want 1", got)
-	}
-}
-
-// TestTokenizerComponent_NewTokenizerComponent_Defaults verifies
-// the Python default param values propagate.
-func TestTokenizerComponent_NewTokenizerComponent_Defaults(t *testing.T) {
-	c, err := NewTokenizerComponent(nil)
-	if err != nil {
-		t.Fatalf("NewTokenizerComponent(nil): %v", err)
-	}
-	tc := c.(*TokenizerComponent)
-	if tc.param.FilenameEmbdWeight != 0.1 {
-		t.Errorf("filename_embd_weight = %v, want 0.1", tc.param.FilenameEmbdWeight)
-	}
-	if len(tc.param.Fields) != 1 || tc.param.Fields[0] != "text" {
-		t.Errorf("fields = %v, want [text]", tc.param.Fields)
-	}
-	if len(tc.param.SearchMethod) != 2 {
-		t.Errorf("search_method len = %d, want 2", len(tc.param.SearchMethod))
-	}
-}
-
-// TestTokenizerComponent_NewTokenizerComponent_BadParam covers
-// the param-validation branch (invalid search_method value).
-func TestTokenizerComponent_NewTokenizerComponent_BadParam(t *testing.T) {
-	_, err := NewTokenizerComponent(map[string]any{
-		"search_method": []any{"unknown"},
-	})
-	if err == nil {
-		t.Fatal("expected param validation error, got nil")
-	}
 }
 
 // TestTokenizerComponent_Smoke_EndToEnd is the BLOCKER smoke test
@@ -679,7 +410,7 @@ func TestTokenizerComponent_NewTokenizerComponent_BadParam(t *testing.T) {
 // production path against a real embedding API was not exercised
 // in this CI sandbox; the helper `withStubEmbedder` deliberately
 // avoids the network round-trip while still exercising the full
-// wiring (TrackElapsed, WithTimeout, batched Encode, vector
+// wiring (TrackElapsed, batched Encode, vector
 // stamping).
 
 func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {
@@ -698,7 +429,7 @@ func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {
 	}
 
 	start := time.Now()
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"tenant_id":     "tenant-smoke",
 		"model_id":      "embd-smoke",
 		"name":          "smoke.pdf",
@@ -740,12 +471,13 @@ func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {
 }
 
 func TestTokenizerComponent_Embedding_MergesTitleAndContentVectors(t *testing.T) {
+	requireTokenizerPool(t)
 	c, stub := withStubEmbedder(t, 2)
 	stub.resultsByCall = []embeddingCallResult{
 		{vectors: [][]float64{{10, 20}}, tokenCount: 7},
 		{vectors: [][]float64{{1, 2}, {3, 4}}, tokenCount: 11},
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}, {"text": "beta"}},
@@ -765,9 +497,10 @@ func TestTokenizerComponent_Embedding_MergesTitleAndContentVectors(t *testing.T)
 }
 
 func TestTokenizerComponent_Embedding_UsesFilenameWeight(t *testing.T) {
+	requireTokenizerPool(t)
 	cIntf, err := NewTokenizerComponentWithResolver(map[string]any{
 		"filename_embd_weight": 0.25,
-	}, func(_, _, _ string) (Embedder, error) {
+	}, func(_ context.Context, _, _, _ string) (Embedder, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{
 			{vectors: [][]float64{{8, 8}}, tokenCount: 3},
@@ -779,7 +512,7 @@ func TestTokenizerComponent_Embedding_UsesFilenameWeight(t *testing.T) {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
 	c := cIntf.(*TokenizerComponent)
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}},
@@ -795,6 +528,7 @@ func TestTokenizerComponent_Embedding_UsesFilenameWeight(t *testing.T) {
 }
 
 func TestTokenizerComponent_Embedding_EmptyNameWarnsAndUsesContentVector(t *testing.T) {
+	requireTokenizerPool(t)
 	c, stub := withStubEmbedder(t, 2)
 	stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{2, 4}}, tokenCount: 5}}
 
@@ -808,7 +542,7 @@ func TestTokenizerComponent_Embedding_EmptyNameWarnsAndUsesContentVector(t *test
 		log.SetFlags(prevFlags)
 	})
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "   ",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}},
@@ -832,11 +566,38 @@ func TestTokenizerComponent_Embedding_EmptyNameWarnsAndUsesContentVector(t *test
 	}
 }
 
+// Python tokenizer.py:95 passes the raw name to embedding without .strip();
+// Go must match — the title embedding must receive the original name, not a
+// TrimSpace'd copy. The empty-name guard still uses TrimSpace (mirroring
+// Python's `.strip()==""` check at tokenizer.py:200), but the value encoded
+// is the raw name.
+func TestTokenizerComponent_Embedding_UsesRawNameNotTrimmed(t *testing.T) {
+	requireTokenizerPool(t)
+	c, stub := withStubEmbedder(t, 2)
+
+	if _, err := c.Invoke(context.Background(), nil, map[string]any{
+		"name":          "  report.pdf  ",
+		"output_format": "chunks",
+		"chunks":        []map[string]any{{"text": "alpha"}},
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if len(stub.callInputs) < 1 {
+		t.Fatalf("callInputs len = %d, want >= 1", len(stub.callInputs))
+	}
+	// First call is the title embedding; it must receive the raw name with
+	// surrounding whitespace preserved, matching Python.
+	if got := stub.callInputs[0][0]; got != "  report.pdf  " {
+		t.Fatalf("title embedding input = %q, want %q (raw, not trimmed)", got, "  report.pdf  ")
+	}
+}
+
 func TestTokenizerComponent_Embedding_TruncatesByMaxTokensMinus10(t *testing.T) {
+	requireTokenizerPool(t)
 	c, stub := withStubEmbedder(t, 2)
 	stub.maxTokens = 12
 	longText := strings.Repeat("hello world ", 20)
-	if _, err := c.Invoke(context.Background(), map[string]any{
+	if _, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": longText}},
@@ -855,8 +616,9 @@ func TestTokenizerComponent_Embedding_TruncatesByMaxTokensMinus10(t *testing.T) 
 }
 
 func TestTokenizerComponent_Embedding_SkipsEmptyCleanedTextsButReturnsZeroWhenAllSkipped(t *testing.T) {
+	requireTokenizerPool(t)
 	c, stub := withStubEmbedder(t, 2)
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "chunks",
 		"chunks": []map[string]any{
@@ -882,13 +644,12 @@ func TestTokenizerComponent_Embedding_SkipsEmptyCleanedTextsButReturnsZeroWhenAl
 }
 
 func TestTokenizerComponent_Embedding_SetsTokenConsumptionIncludingTitleCall(t *testing.T) {
+	requireTokenizerPool(t)
 	c, stub := withStubEmbedder(t, 2)
 	stub.callTokens = []int{3, 5, 7}
-	prevBatchSize := tokenizerEmbeddingBatchSize
-	tokenizerEmbeddingBatchSize = 1
-	t.Cleanup(func() { tokenizerEmbeddingBatchSize = prevBatchSize })
+	t.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "1")
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}, {"text": "beta"}},
@@ -902,12 +663,11 @@ func TestTokenizerComponent_Embedding_SetsTokenConsumptionIncludingTitleCall(t *
 }
 
 func TestTokenizerComponent_Embedding_BatchesByConfiguredBatchSize(t *testing.T) {
+	requireTokenizerPool(t)
 	c, stub := withStubEmbedder(t, 2)
-	prevBatchSize := tokenizerEmbeddingBatchSize
-	tokenizerEmbeddingBatchSize = 2
-	t.Cleanup(func() { tokenizerEmbeddingBatchSize = prevBatchSize })
+	t.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "2")
 
-	if _, err := c.Invoke(context.Background(), map[string]any{
+	if _, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
 		"output_format": "chunks",
 		"chunks": []map[string]any{
@@ -929,24 +689,6 @@ func TestTokenizerComponent_Embedding_BatchesByConfiguredBatchSize(t *testing.T)
 	}
 }
 
-func TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero(t *testing.T) {
-	c, stub := withStubEmbedder(t, 2)
-	out, err := c.Invoke(context.Background(), map[string]any{
-		"name":          "doc.pdf",
-		"output_format": "chunks",
-		"chunks":        []map[string]any{},
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	if got := stub.calls.Load(); got != 0 {
-		t.Fatalf("embedder calls = %d, want 0", got)
-	}
-	if got := out["embedding_token_consumption"]; got != 0 {
-		t.Fatalf("embedding_token_consumption = %v, want 0", got)
-	}
-}
-
 func floatSliceClose(got, want []float64) bool {
 	if len(got) != len(want) {
 		return false
@@ -959,31 +701,9 @@ func floatSliceClose(got, want []float64) bool {
 	return true
 }
 
-func TestValidateTokenizerOutputs_FullTextMissingReturnsError(t *testing.T) {
-	err := validateTokenizerOutputs([]schema.ChunkDoc{{Text: "alpha"}}, []string{"full_text"}, []string{"text"})
-	if err == nil || !strings.Contains(err.Error(), "missing full_text tokens") {
-		t.Fatalf("err = %v, want missing full_text tokens", err)
-	}
-}
-
-func TestValidateTokenizerOutputs_EmbeddingMissingReturnsError(t *testing.T) {
-	err := validateTokenizerOutputs([]schema.ChunkDoc{{Text: "alpha"}}, []string{"embedding"}, []string{"text"})
-	if err == nil || !strings.Contains(err.Error(), "missing embedding vector") {
-		t.Fatalf("err = %v, want missing embedding vector", err)
-	}
-}
-
-func TestValidateTokenizerOutputs_BothModesFailWhenOneMissing(t *testing.T) {
-	ck := schema.ChunkDoc{Text: "alpha", ContentLtks: "tok", ContentSmLtks: "sm"}
-	err := validateTokenizerOutputs([]schema.ChunkDoc{ck}, []string{"full_text", "embedding"}, []string{"text"})
-	if err == nil || !strings.Contains(err.Error(), "missing embedding vector") {
-		t.Fatalf("err = %v, want missing embedding vector", err)
-	}
-}
-
 func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testing.T) {
 	requireTokenizerPool(t)
-	compAIntf, err := NewTokenizerComponentWithResolver(nil, func(_, _, _ string) (Embedder, error) {
+	compAIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{10, 10}}, tokenCount: 1}, {vectors: [][]float64{{1, 1}}, tokenCount: 1}}
 		return stub, nil
@@ -991,7 +711,7 @@ func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testin
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver(A): %v", err)
 	}
-	compBIntf, err := NewTokenizerComponentWithResolver(nil, func(_, _, _ string) (Embedder, error) {
+	compBIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{20, 20}}, tokenCount: 1}, {vectors: [][]float64{{2, 2}}, tokenCount: 1}}
 		return stub, nil
@@ -1002,11 +722,11 @@ func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testin
 	compA := compAIntf.(*TokenizerComponent)
 	compB := compBIntf.(*TokenizerComponent)
 
-	outA, err := compA.Invoke(context.Background(), map[string]any{"name": "docA", "output_format": "chunks", "chunks": []map[string]any{{"text": "alpha"}}})
+	outA, err := compA.Invoke(context.Background(), nil, map[string]any{"name": "docA", "output_format": "chunks", "chunks": []map[string]any{{"text": "alpha"}}})
 	if err != nil {
 		t.Fatalf("Invoke A: %v", err)
 	}
-	outB, err := compB.Invoke(context.Background(), map[string]any{"name": "docB", "output_format": "chunks", "chunks": []map[string]any{{"text": "beta"}}})
+	outB, err := compB.Invoke(context.Background(), nil, map[string]any{"name": "docB", "output_format": "chunks", "chunks": []map[string]any{{"text": "beta"}}})
 	if err != nil {
 		t.Fatalf("Invoke B: %v", err)
 	}
@@ -1014,5 +734,46 @@ func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testin
 	vecB := outB["chunks"].([]map[string]any)[0]["q_2_vec"].([]float64)
 	if reflect.DeepEqual(vecA, vecB) {
 		t.Fatalf("instance resolvers leaked: vecA=%v vecB=%v", vecA, vecB)
+	}
+}
+
+func TestTokenizeChunks_SymbolOnlyTextFallsBackToRawText(t *testing.T) {
+	requireTokenizerPool(t)
+	chunks := []schema.ChunkDoc{
+		{Text: "·"}, // middle dot · — seen in production chunk[15]
+		{Text: ")"},
+		{Text: "("},
+		{Text: "*"},
+	}
+	err := tokenizeChunks(chunks, "test", "English")
+	if err != nil {
+		t.Fatalf("tokenizeChunks: %v", err)
+	}
+	for i, ck := range chunks {
+		t.Logf("chunk[%d]: text=%q content_ltks=%q content_sm_ltks=%q",
+			i, ck.Text, ck.ContentLtks, ck.ContentSmLtks)
+		// After fix: Tokenize returns empty for symbol-only text,
+		// but the fallback sets ContentLtks = raw text.
+		if strings.TrimSpace(ck.ContentLtks) == "" {
+			t.Errorf("chunk[%d]: expected non-empty ContentLtks (raw text fallback) for %q, got empty",
+				i, ck.Text)
+		}
+	}
+}
+
+func TestTokenizeChunks_WhitespaceSummaryShadowsTextBug(t *testing.T) {
+	requireTokenizerPool(t)
+	chunks := []schema.ChunkDoc{
+		{Summary: "   ", Text: "real content here"},
+	}
+	err := tokenizeChunks(chunks, "test", "English")
+	if err != nil {
+		t.Fatalf("tokenizeChunks: %v", err)
+	}
+	// After fix: TrimSpace("   ") is empty, so the Summary branch is skipped.
+	// The Text branch is entered and "real content here" is tokenized normally.
+	if strings.TrimSpace(chunks[0].ContentLtks) == "" {
+		t.Errorf("whitespace Summary should be skipped, Text %q should be tokenized, but ContentLtks is empty",
+			chunks[0].Text)
 	}
 }

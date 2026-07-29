@@ -200,7 +200,9 @@ class Graph:
         return self._tenant_id
 
     def get_value_with_variable(self, value: str) -> Any:
-        pat = re.compile(r"\{* *\{([a-zA-Z:0-9]+@[A-Za-z0-9_.-]+|sys\.[A-Za-z0-9_.]+|env\.[A-Za-z0-9_.]+)\} *\}*")
+        # Reference the canonical pre-compiled regex from ComponentBase so
+        # the source-pattern and the runtime-pattern can never drift apart.
+        pat = ComponentBase.variable_ref_patt_re
         out_parts = []
         last = 0
 
@@ -979,6 +981,9 @@ class Canvas(Graph):
             message_end["status"] = cpn_obj.get_param("status")
         if isinstance(cpn_obj.output("attachment"), dict):
             message_end["attachment"] = cpn_obj.output("attachment")
+        downloads = cpn_obj.output("downloads")
+        if isinstance(downloads, list) and downloads:
+            message_end["downloads"] = downloads
         if self._has_reference():
             message_end["reference"] = self.get_reference()
         # NOTE: aggregated run token usage is intentionally NOT attached here.

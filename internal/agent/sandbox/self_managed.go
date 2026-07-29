@@ -66,10 +66,10 @@ import (
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
+
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-
-	"ragflow/internal/common"
 )
 
 // selfManagedDefaultEndpoint is the canonical executor_manager

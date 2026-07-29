@@ -2697,7 +2697,7 @@ func (p *Parser) parseAPIDisable() (*Command, error) {
 }
 
 // region MODEL commands
-// CHAT 'model@instance@provider' 'hello world'
+// CHAT WITH 'model@instance@provider' MESSAGE 'hello world'
 // CHAT WITH 'model@instance@provider' MESSAGE 'hello world' 'who are you' IMAGE 'url1' 'file0' VIDEO "url2.mov" "file1" FILE "url" "path file2" AUDIO "file.wav"
 func (p *Parser) parseAPIChat() (*Command, error) {
 	p.nextToken() // consume CHAT

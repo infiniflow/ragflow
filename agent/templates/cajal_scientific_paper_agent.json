@@ -191,8 +191,8 @@
                 "{Agent:NewPumasLick@content}"
               ]
             },
-            "label": "Scientific Draft",
-            "name": "Response"
+            "label": "Message",
+            "name": "Scientific Draft"
           },
           "dragging": false,
           "id": "Message:OrangeYearsShine",
@@ -274,8 +274,8 @@
               "user_prompt": "",
               "visual_files_var": ""
             },
-            "label": "CAJAL Writer",
-            "name": "Knowledge Base Agent"
+            "label": "Agent",
+            "name": "CAJAL Writer"
           },
           "dragging": false,
           "id": "Agent:NewPumasLick",

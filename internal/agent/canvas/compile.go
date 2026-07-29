@@ -59,8 +59,8 @@ type CompileOptions struct {
 	// Workflow.Invoke), this is a compile-time descriptor: Compile cannot
 	// call compose.WithCheckPointID (the option type is wrong for a
 	// GraphCompileOption), so it only records the id on the returned
-	// CompiledCanvas — the caller threads it to Invoke. Use a stable,
-	// per-task value (e.g. taskID) so re-running the same task hits the
+	// CompiledCanvas — the caller threads it to Invoke. Use a stable value (for
+	// example a session-derived run id) so resuming hits the
 	// same Redis checkpoint (agent:cp:{id}). When empty,
 	// CompiledCanvas.CheckPointID stays empty and the caller must supply
 	// its own id (or omit it for a fresh per-run checkpoint).
@@ -75,15 +75,14 @@ type CompileOptions struct {
 	// graph does not pause on completion and force an extra, needless
 	// ResumeWithData round.
 	InterruptAfterNonTerminal bool
-	// SetupOverrides is a run-level override map keyed by cpnID. Each
-	// component's `params["setups"]` is merged only with its own entry
+	// OverrideParams is a run-level override map keyed by cpnID. Each
+	// component's `params` is merged only with its own entry
 	// (an arbitrary string-keyed map); the override wins on top-level key
-	// collision (see node_body.go mergeSetups). Components absent from the
+	// collision. Components absent from the
 	// map are left untouched. Used by the ingestion pipeline so a single
-	// Pipeline.Run can override the DSL-baked component setups without
-	// mutating the shared *Canvas (see node_body.go applySetupOverrides /
-	// mergeSetups).
-	SetupOverrides map[string]any
+	// Pipeline.Run can override the DSL-baked component params without
+	// mutating the shared *Canvas (see node_body.go applyOverrideParams).
+	OverrideParams map[string]any
 }
 
 // CompileOption mutates a CompileOptions before the compile runs.
@@ -112,8 +111,8 @@ func WithInterruptAfter(nodes []string) CompileOption {
 // WithCheckPointID sets the stable checkpoint id recorded on the returned
 // CompiledCanvas. Unlike eino's compose.WithCheckPointID (a run-time
 // Option), this is a compile-time descriptor: Compile stores the id so the
-// caller can pass it to Workflow.Invoke. Pass a stable, per-task value
-// (e.g. taskID) so re-running the same task loads the same Redis
+// caller can pass it to Workflow.Invoke. Pass a stable, session-derived id
+// so resuming loads the same Redis
 // checkpoint (agent:cp:{id}).
 func WithCheckPointID(id string) CompileOption {
 	return func(o *CompileOptions) { o.CheckPointID = id }
@@ -130,12 +129,12 @@ func WithInterruptAfterNonTerminalCpn() CompileOption {
 	return func(o *CompileOptions) { o.InterruptAfterNonTerminal = true }
 }
 
-// WithSetupOverrides attaches a run-level setups override map (keyed by
-// cpnID) to the compile. Each component's `params["setups"]` is merged with
+// WithOverrideParams attaches a run-level override map (keyed by
+// cpnID) to the compile. Each component's params are merged with
 // its own entry at compile time (run-level wins on key collision, see
-// node_body.go mergeSetups). Passing nil is a no-op.
-func WithSetupOverrides(m map[string]any) CompileOption {
-	return func(o *CompileOptions) { o.SetupOverrides = m }
+// node_body.go applyOverrideParams). Passing nil is a no-op.
+func WithOverrideParams(m map[string]any) CompileOption {
+	return func(o *CompileOptions) { o.OverrideParams = m }
 }
 
 // Compile builds the eino Workflow from the Canvas and returns the
@@ -213,12 +212,12 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 		}
 	}
 
-	// Thread the run-level setups override (if any) into ctx so each
-	// component's `params["setups"]` is merged with its own entry inside
+	// Thread the run-level override (if any) into ctx so each
+	// component's params is merged with its own entry inside
 	// buildNodeBody. The override is keyed by cpnID; the canvas package
 	// never imports ingestion.
-	if cfg.SetupOverrides != nil {
-		ctx = withSetupOverrides(ctx, cfg.SetupOverrides)
+	if cfg.OverrideParams != nil {
+		ctx = withOverrideParams(ctx, cfg.OverrideParams)
 	}
 
 	wf, err := BuildWorkflow(ctx, c)

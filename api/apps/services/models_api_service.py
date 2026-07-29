@@ -50,8 +50,8 @@ MODEL_TAG_TO_TYPE = {
     "chat": "chat",
     "embedding": "embedding",
     "rerank": "rerank",
-    "asr": "speech2text",
-    "vision": "image2text",
+    "asr": "asr",
+    "vision": "vision",
     "tts": "tts",
     "ocr": "ocr",
 }

@@ -20,6 +20,9 @@
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -31,6 +34,9 @@
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -43,6 +49,9 @@
         "chat",
         "vision"
       ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -54,6 +63,9 @@
       "model_types": [
         "chat"
       ],
+      "tools": {
+        "support": true
+      },
       "thinking": {
         "default_value": true,
         "clear_thinking": true
@@ -64,21 +76,30 @@
       "max_tokens": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "qwen/qwen3.5-4b",
       "max_tokens": 262144,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "tencent/hunyuan-mt-7b",
       "max_tokens": 32768,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "BAAI/bge-reranker-v2-m3",

@@ -43,7 +43,9 @@ func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 
 	// Get user's tenant with owner role
 	userTenantDAO := dao.NewUserTenantDAO()
-	tenants, err := userTenantDAO.GetByUserIDAndRole(userModel.ID, "owner")
+	ctx := c.Request.Context()
+
+	tenants, err := userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userModel.ID, "owner")
 	if err != nil || len(tenants) == 0 {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Tenant not found")
 		return
@@ -52,7 +54,7 @@ func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 	tenantID := tenants[0].TenantID
 
 	// Get keys for the tenant
-	keys, err := h.systemService.ListAPIKeys(tenantID)
+	keys, err := h.systemService.ListAPIKeys(ctx, tenantID)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to list keys")
 		return
@@ -77,7 +79,9 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 
 	// Get user's tenant with owner role
 	userTenantDAO := dao.NewUserTenantDAO()
-	tenants, err := userTenantDAO.GetByUserIDAndRole(userModel.ID, "owner")
+	ctx := c.Request.Context()
+
+	tenants, err := userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userModel.ID, "owner")
 	if err != nil || len(tenants) == 0 {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Tenant not found")
 		return
@@ -93,7 +97,7 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 	}
 
 	// Create key
-	key, err := h.systemService.CreateAPIKey(tenantID, &req)
+	key, err := h.systemService.CreateAPIKey(ctx, tenantID, &req)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to create key")
 		return
@@ -115,10 +119,12 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Invalid user data")
 		return
 	}
+	ctx := c.Request.Context()
 
 	// Get user's tenant with owner role
 	userTenantDAO := dao.NewUserTenantDAO()
-	tenants, err := userTenantDAO.GetByUserIDAndRole(userModel.ID, "owner")
+
+	tenants, err := userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userModel.ID, "owner")
 	if err != nil || len(tenants) == 0 {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Tenant not found")
 		return
@@ -134,7 +140,7 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 	}
 
 	// Delete key
-	if err = h.systemService.DeleteAPIKey(tenantID, key); err != nil {
+	if err = h.systemService.DeleteAPIKey(ctx, tenantID, key); err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to delete key")
 		return
 	}

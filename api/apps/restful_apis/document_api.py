@@ -79,14 +79,6 @@ from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
 
 
-def _compilation_template_group_id_changed(old_config, new_config) -> bool:
-    from rag.svr.task_executor_refactor.chunk_post_processor import (
-        _parser_config_compilation_template_group_ids,
-    )
-
-    return _parser_config_compilation_template_group_ids(old_config) != _parser_config_compilation_template_group_ids(new_config)
-
-
 def _normalize_parser_config_compilation_template_group_ids(parser_config) -> bool:
     from rag.svr.task_executor_refactor.chunk_post_processor import (
         _parser_config_compilation_template_group_ids,
@@ -223,7 +215,7 @@ async def update_document(tenant_id, dataset_id, document_id):
 
     # Verify ownership and existence of dataset and document
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+        return get_error_data_result(message="you don't own the dataset")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
         return get_error_data_result(message="Can't find this dataset!")
@@ -231,7 +223,7 @@ async def update_document(tenant_id, dataset_id, document_id):
     # Prepare data for validation
     docs = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not docs:
-        return get_error_data_result(message="The dataset doesn't own the document.")
+        return get_error_data_result(message="the dataset doesn't own the document")
 
     # Validate document update request parameters
     try:
@@ -260,16 +252,12 @@ async def update_document(tenant_id, dataset_id, document_id):
     if "parser_id" in req and ((doc.type == FileType.VISUAL and req["parser_id"] != "picture") or (re.search(r"\.(ppt|pptx|pages)$", doc.name) and req["parser_id"] != "presentation")):
         return get_data_error_result(message="Not supported yet!")
 
-    parser_config_template_group_changed = False
     # parser config provided (already validated in UpdateDocumentReq), update it.
-    # Changing the document-scoped knowledge compilation template group
-    # affects parse output, so the document must be parsed again for it to
-    # execute.
+    # Changing the document-scoped knowledge compilation template group must
+    # not remove the existing chunks.
     if update_doc_req.parser_config:
-        old_parser_config = dict(doc.parser_config or {})
         req["parser_config"].update(update_doc_req.parser_config.ext)
-        parser_config_template_group_touched = _normalize_parser_config_compilation_template_group_ids(req["parser_config"])
-        parser_config_template_group_changed = parser_config_template_group_touched and _compilation_template_group_id_changed(old_parser_config, req["parser_config"])
+        _normalize_parser_config_compilation_template_group_ids(req["parser_config"])
         DocumentService.update_parser_config(doc.id, req["parser_config"])
 
     # A non-empty pipeline_id selects pipeline parsing; an explicitly empty
@@ -280,17 +268,6 @@ async def update_document(tenant_id, dataset_id, document_id):
     # chunk method provided - the update method will check if it's different with existing one
     elif update_doc_req.chunk_method:
         if error := update_chunk_method(req, doc, tenant_id):
-            return error
-        if parser_config_template_group_changed and doc.parser_id.lower() == req["chunk_method"].lower():
-            if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=""):
-                return error
-    elif parser_config_template_group_changed:
-        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=""):
-            return error
-    else:
-        # Direct-parser updates do not carry a pipeline_id. Clear any stale
-        # pipeline selection and its generated document-store data.
-        if error := reset_document_for_reparse(doc, tenant_id, pipeline_id=""):
             return error
 
     if "enabled" in req:  # already checked in UpdateDocumentReq - it's int if present
@@ -507,8 +484,8 @@ async def upload_document(dataset_id, tenant_id):
         return get_error_data_result(message=f"Can't find the dataset with ID {dataset_id}!", code=RetCode.DATA_ERROR)
 
     if not check_kb_team_permission(kb, tenant_id):
-        logging.error("No authorization.")
-        return get_error_data_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        logging.error("no authorization")
+        return get_error_data_result(message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     if upload_type == "web":
         return await _upload_web_document(dataset_id, kb, tenant_id)
@@ -905,10 +882,10 @@ def _get_docs_with_request(req, dataset_id: str):
     doc_id = q.get("id")
     if doc_id:
         if not DocumentService.query(id=doc_id, kb_id=dataset_id):
-            return RetCode.DATA_ERROR, f"You don't own the document {doc_id}.", [], 0
+            return RetCode.DATA_ERROR, f"you don't own the document {doc_id}", [], 0
         doc_ids_filter = [doc_id]  # id provided, ignore other filters
     if doc_name and not DocumentService.query(name=doc_name, kb_id=dataset_id):
-        return RetCode.DATA_ERROR, f"You don't own the document {doc_name}.", [], 0
+        return RetCode.DATA_ERROR, f"you don't own the document {doc_name}", [], 0
 
     doc_ids = q.getlist("ids")
     if doc_id and len(doc_ids) > 0:
@@ -1239,12 +1216,12 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     """
     # Verify ownership and existence of dataset
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+        return get_error_data_result(message="you don't own the dataset")
 
     # Verify document exists in the dataset
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        msg = f"Document {document_id} not found in dataset {dataset_id}"
+        msg = f"document {document_id} not found in dataset {dataset_id}"
         return get_error_data_result(message=msg)
     doc = doc[0]
 
@@ -1457,7 +1434,7 @@ async def ingest(tenant_id):
 def _run_sync(user_id: str, req):
     for doc_id in req["doc_ids"]:
         if not DocumentService.accessible(doc_id, user_id):
-            return RetCode.AUTHENTICATION_ERROR, "No authorization."
+            return RetCode.AUTHENTICATION_ERROR, "no authorization"
 
     kb_table_num_map = {}
     for doc_id in req["doc_ids"]:
@@ -1493,6 +1470,9 @@ def _run_sync(user_id: str, req):
         DocumentService.update_by_id(doc_id, info)
         if req.get("delete", False):
             TaskService.filter_delete([Task.doc_id == doc_id])
+            from rag.advanced_rag.knowlege_compile.dataset_nav import remove_dataset_nav_doc_sync
+
+            remove_dataset_nav_doc_sync(doc_tenant_id, doc.kb_id, doc.id)
             if settings.docStoreConn.index_exist(search.index_name(doc_tenant_id), doc.kb_id):
                 settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(doc_tenant_id), doc.kb_id)
 
@@ -1603,6 +1583,9 @@ async def parse_documents(tenant_id, dataset_id):
 
                 DocumentService.update_by_id(doc_id, info)
                 TaskService.filter_delete([Task.doc_id == doc_id])
+                from rag.advanced_rag.knowlege_compile.dataset_nav import remove_dataset_nav_doc_sync
+
+                remove_dataset_nav_doc_sync(tenant_id, doc.kb_id, doc.id)
                 if settings.docStoreConn.index_exist(search.index_name(tenant_id), doc.kb_id):
                     settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc.kb_id)
 
@@ -1986,7 +1969,7 @@ async def batch_update_document_status(tenant_id, dataset_id):
 
     # Verify dataset ownership
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+        return get_error_data_result(message="you don't own the dataset")
 
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:

@@ -7,6 +7,8 @@ import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-tem
 import { Database, FileText, LucideIcon } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { formatKindLabel } from '@/utils/compilation-template-util';
 import { TemplateDropdown } from './template-dropdown';
 
 type TemplateCardProps = {
@@ -28,7 +30,6 @@ function ScopeIcon({ scope }: { scope?: string }) {
 
 export function TemplateCard({ data, onClick, onDelete }: TemplateCardProps) {
   const { t } = useTranslation();
-
   const kinds = useMemo(
     () => Array.from(new Set((data.templates ?? []).map((item) => item.kind))),
     [data.templates],
@@ -64,7 +65,7 @@ export function TemplateCard({ data, onClick, onDelete }: TemplateCardProps) {
           <div className="flex flex-wrap gap-2 mt-2">
             {kinds.map((kind) => (
               <Badge key={kind} variant="secondary">
-                {t(`knowledgeCompilation.kind.${kind}`, kind)}
+                {formatKindLabel(t, kind)}
               </Badge>
             ))}
           </div>

@@ -29,7 +29,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { parseModelValue } from '@/utils/llm-util';
+import { buildModelValue, parseModelValue } from '@/utils/llm-util';
 import { useWarnEmptyModel } from './use-warn-empty-model';
 
 export const enum LLMApiAction {
@@ -57,13 +57,8 @@ export const LlmKeys = {
     [LLMApiAction.AllModels, modelType] as const,
   providerInstances: (providerName: string) =>
     [LLMApiAction.AddedProviders, providerName, 'instances'] as const,
-  providerInstance: (providerName: string, instanceName: string) =>
-    [
-      LLMApiAction.AddedProviders,
-      providerName,
-      instanceName,
-      'instance',
-    ] as const,
+  providerInstance: (providerName: string, id: string) =>
+    [LLMApiAction.AddedProviders, providerName, id, 'instance'] as const,
   instanceModels: (providerName: string, instanceName: string) =>
     [
       LLMApiAction.AddedProviders,
@@ -165,18 +160,15 @@ export const useFetchProviderInstances = (providerName: string) => {
   return { data, loading };
 };
 
-export const useFetchProviderInstance = (
-  providerName: string,
-  instanceName: string,
-) => {
+export const useFetchProviderInstance = (providerName: string, id: string) => {
   return useQuery<IProviderInstance>({
-    queryKey: LlmKeys.providerInstance(providerName, instanceName),
+    queryKey: LlmKeys.providerInstance(providerName, id),
     initialData: undefined as unknown as IProviderInstance,
     gcTime: 0,
     enabled: false,
     queryFn: async () => {
       const { data } = await llmService.showProviderInstance(
-        { provider_name: providerName, instance_name: instanceName },
+        { provider_name: providerName, id },
         true,
       );
       return (data?.data ?? {}) as IProviderInstance;
@@ -281,6 +273,19 @@ export const useAddProviderInstance = () => {
         true,
       );
       if (data.code === 0 && !params.verify) {
+        // Invalidate `addedProviders` so `has_instance` flips to `true`
+        // for providers that just gained their first instance. Without
+        // this, the parent page keeps `providerQueryName === ''` (the
+        // `has_instance` gate in index.tsx) and the `providerInstances`
+        // query stays disabled, so the newly-saved instance never
+        // appears. `exact: true` avoids cascading into every
+        // providerInstances / instanceModels query (they share the
+        // `['AddedProviders', ...]` prefix) - the dedicated invalidation
+        // below handles those.
+        queryClient.invalidateQueries({
+          queryKey: LlmKeys.addedProviders(),
+          exact: true,
+        });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.providerInstances(params.llm_factory),
         });
@@ -305,6 +310,7 @@ export const useVerifyProviderConnection = () => {
       base_url?: string;
       region?: string;
       model_info?: IModelInfo[];
+      instance_id?: string;
     }) => {
       const { data } = await llmService.verifyProviderConnection(params);
       return data;
@@ -570,10 +576,7 @@ export const useUpdateProviderInstance = () => {
           queryKey: LlmKeys.providerInstances(params.provider_name),
         });
         queryClient.invalidateQueries({
-          queryKey: LlmKeys.providerInstance(
-            params.provider_name,
-            params.instance_name,
-          ),
+          queryKey: LlmKeys.providerInstance(params.provider_name, params.id),
         });
         queryClient.invalidateQueries({
           queryKey: LlmKeys.instanceModels(
@@ -616,7 +619,17 @@ export const useFetchDefaultModelDictionary = (showEmptyModelWarn = false) => {
     const dict: Record<string, string> = {};
     Object.entries(ModelTypeToField).forEach(([key, field]) => {
       const model = defaultModels.find((m) => m.model_type === key);
-      dict[field] = model && model.enable ? model.model_id : '';
+      if (!model || !model.enable) {
+        dict[field] = '';
+        return;
+      }
+      dict[field] =
+        model.model_id ||
+        buildModelValue({
+          model_name: model.model_name,
+          model_instance: model.model_instance,
+          model_provider: model.model_provider,
+        });
     });
     return dict;
   }, [defaultModels]);

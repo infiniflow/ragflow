@@ -516,6 +516,27 @@ func TestNaiveVerticalMergeNonMerge(t *testing.T) {
 	}
 }
 
+func TestNaiveVerticalMerge_CenteredTitlePreservesPageOrder(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, X0: 250, X1: 450, Top: 50, Bottom: 70, Text: "Document Title", LayoutNo: "title", LayoutType: pdf.LayoutTypeTitle},
+		{PageNumber: 0, X0: 50, X1: 650, Top: 100, Bottom: 112, Text: "First paragraph.", LayoutNo: "body"},
+		{PageNumber: 0, X0: 50, X1: 650, Top: 200, Bottom: 212, Text: "Second paragraph.", LayoutNo: "body"},
+	}
+
+	boxes = AssignColumn(boxes)
+	result := NaiveVerticalMerge(boxes, map[int]float64{0: 12}, map[int]float64{0: 5}, map[int]bool{0: true})
+
+	want := []string{"Document Title", "First paragraph.", "Second paragraph."}
+	if len(result) != len(want) {
+		t.Fatalf("expected %d boxes, got %d", len(want), len(result))
+	}
+	for i, text := range want {
+		if result[i].Text != text {
+			t.Errorf("position %d: want %q, got %q", i, text, result[i].Text)
+		}
+	}
+}
+
 // TestNaiveVerticalMerge_MultiColumnOrder guards against the multi-column
 // reading-order regression: after AssignColumn assigns ColID, the final
 // reading order must be column-major (all of column 0, then all of column 1),
@@ -578,6 +599,66 @@ func TestNaiveVerticalMerge_MultiColumnOrder(t *testing.T) {
 	for i := 1; i < len(col1Tops); i++ {
 		if col1Tops[i] < col1Tops[i-1] {
 			t.Errorf("column 1 not sorted top→bottom: %v", col1Tops)
+		}
+	}
+}
+
+func TestNaiveVerticalMerge_LeadingTitlePreservesMultiColumnOrder(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, ColID: 2, X0: 250, X1: 450, Top: 50, Bottom: 70, Text: "Document Title", LayoutNo: "title", LayoutType: pdf.LayoutTypeTitle},
+		{PageNumber: 0, ColID: 0, X0: 50, X1: 250, Top: 100, Bottom: 112, Text: "L0-a", LayoutNo: "left"},
+		{PageNumber: 0, ColID: 0, X0: 50, X1: 250, Top: 300, Bottom: 312, Text: "L0-b", LayoutNo: "left"},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 150, Bottom: 162, Text: "R0-a", LayoutNo: "right"},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 250, Bottom: 262, Text: "R0-b", LayoutNo: "right"},
+	}
+
+	result := NaiveVerticalMerge(boxes, map[int]float64{0: 12}, map[int]float64{0: 5}, nil)
+	want := []string{"Document Title", "L0-a", "L0-b", "R0-a", "R0-b"}
+	if len(result) != len(want) {
+		t.Fatalf("expected %d boxes, got %d", len(want), len(result))
+	}
+	for i, text := range want {
+		if result[i].Text != text {
+			t.Errorf("position %d: want %q, got %q", i, text, result[i].Text)
+		}
+	}
+}
+
+func TestNaiveVerticalMerge_DoesNotPromoteColumnTitlePastEarlierBody(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, ColID: 0, X0: 50, X1: 250, Top: 100, Bottom: 112, Text: "Left body", LayoutNo: "left"},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 150, Bottom: 162, Text: "Right heading", LayoutNo: "right-title", LayoutType: pdf.LayoutTypeTitle},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 200, Bottom: 212, Text: "Right body", LayoutNo: "right"},
+	}
+
+	result := NaiveVerticalMerge(boxes, map[int]float64{0: 12}, map[int]float64{0: 5}, nil)
+	want := []string{"Left body", "Right heading", "Right body"}
+	if len(result) != len(want) {
+		t.Fatalf("expected %d boxes, got %d", len(want), len(result))
+	}
+	for i, text := range want {
+		if result[i].Text != text {
+			t.Errorf("position %d: want %q, got %q", i, text, result[i].Text)
+		}
+	}
+}
+
+func TestNaiveVerticalMerge_DoesNotPromoteTitlesFromBodyColumns(t *testing.T) {
+	boxes := []pdf.TextBox{
+		{PageNumber: 0, ColID: 0, X0: 50, X1: 250, Top: 50, Bottom: 62, Text: "Left heading", LayoutNo: "left-title", LayoutType: pdf.LayoutTypeTitle},
+		{PageNumber: 0, ColID: 0, X0: 50, X1: 250, Top: 100, Bottom: 112, Text: "Left body", LayoutNo: "left"},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 60, Bottom: 72, Text: "Right heading", LayoutNo: "right-title", LayoutType: pdf.LayoutTypeTitle},
+		{PageNumber: 0, ColID: 1, X0: 400, X1: 600, Top: 120, Bottom: 132, Text: "Right body", LayoutNo: "right"},
+	}
+
+	result := NaiveVerticalMerge(boxes, map[int]float64{0: 12}, map[int]float64{0: 5}, nil)
+	want := []string{"Left heading", "Left body", "Right heading", "Right body"}
+	if len(result) != len(want) {
+		t.Fatalf("expected %d boxes, got %d", len(want), len(result))
+	}
+	for i, text := range want {
+		if result[i].Text != text {
+			t.Errorf("position %d: want %q, got %q", i, text, result[i].Text)
 		}
 	}
 }

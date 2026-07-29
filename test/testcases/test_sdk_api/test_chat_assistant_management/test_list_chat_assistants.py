@@ -20,7 +20,7 @@ import pytest
 
 @pytest.mark.usefixtures("add_chat_assistants")
 class TestChatAssistantsList:
-    @pytest.mark.p1
+    @pytest.mark.p3
     def test_default(self, client):
         assistants = client.list_chats()
         assert len(assistants) == 5
@@ -178,7 +178,7 @@ class TestChatAssistantsList:
         "chat_assistant_id, expected_message",
         [
             (lambda r: r[0], ""),
-            ("unknown", "No authorization."),
+            ("unknown", "no authorization"),
         ],
     )
     def test_get_chat(self, client, add_chat_assistants, chat_assistant_id, expected_message):

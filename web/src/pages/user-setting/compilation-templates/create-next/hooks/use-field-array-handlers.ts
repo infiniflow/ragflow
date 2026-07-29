@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { ArrayPath, UseFormReturn } from 'react-hook-form';
 
-import { FormSchemaType } from '@/pages/user-setting/compilation-templates/edit-template/schema';
+import { FormSchemaType } from '@/pages/user-setting/compilation-templates/create-next/schema';
 
 export const useFieldArrayHandlers = (
   form: UseFormReturn<FormSchemaType>,

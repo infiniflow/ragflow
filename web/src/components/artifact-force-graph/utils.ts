@@ -1,26 +1,30 @@
 import { type IArtifactGraphEntity } from '@/interfaces/database/dataset';
-import { type ComponentProps } from 'react';
-import ForceGraph2D from 'react-force-graph-2d';
-
-export const renderNodeLabel: NonNullable<
-  ComponentProps<typeof ForceGraph2D>['nodeCanvasObject']
-> = (node, ctx) => {
-  const label = node.name;
-  const fontSize = 2;
-  ctx.font = `${fontSize}px Sans-Serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-
-  const textSecondary = getComputedStyle(document.documentElement)
-    .getPropertyValue('--text-secondary')
-    .trim();
-  ctx.fillStyle = `rgb(${textSecondary})`;
-
-  if (node.x && node.y) {
-    ctx.fillText(label, node.x, node.y + 5);
-  }
-};
 
 export const defaultMapNodeToValue = <TNode extends IArtifactGraphEntity>(
   node: TNode,
 ): TNode => node;
+
+export const getBaseLinkColor = (element?: HTMLElement | null): string => {
+  if (typeof window === 'undefined' || !element) {
+    return '#b2b5b7';
+  }
+  return window
+    .getComputedStyle(element)
+    .getPropertyValue('--border-default')
+    .trim();
+};
+
+export const withAlpha = (color: string, alpha: number): string => {
+  if (color.length === 7 && color.startsWith('#')) {
+    return (
+      color +
+      Math.round(alpha * 255)
+        .toString(16)
+        .padStart(2, '0')
+    );
+  }
+  if (color.startsWith('rgb(')) {
+    return `rgba(${color.slice(4, -1)}, ${alpha})`;
+  }
+  return color;
+};

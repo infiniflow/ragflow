@@ -6,6 +6,8 @@ export const enum CompilationTemplateKind {
   Tree = 'tree',
   Empty = 'empty',
   MindMap = 'mind_map',
+  SessionGraph = 'session_graph',
+  SessionEssence = 'session_essence',
 }
 
 export const enum CompilationTemplateScope {

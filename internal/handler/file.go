@@ -30,21 +30,23 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/service"
+	"ragflow/internal/service/document"
+	"ragflow/internal/service/file"
 )
 
 // FileHandler file handler
 type FileHandler struct {
-	fileService          *service.FileService
+	fileService          *file.FileService
 	userService          *service.UserService
-	file2DocumentService *service.File2DocumentService
+	file2DocumentService *document.File2DocumentService
 }
 
 // NewFileHandler create file handler
-func NewFileHandler(fileService *service.FileService, userService *service.UserService) *FileHandler {
+func NewFileHandler(fileService *file.FileService, userService *service.UserService) *FileHandler {
 	return &FileHandler{
 		fileService:          fileService,
 		userService:          userService,
-		file2DocumentService: service.NewFile2DocumentService(),
+		file2DocumentService: document.NewFile2DocumentService(),
 	}
 }
 
@@ -60,7 +62,7 @@ func NewFileHandler(fileService *service.FileService, userService *service.UserS
 // @Param page_size query int false "items per page (default: 15, min: 1, max: 100)"
 // @Param orderby query string false "order by field (default: create_time)"
 // @Param desc query bool false "descending order (default: true)"
-// @Success 200 {object} service.ListFilesResponse
+// @Success 200 {object} file.ListFilesResponse
 // @Router /api/v1/files [get]
 func (h *FileHandler) ListFiles(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
@@ -106,7 +108,8 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 		desc = descStr != "false"
 	}
 
-	result, err := h.fileService.ListFiles(userID, parentID, page, pageSize, orderby, desc, keywords)
+	ctx := c.Request.Context()
+	result, err := h.fileService.ListFiles(ctx, userID, parentID, page, pageSize, orderby, desc, keywords)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -131,8 +134,9 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 	}
 	userID := user.ID
 
+	ctx := c.Request.Context()
 	// Get root folder
-	rootFolder, err := h.fileService.GetRootFolder(userID)
+	rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -165,8 +169,9 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Get parent folder with permission check
-	parentFolder, err := h.fileService.GetParentFolder(userID, fileID)
+	parentFolder, err := h.fileService.GetParentFolder(ctx, userID, fileID)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -199,8 +204,9 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Get all parent folders with permission check
-	parentFolders, err := h.fileService.GetAllParentFolders(userID, fileID)
+	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -232,8 +238,9 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Get all parent folders with permission check
-	parentFolders, err := h.fileService.GetAllParentFolders(userID, fileID)
+	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -269,6 +276,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 	userID := user.ID
 
 	contentType := c.ContentType()
+	ctx := c.Request.Context()
 
 	if strings.Contains(contentType, "multipart/form-data") {
 		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
@@ -283,7 +291,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		}
 		parentID := c.PostForm("parent_id")
 		if parentID == "" {
-			rootFolder, err := h.fileService.GetRootFolder(userID)
+			rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
 			if err != nil {
 				jsonInternalError(c, err)
 				return
@@ -304,7 +312,8 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 			}
 		}
 
-		result, err := h.fileService.UploadFile(userID, parentID, files)
+		ctx := c.Request.Context()
+		result, err := h.fileService.UploadFile(ctx, userID, parentID, files)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
@@ -323,7 +332,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 		parentID := req.ParentID
 		if parentID == "" {
-			rootFolder, err := h.fileService.GetRootFolder(userID)
+			rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
 			if err != nil {
 				jsonInternalError(c, err)
 				return
@@ -331,7 +340,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 			parentID = rootFolder["id"].(string)
 		}
 
-		result, err := h.fileService.CreateFolder(userID, req.Name, parentID, req.Type)
+		result, err := h.fileService.CreateFolder(ctx, userID, req.Name, parentID, req.Type)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
@@ -425,7 +434,8 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 		return
 	}
 
-	success, message := h.fileService.MoveFiles(user.ID, req.SrcFileIDs, req.DestFileID, req.NewName)
+	ctx := c.Request.Context()
+	success, message := h.fileService.MoveFiles(ctx, user.ID, req.SrcFileIDs, req.DestFileID, req.NewName)
 	if !success {
 		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, message)
 		return
@@ -457,8 +467,9 @@ func (h *FileHandler) Download(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Get file metadata and check permission
-	file, err := h.fileService.GetFileContent(userID, fileID)
+	file, err := h.fileService.GetFileContent(ctx, userID, fileID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, err.Error())
 		return
@@ -480,7 +491,8 @@ func (h *FileHandler) Download(c *gin.Context) {
 
 	// If blob is empty, try fallback via file2document
 	if len(blob) == 0 {
-		storageAddr, err := h.fileService.GetStorageAddress(fileID)
+		ctx := c.Request.Context()
+		storageAddr, err := h.fileService.GetStorageAddress(ctx, fileID)
 		if err != nil {
 			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to get file storage address: "+err.Error())
 			return
@@ -527,7 +539,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 // @Tags file
 // @Accept json
 // @Produce json
-// @Param request body service.LinkToDatasetsRequest true "file_ids and kb_ids"
+// @Param request body document.LinkToDatasetsRequest true "file_ids and kb_ids"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/files/link-to-datasets [post]
 func (h *FileHandler) LinkToDatasets(c *gin.Context) {
@@ -537,7 +549,7 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 		return
 	}
 
-	var req service.LinkToDatasetsRequest
+	var req document.LinkToDatasetsRequest
 	// Tolerate bind errors: a malformed or empty body simply leaves the fields
 	// empty, which the validate_request-style check below reports as missing
 	// arguments — matching Python's @validate_request behaviour and code.
@@ -557,7 +569,13 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 		return
 	}
 
-	if err := h.file2DocumentService.LinkToDatasets(user.ID, &req); err != nil {
+	mode := strings.ToLower(c.DefaultQuery("mode", "replace"))
+	if mode != "add" && mode != "replace" {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "mode must be 'add' or 'replace'")
+		return
+	}
+	ctx := c.Request.Context()
+	if err := h.file2DocumentService.LinkToDatasets(ctx, user.ID, &req, mode); err != nil {
 		common.ResponseWithCodeData(c, linkToDatasetsErrorCode(err), nil, err.Error())
 		return
 	}
@@ -571,9 +589,9 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 // any other (internal) error is reported as a server error.
 func linkToDatasetsErrorCode(err error) common.ErrorCode {
 	switch {
-	case errors.Is(err, service.ErrLinkFileNotFound),
-		errors.Is(err, service.ErrLinkDatasetNotFound),
-		errors.Is(err, service.ErrLinkNoAuthorization):
+	case errors.Is(err, document.ErrLinkFileNotFound),
+		errors.Is(err, document.ErrLinkDatasetNotFound),
+		errors.Is(err, document.ErrLinkNoAuthorization):
 		return common.CodeDataError
 	default:
 		return common.CodeServerError

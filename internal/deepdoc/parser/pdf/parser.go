@@ -6,6 +6,7 @@ import (
 	"image"
 	"log/slog"
 	"math"
+	"sort"
 	"sync"
 
 	lyt "ragflow/internal/deepdoc/parser/pdf/layout"
@@ -108,6 +109,46 @@ func documentPages(pageCount int) []int {
 	return pages
 }
 
+// resolvePagesToProcess converts the 1-indexed inclusive Config.Pages ranges
+// into a sorted, de-duplicated slice of 0-indexed page numbers clamped to
+// [0, pageCount-1]. Empty/nil ranges fall back to all pages (the historical
+// behavior), so callers that leave Pages unset are unaffected.
+func resolvePagesToProcess(ranges [][]int, pageCount int) []int {
+	if len(ranges) == 0 {
+		return documentPages(pageCount)
+	}
+	seen := make(map[int]struct{}, pageCount)
+	out := make([]int, 0, pageCount)
+	for _, r := range ranges {
+		if len(r) != 2 {
+			continue
+		}
+		from0 := r[0] - 1
+		to0 := r[1] - 1
+		if from0 < 0 {
+			from0 = 0
+		}
+		if from0 > pageCount-1 {
+			continue
+		}
+		if to0 > pageCount-1 {
+			to0 = pageCount - 1
+		}
+		if to0 < from0 {
+			continue
+		}
+		for pg := from0; pg <= to0; pg++ {
+			if _, dup := seen[pg]; dup {
+				continue
+			}
+			seen[pg] = struct{}{}
+			out = append(out, pg)
+		}
+	}
+	sort.Ints(out)
+	return out
+}
+
 // extractOutlines extracts the PDF outlines, returning nil on error.
 func (p *Parser) extractOutlines(engine pdf.PDFEngine) []pdf.Outline {
 	outlines, outlineErr := engine.Outlines()
@@ -187,7 +228,7 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 		// render to an unsafe DPI and spike memory on large pages.
 		const maxRetryZoom = 9.0
 		retryZoom := math.Min(p.Config.Zoom*pdf.DlaScale, maxRetryZoom)
-		slog.Info("per-page zoom retry", "page", pg, "zoom", retryZoom)
+		slog.Debug("per-page zoom retry", "page", pg, "zoom", retryZoom)
 		retryImg, retryRenderErr := p.renderAtDPI(ctx, engine, pg, retryZoom*72)
 		if retryRenderErr == nil && retryImg != nil {
 			ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, retryImg, chars, pg, retryRenderErr, isScanNoise, docAnalyzer)
@@ -456,9 +497,8 @@ func (p *Parser) buildLayout(ctx context.Context,
 	boxes = lyt.TextMerge(boxes, medianHeights)
 	result.Metrics.BoxesTextMerge = len(boxes)
 
-	// FinalReadingOrderMerge sorts page → column (ColID) → top → x0, which
-	// is the correct multi-column reading order. NaiveVerticalMerge preserves
-	// this column-major order (it buckets by ColID before merging).
+	// Preserve column-major content order while NaiveVerticalMerge promotes a
+	// page-leading title isolated in its own column.
 	boxes = lyt.FinalReadingOrderMerge(boxes)
 
 	boxes = lyt.NaiveVerticalMerge(boxes, medianHeights, medianWidths, pageEnglish)
@@ -498,7 +538,15 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine, docAnal
 	}
 
 	tb := NewTableBuilderFor(docAnalyzer)
-	pages := documentPages(pageCount)
+	pages := resolvePagesToProcess(p.Config.Pages, pageCount)
+	if len(p.Config.Pages) > 0 {
+		slog.Info("deepdoc pdf parse: page ranges applied",
+			"configured_ranges", p.Config.Pages,
+			"page_count", pageCount,
+			"pages_to_parse", pages)
+	} else {
+		slog.Debug("deepdoc pdf parse: parsing all pages", "page_count", pageCount)
+	}
 
 	pageResults, pageErr := p.runPageWorkers(ctx, engine, pages, docAnalyzer, tb)
 	if pageErr != nil {

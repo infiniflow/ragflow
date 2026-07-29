@@ -16,6 +16,7 @@
 
 import pytest
 from test.testcases.configs import INVALID_API_TOKEN
+from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 
 
@@ -35,8 +36,7 @@ def test_document_download_by_id_requires_auth(create_document):
         res = client.get(f"/documents/{document_id}")
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2

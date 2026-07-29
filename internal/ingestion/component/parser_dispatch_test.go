@@ -34,13 +34,17 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"reflect"
 	"strings"
 	"testing"
 
+	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 type captureSetupConfigurer struct {
@@ -56,10 +60,11 @@ func (c *captureSetupConfigurer) ConfigureFromSetup(setup map[string]any) {
 // allowed_output_format check and runs the structured dispatch.
 func TestDispatch_OutputFormatValidation_Allowed(t *testing.T) {
 	param := schema.ParserParam{}.Defaults()
+	setups := defaultSetups()
 	// Defaults already include markdown → {text, json}.
-	c := &ParserComponent{Param: param}
+	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("# Title\n\nbody\n"),
 		"doc_id":    "doc.md",
 		"file_type": "md",
@@ -101,18 +106,19 @@ func TestDispatch_OutputFormatValidation_Allowed(t *testing.T) {
 // degrade.
 func TestDispatch_OutputFormatValidation_Rejection(t *testing.T) {
 	param := schema.ParserParam{}.Defaults()
+	setups := defaultSetups()
 	// Override the markdown setup to ask for an unsupported format.
 	// The key is "markdown" (the python-side family identifier),
 	// NOT "md" — utility.FileTypeMarkdown happens to be the string
 	// "md" but the setup key is the family name. resolveOutputFormat
 	// looks up setups[string(fileType)], so the fileType passed in
 	// here must match the setup key.
-	param.Setups["markdown"] = schema.ParserSetup{"output_format": "html"}
+	setups["markdown"] = schema.ParserSetup{"output_format": "html"}
 	// inputs["file_type"] must also be "markdown" so fileTypeFromInputs
 	// returns a FileType whose string form matches the setup key.
-	c := &ParserComponent{Param: param}
+	c := &ParserComponent{Param: param, Setups: setups}
 
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("# Title\n"),
 		"file_type": "md",
 	})
@@ -135,9 +141,10 @@ func TestDispatch_OutputFormatValidation_Rejection(t *testing.T) {
 // a family hint.
 func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 	param := schema.ParserParam{}.Defaults()
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary": []byte("plain content\n"),
 		"doc_id": "unknown",
 	})
@@ -159,9 +166,10 @@ func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 // silently degrading to text-page mode.
 func TestDispatch_SupportedFamilyFailure_HardErrors(t *testing.T) {
 	param := schema.ParserParam{}.Defaults()
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	c := &ParserComponent{Param: param, Setups: setups}
 
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("PDF payload as bytes (not a real PDF — stub test)\n"),
 		"file_type": "pdf",
 	})
@@ -187,6 +195,12 @@ func TestFileTypeFromInputs_ResolutionOrder(t *testing.T) {
 		want string
 	}{
 		{"explicit pdf", map[string]any{"file_type": "pdf"}, "pdf"},
+		{"explicit xls (binary)", map[string]any{"file_type": "xls"}, "xls"},
+		{"explicit xlsx (OOXML)", map[string]any{"file_type": "xlsx"}, "xlsx"},
+		{"explicit ppt (binary)", map[string]any{"file_type": "ppt"}, "ppt"},
+		{"explicit pptx (OOXML)", map[string]any{"file_type": "pptx"}, "pptx"},
+		{"explicit slides (family name)", map[string]any{"file_type": "slides"}, "pptx"},
+		{"explicit spreadsheet (family name)", map[string]any{"file_type": "spreadsheet"}, "xlsx"},
 		{"explicit markdown (family form)", map[string]any{"file_type": "markdown"}, "md"},
 		{"file.name docx", map[string]any{"file": map[string]any{"name": "report.docx"}}, "docx"},
 		{"name fallback md", map[string]any{"name": "notes.md"}, "md"},
@@ -276,8 +290,23 @@ func TestResolveOutputFormat_DefaultsAndWhitelist(t *testing.T) {
 	}
 }
 
+func TestDefaultSetups_DOCX_OutputFormatMarkdown(t *testing.T) {
+	setups := defaultSetups()
+	docx, ok := setups["docx"]
+	if !ok {
+		t.Fatal("defaultSetups: docx key missing")
+	}
+	got, ok := docx["output_format"].(string)
+	if !ok {
+		t.Fatal("defaultSetups: docx.output_format missing or not a string")
+	}
+	if got != "json" {
+		t.Errorf("docx.output_format = %q, want %q", got, "json")
+	}
+}
+
 func TestConfigureParserFromSetups_UsesPythonFamilySetup(t *testing.T) {
-	setups := schema.ParserParam{}.Defaults().Setups
+	setups := defaultSetups()
 	got := &captureSetupConfigurer{}
 
 	configureParserFromSetups(got, utility.FileTypePDF, setups)
@@ -299,10 +328,11 @@ func TestDispatch_PDFMarkdown_UsesConfiguredOutputFormat(t *testing.T) {
 	}
 
 	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["output_format"] = "markdown"
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data,
 		"file_type": "pdf",
 		"name":      "Doc1.pdf",
@@ -330,11 +360,12 @@ func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 	}
 
 	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "plain_text"
-	param.Setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "plain_text"
+	setups["pdf"]["output_format"] = "json"
+	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data,
 		"file_type": "pdf",
 		"name":      "Doc1.pdf",
@@ -353,10 +384,11 @@ func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 
 func TestDispatch_PDFUnsupportedParseMethod_HardErrors(t *testing.T) {
 	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "CustomVLM"
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "CustomVLM"
+	c := &ParserComponent{Param: param, Setups: setups}
 
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "bad.pdf",
@@ -394,13 +426,13 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
 		}, nil
 	}
-	pdfVisionModelResolver = func(tenantID string, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	pdfVisionModelResolver = func(ctx context.Context, db *gorm.DB, tenantID string, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 		if tenantID != "tenant-1" || modelID != "CustomVLM" {
 			return nil, "", nil, fmt.Errorf("resolver got tenant/model %q/%q", tenantID, modelID)
 		}
 		return nil, "resolved-vlm", nil, nil
 	}
-	pdfVisionChatInvoker = func(_ modelModule.ModelDriver, modelName string, messages []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+	pdfVisionChatInvoker = func(ctx context.Context, _ modelModule.ModelDriver, modelName string, messages []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
 		if modelName != "resolved-vlm" {
 			return nil, fmt.Errorf("modelName = %q, want resolved-vlm", modelName)
 		}
@@ -422,11 +454,12 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 	}
 
 	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "CustomVLM"
-	param.Setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "CustomVLM"
+	setups["pdf"]["output_format"] = "json"
+	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "vision.pdf",
@@ -473,11 +506,11 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
 		}, nil
 	}
-	pdfVisionModelResolver = func(string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	pdfVisionModelResolver = func(ctx context.Context, db *gorm.DB, tenantID string, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 		return nil, "resolved-vlm", nil, nil
 	}
 	call := 0
-	pdfVisionChatInvoker = func(_ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
+	pdfVisionChatInvoker = func(ctx context.Context, _ modelModule.ModelDriver, _ string, _ []modelModule.Message, _ *modelModule.APIConfig) (*modelModule.ChatResponse, error) {
 		call++
 		answer := ""
 		if call == 1 {
@@ -487,11 +520,12 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 	}
 
 	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "CustomVLM"
-	param.Setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "CustomVLM"
+	setups["pdf"]["output_format"] = "json"
+	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "vision.pdf",
@@ -511,29 +545,40 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 
 func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/file_parse":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"data":{"task_id":"task-3"}}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/tasks/task-3/result":
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"results":{"doc":{"md_content":"# Title\n\nBody\n"}}}`))
-		default:
-			http.NotFound(w, r)
+		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
+			buf := new(bytes.Buffer)
+			zw := zip.NewWriter(buf)
+			f, _ := zw.Create("content_list.json")
+			_, _ = f.Write([]byte(`[{"type":"text","text":"# Title\n\nBody\n"}]`))
+			_ = zw.Close()
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(buf.Bytes())
+			return
 		}
+		http.NotFound(w, r)
 	}))
 	defer server.Close()
 
-	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "MinerU"
-	param.Setups["pdf"]["output_format"] = "markdown"
-	param.Setups["pdf"]["mineru_apiserver"] = server.URL
-	c := &ParserComponent{Param: param}
+	// Mock resolveTenantModelByType to return a MinerU driver pointing at the test server.
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+	baseURL := server.URL
+	apiKey := ""
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return &mineruTestDriver{}, "mineru-model", &modelModule.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	param := schema.ParserParam{}.Defaults()
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "mineru"
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{Param: param, Setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -545,6 +590,57 @@ func TestDispatch_PDFMinerUMarkdown_UsesConfiguredBackend(t *testing.T) {
 	if !ok || !strings.Contains(md, "Title") {
 		t.Fatalf("markdown payload = %#v, want Title content", out["markdown"])
 	}
+}
+
+// mineruTestDriver is a minimal ModelDriver mock whose Name() returns "mineru".
+type mineruTestDriver struct{}
+
+func (d *mineruTestDriver) NewInstance(baseURL map[string]string) modelModule.ModelDriver { return d }
+func (d *mineruTestDriver) Name() string                                                  { return "mineru" }
+func (d *mineruTestDriver) ChatWithMessages(ctx context.Context, modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, chatModelConfig *modelModule.ChatConfig, usage *common.ModelUsage) (*modelModule.ChatResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, modelConfig *modelModule.ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *modelModule.APIConfig, embeddingConfig *modelModule.EmbeddingConfig, usage *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *modelModule.APIConfig, rerankConfig *modelModule.RerankConfig, usage *common.ModelUsage) (*modelModule.RerankResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *modelModule.APIConfig, asrConfig *modelModule.ASRConfig, usage *common.ModelUsage) (*modelModule.ASRResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *modelModule.APIConfig, asrConfig *modelModule.ASRConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *modelModule.APIConfig, ttsConfig *modelModule.TTSConfig, usage *common.ModelUsage) (*modelModule.TTSResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *modelModule.APIConfig, ttsConfig *modelModule.TTSConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *modelModule.APIConfig, ocrConfig *modelModule.OCRConfig, usage *common.ModelUsage) (*modelModule.OCRFileResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *modelModule.APIConfig, parseFileConfig *modelModule.ParseFileConfig, usage *common.ModelUsage) (*modelModule.ParseFileResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ListModels(ctx context.Context, apiConfig *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) Balance(ctx context.Context, apiConfig *modelModule.APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) CheckConnection(ctx context.Context, apiConfig *modelModule.APIConfig) error {
+	return fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ListTasks(ctx context.Context, apiConfig *modelModule.APIConfig) ([]modelModule.ListTaskStatus, error) {
+	return nil, fmt.Errorf("not implemented")
+}
+func (d *mineruTestDriver) ShowTask(ctx context.Context, taskID string, apiConfig *modelModule.APIConfig) (*modelModule.TaskResponse, error) {
+	return nil, fmt.Errorf("not implemented")
 }
 
 func TestDispatch_PDFPaddleOCRMarkdown_UsesConfiguredBackend(t *testing.T) {
@@ -563,13 +659,14 @@ func TestDispatch_PDFPaddleOCRMarkdown_UsesConfiguredBackend(t *testing.T) {
 	defer server.Close()
 
 	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "PaddleOCR"
-	param.Setups["pdf"]["output_format"] = "markdown"
-	param.Setups["pdf"]["paddleocr_base_url"] = server.URL
-	param.Setups["pdf"]["paddleocr_api_key"] = "paddle-secret"
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "PaddleOCR"
+	setups["pdf"]["output_format"] = "markdown"
+	setups["pdf"]["paddleocr_base_url"] = server.URL
+	setups["pdf"]["paddleocr_api_key"] = "paddle-secret"
+	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
@@ -611,13 +708,14 @@ func TestDispatch_PDFDoclingMarkdown_UsesConfiguredBackend(t *testing.T) {
 	defer server.Close()
 
 	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "Docling"
-	param.Setups["pdf"]["output_format"] = "markdown"
-	param.Setups["pdf"]["docling_server_url"] = server.URL
-	param.Setups["pdf"]["docling_api_key"] = "doc-secret"
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "Docling"
+	setups["pdf"]["output_format"] = "markdown"
+	setups["pdf"]["docling_server_url"] = server.URL
+	setups["pdf"]["docling_api_key"] = "doc-secret"
+	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
@@ -649,12 +747,13 @@ func TestDispatch_PDFOpenDataLoaderMarkdown_UsesConfiguredBackend(t *testing.T) 
 	defer server.Close()
 
 	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "OpenDataLoader"
-	param.Setups["pdf"]["output_format"] = "markdown"
-	param.Setups["pdf"]["opendataloader_apiserver"] = server.URL
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "OpenDataLoader"
+	setups["pdf"]["output_format"] = "markdown"
+	setups["pdf"]["opendataloader_apiserver"] = server.URL
+	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
@@ -682,12 +781,13 @@ func TestDispatch_PDFSoMarkMarkdown_UsesConfiguredBackend(t *testing.T) {
 	defer server.Close()
 
 	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "SoMark"
-	param.Setups["pdf"]["output_format"] = "markdown"
-	param.Setups["pdf"]["somark_base_url"] = server.URL
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "SoMark"
+	setups["pdf"]["output_format"] = "markdown"
+	setups["pdf"]["somark_base_url"] = server.URL
+	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
@@ -717,12 +817,13 @@ func TestDispatch_PDFTCADPMarkdown_UsesConfiguredBackend(t *testing.T) {
 	defer server.Close()
 
 	param := schema.ParserParam{}.Defaults()
-	param.Setups["pdf"]["parse_method"] = "TCADP parser"
-	param.Setups["pdf"]["output_format"] = "markdown"
-	param.Setups["pdf"]["tcadp_apiserver"] = server.URL
-	c := &ParserComponent{Param: param}
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "TCADP parser"
+	setups["pdf"]["output_format"] = "markdown"
+	setups["pdf"]["tcadp_apiserver"] = server.URL
+	c := &ParserComponent{Param: param, Setups: setups}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    []byte("%PDF-1.4"),
 		"file_type": "pdf",
 		"name":      "sample.pdf",
@@ -749,4 +850,84 @@ func tcadpZipFixtureForComponent(t *testing.T) []byte {
 		t.Fatalf("Close zip: %v", err)
 	}
 	return buf.Bytes()
+}
+
+// TestPythonFamilyName_FileTypeConstants pins the contract that every
+// utility.FileType semantic constant resolves to the setups key used by
+// defaultSetups / AllowedOutputFormat. Before the fix, FileTypeVISUAL mapped
+// to "picture" (mismatching the "image" setups key) and FileTypeAURAL matched
+// no case at all (returning ""), so output_format validation and
+// configureParserFromSetups were silently skipped for image/audio files.
+func TestPythonFamilyName_FileTypeConstants(t *testing.T) {
+	cases := []struct {
+		ft   utility.FileType
+		want string
+	}{
+		{utility.FileTypePDF, "pdf"},
+		{utility.FileTypeDOC, "doc"},
+		{utility.FileTypeDOCX, "docx"},
+		{utility.FileTypePPT, "slides"},
+		{utility.FileTypePPTX, "slides"},
+		{utility.FileTypeXLS, "spreadsheet"},
+		{utility.FileTypeXLSX, "spreadsheet"},
+		{utility.FileTypeCSV, "spreadsheet"},
+		{utility.FileTypeHTML, "html"},
+		{utility.FileTypeMarkdown, "markdown"},
+		{utility.FileTypeTXT, "text&code"},
+		{utility.FileTypeEPUB, "epub"},
+		{utility.FileTypeJSON, "json"},
+		{utility.FileTypeVISUAL, "image"},
+		{utility.FileTypeAURAL, "audio"},
+		{utility.FileTypeVIDEO, "video"},
+		{utility.FileTypeEMAIL, "email"},
+	}
+	for _, c := range cases {
+		got := pythonFamilyName(string(c.ft))
+		if got != c.want {
+			t.Errorf("pythonFamilyName(%q) = %q, want %q", c.ft, got, c.want)
+		}
+		// Every mapped family must have a matching setups key and
+		// allowed_output_format entry, otherwise output_format validation
+		// is silently skipped.
+		if _, ok := defaultSetups()[got]; !ok {
+			t.Errorf("pythonFamilyName(%q) → %q has no defaultSetups entry", c.ft, got)
+		}
+		allowed := schema.ParserParam{}.Defaults().AllowedOutputFormat
+		if _, ok := allowed[got]; !ok {
+			t.Errorf("pythonFamilyName(%q) → %q has no allowed_output_format entry", c.ft, got)
+		}
+	}
+}
+
+// TestConfigureParserFromSetups_VisualAural pins that image and audio
+// files pick up their setup (parse_method / lang / vlm) via the family
+// mapping. Before the fix, configureParserFromSetups silently skipped
+// configuration because resolveParserFamily returned "picture" / "aural",
+// neither of which existed in defaultSetups.
+func TestConfigureParserFromSetups_VisualAural(t *testing.T) {
+	setups := defaultSetups()
+
+	t.Run("visual resolves to image setup", func(t *testing.T) {
+		got := &captureSetupConfigurer{}
+		configureParserFromSetups(got, utility.FileTypeVISUAL, setups)
+		want := map[string]any(setups["image"])
+		if got.setup == nil {
+			t.Fatal("ConfigureFromSetup not called for FileTypeVISUAL")
+		}
+		if v, _ := got.setup["parse_method"].(string); v != want["parse_method"] {
+			t.Errorf("FileTypeVISUAL parse_method = %v, want %v", v, want["parse_method"])
+		}
+	})
+
+	t.Run("aural resolves to audio setup", func(t *testing.T) {
+		got := &captureSetupConfigurer{}
+		configureParserFromSetups(got, utility.FileTypeAURAL, setups)
+		want := map[string]any(setups["audio"])
+		if got.setup == nil {
+			t.Fatal("ConfigureFromSetup not called for FileTypeAURAL")
+		}
+		if v, _ := got.setup["output_format"].(string); v != want["output_format"] {
+			t.Errorf("FileTypeAURAL output_format = %v, want %v", v, want["output_format"])
+		}
+	})
 }

@@ -25,6 +25,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 	"time"
@@ -324,7 +325,7 @@ func (r *ReplicateModel) waitForPrediction(ctx context.Context, prediction *repl
 	}
 }
 
-func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (r *ReplicateModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -340,7 +341,7 @@ func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, 
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	prediction, err := r.createPrediction(ctx, url, version, replicateInputFromMessages(messages, chatModelConfig), false, *apiConfig.ApiKey, true)
@@ -363,7 +364,7 @@ func (r *ReplicateModel) ChatWithMessages(modelName string, messages []Message, 
 	return &ChatResponse{Answer: &answer, ReasonContent: &reasonContent}, nil
 }
 
-func (r *ReplicateModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (r *ReplicateModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -386,12 +387,12 @@ func (r *ReplicateModel) ChatStreamlyWithSender(modelName string, messages []Mes
 		return err
 	}
 
-	prediction, err := r.createPrediction(context.Background(), url, version, replicateInputFromMessages(messages, chatModelConfig), true, *apiConfig.ApiKey, false)
+	prediction, err := r.createPrediction(ctx, url, version, replicateInputFromMessages(messages, chatModelConfig), true, *apiConfig.ApiKey, false)
 	if err != nil {
 		return err
 	}
 	if prediction.URLs.Stream == "" {
-		ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+		ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 		defer cancel()
 		prediction, err = r.waitForPrediction(ctx, prediction, *apiConfig.ApiKey)
 		if err != nil {
@@ -410,11 +411,11 @@ func (r *ReplicateModel) ChatStreamlyWithSender(modelName string, messages []Mes
 		return sender(&endOfStream, nil)
 	}
 
-	return r.readPredictionStream(prediction.URLs.Stream, *apiConfig.ApiKey, sender)
+	return r.readPredictionStream(ctx, prediction.URLs.Stream, *apiConfig.ApiKey, sender)
 }
 
-func (r *ReplicateModel) readPredictionStream(url string, apiKey string, sender func(*string, *string) error) error {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
+func (r *ReplicateModel) readPredictionStream(ctx context.Context, url string, apiKey string, sender func(*string, *string) error) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -498,7 +499,7 @@ func dispatchReplicateSSEEvent(event replicateSSEEvent, sender func(*string, *st
 	}
 }
 
-func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (r *ReplicateModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -508,7 +509,7 @@ func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -558,7 +559,7 @@ func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 		if modelName == "" {
 			continue
 		}
-		modelList.Models = append(modelList.Models, DSModel{
+		modelList.Models = append(modelList.Models, ModelListItem{
 			ID: modelName,
 		})
 	}
@@ -566,8 +567,8 @@ func (r *ReplicateModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, 
 	return ParseListModel(modelList), nil
 }
 
-func (r *ReplicateModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := r.ListModels(apiConfig)
+func (r *ReplicateModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := r.ListModels(ctx, apiConfig)
 	return err
 }
 
@@ -673,7 +674,7 @@ func replicateKeys(m map[string]interface{}) []string {
 }
 
 // Embed turns a list of texts into embedding vectors via Replicate's
-func (r *ReplicateModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (r *ReplicateModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -695,7 +696,7 @@ func (r *ReplicateModel) Embed(modelName *string, texts []string, apiConfig *API
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	prediction, err := r.createPrediction(ctx, url, version, input, false, *apiConfig.ApiKey, true)
@@ -764,7 +765,7 @@ func replicateScoresFromInterface(arr []interface{}, n int) ([]float64, error) {
 }
 
 // Rerank scores a query against a list of documents
-func (r *ReplicateModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (r *ReplicateModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := r.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -786,7 +787,7 @@ func (r *ReplicateModel) Rerank(modelName *string, query string, documents []str
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	prediction, err := r.createPrediction(ctx, url, version, input, false, *apiConfig.ApiKey, true)
@@ -828,38 +829,38 @@ func (r *ReplicateModel) Rerank(modelName *string, query string, documents []str
 	return &RerankResponse{Data: results}, nil
 }
 
-func (r *ReplicateModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (r *ReplicateModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (r *ReplicateModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (r *ReplicateModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (r *ReplicateModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (r *ReplicateModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (r *ReplicateModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (r *ReplicateModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (r *ReplicateModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }
 
-func (r *ReplicateModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (r *ReplicateModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", r.Name())
 }

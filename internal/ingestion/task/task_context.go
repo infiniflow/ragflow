@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
@@ -38,7 +39,11 @@ type TaskContext struct {
 	PipelineID string
 	File       any
 
-	ProgressFunc ProgressFunc
+	// Handle is the message-queue ack handle for the task message that scheduled
+	// this context. The scheduler sets it before queueing; the worker acks on a
+	// durably-persisted terminal status and nacks otherwise (e.g. shutdown
+	// mid-task) so the message is redelivered and resumed after restart.
+	Handle common.TaskHandle
 }
 
 // NewTaskContextForScheduling creates a lightweight TaskContext for queue scheduling.
@@ -52,18 +57,21 @@ func NewTaskContextForScheduling(ctx context.Context, task *entity.IngestionTask
 
 // LoadFromIngestionTask loads the full task context from an IngestionTask.
 // It follows the FK chain: ingestion task -> document -> knowledgebase -> tenant.
-func LoadFromIngestionTask(ingestionTask *entity.IngestionTask) (*TaskContext, error) {
-	doc, err := dao.NewDocumentDAO().GetByID(ingestionTask.DocumentID)
-	if err != nil || doc == nil {
-		return nil, fmt.Errorf("error when load document %s : %w", ingestionTask.DocumentID, err)
+func LoadFromIngestionTask(ctx context.Context, ingestionTask *entity.IngestionTask) (*TaskContext, error) {
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, ingestionTask.DocumentID)
+	if err != nil {
+		return nil, fmt.Errorf("load document %s: %w", ingestionTask.DocumentID, err)
+	}
+	if doc == nil {
+		return nil, fmt.Errorf("document %s not found", ingestionTask.DocumentID)
 	}
 
-	kb, err := dao.NewKnowledgebaseDAO().GetByID(doc.KbID)
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, doc.KbID)
 	if err != nil || kb == nil {
 		return nil, fmt.Errorf("error when load knowledgebase %s: %w", doc.KbID, err)
 	}
 
-	tenant, err := dao.NewTenantDAO().GetByID(kb.TenantID)
+	tenant, err := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
 	if err != nil || tenant == nil {
 		return nil, fmt.Errorf("error when load tenant %s: %w", kb.TenantID, err)
 	}
@@ -71,6 +79,7 @@ func LoadFromIngestionTask(ingestionTask *entity.IngestionTask) (*TaskContext, e
 	pipelineID := resolvePipelineID(doc, kb)
 
 	return &TaskContext{
+		Ctx:           ctx,
 		IngestionTask: ingestionTask,
 		PipelineID:    pipelineID,
 		Doc:           *doc,

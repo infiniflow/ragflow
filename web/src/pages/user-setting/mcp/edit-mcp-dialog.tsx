@@ -39,7 +39,12 @@ const DefaultValues = {
   name: '',
   server_type: ServerType.SSE,
   url: '',
+  authorization_token: '',
 };
+
+// Mask shown in the token field when editing an existing server that already
+// has a token, so the user knows a secret is stored without exposing it.
+const TokenMask = '********';
 
 export function EditMcpDialog({
   hideModal,
@@ -78,9 +83,15 @@ export function EditMcpDialog({
   }, []);
 
   const handleOk = async (values: z.infer<typeof FormSchema>) => {
+    // When the field still holds the mask, the user did not change the token;
+    // send the previously stored token so it is not overwritten with empty.
+    const token =
+      values.authorization_token === TokenMask
+        ? data.variables?.authorization_token
+        : values.authorization_token;
     const nextValues = {
       ...omit(values, 'authorization_token'),
-      variables: { authorization_token: values.authorization_token },
+      variables: { authorization_token: token },
       headers: { Authorization: 'Bearer ${authorization_token}' },
     };
     if (isTriggeredBySaving) {
@@ -95,7 +106,12 @@ export function EditMcpDialog({
 
   useEffect(() => {
     if (!isEmpty(data)) {
-      form.reset(pick(data, ['name', 'server_type', 'url']));
+      form.reset({
+        ...pick(data, ['name', 'server_type', 'url']),
+        authorization_token: data.variables?.authorization_token
+          ? TokenMask
+          : '',
+      });
     }
   }, [data, form]);
 

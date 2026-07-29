@@ -7,7 +7,7 @@ import {
 import {
   isConfigMetaKey,
   sortSectionNames,
-} from '@/pages/user-setting/compilation-templates/edit-template/utils';
+} from '@/pages/user-setting/compilation-templates/create-next/utils';
 
 export const useBuiltinTemplate = (
   builtins: ICompilationTemplateBuiltin[],

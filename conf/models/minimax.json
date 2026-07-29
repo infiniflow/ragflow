@@ -2,8 +2,8 @@
   "name": "MiniMax",
   "rank": 987,
   "url": {
-    "default": "https://api.minimaxi.com/",
-    "global": "https://api.minimax.io/"
+    "default": "https://api.minimaxi.com",
+    "global": "https://api.minimax.io"
   },
   "url_suffix": {
     "chat": "v1/text/chatcompletion_v2",

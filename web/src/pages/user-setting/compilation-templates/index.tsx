@@ -27,7 +27,10 @@ export default function CompilationTemplates() {
   } = useFetchCompilationTemplateGroupsByPage();
 
   const { deleteGroup } = useDeleteCompilationTemplateGroup();
-  const { navigateToCompilationTemplate } = useNavigatePage();
+  const {
+    navigateToCompilationTemplate,
+    navigateToCompilationTemplateEditNext,
+  } = useNavigatePage();
 
   const handlePageChange = useCallback(
     (page: number, pageSize?: number) => {
@@ -39,6 +42,10 @@ export default function CompilationTemplates() {
   const handleAdd = useCallback(() => {
     navigateToCompilationTemplate('create')();
   }, [navigateToCompilationTemplate]);
+
+  const handleAddNext = useCallback(() => {
+    navigateToCompilationTemplateEditNext()();
+  }, [navigateToCompilationTemplateEditNext]);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -73,6 +80,10 @@ export default function CompilationTemplates() {
               <Plus />
               {t('setting.addTemplateGroup')}
             </Button>
+            <Button onClick={handleAddNext}>
+              <Plus />
+              Next
+            </Button>
           </div>
         </header>
       }
@@ -85,7 +96,7 @@ export default function CompilationTemplates() {
                 <TemplateCard
                   key={item.id}
                   data={item}
-                  onClick={navigateToCompilationTemplate(item.id)}
+                  onClick={navigateToCompilationTemplateEditNext(item.id)}
                   onDelete={handleDelete}
                 />
               ))}

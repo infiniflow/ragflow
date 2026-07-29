@@ -26,8 +26,11 @@ export default {
   // llm model
   listAllAddedModels: `${restAPIv1}/models`,
   defaultModel: `${restAPIv1}/models/default`,
+  // AIMLAPI agent-authorization (OAuth device grant) — obtain a key from the provider dialog
+  aimlapiAuthorizeStart: `${restAPIv1}/llm/aimlapi/authorize/start`,
+  aimlapiAuthorizePoll: `${restAPIv1}/llm/aimlapi/authorize/poll`,
   listProviders: `${restAPIv1}/providers`,
-  addProvider: `${restAPIv1}/providers/`,
+  addProvider: `${restAPIv1}/providers`,
   addProviderInstance: ({ llm_factory }: { llm_factory: string }) =>
     `${restAPIv1}/providers/${llm_factory}/instances`,
   verifyProviderConnection: ({ provider_name }: { provider_name: string }) =>
@@ -46,11 +49,11 @@ export default {
     `${restAPIv1}/providers/${provider_name}/instances/${instance_name}/models`,
   showProviderInstance: ({
     provider_name,
-    instance_name,
+    id,
   }: {
     provider_name: string;
-    instance_name: string;
-  }) => `${restAPIv1}/providers/${provider_name}/instances/${instance_name}`,
+    id: string;
+  }) => `${restAPIv1}/providers/${provider_name}/instances/${id}`,
   addInstanceModel: ({
     provider_name,
     instance_name,
@@ -71,11 +74,11 @@ export default {
     `${restAPIv1}/providers/${provider_name}/instances`,
   updateProviderInstance: ({
     provider_name,
-    instance_name,
+    id,
   }: {
     provider_name: string;
-    instance_name: string;
-  }) => `${restAPIv1}/providers/${provider_name}/instances/${instance_name}`,
+    id: string;
+  }) => `${restAPIv1}/providers/${provider_name}/instances/${id}`,
   updateModelStatus: ({
     provider_name,
     instance_name,
@@ -140,6 +143,7 @@ export default {
   checkEmbedding: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/embedding/check`,
   kbList: `${restAPIv1}/datasets`,
+  datasetFilter: `${restAPIv1}/datasets?type=filter`,
   createKb: `${restAPIv1}/datasets`,
   updateKb: (datasetId: string) => `${restAPIv1}/datasets/${datasetId}`,
   rmKb: `${restAPIv1}/datasets`,
@@ -157,6 +161,8 @@ export default {
   getTemporalMetadataProfile: `${restAPIv1}/datasets/metadata/temporal/profile`,
   artifactsList: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts`,
+  artifactsAlteration: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts/alteration`,
   artifactsTopicList: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts_topics`,
   getArtifactPage: (datasetId: string, pageType: string, slug: string) =>
@@ -167,12 +173,35 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/commits/${commitId}`,
   getArtifactGraph: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/graph`,
+  artifactsStructure: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/artifacts_structure`,
   clearWiki: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts`,
   getDatasetSkillTree: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/skills`,
   getDatasetSkillPage: (datasetId: string, skillKwd: string) =>
     `${restAPIv1}/datasets/${datasetId}/skills/${skillKwd
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
+  deleteDatasetSkillTree: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills`,
+  deleteDatasetSkillPage: (datasetId: string, skillKwd: string) =>
+    `${restAPIv1}/datasets/${datasetId}/skills/${skillKwd
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}`,
+  getDatasetNav: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav`,
+  getDatasetNavChildren: (datasetId: string, name: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav/${name
+      .split('/')
+      .map((s) => encodeURIComponent(s))
+      .join('/')}/children`,
+  deleteDatasetNav: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav`,
+  deleteDatasetNavNode: (datasetId: string, name: string) =>
+    `${restAPIv1}/datasets/${datasetId}/nav/${name
       .split('/')
       .map((s) => encodeURIComponent(s))
       .join('/')}`,
@@ -183,6 +212,7 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/ingestions/${logId}`,
   fetchPipelineDatasetLogs: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
+  listPipelines: `${restAPIv1}/pipelines?type=builtin`,
   runIndex: (datasetId: string, indexType: string) =>
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   traceIndex: (datasetId: string, indexType: string) =>
@@ -409,6 +439,8 @@ export default {
   removeDataflow: `${webAPI}/dataflow/rm`,
   listDataflow: `${webAPI}/dataflow/list`,
   runDataflow: `${webAPI}/dataflow/run`,
+  listBuiltinPipelines: `${restAPIv1}/pipelines`,
+  getBuiltinPipeline: (id: string) => `${restAPIv1}/pipelines/${id}`,
 
   // admin
   adminLogin: `${restAPIv1}/admin/login`,

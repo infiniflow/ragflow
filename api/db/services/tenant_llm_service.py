@@ -135,9 +135,9 @@ class TenantLLMService(CommonService):
 
         if llm_type == LLMType.EMBEDDING.value:
             mdlnm = tenant.embd_id if not llm_name else llm_name
-        elif llm_type == LLMType.SPEECH2TEXT.value:
+        elif llm_type == LLMType.ASR.value:
             mdlnm = tenant.asr_id if not llm_name else llm_name
-        elif llm_type == LLMType.IMAGE2TEXT.value:
+        elif llm_type == LLMType.VISION.value:
             mdlnm = tenant.img2txt_id if not llm_name else llm_name
         elif llm_type == LLMType.CHAT.value:
             mdlnm = tenant.llm_id if not llm_name else llm_name
@@ -198,7 +198,7 @@ class TenantLLMService(CommonService):
                 return None
             return RerankModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"])
 
-        elif model_config["model_type"] == LLMType.IMAGE2TEXT.value:
+        elif model_config["model_type"] == LLMType.VISION.value:
             if model_config["llm_factory"] not in CvModel:
                 logging.error("Factory not in cv model. Supported factories: %s", list(CvModel.keys()))
                 return None
@@ -210,9 +210,9 @@ class TenantLLMService(CommonService):
                 return None
             return ChatModel[model_config["llm_factory"]](api_key, model_config["llm_name"], base_url=model_config["api_base"], **kwargs)
 
-        elif model_config["model_type"] == LLMType.SPEECH2TEXT.value:
+        elif model_config["model_type"] == LLMType.ASR.value:
             if model_config["llm_factory"] not in Seq2txtModel:
-                logging.error("Factory not in speech2text model. Supported factories: %s", list(Seq2txtModel.keys()))
+                logging.error("Factory not in asr model. Supported factories: %s", list(Seq2txtModel.keys()))
                 return None
             return Seq2txtModel[model_config["llm_factory"]](key=api_key, model_name=model_config["llm_name"], lang=lang, base_url=model_config["api_base"])
         elif model_config["model_type"] == LLMType.TTS.value:
@@ -248,8 +248,8 @@ class TenantLLMService(CommonService):
 
         llm_map = {
             LLMType.EMBEDDING.value: tenant.embd_id if not llm_name else llm_name,
-            LLMType.SPEECH2TEXT.value: tenant.asr_id,
-            LLMType.IMAGE2TEXT.value: tenant.img2txt_id,
+            LLMType.ASR.value: tenant.asr_id,
+            LLMType.VISION.value: tenant.img2txt_id,
             LLMType.CHAT.value: tenant.llm_id if not llm_name else llm_name,
             LLMType.RERANK.value: tenant.rerank_id if not llm_name else llm_name,
             LLMType.TTS.value: tenant.tts_id if not llm_name else llm_name,

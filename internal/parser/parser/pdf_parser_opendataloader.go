@@ -13,7 +13,7 @@ import (
 	models "ragflow/internal/entity/models"
 )
 
-func parsePDFWithOpenDataLoader(filename string, data []byte, parser *PDFParser) ParseResult {
+func parsePDFWithOpenDataLoader(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
@@ -67,7 +67,7 @@ func parsePDFWithOpenDataLoader(filename string, data []byte, parser *PDFParser)
 		}
 	}
 	if strings.TrimSpace(payload.MDText) != "" {
-		return parseMinerUMarkdownResult(filename, payload.MDText, parser.OutputFormat, 1)
+		return parseMinerUMarkdownResult(ctx, filename, payload.MDText, parser.OutputFormat, 1)
 	}
 	return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader returned no parsed content")}
 }

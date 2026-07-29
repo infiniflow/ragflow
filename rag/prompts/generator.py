@@ -258,8 +258,8 @@ async def full_question(tenant_id=None, llm_id=None, messages=[], language=None,
 
     if not chat_mdl:
         model_types = resolve_model_type(tenant_id, llm_id)
-        if "image2text" in model_types:
-            chat_model_config = resolve_model_config(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+        if "vision" in model_types:
+            chat_model_config = resolve_model_config(tenant_id, LLMType.VISION, llm_id)
         else:
             chat_model_config = resolve_model_config(tenant_id, LLMType.CHAT, llm_id)
         chat_mdl = LLMBundle(tenant_id, chat_model_config)
@@ -292,8 +292,8 @@ async def cross_languages(tenant_id, llm_id, query, languages=[]):
     from api.db.services.llm_service import LLMBundle
     from api.db.joint_services.tenant_model_service import resolve_model_config, get_tenant_default_model_by_type, resolve_model_type
 
-    if llm_id and "image2text" in resolve_model_type(tenant_id, llm_id):
-        chat_model_config = resolve_model_config(tenant_id, LLMType.IMAGE2TEXT, llm_id)
+    if llm_id and "vision" in resolve_model_type(tenant_id, llm_id):
+        chat_model_config = resolve_model_config(tenant_id, LLMType.VISION, llm_id)
     else:
         if not llm_id:
             chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
@@ -962,6 +962,23 @@ SUFFICIENCY_CHECK = load_prompt("sufficiency_check")
 async def sufficiency_check(chat_mdl, question: str, ret_content: str):
     try:
         return await gen_json(PROMPT_JINJA_ENV.from_string(SUFFICIENCY_CHECK).render(question=question, retrieved_docs=ret_content), "Output:\n", chat_mdl)
+    except Exception as e:
+        logging.exception(e)
+    return {}
+
+
+SUFFICIENCY_SELECT = load_prompt("sufficiency_select")
+
+
+async def sufficiency_select(chat_mdl, question: str, ret_content: str):
+    """Sufficiency judgement that also returns the IDs of the useful chunks.
+
+    ``ret_content`` must label each chunk with an ``ID: n`` marker (as
+    :func:`kb_prompt` does). Returns a dict with ``is_sufficient``,
+    ``reasoning``, ``missing_information`` and ``useful_chunk_ids``.
+    """
+    try:
+        return await gen_json(PROMPT_JINJA_ENV.from_string(SUFFICIENCY_SELECT).render(question=question, retrieved_docs=ret_content), "Output:\n", chat_mdl)
     except Exception as e:
         logging.exception(e)
     return {}
