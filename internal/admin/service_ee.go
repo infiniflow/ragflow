@@ -32,6 +32,7 @@ func UpdateServer(serverName string, status *common.BaseMessage) (common.ErrorCo
 }
 
 // Role management methods
+
 // ListRoles list all roles
 func (s *Service) ListRoles() ([]map[string]interface{}, error) {
 	result := []map[string]interface{}{

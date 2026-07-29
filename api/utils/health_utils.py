@@ -15,6 +15,7 @@
 #
 from datetime import datetime
 import json
+import logging
 import os
 import requests
 from timeit import default_timer as timer
@@ -244,6 +245,21 @@ def check_minio_alive():
             "status": "timeout",
             "message": f"error: {str(e)}",
         }
+
+
+def check_s3_alive():
+    """
+    Check AWS S3 (or any S3-compatible) liveness via the active
+    storage backend's `.health()` method. Delegates to the generic
+    ``check_storage`` so the same check works for AWS S3, MinIO,
+    R2, and any other S3-compatible endpoint. See #17294.
+    """
+    ok, payload = check_storage()
+    if ok:
+        logging.debug("check_s3_alive: ok, elapsed=%s ms", payload.get("elapsed", "?"))
+        return {"status": "alive", "message": f"Confirm elapsed: {payload.get('elapsed', '?')} ms."}
+    logging.debug("check_s3_alive: failed, error=%s", payload.get("error", "unknown"))
+    return {"status": "timeout", "message": f"error: {payload.get('error', 'unknown')}"}
 
 
 def get_redis_info():
