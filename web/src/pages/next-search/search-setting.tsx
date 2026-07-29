@@ -130,7 +130,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
           search_config?.vector_similarity_weight ?? 0.3,
         web_search: search_config?.web_search || false,
         doc_ids: [],
-        similarity_threshold: search_config?.similarity_threshold || 0.2,
+        similarity_threshold: search_config?.similarity_threshold ?? 0.2,
         use_kg: false,
         rerank_id: search_config?.rerank_id || '',
         use_rerank: search_config?.rerank_id ? true : false,
@@ -444,10 +444,7 @@ const SearchSetting: React.FC<SearchSettingProps> = ({
                   // rules={{ required: 'Model is required' }}
                   render={({ field }) => (
                     <FormItem className="flex flex-col">
-                      <FormLabel>
-                        <span className="text-destructive mr-1"> *</span>
-                        {t('chat.model')}
-                      </FormLabel>
+                      <FormLabel required>{t('chat.model')}</FormLabel>
                       <FormControl>
                         <ModelTreeSelect
                           modelTypes={['rerank']}

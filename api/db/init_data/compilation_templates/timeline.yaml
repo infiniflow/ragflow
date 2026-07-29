@@ -1,0 +1,48 @@
+kind: timeline
+display_name: List (Timeline) — Chronological events / Graph
+config:
+  kind: timeline
+  entity:
+    description: >-
+      You are a robust events-timeline extractor.
+    fields:
+      - type: timestamp
+        description: the date or time reference (clean, no extraneous text)
+        rule: |
+          - Format: prefer ISO 8601 (YYYY-MM-DD) or a normalized human-readable form
+            (e.g., "March 5, 2024").
+          - If only a relative time (e.g., "yesterday", "next week"), convert to
+            absolute when the context allows, else keep as is.
+          - "timestamp" must be non-empty (or exactly "-1" if no valid time/date).
+          - If a chunk contains multiple events with distinct timestamps, expand them
+            in chronological order:
+              - Each event → {"timestamp":"...","event":"...","chunk_id":"<chunk_ID>"}.
+          - When ambiguous, prefer "-1" unless the text strongly indicates a specific
+            time/date.
+          - Keep language and numbering style of "timestamp" consistent with the input.
+      - type: event
+        description: the event description associated with the timestamp (concise, no metadata)
+        rule: |
+          - Length restriction:
+              • Chinese event: ≤40 characters
+              • English event: ≤120 characters
+          - "event" must be non-empty (or exactly "-1") if no valid event description.
+          - If no valid event but a timestamp exists, output
+            {"timestamp":"...","event":"-1", ...}.
+          - Preserve the core action and key entities; omit redundant phrasing.
+  relation:
+    description: >-
+      You are an expert sequential reasoning assistant specializing in chronological
+      timelines.
+    fields:
+      - type: ordered
+        description: Events are arranged in strict chronological order (earliest to latest).
+        rule: |
+          - "-1" for timestamp or event indicates invalid or missing data; such entries
+            do not participate in ordering.
+          - Must follow explicit or inferred temporal indicators
+            (e.g., "then", "afterwards", "at 3 PM").
+          - If multiple events share the same timestamp, preserve their textual order
+            as a sub-list.
+          - Keep language and date formatting consistent across the timeline.
+  global_rules: ''

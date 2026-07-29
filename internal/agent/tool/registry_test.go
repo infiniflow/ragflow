@@ -25,8 +25,8 @@ func TestBuildAll_KnownTools(t *testing.T) {
 	if err != nil {
 		t.Fatalf("tools[1].Info: %v", err)
 	}
-	if info1.Name != "wikipedia" {
-		t.Errorf("tools[1].Info().Name = %q, want wikipedia", info1.Name)
+	if info1.Name != "wikipedia_search" {
+		t.Errorf("tools[1].Info().Name = %q, want wikipedia_search", info1.Name)
 	}
 }
 
@@ -40,22 +40,61 @@ func TestBuildAll_UnknownTool(t *testing.T) {
 	}
 }
 
+func TestBuildByName_TavilyCanvasComponentNames(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+	}{
+		{name: "TavilySearch"},
+		{name: "TavilyExtract"},
+	} {
+		built, err := BuildByName(tc.name, nil)
+		if err != nil {
+			t.Fatalf("BuildByName(%q): %v", tc.name, err)
+		}
+		switch tc.name {
+		case "TavilySearch":
+			if _, ok := built.(*TavilyTool); !ok {
+				t.Errorf("BuildByName(%q) returned %T, want *TavilyTool", tc.name, built)
+			}
+		case "TavilyExtract":
+			if _, ok := built.(*TavilyExtractTool); !ok {
+				t.Errorf("BuildByName(%q) returned %T, want *TavilyExtractTool", tc.name, built)
+			}
+		}
+	}
+}
+
 func TestBuildAll_AllRegisteredTools(t *testing.T) {
+	// Every key in registry.
 	names := []string{
-		"akshare", "arxiv", "code_exec", "crawler", "deepl", "duckduckgo",
-		"email", "github", "google", "google_scholar", "jin10", "pubmed",
-		"qweather", "retrieval", "searxng", "tavily", "tushare", "wencai",
-		"wikipedia", "yahoo_finance", "execute_sql",
+		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
+		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
+		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
+		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
+		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
+		"yahoo_finance",
 	}
 	params := map[string]map[string]any{
 		"execute_sql": {
-			"db_type":   "mysql",
-			"host":      "127.0.0.1",
-			"port":      3306,
-			"database":  "demo",
-			"username":  "u",
-			"password":  "p",
+			"db_type":     "mysql",
+			"host":        "127.0.0.1",
+			"port":        3306,
+			"database":    "demo",
+			"username":    "u",
+			"password":    "p",
 			"max_records": 10,
+		},
+		"exesql": {
+			"db_type":     "mysql",
+			"host":        "127.0.0.1",
+			"port":        3306,
+			"database":    "demo",
+			"username":    "u",
+			"password":    "p",
+			"max_records": 10,
+		},
+		"keenable": {
+			"api_key": "key-test",
 		},
 	}
 	tools, err := BuildAll(names, params)
@@ -89,15 +128,14 @@ func TestBuildAll_ExeSQLRequiresNodeParams(t *testing.T) {
 func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	t.Parallel()
 
-	// Every entry the registry advertises. 23 names, 22 unique
-	// canonical tools (execute_sql == exesql, retrieval ==
-	// search_my_dateset).
+	// Every entry the registry advertises.
 	names := []string{
-		"akshare", "arxiv", "code_exec", "crawler", "deepl", "duckduckgo",
-		"email", "execute_sql", "exesql", "github", "google",
-		"google_scholar", "jin10", "pubmed", "qweather", "retrieval",
-		"search_my_dateset", "searxng", "tavily", "tushare", "wencai",
-		"wikipedia", "yahoo_finance",
+		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
+		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
+		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
+		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
+		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
+		"yahoo_finance",
 	}
 	params := map[string]map[string]any{
 		"execute_sql": {
@@ -117,6 +155,9 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 			"username":    "u",
 			"password":    "p",
 			"max_records": 10,
+		},
+		"keenable": {
+			"api_key": "key-xyz",
 		},
 	}
 	tools, err := BuildAll(names, params)
@@ -146,14 +187,21 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 	}
 
 	// Alias consistency: execute_sql and exesql must surface the
-	// same canonical Info().Name; same for retrieval and
-	// search_my_dateset. A bug here would mean an alias was
-	// accidentally pointed at a different tool.
+	// same canonical Info().Name; same for retrieval/search_my_dataset/
+	// search_my_dataset and crawler/web_crawler. A bug here would mean
+	// an alias was accidentally pointed at a different tool.
 	canonicalByAlias := map[string]string{
-		"execute_sql":      "execute_sql",
-		"exesql":           "execute_sql",
-		"retrieval":        "search_my_dateset",
-		"search_my_dateset": "search_my_dateset",
+		"execute_sql":           "execute_sql",
+		"exesql":                "execute_sql",
+		"google_scholar":        "google_scholar_search",
+		"google_scholar_search": "google_scholar_search",
+		"retrieval":             "search_my_dateset",
+		"search_my_dataset":     "search_my_dateset",
+		"search_my_dateset":     "search_my_dateset",
+		"crawler":               "web_crawler",
+		"web_crawler":           "web_crawler",
+		"wikipedia":             "wikipedia_search",
+		"wikipedia_search":      "wikipedia_search",
 	}
 	for _, name := range names {
 		canonical, ok := canonicalByAlias[name]

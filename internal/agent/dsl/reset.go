@@ -20,7 +20,7 @@
 // Python's Canvas.reset() does two things:
 //
 //  1. Graph.reset(): clears the per-component state (path, in-memory
-//     caches) and removes the per-task Redis log/cancel keys.
+//     caches) and removes the per-session Redis log/cancel keys.
 //
 //  2. Per-run state wipe: empties self.history / retrieval / memory,
 //     then walks self.globals to zero out every "sys.*" key and to
@@ -30,8 +30,8 @@
 // In the Go port there is no per-canvas "Graph" runtime — the
 // executor is reconstructed from the DSL on every Run. So the
 // Python "Graph.reset()" side (step 1) is implicitly handled by the
-// per-run rebuild and the per-task Redis keys are still owned by the
-// Python task executor. The Go port is responsible for the
+// per-run rebuild and the Redis keys are still owned by the runtime. The Go
+// port is responsible for the
 // per-DSL-state wipe (step 2): it transforms the persisted DSL
 // saved in user_canvas.dsl, the same way the Python handler does
 // before writing it back via UserCanvasService.update_by_id.

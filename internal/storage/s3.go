@@ -264,6 +264,27 @@ func (s *S3Storage) ObjExist(bucket, fnm string, tenantID ...string) bool {
 	return true
 }
 
+func (s *S3Storage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+	ctx := context.Background()
+
+	listInput := &s3.ListObjectsV2Input{
+		Bucket: aws.String(bucket),
+	}
+
+	result, err := s.client.ListObjectsV2(ctx, listInput)
+	if err != nil {
+		return nil, err
+	}
+
+	var objects []string
+
+	for _, obj := range result.Contents {
+		objects = append(objects, *obj.Key)
+	}
+
+	return objects, nil
+}
+
 // GetPresignedURL generates a presigned URL for accessing an object
 func (s *S3Storage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	bucket, fnm = s.resolveBucketAndPath(bucket, fnm)
@@ -397,6 +418,8 @@ func (s *S3Storage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
 	}
 	return false
 }
+
+func (s *S3Storage) Close() error { return nil }
 
 // isNotFound checks if the error is a not found error
 func isS3NotFound(err error) bool {

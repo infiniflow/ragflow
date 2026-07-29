@@ -83,12 +83,21 @@ export function findMessageFromList(eventList: IEventList) {
   const workflowFinished = eventList.find(
     (x) => x.event === MessageEventType.WorkflowFinished,
   ) as IMessageEvent;
+  const messageEndEvent = [...eventList]
+    .reverse()
+    .find((x) => x.event === MessageEventType.MessageEnd) as IMessageEndEvent;
   return {
     id: eventList[0]?.message_id,
     content: nextContent,
     audio_binary: audioBinary,
-    attachment: workflowFinished?.data?.outputs?.attachment || {},
-    downloads: workflowFinished?.data?.outputs?.downloads || [],
+    attachment:
+      workflowFinished?.data?.outputs?.attachment ||
+      messageEndEvent?.data?.attachment ||
+      {},
+    downloads:
+      workflowFinished?.data?.outputs?.downloads ||
+      messageEndEvent?.data?.downloads ||
+      [],
   };
 }
 
@@ -300,7 +309,10 @@ export const useSendAgentMessage = ({
       beginInputs?: BeginQuery[];
       exploreSessionId?: string;
     }) => {
-      const params: Record<string, unknown> = { agent_id: agentId };
+      const params: Record<string, unknown> = {
+        agent_id: agentId,
+        stream: true,
+      };
 
       params.running_hint_text = i18n.t('flow.runningHintText', {
         defaultValue: 'is running...🕞',
@@ -375,6 +387,7 @@ export const useSendAgentMessage = ({
       await send({
         ...body,
         ...(isShared ? {} : { agent_id: agentId }),
+        stream: true,
         session_id: sessionId,
         ...(releaseMode ? { release: releaseMode } : {}),
       });
@@ -411,7 +424,7 @@ export const useSendAgentMessage = ({
 
   const handlePressEnter = useCallback(
     ({ exploreSessionId }: { exploreSessionId?: string } = {}) => {
-      if (trim(value) === '') return;
+      if (trim(value) === '' || !done) return;
       const msgBody = buildRequestBody(value);
       if (done) {
         setValue('');

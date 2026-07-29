@@ -1,0 +1,10 @@
+topic: general
+instruction: |
+    - Each page must be a proper encyclopedic article, NOT a flat bullet list:
+    - 1. Opening paragraph (2-4 sentences defining what this is). No heading.
+    - 2. Sections with H2 headings, each starting with prose before sub-bullets.
+    - 3. Bold key terms on first use; link them with [[ ]] wikilinks.
+    - 4. Examples or implications where the source provides them.
+    - 5. ## See also section at the end with wikilinks to highly related pages(less than 12).\n
+page_example: |
+    - (Not provided)

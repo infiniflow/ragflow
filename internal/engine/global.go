@@ -26,8 +26,9 @@ import (
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
 
-	"go.uber.org/zap"
 	"ragflow/internal/tokenizer"
+
+	"go.uber.org/zap"
 )
 
 var (
@@ -96,6 +97,8 @@ func InitMessageQueueEngine(messageQueueType string) error {
 		if err != nil {
 			return err
 		}
+	case "":
+		return fmt.Errorf("message queue type is empty")
 	default:
 		return fmt.Errorf("unsupported message queue type: %s", messageQueueType)
 	}

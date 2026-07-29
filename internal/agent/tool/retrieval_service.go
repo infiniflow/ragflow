@@ -15,11 +15,9 @@
 //
 
 // RetrievalService is the abstract interface for retrieval.
-// The full Python `Dealer.search()` surface (KB + memory +
-// rerank + cross-language + toc_enhance + metadata filter +
-// GraphRAG) lands incrementally as the corresponding
-// enhancements fill in. For now the interface is minimal —
-// just the entry point the RetrievalTool calls.
+// The Go path exposes only the parameters currently threaded into
+// internal/service/nlp. Extra Python-only options should be added
+// here only when the adapter can pass them through.
 package tool
 
 import (
@@ -27,29 +25,36 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	"gorm.io/gorm"
 )
 
 // RetrievalChunk is the minimal shape RetrievalService returns. The
 // full Chunk type (with document_id, docnm_kwd, position, etc.)
 // lives in internal/entity and is wired in by a follow-up phase.
 type RetrievalChunk struct {
-	ID         string
-	Content    string
-	DocumentID string
-	Score      float64
+	ID               string
+	Content          string
+	DocumentID       string
+	DocumentName     string
+	DatasetID        string
+	ImageID          string
+	URL              string
+	Positions        any
+	Score            float64
+	TermSimilarity   float64
+	VectorSimilarity float64
 }
 
 // RetrievalRequest is the input to RetrievalService.Search.
 type RetrievalRequest struct {
-	Query               string
-	DatasetIDs          []string
-	TopN                int
-	UseKG               bool
-	UseRerank           bool
-	RerankID            string
-	TOCEnhance          bool
-	MetadataFilter      map[string]string
-	SimilarityThreshold float64
+	Query                    string
+	DatasetIDs               []string
+	TopN                     int
+	TopK                     int
+	KeywordsSimilarityWeight *float64
+	UseKG                    bool
+	SimilarityThreshold      float64
 	// TenantID is the calling tenant (== user_id in RAGFlow's data model).
 	// Optional for the nlp adapter; the KG adapter uses it to resolve the
 	// tenant's default chat + embedding models. Reads from
@@ -62,7 +67,7 @@ type RetrievalRequest struct {
 // Today only the stub impl exists; production code can register
 // a real impl via SetRetrievalService during boot.
 type RetrievalService interface {
-	Search(ctx context.Context, req RetrievalRequest) ([]RetrievalChunk, error)
+	Search(ctx context.Context, db *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error)
 }
 
 // KGRetrievalService is the GraphRAG retrieval surface. The
@@ -74,7 +79,7 @@ type RetrievalService interface {
 // adapter can be tested in isolation and wired independently
 // at boot.
 type KGRetrievalService interface {
-	Search(ctx context.Context, req RetrievalRequest) ([]RetrievalChunk, error)
+	Search(ctx context.Context, db *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error)
 }
 
 // ErrRetrievalServiceMissing is declared in retrieval.go (kept
@@ -105,7 +110,7 @@ func GetRetrievalService() RetrievalService {
 
 type stubRetrievalService struct{}
 
-func (stubRetrievalService) Search(_ context.Context, _ RetrievalRequest) ([]RetrievalChunk, error) {
+func (stubRetrievalService) Search(_ context.Context, _ *gorm.DB, _ RetrievalRequest) ([]RetrievalChunk, error) {
 	return nil, ErrRetrievalServiceMissing
 }
 
@@ -116,7 +121,7 @@ func (stubRetrievalService) Search(_ context.Context, _ RetrievalRequest) ([]Ret
 // SetRetrievalService.
 type simpleRetrievalService struct{}
 
-func (simpleRetrievalService) Search(_ context.Context, req RetrievalRequest) ([]RetrievalChunk, error) {
+func (simpleRetrievalService) Search(_ context.Context, _ *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error) {
 	if req.Query == "" {
 		return nil, nil
 	}
@@ -124,6 +129,16 @@ func (simpleRetrievalService) Search(_ context.Context, req RetrievalRequest) ([
 	if topN <= 0 {
 		topN = 8
 	}
+	// Cap topN to a sane upper bound so a hostile canvas can't force
+	// a giant preallocation here. Real callers honor this cap; the
+	// production service has its own server-side limits as well.
+	const maxSimpleTopN = 1024
+	if topN > maxSimpleTopN {
+		topN = maxSimpleTopN
+	}
+	// codeql[go/uncontrolled-allocation-size] False positive: topN
+	// is bounded to maxSimpleTopN (1024) above, so the resulting
+	// slice cannot exceed ~1 MiB (chunk items are small structs).
 	chunks := make([]RetrievalChunk, 0, topN)
 	for i := 0; i < topN && i < 3; i++ {
 		chunks = append(chunks, RetrievalChunk{
@@ -186,6 +201,6 @@ func GetKGRetrievalService() KGRetrievalService {
 
 type stubKGRetrievalService struct{}
 
-func (stubKGRetrievalService) Search(_ context.Context, _ RetrievalRequest) ([]RetrievalChunk, error) {
+func (stubKGRetrievalService) Search(_ context.Context, _ *gorm.DB, _ RetrievalRequest) ([]RetrievalChunk, error) {
 	return nil, ErrKGRetrievalServiceMissing
 }

@@ -1,4 +1,5 @@
 import { FileUploadProps } from '@/components/file-upload';
+import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
 import { ChatSearchParams } from '@/constants/chat';
 import {
@@ -65,6 +66,7 @@ export const useFetchChatList = () => {
   const { searchString, handleInputChange } = useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
 
   const {
     data,
@@ -75,10 +77,11 @@ export const useFetchChatList = () => {
       ChatApiAction.FetchChatList,
       {
         debouncedSearchString,
+        filterValue,
         ...pagination,
       },
     ],
-    initialData: { chats: [], total: 0 },
+    placeholderData: (previousData) => previousData ?? { chats: [], total: 0 },
     gcTime: 0,
     refetchOnWindowFocus: false,
     queryFn: async () => {
@@ -88,8 +91,10 @@ export const useFetchChatList = () => {
             keywords: debouncedSearchString,
             page_size: pagination.pageSize,
             page: pagination.current,
+            owner_ids: filterValue.owner,
           },
           data: {},
+          paramsSerializer: { indexes: null },
         },
         true,
       );
@@ -113,6 +118,8 @@ export const useFetchChatList = () => {
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total },
     setPagination,
+    filterValue,
+    handleFilterSubmit,
   };
 };
 

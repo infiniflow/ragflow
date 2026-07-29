@@ -15,9 +15,13 @@ package component
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
+	"ragflow/internal/entity"
+
 	"github.com/cloudwego/eino/schema"
+	"gorm.io/gorm"
 )
 
 // stubInvoker is a programmable ChatInvoker used by these tests.
@@ -28,7 +32,7 @@ type stubInvoker struct {
 	calls    int
 }
 
-func (s *stubInvoker) Invoke(_ context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+func (s *stubInvoker) Invoke(_ context.Context, _ *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	s.calls++
 	cp := req
 	s.captured = &cp
@@ -51,7 +55,7 @@ func TestLLM_Invoke_HappyPath(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo-model"})
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"user_prompt": "hi",
 	})
 	if err != nil {
@@ -82,7 +86,7 @@ func TestLLM_Invoke_JSONOutput(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"user_prompt": "give me json",
 		"json_output": true,
 	})
@@ -106,7 +110,7 @@ func TestLLM_Invoke_SystemAndUser(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"system_prompt": "you are helpful",
 		"user_prompt":   "say hi",
 	})
@@ -129,7 +133,7 @@ func TestLLM_Stream(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	ch, err := c.Stream(context.Background(), map[string]any{"user_prompt": "go"})
+	ch, err := c.Stream(t.Context(), nil, map[string]any{"user_prompt": "go"})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -153,7 +157,7 @@ func TestLLM_Stream(t *testing.T) {
 func TestLLM_Invoke_MissingModelID(t *testing.T) {
 	withStubInvoker(t, &stubInvoker{resp: &ChatInvokeResponse{Content: "should not be called"}})
 	c := NewLLMComponent(LLMParam{}) // no model_id
-	_, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected ParamError for missing model_id")
 	}
@@ -167,7 +171,7 @@ func TestLLM_Invoke_InvokerError(t *testing.T) {
 	stub := &stubInvoker{err: errors.New("upstream blew up")}
 	withStubInvoker(t, stub)
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected error to propagate")
 	}
@@ -178,14 +182,7 @@ func TestLLM_Invoke_InvokerError(t *testing.T) {
 
 func TestLLM_Registered(t *testing.T) {
 	names := RegisteredNames()
-	found := false
-	for _, n := range names {
-		if n == "llm" {
-			found = true
-			break
-		}
-	}
-	if !found {
+	if !slices.Contains(names, "llm") {
 		t.Fatalf("LLM not registered; names=%v", names)
 	}
 	// And a factory round-trip.
@@ -195,5 +192,130 @@ func TestLLM_Registered(t *testing.T) {
 	}
 	if c.Name() != "LLM" {
 		t.Errorf("Name()=%q, want LLM", c.Name())
+	}
+}
+
+// TestLLM_ThinkingFieldRoundTrip guards the agent-component
+// portion of PR #15446 (thinking switch) and PR #16640 (gen_conf
+// forwarding). The agent component accepts `thinking` from the DSL
+// params (any non-empty, non-"default" value) and threads it through
+// LLMParam and the ChatInvokeRequest. Downstream (einoChatInvoker)
+// only acts on "enabled" / "disabled" and silently ignores other
+// values, so lenient forwarding is safe.
+func TestLLM_ThinkingFieldRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	// Case 1: "enabled" round-trips into LLMParam and ChatInvokeRequest.
+	enabled := mergeLLMParam(LLMParam{}, map[string]any{
+		"thinking":      "enabled",
+		"model_id":      "qwen3-max",
+		"system_prompt": "s",
+		"user_prompt":   "u",
+	})
+	if enabled.Thinking != "enabled" {
+		t.Errorf("Thinking = %q, want enabled", enabled.Thinking)
+	}
+
+	// Case 2: "disabled" also round-trips.
+	disabled := mergeLLMParam(LLMParam{}, map[string]any{
+		"thinking":    "disabled",
+		"model_id":    "kimi-k2.6",
+		"user_prompt": "u",
+	})
+	if disabled.Thinking != "disabled" {
+		t.Errorf("Thinking = %q, want disabled", disabled.Thinking)
+	}
+
+	// Case 3: empty / missing value → empty (system default).
+	defaulted := mergeLLMParam(LLMParam{}, map[string]any{
+		"model_id":    "glm-4.6",
+		"user_prompt": "u",
+	})
+	if defaulted.Thinking != "" {
+		t.Errorf("Thinking = %q, want empty (system default)", defaulted.Thinking)
+	}
+
+	// Case 4: "default" is explicitly rejected, matching Python's
+	// `self.thinking != "default"` gate in gen_conf().
+	defaultStr := mergeLLMParam(LLMParam{}, map[string]any{
+		"thinking":    "default",
+		"model_id":    "glm-4.6",
+		"user_prompt": "u",
+	})
+	if defaultStr.Thinking != "" {
+		t.Errorf(`Thinking = %q, want empty ("default" rejected)`, defaultStr.Thinking)
+	}
+
+	// Case 5: arbitrary / unknown values are leniently forwarded
+	// (matches Python gen_conf() which passes through any truthy
+	// non-"default" string). Downstream einoChatInvoker ignores
+	// unknown values, so this is safe.
+	arbitrary := mergeLLMParam(LLMParam{}, map[string]any{
+		"thinking":    "auto",
+		"model_id":    "glm-4.6",
+		"user_prompt": "u",
+	})
+	if arbitrary.Thinking != "auto" {
+		t.Errorf("arbitrary thinking = %q, want auto (lenient forwarding)", arbitrary.Thinking)
+	}
+}
+
+// TestLLM_ResolvesTenantModelID guards that custom-added tenant models selected
+// in the agent canvas are resolved to their real provider/model name, driver,
+// and credentials before the LLM call is dispatched.
+func TestLLM_ResolvesTenantModelID(t *testing.T) {
+	db := setupComponentTestDB(t)
+	pushComponentDB(t, db)
+
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "provider-1",
+		TenantID:     "tenant-1",
+		ProviderName: "DeepSeek",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "instance-1",
+		ProviderID:   "provider-1",
+		InstanceName: "prod-east",
+		APIKey:       "instance-key",
+		Status:       "active",
+		Extra:        `{"base_url":"https://instance.example"}`,
+	}).Error; err != nil {
+		t.Fatalf("create instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "3d2d824e7e5d11f1a845455b140cef90",
+		ProviderID: "provider-1",
+		InstanceID: "instance-1",
+		ModelName:  "deepseek-chat",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+	}).Error; err != nil {
+		t.Fatalf("create model: %v", err)
+	}
+
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "stub"}}
+	withStubInvoker(t, stub)
+
+	c := NewLLMComponent(LLMParam{ModelID: "3d2d824e7e5d11f1a845455b140cef90"})
+	_, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{"user_prompt": "hi"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if stub.captured == nil {
+		t.Fatal("invoker not called")
+	}
+	if got, want := stub.captured.Driver, "DeepSeek"; got != want {
+		t.Errorf("Driver=%q, want %q", got, want)
+	}
+	if got, want := stub.captured.ModelName, "deepseek-chat"; got != want {
+		t.Errorf("ModelName=%q, want %q", got, want)
+	}
+	if got, want := stub.captured.APIKey, "instance-key"; got != want {
+		t.Errorf("APIKey=%q, want %q", got, want)
+	}
+	if got, want := stub.captured.BaseURL, "https://instance.example"; got != want {
+		t.Errorf("BaseURL=%q, want %q", got, want)
 	}
 }

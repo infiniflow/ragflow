@@ -24,6 +24,7 @@ import (
 
 	"ragflow/internal/harness/core/schema"
 	"ragflow/internal/harness/graph/channels"
+	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/constants"
 	"ragflow/internal/harness/graph/graph"
 	"ragflow/internal/harness/graph/pregel"
@@ -56,7 +57,7 @@ type ReActGraphState struct {
 // ReActGraph wraps a ChatModelAgent's loop into a StateGraph with automatic
 // checkpoint at each iteration and interrupt before tool execution.
 type ReActGraph struct {
-	compiled *graph.CompiledGraph
+	compiled types.CompiledGraph
 	config   *ReActConfig[*schema.Message]
 	agent    *ReActAgent[*schema.Message]
 	allInfos []*schema.ToolInfo // merged config + contributor tool infos
@@ -65,7 +66,7 @@ type ReActGraph struct {
 
 // ReActGraphConfig holds options for building a ReActGraph.
 type ReActGraphConfig struct {
-	Checkpointer    graph.Checkpointer
+	Checkpointer    checkpoint.BaseCheckpointer
 	InterruptBefore []string // node names to interrupt before (default: "execute_tools")
 	RecursionLimit  int
 }
@@ -401,9 +402,8 @@ func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig, al
 		rl = constants.DefaultRecursionLimit
 	}
 
-	compileOpts := []graph.CompileOption{
-		graph.WithRecursionLimit(rl),
-	}
+	var compileOpts []interface{}
+	compileOpts = append(compileOpts, graph.WithRecursionLimit(rl))
 	if cfg.Checkpointer != nil {
 		compileOpts = append(compileOpts, graph.WithCheckpointer(cfg.Checkpointer))
 	}
@@ -473,7 +473,7 @@ func (rg *ReActGraph) ResumeStream(ctx context.Context, config *types.RunnableCo
 }
 
 // Compile returns the underlying compiled graph for direct access.
-func (rg *ReActGraph) Compile() *graph.CompiledGraph { return rg.compiled }
+func (rg *ReActGraph) Compile() types.CompiledGraph { return rg.compiled }
 
 // ---- helpers ----
 

@@ -55,8 +55,6 @@
 package harness
 
 import (
-	"context"
-
 	"ragflow/internal/harness/core"
 	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/checkpoint"
@@ -64,7 +62,7 @@ import (
 	"ragflow/internal/harness/graph/errors"
 	"ragflow/internal/harness/graph/graph"
 	"ragflow/internal/harness/graph/interrupt"
-	"ragflow/internal/harness/graph/pregel"
+	_ "ragflow/internal/harness/graph/pregel" // triggers pregel.init() → sets PregelRunFunc
 	"ragflow/internal/harness/graph/types"
 	"ragflow/internal/harness/prebuilt"
 )
@@ -72,22 +70,22 @@ import (
 // Re-export main types for convenience.
 type (
 	// StateGraph is a graph whose nodes communicate by reading and writing to a shared state.
-	StateGraph = graph.StateGraph
+	StateGraph = types.StateGraph
 
 	// CompiledGraph is a compiled, executable graph.
-	CompiledGraph = graph.CompiledGraph
+	CompiledGraph = types.CompiledGraph
 
 	// Node represents a node in the graph.
-	Node = graph.Node
+	Node = types.Node
 
 	// Edge represents an edge in the graph.
-	Edge = graph.Edge
+	Edge = types.Edge
 
 	// Send represents a dynamic node invocation.
-	Send = graph.Send
+	Send = types.Send
 
 	// Checkpointer is the interface for checkpoint savers.
-	Checkpointer = graph.Checkpointer
+	Checkpointer = checkpoint.BaseCheckpointer
 
 	// MemorySaver is an in-memory checkpoint saver.
 	MemorySaver = checkpoint.MemorySaver
@@ -333,7 +331,7 @@ type (
 )
 
 // NewStateGraph creates a new StateGraph with the given state schema.
-func NewStateGraph(stateSchema interface{}) *StateGraph {
+func NewStateGraph(stateSchema interface{}) StateGraph {
 	return graph.NewStateGraph(stateSchema)
 }
 
@@ -460,40 +458,6 @@ func NewSend(node string, arg interface{}) *Send {
 	return &Send{Node: node, Arg: arg}
 }
 
-// init configures the graph package to use pregel.Engine as the Pregel runner.
-// This merges the two Pregel implementations: CompiledGraph.run() delegates
-// to pregel.Engine.RunSync() instead of its inline loop.
-func init() {
-	graph.SetPregelRunFunc(pregelRunCompiledGraph)
-}
-
-// pregelRunCompiledGraph is the Pregel runner that delegates to pregel.Engine.
-// It is set as graph.PregelRunFunc via init() above.
-func pregelRunCompiledGraph(
-	ctx context.Context,
-	cg *graph.CompiledGraph,
-	input interface{},
-	config *types.RunnableConfig,
-	streamMode types.StreamMode,
-) (interface{}, error) {
-	// Extract interrupt node names from the set
-	interruptKeys := make([]string, 0, len(cg.GetInterrupts()))
-	for k := range cg.GetInterrupts() {
-		interruptKeys = append(interruptKeys, k)
-	}
-	// Extract after-interrupt node names
-	interruptAfterKeys := make([]string, 0, len(cg.GetInterruptsAfter()))
-	for k := range cg.GetInterruptsAfter() {
-		interruptAfterKeys = append(interruptAfterKeys, k)
-	}
-
-	engine := pregel.NewEngine(cg.GetGraph(),
-		pregel.WithCheckpointer(cg.GetCheckpointer()),
-		pregel.WithInterrupts(interruptKeys...),
-		pregel.WithInterruptsAfter(interruptAfterKeys...),
-		pregel.WithRecursionLimit(cg.GetRecursionLimit()),
-		pregel.WithDebug(cg.IsDebug()),
-		pregel.WithConfig(config),
-	)
-	return engine.RunSync(ctx, input)
-}
+// Pregel engine wiring (init + runner) moved to
+// internal/harness/graph/pregel/init_pregel.go so that any
+// package importing pregel automatically activates it.

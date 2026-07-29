@@ -128,7 +128,7 @@ func callToolStreamableHTTP(ctx context.Context, endpoint string, headers map[st
 		return nil, formatMCPError("initialize", initRes.Error)
 	}
 
-	if _, _, err := streamableSend(ctx, client, endpoint, sessionID, headers, jsonRPCRequest{
+	if _, _, err = streamableSend(ctx, client, endpoint, sessionID, headers, jsonRPCRequest{
 		JSONRPC: jsonRPCVersion,
 		Method:  "notifications/initialized",
 	}, false); err != nil {
@@ -137,7 +137,7 @@ func callToolStreamableHTTP(ctx context.Context, endpoint string, headers map[st
 
 	var argsAny any
 	if len(args) > 0 {
-		if err := json.Unmarshal(args, &argsAny); err != nil {
+		if err = json.Unmarshal(args, &argsAny); err != nil {
 			return nil, fmt.Errorf("mcp tools/call: arguments are not valid JSON: %w", err)
 		}
 	}

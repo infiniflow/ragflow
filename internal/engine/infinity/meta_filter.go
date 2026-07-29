@@ -30,28 +30,28 @@ var keyPattern = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 // Supported operators
 var supportedOperators = map[string]bool{
-	"=":          true,
-	"≠":          true,
-	">":          true,
-	"<":          true,
-	"≥":          true,
-	"≤":          true,
-	"in":         true,
-	"not in":     true,
-	"contains":   true,
+	"=":            true,
+	"≠":            true,
+	">":            true,
+	"<":            true,
+	"≥":            true,
+	"≤":            true,
+	"in":           true,
+	"not in":       true,
+	"contains":     true,
 	"not contains": true,
-	"start with": true,
-	"end with":   true,
-	"empty":      true,
-	"not empty":  true,
+	"start with":   true,
+	"end with":     true,
+	"empty":        true,
+	"not empty":    true,
 }
 
 // Range operators mapping
 var rangeOps = map[string]string{
-	">":  ">",
-	"<":  "<",
-	"≥":  ">=",
-	"≤":  "<=",
+	">": ">",
+	"<": "<",
+	"≥": ">=",
+	"≤": "<=",
 }
 
 // MetaFilterTranslator translates filter clauses to Infinity SQL
@@ -150,7 +150,7 @@ func (t *MetaFilterTranslator) translateIn(key string, value interface{}, flt ma
 		coerced := coerceRangeValue(m, flt)
 		if num, ok := coerceToFloat(coerced); ok {
 			numParts = append(numParts, fmt.Sprintf("JSON_CONTAINS(meta_fields, '$.%s', %v)", key, num))
-		} else 		if s, ok := coerced.(string); ok {
+		} else if s, ok := coerced.(string); ok {
 			escaped := escapeSQLString(s)
 			stringParts = append(stringParts, fmt.Sprintf("JSON_CONTAINS(meta_fields, '$.%s', '\"%s\"')", key, escaped))
 		}

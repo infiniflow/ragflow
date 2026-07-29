@@ -140,6 +140,11 @@ export const downloadFileFromBlob = (blob: Blob, name?: string) => {
   window.URL.revokeObjectURL(url);
 };
 
+export const downloadMarkdownFile = (content: string, filename: string) => {
+  const blob = new Blob([content], { type: FileMimeType.Md });
+  downloadFileFromBlob(blob, filename);
+};
+
 export const downloadDocument = async ({
   id,
   filename,

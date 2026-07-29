@@ -29,7 +29,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"os"
+	"ragflow/internal/common"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -101,9 +101,9 @@ func WithBackoff(d time.Duration) Option {
 // (legacy alias per deepdoc/vision/layout_recognizer.py:52). When
 // both are unset, Enabled() reports false.
 func NewClient(opts ...Option) *Client {
-	url := os.Getenv("DEEPDOC_URL")
+	url := common.GetEnv(common.EnvDeepDocURL)
 	if url == "" {
-		url = os.Getenv("TENSORRT_DLA_SVR")
+		url = common.GetEnv(common.EnvTensorrtDLAServer)
 	}
 	return NewClientWithURL(url, opts...)
 }
@@ -210,8 +210,8 @@ func (c *Client) doPost(ctx context.Context, url string, buildBody bodyBuilder, 
 // httpError carries the HTTP status + body so callers can inspect.
 // retryable=true means the doPost loop already exhausted retries.
 type httpError struct {
-	Status   string
-	Body     string
+	Status    string
+	Body      string
 	retryable bool
 }
 

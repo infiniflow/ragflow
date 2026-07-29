@@ -706,15 +706,13 @@ func TestConcurrentCancel(t *testing.T) {
 func TestConcurrentIterators(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < 3; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			model := &mockModel{}
 			model.addResp("conc")
 			agent := reActAgentSetup(model, nil)
 			iter := agent.Run(context.Background(), &AgentInput{Messages: []Message{schema.UserMessage("hi")}})
 			drainAgentEvents(t, iter)
-		}()
+		})
 	}
 	wg.Wait()
 }

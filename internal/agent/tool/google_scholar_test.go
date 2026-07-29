@@ -24,6 +24,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"ragflow/internal/tokenizer"
 )
 
 const cannedScholarHTML = `<html><body>
@@ -52,42 +54,104 @@ func TestGoogleScholar_BuildURL(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name      string
-		query     string
-		max       int
-		wantNum   string
-		wantHost  string
-		wantQuery string
+		name       string
+		query      string
+		topN       int
+		sortBy     string
+		yearLow    int
+		yearHigh   int
+		patents    *bool
+		wantNum    string
+		wantHost   string
+		wantQuery  string
+		wantParams map[string]string
 	}{
 		{
 			name:      "default",
 			query:     "transformer",
-			max:       0,
-			wantNum:   "5",
+			wantNum:   "12",
 			wantHost:  "scholar.google.com",
 			wantQuery: "transformer",
 		},
 		{
-			name:      "clamped high",
+			name:      "explicit high",
 			query:     "x",
-			max:       99,
-			wantNum:   "20",
+			topN:      99,
+			wantNum:   "99",
 			wantHost:  "scholar.google.com",
 			wantQuery: "x",
 		},
 		{
 			name:      "explicit",
 			query:     "a b",
-			max:       3,
+			topN:      3,
 			wantNum:   "3",
 			wantHost:  "scholar.google.com",
 			wantQuery: "a b",
+		},
+		{
+			name:       "sort by date",
+			query:      "test",
+			topN:       5,
+			sortBy:     "date",
+			wantNum:    "5",
+			wantHost:   "scholar.google.com",
+			wantQuery:  "test",
+			wantParams: map[string]string{"scisbd": "1"},
+		},
+		{
+			name:       "year range",
+			query:      "ml",
+			topN:       10,
+			yearLow:    2020,
+			yearHigh:   2024,
+			wantNum:    "10",
+			wantHost:   "scholar.google.com",
+			wantQuery:  "ml",
+			wantParams: map[string]string{"as_ylo": "2020", "as_yhi": "2024"},
+		},
+		{
+			name:       "exclude patents",
+			query:      "ai",
+			topN:       5,
+			patents:    boolPtr(false),
+			wantNum:    "5",
+			wantHost:   "scholar.google.com",
+			wantQuery:  "ai",
+			wantParams: map[string]string{"as_vis": "1"},
+		},
+		{
+			name:      "include patents (default)",
+			query:     "nlp",
+			topN:      5,
+			patents:   boolPtr(true),
+			wantNum:   "5",
+			wantHost:  "scholar.google.com",
+			wantQuery: "nlp",
+		},
+		{
+			name:      "all params combined",
+			query:     "deep learning",
+			topN:      8,
+			sortBy:    "date",
+			yearLow:   2019,
+			yearHigh:  2023,
+			patents:   boolPtr(false),
+			wantNum:   "8",
+			wantHost:  "scholar.google.com",
+			wantQuery: "deep learning",
+			wantParams: map[string]string{
+				"scisbd": "1",
+				"as_ylo": "2019",
+				"as_yhi": "2023",
+				"as_vis": "1",
+			},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := buildGoogleScholarURL(tc.query, tc.max)
+			got := buildGoogleScholarURL(tc.query, tc.topN, tc.sortBy, tc.yearLow, tc.yearHigh, tc.patents)
 			u, err := url.Parse(got)
 			if err != nil {
 				t.Fatalf("url.Parse(%q): %v", got, err)
@@ -104,6 +168,11 @@ func TestGoogleScholar_BuildURL(t *testing.T) {
 			}
 			if q.Get("num") != tc.wantNum {
 				t.Errorf("num = %q, want %q", q.Get("num"), tc.wantNum)
+			}
+			for k, v := range tc.wantParams {
+				if q.Get(k) != v {
+					t.Errorf("%s = %q, want %q", k, q.Get(k), v)
+				}
 			}
 		})
 	}
@@ -123,7 +192,7 @@ func TestGoogleScholar_ParseResults(t *testing.T) {
 	})
 	tool := NewGoogleScholarToolWith(helper)
 	out, err := tool.InvokableRun(context.Background(),
-		`{"query":"transformer","max_results":5}`)
+		`{"query":"transformer","top_n":5,"sort_by":"relevance","year_low":2020,"year_high":2024,"patents":true}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -158,16 +227,17 @@ func TestGoogleScholar_ParseResults(t *testing.T) {
 	}
 }
 
-func TestGoogleScholar_RequiresQuery(t *testing.T) {
+func TestGoogleScholar_EmptyQuery(t *testing.T) {
 	t.Parallel()
 
 	tool := NewGoogleScholarTool()
-	_, err := tool.InvokableRun(context.Background(), `{"query":""}`)
-	if err == nil {
-		t.Fatal("expected error for empty query")
+	out, err := tool.InvokableRun(context.Background(), `{"query":""}`)
+	if err != nil {
+		t.Fatalf("InvokableRun(empty): %v", err)
 	}
-	if !strings.Contains(err.Error(), "query") {
-		t.Errorf("err = %v, want to mention query", err)
+	var envelope googleScholarEnvelope
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 {
+		t.Fatalf("empty result = %s / %v", out, err)
 	}
 }
 
@@ -179,10 +249,121 @@ func TestGoogleScholar_Info(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if info.Name != "google_scholar" {
-		t.Errorf("Name = %q, want google_scholar", info.Name)
+	if info.Name != "google_scholar_search" {
+		t.Errorf("Name = %q, want google_scholar_search", info.Name)
 	}
 	if !strings.Contains(info.Desc, "Scholar") {
 		t.Errorf("Desc = %q, want to mention Scholar", info.Desc)
+	}
+}
+
+func TestGoogleScholar_ComponentReferencesAndValidation(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("google_scholar", map[string]any{
+		"top_n":    float64(7),
+		"sort_by":  "date",
+		"year_low": float64(2020),
+		"patents":  false,
+		"outputs":  map[string]any{"json": map[string]any{}},
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	scholar := built.(*GoogleScholarTool)
+	if scholar.defaults.TopN != 7 || scholar.defaults.SortBy != "date" || scholar.defaults.YearLow != 2020 || scholar.defaults.Patents == nil || *scholar.defaults.Patents {
+		t.Fatalf("defaults = %+v", scholar.defaults)
+	}
+	for _, params := range []map[string]any{{"top_n": 0}, {"top_n": 1.5}, {"sort_by": "newest"}, {"patents": "yes"}} {
+		if _, err := BuildByName("google_scholar", params); err == nil {
+			t.Fatalf("BuildByName(%#v) succeeded", params)
+		}
+	}
+	spec := scholar.ComponentSpec()
+	if query, ok := spec.InputForm["query"].(map[string]any); !ok || query["type"] != "line" {
+		t.Fatalf("query input form = %#v", spec.InputForm["query"])
+	}
+	envelope := map[string]any{"results": []any{map[string]any{
+		"title": "Paper", "link": "https://paper.example", "authors": "A Author", "year": "2024", "snippet": "Abstract",
+	}}}
+	chunks, docAggs := scholar.BuildReferences(context.Background(), envelope)
+	if len(chunks) != 1 || len(docAggs) != 1 || !strings.Contains(chunks[0]["content"].(string), "Authors: A Author") {
+		t.Fatalf("references = %#v / %#v", chunks, docAggs)
+	}
+	outputs := scholar.BuildComponentOutputs(envelope)
+	if results, ok := outputs["json"].([]any); !ok || len(results) != 1 {
+		t.Fatalf("json output = %#v", outputs["json"])
+	}
+	if !strings.Contains(outputs["formalized_content"].(string), "Snippet: Abstract") {
+		t.Fatalf("formalized_content = %q", outputs["formalized_content"])
+	}
+	if _, exists := envelope["chunks"]; exists {
+		t.Fatalf("output conversion mutated envelope: %#v", envelope)
+	}
+}
+
+func TestRenderGoogleScholarReferencesStopsBeforeOverBudgetBlock(t *testing.T) {
+	t.Parallel()
+
+	chunks := []map[string]any{
+		{"id": "1", "document_name": "First", "url": "https://first.example", "content": "first reference content"},
+		{"id": "2", "document_name": "Second", "url": "https://second.example", "content": "second reference content"},
+	}
+	firstBlock := renderGoogleScholarReferences(chunks[:1], 0)
+	firstTokens := tokenizer.NumTokensFromString(firstBlock)
+	maxTokens := (firstTokens*100 + 96) / 97
+	if got := renderGoogleScholarReferences(chunks, maxTokens); got != firstBlock {
+		t.Fatalf("rendered = %q, want only first block %q", got, firstBlock)
+	}
+	if got := renderGoogleScholarReferences(chunks, 1); got != "" {
+		t.Fatalf("over-budget first block was appended: %q", got)
+	}
+	if got := renderGoogleScholarReferences(chunks, 0); !strings.Contains(got, "Title: First") || !strings.Contains(got, "Title: Second") {
+		t.Fatalf("unlimited rendering dropped blocks: %q", got)
+	}
+}
+
+func TestGoogleScholar_MergesNodeLevelDefaults(t *testing.T) {
+	t.Parallel()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("q") != "rag" {
+			t.Errorf("q = %q, want rag", q.Get("q"))
+		}
+		if q.Get("num") != "7" {
+			t.Errorf("num = %q, want 7", q.Get("num"))
+		}
+		if q.Get("scisbd") != "1" {
+			t.Errorf("scisbd = %q, want 1", q.Get("scisbd"))
+		}
+		if q.Get("as_ylo") != "2020" {
+			t.Errorf("as_ylo = %q, want 2020", q.Get("as_ylo"))
+		}
+		if q.Get("as_yhi") != "2024" {
+			t.Errorf("as_yhi = %q, want 2024", q.Get("as_yhi"))
+		}
+		if q.Get("as_vis") != "1" {
+			t.Errorf("as_vis = %q, want 1", q.Get("as_vis"))
+		}
+		w.Header().Set("Content-Type", "text/html; charset=UTF-8")
+		_, _ = w.Write([]byte(cannedScholarHTML))
+	}))
+	defer srv.Close()
+
+	helper := NewHTTPHelper().WithClient(&http.Client{
+		Transport: rewriteHostTransport(srv.URL),
+	})
+	tool := NewGoogleScholarToolWithDefaults(helper, googleScholarParams{
+		Query:    "rag",
+		TopN:     7,
+		SortBy:   "date",
+		YearLow:  2020,
+		YearHigh: 2024,
+		Patents:  boolPtr(false),
+	})
+	_, err := tool.InvokableRun(context.Background(), `{}`)
+	if err != nil {
+		t.Fatalf("InvokableRun with defaults: %v", err)
 	}
 }

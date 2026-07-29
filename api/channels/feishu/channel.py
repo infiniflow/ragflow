@@ -46,14 +46,7 @@ class FeishuChannel(Channel):
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._ws_client = None
         self._ws_thread: Optional[threading.Thread] = None
-        self._rest = (
-            lark.Client.builder()
-            .app_id(account.app_id)
-            .app_secret(account.app_secret)
-            .domain(_lark_domain(account.domain))
-            .log_level(lark.LogLevel.DEBUG)
-            .build()
-        )
+        self._rest = lark.Client.builder().app_id(account.app_id).app_secret(account.app_secret).domain(_lark_domain(account.domain)).log_level(lark.LogLevel.DEBUG).build()
 
     async def start(self) -> None:
         # The channel loop is the cross-thread dispatch target for inbound events.
@@ -82,11 +75,7 @@ class FeishuChannel(Channel):
         # server's main loop.
         lark_ws_client.loop = loop
         try:
-            handler = (
-                lark.EventDispatcherHandler.builder("", "")
-                .register_p2_im_message_receive_v1(self._on_message_receive)
-                .build()
-            )
+            handler = lark.EventDispatcherHandler.builder("", "").register_p2_im_message_receive_v1(self._on_message_receive).build()
             self._ws_client = lark.ws.Client(
                 self.account.app_id,
                 self.account.app_secret,
@@ -123,9 +112,7 @@ class FeishuChannel(Channel):
                         if asyncio.iscoroutine(result):
                             ws_loop = lark_ws_client.loop
                             if ws_loop and not ws_loop.is_closed():
-                                await asyncio.wrap_future(
-                                    asyncio.run_coroutine_threadsafe(result, ws_loop)
-                                )
+                                await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(result, ws_loop))
                             else:
                                 await result
                     except Exception:
@@ -139,30 +126,11 @@ class FeishuChannel(Channel):
     async def send(self, message: OutgoingMessage) -> None:
         content = json.dumps({"text": message.text}, ensure_ascii=False)
         if message.reply_to_message_id:
-            req = (
-                ReplyMessageRequest.builder()
-                .message_id(message.reply_to_message_id)
-                .request_body(
-                    ReplyMessageRequestBody.builder()
-                    .content(content)
-                    .msg_type("text")
-                    .build()
-                )
-                .build()
-            )
+            req = ReplyMessageRequest.builder().message_id(message.reply_to_message_id).request_body(ReplyMessageRequestBody.builder().content(content).msg_type("text").build()).build()
             resp = await asyncio.to_thread(self._rest.im.v1.message.reply, req)
         else:
             req = (
-                CreateMessageRequest.builder()
-                .receive_id_type("chat_id")
-                .request_body(
-                    CreateMessageRequestBody.builder()
-                    .receive_id(message.chat_id)
-                    .content(content)
-                    .msg_type("text")
-                    .build()
-                )
-                .build()
+                CreateMessageRequest.builder().receive_id_type("chat_id").request_body(CreateMessageRequestBody.builder().receive_id(message.chat_id).content(content).msg_type("text").build()).build()
             )
             resp = await asyncio.to_thread(self._rest.im.v1.message.create, req)
         if not resp.success():
@@ -219,9 +187,7 @@ def _build(account_id: str, cfg: dict) -> Channel:
     app_id = cfg.get("app_id")
     app_secret = cfg.get("app_secret")
     if not app_id or not app_secret:
-        raise ValueError(
-            f"feishu account '{account_id}' is missing app_id or app_secret"
-        )
+        raise ValueError(f"feishu account '{account_id}' is missing app_id or app_secret")
     return FeishuChannel(
         FeishuAccount(
             account_id=account_id,

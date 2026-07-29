@@ -46,9 +46,10 @@ func TestUserCanvasDAOUpdateDSL(t *testing.T) {
 	db := setupUserCanvasTestDB(t)
 	pushDB(t, db)
 
+	ctx := t.Context()
 	dao := NewUserCanvasDAO()
 	originalDSL := entity.JSONMap{"graph": map[string]interface{}{"nodes": []interface{}{"old"}}}
-	if err := dao.Create(&entity.UserCanvas{
+	if err := dao.Create(ctx, db, &entity.UserCanvas{
 		ID:             "canvas-1",
 		UserID:         "user-1",
 		Title:          stringPtr("Test Canvas"),
@@ -65,7 +66,7 @@ func TestUserCanvasDAOUpdateDSL(t *testing.T) {
 		},
 		"path": []interface{}{"start", "end"},
 	}
-	rows, err := dao.UpdateDSL("canvas-1", newDSL)
+	rows, err := dao.UpdateDSL(ctx, db, "canvas-1", newDSL)
 	if err != nil {
 		t.Fatalf("UpdateDSL failed: %v", err)
 	}
@@ -73,7 +74,7 @@ func TestUserCanvasDAOUpdateDSL(t *testing.T) {
 		t.Fatalf("expected 1 row affected, got %d", rows)
 	}
 
-	canvas, err := dao.GetByID("canvas-1")
+	canvas, err := dao.GetByID(ctx, db, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to get canvas: %v", err)
 	}
@@ -100,10 +101,10 @@ func TestUserCanvasDAOUpdateDSL(t *testing.T) {
 func TestUserCanvasDAOUpdateDSLNoMatch(t *testing.T) {
 	db := setupUserCanvasTestDB(t)
 	pushDB(t, db)
-
+	ctx := t.Context()
 	dao := NewUserCanvasDAO()
 	originalDSL := entity.JSONMap{"path": []interface{}{"old"}}
-	if err := dao.Create(&entity.UserCanvas{
+	if err := dao.Create(ctx, db, &entity.UserCanvas{
 		ID:             "canvas-1",
 		UserID:         "user-1",
 		Title:          stringPtr("Test Canvas"),
@@ -113,7 +114,7 @@ func TestUserCanvasDAOUpdateDSLNoMatch(t *testing.T) {
 		t.Fatalf("failed to create canvas: %v", err)
 	}
 
-	rows, err := dao.UpdateDSL("missing-canvas", entity.JSONMap{"path": []interface{}{"new"}})
+	rows, err := dao.UpdateDSL(ctx, db, "missing-canvas", entity.JSONMap{"path": []interface{}{"new"}})
 	if err != nil {
 		t.Fatalf("UpdateDSL failed: %v", err)
 	}
@@ -121,7 +122,7 @@ func TestUserCanvasDAOUpdateDSLNoMatch(t *testing.T) {
 		t.Fatalf("expected 0 rows affected, got %d", rows)
 	}
 
-	canvas, err := dao.GetByID("canvas-1")
+	canvas, err := dao.GetByID(ctx, db, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to get canvas: %v", err)
 	}
@@ -131,5 +132,63 @@ func TestUserCanvasDAOUpdateDSLNoMatch(t *testing.T) {
 	}
 	if len(path) != 1 || path[0] != "old" {
 		t.Fatalf("expected original DSL to remain unchanged, got %v", path)
+	}
+}
+
+func TestUserCanvasDAOListTagsIncludesPipelineWhenCategoryIsEmpty(t *testing.T) {
+	db := setupUserCanvasTestDB(t)
+	pushDB(t, db)
+
+	dao := NewUserCanvasDAO()
+	pipelineType := "pipeline"
+	rows := []*entity.UserCanvas{
+		{
+			ID:             "agent-canvas",
+			UserID:         "user-1",
+			Title:          stringPtr("Agent Canvas"),
+			Permission:     "me",
+			CanvasCategory: "agent_canvas",
+			Tags:           "agent-tag,shared",
+		},
+		{
+			ID:             "pipeline-canvas",
+			UserID:         "user-1",
+			Title:          stringPtr("Pipeline Canvas"),
+			Permission:     "me",
+			CanvasCategory: "dataflow_canvas",
+			CanvasType:     &pipelineType,
+			Tags:           "pipeline-tag,shared",
+		},
+	}
+	ctx := t.Context()
+	for _, row := range rows {
+		if err := dao.Create(ctx, db, row); err != nil {
+			t.Fatalf("failed to create canvas %s: %v", row.ID, err)
+		}
+	}
+
+	counts, err := dao.ListTags(ctx, db, []string{"user-1"}, "user-1", "")
+	if err != nil {
+		t.Fatalf("ListTags failed: %v", err)
+	}
+	if counts["agent-tag"] != 1 {
+		t.Fatalf("agent-tag count = %d, want 1", counts["agent-tag"])
+	}
+	if counts["pipeline-tag"] != 1 {
+		t.Fatalf("pipeline-tag count = %d, want 1", counts["pipeline-tag"])
+	}
+	if counts["shared"] != 2 {
+		t.Fatalf("shared count = %d, want 2", counts["shared"])
+	}
+
+	counts, err = dao.ListTags(ctx, db, []string{"user-1"}, "user-1", "agent_canvas")
+	if err != nil {
+		t.Fatalf("ListTags with category failed: %v", err)
+	}
+	if counts["pipeline-tag"] != 0 {
+		t.Fatalf("pipeline-tag count with agent_canvas filter = %d, want 0", counts["pipeline-tag"])
+	}
+	if counts["agent-tag"] != 1 {
+		t.Fatalf("agent-tag count with agent_canvas filter = %d, want 1", counts["agent-tag"])
 	}
 }

@@ -64,7 +64,7 @@ func TestCrawler_FetchesAndExtractsText(t *testing.T) {
 	}
 	c := NewCrawlerTool().WithResolver(loopbackResolver)
 	out, err := c.InvokableRun(context.Background(),
-		`{"url":`+jsonString(srv.URL)+`,"max_depth":0}`)
+		`{"query":`+jsonString(srv.URL)+`,"max_depth":0}`)
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
@@ -107,19 +107,19 @@ func TestCrawler_RejectsMaxDepthGreaterThanZero(t *testing.T) {
 	t.Parallel()
 
 	c := NewCrawlerTool()
-	_, err := c.InvokableRun(context.Background(), `{"url":"https://example.com","max_depth":1}`)
+	_, err := c.InvokableRun(context.Background(), `{"query":"https://example.com","max_depth":1}`)
 	if !errors.Is(err, ErrCrawlerDepthUnsupported) {
 		t.Fatalf("err = %v, want ErrCrawlerDepthUnsupported", err)
 	}
 }
 
-func TestCrawler_RejectsMissingURL(t *testing.T) {
+func TestCrawler_RejectsMissingQuery(t *testing.T) {
 	t.Parallel()
 
 	c := NewCrawlerTool()
-	_, err := c.InvokableRun(context.Background(), `{"url":""}`)
+	_, err := c.InvokableRun(context.Background(), `{"query":""}`)
 	if err == nil {
-		t.Fatal("expected error for empty url")
+		t.Fatal("expected error for empty query")
 	}
 }
 
@@ -127,9 +127,26 @@ func TestCrawler_RejectsNonHTTPScheme(t *testing.T) {
 	t.Parallel()
 
 	c := NewCrawlerTool()
-	_, err := c.InvokableRun(context.Background(), `{"url":"file:///etc/passwd"}`)
+	_, err := c.InvokableRun(context.Background(), `{"query":"file:///etc/passwd"}`)
 	if err == nil || !strings.Contains(err.Error(), "scheme") {
 		t.Fatalf("err = %v, want to reject file:// scheme", err)
+	}
+}
+
+func TestCrawler_AcceptsLegacyURLArgument(t *testing.T) {
+	t.Parallel()
+
+	sentinel := errors.New("stop after legacy url normalization")
+	c := NewCrawlerTool().WithResolver(func(rawURL string) (string, net.IP, error) {
+		if rawURL != "https://example.com" {
+			t.Fatalf("resolver URL = %q, want https://example.com", rawURL)
+		}
+		return "example.com", net.ParseIP("93.184.216.34"), sentinel
+	})
+
+	_, err := c.InvokableRun(context.Background(), `{"url":"https://example.com"}`)
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("err = %v, want resolver error after accepting legacy url", err)
 	}
 }
 
@@ -141,11 +158,32 @@ func TestCrawler_Info(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if info.Name != "crawler" {
-		t.Errorf("Name = %q, want crawler", info.Name)
+	if info.Name != "web_crawler" {
+		t.Errorf("Name = %q, want web_crawler", info.Name)
 	}
 	if !strings.Contains(info.Desc, "text") {
 		t.Errorf("Desc = %q, want to mention text extraction", info.Desc)
+	}
+	if info.ParamsOneOf == nil {
+		t.Fatal("ParamsOneOf = nil, want schema definition")
+	}
+	paramsSchema, err := info.ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("ToJSONSchema: %v", err)
+	}
+	paramsJSON, err := json.Marshal(paramsSchema)
+	if err != nil {
+		t.Fatalf("marshal params schema: %v", err)
+	}
+	params := string(paramsJSON)
+	if !strings.Contains(params, `"query"`) {
+		t.Fatalf("schema missing query parameter: %s", params)
+	}
+	if !strings.Contains(params, `"required":["query"]`) {
+		t.Fatalf("schema does not require query: %s", params)
+	}
+	if strings.Contains(params, `"url"`) {
+		t.Fatalf("schema exposes legacy url parameter: %s", params)
 	}
 }
 

@@ -56,6 +56,7 @@ def _agent_items(res):
         return data.get("canvas", [])
     return data
 
+
 @pytest.fixture(scope="function")
 def agent_id(HttpApiAuth, request):
     res = list_agents(HttpApiAuth, {"page_size": 100})

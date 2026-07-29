@@ -32,15 +32,18 @@ from common.constants import PAGERANK_FLD, TAG_FLD
 from common.decorator import singleton
 from common.doc_store.doc_store_base import MatchExpr, OrderByExpr, FusionExpr, MatchTextExpr, MatchDenseExpr
 from common.doc_store.ob_conn_base import (
-    OBConnectionBase, get_value_str,
-    vector_search_template, vector_column_pattern,
-    fulltext_index_name_template, doc_meta_column_names,
+    OBConnectionBase,
+    get_value_str,
+    vector_search_template,
+    vector_column_pattern,
+    fulltext_index_name_template,
+    doc_meta_column_names,
     doc_meta_column_types,
 )
 from common.float_utils import get_float
 from rag.nlp import rag_tokenizer
 
-logger = logging.getLogger('ragflow.ob_conn')
+logger = logging.getLogger("ragflow.ob_conn")
 
 column_order_id = Column("_order_id", Integer, nullable=True, comment="chunk order id for maintaining sequence")
 column_group_id = Column("group_id", String(256), nullable=True, comment="group id for external retrieval")
@@ -48,8 +51,7 @@ column_mom_id = Column("mom_id", String(256), nullable=True, comment="parent chu
 column_chunk_data = Column("chunk_data", JSON, nullable=True, comment="table parser row data")
 column_raptor_kwd = Column("raptor_kwd", String(256), nullable=True, comment="RAPTOR summary marker")
 column_raptor_layer_int = Column("raptor_layer_int", Integer, nullable=True, comment="RAPTOR summary layer")
-column_n_hop_with_weight = Column("n_hop_with_weight", LONGTEXT, nullable=True,
-                                  comment="JSON-encoded n-hop neighbour paths and weights for a graph entity")
+column_n_hop_with_weight = Column("n_hop_with_weight", LONGTEXT, nullable=True, comment="JSON-encoded n-hop neighbour paths and weights for a graph entity")
 
 column_definitions: list[Column] = [
     Column("id", String(256), primary_key=True, comment="chunk id"),
@@ -68,10 +70,8 @@ column_definitions: list[Column] = [
     Column("question_kwd", ARRAY(String(1024)), nullable=True, comment="questions"),
     Column("question_tks", TEXT, nullable=True, comment="question tokens"),
     Column("tag_kwd", ARRAY(String(256)), nullable=True, comment="tags"),
-    Column("tag_feas", JSON, nullable=True,
-           comment="tag features used for 'rank_feature', format: [tag -> relevance score]"),
-    Column("available_int", Integer, nullable=False, index=True, server_default="1",
-           comment="status of availability, 0 for unavailable, 1 for available"),
+    Column("tag_feas", JSON, nullable=True, comment="tag features used for 'rank_feature', format: [tag -> relevance score]"),
+    Column("available_int", Integer, nullable=False, index=True, server_default="1", comment="status of availability, 0 for unavailable, 1 for available"),
     Column("create_time", String(19), nullable=True, comment="creation time in YYYY-MM-DD HH:MM:SS format"),
     Column("create_timestamp_flt", Double, nullable=True, comment="creation timestamp in float format"),
     Column("img_id", String(128), nullable=True, comment="image id"),
@@ -89,8 +89,7 @@ column_definitions: list[Column] = [
     Column("entities_kwd", ARRAY(String(256)), nullable=True, comment="node ids of entities"),
     Column("rank_flt", Double, nullable=True, comment="rank of this entity"),
     column_n_hop_with_weight,
-    Column("removed_kwd", String(256), nullable=True, index=True, server_default="'N'",
-           comment="whether it has been deleted"),
+    Column("removed_kwd", String(256), nullable=True, index=True, server_default="'N'", comment="whether it has been deleted"),
     column_raptor_kwd,
     column_raptor_layer_int,
     column_chunk_data,
@@ -320,7 +319,7 @@ def get_filters(condition: dict) -> list[str]:
 @singleton
 class OBConnection(OBConnectionBase):
     def __init__(self):
-        super().__init__(logger_name='ragflow.ob_conn')
+        super().__init__(logger_name="ragflow.ob_conn")
         # Determine which columns to use for full-text search dynamically
         self._fulltext_search_columns = FTS_COLUMNS_ORIGIN if self.search_original_content else FTS_COLUMNS_TKS
 
@@ -364,16 +363,7 @@ class OBConnection(OBConnectionBase):
         Returns:
             dict: Performance metrics including latency, storage, QPS, and slow queries
         """
-        metrics = {
-            "connection": "connected",
-            "latency_ms": 0.0,
-            "storage_used": "0B",
-            "storage_total": "0B",
-            "query_per_second": 0,
-            "slow_queries": 0,
-            "active_connections": 0,
-            "max_connections": 0
-        }
+        metrics = {"connection": "connected", "latency_ms": 0.0, "storage_used": "0B", "storage_total": "0B", "query_per_second": 0, "slow_queries": 0, "active_connections": 0, "max_connections": 0}
 
         try:
             # Measure connection latency
@@ -426,33 +416,23 @@ class OBConnection(OBConnectionBase):
         try:
             # Get database size
             result = self.client.perform_raw_text_sql(
-                f"SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'size_mb' "
-                f"FROM information_schema.tables WHERE table_schema = '{self.db_name}'"
+                f"SELECT ROUND(SUM(data_length + index_length) / 1024 / 1024, 2) AS 'size_mb' FROM information_schema.tables WHERE table_schema = '{self.db_name}'"
             ).fetchone()
 
             size_mb = float(result[0]) if result and result[0] else 0.0
 
             # Try to get total available space (may not be available in all OceanBase versions)
             try:
-                result = self.client.perform_raw_text_sql(
-                    "SELECT ROUND(SUM(total_size) / 1024 / 1024 / 1024, 2) AS 'total_gb' "
-                    "FROM oceanbase.__all_disk_stat"
-                ).fetchone()
+                result = self.client.perform_raw_text_sql("SELECT ROUND(SUM(total_size) / 1024 / 1024 / 1024, 2) AS 'total_gb' FROM oceanbase.__all_disk_stat").fetchone()
                 total_gb = float(result[0]) if result and result[0] else None
             except Exception:
                 # Fallback: estimate total space (100GB default if not available)
                 total_gb = 100.0
 
-            return {
-                "storage_used": f"{size_mb:.2f}MB",
-                "storage_total": f"{total_gb:.2f}GB" if total_gb else "N/A"
-            }
+            return {"storage_used": f"{size_mb:.2f}MB", "storage_total": f"{total_gb:.2f}GB" if total_gb else "N/A"}
         except Exception as e:
             logger.warning(f"Failed to get storage info: {str(e)}")
-            return {
-                "storage_used": "N/A",
-                "storage_total": "N/A"
-            }
+            return {"storage_used": "N/A", "storage_total": "N/A"}
 
     def _get_connection_pool_stats(self) -> dict:
         """
@@ -467,26 +447,16 @@ class OBConnection(OBConnectionBase):
             active_connections = len(list(result.fetchall()))
 
             # Get max_connections setting
-            max_conn_result = self.client.perform_raw_text_sql(
-                "SHOW VARIABLES LIKE 'max_connections'"
-            ).fetchone()
+            max_conn_result = self.client.perform_raw_text_sql("SHOW VARIABLES LIKE 'max_connections'").fetchone()
             max_connections = int(max_conn_result[1]) if max_conn_result and max_conn_result[1] else 0
 
             # Get pool size from client if available
-            pool_size = getattr(self.client, 'pool_size', None) or 0
+            pool_size = getattr(self.client, "pool_size", None) or 0
 
-            return {
-                "active_connections": active_connections,
-                "max_connections": max_connections if max_connections > 0 else pool_size,
-                "pool_size": pool_size
-            }
+            return {"active_connections": active_connections, "max_connections": max_connections if max_connections > 0 else pool_size, "pool_size": pool_size}
         except Exception as e:
             logger.warning(f"Failed to get connection pool stats: {str(e)}")
-            return {
-                "active_connections": 0,
-                "max_connections": 0,
-                "pool_size": 0
-            }
+            return {"active_connections": 0, "max_connections": 0, "pool_size": 0}
 
     def _get_slow_query_count(self, threshold_seconds: int = 1) -> int:
         """
@@ -499,10 +469,7 @@ class OBConnection(OBConnectionBase):
             int: Number of slow queries
         """
         try:
-            result = self.client.perform_raw_text_sql(
-                f"SELECT COUNT(*) FROM information_schema.processlist "
-                f"WHERE time > {threshold_seconds} AND command != 'Sleep'"
-            ).fetchone()
+            result = self.client.perform_raw_text_sql(f"SELECT COUNT(*) FROM information_schema.processlist WHERE time > {threshold_seconds} AND command != 'Sleep'").fetchone()
             return int(result[0]) if result and result[0] else 0
         except Exception as e:
             logger.warning(f"Failed to get slow query count: {str(e)}")
@@ -517,9 +484,7 @@ class OBConnection(OBConnectionBase):
         """
         try:
             # Count active queries (non-Sleep commands)
-            result = self.client.perform_raw_text_sql(
-                "SELECT COUNT(*) FROM information_schema.processlist WHERE command != 'Sleep'"
-            ).fetchone()
+            result = self.client.perform_raw_text_sql("SELECT COUNT(*) FROM information_schema.processlist WHERE command != 'Sleep'").fetchone()
             active_queries = int(result[0]) if result and result[0] else 0
 
             # Rough estimate: assume average query takes 0.1 seconds
@@ -585,8 +550,7 @@ class OBConnection(OBConnectionBase):
                     if v == 0:
                         bqry.filter.append(Q("range", available_int={"lt": 1}))
                     else:
-                        bqry.filter.append(
-                            Q("bool", must_not=Q("range", available_int={"lt": 1})))
+                        bqry.filter.append(Q("bool", must_not=Q("range", available_int={"lt": 1})))
                     continue
                 if not v:
                     continue
@@ -595,16 +559,18 @@ class OBConnection(OBConnectionBase):
                 elif isinstance(v, str) or isinstance(v, int):
                     bqry.filter.append(Q("term", **{k: v}))
                 else:
-                    raise Exception(
-                        f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
+                    raise Exception(f"Condition `{str(k)}={str(v)}` value type is {str(type(v))}, expected to be int, str or list.")
 
             s = Search()
             vector_similarity_weight = 0.5
             for m in match_expressions:
                 if isinstance(m, FusionExpr) and m.method == "weighted_sum" and "weights" in m.fusion_params:
-                    if not (len(match_expressions) == 3 and isinstance(match_expressions[0], MatchTextExpr) and isinstance(
-                            match_expressions[1], MatchDenseExpr) and isinstance(
-                            match_expressions[2], FusionExpr)):
+                    if not (
+                        len(match_expressions) == 3
+                        and isinstance(match_expressions[0], MatchTextExpr)
+                        and isinstance(match_expressions[1], MatchDenseExpr)
+                        and isinstance(match_expressions[2], FusionExpr)
+                    ):
                         raise ValueError("match_expressions must contain MatchTextExpr, MatchDenseExpr, and FusionExpr")
                     weights = m.fusion_params["weights"]
                     vector_similarity_weight = get_float(weights.split(",")[1])
@@ -613,10 +579,7 @@ class OBConnection(OBConnectionBase):
                     minimum_should_match = m.extra_options.get("minimum_should_match", 0.0)
                     if isinstance(minimum_should_match, float):
                         minimum_should_match = str(int(minimum_should_match * 100)) + "%"
-                    bqry.must.append(Q("query_string", fields=FTS_COLUMNS_TKS,
-                                       type="best_fields", query=m.matching_text,
-                                       minimum_should_match=minimum_should_match,
-                                       boost=1))
+                    bqry.must.append(Q("query_string", fields=FTS_COLUMNS_TKS, type="best_fields", query=m.matching_text, minimum_should_match=minimum_should_match, boost=1))
                     bqry.boost = 1.0 - vector_similarity_weight
 
                 elif isinstance(m, MatchDenseExpr):
@@ -625,13 +588,14 @@ class OBConnection(OBConnectionBase):
                     similarity = 0.0
                     if "similarity" in m.extra_options:
                         similarity = m.extra_options["similarity"]
-                    s = s.knn(m.vector_column_name,
-                              m.topn,
-                              m.topn * 2,
-                              query_vector=list(m.embedding_data),
-                              filter=bqry.to_dict(),
-                              similarity=similarity,
-                              )
+                    s = s.knn(
+                        m.vector_column_name,
+                        m.topn,
+                        m.topn * 2,
+                        query_vector=list(m.embedding_data),
+                        filter=bqry.to_dict(),
+                        similarity=similarity,
+                    )
 
             if bqry and rank_feature:
                 for fld, sc in rank_feature.items():
@@ -649,8 +613,7 @@ class OBConnection(OBConnectionBase):
                 for field, order in order_by.fields:
                     order = "asc" if order == 0 else "desc"
                     if field in ["page_num_int", "top_int"]:
-                        order_info = {"order": order, "unmapped_type": "float",
-                                      "mode": "avg", "numeric_type": "double"}
+                        order_info = {"order": order, "unmapped_type": "float", "mode": "avg", "numeric_type": "double"}
                     elif field.endswith("_int") or field.endswith("_flt"):
                         order_info = {"order": order, "unmapped_type": "float"}
                     else:
@@ -659,25 +622,18 @@ class OBConnection(OBConnectionBase):
                 s = s.sort(*orders)
 
             for fld in agg_fields:
-                s.aggs.bucket(f'aggs_{fld}', 'terms', field=fld, size=1000000)
+                s.aggs.bucket(f"aggs_{fld}", "terms", field=fld, size=1000000)
 
             if limit > 0:
-                s = s[offset:offset + limit]
+                s = s[offset : offset + limit]
             q = s.to_dict()
             logger.debug(f"OBConnection.hybrid_search {str(index_names)} query: " + json.dumps(q))
 
             for index_name in index_names:
                 start_time = time.time()
-                res = self.es.search(index=index_name,
-                                     body=q,
-                                     timeout="600s",
-                                     track_total_hits=True,
-                                     _source=True)
+                res = self.es.search(index=index_name, body=q, timeout="600s", track_total_hits=True, _source=True)
                 elapsed_time = time.time() - start_time
-                logger.info(
-                    f"OBConnection.search table {index_name}, search type: hybrid, elapsed time: {elapsed_time:.3f} seconds,"
-                    f" got count: {len(res)}"
-                )
+                logger.info(f"OBConnection.search table {index_name}, search type: hybrid, elapsed time: {elapsed_time:.3f} seconds, got count: {len(res)}")
                 for chunk in res:
                     result.chunks.append(self._es_row_to_entity(chunk))
                     result.total = result.total + 1
@@ -731,9 +687,7 @@ class OBConnection(OBConnectionBase):
                 fulltext_query = escape_string(fulltext_query.strip())
                 fulltext_topn = m.topn
 
-                fulltext_search_expr, fulltext_search_weight = self._parse_fulltext_columns(
-                    fulltext_query, self._fulltext_search_columns
-                )
+                fulltext_search_expr, fulltext_search_weight = self._parse_fulltext_columns(fulltext_query, self._fulltext_search_columns)
                 for column_name in fulltext_search_expr.keys():
                     fulltext_search_idx_list.append(fulltext_index_name_template % column_name)
 
@@ -786,7 +740,6 @@ class OBConnection(OBConnectionBase):
                 limit = min(fulltext_topn, limit)
 
         for index_name in index_names:
-
             if not self._check_table_exists_cached(index_name):
                 continue
 
@@ -919,10 +872,7 @@ class OBConnection(OBConnectionBase):
                 if total_count == 0:
                     continue
 
-                vector_sql = self._build_vector_search_sql(
-                    index_name, fields_expr, vector_search_score_expr, filters_expr,
-                    vector_search_filter, vector_search_expr, limit, vector_topn, offset
-                )
+                vector_sql = self._build_vector_search_sql(index_name, fields_expr, vector_search_score_expr, filters_expr, vector_search_filter, vector_search_expr, limit, vector_topn, offset)
                 logger.debug("OBConnection.search with vector sql: %s", vector_sql)
                 rows, elapsed_time = self._execute_search_sql(vector_sql)
                 logger.info(
@@ -954,8 +904,7 @@ class OBConnection(OBConnectionBase):
                     continue
 
                 fulltext_sql = self._build_fulltext_search_sql(
-                    index_name, fields_expr, fulltext_search_score_expr, filters_expr,
-                    fulltext_search_filter, offset, limit, fulltext_topn, fulltext_search_hint
+                    index_name, fields_expr, fulltext_search_score_expr, filters_expr, fulltext_search_filter, offset, limit, fulltext_topn, fulltext_search_hint
                 )
                 logger.debug("OBConnection.search with fulltext sql: %s", fulltext_sql)
                 rows, elapsed_time = self._execute_search_sql(fulltext_sql)
@@ -975,10 +924,7 @@ class OBConnection(OBConnectionBase):
                     raise ValueError("Only one aggregation field is supported in OceanBase.")
                 agg_field = agg_fields[0]
                 if agg_field in array_columns:
-                    res = self.client.perform_raw_text_sql(
-                        f"SELECT {agg_field} FROM {index_name}"
-                        f" WHERE {agg_field} IS NOT NULL AND {filters_expr}"
-                    )
+                    res = self.client.perform_raw_text_sql(f"SELECT {agg_field} FROM {index_name} WHERE {agg_field} IS NOT NULL AND {filters_expr}")
                     counts = {}
                     for row in res:
                         if row[0]:
@@ -997,22 +943,22 @@ class OBConnection(OBConnectionBase):
                                         counts[v] = counts.get(v, 0) + 1
 
                     for v, count in counts.items():
-                        result.chunks.append({
-                            "value": v,
-                            "count": count,
-                        })
+                        result.chunks.append(
+                            {
+                                "value": v,
+                                "count": count,
+                            }
+                        )
                     result.total += len(counts)
                 else:
-                    res = self.client.perform_raw_text_sql(
-                        f"SELECT {agg_field}, COUNT(*) as count FROM {index_name}"
-                        f" WHERE {agg_field} IS NOT NULL AND {filters_expr}"
-                        f" GROUP BY {agg_field}"
-                    )
+                    res = self.client.perform_raw_text_sql(f"SELECT {agg_field}, COUNT(*) as count FROM {index_name} WHERE {agg_field} IS NOT NULL AND {filters_expr} GROUP BY {agg_field}")
                     for row in res:
-                        result.chunks.append({
-                            "value": row[0],
-                            "count": int(row[1]),
-                        })
+                        result.chunks.append(
+                            {
+                                "value": row[0],
+                                "count": int(row[1]),
+                            }
+                        )
                         result.total += 1
             else:
                 # only filter
@@ -1030,20 +976,14 @@ class OBConnection(OBConnectionBase):
                 rows, elapsed_time = self._execute_search_sql(count_sql)
                 total_count = rows[0][0] if rows else 0
                 result.total += total_count
-                logger.info(
-                    f"OBConnection.search table {index_name}, search type: normal, step: 1-count, elapsed time: {elapsed_time:.3f} seconds,"
-                    f" condition: '{condition}',"
-                    f" got count: {total_count}"
-                )
+                logger.info(f"OBConnection.search table {index_name}, search type: normal, step: 1-count, elapsed time: {elapsed_time:.3f} seconds, condition: '{condition}', got count: {total_count}")
 
                 if total_count == 0:
                     continue
 
                 order_by_expr = ("ORDER BY " + ", ".join(orders)) if len(orders) > 0 else ""
                 limit_expr = f"LIMIT {offset}, {limit}" if limit != 0 else ""
-                filter_sql = self._build_filter_search_sql(
-                    index_name, fields_expr, filters_expr, order_by_expr, limit_expr
-                )
+                filter_sql = self._build_filter_search_sql(index_name, fields_expr, filters_expr, order_by_expr, limit_expr)
                 logger.debug("OBConnection.search with normal sql: %s", filter_sql)
                 rows, elapsed_time = self._execute_search_sql(filter_sql)
                 logger.info(
@@ -1069,10 +1009,7 @@ class OBConnection(OBConnectionBase):
             return doc
         except json.JSONDecodeError as e:
             logger.error(f"JSON decode error when getting chunk {chunk_id}: {str(e)}")
-            return {
-                "id": chunk_id,
-                "error": f"Failed to parse chunk data due to invalid JSON: {str(e)}"
-            }
+            return {"id": chunk_id, "error": f"Failed to parse chunk data due to invalid JSON: {str(e)}"}
         except Exception as e:
             logger.exception(f"OBConnection.get({chunk_id}) got exception")
             raise e
@@ -1114,10 +1051,10 @@ class OBConnection(OBConnectionBase):
                     for vv in v:
                         if isinstance(vv, str):
                             cleaned_str = vv.strip()
-                            cleaned_str = cleaned_str.replace('\\', '\\\\')
-                            cleaned_str = cleaned_str.replace('\n', '\\n')
-                            cleaned_str = cleaned_str.replace('\r', '\\r')
-                            cleaned_str = cleaned_str.replace('\t', '\\t')
+                            cleaned_str = cleaned_str.replace("\\", "\\\\")
+                            cleaned_str = cleaned_str.replace("\n", "\\n")
+                            cleaned_str = cleaned_str.replace("\r", "\\r")
+                            cleaned_str = cleaned_str.replace("\t", "\\t")
                             cleaned_v.append(cleaned_str)
                         else:
                             cleaned_v.append(vv)
@@ -1231,11 +1168,7 @@ class OBConnection(OBConnectionBase):
         if not set_values:
             return True
 
-        update_sql = (
-            f"UPDATE {index_name}"
-            f" SET {', '.join(set_values)}"
-            f" WHERE {' AND '.join(filters)}"
-        )
+        update_sql = f"UPDATE {index_name} SET {', '.join(set_values)} WHERE {' AND '.join(filters)}"
         logger.debug("OBConnection.update sql: %s", update_sql)
 
         try:
@@ -1330,7 +1263,8 @@ class OBConnection(OBConnectionBase):
         if question and not self.is_chinese(question):
             highlighted_txt = re.sub(
                 r"(^|\W)(%s)(\W|$)" % re.escape(question),
-                r"\1<em>\2</em>\3", highlighted_txt,
+                r"\1<em>\2</em>\3",
+                highlighted_txt,
                 flags=re.IGNORECASE | re.MULTILINE,
             )
             if re.search(r"<em>[^<>]+</em>", highlighted_txt, flags=re.IGNORECASE | re.MULTILINE):
@@ -1339,11 +1273,11 @@ class OBConnection(OBConnectionBase):
             for keyword in keywords:
                 highlighted_txt = re.sub(
                     r"(^|\W)(%s)(\W|$)" % re.escape(keyword),
-                    r"\1<em>\2</em>\3", highlighted_txt,
+                    r"\1<em>\2</em>\3",
+                    highlighted_txt,
                     flags=re.IGNORECASE | re.MULTILINE,
                 )
-            if len(re.findall(r'</em><em>', highlighted_txt)) > 0 or len(
-                re.findall(r'</em>\s*<em>', highlighted_txt)) > 0:
+            if len(re.findall(r"</em><em>", highlighted_txt)) > 0 or len(re.findall(r"</em>\s*<em>", highlighted_txt)) > 0:
                 return highlighted_txt
             else:
                 return None
@@ -1361,13 +1295,9 @@ class OBConnection(OBConnectionBase):
             token_pos = highlighted_txt.rfind(token, 0, last_pos)
             if token_pos != -1:
                 if token in keywords:
-                    highlighted_txt = (
-                        highlighted_txt[:token_pos] +
-                        f'<em>{token}</em>' +
-                        highlighted_txt[token_pos + len(token):]
-                    )
+                    highlighted_txt = highlighted_txt[:token_pos] + f"<em>{token}</em>" + highlighted_txt[token_pos + len(token) :]
                 last_pos = token_pos
-        return re.sub(r'</em><em>', '', highlighted_txt)
+        return re.sub(r"</em><em>", "", highlighted_txt)
 
     def get_highlight(self, res, keywords: list[str], fieldnm: str):
         ans = {}

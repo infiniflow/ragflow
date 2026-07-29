@@ -4,6 +4,7 @@ import ArXivForm from '../form/arxiv-form';
 import BeginForm from '../form/begin-form';
 import BingForm from '../form/bing-form';
 import BrowserForm from '../form/browser-use-form';
+import CompilationForm from '../form/compilation-form';
 import CategorizeForm from '../form/categorize-form';
 import CodeForm from '../form/code-form';
 import CrawlerForm from '../form/crawler-form';
@@ -25,6 +26,7 @@ import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
 import ParserForm from '../form/parser-form';
 import PubMedForm from '../form/pubmed-form';
+import BGPTForm from '../form/bgpt-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
 import SearXNGForm from '../form/searxng-form';
@@ -79,6 +81,9 @@ export const FormConfigMap = {
   },
   [Operator.PubMed]: {
     component: PubMedForm,
+  },
+  [Operator.BGPT]: {
+    component: BGPTForm,
   },
   [Operator.ArXiv]: {
     component: ArXivForm,
@@ -170,6 +175,9 @@ export const FormConfigMap = {
   },
   [Operator.Extractor]: {
     component: ExtractorForm,
+  },
+  [Operator.Compilation]: {
+    component: CompilationForm,
   },
   [Operator.DataOperations]: {
     component: DataOperationsForm,

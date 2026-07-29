@@ -237,18 +237,19 @@ func TestCompose(t *testing.T) {
 }
 
 func TestTaskContext(t *testing.T) {
+	start := time.Unix(100, 0)
 	tc := &TaskContext{
 		Name:    "test",
 		ID:      "123",
 		Input:   "input",
 		Output:  "output",
 		Attempt: 1,
-		Start:   time.Now(),
-		End:     time.Now().Add(10 * time.Millisecond),
+		Start:   start,
+		End:     start.Add(10 * time.Millisecond),
 	}
 
-	if tc.Duration() < 10*time.Millisecond {
-		t.Error("expected duration >= 10ms")
+	if got := tc.Duration(); got != 10*time.Millisecond {
+		t.Errorf("Duration()=%v, want 10ms", got)
 	}
 }
 

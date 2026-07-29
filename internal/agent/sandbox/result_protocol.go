@@ -54,17 +54,22 @@ const resultMarkerPrefix = "__RAGFLOW_RESULT__:"
 //   - main's return value is JSON-encoded, prefixed with the
 //     marker, and printed to stdout.
 //
-// The argsJSON is a JSON object string (not a Python dict literal)
-// because the wrapper unserializes it via json.loads — this keeps
-// the boundary clean and avoids Python eval.
+// argsJSON is base64-encoded and decoded inside Python via
+// json.loads(base64.b64decode(...)). The base64 alphabet has no
+// characters that conflict with Python syntax, so splicing the
+// encoded string into a Python literal is safe. This avoids the
+// fragility of embedding raw JSON directly (true/false/null vs
+// Python's True/False/None) and removes the unsafe-quoting sink
+// from CodeQL's view.
 func BuildPythonWrapper(code, argsJSON string) string {
+	argsB64 := base64.StdEncoding.EncodeToString([]byte(argsJSON))
 	return code + `
 
 if __name__ == "__main__":
     import base64
     import json
 
-    result = main(**` + argsJSON + `)
+    result = main(**json.loads(base64.b64decode("` + argsB64 + `").decode("utf-8")))
     payload = json.dumps({"present": True, "value": result, "type": "json"}, ensure_ascii=False, separators=(",", ":"))
     print("` + resultMarkerPrefix + `" + base64.b64encode(payload.encode("utf-8")).decode("ascii"))
 `
@@ -81,7 +86,13 @@ if __name__ == "__main__":
 // JavaScript lacks a "module" boundary in `node -e`, so we look for
 // `main` in (a) the global scope and (b) `module.exports.main`,
 // matching the Python wrapper.
+//
+// argsJSON is embedded as a base64 literal (alphabet contains no JS
+// syntax-significant characters) and decoded at runtime via
+// JSON.parse(Buffer.from(..., 'base64').toString('utf8')), so the
+// only Go-side dataflow into the JS source is the base64 string.
 func BuildJavaScriptWrapper(code, argsJSON string) string {
+	argsB64 := base64.StdEncoding.EncodeToString([]byte(argsJSON))
 	// Note: this string is *embedded inside* a Go raw string, but the
 	// Go raw string and the JS source are independent languages. We
 	// need the final JS to be valid; the doubled braces {{ }} are JS
@@ -89,7 +100,8 @@ func BuildJavaScriptWrapper(code, argsJSON string) string {
 	// through as-is.
 	return code + `
 
-const __ragflowArgs = ` + argsJSON + `;
+const __ragflowArgsB64 = "` + argsB64 + `";
+const __ragflowArgs = JSON.parse(Buffer.from(__ragflowArgsB64, 'base64').toString('utf8'));
 
 (async () => {
   const __ragflowMain = typeof main !== 'undefined' ? main : module.exports && module.exports.main;

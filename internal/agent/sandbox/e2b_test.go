@@ -19,7 +19,7 @@ package sandbox
 import (
 	"context"
 	"errors"
-	"os"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 	"time"
@@ -93,7 +93,7 @@ func TestE2BProvider_Initialize_MissingCreds(t *testing.T) {
 // key is set (CI without secrets). The skip is loud via a clear
 // log line so missing-secrets is visible in test output.
 func TestE2BProvider_Initialize_WithAPIKey(t *testing.T) {
-	apiKey := os.Getenv("E2B_API_KEY")
+	apiKey := common.GetEnv(common.EnvE2BApiKey)
 	if apiKey == "" {
 		t.Skip("E2B_API_KEY not set — skipping network-dependent init check")
 	}
@@ -265,7 +265,7 @@ func makeFakeCommandResult(stdout string) *e2bsdk.CommandResult {
 // the test always runs (so missing-secrets shows up in CI logs).
 // When enabled, it creates a real sandbox, runs Python, kills it.
 func TestE2BProvider_FullE2E_SkipWithoutKey(t *testing.T) {
-	apiKey := os.Getenv("E2B_API_KEY")
+	apiKey := common.GetEnv(common.EnvE2BApiKey)
 	if apiKey == "" {
 		t.Skip("E2B_API_KEY not set — skipping full E2E test (real network call)")
 	}

@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 	"time"
@@ -366,25 +367,25 @@ func TestStatusFromExitCode(t *testing.T) {
 }
 
 func TestEnvOr(t *testing.T) {
-	t.Setenv("RAGFLOW_TEST_ENVOR", "x")
-	if got := envOr("RAGFLOW_TEST_ENVOR", "fallback"); got != "x" {
+	t.Setenv(common.EnvRAGFlowTestEnvOr, "x")
+	if got := envOr(common.EnvRAGFlowTestEnvOr, "fallback"); got != "x" {
 		t.Errorf("got %q, want x", got)
 	}
-	if got := envOr("RAGFLOW_TEST_ENVOR_UNSET", "fallback"); got != "fallback" {
+	if got := envOr(common.EnvRAGFlowTestEnvOrUnset, "fallback"); got != "fallback" {
 		t.Errorf("got %q, want fallback", got)
 	}
 }
 
 func TestEnvIntOr(t *testing.T) {
-	t.Setenv("RAGFLOW_TEST_ENVINTOR", "42")
-	if got := envIntOr("RAGFLOW_TEST_ENVINTOR", 10); got != 42 {
+	t.Setenv(common.EnvRAGFlowTestEnvIntOr, "42")
+	if got := envIntOr(common.EnvRAGFlowTestEnvIntOr, 10); got != 42 {
 		t.Errorf("got %d, want 42", got)
 	}
-	if got := envIntOr("RAGFLOW_TEST_ENVINTOR_UNSET", 10); got != 10 {
+	if got := envIntOr(common.EnvRAGFlowTestEnvIntOrUnset, 10); got != 10 {
 		t.Errorf("got %d, want 10", got)
 	}
-	t.Setenv("RAGFLOW_TEST_ENVINTOR", "garbage")
-	if got := envIntOr("RAGFLOW_TEST_ENVINTOR", 10); got != 10 {
+	t.Setenv(common.EnvRAGFlowTestEnvIntOr, "garbage")
+	if got := envIntOr(common.EnvRAGFlowTestEnvIntOr, 10); got != 10 {
 		t.Errorf("garbage value: got %d, want fallback 10", got)
 	}
 }
@@ -392,7 +393,7 @@ func TestEnvIntOr(t *testing.T) {
 // findBinary searches PATH for a binary. Used by tests that
 // skip on missing runtime dependencies.
 func findBinary(name string) (string, error) {
-	paths := strings.Split(os.Getenv("PATH"), string(os.PathListSeparator))
+	paths := strings.Split(common.GetEnv(common.EnvPath), string(os.PathListSeparator))
 	for _, dir := range paths {
 		candidate := filepath.Join(dir, name)
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() && info.Mode()&0o111 != 0 {

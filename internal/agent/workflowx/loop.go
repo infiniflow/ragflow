@@ -24,7 +24,7 @@
 // a normal workflow node. See the .claude/plans/eino-workflow-loop.md
 // plan for the design rationale.
 //
-// Foundation for the canvas Loop component
+// # Foundation for the canvas Loop component
 //
 // AddLoopNode is also the runtime driver for the RAGFlow agent canvas's
 // "Loop" component (internal/agent/component/loop.go). The canvas engine
@@ -81,7 +81,7 @@ const (
 	LoopStreamEveryIteration LoopStreamMode = "every_iteration"
 )
 
-// defaultMaxIterations caps the loop when the caller does not
+// defaultMaxIterations is a safety guard used only when the caller does not
 // configure an explicit limit. The cap is intentionally generous to
 // accommodate real workflows (deep research, iterative refinement) but
 // is finite so a bug in the quit condition cannot spin forever.
@@ -114,9 +114,9 @@ type LoopCondition[T any] func(ctx context.Context, iteration int, prev, next T)
 
 // Sentinel errors. Tests use errors.Is to assert these.
 var (
-	// ErrLoopMaxIterationsExceeded is returned when the configured
-	// (or default) iteration cap is reached without shouldQuit
-	// returning true. The cap exists purely as a safety net.
+	// ErrLoopMaxIterationsExceeded is returned when the default safety
+	// cap is reached without shouldQuit returning true. Explicit loop
+	// limits are normal termination, matching the canvas Python runtime.
 	ErrLoopMaxIterationsExceeded = errors.New("workflowx: loop max iterations exceeded")
 
 	// ErrLoopSubGraphInterrupted is wrapped around an interrupt error
@@ -141,23 +141,27 @@ var (
 type LoopOption func(*loopOptions)
 
 type loopOptions struct {
-	maxIterations     int
-	compileOpts       []compose.GraphCompileOption
-	runOpts           []compose.Option
-	streamMode        LoopStreamMode
-	checkpointBuilder func(nodeKey string, iteration int) string
+	maxIterations       int
+	maxIterationsSet    bool
+	compileOpts         []compose.GraphCompileOption
+	runOpts             []compose.Option
+	streamMode          LoopStreamMode
+	checkpointBuilder   func(nodeKey string, iteration int) string
 	enableSubCheckpoint bool
+	onStart             func(context.Context, any)
+	onFinish            func(context.Context, error)
 }
 
-// WithLoopMaxIterations caps the loop at n iterations. The cap is
-// checked AFTER each completed iteration. A value of 0 keeps the
-// default cap in effect. A value of 1 is legal and yields the
-// do-while contract: the sub-workflow executes at least once and the
-// loop exits immediately (subject to shouldQuit).
+// WithLoopMaxIterations caps the loop at n iterations. The cap is checked
+// AFTER each completed iteration. A value of 0 keeps the default safety cap in
+// effect. A positive value is normal loop termination, not an error; this
+// matches the canvas Python runtime's maximum_loop_count semantics. A value of
+// 1 is legal and yields the single-iteration do-while case.
 func WithLoopMaxIterations(n int) LoopOption {
 	return func(o *loopOptions) {
-		if n >= 0 {
+		if n > 0 {
 			o.maxIterations = n
+			o.maxIterationsSet = true
 		}
 	}
 }
@@ -168,6 +172,17 @@ func WithLoopMaxIterations(n int) LoopOption {
 func WithLoopCompileOptions(opts ...compose.GraphCompileOption) LoopOption {
 	return func(o *loopOptions) {
 		o.compileOpts = append(o.compileOpts, opts...)
+	}
+}
+
+// WithLoopLifecycleHooks installs callbacks around the outer loop node's
+// execution. Canvas uses this to emit node lifecycle events for the Loop macro
+// without relying on eino state post-processing, which is unsafe for streamed
+// multi-iteration output.
+func WithLoopLifecycleHooks(onStart func(context.Context, any), onFinish func(context.Context, error)) LoopOption {
+	return func(o *loopOptions) {
+		o.onStart = onStart
+		o.onFinish = onFinish
 	}
 }
 
@@ -237,8 +252,8 @@ func defaultCheckpointBuilder(nodeKey string, iteration int) string {
 
 func getLoopOptions(opts []LoopOption) *loopOptions {
 	o := &loopOptions{
-		streamMode:        LoopStreamFinalOnly,
-		checkpointBuilder: defaultCheckpointBuilder,
+		streamMode:          LoopStreamFinalOnly,
+		checkpointBuilder:   defaultCheckpointBuilder,
 		enableSubCheckpoint: true,
 	}
 	for _, opt := range opts {
@@ -260,12 +275,12 @@ func getLoopOptions(opts []LoopOption) *loopOptions {
 // by the loop itself) sidesteps the need for callers to register
 // generic types with the schema package — see plan §"Type shape".
 type loopInterruptState struct {
-	Iteration       int                `json:"iteration"`
-	CurrentInput    []byte             `json:"current_input"`
-	StreamMode      LoopStreamMode     `json:"stream_mode"`
-	SubCheckpointID string             `json:"sub_checkpoint_id"`
-	SubCheckpoints  map[string][]byte  `json:"sub_checkpoints,omitempty"`
-	ReplayChunks    [][]byte           `json:"replay_chunks,omitempty"`
+	Iteration       int               `json:"iteration"`
+	CurrentInput    []byte            `json:"current_input"`
+	StreamMode      LoopStreamMode    `json:"stream_mode"`
+	SubCheckpointID string            `json:"sub_checkpoint_id"`
+	SubCheckpoints  map[string][]byte `json:"sub_checkpoints,omitempty"`
+	ReplayChunks    [][]byte          `json:"replay_chunks,omitempty"`
 }
 
 // AddLoopNode appends a loop node to the outer workflow `wf`. The
@@ -286,14 +301,7 @@ type loopInterruptState struct {
 // failures are returned as an error and the outer workflow is not
 // modified, so the caller does not need to roll back any state on
 // failure.
-func AddLoopNode[T any](
-	ctx context.Context,
-	wf *compose.Workflow[T, T],
-	key string,
-	sub *compose.Workflow[T, T],
-	shouldQuit LoopCondition[T],
-	opts ...LoopOption,
-) (*compose.WorkflowNode, error) {
+func AddLoopNode[T any](ctx context.Context, wf *compose.Workflow[T, T], key string, sub *compose.Workflow[T, T], shouldQuit LoopCondition[T], opts ...LoopOption) (*compose.WorkflowNode, error) {
 	if wf == nil {
 		return nil, errors.New("workflowx: outer workflow is nil")
 	}
@@ -323,10 +331,27 @@ func AddLoopNode[T any](
 	// struct{} options at run time.
 	lambda, err := compose.AnyLambda[T, T, struct{}](
 		func(ctx context.Context, input T, _ ...struct{}) (T, error) {
-			return runLoopInvoke(ctx, key, compiled, input, shouldQuit, options)
+			if options.onStart != nil {
+				options.onStart(ctx, input)
+			}
+			out, err := runLoopInvoke(ctx, key, compiled, input, shouldQuit, options)
+			if options.onFinish != nil {
+				options.onFinish(ctx, err)
+			}
+			return out, err
 		},
 		func(ctx context.Context, input T, _ ...struct{}) (*schema.StreamReader[T], error) {
-			return runLoopStream(ctx, key, compiled, input, shouldQuit, options)
+			if options.onStart != nil {
+				options.onStart(ctx, input)
+			}
+			reader, err := runLoopStream(ctx, key, compiled, input, shouldQuit, options)
+			if err != nil {
+				if options.onFinish != nil {
+					options.onFinish(ctx, err)
+				}
+				return nil, err
+			}
+			return wrapLoopStreamFinish(ctx, reader, options.onFinish), nil
 		},
 		nil,
 		nil,
@@ -375,15 +400,15 @@ func loadLoopSnapshot[T any](ctx context.Context, defaultMode LoopStreamMode) (l
 	if streamMode == "" {
 		streamMode = defaultMode
 	}
-		return loopSnapshot{
-			startIteration: st.Iteration,
-			current:        st.CurrentInput,
-			streamMode:     streamMode,
-			subCheckID:     st.SubCheckpointID,
-			subCheckpoints: cloneCheckpointMap(st.SubCheckpoints),
-			replayChunks:   cloneByteSlices(st.ReplayChunks),
-		}, nil
-	}
+	return loopSnapshot{
+		startIteration: st.Iteration,
+		current:        st.CurrentInput,
+		streamMode:     streamMode,
+		subCheckID:     st.SubCheckpointID,
+		subCheckpoints: cloneCheckpointMap(st.SubCheckpoints),
+		replayChunks:   cloneByteSlices(st.ReplayChunks),
+	}, nil
+}
 
 // encodeState marshals a loop snapshot to the persisted form.
 func encodeState(s loopSnapshot) ([]byte, error) {
@@ -400,14 +425,7 @@ func encodeState(s loopSnapshot) ([]byte, error) {
 // runLoopInvoke executes the loop on the invoke path. It is the
 // body of the loop lambda's Invoke handler. See the package doc and
 // plan §"Invoke path" for the documented state machine.
-func runLoopInvoke[T any](
-	ctx context.Context,
-	nodeKey string,
-	sub compose.Runnable[T, T],
-	input T,
-	shouldQuit LoopCondition[T],
-	options *loopOptions,
-) (T, error) {
+func runLoopInvoke[T any](ctx context.Context, nodeKey string, sub compose.Runnable[T, T], input T, shouldQuit LoopCondition[T], options *loopOptions) (T, error) {
 	var zero T
 
 	snap, err := loadLoopSnapshot[T](ctx, options.streamMode)
@@ -487,10 +505,15 @@ func runLoopInvoke[T any](
 			return next, nil
 		}
 
-		// Cap enforcement. The check uses iteration, not a
-		// pre-decrement, so WithLoopMaxIterations(1) is the
-		// single-iteration do-while case.
+		// Cap enforcement. The check uses iteration, not a pre-decrement,
+		// so WithLoopMaxIterations(1) is the single-iteration do-while
+		// case. Explicit caps are normal termination; the default cap is
+		// the runaway-loop safety net and remains an error.
 		if iteration >= options.maxIterations {
+			bridgeState.delete(subCheckID)
+			if options.maxIterationsSet {
+				return next, nil
+			}
 			return zero, fmt.Errorf("%w: %d", ErrLoopMaxIterationsExceeded, options.maxIterations)
 		}
 
@@ -561,10 +584,7 @@ func runLoopStream[T any](
 	// size the slice: maxIterations is always set (default or
 	// user-supplied), so a bound of maxIterations - snap.startIteration + 1
 	// is safe and tight.
-	remaining := options.maxIterations - snap.startIteration + 1
-	if remaining < 1 {
-		remaining = 1
-	}
+	remaining := max(options.maxIterations-snap.startIteration+1, 1)
 
 	streamMode := snap.streamMode
 	streamReaders := make([]*schema.StreamReader[T], 0, remaining)
@@ -692,6 +712,10 @@ func runLoopStream[T any](
 				return
 			}
 			if iteration >= options.maxIterations {
+				bridgeState.delete(subCheckID)
+				if options.maxIterationsSet {
+					return
+				}
 				pipeErrCh <- fmt.Errorf("%w: %d", ErrLoopMaxIterationsExceeded, options.maxIterations)
 				return
 			}
@@ -736,6 +760,37 @@ func runLoopStream[T any](
 	}()
 
 	return outReader, nil
+}
+
+func wrapLoopStreamFinish[T any](ctx context.Context, reader *schema.StreamReader[T], onFinish func(context.Context, error)) *schema.StreamReader[T] {
+	if onFinish == nil || reader == nil {
+		return reader
+	}
+	outReader, outWriter := schema.Pipe[T](16)
+	go func() {
+		var zero T
+		var finishErr error
+		defer func() {
+			reader.Close()
+			outWriter.Close()
+			onFinish(ctx, finishErr)
+		}()
+		for {
+			v, err := reader.Recv()
+			if err != nil {
+				if errors.Is(err, io.EOF) {
+					return
+				}
+				finishErr = err
+				outWriter.Send(zero, err)
+				return
+			}
+			if outWriter.Send(v, nil) {
+				return
+			}
+		}
+	}()
+	return outReader
 }
 
 // sendIterations writes the supplied iteration readers to w. For

@@ -1,0 +1,25 @@
+
+instruction: |
+    - Each page must be a proper encyclopedic article, NOT a flat bullet list:
+    - 1. Take prefix ">" or "-" in the "page_example" as instructions to generate the content.
+    - 2. Sections with H2 headings, each starting with prose before sub-bullets.
+page_example: |
+    # Competitor analysis(title)
+
+    ## Analysis strengths/weaknesses
+    > Use the table below to analyze strong and weak points of each competitor
+    | Competitor Name | Weakness | strengths |
+    | :--- | :---: | ---: |
+    | Laptop | Electronics | something |
+    | Coffee Mug | Kitchenware | something |
+    | Desk Chair | Furniture | something |
+
+    ## Positioning & use cases
+    > How is the product positioning itself on the market? What use cases does it enable?
+
+    ## Features to note
+    > List and add screenshots of any noteworthy feature.
+
+    ## Pricing
+
+topic: marketing

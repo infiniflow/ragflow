@@ -210,6 +210,7 @@ export const ManageMetadataModal = (props: IManageModalProps) => {
     isShowDescription,
     showTypeColumn,
     setShouldSave,
+    addUpdateValue,
   });
 
   const table = useReactTable({

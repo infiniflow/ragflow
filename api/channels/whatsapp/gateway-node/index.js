@@ -472,9 +472,11 @@ const server = http.createServer(async (req, res) => {
 
     return sendError(res, 404, 'not found');
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    // Log the full error server-side for debugging, but return a
+    // generic message to the client — error.message can leak
+    // filesystem paths, internal hostnames, library internals, etc.
     console.error(error);
-    return sendJson(res, 500, { code: 500, message, data: null });
+    return sendJson(res, 500, { code: 500, message: 'internal error', data: null });
   }
 });
 

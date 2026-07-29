@@ -15,10 +15,12 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { MultiSelect } from '@/components/ui/multi-select';
-import { useSelectKnowledgeOptions } from '@/hooks/use-knowledge-request';
+import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
 import { IModalProps } from '@/interfaces/common';
+import { useDebounce } from 'ahooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Link2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -47,7 +49,21 @@ function LinkToDatasetForm({
     },
   });
 
-  const options = useSelectKnowledgeOptions();
+  const [searchString, setSearchString] = useState('');
+  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  const { list, loading, handleScroll, hasNextPage } = useFetchKnowledgeList(
+    false,
+    debouncedSearchString,
+  );
+
+  const options = useMemo(
+    () =>
+      list.map((item) => ({
+        label: item.name,
+        value: item.id,
+      })),
+    [list],
+  );
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
     onConnectToKnowledgeOk(data.knowledgeIds);
@@ -77,6 +93,11 @@ function LinkToDatasetForm({
                   defaultValue={field.value}
                   placeholder={t('fileManager.pleaseSelect')}
                   maxCount={100}
+                  searchValue={searchString}
+                  onSearchChange={setSearchString}
+                  isSearching={loading}
+                  shouldFilter={false}
+                  onListScroll={hasNextPage ? handleScroll : undefined}
                   //   {...field}
                   modalPopover
                 />

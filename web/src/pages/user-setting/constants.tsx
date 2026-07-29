@@ -40,6 +40,7 @@ export const LocalLlmFactories = [
   LLMFactory.ModelScope,
   LLMFactory.VLLM,
   LLMFactory.RAGcon,
+  LLMFactory.FunASR,
 ];
 
 export enum TenantRole {

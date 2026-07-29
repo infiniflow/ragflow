@@ -7,15 +7,16 @@ import (
 	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/constants"
 	"ragflow/internal/harness/graph/graph"
+	"ragflow/internal/harness/graph/types"
 )
 
-func newTestGraph(t *testing.T) *graph.StateGraph {
+func newTestGraph(t *testing.T) types.StateGraph {
 	t.Helper()
 	sg := newSimpleGraph(t)
 	return sg
 }
 
-func newSimpleGraph(t *testing.T) *graph.StateGraph {
+func newSimpleGraph(t *testing.T) types.StateGraph {
 	t.Helper()
 	sg := graph.NewStateGraph(map[string]any{"value": ""})
 	// Register a channel so the engine can write output

@@ -29,6 +29,8 @@ import (
 	"maps"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 // mapsCopy is a thin alias for the stdlib maps.Copy to keep the call
@@ -62,7 +64,7 @@ func (b *BeginComponent) Name() string { return b.name }
 // the shared *CanvasState.Sys namespace, then returns the input map as
 // outputs unchanged. The input map is shallow-copied to avoid aliasing
 // surprises across concurrent goroutines that share an inputs map.
-func (b *BeginComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil {
 		return nil, fmt.Errorf("Begin: %w", err)
@@ -82,6 +84,16 @@ func (b *BeginComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 		state.Sys["user_id"] = uid
 	}
 
+	// Webhook payload injection. The webhook HTTP handler sets
+	// root["webhook_payload"] (see service/agent.go RunAgentWithWebhook)
+	// which BuildWorkflow forwards into inputs. Surfacing it on
+	// state.Sys lets downstream components read sys.webhook_payload the
+	// same way they read sys.query / sys.user_id. The chat path never
+	// sets this key, so existing tests stay green.
+	if payload, ok := inputs["webhook_payload"].(map[string]any); ok && len(payload) > 0 {
+		state.Sys["webhook_payload"] = payload
+	}
+
 	// Passthrough: a shallow copy keeps the caller's map un-aliased.
 	out := make(map[string]any, len(inputs))
 	mapsCopy(out, inputs)
@@ -91,8 +103,8 @@ func (b *BeginComponent) Invoke(ctx context.Context, inputs map[string]any) (map
 // Stream is a synchronous facade over Invoke for P0. SSE streaming of
 // Begin output is not meaningful (Begin has no I/O), so the channel
 // receives a single payload and closes — same shape as Invoke's return.
-func (b *BeginComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := b.Invoke(ctx, inputs)
+func (b *BeginComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
+	out, err := b.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -106,18 +118,20 @@ func (b *BeginComponent) Stream(ctx context.Context, inputs map[string]any) (<-c
 // strings live on the struct / method above.
 func (b *BeginComponent) Inputs() map[string]string {
 	return map[string]string{
-		"query":   "User query string (the chat input).",
-		"user_id": "Optional user/tenant identifier.",
-		"inputs":  "Optional free-form inputs map; passthrough only.",
+		"query":           "User query string (the chat input).",
+		"user_id":         "Optional user/tenant identifier.",
+		"webhook_payload": "Optional structured webhook request (set by the webhook HTTP handler; absent on chat flows).",
+		"inputs":          "Optional free-form inputs map; passthrough only.",
 	}
 }
 
 // Outputs returns the same keys as Inputs (Begin is a passthrough).
 func (b *BeginComponent) Outputs() map[string]string {
 	return map[string]string{
-		"query":   "Query string (passthrough).",
-		"user_id": "User id, if provided (passthrough).",
-		"inputs":  "Raw inputs map (passthrough).",
+		"query":           "Query string (passthrough).",
+		"user_id":         "User id, if provided (passthrough).",
+		"webhook_payload": "Webhook request payload, if provided (passthrough; also written to state.Sys[webhook_payload]).",
+		"inputs":          "Raw inputs map (passthrough).",
 	}
 }
 

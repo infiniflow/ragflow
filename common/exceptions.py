@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+
 class TaskCanceledException(Exception):
     def __init__(self, msg):
         self.msg = msg
@@ -26,6 +27,7 @@ class ArgumentException(Exception):
 class NotFoundException(Exception):
     def __init__(self, msg):
         self.msg = msg
+
 
 class ModelException(Exception):
     def __init__(self, msg, retryable=False):

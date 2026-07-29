@@ -12,6 +12,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { useOwnerTenantId } from '../../../context';
 import { DescriptionField } from '../../components/description-field';
 import { FormWrapper } from '../../components/form-wrapper';
 import {
@@ -40,6 +41,8 @@ const RetrievalForm = () => {
 
   useWatchFormChange(form);
 
+  const ownerTenantId = useOwnerTenantId();
+
   return (
     <Form {...form}>
       <FormWrapper>
@@ -55,7 +58,9 @@ const RetrievalForm = () => {
             <TopNFormField></TopNFormField>
             {hideKnowledgeGraphField || (
               <>
-                <RerankFormFields></RerankFormFields>
+                <RerankFormFields
+                  ownerTenantId={ownerTenantId}
+                ></RerankFormFields>
                 <MetadataFilter canReference></MetadataFilter>
               </>
             )}

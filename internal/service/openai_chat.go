@@ -78,7 +78,7 @@ type OpenAICompletionResponse struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
-	Created          int64
+	Created          *int64
 }
 
 // OpenAIStreamEventKind discriminates stream events.
@@ -217,7 +217,8 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 
-	dialogResp, err := s.chatSvc.GetChat(userID, chatID)
+	ctx := c.Request.Context()
+	dialogResp, err := s.chatSvc.GetChat(ctx, userID, chatID)
 	if err != nil {
 		s.writeDataError(c, err.Error())
 		return
@@ -231,11 +232,11 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 	if req.Model != "model" {
-		if _, _, _, _, mErr := s.pipeline.ModelProviderSvc.GetChatModelConfig(dialog.TenantID, resolvedModel); mErr != nil {
+		if _, _, _, _, mErr := s.pipeline.ModelProviderSvc.GetChatModelConfig(ctx, dialog.TenantID, resolvedModel); mErr != nil {
 			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
 			return
 		}
-		apiKey, apiErr := s.tenantLLMSvc.GetAPIKeyFromInstance(dialog.TenantID, req.Model)
+		apiKey, apiErr := s.tenantLLMSvc.GetAPIKeyFromInstance(ctx, dialog.TenantID, req.Model)
 		if apiErr != nil || apiKey == "" {
 			s.writeDataError(c, fmt.Sprintf("Cannot use specified model %s.", req.Model))
 			return
@@ -263,7 +264,6 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 
 	completionID := fmt.Sprintf("chatcmpl-%s", openaiReq.ChatID)
 
-	ctx := c.Request.Context()
 	lfClient := LangfuseClientFromTenant(ctx, dialog.TenantID, userID, openaiReq.ChatID, openaiReq.Model)
 	if lfClient != nil {
 		ctx = context.WithValue(ctx, langfuseCtxKey, lfClient)
@@ -286,7 +286,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 				kbIDs = append(kbIDs, id)
 			}
 		}
-		metas, mdErr := s.pipeline.MetadataSvc.GetFlattedMetaByKBs(kbIDs)
+		metas, mdErr := s.pipeline.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
 		if mdErr != nil {
 			s.writeDataError(c, fmt.Errorf("metadata_condition: load metadata: %w", mdErr).Error())
 			return
@@ -319,7 +319,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		chatKwargs["doc_ids"] = docIDsStr
 	}
 
-	asyncResults, asyncErr := s.pipeline.AsyncChat(ctx, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
+	asyncResults, asyncErr := s.pipeline.AsyncChat(ctx, userID, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
 	if asyncErr != nil {
 		s.writeDataError(c, asyncErr.Error())
 		return
@@ -358,6 +358,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 				if result.Final {
 					finalContent := strings.TrimSpace(result.Answer)
 					fullContent = finalContent
+					finalReference = []FormattedChunk{}
 					if ref, ok := result.Reference["chunks"]; ok {
 						if chunks, ok := ref.([]map[string]interface{}); ok {
 							finalReference = formatChunks(chunks)
@@ -397,6 +398,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 			}
 
 			if finalReference == nil && openaiReq.NeedReference {
+				finalReference = []FormattedChunk{}
 				if ref, ok := lastResult.Reference["chunks"]; ok {
 					if chunks, ok := ref.([]map[string]interface{}); ok {
 						finalReference = formatChunks(chunks)
@@ -434,7 +436,6 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		content := strings.TrimSpace(finalResult.Answer)
 		completionTokens := tokenizer.NumTokensFromString(content)
 		resp := &OpenAICompletionResponse{
-			Created:          time.Now().Unix(),
 			Model:            openaiReq.Model,
 			Content:          content,
 			PromptTokens:     promptTokens,
@@ -442,6 +443,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 			TotalTokens:      promptTokens + completionTokens,
 		}
 		if openaiReq.NeedReference {
+			resp.Reference = []FormattedChunk{}
 			if ref, ok := finalResult.Reference["chunks"]; ok {
 				if chunks, ok := ref.([]map[string]interface{}); ok {
 					resp.Reference = formatChunks(chunks)
@@ -473,7 +475,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		c.JSON(http.StatusOK, gin.H{
 			"id":      completionID,
 			"object":  "chat.completion",
-			"created": resp.Created,
+			"created": getCreatedOrDefault(resp.Created),
 			"model":   resp.Model,
 			"usage": gin.H{
 				"prompt_tokens":     resp.PromptTokens,
@@ -644,16 +646,16 @@ func formatChunks(chunks []map[string]interface{}) []FormattedChunk {
 	for _, chunk := range chunks {
 		out = append(out, FormattedChunk{
 			ID:               strVal(getValue(chunk, "chunk_id", "id")),
-			Content:          strVal(getValue(chunk, "content", "content_with_weight")),
+			Content:          strVal(getValue(chunk, "content_with_weight", "content")),
 			DocumentID:       strVal(getValue(chunk, "doc_id", "document_id")),
 			DocumentName:     strVal(getValue(chunk, "docnm_kwd", "document_name")),
 			DatasetID:        strVal(getValue(chunk, "kb_id", "dataset_id")),
 			ImageID:          strVal(getValue(chunk, "image_id", "img_id")),
 			Positions:        getValue(chunk, "positions", "position_int"),
 			URL:              chunk["url"],
-			Similarity:       chunk["similarity"],
-			VectorSimilarity: chunk["vector_similarity"],
-			TermSimilarity:   chunk["term_similarity"],
+			Similarity:       sanitizeJSONFloats(chunk["similarity"]),
+			VectorSimilarity: sanitizeJSONFloats(chunk["vector_similarity"]),
+			TermSimilarity:   sanitizeJSONFloats(chunk["term_similarity"]),
 			RowID:            chunk["row_id"],
 			DocType:          getValue(chunk, "doc_type_kwd", "doc_type"),
 			DocumentMetadata: chunk["document_metadata"],
@@ -829,18 +831,17 @@ func streamChatCompletionSSE(
 
 // writeArgError writes a 101 JSON error envelope (malformed request).
 func (s *OpenAIChatService) writeArgError(c *gin.Context, msg string) {
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeArgumentError,
-		"data":    nil,
-		"message": msg,
-	})
+	common.ResponseWithCodeData(c, common.CodeArgumentError, nil, msg)
 }
 
 // writeDataError writes a 102 JSON error envelope (service failure).
 func (s *OpenAIChatService) writeDataError(c *gin.Context, msg string) {
-	c.JSON(http.StatusOK, gin.H{
-		"code":    common.CodeDataError,
-		"data":    nil,
-		"message": msg,
-	})
+	common.ResponseWithCodeData(c, common.CodeDataError, nil, msg)
+}
+
+func getCreatedOrDefault(created *int64) int64 {
+	if created != nil {
+		return *created
+	}
+	return time.Now().Unix()
 }

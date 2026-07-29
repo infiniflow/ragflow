@@ -87,7 +87,7 @@ type parallelItemResult struct {
 // sub is the already-compiled sub-graph to invoke per item.
 func NewParallelNodeFunc(
 	key string,
-	sub *CompiledGraph,
+	sub *compiledGraph,
 	opts ...ParallelOption,
 ) (types.NodeFunc, error) {
 	if key == "" {
@@ -129,7 +129,7 @@ func NewParallelNodeFunc(
 func runParallel(
 	ctx context.Context,
 	key string,
-	sub *CompiledGraph,
+	sub *compiledGraph,
 	items []interface{},
 	options *parallelOptions,
 ) (interface{}, error) {
@@ -223,7 +223,7 @@ func runParallel(
 func fanOutItems(
 	ctx context.Context,
 	key string,
-	sub *CompiledGraph,
+	sub *compiledGraph,
 	items []interface{},
 	indices []int,
 	options *parallelOptions,

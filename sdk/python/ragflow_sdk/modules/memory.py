@@ -18,7 +18,6 @@ from .base import Base
 
 
 class Memory(Base):
-
     def __init__(self, rag, res_dict):
         self.id = ""
         self.name = ""
@@ -33,7 +32,7 @@ class Memory(Base):
         self.description = ""
         self.memory_size = 5 * 1024 * 1024
         self.forgetting_policy = "FIFO"
-        self.temperature = 0.5,
+        self.temperature = (0.5,)
         self.system_prompt = ""
         self.user_prompt = ""
         for k in list(res_dict.keys()):
@@ -57,13 +56,8 @@ class Memory(Base):
         self._update_from_dict(self.rag, res.get("data", {}))
         return self
 
-    def list_memory_messages(self, agent_id: str | list[str]=None, keywords: str=None, page: int=1, page_size: int=50):
-        params = {
-            "agent_id": agent_id,
-            "keywords": keywords,
-            "page": page,
-            "page_size": page_size
-        }
+    def list_memory_messages(self, agent_id: str | list[str] = None, keywords: str = None, page: int = 1, page_size: int = 50):
+        params = {"agent_id": agent_id, "keywords": keywords, "page": page, "page_size": page_size}
         res = self.get(f"/memories/{self.id}", params)
         res = res.json()
         if res.get("code") != 0:
@@ -78,9 +72,7 @@ class Memory(Base):
         return True
 
     def update_message_status(self, message_id: int, status: bool):
-        update_message = {
-            "status": status
-        }
+        update_message = {"status": status}
         res = self.put(f"/messages/{self.id}:{message_id}", update_message)
         res = res.json()
         if res.get("code") != 0:

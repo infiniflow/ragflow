@@ -97,9 +97,7 @@ class WhatsAppGatewayRuntime:
             npm = shutil.which("npm")
             if not npm:
                 if not _deps_install_warned:
-                    LOGGER.warning(
-                        "npm is not available; WhatsApp gateway dependencies cannot be installed automatically"
-                    )
+                    LOGGER.warning("npm is not available; WhatsApp gateway dependencies cannot be installed automatically")
                     _deps_install_warned = True
                 return
 

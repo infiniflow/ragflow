@@ -82,8 +82,7 @@ func TestReActGraph_StreamWithInterrupt(t *testing.T) {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	outputCh, errCh := rg.Stream(ctx, &AgentInput{
 		Messages: []*schema.Message{schema.UserMessage("test")}},
 		nil, types.StreamModeValues)

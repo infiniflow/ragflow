@@ -25,6 +25,7 @@ type IToolIcon =
   | Operator.Google
   | Operator.GoogleScholar
   | Operator.PubMed
+  | Operator.BGPT
   | Operator.TavilyExtract
   | Operator.TavilySearch
   | Operator.KeenableSearch

@@ -1,3 +1,19 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useAddInstanceModel,
@@ -127,8 +143,10 @@ export const useVerifyConnection = () => {
   );
 };
 
-// ============ Hooks for the 4 retained special modals ============
-// Bedrock / MinerU / PaddleOCR / OpenDataLoader are not yet merged into ProviderModal
+// ============ Hooks for retained special modals ============
+// Bedrock and SoMark have been migrated to inline instance cards
+// (BedrockInstanceCard / SoMarkInstanceCard); these legacy modal
+// hooks are kept only for backward-compat references.
 
 export const useSubmitBedrock = () => {
   const [saveLoading, setSaveLoading] = useState(false);
@@ -182,25 +200,5 @@ export const useSubmitBedrock = () => {
     bedrockAddingVisible,
     hideBedrockAddingModal,
     showBedrockAddingModal,
-  };
-};
-
-/**
- * Wraps the verify callback: provides a unified call with isVerify=true for the Verify button
- */
-export const useVerifySettings = ({
-  onVerify,
-}: {
-  onVerify: (postBody: any, isVerify?: boolean) => Promise<any>;
-}) => {
-  const onApiKeyVerifying = useCallback(
-    async (postBody: any) => {
-      const res = await onVerify(postBody, true);
-      return res;
-    },
-    [onVerify],
-  );
-  return {
-    onApiKeyVerifying,
   };
 };

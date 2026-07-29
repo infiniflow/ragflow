@@ -35,19 +35,27 @@
 //   tool.RetrievalRequest.Query      → nlp.RetrievalRequest.Question
 //   tool.RetrievalRequest.DatasetIDs → nlp.RetrievalRequest.KbIDs
 //   tool.RetrievalRequest.TopN       → nlp.RetrievalRequest.PageSize
-//                                       (Page=1, Top=TopN*4 so rerank
+//   tool.RetrievalRequest.TopK       → nlp.RetrievalRequest.Top
+//                                       (fallback Top=TopN*4 so rerank
 //                                        has headroom)
+//   tool.RetrievalRequest.KeywordsSimilarityWeight
+//                                    → nlp.RetrievalRequest.VectorSimilarityWeight
+//                                       as 1-keyword weight
 //   tool.RetrievalRequest.UseKG      → ErrGraphRAGNotSupported (out of
 //                                       scope per plan  + §9 Q3)
 //
 // Chunk shape translation: nlp's Chunks are []map[string]any with
 // keys chunk_id, doc_id, docnm_kwd, content_with_weight,
 // content_ltks, similarity, term_similarity, vector_similarity. The
-// tool side wants a flat RetrievalChunk{ID, Content, DocumentID,
-// Score}. We pick the most user-facing fields:
+// tool side wants a flat RetrievalChunk with the fields needed for both
+// display and the frontend reference strip. We pick the most user-facing fields:
 //   - ID         ← chunk_id
 //   - Content    ← content_with_weight (fallback to content_ltks)
 //   - DocumentID ← doc_id
+//   - DocumentName ← docnm_kwd
+//   - DatasetID  ← kb_id
+//   - ImageID    ← image_id/img_id
+//   - Positions  ← positions/position_int
 //   - Score      ← similarity (fallback to avg of term+vector)
 //
 // Defensive defaults: missing or wrong-typed chunk fields become
@@ -59,10 +67,15 @@ package tool
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/entity"
 	"ragflow/internal/service/nlp"
+
+	"gorm.io/gorm"
 )
 
 // NLPRetrievalAdapter wraps *nlp.RetrievalService behind the
@@ -71,13 +84,21 @@ import (
 // beyond its docEngine + documentDAO handles, both of which the
 // nlp package treats as concurrent-safe.
 type NLPRetrievalAdapter struct {
-	svc *nlp.RetrievalService
+	svc   *nlp.RetrievalService
+	kbDAO knowledgebaseLookup
+}
+
+type knowledgebaseLookup interface {
+	GetByIDs(ctx context.Context, sqlDB *gorm.DB, ids []string) ([]*entity.Knowledgebase, error)
 }
 
 // NewNLPRetrievalAdapter wraps an already-constructed
 // *nlp.RetrievalService.
 func NewNLPRetrievalAdapter(svc *nlp.RetrievalService) *NLPRetrievalAdapter {
-	return &NLPRetrievalAdapter{svc: svc}
+	return &NLPRetrievalAdapter{
+		svc:   svc,
+		kbDAO: dao.NewKnowledgebaseDAO(),
+	}
 }
 
 // NewNLPRetrievalAdapterFromDeps is the convenience constructor
@@ -88,12 +109,15 @@ func NewNLPRetrievalAdapter(svc *nlp.RetrievalService) *NLPRetrievalAdapter {
 // matches chat_session.go's newChatSessionServiceWithRetrieval
 // call site.
 func NewNLPRetrievalAdapterFromDeps(docEngine engine.DocEngine, documentDAO *dao.DocumentDAO) *NLPRetrievalAdapter {
-	return &NLPRetrievalAdapter{svc: nlp.NewRetrievalService(docEngine, documentDAO)}
+	return &NLPRetrievalAdapter{
+		svc:   nlp.NewRetrievalService(docEngine, documentDAO),
+		kbDAO: dao.NewKnowledgebaseDAO(),
+	}
 }
 
 // Search implements RetrievalService. The translation rules live
 // at the top of this file.
-func (a *NLPRetrievalAdapter) Search(ctx context.Context, req RetrievalRequest) ([]RetrievalChunk, error) {
+func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req RetrievalRequest) ([]RetrievalChunk, error) {
 	if a == nil || a.svc == nil {
 		return nil, ErrRetrievalServiceMissing
 	}
@@ -113,26 +137,11 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, req RetrievalRequest) 
 		topN = 8
 	}
 
-	// nlp.Retrieval applies its own defaults for SimilarityThreshold
-	// (0.2), VectorSimilarityWeight (0.3), RankFeature, etc. We
-	// surface only the fields the agent tool actually controls:
-	// Page=1, PageSize=TopN, KbIDs=DatasetIDs, Top=TopN*4 (rerank
-	// headroom — matches the chat_session.go call pattern).
-	nlpReq := &nlp.RetrievalRequest{
-		Question:  req.Query,
-		KbIDs:     append([]string(nil), req.DatasetIDs...),
-		Page:      1,
-		PageSize:  topN,
-		Aggs:      boolPtr(false),
-		Highlight: boolPtr(false),
+	tenantIDs, err := a.resolveTenantIDs(ctx, db, req)
+	if err != nil {
+		return nil, err
 	}
-	if topN > 0 {
-		rerankBudget := topN * 4
-		nlpReq.Top = &rerankBudget
-	}
-	if req.SimilarityThreshold > 0 {
-		nlpReq.SimilarityThreshold = &req.SimilarityThreshold
-	}
+	nlpReq := nlpRequestFromRetrieval(req, tenantIDs, topN)
 
 	res, err := a.svc.Retrieval(ctx, nlpReq)
 	if err != nil {
@@ -148,16 +157,86 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, req RetrievalRequest) 
 	return out, nil
 }
 
+func nlpRequestFromRetrieval(req RetrievalRequest, tenantIDs []string, topN int) *nlp.RetrievalRequest {
+	nlpReq := &nlp.RetrievalRequest{
+		Question:  req.Query,
+		TenantIDs: append([]string(nil), tenantIDs...),
+		KbIDs:     append([]string(nil), req.DatasetIDs...),
+		Page:      1,
+		PageSize:  topN,
+		Aggs:      boolPtr(false),
+		Highlight: boolPtr(false),
+	}
+	if req.TopK > 0 {
+		nlpReq.Top = &req.TopK
+	} else if topN > 0 {
+		rerankBudget := topN * 4
+		nlpReq.Top = &rerankBudget
+	}
+	if req.SimilarityThreshold > 0 {
+		nlpReq.SimilarityThreshold = &req.SimilarityThreshold
+	}
+	if req.KeywordsSimilarityWeight != nil {
+		vectorSimilarityWeight := 1 - *req.KeywordsSimilarityWeight
+		nlpReq.VectorSimilarityWeight = &vectorSimilarityWeight
+	}
+	return nlpReq
+}
+
+func (a *NLPRetrievalAdapter) resolveTenantIDs(ctx context.Context, db *gorm.DB, req RetrievalRequest) ([]string, error) {
+	seen := map[string]struct{}{}
+	tenantIDs := make([]string, 0, 1)
+	appendTenantID := func(tenantID string) {
+		tenantID = strings.TrimSpace(tenantID)
+		if tenantID == "" {
+			return
+		}
+		if _, ok := seen[tenantID]; ok {
+			return
+		}
+		seen[tenantID] = struct{}{}
+		tenantIDs = append(tenantIDs, tenantID)
+	}
+
+	appendTenantID(req.TenantID)
+	datasetIDs := compactStrings(req.DatasetIDs)
+	if len(datasetIDs) == 0 || a == nil || a.kbDAO == nil {
+		return tenantIDs, nil
+	}
+
+	kbs, err := a.kbDAO.GetByIDs(ctx, db, datasetIDs)
+	if err != nil {
+		return nil, fmt.Errorf("retrieval: resolve dataset tenants: %w", err)
+	}
+	for _, kb := range kbs {
+		if kb == nil {
+			continue
+		}
+		appendTenantID(kb.TenantID)
+	}
+	if len(tenantIDs) == 0 {
+		return nil, fmt.Errorf("retrieval: no valid knowledge bases found for dataset_ids %v", datasetIDs)
+	}
+	return tenantIDs, nil
+}
+
 // translateChunk converts one nlp chunk map into a RetrievalChunk.
 // Tolerates missing fields (returns zero values) and wrong types
 // (returns zero values) so a single bad chunk from the doc engine
 // can't break the whole result list.
 func translateChunk(raw map[string]any) RetrievalChunk {
 	return RetrievalChunk{
-		ID:         stringFromMap(raw, "chunk_id"),
-		Content:    contentFromMap(raw),
-		DocumentID: stringFromMap(raw, "doc_id"),
-		Score:      scoreFromMap(raw),
+		ID:               stringFromMap(raw, "chunk_id"),
+		Content:          contentFromMap(raw),
+		DocumentID:       stringFromMap(raw, "doc_id"),
+		DocumentName:     stringFromMap(raw, "docnm_kwd"),
+		DatasetID:        stringFromMap(raw, "kb_id"),
+		ImageID:          firstStringFromMap(raw, "image_id", "img_id"),
+		URL:              firstStringFromMap(raw, "url", "document_url", "doc_url"),
+		Positions:        firstValueFromMap(raw, "positions", "position_int"),
+		Score:            scoreFromMap(raw),
+		TermSimilarity:   scoreValueFromMap(raw, "term_similarity"),
+		VectorSimilarity: scoreValueFromMap(raw, "vector_similarity"),
 	}
 }
 
@@ -170,6 +249,24 @@ func stringFromMap(raw map[string]any, key string) string {
 		}
 	}
 	return ""
+}
+
+func firstStringFromMap(raw map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value := stringFromMap(raw, key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func firstValueFromMap(raw map[string]any, keys ...string) any {
+	for _, key := range keys {
+		if value, ok := raw[key]; ok && value != nil {
+			return value
+		}
+	}
+	return nil
 }
 
 // contentFromMap picks the most user-facing content field. nlp
@@ -205,6 +302,11 @@ func scoreFromMap(raw map[string]any) float64 {
 		return vec
 	}
 	return 0
+}
+
+func scoreValueFromMap(raw map[string]any, key string) float64 {
+	value, _ := numberFromMap(raw, key)
+	return value
 }
 
 // numberFromMap returns raw[key].(float64) with a tolerant path

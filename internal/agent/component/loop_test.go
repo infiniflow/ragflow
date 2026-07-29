@@ -84,7 +84,7 @@ func TestLoop_InvokeIsNoOp(t *testing.T) {
 			{"variable": "counter", "input_mode": "constant", "value": 7, "type": "number"},
 		},
 	})
-	out, err := c.Invoke(context.Background(), map[string]any{"in": 1})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{"in": 1})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestLoop_InvokeIsNoOp(t *testing.T) {
 // empty-map chunk and closes.
 func TestLoop_StreamMirrorsInvoke(t *testing.T) {
 	c := NewLoopComponent(loopParam{})
-	ch, err := c.Stream(context.Background(), nil)
+	ch, err := c.Stream(context.Background(), nil, nil)
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}

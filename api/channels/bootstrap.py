@@ -21,6 +21,7 @@ table: newly added bots are started, deleted ones are stopped, and edited ones
 messages are answered with a RAG completion routed through the conversation
 wired to that bot. Replaces the standalone ``server.py`` entrypoint.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -87,9 +88,7 @@ def _build_one(account_id: str, channel: str, credential: dict):
     from api.channels.core.registry import build_channels
 
     # account_id == chat_channel.id.
-    instances = build_channels(
-        {"channels": {channel: {"accounts": {account_id: credential}}}}
-    )
+    instances = build_channels({"channels": {channel: {"accounts": {account_id: credential}}}})
     return instances[0] if instances else None
 
 
@@ -242,9 +241,7 @@ async def _reconcile(running: dict, failed: dict) -> None:
 
     active_whatsapp = any(channel == "whatsapp" for channel, _, _ in desired.values())
     if not active_whatsapp:
-        active_whatsapp = any(
-            entry["ch"].channel_id == "whatsapp" for entry in running.values()
-        )
+        active_whatsapp = any(entry["ch"].channel_id == "whatsapp" for entry in running.values())
     from api.channels.whatsapp.gateway import sync_whatsapp_gateway
 
     try:

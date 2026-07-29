@@ -1,7 +1,10 @@
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { ResponseType } from '@/interfaces/database/base';
-import { IReferenceObject } from '@/interfaces/database/chat';
+import {
+  IDocumentDownloadInfo,
+  IReferenceObject,
+} from '@/interfaces/database/chat';
 import { BeginQuery } from '@/pages/agent/interface';
 import { getAuthorization } from '@/utils/authorization-util';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
@@ -15,6 +18,7 @@ export enum MessageEventType {
   MessageEnd = 'message_end',
   WorkflowFinished = 'workflow_finished',
   UserInputs = 'user_inputs',
+  WaitingForUser = 'waiting_for_user',
   NodeLogs = 'node_logs',
 }
 
@@ -58,7 +62,9 @@ export interface IMessageData {
 }
 
 export interface IMessageEndData {
-  reference: IReferenceObject;
+  reference?: IReferenceObject;
+  attachment?: IAttachment;
+  downloads?: IDocumentDownloadInfo[];
 }
 
 export interface ILogData extends INodeData {
@@ -85,6 +91,28 @@ export type ILogEvent = IAnswerEvent<ILogData>;
 export type IChatEvent = INodeEvent | IMessageEvent | IMessageEndEvent;
 
 export type IEventList = Array<IChatEvent>;
+
+const parseAgentEventData = (data: any) => {
+  if (typeof data !== 'string') return data;
+
+  try {
+    return JSON.parse(data);
+  } catch {
+    return data;
+  }
+};
+
+const normalizeAgentEvent = (value: any) => {
+  if (value?.event === MessageEventType.WaitingForUser) {
+    return {
+      ...value,
+      event: MessageEventType.UserInputs,
+      data: parseAgentEventData(value.data),
+    };
+  }
+
+  return value;
+};
 
 export const useSendMessageBySSE = (url: string) => {
   const [answerList, setAnswerList] = useState<IEventList>([]);
@@ -123,7 +151,14 @@ export const useSendMessageBySSE = (url: string) => {
           body: JSON.stringify(body),
           signal: controller?.signal || sseRef.current?.signal,
         });
-        const responseDataPromise = response
+        // SSE streams (text/event-stream) emit `data: {...}\n\n` frames, not
+        // a single JSON document. The .clone().json() call below is kept
+        // for non-streaming callers (lastEventData will be set from the
+        // per-frame parser below when the response IS SSE); for SSE
+        // bodies the JSON parse rejects — swallow it silently instead
+        // of console.warn'ing `SyntaxError: Unexpected token 'd', "data:
+        // {"ev"... is not valid JSON` on every chat completion.
+        const responseDataPromise: Promise<ResponseType | undefined> = response
           .clone()
           .json()
           .then((data: ResponseType) => data)
@@ -158,7 +193,7 @@ export const useSendMessageBySSE = (url: string) => {
         let lastEventData: ResponseType | undefined;
 
         try {
-          // eslint-disable-next-line no-constant-condition
+          // oxlint-disable-next-line no-constant-condition
           while (true) {
             const x = await reader?.read();
             if (!x) {
@@ -166,6 +201,7 @@ export const useSendMessageBySSE = (url: string) => {
             }
             const { done, value } = x;
             if (done) {
+              console.log('agent chat sse reader done');
               break;
             }
 
@@ -185,9 +221,11 @@ export const useSendMessageBySSE = (url: string) => {
               // `data: [DONE]` payload is caught and the stream
               // loop is terminated.
               if (payload === '[DONE]') {
+                console.log('agent chat sse done sentinel');
                 break;
               }
-              const val = JSON.parse(payload);
+              const val = normalizeAgentEvent(JSON.parse(payload));
+              console.log('agent chat sse event', val);
 
               if (typeof val?.code === 'number' && val.code !== 0) {
                 message.error(val.message);

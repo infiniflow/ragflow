@@ -72,11 +72,11 @@ class ESClient:
     def list_ragflow_indices(self) -> list[str]:
         """
         List all RAGFlow-related indices.
-        
+
         Returns indices matching patterns:
         - ragflow_* (document chunks)
         - ragflow_doc_meta_* (document metadata)
-        
+
         Returns:
             List of RAGFlow index names
         """
@@ -111,18 +111,14 @@ class ESClient:
         response = self.client.count(index=index_name)
         return response["count"]
 
-    def count_documents_with_filter(
-        self, 
-        index_name: str, 
-        filters: dict[str, Any]
-    ) -> int:
+    def count_documents_with_filter(self, index_name: str, filters: dict[str, Any]) -> int:
         """
         Count documents with filter conditions.
-        
+
         Args:
             index_name: Index name
             filters: Filter conditions (e.g., {"kb_id": "xxx"})
-            
+
         Returns:
             Document count
         """
@@ -133,30 +129,26 @@ class ESClient:
                 must_clauses.append({"terms": {field: value}})
             else:
                 must_clauses.append({"term": {field: value}})
-        
-        query = {
-            "bool": {
-                "must": must_clauses
-            }
-        } if must_clauses else {"match_all": {}}
-        
+
+        query = {"bool": {"must": must_clauses}} if must_clauses else {"match_all": {}}
+
         response = self.client.count(index=index_name, query=query)
         return response["count"]
 
     def aggregate_field(
-        self, 
-        index_name: str, 
+        self,
+        index_name: str,
         field: str,
         size: int = 10000,
     ) -> dict[str, Any]:
         """
         Aggregate field values (like getting all unique kb_ids).
-        
+
         Args:
             index_name: Index name
             field: Field to aggregate
             size: Max number of buckets
-            
+
         Returns:
             Aggregation result with buckets
         """
@@ -170,7 +162,7 @@ class ESClient:
                         "size": size,
                     }
                 }
-            }
+            },
         )
         return response["aggregations"]["field_values"]
 
@@ -244,24 +236,21 @@ class ESClient:
             return None
 
     def get_sample_documents(
-        self, 
-        index_name: str, 
+        self,
+        index_name: str,
         size: int = 10,
         query: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
         """
         Get sample documents from an index.
-        
+
         Args:
             index_name: Index name
             size: Number of samples
             query: Optional query filter
         """
-        search_body = {
-            "query": query if query else {"match_all": {}},
-            "size": size
-        }
-        
+        search_body = {"query": query if query else {"match_all": {}}, "size": size}
+
         response = self.client.search(index=index_name, body=search_body)
         documents = []
         for hit in response["hits"]["hits"]:
@@ -271,8 +260,8 @@ class ESClient:
         return documents
 
     def get_document_ids(
-        self, 
-        index_name: str, 
+        self,
+        index_name: str,
         size: int = 1000,
         query: dict[str, Any] | None = None,
     ) -> list[str]:
@@ -282,7 +271,7 @@ class ESClient:
             "size": size,
             "_source": False,
         }
-        
+
         response = self.client.search(index=index_name, body=search_body)
         return [hit["_id"] for hit in response["hits"]["hits"]]
 

@@ -118,6 +118,7 @@ export function AccordionOperators({
               Operator.GoogleScholar,
               Operator.ArXiv,
               Operator.PubMed,
+              Operator.BGPT,
               Operator.GitHub,
               Operator.Invoke,
               Operator.WenCai,
@@ -172,8 +173,11 @@ export function PipelineAccordionOperators({
       ...restrictSingleOperatorOnCanvas([Operator.Parser, Operator.Tokenizer]),
     ];
     list.push(Operator.Extractor);
+    if (getOperatorTypeFromId(nodeId) !== Operator.Compilation) {
+      list.push(Operator.Compilation);
+    }
     return list;
-  }, [restrictSingleOperatorOnCanvas]);
+  }, [getOperatorTypeFromId, nodeId, restrictSingleOperatorOnCanvas]);
 
   const chunkerOperators = useMemo(() => {
     return [
@@ -187,6 +191,7 @@ export function PipelineAccordionOperators({
   const showChunker = useMemo(() => {
     return (
       getOperatorTypeFromId(nodeId) !== Operator.Extractor &&
+      getOperatorTypeFromId(nodeId) !== Operator.Compilation &&
       chunkerOperators.length > 0
     );
   }, [chunkerOperators.length, getOperatorTypeFromId, nodeId]);

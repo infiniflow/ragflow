@@ -252,9 +252,7 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
 
     def get_all_drive_ids(self) -> set[str]:
         if self._all_drive_ids_cache is None:
-            self._all_drive_ids_cache = self._get_all_drives_for_user(
-                self.primary_admin_email
-            )
+            self._all_drive_ids_cache = self._get_all_drives_for_user(self.primary_admin_email)
         return set(self._all_drive_ids_cache)
 
     def _get_all_drives_for_user(self, user_email: str) -> set[str]:
@@ -752,9 +750,7 @@ class GoogleDriveConnector(SlimConnectorWithPermSync, CheckpointedConnectorWithP
         if remaining_folders:
             self.logger.warning(f"Some folders/drives were not retrieved. IDs: {remaining_folders}")
 
-    def _adjust_start_for_query(
-        self, start: SecondsSinceUnixEpoch | None
-    ) -> SecondsSinceUnixEpoch | None:
+    def _adjust_start_for_query(self, start: SecondsSinceUnixEpoch | None) -> SecondsSinceUnixEpoch | None:
         """Subtract the configured time buffer from start to create an overlap window for incremental syncs."""
         if not start or start <= 0:
             return start
@@ -1227,6 +1223,7 @@ def yield_all_docs_from_checkpoint_connector(
 if __name__ == "__main__":
     import time
     from common.data_source.google_util.util import get_credentials_from_env
+
     logging.basicConfig(level=logging.DEBUG)
 
     try:

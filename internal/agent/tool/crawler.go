@@ -31,18 +31,27 @@ import (
 	"golang.org/x/net/html"
 )
 
-const crawlerToolName = "crawler"
+const crawlerToolName = "web_crawler"
 
-const crawlerToolDescription = "Fetches a web page and returns its extracted text content and links."
+const crawlerToolDescription = "Crawls a web page and returns its extracted text content and links."
 
-// crawlerArgs is the JSON shape the model sends in. max_depth and
-// max_pages are accepted for API symmetry with the Python tool, but
-// the current implementation only supports depth=0 (single page
-// fetch).
+// crawlerArgs is the JSON shape the model sends in. query is the
+// Python-compatible argument name; url is accepted for older Go
+// callers. max_depth and max_pages are accepted for API symmetry with
+// earlier Go callers, but the current implementation only supports
+// depth=0 (single page fetch).
 type crawlerArgs struct {
-	URL      string `json:"url"`
+	Query    string `json:"query"`
+	URL      string `json:"url,omitempty"`
 	MaxDepth int    `json:"max_depth,omitempty"`
 	MaxPages int    `json:"max_pages,omitempty"`
+}
+
+func (a crawlerArgs) targetURL() string {
+	if url := strings.TrimSpace(a.Query); url != "" {
+		return url
+	}
+	return strings.TrimSpace(a.URL)
 }
 
 // crawlerResult is the JSON envelope returned to the model. The shape
@@ -119,9 +128,9 @@ func (c *CrawlerTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		Name: crawlerToolName,
 		Desc: crawlerToolDescription,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"url": {
+			"query": {
 				Type:     schema.String,
-				Desc:     "The URL to fetch. Must be http or https.",
+				Desc:     "The absolute URL to crawl. Must include an http:// or https:// scheme.",
 				Required: true,
 			},
 			"max_depth": {
@@ -159,20 +168,21 @@ func (c *CrawlerTool) InvokableRun(ctx context.Context, argumentsInJSON string, 
 			fmt.Errorf("crawler: parse arguments: %w", err)
 	}
 
-	if strings.TrimSpace(args.URL) == "" {
-		return crawlerStubResult(crawlerResult{Error: "url is required"}),
-			errors.New("crawler: empty url")
+	targetURL := args.targetURL()
+	if targetURL == "" {
+		return crawlerStubResult(crawlerResult{Error: "query is required"}),
+			errors.New("crawler: empty query")
 	}
-	if !strings.HasPrefix(args.URL, "http://") && !strings.HasPrefix(args.URL, "https://") {
-		return crawlerStubResult(crawlerResult{URL: args.URL, Error: "url must be http or https"}),
-			fmt.Errorf("crawler: unsupported url scheme: %s", args.URL)
+	if !strings.HasPrefix(targetURL, "http://") && !strings.HasPrefix(targetURL, "https://") {
+		return crawlerStubResult(crawlerResult{URL: targetURL, Error: "url must be http or https"}),
+			fmt.Errorf("crawler: unsupported url scheme: %s", targetURL)
 	}
 	// Reject max_depth > 0 BEFORE the SSRF guard: the guard performs a
 	// DNS lookup that may be slow / fail in CI, and a depth-0 caller
 	// asking for max_depth=10 should be rejected on a structural
 	// problem first.
 	if args.MaxDepth > 0 {
-		return crawlerStubResult(crawlerResult{URL: args.URL, Error: ErrCrawlerDepthUnsupported.Error()}),
+		return crawlerStubResult(crawlerResult{URL: targetURL, Error: ErrCrawlerDepthUnsupported.Error()}),
 			ErrCrawlerDepthUnsupported
 	}
 	// SSRF guard + DNS-rebinding pinning. c.resolve validates the URL
@@ -184,29 +194,29 @@ func (c *CrawlerTool) InvokableRun(ctx context.Context, argumentsInJSON string, 
 	// IP we resolved here) AND TLS SNI / cert verification continue to
 	// target the validated hostname. Rewriting the URL host to the IP
 	// would have broken HTTPS, so the pinning happens in the dialer.
-	host, pinnedIP, resolveErr := c.resolve(args.URL)
+	host, pinnedIP, resolveErr := c.resolve(targetURL)
 	if resolveErr != nil {
-		return crawlerStubResult(crawlerResult{URL: args.URL, Error: resolveErr.Error()}), resolveErr
+		return crawlerStubResult(crawlerResult{URL: targetURL, Error: resolveErr.Error()}), resolveErr
 	}
 
-	resp, err := c.helper.DoPinned(ctx, http.MethodGet, args.URL, "", "", nil, host, pinnedIP)
+	resp, err := c.helper.DoPinned(ctx, http.MethodGet, targetURL, "", "", nil, host, pinnedIP)
 	if err != nil {
-		return crawlerStubResult(crawlerResult{URL: args.URL, Error: err.Error()}), err
+		return crawlerStubResult(crawlerResult{URL: targetURL, Error: err.Error()}), err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return crawlerStubResult(crawlerResult{URL: args.URL, Status: resp.StatusCode, Error: "read body: " + err.Error()}),
+		return crawlerStubResult(crawlerResult{URL: targetURL, Status: resp.StatusCode, Error: "read body: " + err.Error()}),
 			fmt.Errorf("crawler: read body: %w", err)
 	}
 
 	page, err := extractPage(body)
 	if err != nil {
-		return crawlerStubResult(crawlerResult{URL: args.URL, Status: resp.StatusCode, Error: err.Error()}),
+		return crawlerStubResult(crawlerResult{URL: targetURL, Status: resp.StatusCode, Error: err.Error()}),
 			fmt.Errorf("crawler: extract: %w", err)
 	}
-	page.URL = args.URL
+	page.URL = targetURL
 	page.Status = resp.StatusCode
 
 	return crawlerJSON(page)

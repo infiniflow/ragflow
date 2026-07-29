@@ -20,7 +20,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
+	"ragflow/internal/entity"
 	"strings"
 	"time"
 
@@ -28,15 +30,18 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/server"
 	"ragflow/internal/storage"
-	"ragflow/internal/utility"
 )
 
 // SystemService system service
-type SystemService struct{}
+type SystemService struct {
+	systemSettingsDAO *dao.SystemSettingsDAO
+}
 
 // NewSystemService create system service
 func NewSystemService() *SystemService {
-	return &SystemService{}
+	return &SystemService{
+		systemSettingsDAO: dao.NewSystemSettingsDAO(),
+	}
 }
 
 // ConfigResponse system configuration response
@@ -61,6 +66,7 @@ func (s *SystemService) GetConfig() (*ConfigResponse, error) {
 // VersionResponse version response
 type VersionResponse struct {
 	Version string `json:"version"`
+	Type    string `json:"type"`
 }
 
 type HealthzMeta struct {
@@ -69,19 +75,22 @@ type HealthzMeta struct {
 }
 
 type HealthzResponse struct {
-	DB        string                 `json:"db"`
-	Redis     string                 `json:"redis"`
-	DocEngine string                 `json:"doc_engine"`
-	Storage   string                 `json:"storage"`
-	Status    string                 `json:"status"`
-	Meta      map[string]HealthzMeta `json:"_meta,omitempty"`
+	DB           string                 `json:"db"`
+	Redis        string                 `json:"redis"`
+	DocEngine    string                 `json:"doc_engine"`
+	Storage      string                 `json:"storage"`
+	MessageQueue string                 `json:"message_queue"`
+	Status       string                 `json:"status"`
+	Meta         map[string]HealthzMeta `json:"_meta,omitempty"`
 }
 
 // GetVersion get RAGFlow version
 func (s *SystemService) GetVersion() (*VersionResponse, error) {
-	version := utility.GetRAGFlowVersion()
+	version := common.GetRAGFlowVersion()
+	versionType := common.GetRAGFlowType()
 	return &VersionResponse{
 		Version: version,
+		Type:    versionType,
 	}, nil
 }
 
@@ -306,8 +315,7 @@ func timedHealthCheck(check func() error) (bool, HealthzMeta) {
 	return true, meta
 }
 
-// Healthz runs lightweight dependency checks for /api/v1/system/healthz.
-func (s *SystemService) Healthz(ctx context.Context) (*HealthzResponse, bool) {
+func GetComponentsHealthz(ctx context.Context) (*HealthzResponse, bool) {
 	meta := map[string]HealthzMeta{}
 
 	dbOK, dbMeta := timedHealthCheck(func() error {
@@ -357,16 +365,170 @@ func (s *SystemService) Healthz(ctx context.Context) (*HealthzResponse, bool) {
 		meta["storage"] = storageMeta
 	}
 
-	allOK := dbOK && redisOK && docOK && storageOK
+	messageQueueOK, messageQueueMeta := timedHealthCheck(func() error {
+
+		msgQueueEngine := engine.GetMessageQueueEngine()
+		if msgQueueEngine == nil {
+			return fmt.Errorf("message queue is not initialized")
+		}
+
+		status := msgQueueEngine.CheckStatus()
+
+		if msgQueueEngine == nil || status != "CONNECTED" {
+			return fmt.Errorf("message queue is not healthy")
+		}
+		return nil
+	})
+	if !messageQueueOK {
+		meta["message_queue"] = messageQueueMeta
+	}
+
+	allOK := dbOK && redisOK && docOK && storageOK && messageQueueOK
 	result := &HealthzResponse{
-		DB:        okNok(dbOK),
-		Redis:     okNok(redisOK),
-		DocEngine: okNok(docOK),
-		Storage:   okNok(storageOK),
-		Status:    okNok(allOK),
+		DB:           okNok(dbOK),
+		Redis:        okNok(redisOK),
+		DocEngine:    okNok(docOK),
+		Storage:      okNok(storageOK),
+		MessageQueue: okNok(messageQueueOK),
+		Status:       okNok(allOK),
 	}
 	if len(meta) > 0 {
 		result.Meta = meta
 	}
 	return result, allOK
+}
+
+// Healthz runs lightweight dependency checks for /api/v1/system/healthz.
+func (s *SystemService) Healthz(ctx context.Context) (*HealthzResponse, bool) {
+	return GetComponentsHealthz(ctx)
+}
+
+// ListAllVariables list all variables
+// Returns all system settings from database
+func (s *SystemService) ListAllVariables(ctx context.Context) ([]map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetAll(ctx, dao.DB)
+	if err != nil {
+		return nil, err
+	}
+
+	return common.FormatSystemSettings(settings), nil
+}
+
+func (s *SystemService) ShowVariable(ctx context.Context, varName string) ([]map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(settings) == 0 {
+		settings, err = s.systemSettingsDAO.GetByNamePrefix(ctx, dao.DB, varName)
+		if err != nil {
+			return nil, err
+		}
+		if len(settings) == 0 {
+			return nil, fmt.Errorf("can't get setting: %s", varName)
+		}
+	}
+	return common.FormatSystemSettings(settings), nil
+}
+
+// SetVariable set variable
+// Creates or updates a system setting
+// If the setting exists, updates it; otherwise creates a new one
+func (s *SystemService) SetVariable(ctx context.Context, varName, varValue string) error {
+	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
+	if err != nil {
+		return err
+	}
+
+	if len(settings) == 1 {
+		setting := &settings[0]
+		if err = common.ValidateSystemSettingValue(*setting, varValue); err != nil {
+			return err
+		}
+		setting.Value = varValue
+		return s.systemSettingsDAO.UpdateByName(ctx, dao.DB, varName, setting)
+	} else if len(settings) > 1 {
+		return fmt.Errorf("can't update more than 1 setting: %s", varName)
+	}
+
+	dataType := common.InferSystemSettingDataType(varName)
+	newSetting := &entity.SystemSettings{
+		Name:     varName,
+		Value:    varValue,
+		Source:   "admin",
+		DataType: dataType,
+	}
+	if err = common.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
+		return err
+	}
+	return s.systemSettingsDAO.Create(ctx, dao.DB, newSetting)
+}
+
+// Config methods
+
+// ListAllConfigs list all configs
+// Returns all service configurations from the config file
+func (s *SystemService) ListAllConfigs() ([]map[string]interface{}, error) {
+	result := server.GetAllConfigs()
+	return result, nil
+}
+
+// Environment methods
+
+// ListEnvironments list all environments
+func (s *SystemService) ListEnvironments() ([]map[string]interface{}, error) {
+	result := make([]map[string]interface{}, 0)
+
+	// DOC_ENGINE
+	docEngine := common.GetEnv(common.EnvDocEngine)
+	if docEngine == "" {
+		docEngine = "elasticsearch"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DOC_ENGINE",
+		"value": docEngine,
+	})
+
+	// DEFAULT_SUPERUSER_EMAIL
+	defaultSuperuserEmail := common.GetEnvSmall(common.EnvDefaultSuperuserEmail)
+	if defaultSuperuserEmail == "" {
+		defaultSuperuserEmail = "admin@ragflow.io"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DEFAULT_SUPERUSER_EMAIL",
+		"value": defaultSuperuserEmail,
+	})
+
+	// DB_TYPE
+	dbType := common.GetEnvSmall(common.EnvDBType)
+	if dbType == "" {
+		dbType = "mysql"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DB_TYPE",
+		"value": dbType,
+	})
+
+	// DEVICE
+	device := common.GetEnvSmall(common.EnvDevice)
+	if device == "" {
+		device = "cpu"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "DEVICE",
+		"value": device,
+	})
+
+	// STORAGE_IMPL
+	storageImpl := common.GetEnvSmall(common.EnvStorageImpl)
+	if storageImpl == "" {
+		storageImpl = "MINIO"
+	}
+	result = append(result, map[string]interface{}{
+		"env":   "STORAGE_IMPL",
+		"value": storageImpl,
+	})
+
+	return result, nil
 }

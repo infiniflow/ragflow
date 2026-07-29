@@ -37,6 +37,11 @@ type NatsEngine struct {
 	jetStream jetstream.JetStream
 	stream    jetstream.Stream
 	consumer  jetstream.Consumer
+
+	// dataset-level compile consumer (§11) state.
+	knowledgeCompileStream   jetstream.Stream
+	knowledgeCompileConsumer jetstream.Consumer
+	kv                       jetstream.KeyValue
 }
 
 func NewNatsEngine(host string, port int) *NatsEngine {
@@ -48,15 +53,16 @@ func NewNatsEngine(host string, port int) *NatsEngine {
 
 func (n *NatsEngine) Init() error {
 	var err error
-	n.nc, err = nats.Connect(nats.DefaultURL)
+	natsURL := fmt.Sprintf("nats://%s:%d", n.host, n.port)
+	n.nc, err = nats.Connect(natsURL)
 	if err != nil {
-		return fmt.Errorf("failed to connect to NATS: %w", err)
+		return fmt.Errorf("failed to connect to NATS at %s: %w", natsURL, err)
 	}
 
 	n.jetStream, err = jetstream.New(n.nc)
 	if err != nil {
 		n.nc.Close()
-		return fmt.Errorf("failed to create JetStream context: %w", err)
+		return fmt.Errorf("failed to create JetStream context at %s: %w", natsURL, err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -73,19 +79,19 @@ func (n *NatsEngine) Init() error {
 
 	n.stream, err = n.jetStream.CreateStream(ctx, streamCfg)
 	if err != nil {
-		if err.Error() != "stream already exists" {
+		if !strings.Contains(err.Error(), "already exists") {
 			n.nc.Close()
-			return fmt.Errorf("fail to create stream: %w", err)
+			return fmt.Errorf("fail to create stream at %s: %w", natsURL, err)
 		}
 
 		common.Info("NATS stream already exists, use existing stream")
 		n.stream, err = n.jetStream.Stream(ctx, "RAGFLOW_TASKS")
 		if err != nil {
 			n.nc.Close()
-			return fmt.Errorf("fail to get existing stream: %w", err)
+			return fmt.Errorf("fail to get existing stream at %s: %w", natsURL, err)
 		}
 	} else {
-		common.Info("NATS stream create successfully")
+		common.Info(fmt.Sprintf("NATS stream create successfully at %s", natsURL))
 	}
 
 	return nil
@@ -122,18 +128,18 @@ func (n *NatsEngine) ShowMessageQueue() (map[string]string, error) {
 	result["message_count"] = strconv.FormatUint(info.State.Msgs, 10)
 
 	consumer, err := n.stream.Consumer(ctx, "RAGFLOW_CONSUMER")
-	if err != nil {
-		return nil, fmt.Errorf("failed to get existing consumer: %w", err)
+	if err == nil {
+		var consumerInfo *jetstream.ConsumerInfo
+		consumerInfo, err = consumer.Info(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get consumer info: %w", err)
+		}
+		result["pending_count"] = strconv.FormatUint(consumerInfo.NumPending, 10)
+		result["waiting_count"] = strconv.Itoa(consumerInfo.NumWaiting)
+		result["ack_pending_count"] = strconv.Itoa(consumerInfo.NumAckPending)
+		result["redelivered_count"] = strconv.Itoa(consumerInfo.NumRedelivered)
 	}
 
-	consumerInfo, err := consumer.Info(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get consumer info: %w", err)
-	}
-	result["pending_count"] = strconv.FormatUint(consumerInfo.NumPending, 10)
-	result["waiting_count"] = strconv.Itoa(consumerInfo.NumWaiting)
-	result["ack_pending_count"] = strconv.Itoa(consumerInfo.NumAckPending)
-	result["redelivered_count"] = strconv.Itoa(consumerInfo.NumRedelivered)
 	return result, nil
 }
 
@@ -181,6 +187,9 @@ func (n *NatsEngine) ListMessages(messageType string, pending bool) ([]map[strin
 }
 
 func (n *NatsEngine) InitConsumer(subject string) error {
+	if n.stream == nil {
+		return fmt.Errorf("NATS stream is nil, engine not properly initialized")
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -218,6 +227,11 @@ func (n *NatsEngine) GetMessages(messageCount int) ([]common.TaskHandle, error) 
 	return resultMessages, nil
 }
 
+func (n *NatsEngine) CheckStatus() string {
+	n.nc.Stats()
+	return n.nc.Status().String()
+}
+
 type NatsMessageHandle struct {
 	message jetstream.Msg
 }
@@ -243,4 +257,8 @@ func (m *NatsMessageHandle) Ack() error {
 
 func (m *NatsMessageHandle) Nack() error {
 	return m.message.Nak()
+}
+
+func (m *NatsMessageHandle) InProgress() error {
+	return m.message.InProgress()
 }

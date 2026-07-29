@@ -103,7 +103,7 @@ export const WorkFlowTimeline = ({
     data: traceData,
     setMessageId,
     setISStopFetchTrace,
-  } = useFetchMessageTrace(canvasId);
+  } = useFetchMessageTrace(canvasId, isShare);
 
   useEffect(() => {
     setMessageId(currentMessageId);

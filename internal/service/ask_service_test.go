@@ -32,7 +32,7 @@ type fakeRetriever struct {
 	err    error
 }
 
-func (r *fakeRetriever) RetrievalTest(req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error) {
+func (r *fakeRetriever) RetrievalTest(ctx context.Context, req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error) {
 	if r.err != nil {
 		return nil, r.err
 	}
@@ -111,6 +111,21 @@ func TestAskService_StreamingFlow(t *testing.T) {
 	}
 	if !hasAnswer || !hasFinal {
 		t.Errorf("expected answer+final deltas, got %+v", deltas)
+	}
+}
+
+func TestAskService_EmptyLLMStreamReturnsError(t *testing.T) {
+	ret := &fakeRetriever{result: &RetrievalTestResponse{
+		Chunks: []map[string]interface{}{
+			{"id": "c1", "content_with_weight": "test chunk", "docnm_kwd": "Doc", "kb_id": "kb1", "doc_id": "d1"},
+		},
+	}}
+	llm := &fakeStreamLLM{}
+	svc := NewAskService(ret, nil, 0, 0)
+	deltas := collect(svc.Stream(context.Background(), llm, "user1", "test", []string{"kb1"}))
+
+	if len(deltas) != 1 || deltas[0].Kind != AskDeltaError || !strings.Contains(deltas[0].Value, "LLM call failed") {
+		t.Fatalf("expected LLM error delta, got %+v", deltas)
 	}
 }
 

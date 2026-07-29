@@ -128,7 +128,7 @@ func TestMultiAgent_PlanExecute(t *testing.T) {
 	reviser := &reviserModel{successOnCall: 2} // needs 2 passes
 
 	sg := graph.NewStateGraph(&planExecState{})
-	sg.NodeTriggerMode = types.NodeTriggerAnyPredecessor
+	sg.SetNodeTriggerMode(types.NodeTriggerAnyPredecessor)
 
 	// Planner node.
 	sg.AddNode("planner", func(ctx context.Context, state interface{}) (interface{}, error) {
@@ -426,7 +426,7 @@ func TestMultiAgent_ConcurrentExecution(t *testing.T) {
 			}()
 
 			sg := graph.NewStateGraph(&planExecState{})
-			sg.NodeTriggerMode = types.NodeTriggerAnyPredecessor
+			sg.SetNodeTriggerMode(types.NodeTriggerAnyPredecessor)
 
 			// Simple linear chain: A → B → C for each agent ID.
 			prefix := fmt.Sprintf("id%d", id)

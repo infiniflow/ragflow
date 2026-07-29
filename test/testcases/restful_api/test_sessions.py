@@ -19,7 +19,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32, SESSION_WITH_CHAT_NAME_LIMIT
+from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32, IS_GO_PROXY, SESSION_WITH_CHAT_NAME_LIMIT
+from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import is_sorted
 
@@ -97,7 +98,7 @@ def test_session_create_name_validation(rest_client, create_chat):
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 102, payload
-    assert "`name` can not be empty." in payload["message"], payload
+    assert "`name` can not be empty" in payload["message"], payload
 
 
 @pytest.mark.p2
@@ -113,13 +114,13 @@ def test_session_update_blocks_messages_and_reference(rest_client, create_chat):
     assert msg_res.status_code == 200
     msg_payload = msg_res.json()
     assert msg_payload["code"] == 102, msg_payload
-    assert "`messages` cannot be changed." in msg_payload["message"], msg_payload
+    assert "`messages` cannot be changed" in msg_payload["message"], msg_payload
 
     ref_res = rest_client.patch(f"/chats/{chat_id}/sessions/{session_id}", json={"reference": []})
     assert ref_res.status_code == 200
     ref_payload = ref_res.json()
     assert ref_payload["code"] == 102, ref_payload
-    assert "`reference` cannot be changed." in ref_payload["message"], ref_payload
+    assert "`reference` cannot be changed" in ref_payload["message"], ref_payload
 
 
 @pytest.mark.p1
@@ -128,9 +129,7 @@ def test_session_create_requires_auth_and_invalid_chat_contract():
         res = client.post("/chats/chat_id/sessions", json={"name": "x"})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
-
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2
@@ -147,7 +146,7 @@ def test_session_create_validation_and_deleted_chat_contract(rest_client, create
     assert invalid_chat_res.status_code == 200
     invalid_chat_payload = invalid_chat_res.json()
     assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert invalid_chat_payload["message"] == "No authorization.", invalid_chat_payload
+    assert invalid_chat_payload["message"] == "no authorization", invalid_chat_payload
 
     for scenario_name, payload in (
         ("valid", {"name": "valid_name"}),
@@ -164,7 +163,7 @@ def test_session_create_validation_and_deleted_chat_contract(rest_client, create
             assert body["data"]["chat_id"] == chat_id, (scenario_name, body)
         else:
             assert body["code"] == 102, (scenario_name, body)
-            assert body["message"] == "`name` can not be empty.", (scenario_name, body)
+            assert body["message"] == "`name` can not be empty", (scenario_name, body)
 
     duplicate_first = rest_client.post(f"/chats/{chat_id}/sessions", json={"name": "duplicated_name"}).json()
     duplicate_second = rest_client.post(f"/chats/{chat_id}/sessions", json={"name": "duplicated_name"}).json()
@@ -195,7 +194,7 @@ def test_session_create_validation_and_deleted_chat_contract(rest_client, create
     assert create_after_delete.status_code == 200
     create_after_delete_payload = create_after_delete.json()
     assert create_after_delete_payload["code"] == 109, create_after_delete_payload
-    assert create_after_delete_payload["message"] == "No authorization.", create_after_delete_payload
+    assert create_after_delete_payload["message"] == "no authorization", create_after_delete_payload
 
 
 @pytest.mark.p2
@@ -229,14 +228,13 @@ def test_session_delete_requires_auth_and_invalid_target_contract(rest_client, c
         res = client.delete(f"/chats/{chat_id}/sessions", json={"ids": [session_id]})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
     invalid_chat_res = rest_client.delete("/chats/invalid_chat_assistant_id/sessions", json={"ids": [session_id]})
     assert invalid_chat_res.status_code == 200
     invalid_chat_payload = invalid_chat_res.json()
     assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert invalid_chat_payload["message"] == "No authorization.", invalid_chat_payload
+    assert invalid_chat_payload["message"] == "no authorization", invalid_chat_payload
 
 
 @pytest.mark.p2
@@ -322,7 +320,7 @@ def test_session_delete_error_and_repeat_contract(rest_client, create_chat):
         assert f"The chat doesn't own the session {session_id}" in second_payload["message"], second_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_session_delete_concurrent_and_bulk_contract(rest_client, create_chat):
     concurrent_chat_id, concurrent_sessions = _seed_sessions(rest_client, create_chat, "delete_concurrent", count=20)
 
@@ -357,8 +355,7 @@ def test_session_list_requires_auth_and_invalid_target_contract():
         res = client.get("/chats/chat_id/sessions")
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
 
 @pytest.mark.p2
@@ -397,7 +394,7 @@ def test_session_list_filter_and_deleted_chat_contract(rest_client, create_chat)
     assert invalid_chat_res.status_code == 200
     invalid_chat_payload = invalid_chat_res.json()
     assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert invalid_chat_payload["message"] == "No authorization.", invalid_chat_payload
+    assert invalid_chat_payload["message"] == "no authorization", invalid_chat_payload
 
     delete_chat_res = rest_client.delete("/chats", json={"ids": [chat_id]})
     assert delete_chat_res.status_code == 200
@@ -408,7 +405,7 @@ def test_session_list_filter_and_deleted_chat_contract(rest_client, create_chat)
     assert deleted_list_res.status_code == 200
     deleted_list_payload = deleted_list_res.json()
     assert deleted_list_payload["code"] == 109, deleted_list_payload
-    assert deleted_list_payload["message"] == "No authorization.", deleted_list_payload
+    assert deleted_list_payload["message"] == "no authorization", deleted_list_payload
 
 
 @pytest.mark.p2
@@ -495,14 +492,13 @@ def test_session_update_requires_auth_and_invalid_target_contract(rest_client, c
         res = client.patch(f"/chats/{chat_id}/sessions/{session_id}", json={"name": "x"})
         assert res.status_code == 401, (scenario_name, res.text)
         payload = res.json()
-        assert payload["code"] == 401, (scenario_name, payload)
-        assert payload["message"] == "<Unauthorized '401: Unauthorized'>", (scenario_name, payload)
+        assert_auth_error(payload, scenario_name)
 
     invalid_chat_res = rest_client.patch(f"/chats/{INVALID_ID_32}/sessions/{session_id}", json={"name": "x"})
     assert invalid_chat_res.status_code == 200
     invalid_chat_payload = invalid_chat_res.json()
     assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert invalid_chat_payload["message"] == "No authorization.", invalid_chat_payload
+    assert invalid_chat_payload["message"] == "no authorization", invalid_chat_payload
 
     empty_session_res = rest_client.patch(f"/chats/{chat_id}/sessions/", json={"name": "x"})
     assert empty_session_res.status_code == 200
@@ -524,8 +520,8 @@ def test_session_update_name_and_param_contract(rest_client, create_chat):
 
     for scenario_name, payload, expected_code, expected_name_or_message in (
         ("valid", {"name": "valid_name"}, 0, "valid_name"),
-        ("empty", {"name": ""}, 102, "`name` can not be empty."),
-        ("numeric", {"name": 1}, 102, "`name` can not be empty."),
+        ("empty", {"name": ""}, 102, "`name` can not be empty"),
+        ("numeric", {"name": 1}, 102, "`name` can not be empty"),
         ("duplicate", {"name": "duplicated_name"}, 0, "duplicated_name"),
         ("case insensitive upper", {"name": "CASE INSENSITIVE UPDATE"}, 0, "CASE INSENSITIVE UPDATE"),
         ("case insensitive lower", {"name": "case insensitive update"}, 0, "case insensitive update"),
@@ -556,7 +552,7 @@ def test_session_update_name_and_param_contract(rest_client, create_chat):
     assert update_after_delete_res.status_code == 200
     update_after_delete_payload = update_after_delete_res.json()
     assert update_after_delete_payload["code"] == 109, update_after_delete_payload
-    assert update_after_delete_payload["message"] == "No authorization.", update_after_delete_payload
+    assert update_after_delete_payload["message"] == "no authorization", update_after_delete_payload
 
 
 @pytest.mark.p2
@@ -591,7 +587,8 @@ def test_chat_recommendation_requires_question(rest_client):
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 101, payload
-    assert "required argument are missing: question" in payload["message"], payload
+    expected_message = "question is required" if IS_GO_PROXY else "required argument are missing: question"
+    assert expected_message in payload["message"], payload
 
 
 @pytest.mark.p2
@@ -604,12 +601,15 @@ def test_related_questions_compatibility_requires_auth(rest_client_noauth):
     )
     assert res.status_code == 200
     payload = res.json()
-    assert payload["code"] == 102, payload
-    assert payload["message"].strip() in {
-        "Authorization is not valid!",
-        'Authentication error: API key is invalid!"',
-        "Authentication error: API key is invalid!",
-    }, payload
+    if IS_GO_PROXY:
+        assert_auth_error(payload, "invalid token")
+    else:
+        assert payload["code"] == 102, payload
+        assert payload["message"].strip() in {
+            "Authorization is not valid!",
+            'Authentication error: API key is invalid!"',
+            "Authentication error: API key is invalid!",
+        }, payload
 
 
 @pytest.mark.p2
@@ -677,7 +677,7 @@ def test_chat_completion_nonstream_without_chat(rest_client):
     assert "answer" in completion_payload["data"], completion_payload
 
 
-@pytest.mark.p2
+@pytest.mark.p3
 def test_chat_completion_stream_events(rest_client, create_chat):
     chat_id = create_chat("restful_completion_stream_chat")
     stream_res = rest_client.post(
@@ -759,4 +759,4 @@ def test_chat_completion_validation_errors(rest_client, create_chat):
     assert invalid_chat.status_code == 200
     invalid_chat_payload = invalid_chat.json()
     assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert "No authorization." in invalid_chat_payload["message"], invalid_chat_payload
+    assert "no authorization" in invalid_chat_payload["message"], invalid_chat_payload

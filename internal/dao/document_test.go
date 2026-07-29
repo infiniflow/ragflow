@@ -35,6 +35,8 @@ func setupDocumentTestDB(t *testing.T) *gorm.DB {
 	}
 	if err := db.AutoMigrate(
 		&entity.Document{},
+		&entity.Knowledgebase{},
+		&entity.Tenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -50,14 +52,14 @@ func pushDocDB(t *testing.T, testDB *gorm.DB) {
 
 func TestDocumentGetByIDs_Success(t *testing.T) {
 	db := setupDocumentTestDB(t)
-	pushDocDB(t, db)
 
 	db.Create(&entity.Document{ID: "doc1", KbID: "kb1", Name: sp("Doc 1"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}})
 	db.Create(&entity.Document{ID: "doc2", KbID: "kb1", Name: sp("Doc 2"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}})
 	db.Create(&entity.Document{ID: "doc3", KbID: "kb2", Name: sp("Doc 3"), CreatedBy: "user2", ParserConfig: entity.JSONMap{}})
 
+	ctx := t.Context()
 	dao := NewDocumentDAO()
-	docs, err := dao.GetByIDs([]string{"doc1", "doc3"})
+	docs, err := dao.GetByIDs(ctx, db, []string{"doc1", "doc3"})
 	if err != nil {
 		t.Fatalf("GetByIDs failed: %v", err)
 	}
@@ -76,10 +78,9 @@ func TestDocumentGetByIDs_Success(t *testing.T) {
 
 func TestDocumentGetByIDs_EmptyIDs(t *testing.T) {
 	db := setupDocumentTestDB(t)
-	pushDocDB(t, db)
-
+	ctx := t.Context()
 	dao := NewDocumentDAO()
-	docs, err := dao.GetByIDs([]string{})
+	docs, err := dao.GetByIDs(ctx, db, []string{})
 	if err != nil {
 		t.Fatalf("GetByIDs failed: %v", err)
 	}
@@ -90,10 +91,9 @@ func TestDocumentGetByIDs_EmptyIDs(t *testing.T) {
 
 func TestDocumentGetByIDs_NilIDs(t *testing.T) {
 	db := setupDocumentTestDB(t)
-	pushDocDB(t, db)
-
+	ctx := t.Context()
 	dao := NewDocumentDAO()
-	docs, err := dao.GetByIDs(nil)
+	docs, err := dao.GetByIDs(ctx, db, nil)
 	if err != nil {
 		t.Fatalf("GetByIDs failed: %v", err)
 	}
@@ -104,12 +104,11 @@ func TestDocumentGetByIDs_NilIDs(t *testing.T) {
 
 func TestDocumentGetByIDs_NoMatch(t *testing.T) {
 	db := setupDocumentTestDB(t)
-	pushDocDB(t, db)
 
 	db.Create(&entity.Document{ID: "doc1", KbID: "kb1", Name: sp("Doc 1"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}})
-
+	ctx := t.Context()
 	dao := NewDocumentDAO()
-	docs, err := dao.GetByIDs([]string{"nonexistent"})
+	docs, err := dao.GetByIDs(ctx, db, []string{"nonexistent"})
 	if err != nil {
 		t.Fatalf("GetByIDs failed: %v", err)
 	}
@@ -120,7 +119,6 @@ func TestDocumentGetByIDs_NoMatch(t *testing.T) {
 
 func TestDocumentGetByKBIDOrdersByCreateTime(t *testing.T) {
 	db := setupDocumentTestDB(t)
-	pushDocDB(t, db)
 
 	createTime10 := int64(10)
 	createTime20 := int64(20)
@@ -128,8 +126,9 @@ func TestDocumentGetByKBIDOrdersByCreateTime(t *testing.T) {
 	db.Create(&entity.Document{ID: "doc-later", KbID: "kb1", Name: sp("Doc Later"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}, BaseModel: entity.BaseModel{CreateTime: &createTime30}})
 	db.Create(&entity.Document{ID: "doc-other", KbID: "kb2", Name: sp("Doc Other"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}, BaseModel: entity.BaseModel{CreateTime: &createTime10}})
 	db.Create(&entity.Document{ID: "doc-earlier", KbID: "kb1", Name: sp("Doc Earlier"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}, BaseModel: entity.BaseModel{CreateTime: &createTime20}})
-
-	docs, total, err := NewDocumentDAO().GetByKBID("kb1")
+	ctx := t.Context()
+	dao := NewDocumentDAO()
+	docs, total, err := dao.GetByKBID(ctx, db, "kb1")
 	if err != nil {
 		t.Fatalf("GetByKBID failed: %v", err)
 	}
@@ -146,12 +145,12 @@ func TestDocumentGetByKBIDOrdersByCreateTime(t *testing.T) {
 
 func TestDocumentGetByDocumentIDAndDatasetIDUsesKBID(t *testing.T) {
 	db := setupDocumentTestDB(t)
-	pushDocDB(t, db)
 
 	db.Create(&entity.Document{ID: "doc1", KbID: "kb1", Name: sp("Doc 1"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}})
 	db.Create(&entity.Document{ID: "doc1-other", KbID: "kb2", Name: sp("Doc 2"), CreatedBy: "user1", ParserConfig: entity.JSONMap{}})
-
-	doc, err := NewDocumentDAO().GetByDocumentIDAndDatasetID("doc1", "kb1")
+	ctx := t.Context()
+	dao := NewDocumentDAO()
+	doc, err := dao.GetByDocumentIDAndDatasetID(ctx, db, "doc1", "kb1")
 	if err != nil {
 		t.Fatalf("GetByDocumentIDAndDatasetID failed: %v", err)
 	}
@@ -159,8 +158,66 @@ func TestDocumentGetByDocumentIDAndDatasetIDUsesKBID(t *testing.T) {
 		t.Fatalf("unexpected document: id=%s kb_id=%s", doc.ID, doc.KbID)
 	}
 
-	if _, err := NewDocumentDAO().GetByDocumentIDAndDatasetID("doc1", "kb2"); err == nil {
+	if _, err = dao.GetByDocumentIDAndDatasetID(ctx, db, "doc1", "kb2"); err == nil {
 		t.Fatal("expected no match when document does not belong to dataset")
+	}
+}
+
+func TestDocumentGetChunkingConfigScansParserConfig(t *testing.T) {
+	db := setupDocumentTestDB(t)
+
+	if err := db.Create(&entity.Tenant{
+		ID:        "tenant1",
+		LLMID:     "llm1",
+		EmbdID:    "embd1",
+		ASRID:     "asr1",
+		Img2TxtID: "img2txt1",
+		RerankID:  "rerank1",
+		ParserIDs: "naive",
+	}).Error; err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+	if err := db.Create(&entity.Knowledgebase{
+		ID:           "kb1",
+		TenantID:     "tenant1",
+		Name:         "Dataset 1",
+		Language:     sp("English"),
+		EmbdID:       "kb-embd1",
+		Permission:   "me",
+		CreatedBy:    "user1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{},
+	}).Error; err != nil {
+		t.Fatalf("create knowledgebase: %v", err)
+	}
+	if err := db.Create(&entity.Document{
+		ID:           "doc1",
+		KbID:         "kb1",
+		ParserID:     "naive",
+		ParserConfig: entity.JSONMap{"chunk_token_num": float64(128), "delimiter": "\\n"},
+		SourceType:   "local",
+		Type:         "doc",
+		CreatedBy:    "user1",
+		Size:         42,
+		Suffix:       ".txt",
+	}).Error; err != nil {
+		t.Fatalf("create document: %v", err)
+	}
+	ctx := t.Context()
+	dao := NewDocumentDAO()
+	config, err := dao.GetChunkingConfig(ctx, db, "doc1")
+	if err != nil {
+		t.Fatalf("GetChunkingConfig failed: %v", err)
+	}
+	parserConfig, ok := config["parser_config"].(entity.JSONMap)
+	if !ok {
+		t.Fatalf("parser_config type = %T, want entity.JSONMap", config["parser_config"])
+	}
+	if parserConfig["chunk_token_num"] != float64(128) || parserConfig["delimiter"] != "\\n" {
+		t.Fatalf("unexpected parser_config: %#v", parserConfig)
+	}
+	if config["tenant_id"] != "tenant1" || config["embd_id"] != "kb-embd1" {
+		t.Fatalf("unexpected joined config: %#v", config)
 	}
 }
 

@@ -78,10 +78,8 @@ app.config["BODY_TIMEOUT"] = int(os.environ.get("QUART_BODY_TIMEOUT", 600))
 app.config["SESSION_PERMANENT"] = False
 app.config["SESSION_TYPE"] = "redis"
 app.config["SESSION_REDIS"] = settings.decrypt_database_config(name="redis")
-app.config["MAX_CONTENT_LENGTH"] = int(
-    os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024)
-)
-app.config['SECRET_KEY'] = settings.get_secret_key()
+app.config["MAX_CONTENT_LENGTH"] = int(os.environ.get("MAX_CONTENT_LENGTH", 1024 * 1024 * 1024))
+app.config["SECRET_KEY"] = settings.get_secret_key()
 app.secret_key = settings.get_secret_key()
 commands.register_commands(app)
 
@@ -148,7 +146,7 @@ def _load_user(auth_types=None):
     auth_types = _normalize_auth_types(auth_types)
     if getattr(g, "user", None) and (not explicit_auth_types or getattr(g, "auth_type", None) in auth_types):
         return g.user
-    
+
     # No Authorization header, try to load user from session cookie if JWT auth is allowed
     authorization = request.headers.get("Authorization")
     if not authorization:
@@ -159,7 +157,7 @@ def _load_user(auth_types=None):
         parts = authorization.split(maxsplit=1)
         if len(parts) < 2:
             logging.warning("Authorization header has invalid bearer format")
-            return _load_user_from_session() if AUTH_JWT in auth_types else None
+            return None
         auth_token = parts[1]
     else:
         auth_token = authorization
@@ -178,10 +176,10 @@ def _load_user(auth_types=None):
                     g.auth_type = AUTH_BETA
                     g.user = user[0]
                     return user[0]
-            g.auth_error_message = 'Authentication error: API key is invalid! '
+            g.auth_error_message = "Authentication error: API key is invalid! "
         except Exception as e_beta:
             logging.warning(f"load_user from beta token got exception {e_beta}")
-            g.auth_error_message = 'Authentication error: API key is invalid!'
+            g.auth_error_message = "Authentication error: API key is invalid!"
 
     # Try JWT decoding
     if AUTH_JWT in auth_types:
@@ -191,21 +189,21 @@ def _load_user(auth_types=None):
 
             if not access_token or not access_token.strip():
                 logging.warning("Authentication attempt with empty access token")
-                return _load_user_from_session()
+                return None
 
             if len(access_token.strip()) < 32:
                 logging.warning(f"Authentication attempt with invalid token format: {len(access_token)} chars")
-                return _load_user_from_session()
+                return None
 
             user = UserService.query(access_token=access_token, status=StatusEnum.VALID.value)
             if user:
                 if not user[0].access_token or not user[0].access_token.strip():
                     logging.warning(f"User {user[0].email} has empty access_token in database")
-                    return _load_user_from_session()
+                    return None
                 g.auth_type = AUTH_JWT
                 g.user = user[0]
                 return user[0]
-            return _load_user_from_session()
+            return None
         except Exception as e_jwt:
             logging.warning(f"load_user from jwt got exception {e_jwt}")
 
@@ -218,7 +216,7 @@ def _load_user(auth_types=None):
                 if user:
                     if not user[0].access_token or not user[0].access_token.strip():
                         logging.warning(f"User {user[0].email} has empty access_token in database")
-                        return _load_user_from_session() if AUTH_JWT in auth_types else None
+                        return None
                     g.auth_type = AUTH_API
                     g.user = user[0]
                     return user[0]
@@ -228,7 +226,7 @@ def _load_user(auth_types=None):
         except Exception as e_api_token:
             logging.warning(f"load_user from api token got exception {e_api_token}")
 
-    return _load_user_from_session() if AUTH_JWT in auth_types else None
+    return None
 
 
 current_user = LocalProxy(_load_user)

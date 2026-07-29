@@ -209,7 +209,7 @@ function CheckboxFormMultiple({
               return (
                 <div
                   key={key}
-                  className="flex flex-col space-y-4 border-b border-border-button pb-4"
+                  className="flex flex-col gap-4 border-b border-border-button pb-4"
                 >
                   <div className="text-text-primary text-sm">{key}</div>
                   <div className="flex flex-col space-y-4">
@@ -223,7 +223,6 @@ function CheckboxFormMultiple({
                               onChange={(e) =>
                                 handleSearchChange(x.field, e.target.value)
                               }
-                              className="h-8"
                             />
                           </div>
                         )}
@@ -249,7 +248,7 @@ function CheckboxFormMultiple({
               return (
                 <FormItem className="space-y-4" key={x.field}>
                   <div>
-                    <div className="flex flex-col items-start justify-between mb-2">
+                    <div className="flex flex-col items-start justify-between gap-2 mb-2">
                       <FormLabel className="text-text-primary text-sm">
                         {x.label}
                       </FormLabel>
@@ -260,7 +259,7 @@ function CheckboxFormMultiple({
                           onChange={(e) =>
                             handleSearchChange(x.field, e.target.value)
                           }
-                          className="h-8 w-full"
+                          rootClassName="w-full"
                         />
                       )}
                     </div>
@@ -287,7 +286,7 @@ function CheckboxFormMultiple({
             })}
         </div>
 
-        <div className="flex justify-end gap-5">
+        <div className="flex justify-end gap-2">
           <Button
             type="button"
             variant={'outline'}

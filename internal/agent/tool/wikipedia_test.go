@@ -24,6 +24,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"ragflow/internal/tokenizer"
 )
 
 func TestWikipedia_BuildURL(t *testing.T) {
@@ -80,14 +82,14 @@ func TestWikipedia_BuildURL(t *testing.T) {
 			if q.Get("action") != "query" {
 				t.Errorf("action = %q, want query", q.Get("action"))
 			}
-			if q.Get("list") != "search" {
-				t.Errorf("list = %q, want search", q.Get("list"))
+			if q.Get("generator") != "search" {
+				t.Errorf("generator = %q, want search", q.Get("generator"))
 			}
 			if q.Get("format") != "json" {
 				t.Errorf("format = %q, want json", q.Get("format"))
 			}
-			if q.Get("srsearch") != tc.query {
-				t.Errorf("srsearch = %q, want %q (raw query, not pre-encoded)", q.Get("srsearch"), tc.query)
+			if q.Get("gsrsearch") != tc.query {
+				t.Errorf("gsrsearch = %q, want %q (raw query, not pre-encoded)", q.Get("gsrsearch"), tc.query)
 			}
 		})
 	}
@@ -96,14 +98,16 @@ func TestWikipedia_BuildURL(t *testing.T) {
 func TestWikipedia_ParseResults(t *testing.T) {
 	t.Parallel()
 
+	var gotUA string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUA = r.Header.Get("User-Agent")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{
 			"query": {
-				"search": [
-					{"title":"RAG","snippet":"<span>rag</span> is ..."},
-					{"title":"Retrieval-augmented generation","snippet":"<b>RAG</b> is ..."}
-				]
+				"pages": {
+					"11": {"index":2,"title":"Retrieval-augmented generation","extract":"RAG is a generation technique.","fullurl":"https://en.wikipedia.org/wiki/Retrieval-augmented_generation"},
+					"10": {"index":1,"title":"RAG","extract":"RAG is an acronym.","fullurl":"https://en.wikipedia.org/wiki/RAG"}
+				}
 			}
 		}`))
 	}))
@@ -119,6 +123,9 @@ func TestWikipedia_ParseResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
+	if !strings.Contains(gotUA, "ragflow") {
+		t.Errorf("User-Agent = %q, want to contain ragflow", gotUA)
+	}
 
 	var env wikipediaEnvelope
 	if jerr := json.Unmarshal([]byte(out), &env); jerr != nil {
@@ -132,6 +139,12 @@ func TestWikipedia_ParseResults(t *testing.T) {
 	}
 	if env.Results[0].Title != "RAG" {
 		t.Errorf("Results[0].Title = %q, want RAG", env.Results[0].Title)
+	}
+	if env.Results[0].Content != "RAG is an acronym." {
+		t.Errorf("Results[0].Content = %q, want summary extract", env.Results[0].Content)
+	}
+	if !strings.Contains(env.FormalizedContent, "RAG is an acronym.") {
+		t.Errorf("FormalizedContent = %q, want rendered summary", env.FormalizedContent)
 	}
 	if !strings.HasPrefix(env.Results[0].URL, "https://en.wikipedia.org/wiki/") {
 		t.Errorf("Results[0].URL = %q, want to start with https://en.wikipedia.org/wiki/", env.Results[0].URL)
@@ -172,23 +185,94 @@ func TestWikipedia_Info(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Info: %v", err)
 	}
-	if info.Name != "wikipedia" {
-		t.Errorf("Name = %q, want wikipedia", info.Name)
+	if info.Name != "wikipedia_search" {
+		t.Errorf("Name = %q, want wikipedia_search", info.Name)
 	}
 	if !strings.Contains(info.Desc, "Wikipedia") {
 		t.Errorf("Desc = %q, want to mention Wikipedia", info.Desc)
 	}
 }
 
-func TestWikipedia_RequiresQuery(t *testing.T) {
+func TestWikipedia_EmptyQuery(t *testing.T) {
 	t.Parallel()
 
 	tool := NewWikipediaTool()
-	_, err := tool.InvokableRun(context.Background(), `{"query":""}`)
-	if err == nil {
-		t.Fatal("expected error for empty query")
+	out, err := tool.InvokableRun(context.Background(), `{"query":""}`)
+	if err != nil {
+		t.Fatalf("InvokableRun(empty): %v", err)
 	}
-	if !strings.Contains(err.Error(), "query") {
-		t.Errorf("err = %v, want to mention query", err)
+	var envelope wikipediaEnvelope
+	if err := json.Unmarshal([]byte(out), &envelope); err != nil || len(envelope.Results) != 0 {
+		t.Fatalf("empty result = %s / %v", out, err)
+	}
+	if !strings.Contains(out, `"results":[]`) {
+		t.Fatalf("empty result omitted results key: %s", out)
+	}
+}
+
+func TestWikipedia_ComponentReferencesAndOutputs(t *testing.T) {
+	t.Parallel()
+
+	wikipedia := NewWikipediaTool()
+	spec := wikipedia.ComponentSpec()
+	if query, ok := spec.InputForm["query"].(map[string]any); !ok || query["name"] != "Query" || query["type"] != "line" {
+		t.Fatalf("query input form = %#v", spec.InputForm["query"])
+	}
+	envelope := map[string]any{"results": []any{map[string]any{
+		"title":   "RAG",
+		"url":     "https://en.wikipedia.org/wiki/RAG",
+		"content": "RAG is an acronym.",
+	}}}
+	chunks, docAggs := wikipedia.BuildReferences(context.Background(), envelope)
+	if len(chunks) != 1 || len(docAggs) != 1 || chunks[0]["document_name"] != "RAG" || chunks[0]["similarity"] != 1 {
+		t.Fatalf("references = %#v / %#v", chunks, docAggs)
+	}
+	outputs := wikipedia.BuildComponentOutputs(envelope)
+	if results, ok := outputs["json"].([]any); !ok || len(results) != 1 {
+		t.Fatalf("json output = %#v", outputs["json"])
+	}
+	if !strings.Contains(outputs["formalized_content"].(string), "RAG is an acronym.") {
+		t.Fatalf("formalized_content = %q", outputs["formalized_content"])
+	}
+	if _, exists := envelope["chunks"]; exists {
+		t.Fatalf("output conversion mutated envelope: %#v", envelope)
+	}
+}
+
+func TestRenderWikipediaReferencesStopsBeforeOverBudgetBlock(t *testing.T) {
+	t.Parallel()
+
+	chunks := []map[string]any{
+		{"id": "1", "document_name": "First", "url": "https://first.example", "content": "first reference content"},
+		{"id": "2", "document_name": "Second", "url": "https://second.example", "content": "second reference content"},
+	}
+	firstBlock := renderWikipediaReferences(chunks[:1], 0)
+	firstTokens := tokenizer.NumTokensFromString(firstBlock)
+	maxTokens := (firstTokens*100 + 96) / 97
+	if got := renderWikipediaReferences(chunks, maxTokens); got != firstBlock {
+		t.Fatalf("rendered = %q, want only first block %q", got, firstBlock)
+	}
+	if got := renderWikipediaReferences(chunks, 1); got != "" {
+		t.Fatalf("over-budget first block was appended: %q", got)
+	}
+	if got := renderWikipediaReferences(chunks, 0); !strings.Contains(got, "Title: First") || !strings.Contains(got, "Title: Second") {
+		t.Fatalf("unlimited rendering dropped blocks: %q", got)
+	}
+}
+
+func TestWikipedia_BuildByNameIgnoresCanvasParams(t *testing.T) {
+	t.Parallel()
+
+	built, err := BuildByName("wikipedia", map[string]any{
+		"top_n":    float64(3),
+		"language": "en",
+		"outputs":  map[string]any{"json": map[string]any{}},
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	wikipedia := built.(*WikipediaTool)
+	if wikipedia.topN != 3 || wikipedia.lang != "en" {
+		t.Fatalf("node defaults = %d/%q", wikipedia.topN, wikipedia.lang)
 	}
 }
