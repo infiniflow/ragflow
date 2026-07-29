@@ -45,6 +45,35 @@ from rag.prompts.generator import gen_metadata, keyword_extraction, question_pro
 from rag.graphrag.utils import get_llm_cache, set_llm_cache, get_tags_from_cache, set_tags_to_cache
 
 
+# Elasticsearch keyword fields reject terms whose UTF-8 encoding exceeds
+# 32766 bytes. Split oversized terms so ingestion never fails because a
+# malformed LLM response produced a single huge "keyword".
+_ES_KEYWORD_MAX_TERM_BYTES = 32766
+
+
+def _sanitize_keyword_term(term: str) -> list[str]:
+    """Return keyword pieces that fit into an Elasticsearch keyword field.
+
+    If ``term`` is small enough it is returned as-is. If it is too large
+    and contains whitespace, it is split on whitespace and each piece is
+    truncated to the ES keyword limit. Empty pieces are dropped.
+    """
+    term = term.strip()
+    if not term:
+        return []
+    if len(term.encode("utf-8")) <= _ES_KEYWORD_MAX_TERM_BYTES:
+        return [term]
+
+    pieces = []
+    for piece in term.split():
+        encoded = piece.encode("utf-8")
+        if len(encoded) > _ES_KEYWORD_MAX_TERM_BYTES:
+            piece = encoded[:_ES_KEYWORD_MAX_TERM_BYTES].decode("utf-8", errors="ignore")
+        if piece:
+            pieces.append(piece)
+    return pieces
+
+
 async def extract_keywords(docs: List[Dict], ctx: TaskContext) -> None:
     """Extract keywords for chunks.
 
@@ -69,7 +98,7 @@ async def extract_keywords(docs: List[Dict], ctx: TaskContext) -> None:
                     cached = await keyword_extraction(chat_mdl, d["content_with_weight"], topn)
                 set_llm_cache(chat_mdl.llm_name, d["content_with_weight"], cached, "keywords", {"topn": topn})
             if cached:
-                d["important_kwd"] = [k for k in re.split(r"[,，;；、\r\n]+", cached) if k.strip()]
+                d["important_kwd"] = [kw for k in re.split(r"[,，;；、\r\n]+", cached) for kw in _sanitize_keyword_term(k)]
                 d["important_tks"] = rag_tokenizer.tokenize(" ".join(d["important_kwd"]))
             return
 
