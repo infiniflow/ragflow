@@ -73,7 +73,7 @@ export function NextMessageInput({
     null,
   );
 
-  const [enableThinking, setEnableThinking] = useState('0');
+  const [enableThinking, setEnableThinking] = useState('1');
   const [enableInternet, setEnableInternet] = useState(false);
 
   const thinkingOptions = useMemo(
