@@ -364,7 +364,32 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 			tenantIDs = append(tenantIDs, ownerID)
 		}
 	}
-	if len(tenantIDs) == 0 {
+	queryUserID := userID
+	if len(tenantIDs) > 0 {
+		joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
+		if err != nil {
+			return nil, 0, common.CodeServerError, errors.New("database operation failed")
+		}
+		allowedTenantIDs := map[string]struct{}{userID: {}}
+		for _, joinedTenant := range joinedTenants {
+			if joinedTenant == nil || joinedTenant.TenantID == "" {
+				continue
+			}
+			allowedTenantIDs[joinedTenant.TenantID] = struct{}{}
+		}
+		filteredTenantIDs := tenantIDs[:0]
+		queryUserID = ""
+		for _, tenantID := range tenantIDs {
+			if _, ok := allowedTenantIDs[tenantID]; !ok {
+				continue
+			}
+			filteredTenantIDs = append(filteredTenantIDs, tenantID)
+			if tenantID == userID {
+				queryUserID = userID
+			}
+		}
+		tenantIDs = filteredTenantIDs
+	} else {
 		joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
 		if err != nil {
 			return nil, 0, common.CodeServerError, errors.New("database operation failed")
@@ -377,7 +402,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 		}
 	}
 
-	kbs, total, err := d.kbDAO.GetByTenantIDs(ctx, dao.DB, tenantIDs, userID, page, pageSize, orderby, desc, keywords, parserID, id, name)
+	kbs, total, err := d.kbDAO.GetByTenantIDs(ctx, dao.DB, tenantIDs, queryUserID, page, pageSize, orderby, desc, keywords, parserID, id, name)
 	if err != nil {
 		return nil, 0, common.CodeServerError, errors.New("database operation failed")
 	}
