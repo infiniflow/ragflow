@@ -277,8 +277,30 @@ func (j *JinaModel) Embed(ctx context.Context, modelName *string, texts []string
 
 	var embeddings []EmbeddingData
 	for _, dataElem := range parsedResponse.Data {
+		embedding := dataElem.Embedding
+		if len(embedding) == 0 && len(dataElem.Embeddings) > 0 {
+			dimensions := len(dataElem.Embeddings[0])
+			if dimensions == 0 {
+				return nil, fmt.Errorf("Jina embedding response contains an empty multivector at index %d", dataElem.Index)
+			}
+			embedding = make([]float64, dimensions)
+			for _, vector := range dataElem.Embeddings {
+				if len(vector) != dimensions {
+					return nil, fmt.Errorf("Jina embedding response contains inconsistent multivector dimensions at index %d", dataElem.Index)
+				}
+				for i, value := range vector {
+					embedding[i] += value
+				}
+			}
+			for i := range embedding {
+				embedding[i] /= float64(len(dataElem.Embeddings))
+			}
+		}
+		if len(embedding) == 0 {
+			return nil, fmt.Errorf("Jina embedding response contains an empty vector at index %d", dataElem.Index)
+		}
 		embeddings = append(embeddings, EmbeddingData{
-			Embedding: dataElem.Embedding,
+			Embedding: embedding,
 			Index:     dataElem.Index,
 		})
 	}

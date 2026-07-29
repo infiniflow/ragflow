@@ -260,6 +260,8 @@ func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 
 	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]any](resp.Body, func(event map[string]any) error {
+		common.Info(fmt.Sprintf("%v", event))
+
 		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
 		if usageErr != nil {
 			return usageErr

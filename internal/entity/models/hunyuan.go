@@ -228,6 +228,8 @@ func (h *HunyuanModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	sawTerminal := false
 	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]any](resp.Body, func(event map[string]any) error {
+		common.Info(fmt.Sprintf("%v", event))
+
 		if apiErr, ok := event["error"]; ok {
 			return fmt.Errorf("hunyuan: upstream stream error: %v", apiErr)
 		}
