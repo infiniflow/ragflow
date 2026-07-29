@@ -109,6 +109,10 @@ def _load_dify_retrieval_module(monkeypatch):
     common_temporal_retrieval_mod.resolve_temporal_retrieval_context = _resolve_temporal_retrieval_context
     monkeypatch.setitem(sys.modules, "common.temporal_retrieval", common_temporal_retrieval_mod)
 
+    common_temporal_validation_mod = ModuleType("common.temporal_validation")
+    common_temporal_validation_mod.validate_temporal_retrieval_config = lambda _config: None
+    monkeypatch.setitem(sys.modules, "common.temporal_validation", common_temporal_validation_mod)
+
     # 2. quart + werkzeug (avoid heavy web framework imports)
     qt_mod = ModuleType("quart")
     qt_mod.jsonify = lambda *_args, **_kwargs: None
