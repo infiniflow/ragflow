@@ -1,15 +1,16 @@
 import { MoreButton } from '@/components/more-button';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { CompilationTemplateScope } from '@/constants/compilation';
 import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-template';
-import { Database, FileText, LucideIcon } from 'lucide-react';
+import { formatDate } from '@/utils/date';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { formatKindLabel } from '@/utils/compilation-template-util';
 import { CompilationTemplateDropdown } from './compilation-template-dropdown';
+import { FlowType, FlowTypeConfig } from './constant';
 
 type CompilationTemplateCardProps = {
   data: ICompilationTemplateGroup;
@@ -17,16 +18,7 @@ type CompilationTemplateCardProps = {
   onDelete: (id: string) => void;
 };
 
-const ScopeIconMap: Record<string, LucideIcon> = {
-  [CompilationTemplateScope.File]: FileText,
-  [CompilationTemplateScope.Dataset]: Database,
-};
-
-function ScopeIcon({ scope }: { scope?: string }) {
-  const Icon = scope ? ScopeIconMap[scope] : null;
-
-  return Icon ? <Icon className="size-4 text-text-secondary shrink-0" /> : null;
-}
+const CompilerIcon = FlowTypeConfig[FlowType.Compiler].icon;
 
 export function CompilationTemplateCard({
   data,
@@ -50,12 +42,13 @@ export function CompilationTemplateCard({
 
         <div className="flex-1 min-w-0 flex flex-col gap-1">
           <section className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <h3 className="text-base font-normal truncate text-text-primary">
-                {data.name}
-              </h3>
-              <ScopeIcon scope={data.scope} />
-            </div>
+            <h3 className="flex-1 min-w-0 text-base font-normal truncate text-text-primary">
+              {data.name}
+            </h3>
+
+            <Button variant="ghost" size="sm">
+              <CompilerIcon />
+            </Button>
 
             <CompilationTemplateDropdown data={data} onDelete={onDelete}>
               <MoreButton />
@@ -72,6 +65,11 @@ export function CompilationTemplateCard({
                 {formatKindLabel(t, kind)}
               </Badge>
             ))}
+          </div>
+
+          <div className="flex items-center gap-2 mt-1 min-w-0 text-sm text-text-secondary">
+            <span className="whitespace-nowrap">{t('flow.lastSavedAt')}:</span>
+            <p className="truncate">{formatDate(data.update_time)}</p>
           </div>
         </div>
       </CardContent>

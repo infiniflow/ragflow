@@ -25,6 +25,7 @@ API key is returned to the browser, to be filled into the provider form.
 Configuration (all via environment):
   AIMLAPI_APP_URL                  agent-auth host (default https://app.aimlapi.com)
   AIMLAPI_PARTNER_ID               partner id (defaults to RAGFlow's; override to change)
+  AIMLAPI_SOURCE                   client identifier sent on every request (default agent/ragflow)
   AIMLAPI_PARTNER_NAME             display name shown on the consent page
   AIMLAPI_VERIFICATION_BASE_URL    base of the consent page (default https://aimlapi.com)
   AIMLAPI_REQUESTED_USD_LIMIT_MINOR requested spend cap in USD minor units (default 1000)
@@ -34,11 +35,13 @@ import asyncio
 import json
 import logging
 import os
+from urllib.parse import urlencode
 
 import requests
 
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
+from common.aimlapi_utils import attribution_headers, partner_id as _partner_id, source as _source
 from rag.utils.redis_conn import REDIS_CONN
 
 LOGGER = logging.getLogger(__name__)
@@ -51,10 +54,6 @@ _HTTP_TIMEOUT = 15
 
 def _app_url() -> str:
     return os.environ.get("AIMLAPI_APP_URL", "https://app.aimlapi.com").rstrip("/")
-
-
-def _partner_id() -> str:
-    return os.environ.get("AIMLAPI_PARTNER_ID", "part_yNkcOvbGLtgxWLjy4sRysaer").strip()
 
 
 def _partner_name() -> str:
@@ -98,6 +97,7 @@ async def aimlapi_authorize_start():
             requests.post,
             f"{_app_url()}/v3/agent-auth/authorizations",
             json=payload,
+            headers=attribution_headers(),
             timeout=_HTTP_TIMEOUT,
         )
     except Exception as e:
@@ -131,7 +131,10 @@ async def aimlapi_authorize_start():
     LOGGER.info("AIMLAPI authorize start ok: request_id=%s", request_id)
 
     # Rebuild the consent URL from AIMLAPI_VERIFICATION_BASE_URL so an env override applies; the create response returns an absolute URL.
-    verification_uri = f"{_verification_base_url()}/agent/authorize?request={request_id}"
+    # `source` carries the same client identifier as the request headers: if the user signs up while consenting, that happens in a browser
+    # flow on AIMLAPI's side, where a request header cannot reach — the query parameter is the only way to attribute the new account.
+    query = urlencode({"request": request_id, "source": _source()})
+    verification_uri = f"{_verification_base_url()}/agent/authorize?{query}"
     return get_json_result(
         data={
             "request_id": request_id,
@@ -170,6 +173,7 @@ async def aimlapi_authorize_poll():
             requests.post,
             f"{_app_url()}/v3/agent-auth/token",
             json=payload,
+            headers=attribution_headers(),
             timeout=_HTTP_TIMEOUT,
         )
     except Exception as e:

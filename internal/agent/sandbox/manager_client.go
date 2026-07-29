@@ -3,6 +3,7 @@ package sandbox
 import (
 	"context"
 	"fmt"
+	"time"
 
 	agenttool "ragflow/internal/agent/tool"
 )
@@ -33,7 +34,11 @@ func (c *ManagerClient) ExecuteCode(ctx context.Context, req agenttool.SandboxRe
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = provider.DestroyInstance(context.Background(), inst) }()
+	defer func() {
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_ = provider.DestroyInstance(cleanupCtx, inst)
+	}()
 
 	timeout := req.Timeout
 	if timeout == 0 {

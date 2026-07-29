@@ -23,7 +23,7 @@ import (
 )
 
 func TestCanvasStateSerializer_RoundTrip(t *testing.T) {
-	src := NewCanvasState("run_abc", "task_xyz")
+	src := NewCanvasState("run_abc", "session_xyz")
 	src.Outputs["retrieval_0"] = map[string]any{
 		"chunks":   []string{"a", "b", "c"},
 		"doc_aggs": map[string]int{"doc1": 3, "doc2": 1},
@@ -64,8 +64,8 @@ func TestCanvasStateSerializer_RoundTrip(t *testing.T) {
 	if dst.RunID != src.RunID {
 		t.Fatalf("RunID = %q, want %q", dst.RunID, src.RunID)
 	}
-	if dst.TaskID != src.TaskID {
-		t.Fatalf("TaskID = %q, want %q", dst.TaskID, src.TaskID)
+	if dst.SessionID != src.SessionID {
+		t.Fatalf("SessionID = %q, want %q", dst.SessionID, src.SessionID)
 	}
 	// JSON round-trip coerces numbers to float64, so we re-marshal both
 	// sides and compare bytes — that is the real contract of the
@@ -110,8 +110,8 @@ func TestCanvasStateSerializer_EmptyState(t *testing.T) {
 	if err := ser.Unmarshal(data, dst); err != nil {
 		t.Fatalf("Unmarshal empty: %v", err)
 	}
-	if dst.RunID != "r" || dst.TaskID != "t" {
-		t.Fatalf("ids not preserved: %q %q", dst.RunID, dst.TaskID)
+	if dst.RunID != "r" || dst.SessionID != "t" {
+		t.Fatalf("ids not preserved: %q %q", dst.RunID, dst.SessionID)
 	}
 }
 
@@ -135,8 +135,8 @@ func TestCanvasStateSerializer_UnmarshalIntoExistingPointer(t *testing.T) {
 		t.Fatalf("Sys[x] = %v (%T), want float64(1)", dst.Sys["x"], dst.Sys["x"])
 	}
 	// Ids are overwritten by the round-trip.
-	if dst.RunID != "r2" || dst.TaskID != "t2" {
-		t.Fatalf("ids not overwritten: %q %q", dst.RunID, dst.TaskID)
+	if dst.RunID != "r2" || dst.SessionID != "t2" {
+		t.Fatalf("ids not overwritten: %q %q", dst.RunID, dst.SessionID)
 	}
 }
 

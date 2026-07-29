@@ -23,7 +23,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, common.CodeDataError, errors.New("Dataset name can't be empty.")
+		return nil, common.CodeDataError, errors.New("dataset name can't be empty")
 	}
 	if len(name) > entity.DatasetNameLimit {
 		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(name), entity.DatasetNameLimit)
@@ -74,20 +74,20 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	}
 	if req.EmbeddingModel != nil {
 		embeddingModel = strings.TrimSpace(*req.EmbeddingModel)
-		if err := validateDatasetEmbeddingModel(embeddingModel); err != nil {
+		if err = validateDatasetEmbeddingModel(embeddingModel); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
 
 	if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
-		if ok, err := canvasAccessibleForUser(tenantID, strings.TrimSpace(*pipelineID)); err != nil {
+		if ok, err := canvasAccessibleForUser(ctx, tenantID, strings.TrimSpace(*pipelineID)); err != nil {
 			return nil, common.CodeServerError, err
 		} else if !ok {
 			return nil, common.CodeDataError, errors.New("canvas is not accessible")
 		}
 	}
 
-	parserConfig, cpErr := service.ResolveComponentParamsDefaults(parserID, pipelineID)
+	parserConfig, cpErr := service.ResolveComponentParamsDefaults(ctx, parserID, pipelineID)
 	if cpErr != nil {
 		common.Warn("failed to resolve component params defaults for dataset",
 			zap.String("parserID", parserID), zap.Error(cpErr))
@@ -364,7 +364,32 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 			tenantIDs = append(tenantIDs, ownerID)
 		}
 	}
-	if len(tenantIDs) == 0 {
+	queryUserID := userID
+	if len(tenantIDs) > 0 {
+		joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
+		if err != nil {
+			return nil, 0, common.CodeServerError, errors.New("database operation failed")
+		}
+		allowedTenantIDs := map[string]struct{}{userID: {}}
+		for _, joinedTenant := range joinedTenants {
+			if joinedTenant == nil || joinedTenant.TenantID == "" {
+				continue
+			}
+			allowedTenantIDs[joinedTenant.TenantID] = struct{}{}
+		}
+		filteredTenantIDs := tenantIDs[:0]
+		queryUserID = ""
+		for _, tenantID := range tenantIDs {
+			if _, ok := allowedTenantIDs[tenantID]; !ok {
+				continue
+			}
+			filteredTenantIDs = append(filteredTenantIDs, tenantID)
+			if tenantID == userID {
+				queryUserID = userID
+			}
+		}
+		tenantIDs = filteredTenantIDs
+	} else {
 		joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
 		if err != nil {
 			return nil, 0, common.CodeServerError, errors.New("database operation failed")
@@ -377,7 +402,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 		}
 	}
 
-	kbs, total, err := d.kbDAO.GetByTenantIDs(ctx, dao.DB, tenantIDs, userID, page, pageSize, orderby, desc, keywords, parserID, id, name)
+	kbs, total, err := d.kbDAO.GetByTenantIDs(ctx, dao.DB, tenantIDs, queryUserID, page, pageSize, orderby, desc, keywords, parserID, id, name)
 	if err != nil {
 		return nil, 0, common.CodeServerError, errors.New("database operation failed")
 	}

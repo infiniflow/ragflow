@@ -20,6 +20,7 @@ import asyncio
 
 from common.constants import LLMType, ActiveStatusEnum, ModelVerifyStatusEnum
 from common.settings import FACTORY_LLM_INFOS
+from api.db.db_models import DB
 from api.db.joint_services.tenant_model_service import resolve_model_config, delete_models_by_instance_ids, delete_instances_by_provider_ids
 from api.db.services.tenant_model_provider_service import TenantModelProviderService
 from api.db.services.tenant_model_instance_service import TenantModelInstanceService
@@ -944,7 +945,100 @@ def drop_provider_instances(tenant_id: str, provider_id_or_name: str, instance_i
     return True, None
 
 
-def list_instance_models(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str, supported_only: bool = False):
+def _public_factory_model(llm: dict) -> dict:
+    return {
+        "name": _factory_llm_name(llm),
+        "max_tokens": llm.get("max_tokens", 8192),
+        "model_types": _factory_model_types(llm),
+        "features": (llm.get("features") if llm.get("features") is not None else ((["is_tools"] if llm.get("is_tools") else []) + (["thinking"] if llm.get("thinking") else []))),
+    }
+
+
+def _merge_nvidia_models(factory_info: dict, remote_models: list[dict]) -> list[dict]:
+    static_models = {_factory_llm_name(llm): _public_factory_model(llm) for llm in factory_info.get("llm", [])}
+    merged = []
+    seen = set()
+    for remote in remote_models:
+        model_name = str(remote.get("name", "")).strip()
+        if not model_name or model_name in seen:
+            continue
+        seen.add(model_name)
+        model = dict(remote)
+        model["name"] = model_name
+        if preset := static_models.get(model_name):
+            model = {**model, **preset}
+        if not model.get("model_types"):
+            model["model_types"] = [LLMType.CHAT.value]
+        model["max_tokens"] = _to_int(model.get("max_tokens"), 8192)
+        model.setdefault("features", [])
+        merged.append(model)
+    merged.sort(key=lambda model: model["name"])
+    return merged
+
+
+def _set_discovered_model_metadata(extra: dict, model: dict):
+    extra["max_tokens"] = _to_int(model.get("max_tokens"), 8192)
+    if model.get("max_dimension") is not None:
+        extra["max_dimension"] = model["max_dimension"]
+    if model.get("dimensions"):
+        extra["dimensions"] = model["dimensions"]
+    features = model.get("features") or []
+    extra["is_tools"] = "is_tools" in features
+    extra["thinking"] = "thinking" in features
+
+
+def _reconcile_nvidia_instance_models(provider_obj, instance_obj, remote_models: list[dict]):
+    normalized = []
+    seen = set()
+    for model in remote_models:
+        model_name = str(model.get("name", "")).strip()
+        if not model_name or model_name in seen:
+            continue
+        seen.add(model_name)
+        normalized.append({**model, "name": model_name})
+    if not normalized:
+        raise ValueError("NVIDIA model discovery returned no usable models")
+
+    with DB.atomic():
+        existing_models = TenantModelService.get_models_by_instance_id(instance_obj.id)
+        existing_by_name = {model.model_name: model for model in existing_models}
+
+        for model in normalized:
+            model_name = model["name"]
+            model_types = model.get("model_types") or [LLMType.CHAT.value]
+            model_type = calculate_model_type(model_types)
+            if existing := existing_by_name.pop(model_name, None):
+                extra = json.loads(existing.extra or "{}")
+                _set_discovered_model_metadata(extra, model)
+                TenantModelService.update_model(existing.id, {"model_type": model_type, "extra": json.dumps(extra)})
+                continue
+
+            extra = {"verify": ModelVerifyStatusEnum.UNKNOWN.value}
+            _set_discovered_model_metadata(extra, model)
+            TenantModelService.insert(
+                model_name=model_name,
+                provider_id=provider_obj.id,
+                instance_id=instance_obj.id,
+                model_type=model_type,
+                status=ActiveStatusEnum.ACTIVE.value,
+                extra=json.dumps(extra),
+            )
+
+        TenantModelService.delete_by_ids([model.id for model in existing_by_name.values()])
+
+
+def _get_provider_instance(provider_obj, instance_id_or_name: str):
+    instance_obj = None
+    if instance_id_or_name:
+        _, instance_obj = TenantModelInstanceService.get_by_id(instance_id_or_name)
+    if instance_obj and instance_obj.provider_id != provider_obj.id:
+        instance_obj = None
+    if not instance_obj:
+        instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_id_or_name)
+    return instance_obj
+
+
+async def list_instance_models(tenant_id: str, provider_id_or_name: str, instance_id_or_name: str, supported_only: bool = False):
     """
     List models for a provider instance.
 
@@ -966,14 +1060,33 @@ def list_instance_models(tenant_id: str, provider_id_or_name: str, instance_id_o
         return False, f"No provider found for provider '{provider_id_or_name}'"
 
     if supported_only:
-        # List all models supported by this provider from the LLM dictionary
-        factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_obj.provider_name]
-        if not factory_info:
+        # List all models supported by this provider from the LLM dictionary.
+        factory_infos = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_obj.provider_name]
+        if not factory_infos:
             return False, f"Provider '{provider_id_or_name}' not found"
-        llms = factory_info[0].get("llm", [])
+        factory_info = factory_infos[0]
+
+        if provider_obj.provider_name == "NVIDIA":
+            instance_obj = _get_provider_instance(provider_obj, instance_id_or_name)
+            if not instance_obj:
+                return False, f"No instance found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
+            instance_extra = json.loads(instance_obj.extra or "{}")
+            base_url = instance_extra.get("base_url") or factory_info.get("url", "")
+            remote_models = await ModelMeta["NVIDIA"](instance_obj.api_key, base_url).get_model_list()
+            models = _merge_nvidia_models(factory_info, remote_models)
+            if not models:
+                return False, "NVIDIA model discovery returned no usable models"
+            _reconcile_nvidia_instance_models(provider_obj, instance_obj, models)
+            return True, models
+
+        llms = factory_info.get("llm", [])
         models = [{"name": llm["llm_name"], "rank": _to_int(llm.get("rank", 500))} for llm in llms]
         models.sort(key=lambda x: (-x["rank"], x["name"]))
         return True, models
+
+    instance_obj = _get_provider_instance(provider_obj, instance_id_or_name)
+    if not instance_obj:
+        return False, f"No instance found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
 
     # Build rank mapping from LLM dictionary for the provider
     factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == provider_obj.provider_name]
@@ -982,16 +1095,6 @@ def list_instance_models(tenant_id: str, provider_id_or_name: str, instance_id_o
         for llm in factory_info[0].get("llm", []):
             model_rank_map[llm["llm_name"]] = _to_int(llm.get("rank", 500))
 
-    # Get instance
-    instance_obj = None
-    if instance_id_or_name:
-        _, instance_obj = TenantModelInstanceService.get_by_id(instance_id_or_name)
-    if instance_obj and instance_obj.provider_id != provider_obj.id:
-        instance_obj = None
-    if not instance_obj:
-        instance_obj = TenantModelInstanceService.get_by_provider_id_and_instance_name(provider_obj.id, instance_id_or_name)
-    if not instance_obj:
-        return False, f"No instance found for provider '{provider_id_or_name}' and instance '{instance_id_or_name}'"
     # Get models
     model_objs = TenantModelService.get_models_by_instance_id(instance_obj.id)
     model_list = []

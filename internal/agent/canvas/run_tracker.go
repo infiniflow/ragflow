@@ -20,16 +20,18 @@
 //
 // Status code mapping (stored as int under the "status" field):
 //
-//	0 = running, 1 = succeeded, 2 = failed, 3 = cancelled.
+//	0 = running, 1 = succeeded, 2 = failed, 3 = cancelled, 4 = waiting_for_user.
 package canvas
 
 import (
 	"context"
 	"errors"
-	redis2 "ragflow/internal/engine/redis"
+	"strconv"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+
+	redis2 "ragflow/internal/engine/redis"
 )
 
 // runKeyPrefix is the Redis Hash key namespace for run metadata.
@@ -42,6 +44,7 @@ const (
 	runStatusSucceeded = "1"
 	runStatusFailed    = "2"
 	runStatusCancelled = "3"
+	runStatusWaiting   = "4"
 )
 
 // runFieldInterruptID is the hash field that holds the eino interrupt id a
@@ -49,6 +52,22 @@ const (
 const runFieldInterruptID = "interrupt_id"
 
 func runKey(runID string) string { return runKeyPrefix + runID }
+
+const activeSessionKeyPrefix = "agent:active-session:"
+
+const activeSessionLeaseTTL = 30 * time.Second
+
+func activeSessionKey(sessionID string) string { return activeSessionKeyPrefix + sessionID }
+
+// ActiveSession is the distributed ordinary-Agent run registration. Token is
+// an internal lease owner token; it is never exposed as a business run id.
+type ActiveSession struct {
+	SessionID string
+	Token     string
+	UserID    string
+	CanvasID  string
+	RunID     string
+}
 
 // RunTracker manages canvas-run metadata (canvas_id, status, checkpoint
 // link, resume chain, ...) on a Redis Hash. Operations are explicit — the
@@ -152,8 +171,9 @@ func (t *RunTracker) GetInterruptID(ctx context.Context, runID string) (string, 
 	return v, true, nil
 }
 
-// ClearInterruptID removes the persisted interrupt id. Called when a run
-// completes (no longer paused) or is cancelled (the checkpoint is wiped).
+// ClearInterruptID removes the persisted interrupt id after a resumed run
+// completes. Cancelling an unrelated turn does not discard the session's
+// UserFillUp checkpoint.
 func (t *RunTracker) ClearInterruptID(ctx context.Context, runID string) error {
 	if t == nil || t.client == nil {
 		return errors.New("run tracker: redis client not initialized")
@@ -189,11 +209,161 @@ func (t *RunTracker) MarkCancelled(ctx context.Context, runID string) error {
 	if t == nil || t.client == nil {
 		return errors.New("run tracker: redis client not initialized")
 	}
-	return t.client.HSet(ctx, runKey(runID),
+	key := runKey(runID)
+	pipe := t.client.Pipeline()
+	pipe.HSet(ctx, key,
 		"status", runStatusCancelled,
 		"finished_at", time.Now().UnixMilli(),
 		"cancel_requested", 1,
-	).Err()
+	)
+	pipe.Expire(ctx, key, t.ttl)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+// RegisterActiveSession atomically acquires the distributed active-run lease
+// for sessionID. A cancel marker found without an active lease belongs to an
+// older run and is removed before the new owner is registered. A false result
+// means another instance already owns the session.
+func (t *RunTracker) RegisterActiveSession(ctx context.Context, active ActiveSession) (bool, error) {
+	if t == nil || t.client == nil {
+		return false, errors.New("run tracker: redis client not initialized")
+	}
+	const script = `
+if redis.call("EXISTS", KEYS[1]) == 1 then return 0 end
+redis.call("DEL", KEYS[2])
+redis.call("HSET", KEYS[1],
+  "session_id", ARGV[1], "token", ARGV[2], "user_id", ARGV[3],
+  "canvas_id", ARGV[4], "run_id", ARGV[5], "started_at", ARGV[6])
+redis.call("PEXPIRE", KEYS[1], ARGV[7])
+return 1`
+	result, err := t.client.Eval(ctx, script,
+		[]string{activeSessionKey(active.SessionID), cancelKey(active.SessionID)},
+		active.SessionID, active.Token, active.UserID, active.CanvasID, active.RunID,
+		strconv.FormatInt(time.Now().UnixMilli(), 10), strconv.FormatInt(t.leaseTTL().Milliseconds(), 10),
+	).Int64()
+	return result == 1, err
+}
+
+// GetActiveSession returns the distributed active run for sessionID. A nil
+// result means the session is not running.
+func (t *RunTracker) GetActiveSession(ctx context.Context, sessionID string) (*ActiveSession, error) {
+	if t == nil || t.client == nil {
+		return nil, errors.New("run tracker: redis client not initialized")
+	}
+	fields, err := t.client.HGetAll(ctx, activeSessionKey(sessionID)).Result()
+	if err != nil || len(fields) == 0 {
+		return nil, err
+	}
+	return &ActiveSession{
+		SessionID: fields["session_id"],
+		Token:     fields["token"],
+		UserID:    fields["user_id"],
+		CanvasID:  fields["canvas_id"],
+		RunID:     fields["run_id"],
+	}, nil
+}
+
+// RefreshActiveSession extends the lease only while token still owns it.
+func (t *RunTracker) RefreshActiveSession(ctx context.Context, sessionID, token string) (bool, error) {
+	if t == nil || t.client == nil {
+		return false, errors.New("run tracker: redis client not initialized")
+	}
+	const script = `if redis.call("HGET", KEYS[1], "token") == ARGV[1] then return redis.call("PEXPIRE", KEYS[1], ARGV[2]) end return 0`
+	result, err := t.client.Eval(ctx, script, []string{activeSessionKey(sessionID)}, token,
+		strconv.FormatInt(t.leaseTTL().Milliseconds(), 10)).Int64()
+	return result == 1, err
+}
+
+// ReleaseActiveSession deletes the registration and cancel marker only when
+// token still owns the session, preventing stale cleanup from touching a newer
+// run.
+func (t *RunTracker) ReleaseActiveSession(ctx context.Context, sessionID, token string) (bool, error) {
+	if t == nil || t.client == nil {
+		return false, errors.New("run tracker: redis client not initialized")
+	}
+	const script = `
+if redis.call("HGET", KEYS[1], "token") ~= ARGV[1] then return 0 end
+redis.call("DEL", KEYS[2])
+redis.call("DEL", KEYS[1])
+return 1`
+	result, err := t.client.Eval(ctx, script,
+		[]string{activeSessionKey(sessionID), cancelKey(sessionID)}, token).Int64()
+	return result == 1, err
+}
+
+// RequestCancelActiveSession publishes a cancel marker only while token still
+// owns the active session lease. This prevents a stale owner from cancelling
+// a newer run after its lease has been replaced or released.
+func (t *RunTracker) RequestCancelActiveSession(ctx context.Context, sessionID, token string) (bool, error) {
+	if t == nil || t.client == nil {
+		return false, errors.New("run tracker: redis client not initialized")
+	}
+	const script = `
+if redis.call("HGET", KEYS[1], "token") ~= ARGV[1] then return 0 end
+redis.call("SET", KEYS[2], "x", "PX", ARGV[2])
+return 1`
+	result, err := t.client.Eval(ctx, script,
+		[]string{activeSessionKey(sessionID), cancelKey(sessionID)}, token,
+		strconv.FormatInt(RequestCancelTTL.Milliseconds(), 10)).Int64()
+	return result == 1, err
+}
+
+// WatchActiveSession keeps the distributed lease alive for the lifetime of
+// ctx. It invokes onLost if another owner replaces the lease or Redis cannot
+// confirm ownership before the current lease can expire.
+func (t *RunTracker) WatchActiveSession(ctx context.Context, sessionID, token string, onLost func()) {
+	if t == nil || t.client == nil {
+		return
+	}
+	leaseTTL := t.leaseTTL()
+	interval := leaseTTL / 3
+	if interval > 10*time.Second {
+		interval = 10 * time.Second
+	}
+	if interval < 10*time.Millisecond {
+		interval = 10 * time.Millisecond
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	lastConfirmed := time.Now()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			owned, err := t.RefreshActiveSession(ctx, sessionID, token)
+			switch {
+			case err == nil && owned:
+				lastConfirmed = time.Now()
+			case err == nil && !owned, time.Since(lastConfirmed) >= leaseTTL*2/3:
+				if onLost != nil {
+					onLost()
+				}
+				return
+			}
+		}
+	}
+}
+
+func (t *RunTracker) leaseTTL() time.Duration {
+	if t.ttl > 0 && t.ttl < activeSessionLeaseTTL {
+		return t.ttl
+	}
+	return activeSessionLeaseTTL
+}
+
+// MarkWaiting records a normal UserFillUp pause. It is not a failure.
+func (t *RunTracker) MarkWaiting(ctx context.Context, runID string) error {
+	if t == nil || t.client == nil {
+		return errors.New("run tracker: redis client not initialized")
+	}
+	key := runKey(runID)
+	pipe := t.client.Pipeline()
+	pipe.HSet(ctx, key, "status", runStatusWaiting)
+	pipe.Expire(ctx, key, t.ttl)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 // Get returns all hash fields for a run. The empty map (not nil) plus a

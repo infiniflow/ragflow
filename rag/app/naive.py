@@ -35,6 +35,7 @@ from api.db.joint_services.tenant_model_service import (
     ensure_mineru_from_env,
     ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
+    get_composite_model_name_by_id,
     get_first_provider_model_name,
     resolve_model_config,
     get_tenant_default_model_by_type,
@@ -899,7 +900,7 @@ class Markdown(MarkdownParser):
                 txt = f.read()
 
         remainder, tables = self.extract_tables_and_remainder(f"{txt}\n", separate_tables=separate_tables)
-        parsing_text = remainder if separate_tables else txt
+        parsing_text = remainder
         extractor = MarkdownElementExtractor(parsing_text)
         image_refs = self.extract_image_urls_with_lines(parsing_text)
         element_sections = extractor.extract_elements(delimiter, include_meta=True)
@@ -922,8 +923,9 @@ class Markdown(MarkdownParser):
             section_images.append(combined_image)
 
         tbls = []
-        for table in tables:
-            tbls.append(((None, markdown(table, extensions=["markdown.extensions.tables"])), ""))
+        if separate_tables:
+            for table in tables:
+                tbls.append(((None, markdown(table, extensions=["markdown.extensions.tables"])), ""))
         if return_section_images:
             return sections, tbls, section_images
         return sections, tbls
@@ -1037,7 +1039,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         return res
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        layout_recognize_raw = parser_config.get("layout_recognize", "DeepDOC")
+        tenant_id = kwargs.get("tenant_id")
+        if tenant_id and isinstance(layout_recognize_raw, str):
+            try:
+                layout_recognize_raw = get_composite_model_name_by_id(layout_recognize_raw)
+            except LookupError:
+                pass
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize_raw)
         opendataloader_llm_name = kwargs.pop("opendataloader_llm_name", None)
         if layout_recognizer == "OpenDataLoader" and parser_model_name:
             opendataloader_llm_name = parser_model_name
@@ -1128,7 +1137,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         sections, tables, section_images = markdown_parser(
             filename,
             binary,
-            separate_tables=True,
+            separate_tables=False,
             delimiter=parser_config.get("delimiter", "\n!?;。；！？"),
             return_section_images=True,
         )

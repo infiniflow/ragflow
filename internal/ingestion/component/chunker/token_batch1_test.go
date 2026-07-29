@@ -69,7 +69,7 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 	}
 	// The overlap prefix is prepended to the SECOND chunk. The original
 	// first chunk legitimately keeps its own parser tag; only the overlap
-	// region (merged[1]) must be tag-free (diff Chunker-2.2).
+	// region (merged[1]) must be tag-free. .
 	if strings.Contains(merged[1].Text, "@@") || strings.Contains(merged[1].Text, "##") {
 		t.Errorf("overlap prefix leaked parser tag into chunk 1: %q", merged[1].Text)
 	}
@@ -155,7 +155,7 @@ func TestMergeByTokenSizeFromJSON_EmptyPrevKeepsChunk(t *testing.T) {
 }
 
 // TestTakeFromEndRespectsTokenCount and TestTakeFromStartRespectsTokenCount
-// exercise migration diff Chunker-2.4: takeFromEnd/takeFromStart used a
+// covers takeFromEnd/takeFromStart used a
 // fixed 4-bytes-per-token heuristic which badly over-counts for CJK text
 // (≈3 bytes/char, 1-2 tokens/char). They must now count tokens exactly via
 // tokenizeStr so the returned slice is close to the requested token budget.

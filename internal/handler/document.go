@@ -309,7 +309,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		return
 	}
 	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
@@ -362,7 +362,7 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 		return
 	}
 	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
@@ -837,7 +837,7 @@ func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 		return
 	}
 	if !h.datasetService.CheckKBTeamPermission(ctx, kb, tenantID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
@@ -1238,7 +1238,7 @@ func (h *DocumentHandler) SetMeta(c *gin.Context) {
 		return
 	}
 	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
@@ -1333,7 +1333,7 @@ func (h *DocumentHandler) DeleteMeta(c *gin.Context) {
 		return
 	}
 	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 

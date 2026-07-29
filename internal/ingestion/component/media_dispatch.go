@@ -65,58 +65,21 @@ func maybeDispatchVideo(
 	if fileType != utility.FileTypeVIDEO {
 		return parserDispatchResult{}, false, nil
 	}
-	setup, ok := setups["video"]
-	if !ok {
+	if _, ok := setups["video"]; !ok {
 		return parserDispatchResult{}, false, nil
 	}
-	tenantID := getStringOr(inputs, "tenant_id", "")
-	if tenantID == "" {
-		return parserDispatchResult{}, true,
-			fmt.Errorf("parser: video requires tenant_id")
-	}
 
-	// Resolve the tenant's IMAGE2TEXT model.
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
-	if err != nil {
-		return parserDispatchResult{}, true,
-			fmt.Errorf("parser: video image2text model: %w", err)
-	}
-
-	videoPrompt, _ := setup["prompt"].(string)
-	videoB64 := base64.StdEncoding.EncodeToString(binary)
-
-	// Build a multimodal message with the video payload.
-	// Python uses cv_mdl.async_chat(video_bytes=blob, ...);
-	// Go ChatWithMessages is synchronous and uses a data URI.
-	mimeType := videoMIME(filename)
-	dataURI := "data:" + mimeType + ";base64," + videoB64
-	messages := []modelModule.Message{{
-		Role: "user",
-		Content: []interface{}{
-			map[string]any{"type": "text", "text": videoPrompt},
-			map[string]any{"type": "video_url", "video_url": map[string]any{"url": dataURI}},
-		},
-	}}
-	vision := true
-	resp, err := driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
-	if err != nil {
-		return parserDispatchResult{}, true,
-			fmt.Errorf("parser: video describe: %w", err)
-	}
-	txt := ""
-	if resp != nil && resp.Answer != nil {
-		txt = strings.TrimSpace(*resp.Answer)
-	}
-
-	outputFormat, _ := setup["output_format"].(string)
-	if outputFormat == "" {
-		outputFormat = "text"
-	}
-	return parserDispatchResult{
-		OutputFormat: outputFormat,
-		DocType:      "video",
-		Text:         txt,
-	}, true, nil
+	// Video parsing is intentionally not implemented yet: the underlying
+	// video-analysis capability is pending. The previously-shipped path sent a
+	// video_url data URI, but no model driver honors it — OpenAI-compatible
+	// drivers only accept image_url (the block is ignored), and Gemini's
+	// googleMessageParts only accepts text/image_url and silently drops
+	// video_url. Returning an explicit error is safer than silently producing
+	// a description from the prompt text alone. The real implementation must
+	// be provider-specific (OpenAI-compatible: frame extraction -> image_url;
+	// Gemini: raw-bytes inline_data; Qwen: file://)
+	return parserDispatchResult{}, true,
+		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }
 
 // Image dispatch: OCR + IMAGE2TEXT vision describe ---
@@ -321,7 +284,7 @@ func maybeDispatchAudio(
 
 	outputFormat, _ := setup["output_format"].(string)
 	if outputFormat == "" {
-		outputFormat = "text"
+		outputFormat = "json"
 	}
 	// Diff 2.11: when output_format is "json" the transcription must be
 	// carried as a JSON item. Returning it only in Text made the Invoke
@@ -415,7 +378,10 @@ func imageMIME(filename string) string {
 }
 
 // videoMIME maps common video filename extensions to MIME types
-// for constructing base64 data URIs.
+// for constructing base64 data URIs. Retained as a reference for the
+// future real video-parsing implementation (provider-specific frame
+// extraction / inline_data / file://); not currently used because
+// maybeDispatchVideo returns an explicit unsupported error.
 func videoMIME(filename string) string {
 	dot := strings.LastIndex(filename, ".")
 	if dot == -1 {

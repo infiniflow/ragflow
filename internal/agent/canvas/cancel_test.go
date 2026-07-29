@@ -49,18 +49,18 @@ func TestWatchCancel_FiresAfterRequest(t *testing.T) {
 	withCancelClient(t)
 	ctx := t.Context()
 
-	taskID := "task_test_1"
+	sessionID := "session_test_1"
 	fired := atomic.Bool{}
 	done := make(chan struct{})
 
 	go func() {
-		WatchCancel(ctx, taskID, func() { fired.Store(true) })
+		WatchCancel(ctx, sessionID, func() { fired.Store(true) })
 		close(done)
 	}()
 
 	// Give the watcher time to start its first tick.
 	time.Sleep(200 * time.Millisecond)
-	if err := RequestCancel(ctx, taskID); err != nil {
+	if err := RequestCancel(ctx, sessionID); err != nil {
 		t.Fatalf("RequestCancel: %v", err)
 	}
 
@@ -80,10 +80,10 @@ func TestWatchCancel_StopsOnContextCancel(t *testing.T) {
 	withCancelClient(t)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	taskID := "task_test_ctx"
+	sessionID := "session_test_ctx"
 	done := make(chan struct{})
 	go func() {
-		WatchCancel(ctx, taskID, func() {
+		WatchCancel(ctx, sessionID, func() {
 			t.Error("onCancel should not fire without a Redis signal")
 		})
 		close(done)
@@ -109,7 +109,7 @@ func TestWatchCancel_OnCancelNotInvokedForEmptyKey(t *testing.T) {
 	invoked := atomic.Int32{}
 	done := make(chan struct{})
 	go func() {
-		WatchCancel(ctx, "task_never_cancelled", func() {
+		WatchCancel(ctx, "session_never_cancelled", func() {
 			invoked.Add(1)
 		})
 		close(done)
@@ -121,28 +121,47 @@ func TestWatchCancel_OnCancelNotInvokedForEmptyKey(t *testing.T) {
 	<-done
 
 	if invoked.Load() != 0 {
-		t.Fatalf("onCancel fired %d times for an unsignaled task; want 0",
+		t.Fatalf("onCancel fired %d times for an unsignaled session; want 0",
 			invoked.Load())
 	}
 }
 
 func TestRequestCancel_EmptyValueStillFires(t *testing.T) {
-	// Python's task_service.py writes "x" as the value, but a buggy
-	// caller that wrote "" should not silently keep the watcher
+	// A caller that wrote "" should not silently keep the watcher
 	// waiting. WatchCancel's contract is "non-empty triggers onCancel";
 	// we rely on RequestCancel to always set "x" so this test is just
 	// a sanity check that the value round-trips.
 	mr := withCancelClient(t)
 	ctx := context.Background()
 
-	if err := RequestCancel(ctx, "task_value"); err != nil {
+	if err := RequestCancel(ctx, "session_value"); err != nil {
 		t.Fatalf("RequestCancel: %v", err)
 	}
-	got, err := mr.Get("task_value-cancel")
+	got, err := mr.Get("session_value-cancel")
 	if err != nil {
 		t.Fatalf("mr.Get: %v", err)
 	}
 	if got != "x" {
 		t.Fatalf("cancel key value = %q, want %q", got, "x")
+	}
+	if ttl := mr.TTL("session_value-cancel"); ttl <= 0 {
+		t.Fatalf("cancel key TTL = %v, want finite positive TTL", ttl)
+	}
+}
+
+func TestCancelRequested(t *testing.T) {
+	withCancelClient(t)
+	ctx := context.Background()
+
+	requested, err := CancelRequested(ctx, "session-check")
+	if err != nil || requested {
+		t.Fatalf("CancelRequested before marker = %v, %v; want false, nil", requested, err)
+	}
+	if err := RequestCancel(ctx, "session-check"); err != nil {
+		t.Fatalf("RequestCancel: %v", err)
+	}
+	requested, err = CancelRequested(ctx, "session-check")
+	if err != nil || !requested {
+		t.Fatalf("CancelRequested after marker = %v, %v; want true, nil", requested, err)
 	}
 }

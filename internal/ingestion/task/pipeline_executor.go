@@ -222,7 +222,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		}
 	}
 
-	if err := s.indexWriter.Write(ctx, chunks); err != nil {
+	if err = s.indexWriter.Write(ctx, chunks); err != nil {
 		return nil, err
 	}
 
@@ -288,7 +288,7 @@ func (s *PipelineExecutor) loadDSLFromCanvas(ctx context.Context, canvasID strin
 	if canvasID == "" {
 		return "", "", fmt.Errorf("pipeline executor: empty canvas id")
 	}
-	canvas, err := dao.NewUserCanvasDAO().GetByID(canvasID)
+	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, canvasID)
 	if err != nil {
 		return "", "", fmt.Errorf("load canvas %s: %w", canvasID, err)
 	}

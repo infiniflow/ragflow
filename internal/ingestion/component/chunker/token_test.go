@@ -19,6 +19,8 @@ package chunker
 import (
 	"context"
 	"math"
+	"reflect"
+	"strings"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
@@ -382,7 +384,7 @@ func TestTokenChunker_NewAcceptsPythonOverlappedRange(t *testing.T) {
 }
 
 // TestNormalizeOverlappedPercent is the Go port of Python
-// common/float_utils.py:50-58 normalize_overlapped_percent (diff Chunker-2.6).
+// common/float_utils.py:50-58 normalize_overlapped_percent. .
 // Python's user-facing input is a [0,1) fraction; the helper converts it to
 // the [0,90] integer-percentage scale the merge math expects.
 func TestNormalizeOverlappedPercent(t *testing.T) {
@@ -400,6 +402,10 @@ func TestNormalizeOverlappedPercent(t *testing.T) {
 		{"clamp 95 -> 90", 95, 90},
 		{"clamp -5 -> 0", -5, 0},
 		{"negative fraction -0.1 -> 0", -0.1, 0},
+		{`numeric string "10" -> 10`, "10", 10},
+		{`numeric string fraction "0.1" -> 10`, "0.1", 10},
+		{"bad string -> 0", "abc", 0},
+		{"nil -> 0", nil, 0},
 		// Huge out-of-range values must clamp to 90 (not 0). Go's
 		// float->int is implementation-defined past int's range, so the
 		// clamp must run before truncation (review finding #4). Python's
@@ -407,10 +413,6 @@ func TestNormalizeOverlappedPercent(t *testing.T) {
 		{"huge 1e300 -> 90", 1e300, 90},
 		{"huge -1e300 -> 0", -1e300, 0},
 		{"huge math.MaxFloat64 -> 90", math.MaxFloat64, 90},
-		{`numeric string "10" -> 10`, "10", 10},
-		{`numeric string fraction "0.1" -> 10`, "0.1", 10},
-		{"bad string -> 0", "abc", 0},
-		{"nil -> 0", nil, 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -421,8 +423,32 @@ func TestNormalizeOverlappedPercent(t *testing.T) {
 	}
 }
 
+// TestTokenChunkerParam_UpdatePreservesOverlappedPercent covers review
+// finding #3: tokenChunkerParam.Update must not reset OverlappedPercent to 0
+// when the incoming config omits the key. All other fields use a presence
+// guard, and a partial Update (e.g. changing only chunk_token_size) must
+// preserve the previously configured overlap instead of clobbering it.
+func TestTokenChunkerParam_UpdatePreservesOverlappedPercent(t *testing.T) {
+	p := defaultsToken(tokenChunkerParam{})
+	p.TokenChunkerParam.OverlappedPercent = 30 // pre-existing config
+
+	// Partial update: only chunk_token_size changes.
+	p.Update(map[string]any{"chunk_token_size": 100})
+	if p.TokenChunkerParam.OverlappedPercent != 30 {
+		t.Errorf("after partial Update: overlapped_percent=%v, want 30 (preserved)",
+			p.TokenChunkerParam.OverlappedPercent)
+	}
+
+	// Explicit key still wins and normalizes.
+	p.Update(map[string]any{"overlapped_percent": 0.5})
+	if p.TokenChunkerParam.OverlappedPercent != 50 {
+		t.Errorf("after explicit Update: overlapped_percent=%v, want 50 (normalized)",
+			p.TokenChunkerParam.OverlappedPercent)
+	}
+}
+
 // TestTokenChunker_NormalizesOverlappedPercent asserts the stored value after
-// construction matches Python's normalized [0,90] scale (diff Chunker-2.6).
+// construction matches Python's normalized [0,90] scale. .
 func TestTokenChunker_NormalizesOverlappedPercent(t *testing.T) {
 	cases := []struct {
 		name string
@@ -446,37 +472,6 @@ func TestTokenChunker_NormalizesOverlappedPercent(t *testing.T) {
 			got := c.(*TokenChunkerComponent).param.OverlappedPercent
 			if got != tc.want {
 				t.Errorf("overlapped_percent=%v: stored %v, want %v", tc.in, got, tc.want)
-			}
-		})
-	}
-}
-
-// TestSplitIntoSections locks the CRLF-safe blank-line splitting used by
-// mergeByTokenSize. It does NOT claim Chunker-2.7/2.10 coverage: that
-// section-splitting semantics is still OPEN in
-// docs/migration_python_go_diff.md (flow-vs-app Python alignment target
-// undecided), so this only guards the existing behaviour.
-func TestSplitIntoSections(t *testing.T) {
-	tests := []struct {
-		name string
-		text string
-		want int
-	}{
-		{"two paragraphs", "a\n\nb", 2},
-		{"three paragraphs with excess blank lines", "a\n\n\nb\n\nc", 3},
-		{"single paragraph", "hello world", 1},
-		// A blank line containing only whitespace is still a boundary
-		// under \n\s*\n (this is what reverted the stricter \n{2,}).
-		{"blank line with space is a boundary", "a\n \nb", 2},
-		{"leading blank lines produce empty prefix (caller filters)", "\n\ntext", 2},
-		// CRLF regression guard: \r\n\r\n must split the same as \n\n.
-		{"CRLF paragraph break splits", "a\r\n\r\nb", 2},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := splitIntoSections(tt.text)
-			if len(got) != tt.want {
-				t.Errorf("splitIntoSections(%q) = %d sections, want %d: %v", tt.text, len(got), tt.want, got)
 			}
 		})
 	}
@@ -526,27 +521,134 @@ func TestTokenChunkerParam_ValidateOverlappedRange(t *testing.T) {
 	}
 }
 
-// TestTokenChunkerParam_UpdatePreservesOverlappedPercent locks review
-// finding #3: tokenChunkerParam.Update must not reset OverlappedPercent to 0
-// when the incoming config omits the key. All other fields use a presence
-// guard, and a partial Update (e.g. changing only chunk_token_size) must
-// preserve the previously configured overlap instead of clobbering it.
-func TestTokenChunkerParam_UpdatePreservesOverlappedPercent(t *testing.T) {
-	p := defaultsToken(tokenChunkerParam{})
-	p.TokenChunkerParam.OverlappedPercent = 30 // pre-existing config
-
-	// Partial update: only chunk_token_size changes.
-	p.Update(map[string]any{"chunk_token_size": 100})
-
-	if p.TokenChunkerParam.OverlappedPercent != 30 {
-		t.Errorf("after partial Update: overlapped_percent=%v, want 30 (preserved)",
-			p.TokenChunkerParam.OverlappedPercent)
+// TestMergeByTokenSize_CRLFNormalization verifies that, like Python
+// naive_merge, line endings are normalised
+// (replace("\r\n","\n").replace("\r","\n")) before splitting, so CRLF/CR
+// input must segment and split exactly like the equivalent LF input, and
+// no carriage return may survive into a produced chunk.
+func TestMergeByTokenSize_CRLFNormalization(t *testing.T) {
+	chunkTexts := func(t *testing.T, text string) []string {
+		t.Helper()
+		c := &TokenChunkerComponent{}
+		c.param.ChunkTokenSize = 128
+		c.param.OverlappedPercent = 0
+		out := c.mergeByTokenSize(text, nil)
+		raw, ok := out["chunks"].([]map[string]any)
+		if !ok {
+			t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
+		}
+		texts := make([]string, 0, len(raw))
+		for _, m := range raw {
+			if s, ok := m["text"].(string); ok {
+				texts = append(texts, s)
+			}
+		}
+		return texts
 	}
 
-	// Explicit key still wins and normalizes.
-	p.Update(map[string]any{"overlapped_percent": 0.5})
-	if p.TokenChunkerParam.OverlappedPercent != 50 {
-		t.Errorf("after explicit Update: overlapped_percent=%v, want 50 (normalized)",
-			p.TokenChunkerParam.OverlappedPercent)
+	t.Run("no carriage return survives", func(t *testing.T) {
+		texts := chunkTexts(t, "Para A\r\nPara B\r\nPara C")
+		if len(texts) == 0 {
+			t.Fatalf("expected chunks, got none")
+		}
+		for _, s := range texts {
+			if strings.Contains(s, "\r") {
+				t.Errorf("chunk text contains carriage return: %q", s)
+			}
+		}
+	})
+
+	t.Run("CRLF equals LF", func(t *testing.T) {
+		// With no blank-line pre-splitting, CRLF is
+		// normalised to LF and the blank-line run is preserved (not
+		// collapsed), so equal newline counts must yield equal chunks.
+		crlf := chunkTexts(t, "Para A\r\nPara B\r\nPara C")
+		lf := chunkTexts(t, "Para A\nPara B\nPara C")
+		if !reflect.DeepEqual(crlf, lf) {
+			t.Errorf("CRLF/LF divergence:\n crlf=%v\n lf =%v", crlf, lf)
+		}
+	})
+}
+
+// TestMergeByTokenSize_PreservesBlankLines verifies that an original
+// blank-line run survives in the produced chunk: naive_merge treats the
+// whole payload as a single section and does NOT split on blank lines.
+func TestMergeByTokenSize_PreservesBlankLines(t *testing.T) {
+	c := &TokenChunkerComponent{}
+	c.param.ChunkTokenSize = 128
+	c.param.OverlappedPercent = 0
+	out := c.mergeByTokenSize("A\n\n\nB", nil)
+	raw, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
+	}
+	var joined strings.Builder
+	for _, m := range raw {
+		if s, ok := m["text"].(string); ok {
+			joined.WriteString(s)
+		}
+	}
+	if got := joined.String(); !strings.Contains(got, "A\n\n\nB") {
+		t.Errorf("blank-line run not preserved: got chunk text %q, want it to contain %q", got, "A\n\n\nB")
+	}
+}
+
+// TestMergeByTokenSize_OversizeDropsDelimiters verifies that when a
+// section exceeds chunk_token_size, naive_merge splits on sentence
+// delimiters with a capturing-group re.split but then SKIPS any segment
+// that is a pure delimiter (re.fullmatch(dels, sub_sec)), so the
+// delimiter character ("。") is DROPPED from the produced chunk text
+// rather than retained (rag/nlp/__init__.py:1216-1225). The Go port uses
+// regexp.Split (which discards the delimiter) and prepends a single "\n",
+// so the merged chunk text must NOT contain the original "。".
+func TestMergeByTokenSize_OversizeDropsDelimiters(t *testing.T) {
+	c := &TokenChunkerComponent{}
+	c.param.ChunkTokenSize = 5
+	c.param.OverlappedPercent = 0
+	text := "第一句。第二句。第三句。第四句。第五句。"
+	out := c.mergeByTokenSize(text, nil)
+	raw, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
+	}
+	var joined strings.Builder
+	for _, m := range raw {
+		if s, ok := m["text"].(string); ok {
+			joined.WriteString(s)
+		}
+	}
+	if got := joined.String(); strings.Contains(got, "。") {
+		t.Errorf("sentence delimiter retained (Python drops it): got chunk text %q, want it to NOT contain %q", got, "。")
+	}
+}
+
+// TestMergeByTokenSize_OversizeDropsBlankLines covers review #1: in the
+// oversize sentence-split path, a blank line whose "\n" delimiter segments
+// are dropped (matching Python naive_merge, rag/nlp/__init__.py:1216-1225)
+// must NOT survive as a blank line. The lone "\n" delimiters produced by
+// "\n\n" are dropped, so the merged chunk text must not contain "\n\n".
+func TestMergeByTokenSize_OversizeDropsBlankLines(t *testing.T) {
+	c := &TokenChunkerComponent{}
+	c.param.ChunkTokenSize = 100
+	c.param.OverlappedPercent = 0
+	// Two ~70-char blocks (no sentence punctuation, so the only
+	// delimiters are the two blank-line newlines) separated by "\n\n".
+	// Total exceeds 100 tokens → oversize path; the "\n" delimiters are
+	// dropped, mirroring Python, so the blank line must not survive.
+	block := strings.Repeat("知识库检索增强生成技术", 7) // 70 chars
+	text := block + "\n\n" + block
+	out := c.mergeByTokenSize(text, nil)
+	raw, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("mergeByTokenSize output missing chunks: %v", out)
+	}
+	var joined strings.Builder
+	for _, m := range raw {
+		if s, ok := m["text"].(string); ok {
+			joined.WriteString(s)
+		}
+	}
+	if got := joined.String(); strings.Contains(got, "\n\n") {
+		t.Errorf("blank line survived in oversize path (Python drops it): got chunk text %q, want no blank line (\\n\\n)", got)
 	}
 }

@@ -11,13 +11,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
+import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentListByPage } from '@/hooks/use-agent-request';
 import { useDeleteCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
 import { Routes } from '@/routes';
 import { pick } from 'lodash';
 import { Clipboard, ClipboardPlus, FileInput, Plus } from 'lucide-react';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
 import { AgentCard } from './agent-card';
@@ -44,15 +45,6 @@ export default function Agents() {
     filterValue,
     handleFilterSubmit,
   } = useFetchAgentListByPage();
-
-  const canvasCategory = useMemo(
-    () =>
-      Array.isArray(filterValue.canvasCategory)
-        ? (filterValue.canvasCategory[0] as string | undefined)
-        : undefined,
-    [filterValue.canvasCategory],
-  );
-  const isCompilation = canvasCategory === CompilationGroupCategory;
 
   const { navigateToAgentTemplates } = useNavigatePage();
   const navigate = useNavigate();
@@ -91,10 +83,7 @@ export default function Agents() {
     },
     [setPagination],
   );
-
-  const handleAddCompilation = useCallback(() => {
-    navigate(`${Routes.CompilationTemplatesEditNext}?source=agents`);
-  }, [navigate]);
+  useGoToPreviousPageOnEmpty(data?.length, listLoading);
 
   const handleEditCompilation = useCallback(
     (id: string) => () => {
@@ -137,68 +126,59 @@ export default function Agents() {
             onChange={handleFilterSubmit}
             value={filterValue}
           >
-            {isCompilation ? (
-              <Button
-                onClick={handleAddCompilation}
-                data-testid="create-compilation-template"
-              >
-                <Plus className="size-[1em]" />
-              </Button>
-            ) : (
-              <DropdownMenu>
-                <DropdownMenuTrigger data-testid="create-agent" asChild>
-                  <Button>
-                    <Plus className="size-[1em]" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent data-testid="agent-create-menu">
-                  <DropdownMenuItem
-                    justifyBetween={false}
-                    onClick={showCreatingModal}
-                  >
-                    <Clipboard />
-                    {t('flow.createFromBlank')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    justifyBetween={false}
-                    onClick={() => navigateToAgentTemplates()}
-                  >
-                    <ClipboardPlus />
-                    {t('flow.createFromTemplate')}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    data-testid="agent-import-json"
-                    justifyBetween={false}
-                    onClick={handleImportJson}
-                  >
-                    <FileInput />
-                    {t('flow.importJsonFile')}
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger data-testid="create-agent" asChild>
+                <Button>
+                  <Plus className="size-[1em]" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent data-testid="agent-create-menu">
+                <DropdownMenuItem
+                  justifyBetween={false}
+                  onClick={showCreatingModal}
+                >
+                  <Clipboard />
+                  {t('flow.createFromBlank')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  justifyBetween={false}
+                  onClick={() => navigateToAgentTemplates()}
+                >
+                  <ClipboardPlus />
+                  {t('flow.createFromTemplate')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  data-testid="agent-import-json"
+                  justifyBetween={false}
+                  onClick={handleImportJson}
+                >
+                  <FileInput />
+                  {t('flow.importJsonFile')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </ListFilterBar>
         </header>
 
         {data.length ? (
           <>
             <CardContainer className="flex-1 overflow-auto px-5">
-              {isCompilation
-                ? (data as any[]).map((item) => (
-                    <CompilationTemplateCard
-                      key={item.id}
-                      data={item}
-                      onClick={handleEditCompilation(item.id)}
-                      onDelete={handleDeleteCompilation}
-                    />
-                  ))
-                : data.map((x) => (
-                    <AgentCard
-                      key={x.id}
-                      data={x}
-                      showAgentRenameModal={showAgentRenameModal}
-                    />
-                  ))}
+              {data.map((x) =>
+                x.type === CompilationGroupCategory ? (
+                  <CompilationTemplateCard
+                    key={x.id}
+                    data={x}
+                    onClick={handleEditCompilation(x.id)}
+                    onDelete={handleDeleteCompilation}
+                  />
+                ) : (
+                  <AgentCard
+                    key={x.id}
+                    data={x}
+                    showAgentRenameModal={showAgentRenameModal}
+                  />
+                ),
+              )}
             </CardContainer>
 
             <footer className="mt-4 px-5 pb-5">

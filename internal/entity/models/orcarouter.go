@@ -48,6 +48,28 @@ func (o *OrcaRouterModel) Name() string {
 	return "orcarouter"
 }
 
+type OrcaRouterChatResponse struct {
+	ID      string `json:"id"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Message      struct {
+			Content   string           `json:"content"`
+			Role      string           `json:"role"`
+			ToolCalls []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+		Logprobs interface{} `json:"logprobs"`
+	} `json:"choices"`
+	Created int    `json:"created"`
+	Model   string `json:"model"`
+	Object  string `json:"object"`
+	Usage   struct {
+		CompletionTokens int `json:"completion_tokens"`
+		PromptTokens     int `json:"prompt_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
 func (o *OrcaRouterModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -101,39 +123,34 @@ func (o *OrcaRouterModel) ChatWithMessages(ctx context.Context, modelName string
 	}
 
 	// Parse response
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result OrcaRouterChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no choices in response")
-	}
+		choice := &result.Choices[0]
+		content := choice.Message.Content
+		if content == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no message in response")
+		}
 
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no message in response")
-	}
-
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("no message in response")
-	}
-
-	// baichuan not support think
-	emptyReason := ""
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &emptyReason,
-	}
-
-	return chatResponse, nil
+		emptyReason := ""
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &content,
+			ReasonContent: &emptyReason,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 func (o *OrcaRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -191,6 +208,14 @@ func (o *OrcaRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
+
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(modelConfig, modelUsage, tokenUsage)
+		}
 
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
@@ -374,7 +399,6 @@ func (o *OrcaRouterModel) ListModels(ctx context.Context, apiConfig *APIConfig) 
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
 	// Parse response
 	var modelList ModelList
 	if err = json.Unmarshal(body, &modelList); err != nil {

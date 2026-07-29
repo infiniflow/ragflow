@@ -125,11 +125,7 @@ func NewMemoryMessageService(memories *MemoryService) *MemoryMessageService {
 // the per-memory outcomes. The outer error is reserved for
 // call-level failures (e.g. invalid input); per-memory failures
 // go into Failed, mirroring the Python tuple shape.
-func (s *MemoryMessageService) QueueSaveToMemoryTask(
-	ctx context.Context,
-	memoryIDs []string,
-	msg MemoryMessage,
-) (*QueueSaveResult, error) {
+func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memoryIDs []string, msg MemoryMessage) (*QueueSaveResult, error) {
 	if len(memoryIDs) == 0 {
 		return &QueueSaveResult{}, nil
 	}
@@ -225,12 +221,13 @@ func buildRawMessage(
 // buildTaskRow constructs the Task row the async extractor polls.
 func buildTaskRow(rawMessageID int64, memoryID string) map[string]any {
 	return map[string]any{
-		"id":        newUUIDString(),
-		"doc_id":    memoryID,
-		"task_type": "memory",
-		"progress":  0.0,
-		"begin_at":  time.Now(),
-		"digest":    fmt.Sprintf("%d", rawMessageID),
+		"id":           newUUIDString(),
+		"doc_id":       memoryID,
+		"task_type":    "memory",
+		"progress":     0.0,
+		"progress_msg": "",
+		"begin_at":     time.Now(),
+		"digest":       fmt.Sprintf("%d", rawMessageID),
 	}
 }
 
@@ -321,18 +318,20 @@ func newUUIDString() string {
 
 func taskFromRow(row map[string]any) *entity.Task {
 	digest := fmt.Sprint(row["digest"])
+	progressMsg := fmt.Sprint(row["progress_msg"])
 	beginAt, _ := row["begin_at"].(time.Time)
 	if beginAt.IsZero() {
 		now := time.Now()
 		beginAt = now
 	}
 	return &entity.Task{
-		ID:       fmt.Sprint(row["id"]),
-		DocID:    fmt.Sprint(row["doc_id"]),
-		TaskType: fmt.Sprint(row["task_type"]),
-		Progress: 0,
-		BeginAt:  &beginAt,
-		Digest:   &digest,
+		ID:          fmt.Sprint(row["id"]),
+		DocID:       fmt.Sprint(row["doc_id"]),
+		TaskType:    fmt.Sprint(row["task_type"]),
+		Progress:    0,
+		ProgressMsg: &progressMsg,
+		BeginAt:     &beginAt,
+		Digest:      &digest,
 	}
 }
 

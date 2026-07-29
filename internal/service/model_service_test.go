@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -243,6 +245,144 @@ func TestModelProviderServiceAlterModelRejectsWrongScopedModelID(t *testing.T) {
 	if code != common.CodeNotFound {
 		t.Fatalf("code = %v, want %v", code, common.CodeNotFound)
 	}
+}
+
+func TestReconcileNvidiaInstanceModelsAddsUpdatesAndDeletes(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	provider := &entity.TenantModelProvider{ID: "provider-nvidia", TenantID: "tenant-1", ProviderName: "NVIDIA"}
+	instance := &entity.TenantModelInstance{ID: "instance-nvidia", ProviderID: provider.ID, InstanceName: "default", APIKey: "nvapi-test", Status: "active", Extra: "{}"}
+	rows := []interface{}{
+		provider,
+		instance,
+		&entity.TenantModel{
+			ID:         "keep-id",
+			ProviderID: provider.ID,
+			InstanceID: instance.ID,
+			ModelName:  "nvidia/keep",
+			ModelType:  int(entity.ModelTypeChat),
+			Status:     "inactive",
+			Extra:      `{"max_tokens":4096,"verify":"success","custom":"preserved"}`,
+		},
+		&entity.TenantModel{
+			ID:         "stale-id",
+			ProviderID: provider.ID,
+			InstanceID: instance.ID,
+			ModelName:  "nvidia/stale",
+			ModelType:  int(entity.ModelTypeChat),
+			Status:     "active",
+			Extra:      `{}`,
+		},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+
+	maxTokens := 131072
+	maxDimension := 2048
+	remote := []modelModule.ListModelResponse{
+		{Name: "nvidia/keep", MaxTokens: &maxTokens, ModelTypes: []string{"chat", "vision"}},
+		{Name: "nvidia/new-embed", MaxTokens: ptrService(8192), MaxDimension: &maxDimension, Dimensions: []int{1024, 2048}, ModelTypes: []string{"embedding"}},
+	}
+
+	err := NewModelProviderService().reconcileNvidiaInstanceModels(context.Background(), db, provider, instance, remote)
+	if err != nil {
+		t.Fatalf("reconcileNvidiaInstanceModels() error = %v", err)
+	}
+
+	var got []*entity.TenantModel
+	if err := db.Order("model_name").Find(&got).Error; err != nil {
+		t.Fatalf("list models: %v", err)
+	}
+	if len(got) != 2 || got[0].ModelName != "nvidia/keep" || got[1].ModelName != "nvidia/new-embed" {
+		t.Fatalf("models = %#v, want keep and new", got)
+	}
+	if got[0].ID != "keep-id" || got[0].Status != "inactive" {
+		t.Fatalf("retained model identity/status = %q/%q", got[0].ID, got[0].Status)
+	}
+	if got[0].ModelType != int(entity.ModelTypeChat|entity.ModelTypeImage2Text) {
+		t.Fatalf("retained model type = %d", got[0].ModelType)
+	}
+	var keepExtra map[string]interface{}
+	if err := json.Unmarshal([]byte(got[0].Extra), &keepExtra); err != nil {
+		t.Fatalf("decode retained extra: %v", err)
+	}
+	if keepExtra["custom"] != "preserved" || keepExtra["verify"] != "success" || int(keepExtra["max_tokens"].(float64)) != maxTokens {
+		t.Fatalf("retained extra = %#v", keepExtra)
+	}
+	var newExtra map[string]interface{}
+	if err := json.Unmarshal([]byte(got[1].Extra), &newExtra); err != nil {
+		t.Fatalf("decode new extra: %v", err)
+	}
+	if newExtra["verify"] != entity.ModelVerifyUnknown || int(newExtra["max_dimension"].(float64)) != maxDimension {
+		t.Fatalf("new extra = %#v", newExtra)
+	}
+}
+
+func TestReconcileNvidiaInstanceModelsRejectsEmptyDiscoveryWithoutMutation(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	provider := &entity.TenantModelProvider{ID: "provider-nvidia", TenantID: "tenant-1", ProviderName: "NVIDIA"}
+	instance := &entity.TenantModelInstance{ID: "instance-nvidia", ProviderID: provider.ID, InstanceName: "default", Status: "active", Extra: "{}"}
+	existing := &entity.TenantModel{ID: "keep-id", ProviderID: provider.ID, InstanceID: instance.ID, ModelName: "nvidia/keep", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: "{}"}
+	for _, row := range []interface{}{provider, instance, existing} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+
+	err := NewModelProviderService().reconcileNvidiaInstanceModels(context.Background(), db, provider, instance, nil)
+	if err == nil {
+		t.Fatal("reconcileNvidiaInstanceModels() error = nil, want empty discovery error")
+	}
+	var count int64
+	if err := db.Model(&entity.TenantModel{}).Where("id = ?", existing.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count retained model: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("retained model count = %d, want 1", count)
+	}
+}
+
+func TestReconcileNvidiaInstanceModelsRollsBackPartialRefresh(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	provider := &entity.TenantModelProvider{ID: "provider-nvidia", TenantID: "tenant-1", ProviderName: "NVIDIA"}
+	instance := &entity.TenantModelInstance{ID: "instance-nvidia", ProviderID: provider.ID, InstanceName: "default", Status: "active", Extra: "{}"}
+	existing := &entity.TenantModel{
+		ID:         "keep-id",
+		ProviderID: provider.ID,
+		InstanceID: instance.ID,
+		ModelName:  "nvidia/keep",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+		Extra:      "{invalid-json",
+	}
+	for _, row := range []interface{}{provider, instance, existing} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("seed %T: %v", row, err)
+		}
+	}
+
+	remote := []modelModule.ListModelResponse{
+		{Name: "nvidia/new", ModelTypes: []string{"chat"}},
+		{Name: "nvidia/keep", ModelTypes: []string{"chat"}},
+	}
+	err := NewModelProviderService().reconcileNvidiaInstanceModels(context.Background(), db, provider, instance, remote)
+	if err == nil {
+		t.Fatal("reconcileNvidiaInstanceModels() error = nil, want metadata error")
+	}
+
+	var got []*entity.TenantModel
+	if err := db.Order("model_name").Find(&got).Error; err != nil {
+		t.Fatalf("list models: %v", err)
+	}
+	if len(got) != 1 || got[0].ID != existing.ID {
+		t.Fatalf("models after rollback = %#v, want only original model", got)
+	}
+}
+
+func ptrService[T any](value T) *T {
+	return &value
 }
 
 func TestParseModelName(t *testing.T) {

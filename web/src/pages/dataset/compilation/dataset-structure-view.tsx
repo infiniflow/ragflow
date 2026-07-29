@@ -2,11 +2,14 @@ import {
   SelectWithSearch,
   SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { getEntityDisplayName } from '@/components/structure-graph/adapters';
 import { RepresentationRenderer } from '@/components/structure-graph/representation-renderer';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import {
   DatasetStructureKeys,
+  useDeleteDatasetStructure,
   useFetchDatasetStructureGraph,
   useFetchKnowledgeBaseConfiguration,
   useKnowledgeBaseId,
@@ -15,10 +18,16 @@ import { GenerateStatus } from '@/pages/dataset/dataset/generate-button/constant
 import { useTraceRunData } from '@/pages/dataset/dataset/generate-button/hook';
 import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
 import { useQueryClient } from '@tanstack/react-query';
+import { Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { StructureKind, ViewMode, ViewModeGenerateTypeMap } from './constants';
+import {
+  StructureKind,
+  ViewMode,
+  ViewModeGenerateTypeMap,
+  ViewModeLabelKeyMap,
+} from './constants';
 import CompilationEmptyState from './empty-state';
 import { CompilationLoadingCard } from './loading-card';
 
@@ -35,6 +44,8 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
   const [selectedNodeId, setSelectedNodeId] = useState('');
   const { data, loading } = useFetchDatasetStructureGraph(kind, graphKeywords);
   const template = data?.templates?.[0];
+  const { deleteDatasetStructure, loading: deleting } =
+    useDeleteDatasetStructure();
 
   const { data: structureRunData } = useTraceRunData(
     ViewModeGenerateTypeMap[kind],
@@ -86,6 +97,14 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
     setSelectedNodeId('');
   }, []);
 
+  const handleDeleteStructure = useCallback(async () => {
+    const code = await deleteDatasetStructure(kind);
+    if (code === 0) {
+      setGraphKeywords('');
+      setSelectedNodeId('');
+    }
+  }, [deleteDatasetStructure, kind]);
+
   const canGenerate = (knowledgeBase?.chunk_count ?? 0) > 0;
 
   if (loading && !data) {
@@ -104,8 +123,18 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
 
   return (
     <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
-      {kind === ViewMode.Graph && (
-        <div className="flex justify-end px-4 pt-4">
+      <div className="flex justify-between gap-4 px-4 pt-4">
+        <ConfirmDeleteDialog
+          title={t('knowledgeDetails.deleteStructureConfirm', {
+            name: t(ViewModeLabelKeyMap[kind]),
+          })}
+          onOk={handleDeleteStructure}
+        >
+          <Button variant="outline" size="sm" disabled={deleting}>
+            <Trash2 />
+          </Button>
+        </ConfirmDeleteDialog>
+        {kind === ViewMode.Graph && (
           <SelectWithSearch
             options={entityOptions}
             value={selectedEntityName || graphKeywords}
@@ -116,8 +145,8 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
             onNoMatchEnter={handleNoMatchEnter}
             disableAutoSelectOnEnter
           />
-        </div>
-      )}
+        )}
+      </div>
       <RepresentationRenderer
         template={template}
         highlightNodeId={selectedEntityName || null}

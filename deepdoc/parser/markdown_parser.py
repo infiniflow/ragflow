@@ -55,11 +55,11 @@ class RAGFlowMarkdownParser:
                 table_list.append(raw_table)
                 if separate_tables:
                     # Skip this match (i.e., remove it)
-                    new_text += working_text[last_end : match.start()] + "\n\n"
+                    new_text += working_text[last_end : match.start()] + "\n"
                 else:
                     # Replace with rendered HTML
                     html_table = markdown(raw_table, extensions=["markdown.extensions.tables"]) if render else raw_table
-                    new_text += working_text[last_end : match.start()] + html_table + "\n\n"
+                    new_text += working_text[last_end : match.start()] + html_table + "\n"
                 last_end = match.end()
             new_text += working_text[last_end:]
             return new_text
@@ -75,7 +75,7 @@ class RAGFlowMarkdownParser:
             """,
                 re.VERBOSE,
             )
-            working_text = replace_tables_with_rendered_html(border_table_pattern, tables, render=separate_tables)
+            working_text = replace_tables_with_rendered_html(border_table_pattern, tables)
 
             # Borderless Markdown table
             no_border_table_pattern = re.compile(
@@ -87,7 +87,7 @@ class RAGFlowMarkdownParser:
                 """,
                 re.VERBOSE,
             )
-            working_text = replace_tables_with_rendered_html(no_border_table_pattern, tables, render=separate_tables)
+            working_text = replace_tables_with_rendered_html(no_border_table_pattern, tables)
 
         # Replace any TAGS e.g. <table ...> to <table>
         TAGS = ["table", "td", "tr", "th", "tbody", "thead", "div"]
@@ -139,9 +139,9 @@ class RAGFlowMarkdownParser:
                     raw_table = match.group()
                     tables.append(raw_table)
                     if separate_tables:
-                        new_text += working_text[last_end : match.start()] + "\n\n"
+                        new_text += working_text[last_end : match.start()] + "\n"
                     else:
-                        new_text += working_text[last_end : match.start()] + raw_table + "\n\n"
+                        new_text += working_text[last_end : match.start()] + raw_table + "\n"
                     last_end = match.end()
                 new_text += working_text[last_end:]
                 working_text = new_text

@@ -10,7 +10,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
-import { StructureKinds, ViewMode } from './constants';
+import { StructureKinds, ViewMode, ViewModeLabelKeyMap } from './constants';
 import { DatasetStructureView } from './dataset-structure-view';
 import { LlmWikiView } from './llm-wiki-view';
 import { NavTreeView } from './nav-tree-view';
@@ -24,40 +24,10 @@ export default function Compilation() {
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.LlmWiki);
 
   const viewOptions = useMemo<SelectWithSearchFlagOptionType[]>(() => {
-    return [
-      {
-        value: ViewMode.LlmWiki,
-        label: t('knowledgeDetails.llmWiki'),
-      },
-      {
-        value: ViewMode.Skills,
-        label: t('knowledgeDetails.skills', 'To Skills'),
-      },
-      {
-        value: ViewMode.Tree,
-        label: t('knowledgeDetails.navTree'),
-      },
-      {
-        value: ViewMode.Graph,
-        label: t('knowledgeDetails.structureGraph'),
-      },
-      {
-        value: ViewMode.MindMap,
-        label: t('knowledgeDetails.structureMindmap'),
-      },
-      {
-        value: ViewMode.Timeline,
-        label: t('knowledgeDetails.structureTimeline'),
-      },
-      // {
-      //   value: ViewMode.SessionEssence,
-      //   label: t('knowledgeDetails.structureSessionEssence'),
-      // },
-      // {
-      //   value: ViewMode.SessionGraph,
-      //   label: t('knowledgeDetails.structureSessionGraph'),
-      // },
-    ];
+    return Object.values(ViewMode).map((mode) => ({
+      value: mode,
+      label: t(ViewModeLabelKeyMap[mode]),
+    }));
   }, [t]);
 
   const handleViewModeChange = useCallback((value: string) => {

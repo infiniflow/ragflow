@@ -14,23 +14,26 @@ register_tool("web_search", _search_schema("web_search", "Internet search"), web
 register_tool("structured_query", _search_schema("structured_query", "SQL search"), structured_query)
 
 # Navigation tools (require compilation)
-from rag.advanced_rag.harness.tools.navigation import catalog_navigate, dataset_navigate, mindmap_navigate
+from rag.advanced_rag.harness.tools.navigation import ontology_navigate, dataset_navigation_by_tree, mindmap_navigate
 
-# catalog_navigate covers both the tree/TOC outline and the page index.
+# ontology_navigate covers both the tree/TOC outline and the page index.
 register_tool(
-    "catalog_navigate",
-    _navigate_schema("catalog_navigate", "Get question-related chunks from the document's catalog (table of contents / page index)"),
-    catalog_navigate,
+    "ontology_navigate",
+    _navigate_schema("ontology_navigate", "Get question-related chunks from the given documents catalog (tree / page index / mind map). It always follows dataset navigation."),
+    ontology_navigate,
     requires_compilation=True,
-    compilation_type=("toc", "page_index"),
+    compilation_type=("toc", "page_index", "mindmap"),
 )
 register_tool(
     "mindmap_navigate", _navigate_schema("mindmap_navigate", "Get question-related chunks from the document's  mindmap"), mindmap_navigate, requires_compilation=True, compilation_type="mindmap"
 )
 register_tool(
-    "dataset_navigate",
-    _navigate_schema("dataset_navigate", "Find the most relevant documents via the dataset map, then search within them"),
-    dataset_navigate,
+    "dataset_navigation_by_tree",
+    _navigate_schema(
+        "dataset_navigation_by_tree",
+        "Find the documents most relevant to the question via the dataset map; returns their document IDs (later navigation/exploration tools are automatically scoped to them).",
+    ),
+    dataset_navigation_by_tree,
     requires_compilation=True,
     compilation_type="tree",
 )

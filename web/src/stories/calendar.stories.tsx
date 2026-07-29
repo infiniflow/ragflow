@@ -28,7 +28,7 @@ import { useState } from 'react';
 
 function MyComponent() {
   const [date, setDate] = useState<Date | undefined>(new Date());
-  
+
   return (
     <Calendar
       mode="single"
@@ -99,7 +99,7 @@ export const Default: Story = {
     className: 'rounded-md border',
   },
   render: () => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [date, setDate] = useState<Date | undefined>(new Date());
 
     return (
@@ -143,7 +143,7 @@ export const RangeSelection: Story = {
     className: 'rounded-md border',
   },
   render: () => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [range, setRange] = useState<{
       from: Date | undefined;
       to?: Date | undefined;
@@ -206,7 +206,7 @@ export const WithoutOutsideDays: Story = {
     className: 'rounded-md border',
   },
   render: () => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [date, setDate] = useState<Date | undefined>(new Date());
 
     return (
@@ -249,7 +249,7 @@ export const CustomStyling: Story = {
     showOutsideDays: true,
   },
   render: () => {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
+    // oxlint-disable-next-line react/rules-of-hooks
     const [date, setDate] = useState<Date | undefined>(new Date());
 
     return (

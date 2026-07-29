@@ -24,6 +24,7 @@ from rag.nlp import rag_tokenizer, tokenize
 from deepdoc.parser import PdfParser, ExcelParser, HtmlParser
 from deepdoc.parser.figure_parser import vision_figure_parser_docx_wrapper_naive
 from rag.app.naive import by_plaintext, PARSERS
+from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id
 from common.constants import MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
 from common.parser_config_utils import normalize_layout_recognizer
 
@@ -87,7 +88,14 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         callback(0.8, "Finish parsing.")
 
     elif re.search(r"\.pdf$", filename, re.IGNORECASE):
-        layout_recognizer, parser_model_name = normalize_layout_recognizer(parser_config.get("layout_recognize", "DeepDOC"))
+        layout_recognize_raw = parser_config.get("layout_recognize", "DeepDOC")
+        tenant_id = kwargs.get("tenant_id")
+        if tenant_id and isinstance(layout_recognize_raw, str):
+            try:
+                layout_recognize_raw = get_composite_model_name_by_id(layout_recognize_raw)
+            except LookupError:
+                pass
+        layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize_raw)
 
         if isinstance(layout_recognizer, bool):
             layout_recognizer = "DeepDOC" if layout_recognizer else "Plain Text"

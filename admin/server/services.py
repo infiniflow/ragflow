@@ -273,12 +273,23 @@ class ServiceMgr:
     @staticmethod
     def get_all_services():
         doc_engine = os.getenv("DOC_ENGINE", "elasticsearch")
+        # Map STORAGE_IMPL (e.g. "AWS_S3", "MINIO", "OSS") to the lowercase
+        # `store_type` we use in FileStoreConfig.store_type. The "AWS_"
+        # prefix is stripped so AWS_S3 matches store_type "s3".
+        storage_impl = os.getenv("STORAGE_IMPL", "MINIO")
+        active_store_type = storage_impl.lower().removeprefix("aws_")
         result = []
         configs = SERVICE_CONFIGS.configs
         for service_id, config in enumerate(configs):
             config_dict = config.to_dict()
             if config_dict["service_type"] == "retrieval":
                 if config_dict["extra"]["retrieval_type"] != doc_engine:
+                    continue
+            if config_dict["service_type"] == "file_store":
+                # Only show the file-store backend that's actually active.
+                # Without this filter, a stale minio entry from service_conf.yaml
+                # is returned even when STORAGE_IMPL=AWS_S3 (see #17294).
+                if config_dict.get("extra", {}).get("store_type") != active_store_type:
                     continue
             try:
                 service_detail = ServiceMgr.get_service_details(service_id)
@@ -484,6 +495,11 @@ class SandboxMgr:
             "description": "E2B Cloud - Code Execution Sandboxes",
             "tags": ["saas", "fast", "global"],
         },
+        "tenki": {
+            "name": "Tenki",
+            "description": "Tenki - Disposable microVM code sandboxes",
+            "tags": ["saas", "cloud", "microvm", "isolated"],
+        },
     }
 
     @staticmethod
@@ -503,6 +519,7 @@ class SandboxMgr:
             SSHProvider,
             AliyunCodeInterpreterProvider,
             E2BProvider,
+            TenkiProvider,
         )
 
         schemas = {
@@ -511,6 +528,7 @@ class SandboxMgr:
             "ssh": SSHProvider.get_config_schema(),
             "aliyun_codeinterpreter": AliyunCodeInterpreterProvider.get_config_schema(),
             "e2b": E2BProvider.get_config_schema(),
+            "tenki": TenkiProvider.get_config_schema(),
         }
 
         if provider_id not in schemas:
@@ -576,6 +594,7 @@ class SandboxMgr:
             SSHProvider,
             AliyunCodeInterpreterProvider,
             E2BProvider,
+            TenkiProvider,
         )
 
         try:
@@ -620,6 +639,7 @@ class SandboxMgr:
                 "ssh": SSHProvider,
                 "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
                 "e2b": E2BProvider,
+                "tenki": TenkiProvider,
             }
             provider = provider_classes[provider_type]()
             is_valid, error_msg = provider.validate_config(config)
@@ -667,6 +687,7 @@ class SandboxMgr:
                 SSHProvider,
                 AliyunCodeInterpreterProvider,
                 E2BProvider,
+                TenkiProvider,
             )
 
             # Instantiate provider based on type
@@ -676,6 +697,7 @@ class SandboxMgr:
                 "ssh": SSHProvider,
                 "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
                 "e2b": E2BProvider,
+                "tenki": TenkiProvider,
             }
 
             if provider_type not in provider_classes:

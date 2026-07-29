@@ -67,7 +67,7 @@ func TestRealProducerConsumer(t *testing.T) {
 		DatasetID:  "kb1",
 		Status:     common.CREATED,
 	}
-	created, err := dao.NewIngestionTaskDAO().Create(ingestionTask)
+	created, err := dao.NewIngestionTaskDAO().Create(context.Background(), db, ingestionTask)
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -103,11 +103,11 @@ func TestRealProducerConsumer(t *testing.T) {
 
 	// Mirrors Start():142-143 — UpdateStatusIfCurrent
 	ingestionTaskDAO := dao.NewIngestionTaskDAO()
-	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(taskMsg.TaskID, common.CREATED, common.RUNNING)
+	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, taskMsg.TaskID, common.CREATED, common.RUNNING)
 	if err != nil {
 		t.Fatalf("UpdateStatusIfCurrent: %v", err)
 	}
-	task, err := ingestionTaskDAO.GetByID(taskMsg.TaskID)
+	task, err := ingestionTaskDAO.GetByID(context.Background(), db, taskMsg.TaskID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}
@@ -161,7 +161,7 @@ func TestRealProducerConsumer(t *testing.T) {
 	t.Log("Consumer: PipelineExecutor.Execute() - OK")
 
 	// Mirrors executeTask — mark as completed
-	if _, err := ingestionTaskDAO.UpdateStatusIfCurrent(task.ID, common.RUNNING, common.COMPLETED); err != nil {
+	if _, err := ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, task.ID, common.RUNNING, common.COMPLETED); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
 
@@ -169,7 +169,7 @@ func TestRealProducerConsumer(t *testing.T) {
 	taskHandle.Ack()
 
 	// ── 6. Verify ──
-	final, _ := ingestionTaskDAO.GetByID(task.ID)
+	final, _ := ingestionTaskDAO.GetByID(context.Background(), db, task.ID)
 	if final.Status != common.COMPLETED {
 		t.Errorf("final status = %s, want %s", final.Status, common.COMPLETED)
 	}
