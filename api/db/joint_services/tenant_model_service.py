@@ -452,12 +452,16 @@ def get_api_key(tenant_id: str, model_name: str):
         if not exist_inst:
             logger.warning(
                 "Direct-ID resolution: instance not found | tenant_id=%s model_id=%s instance_id=%s",
-                tenant_id, model_name, model_obj.instance_id,
+                tenant_id,
+                model_name,
+                model_obj.instance_id,
             )
             raise LookupError(f"Instance {model_obj.instance_id} not found for model {model_name}.")
         logger.debug(
             "Direct-ID resolution: resolved | tenant_id=%s model_id=%s instance_id=%s",
-            tenant_id, model_name, model_obj.instance_id,
+            tenant_id,
+            model_name,
+            model_obj.instance_id,
         )
         return instance_obj.api_key
 
