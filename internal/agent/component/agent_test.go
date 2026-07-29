@@ -677,6 +677,60 @@ func (m *fakeToolCallingChatModel) WithTools(tools []*schema.ToolInfo) (model.To
 	return &cp, nil
 }
 
+type oneRoundTool struct {
+	calls int
+}
+
+func (t *oneRoundTool) Info(context.Context) (*schema.ToolInfo, error) {
+	return &schema.ToolInfo{
+		Name: "search",
+		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
+			"query": {Type: schema.String, Required: true},
+		}),
+	}, nil
+}
+
+func (t *oneRoundTool) InvokableRun(context.Context, string, ...einotool.Option) (string, error) {
+	t.calls++
+	return "source-backed result", nil
+}
+
+type finalAfterOneToolModel struct {
+	turn        int
+	sawToolData bool
+}
+
+func (m *finalAfterOneToolModel) WithTools([]*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	return m, nil
+}
+
+func (m *finalAfterOneToolModel) Generate(_ context.Context, in []*schema.Message, _ ...model.Option) (*schema.Message, error) {
+	m.turn++
+	if m.turn == 1 {
+		return &schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{{
+				ID:   "call-1",
+				Type: "function",
+				Function: schema.FunctionCall{
+					Name:      "search",
+					Arguments: `{"query":"codex"}`,
+				},
+			}},
+		}, nil
+	}
+	for _, msg := range in {
+		if msg.Role == schema.Tool && msg.Content == "source-backed result" {
+			m.sawToolData = true
+		}
+	}
+	return &schema.Message{Role: schema.Assistant, Content: "final answer"}, nil
+}
+
+func (m *finalAfterOneToolModel) Stream(context.Context, []*schema.Message, ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	return nil, errors.New("unexpected streaming call")
+}
+
 func TestAgent_CanCreateReactAgentWithAllRegisteredTools(t *testing.T) {
 	p := AgentParam{
 		Tools: []string{
@@ -714,6 +768,57 @@ func TestAgent_CanCreateReactAgentWithAllRegisteredTools(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("react.NewAgent(all tools): %v", err)
+	}
+}
+
+func TestAgent_ReactMaxStepsMatchesPythonRounds(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name      string
+		maxRounds int
+		wantSteps int
+	}{
+		{name: "one tool round still allows final answer", maxRounds: 1, wantSteps: 3},
+		{name: "default five rounds includes final answer", maxRounds: 5, wantSteps: 11},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := reactMaxSteps(tc.maxRounds); got != tc.wantSteps {
+				t.Fatalf("reactMaxSteps(%d) = %d, want %d", tc.maxRounds, got, tc.wantSteps)
+			}
+		})
+	}
+}
+
+func TestAgent_OnePythonToolRoundExecutesToolAndFinalModel(t *testing.T) {
+	t.Parallel()
+
+	chatModel := &finalAfterOneToolModel{}
+	searchTool := &oneRoundTool{}
+	agent, err := react.NewAgent(t.Context(), &react.AgentConfig{
+		ToolCallingModel: chatModel,
+		ToolsConfig: compose.ToolsNodeConfig{
+			Tools: []einotool.BaseTool{searchTool},
+		},
+		MaxStep: reactMaxSteps(1),
+	})
+	if err != nil {
+		t.Fatalf("react.NewAgent: %v", err)
+	}
+
+	out, err := agent.Generate(t.Context(), []*schema.Message{schema.UserMessage("find Codex docs")})
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if out.Content != "final answer" {
+		t.Fatalf("content = %q, want final answer", out.Content)
+	}
+	if searchTool.calls != 1 {
+		t.Fatalf("tool calls = %d, want 1", searchTool.calls)
+	}
+	if chatModel.turn != 2 || !chatModel.sawToolData {
+		t.Fatalf("model turns = %d, saw tool data = %t; want 2 and true", chatModel.turn, chatModel.sawToolData)
 	}
 }
 

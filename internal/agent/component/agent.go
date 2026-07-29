@@ -178,7 +178,12 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 			}
 			return msgs
 		},
-		MaxStep: p.MaxRounds,
+		// Python executes range(max_rounds + 1): max_rounds counts
+		// tool-use rounds, while the extra model call produces the final
+		// answer after the last tool result. Eino counts both model and
+		// tool graph nodes, so one Python tool round needs three Eino
+		// steps: model -> tool -> final model.
+		MaxStep: reactMaxSteps(p.MaxRounds),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create react agent: %w", err)
@@ -218,6 +223,14 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		return nil, err
 	}
 	return msg, nil
+}
+
+// reactMaxSteps converts the Python Agent max_rounds contract to Eino's graph
+// step limit. Each tool-use round visits the model and tool nodes, then one
+// final model visit produces the answer. AgentParam normalization guarantees
+// maxRounds is positive before the runner is called.
+func reactMaxSteps(maxRounds int) int {
+	return maxRounds*2 + 1
 }
 
 // buildAgentInputMessages assembles the Python-compatible Agent prompt: the
