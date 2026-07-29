@@ -65,6 +65,7 @@ export function SavedModeCard({
   draftName,
   open,
   setOpen,
+  verifyTransform,
 }: SavedModeCardProps) {
   const { t } = useTranslation();
   const { t: tSetting } = useTranslate('setting');
@@ -215,6 +216,7 @@ export function SavedModeCard({
                 hideIfEmpty={false}
                 instanceDetailsLoaded={instanceDetailsLoaded}
                 getFormValues={() => formRef.current?.getValues?.() ?? {}}
+                verifyTransform={verifyTransform}
                 onInstanceModelsChange={(info) => {
                   modelInfoRef.current = info;
                 }}
