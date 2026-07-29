@@ -22,6 +22,8 @@ from pathlib import Path
 from typing import List
 import platform
 from enum import Enum
+
+
 class Colors(Enum):
     """ANSI color codes for terminal output"""
 
@@ -29,11 +31,12 @@ class Colors(Enum):
     GREEN = "\033[0;32m"
     YELLOW = "\033[1;33m"
     BLUE = "\033[0;34m"
-    BLACK = '\033[30m'
-    MAGENTA = '\033[35m'
-    CYAN = '\033[36m'
-    WHITE = '\033[37m'
+    BLACK = "\033[30m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    WHITE = "\033[37m"
     NC = "\033[0m"  # No Color
+
 
 def _is_color_supported() -> bool:
     """
@@ -44,10 +47,10 @@ def _is_color_supported() -> bool:
     Returns:
         result(bool): Whether color output is supported
     """
-     # Non-interactive terminals do not support color output
+    # Non-interactive terminals do not support color output
     if not sys.stdout.isatty():
         return False
-    
+
     # Handle Windows systems
     if sys.platform.startswith("win"):
         try:
@@ -57,10 +60,11 @@ def _is_color_supported() -> bool:
             if not (major >= 10 and build >= 10586):
                 return False
             from ctypes import windll
+
             # Actively enable ANSI support for Windows terminal
             INVALID_HANDLE_VALUE = -1
             kernel32 = windll.kernel32
-            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE       
+            handle = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
             if handle == INVALID_HANDLE_VALUE:
                 return False
             success = kernel32.SetConsoleMode(handle, 7)
@@ -73,21 +77,18 @@ def _is_color_supported() -> bool:
     else:
         try:
             # Detect color support
-            result = subprocess.check_output(
-                ["tput", "colors"], 
-                stderr=subprocess.DEVNULL,
-                text=True
-            )
+            result = subprocess.check_output(["tput", "colors"], stderr=subprocess.DEVNULL, text=True)
             color_count = int(result.strip())
             return color_count >= 8
         # Explicitly catch tput-related exceptions
         except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
-            return False 
-        
+            return False
+
+
 COLOR_SUPPORT = _is_color_supported()
 
-def set_color(s: str,
-              color: str) -> str:
+
+def set_color(s: str, color: str) -> str:
     """
     Wrap input string with specified ANSI terminal color escape sequence.
     Color name argument is case-insensitive. If color is unsupported or invalid,
@@ -103,10 +104,11 @@ def set_color(s: str,
         >>> set_color(s="hello world",color="red")
 
     """
-    
+
     if COLOR_SUPPORT:
         return f"{getattr(Colors, color.strip().upper()).value}{s}{Colors.NC.value}"
     return f"{s}"  # pragma: no cover
+
 
 class TestRunner:
     """RAGFlow Unit Test Runner"""
@@ -129,12 +131,12 @@ class TestRunner:
     @staticmethod
     def print_info(message: str) -> None:
         """Print informational message"""
-        print(f"{set_color(s="[INFO]",color="blue")} {message}")
+        print(f"{set_color(s='[INFO]', color='blue')} {message}", flush=True)
 
     @staticmethod
     def print_error(message: str) -> None:
         """Print error message"""
-        print(f"{set_color(s="[ERROR]",color="red")} {message}")
+        print(f"{set_color(s='[ERROR]', color='red')} {message}", flush=True)
 
     @staticmethod
     def show_usage() -> None:
@@ -252,20 +254,28 @@ EXAMPLES:
         if self.keyword:
             self.print_info(f"Keyword: {self.keyword}")
 
-        print(f"\n{set_color(s="[EXECUTING]",color='blue')} {' '.join(cmd)}\n")
+        # Optionally run pytest under `python -v` to trace every import. This is
+        # the most reliable way to see where collection hangs (importing heavy
+        # modules like ragflow/deepdoc). Toggle with RAGFLOW_TEST_IMPORT_TRACE=1.
+        final_cmd = cmd
+        if os.environ.get("RAGFLOW_TEST_IMPORT_TRACE") == "1":
+            final_cmd = [self.python, "-v", "-m", "pytest", *cmd[1:]]
+
+        print(f"\n{set_color(s='[EXECUTING]', color='blue')} {' '.join(final_cmd)}\n", flush=True)
+        self.print_info("Launching pytest — collection of test modules may take a while...")
 
         # Run pytest
         try:
-            result = subprocess.run(cmd, check=False)
+            result = subprocess.run(final_cmd, check=False)
 
             if result.returncode == 0:
-                print(f"\n{set_color(s="[SUCCESS]",color="green")} All tests passed!")
+                print(f"\n{set_color(s='[SUCCESS]', color='green')} All tests passed!")
 
                 if self.coverage:
                     coverage_dir = self.ut_dir / "htmlcov"
                     if coverage_dir.exists():
                         index_file = coverage_dir / "index.html"
-                        print(f"\n{set_color(s="[INFO]",color="blue")} Coverage report generated:")
+                        print(f"\n{set_color(s='[INFO]', color='blue')} Coverage report generated:")
                         print(f"    {index_file}")
                         print("\nOpen with:")
                         print(f"    - Windows: start {index_file}")
@@ -274,11 +284,11 @@ EXAMPLES:
 
                 return True
             else:
-                print(f"\n{set_color(s="[FAILURE]",color="red")} Some tests failed!")
+                print(f"\n{set_color(s='[FAILURE]', color='red')} Some tests failed!")
                 return False
 
         except KeyboardInterrupt:
-            print(f"\n{set_color(s="[INTERRUPTED]",color="yellow")} Test execution interrupted by user")
+            print(f"\n{set_color(s='[INTERRUPTED]', color='yellow')} Test execution interrupted by user")
             return False
         except Exception as e:
             self.print_error(f"Failed to execute tests: {e}")

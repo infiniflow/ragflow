@@ -48,3 +48,37 @@ for _name, _find_path in _REQUIRED_NLTK_DATA:
         nltk.data.find(_find_path)
     except LookupError:
         nltk.download(_name, quiet=True)
+
+
+# Diagnostic collection logging. pytest is silent during its collection phase
+# (importing test modules and the heavy app code they pull in), so CI hangs
+# here show nothing until "collected N items". When RAGFLOW_TEST_COLLECT_LOG=1
+# we print every collector as pytest starts it: the last path printed before a
+# long silence is the module pytest is stuck importing.
+_COLLECT_LOG = os.environ.get("RAGFLOW_TEST_COLLECT_LOG") == "1"
+
+
+def pytest_collection_start(session):
+    if _COLLECT_LOG:
+        print("[COLLECT] session collection started", flush=True)
+
+
+def pytest_collectstart(collector):
+    if not _COLLECT_LOG:
+        return
+    path = getattr(collector, "path", None)
+    if path is None:
+        return
+    # Only log directory-level collectors (Dir/Package), not individual modules,
+    # to keep the CI log concise during the otherwise silent collection phase.
+    try:
+        is_dir = path.is_dir()
+    except AttributeError:
+        is_dir = bool(getattr(path, "isdir", lambda: False)())
+    if is_dir:
+        print(f"[COLLECT] {path}", flush=True)
+
+
+def pytest_collection_modifyitems(session, config, items):
+    if _COLLECT_LOG:
+        print(f"[COLLECT] session collection finished: {len(items)} items", flush=True)
