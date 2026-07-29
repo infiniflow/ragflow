@@ -15,8 +15,11 @@
 #
 
 import base64
+from contextlib import contextmanager
 import json
+import os
 import re
+import threading
 import aiosmtplib
 from email.mime.text import MIMEText
 from email.header import Header
@@ -38,6 +41,24 @@ OTP_TTL_SECONDS = 5 * 60  # valid for 5 minutes
 ATTEMPT_LIMIT = 5  # maximum attempts
 ATTEMPT_LOCK_SECONDS = 30 * 60  # lock for 30 minutes
 RESEND_COOLDOWN_SECONDS = 60  # cooldown for 1 minute
+BROWSER_FETCH_CONCURRENCY = max(1, int(os.getenv("RAGFLOW_BROWSER_FETCH_CONCURRENCY", "2")))
+BROWSER_FETCH_ACQUIRE_TIMEOUT = float(os.getenv("RAGFLOW_BROWSER_FETCH_ACQUIRE_TIMEOUT", "5"))
+BROWSER_FETCH_TIMEOUT = float(os.getenv("RAGFLOW_BROWSER_FETCH_TIMEOUT", "60"))
+_BROWSER_FETCH_SEMAPHORE = threading.BoundedSemaphore(BROWSER_FETCH_CONCURRENCY)
+
+
+class BrowserFetchBusy(RuntimeError):
+    pass
+
+
+@contextmanager
+def browser_fetch_slot(timeout: float = BROWSER_FETCH_ACQUIRE_TIMEOUT):
+    if not _BROWSER_FETCH_SEMAPHORE.acquire(timeout=timeout):
+        raise BrowserFetchBusy("Too many concurrent browser fetch requests")
+    try:
+        yield
+    finally:
+        _BROWSER_FETCH_SEMAPHORE.release()
 
 
 from api.utils.file_response import (  # noqa: F401
@@ -69,7 +90,8 @@ def html2pdf(
     install_driver: bool = True,
     print_options: dict = {},
 ):
-    result = __get_pdf_from_html(source, timeout, install_driver, print_options)
+    with browser_fetch_slot():
+        result = __get_pdf_from_html(source, timeout, install_driver, print_options)
     return result
 
 
@@ -96,15 +118,18 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
 
     webdriver_prefs["profile.default_content_settings"] = {"images": 2}
 
-    if install_driver:
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=webdriver_options)
-    else:
-        driver = webdriver.Chrome(options=webdriver_options)
-
-    driver.get(path)
-
+    driver = None
     try:
+        if install_driver:
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=webdriver_options)
+        else:
+            driver = webdriver.Chrome(options=webdriver_options)
+
+        driver.set_page_load_timeout(BROWSER_FETCH_TIMEOUT)
+        driver.set_script_timeout(BROWSER_FETCH_TIMEOUT)
+        driver.get(path)
+
         WebDriverWait(driver, timeout).until(staleness_of(driver.find_element(by=By.TAG_NAME, value="html")))
     except TimeoutException:
         pass
@@ -120,7 +145,8 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
         result = __send_devtools(driver, "Page.printToPDF", calculated_print_options)
         return base64.b64decode(result["data"])
     finally:
-        driver.quit()
+        if driver:
+            driver.quit()
 
 
 def is_valid_url(url: str) -> bool:

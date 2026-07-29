@@ -762,73 +762,75 @@ class FileService(CommonService):
         if url:
             import requests as _requests
             from urllib.parse import urljoin as _urljoin
+            from api.utils.web_utils import BROWSER_FETCH_TIMEOUT, browser_fetch_slot
 
             _MAX_CRAWL_REDIRECTS = 10
 
-            # Pre-resolve the full redirect chain so that AsyncWebCrawler never
-            # follows a server-sent redirect to an unvalidated (potentially
-            # internal) host. Each hop is SSRF-checked before being followed;
-            # the validated (hostname, ip) pairs are pinned via Chromium's
-            # --host-resolver-rules so the browser cannot re-resolve any of them
-            # through a fresh DNS query.
-            current_url = url
-            current_hostname, current_ip = FileService._validate_url_for_crawl(current_url)
-            # Accumulate MAP rules for every hostname we encounter in the chain.
-            host_pins: dict[str, str] = {current_hostname: current_ip}
+            with browser_fetch_slot():
+                # Pre-resolve the full redirect chain so that AsyncWebCrawler never
+                # follows a server-sent redirect to an unvalidated (potentially
+                # internal) host. Each hop is SSRF-checked before being followed;
+                # the validated (hostname, ip) pairs are pinned via Chromium's
+                # --host-resolver-rules so the browser cannot re-resolve any of them
+                # through a fresh DNS query.
+                current_url = url
+                current_hostname, current_ip = FileService._validate_url_for_crawl(current_url)
+                # Accumulate MAP rules for every hostname we encounter in the chain.
+                host_pins: dict[str, str] = {current_hostname: current_ip}
 
-            for _ in range(_MAX_CRAWL_REDIRECTS):
-                try:
-                    _resp = _requests.get(
-                        current_url,
-                        timeout=10,
-                        allow_redirects=False,
+                for _ in range(_MAX_CRAWL_REDIRECTS):
+                    try:
+                        _resp = _requests.get(
+                            current_url,
+                            timeout=10,
+                            allow_redirects=False,
+                        )
+                    except _requests.RequestException as _exc:
+                        raise ValueError(f"Failed to fetch {current_url!r}: {_exc}") from _exc
+
+                    if _resp.status_code not in (301, 302, 303, 307, 308):
+                        break
+
+                    _location = _resp.headers.get("Location")
+                    if not _location:
+                        break
+
+                    _next_url = _urljoin(current_url, _location)
+                    _next_hostname, _next_ip = FileService._validate_url_for_crawl(_next_url)
+                    host_pins[_next_hostname] = _next_ip
+                    current_url = _next_url
+                else:
+                    raise ValueError(f"Exceeded {_MAX_CRAWL_REDIRECTS} redirects fetching {url!r}")
+
+                # Build a single MAP rule string covering every validated hostname
+                # in the redirect chain. Chromium uses the pinned IP for each,
+                # skipping DNS entirely and eliminating the rebinding window.
+                _map_rules = ",".join(f"MAP {h} {ip}" for h, ip in host_pins.items())
+
+                from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, DefaultMarkdownGenerator, PruningContentFilter, CrawlResult
+
+                filename = re.sub(r"\?.*", "", url.split("/")[-1])
+
+                async def adownload():
+                    browser_config = BrowserConfig(
+                        headless=True,
+                        verbose=False,
+                        extra_args=[f"--host-resolver-rules={_map_rules}"],
                     )
-                except _requests.RequestException as _exc:
-                    raise ValueError(f"Failed to fetch {current_url!r}: {_exc}") from _exc
+                    async with AsyncWebCrawler(config=browser_config) as crawler:
+                        crawler_config = CrawlerRunConfig(markdown_generator=DefaultMarkdownGenerator(content_filter=PruningContentFilter()), pdf=True, screenshot=False)
+                        # Use the final resolved URL so the browser starts at the
+                        # redirect destination rather than re-following the chain.
+                        result: CrawlResult = await asyncio.wait_for(crawler.arun(url=current_url, config=crawler_config), timeout=BROWSER_FETCH_TIMEOUT)
+                        return result
 
-                if _resp.status_code not in (301, 302, 303, 307, 308):
-                    break
+                page = asyncio.run(adownload())
+                if page.pdf:
+                    if filename.split(".")[-1].lower() != "pdf":
+                        filename += ".pdf"
+                    return structured(filename, "pdf", page.pdf, page.response_headers["content-type"])
 
-                _location = _resp.headers.get("Location")
-                if not _location:
-                    break
-
-                _next_url = _urljoin(current_url, _location)
-                _next_hostname, _next_ip = FileService._validate_url_for_crawl(_next_url)
-                host_pins[_next_hostname] = _next_ip
-                current_url = _next_url
-            else:
-                raise ValueError(f"Exceeded {_MAX_CRAWL_REDIRECTS} redirects fetching {url!r}")
-
-            # Build a single MAP rule string covering every validated hostname
-            # in the redirect chain. Chromium uses the pinned IP for each,
-            # skipping DNS entirely and eliminating the rebinding window.
-            _map_rules = ",".join(f"MAP {h} {ip}" for h, ip in host_pins.items())
-
-            from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, DefaultMarkdownGenerator, PruningContentFilter, CrawlResult
-
-            filename = re.sub(r"\?.*", "", url.split("/")[-1])
-
-            async def adownload():
-                browser_config = BrowserConfig(
-                    headless=True,
-                    verbose=False,
-                    extra_args=[f"--host-resolver-rules={_map_rules}"],
-                )
-                async with AsyncWebCrawler(config=browser_config) as crawler:
-                    crawler_config = CrawlerRunConfig(markdown_generator=DefaultMarkdownGenerator(content_filter=PruningContentFilter()), pdf=True, screenshot=False)
-                    # Use the final resolved URL so the browser starts at the
-                    # redirect destination rather than re-following the chain.
-                    result: CrawlResult = await crawler.arun(url=current_url, config=crawler_config)
-                    return result
-
-            page = asyncio.run(adownload())
-            if page.pdf:
-                if filename.split(".")[-1].lower() != "pdf":
-                    filename += ".pdf"
-                return structured(filename, "pdf", page.pdf, page.response_headers["content-type"])
-
-            return structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"])
+                return structured(filename, "html", str(page.markdown).encode("utf-8"), page.response_headers["content-type"])
 
         DocumentService.check_doc_health(user_id, file.filename)
         return structured(file.filename, filename_type(file.filename), file.read(), file.content_type)

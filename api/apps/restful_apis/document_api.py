@@ -519,7 +519,7 @@ async def _upload_web_document(dataset_id, kb, tenant_id):
     if not is_valid_url(url):
         return get_error_data_result(message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
 
-    blob = html2pdf(url)
+    blob = await thread_pool_exec(html2pdf, url)
     if not blob:
         return server_error_response(ValueError("Download failure."))
 
