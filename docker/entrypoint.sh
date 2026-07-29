@@ -280,7 +280,9 @@ fi
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
-    /usr/sbin/nginx
+    export LD_LIBRARY_PATH=/usr/local/openresty/openssl3/lib:${LD_LIBRARY_PATH}
+    nginx -t -c /etc/nginx/nginx.conf -p /etc/nginx
+    /usr/sbin/nginx -c /etc/nginx/nginx.conf -p /etc/nginx
 
     if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
         while true; do
