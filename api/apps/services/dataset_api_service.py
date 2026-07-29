@@ -1914,7 +1914,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     templates_out: list[dict] = []
     for tid in kind_template_ids:
         try:
-            entities, relations = await sgc.build_bucket(index_nm, dataset_id, {"compilation_template_ids": [tid]})
+            entities, relations = await sgc.build_bucket(index_nm, dataset_id, {"compilation_template_ids": [tid], "scope_kwd": ["dataset"]})
         except Exception:
             logging.exception("get_dataset_structure: bucket build failed for kb=%s template=%s", dataset_id, tid)
             continue

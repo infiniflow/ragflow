@@ -14,143 +14,468 @@
 #  limitations under the License.
 #
 
-"""KB-wide structure-graph merge task.
+"""KB-wide structure-graph merge task (incremental, bucketed).
 
-Runs when the user POSTs to ``/datasets/<id>/index`` with a structure index
-type (``structure_graph`` / ``structure_mindmap`` / ``timeline`` /
-``session_graph`` / ``session_essence``, or ``structure`` for merge-all). It
-re-projects every document's already-merged ``entity`` / ``relation`` rows into
-the KB-wide ``knowledge_graph_kwd="dataset_graph"`` rows via
-:func:`rag.advanced_rag.knowlege_compile.structure.rebuild_dataset_structure_graph_json`
-— the same merge the per-document parse runner performs at flush time
-(``rag.advanced_rag.knowlege_compile.runner``), exposed here as an on-demand
-re-merge.
+Triggered when the user POSTs to ``/datasets/<id>/index`` with a structure
+index type.  Scans ``scope_kwd="doc"`` entity rows grouped by ``(name, type)``,
+merges them into ``scope_kwd="dataset"`` rows with bucketing for bounded memory.
 
-The task carries the target kind in ``task_type``; the driver enumerates the
-``(compile_kwd, template_id)`` pairs actually present in the store, keeps only
-dataset-merge templates of the requested kind (all kinds for merge-all), and
-rebuilds one dataset graph per pair. It performs no LLM work.
+Key design:
+  - 256 hash buckets — each bucket flushed when it reaches 500 rows
+  - Incremental: only processes doc_graph rows changed since ``last_build_time``
+  - Full rebuild on doc deletion or template change
+  - Resulting dataset_graph rows are searchable (``available_int=1``)
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Optional
+
+import xxhash
 
 from common import settings
 from common.misc_utils import thread_pool_exec
 from rag.nlp import search
-from rag.advanced_rag.knowlege_compile.structure import (
-    rebuild_dataset_structure_graph_json,
+from rag.advanced_rag.knowlege_compile._common import (
+    encode as _encode,
+    tokenize_for_search as _tokenize_for_search,
+    stable_row_id as _stable_row_id,
 )
 from rag.svr.task_executor_refactor.task_context import TaskContext
 
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
 
-# Structure merge task_type -> the template's top-level ``kind`` as stored on
-# ``dataset_graph`` rows. ``None`` (the merge-all ``structure`` type) rebuilds
-# every dataset-merge kind regardless of its top-level kind.
-_STRUCTURE_TASK_TYPE_TO_KIND: dict[str, Optional[str]] = {
-    "structure_graph": "knowledge_graph",
-    "structure_mindmap": "mind_map",
-    "timeline": "timeline",
-    "session_graph": "session_graph",
-    "session_essence": "session_essence",
-    "structure": None,  # merge-all
-}
+_BUCKET_COUNT = 256
+_BUCKET_FLUSH_THRESHOLD = 500
+_PAGE_SIZE = 1000
+_SCOPE_KWD_DOC = "doc"
+_SCOPE_KWD_DATASET = "dataset"
 
-STRUCTURE_MERGE_TASK_TYPES = frozenset(_STRUCTURE_TASK_TYPE_TO_KIND)
+# Row id seeds for metadata
+_META_ROW_KWD = "kg_build_meta"
+
+STRUCTURE_MERGE_TASK_TYPES = frozenset(
+    {
+        "structure_graph",
+        "structure_mindmap",
+        "timeline",
+        "session_graph",
+        "session_essence",
+        "structure",
+    }
+)
 
 
 def is_structure_merge_task(task_type: str) -> bool:
     return (task_type or "").lower() in STRUCTURE_MERGE_TASK_TYPES
 
 
-async def _collect_structure_pairs(tenant_id: str, kb_id: str) -> set[tuple[str, str]]:
-    """Distinct ``(compile_kwd, template_id)`` pairs across the KB's structure
-    ``entity`` / ``relation`` rows — the inputs each dataset graph is rebuilt
-    from. Rows without a ``compilation_template_ids`` are skipped: the merge is
-    always template-scoped (an untemplated rebuild would over-merge unrelated
-    kinds sharing a ``compile_kwd``)."""
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _index_name(tenant_id: str) -> str:
+    return search.index_name(tenant_id)
+
+
+def _meta_row_id(kb_id: str, compile_kwd: str, template_id: str | None) -> str:
+    return xxhash.xxh64(
+        f"{_META_ROW_KWD}:{kb_id}:{compile_kwd}:{template_id or ''}".encode("utf-8", "surrogatepass"),
+    ).hexdigest()
+
+
+def _dataset_entity_row_id(kb_id: str, compile_kwd: str, template_id: str | None, name: str) -> str:
+    return _stable_row_id(name, kb_id, compile_kwd, template_id or "", _SCOPE_KWD_DATASET)
+
+
+def _dataset_relation_row_id(kb_id: str, compile_kwd: str, template_id: str | None, src: str, tgt: str) -> str:
+    return _stable_row_id(f"{src}->{tgt}", kb_id, compile_kwd, template_id or "", _SCOPE_KWD_DATASET)
+
+
+# ---------------------------------------------------------------------------
+# ES I/O
+# ---------------------------------------------------------------------------
+
+
+async def _es_search(
+    tenant_id: str,
+    kb_id: str,
+    condition: dict,
+    fields: list[str],
+    limit: int = 10000,
+    offset: int = 0,
+) -> list[dict]:
     from common.doc_store.doc_store_base import OrderByExpr
 
-    index = search.index_name(tenant_id)
+    index = _index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
-        return set()
+        return []
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields,
+            [],
+            condition,
+            [],
+            OrderByExpr(),
+            offset,
+            limit,
+            index,
+            [kb_id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, fields) or {}
+        return list(field_map.values())
+    except Exception:
+        logging.exception("structure_merge: search failed for kb=%s", kb_id)
+        return []
 
-    select_fields = ["id", "compile_kwd", "compilation_template_ids"]
-    pairs: set[tuple[str, str]] = set()
-    offset = 0
-    page_size = 1000
-    while True:
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                select_fields,
-                [],
-                {"knowledge_graph_kwd": ["entity", "relation"]},
-                [],
-                OrderByExpr(),
-                offset,
-                page_size,
-                index,
-                [kb_id],
+
+async def _es_delete(tenant_id: str, kb_id: str, condition: dict) -> None:
+    index = _index_name(tenant_id)
+    try:
+        await thread_pool_exec(settings.docStoreConn.delete, condition, index, kb_id)
+    except Exception:
+        pass
+
+
+async def _es_insert(tenant_id: str, kb_id: str, rows: list[dict]) -> None:
+    if not rows:
+        return
+    index = _index_name(tenant_id)
+    try:
+        await thread_pool_exec(settings.docStoreConn.insert, rows, index, kb_id)
+    except Exception:
+        logging.exception("structure_merge: insert failed for kb=%s", kb_id)
+
+
+# ---------------------------------------------------------------------------
+# Merge logic
+# ---------------------------------------------------------------------------
+
+
+async def _load_last_build_time(tenant_id: str, kb_id: str, compile_kwd: str, template_id: str | None) -> float | None:
+    """Read the last build timestamp from a metadata row."""
+    meta_id = _meta_row_id(kb_id, compile_kwd, template_id)
+    index = _index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return None
+    try:
+        row = await thread_pool_exec(settings.docStoreConn.get, meta_id, index, [kb_id])
+        if row:
+            return float(row.get("build_timestamp_flt", 0))
+    except Exception:
+        pass
+    return None
+
+
+async def _save_build_time(tenant_id: str, kb_id: str, compile_kwd: str, template_id: str | None, timestamp: float) -> None:
+    """Persist the build timestamp."""
+    import datetime
+
+    meta_id = _meta_row_id(kb_id, compile_kwd, template_id)
+    index = _index_name(tenant_id)
+    payload = {
+        "id": meta_id,
+        "kb_id": kb_id,
+        "doc_id": kb_id,
+        "compile_kwd": compile_kwd,
+        "knowledge_graph_kwd": _META_ROW_KWD,
+        "build_timestamp_flt": timestamp,
+        "create_time": datetime.datetime.now().isoformat(),
+    }
+    existing = await thread_pool_exec(settings.docStoreConn.get, meta_id, index, [kb_id])
+    if existing:
+        await thread_pool_exec(settings.docStoreConn.update, {"id": meta_id}, payload, index, kb_id)
+    else:
+        await thread_pool_exec(settings.docStoreConn.insert, [payload], index, kb_id)
+
+
+def _bucket_id(name: str, bucket_count: int = _BUCKET_COUNT) -> int:
+    """Determine the hash bucket for an entity name."""
+    return xxhash.xxh64(name.encode("utf-8", "surrogatepass")).intdigest() % bucket_count
+
+
+async def _merge_bucket(
+    tenant_id: str,
+    kb_id: str,
+    compile_kwd: str,
+    template_id: str | None,
+    bucket_rows: list[dict],
+    embd_mdl,
+    structure_kind: str | None = None,
+) -> list[dict]:
+    """Flush one bucket: group by (name, type), merge, build dataset rows.
+
+    Returns the list of entity/relation rows to insert.
+    """
+    from rag.advanced_rag.knowlege_compile.structure import _struct_entity_name
+
+    # Group by (name, type)
+    groups: dict[tuple[str, str], list[dict]] = {}
+    for row in bucket_rows:
+        payload = json.loads(row.get("content_with_weight") or "{}")
+        name = _struct_entity_name(payload) or ""
+        typ = payload.get("type", "other")
+        key = (name.lower(), str(typ).strip())
+        groups.setdefault(key, []).append(row)
+
+    rows_out: list[dict] = []
+    for (name_lower, typ), rows in groups.items():
+        # Collect all source_chunk_ids and doc_ids
+        all_chunks: list[str] = []
+        all_docs: list[str] = []
+        all_descriptions: list[str] = []
+        mention_count = 0
+        for r in rows:
+            payload = json.loads(r.get("content_with_weight") or "{}")
+            chunks = r.get("source_chunk_ids") or []
+            for c in chunks:
+                if c not in all_chunks:
+                    all_chunks.append(c)
+            doc = r.get("doc_id") or ""
+            if doc and doc not in all_docs:
+                all_docs.append(doc)
+            mention_count += int(r.get("mention_count_int") or payload.get("mention_count", 1))
+            desc = payload.get("description", "")
+            if desc and desc not in all_descriptions:
+                all_descriptions.append(desc)
+
+        # Use the longest description (most complete)
+        best_desc = max(all_descriptions, key=len) if all_descriptions else name_lower
+        payload_out = {"name": name_lower, "type": typ, "description": best_desc, "mention_count": mention_count}
+        ltks, sm_ltks = _tokenize_for_search(best_desc)
+
+        row_id = _dataset_entity_row_id(kb_id, compile_kwd, template_id, name_lower)
+        row = {
+            "id": row_id,
+            "content_with_weight": json.dumps(payload_out, ensure_ascii=False),
+            "compile_kwd": compile_kwd,
+            "knowledge_graph_kwd": "entity",
+            "scope_kwd": _SCOPE_KWD_DATASET,
+            "doc_id": kb_id,
+            "kb_id": kb_id,
+            "name_kwd": name_lower,
+            "source_chunk_ids": all_chunks,
+            "doc_ids_kwd": all_docs,
+            "content_ltks": ltks,
+            "content_sm_ltks": sm_ltks,
+            "mention_count_int": mention_count,
+            "available_int": 1,
+        }
+        if template_id:
+            row["compilation_template_ids"] = [template_id]
+        if structure_kind:
+            row["compilation_template_kind_kwd"] = str(structure_kind)
+        # Re-embed
+        if embd_mdl:
+            vecs = await _encode(embd_mdl, [best_desc])
+            if vecs and len(vecs[0]) > 0:
+                dim = len(vecs[0])
+                row[f"q_{dim}_vec"] = list(vecs[0])
+        rows_out.append(row)
+
+    return rows_out
+
+
+async def _do_build(
+    tenant_id: str,
+    kb_id: str,
+    compile_kwd: str,
+    template_id: str | None,
+    structure_kind: str | None,
+    embd_mdl,
+    incremental: bool = True,
+) -> None:
+    """Core build logic — read doc_graph rows, bucket, merge, write dataset rows.
+
+    When *incremental* is True, only processes rows changed since the last build
+    timestamp.  When False (full rebuild), reads ALL doc_graph rows for the
+    given (compile_kwd, template) and deletes existing dataset rows first.
+    """
+
+    index = _index_name(tenant_id)
+
+    # ── Determine the time window ─────────────────────────────────────
+    last_build_time = None
+    if incremental:
+        last_build_time = await _load_last_build_time(tenant_id, kb_id, compile_kwd, template_id)
+
+    # ── Full rebuild: delete existing dataset rows ────────────────────
+    if not incremental or last_build_time is None:
+        del_cond: dict = {
+            "scope_kwd": [_SCOPE_KWD_DATASET],
+            "compile_kwd": [compile_kwd],
+            "kb_id": [kb_id],
+        }
+        if template_id:
+            del_cond["compilation_template_ids"] = [template_id]
+        offset = 0
+        while True:
+            existing = await _es_search(
+                tenant_id,
+                kb_id,
+                del_cond,
+                ["id"],
+                limit=1000,
+                offset=offset,
             )
-            field_map = settings.docStoreConn.get_fields(res, select_fields) or {}
+            if not existing:
+                break
+            ids = [r["id"] for r in existing if r.get("id")]
+            if ids:
+                await _es_delete(tenant_id, kb_id, {"id": ids})
+            if len(existing) < 1000:
+                break
+            offset += 1000
+        # Also delete the meta rows
+        meta_id = _meta_row_id(kb_id, compile_kwd, template_id)
+        try:
+            await thread_pool_exec(settings.docStoreConn.delete, {"id": [meta_id]}, index, kb_id)
         except Exception:
-            logging.exception("structure_merge: failed to scan entity/relation rows for kb=%s", kb_id)
+            pass
+
+    # ── Scan doc_graph rows ──────────────────────────────────────────
+    # Backward compat: existing doc_graph rows don't have scope_kwd.
+    # Search for (scope_kwd="doc" OR (not exists scope_kwd)) AND compile_kwd.
+    base_cond = {
+        "compile_kwd": [compile_kwd],
+        "knowledge_graph_kwd": ["entity"],
+    }
+    if template_id:
+        base_cond["compilation_template_ids"] = [template_id]
+    scan_all = not incremental or last_build_time is None
+    if not scan_all:
+        base_cond["scope_kwd"] = [_SCOPE_KWD_DOC]
+
+    # Build timestamp filter for incremental mode
+    ts_cond = None
+    if not scan_all and last_build_time is not None:
+        ts_cond = {"create_timestamp_flt": {"gte": last_build_time}}
+
+    limit = _PAGE_SIZE
+    offset = 0
+    buckets: list[list] = [[] for _ in range(_BUCKET_COUNT)]
+
+    all_rows_out: list[dict] = []
+    last_page = False
+    while not last_page:
+        rows = await _es_search(
+            tenant_id,
+            kb_id,
+            base_cond,
+            [
+                "id",
+                "content_with_weight",
+                "source_chunk_ids",
+                "doc_id",
+                "name_kwd",
+                "mention_count_int",
+                "compilation_template_ids",
+            ],
+            limit=limit,
+            offset=offset,
+        )
+        if not rows:
             break
-        if not field_map:
-            break
-        for row in field_map.values():
-            compile_kwd = row.get("compile_kwd")
-            if not isinstance(compile_kwd, str) or not compile_kwd:
+        for row in rows:
+            # Time filter (incremental mode)
+            if ts_cond:
+                ts = row.get("create_timestamp_flt", 0)
+                if isinstance(ts, (int, float)) and ts < ts_cond["create_timestamp_flt"][0]:
+                    continue
+            name = row.get("name_kwd", "")
+            if not name:
                 continue
-            raw_tids = row.get("compilation_template_ids")
-            if isinstance(raw_tids, str):
-                tids = [raw_tids] if raw_tids else []
-            elif isinstance(raw_tids, list):
-                tids = [t for t in raw_tids if isinstance(t, str) and t]
-            else:
-                tids = []
-            for tid in tids:
-                pairs.add((compile_kwd, tid))
-        if len(field_map) < page_size:
-            break
-        offset += page_size
-    return pairs
+            bid = _bucket_id(name)
+            if bid < _BUCKET_COUNT:
+                buckets[bid].append(row)
+                if len(buckets[bid]) >= _BUCKET_FLUSH_THRESHOLD:
+                    out = await _merge_bucket(
+                        tenant_id,
+                        kb_id,
+                        compile_kwd,
+                        template_id,
+                        buckets[bid],
+                        embd_mdl,
+                        structure_kind,
+                    )
+                    all_rows_out.extend(out)
+                    buckets[bid] = []
+        if len(rows) < limit:
+            last_page = True
+        else:
+            offset += limit
+
+    # Flush remaining buckets
+    for bi in range(_BUCKET_COUNT):
+        if buckets[bi]:
+            out = await _merge_bucket(
+                tenant_id,
+                kb_id,
+                compile_kwd,
+                template_id,
+                buckets[bi],
+                embd_mdl,
+                structure_kind,
+            )
+            all_rows_out.extend(out)
+            buckets[bi] = []
+
+    # ── Write ────────────────────────────────────────────────────────
+    if all_rows_out:
+        await _es_insert(tenant_id, kb_id, all_rows_out[:_BUCKET_FLUSH_THRESHOLD])
+        for start in range(_BUCKET_FLUSH_THRESHOLD, len(all_rows_out), _BUCKET_FLUSH_THRESHOLD):
+            await _es_insert(tenant_id, kb_id, all_rows_out[start : start + _BUCKET_FLUSH_THRESHOLD])
+
+    # ── Save build timestamp ─────────────────────────────────────────
+    import datetime
+
+    await _save_build_time(tenant_id, kb_id, compile_kwd, template_id, datetime.datetime.now().timestamp())
 
 
 async def run_structure_merge(ctx: TaskContext) -> None:
-    """Rebuild the KB-wide dataset structure graph(s) for the task's kind.
-
-    Enumerates the ``(compile_kwd, template_id)`` pairs present in the store,
-    filters to dataset-merge templates of the requested kind (all kinds for the
-    merge-all ``structure`` type), and rebuilds one ``dataset_graph`` row per
-    pair. Per-pair failures are logged and skipped so one bad template does not
-    abort the whole merge.
-    """
+    """Entry point — called from task_handler.py when ``is_structure_merge_task`` matches."""
     from api.db.services.compilation_template_service import CompilationTemplateService
 
     progress = ctx.progress_cb
     task_type = (ctx.task_type or "").lower()
-    target_kind = _STRUCTURE_TASK_TYPE_TO_KIND.get(task_type)
+    target_kind = {
+        "structure_graph": "knowledge_graph",
+        "structure_mindmap": "mind_map",
+        "timeline": "timeline",
+        "session_graph": "session_graph",
+        "session_essence": "session_essence",
+    }.get(task_type)
     merge_all = task_type == "structure"
 
-    def _canceled() -> bool:
-        try:
-            return bool(ctx.has_canceled_func(ctx.id))
-        except Exception:
-            return False
+    # Resolve embedding model (required for re-embedding dataset rows)
+    embd_mdl = None
+    try:
+        from api.db.services.llm_service import LLMBundle
+        from api.apps.services.dataset_api_service import resolve_model_config
+        from api.db import LLMType
 
-    progress(0.0, "Collecting structure graphs to merge...")
+        kb = None
+        from api.db.services.knowledgebase_service import KnowledgebaseService
+
+        ok, kb = KnowledgebaseService.get_by_id(ctx.kb_id)
+        if ok and kb:
+            model_config = resolve_model_config(ctx.tenant_id, LLMType.EMBEDDING.value, kb.embd_id)
+            embd_mdl = LLMBundle(ctx.tenant_id, model_config, lang=ctx.language)
+    except Exception:
+        logging.exception("structure_merge: failed to bind embedding model for kb=%s", ctx.kb_id)
+
+    progress(0.0, "Scanning doc_graph rows...")
     pairs = await _collect_structure_pairs(ctx.tenant_id, ctx.kb_id)
     if not pairs:
-        progress(1.0, "No structure graphs to merge.")
+        progress(1.0, "No doc_graph rows found.")
         return
 
-    # Resolve each template once: keep only dataset-merge templates, and (unless
-    # merge-all) only those whose top-level kind matches the requested kind.
-    # ``template_meta`` maps template_id -> (keep: bool, structure_kind: str|None).
     template_meta: dict[str, tuple[bool, Optional[str]]] = {}
 
     def _resolve_template(template_id: str) -> tuple[bool, Optional[str]]:
@@ -163,12 +488,10 @@ async def run_structure_merge(ctx: TaskContext) -> None:
             saved = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
             if saved:
                 structure_kind = (saved.get("kind") or "").strip() or None
-                # config = saved.get("config") or {}
-                dataset_merge = True  # bool(config.get("dataset_merge")) if isinstance(config, dict) else False
                 kind_ok = merge_all or (structure_kind == target_kind)
-                keep = dataset_merge and kind_ok
+                keep = kind_ok
         except Exception:
-            logging.exception("structure_merge: failed to resolve template %s for kb=%s", template_id, ctx.kb_id)
+            logging.exception("structure_merge: failed to resolve template %s", template_id)
         result = (keep, structure_kind)
         template_meta[template_id] = result
         return result
@@ -181,34 +504,63 @@ async def run_structure_merge(ctx: TaskContext) -> None:
 
     if not eligible:
         kind_label = "any kind" if merge_all else (target_kind or task_type)
-        progress(1.0, f"No dataset-merge structure templates to merge for {kind_label}.")
+        progress(1.0, f"No eligible templates for {kind_label}.")
         return
 
     total = len(eligible)
     rebuilt = 0
     for i, (compile_kwd, template_id, structure_kind) in enumerate(eligible):
-        if _canceled():
-            progress(-1, "Task has been canceled.")
-            return
-        progress(
-            0.05 + 0.9 * (i / total),
-            f"Merging structure graph {i + 1}/{total} (compile_kwd={compile_kwd}) ...",
-        )
+        progress(0.05 + 0.9 * (i / total), f"Building dataset graph {i + 1}/{total} ...")
         try:
-            await rebuild_dataset_structure_graph_json(
-                ctx.tenant_id,
-                ctx.kb_id,
-                compile_kwd,
-                compilation_template_id=template_id,
-                structure_kind=structure_kind,
-            )
+            await _do_build(ctx.tenant_id, ctx.kb_id, compile_kwd, template_id, structure_kind, embd_mdl)
             rebuilt += 1
         except Exception:
-            logging.exception(
-                "structure_merge: rebuild failed for kb=%s compile_kwd=%s template=%s",
-                ctx.kb_id,
-                compile_kwd,
-                template_id,
-            )
+            logging.exception("structure_merge: build failed for kb=%s compile_kwd=%s", ctx.kb_id, compile_kwd)
+    progress(1.0, f"Built {rebuilt}/{total} dataset graph(s).")
 
-    progress(1.0, f"Merged {rebuilt}/{total} structure graph(s).")
+
+async def _collect_structure_pairs(tenant_id: str, kb_id: str) -> set[tuple[str, str]]:
+    """Collect distinct (compile_kwd, template_id) pairs from doc_graph entity rows."""
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = _index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return set()
+
+    pairs: set[tuple[str, str]] = set()
+    offset = 0
+    while True:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id", "compile_kwd", "compilation_template_ids"],
+                [],
+                {"knowledge_graph_kwd": ["entity"]},
+                [],
+                OrderByExpr(),
+                offset,
+                _PAGE_SIZE,
+                index,
+                [kb_id],
+            )
+            field_map = settings.docStoreConn.get_fields(res, ["id", "compile_kwd", "compilation_template_ids"]) or {}
+        except Exception:
+            break
+        if not field_map:
+            break
+        for row in field_map.values():
+            compile_kwd = row.get("compile_kwd")
+            if not isinstance(compile_kwd, str) or not compile_kwd:
+                continue
+            raw_tids = row.get("compilation_template_ids")
+            tids = []
+            if isinstance(raw_tids, list):
+                tids = [t for t in raw_tids if isinstance(t, str) and t]
+            elif isinstance(raw_tids, str) and raw_tids:
+                tids = [raw_tids]
+            for tid in tids:
+                pairs.add((compile_kwd, tid))
+        if len(field_map) < _PAGE_SIZE:
+            break
+        offset += _PAGE_SIZE
+    return pairs
