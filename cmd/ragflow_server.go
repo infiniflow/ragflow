@@ -608,7 +608,7 @@ func runSyncer(ctx context.Context, args *serverArgs, config *server.Config) err
 	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
 		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
 	} else {
-		// Start heartbeat reporter with 30 seconds interval
+		// Start heartbeat reporter with configured interval
 		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", config.General.HeartbeatInterval*time.Second, func() {
 			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
 				local.SetAdminStatus(0, "")
@@ -893,7 +893,7 @@ func startServer(ctx context.Context, config *server.Config) {
 	if err = service.AdminServiceClient.InitHTTPClient(); err != nil {
 		common.Warn("Failed to initialize heartbeat service", zap.Error(err))
 	} else {
-		// Start heartbeat reporter with 30 seconds interval
+		// Start heartbeat reporter with configured interval
 		heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", config.General.HeartbeatInterval*time.Second, func() {
 			if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
 				local.SetAdminStatus(0, "")
