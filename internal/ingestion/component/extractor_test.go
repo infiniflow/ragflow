@@ -29,7 +29,9 @@ import (
 	eschema "github.com/cloudwego/eino/schema"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/utility"
 )
 
 // stubExtractorChatInvoker is the test seam for the package-level
@@ -582,6 +584,42 @@ func TestNewExtractorComponent_SysPromptAlias(t *testing.T) {
 	}
 }
 
+// TestNewExtractorComponent_MetadataAsAnySlice guards against the regression
+// where InjectExtractorEnableMetadata injected the field schema as a
+// []map[string]interface{} while NewExtractorComponent only accepted []any;
+// the type assertion then failed and ExtractorParam.Metadata stayed empty, so
+// auto-metadata never fired. The override_params path passes the injected
+// value straight through (no JSON round-trip), so the slice element type must
+// be []any for the assertion to succeed.
+func TestNewExtractorComponent_MetadataAsAnySlice(t *testing.T) {
+	comp, err := NewExtractorComponent(map[string]any{
+		"field_name":      "out",
+		"enable_metadata": 1,
+		// This is exactly the dynamic type InjectExtractorEnableMetadata
+		// produces ([]any of map[string]any), NOT []map[string]interface{}.
+		"metadata": []any{
+			map[string]any{"key": "author", "type": "string", "description": "doc author"},
+			map[string]any{"key": "year", "type": "number", "enum": []any{"2020", "2021"}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	ec := comp.(*ExtractorComponent)
+	if ec.Param.EnableMetadata != 1 {
+		t.Fatalf("EnableMetadata = %d, want 1", ec.Param.EnableMetadata)
+	}
+	if len(ec.Param.Metadata) != 2 {
+		t.Fatalf("Metadata = %#v, want 2 fields", ec.Param.Metadata)
+	}
+	if ec.Param.Metadata[0].Key != "author" || ec.Param.Metadata[0].Type != "string" {
+		t.Errorf("Metadata[0] = %#v, want key=author type=string", ec.Param.Metadata[0])
+	}
+	if len(ec.Param.Metadata[1].Enum) != 2 {
+		t.Errorf("Metadata[1].Enum = %#v, want 2 enum values", ec.Param.Metadata[1].Enum)
+	}
+}
+
 // TestNewExtractorComponent_PromptsArray verifies that the Python DSL
 // "prompts" array format is parsed into Param.Prompt.
 func TestNewExtractorComponent_PromptsArray(t *testing.T) {
@@ -756,6 +794,13 @@ func TestTryParseJSONObject(t *testing.T) {
 		{name: "object", in: `{"a":1}`, wantOK: true, wantKey: "a"},
 		{name: "object with fence", in: "```json\n{\"a\":1}\n```", wantOK: true, wantKey: "a"},
 		{name: "fence without json tag", in: "```\n{\"a\":1}\n```", wantOK: true, wantKey: "a"},
+		// Language tag on its own line (```\njson\n{...}) — Python json_repair
+		// tolerates this, so encoding/json must not choke on the bare "json".
+		{name: "json tag on own line", in: "```\njson\n{\"a\":1}\n```", wantOK: true, wantKey: "a"},
+		{name: "JSON tag on own line", in: "```\nJSON\n{\"a\":1}\n```", wantOK: true, wantKey: "a"},
+		// Leading prose before the fence must not be stripped (only a real
+		// ``` fence prefix is handled).
+		{name: "leading prose no fence", in: "Here is the result: {\"a\":1}", wantOK: false},
 		{name: "plain string", in: "hello", wantOK: false},
 		{name: "array", in: `[1,2]`, wantOK: false},
 		{name: "empty object", in: `{}`, wantOK: false},
@@ -773,6 +818,202 @@ func TestTryParseJSONObject(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestCleanExtractionResult covers the </think> chain-of-thought stripping
+// and the **ERROR** guard that mirrors Python's metadata post-processing.
+func TestCleanExtractionResult(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "plain", in: `{"a":1}`, want: `{"a":1}`},
+		// Python re.sub(r"^.*</think>", "", ans): everything up to and
+		// including the LAST </think> is dropped.
+		{name: "thinks stripped", in: "let me think<think>reasoning</think>\n{\"a\":1}", want: `{"a":1}`},
+		{name: "thinks no json", in: "thinking</think>no json here", want: "no json here"},
+		// **ERROR** responses are rejected entirely.
+		{name: "error marker rejected", in: "**ERROR** could not extract", want: ""},
+		{name: "error after think", in: "x</think>**ERROR** boom", want: ""},
+		{name: "whitespace trimmed", in: "  {\"a\":1}  ", want: `{"a":1}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cleanExtractionResult(tc.in); got != tc.want {
+				t.Errorf("cleanExtractionResult(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
+// newMetadataExtractor returns an ExtractorComponent wired for doc-level
+// metadata extraction with the given field definitions.
+func newMetadataExtractor(fields ...common.MetadataFieldDef) *ExtractorComponent {
+	return &ExtractorComponent{Param: schema.ExtractorParam{
+		EnableMetadata: 1,
+		Metadata:       fields,
+	}}
+}
+
+// TestExtractorComponent_runEnableMetadata_MergesIntoChunkMetadata verifies a
+// JSON object from the LLM is parsed and merged into the chunk's metadata map,
+// which mergeChunkMetadata then aggregates to the doc level.
+func TestExtractorComponent_runEnableMetadata_MergesIntoChunkMetadata(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"category":"finance","region":"east"}`})
+	c := newMetadataExtractor(
+		common.MetadataFieldDef{Key: "category", Type: "string"},
+		common.MetadataFieldDef{Key: "region", Type: "string"},
+	)
+	ck := map[string]any{}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing or wrong type: %T", ck["metadata"])
+	}
+	if meta["category"] != "finance" || meta["region"] != "east" {
+		t.Errorf("metadata = %v, want category=finance region=east", meta)
+	}
+}
+
+// TestExtractorComponent_runEnableMetadata_StripsJSONFence verifies the
+// extraction path tolerates a fenced ```json response (the common model
+// output) that would otherwise fail encoding/json parsing — mirroring Python
+// json_repair.
+func TestExtractorComponent_runEnableMetadata_StripsJSONFence(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: "```json\n{\"category\":\"law\"}\n```"})
+	c := newMetadataExtractor(common.MetadataFieldDef{Key: "category", Type: "string"})
+	ck := map[string]any{}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing: %T", ck["metadata"])
+	}
+	if meta["category"] != "law" {
+		t.Errorf("metadata = %v, want category=law", meta)
+	}
+}
+
+// TestExtractorComponent_runEnableMetadata_DegradesGracefully verifies that an
+// empty / **ERROR** / unparseable / think-only LLM response does NOT block
+// ingestion: the chunk metadata is left untouched and no error is returned
+// (Python "no evidence → {}").
+func TestExtractorComponent_runEnableMetadata_DegradesGracefully(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+	}{
+		{"empty", ""},
+		{"error_marker", "**ERROR** something went wrong"},
+		{"garbage", "I could not find any metadata in this text."},
+		{"not_json", "{\"category\": } partial"},
+		{"think_only", "<think>let me think</think>"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			withStubChatInvoker(t, stubResponse{Content: tc.content})
+			c := newMetadataExtractor(common.MetadataFieldDef{Key: "category", Type: "string"})
+			ck := map[string]any{"metadata": map[string]any{"preexisting": "keep"}}
+			if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, tc.name); err != nil {
+				t.Fatalf("runEnableMetadata returned error: %v", err)
+			}
+			meta, ok := ck["metadata"].(map[string]any)
+			if !ok {
+				t.Fatalf("ck[metadata] should remain a map, got %T", ck["metadata"])
+			}
+			if meta["preexisting"] != "keep" {
+				t.Errorf("preexisting metadata must be preserved: %v", meta)
+			}
+			if _, has := meta["category"]; has {
+				t.Errorf("category should not be set on degraded response: %v", meta)
+			}
+		})
+	}
+}
+
+// TestExtractorComponent_runEnableMetadata_CrossChunkUnion simulates two chunks
+// whose extraction returns overlapping list values for the same key. Aggregating
+// the chunk metadata maps with utility.UpdateMetadataTo (as mergeChunkMetadata
+// does) must produce a de-duplicated union, matching Python update_metadata_to.
+func TestExtractorComponent_runEnableMetadata_CrossChunkUnion(t *testing.T) {
+	withStubChatInvoker(t,
+		stubResponse{Content: `{"people":["关羽","张辽"]}`},
+		stubResponse{Content: `{"people":["张辽","刘备"]}`},
+	)
+	c := newMetadataExtractor(common.MetadataFieldDef{Key: "people", Type: "string"})
+	ck1 := map[string]any{}
+	ck2 := map[string]any{}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck1, "chunk one"); err != nil {
+		t.Fatalf("ck1: %v", err)
+	}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck2, "chunk two"); err != nil {
+		t.Fatalf("ck2: %v", err)
+	}
+	// mirror mergeChunkMetadata: aggregate chunk metadata into doc metadata.
+	m1, ok := ck1["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck1[metadata] missing: %T", ck1["metadata"])
+	}
+	m2, ok := ck2["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck2[metadata] missing: %T", ck2["metadata"])
+	}
+	docMeta := map[string]any{}
+	docMeta = utility.UpdateMetadataTo(docMeta, m1)
+	docMeta = utility.UpdateMetadataTo(docMeta, m2)
+	people, ok := docMeta["people"].([]string)
+	if !ok {
+		t.Fatalf("people = %T, want []string", docMeta["people"])
+	}
+	want := map[string]bool{"关羽": true, "张辽": true, "刘备": true}
+	if len(people) != len(want) {
+		t.Fatalf("people = %v, want union of %v", people, want)
+	}
+	for _, p := range people {
+		if !want[p] {
+			t.Errorf("unexpected person %q", p)
+		}
+	}
+}
+
+// TestExtractorComponent_runEnableMetadata_CombinedValueSplit verifies a value
+// the LLM combines with Chinese/comma delimiters is split when passed through
+// common.SplitCombinedMetadataValues (as mergeDocMetadata does before writing),
+// matching Python _split_combined_values (doc_metadata_service.py).
+func TestExtractorComponent_runEnableMetadata_CombinedValueSplit(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"people":["关羽、张辽、刘备"]}`})
+	c := newMetadataExtractor(common.MetadataFieldDef{Key: "people", Type: "string"})
+	ck := map[string]any{}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	rawMeta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing: %T", ck["metadata"])
+	}
+	raw, ok := rawMeta["people"].([]any)
+	if !ok || len(raw) != 1 {
+		t.Fatalf("raw people = %v, want 1 combined element", rawMeta["people"])
+	}
+	// mergeDocMetadata runs SplitCombinedMetadataValues before writing.
+	split := common.SplitCombinedMetadataValues(ck["metadata"].(map[string]any))
+	people, ok := split["people"].([]string)
+	if !ok {
+		t.Fatalf("people = %T, want []string", split["people"])
+	}
+	want := map[string]bool{"关羽": true, "张辽": true, "刘备": true}
+	if len(people) != len(want) {
+		t.Fatalf("people = %v, want 3 split elements", people)
+	}
+	for _, p := range people {
+		if !want[p] {
+			t.Errorf("unexpected %q", p)
+		}
 	}
 }
 
