@@ -270,6 +270,10 @@ def _load_search_api(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
     utils_pkg.api_utils = api_utils_mod
 
+    pagination_utils_mod = ModuleType("api.utils.pagination_utils")
+    pagination_utils_mod.validate_rest_api_page_size = lambda size: size
+    monkeypatch.setitem(sys.modules, "api.utils.pagination_utils", pagination_utils_mod)
+
     module_name = "test_search_api_unit_module"
     module_path = repo_root / "api" / "apps" / "restful_apis" / "search_api.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
