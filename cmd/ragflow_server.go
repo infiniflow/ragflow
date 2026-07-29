@@ -220,24 +220,24 @@ func main() {
 	arguments, err := parseArgs()
 	if err != nil {
 		fmt.Printf("Failed to parse arguments: %v\n", err)
-		return
+		os.Exit(1)
 	}
 
 	if arguments.helpFlag || arguments.mode == nil {
 		printHelp(arguments)
-		return
+		os.Exit(1)
 	}
 
 	if arguments.versionFlag {
 		fmt.Printf("RAGFlow version: %s\n", common.GetRAGFlowVersion())
-		return
+		os.Exit(1)
 	}
 
 	// Initialize local variables (runtime variables from Redis)
 	err = server.InitLocalVariables()
 	if err != nil {
 		fmt.Printf("Failed to start %s server: %v\n", *arguments.mode, err)
-		return
+		os.Exit(1)
 	}
 
 	// Temporary logger initialization
@@ -267,7 +267,7 @@ func main() {
 
 	if err = server.Init(configPath); err != nil {
 		common.Error("Failed to initialize configuration", err)
-		return
+		os.Exit(1)
 	}
 
 	config := server.GetConfig()
@@ -303,8 +303,9 @@ func main() {
 			serverName = fmt.Sprintf("syncer_server_%s", uuid)
 		}
 	default:
-		common.Error("invalid server mode", errors.New(*arguments.mode))
-		return
+		err = errors.New(*arguments.mode)
+		common.Error("invalid server mode", err)
+		os.Exit(1)
 	}
 
 	// set server name and log file path
@@ -377,7 +378,7 @@ func main() {
 
 	if err = server.StartServer(ctx, cancel, serverName); err != nil {
 		common.Error("Failed to start EE server", err)
-		return
+		os.Exit(1)
 	}
 	defer server.ShutdownServer(ctx)
 
@@ -389,30 +390,30 @@ func main() {
 	case "api":
 		if err = runAPI(ctx, arguments, config); err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
-			return
+			os.Exit(1)
 		}
 	case "admin":
-		if err = runAdmin(ctx, cancel, arguments, config); err != nil {
+		if err = runAdmin(ctx, arguments, config); err != nil {
 			fmt.Printf("Failed to start ADMIN server: %v\n", err)
-			return
+			os.Exit(1)
 		}
 	case "ingestor":
 		if err = runIngestor(ctx, cancel, arguments, config); err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
-			return
+			os.Exit(1)
 		}
 	case "syncer":
 		if err = runSyncer(ctx, cancel, arguments, config); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
-			return
+			os.Exit(1)
 		}
 	default:
 		fmt.Printf("Invalid server mode: %s\n", *arguments.mode)
-		return
+		os.Exit(1)
 	}
 }
 
-func runAdmin(ctx context.Context, cancel context.CancelFunc, args *serverArgs, config *server.Config) error {
+func runAdmin(ctx context.Context, args *serverArgs, config *server.Config) error {
 
 	// Set Gin mode
 	if config.Server.Mode == "release" {
