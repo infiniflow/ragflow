@@ -498,6 +498,13 @@ func truncateForEmbedding(text string, maxTokens int) string {
 	if maxTokens <= 0 {
 		maxTokens = defaultEmbeddingTokenLimit
 	}
+	// Keep a 10-token safety margin, mirroring Python's embedding path
+	// (rag/svr/task_executor.py uses `mdl.max_length - 10`). Only apply it
+	// when the limit is large enough; for small limits (<=10) keep the full
+	// value so the result stays non-empty instead of collapsing to "".
+	if maxTokens > 10 {
+		maxTokens -= 10
+	}
 	return tokenizer.TrimContentToTokenLimit(text, maxTokens)
 }
 
