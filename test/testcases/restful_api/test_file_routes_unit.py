@@ -619,14 +619,14 @@ def test_convert_branch_matrix_unit(monkeypatch):
     monkeypatch.setattr(module, "check_file_team_permission", lambda *_args, **_kwargs: False)
     res = _run(module.convert())
     assert res["code"] == 102
-    assert res["message"] == "No authorization."
+    assert res["message"] == "no authorization"
 
     # Unauthorized dataset access is rejected before scheduling background work.
     monkeypatch.setattr(module, "check_file_team_permission", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(module, "check_kb_team_permission", lambda *_args, **_kwargs: False)
     res = _run(module.convert())
     assert res["code"] == 102
-    assert res["message"] == "No authorization."
+    assert res["message"] == "no authorization"
 
     # Valid file and kb schedule background work and return data=True immediately.
     monkeypatch.setattr(module, "check_kb_team_permission", lambda *_args, **_kwargs: True)
@@ -993,7 +993,7 @@ def test_get_file_content_checks_permission(monkeypatch):
 
     ok, message = module.get_file_content("tenant1", "file1")
     assert ok is False
-    assert message == "No authorization."
+    assert message == "no authorization"
 
     monkeypatch.setattr(module, "check_file_team_permission", lambda *_args, **_kwargs: True)
     ok, file = module.get_file_content("tenant1", "file1")

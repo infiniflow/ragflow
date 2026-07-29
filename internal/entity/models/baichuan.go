@@ -49,6 +49,29 @@ func (b *BaichuanModel) Name() string {
 	return "BaiChuan"
 }
 
+type BaiChuanChatResponse struct {
+	ID      string `json:"id"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Message      struct {
+			Content   string           `json:"content"`
+			Role      string           `json:"role"`
+			ToolCalls []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+		Logprobs interface{} `json:"logprobs"`
+	} `json:"choices"`
+	Created int    `json:"created"`
+	Model   string `json:"model"`
+	Object  string `json:"object"`
+	Usage   struct {
+		CompletionTokens int `json:"completion_tokens"`
+		PromptTokens     int `json:"prompt_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+		SearchCount      int `json:"search_count"`
+	} `json:"usage"`
+}
+
 func (b *BaichuanModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -96,41 +119,34 @@ func (b *BaichuanModel) ChatWithMessages(ctx context.Context, modelName string, 
 	}
 
 	// Parse response
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result BaiChuanChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no choices in response")
-	}
+		choice := &result.Choices[0]
+		content := choice.Message.Content
+		if content == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no message in response")
+		}
 
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no message in response")
-	}
-
-	content, ok := messageMap["content"].(string)
-	toolCalls := extractToolCalls(messageMap)
-	if !ok && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("no message in response")
-	}
-
-	// baichuan not support think
-	emptyReason := ""
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &emptyReason,
-		ToolCalls:     toolCalls,
-	}
-
-	return chatResponse, nil
+		emptyReason := ""
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &content,
+			ReasonContent: &emptyReason,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 func (b *BaichuanModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -182,6 +198,14 @@ func (b *BaichuanModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
+
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(modelConfig, modelUsage, tokenUsage)
+		}
 
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
@@ -279,10 +303,15 @@ func (b *BaichuanModel) Embed(ctx context.Context, modelName *string, texts []st
 	}
 
 	var parsedResponse struct {
+		ID   string `json:"id"`
 		Data []struct {
 			Embedding []float64 `json:"embedding"`
 			Index     int       `json:"index"`
 		} `json:"data"`
+		Usage struct {
+			PromptTokens int `json:"prompt_tokens"`
+			TotalTokens  int `json:"total_tokens"`
+		}
 	}
 
 	if err = json.Unmarshal(body, &parsedResponse); err != nil {
@@ -300,6 +329,10 @@ func (b *BaichuanModel) Embed(ctx context.Context, modelName *string, texts []st
 			Index:     dataElem.Index,
 		})
 	}
+	recordResponseUsage(modelUsage, parsedResponse.ID, &TokenUsage{
+		PromptTokens: parsedResponse.Usage.PromptTokens,
+		TotalTokens:  parsedResponse.Usage.TotalTokens,
+	}, "embedding")
 
 	return embeddings, nil
 }

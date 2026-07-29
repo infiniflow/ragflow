@@ -256,7 +256,7 @@ class TestDocumentMetadataNegative:
         # Now try to update metadata setting for the deleted document
         res = document_update_metadata_setting(WebApiAuth, dataset_id, doc_id, {"metadata": {"author": "test"}})
         assert res["code"] == 102, res
-        assert f"Document {doc_id} not found in dataset {dataset_id}" in res["message"], res
+        assert f"document {doc_id} not found in dataset {dataset_id}" in res["message"], res
 
     @pytest.mark.p3
     def test_change_status_invalid_status(self, WebApiAuth, add_document_func):

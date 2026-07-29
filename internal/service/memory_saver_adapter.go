@@ -23,8 +23,8 @@ import (
 	"ragflow/internal/agent/component"
 )
 
-// memorySaverAdapter bridges the component.MemorySaver interface to
-// MemoryService.AddMessage. It is installed via component.SetMemorySaver
+// memorySaverAdapter bridges the component.MemorySaver interface to the
+// agent-internal memory queue. It is installed via component.SetMemorySaver
 // at boot time so that the Message component can persist conversation
 // turns to memory stores declared in the canvas DSL.
 type memorySaverAdapter struct {
@@ -37,10 +37,9 @@ func NewMemorySaverAdapter(svc *MemoryService) component.MemorySaver {
 	return &memorySaverAdapter{svc: svc}
 }
 
-// Save implements component.MemorySaver. It delegates to
-// MemoryService.AddMessage which handles access filtering, message
-// construction, embedding, and async task queueing — the same pipeline
-// used by the REST API add_message endpoint.
+// Save implements component.MemorySaver. Agent message components already run
+// inside an authorized canvas, so this path queues the selected memories
+// directly instead of applying REST request access filtering.
 func (a *memorySaverAdapter) Save(ctx context.Context, req component.MemorySaveRequest) error {
 	if a == nil || a.svc == nil {
 		return fmt.Errorf("memory: saver adapter not initialised")
@@ -52,7 +51,7 @@ func (a *memorySaverAdapter) Save(ctx context.Context, req component.MemorySaveR
 		UserInput:     req.UserInput,
 		AgentResponse: req.AgentResponse,
 	}
-	ok, detail, err := a.svc.AddMessage(ctx, req.UserID, req.MemoryIDs, msg)
+	ok, detail, err := a.svc.saveAgentMessage(ctx, req.MemoryIDs, msg)
 	if err != nil {
 		return err
 	}

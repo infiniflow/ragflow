@@ -44,7 +44,7 @@ func (s *DocumentService) GetThumbnails(ctx context.Context, userID string, docI
 
 	tenantIDs := []string{userID}
 	if userID != "" {
-		ids, err := dao.NewUserTenantDAO().GetTenantIDsByUserID(userID)
+		ids, err := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch user tenants: %w", err)
 		}

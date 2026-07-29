@@ -167,7 +167,7 @@ async def convert():
                     file_ids,
                     kb_ids,
                 )
-                return get_data_error_result(message="No authorization.")
+                return get_data_error_result(message="no authorization")
 
         for kb_id, kb in kb_map.items():
             if not check_kb_team_permission(kb, user_id):
@@ -178,7 +178,7 @@ async def convert():
                     file_ids,
                     kb_ids,
                 )
-                return get_data_error_result(message="No authorization.")
+                return get_data_error_result(message="no authorization")
 
         # Run the blocking DB work in a thread so the event loop is not blocked.
         # For large folders this prevents 504 Gateway Timeout by returning as

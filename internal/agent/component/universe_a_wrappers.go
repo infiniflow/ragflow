@@ -80,9 +80,7 @@ type retrievalParams struct {
 // "default everything". This matches Python's
 // component.retrieval.RetrievalParam.__init__ tolerance.
 func parseRetrievalParams(params map[string]any) retrievalParams {
-	out := retrievalParams{
-		EmptyResponse: "Sorry, no relevant content was found in the knowledge base.",
-	}
+	out := retrievalParams{}
 	if params == nil {
 		return out
 	}

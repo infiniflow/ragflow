@@ -160,7 +160,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		return nil, fmt.Errorf("dataset_ids is required")
 	}
 
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -512,7 +512,7 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 	}
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -787,7 +787,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	}
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -1013,7 +1013,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 	}
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -1070,7 +1070,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	}
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -1209,7 +1209,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 	}
 
 	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get user tenants: %w", err)
 	}

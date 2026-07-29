@@ -63,6 +63,7 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -89,6 +90,19 @@ const componentNameExtractor = "Extractor"
 // orchestrator (Phase 3) overrides this if a stage-level ceiling
 // is configured.
 const extractorTimeout = 600 * time.Second
+
+// extractorRetryMax and extractorRetryDelay are package-level vars
+// so tests can override them (extractorRetryDelay → time.Millisecond)
+// to avoid multi-second retry sleeps. Production defaults match
+// common.RetryWithBackoff defaults (3 retries, 2s initial delay).
+var (
+	extractorRetryMax   = common.DefaultRetryMax
+	extractorRetryDelay = common.DefaultRetryDelay
+)
+
+// extractorTemperature mirrors Python's 0.2 default for keyword
+// and question extraction calls (generator.py:230,245).
+const extractorTemperature = 0.2
 
 const (
 	autoKeywordPrompt = `## Role
@@ -425,6 +439,12 @@ type extractorInputs struct {
 	prompt       string
 	lang         string
 	chunks       []map[string]any
+	// temperature overrides the LLM temperature for this call. A
+	// nil value leaves the request's Temperature unset so the model
+	// (or the chat-model default) decides, matching Python's generic
+	// Extractor path. The keyword/question helpers set it to
+	// extractorTemperature (0.2) to mirror generator.py.
+	temperature *float64
 }
 
 // resolveInputs overlays per-call inputs on top of the
@@ -561,19 +581,67 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 				text, _ = ck["text"].(string)
 			}
 
-			if c.Param.AutoKeywords > 0 {
-				if err := c.runAutoKeywords(timeoutCtx, db, in, ck, text); err != nil {
-					return fmt.Errorf("chunk %d keywords: %w", i, err)
+			if c.Param.AutoKeywords > 0 && c.Param.AutoQuestions > 0 {
+				// Run keyword and question extraction concurrently
+				// per chunk (mirrors Python's ThreadPoolExecutor:
+				// task_executor.py:444-448). The shared chunk map is
+				// guarded by mu inside runAutoKeywords/runAutoQuestions,
+				// which also short-circuit when the key already exists.
+				var kwErr, qErr error
+				var mu sync.Mutex
+				var wg sync.WaitGroup
+				wg.Add(2)
+				go func() {
+					defer wg.Done()
+					if err := c.runAutoKeywords(timeoutCtx, db, in, ck, text, &mu); err != nil {
+						kwErr = err
+					}
+				}()
+				go func() {
+					defer wg.Done()
+					if err := c.runAutoQuestions(timeoutCtx, db, in, ck, text, &mu); err != nil {
+						qErr = err
+					}
+				}()
+				wg.Wait()
+				if kwErr != nil {
+					return fmt.Errorf("chunk %d keywords: %w", i, kwErr)
 				}
-			}
-			if c.Param.AutoQuestions > 0 {
-				if err := c.runAutoQuestions(timeoutCtx, db, in, ck, text); err != nil {
-					return fmt.Errorf("chunk %d questions: %w", i, err)
+				if qErr != nil {
+					return fmt.Errorf("chunk %d questions: %w", i, qErr)
+				}
+			} else {
+				if c.Param.AutoKeywords > 0 {
+					if err := c.runAutoKeywords(timeoutCtx, db, in, ck, text, nil); err != nil {
+						return fmt.Errorf("chunk %d keywords: %w", i, err)
+					}
+				}
+				if c.Param.AutoQuestions > 0 {
+					if err := c.runAutoQuestions(timeoutCtx, db, in, ck, text, nil); err != nil {
+						return fmt.Errorf("chunk %d questions: %w", i, err)
+					}
 				}
 			}
 
 			if in.fieldName != "" {
-				ans, callErr := c.call(timeoutCtx, db, in, text)
+				// Substitute {field_name} placeholders with current
+				// chunk field values, mirroring Python's
+				// string_format at extractor.py:103.
+				callIn := in
+				callIn.prompt = substituteChunkPlaceholders(in.prompt, ck, text)
+				callIn.systemPrompt = substituteChunkPlaceholders(in.systemPrompt, ck, text)
+				// buildExtractorMessages appends chunkText to the user
+				// message unconditionally. When the chunk text was already
+				// embedded via a {text}/{chunks} placeholder above, passing
+				// it again would duplicate the content in the final prompt.
+				// Suppress the automatic append in that case (the keyword/
+				// question helper paths do the same by passing "").
+				callChunkText := text
+				if strings.Contains(in.prompt, "{text}") || strings.Contains(in.prompt, "{chunks}") ||
+					strings.Contains(in.systemPrompt, "{text}") || strings.Contains(in.systemPrompt, "{chunks}") {
+					callChunkText = ""
+				}
+				ans, callErr := c.call(timeoutCtx, db, callIn, callChunkText)
 				if callErr != nil {
 					return fmt.Errorf("chunk %d: %w", i, callErr)
 				}
@@ -594,14 +662,30 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	}, nil
 }
 
-func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
-	if _, exists := ck["important_kwd"]; exists {
+// runAutoKeywords extracts keywords for the current chunk and stores
+// them on ck["important_kwd"]. mu may be nil (sequential path); when
+// non-nil it serializes the shared chunk-map accesses so concurrent
+// keyword/question goroutines stay race-free. The existence check and
+// the map writes are both guarded by mu. Keyword extraction pins
+// temperature to extractorTemperature (0.2) to mirror generator.py.
+func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string, mu *sync.Mutex) error {
+	if mu != nil {
+		mu.Lock()
+	}
+	_, exists := ck["important_kwd"]
+	if mu != nil {
+		mu.Unlock()
+	}
+	if exists {
 		return nil
 	}
-	kwIn := in
-	kwIn.prompt = "Output: "
-	kwIn.systemPrompt = fmt.Sprintf(autoKeywordPrompt, c.Param.AutoKeywords, chunkText)
-	kwIn.fieldName = ""
+	kwTemp := extractorTemperature
+	kwIn := extractorInputs{
+		llmID:        in.llmID,
+		systemPrompt: fmt.Sprintf(autoKeywordPrompt, c.Param.AutoKeywords, chunkText),
+		prompt:       "Output: ",
+		temperature:  &kwTemp,
+	}
 	result, err := c.call(ctx, db, kwIn, "")
 	if err != nil {
 		return err
@@ -615,23 +699,42 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	if len(kwds) == 0 {
 		return nil
 	}
-	ck["important_kwd"] = kwds
 	tok := tokenizer.New(in.lang)
 	tks, tkErr := tok.Tokenize(strings.Join(kwds, " "))
+	if mu != nil {
+		mu.Lock()
+	}
+	ck["important_kwd"] = kwds
 	if tkErr == nil {
 		ck["important_tks"] = tks
+	}
+	if mu != nil {
+		mu.Unlock()
 	}
 	return nil
 }
 
-func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
-	if _, exists := ck["question_kwd"]; exists {
+// runAutoQuestions extracts questions for the current chunk and stores
+// them on ck["question_kwd"]. See runAutoKeywords for the mu contract
+// and the temperature pin.
+func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string, mu *sync.Mutex) error {
+	if mu != nil {
+		mu.Lock()
+	}
+	_, exists := ck["question_kwd"]
+	if mu != nil {
+		mu.Unlock()
+	}
+	if exists {
 		return nil
 	}
-	qIn := in
-	qIn.prompt = "Output: "
-	qIn.systemPrompt = fmt.Sprintf(autoQuestionPrompt, c.Param.AutoQuestions, chunkText)
-	qIn.fieldName = ""
+	qTemp := extractorTemperature
+	qIn := extractorInputs{
+		llmID:        in.llmID,
+		systemPrompt: fmt.Sprintf(autoQuestionPrompt, c.Param.AutoQuestions, chunkText),
+		prompt:       "Output: ",
+		temperature:  &qTemp,
+	}
 	result, err := c.call(ctx, db, qIn, "")
 	if err != nil {
 		return err
@@ -653,11 +756,17 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	if len(filtered) == 0 {
 		return nil
 	}
-	ck["question_kwd"] = filtered
 	tok := tokenizer.New(in.lang)
 	tks, tkErr := tok.Tokenize(strings.Join(filtered, "\n"))
+	if mu != nil {
+		mu.Lock()
+	}
+	ck["question_kwd"] = filtered
 	if tkErr == nil {
 		ck["question_tks"] = tks
+	}
+	if mu != nil {
+		mu.Unlock()
 	}
 	return nil
 }
@@ -665,7 +774,7 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 // cleanExtractionResult strips `</think>` tags and rejects `**ERROR**` responses,
 // matching Python's keyword_extraction and question_proposal post-processing.
 func cleanExtractionResult(s string) string {
-	if i := strings.Index(s, "</think>"); i >= 0 {
+	if i := strings.LastIndex(s, "</think>"); i >= 0 {
 		s = s[i+len("</think>"):]
 	}
 	s = strings.TrimSpace(s)
@@ -690,6 +799,48 @@ func splitKeywords(s string) []string {
 	return result
 }
 
+// nonRetryableStatusRE matches HTTP client-error status codes that
+// signal a permanent (non-transient) condition and therefore must
+// NOT be retried. The word boundaries are essential: a bare
+// substring check on "400" would wrongly flag phrasing such as
+// "context deadline exceeded after 400ms" (a transient timeout,
+// retryable) as non-retryable. \b ensures we only match a standalone
+// 3-digit status token, so "400ms" / "4000" do not match. 429 and
+// 5xx are deliberately absent — they stay retryable.
+var nonRetryableStatusRE = regexp.MustCompile(`\b(?:400|401|403|404|405|422)\b`)
+
+// isRetryableLLMError classifies an LLM chat error as worth
+// retrying. The production chat invoker returns opaque errors:
+// configuration failures (missing model/driver) before any API
+// call, and the provider SDK's raw error after the call. We treat
+// context cancellation/deadline as terminal, plus a lightweight
+// heuristic for non-transient auth/client errors. Anything
+// unrecognized defaults to retryable so genuinely transient 5xx /
+// 429 / network blips keep retrying (matching the prior blind-retry
+// behavior).
+func isRetryableLLMError(err error) bool {
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{
+		"unauthorized", "authentication", "api key",
+		"bad request", "not found", "model not found", "content filter",
+		"no driver resolved", "model_name is required", "resolve driver",
+	} {
+		if strings.Contains(msg, s) {
+			return false
+		}
+	}
+	if nonRetryableStatusRE.MatchString(msg) {
+		return false
+	}
+	return true
+}
+
 // call dispatches one LLM chat call for the supplied chunk text
 // (empty string in the no-chunk fast path). The result is the
 // raw string from the model — JSON parsing happens here so
@@ -701,14 +852,27 @@ func (c *ExtractorComponent) call(ctx context.Context, db *gorm.DB, in extractor
 	}
 	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, chunkText, in.chunks)
 	inv := getExtractorChatInvoker()
-	resp, err := inv.Chat(ctx, extractorChatRequest{
+	req := extractorChatRequest{
 		Driver:    driver,
 		ModelName: modelName,
 		APIKey:    apiKey,
 		BaseURL:   baseURL,
 		Messages:  msgs,
-	})
-	if err != nil {
+	}
+	// Only override the temperature when the caller set one. A nil
+	// Temperature lets the model / chat-model default decide, matching
+	// Python's generic Extractor path; keyword/question helpers set
+	// extractorTemperature (0.2) to mirror generator.py.
+	if in.temperature != nil {
+		temp := *in.temperature
+		req.Temperature = &temp
+	}
+	var resp *extractorChatResponse
+	if err := common.RetryWithBackoff(ctx, extractorRetryMax, extractorRetryDelay, func() error {
+		r, e := inv.Chat(ctx, req)
+		resp = r
+		return e
+	}, isRetryableLLMError); err != nil {
 		return nil, err
 	}
 	raw := strings.TrimSpace(resp.Content)
@@ -735,6 +899,14 @@ func resolveExtractorChatTarget(ctx context.Context, db *gorm.DB, llmID string) 
 	if override := getExtractorChatTargetResolverOverride(); override != nil {
 		if driver, modelName, apiKey, baseURL, ok := override(llmID); ok {
 			return driver, modelName, apiKey, baseURL, nil
+		}
+	}
+
+	// When llmID is empty, try tenant default chat model
+	// (mirrors Python task_executor.py:573-574 fallback).
+	if llmID == "" {
+		if cfg := resolveExtractorChatDefaultConfig(ctx, db); cfg.driver != "" {
+			return cfg.driver, cfg.modelName, cfg.apiKey, cfg.baseURL, nil
 		}
 	}
 
@@ -820,6 +992,43 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 		apiKey:    apiKey,
 		baseURL:   baseURL,
 	}, nil
+}
+
+// resolveExtractorChatDefaultConfig resolves the tenant's default chat
+// model when no explicit llm_id is provided. Returns empty config when
+// no canvas state or tenant_id is available (unit-test context).
+func resolveExtractorChatDefaultConfig(ctx context.Context, db *gorm.DB) extractorChatConfig {
+	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	if err != nil || state == nil {
+		return extractorChatConfig{}
+	}
+	tidVal, _ := state.GetGlobal("tenant_id")
+	tid, _ := tidVal.(string)
+	if tid == "" {
+		return extractorChatConfig{}
+	}
+
+	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tid, entity.ModelTypeChat)
+	if err != nil || driver == nil {
+		return extractorChatConfig{}
+	}
+
+	apiKey := ""
+	baseURL := ""
+	if apiConfig != nil {
+		if apiConfig.ApiKey != nil {
+			apiKey = *apiConfig.ApiKey
+		}
+		if apiConfig.BaseURL != nil {
+			baseURL = *apiConfig.BaseURL
+		}
+	}
+	return extractorChatConfig{
+		driver:    strings.ToLower(driver.Name()),
+		modelName: modelName,
+		apiKey:    apiKey,
+		baseURL:   baseURL,
+	}
 }
 
 // isBareTenantModelID reports whether s is a 32-character hex string
@@ -929,6 +1138,39 @@ func substitutePromptPlaceholders(prompt string, chunks []map[string]any) string
 // the @chunks variant but kept so the regex rejects arbitrary
 // placeholders (a future per-component substitution extends here).
 var placeholderRE = regexp.MustCompile(`\{[A-Za-z0-9_]+:[A-Za-z0-9_]+@chunks\}`)
+
+// simplePlaceholderRE matches simple {field_name} placeholders
+// (no colons, no @chunks). Used by substituteChunkPlaceholders to
+// replace {text}, {content_with_weight}, etc. with the current
+// chunk's field values, mirroring Python's string_format
+// (agent/component/base.py:602-609).
+var simplePlaceholderRE = regexp.MustCompile(`\{[A-Za-z_][A-Za-z0-9_]*\}`)
+
+// substituteChunkPlaceholders replaces {field_name} placeholders in
+// the prompt with values from the current chunk map. The special
+// alias "chunks" maps to chunkText (the current chunk's primary
+// text), matching Python's `args[chunks_key] = ck["text"]` at
+// extractor.py:102. Unmatched placeholders are left as-is.
+func substituteChunkPlaceholders(prompt string, ck map[string]any, chunkText string) string {
+	if prompt == "" || ck == nil {
+		return prompt
+	}
+	// Build lookup: chunk fields + "chunks" alias
+	lookup := make(map[string]string, len(ck)+1)
+	for k, v := range ck {
+		lookup[k] = fmt.Sprintf("%v", v)
+	}
+	if _, has := lookup["chunks"]; !has {
+		lookup["chunks"] = chunkText
+	}
+	return simplePlaceholderRE.ReplaceAllStringFunc(prompt, func(match string) string {
+		key := match[1 : len(match)-1] // strip { }
+		if val, ok := lookup[key]; ok {
+			return val
+		}
+		return match // leave unknown placeholders as-is
+	})
+}
 
 // tryParseJSONObject tries to parse s as a JSON object. Returns
 // (parsed, true) on success; (nil, false) on parse error or when

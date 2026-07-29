@@ -30,8 +30,9 @@ import (
 	"sync"
 	"time"
 
+	markdownlib "github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/ast"
-	"github.com/gomarkdown/markdown/parser"
+	mdparser "github.com/gomarkdown/markdown/parser"
 )
 
 // mdImagePattern matches markdown inline image syntax: ![alt](url).
@@ -94,8 +95,18 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 // the base64-encoded image payload. The legacy debug-print path has
 // been removed; callers consume ParseResult directly.
 func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	doc := markdownNew().Parse(data)
 	rawText := string(data)
+	if rendered, ok := renderMarkdownTablesInline(rawText); ok {
+		return ParseResult{
+			OutputFormat: "json",
+			File: map[string]any{
+				"name": filename,
+			},
+			JSON: []map[string]any{{"text": rendered, "doc_type_kwd": "text"}},
+		}
+	}
+
+	doc := markdownNew().Parse(data)
 
 	var items []map[string]any
 	walkMarkdownBlocksWithImages(doc, rawText, &items, p.FlattenMediaToText)
@@ -117,9 +128,108 @@ func (p *MarkdownParser) String() string {
 
 // markdownNew is a thin constructor so the extension set is owned
 // in one place (both Parse and ParseWithResult consume it).
-func markdownNew() *parser.Parser {
-	extensions := parser.CommonExtensions | parser.AutoHeadingIDs | parser.NoEmptyLineBeforeBlock
-	return parser.NewWithExtensions(extensions)
+func markdownNew() *mdparser.Parser {
+	extensions := mdparser.CommonExtensions | mdparser.AutoHeadingIDs | mdparser.NoEmptyLineBeforeBlock
+	return mdparser.NewWithExtensions(extensions)
+}
+
+func renderMarkdownTablesInline(text string) (string, bool) {
+	lines := strings.SplitAfter(strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"), "\n")
+	var buf strings.Builder
+	changed := false
+	inFence := false
+	var fenceChar byte
+	var fenceLen int
+
+	for i := 0; i < len(lines); {
+		line := strings.TrimRight(lines[i], "\n")
+		if ch, n, ok := markdownFenceMarker(line); ok {
+			if inFence && ch == fenceChar && n >= fenceLen {
+				inFence = false
+			} else if !inFence {
+				inFence = true
+				fenceChar = ch
+				fenceLen = n
+			}
+			buf.WriteString(lines[i])
+			i++
+			continue
+		}
+		if !inFence && i+1 < len(lines) && isMarkdownTableRow(line) && isMarkdownTableSeparator(strings.TrimRight(lines[i+1], "\n")) {
+			start := i
+			i += 2
+			for i < len(lines) && isMarkdownTableRow(strings.TrimRight(lines[i], "\n")) {
+				i++
+			}
+			for i < len(lines) && strings.TrimSpace(lines[i]) == "" {
+				i++
+			}
+			tableHTML := markdownlib.ToHTML([]byte(strings.Join(lines[start:i], "")), markdownNew(), nil)
+			buf.WriteString(strings.TrimRight(string(tableHTML), "\r\n"))
+			buf.WriteByte('\n')
+			changed = true
+			continue
+		}
+		buf.WriteString(lines[i])
+		i++
+	}
+	return buf.String(), changed
+}
+
+func markdownFenceMarker(line string) (byte, int, bool) {
+	trimmed := strings.TrimLeft(line, " \t")
+	if len(line)-len(trimmed) > 3 || len(trimmed) < 3 {
+		return 0, 0, false
+	}
+	ch := trimmed[0]
+	if ch != '`' && ch != '~' {
+		return 0, 0, false
+	}
+	n := 0
+	for n < len(trimmed) && trimmed[n] == ch {
+		n++
+	}
+	return ch, n, n >= 3
+}
+
+func isMarkdownTableRow(line string) bool {
+	cells := markdownTableCells(line)
+	if len(cells) < 2 {
+		return false
+	}
+	for _, cell := range cells {
+		if strings.TrimSpace(cell) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func isMarkdownTableSeparator(line string) bool {
+	cells := markdownTableCells(line)
+	if len(cells) < 2 {
+		return false
+	}
+	for _, cell := range cells {
+		cell = strings.ReplaceAll(strings.TrimSpace(cell), " ", "")
+		if cell == "" {
+			return false
+		}
+		cell = strings.TrimPrefix(strings.TrimSuffix(cell, ":"), ":")
+		if strings.Trim(cell, "-") != "" || !strings.Contains(cell, "-") {
+			return false
+		}
+	}
+	return true
+}
+
+func markdownTableCells(line string) []string {
+	line = strings.TrimSpace(line)
+	if !strings.Contains(line, "|") {
+		return nil
+	}
+	line = strings.TrimPrefix(strings.TrimSuffix(line, "|"), "|")
+	return strings.Split(line, "|")
 }
 
 // walkMarkdownBlocksWithImages emits one normalized item per

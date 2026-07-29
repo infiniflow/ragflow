@@ -355,7 +355,7 @@ class TestWebCrawlUnit:
         )
         res = _run(module.upload_document(dataset_id="kb1"))
         assert res["code"] == 109
-        assert res["message"] == "No authorization."
+        assert res["message"] == "no authorization"
 
     def test_download_failure(self, document_rest_api_module, monkeypatch):
         module = document_rest_api_module

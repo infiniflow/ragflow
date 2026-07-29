@@ -509,7 +509,7 @@ async def get_chat(chat_id):
         else:
             return get_json_result(
                 data=False,
-                message="No authorization.",
+                message="no authorization",
                 code=RetCode.AUTHENTICATION_ERROR,
             )
 
@@ -525,7 +525,7 @@ async def get_chat(chat_id):
 @login_required
 async def update_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         req = await get_request_json()
@@ -607,7 +607,7 @@ async def update_chat(chat_id):
 @login_required
 async def patch_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         req = await get_request_json()
@@ -695,7 +695,7 @@ async def patch_chat(chat_id):
 @login_required
 async def delete_chat(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         if not DialogService.update_by_id(chat_id, {"status": StatusEnum.INVALID.value}):
@@ -757,7 +757,7 @@ async def bulk_delete_chats():
 async def create_session(chat_id):
     """Create a new conversation session for the given chat, owned by the authenticated user."""
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
         req = await get_request_json()
         ok, dia = DialogService.get_by_id(chat_id)
@@ -765,7 +765,7 @@ async def create_session(chat_id):
             return get_data_error_result(message="Chat not found!")
         name = req.get("name", "New session")
         if not isinstance(name, str) or not name.strip():
-            return get_data_error_result(message="`name` can not be empty.")
+            return get_data_error_result(message="`name` can not be empty")
         name = name.strip()[:255]
         conv = {
             "id": get_uuid(),
@@ -791,7 +791,7 @@ async def list_sessions(chat_id):
         if not await _ensure_owned_chat(chat_id):
             return get_json_result(
                 data=False,
-                message="No authorization.",
+                message="no authorization",
                 code=RetCode.AUTHENTICATION_ERROR,
             )
         page_number = int(request.args.get("page", 1))
@@ -813,7 +813,7 @@ async def list_sessions(chat_id):
 @login_required
 async def get_session(chat_id, session_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
         ok, conv = await thread_pool_exec(ConversationService.get_by_id, session_id)
         if not ok:
@@ -837,19 +837,19 @@ async def get_session(chat_id, session_id):
 @login_required
 async def update_session(chat_id, session_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
         req = await get_request_json()
         if not ConversationService.query(id=session_id, dialog_id=chat_id):
             return get_data_error_result(message="Session not found!")
         if "message" in req or "messages" in req:
-            return get_data_error_result(message="`messages` cannot be changed.")
+            return get_data_error_result(message="`messages` cannot be changed")
         if "reference" in req:
-            return get_data_error_result(message="`reference` cannot be changed.")
+            return get_data_error_result(message="`reference` cannot be changed")
         name = req.get("name")
         if name is not None:
             if not isinstance(name, str) or not name.strip():
-                return get_data_error_result(message="`name` can not be empty.")
+                return get_data_error_result(message="`name` can not be empty")
             req["name"] = name.strip()[:255]
         update_fields = {k: v for k, v in req.items() if k not in {"id", "dialog_id", "chat_id", "user_id"}}
         if not ConversationService.update_by_id(session_id, update_fields):
@@ -866,7 +866,7 @@ async def update_session(chat_id, session_id):
 @login_required
 async def delete_sessions(chat_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
         req = await get_request_json()
         if not req:
@@ -917,7 +917,7 @@ async def delete_sessions(chat_id):
 @login_required
 async def delete_session_message(chat_id, session_id, msg_id):
     if not await _ensure_owned_chat(chat_id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
         ok, conv = ConversationService.get_by_id(session_id)
         if not ok or conv.dialog_id != chat_id:
@@ -943,7 +943,7 @@ async def delete_session_message(chat_id, session_id, msg_id):
 async def update_message_feedback(chat_id, session_id, msg_id):
     owned = await _ensure_owned_chat(chat_id)
     if not owned:
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
         req = await get_request_json()
         ok, conv = ConversationService.get_by_id(session_id)
@@ -1179,7 +1179,7 @@ async def session_completion(chat_id_in_arg=""):
             if not await _ensure_owned_chat(chat_id):
                 return get_json_result(
                     data=False,
-                    message="No authorization.",
+                    message="no authorization",
                     code=RetCode.AUTHENTICATION_ERROR,
                 )
             e, dia = await thread_pool_exec(DialogService.get_by_id, chat_id)

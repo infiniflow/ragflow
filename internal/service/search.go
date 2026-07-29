@@ -91,7 +91,7 @@ func (s *SearchService) ListSearches(ctx context.Context, userID string, keyword
 			return nil, err
 		}
 	} else {
-		ownerIDs, err = s.filterAccessibleSearchOwnerIDs(userID, ownerIDs)
+		ownerIDs, err = s.filterAccessibleSearchOwnerIDs(ctx, userID, ownerIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -133,8 +133,8 @@ func (s *SearchService) ListSearches(ctx context.Context, userID string, keyword
 	}, nil
 }
 
-func (s *SearchService) filterAccessibleSearchOwnerIDs(userID string, ownerIDs []string) ([]string, error) {
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+func (s *SearchService) filterAccessibleSearchOwnerIDs(ctx context.Context, userID string, ownerIDs []string) ([]string, error) {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +254,7 @@ func (s *SearchService) CreateSearch(ctx context.Context, userID string, name st
 
 func (s *SearchService) GetSearchDetail(ctx context.Context, userID string, searchID string) (*entity.Search, error) {
 	// Step 1: Get user tenants (same as Python UserTenantService.query(user_id=current_user.id))
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tenants: %w", err)
 	}
@@ -283,7 +283,7 @@ func (s *SearchService) GetSearchDetail(ctx context.Context, userID string, sear
 	// Step 3: Get search detail (same as Python SearchService.get_detail(search_id))
 	search, err := s.searchDAO.GetByID(ctx, dao.DB, searchID)
 	if err != nil {
-		return nil, fmt.Errorf("can't find this Search App!")
+		return nil, fmt.Errorf("can't find this Search App")
 	}
 
 	return search, nil
@@ -301,7 +301,7 @@ func (s *SearchService) GetSearchShareDetail(ctx context.Context, userID, search
 		return nil, err
 	}
 	if detail == nil {
-		return nil, fmt.Errorf("can't find this Search App!")
+		return nil, fmt.Errorf("can't find this Search App")
 	}
 
 	return &SearchShareDetail{
@@ -311,7 +311,7 @@ func (s *SearchService) GetSearchShareDetail(ctx context.Context, userID, search
 		Name:         detail.Name,
 		Description:  detail.Description,
 		CreatedBy:    detail.CreatedBy,
-		SearchConfig: map[string]interface{}(detail.SearchConfig),
+		SearchConfig: detail.SearchConfig,
 		UpdateTime:   detail.UpdateTime,
 	}, nil
 }

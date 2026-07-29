@@ -64,6 +64,10 @@ const RetrievalDocuments = ({
   const [selectedValues, setSelectedValues] =
     useState<string[]>(selectedDocumentIds);
 
+  useEffect(() => {
+    setSelectedValues(selectedDocumentIds);
+  }, [selectedDocumentIds]);
+
   const multiOptions = useMemo(() => {
     if (!useDocuments || !useDocuments.length) {
       return [];

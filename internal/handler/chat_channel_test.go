@@ -232,7 +232,7 @@ func TestChatChannelHandlerGetChatChannelUnauthorized(t *testing.T) {
 	h := &ChatChannelHandler{
 		chatChannelService: fakeChatChannelService{
 			getFn: func(userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
-				return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+				return nil, common.CodeAuthenticationError, errors.New("no authorization")
 			},
 		},
 	}
