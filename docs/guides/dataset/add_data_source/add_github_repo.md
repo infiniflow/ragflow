@@ -51,6 +51,8 @@ Once your GitHub token is ready, register the external data source within your R
 4. Click **Save** to confirm your changes.  
    *RAGFlow validates the connection immediately.*
 
+![GitHub](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/github.jpg)
+
 :::tip NOTE
 Currently deleted or modified files are not synchronized automatically. This feature is coming soon. Thanks to Gisselle-Gonzalez for requesting [this feature](https://github.com/infiniflow/ragflow/issues/13708).
 :::
