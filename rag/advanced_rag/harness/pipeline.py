@@ -9,6 +9,12 @@ from rag.advanced_rag.harness.tools.registry import TOOL_REGISTRY
 
 _LOG = logging.getLogger(__name__)
 
+# Tools that retrieve *within* a set of documents. When a routing tool
+# (``dataset_navigation_by_tree``) has produced a relevant-document set, these
+# inherit it as their ``doc_scope`` unless the caller passed one explicitly, so
+# a follow-up search stays within the routed docs instead of re-scanning the KB.
+_DOC_SCOPE_CONSUMERS = {"ontology_navigate", "mindmap_navigate", "graph_explore", "hybrid_search"}
+
 
 class Pipeline:
     """Unified tool execution layer.
@@ -23,6 +29,8 @@ class Pipeline:
         self.tools = rag_tools
         self.compilation_map = compilation_map or {}
         self.trace: list[dict] = []
+        # Latest relevant-document set produced by a routing tool this run.
+        self._routed_docs: list[str] = []
 
     async def execute(self, tool_name: str, **kwargs) -> ToolResult:
         """Execute a registered tool by name."""
@@ -34,12 +42,23 @@ class Pipeline:
         if not fn:
             return ToolResult(chunks=[], metadata={}, error=f"Tool {tool_name} has no executor")
 
+        # Downstream scoping: a within-document tool inherits the doc IDs a prior
+        # router (dataset_navigation_by_tree) produced, unless the caller passed
+        # an explicit doc_scope.
+        if tool_name in _DOC_SCOPE_CONSUMERS and self._routed_docs and not kwargs.get("doc_scope"):
+            kwargs["doc_scope"] = list(self._routed_docs)
+
         start = time.time()
         try:
             raw = await fn(self.tools, **kwargs)
             elapsed = time.time() - start
             self.trace.append({"tool": tool_name, "args": kwargs, "elapsed": elapsed, "success": True})
             result = self._normalize(raw)
+            # A routing tool (e.g. dataset_navigation_by_tree) yields the relevant
+            # document IDs; remember them so the scope-consuming tools above can
+            # inherit them on later turns.
+            if result.docs:
+                self._routed_docs = list(result.docs)
             # Feed the shared citation pool: agent searches go through the
             # pipeline, so without this their evidence never reaches kbinfos and
             # the final answer has nothing to cite.
@@ -103,9 +122,14 @@ class Pipeline:
         if isinstance(raw, dict):
             return ToolResult(
                 chunks=raw.get("chunks", []),
+                docs=raw.get("docs") or None,
                 metadata={"aggs": raw.get("doc_aggs", []), "answer": raw.get("answer", "")},
             )
         if isinstance(raw, list):
+            # A list of doc-id strings is a document-routing result (e.g.
+            # dataset_navigation_by_tree); a list of dicts is chunks.
+            if raw and all(isinstance(x, str) for x in raw):
+                return ToolResult(docs=list(raw), metadata={})
             return ToolResult(chunks=raw, metadata={})
         return ToolResult(chunks=[], metadata={"raw": str(raw)})
 
