@@ -400,6 +400,12 @@ func (e *infinityEngine) UpdateChunks(ctx context.Context, condition map[string]
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
+		// Tolerate missing table (mirrors Python's docStoreConn which
+		// silently returns False on a non-existent table).
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "doesn't exist") {
+			return nil
+		}
 		return fmt.Errorf("Failed to get table %s: %w", tableName, err)
 	}
 

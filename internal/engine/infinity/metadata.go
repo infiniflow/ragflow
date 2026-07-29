@@ -247,6 +247,12 @@ func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, datas
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
+		// Tolerate missing metadata table (mirrors Python's docStoreConn
+		// which silently returns False on a non-existent table).
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "doesn't exist") {
+			return nil
+		}
 		return fmt.Errorf("failed to get metadata table %s: %w", tableName, err)
 	}
 
@@ -421,6 +427,12 @@ func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, d
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
+		// Tolerate missing metadata table (mirrors Python's docStoreConn
+		// which silently returns False on a non-existent table).
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "doesn't exist") {
+			return nil
+		}
 		return fmt.Errorf("failed to get metadata table %s: %w", tableName, err)
 	}
 

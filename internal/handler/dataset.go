@@ -214,7 +214,7 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 	}
 	// Mirror Python's pydantic required validation.
 	if req.Name == "" || (len(bodyBytes) > 0 && jsonNullValue(bodyBytes, "name")) {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Field validation for 'name' failed on the 'required' tag")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Field validation for 'name' failed on the 'required' tag")
 		return
 	}
 

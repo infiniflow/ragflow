@@ -227,12 +227,6 @@ func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, del
 		deleted++
 	}
 
-	// If nothing was deleted, the documents no longer exist — mirror
-	// Python's "or Document not found" error.
-	if deleted == 0 && !deleteAll {
-		return 0, fmt.Errorf("These documents do not belong to dataset %s or Document not found", datasetID)
-	}
-
 	return deleted, nil
 }
 

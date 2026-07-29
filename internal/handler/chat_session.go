@@ -106,7 +106,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID, c.Query("id"), c.Query("name"), orderby, desc, page, pageSize)
 	if err != nil {
 		// Mirror Python: ownership failures return code 109 "No authorization."
-		if strings.Contains(err.Error(), "only owner of dialog authorized") {
+		if strings.Contains(err.Error(), "No authorization") {
 			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
 			return
 		}
