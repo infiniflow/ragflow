@@ -36,6 +36,7 @@ const DefaultConnectTimeout = 5 * time.Second
 
 // Config application configuration
 type Config struct {
+	General          GeneralConfig          `mapstructure:"general"`
 	Server           ServerConfig           `mapstructure:"server"`
 	Authentication   AuthenticationConfig   `mapstructure:"authentication"`
 	Database         DatabaseConfig         `mapstructure:"database"`
@@ -55,6 +56,11 @@ type Config struct {
 	FileSyncer       FileSyncerConfig       `mapstructure:"file_syncer"`
 	OTel             OtelConfig             `mapstructure:"otel"`
 	Clickhouse       ClickhouseConfig       `mapstructure:"clickhouse"`
+}
+
+// GeneralConfig general configuration
+type GeneralConfig struct {
+	HeartbeatInterval time.Duration `mapstructure:"heartbeat_interval"`
 }
 
 // AdminConfig admin server configuration
