@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/channels"
 	"ragflow/internal/handler"
 	ingestion "ragflow/internal/ingestion/service"
 	"ragflow/internal/mcp"
@@ -842,6 +843,8 @@ func startServer(ctx context.Context, config *server.Config) {
 
 	// Setup routes
 	r.Setup(ginEngine)
+
+	channels.Start(ctx)
 
 	// Create HTTP server with timeouts to prevent slow clients from blocking shutdown
 	addr := fmt.Sprintf(":%d", config.Server.Port)
