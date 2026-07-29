@@ -186,8 +186,6 @@ async def apply_meta_data_filter(
         list of doc_ids, ["-999"] when manual filters yield no result, or None
         when auto/semi_auto filters return empty.
     """
-    from rag.prompts.generator import gen_meta_filter  # move from the top of the file to avoid circular import
-
     if base_doc_ids is not None:
         base_doc_ids = list(base_doc_ids)
     extra_conditions = [flt for flt in (extra_conditions or []) if isinstance(flt, dict)]
@@ -288,6 +286,8 @@ async def apply_meta_data_filter(
         return _scope_to_base(_run_metadata_filter(conditions, logic))
 
     if method == "auto":
+        from rag.prompts.generator import gen_meta_filter  # avoid circular imports for non-LLM filter modes
+
         filters: dict = await gen_meta_filter(chat_mdl, _get_metas(), question)
         logging.debug(f"Metadata filter(auto) generated: {filters}")
         doc_ids = _run_user_and_extra(filters["conditions"], filters.get("logic", "and"))
@@ -311,6 +311,8 @@ async def apply_meta_data_filter(
             current_metas = _get_metas()
             filtered_metas = {key: current_metas[key] for key in selected_keys if key in current_metas}
             if filtered_metas:
+                from rag.prompts.generator import gen_meta_filter  # avoid circular imports for non-LLM filter modes
+
                 filters: dict = await gen_meta_filter(chat_mdl, filtered_metas, question, constraints=constraints)
                 logging.debug(f"Metadata filter(semi_auto) generated: {filters}")
                 doc_ids = _run_user_and_extra(filters["conditions"], filters.get("logic", "and"))
