@@ -37,6 +37,11 @@ PDFIUM_STATIC_VERSION="7809"
 PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide"
 PDF_OXIDE_VERSION="0.3.67"
 
+# Chromium's prebuilt libc++ archives use SHT_CREL compressed relocations.
+# LLD 20+ is required to preserve them when cgo prepares host objects.
+LLD_MIN_MAJOR=20
+LLD_BINDIR=""
+
 # Copy a dependency from the system pre-seed directory to the user cache.
 # Returns 0 if the dep was copied or already exists in cache, 1 otherwise.
 _seed_from_system() {
@@ -111,6 +116,35 @@ check_pcre2() {
         [ -f "$p" ] && return 0
     done
     return 1
+}
+
+# Validate the Linux linker and expose its versioned directory. Including the
+# resolved directory in CGO_LDFLAGS also invalidates Go's build cache when the
+# linker installation changes behind an unversioned ld.lld symlink.
+check_lld() {
+    local lld_bin
+    local lld_real_bin
+    local lld_version
+    local lld_major
+
+    lld_bin="$(command -v ld.lld || true)"
+    if [ -z "$lld_bin" ]; then
+        echo -e "${RED}Error: ld.lld not found. Install with: sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld${NC}"
+        echo "  lld 20 or newer is required to link Chromium-built pdfium archives"
+        return 1
+    fi
+
+    lld_version="$("$lld_bin" --version 2>/dev/null | head -n 1)"
+    lld_major="$(printf '%s\n' "$lld_version" | sed -nE 's/.*LLD ([0-9]+)(\..*)?/\1/p')"
+    if [ -z "$lld_major" ] || [ "$lld_major" -lt "$LLD_MIN_MAJOR" ]; then
+        echo -e "${RED}Error: ld.lld ${LLD_MIN_MAJOR} or newer is required; found: ${lld_version:-unknown version}${NC}"
+        echo "  Older linkers can silently drop SHT_CREL relocations and produce a binary that crashes at startup."
+        return 1
+    fi
+
+    lld_real_bin="$(readlink -f "$lld_bin" 2>/dev/null || printf '%s' "$lld_bin")"
+    LLD_BINDIR="$(dirname "$lld_real_bin")"
+    echo "lld check passed: ${lld_version} at ${lld_real_bin}"
 }
 
 # Check dependencies
@@ -366,15 +400,11 @@ setup_cgo_env() {
     # staticlibs that embed the Rust runtime; linking them together produces
     # duplicate rust_eh_personality symbols.
     if [ "$(uname -s)" = "Linux" ]; then
-        if ! command -v ld.lld >/dev/null 2>&1; then
-            echo -e "${RED}Error: ld.lld not found. Install with: sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld${NC}"
-            echo "  lld is required to static-link Chromium-built pdfium (.eh_frame format)"
-            return 1
-        fi
+        check_lld || return 1
         export CGO_LDFLAGS="$CGO_LDFLAGS \
             ${PDFIUM_STATIC_PREFIX}/lib/libc++.a \
             ${PDFIUM_STATIC_PREFIX}/lib/libc++abi.a \
-            -fuse-ld=lld -Wl,--allow-multiple-definition"
+            -B${LLD_BINDIR} -fuse-ld=lld -Wl,--allow-multiple-definition"
     fi
 
     # ── pdf_oxide ─────────────────────────────────────────────────────
