@@ -1019,7 +1019,7 @@ export const useFetchKnowledgeList = (
   handleScroll: (e: React.UIEvent<HTMLDivElement>) => void;
 } => {
   const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage } =
-    useInfiniteQuery<{ items: IDataset[] }>({
+    useInfiniteQuery<{ items: IDataset[]; total: number }>({
       queryKey: KnowledgeListKeys.list(
         shouldFilterListWithoutDocument,
         keywords,
@@ -1034,10 +1034,15 @@ export const useFetchKnowledgeList = (
           page_size: pageSize,
           ...(keywords ? { ext: { keywords } } : {}),
         });
-        return { items: (data?.data ?? []) as IDataset[] };
+        return {
+          items: (data?.data ?? []) as IDataset[],
+          total: data?.total_datasets ?? 0,
+        };
       },
-      getNextPageParam: (lastPage, allPages) =>
-        lastPage.items.length >= pageSize ? allPages.length + 1 : undefined,
+      getNextPageParam: (lastPage, allPages) => {
+        const loaded = allPages.reduce((total, page) => total + page.items.length, 0);
+        return loaded < lastPage.total ? allPages.length + 1 : undefined;
+      },
     });
 
   const list = useMemo(() => {
