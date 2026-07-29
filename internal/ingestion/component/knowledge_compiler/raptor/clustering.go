@@ -197,9 +197,18 @@ func wardAHC(embeddings [][]float64, spec ClusterSpec) ([]int, [][]float64) {
 		// bestB into bestA.
 		ca, cb := clusters[bestA], clusters[bestB]
 		merges = append(merges, mergeRec{ca.id, cb.id, height})
+		// ca.centroid / cb.centroid are already per-cluster means, so the
+		// merged centroid must be the size-weighted mean, not an equal
+		// average; otherwise Ward merge costs downstream select the wrong
+		// clusters when sizes differ.
+		centroid := make([]float64, len(ca.centroid))
+		for i := range centroid {
+			centroid[i] = (float64(ca.size)*ca.centroid[i] +
+				float64(cb.size)*cb.centroid[i]) / float64(ca.size+cb.size)
+		}
 		merged := &cluster{
 			members:  append(append([]int{}, ca.members...), cb.members...),
-			centroid: meanCentroid([][]float64{ca.centroid, cb.centroid}, ca.size+cb.size),
+			centroid: centroid,
 			size:     ca.size + cb.size,
 			id:       ca.id,
 		}
@@ -331,23 +340,6 @@ func cutTree(embeddings [][]float64, merges []mergeRec, numClusters int) ([]int,
 		centroidsOut = append(centroidsOut, centroid)
 	}
 	return labels, centroidsOut
-}
-
-func meanCentroid(rows [][]float64, total int) []float64 {
-	if total == 0 {
-		return nil
-	}
-	d := len(rows[0])
-	out := make([]float64, d)
-	for _, r := range rows {
-		for j := 0; j < d; j++ {
-			out[j] += r[j]
-		}
-	}
-	for j := 0; j < d; j++ {
-		out[j] /= float64(total)
-	}
-	return out
 }
 
 func sqEuclid(a, b []float64) float64 {

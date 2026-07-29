@@ -2,22 +2,35 @@ package common
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"strings"
 )
 
 // StableRowID returns a deterministic, collision-resistant hex id from the
-// given parts (e.g. tenant_id, doc_id, variant, content hash). Field
-// separators are NUL bytes so distinct part orderings never collide. The
-// digest is SHA-256 (not a 64-bit hash) so distinct products cannot
+// given parts (e.g. tenant_id, doc_id, variant, content hash).
+//
+// Encoding contract: each part is length-prefixed (a 4-byte big-endian
+// uint32 byte-length followed by the raw part bytes) before hashing. Length
+// prefixing — rather than a NUL/join delimiter — makes the encoding
+// unambiguous, so distinct part sequences can never collide (e.g. ["a\x00b"]
+// vs ["a","b"]).
+//
+// The digest is SHA-256 (not a 64-bit hash) so distinct products cannot
 // accidentally share an id and be overwritten by Upsert/merge paths (M10).
+//
+// STABILITY: the encoding and hash algorithm form the row-id contract. This
+// feature is pre-GA, so previously generated row ids are disposable and
+// re-runs regenerate them deterministically; if the encoding or hash ever
+// changes after GA, a backfill/migration of existing compiled rows is
+// required before rollout.
 func StableRowID(parts ...string) string {
 	h := sha256.New()
-	for i, p := range parts {
-		if i > 0 {
-			h.Write([]byte{0})
-		}
-		_, _ = h.Write([]byte(p))
+	var lenBuf [4]byte
+	for _, p := range parts {
+		binary.BigEndian.PutUint32(lenBuf[:], uint32(len(p)))
+		h.Write(lenBuf[:])
+		h.Write([]byte(p))
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

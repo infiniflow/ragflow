@@ -187,8 +187,12 @@ func (o *Outputs) EnforceGuardrails(g CapacityGuardrails, sink ChunkedSink, ctx 
 			return err
 		}
 		o.Flushed = true
-		// Hand off ownership to the sink (see FlushIfNeeded, M9).
+		// Hand off ownership to the sink (see FlushIfNeeded, M9) and reset all
+		// per-buffer accounting so a reused Outputs starts empty and does not
+		// re-trigger flushes on stale thresholds (M9 follow-up).
 		o.Products = nil
+		o.Items = 0
+		o.VectorBytes = 0
 		return nil
 	default:
 		return nil
