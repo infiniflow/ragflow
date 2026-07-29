@@ -21,7 +21,7 @@ index type.  Scans ``scope_kwd="doc"`` entity rows grouped by ``(name, type)``,
 merges them into ``scope_kwd="dataset"`` rows with bucketing for bounded memory.
 
 Key design:
-  - 256 hash buckets — each bucket flushed when it reaches 500 rows
+  - 256 hash buckets — all rows accumulated in memory, merged once after scan
   - Incremental: only processes doc_graph rows changed since ``last_build_time``
   - Document deletions tracked via ``record_doc_deletion()`` – ghost entities
     are cleaned up incrementally at the start of the next build
@@ -96,16 +96,12 @@ def _dataset_entity_row_id(kb_id: str, compile_kwd: str, template_id: str | None
     return _stable_row_id(name, kb_id, compile_kwd, template_id or "", _SCOPE_KWD_DATASET)
 
 
-def _dataset_relation_row_id(kb_id: str, compile_kwd: str, template_id: str | None, src: str, tgt: str) -> str:
-    return _stable_row_id(f"{src}->{tgt}", kb_id, compile_kwd, template_id or "", _SCOPE_KWD_DATASET)
-
-
 # ---------------------------------------------------------------------------
-# ES I/O
+# Document-store I/O
 # ---------------------------------------------------------------------------
 
 
-async def _es_search(
+async def _index_search(
     tenant_id: str,
     kb_id: str,
     condition: dict,
@@ -138,15 +134,15 @@ async def _es_search(
         return []
 
 
-async def _es_delete(tenant_id: str, kb_id: str, condition: dict) -> None:
+async def _index_delete(tenant_id: str, kb_id: str, condition: dict) -> None:
     index = _index_name(tenant_id)
     try:
         await thread_pool_exec(settings.docStoreConn.delete, condition, index, kb_id)
     except Exception:
-        pass
+        logging.exception("structure_merge: delete failed for kb=%s cond=%s", kb_id, condition)
 
 
-async def _es_insert(tenant_id: str, kb_id: str, rows: list[dict]) -> None:
+async def _index_insert(tenant_id: str, kb_id: str, rows: list[dict]) -> None:
     if not rows:
         return
     index = _index_name(tenant_id)
@@ -168,6 +164,10 @@ def record_doc_deletion(tenant_id: str, kb_id: str, doc_id: str) -> None:
     can look up which docs were deleted and clean up orphaned dataset-level
     entity rows (those whose *only* source document was the deleted doc).
 
+    The deleted doc ID is stored in **deleted_doc_id** (not ``doc_id``) so the
+    row survives the ``doc_id``-based chunk sweep that runs in
+    ``DocumentService.remove_document``.
+
     Must be callable from a synchronous context (``DocumentService.remove_document``).
     """
     import datetime
@@ -179,7 +179,7 @@ def record_doc_deletion(tenant_id: str, kb_id: str, doc_id: str) -> None:
         row = {
             "id": f"{_DELETION_META_KWD}:{kb_id}:{doc_id}",
             "kb_id": kb_id,
-            "doc_id": doc_id,
+            "deleted_doc_id": doc_id,
             "knowledge_graph_kwd": _DELETION_META_KWD,
             "compile_kwd": "*",
             "create_timestamp_flt": datetime.datetime.now().timestamp(),
@@ -203,9 +203,11 @@ async def _load_last_build_time(tenant_id: str, kb_id: str, compile_kwd: str, te
     try:
         row = await thread_pool_exec(settings.docStoreConn.get, meta_id, index, [kb_id])
         if row:
-            return float(row.get("build_timestamp_flt", 0))
+            ts = row.get("build_timestamp_flt")
+            if ts is not None and isinstance(ts, (int, float)) and ts > 0:
+                return float(ts)
     except Exception:
-        pass
+        logging.exception("structure_merge: failed to load build time for kb=%s compile=%s", kb_id, compile_kwd)
     return None
 
 
@@ -262,10 +264,11 @@ async def _merge_bucket(
 
     rows_out: list[dict] = []
     for (name_lower, typ), rows in groups.items():
-        # Collect all source_chunk_ids and doc_ids
+        # Collect all source_chunk_ids, doc_ids, and original-cased names
         all_chunks: list[str] = []
         all_docs: list[str] = []
         all_descriptions: list[str] = []
+        all_original_names: list[str] = []
         mention_count = 0
         for r in rows:
             payload = json.loads(r.get("content_with_weight") or "{}")
@@ -280,10 +283,14 @@ async def _merge_bucket(
             desc = payload.get("description", "")
             if desc and desc not in all_descriptions:
                 all_descriptions.append(desc)
+            orig = _struct_entity_name(payload) or ""
+            if orig and orig not in all_original_names:
+                all_original_names.append(orig)
 
-        # Use the longest description (most complete)
+        # Use the longest description (most complete) and best original-cased name
         best_desc = max(all_descriptions, key=len) if all_descriptions else name_lower
-        payload_out = {"name": name_lower, "type": typ, "description": best_desc, "mention_count": mention_count}
+        best_orig_name = max(all_original_names, key=len) if all_original_names else name_lower
+        payload_out = {"name": best_orig_name, "type": typ, "description": best_desc, "mention_count": mention_count}
         ltks, sm_ltks = _tokenize_for_search(best_desc)
 
         row_id = _dataset_entity_row_id(kb_id, compile_kwd, template_id, name_lower)
@@ -328,36 +335,40 @@ async def _cleanup_deleted_docs(
     kb_id: str,
     compile_kwd: str,
     template_id: str | None,
-) -> None:
+) -> bool:
     """Clean dataset-level entity rows whose *only* source doc was deleted.
 
     Called once per (compile_kwd, template_id) at the beginning of an
-    incremental build.  Works in three passes:
+    incremental build.  Works in two passes:
 
-    1. Read all pending ``doc_deleted`` meta rows for this kb.
+    1. Read all pending ``doc_deleted`` meta rows for this kb (stored under
+       ``deleted_doc_id``).
     2. Find dataset entity rows whose ``doc_ids_kwd`` references a deleted
        doc.  If after removing the deleted doc ID the ``doc_ids_kwd`` list
        is empty the row is a **ghost** and gets deleted.
-    3. Delete the processed ``doc_deleted`` meta rows.
 
     Shared entities (those still referenced by other live docs) keep their
     existing content — the next incremental re-merge will correct any stale
     descriptions or mention counts.
+
+    Returns ``True`` when Pass 2 completed without store errors, ``False``
+    otherwise.  The caller must delete the processed meta rows only after
+    **all** (compile_kwd, template_id) pairs have been handled successfully.
     """
     from common.doc_store.doc_store_base import OrderByExpr
 
     index = _index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
-        return
+        return False
 
     # ── Pass 1: collect pending deletions ────────────────────────────
-    cursor: dict[str, str] = {}  # meta_row_id → doc_id
+    cursor: dict[str, str] = {}  # meta_row_id → deleted_doc_id
     offset = 0
     while True:
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                ["id", "doc_id"],
+                ["id", "deleted_doc_id"],
                 [],
                 {"kb_id": [kb_id], "knowledge_graph_kwd": [_DELETION_META_KWD]},
                 [],
@@ -367,13 +378,13 @@ async def _cleanup_deleted_docs(
                 index,
                 [kb_id],
             )
-            fm = settings.docStoreConn.get_fields(res, ["id", "doc_id"]) or {}
+            fm = settings.docStoreConn.get_fields(res, ["id", "deleted_doc_id"]) or {}
         except Exception:
             break
         if not fm:
             break
         for row in fm.values():
-            did = row.get("doc_id")
+            did = row.get("deleted_doc_id")
             if did:
                 cursor[row["id"]] = did
         if len(fm) < _PAGE_SIZE:
@@ -381,7 +392,7 @@ async def _cleanup_deleted_docs(
         offset += _PAGE_SIZE
 
     if not cursor:
-        return
+        return True  # no markers — nothing to do
     deleted_doc_ids = list(set(cursor.values()))
 
     # ── Pass 2: find affected dataset rows and remove ghosts ─────────
@@ -396,6 +407,7 @@ async def _cleanup_deleted_docs(
 
     ids_to_delete: list[str] = []
     ids_to_update: list[tuple[str, list[str]]] = []  # (row_id, new_doc_ids)
+    pass2_ok = True
     offset = 0
     while True:
         try:
@@ -413,6 +425,7 @@ async def _cleanup_deleted_docs(
             )
             fm = settings.docStoreConn.get_fields(res, ["id", "doc_ids_kwd"]) or {}
         except Exception:
+            pass2_ok = False
             break
         if not fm:
             break
@@ -429,6 +442,9 @@ async def _cleanup_deleted_docs(
             break
         offset += _PAGE_SIZE
 
+    if not pass2_ok:
+        return False  # marker rows preserved for retry
+
     # Execute deletions
     if ids_to_delete:
         logging.info(
@@ -437,7 +453,7 @@ async def _cleanup_deleted_docs(
             kb_id,
             compile_kwd,
         )
-        await _es_delete(tenant_id, kb_id, {"id": ids_to_delete})
+        await _index_delete(tenant_id, kb_id, {"id": ids_to_delete})
 
     # Execute updates (remove stale doc_id from doc_ids_kwd)
     if ids_to_update:
@@ -462,10 +478,49 @@ async def _cleanup_deleted_docs(
                     rid,
                 )
 
-    # ── Pass 3: clear processed meta rows ────────────────────────────
-    meta_ids = list(cursor.keys())
-    if meta_ids:
-        await _es_delete(tenant_id, kb_id, {"id": meta_ids})
+    # Markers are NOT deleted here — caller (run_structure_merge) deletes
+    # them once after all (compile_kwd, template_id) pairs succeed.
+    return True
+
+
+async def _consume_deletion_markers(tenant_id: str, kb_id: str) -> None:
+    """Remove all pending ``doc_deleted`` meta rows for *kb_id*.
+
+    Called from :func:`run_structure_merge` *after* every eligible
+    ``(compile_kwd, template_id)`` pair has been processed successfully.
+    """
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = _index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return
+    offset = 0
+    all_marker_ids: list[str] = []
+    while True:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id"],
+                [],
+                {"kb_id": [kb_id], "knowledge_graph_kwd": [_DELETION_META_KWD]},
+                [],
+                OrderByExpr(),
+                offset,
+                _PAGE_SIZE,
+                index,
+                [kb_id],
+            )
+            fm = settings.docStoreConn.get_fields(res, ["id"]) or {}
+        except Exception:
+            break
+        if not fm:
+            break
+        all_marker_ids.extend(row["id"] for row in fm.values() if row.get("id"))
+        if len(fm) < _PAGE_SIZE:
+            break
+        offset += _PAGE_SIZE
+    if all_marker_ids:
+        await _index_delete(tenant_id, kb_id, {"id": all_marker_ids})
 
 
 async def _do_build(
@@ -476,7 +531,7 @@ async def _do_build(
     structure_kind: str | None,
     embd_mdl,
     incremental: bool = True,
-) -> None:
+) -> bool:
     """Core build logic — read doc_graph rows, bucket, merge, write dataset rows.
 
     When *incremental* is True, only processes rows changed since the last build
@@ -486,7 +541,11 @@ async def _do_build(
     Document deletions are tracked via :func:`record_doc_deletion` and cleaned
     up incrementally (:func:`_cleanup_deleted_docs`) so that deleting a
     document no longer forces a full rebuild.
+
+    Returns ``True`` if deletion markers were processed successfully (or no
+    markers existed), ``False`` if a store error prevented cleanup.
     """
+    cleanup_ok = True
 
     index = _index_name(tenant_id)
 
@@ -506,7 +565,7 @@ async def _do_build(
             del_cond["compilation_template_ids"] = [template_id]
         offset = 0
         while True:
-            existing = await _es_search(
+            existing = await _index_search(
                 tenant_id,
                 kb_id,
                 del_cond,
@@ -518,7 +577,7 @@ async def _do_build(
                 break
             ids = [r["id"] for r in existing if r.get("id")]
             if ids:
-                await _es_delete(tenant_id, kb_id, {"id": ids})
+                await _index_delete(tenant_id, kb_id, {"id": ids})
             if len(existing) < 1000:
                 break
             offset += 1000
@@ -531,7 +590,7 @@ async def _do_build(
 
     # ── Incremental: clean up ghosts from deleted docs ───────────────
     if incremental and last_build_time is not None:
-        await _cleanup_deleted_docs(tenant_id, kb_id, compile_kwd, template_id)
+        cleanup_ok = await _cleanup_deleted_docs(tenant_id, kb_id, compile_kwd, template_id)
 
     # ── Scan doc_graph rows ──────────────────────────────────────────
     # Backward compat: existing doc_graph rows don't have scope_kwd.
@@ -555,10 +614,9 @@ async def _do_build(
     offset = 0
     buckets: list[list] = [[] for _ in range(_BUCKET_COUNT)]
 
-    all_rows_out: list[dict] = []
     last_page = False
     while not last_page:
-        rows = await _es_search(
+        rows = await _index_search(
             tenant_id,
             kb_id,
             base_cond,
@@ -570,6 +628,7 @@ async def _do_build(
                 "name_kwd",
                 "mention_count_int",
                 "compilation_template_ids",
+                "create_timestamp_flt",
             ],
             limit=limit,
             offset=offset,
@@ -580,7 +639,7 @@ async def _do_build(
             # Time filter (incremental mode)
             if ts_cond:
                 ts = row.get("create_timestamp_flt", 0)
-                if isinstance(ts, (int, float)) and ts < ts_cond["create_timestamp_flt"][0]:
+                if isinstance(ts, (int, float)) and ts < ts_cond["create_timestamp_flt"]["gte"]:
                     continue
             name = row.get("name_kwd", "")
             if not name:
@@ -588,24 +647,12 @@ async def _do_build(
             bid = _bucket_id(name)
             if bid < _BUCKET_COUNT:
                 buckets[bid].append(row)
-                if len(buckets[bid]) >= _BUCKET_FLUSH_THRESHOLD:
-                    out = await _merge_bucket(
-                        tenant_id,
-                        kb_id,
-                        compile_kwd,
-                        template_id,
-                        buckets[bid],
-                        embd_mdl,
-                        structure_kind,
-                    )
-                    all_rows_out.extend(out)
-                    buckets[bid] = []
         if len(rows) < limit:
             last_page = True
         else:
             offset += limit
 
-    # Flush remaining buckets
+    # Merge each bucket after all pages are scanned
     for bi in range(_BUCKET_COUNT):
         if buckets[bi]:
             out = await _merge_bucket(
@@ -617,19 +664,15 @@ async def _do_build(
                 embd_mdl,
                 structure_kind,
             )
-            all_rows_out.extend(out)
-            buckets[bi] = []
-
-    # ── Write ────────────────────────────────────────────────────────
-    if all_rows_out:
-        await _es_insert(tenant_id, kb_id, all_rows_out[:_BUCKET_FLUSH_THRESHOLD])
-        for start in range(_BUCKET_FLUSH_THRESHOLD, len(all_rows_out), _BUCKET_FLUSH_THRESHOLD):
-            await _es_insert(tenant_id, kb_id, all_rows_out[start : start + _BUCKET_FLUSH_THRESHOLD])
+            if out:
+                for start in range(0, len(out), _BUCKET_FLUSH_THRESHOLD):
+                    await _index_insert(tenant_id, kb_id, out[start : start + _BUCKET_FLUSH_THRESHOLD])
 
     # ── Save build timestamp ─────────────────────────────────────────
     import datetime
 
     await _save_build_time(tenant_id, kb_id, compile_kwd, template_id, datetime.datetime.now().timestamp())
+    return cleanup_ok
 
 
 async def run_structure_merge(ctx: TaskContext) -> None:
@@ -654,15 +697,18 @@ async def run_structure_merge(ctx: TaskContext) -> None:
         from api.apps.services.dataset_api_service import resolve_model_config
         from common.constants import LLMType
 
-        kb = None
         from api.db.services.knowledgebase_service import KnowledgebaseService
 
         ok, kb = KnowledgebaseService.get_by_id(ctx.kb_id)
         if ok and kb:
             model_config = resolve_model_config(ctx.tenant_id, LLMType.EMBEDDING.value, kb.embd_id)
             embd_mdl = LLMBundle(ctx.tenant_id, model_config, lang=ctx.language)
+        else:
+            raise RuntimeError(f"Knowledge base {ctx.kb_id} not found")
     except Exception:
         logging.exception("structure_merge: failed to bind embedding model for kb=%s", ctx.kb_id)
+        progress(1.0, "Failed to bind embedding model — aborting.")
+        return
 
     progress(0.0, "Scanning doc_graph rows...")
     pairs = await _collect_structure_pairs(ctx.tenant_id, ctx.kb_id)
@@ -703,13 +749,27 @@ async def run_structure_merge(ctx: TaskContext) -> None:
 
     total = len(eligible)
     rebuilt = 0
+    all_cleanup_ok = True
     for i, (compile_kwd, template_id, structure_kind) in enumerate(eligible):
+        if ctx.cancelled:
+            progress(1.0, f"Cancelled after {rebuilt}/{total} dataset graph(s).")
+            return
         progress(0.05 + 0.9 * (i / total), f"Building dataset graph {i + 1}/{total} ...")
         try:
-            await _do_build(ctx.tenant_id, ctx.kb_id, compile_kwd, template_id, structure_kind, embd_mdl)
+            cleanup_ok = await _do_build(ctx.tenant_id, ctx.kb_id, compile_kwd, template_id, structure_kind, embd_mdl)
+            if not cleanup_ok:
+                all_cleanup_ok = False
             rebuilt += 1
         except Exception:
+            all_cleanup_ok = False
             logging.exception("structure_merge: build failed for kb=%s compile_kwd=%s", ctx.kb_id, compile_kwd)
+
+    # Delete pending deletion markers only after every pair has been
+    # processed successfully.  If any pair had a store error the markers
+    # survive so the next run retries the cleanup.
+    if all_cleanup_ok:
+        await _consume_deletion_markers(ctx.tenant_id, ctx.kb_id)
+
     progress(1.0, f"Built {rebuilt}/{total} dataset graph(s).")
 
 
@@ -721,6 +781,10 @@ async def _collect_structure_pairs(tenant_id: str, kb_id: str) -> set[tuple[str,
     if not settings.docStoreConn.index_exist(index, kb_id):
         return set()
 
+    # NOTE: No scope_kwd filter here because old doc_graph rows that predate
+    # the scope_kwd field won't have it — applying ["doc"] would miss those
+    # rows and prevent their pairs from ever being rebuilt.  The scan in
+    # _do_build adds its own scope_kwd constraint.
     pairs: set[tuple[str, str]] = set()
     offset = 0
     while True:

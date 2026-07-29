@@ -2281,7 +2281,7 @@ async def _struct_upsert_dataset_graph_json(
         mention_count = ent.get("mention_count", 1)
         source_chunk_ids = ent.get("source_chunk_ids") or []
         doc_ids = ent.get("doc_ids_kwd") or []
-        row_id = _stable_row_id(json.dumps(payload), kb_id_str, compile_kwd, compilation_template_id or "", "dataset", ent_name)
+        row_id = _stable_row_id(ent_name.lower(), kb_id_str, compile_kwd, compilation_template_id or "", "dataset")
         row = {
             "id": row_id,
             "content_with_weight": json.dumps(payload, ensure_ascii=False),
