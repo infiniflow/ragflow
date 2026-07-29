@@ -212,6 +212,11 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
+	// Mirror Python's pydantic required validation.
+	if req.Name == "" || (len(bodyBytes) > 0 && jsonNullValue(bodyBytes, "name")) {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Field validation for 'name' failed on the 'required' tag")
+		return
+	}
 
 	ctx := c.Request.Context()
 
@@ -283,6 +288,19 @@ func parseJSONRequestObject(c *gin.Context) (body []byte, raw map[string]interfa
 		return nil, nil, false
 	}
 	return body, raw, true
+}
+
+// jsonNullValue checks if a field is explicitly null in the JSON body.
+func jsonNullValue(body []byte, field string) bool {
+	var m map[string]json.RawMessage
+	if err := json.Unmarshal(body, &m); err != nil {
+		return false
+	}
+	raw, ok := m[field]
+	if !ok {
+		return false
+	}
+	return strings.TrimSpace(string(raw)) == "null"
 }
 
 // pythonJSONTypeName maps a decoded JSON value to the Python type name used in

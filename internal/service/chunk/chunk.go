@@ -1396,6 +1396,11 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 
 	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second)
 	defer cancel()
+	// Ensure the ES index exists before inserting (mirrors Python's
+	// docStoreConn.insert which auto-creates the index on first write).
+	if err := s.docEngine.CreateChunkStore(ctx, indexName, req.DatasetID, 0, doc.ParserID); err != nil {
+		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("create chunk store: %v", err)}
+	}
 	if _, err := s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID); err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("insert chunk: %v", err)}
 	}
