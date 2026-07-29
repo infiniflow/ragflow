@@ -191,7 +191,8 @@ type APIConfig struct {
 }
 
 type EmbeddingConfig struct {
-	Dimension int
+	Dimension      int
+	EncodingFormat string
 }
 
 type RerankConfig struct {

@@ -1,6 +1,58 @@
 {
     "factory_llm_infos": [
         {
+            "name": "GreenPT",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,SPEECH2TEXT",
+            "status": "1",
+            "rank": "50",
+            "url": "https://api.greenpt.ai/v1",
+            "llm": [
+                {
+                    "llm_name": "glm-5.2",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "kimi-k2.7-code",
+                    "tags": "LLM,CHAT,256K",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "green-embedding",
+                    "tags": "TEXT EMBEDDING,32K",
+                    "max_tokens": 32768,
+                    "model_type": "embedding",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "green-rerank",
+                    "tags": "RE-RANK,32K",
+                    "max_tokens": 32768,
+                    "model_type": "rerank",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "green-s",
+                    "tags": "SPEECH2TEXT",
+                    "max_tokens": 0,
+                    "model_type": "speech2text",
+                    "is_tools": false
+                },
+                {
+                    "llm_name": "green-s-pro",
+                    "tags": "SPEECH2TEXT",
+                    "max_tokens": 0,
+                    "model_type": "speech2text",
+                    "is_tools": false
+                }
+            ]
+        },
+        {
             "name": "aimlapi.com",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",

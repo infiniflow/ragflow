@@ -53,6 +53,86 @@ func (c *CoHereModel) Name() string {
 	return "Cohere"
 }
 
+type CohereChatResponse struct {
+	ID           string `json:"id"`
+	FinishReason string `json:"finish_reason"`
+	Message      struct {
+		Role      string           `json:"role"`
+		ToolCalls []map[string]any `json:"tool_calls"`
+
+		Content []struct {
+			Type     string `json:"type"`
+			Text     string `json:"text"`
+			Thinking string `json:"thinking"`
+		} `json:"content"`
+	} `json:"message"`
+	Usage struct {
+		Tokens struct {
+			InputTokens  float64 `json:"input_tokens"`
+			OutputTokens float64 `json:"output_tokens"`
+		} `json:"tokens"`
+	} `json:"usage"`
+}
+
+func buildCohereTokenUsage(inputTokens, outputTokens float64) *TokenUsage {
+	input := int(inputTokens)
+	output := int(outputTokens)
+	return &TokenUsage{
+		PromptTokens:     input,
+		CompletionTokens: output,
+		TotalTokens:      input + output,
+	}
+}
+
+func decodeCohereStreamUsage(event map[string]interface{}) (*TokenUsage, bool, error) {
+	eventType, _ := event["type"].(string)
+	if eventType != "message-end" {
+		return nil, false, nil
+	}
+	var parsed struct {
+		Delta struct {
+			Usage struct {
+				Tokens struct {
+					InputTokens  float64 `json:"input_tokens"`
+					OutputTokens float64 `json:"output_tokens"`
+				} `json:"tokens"`
+			} `json:"usage"`
+		} `json:"delta"`
+		Usage struct {
+			Tokens struct {
+				InputTokens  float64 `json:"input_tokens"`
+				OutputTokens float64 `json:"output_tokens"`
+			} `json:"tokens"`
+		} `json:"usage"`
+		Response struct {
+			Usage struct {
+				Tokens struct {
+					InputTokens  float64 `json:"input_tokens"`
+					OutputTokens float64 `json:"output_tokens"`
+				} `json:"tokens"`
+			} `json:"usage"`
+		} `json:"response"`
+	}
+	body, err := json.Marshal(event)
+	if err != nil {
+		return nil, false, err
+	}
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return nil, false, err
+	}
+	tokens := parsed.Response.Usage.Tokens
+	if tokens.InputTokens == 0 && tokens.OutputTokens == 0 {
+		tokens = parsed.Delta.Usage.Tokens
+	}
+	if tokens.InputTokens == 0 && tokens.OutputTokens == 0 {
+		tokens = parsed.Usage.Tokens
+	}
+	if tokens.InputTokens == 0 && tokens.OutputTokens == 0 {
+		return nil, false, nil
+	}
+	return buildCohereTokenUsage(tokens.InputTokens, tokens.OutputTokens), true, nil
+}
+
 func (c *CoHereModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -120,44 +200,33 @@ func (c *CoHereModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("Cohere chat API error: %d %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	messageMap, ok := result["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no message found in Cohere response: %s", string(body))
-	}
-
-	contentArray, ok := messageMap["content"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("content is not an array in Cohere response")
-	}
-
-	var fullContent string
-	var reasonContent string
-	for _, cBlock := range contentArray {
-		cmap, ok := cBlock.(map[string]interface{})
-		if !ok {
-			continue
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result CohereChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to unmarshal response: %w", err)
 		}
-		if blockType, ok := cmap["type"].(string); ok && blockType == "thinking" {
-			if thinkingText, ok := cmap["thinking"].(string); ok {
-				reasonContent += thinkingText
+		if len(result.Message.Content) == 0 && len(result.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("content is not an array in Cohere response")
+		}
+
+		var fullContent string
+		var reasonContent string
+		for _, block := range result.Message.Content {
+			if block.Type == "thinking" {
+				reasonContent += block.Thinking
+			} else {
+				fullContent += block.Text
 			}
-		} else if text, ok := cmap["text"].(string); ok {
-			fullContent += text
 		}
-	}
 
-	chatResponse := &ChatResponse{
-		Answer:        &fullContent,
-		ReasonContent: &reasonContent,
-	}
-
-	return chatResponse, nil
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &fullContent,
+			ReasonContent: &reasonContent,
+			ToolCalls:     result.Message.ToolCalls,
+			Usage:         buildCohereTokenUsage(result.Usage.Tokens.InputTokens, result.Usage.Tokens.OutputTokens),
+		}, nil
+	})
 }
 
 func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -229,6 +298,14 @@ func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		eventType, ok := event["type"].(string)
 		if !ok {
 			return nil
+		}
+
+		tokenUsage, found, usageErr := decodeCohereStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(modelConfig, modelUsage, tokenUsage)
 		}
 
 		if eventType == "message-end" {
@@ -341,9 +418,16 @@ func (c *CoHereModel) Embed(ctx context.Context, modelName *string, texts []stri
 	}
 
 	var result struct {
+		ID         string `json:"id"`
 		Embeddings struct {
 			Float [][]float64 `json:"float"`
 		} `json:"embeddings"`
+		Meta struct {
+			Tokens struct {
+				InputTokens  float64 `json:"input_tokens"`
+				OutputTokens float64 `json:"output_tokens"`
+			}
+		} `json:"meta"`
 	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
@@ -360,6 +444,7 @@ func (c *CoHereModel) Embed(ctx context.Context, modelName *string, texts []stri
 			Index:     i,
 		})
 	}
+	recordResponseUsage(modelUsage, result.ID, buildCohereTokenUsage(result.Meta.Tokens.InputTokens, result.Meta.Tokens.OutputTokens), "embedding")
 
 	return embeddings, nil
 }
@@ -426,10 +511,17 @@ func (c *CoHereModel) Rerank(ctx context.Context, modelName *string, query strin
 	}
 
 	var rerankResp struct {
+		ID      string `json:"id"`
 		Results []struct {
 			Index          int     `json:"index"`
 			RelevanceScore float64 `json:"relevance_score"`
 		} `json:"results"`
+		Meta struct {
+			Tokens struct {
+				InputTokens  float64 `json:"input_tokens"`
+				OutputTokens float64 `json:"output_tokens"`
+			}
+		} `json:"meta"`
 	}
 
 	if err := json.Unmarshal(body, &rerankResp); err != nil {
@@ -444,6 +536,7 @@ func (c *CoHereModel) Rerank(ctx context.Context, modelName *string, query strin
 		}
 		rerankResponse.Data = append(rerankResponse.Data, rerankResult)
 	}
+	recordResponseUsage(modelUsage, rerankResp.ID, buildCohereTokenUsage(rerankResp.Meta.Tokens.InputTokens, rerankResp.Meta.Tokens.OutputTokens), "rerank")
 
 	return &rerankResponse, nil
 }

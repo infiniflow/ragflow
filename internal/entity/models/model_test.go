@@ -269,12 +269,12 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if provider.ModelDriver.Name() != "ppio" {
 		t.Errorf("ModelDriver.Name()=%q", provider.ModelDriver.Name())
 	}
-	if len(provider.Models) != 21 {
-		t.Fatalf("PPIO model count=%d, want 21", len(provider.Models))
+	if len(provider.Models) != 25 {
+		t.Fatalf("PPIO model count=%d, want 25", len(provider.Models))
 	}
 	for _, model := range provider.Models {
-		if !model.ModelTypeMap["chat"] {
-			t.Errorf("model %q missing chat type map", model.Name)
+		if len(model.ModelTypes) == 0 {
+			t.Errorf("model %q missing model types", model.Name)
 		}
 		if model.Class == nil || *model.Class != "PPIO" {
 			t.Errorf("model %q class=%v", model.Name, model.Class)
@@ -285,8 +285,8 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if len(models) != 21 {
-		t.Errorf("ListModels count=%d, want 21", len(models))
+	if len(models) != 25 {
+		t.Errorf("ListModels count=%d, want 25", len(models))
 	}
 
 	model, err := pm.GetModelByName("ppio", "deepseek/deepseek-r1")
@@ -309,6 +309,23 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	}
 	if *model.MaxTokens != 1048576 {
 		t.Errorf("deepseek/deepseek-v4-flash max_tokens=%d", *model.MaxTokens)
+	}
+	if !model.ModelTypeMap["chat"] {
+		t.Errorf("deepseek/deepseek-v4-flash missing chat type map")
+	}
+	model, err = pm.GetModelByName("ppio", "qwen/qwen3-embedding-8b")
+	if err != nil {
+		t.Fatalf("GetModelByName qwen/qwen3-embedding-8b: %v", err)
+	}
+	if !model.ModelTypeMap["embedding"] {
+		t.Errorf("qwen/qwen3-embedding-8b missing embedding type map")
+	}
+	model, err = pm.GetModelByName("ppio", "baai/bge-reranker-v2-m3")
+	if err != nil {
+		t.Fatalf("GetModelByName baai/bge-reranker-v2-m3: %v", err)
+	}
+	if !model.ModelTypeMap["rerank"] {
+		t.Errorf("baai/bge-reranker-v2-m3 missing rerank type map")
 	}
 
 	resp := pm.SearchByType("chat")
