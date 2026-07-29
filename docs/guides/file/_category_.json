@@ -1,0 +1,11 @@
+{
+  "label": "File Management",
+  "position": 3.6,
+  "link": {
+    "type": "generated-index",
+    "description": "Guides on creating folders, uploading files, managing file operations, linking knowledge bases, and batch file management in RAGFlow."
+  },
+  "customProps": {
+    "categoryIcon": "LucideFolderDot"
+  }
+}
