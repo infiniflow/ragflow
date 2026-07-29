@@ -848,14 +848,11 @@ class MinerUParser(RAGFlowPdfParser):
         return lines
 
     def _build_image_texts(self, output: dict[str, object], *, keep_placeholder: bool = False) -> list[str]:
-        """Build searchable text lines for a MinerU image block."""
+        """Build raw caption and footnote text lines for a MinerU image block."""
         image_caption = output.get("image_caption")
         image_footnote = output.get("image_footnote")
         texts = self._normalize_text_lines(image_caption if isinstance(image_caption, list) else None)
         texts.extend(self._normalize_text_lines(image_footnote if isinstance(image_footnote, list) else None))
-        vlm_description = str(output.get("vlm_description") or "").strip()
-        if vlm_description:
-            texts.append(vlm_description)
         if texts or not keep_placeholder:
             return texts
         return [""]
@@ -970,46 +967,6 @@ class MinerUParser(RAGFlowPdfParser):
         self.logger.info("[MinerU] Media blocks produced: %d table(s), %d image(s)", table_count, image_count)
         return tables
 
-    def _enhance_images_with_vlm(self, outputs: list[dict[str, Any]], vision_model, callback: Optional[Callable] = None):
-        """Generate semantic descriptions for image blocks via the tenant's
-        VISION model, mirroring deepdoc's VisionFigureParser. Each
-        IMAGE block with a readable img_path gets a ``vlm_description``
-        field that ``_transfer_to_sections`` then folds into the chunk
-        text — closing issue #14869.
-
-        ``_transfer_to_media_blocks`` also reuses the same description when building
-        MinerU image media chunks.
-        """
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-        from rag.app.picture import vision_llm_chunk
-        from rag.prompts.generator import vision_llm_figure_describe_prompt
-
-        image_jobs = [(idx, item) for idx, item in enumerate(outputs) if item.get("type") == MinerUContentType.IMAGE and item.get("img_path") and os.path.exists(item["img_path"])]
-        if not image_jobs:
-            return
-
-        if callback:
-            callback(0.78, f"[MinerU] Generating VLM descriptions for {len(image_jobs)} images...")
-
-        prompt = vision_llm_figure_describe_prompt()
-
-        def worker(idx, item):
-            try:
-                with Image.open(item["img_path"]) as img:
-                    img.load()
-                    desc = vision_llm_chunk(binary=img, vision_model=vision_model, prompt=prompt)
-                return idx, (desc or "").strip()
-            except Exception as e:
-                logging.warning(f"[MinerU] VLM description failed for image #{idx}: {e}")
-                return idx, ""
-
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [executor.submit(worker, idx, item) for idx, item in image_jobs]
-            for fut in as_completed(futures):
-                idx, desc = fut.result()
-                if desc:
-                    outputs[idx]["vlm_description"] = desc
-
     def parse_pdf(
         self,
         filepath: str | PathLike[str],
@@ -1092,13 +1049,8 @@ class MinerUParser(RAGFlowPdfParser):
             if callback:
                 callback(0.75, f"[MinerU] Parsed {len(outputs)} blocks from PDF.")
 
-            vision_model = kwargs.get("vision_model")
-            if vision_model is not None:
-                try:
-                    self._enhance_images_with_vlm(outputs, vision_model, callback=callback)
-                except Exception as e:
-                    self.logger.warning(f"[MinerU] VLM image enhancement failed: {e}. Continuing without descriptions.")
-
+            # VISION enrichment belongs to the caller after media ownership is
+            # resolved, preventing Manual and Paper from processing an image twice.
             return self._transfer_to_sections(outputs, parse_method, enable_table), self._transfer_to_media_blocks(outputs, enable_table)
         finally:
             if temp_pdf and temp_pdf.exists():

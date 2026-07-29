@@ -117,6 +117,23 @@ def test_transfer_to_sections_skips_unknown_types_without_duplicating_text(monke
     assert "Skip unsupported section type=sidebar" in caplog.text
 
 
+def test_build_image_texts_uses_only_mineru_caption_and_footnote(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+
+    image_texts = parser._build_image_texts(
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Figure caption"],
+            "image_footnote": ["Figure footnote"],
+            "vlm_description": "Description supplied by a caller",
+        }
+    )
+
+    assert image_texts == ["Figure caption", "Figure footnote"]
+    assert not hasattr(parser, "_enhance_images_with_vlm")
+
+
 class _FakeZipResponse:
     """Stand-in for the streaming response returned by requests.post.
 
