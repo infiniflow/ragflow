@@ -18,43 +18,60 @@ package config
 
 import "github.com/spf13/viper"
 
-func parseDatabaseConfig(databaseType string, config *Config, v *viper.Viper) {
+// DatabaseConfig database configuration
+type DatabaseConfig struct {
+	DatabaseType string      `mapstructure:"type"`
+	MySQL        MySQLConfig `mapstructure:"mysql"`
+}
+
+type MySQLConfig struct {
+	DatabaseName     string `mapstructure:"name"` // database name
+	User             string `mapstructure:"user"`
+	Password         string `mapstructure:"password"`
+	Host             string `mapstructure:"host"`
+	Port             int    `mapstructure:"port"`
+	MaxConnections   int    `mapstructure:"max_connections"`
+	StaleTimeout     int    `mapstructure:"stale_timeout"`
+	MaxAllowedPacket int    `mapstructure:"max_allowed_packet"`
+}
+
+func ParseDatabaseConfig(databaseType string, config *Config, v *viper.Viper) {
 	switch databaseType {
 	case "mysql":
 		parseMySQLConfig(config, v)
 	default:
 		return
 	}
-
+	config.Database.DatabaseType = databaseType
 }
-
-//name: 'rag_flow'
-//user: 'root'
-//password: 'infini_rag_flow'
-//host: 'localhost'
-//port: 3306
-//max_connections: 900
-//stale_timeout: 300
-//max_allowed_packet: 1073741824
 
 func parseMySQLConfig(config *Config, v *viper.Viper) {
 
-	config.Database
+	// Default MySQL config
+	config.Database.MySQL.DatabaseName = "rag_flow"
+	config.Database.MySQL.User = "root"
+	config.Database.MySQL.Password = "infini_rag_flow"
+	config.Database.MySQL.Host = "localhost"
+	config.Database.MySQL.Port = 3306
+	config.Database.MySQL.MaxConnections = 900
+	config.Database.MySQL.StaleTimeout = 300
+	config.Database.MySQL.MaxAllowedPacket = 1073741824
 
-	if !v.IsSet("mysql") || config.Database.Host != "" {
+	if !v.IsSet("mysql") {
 		return
 	}
 	sub := v.Sub("mysql")
 	if sub == nil {
 		return
 	}
-	config.Database = DatabaseConfig{
-		Driver:   "mysql",
-		Host:     sub.GetString("host"),
-		Port:     sub.GetInt("port"),
-		Database: sub.GetString("name"),
-		Username: sub.GetString("user"),
-		Password: sub.GetString("password"),
-		Charset:  "utf8mb4",
+	config.Database.MySQL = MySQLConfig{
+		DatabaseName:     sub.GetString("name"),
+		User:             sub.GetString("user"),
+		Password:         sub.GetString("password"),
+		Host:             sub.GetString("host"),
+		Port:             sub.GetInt("port"),
+		MaxConnections:   sub.GetInt("max_connections"),
+		StaleTimeout:     sub.GetInt("stale_timeout"),
+		MaxAllowedPacket: sub.GetInt("max_allowed_packet"),
 	}
 }

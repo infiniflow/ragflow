@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/mail"
 	"net/url"
+	"ragflow/internal/server/config"
 	"strconv"
 	"strings"
 	"time"
@@ -315,6 +316,8 @@ var (
 	globalViper  *viper.Viper
 	zapLogger    *zap.Logger
 	allConfigs   []map[string]interface{}
+
+	newConfig *config.Config
 )
 
 // Init initialize configuration
@@ -662,6 +665,10 @@ func FromConfigFile(configPath string) error {
 	if err := v.Unmarshal(&globalConfig); err != nil {
 		return fmt.Errorf("unmarshal config error: %w", err)
 	}
+
+	newConfig = &config.Config{}
+	config.ParseGeneralConfig(newConfig, v)
+	config.ParseDatabaseConfig(newConfig.General.Database, newConfig, v)
 
 	// Set default values for admin configuration if not configured
 	if globalConfig.Admin.Host == "" {

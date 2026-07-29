@@ -18,7 +18,6 @@ package config
 
 import (
 	"ragflow/internal/common"
-	"time"
 )
 
 type Config struct {
@@ -42,18 +41,6 @@ type Config struct {
 	FileSyncer       FileSyncerConfig
 	OTel             OtelConfig
 	Clickhouse       ClickhouseConfig
-}
-
-// GeneralConfig general configuration
-type GeneralConfig struct {
-	HeartbeatInterval time.Duration `mapstructure:"heartbeat_interval"`
-	Mode              string        `mapstructure:"mode"` // debug, release
-	SecretKey         *string       `mapstructure:"secret_key"`
-	DocEngine         string        `mapstructure:"doc_engine"`      // Infinity, Elasticsearch
-	StorageEngine     string        `mapstructure:"storage_engine"`  // Minio, S3
-	CacheEngine       string        `mapstructure:"cache_engine"`    // Redis
-	QueueEngine       string        `mapstructure:"queue_engine"`    // NATS
-	AnalyticEngine    string        `mapstructure:"analytic_engine"` // Clickhouse
 }
 
 // AdminConfig admin server configuration
@@ -149,37 +136,6 @@ type OAuthConfig struct {
 	RedirectURI      string `mapstructure:"redirect_uri"`
 	Scope            string `mapstructure:"scope"`
 	Issuer           string `mapstructure:"issuer"`
-}
-
-//name: 'rag_flow'
-//user: 'root'
-//password: 'infini_rag_flow'
-//host: 'localhost'
-//port: 3306
-//max_connections: 900
-//stale_timeout: 300
-//max_allowed_packet: 1073741824
-
-type MySQLConfig struct {
-	DatabaseName     string `mapstructure:"name"` // database name
-	User             string `mapstructure:"user"`
-	Password         string `mapstructure:"password"`
-	Host             string `mapstructure:"host"`
-	Port             int    `mapstructure:"port"`
-	MaxConnections   int    `mapstructure:"max_connections"`
-	StaleTimeout     int    `mapstructure:"stale_timeout"`
-	MaxAllowedPacket int    `mapstructure:"max_allowed_packet"`
-}
-
-// DatabaseConfig database configuration
-type DatabaseConfig struct {
-	Driver   string `mapstructure:"driver"` // mysql
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	Database string `mapstructure:"database"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
-	Charset  string `mapstructure:"charset"`
 }
 
 // LogConfig logging configuration.
