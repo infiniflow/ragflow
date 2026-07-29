@@ -751,7 +751,7 @@ async def run_structure_merge(ctx: TaskContext) -> None:
     rebuilt = 0
     all_cleanup_ok = True
     for i, (compile_kwd, template_id, structure_kind) in enumerate(eligible):
-        if ctx.cancelled:
+        if ctx.has_canceled_func(ctx.id):
             progress(1.0, f"Cancelled after {rebuilt}/{total} dataset graph(s).")
             return
         progress(0.05 + 0.9 * (i / total), f"Building dataset graph {i + 1}/{total} ...")

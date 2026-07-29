@@ -1833,45 +1833,54 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
             "kind": row_kind or template_kind_cache.get(tid) or resolved_kind,
         }
 
-    # ── Discovery: dataset_graph blob rows, metadata only (no huge content). ──
-    # Keep only rows whose TOP-LEVEL kind matches the request. Raw entity/relation
-    # rows stamp ``compilation_template_kind_kwd`` with config.kind (which folds the
-    # knowledge_graph family), so we scope raw-row queries by template id — resolved
-    # here from the blobs, whose stamp is the top-level kind — not by kind directly.
-    meta_fields = ["compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"]
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            meta_fields,
-            [],
-            {"knowledge_graph_kwd": [_DATASET_STRUCTURE_ROW_KWD]},
-            [],
-            OrderByExpr(),
-            0,
-            1000,
-            index_nm,
-            [dataset_id],
-        )
-        meta_rows = settings.docStoreConn.get_fields(res, meta_fields) or {}
-    except Exception:
-        logging.exception("get_dataset_structure: docStore discovery failed for kb=%s", dataset_id)
-        return True, empty
-
+    # ── Discovery: the dataset-scoped rows the structure merge writes. ──
+    # ``run_structure_merge`` (rag.svr.task_executor_refactor.dataset_structure_merger)
+    # writes merged ``knowledge_graph_kwd="entity"/"relation"`` rows with
+    # ``scope_kwd="dataset"``, stamped with ``compilation_template_ids`` and the
+    # top-level ``compilation_template_kind_kwd``. Page through them (metadata
+    # fields only) to enumerate the distinct template ids whose top-level kind
+    # matches the request; ``build_bucket`` below then reads each template's rows.
+    meta_fields = ["id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"]
     kind_template_ids: list[str] = []
     seen_tid: set[str] = set()
     has_templateless = False
-    for row in meta_rows.values():
-        tid = _row_template_id(row)
-        stamped_kind = (row.get("compilation_template_kind_kwd") or "").strip()
-        row_kind = stamped_kind or _template_meta(tid) or ""
-        if _resolve_dataset_structure_kind(row_kind) != resolved_kind:
-            continue
-        if tid:
-            if tid not in seen_tid:
-                seen_tid.add(tid)
-                kind_template_ids.append(tid)
-        else:
-            has_templateless = True
+    offset = 0
+    page_size = 1000
+    while True:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                meta_fields,
+                [],
+                {"knowledge_graph_kwd": ["entity", "relation"], "scope_kwd": ["dataset"]},
+                [],
+                OrderByExpr(),
+                offset,
+                page_size,
+                index_nm,
+                [dataset_id],
+            )
+            meta_rows = settings.docStoreConn.get_fields(res, meta_fields) or {}
+        except Exception:
+            logging.exception("get_dataset_structure: docStore discovery failed for kb=%s", dataset_id)
+            return True, empty
+        if not meta_rows:
+            break
+        for row in meta_rows.values():
+            tid = _row_template_id(row)
+            stamped_kind = (row.get("compilation_template_kind_kwd") or "").strip()
+            row_kind = stamped_kind or _template_meta(tid) or ""
+            if _resolve_dataset_structure_kind(row_kind) != resolved_kind:
+                continue
+            if tid:
+                if tid not in seen_tid:
+                    seen_tid.add(tid)
+                    kind_template_ids.append(tid)
+            else:
+                has_templateless = True
+        if len(meta_rows) < page_size:
+            break
+        offset += page_size
 
     # ── keywords mode: global KNN across the kind → top-1's focused subgraph. ──
     if keywords:
