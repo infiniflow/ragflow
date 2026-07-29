@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"ragflow/internal/channels/whatsapp"
@@ -303,7 +304,8 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 		nil,
 	)
 	if err != nil {
-		return fmt.Sprintf("**ERROR**: %s", err.Error()), nil
+		log.Printf("chat channel %s completion failed: %v", channel.ID, err)
+		return "Sorry, I couldn't process your message right now.", nil
 	}
 	if result == nil {
 		return "", nil

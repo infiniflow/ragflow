@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -32,24 +33,34 @@ import (
 	"ragflow/internal/service"
 )
 
-const reconcileInterval = 10 * time.Second
+const (
+	reconcileInterval      = 10 * time.Second
+	initialStartRetryDelay = 10 * time.Second
+	maxStartRetryDelay     = 5 * time.Minute
+)
 
 type runningChannel struct {
 	channel core.Channel
 	fp      string
 }
 
+type failedChannel struct {
+	fp          string
+	attempts    int
+	nextRetryAt time.Time
+}
+
 type Runtime struct {
 	mu      sync.Mutex
 	running map[string]runningChannel
-	failed  map[string]string
+	failed  map[string]failedChannel
 }
 
 // NewRuntime creates an empty chat-channel runtime reconciler.
 func NewRuntime() *Runtime {
 	return &Runtime{
 		running: map[string]runningChannel{},
-		failed:  map[string]string{},
+		failed:  map[string]failedChannel{},
 	}
 }
 
@@ -85,21 +96,26 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 		return err
 	}
 
+	var toStop []core.Channel
 	r.mu.Lock()
 	for accountID, entry := range r.running {
 		wanted, ok := desired[accountID]
 		if !ok || wanted.fp != entry.fp {
 			delete(r.running, accountID)
-			go stopChannel(context.Background(), entry.channel)
+			toStop = append(toStop, entry.channel)
 		}
 	}
-	for accountID, fp := range r.failed {
+	for accountID, failure := range r.failed {
 		wanted, ok := desired[accountID]
-		if !ok || wanted.fp != fp {
+		if !ok || wanted.fp != failure.fp {
 			delete(r.failed, accountID)
 		}
 	}
 	r.mu.Unlock()
+
+	for _, ch := range toStop {
+		stopChannel(context.Background(), ch)
+	}
 
 	activeWhatsApp := false
 	for _, wanted := range desired {
@@ -112,22 +128,62 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 		log.Printf("failed to sync WhatsApp gateway: %v", err)
 	}
 
+	now := time.Now()
 	for accountID, wanted := range desired {
 		r.mu.Lock()
 		_, isRunning := r.running[accountID]
-		failedSameConfig := r.failed[accountID] == wanted.fp
+		failure, failed := r.failed[accountID]
+		retryPending := failed && failure.fp == wanted.fp && now.Before(failure.nextRetryAt)
 		r.mu.Unlock()
-		if isRunning || failedSameConfig {
+		if isRunning || retryPending {
 			continue
 		}
 		if err := r.startChannel(ctx, accountID, wanted); err != nil {
 			log.Printf("failed to start chat channel %s (%s): %v", accountID, wanted.channel, err)
-			r.mu.Lock()
-			r.failed[accountID] = wanted.fp
-			r.mu.Unlock()
+			r.recordStartFailure(accountID, wanted.fp, now)
+			continue
 		}
+		r.clearStartFailure(accountID)
 	}
 	return nil
+}
+
+// recordStartFailure saves the next retry window for a failed channel start.
+func (r *Runtime) recordStartFailure(accountID string, fp string, now time.Time) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	attempts := 1
+	if failure, ok := r.failed[accountID]; ok && failure.fp == fp {
+		attempts = failure.attempts + 1
+	}
+	r.failed[accountID] = failedChannel{
+		fp:          fp,
+		attempts:    attempts,
+		nextRetryAt: now.Add(startRetryDelay(attempts)),
+	}
+}
+
+// clearStartFailure removes a stale failed-start record after a successful start.
+func (r *Runtime) clearStartFailure(accountID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.failed, accountID)
+}
+
+// startRetryDelay returns the bounded exponential backoff for a start attempt.
+func startRetryDelay(attempts int) time.Duration {
+	if attempts < 1 {
+		attempts = 1
+	}
+	delay := initialStartRetryDelay
+	for i := 1; i < attempts; i++ {
+		delay *= 2
+		if delay >= maxStartRetryDelay {
+			return maxStartRetryDelay
+		}
+	}
+	return delay
 }
 
 type desiredChannel struct {
@@ -224,7 +280,7 @@ func buildChannel(accountID string, wanted desiredChannel) (core.Channel, error)
 	case "whatsapp":
 		return whatsapp.NewChannelFromConfig(accountID, wanted.credential)
 	default:
-		return nil, nil
+		return nil, fmt.Errorf("unknown channel: %s", wanted.channel)
 	}
 }
 

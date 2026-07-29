@@ -38,10 +38,10 @@ type OutgoingMessage struct {
 type MessageHandler func(ctx context.Context, msg IncomingMessage) error
 
 type Channel interface {
-	ChannelID() string
-	AccountID() string
-	SetMessageHandler(MessageHandler)
-	Start(ctx context.Context) error
-	Stop(ctx context.Context) error
-	Send(ctx context.Context, msg OutgoingMessage) error
+	ChannelID() string                                   // ChannelID return channel's name
+	AccountID() string                                   // AccountID return channel's channelID
+	SetMessageHandler(MessageHandler)                    // SetMessageHandler set channel's Message Handler
+	Start(ctx context.Context) error                     // Start the channel
+	Stop(ctx context.Context) error                      // Stop cancels channel event
+	Send(ctx context.Context, msg OutgoingMessage) error // Send posts an outgoing RAGFlow answer to the channel
 }

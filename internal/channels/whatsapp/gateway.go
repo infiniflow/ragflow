@@ -35,11 +35,17 @@ import (
 const (
 	gatewayStartTimeout = 30 * time.Second
 	gatewayProbeEvery   = 500 * time.Millisecond
+	gatewayStopTimeout  = 10 * time.Second
 )
 
+type gatewayProcess struct {
+	cmd  *exec.Cmd
+	done chan struct{}
+}
+
 type gatewayRuntime struct {
-	mu  sync.Mutex
-	cmd *exec.Cmd
+	mu      sync.Mutex
+	process *gatewayProcess
 }
 
 var gateway gatewayRuntime
@@ -90,37 +96,50 @@ func gatewayWorkdir() string {
 // start launches the gateway process if it is not already running.
 func (r *gatewayRuntime) start(ctx context.Context) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	if r.cmd != nil && r.cmd.Process != nil && r.cmd.ProcessState == nil {
-		return nil
+	if r.process != nil {
+		select {
+		case <-r.process.done:
+			r.process = nil
+		default:
+			r.mu.Unlock()
+			return nil
+		}
 	}
 	if gatewayReachable(ctx) {
+		r.mu.Unlock()
 		return nil
 	}
 
 	argv, cwd := gatewayCommand()
 	if len(argv) == 0 {
+		r.mu.Unlock()
 		return errors.New("WhatsApp gateway command is not configured")
 	}
 
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = cwd
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Env = os.Environ()
 	if err := cmd.Start(); err != nil {
+		r.mu.Unlock()
 		return err
 	}
-	r.cmd = cmd
+	process := &gatewayProcess{cmd: cmd, done: make(chan struct{})}
+	r.process = process
+	r.mu.Unlock()
+
 	go func() {
 		err := cmd.Wait()
+		close(process.done)
+
 		r.mu.Lock()
-		if r.cmd == cmd {
-			r.cmd = nil
+		owned := r.process == process
+		if r.process == process {
+			r.process = nil
 		}
 		r.mu.Unlock()
-		if err != nil && ctx.Err() == nil {
+		if err != nil && owned {
 			log.Printf("whatsapp gateway exited: %v", err)
 		}
 	}()
@@ -130,22 +149,31 @@ func (r *gatewayRuntime) start(ctx context.Context) error {
 // stop terminates the gateway process if this runtime started one.
 func (r *gatewayRuntime) stop() error {
 	r.mu.Lock()
-	cmd := r.cmd
-	r.cmd = nil
+	process := r.process
+	r.process = nil
 	r.mu.Unlock()
-	if cmd == nil || cmd.Process == nil {
+	if process == nil || process.cmd == nil || process.cmd.Process == nil {
 		return nil
 	}
-	if cmd.ProcessState != nil {
+	select {
+	case <-process.done:
 		return nil
+	default:
 	}
-	if err := cmd.Process.Signal(os.Interrupt); err != nil {
-		_ = cmd.Process.Kill()
+
+	if err := process.cmd.Process.Signal(os.Interrupt); err != nil {
+		_ = process.cmd.Process.Kill()
 		return err
 	}
-	time.Sleep(10 * time.Second)
-	if cmd.ProcessState == nil {
-		_ = cmd.Process.Kill()
+	select {
+	case <-process.done:
+		return nil
+	case <-time.After(gatewayStopTimeout):
+		_ = process.cmd.Process.Kill()
+	}
+	select {
+	case <-process.done:
+	case <-time.After(2 * time.Second):
 	}
 	return nil
 }

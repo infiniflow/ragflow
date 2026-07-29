@@ -18,7 +18,6 @@ package service
 
 import (
 	"context"
-	"crypto/md5"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -1834,31 +1833,10 @@ func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID
 	sessionID := channelSessionID(dialogID, channelID, chatID)
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
 	if err == nil {
-		_ = s.deleteLegacyChannelSession(ctx, dialogID, channelID, chatID)
 		return session, nil
 	}
 	if !dao.IsNotFoundErr(err) {
 		return nil, err
-	}
-
-	legacyID := legacyChannelSessionID(dialogID, channelID, chatID)
-	legacy, legacyErr := s.chatSessionDAO.GetByID(ctx, dao.DB, legacyID)
-	if legacyErr == nil && legacy != nil {
-		migrated := *legacy
-		migrated.ID = sessionID
-		if err = s.chatSessionDAO.Create(ctx, dao.DB, &migrated); err != nil {
-			session, rereadErr := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
-			if rereadErr == nil {
-				_ = s.deleteLegacyChannelSession(ctx, dialogID, channelID, chatID)
-				return session, nil
-			}
-			return nil, err
-		}
-		_ = s.deleteLegacyChannelSession(ctx, dialogID, channelID, chatID)
-		return s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
-	}
-	if legacyErr != nil && !dao.IsNotFoundErr(legacyErr) {
-		return nil, legacyErr
 	}
 
 	messagesJSON, _ := json.Marshal([]map[string]interface{}{})
@@ -1881,25 +1859,9 @@ func (s *ChatSessionService) GetOrCreateForChannel(ctx context.Context, dialogID
 	return session, nil
 }
 
-// deleteLegacyChannelSession removes the old MD5-derived channel conversation after migration.
-func (s *ChatSessionService) deleteLegacyChannelSession(ctx context.Context, dialogID, channelID, chatID string) error {
-	legacyID := legacyChannelSessionID(dialogID, channelID, chatID)
-	currentID := channelSessionID(dialogID, channelID, chatID)
-	if legacyID == currentID {
-		return nil
-	}
-	return s.chatSessionDAO.DeleteByID(ctx, dao.DB, legacyID)
-}
-
 // channelSessionID derives the stable SHA-256 conversation ID for a channel chat.
 func channelSessionID(dialogID, channelID, chatID string) string {
 	sum := sha256.Sum256([]byte(dialogID + ":" + channelID + ":" + chatID))
-	return fmt.Sprintf("%x", sum[:])[:32]
-}
-
-// legacyChannelSessionID derives the older MD5 conversation ID for migration lookups.
-func legacyChannelSessionID(dialogID, channelID, chatID string) string {
-	sum := md5.Sum([]byte(dialogID + ":" + channelID + ":" + chatID))
 	return fmt.Sprintf("%x", sum[:])[:32]
 }
 

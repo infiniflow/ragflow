@@ -306,6 +306,14 @@ func (c *Channel) runEvents(ctx context.Context) error {
 	}
 	defer conn.Close()
 
+	go func() {
+		<-ctx.Done()
+		_ = conn.Close()
+	}()
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(2 * wsHandshakeTimeout))
+	})
+
 	for ctx.Err() == nil {
 		_, payload, err := conn.ReadMessage()
 		if err != nil {
