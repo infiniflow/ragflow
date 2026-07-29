@@ -332,7 +332,9 @@ async def mindmap_navigate(tools, topic: str, keywords: str = "", doc_scope: lis
 
     :returns: ``{"answer": "", "chunks": [...], "doc_aggs": [...]}``
     """
-    _LOG.info(f'[Mindmap navigation] Following the concept mindmap for "{topic}" (keywords: {keywords})')
+    if not doc_scope:
+        doc_scope = []
+    _LOG.info(f'[Mindmap navigation] Following the concept mindmap for "{topic}" (keywords: {keywords}) in doc: {len(doc_scope)}')
     chunks = await _navigate_within_doc(tools, topic, keywords, doc_scope, _MINDMAP_KINDS)
     return {"answer": "", "chunks": chunks, "doc_aggs": _doc_aggs(chunks)}
 
