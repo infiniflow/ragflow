@@ -251,6 +251,7 @@ def _load_chat_module(monkeypatch):
                     "top_k": None,
                     "rerank_id": None,
                     "meta_data_filter": None,
+                    "temporal_retrieval": None,
                     "created_by": None,
                     "create_time": None,
                     "create_date": None,
