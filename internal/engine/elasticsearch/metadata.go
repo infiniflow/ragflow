@@ -181,6 +181,11 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 //	{character:["曹操","孙权"], year:2025}
 //	  + {year:2026}
 //	  = {character:["曹操","孙权"], year:2026}
+//
+// UpdateMetadata fully replaces the meta_fields for a document in the
+// document engine. Callers must send the complete desired meta_fields map —
+// unchanged keys are NOT preserved (unlike a merge). This mirrors Python's
+// replace_meta_fields semantics: stale keys must not survive an update.
 func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
 	indexName := buildMetadataIndexName(tenantID)
 	common.Info("ElasticsearchConnection.UpdateMetadata called", zap.String("index_name", indexName), zap.String("docID", docID), zap.String("datasetID", datasetID))

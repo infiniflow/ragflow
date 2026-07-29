@@ -527,16 +527,27 @@ func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID strin
 		}
 	}
 
-	updateFields := make(map[string]interface{})
+	// Check if anything actually changed.
+	changed := false
 	for key, value := range after {
 		if !reflect.DeepEqual(before[key], value) {
-			updateFields[key] = value
+			changed = true
+			break
 		}
 	}
-	if len(updateFields) == 0 {
+	if !changed && len(deleteKeys) == 0 {
 		return nil
 	}
-	return s.SetDocumentMetadata(ctx, docID, updateFields)
+
+	// If 'after' is empty, all keys were deleted — the record has already
+	// been cleaned up by DeleteDocumentMetadata above; skip the write.
+	if len(after) == 0 {
+		return nil
+	}
+
+	// Send the complete 'after' map — UpdateMetadata does a full replace,
+	// not a merge, so a partial delta would wipe unchanged keys.
+	return s.SetDocumentMetadata(ctx, docID, after)
 }
 
 // BatchUpdateDocumentMetadatas implements the shared logic for
