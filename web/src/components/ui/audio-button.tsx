@@ -10,6 +10,7 @@ import { Loader2, Mic, Square } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Input } from './input';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
+import message from './message';
 
 const VoiceVisualizer = ({ isRecording }: { isRecording: boolean }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -287,6 +288,13 @@ export const AudioButton = ({
 
   //  Start recording
   const startRecording = () => {
+    if (
+      !navigator.mediaDevices ||
+      typeof navigator.mediaDevices.getUserMedia !== 'function'
+    ) {
+      message.error('Browser does not support getUserMedia API');
+      return;
+    }
     recorderControls.startRecording();
     setIsRecording(true);
     // setShowInputBox(true);
@@ -331,51 +339,6 @@ export const AudioButton = ({
   }, []);
   return (
     <div>
-      {false && (
-        <div className="flex flex-col items-center space-y-4">
-          <div className="relative">
-            <Popover
-              open={popoverOpen}
-              onOpenChange={(open) => {
-                setPopoverOpen(open);
-              }}
-            >
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (isRecording) {
-                      stopRecording();
-                    } else {
-                      startRecording();
-                    }
-                  }}
-                  className={`w-6 h-6 p-2 rounded-full border-none bg-transparent hover:bg-transparent ${
-                    isRecording ? 'animate-pulse' : ''
-                  }`}
-                  disabled={isProcessing}
-                >
-                  <Mic size={16} className="text-text-primary" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent
-                align="end"
-                sideOffset={-20}
-                className="p-0 border-none"
-              >
-                <VoiceInputBox
-                  isRecording={isRecording}
-                  value={transcript}
-                  onStop={stopRecording}
-                  recordingTime={recordingTime}
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-        </div>
-      )}
-
       <div className=" relative w-6 h-6 flex items-center justify-center">
         {isRecording && (
           <div className="absolute inset-0 size-full overflow-hidden flex items-center justify-center p-1">
@@ -392,6 +355,7 @@ export const AudioButton = ({
         )}
 
         <Button
+          type="button"
           variant="transparent"
           size="icon-xs"
           // onMouseDown={() => {
