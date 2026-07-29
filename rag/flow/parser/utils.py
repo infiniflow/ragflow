@@ -178,7 +178,8 @@ def enhance_media_sections_with_vision(
         return sections
 
     for item in sections:
-        if item.get("doc_type_kwd") not in {"image", "table"}:
+        # The generic figure prompt is image-only; tables keep their structured text.
+        if item.get("doc_type_kwd") != "image":
             continue
         if item.get("image") is None:
             continue
