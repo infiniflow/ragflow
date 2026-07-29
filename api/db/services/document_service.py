@@ -506,7 +506,15 @@ class DocumentService(CommonService):
                 f"Failed to prune dataset_nav for document {doc.id}: {e}",
             )
 
-        # Record doc deletion for incremental structure-merge ghost cleanup
+        # Delete chunks from doc store - this is critical, log errors
+        try:
+            settings.docStoreConn.delete({"doc_id": doc.id}, chunk_index_name, doc.kb_id)
+        except Exception as e:
+            logging.error(f"Failed to delete chunks from doc store for document {doc.id}: {e}")
+
+        # Record doc deletion for incremental structure-merge ghost cleanup.
+        # Runs after the doc_id sweep so the marker (stored under
+        # deleted_doc_id to avoid matching the same sweep) survives.
         try:
             from rag.svr.task_executor_refactor.dataset_structure_merger import (
                 record_doc_deletion,
@@ -517,12 +525,6 @@ class DocumentService(CommonService):
             logging.warning(
                 f"Failed to record doc deletion for structure merge: {e}",
             )
-
-        # Delete chunks from doc store - this is critical, log errors
-        try:
-            settings.docStoreConn.delete({"doc_id": doc.id}, chunk_index_name, doc.kb_id)
-        except Exception as e:
-            logging.error(f"Failed to delete chunks from doc store for document {doc.id}: {e}")
 
         # Ref-counted cleanup of wiki/artifact products this doc fed into
         # (non-critical, log and continue). A product shared by other docs

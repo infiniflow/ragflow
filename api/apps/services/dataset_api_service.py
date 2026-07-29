@@ -1888,13 +1888,15 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
             tid = _row_template_id(row) or ""
             stamped = (row.get("compilation_template_kind_kwd") or "").strip()
             meta = _bucket_meta_for(tid, stamped) if tid else {"template_id": f"kind:{resolved_kind}", "template_name": f"kind:{resolved_kind}", "kind": resolved_kind}
-            return meta, {"compilation_template_ids": [tid]} if tid else {"compilation_template_kind_kwd": [stamped]}
+            if tid:
+                return meta, {"compilation_template_ids": [tid], "scope_kwd": ["dataset"]}
+            return meta, {"compilation_template_kind_kwd": [stamped]}
 
         bucket_meta, kw_entities, kw_relations = await sgc.keyword_subgraph(
             index_nm,
             dataset_id,
             embd_mdl,
-            {"compilation_template_ids": kind_template_ids, "knowledge_graph_kwd": ["entity"]},
+            {"compilation_template_ids": kind_template_ids, "knowledge_graph_kwd": ["entity"], "scope_kwd": ["dataset"]},
             keywords,
             _scope_for_template,
             log_ctx=f"kb={dataset_id}",
