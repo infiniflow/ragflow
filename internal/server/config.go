@@ -64,6 +64,11 @@ type GeneralConfig struct {
 	HeartbeatInterval time.Duration `mapstructure:"heartbeat_interval"`
 	Mode              string        `mapstructure:"mode"` // debug, release
 	SecretKey         *string       `mapstructure:"secret_key"`
+	DocEngine         string        `mapstructure:"doc_engine"`      // Infinity, Elasticsearch
+	StorageEngine     string        `mapstructure:"storage_engine"`  // Minio, S3
+	CacheEngine       string        `mapstructure:"cache_engine"`    // Redis
+	QueueEngine       string        `mapstructure:"queue_engine"`    // NATS
+	AnalyticEngine    string        `mapstructure:"analytic_engine"` // Clickhouse
 }
 
 // AdminConfig admin server configuration
