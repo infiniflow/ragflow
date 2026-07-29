@@ -17,6 +17,7 @@
 import logging
 import os
 import re
+import time
 from abc import ABC
 from typing import Any
 
@@ -31,6 +32,10 @@ QUERIT_MAX_ATTEMPTS = 3
 QUERIT_RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 TIME_RANGE_PATTERN = re.compile(r"^([dwmy][1-9][0-9]*|\d{4}-\d{2}-\d{2}to\d{4}-\d{2}-\d{2})$")
 logger = logging.getLogger(__name__)
+
+
+class _QueritCanceled(Exception):
+    pass
 
 
 class QueritSearchParam(ToolParamBase):
@@ -172,15 +177,17 @@ class QueritSearch(ToolBase, ABC):
             if reference_results:
                 self._retrieve_chunks(
                     reference_results,
-                    get_title=lambda item: item.get("title", ""),
-                    get_url=lambda item: item.get("url", ""),
-                    get_content=lambda item: item.get("snippet", ""),
+                    get_title=lambda item: _querit_text(item.get("title")),
+                    get_url=lambda item: _querit_text(item.get("url")),
+                    get_content=lambda item: _querit_text(item.get("snippet")),
                     get_score=lambda _item: 1,
                 )
             else:
                 self.set_output("formalized_content", "")
             self.set_output("json", response_data)
             return self.output("formalized_content")
+        except _QueritCanceled:
+            return
         except (requests.RequestException, RuntimeError, TypeError, ValueError) as error:
             return self._fail(_safe_error_message(error, api_key))
 
@@ -191,6 +198,8 @@ class QueritSearch(ToolBase, ABC):
             "Content-Type": "application/json",
         }
         for attempt in range(QUERIT_MAX_ATTEMPTS):
+            if self.check_if_canceled("QueritSearch processing"):
+                raise _QueritCanceled
             try:
                 response = requests.post(
                     QUERIT_SEARCH_URL,
@@ -199,6 +208,7 @@ class QueritSearch(ToolBase, ABC):
                     timeout=DEFAULT_TIMEOUT,
                 )
                 if response.status_code in QUERIT_RETRYABLE_STATUS_CODES and attempt + 1 < QUERIT_MAX_ATTEMPTS:
+                    self._wait_before_retry()
                     continue
                 response.raise_for_status()
                 return response.json()
@@ -209,7 +219,13 @@ class QueritSearch(ToolBase, ABC):
             except requests.RequestException:
                 if attempt + 1 >= QUERIT_MAX_ATTEMPTS:
                     raise
+                self._wait_before_retry()
         raise RuntimeError("Querit request failed after three attempts.")
+
+    def _wait_before_retry(self) -> None:
+        if self.check_if_canceled("QueritSearch processing"):
+            raise _QueritCanceled
+        time.sleep(self._param.delay_after_error)
 
     def _fail(self, message: str) -> str:
         self.set_output("_ERROR", message)
@@ -276,3 +292,7 @@ def _validate_search_inputs(
 def _safe_error_message(error: Exception, api_key: str) -> str:
     message = str(error) or error.__class__.__name__
     return message.replace(api_key, "[REDACTED]") if api_key else message
+
+
+def _querit_text(value: Any) -> str:
+    return "" if value is None else str(value)

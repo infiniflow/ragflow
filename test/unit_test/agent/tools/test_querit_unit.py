@@ -318,6 +318,43 @@ def test_retryable_http_errors_are_retried_until_success(monkeypatch):
     assert outputs["json"]["request_id"] == "success"
 
 
+def test_retry_wait_uses_configured_delay(monkeypatch):
+    responses = [
+        _FakeResponse({"error": "rate limited"}, status_code=429),
+        _FakeResponse({"results": {"result": []}}),
+    ]
+    delays = []
+
+    monkeypatch.setattr(querit_module.requests, "post", lambda *args, **kwargs: responses.pop(0))
+    monkeypatch.setattr(querit_module.time, "sleep", delays.append)
+    tool, _, _ = _make_tool()
+    tool._param.delay_after_error = 0.25
+
+    result = tool._invoke(query="AI news")
+
+    assert result == ""
+    assert delays == [0.25]
+
+
+def test_cancellation_stops_before_retry(monkeypatch):
+    calls = []
+
+    def fake_post(*args, **kwargs):
+        calls.append((args, kwargs))
+        return _FakeResponse({"error": "rate limited"}, status_code=429)
+
+    monkeypatch.setattr(querit_module.requests, "post", fake_post)
+    tool, _, outputs = _make_tool()
+    cancellation_checks = iter([False, False, True])
+    tool.check_if_canceled = lambda *args, **kwargs: next(cancellation_checks)
+
+    result = tool._invoke(query="AI news")
+
+    assert result is None
+    assert len(calls) == 1
+    assert "_ERROR" not in outputs
+
+
 def test_network_errors_are_retried_until_success(monkeypatch):
     outcomes = [
         querit_module.requests.ConnectTimeout("first timeout"),
@@ -444,6 +481,39 @@ def test_results_with_missing_optional_fields_do_not_fail(monkeypatch):
 
     assert result == "FORMALIZED"
     assert len(captured["references"]) == 3
+    assert outputs["json"] == raw_response
+
+
+def test_non_string_reference_fields_match_go_string_coercion(monkeypatch):
+    raw_response = {
+        "results": {
+            "result": [
+                {
+                    "title": 123,
+                    "url": 456,
+                    "snippet": 789,
+                }
+            ]
+        }
+    }
+    monkeypatch.setattr(
+        querit_module.requests,
+        "post",
+        lambda *args, **kwargs: _FakeResponse(raw_response),
+    )
+    tool, captured, outputs = _make_tool()
+
+    result = tool._invoke(query="AI news")
+
+    assert result == "FORMALIZED"
+    assert captured["references"] == [
+        {
+            "title": "123",
+            "url": "456",
+            "content": "789",
+            "score": 1,
+        }
+    ]
     assert outputs["json"] == raw_response
 
 

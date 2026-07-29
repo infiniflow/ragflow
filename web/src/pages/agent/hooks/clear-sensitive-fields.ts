@@ -10,6 +10,16 @@ const apiKeyOperators = [
   Operator.QueritSearch,
 ];
 
+function isQueritOperator(value: unknown) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  return ['querit', 'queritsearch'].includes(
+    value.replace(/_/g, '').toLowerCase(),
+  );
+}
+
 export function clearSensitiveFields<T>(obj: T): T {
   return cloneDeepWith(obj, (value) => {
     if (!isPlainObject(value)) {
@@ -17,14 +27,15 @@ export function clearSensitiveFields<T>(obj: T): T {
     }
 
     if (
-      apiKeyOperators.includes(value.component_name) &&
+      (apiKeyOperators.includes(value.component_name) ||
+        isQueritOperator(value.component_name)) &&
       get(value, 'params.api_key')
     ) {
       return { ...value, params: { ...value.params, api_key: '' } };
     }
 
     if (
-      get(value, 'data.label') === Operator.QueritSearch &&
+      isQueritOperator(get(value, 'data.label')) &&
       get(value, 'data.form.api_key')
     ) {
       return {
