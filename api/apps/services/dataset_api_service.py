@@ -1942,7 +1942,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
             _scope_for_template,
             log_ctx=f"kb={dataset_id}",
         )
-        if resolved_kind in {"knowledge_graph", "mind_map"}:
+        if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             kw_entities = sgc.filter_entities_with_relations(kw_entities, kw_relations)
             if not kw_entities:
                 return True, empty
@@ -1961,7 +1961,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
         except Exception:
             logging.exception("get_dataset_structure: bucket build failed for kb=%s template=%s", dataset_id, tid)
             continue
-        if resolved_kind in {"knowledge_graph", "mind_map"}:
+        if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             entities = sgc.filter_entities_with_relations(entities, relations)
             if not entities:
                 continue
@@ -2003,10 +2003,10 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
                 continue
             legacy_bucket["entities"].extend(graph.get("entities") or [])
             legacy_bucket["relations"].extend(graph.get("relations") or [])
-        if resolved_kind in {"knowledge_graph", "mind_map"}:
+        if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             legacy_bucket["entities"] = sgc.filter_entities_with_relations(legacy_bucket["entities"], legacy_bucket["relations"])
         if legacy_bucket["entities"] or legacy_bucket["relations"]:
-            if resolved_kind not in {"knowledge_graph", "mind_map"} or legacy_bucket["entities"]:
+            if resolved_kind not in {"knowledge_graph", "mind_map", "timeline"} or legacy_bucket["entities"]:
                 templates_out.append(legacy_bucket)
 
     return True, {"kind": kind, "templates": templates_out}

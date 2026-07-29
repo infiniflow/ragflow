@@ -190,8 +190,8 @@ def filter_entities_with_relations(entities: list[dict], relations: list[dict]) 
         return []
 
     # Match case-insensitively: the dataset-scoped merge lowercases relation
-    # endpoints (from/to) while entity names keep their original case, so an
-    # exact match would drop every node (this is what left kind=mindmap empty).
+    # endpoints while entity names keep their original case, so exact matching
+    # would drop connected nodes from graph-like views.
     connected: set[str] = set()
     for relation in relations:
         if not isinstance(relation, dict):
