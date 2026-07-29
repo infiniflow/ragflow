@@ -715,7 +715,7 @@ async def drop_provider_instances(tenant_id: str = None, provider_id_or_name: st
 @manager.route("/providers/<provider_id_or_name>/instances/<instance_id_or_name>/models", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
-def list_instance_models(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None):
+async def list_instance_models(tenant_id: str = None, provider_id_or_name: str = None, instance_id_or_name: str = None):
     """
     List models for a provider instance.
     ---
@@ -757,7 +757,7 @@ def list_instance_models(tenant_id: str = None, provider_id_or_name: str = None,
     """
     supported_only = request.args.get("supported", "").lower() == "true"
     try:
-        success, result = provider_api_service.list_instance_models(tenant_id, provider_id_or_name, instance_id_or_name, supported_only)
+        success, result = await provider_api_service.list_instance_models(tenant_id, provider_id_or_name, instance_id_or_name, supported_only)
         if success:
             return get_result(data=result)
         else:
