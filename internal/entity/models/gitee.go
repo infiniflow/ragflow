@@ -53,6 +53,34 @@ func (g *GiteeModel) Name() string {
 	return "GiteeAI"
 }
 
+// GiteeChatResponse mirrors GiteeAI's OpenAI-compatible chat response.
+type GiteeChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Logprobs     any    `json:"logprobs"`
+		Message      struct {
+			Content          string           `json:"content"`
+			ReasoningContent string           `json:"reasoning_content"`
+			Role             string           `json:"role"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+	SystemFingerprint string `json:"system_fingerprint"`
+	Usage             struct {
+		CompletionTokens    int `json:"completion_tokens"`
+		PromptTokens        int `json:"prompt_tokens"`
+		TotalTokens         int `json:"total_tokens"`
+		PromptTokensDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	} `json:"usage"`
+}
+
 // ChatWithMessages sends multiple messages with roles and returns response
 func (g *GiteeModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -117,69 +145,48 @@ func (g *GiteeModel) ChatWithMessages(ctx context.Context, modelName string, mes
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result GiteeChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
+		choice := result.Choices[0]
+		content := choice.Message.Content
+		if content == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("response contains neither content nor tool calls")
+		}
 
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, _ := messageMap["content"].(string)
-
-	// Handle thinking/reasoning if enabled
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		// Try to get reasoning_content directly first
-		if rc, ok := messageMap["reasoning_content"].(string); ok && rc != "" {
-			reasonContent = rc
-			if reasonContent[0] == '\n' {
+		reasonContent := ""
+		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
+			reasonContent = choice.Message.ReasoningContent
+			if reasonContent == "" {
+				reasoning, answer := GetThinkingAndAnswer(chatConfig.ModelClass, &content)
+				if reasoning != nil {
+					reasonContent = *reasoning
+					content = *answer
+				}
+			}
+			if strings.HasPrefix(reasonContent, "\n") {
 				reasonContent = reasonContent[1:]
 			}
-		} else {
-			// Fall back to parsing <think> tags from content
-			reasoning, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
-			if reasoning != nil {
-				reasonContent = *reasoning
-				content = *answer
-			}
 		}
-	}
 
-	var toolCalls []map[string]any
-	if tcs, ok := messageMap["tool_calls"].([]any); ok {
-		for _, tc := range tcs {
-			if toolCall, ok := tc.(map[string]any); ok {
-				toolCalls = append(toolCalls, toolCall)
-			}
-		}
-	}
-
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}
-	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
-		chatResponse.Usage = &TokenUsage{
-			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
-		}
-	}
-
-	return chatResponse, nil
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &content,
+			ReasonContent: &reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -191,13 +198,18 @@ func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
+	if chatModelConfig != nil {
+		chatModelConfig.ToolCallsResult = nil
+		chatModelConfig.UsageResult = nil
+	}
 
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/chat/completions", resolvedBaseURL)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), g.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
 	if chatModelConfig != nil {
 		if chatModelConfig.Thinking != nil {
@@ -247,23 +259,38 @@ func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	sawTerminal := false
 
 	accumulatedToolCalls := make(map[int]map[string]any)
-	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		choices, ok := event["choices"].([]interface{})
+	done, err := ParseSSEStream[map[string]any](resp.Body, func(event map[string]any) error {
+		common.Info(fmt.Sprintf("%v", event))
+
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
+		}
+		choices, ok := event["choices"].([]any)
 		if !ok || len(choices) == 0 {
 			return nil
 		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
+		choice, ok := choices[0].(map[string]any)
 		if !ok {
 			return nil
 		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
+		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
+		delta, ok := choice["delta"].(map[string]any)
 		if !ok {
 			return nil
 		}
 
 		accumulateToolCallDeltas(delta, accumulatedToolCalls)
+		if reasoning, ok := delta["reasoning_content"].(string); ok && reasoning != "" {
+			if err := sender(nil, &reasoning); err != nil {
+				return err
+			}
+		}
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
@@ -297,10 +324,6 @@ func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 			}
 		}
 
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			sawTerminal = true
-		}
 		return nil
 	})
 	if err != nil {
@@ -327,22 +350,21 @@ func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	return nil
 }
 
-type giteeEmbeddingResponse struct {
-	Object string               `json:"object"`
-	Data   []giteeEmbeddingData `json:"data"`
-	Model  string               `json:"model"`
-	Usage  giteeUsage           `json:"usage"`
-}
-
-type giteeEmbeddingData struct {
-	Object    string    `json:"object"`
-	Embedding []float64 `json:"embedding"`
-	Index     int       `json:"index"`
-}
-
-type giteeUsage struct {
-	PromptTokens int `json:"prompt_tokens"`
-	TotalTokens  int `json:"total_tokens"`
+// GiteeEmbeddingResponse mirrors GiteeAI's embeddings response.
+type GiteeEmbeddingResponse struct {
+	ID     string `json:"id"`
+	Object string `json:"object"`
+	Model  string `json:"model"`
+	Data   []struct {
+		Object    string    `json:"object"`
+		Embedding []float64 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // Embed embeds a list of texts into embeddings
@@ -406,10 +428,15 @@ func (g *GiteeModel) Embed(ctx context.Context, modelName *string, texts []strin
 		return nil, fmt.Errorf("Gitee embeddings API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var parsed giteeEmbeddingResponse
+	var parsed GiteeEmbeddingResponse
 	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens:     parsed.Usage.PromptTokens,
+		CompletionTokens: parsed.Usage.CompletionTokens,
+		TotalTokens:      parsed.Usage.TotalTokens,
+	}, "embedding")
 
 	var embeddings []EmbeddingData
 	for _, dataElem := range parsed.Data {
@@ -428,6 +455,24 @@ type giteeRerankRequest struct {
 	Documents       []string `json:"documents"`
 	TopN            int      `json:"top_n"`
 	ReturnDocuments bool     `json:"return_documents"`
+}
+
+// GiteeRerankResponse mirrors GiteeAI's rerank response.
+type GiteeRerankResponse struct {
+	ID      string `json:"id"`
+	Model   string `json:"model"`
+	Results []struct {
+		Index    int `json:"index"`
+		Document struct {
+			Text string `json:"text"`
+		} `json:"document"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // Rerank calculates similarity scores between query and documents
@@ -452,9 +497,9 @@ func (g *GiteeModel) Rerank(ctx context.Context, modelName *string, query string
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.Rerank)
 
-	var topN = rerankConfig.TopN
-	if rerankConfig.TopN == 0 {
-		topN = len(documents)
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 {
+		topN = rerankConfig.TopN
 	}
 
 	reqBody := giteeRerankRequest{
@@ -496,9 +541,22 @@ func (g *GiteeModel) Rerank(ctx context.Context, modelName *string, query string
 		return nil, fmt.Errorf("gitee rerank API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var rerankResponse RerankResponse
-	if err = json.Unmarshal(body, &rerankResponse); err != nil {
+	var parsed GiteeRerankResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens:     parsed.Usage.PromptTokens,
+		CompletionTokens: parsed.Usage.CompletionTokens,
+		TotalTokens:      parsed.Usage.TotalTokens,
+	}, "rerank")
+
+	rerankResponse := RerankResponse{Data: make([]RerankResult, 0, len(parsed.Results))}
+	for _, result := range parsed.Results {
+		rerankResponse.Data = append(rerankResponse.Data, RerankResult{
+			Index:          result.Index,
+			RelevanceScore: result.RelevanceScore,
+		})
 	}
 
 	return &rerankResponse, nil

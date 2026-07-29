@@ -33,7 +33,7 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
     loading,
     handleScroll,
     hasNextPage,
-  } = useFetchKnowledgeList(true, debouncedSearchString);
+  } = useFetchKnowledgeList(false, debouncedSearchString);
   const datasetCacheRef = useRef(new Map<string, IDataset>());
 
   const datasetList = useMemo(() => {
@@ -62,29 +62,29 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
   }, [datasetId, datasetList]);
 
   const nextOptions = useMemo(() => {
-    const datasetListMap = datasetList
-      .filter((x) => x.chunk_method !== DocumentParserType.Tag)
-      .map((item: IDataset) => {
-        return {
-          label: item.name,
-          icon: () => (
-            <RAGFlowAvatar
-              className="size-4"
-              avatar={item.avatar}
-              name={item.name}
-            />
-          ),
-          suffix: (
-            <section className="flex gap-2">
-              <DatasetLabel text={item.nickname} />
-              <DatasetLabel text={item.embedding_model} />
-            </section>
-          ),
-          value: item.id,
-          disabled:
-            item.embedding_model !== selectedEmbedId && selectedEmbedId !== '',
-        };
-      });
+    const datasetListMap = datasetList.map((item: IDataset) => {
+      return {
+        label: item.name,
+        icon: () => (
+          <RAGFlowAvatar
+            className="size-4"
+            avatar={item.avatar}
+            name={item.name}
+          />
+        ),
+        suffix: (
+          <section className="flex gap-2">
+            <DatasetLabel text={item.nickname} />
+            <DatasetLabel text={item.embedding_model} />
+          </section>
+        ),
+        value: item.id,
+        disabled:
+          item.chunk_count <= 0 ||
+          item.chunk_method === DocumentParserType.Tag ||
+          (item.embedding_model !== selectedEmbedId && selectedEmbedId !== ''),
+      };
+    });
 
     return datasetListMap;
   }, [datasetList, selectedEmbedId]);

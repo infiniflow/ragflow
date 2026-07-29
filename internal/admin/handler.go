@@ -215,10 +215,10 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	var users []map[string]interface{}
 	switch common.GetRAGFlowType() {
 	case common.OpenSourceVersion:
-		ctx := c.Request.Context()
 		users, err = h.service.ListUsers(ctx, pageInt, pageSizeInt, name, status, sort, orderBy)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
@@ -228,7 +228,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 		common.SuccessWithData(c, users, "List users")
 		return
 	case common.EnterpriseEdition:
-		users, err = h.service.ListUsersEE(pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaPtr)
+		users, err = h.service.ListUsersEE(ctx, pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaPtr)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return
@@ -865,7 +865,7 @@ func (h *Handler) HandleNoRoute(c *gin.Context) {
 
 // GetLogLevel returns the current log level
 func (h *Handler) GetLogLevel(c *gin.Context) {
-	level := common.GetLevel()
+	level := common.GetLogLevel()
 	common.SuccessWithData(c, gin.H{"level": level}, "SUCCESS")
 }
 
@@ -882,7 +882,7 @@ func (h *Handler) SetLogLevel(c *gin.Context) {
 		return
 	}
 
-	if err := common.SetLevel(req.Level); err != nil {
+	if err := common.SetLogLevel(req.Level); err != nil {
 		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 		return
 	}
@@ -1095,11 +1095,12 @@ func (h *Handler) ListIngestionTasks(c *gin.Context) {
 	var err error
 	var tasks []map[string]interface{}
 	var req ListIngestionTasksRequest
+	ctx := c.Request.Context()
+
 	if err = c.ShouldBindJSON(&req); err != nil {
-		ctx := c.Request.Context()
 		tasks, err = h.service.ListIngestionTasks(ctx)
 	} else {
-		tasks, err = h.service.ListIngestionTasksByCondition(req.Email, req.Status)
+		tasks, err = h.service.ListIngestionTasksByCondition(ctx, req.Email, req.Status)
 	}
 
 	if err != nil {
