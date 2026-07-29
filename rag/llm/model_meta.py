@@ -17,6 +17,7 @@ import json
 import logging
 import aiohttp
 from abc import ABC
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 from json.decoder import JSONDecodeError
 from typing import ClassVar
@@ -462,6 +463,117 @@ class OpenAIAPICompatible(Base):
 
 class NVIDIA(OpenAIAPICompatible):
     _FACTORY_NAME = "NVIDIA"
+    _HOSTED_API_HOST = "integrate.api.nvidia.com"
+    _CATALOG_URL = "https://api.ngc.nvidia.com/v2/search/catalog/resources/ENDPOINT"
+    _CATALOG_QUERY = {"page": 0, "pageSize": 500}
+    _MODEL_LIST_TIMEOUT = aiohttp.ClientTimeout(total=30)
+
+    @staticmethod
+    def _normalized_publisher(value):
+        return value.strip().lower().replace("_", "-")
+
+    @classmethod
+    def _catalog_resources(cls, catalog):
+        if not isinstance(catalog, dict):
+            return None
+        for group in catalog.get("results", []):
+            if not isinstance(group, dict) or group.get("groupValue") != "ENDPOINT":
+                continue
+            resources = group.get("resources")
+            total_count = group.get("totalCount")
+            if not isinstance(resources, list) or not isinstance(total_count, int) or len(resources) < total_count:
+                return None
+            return resources
+        return None
+
+    @staticmethod
+    def _label_values(resource, key):
+        for label in resource.get("labels", []):
+            if isinstance(label, dict) and label.get("key") == key:
+                values = label.get("values", [])
+                return values if isinstance(values, list) else []
+        return []
+
+    @staticmethod
+    def _unresolved_label_values(resource, key):
+        for label in resource.get("labels", []):
+            if isinstance(label, dict) and label.get("key") == key:
+                values = label.get("unresolvedValues", [])
+                return values if isinstance(values, list) else []
+        return []
+
+    @staticmethod
+    def _attribute_value(resource, key):
+        for attribute in resource.get("attributes", []):
+            if isinstance(attribute, dict) and attribute.get("key") == key:
+                return attribute.get("value")
+        return None
+
+    @classmethod
+    def _is_active_free_endpoint(cls, resource, now):
+        if "Free Endpoint" not in cls._label_values(resource, "nimType"):
+            return False
+        deprecation = cls._attribute_value(resource, "DEPRECATION")
+        if not deprecation:
+            return True
+        try:
+            cutoff = datetime.strptime(deprecation, "%m/%d/%Y").replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            return False
+        return cutoff.date() > now.date()
+
+    @classmethod
+    def _filter_hosted_models(cls, models, catalog, now=None):
+        resources = cls._catalog_resources(catalog)
+        if resources is None:
+            return []
+
+        now = now or datetime.now(timezone.utc)
+        active_endpoints = set()
+        for resource in resources:
+            if not isinstance(resource, dict) or not cls._is_active_free_endpoint(resource, now):
+                continue
+            publishers = cls._unresolved_label_values(resource, "publisher")
+            display_name = resource.get("displayName") or resource.get("name")
+            if not publishers or not isinstance(display_name, str) or not display_name:
+                continue
+            active_endpoints.add((cls._normalized_publisher(publishers[0]), display_name))
+
+        filtered = []
+        for model in models:
+            publisher, separator, model_name = model["name"].partition("/")
+            if separator and (cls._normalized_publisher(publisher), model_name) in active_endpoints:
+                filtered.append(model)
+        return filtered
+
+    def _uses_hosted_catalog(self):
+        model_list_url = self._get_model_list_url()
+        return bool(model_list_url and urlparse(model_list_url).hostname == self._HOSTED_API_HOST)
+
+    async def get_model_list(self):
+        if not self._uses_hosted_catalog():
+            return await super().get_model_list()
+
+        try:
+            async with aiohttp.ClientSession(timeout=self._MODEL_LIST_TIMEOUT) as session:
+                async with session.get(self._get_model_list_url(), headers={"Authorization": f"Bearer {self._get_api_key()}"}) as response:
+                    if response.status != 200:
+                        logging.warning("[NVIDIA] Model list request failed with HTTP %s", response.status)
+                        return []
+                    raw_models = await response.json()
+                async with session.get(
+                    self._CATALOG_URL,
+                    params={"q": json.dumps(self._CATALOG_QUERY, separators=(",", ":")), "group-labels-by-labelset": "true"},
+                ) as response:
+                    if response.status != 200:
+                        logging.warning("[NVIDIA] Endpoint catalog request failed with HTTP %s", response.status)
+                        return []
+                    catalog = await response.json()
+        except (aiohttp.ClientError, TimeoutError, ValueError) as error:
+            logging.warning("[NVIDIA] Hosted model discovery failed: %s", error)
+            return []
+
+        return self._filter_hosted_models(self._format_model_list(raw_models), catalog)
 
     def _format_model_list(self, raw_model_list):
         models = super()._format_model_list(raw_model_list)

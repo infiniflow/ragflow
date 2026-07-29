@@ -12,62 +12,6 @@
   "class": "nvidia",
   "models": [
     {
-      "name": "01-ai/yi-large",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "adept/fuyu-8b",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "ai21labs/jamba-1.5-large-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "aisingapore/sea-lion-7b-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "baai/bge-m3",
-      "max_tokens": 8192,
-      "model_types": [
-        "embedding"
-      ]
-    },
-    {
-      "name": "bigcode/starcoder2-15b",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "databricks/dbrx-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "deepseek-ai/deepseek-coder-6.7b-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "deepseek-ai/deepseek-v4-flash",
       "max_tokens": 1048576,
       "model_types": [
@@ -88,53 +32,7 @@
       }
     },
     {
-      "name": "google/codegemma-1.1-7b",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "google/codegemma-7b",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "google/deplot",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat",
-        "vision"
-      ]
-    },
-    {
       "name": "google/diffusiongemma-26b-a4b-it",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "google/gemma-2b",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "google/gemma-3-12b-it",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "google/gemma-3-4b-it",
       "max_tokens": 8192,
       "model_types": [
         "chat"
@@ -149,48 +47,6 @@
       "tools": {
         "support": true
       }
-    },
-    {
-      "name": "google/recurrentgemma-2b",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "ibm/granite-3.0-3b-a800m-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "ibm/granite-3.0-8b-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "ibm/granite-34b-code-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "ibm/granite-8b-code-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "meta/codellama-70b",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
     },
     {
       "name": "meta/llama-3.1-70b-instruct",
@@ -254,68 +110,7 @@
       ]
     },
     {
-      "name": "meta/llama2-70b",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "microsoft/kosmos-2",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat",
-        "vision"
-      ]
-    },
-    {
-      "name": "microsoft/phi-3-vision-128k-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat",
-        "vision"
-      ]
-    },
-    {
-      "name": "microsoft/phi-3.5-moe-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "minimaxai/minimax-m3",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "mistralai/codestral-22b-instruct-v0.1",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "mistralai/mistral-7b-instruct-v0.3",
-      "max_tokens": 32768,
-      "model_types": [
-        "chat"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "mistralai/mistral-large",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "mistralai/mistral-large-2-instruct",
       "max_tokens": 8192,
       "model_types": [
         "chat"
@@ -343,13 +138,6 @@
       }
     },
     {
-      "name": "mistralai/mixtral-8x22b-v0.1",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "moonshotai/kimi-k2.6",
       "max_tokens": 262144,
       "model_types": [
@@ -361,69 +149,7 @@
       }
     },
     {
-      "name": "nv-mistralai/mistral-nemo-12b-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "nvidia/ai-synthetic-video-detector",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "nvidia/cosmos-reason2-8b",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "nvidia/embed-qa-4",
-      "max_tokens": 8192,
-      "model_types": [
-        "embedding"
-      ]
-    },
-    {
       "name": "nvidia/ising-calibration-1.5-31b",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "nvidia/llama-3.1-nemoguard-8b-content-safety",
-      "max_tokens": 131072,
-      "model_types": [
-        "chat"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "nvidia/llama-3.1-nemoguard-8b-topic-control",
-      "max_tokens": 131072,
-      "model_types": [
-        "chat"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "nvidia/llama-3.1-nemotron-51b-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "nvidia/llama-3.1-nemotron-70b-instruct",
       "max_tokens": 8192,
       "model_types": [
         "chat"
@@ -458,34 +184,6 @@
       }
     },
     {
-      "name": "nvidia/llama-3.1-nemotron-ultra-253b-v1",
-      "max_tokens": 131072,
-      "model_types": [
-        "chat"
-      ],
-      "thinking": {
-        "default_value": true,
-        "clear_thinking": true
-      },
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "nvidia/llama-3.2-nemoretriever-1b-vlm-embed-v1",
-      "max_tokens": 8192,
-      "model_types": [
-        "embedding"
-      ]
-    },
-    {
-      "name": "nvidia/llama-3.2-nv-embedqa-1b-v1",
-      "max_tokens": 8192,
-      "model_types": [
-        "embedding"
-      ]
-    },
-    {
       "name": "nvidia/llama-3.3-nemotron-super-49b-v1",
       "max_tokens": 131072,
       "model_types": [
@@ -508,41 +206,6 @@
       "tools": {
         "support": true
       }
-    },
-    {
-      "name": "nvidia/llama-nemotron-embed-1b-v2",
-      "max_tokens": 8192,
-      "model_types": [
-        "embedding"
-      ]
-    },
-    {
-      "name": "nvidia/llama-nemotron-embed-vl-1b-v2",
-      "max_tokens": 8192,
-      "model_types": [
-        "embedding"
-      ]
-    },
-    {
-      "name": "nvidia/llama3-chatqa-1.5-70b",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "nvidia/mistral-nemo-minitron-8b-8k-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "nvidia/nemoretriever-parse",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
     },
     {
       "name": "nvidia/nemotron-3-embed-1b",
@@ -601,20 +264,6 @@
       ]
     },
     {
-      "name": "nvidia/nemotron-4-340b-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "nvidia/nemotron-4-340b-reward",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "nvidia/nemotron-mini-4b-instruct",
       "max_tokens": 4096,
       "model_types": [
@@ -626,28 +275,6 @@
     },
     {
       "name": "nvidia/nemotron-nano-12b-v2-vl",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat",
-        "vision"
-      ]
-    },
-    {
-      "name": "nvidia/nemotron-nano-3-30b-a3b",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "nvidia/nemotron-parse",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "nvidia/neva-22b",
       "max_tokens": 8192,
       "model_types": [
         "chat",
@@ -669,46 +296,8 @@
       ]
     },
     {
-      "name": "nvidia/nv-embedqa-e5-v5",
-      "max_tokens": 512,
-      "model_types": [
-        "embedding"
-      ]
-    },
-    {
-      "name": "nvidia/nv-embedqa-mistral-7b-v2",
-      "max_tokens": 512,
-      "model_types": [
-        "embedding"
-      ]
-    },
-    {
-      "name": "nvidia/nvclip",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "nvidia/nvidia-nemotron-nano-9b-v2",
       "max_tokens": 131072,
-      "model_types": [
-        "chat"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "nvidia/riva-translate-4b-instruct",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "nvidia/riva-translate-4b-instruct-v1.1",
-      "max_tokens": 4096,
       "model_types": [
         "chat"
       ],
@@ -721,14 +310,6 @@
       "max_tokens": 8192,
       "model_types": [
         "chat"
-      ]
-    },
-    {
-      "name": "nvidia/vila",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat",
-        "vision"
       ]
     },
     {
@@ -756,13 +337,6 @@
       ]
     },
     {
-      "name": "snowflake/arctic-embed-l",
-      "max_tokens": 8192,
-      "model_types": [
-        "embedding"
-      ]
-    },
-    {
       "name": "stepfun-ai/step-3.7-flash",
       "max_tokens": 8192,
       "model_types": [
@@ -777,42 +351,7 @@
       ]
     },
     {
-      "name": "writer/palmyra-creative-122b",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "writer/palmyra-fin-70b-32k",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "writer/palmyra-med-70b",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "writer/palmyra-med-70b-32k",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
       "name": "z-ai/glm-5.2",
-      "max_tokens": 8192,
-      "model_types": [
-        "chat"
-      ]
-    },
-    {
-      "name": "zyphra/zamba2-7b-instruct",
       "max_tokens": 8192,
       "model_types": [
         "chat"

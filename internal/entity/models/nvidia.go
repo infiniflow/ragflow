@@ -23,14 +23,23 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"ragflow/internal/common"
 	"sort"
 	"strings"
+	"time"
+)
+
+const (
+	nvidiaHostedAPIHost = "integrate.api.nvidia.com"
+	nvidiaCatalogURL    = "https://api.ngc.nvidia.com/v2/search/catalog/resources/ENDPOINT"
 )
 
 // NvidiaModel implements ModelDriver for Nvidia
 type NvidiaModel struct {
-	baseModel BaseModel
+	baseModel     BaseModel
+	catalogURL    string
+	hostedAPIHost string
 }
 
 // NewNvidiaModel creates a new Nvidia model instance
@@ -41,6 +50,8 @@ func NewNvidiaModel(baseURL map[string]string, urlSuffix URLSuffix) *NvidiaModel
 			URLSuffix:  urlSuffix,
 			httpClient: NewDriverHTTPClient(),
 		},
+		catalogURL:    nvidiaCatalogURL,
+		hostedAPIHost: nvidiaHostedAPIHost,
 	}
 }
 
@@ -564,10 +575,185 @@ func (n NvidiaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 		provider = pm.FindProvider("NVIDIA")
 	}
 	models := parseNvidiaModelList(modelList, provider)
+	if n.usesHostedCatalog(resolvedBaseURL) {
+		catalog, catalogErr := n.fetchHostedCatalog(ctx)
+		if catalogErr != nil {
+			return nil, catalogErr
+		}
+		models = filterNvidiaHostedModels(models, catalog, time.Now().UTC())
+	}
 	if len(models) == 0 {
 		return nil, fmt.Errorf("Nvidia models API returned no usable models")
 	}
 	return models, nil
+}
+
+type nvidiaCatalogLabel struct {
+	Key              string   `json:"key"`
+	Values           []string `json:"values"`
+	UnresolvedValues []string `json:"unresolvedValues"`
+}
+
+type nvidiaCatalogAttribute struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+type nvidiaCatalogResource struct {
+	Name        string                   `json:"name"`
+	DisplayName string                   `json:"displayName"`
+	Labels      []nvidiaCatalogLabel     `json:"labels"`
+	Attributes  []nvidiaCatalogAttribute `json:"attributes"`
+}
+
+type nvidiaCatalogGroup struct {
+	GroupValue string                  `json:"groupValue"`
+	TotalCount int                     `json:"totalCount"`
+	Resources  []nvidiaCatalogResource `json:"resources"`
+}
+
+type nvidiaCatalogResponse struct {
+	Results []nvidiaCatalogGroup `json:"results"`
+}
+
+func (n NvidiaModel) usesHostedCatalog(baseURL string) bool {
+	parsed, err := url.Parse(baseURL)
+	return err == nil && strings.EqualFold(parsed.Hostname(), n.hostedAPIHost)
+}
+
+func (n NvidiaModel) fetchHostedCatalog(ctx context.Context) (*nvidiaCatalogResponse, error) {
+	parsed, err := url.Parse(n.catalogURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse Nvidia endpoint catalog URL: %w", err)
+	}
+	query := parsed.Query()
+	query.Set("q", `{"page":0,"pageSize":500}`)
+	query.Set("group-labels-by-labelset", "true")
+	parsed.RawQuery = query.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Nvidia endpoint catalog request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := n.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to request Nvidia endpoint catalog: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read Nvidia endpoint catalog: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Nvidia endpoint catalog error: %s, body: %s", resp.Status, string(body))
+	}
+
+	var catalog nvidiaCatalogResponse
+	if err = json.Unmarshal(body, &catalog); err != nil {
+		return nil, fmt.Errorf("failed to parse Nvidia endpoint catalog: %w", err)
+	}
+	return &catalog, nil
+}
+
+func filterNvidiaHostedModels(models []ListModelResponse, catalog *nvidiaCatalogResponse, now time.Time) []ListModelResponse {
+	if catalog == nil {
+		return nil
+	}
+
+	var resources []nvidiaCatalogResource
+	for _, group := range catalog.Results {
+		if group.GroupValue != "ENDPOINT" {
+			continue
+		}
+		if group.TotalCount < 0 || len(group.Resources) < group.TotalCount {
+			return nil
+		}
+		resources = group.Resources
+		break
+	}
+	if resources == nil {
+		return nil
+	}
+
+	activeEndpoints := make(map[string]struct{}, len(resources))
+	for _, resource := range resources {
+		if !nvidiaCatalogResourceIsActive(resource, now) {
+			continue
+		}
+		publishers := nvidiaCatalogLabelValues(resource, "publisher", true)
+		displayName := resource.DisplayName
+		if displayName == "" {
+			displayName = resource.Name
+		}
+		if len(publishers) == 0 || displayName == "" {
+			continue
+		}
+		activeEndpoints[nvidiaCatalogKey(publishers[0], displayName)] = struct{}{}
+	}
+
+	filtered := make([]ListModelResponse, 0, len(models))
+	for _, model := range models {
+		publisher, modelName, found := strings.Cut(model.Name, "/")
+		if !found {
+			continue
+		}
+		if _, ok := activeEndpoints[nvidiaCatalogKey(publisher, modelName)]; ok {
+			filtered = append(filtered, model)
+		}
+	}
+	return filtered
+}
+
+func nvidiaCatalogResourceIsActive(resource nvidiaCatalogResource, now time.Time) bool {
+	if !containsNvidiaCatalogValue(nvidiaCatalogLabelValues(resource, "nimType", false), "Free Endpoint") {
+		return false
+	}
+	deprecation := ""
+	for _, attribute := range resource.Attributes {
+		if attribute.Key == "DEPRECATION" {
+			deprecation = attribute.Value
+			break
+		}
+	}
+	if deprecation == "" {
+		return true
+	}
+	cutoff, err := time.Parse("01/02/2006", deprecation)
+	if err != nil {
+		return false
+	}
+	today := time.Date(now.UTC().Year(), now.UTC().Month(), now.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	return cutoff.After(today)
+}
+
+func nvidiaCatalogLabelValues(resource nvidiaCatalogResource, key string, unresolved bool) []string {
+	for _, label := range resource.Labels {
+		if label.Key != key {
+			continue
+		}
+		if unresolved {
+			return label.UnresolvedValues
+		}
+		return label.Values
+	}
+	return nil
+}
+
+func nvidiaCatalogKey(publisher, modelName string) string {
+	publisher = strings.ReplaceAll(strings.ToLower(strings.TrimSpace(publisher)), "_", "-")
+	return publisher + "\x00" + modelName
+}
+
+func containsNvidiaCatalogValue(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
 
 func parseNvidiaModelList(modelList ModelList, provider *Provider) []ListModelResponse {
