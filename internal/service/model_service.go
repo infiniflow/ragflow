@@ -385,6 +385,11 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 	if err != nil {
 		return nil, err
 	}
+	if strings.EqualFold(provider.ProviderName, "NVIDIA") {
+		if err = m.reconcileNvidiaInstanceModels(ctx, dao.DB, provider, instance, modelList); err != nil {
+			return nil, err
+		}
+	}
 
 	var result []map[string]interface{}
 	for _, model := range modelList {
@@ -398,6 +403,122 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 		})
 	}
 	return result, nil
+}
+
+func (m *ModelProviderService) reconcileNvidiaInstanceModels(
+	ctx context.Context,
+	db *gorm.DB,
+	provider *entity.TenantModelProvider,
+	instance *entity.TenantModelInstance,
+	remoteModels []modelModule.ListModelResponse,
+) error {
+	if provider == nil || instance == nil || provider.ID == "" || instance.ID == "" || instance.ProviderID != provider.ID {
+		return errors.New("invalid NVIDIA provider instance scope")
+	}
+
+	normalized := make([]modelModule.ListModelResponse, 0, len(remoteModels))
+	seen := make(map[string]struct{}, len(remoteModels))
+	for _, remote := range remoteModels {
+		remote.Name = strings.TrimSpace(remote.Name)
+		if remote.Name == "" {
+			continue
+		}
+		if _, ok := seen[remote.Name]; ok {
+			continue
+		}
+		seen[remote.Name] = struct{}{}
+		if len(remote.ModelTypes) == 0 {
+			remote.ModelTypes = modelModule.InferModelTypes(remote.Name)
+		}
+		normalized = append(normalized, remote)
+	}
+	if len(normalized) == 0 {
+		return errors.New("NVIDIA model discovery returned no usable models")
+	}
+
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		existingModels, err := m.modelDAO.GetModelsByInstanceID(ctx, tx, instance.ID)
+		if err != nil {
+			return err
+		}
+		existingByName := make(map[string]*entity.TenantModel, len(existingModels))
+		for _, existing := range existingModels {
+			existingByName[existing.ModelName] = existing
+		}
+
+		for _, remote := range normalized {
+			maxTokens := 8192
+			if remote.MaxTokens != nil && *remote.MaxTokens > 0 {
+				maxTokens = *remote.MaxTokens
+			}
+			modelType := int(entity.ModelTypeFromStrings(remote.ModelTypes))
+
+			if existing, ok := existingByName[remote.Name]; ok {
+				extra := make(map[string]interface{})
+				if existing.Extra != "" {
+					if err := json.Unmarshal([]byte(existing.Extra), &extra); err != nil {
+						return fmt.Errorf("decode metadata for NVIDIA model %q: %w", remote.Name, err)
+					}
+				}
+				setDiscoveredModelMetadata(extra, remote, maxTokens)
+				extraBytes, err := json.Marshal(extra)
+				if err != nil {
+					return fmt.Errorf("encode metadata for NVIDIA model %q: %w", remote.Name, err)
+				}
+				if err = m.modelDAO.UpdateByID(ctx, tx, existing.ID, map[string]interface{}{
+					"model_type": modelType,
+					"extra":      string(extraBytes),
+				}); err != nil {
+					return err
+				}
+				delete(existingByName, remote.Name)
+				continue
+			}
+
+			extra := map[string]interface{}{"verify": entity.ModelVerifyUnknown}
+			setDiscoveredModelMetadata(extra, remote, maxTokens)
+			extraBytes, err := json.Marshal(extra)
+			if err != nil {
+				return fmt.Errorf("encode metadata for NVIDIA model %q: %w", remote.Name, err)
+			}
+			if err = m.modelDAO.Create(ctx, tx, &entity.TenantModel{
+				ID:         utility.GenerateToken(),
+				ModelName:  remote.Name,
+				ModelType:  modelType,
+				ProviderID: provider.ID,
+				InstanceID: instance.ID,
+				Status:     "active",
+				Extra:      string(extraBytes),
+			}); err != nil {
+				return err
+			}
+		}
+
+		staleIDs := make([]string, 0, len(existingByName))
+		for _, stale := range existingByName {
+			staleIDs = append(staleIDs, stale.ID)
+		}
+		if len(staleIDs) > 0 {
+			if _, err := m.modelDAO.DeleteByIDs(ctx, tx, staleIDs); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func setDiscoveredModelMetadata(extra map[string]interface{}, model modelModule.ListModelResponse, maxTokens int) {
+	extra["max_tokens"] = maxTokens
+	if model.MaxDimension != nil {
+		extra["max_dimension"] = *model.MaxDimension
+	}
+	if len(model.Dimensions) > 0 {
+		extra["dimensions"] = model.Dimensions
+	}
+	if model.Thinking != nil {
+		extra["thinking"] = model.Thinking.DefaultValue
+		extra["clear_thinking"] = model.Thinking.ClearThinking
+	}
 }
 
 type CreateInstanceModelInfo struct {
