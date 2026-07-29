@@ -118,7 +118,14 @@ export const AssistantGroupButton = ({
         )}
         {showLog && (
           <ToggleGroupItem value="f" onClick={handleShowLogSheet}>
-            <NotebookText className="size-4" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <NotebookText className="size-4" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{t('flow.log')}</TooltipContent>
+            </Tooltip>
           </ToggleGroupItem>
         )}
         {!!attachment?.doc_id && !isShare && (
