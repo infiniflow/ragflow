@@ -695,13 +695,15 @@ class HuggingFace(Base):
         if isinstance(model_type, dict):
             if "embedding" in model_type:
                 return [LLMType.EMBEDDING.value]
-            return [LLMType.CHAT.value]
+            if "rerank" in model_type:
+                return [LLMType.RERANK.value]
+            return []
         # TGI format: "text-generation" / "text2text-generation"
         if isinstance(model_type, str):
             if "embedding" in model_type.lower():
                 return [LLMType.EMBEDDING.value]
             return [LLMType.CHAT.value]
-        return [LLMType.CHAT.value]
+        return []
 
     def _format_model_list(self, raw_model_list):
         if not isinstance(raw_model_list, dict):
