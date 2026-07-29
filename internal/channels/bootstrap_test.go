@@ -17,10 +17,13 @@
 package channels
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"ragflow/internal/channels/core"
 )
 
 func TestStartRetryDelay(t *testing.T) {
@@ -115,5 +118,62 @@ func TestGatewayEnabledRejectsInvalidValue(t *testing.T) {
 
 	if gatewayEnabled() {
 		t.Fatal("gatewayEnabled() = true for invalid value, want false")
+	}
+}
+
+func TestWhatsAppEnqueueDoesNotMarkDroppedMessageSeen(t *testing.T) {
+	ch := newWhatsAppChannel(whatsappAccount{AccountID: "account-1"})
+	worker := &whatsappChatWorker{queue: make(chan core.IncomingMessage, 1)}
+	worker.queue <- core.IncomingMessage{MessageID: "queued"}
+	ch.workers["chat-1"] = worker
+
+	ok := ch.enqueueIncoming(context.Background(), core.IncomingMessage{
+		ChatID:    "chat-1",
+		MessageID: "dropped",
+	})
+
+	if ok {
+		t.Fatal("enqueueIncoming succeeded for a full queue")
+	}
+	if _, seen := ch.seen["dropped"]; seen {
+		t.Fatal("dropped message was marked seen")
+	}
+}
+
+func TestWhatsAppEnqueueMarksSeenAfterSuccessfulHandoff(t *testing.T) {
+	ch := newWhatsAppChannel(whatsappAccount{AccountID: "account-1"})
+	ch.workers["chat-1"] = &whatsappChatWorker{queue: make(chan core.IncomingMessage, 1)}
+	msg := core.IncomingMessage{ChatID: "chat-1", MessageID: "message-1"}
+
+	if ok := ch.enqueueIncoming(context.Background(), msg); !ok {
+		t.Fatal("enqueueIncoming failed for an empty queue")
+	}
+	if _, seen := ch.seen[msg.MessageID]; !seen {
+		t.Fatal("successfully handed off message was not marked seen")
+	}
+	if ok := ch.enqueueIncoming(context.Background(), msg); ok {
+		t.Fatal("duplicate message was enqueued")
+	}
+}
+
+func TestWhatsAppRetireChatWorkerRequiresCurrentEmptyWorker(t *testing.T) {
+	ch := newWhatsAppChannel(whatsappAccount{AccountID: "account-1"})
+	worker := &whatsappChatWorker{queue: make(chan core.IncomingMessage, 1)}
+	worker.queue <- core.IncomingMessage{ChatID: "chat-1", MessageID: "message-1"}
+	ch.workers["chat-1"] = worker
+
+	if ch.retireChatWorker("chat-1", worker) {
+		t.Fatal("retireChatWorker retired a non-empty worker")
+	}
+	if ch.workers["chat-1"] != worker {
+		t.Fatal("non-empty worker was removed from ownership map")
+	}
+
+	<-worker.queue
+	if !ch.retireChatWorker("chat-1", worker) {
+		t.Fatal("retireChatWorker did not retire an empty current worker")
+	}
+	if _, ok := ch.workers["chat-1"]; ok {
+		t.Fatal("empty retired worker remains in ownership map")
 	}
 }

@@ -392,7 +392,7 @@ func (c *whatsappChannel) handleEvent(ctx context.Context, item map[string]any) 
 		return
 	}
 	messageID := strings.TrimSpace(fmt.Sprint(item["message_id"]))
-	if messageID == "" || c.isSeen(messageID) {
+	if messageID == "" {
 		return
 	}
 	incoming := core.IncomingMessage{
@@ -405,34 +405,56 @@ func (c *whatsappChannel) handleEvent(ctx context.Context, item map[string]any) 
 		Text:      fmt.Sprint(item["text"]),
 		Raw:       item,
 	}
-	c.enqueueIncoming(ctx, incoming)
+	_ = c.enqueueIncoming(ctx, incoming)
 }
 
-// enqueueIncoming schedules message handling without blocking the websocket reader.
-func (c *whatsappChannel) enqueueIncoming(ctx context.Context, incoming core.IncomingMessage) {
-	worker := c.chatWorker(ctx, incoming.ChatID)
-	select {
-	case worker.queue <- incoming:
-	case <-ctx.Done():
-	default:
-		log.Printf("[whatsapp:%s] dropping message %s for chat %s: queue is full", c.account.AccountID, incoming.MessageID, incoming.ChatID)
+// enqueueIncoming schedules message handling and marks the message seen after a successful handoff.
+func (c *whatsappChannel) enqueueIncoming(ctx context.Context, incoming core.IncomingMessage) bool {
+	if ctx.Err() != nil {
+		return false
 	}
-}
 
-// chatWorker returns the ordered worker for one external chat.
-func (c *whatsappChannel) chatWorker(ctx context.Context, chatID string) *whatsappChatWorker {
+	now := time.Now()
+	var worker *whatsappChatWorker
+	startWorker := false
+	queueFull := false
+
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.pruneSeenLocked(now)
+	if _, ok := c.seen[incoming.MessageID]; ok {
+		c.mu.Unlock()
+		return false
+	}
 	if c.workers == nil {
 		c.workers = map[string]*whatsappChatWorker{}
 	}
-	if worker := c.workers[chatID]; worker != nil {
-		return worker
+	worker = c.workers[incoming.ChatID]
+	if worker == nil {
+		worker = &whatsappChatWorker{queue: make(chan core.IncomingMessage, messageQueueSize)}
+		c.workers[incoming.ChatID] = worker
+		startWorker = true
 	}
-	worker := &whatsappChatWorker{queue: make(chan core.IncomingMessage, messageQueueSize)}
-	c.workers[chatID] = worker
-	go c.runChatWorker(ctx, chatID, worker)
-	return worker
+	select {
+	case worker.queue <- incoming:
+		c.seen[incoming.MessageID] = now
+		c.mu.Unlock()
+		if startWorker {
+			go c.runChatWorker(ctx, incoming.ChatID, worker)
+		}
+		return true
+	case <-ctx.Done():
+		c.mu.Unlock()
+	default:
+		queueFull = true
+		c.mu.Unlock()
+	}
+	if startWorker {
+		go c.runChatWorker(ctx, incoming.ChatID, worker)
+	}
+	if queueFull {
+		log.Printf("[whatsapp:%s] dropping message %s for chat %s: queue is full", c.account.AccountID, incoming.MessageID, incoming.ChatID)
+	}
+	return false
 }
 
 // runChatWorker processes one chat's inbound messages sequentially.
@@ -450,19 +472,29 @@ func (c *whatsappChannel) runChatWorker(ctx context.Context, chatID string, work
 			c.handleIncoming(ctx, msg)
 			resetTimer(idle, chatWorkerIdle)
 		case <-idle.C:
-			c.removeChatWorker(chatID, worker)
-			return
+			if c.retireChatWorker(chatID, worker) {
+				return
+			}
+			resetTimer(idle, chatWorkerIdle)
 		}
 	}
 }
 
-// removeChatWorker forgets an idle per-chat worker if it is still current.
-func (c *whatsappChannel) removeChatWorker(chatID string, worker *whatsappChatWorker) {
+// retireChatWorker removes an idle worker only while it is still current and empty.
+func (c *whatsappChannel) retireChatWorker(chatID string, worker *whatsappChatWorker) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.workers[chatID] == worker {
+	current := c.workers[chatID]
+	if current != worker {
+		return true
+	}
+	if len(worker.queue) > 0 {
+		return false
+	}
+	if current == worker {
 		delete(c.workers, chatID)
 	}
+	return true
 }
 
 // handleIncoming invokes the installed RAGFlow bridge for one queued message.
@@ -478,21 +510,13 @@ func (c *whatsappChannel) handleIncoming(ctx context.Context, incoming core.Inco
 	}
 }
 
-// isSeen records and filters duplicate WhatsApp message IDs for a bounded time window.
-func (c *whatsappChannel) isSeen(messageID string) bool {
-	now := time.Now()
-	c.mu.Lock()
-	defer c.mu.Unlock()
+// pruneSeenLocked removes expired duplicate-tracking entries while c.mu is held.
+func (c *whatsappChannel) pruneSeenLocked(now time.Time) {
 	for key, ts := range c.seen {
 		if now.Sub(ts) > messageTTL {
 			delete(c.seen, key)
 		}
 	}
-	if _, ok := c.seen[messageID]; ok {
-		return true
-	}
-	c.seen[messageID] = now
-	return false
 }
 
 // applySnapshot updates the cached connection and QR-code state from the gateway.
