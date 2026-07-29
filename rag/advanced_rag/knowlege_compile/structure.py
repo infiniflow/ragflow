@@ -2320,7 +2320,9 @@ async def _struct_upsert_dataset_graph_json(
         payload = {"from": src, "to": tgt, "type": rel_type}
         desc = f"{src} {rel_type} {tgt}"
         ltks, sm_ltks = _tokenize_for_search(desc)
-        row_id = _stable_row_id(json.dumps(payload), kb_id_str, compile_kwd, compilation_template_id or "", "dataset", "rel", src, tgt)
+        rel_key = f"{src.lower()} -> {rel_type.lower()} -> {tgt.lower()}"
+        row_id = _stable_row_id(rel_key, kb_id_str, compile_kwd, compilation_template_id or "", "dataset")
+        doc_ids = rel.get("doc_ids_kwd") or []
         row = {
             "id": row_id,
             "content_with_weight": json.dumps(payload, ensure_ascii=False),
@@ -2329,14 +2331,16 @@ async def _struct_upsert_dataset_graph_json(
             "scope_kwd": "dataset",
             "doc_id": kb_id_str,
             "kb_id": kb_id_str,
-            "from_entity_kwd": src,
-            "to_entity_kwd": tgt,
+            "from_entity_kwd": src.lower(),
+            "to_entity_kwd": tgt.lower(),
             "content_ltks": ltks,
             "content_sm_ltks": sm_ltks,
             "available_int": 1,
         }
         if compilation_template_id:
             row["compilation_template_ids"] = [compilation_template_id]
+        if doc_ids:
+            row["doc_ids_kwd"] = doc_ids
         rows.append(row)
 
     if rows:

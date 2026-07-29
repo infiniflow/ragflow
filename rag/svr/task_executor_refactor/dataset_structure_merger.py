@@ -96,6 +96,11 @@ def _dataset_entity_row_id(kb_id: str, compile_kwd: str, template_id: str | None
     return _stable_row_id(name, kb_id, compile_kwd, template_id or "", _SCOPE_KWD_DATASET)
 
 
+def _dataset_relation_row_id(kb_id: str, compile_kwd: str, template_id: str | None, src: str, tgt: str, rel_type: str) -> str:
+    key = f"{src.lower()} -> {rel_type.lower()} -> {tgt.lower()}"
+    return _stable_row_id(key, kb_id, compile_kwd, template_id or "", _SCOPE_KWD_DATASET)
+
+
 # ---------------------------------------------------------------------------
 # Document-store I/O
 # ---------------------------------------------------------------------------
@@ -325,6 +330,75 @@ async def _merge_bucket(
     return rows_out
 
 
+async def _merge_relations(
+    tenant_id: str,
+    kb_id: str,
+    compile_kwd: str,
+    template_id: str | None,
+    relation_rows: list[dict],
+    structure_kind: str | None = None,
+) -> list[dict]:
+    """Group doc-graph relation rows by (src, rel_type, tgt) and merge.
+
+    Each group produces one dataset-scoped relation row.  Duplicate
+    ``source_chunk_ids`` and ``doc_ids`` are deduplicated per group.
+    """
+    groups: dict[tuple[str, str, str], list[dict]] = {}
+    for row in relation_rows:
+        payload = json.loads(row.get("content_with_weight") or "{}")
+        src = (payload.get("from") or row.get("from_entity_kwd") or "").strip().lower()
+        tgt = (payload.get("to") or row.get("to_entity_kwd") or "").strip().lower()
+        rel_type = (payload.get("type") or "related").strip().lower()
+        key = (src, rel_type, tgt)
+        groups.setdefault(key, []).append(row)
+
+    rows_out: list[dict] = []
+    for (src, rel_type, tgt), rows in groups.items():
+        all_chunks: list[str] = []
+        all_docs: list[str] = []
+        # Use the longest description for tokenization
+        all_desc: list[str] = []
+        for r in rows:
+            payload = json.loads(r.get("content_with_weight") or "{}")
+            chunks = r.get("source_chunk_ids") or []
+            for c in chunks:
+                if c not in all_chunks:
+                    all_chunks.append(c)
+            doc = r.get("doc_id") or ""
+            if doc and doc not in all_docs:
+                all_docs.append(doc)
+            desc = payload.get("description") or f"{src} {rel_type} {tgt}"
+            if desc not in all_desc:
+                all_desc.append(desc)
+        best_desc = max(all_desc, key=len)
+        ltks, sm_ltks = _tokenize_for_search(best_desc)
+
+        row_id = _dataset_relation_row_id(kb_id, compile_kwd, template_id, src, tgt, rel_type)
+        row = {
+            "id": row_id,
+            "content_with_weight": json.dumps({"from": src, "to": tgt, "type": rel_type}, ensure_ascii=False),
+            "compile_kwd": compile_kwd,
+            "knowledge_graph_kwd": "relation",
+            "scope_kwd": _SCOPE_KWD_DATASET,
+            "doc_id": kb_id,
+            "kb_id": kb_id,
+            "from_entity_kwd": src,
+            "to_entity_kwd": tgt,
+            "source_chunk_ids": all_chunks,
+            "doc_ids_kwd": all_docs,
+            "content_ltks": ltks,
+            "content_sm_ltks": sm_ltks,
+            "available_int": 1,
+        }
+        if template_id:
+            row["compilation_template_ids"] = [template_id]
+        if structure_kind:
+            row["compilation_template_kind_kwd"] = str(structure_kind)
+        rows_out.append(row)
+
+    return rows_out
+
+
 # ---------------------------------------------------------------------------
 # Deletion-driven ghost cleanup
 # ---------------------------------------------------------------------------
@@ -343,9 +417,9 @@ async def _cleanup_deleted_docs(
 
     1. Read all pending ``doc_deleted`` meta rows for this kb (stored under
        ``deleted_doc_id``).
-    2. Find dataset entity rows whose ``doc_ids_kwd`` references a deleted
-       doc.  If after removing the deleted doc ID the ``doc_ids_kwd`` list
-       is empty the row is a **ghost** and gets deleted.
+    2. Find dataset entity/relation rows whose ``doc_ids_kwd`` references a
+       deleted doc.  If after removing the deleted doc ID the ``doc_ids_kwd``
+       list is empty the row is a **ghost** and gets deleted.
 
     Shared entities (those still referenced by other live docs) keep their
     existing content — the next incremental re-merge will correct any stale
@@ -597,7 +671,7 @@ async def _do_build(
     # Search for (scope_kwd="doc" OR (not exists scope_kwd)) AND compile_kwd.
     base_cond = {
         "compile_kwd": [compile_kwd],
-        "knowledge_graph_kwd": ["entity"],
+        "knowledge_graph_kwd": ["entity", "relation"],
     }
     if template_id:
         base_cond["compilation_template_ids"] = [template_id]
@@ -613,6 +687,7 @@ async def _do_build(
     limit = _PAGE_SIZE
     offset = 0
     buckets: list[list] = [[] for _ in range(_BUCKET_COUNT)]
+    relation_rows: list[dict] = []
 
     last_page = False
     while not last_page:
@@ -629,6 +704,8 @@ async def _do_build(
                 "mention_count_int",
                 "compilation_template_ids",
                 "create_timestamp_flt",
+                "from_entity_kwd",
+                "to_entity_kwd",
             ],
             limit=limit,
             offset=offset,
@@ -641,18 +718,22 @@ async def _do_build(
                 ts = row.get("create_timestamp_flt", 0)
                 if isinstance(ts, (int, float)) and ts < ts_cond["create_timestamp_flt"]["gte"]:
                     continue
-            name = row.get("name_kwd", "")
-            if not name:
-                continue
-            bid = _bucket_id(name)
-            if bid < _BUCKET_COUNT:
-                buckets[bid].append(row)
+            is_rel = row.get("knowledge_graph_kwd") == "relation" or "from_entity_kwd" in row
+            if is_rel:
+                relation_rows.append(row)
+            else:
+                name = row.get("name_kwd", "")
+                if not name:
+                    continue
+                bid = _bucket_id(name)
+                if bid < _BUCKET_COUNT:
+                    buckets[bid].append(row)
         if len(rows) < limit:
             last_page = True
         else:
             offset += limit
 
-    # Merge each bucket after all pages are scanned
+    # Merge entity buckets into dataset rows
     for bi in range(_BUCKET_COUNT):
         if buckets[bi]:
             out = await _merge_bucket(
@@ -667,6 +748,20 @@ async def _do_build(
             if out:
                 for start in range(0, len(out), _BUCKET_FLUSH_THRESHOLD):
                     await _index_insert(tenant_id, kb_id, out[start : start + _BUCKET_FLUSH_THRESHOLD])
+
+    # Merge relation rows into dataset rows
+    if relation_rows:
+        rel_out = await _merge_relations(
+            tenant_id,
+            kb_id,
+            compile_kwd,
+            template_id,
+            relation_rows,
+            structure_kind,
+        )
+        if rel_out:
+            for start in range(0, len(rel_out), _BUCKET_FLUSH_THRESHOLD):
+                await _index_insert(tenant_id, kb_id, rel_out[start : start + _BUCKET_FLUSH_THRESHOLD])
 
     # ── Save build timestamp ─────────────────────────────────────────
     import datetime
