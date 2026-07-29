@@ -518,7 +518,7 @@ class VoyageRerank(Base):
 class QWenRerank(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
-    def __init__(self, key, model_name="gte-rerank", **kwargs):
+    def __init__(self, key, model_name="gte-rerank-v2", **kwargs):
         import dashscope
 
         self.api_key = key

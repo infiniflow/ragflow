@@ -226,7 +226,7 @@ const ChatCard = forwardRef(function ChatCard(
                 <p>{t('chat.applyModelConfigs')}</p>
               </TooltipContent>
             </Tooltip>
-            {!isLatestChat || chatBoxIds.length === 3 ? (
+            {chatBoxIds.length > 1 && (
               <Button
                 variant="ghost"
                 size="icon-sm"
@@ -236,7 +236,8 @@ const ChatCard = forwardRef(function ChatCard(
               >
                 <Trash2 />
               </Button>
-            ) : (
+            )}
+            {isLatestChat && idx < 2 && (
               <Button
                 variant="ghost"
                 size="icon-sm"
