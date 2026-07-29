@@ -20,7 +20,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router';
 
-import { LeftPanelTab } from './constants';
+import { LeftPanelTab, ViewMode } from './constants';
 import CompilationEmptyState from './empty-state';
 import { useCompilationArtifact } from './hooks/use-compilation-artifact';
 import { CompilationLoadingCard } from './loading-card';
@@ -43,9 +43,11 @@ export function LlmWikiView() {
 
   const { data: artifactRunData } = useTraceRunData(GenerateType.Artifact);
   const { status: artifactStatus } = useGenerateStatus(artifactRunData);
+  const [updateSheetOpen, setUpdateSheetOpen] = useState(false);
 
   useEffect(() => {
     if (artifactStatus === GenerateStatus.completed) {
+      setUpdateSheetOpen(false);
       queryClient.invalidateQueries({
         queryKey: ArtifactKeys.listByDataset(id!),
       });
@@ -70,7 +72,7 @@ export function LlmWikiView() {
   if (isEmpty) {
     return (
       <CompilationEmptyState
-        type="llm-wiki"
+        type={ViewMode.LlmWiki}
         disabled={!canGenerate}
         data={artifactRunData}
       />
@@ -88,6 +90,9 @@ export function LlmWikiView() {
             onSelectArtifact={handleSelectArtifact}
             onClearArtifact={clearSelectedArtifact}
             onClearWiki={clearSelectedArtifact}
+            updateSheetOpen={updateSheetOpen}
+            onUpdateSheetOpenChange={setUpdateSheetOpen}
+            traceData={artifactRunData}
           />
         </ResizablePanel>
         <ResizableHandle withHandle />

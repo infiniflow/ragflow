@@ -176,6 +176,150 @@ func TestLongCatChatExtractsReasoningContent(t *testing.T) {
 	}
 }
 
+// TestLongCatChatParsesUsage verifies that the typed LongCat response
+// parser extracts the OpenAI-compatible usage block into ChatResponse.Usage.
+// LongCat always returns usage on success, so the field must be populated.
+func TestLongCatChatParsesUsage(t *testing.T) {
+	ctx := t.Context()
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":      "chatcmpl-abc123",
+			"object":  "chat.completion",
+			"created": 1700000000,
+			"model":   "LongCat-2.0",
+			"choices": []map[string]interface{}{{
+				"index": 0,
+				"message": map[string]interface{}{
+					"role":    "assistant",
+					"content": "Hello!",
+				},
+				"finish_reason": "stop",
+			}},
+			"usage": map[string]interface{}{
+				"prompt_tokens":     20,
+				"completion_tokens": 15,
+				"total_tokens":      35,
+			},
+		})
+	})
+	defer srv.Close()
+
+	m := newLongCatForTest(srv.URL)
+	apiKey := "test-key"
+	resp, err := m.ChatWithMessages(ctx, "LongCat-2.0",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err != nil {
+		t.Fatalf("Chat: %v", err)
+	}
+	if resp.Usage == nil {
+		t.Fatal("Usage must be non-nil")
+	}
+	if resp.Usage.PromptTokens != 20 {
+		t.Errorf("PromptTokens=%d, want 20", resp.Usage.PromptTokens)
+	}
+	if resp.Usage.CompletionTokens != 15 {
+		t.Errorf("CompletionTokens=%d, want 15", resp.Usage.CompletionTokens)
+	}
+	if resp.Usage.TotalTokens != 35 {
+		t.Errorf("TotalTokens=%d, want 35", resp.Usage.TotalTokens)
+	}
+}
+
+// TestLongCatChatAcceptsReasoningOnlyResponse verifies that a response with
+// null content but non-empty reasoning_content is accepted. LongCat's
+// thinking model can emit all output as reasoning_content, leaving content
+// null — that is a valid response, not an error.
+func TestLongCatChatAcceptsReasoningOnlyResponse(t *testing.T) {
+	ctx := t.Context()
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":     "cmpl_reasoning_only",
+			"object": "chat.completion",
+			"model":  "LongCat-2.0",
+			"choices": []map[string]interface{}{{
+				"index": 0,
+				"message": map[string]interface{}{
+					"role":              "assistant",
+					"content":           nil,
+					"reasoning_content": "\nThe answer is 4.",
+				},
+				"finish_reason": "stop",
+			}},
+			"usage": map[string]interface{}{
+				"prompt_tokens":     5,
+				"completion_tokens": 10,
+				"total_tokens":      15,
+			},
+		})
+	})
+	defer srv.Close()
+
+	m := newLongCatForTest(srv.URL)
+	apiKey := "test-key"
+	resp, err := m.ChatWithMessages(ctx, "LongCat-2.0",
+		[]Message{{Role: "user", Content: "what is 2+2"}},
+		&APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err != nil {
+		t.Fatalf("Chat: %v (should not error on reasoning-only response)", err)
+	}
+	if resp.Answer == nil {
+		t.Error("Answer must be non-nil")
+	} else if *resp.Answer != "" {
+		t.Errorf("Answer=%q, want empty string", *resp.Answer)
+	}
+	if resp.ReasonContent == nil {
+		t.Error("ReasonContent must be non-nil")
+	} else if *resp.ReasonContent != "The answer is 4." {
+		t.Errorf("ReasonContent=%q, want 'The answer is 4.'", *resp.ReasonContent)
+	}
+	if resp.Usage == nil {
+		t.Error("Usage must be non-nil")
+	} else if resp.Usage.TotalTokens != 15 {
+		t.Errorf("Usage=%#v, want total=15", resp.Usage)
+	}
+}
+
+// TestLongCatStreamRequestsIncludeUsage verifies that the streaming driver
+// asks LongCat for aggregate token usage via stream_options.include_usage,
+// and that the usage event populates chatConfig.UsageResult.
+func TestLongCatStreamRequestsIncludeUsage(t *testing.T) {
+	ctx := t.Context()
+	srv := newLongCatServer(t, "/openai/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		streamOpts, ok := body["stream_options"].(map[string]interface{})
+		if !ok {
+			t.Errorf("stream_options missing: %v", body)
+			return
+		}
+		if inc, _ := streamOpts["include_usage"].(bool); !inc {
+			t.Errorf("stream_options.include_usage=%v, want true", streamOpts["include_usage"])
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w,
+			`data: {"choices":[{"index":0,"delta":{"content":"hi"}}]}`+"\n"+
+				`data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}`+"\n"+
+				`data: [DONE]`+"\n")
+	})
+	defer srv.Close()
+
+	m := newLongCatForTest(srv.URL)
+	apiKey := "test-key"
+	chatConfig := &ChatConfig{}
+	err := m.ChatStreamlyWithSender(ctx, "LongCat-2.0",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey}, chatConfig, nil,
+		func(*string, *string) error { return nil })
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	if chatConfig.UsageResult == nil {
+		t.Fatal("UsageResult must be non-nil after stream with usage event")
+	}
+	if chatConfig.UsageResult.PromptTokens != 10 || chatConfig.UsageResult.CompletionTokens != 2 || chatConfig.UsageResult.TotalTokens != 12 {
+		t.Errorf("UsageResult=%#v, want prompt=10 completion=2 total=12", chatConfig.UsageResult)
+	}
+}
+
 // TestLongCatChatDropsUndocumentedFields guards against re-introducing
 // stop / reasoning_effort / response_format / tools etc. The LongCat
 // docs only list model, messages, stream, max_tokens, temperature,

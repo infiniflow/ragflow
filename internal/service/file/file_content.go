@@ -21,7 +21,7 @@ func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*
 		return nil, fmt.Errorf("Document not found!")
 	}
 	if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
-		return nil, fmt.Errorf("No authorization.")
+		return nil, fmt.Errorf("no authorization")
 	}
 	return file, nil
 }
@@ -129,7 +129,7 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 		}
 		// Permission: only the owner can access their uploads bucket.
 		if createdBy != uid {
-			return nil, nil, fmt.Errorf("No authorization.")
+			return nil, nil, fmt.Errorf("no authorization")
 		}
 
 		data, derr := storageImpl.Get(createdBy+"-downloads", id)

@@ -266,9 +266,17 @@ def _struct_render_type_fields(fields: list, language: str, *, kind: str) -> Tup
         lines.append("- type: other")
 
     if kind == "relation":
-        skeleton = '{ "type": "<one of: ' + "|".join(type_values) + '>", "source": "<known entity name>", "target": "<known entity name>", "description": "<evidence or relation description>" }'
+        skeleton = (
+            '{ "type": "<one of: '
+            + "|".join(type_values)
+            + '>", "source": "<known entity name>", "target": "<known entity name>", "description": "<evidence or relation description>", "source_chunk_ids": ["<source chunk id>", ...] }'
+        )
     else:
-        skeleton = '{ "type": "<one of: ' + "|".join(type_values) + '>", "name": "<exact extracted item text>", "description": "<evidence, definition, or detail from the source>" }'
+        skeleton = (
+            '{ "type": "<one of: '
+            + "|".join(type_values)
+            + '>", "name": "<exact extracted item text>", "description": "<evidence, definition, or detail from the source>", "source_chunk_ids": ["<source chunk id>", ...] }'
+        )
     return "\n".join(lines), skeleton
 
 
@@ -331,7 +339,7 @@ def _struct_hypergraph_prompts(parser_config: dict, language: str = "en") -> Tup
     if rel_desc:
         edge_parts.append(f"## Relation Description:\n{rel_desc}")
     edge_parts.append(f"## Relation Fields:\n{rel_fields_text}")
-    edge_parts.append("## Known Entities:\nSee the source text below.")
+    edge_parts.append("## Known Entities:\n{known_nodes}")
     edge_parts.append(
         "## Response Format:\n"
         "Reply with a single JSON object of the form: "
@@ -378,7 +386,13 @@ def _struct_unwrap_items(res) -> list:
 async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, language: str) -> Tuple[list[dict], list[dict]]:
     node_prompt, edge_prompt_template = _struct_hypergraph_prompts(parser_config, language)
 
-    user_prompt = f"## Source Text:\n{text}\n\n## Output (JSON only):"
+    user_prompt = (
+        "## Source Text:\n"
+        "Each source chunk is enclosed by [CHUNK_ID: ...] and [END_CHUNK]. "
+        "For every entity and relation, return source_chunk_ids containing only "
+        "the IDs of chunks that support that item.\n"
+        f"{text}\n\n## Output (JSON only):"
+    )
     node_res = await gen_json(node_prompt, user_prompt, chat_mdl, gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}))
     nodes = _struct_unwrap_items(node_res)
 
@@ -401,6 +415,22 @@ async def _struct_extract_hypergraph(text: str, parser_config: dict, chat_mdl, l
     edges = _struct_unwrap_items(edge_res)
 
     return nodes, edges
+
+
+def _struct_payload_chunk_ids(payload: dict, batch_ids: list) -> list:
+    """Keep only model-selected chunk IDs that belong to the current batch."""
+    raw_ids = payload.get("source_chunk_ids")
+    if isinstance(raw_ids, str):
+        raw_ids = [raw_ids]
+    if not isinstance(raw_ids, list):
+        raw_ids = []
+    allowed = set(batch_ids)
+    selected = []
+    for chunk_id in raw_ids:
+        chunk_id = str(chunk_id).strip()
+        if chunk_id in allowed and chunk_id not in selected:
+            selected.append(chunk_id)
+    return selected or list(batch_ids)
 
 
 _struct_embed = _encode
@@ -542,6 +572,8 @@ def _struct_to_doc_storage_doc(
     target_field: str | None = None,
     compilation_template_id: str | None = None,
     compilation_template_kind: str | None = None,
+    scope: str = "doc",
+    doc_ids: list[str] | None = None,
 ) -> dict:
     """Build one ES doc for an extracted entity or relation.
 
@@ -552,11 +584,11 @@ def _struct_to_doc_storage_doc(
             ``from_entity_kwd`` / ``to_entity_kwd``.
         compilation_template_id / compilation_template_kind: stamped onto
             every row so the document-structure endpoint can group by
-            template id and the UI can render one tab per template. The
-            id is stored as a single-element list under
-            ``compilation_template_ids`` because the same logical entity
-            *could* later be claimed by multiple templates during a
-            cross-template merge (rare, but the schema is forward-compat).
+            template id and the UI can render one tab per template.
+        scope: ``"doc"`` for document-level rows, ``"dataset"`` for the KB-wide
+            merged entity rows written by the Build button.
+        doc_ids: only set for ``scope="dataset"`` rows — lists the documents
+            that contributed to this merged entity.
     """
     content_with_weight = json.dumps(payload, ensure_ascii=False)
     if hasattr(vec, "tolist"):
@@ -572,13 +604,18 @@ def _struct_to_doc_storage_doc(
     # Mix the template id into the stable row id so two templates with the
     # same compile_kwd don't collide on identical payloads (e.g. two
     # different list-kind templates that each extract "headline X").
+    # Dataset-scope rows get the scope in the row seed to avoid colliding
+    # with doc-scope rows for the same entity.
     row_seed_extras = [template_id_str] if template_id_str else []
+    if scope == "dataset":
+        row_seed_extras.append("dataset")
     row_id = _stable_row_id(content_with_weight, doc_id_str, *row_seed_extras)
 
     doc = {
         "content_with_weight": content_with_weight,
         "compile_kwd": compile_kwd,
         "knowledge_graph_kwd": kind,
+        "scope_kwd": scope,
         "doc_id": doc_id_str,
         "source_chunk_ids": list(chunk_ids or []),
         "content_ltks": content_ltks,
@@ -586,6 +623,8 @@ def _struct_to_doc_storage_doc(
         f"q_{len(vec_list)}_vec": vec_list,
         "id": row_id,
     }
+    if scope == "dataset" and doc_ids:
+        doc["doc_ids_kwd"] = list(doc_ids)
 
     # Surface two payload fields as queryable top-level columns so the store can
     # filter/sort on them without parsing ``content_with_weight``. Both are
@@ -654,8 +693,8 @@ async def _struct_process_batch(
         return []
 
     batch_ids: list = [e["chunk_id"] for e in packed if e.get("chunk_id")]
-    batch_segments: list[str] = [e["text"] for e in packed if isinstance(e.get("text"), str)]
-    combined_text = "\n\n---\n\n".join(batch_segments)
+    batch_segments: list[str] = [f"[CHUNK_ID: {e['chunk_id']}]\n{e['text']}\n[END_CHUNK]" for e in packed if e.get("chunk_id") and isinstance(e.get("text"), str)]
+    combined_text = "\n\n".join(batch_segments)
 
     src_field, target_field = _struct_relation_member_fields(parser_config)
 
@@ -694,7 +733,7 @@ async def _struct_process_batch(
                 payload,
                 autotype,
                 doc_id,
-                batch_ids,
+                _struct_payload_chunk_ids(payload, batch_ids),
                 vec,
                 kind,
                 src_field=src_field,
@@ -786,7 +825,6 @@ async def compile_structure_from_text(
         chunks,
         chat_mdl,
         prompt_overhead_tokens=prompt_overhead,
-        batch_size_cap=1 if str(template_kind).strip().lower().replace("-", "_") in {"page_index", "pageindex"} else None,
     )
     if not packed_batches:
         return []
@@ -2089,6 +2127,63 @@ async def _struct_upsert_graph_json(
         await thread_pool_exec(settings.docStoreConn.insert, [row], index, kb_id)
 
 
+async def _struct_upsert_tree_graph_rows(
+    graph: dict,
+    tenant_id: str,
+    kb_id: str,
+    doc_id: str,
+    embedding_model,
+    compilation_template_id: str | None = None,
+) -> None:
+    """Persist Pipeline tree entities and child relations as structure rows.
+
+    The tree graph blob remains the compact representation and discovery row;
+    these raw rows provide the entity/relation representation consumed by the
+    structure graph API and its subgraph builder.
+    """
+    from common import settings
+    from rag.nlp import search as _rag_search
+
+    entities = [item for item in graph.get("entities") or [] if isinstance(item, dict)]
+    relations = [item for item in graph.get("relations") or [] if isinstance(item, dict)]
+    index = _rag_search.index_name(tenant_id)
+    payloads = [(entity, "entity") for entity in entities] + [(relation, "relation") for relation in relations]
+    rows = []
+    if payloads:
+        descriptions = [_struct_payload_description(payload) for payload, _ in payloads]
+        vectors = await _struct_embed(embedding_model, descriptions)
+        if len(vectors) != len(payloads):
+            raise ValueError(f"Tree graph embedding count mismatch: {len(vectors)} != {len(payloads)}")
+
+        for (payload, kind), vector in zip(payloads, vectors):
+            source_chunk_ids = payload.get("source_chunk_ids") or [] if kind == "entity" else []
+            rows.append(
+                _struct_to_doc_storage_doc(
+                    payload=payload,
+                    compile_kwd="tree",
+                    doc_id=doc_id,
+                    chunk_ids=source_chunk_ids,
+                    vec=vector,
+                    kind=kind,
+                    src_field="from" if kind == "relation" else None,
+                    target_field="to" if kind == "relation" else None,
+                    compilation_template_id=compilation_template_id,
+                    compilation_template_kind="tree",
+                )
+            )
+
+    template_filter = {"compilation_template_ids": [compilation_template_id]} if compilation_template_id else {"must_not": {"exists": "compilation_template_ids"}}
+    delete_condition = {
+        "doc_id": [doc_id],
+        "compile_kwd": ["tree"],
+        "knowledge_graph_kwd": ["entity", "relation"],
+        **template_filter,
+    }
+    await thread_pool_exec(settings.docStoreConn.delete, delete_condition, index, kb_id)
+    if rows:
+        await thread_pool_exec(settings.docStoreConn.insert, rows, index, kb_id)
+
+
 async def rebuild_structure_graph_json(
     tenant_id: str,
     kb_id: str,
@@ -2140,44 +2235,116 @@ async def _struct_upsert_dataset_graph_json(
     compile_kwd: str,
     compilation_template_id: str | None = None,
     structure_kind: str | None = None,
+    embd_mdl=None,
 ) -> None:
+    """Write dataset-level entity/relation rows from a merged graph.
+
+    Replaces the old ``dataset_graph`` JSON blob with individual searchable
+    entity/relation rows (``scope_kwd="dataset"``).  Each row carries its own
+    embedding and tokenized text, so both KNN and full-text search can hit it.
+    """
     from common import settings
     from rag.nlp import search as _rag_search
+    from ._common import encode as _encode, tokenize_for_search as _tokenize_for_search, stable_row_id as _stable_row_id
 
     index = _rag_search.index_name(tenant_id)
-    row_id = _dataset_struct_graph_row_id(kb_id, compile_kwd, compilation_template_id)
-    # The dataset graph is not per-document generated data, but the store schema
-    # requires ``doc_id``; carry ``kb_id`` there so the row is self-describing
-    # and per-doc graph queries (filtered by a real doc_id) never pick it up.
-    row = {
-        "id": row_id,
-        "content_with_weight": json.dumps(graph, ensure_ascii=False),
+    kb_id_str = str(kb_id)
+
+    # Write a single metadata row so the artifacts_structure discovery endpoint
+    # can find this template without scanning entity rows.
+    meta_id = _dataset_struct_graph_row_id(kb_id, compile_kwd, compilation_template_id)
+    meta_row = {
+        "id": meta_id,
         "compile_kwd": compile_kwd,
         "knowledge_graph_kwd": "dataset_graph",
-        "doc_id": kb_id,
-        "kb_id": kb_id,
+        "scope_kwd": "dataset",
+        "doc_id": kb_id_str,
+        "kb_id": kb_id_str,
         "available_int": 0,
+        "compilation_template_ids": [compilation_template_id] if compilation_template_id else [],
     }
-    if compilation_template_id:
-        row["compilation_template_ids"] = [compilation_template_id]
-    # On ``dataset_graph`` rows ``compilation_template_kind_kwd`` carries the
-    # template's *top-level* kind (graph/mind_map/timeline/session_essence/
-    # session_graph) so the artifacts_structure endpoint can filter by it —
-    # unlike entity/relation rows where the field holds the ``config.kind``
-    # (which collapses the knowledge_graph family together).
     if structure_kind:
-        row["compilation_template_kind_kwd"] = str(structure_kind)
-    old = await thread_pool_exec(settings.docStoreConn.get, row_id, index, [kb_id])
+        meta_row["compilation_template_kind_kwd"] = str(structure_kind)
+    old = await thread_pool_exec(settings.docStoreConn.get, meta_id, index, [kb_id])
     if old:
-        await thread_pool_exec(
-            settings.docStoreConn.update,
-            {"id": row_id},
-            {k: v for k, v in row.items() if k != "id"},
-            index,
-            kb_id,
-        )
+        await thread_pool_exec(settings.docStoreConn.update, {"id": meta_id}, {k: v for k, v in meta_row.items() if k != "id"}, index, kb_id)
     else:
-        await thread_pool_exec(settings.docStoreConn.insert, [row], index, kb_id)
+        await thread_pool_exec(settings.docStoreConn.insert, [meta_row], index, kb_id)
+
+    # Write individual entity/relation rows (scope_kwd="dataset", searchable).
+    rows = []
+    for ent in graph.get("entities") or []:
+        payload = {"name": ent.get("name", ""), "type": ent.get("type", "other"), "description": ent.get("description", "")}
+        ent_name = (ent.get("name") or "").strip()
+        desc = ent.get("description") or ent_name
+        ltks, sm_ltks = _tokenize_for_search(desc)
+        mention_count = ent.get("mention_count", 1)
+        source_chunk_ids = ent.get("source_chunk_ids") or []
+        doc_ids = ent.get("doc_ids_kwd") or []
+        row_id = _stable_row_id(ent_name.lower(), kb_id_str, compile_kwd, compilation_template_id or "", "dataset")
+        row = {
+            "id": row_id,
+            "content_with_weight": json.dumps(payload, ensure_ascii=False),
+            "compile_kwd": compile_kwd,
+            "knowledge_graph_kwd": "entity",
+            "scope_kwd": "dataset",
+            "doc_id": kb_id_str,
+            "kb_id": kb_id_str,
+            "source_chunk_ids": source_chunk_ids,
+            "content_ltks": ltks,
+            "content_sm_ltks": sm_ltks,
+            "mention_count_int": mention_count,
+            "name_kwd": ent_name.lower(),
+            "available_int": 1,
+        }
+        if compilation_template_id:
+            row["compilation_template_ids"] = [compilation_template_id]
+        if structure_kind:
+            row["compilation_template_kind_kwd"] = str(structure_kind)
+        if doc_ids:
+            row["doc_ids_kwd"] = doc_ids
+        # Re-embed: use embd_mdl if available, otherwise skip the vector.
+        if embd_mdl:
+            vecs = await _encode(embd_mdl, [desc])
+            if vecs and len(vecs[0]) > 0:
+                dim = len(vecs[0])
+                row[f"q_{dim}_vec"] = list(vecs[0])
+        rows.append(row)
+
+    for rel in graph.get("relations") or []:
+        src = str(rel.get("from", "")).strip()
+        tgt = str(rel.get("to", "")).strip()
+        if not src or not tgt:
+            continue
+        rel_type = str(rel.get("type", "related")).strip()
+        payload = {"from": src, "to": tgt, "type": rel_type}
+        desc = f"{src} {rel_type} {tgt}"
+        ltks, sm_ltks = _tokenize_for_search(desc)
+        rel_key = f"{src.lower()} -> {rel_type.lower()} -> {tgt.lower()}"
+        row_id = _stable_row_id(rel_key, kb_id_str, compile_kwd, compilation_template_id or "", "dataset")
+        doc_ids = rel.get("doc_ids_kwd") or []
+        row = {
+            "id": row_id,
+            "content_with_weight": json.dumps(payload, ensure_ascii=False),
+            "compile_kwd": compile_kwd,
+            "knowledge_graph_kwd": "relation",
+            "scope_kwd": "dataset",
+            "doc_id": kb_id_str,
+            "kb_id": kb_id_str,
+            "from_entity_kwd": src.lower(),
+            "to_entity_kwd": tgt.lower(),
+            "content_ltks": ltks,
+            "content_sm_ltks": sm_ltks,
+            "available_int": 1,
+        }
+        if compilation_template_id:
+            row["compilation_template_ids"] = [compilation_template_id]
+        if doc_ids:
+            row["doc_ids_kwd"] = doc_ids
+        rows.append(row)
+
+    if rows:
+        await thread_pool_exec(settings.docStoreConn.insert, rows, index, kb_id)
 
 
 async def rebuild_dataset_structure_graph_json(
@@ -2186,19 +2353,16 @@ async def rebuild_dataset_structure_graph_json(
     compile_kwd: str,
     compilation_template_id: str | None = None,
     structure_kind: str | None = None,
+    embd_mdl=None,
 ) -> dict:
-    """Rebuild and persist the KB-wide (dataset) structure graph for one
-    (compile_kwd, template_id) pair.
+    """Rebuild and persist the KB-wide dataset structure graph.
 
-    Reads every document's merged entities/relations in the KB (no ``doc_id``
-    filter) and writes a single ``knowledge_graph_kwd="dataset_graph"`` row.
-    Meant to run once per template after all per-document flushes finish; when
-    ``dataset`` merge scope is on the entity/relation rows are already
-    deduplicated across documents, so this simply projects them into a graph.
+    Reads every document's entity/relation rows in the KB (no ``doc_id``
+    filter) and writes individual ``scope_kwd="dataset"`` entity/relation
+    rows with embeddings and tokenized text — making them searchable.
 
     ``structure_kind`` is the template's top-level kind (e.g. ``knowledge_graph``,
-    ``session_graph``); it is stamped on the row so the dataset structure API
-    can filter by kind."""
+    ``session_graph``); it is stamped on the meta row so the API can filter."""
     graph = await _struct_rebuild_graph_json(
         tenant_id,
         kb_id,
@@ -2213,6 +2377,7 @@ async def rebuild_dataset_structure_graph_json(
         compile_kwd,
         compilation_template_id,
         structure_kind=structure_kind,
+        embd_mdl=embd_mdl,
     )
     return graph
 

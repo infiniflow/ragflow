@@ -90,6 +90,38 @@ func TestJinaChatHappyPath(t *testing.T) {
 	}
 }
 
+func TestJinaChatPreservesReasoningContent(t *testing.T) {
+	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id": "jina-chat",
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{
+					"content":           "answer",
+					"reasoning_content": "\nthought",
+				},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	thinking := true
+	response, err := newJinaForTest(srv.URL).ChatWithMessages(
+		t.Context(),
+		"jina-vlm",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{Thinking: &thinking},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if response.ReasonContent == nil || *response.ReasonContent != "thought" {
+		t.Fatalf("ReasonContent=%v, want thought", response.ReasonContent)
+	}
+}
+
 func TestJinaChatSupportsToolCalls(t *testing.T) {
 	testNonStreamingToolCall(t, "jina-vlm", "/chat/completions", func(baseURL string) ModelDriver {
 		return newJinaForTest(baseURL)
@@ -188,6 +220,51 @@ func TestJinaChatValidation(t *testing.T) {
 				t.Fatalf("expected %q error, got %v", tt.want, err)
 			}
 		})
+	}
+}
+
+func TestJinaChatStreamIsNotSupported(t *testing.T) {
+	apiKey := "test-key"
+	err := newJinaForTest("http://unused").ChatStreamlyWithSender(
+		t.Context(),
+		"jina-vlm",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+		func(*string, *string) error { return nil },
+	)
+	if err == nil || !strings.Contains(err.Error(), "ChatStreamlyWithSender") {
+		t.Fatalf("expected unsupported streaming error, got %v", err)
+	}
+}
+
+func TestJinaEmbedMeanPoolsMultivectorResponse(t *testing.T) {
+	srv := newJinaServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{{
+				"embeddings": [][]float64{{1, 3}, {3, 5}},
+				"index":      0,
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	modelName := "jina-embeddings-v4"
+	embeddings, err := newJinaForTest(srv.URL).Embed(
+		t.Context(),
+		&modelName,
+		[]string{"text"},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(embeddings) != 1 || len(embeddings[0].Embedding) != 2 || embeddings[0].Embedding[0] != 2 || embeddings[0].Embedding[1] != 4 {
+		t.Fatalf("embeddings=%v, want [[2 4]]", embeddings)
 	}
 }
 

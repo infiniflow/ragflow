@@ -71,7 +71,7 @@ func LoadFromIngestionTask(ctx context.Context, ingestionTask *entity.IngestionT
 		return nil, fmt.Errorf("error when load knowledgebase %s: %w", doc.KbID, err)
 	}
 
-	tenant, err := dao.NewTenantDAO().GetByID(kb.TenantID)
+	tenant, err := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
 	if err != nil || tenant == nil {
 		return nil, fmt.Errorf("error when load tenant %s: %w", kb.TenantID, err)
 	}

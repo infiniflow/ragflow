@@ -82,7 +82,7 @@ func isElasticsearch(docEngine engine.DocEngine) bool {
 func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, spaceID string, skill SkillInfo, docEngine engine.DocEngine, embdID string) error {
 	spaceID = normalizeSpaceID(spaceID)
 
-	config, err := s.configDAO.GetOrCreate(tenantID, spaceID, embdID)
+	config, err := s.configDAO.GetOrCreate(ctx, dao.DB, tenantID, spaceID, embdID)
 	if err != nil {
 		return fmt.Errorf("failed to get config: %w", err)
 	}
@@ -208,7 +208,7 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 		return nil
 	}
 
-	config, err := s.configDAO.GetOrCreate(tenantID, spaceID, embdID)
+	config, err := s.configDAO.GetOrCreate(ctx, dao.DB, tenantID, spaceID, embdID)
 	if err != nil {
 		return fmt.Errorf("failed to get config: %w", err)
 	}
@@ -414,14 +414,14 @@ func (s *SkillIndexerService) UpdateSkillVersion(ctx context.Context, tenantID, 
 func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, spaceID string, docEngine engine.DocEngine, embdID string) (map[string]interface{}, error) {
 	spaceID = normalizeSpaceID(spaceID)
 	// Get current config and increment semantic version
-	config, err := s.configDAO.GetOrCreate(tenantID, spaceID, embdID)
+	config, err := s.configDAO.GetOrCreate(ctx, dao.DB, tenantID, spaceID, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get config: %w", err)
 	}
 
 	// Increment semantic version (e.g., "1.0.0" -> "1.0.1" or "1.0.9" -> "1.1.0")
 	newVersion := incrementSemanticVersion(config.IndexVersion)
-	if err := s.configDAO.UpdateByTenantID(tenantID, spaceID, map[string]interface{}{
+	if err = s.configDAO.UpdateByTenantID(ctx, dao.DB, tenantID, spaceID, map[string]interface{}{
 		"index_version": newVersion,
 	}); err != nil {
 		return nil, fmt.Errorf("failed to update version: %w", err)
@@ -451,7 +451,7 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, spaceID 
 	}
 
 	// Get space info to find folder ID
-	space, err := s.spaceDAO.GetByID(spaceID)
+	space, err := s.spaceDAO.GetByID(ctx, dao.DB, spaceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get space: %w", err)
 	}

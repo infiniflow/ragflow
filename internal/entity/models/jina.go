@@ -55,6 +55,70 @@ func (j *JinaModel) Name() string {
 	return "jina"
 }
 
+// JinaChatResponse mirrors Jina's OpenAI-compatible chat response.
+type JinaChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Logprobs     any    `json:"logprobs"`
+		Message      struct {
+			Content          string           `json:"content"`
+			Reasoning        string           `json:"reasoning"`
+			ReasoningContent string           `json:"reasoning_content"`
+			Role             string           `json:"role"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+	SystemFingerprint string `json:"system_fingerprint"`
+	Usage             struct {
+		CompletionTokens    int `json:"completion_tokens"`
+		PromptTokens        int `json:"prompt_tokens"`
+		TotalTokens         int `json:"total_tokens"`
+		PromptTokensDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	} `json:"usage"`
+}
+
+// JinaEmbeddingResponse mirrors Jina's embeddings response. Embeddings is
+// populated by multivector models such as jina-embeddings-v4.
+type JinaEmbeddingResponse struct {
+	ID     string `json:"id"`
+	Object string `json:"object"`
+	Model  string `json:"model"`
+	Data   []struct {
+		Object     string      `json:"object"`
+		Embedding  []float64   `json:"embedding"`
+		Embeddings [][]float64 `json:"embeddings"`
+		Index      int         `json:"index"`
+	} `json:"data"`
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+// JinaRerankResponse mirrors Jina's rerank response.
+type JinaRerankResponse struct {
+	ID      string `json:"id"`
+	Model   string `json:"model"`
+	Results []struct {
+		Index    int `json:"index"`
+		Document struct {
+			Text string `json:"text"`
+		} `json:"document"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
 func (j *JinaModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -106,42 +170,40 @@ func (j *JinaModel) ChatWithMessages(ctx context.Context, modelName string, mess
 		return nil, fmt.Errorf("Jina chat API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, _ *ChatConfig) (chatResponseParts, error) {
+		var result JinaChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	toolCalls := extractToolCalls(messageMap)
-	content, hasContent := messageMap["content"].(string)
-	if !hasContent && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	reasonContent := ""
-	return &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}, nil
+		choice := result.Choices[0]
+		if choice.Message.Content == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("response contains neither content nor tool calls")
+		}
+		reasonContent := choice.Message.ReasoningContent
+		if reasonContent == "" {
+			reasonContent = choice.Message.Reasoning
+		}
+		reasonContent = strings.TrimPrefix(reasonContent, "\n")
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &choice.Message.Content,
+			ReasonContent: &reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 func (j *JinaModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	//TODO implement me: https://api.jina.ai/docs#/Search%20Foundation%20Models/chat_completions_v1_chat_completions_post
+	// Jina's public API does not expose a streaming chat-completions endpoint.
 	return fmt.Errorf("jina does not implement ChatStreamlyWithSender(not available for now)")
 }
 
@@ -152,6 +214,9 @@ func (j *JinaModel) Embed(ctx context.Context, modelName *string, texts []string
 
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
@@ -170,7 +235,10 @@ func (j *JinaModel) Embed(ctx context.Context, modelName *string, texts []string
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -193,12 +261,7 @@ func (j *JinaModel) Embed(ctx context.Context, modelName *string, texts []string
 		return nil, fmt.Errorf("Jina embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var parsedResponse struct {
-		Data []struct {
-			Embedding []float64 `json:"embedding"`
-			Index     int       `json:"index"`
-		} `json:"data"`
-	}
+	var parsedResponse JinaEmbeddingResponse
 
 	if err = json.Unmarshal(body, &parsedResponse); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
@@ -207,11 +270,37 @@ func (j *JinaModel) Embed(ctx context.Context, modelName *string, texts []string
 	if len(parsedResponse.Data) == 0 {
 		return nil, fmt.Errorf("Jina embedding response contains no data: %s", string(body))
 	}
+	recordResponseUsage(modelUsage, parsedResponse.ID, &TokenUsage{
+		PromptTokens: parsedResponse.Usage.PromptTokens,
+		TotalTokens:  parsedResponse.Usage.TotalTokens,
+	}, "embedding")
 
 	var embeddings []EmbeddingData
 	for _, dataElem := range parsedResponse.Data {
+		embedding := dataElem.Embedding
+		if len(embedding) == 0 && len(dataElem.Embeddings) > 0 {
+			dimensions := len(dataElem.Embeddings[0])
+			if dimensions == 0 {
+				return nil, fmt.Errorf("Jina embedding response contains an empty multivector at index %d", dataElem.Index)
+			}
+			embedding = make([]float64, dimensions)
+			for _, vector := range dataElem.Embeddings {
+				if len(vector) != dimensions {
+					return nil, fmt.Errorf("Jina embedding response contains inconsistent multivector dimensions at index %d", dataElem.Index)
+				}
+				for i, value := range vector {
+					embedding[i] += value
+				}
+			}
+			for i := range embedding {
+				embedding[i] /= float64(len(dataElem.Embeddings))
+			}
+		}
+		if len(embedding) == 0 {
+			return nil, fmt.Errorf("Jina embedding response contains an empty vector at index %d", dataElem.Index)
+		}
 		embeddings = append(embeddings, EmbeddingData{
-			Embedding: dataElem.Embedding,
+			Embedding: embedding,
 			Index:     dataElem.Index,
 		})
 	}
@@ -226,6 +315,9 @@ func (j *JinaModel) Rerank(ctx context.Context, modelName *string, query string,
 
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
+	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
 	}
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
@@ -251,7 +343,10 @@ func (j *JinaModel) Rerank(ctx context.Context, modelName *string, query string,
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -274,16 +369,15 @@ func (j *JinaModel) Rerank(ctx context.Context, modelName *string, query string,
 		return nil, fmt.Errorf("Jina Rerank API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var rerankResp struct {
-		Results []struct {
-			Index          int     `json:"index"`
-			RelevanceScore float64 `json:"relevance_score"`
-		} `json:"results"`
-	}
+	var rerankResp JinaRerankResponse
 
 	if err = json.Unmarshal(body, &rerankResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
+	recordResponseUsage(modelUsage, rerankResp.ID, &TokenUsage{
+		PromptTokens: rerankResp.Usage.PromptTokens,
+		TotalTokens:  rerankResp.Usage.TotalTokens,
+	}, "rerank")
 
 	var rerankResponse RerankResponse
 	for _, result := range rerankResp.Results {

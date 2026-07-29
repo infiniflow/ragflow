@@ -166,7 +166,7 @@ func (s *IngestionTaskService) ListAllForAdmin(ctx context.Context) ([]map[strin
 	showTasks := make([]map[string]interface{}, 0, len(ingestionTasks))
 	for _, task := range ingestionTasks {
 		var user *entity.User
-		user, err = s.userDAO.GetByTenantID(task.UserID)
+		user, err = s.userDAO.GetByTenantID(ctx, dao.DB, task.UserID)
 		if err != nil {
 			return nil, err
 		}

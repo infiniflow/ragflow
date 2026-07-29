@@ -109,7 +109,7 @@ function useHandleSelectChange({ onChange, value }: ToolCommandProps) {
   };
 }
 
-// eslint-disable-next-line
+// oxlint-disable-next-line
 export function ToolCommand({ value, onChange }: ToolCommandProps) {
   const { t } = useTranslation();
 

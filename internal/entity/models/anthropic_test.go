@@ -291,6 +291,124 @@ func TestAnthropicChatRejectsMalformedResponse(t *testing.T) {
 	}
 }
 
+func TestAnthropicChatStreamlyWithSenderHappyPath(t *testing.T) {
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["stream"] != true {
+			t.Errorf("stream=%v, want true", body["stream"])
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		events := []string{
+			`{"type":"message_start","message":{"id":"msg_1","usage":{"input_tokens":5,"output_tokens":0}}}`,
+			`{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}`,
+			`{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"pondering"}}`,
+			`{"type":"content_block_stop","index":0}`,
+			`{"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}`,
+			`{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"pong"}}`,
+			`{"type":"content_block_stop","index":1}`,
+			`{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}`,
+			`{"type":"message_stop"}`,
+		}
+		for _, event := range events {
+			_, _ = w.Write([]byte("data: " + event + "\n\n"))
+		}
+	})
+	defer srv.Close()
+	ctx := t.Context()
+
+	apiKey := "test-key"
+	var answer, reasoning strings.Builder
+	sawDone := false
+	modelUsage := &common.ModelUsage{}
+	err := newAnthropicForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"claude-sonnet-4-5-20250929",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{},
+		modelUsage,
+		func(text, reason *string) error {
+			if text != nil {
+				if *text == "[DONE]" {
+					sawDone = true
+				} else {
+					answer.WriteString(*text)
+				}
+			}
+			if reason != nil {
+				reasoning.WriteString(*reason)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("ChatStreamlyWithSender: %v", err)
+	}
+	if answer.String() != "pong" {
+		t.Errorf("answer=%q, want pong", answer.String())
+	}
+	if reasoning.String() != "pondering" {
+		t.Errorf("reasoning=%q, want pondering", reasoning.String())
+	}
+	if !sawDone {
+		t.Error("expected terminal [DONE] sender call")
+	}
+	if modelUsage.InputTokens != 5 {
+		t.Errorf("InputTokens=%d, want 5", modelUsage.InputTokens)
+	}
+	if modelUsage.OutputTokens != 2 {
+		t.Errorf("OutputTokens=%d, want 2", modelUsage.OutputTokens)
+	}
+	if modelUsage.TotalTokens != 7 {
+		t.Errorf("TotalTokens=%d, want 7", modelUsage.TotalTokens)
+	}
+}
+
+func TestAnthropicChatStreamlyWithSenderRejectsHTTPError(t *testing.T) {
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"bad key"}}`))
+	})
+	defer srv.Close()
+	ctx := t.Context()
+
+	apiKey := "test-key"
+	err := newAnthropicForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"claude",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+		func(*string, *string) error { return nil },
+	)
+	if err == nil || !strings.Contains(err.Error(), "401") || !strings.Contains(err.Error(), "bad key") {
+		t.Errorf("expected provider error, got %v", err)
+	}
+}
+
+func TestAnthropicChatStreamlyWithSenderRejectsStreamError(t *testing.T) {
+	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(`data: {"type":"error","error":{"message":"overloaded"}}` + "\n\n"))
+	})
+	defer srv.Close()
+	ctx := t.Context()
+
+	apiKey := "test-key"
+	err := newAnthropicForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
+		"claude",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+		func(*string, *string) error { return nil },
+	)
+	if err == nil || !strings.Contains(err.Error(), "overloaded") {
+		t.Errorf("expected stream error, got %v", err)
+	}
+}
+
 func TestAnthropicListModelsAndCheckConnection(t *testing.T) {
 	ctx := t.Context()
 	var calls int
@@ -352,17 +470,6 @@ func TestAnthropicUnsupportedMethods(t *testing.T) {
 	m := newAnthropicForTest("http://unused")
 	apiKey := "test-key"
 	modelName := "claude"
-	checks := []struct {
-		name string
-		err  error
-	}{
-		{"stream", m.ChatStreamlyWithSender(ctx, modelName, []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, func(*string, *string) error { return nil })},
-	}
-	for _, check := range checks {
-		if check.err == nil || !strings.Contains(check.err.Error(), "no such method") {
-			t.Errorf("%s: want no such method, got %v", check.name, check.err)
-		}
-	}
 	if _, err := m.Embed(ctx, &modelName, []string{"x"}, &APIConfig{ApiKey: &apiKey}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: got %v", err)
 	}

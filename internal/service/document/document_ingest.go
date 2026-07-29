@@ -2,6 +2,7 @@ package document
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
@@ -127,7 +128,12 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		}
 
 		if req.Delete {
-			_, _ = s.taskDAO.DeleteIngestionTasksByDocIDs([]string{doc.ID})
+			if _, delErr := s.taskDAO.DeleteIngestionTasksByDocIDs(ctx, dao.DB, []string{doc.ID}); delErr != nil {
+				if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
+					return common.CodeExceptionError, fmt.Errorf("delete ingestion tasks: %w", delErr)
+				}
+				common.Error(fmt.Sprintf("go side, doc %s, DeleteIngestionTasksByDocIDs failed", doc.ID), delErr)
+			}
 			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 			if s.docEngine != nil {
 				exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, doc.KbID)

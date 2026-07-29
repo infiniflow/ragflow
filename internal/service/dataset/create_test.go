@@ -157,7 +157,7 @@ func TestCreateDataset_ValidatesName(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if err.Error() != "Dataset name can't be empty." {
+	if err.Error() != "dataset name can't be empty" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -197,13 +197,13 @@ func TestCreateDataset_RejectsInvalidEmbeddingModel(t *testing.T) {
 		embeddingModel  string
 		expectedMessage string
 	}{
-		{"empty", "", "Embedding model identifier must follow <model_name>@<provider> format"},
-		{"whitespace", " ", "Embedding model identifier must follow <model_name>@<provider> format"},
-		{"missing_at", "BAAI/bge-small-en-v1.5Builtin", "Embedding model identifier must follow <model_name>@<provider> format"},
-		{"empty_model_name", "@Builtin", "Both model_name and provider must be non-empty strings"},
-		{"empty_provider", "BAAI/bge-small-en-v1.5@", "Both model_name and provider must be non-empty strings"},
-		{"whitespace_model_name", " @Builtin", "Both model_name and provider must be non-empty strings"},
-		{"whitespace_provider", "BAAI/bge-small-en-v1.5@ ", "Both model_name and provider must be non-empty strings"},
+		{"empty", "", "embedding model identifier must follow <model_name>@<provider> format"},
+		{"whitespace", " ", "embedding model identifier must follow <model_name>@<provider> format"},
+		{"missing_at", "BAAI/bge-small-en-v1.5Builtin", "embedding model identifier must follow <model_name>@<provider> format"},
+		{"empty_model_name", "@Builtin", "both model_name and provider must be non-empty strings"},
+		{"empty_provider", "BAAI/bge-small-en-v1.5@", "both model_name and provider must be non-empty strings"},
+		{"whitespace_model_name", " @Builtin", "both model_name and provider must be non-empty strings"},
+		{"whitespace_provider", "BAAI/bge-small-en-v1.5@ ", "both model_name and provider must be non-empty strings"},
 	}
 
 	ctx := t.Context()

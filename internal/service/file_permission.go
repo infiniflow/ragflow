@@ -27,7 +27,7 @@ func CheckFileTeamPermission(ctx context.Context, fileDAO *dao.FileDAO, file *en
 		if err != nil || kb == nil {
 			continue
 		}
-		if HasKBTeamPermission(kb, userID, dao.NewTenantDAO()) {
+		if HasKBTeamPermission(ctx, kb, userID, dao.NewTenantDAO()) {
 			return true
 		}
 	}

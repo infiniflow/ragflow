@@ -467,3 +467,99 @@ func TestOutlineFromInputs(t *testing.T) {
 		t.Errorf("empty inputs outline = %v, want nil", got)
 	}
 }
+
+// TestResolveTitleLevels_BulletFallback covers Chunker-1.7: when
+// frequency-based detection assigns bodyLevel to every record, the
+// BULLET_PATTERN bullet-fallback scans the text for numbered/bulleted
+// list entries and assigns structural levels, mirroring Python's
+// bullets_category + title_frequency.
+func TestResolveTitleLevels_BulletFallback(t *testing.T) {
+	// All subtests use empty Levels to ensure no regex group matches,
+	// so the bullet fallback is the only level signal.
+
+	t.Run("ChineseLegalGroups0", func(t *testing.T) {
+		p := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{
+			Method: "group",
+		}}
+		records := []lineRecord{
+			{text: "第一条 定义", docType: "text"},
+			{text: "第二条 适用范围", docType: "text"},
+			{text: "这是普通正文内容。", docType: "text"},
+		}
+		levels := resolveTitleLevels(records, p)
+		// "第一条" matches group-0 index-3 (r"第...条") -> level = 3+1 = 4.
+		if lvl := levels[0]; lvl >= bodyLevel || lvl <= 0 {
+			t.Errorf("bullet line '第一条' level = %d, want non-body positive", lvl)
+		}
+		if lvl := levels[1]; lvl >= bodyLevel || lvl <= 0 {
+			t.Errorf("bullet line '第二条' level = %d, want non-body positive", lvl)
+		}
+		if levels[2] != bodyLevel {
+			t.Errorf("plain body line level = %d, want bodyLevel", levels[2])
+		}
+	})
+
+	t.Run("NumberingGroup1", func(t *testing.T) {
+		p := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{
+			Method: "group",
+		}}
+		records := []lineRecord{
+			{text: "1. Introduction", docType: "text"},
+			{text: "2. Methods", docType: "text"},
+			{text: "3. Results", docType: "text"},
+			{text: "Plain body paragraph here.", docType: "text"},
+		}
+		levels := resolveTitleLevels(records, p)
+		for i := 0; i < 3; i++ {
+			if lvl := levels[i]; lvl >= bodyLevel || lvl <= 0 {
+				t.Errorf("numbered line index %d level = %d, want non-body positive", i, lvl)
+			}
+		}
+		if levels[3] != bodyLevel {
+			t.Errorf("plain body line level = %d, want bodyLevel", levels[3])
+		}
+	})
+
+	t.Run("NotBulletExcluded", func(t *testing.T) {
+		p := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{
+			Method: "group",
+		}}
+		records := []lineRecord{
+			{text: "0", docType: "text"},
+			{text: "1 2 3", docType: "text"},
+			{text: "第一条 定义", docType: "text"},
+		}
+		levels := resolveTitleLevels(records, p)
+		// "0" and "1 2 3" are not-bullet -> bodyLevel.
+		if levels[0] != bodyLevel {
+			t.Errorf("notBullet '0' level = %d, want bodyLevel", levels[0])
+		}
+		if levels[1] != bodyLevel {
+			t.Errorf("notBullet '1 2 3' level = %d, want bodyLevel", levels[1])
+		}
+		if lvl := levels[2]; lvl >= bodyLevel || lvl <= 0 {
+			t.Errorf("genuine bullet '第一条' level = %d, want non-body positive", lvl)
+		}
+	})
+
+	t.Run("RegexMatchGuardsBulletFallback", func(t *testing.T) {
+		p := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{
+			Method: "group",
+			Levels: [][]string{{`^第[零一二三四五六七八九十百0-9]+章`}},
+		}}
+		records := []lineRecord{
+			{text: "第一章 概述", docType: "text"},
+			{text: "第一条 定义", docType: "text"},
+		}
+		levels := resolveTitleLevels(records, p)
+		// "第一章" matches the user-supplied regex -> level 1 from regex.
+		// Because regex matched, bullet fallback must NOT fire.
+		// "第一条" should still be bodyLevel (not promoted by bullet fallback).
+		if levels[0] >= bodyLevel {
+			t.Errorf("regex match '第一章' level = %d, want non-body (regex)", levels[0])
+		}
+		if levels[1] != bodyLevel {
+			t.Errorf("non-matching '第一条' level = %d, want bodyLevel (bullet fallback must not override regex path)", levels[1])
+		}
+	})
+}

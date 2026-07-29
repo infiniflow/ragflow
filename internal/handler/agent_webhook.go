@@ -68,6 +68,8 @@ import (
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	rediscli "ragflow/internal/engine/redis"
+	"ragflow/internal/service"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 	"time"
@@ -224,7 +226,7 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 		}
 		// Detached background run — does NOT inherit c.Request.Context()
 		// so a client disconnect does not cancel the canvas run.
-		go h.runWebhookDetached(cv, clean, isTest, startTs)
+		go h.runWebhookDetached(c.Request.Context(), cv, clean, isTest, startTs)
 		c.Data(status, contentType, payload)
 		return
 	}
@@ -494,17 +496,19 @@ func renderImmediatelyResponse(cfg map[string]any) (int, string, []byte, error) 
 	return status, "text/plain", []byte(bodyTpl), nil
 }
 
-// runWebhookDetached runs the canvas in the background. It uses
-// context.Background() with a 5-minute timeout (NOT
-// c.Request.Context()) so a client disconnect does NOT cancel the run.
+// runWebhookDetached runs the canvas with a five-minute timeout. It preserves
+// request-scoped context values while intentionally detaching cancellation so
+// a client disconnect does not cancel an Immediate webhook run.
 // Trace events are appended to the redis key when isTest is true.
 //
 // Mirrors python: agent_api.py:2123-2175 (the asyncio.create_task body
 // inside the Immediately branch).
 func (h *AgentHandler) runWebhookDetached(
-	cv *entity.UserCanvas, payload map[string]any, isTest bool, startTs time.Time,
+	parent context.Context, cv *entity.UserCanvas, payload map[string]any, isTest bool, startTs time.Time,
 ) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	sessionID := utility.GenerateToken()
+	parent = service.WithAgentSessionID(parent, sessionID)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 5*time.Minute)
 	defer cancel()
 
 	events, err := h.loader.RunAgentWithWebhook(ctx, cv.UserID, cv.ID, payload)
@@ -513,11 +517,14 @@ func (h *AgentHandler) runWebhookDetached(
 			zap.String("canvas", cv.ID),
 			zap.Error(err))
 		if isTest {
-			appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "error", Data: mustJSON(map[string]any{"message": err.Error()})})
+			appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "error", SessionID: sessionID, Data: mustJSON(map[string]any{"message": err.Error()})})
 		}
 		return
 	}
 	for ev := range events {
+		if ev.SessionID == "" {
+			ev.SessionID = sessionID
+		}
 		if isTest {
 			appendWebhookTrace(cv.ID, startTs, ev)
 		}
@@ -538,21 +545,28 @@ func (h *AgentHandler) runWebhookSync(
 	isTest bool, startTs time.Time,
 ) webhookSyncResult {
 	status := 200
+	sessionID := utility.GenerateToken()
+	ctx = service.WithAgentSessionID(ctx, sessionID)
 	events, err := h.loader.RunAgentWithWebhook(ctx, cv.UserID, cv.ID, payload)
 	if err != nil {
 		if isTest {
-			appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "error", Data: mustJSON(map[string]any{"message": err.Error()})})
-			appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "finished", Data: mustJSON(map[string]any{"success": false})})
+			appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "error", SessionID: sessionID, Data: mustJSON(map[string]any{"message": err.Error()})})
+			appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "finished", SessionID: sessionID, Data: mustJSON(map[string]any{"success": false})})
 		}
 		return webhookSyncResult{status: http.StatusBadRequest, body: gin.H{
-			"code":    400,
-			"message": err.Error(),
-			"success": false,
+			"code":       400,
+			"message":    err.Error(),
+			"success":    false,
+			"task_id":    sessionID,
+			"session_id": sessionID,
 		}}
 	}
 
 	contents := []string{}
 	for ev := range events {
+		if ev.SessionID == "" {
+			ev.SessionID = sessionID
+		}
 		if isTest {
 			appendWebhookTrace(cv.ID, startTs, ev)
 		}
@@ -585,12 +599,14 @@ func (h *AgentHandler) runWebhookSync(
 	}
 	final := strings.Join(contents, "")
 	if isTest {
-		appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "finished", Data: mustJSON(map[string]any{"success": true})})
+		appendWebhookTrace(cv.ID, startTs, canvas.RunEvent{Type: "finished", SessionID: sessionID, Data: mustJSON(map[string]any{"success": true})})
 	}
 	return webhookSyncResult{status: status, body: gin.H{
-		"message": final,
-		"success": true,
-		"code":    status,
+		"message":    final,
+		"success":    true,
+		"code":       status,
+		"task_id":    sessionID,
+		"session_id": sessionID,
 	}}
 }
 
@@ -647,10 +663,8 @@ func appendWebhookTrace(agentID string, startTs time.Time, ev canvas.RunEvent) {
 	if ev.MessageID != "" {
 		eventRecord["message_id"] = ev.MessageID
 	}
-	if ev.TaskID != "" {
-		eventRecord["task_id"] = ev.TaskID
-	}
 	if ev.SessionID != "" {
+		eventRecord["task_id"] = ev.SessionID
 		eventRecord["session_id"] = ev.SessionID
 	}
 	entry["events"] = append(events, eventRecord)

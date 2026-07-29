@@ -62,6 +62,67 @@ func validateJieKouAIModelName(modelName *string) (string, error) {
 	return strings.TrimSpace(*modelName), nil
 }
 
+// JieKouAIChatResponse mirrors Jiekou.AI's OpenAI-compatible chat response.
+type JieKouAIChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Logprobs     any    `json:"logprobs"`
+		Message      struct {
+			Content          string           `json:"content"`
+			Reasoning        string           `json:"reasoning"`
+			ReasoningContent string           `json:"reasoning_content"`
+			Role             string           `json:"role"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+	SystemFingerprint string `json:"system_fingerprint"`
+	Usage             struct {
+		CompletionTokens int `json:"completion_tokens"`
+		PromptTokens     int `json:"prompt_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+// JieKouAIEmbeddingResponse mirrors Jiekou.AI's embeddings response.
+type JieKouAIEmbeddingResponse struct {
+	ID     string `json:"id"`
+	Object string `json:"object"`
+	Model  string `json:"model"`
+	Data   []struct {
+		Object    string    `json:"object"`
+		Embedding []float64 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+// JieKouAIRerankResponse mirrors Jiekou.AI's rerank response.
+type JieKouAIRerankResponse struct {
+	ID      string `json:"id"`
+	Model   string `json:"model"`
+	Results []struct {
+		Index    int `json:"index"`
+		Document struct {
+			Text string `json:"text"`
+		} `json:"document"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
 func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -86,9 +147,7 @@ func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, 
 	if chatModelConfig != nil {
 		// For zai-org/glm-4.5: https://docs.jiekou.ai/docs/models/reference-llm-create-chat-completion
 		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				reqBody["enable_thinking"] = *chatModelConfig.Thinking
-			}
+			reqBody["enable_thinking"] = *chatModelConfig.Thinking
 		}
 	}
 
@@ -97,7 +156,10 @@ func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -121,52 +183,39 @@ func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, ok := messageMap["content"].(string)
-	toolCalls := extractToolCalls(messageMap)
-	if !ok && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid content format")
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result JieKouAIChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
 		}
-		// if first char of reasonContent is \n remove the '\n'
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
 		}
-	}
 
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}
-
-	return chatResponse, nil
+		choice := result.Choices[0]
+		if choice.Message.Content == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("response contains neither content nor tool calls")
+		}
+		reasonContent := ""
+		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
+			reasonContent = choice.Message.ReasoningContent
+			if reasonContent == "" {
+				reasonContent = choice.Message.Reasoning
+			}
+			reasonContent = strings.TrimPrefix(reasonContent, "\n")
+		}
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &choice.Message.Content,
+			ReasonContent: &reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -183,6 +232,10 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
+	if modelConfig != nil {
+		modelConfig.ToolCallsResult = nil
+		modelConfig.UsageResult = nil
+	}
 
 	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -192,12 +245,11 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
 	if modelConfig != nil {
 		if modelConfig.Thinking != nil {
-			if *modelConfig.Thinking {
-				reqBody["enable_thinking"] = *modelConfig.Thinking
-			}
+			reqBody["enable_thinking"] = *modelConfig.Thinking
 		}
 	}
 
@@ -206,7 +258,10 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -226,20 +281,31 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: read line by line
+	sawTerminal := false
 	accumulatedToolCalls := make(map[int]map[string]any)
-	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		choices, ok := event["choices"].([]interface{})
+	done, err := ParseSSEStream[map[string]any](resp.Body, func(event map[string]any) error {
+		common.Info(fmt.Sprintf("%v", event))
+
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(modelConfig, modelUsage, tokenUsage)
+		}
+		choices, ok := event["choices"].([]any)
 		if !ok || len(choices) == 0 {
 			return nil
 		}
 
-		firstChoice, ok := choices[0].(map[string]interface{})
+		choice, ok := choices[0].(map[string]any)
 		if !ok {
 			return nil
 		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
+		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
+		delta, ok := choice["delta"].(map[string]any)
 		if !ok {
 			return nil
 		}
@@ -261,8 +327,12 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		}
 
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+	if !done && !sawTerminal {
+		return fmt.Errorf("jiekouai: stream ended before [DONE] or finish_reason")
 	}
 	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
 
@@ -305,7 +375,10 @@ func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []st
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -328,12 +401,7 @@ func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []st
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var parsedResponse struct {
-		Data []struct {
-			Embedding []float64 `json:"embedding"`
-			Index     int       `json:"index"`
-		} `json:"data"`
-	}
+	var parsedResponse JieKouAIEmbeddingResponse
 
 	if err = json.Unmarshal(body, &parsedResponse); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
@@ -342,6 +410,11 @@ func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, texts []st
 	if len(parsedResponse.Data) == 0 {
 		return nil, fmt.Errorf("failed to parse response")
 	}
+	recordResponseUsage(modelUsage, parsedResponse.ID, &TokenUsage{
+		PromptTokens:     parsedResponse.Usage.PromptTokens,
+		CompletionTokens: parsedResponse.Usage.CompletionTokens,
+		TotalTokens:      parsedResponse.Usage.TotalTokens,
+	}, "embedding")
 
 	var embeddings []EmbeddingData
 	for _, embedding := range parsedResponse.Data {
@@ -391,7 +464,10 @@ func (j *JieKouAIModel) Rerank(ctx context.Context, modelName *string, query str
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -414,16 +490,16 @@ func (j *JieKouAIModel) Rerank(ctx context.Context, modelName *string, query str
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var rerankResp struct {
-		Results []struct {
-			Index          int     `json:"index"`
-			RelevanceScore float64 `json:"relevance_score"`
-		} `json:"results"`
-	}
+	var rerankResp JieKouAIRerankResponse
 
 	if err = json.Unmarshal(body, &rerankResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
+	recordResponseUsage(modelUsage, rerankResp.ID, &TokenUsage{
+		PromptTokens:     rerankResp.Usage.PromptTokens,
+		CompletionTokens: rerankResp.Usage.CompletionTokens,
+		TotalTokens:      rerankResp.Usage.TotalTokens,
+	}, "rerank")
 
 	var rerankResponse RerankResponse
 	for _, result := range rerankResp.Results {

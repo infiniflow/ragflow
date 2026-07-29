@@ -413,6 +413,7 @@ func (e *elasticsearchEngine) updateSingleMemoryMessage(ctx context.Context, ind
 		Index:      indexName,
 		DocumentID: messageDocID,
 		Body:       bytes.NewReader(body),
+		Refresh:    "wait_for",
 	}
 	res, err := req.Do(ctx, e.client)
 	if err != nil {

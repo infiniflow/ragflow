@@ -235,6 +235,7 @@ type KnowledgebaseListItem struct {
 	ChunkNum     int64   `json:"chunk_num"`
 	ParserID     string  `json:"parser_id"`
 	EmbdID       string  `json:"embd_id"`
+	TenantEmbdID *string `json:"tenant_embd_id,omitempty"`
 	Nickname     string  `json:"nickname"`
 	TenantAvatar *string `json:"tenant_avatar,omitempty"`
 	UpdateTime   *int64  `json:"update_time,omitempty"`

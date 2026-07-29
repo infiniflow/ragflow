@@ -106,12 +106,16 @@ func TestRetrieval_EmptyArgsIsHandled(t *testing.T) {
 	t.Parallel()
 
 	rt := NewRetrievalTool()
-	// Empty arguments should still return a stub error (not panic) — the
-	// Python tool defaults to empty_response in this case. Without
-	// wiring, the Go side surfaces the service-missing error.
-	_, err := rt.InvokableRun(context.Background(), "")
-	if !errors.Is(err, ErrRetrievalServiceMissing) {
-		t.Fatalf("err = %v, want ErrRetrievalServiceMissing", err)
+	out, err := rt.InvokableRun(context.Background(), "")
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	var result retrievalResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if result.FormalizedContent != "" {
+		t.Fatalf("FormalizedContent = %q, want empty default", result.FormalizedContent)
 	}
 }
 
@@ -197,7 +201,7 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 	}
 }
 
-func TestRetrieval_IgnoresPythonOnlyNodeParams(t *testing.T) {
+func TestRetrieval_AcceptsEmptyResponseNodeParam(t *testing.T) {
 	t.Parallel()
 
 	built, err := BuildByName("retrieval", map[string]any{
@@ -218,7 +222,56 @@ func TestRetrieval_IgnoresPythonOnlyNodeParams(t *testing.T) {
 		t.Fatalf("BuildByName(retrieval) returned %T, want *RetrievalTool", built)
 	}
 	if rt.defaults.TopN != 0 || rt.defaults.TopK != 0 || rt.defaults.KeywordsSimilarityWeight != nil {
-		t.Fatalf("python-only params should not mutate retrieval defaults: %#v", rt.defaults)
+		t.Fatalf("unimplemented params should not mutate retrieval defaults: %#v", rt.defaults)
+	}
+	if rt.defaults.EmptyResponse != "empty" {
+		t.Fatalf("EmptyResponse = %q, want empty", rt.defaults.EmptyResponse)
+	}
+}
+
+func TestRetrieval_UsesEmptyResponseForEmptyQuery(t *testing.T) {
+	t.Parallel()
+
+	rt := NewRetrievalToolWithDefaults(retrievalArgs{EmptyResponse: "No query or result."})
+	out, err := rt.InvokableRun(context.Background(), `{"query":""}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	var result retrievalResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if result.FormalizedContent != "No query or result." {
+		t.Fatalf("FormalizedContent = %q", result.FormalizedContent)
+	}
+}
+
+func TestRetrieval_OmitsUnsetEmptyResponseFromArguments(t *testing.T) {
+	arguments, err := json.Marshal(retrievalArgs{Query: "love"})
+	if err != nil {
+		t.Fatalf("marshal arguments: %v", err)
+	}
+	if strings.Contains(string(arguments), `"empty_response"`) {
+		t.Fatalf("arguments unexpectedly include empty_response: %s", arguments)
+	}
+}
+
+func TestRetrieval_UsesEmptyResponseWhenSearchHasNoChunks(t *testing.T) {
+	prev := GetRetrievalService()
+	SetRetrievalService(staticRetrievalService{})
+	t.Cleanup(func() { SetRetrievalService(prev) })
+
+	rt := NewRetrievalToolWithDefaults(retrievalArgs{EmptyResponse: "No matching chunk."})
+	out, err := rt.InvokableRun(context.Background(), `{"query":"love"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	var result retrievalResult
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatalf("unmarshal result: %v", err)
+	}
+	if result.FormalizedContent != "No matching chunk." {
+		t.Fatalf("FormalizedContent = %q", result.FormalizedContent)
 	}
 }
 

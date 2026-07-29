@@ -50,6 +50,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     hideActions = false,
     hideIfEmpty = false,
     getFormValues,
+    verifyTransform,
     onBlurSuppressChange,
     onInstanceModelsChange,
     onInstanceModelsEdited,
@@ -154,6 +155,8 @@ export function ModelsSection(props: ModelsSectionProps) {
     resolveCreds,
     instanceModels,
     instance,
+    getFormValues,
+    verifyTransform,
   });
 
   // 7. Add / remove / batch toggle / custom add.
@@ -192,7 +195,6 @@ export function ModelsSection(props: ModelsSectionProps) {
   } = useModelEdit({
     providerName,
     instanceName,
-    setCatalog,
   });
 
   // Add-custom-model dialog open state (local UI state).

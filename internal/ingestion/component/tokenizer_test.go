@@ -365,7 +365,7 @@ func TestTokenizerComponent_Invoke_EncoderCountMismatch(t *testing.T) {
 	// Inject an embedder that returns the wrong number of vectors
 	// regardless of input.
 	wrong := &countMismatchedEmbedder{want: 1}
-	cIntf, err := NewTokenizerComponentWithResolver(nil, func(_, _, _ string) (Embedder, error) { return wrong, nil })
+	cIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) { return wrong, nil })
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
@@ -385,7 +385,7 @@ func TestTokenizerComponent_Invoke_EncoderCountMismatch(t *testing.T) {
 
 type countMismatchedEmbedder struct{ want int }
 
-func (c *countMismatchedEmbedder) MaxTokens() int { return 0 }
+func (c *countMismatchedEmbedder) MaxTokens() int { return 2048 }
 
 func (c *countMismatchedEmbedder) Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error) {
 	out := make([]EmbeddingResult, c.want)
@@ -393,31 +393,6 @@ func (c *countMismatchedEmbedder) Encode(ctx context.Context, texts []string) ([
 		out[i] = EmbeddingResult{Vector: make([]float64, 4), TokenCount: 1}
 	}
 	return out, nil
-}
-
-// TestTokenizerComponent_Invoke_HonorsTimeout installs an
-// embedder that blocks past a (test-shrunk) tokenizerTimeout and
-// asserts the component returns context.DeadlineExceeded.
-func TestTokenizerComponent_Invoke_HonorsTimeout(t *testing.T) {
-	requireTokenizerPool(t)
-	t.Setenv("COMPONENT_EXEC_TIMEOUT_TOKENIZER", "1")
-
-	c, stub := withStubEmbedder(t, 4)
-	stub.delay = 2 * time.Second
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	_, err := c.Invoke(ctx, nil, map[string]any{
-		"output_format": "chunks",
-		"chunks":        []map[string]any{{"text": "alpha"}},
-	})
-	if err == nil {
-		t.Fatal("expected timeout error, got nil")
-	}
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("expected context.DeadlineExceeded, got %v", err)
-	}
 }
 
 // TestTokenizerComponent_Smoke_EndToEnd is the BLOCKER smoke test
@@ -435,7 +410,7 @@ func TestTokenizerComponent_Invoke_HonorsTimeout(t *testing.T) {
 // production path against a real embedding API was not exercised
 // in this CI sandbox; the helper `withStubEmbedder` deliberately
 // avoids the network round-trip while still exercising the full
-// wiring (TrackElapsed, WithTimeout, batched Encode, vector
+// wiring (TrackElapsed, batched Encode, vector
 // stamping).
 
 func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {
@@ -525,7 +500,7 @@ func TestTokenizerComponent_Embedding_UsesFilenameWeight(t *testing.T) {
 	requireTokenizerPool(t)
 	cIntf, err := NewTokenizerComponentWithResolver(map[string]any{
 		"filename_embd_weight": 0.25,
-	}, func(_, _, _ string) (Embedder, error) {
+	}, func(_ context.Context, _, _, _ string) (Embedder, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{
 			{vectors: [][]float64{{8, 8}}, tokenCount: 3},
@@ -672,9 +647,7 @@ func TestTokenizerComponent_Embedding_SetsTokenConsumptionIncludingTitleCall(t *
 	requireTokenizerPool(t)
 	c, stub := withStubEmbedder(t, 2)
 	stub.callTokens = []int{3, 5, 7}
-	prevBatchSize := tokenizerEmbeddingBatchSize
-	tokenizerEmbeddingBatchSize = 1
-	t.Cleanup(func() { tokenizerEmbeddingBatchSize = prevBatchSize })
+	t.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "1")
 
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
@@ -692,9 +665,7 @@ func TestTokenizerComponent_Embedding_SetsTokenConsumptionIncludingTitleCall(t *
 func TestTokenizerComponent_Embedding_BatchesByConfiguredBatchSize(t *testing.T) {
 	requireTokenizerPool(t)
 	c, stub := withStubEmbedder(t, 2)
-	prevBatchSize := tokenizerEmbeddingBatchSize
-	tokenizerEmbeddingBatchSize = 2
-	t.Cleanup(func() { tokenizerEmbeddingBatchSize = prevBatchSize })
+	t.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "2")
 
 	if _, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
@@ -732,7 +703,7 @@ func floatSliceClose(got, want []float64) bool {
 
 func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testing.T) {
 	requireTokenizerPool(t)
-	compAIntf, err := NewTokenizerComponentWithResolver(nil, func(_, _, _ string) (Embedder, error) {
+	compAIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{10, 10}}, tokenCount: 1}, {vectors: [][]float64{{1, 1}}, tokenCount: 1}}
 		return stub, nil
@@ -740,7 +711,7 @@ func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testin
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver(A): %v", err)
 	}
-	compBIntf, err := NewTokenizerComponentWithResolver(nil, func(_, _, _ string) (Embedder, error) {
+	compBIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{20, 20}}, tokenCount: 1}, {vectors: [][]float64{{2, 2}}, tokenCount: 1}}
 		return stub, nil
@@ -751,11 +722,11 @@ func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testin
 	compA := compAIntf.(*TokenizerComponent)
 	compB := compBIntf.(*TokenizerComponent)
 
-	outA, err := compA.Invoke(context.Background(), map[string]any{"name": "docA", "output_format": "chunks", "chunks": []map[string]any{{"text": "alpha"}}})
+	outA, err := compA.Invoke(context.Background(), nil, map[string]any{"name": "docA", "output_format": "chunks", "chunks": []map[string]any{{"text": "alpha"}}})
 	if err != nil {
 		t.Fatalf("Invoke A: %v", err)
 	}
-	outB, err := compB.Invoke(context.Background(), map[string]any{"name": "docB", "output_format": "chunks", "chunks": []map[string]any{{"text": "beta"}}})
+	outB, err := compB.Invoke(context.Background(), nil, map[string]any{"name": "docB", "output_format": "chunks", "chunks": []map[string]any{{"text": "beta"}}})
 	if err != nil {
 		t.Fatalf("Invoke B: %v", err)
 	}

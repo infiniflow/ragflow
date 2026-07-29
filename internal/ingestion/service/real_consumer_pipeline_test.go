@@ -79,11 +79,11 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 	}
 
 	ingestionTaskDAO := dao.NewIngestionTaskDAO()
-	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(taskMsg.TaskID, common.CREATED, common.RUNNING)
+	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, taskMsg.TaskID, common.CREATED, common.RUNNING)
 	if err != nil {
 		t.Fatalf("UpdateStatusIfCurrent: %v", err)
 	}
-	task, err := ingestionTaskDAO.GetByID(taskMsg.TaskID)
+	task, err := ingestionTaskDAO.GetByID(context.Background(), db, taskMsg.TaskID)
 	if err != nil || task == nil {
 		t.Fatalf("task not found after publish: %s", taskMsg.TaskID)
 	}
@@ -102,7 +102,7 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 		return nil
 	}
 
-	ingestor.executeTask(taskCtx)
+	ingestor.executeTask(context.Background(), taskCtx)
 
 	if !routedToPipeline {
 		t.Fatal("expected executeTask to route queue-consumed pipeline task to runDocumentTask")
@@ -111,7 +111,7 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 		t.Fatalf("Ack: %v", err)
 	}
 
-	finalTask, err := ingestionTaskDAO.GetByID(task.ID)
+	finalTask, err := ingestionTaskDAO.GetByID(context.Background(), db, task.ID)
 	if err != nil {
 		t.Fatalf("GetByID: %v", err)
 	}

@@ -185,7 +185,8 @@ func TestInsertChunks_EmptyChunks(t *testing.T) {
 			return nil, nil
 		},
 	)
-	err := svc.indexWriter.Write(context.Background(), nil)
+	ctx := t.Context()
+	err := svc.indexWriter.Write(ctx, nil)
 	if err != nil {
 		t.Errorf("expected no error for nil chunks, got %v", err)
 	}
@@ -200,8 +201,9 @@ func TestInsertChunks_BaseNameAndDatasetID(t *testing.T) {
 			return nil, nil
 		},
 	)
+	ctx := t.Context()
 	chunks := []map[string]any{{"text": "hello"}}
-	err := svc.indexWriter.Write(context.Background(), chunks)
+	err := svc.indexWriter.Write(ctx, chunks)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -215,20 +217,22 @@ func TestInsertChunks_BaseNameAndDatasetID(t *testing.T) {
 
 func TestRecordPipelineLog(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithLogCreateFunc(
-		func(log *entity.PipelineOperationLog) error { return nil },
+		func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil },
 	)
-	svc.recordPipelineLog("doc-1", `{"components": {}}`, "done")
+	ctx := t.Context()
+	svc.recordPipelineLog(ctx, dao.DB, "doc-1", `{"components": {}}`, "done")
 }
 
 func TestRecordPipelineLog_InvalidJSONFallback(t *testing.T) {
 	var captured *entity.PipelineOperationLog
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithLogCreateFunc(
-		func(log *entity.PipelineOperationLog) error {
+		func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
 			captured = log
 			return nil
 		},
 	)
-	svc.recordPipelineLog("doc-1", "not-valid-json", "done")
+	ctx := t.Context()
+	svc.recordPipelineLog(ctx, dao.DB, "doc-1", "not-valid-json", "done")
 	if captured == nil {
 		t.Fatal("logCreateFunc was not called")
 	}
@@ -241,12 +245,13 @@ func TestRecordPipelineLog_InvalidJSONFallback(t *testing.T) {
 func TestRecordPipelineLog_ValidJSONParsed(t *testing.T) {
 	var captured *entity.PipelineOperationLog
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithLogCreateFunc(
-		func(log *entity.PipelineOperationLog) error {
+		func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
 			captured = log
 			return nil
 		},
 	)
-	svc.recordPipelineLog("doc-1", `{"components": {"a": {"obj": {"component_name": "Parser", "params": {}}}}}`, "done")
+	ctx := t.Context()
+	svc.recordPipelineLog(ctx, dao.DB, "doc-1", `{"components": {"a": {"obj": {"component_name": "Parser", "params": {}}}}}`, "done")
 	if captured == nil {
 		t.Fatal("logCreateFunc was not called")
 	}
@@ -261,7 +266,8 @@ func TestRecordPipelineLog_ValidJSONParsed(t *testing.T) {
 
 func TestRunPipeline_NilOutput(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0)
-	_, err := svc.processOutput(context.Background(), nil, time.Now())
+	ctx := t.Context()
+	_, err := svc.processOutput(ctx, nil, time.Now())
 	if err != nil {
 		t.Errorf("expected nil error for nil output, got %v", err)
 	}
@@ -269,9 +275,10 @@ func TestRunPipeline_NilOutput(t *testing.T) {
 
 func TestRunPipeline_EmptyOutput(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithLogCreateFunc(
-		func(log *entity.PipelineOperationLog) error { return nil },
+		func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil },
 	)
-	_, err := svc.processOutput(context.Background(), map[string]any{}, time.Now())
+	ctx := t.Context()
+	_, err := svc.processOutput(ctx, map[string]any{}, time.Now())
 	if err != nil {
 		t.Errorf("expected nil error for empty output, got %v", err)
 	}
@@ -279,9 +286,10 @@ func TestRunPipeline_EmptyOutput(t *testing.T) {
 
 func TestRunPipeline_NormalizedEmpty(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).WithLogCreateFunc(
-		func(log *entity.PipelineOperationLog) error { return nil },
+		func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil },
 	)
-	_, err := svc.processOutput(context.Background(), map[string]any{"markdown": ""}, time.Now())
+	ctx := t.Context()
+	_, err := svc.processOutput(ctx, map[string]any{"markdown": ""}, time.Now())
 	if err != nil {
 		t.Errorf("expected nil error for empty normalized output, got %v", err)
 	}
@@ -292,14 +300,15 @@ func TestRunPipeline_FullFlow(t *testing.T) {
 		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			return nil, nil
 		}).
-		WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil })
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil })
 	output := map[string]any{
 		"chunks": []map[string]any{
 			{"text": "hello"},
 			{"text": "world"},
 		},
 	}
-	_, err := svc.processOutput(context.Background(), output, time.Now())
+	ctx := t.Context()
+	_, err := svc.processOutput(ctx, output, time.Now())
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -310,14 +319,15 @@ func TestRunPipeline_AlreadyHasVectors(t *testing.T) {
 		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			return nil, nil
 		}).
-		WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil })
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil })
 
 	output := map[string]any{
 		"chunks": []map[string]any{
 			{"text": "hello", "q_768_vec": []float64{0.1, 0.2}},
 		},
 	}
-	_, err := svc.processOutput(context.Background(), output, time.Now())
+	ctx := t.Context()
+	_, err := svc.processOutput(ctx, output, time.Now())
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -355,7 +365,7 @@ func TestPipelineExecutor_Run_MainFlowWithStubs(t *testing.T) {
 			inserted = true
 			return nil, nil
 		}).
-		WithLogCreateFunc(func(log *entity.PipelineOperationLog) error {
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
 			logged = true
 			if log.PipelineID == nil || *log.PipelineID != "flow-corrected" {
 				t.Fatalf("PipelineID = %v, want flow-corrected", log.PipelineID)
@@ -382,7 +392,8 @@ func TestPipelineExecutor_Execute_PropagatesContext(t *testing.T) {
 	type ctxKey string
 	const key ctxKey = "trace"
 	taskCtx := makeTaskCtx()
-	taskCtx.Ctx = context.WithValue(context.Background(), key, "task-ctx")
+	ctx := t.Context()
+	taskCtx.Ctx = context.WithValue(ctx, key, "task-ctx")
 
 	svc := mustNewPipelineExecutor(t, taskCtx, "flow-1", 0).
 		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
@@ -397,7 +408,7 @@ func TestPipelineExecutor_Execute_PropagatesContext(t *testing.T) {
 		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			return nil, nil
 		}).
-		WithLogCreateFunc(func(log *entity.PipelineOperationLog) error { return nil })
+		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil })
 
 	if _, err := svc.Execute(taskCtx.Ctx); err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -450,8 +461,9 @@ func TestPipelineExecutorRunPipelineWithDSLForwardsSink(t *testing.T) {
 	svc.WithProgressSink(sink)
 
 	dsl := `{"dsl":{"components":{"begin":{"obj":{"component_name":"Begin","params":{}},"downstream":["a"]},"a":{"obj":{"component_name":"` + nameA + `","params":{}},"upstream":["begin"]}},"path":["begin","a"],"graph":{"nodes":[]}}}`
+	ctx := t.Context()
 
-	if _, _, err := svc.runPipelineWithDSL(context.Background(), dsl); err != nil {
+	if _, _, err := svc.runPipelineWithDSL(ctx, dsl); err != nil {
 		t.Fatalf("runPipelineWithDSL: %v", err)
 	}
 

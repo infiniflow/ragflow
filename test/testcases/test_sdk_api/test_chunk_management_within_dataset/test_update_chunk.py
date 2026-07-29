@@ -167,5 +167,5 @@ class TestUpdatedChunk:
         with pytest.raises(Exception) as exception_info:
             chunks[0].update({})
         message = str(exception_info.value)
-        ownership_message = f"You don't own the document {chunks[0].document_id}"
+        ownership_message = f"you don't own the document {chunks[0].document_id}"
         assert message.rstrip(".") == ownership_message or message == f"Can't find this chunk {chunks[0].id}", message

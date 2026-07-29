@@ -64,13 +64,14 @@ type retrievalArgs struct {
 	KeywordsSimilarityWeight *float64 `json:"keywords_similarity_weight,omitempty"`
 	UseKG                    bool     `json:"use_kg,omitempty"`
 	SimilarityThreshold      float64  `json:"similarity_threshold,omitempty"`
+	EmptyResponse            string   `json:"empty_response,omitempty"`
 }
 
 // retrievalResult is the JSON shape returned to the model. The `_ERROR`
 // field matches the Python tool's output convention; downstream components
 // can pattern-match on it.
 type retrievalResult struct {
-	FormalizedContent string         `json:"formalized_content,omitempty"`
+	FormalizedContent string         `json:"formalized_content"`
 	Chunks            []chunkPayload `json:"chunks,omitempty"`
 	Stub              bool           `json:"stub,omitempty"`
 	Error             string         `json:"_ERROR,omitempty"`
@@ -146,6 +147,9 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		zap.Float64p("keywords_similarity_weight", args.KeywordsSimilarityWeight),
 		zap.Bool("use_kg", args.UseKG),
 	)
+	if args.Query == "" {
+		return stubJSONWithErr(retrievalResult{FormalizedContent: args.EmptyResponse})
+	}
 
 	if args.UseKG {
 		// Plan  + §9 Q3: GraphRAG is out of scope for the Go
@@ -193,10 +197,11 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 			Score:      c.Score,
 		})
 	}
-	out := retrievalResult{
-		FormalizedContent: renderChunks(chunks, args.Query),
-		Chunks:            payload,
+	formalizedContent := renderChunks(chunks, args.Query)
+	if len(chunks) == 0 {
+		formalizedContent = args.EmptyResponse
 	}
+	out := retrievalResult{FormalizedContent: formalizedContent, Chunks: payload}
 	// Record chunks into canvas state so the Agent's post-stream
 	// citation grounding call can read them. The recording is
 	// best-effort — when the canvas state is not
@@ -229,6 +234,9 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 	}
 	if args.SimilarityThreshold <= 0 {
 		args.SimilarityThreshold = r.defaults.SimilarityThreshold
+	}
+	if args.EmptyResponse == "" {
+		args.EmptyResponse = r.defaults.EmptyResponse
 	}
 	args.UseKG = args.UseKG || r.defaults.UseKG
 	return args

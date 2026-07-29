@@ -208,6 +208,7 @@ const TokenChunkerForm = ({
                 ))}
 
                 <BlockButton
+                  type="button"
                   onClick={() => childrenDelimiters.append({ value: '\n' })}
                 >
                   {t('common.add')}

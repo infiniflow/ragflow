@@ -44,7 +44,7 @@ import (
 
 type fixedEmbedder struct{}
 
-func (fixedEmbedder) MaxTokens() int { return 0 }
+func (fixedEmbedder) MaxTokens() int { return 2048 }
 
 func (fixedEmbedder) Encode(ctx context.Context, texts []string) ([]componentpkg.EmbeddingResult, error) {
 	out := make([]componentpkg.EmbeddingResult, 0, len(texts))

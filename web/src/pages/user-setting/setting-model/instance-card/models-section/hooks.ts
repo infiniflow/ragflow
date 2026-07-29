@@ -15,7 +15,9 @@
  */
 
 import { LLMFactory } from '@/constants/llm';
+import { useQueryClient } from '@tanstack/react-query';
 import {
+  LlmKeys,
   useAddInstanceModel,
   useDeleteInstanceModels,
   useListProviderModels,
@@ -186,7 +188,7 @@ export function useModelsCatalog({
     if (!credsReady) return;
     hasAutoFetchedRef.current = true;
     handleListModels();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [providerName, instanceName, hideActions, credsReady]);
 
   // Mark `hasFetched` true once the per-instance query resolves — even if
@@ -389,6 +391,26 @@ interface UseModelVerifyArgs {
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
   instance?: IProviderInstance;
+  /**
+   * Host card's current form values. Required when `verifyTransform` is
+   * supplied so the transform can map provider-specific field names
+   * (e.g. PaddleOCR's `paddleocr_api_url`) onto the structured `api_key`
+   * object the verify endpoint expects.
+   */
+  getFormValues?: () => Record<string, any>;
+  /**
+   * Provider-specific transform that maps form values onto the verify
+   * payload's `api_key` / `base_url` / `region`. When present it takes
+   * precedence over the generic `resolveCreds()` mapping. The
+   * `modelInfo` it returns is ignored - per-model verify always sends
+   * only the single model being verified.
+   */
+  verifyTransform?: (values: Record<string, any>) => {
+    apiKey: string | object | Record<string, any>;
+    baseUrl?: string;
+    region?: string;
+    modelInfo?: IModelInfo[];
+  };
 }
 
 export function useModelVerify({
@@ -396,6 +418,8 @@ export function useModelVerify({
   resolveCreds,
   instanceModels,
   instance,
+  getFormValues,
+  verifyTransform,
 }: UseModelVerifyArgs) {
   const { verifyProviderConnection } = useVerifyProviderConnection();
   const [verify, setVerify] = useState<Record<string, VerifyStatus>>({});
@@ -424,18 +448,49 @@ export function useModelVerify({
   const handleVerify = async (model: IProviderModelItem) => {
     setVerify((prev) => ({ ...prev, [model.name]: 'loading' }));
     try {
-      const { apiKey, baseUrl } = resolveCreds();
+      // Per-model verify always sends only the model being verified -
+      // even when `verifyTransform` returns a `modelInfo` array, it is
+      // intentionally overridden here.
+      const modelInfo: IModelInfo[] = [
+        {
+          model_name: model.name,
+          model_type: model.model_types ?? [],
+          max_tokens: model.max_tokens ?? 0,
+        },
+      ];
+
+      let apiKey: string | object;
+      let baseUrl: string | undefined;
+      let region: string | undefined;
+
+      if (verifyTransform) {
+        // Provider-specific field mapping (e.g. PaddleOCR's nested
+        // `paddleocr_api_url` / `paddleocr_access_token` /
+        // `paddleocr_algorithm` -> structured `api_key` object). Run the
+        // host card's current form values through the transform so the
+        // user can verify with values they are still editing.
+        const formValues = getFormValues?.() ?? {};
+        const transformed = verifyTransform(formValues);
+        apiKey = transformed.apiKey;
+        baseUrl = transformed.baseUrl;
+        region = transformed.region;
+      } else {
+        const creds = resolveCreds();
+        apiKey = creds.apiKey;
+        baseUrl = creds.baseUrl;
+      }
+
+      // `api_key` is typed `string` on the service signature, but
+      // providers with a `verifyTransform` may legitimately produce an
+      // object (e.g. PaddleOCR's nested config). The backend accepts
+      // both shapes, so cast to `any` to match the existing card-level
+      // verify path in `useVerifyProvider`.
       const ret = await verifyProviderConnection({
         provider_name: providerName,
-        api_key: apiKey,
+        api_key: apiKey as any,
         base_url: baseUrl,
-        model_info: [
-          {
-            model_name: model.name,
-            model_type: model.model_types ?? [],
-            max_tokens: model.max_tokens ?? 0,
-          },
-        ],
+        model_info: modelInfo,
+        ...(region ? { region } : {}),
         ...(instance?.id ? { instance_id: instance.id } : {}),
       });
       setVerify((prev) => ({
@@ -590,6 +645,7 @@ export function useModelMutations({
     const { apiKey, baseUrl } = resolveCreds();
     await updateProviderInstance({
       provider_name: providerName,
+      id: instance!.id,
       instance_name: instanceName,
       api_key: apiKey,
       base_url: baseUrl,
@@ -615,14 +671,10 @@ export function useModelMutations({
 interface UseModelEditArgs {
   providerName: string;
   instanceName: string;
-  setCatalog: Dispatch<SetStateAction<IProviderModelItem[]>>;
 }
 
-export function useModelEdit({
-  providerName,
-  instanceName,
-  setCatalog,
-}: UseModelEditArgs) {
+export function useModelEdit({ providerName, instanceName }: UseModelEditArgs) {
+  const queryClient = useQueryClient();
   const customModelDialogFields = useCustomModelFields();
   const { patchInstanceModel, loading: editLoading } = usePatchInstanceModel();
   // Model currently being edited via AddCustomModelDialog (with `name`
@@ -655,17 +707,34 @@ export function useModelEdit({
     };
   }, [editingModel]);
 
-  // Persist edits to an existing model. The local `catalog` is patched so
-  // the UI reflects the new values immediately, before the cache
-  // invalidation lands.
+  // Persist edits to an existing model. The instance-models cache
+  // (the source of truth for already-added models) is patched so the
+  // UI reflects the new `max_tokens` / `model_types` / `is_tools`
+  // values immediately, before the PATCH's invalidation refetches.
+  // Updating `catalog` instead would be a no-op here: the union in
+  // `useModelsDerived` lets `instanceItems` win on name conflicts, so
+  // a catalog-only patch is invisible for any model already attached
+  // to the instance.
   const handleEditSubmit = async (item: IProviderModelItem) => {
     if (!editingModel) return;
     const targetName = editingModel.name;
 
-    setCatalog((prev) =>
-      prev.some((m) => m.name === targetName)
-        ? prev.map((m) => (m.name === targetName ? item : m))
-        : prev,
+    queryClient.setQueryData<IInstanceModel[]>(
+      LlmKeys.instanceModels(providerName, instanceName),
+      (prev) => {
+        if (!prev) return prev;
+        const idx = prev.findIndex((m) => m.name === targetName);
+        if (idx === -1) return prev;
+        const next = [...prev];
+        const existing = next[idx];
+        next[idx] = {
+          ...existing,
+          max_tokens: item.max_tokens ?? 0,
+          model_type: item.model_types ?? [],
+          is_tools: hasToolFeature(item.features),
+        };
+        return next;
+      },
     );
 
     await patchInstanceModel({

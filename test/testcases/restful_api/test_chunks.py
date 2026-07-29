@@ -281,7 +281,7 @@ def test_chunk_add_invalid_dataset_and_document_contract(rest_client, create_doc
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"You don't own the document {INVALID_ID_32}.", invalid_document_payload
+    assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
 
 @pytest.mark.p2
@@ -315,7 +315,7 @@ def test_chunk_add_repeated_and_deleted_document_contract(rest_client, create_do
     assert add_after_delete_res.status_code == 200
     add_after_delete_payload = add_after_delete_res.json()
     assert add_after_delete_payload["code"] == 102, add_after_delete_payload
-    assert add_after_delete_payload["message"] == f"You don't own the document {document_id}.", add_after_delete_payload
+    assert add_after_delete_payload["message"] == f"you don't own the document {document_id}", add_after_delete_payload
 
 
 @pytest.mark.p2
@@ -446,7 +446,7 @@ def test_chunk_delete_partial_duplicate_repeat_and_invalid_target_contract(rest_
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"You don't own the document {INVALID_ID_32}.", invalid_document_payload
+    assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
 
 @pytest.mark.p2
@@ -560,7 +560,7 @@ def test_chunk_list_default_get_id_and_invalid_target_contract(rest_client, crea
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"You don't own the document {INVALID_ID_32}.", invalid_document_payload
+    assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
 
 @pytest.mark.p2
@@ -752,7 +752,7 @@ def test_chunk_update_invalid_target_and_param_contract(rest_client, create_docu
     assert invalid_document_res.status_code == 200
     invalid_document_payload = invalid_document_res.json()
     assert invalid_document_payload["code"] == 102, invalid_document_payload
-    assert invalid_document_payload["message"] == f"You don't own the document {INVALID_ID_32}.", invalid_document_payload
+    assert invalid_document_payload["message"] == f"you don't own the document {INVALID_ID_32}", invalid_document_payload
 
     invalid_chunk_res = rest_client.patch(
         f"{base_path}/{INVALID_ID_32}",
@@ -826,6 +826,6 @@ def test_chunk_update_repeated_concurrent_and_deleted_document_contract(rest_cli
     update_after_delete_payload = update_after_delete.json()
     assert update_after_delete_payload["code"] == 102, update_after_delete_payload
     assert update_after_delete_payload["message"] in {
-        f"You don't own the document {document_id}.",
+        f"you don't own the document {document_id}",
         f"Can't find this chunk {chunk_id}",
     }, update_after_delete_payload

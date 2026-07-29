@@ -60,7 +60,7 @@ type GetConfigRequest struct {
 }
 
 // GetConfig retrieves the search configuration for a tenant
-func (s *SkillSearchService) GetConfig(tenantID, spaceID, embdID string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSearchService) GetConfig(ctx context.Context, tenantID, spaceID, embdID string) (map[string]interface{}, common.ErrorCode, error) {
 	spaceID = normalizeSpaceID(spaceID)
 	var config *entity.SkillSearchConfig
 	var err error
@@ -68,7 +68,7 @@ func (s *SkillSearchService) GetConfig(tenantID, spaceID, embdID string) (map[st
 	if embdID == "" {
 		// If embd_id is not provided, get the latest config for the tenant
 		// Prioritize configs with non-empty embd_id (user-saved configs)
-		config, err = s.configDAO.GetLatestByTenantID(tenantID, spaceID)
+		config, err = s.configDAO.GetLatestByTenantID(ctx, dao.DB, tenantID, spaceID)
 		if err != nil {
 			// No config found, return default config
 			config = &entity.SkillSearchConfig{
@@ -87,10 +87,10 @@ func (s *SkillSearchService) GetConfig(tenantID, spaceID, embdID string) (map[st
 			}
 		}
 	} else {
-		config, err = s.configDAO.GetByTenantAndEmbdID(tenantID, spaceID, embdID)
+		config, err = s.configDAO.GetByTenantAndEmbdID(ctx, dao.DB, tenantID, spaceID, embdID)
 		if err != nil {
 			// Config not found, create default one
-			config, err = s.configDAO.GetOrCreate(tenantID, spaceID, embdID)
+			config, err = s.configDAO.GetOrCreate(ctx, dao.DB, tenantID, spaceID, embdID)
 			if err != nil {
 				return nil, common.CodeOperatingError, fmt.Errorf("failed to get or create config: %w", err)
 			}
@@ -113,7 +113,7 @@ type UpdateConfigRequest struct {
 }
 
 // UpdateConfig updates the search configuration for a tenant
-func (s *SkillSearchService) UpdateConfig(req *UpdateConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSearchService) UpdateConfig(ctx context.Context, req *UpdateConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
 	req.SpaceID = normalizeSpaceID(req.SpaceID)
 	// Validate vector_similarity_weight
 	if req.VectorSimilarityWeight < 0 || req.VectorSimilarityWeight > 1 {
@@ -132,17 +132,17 @@ func (s *SkillSearchService) UpdateConfig(req *UpdateConfigRequest) (map[string]
 
 	// Get or create config for this tenant+space (regardless of embd_id)
 	// Each tenant+space should have only ONE config, switching embd_id updates the existing config
-	config, err := s.configDAO.GetLatestByTenantID(req.TenantID, req.SpaceID)
+	config, err := s.configDAO.GetLatestByTenantID(ctx, dao.DB, req.TenantID, req.SpaceID)
 	if err != nil {
 		// No config exists, create a new one
-		config, err = s.configDAO.CreateWithTenantSpace(req.TenantID, req.SpaceID, req.EmbdID)
+		config, err = s.configDAO.CreateWithTenantSpace(ctx, dao.DB, req.TenantID, req.SpaceID, req.EmbdID)
 		if err != nil {
 			return nil, common.CodeOperatingError, fmt.Errorf("failed to create config: %w", err)
 		}
 	} else {
 		// Config exists, clean up any other active records for this tenant+space
 		// to ensure only one active config per tenant+space
-		if err := s.configDAO.DeleteAllByTenantSpaceExceptID(req.TenantID, req.SpaceID, config.ID); err != nil {
+		if err := s.configDAO.DeleteAllByTenantSpaceExceptID(ctx, dao.DB, req.TenantID, req.SpaceID, config.ID); err != nil {
 			common.Warn("Failed to clean up duplicate configs", zap.Error(err))
 		}
 	}
@@ -179,12 +179,12 @@ func (s *SkillSearchService) UpdateConfig(req *UpdateConfigRequest) (map[string]
 	}
 
 	// Update by config ID to ensure we update the correct record
-	if err := s.configDAO.Update(config.ID, updates); err != nil {
+	if err = s.configDAO.Update(ctx, dao.DB, config.ID, updates); err != nil {
 		return nil, common.CodeOperatingError, fmt.Errorf("failed to update config: %w", err)
 	}
 
 	// Refresh config
-	config, err = s.configDAO.GetByID(config.ID)
+	config, err = s.configDAO.GetByID(ctx, dao.DB, config.ID)
 	if err != nil {
 		return nil, common.CodeOperatingError, fmt.Errorf("failed to refresh config: %w", err)
 	}
@@ -245,7 +245,7 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 
 	// Get config for search strategy
 	// Use GetLatestByTenantID to prioritize configs with non-empty embd_id
-	config, err := s.configDAO.GetLatestByTenantID(req.TenantID, req.SpaceID)
+	config, err := s.configDAO.GetLatestByTenantID(ctx, dao.DB, req.TenantID, req.SpaceID)
 	if err != nil {
 		// Use default config if not found
 		config = &entity.SkillSearchConfig{

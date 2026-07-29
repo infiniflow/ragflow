@@ -98,3 +98,46 @@ func TestOneChunker_JSONMultipleMerges(t *testing.T) {
 		t.Errorf("image = %q, want first available media context", got)
 	}
 }
+
+// TestOneChunker_PreservesPositions verifies that when a single upstream
+// item carries PDF coordinates, the OneChunker preserves both Positions
+// and PDFPositions (with their coordinate values) on the output chunk.
+func TestOneChunker_PreservesPositions(t *testing.T) {
+	chunks := oneChunksOf(t, map[string]any{
+		"name":          "page.pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{
+				"text":           "page text",
+				"positions":      []any{[]any{10.0, 20.0, 30.0, 40.0}},
+				"_pdf_positions": []any{[]any{1.0, 2.0, 3.0, 4.0, 5.0}},
+			},
+		},
+	})
+	if len(chunks) != 1 {
+		t.Fatalf("want 1 chunk, got %d", len(chunks))
+	}
+	assertCoordTuple(t, "positions", chunks[0]["positions"], []float64{10.0, 20.0, 30.0, 40.0})
+	assertCoordTuple(t, "_pdf_positions", chunks[0]["_pdf_positions"], []float64{1.0, 2.0, 3.0, 4.0, 5.0})
+}
+
+// assertCoordTuple verifies a positions/_pdf_positions field round-tripped
+// as a [][]float64 with the expected single-row coordinate tuple.
+func assertCoordTuple(t *testing.T, key string, got any, want []float64) {
+	t.Helper()
+	rows, ok := got.([][]float64)
+	if !ok {
+		t.Fatalf("%s = %v, want [][]float64 (got %T)", key, got, got)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("%s has %d rows, want 1", key, len(rows))
+	}
+	if len(rows[0]) != len(want) {
+		t.Fatalf("%s[0] = %v, want %v (len %d vs %d)", key, rows[0], want, len(rows[0]), len(want))
+	}
+	for i, w := range want {
+		if rows[0][i] != w {
+			t.Errorf("%s[0][%d] = %v, want %v", key, i, rows[0][i], w)
+		}
+	}
+}

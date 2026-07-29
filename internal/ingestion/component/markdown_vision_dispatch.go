@@ -35,6 +35,8 @@ import (
 
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 var (
@@ -55,6 +57,7 @@ var (
 // "image" base64 field. It returns (result, handled, error).
 func maybeDispatchMarkdownVision(
 	ctx context.Context,
+	db *gorm.DB,
 	fileType utility.FileType,
 	dispatched parserDispatchResult,
 	inputs map[string]any,
@@ -101,7 +104,7 @@ func maybeDispatchMarkdownVision(
 	}
 
 	// Resolve the tenant's IMAGE2TEXT model.
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(tenantID, entity.ModelTypeImage2Text)
+	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 	if err != nil {
 		// Model not available — skip vision enhancement silently,
 		// matching Python's try/except pass behaviour.

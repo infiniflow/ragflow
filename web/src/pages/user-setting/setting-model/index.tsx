@@ -176,19 +176,17 @@ const SettingModelV2: FC = () => {
     );
     if (refs.length === 0) return;
 
-    // 1. Validate every card up front. Block all saves if any is invalid.
+    const dirty = refs
+      .map((r) => ({ ref: r, payload: r.getSavePayload() }))
+      .filter((e) => e.payload !== null);
+    if (dirty.length === 0) return;
+
     const validations = await Promise.all(
-      refs.map(async (r) => ({ ref: r, valid: await r.validate() })),
+      dirty.map(async (e) => ({ ...e, valid: await e.ref.validate() })),
     );
     if (validations.some((v) => !v.valid)) {
       return;
     }
-
-    // 2. Collect dirty payloads (null = nothing to save for this card).
-    const entries = validations
-      .map((v) => ({ ref: v.ref, payload: v.ref.getSavePayload() }))
-      .filter((e) => e.payload !== null);
-    if (entries.length === 0) return;
 
     setSaving(true);
     // Pin the auto-show guard so a draft isn't re-spawned while the
@@ -200,7 +198,7 @@ const SettingModelV2: FC = () => {
       // 3. Dispatch one API call per dirty card. Sequential so any
       //    backend error stops the batch and the user can retry the
       //    remaining cards after fixing the issue.
-      for (const { ref, payload } of entries) {
+      for (const { ref, payload } of validations) {
         if (!payload) continue;
         if (payload.apiKind === 'add') {
           const ret = await addProviderInstance(payload.payload as any);
