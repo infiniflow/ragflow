@@ -783,6 +783,40 @@ def test_update_chat_allows_knowledge_placeholder_without_sources(monkeypatch):
     assert updated["prompt_config"]["system"] == "Answer with {knowledge}"
 
 
+@pytest.mark.p1
+def test_update_chat_merges_temporal_retrieval(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    existing = _DummyDialogRecord().to_dict()
+    existing["temporal_retrieval"] = {
+        "enabled": True,
+        "mode": "auto",
+        "temporal_field": "published_at",
+        "half_life_days": 14,
+    }
+    updated = {}
+
+    _set_request_json(monkeypatch, module, {"temporal_retrieval": {"half_life_days": 7}})
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(existing)))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+
+    def _update(_chat_id, payload):
+        updated.update(payload)
+        return True
+
+    monkeypatch.setattr(module.DialogService, "update_by_id", _update)
+
+    res = _run(module.update_chat.__wrapped__("chat-1"))
+
+    assert res["code"] == 0
+    assert updated["temporal_retrieval"] == {
+        "enabled": True,
+        "mode": "auto",
+        "temporal_field": "published_at",
+        "half_life_days": 7,
+    }
+
+
 @pytest.mark.p2
 def test_list_chats_returns_old_business_fields(monkeypatch):
     module = _load_chat_module(monkeypatch)

@@ -55,6 +55,21 @@ def test_profile_temporal_field_and_hide_internal_metadata():
 
 
 @pytest.mark.p2
+def test_profile_year_only_field_uses_freshness_without_hard_filtering():
+    profile = profile_temporal_field(
+        {
+            "doc-1": {"year": "2025"},
+            "doc-2": {"year": "2026"},
+        },
+        "year",
+    )
+
+    assert profile.detected_format == "year"
+    assert profile.supports_hard_filter is False
+    assert profile.supports_freshness_score is True
+
+
+@pytest.mark.p2
 def test_temporal_policy_arabic_latest_uses_digit_normalization():
     resolved = TemporalRetrievalPolicy.resolve(
         "آخر أخبار ٢٠٢٦ عن الاقتصاد",

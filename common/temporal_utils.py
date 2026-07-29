@@ -348,7 +348,7 @@ def profile_temporal_field(metadata_by_doc: dict[str, dict[str, Any]], temporal_
     detected_format = formats.most_common(1)[0][0] if formats else None
     dates = sorted(p.date_norm for p in parsed_values)
     parse_rate = parsed_count / denominator
-    directly_comparable = detected_format in {"date", "year"} and parse_rate >= 0.8
+    directly_comparable = detected_format == "date" and parse_rate >= 0.8
 
     return TemporalFieldProfile(
         temporal_field=temporal_field,
