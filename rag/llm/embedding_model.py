@@ -32,9 +32,14 @@ from common import settings
 from common.aimlapi_utils import attribution_headers
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
+<<<<<<< HEAD
 from rag.llm.key_utils import _normalize_replicate_key
 from rag.llm.mws_utils import mws_api_url, require_mws_token
 from rag.utils.url_utils import append_api_path, ensure_v1
+=======
+from rag.llm.key_utils import _normalize_replicate_key, _resolve_qianfan_credentials
+from rag.utils.url_utils import ensure_v1
+>>>>>>> bebb5da62 (fix(llm): guard BaiduYiyanEmbed key against non-JSON / JSON non-object (#17504))
 import logging
 import base64
 
@@ -1092,7 +1097,14 @@ class BaiduYiyanEmbed(Base):
     def __init__(self, key, model_name, base_url=None):
         import qianfan
 
-        key = json.loads(key)
+        # Parse the key via the shared helper (added in PR #17390 for
+        # the chat side; this PR wires the embed side through the same
+        # helper). Pre-fix, the bare ``json.loads(key).get(...)`` calls
+        # crashed with AttributeError on any non-JSON or JSON non-object
+        # input (e.g. "[1,2,3]", "42", "null"). The provider REQUIRES a
+        # JSON object so the helper raises a clear ModelException
+        # instead. See #17504.
+        key = _resolve_qianfan_credentials(key)
         ak = key.get("yiyan_ak", "")
         sk = key.get("yiyan_sk", "")
         self.client = qianfan.Embedding(ak=ak, sk=sk)
