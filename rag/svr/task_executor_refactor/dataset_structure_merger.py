@@ -23,7 +23,9 @@ merges them into ``scope_kwd="dataset"`` rows with bucketing for bounded memory.
 Key design:
   - 256 hash buckets — each bucket flushed when it reaches 500 rows
   - Incremental: only processes doc_graph rows changed since ``last_build_time``
-  - Full rebuild on doc deletion or template change
+  - Document deletions tracked via ``record_doc_deletion()`` – ghost entities
+    are cleaned up incrementally at the start of the next build
+  - Template changes still require a full rebuild
   - Resulting dataset_graph rows are searchable (``available_int=1``)
 """
 
@@ -54,6 +56,7 @@ _BUCKET_FLUSH_THRESHOLD = 500
 _PAGE_SIZE = 1000
 _SCOPE_KWD_DOC = "doc"
 _SCOPE_KWD_DATASET = "dataset"
+_DELETION_META_KWD = "doc_deleted"
 
 # Row id seeds for metadata
 _META_ROW_KWD = "kg_build_meta"
@@ -151,6 +154,39 @@ async def _es_insert(tenant_id: str, kb_id: str, rows: list[dict]) -> None:
         await thread_pool_exec(settings.docStoreConn.insert, rows, index, kb_id)
     except Exception:
         logging.exception("structure_merge: insert failed for kb=%s", kb_id)
+
+
+# ---------------------------------------------------------------------------
+# Document deletion tracking (sync, called from DocumentService.remove_document)
+# ---------------------------------------------------------------------------
+
+
+def record_doc_deletion(tenant_id: str, kb_id: str, doc_id: str) -> None:
+    """Record a document deletion for incremental ghost cleanup.
+
+    Creates a lightweight ES meta row so that the next incremental merge build
+    can look up which docs were deleted and clean up orphaned dataset-level
+    entity rows (those whose *only* source document was the deleted doc).
+
+    Must be callable from a synchronous context (``DocumentService.remove_document``).
+    """
+    import datetime
+
+    try:
+        index = search.index_name(tenant_id)
+        if not settings.docStoreConn.index_exist(index, kb_id):
+            return
+        row = {
+            "id": f"{_DELETION_META_KWD}:{kb_id}:{doc_id}",
+            "kb_id": kb_id,
+            "doc_id": doc_id,
+            "knowledge_graph_kwd": _DELETION_META_KWD,
+            "compile_kwd": "*",
+            "create_timestamp_flt": datetime.datetime.now().timestamp(),
+        }
+        settings.docStoreConn.insert([row], index, kb_id)
+    except Exception:
+        logging.exception("structure_merge: failed to record doc deletion kb=%s doc=%s", kb_id, doc_id)
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +318,156 @@ async def _merge_bucket(
     return rows_out
 
 
+# ---------------------------------------------------------------------------
+# Deletion-driven ghost cleanup
+# ---------------------------------------------------------------------------
+
+
+async def _cleanup_deleted_docs(
+    tenant_id: str,
+    kb_id: str,
+    compile_kwd: str,
+    template_id: str | None,
+) -> None:
+    """Clean dataset-level entity rows whose *only* source doc was deleted.
+
+    Called once per (compile_kwd, template_id) at the beginning of an
+    incremental build.  Works in three passes:
+
+    1. Read all pending ``doc_deleted`` meta rows for this kb.
+    2. Find dataset entity rows whose ``doc_ids_kwd`` references a deleted
+       doc.  If after removing the deleted doc ID the ``doc_ids_kwd`` list
+       is empty the row is a **ghost** and gets deleted.
+    3. Delete the processed ``doc_deleted`` meta rows.
+
+    Shared entities (those still referenced by other live docs) keep their
+    existing content — the next incremental re-merge will correct any stale
+    descriptions or mention counts.
+    """
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = _index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return
+
+    # ── Pass 1: collect pending deletions ────────────────────────────
+    cursor: dict[str, str] = {}  # meta_row_id → doc_id
+    offset = 0
+    while True:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id", "doc_id"],
+                [],
+                {"kb_id": [kb_id], "knowledge_graph_kwd": [_DELETION_META_KWD]},
+                [],
+                OrderByExpr(),
+                offset,
+                _PAGE_SIZE,
+                index,
+                [kb_id],
+            )
+            fm = settings.docStoreConn.get_fields(res, ["id", "doc_id"]) or {}
+        except Exception:
+            break
+        if not fm:
+            break
+        for row in fm.values():
+            did = row.get("doc_id")
+            if did:
+                cursor[row["id"]] = did
+        if len(fm) < _PAGE_SIZE:
+            break
+        offset += _PAGE_SIZE
+
+    if not cursor:
+        return
+    deleted_doc_ids = list(set(cursor.values()))
+
+    # ── Pass 2: find affected dataset rows and remove ghosts ─────────
+    dataset_del_cond: dict = {
+        "scope_kwd": [_SCOPE_KWD_DATASET],
+        "compile_kwd": [compile_kwd],
+        "kb_id": [kb_id],
+        "doc_ids_kwd": deleted_doc_ids,
+    }
+    if template_id:
+        dataset_del_cond["compilation_template_ids"] = [template_id]
+
+    ids_to_delete: list[str] = []
+    ids_to_update: list[tuple[str, list[str]]] = []  # (row_id, new_doc_ids)
+    offset = 0
+    while True:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id", "doc_ids_kwd"],
+                [],
+                dataset_del_cond,
+                [],
+                OrderByExpr(),
+                offset,
+                _PAGE_SIZE,
+                index,
+                [kb_id],
+            )
+            fm = settings.docStoreConn.get_fields(res, ["id", "doc_ids_kwd"]) or {}
+        except Exception:
+            break
+        if not fm:
+            break
+        for row in fm.values():
+            current: list = row.get("doc_ids_kwd") or []
+            if not isinstance(current, list):
+                current = []
+            remaining = [d for d in current if d not in deleted_doc_ids]
+            if not remaining:
+                ids_to_delete.append(row["id"])
+            elif len(remaining) < len(current):
+                ids_to_update.append((row["id"], remaining))
+        if len(fm) < _PAGE_SIZE:
+            break
+        offset += _PAGE_SIZE
+
+    # Execute deletions
+    if ids_to_delete:
+        logging.info(
+            "structure_merge: deleting %d ghost dataset rows for kb=%s compile=%s",
+            len(ids_to_delete),
+            kb_id,
+            compile_kwd,
+        )
+        await _es_delete(tenant_id, kb_id, {"id": ids_to_delete})
+
+    # Execute updates (remove stale doc_id from doc_ids_kwd)
+    if ids_to_update:
+        logging.info(
+            "structure_merge: updating doc_ids_kwd on %d shared dataset rows for kb=%s compile=%s",
+            len(ids_to_update),
+            kb_id,
+            compile_kwd,
+        )
+        for rid, remaining in ids_to_update:
+            try:
+                await thread_pool_exec(
+                    settings.docStoreConn.update,
+                    {"id": [rid]},
+                    {"doc_ids_kwd": remaining},
+                    index,
+                    kb_id,
+                )
+            except Exception:
+                logging.exception(
+                    "structure_merge: failed to update doc_ids_kwd on row %s",
+                    rid,
+                )
+
+    # ── Pass 3: clear processed meta rows ────────────────────────────
+    meta_ids = list(cursor.keys())
+    if meta_ids:
+        await _es_delete(tenant_id, kb_id, {"id": meta_ids})
+
+
 async def _do_build(
     tenant_id: str,
     kb_id: str,
@@ -296,6 +482,10 @@ async def _do_build(
     When *incremental* is True, only processes rows changed since the last build
     timestamp.  When False (full rebuild), reads ALL doc_graph rows for the
     given (compile_kwd, template) and deletes existing dataset rows first.
+
+    Document deletions are tracked via :func:`record_doc_deletion` and cleaned
+    up incrementally (:func:`_cleanup_deleted_docs`) so that deleting a
+    document no longer forces a full rebuild.
     """
 
     index = _index_name(tenant_id)
@@ -338,6 +528,10 @@ async def _do_build(
             await thread_pool_exec(settings.docStoreConn.delete, {"id": [meta_id]}, index, kb_id)
         except Exception:
             pass
+
+    # ── Incremental: clean up ghosts from deleted docs ───────────────
+    if incremental and last_build_time is not None:
+        await _cleanup_deleted_docs(tenant_id, kb_id, compile_kwd, template_id)
 
     # ── Scan doc_graph rows ──────────────────────────────────────────
     # Backward compat: existing doc_graph rows don't have scope_kwd.

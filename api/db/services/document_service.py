@@ -506,6 +506,18 @@ class DocumentService(CommonService):
                 f"Failed to prune dataset_nav for document {doc.id}: {e}",
             )
 
+        # Record doc deletion for incremental structure-merge ghost cleanup
+        try:
+            from rag.svr.task_executor_refactor.dataset_structure_merger import (
+                record_doc_deletion,
+            )
+
+            record_doc_deletion(tenant_id, doc.kb_id, doc.id)
+        except Exception as e:
+            logging.warning(
+                f"Failed to record doc deletion for structure merge: {e}",
+            )
+
         # Delete chunks from doc store - this is critical, log errors
         try:
             settings.docStoreConn.delete({"doc_id": doc.id}, chunk_index_name, doc.kb_id)
