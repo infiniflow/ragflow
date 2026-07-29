@@ -79,7 +79,6 @@ export default function SearchingView({
     setSearchText(searchStr);
   }, [searchStr, setSearchText]);
 
-  useAutoResizeTextarea(searchInputRef, searchText);
   const isMultiLine = useAutoResizeTextarea(searchInputRef, searchText);
   return (
     <section
