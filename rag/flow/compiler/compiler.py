@@ -61,8 +61,9 @@ class CompilerParam(ProcessParamBase, LLMParam):
 
 class Compiler(ProcessBase, LLM):
     component_name = "Compiler"
-    _PARSER_TEXT_CHUNK_TOKEN_SIZE = 512
+    _PARSER_TEXT_CHUNK_TOKEN_SIZE = 1024
     _PARSER_CANDIDATE_TOKEN_SIZE = 128
+    _PARSER_MIN_COARSE_CHUNK_TOKEN_SIZE = 256
     _PARSER_MIN_SPLIT_CHARACTERS = 24
 
     @classmethod
@@ -95,27 +96,26 @@ class Compiler(ProcessBase, LLM):
         return [part for part in merged if part.strip()]
 
     @classmethod
-    def _slumber_candidates(cls, text: str, level: int = 0) -> list[str]:
-        """Apply Slumber's paragraph→sentence→pause→word→token hierarchy."""
+    def _slumber_candidates(cls, text: str, level: int = 0, target_token_size: int | None = None) -> list[str]:
+        """Apply paragraph→sentence splitting with token fallback."""
+        target_token_size = target_token_size or cls._PARSER_TEXT_CHUNK_TOKEN_SIZE
         levels = [
             ["\n\n", "\r\n", "\n", "\r"],
             [". ", "! ", "? ", "。", "！", "？", "；", ";"],
-            ["{", "}", '"', "[", "]", "<", ">", "(", ")", ":", "：", ";", "，", ",", "—", "|", "~", "-", "...", "`", "'"],
-            [" "],
         ]
         if not text.strip():
             return []
         if level >= len(levels):
-            return [part for part in naive_merge(text, cls._PARSER_TEXT_CHUNK_TOKEN_SIZE, "", 0) if part.strip()]
+            return [part for part in naive_merge(text, target_token_size, "", 0) if part.strip()]
 
         splits = cls._split_slumber_level(text, levels[level])
         if len(splits) <= 1 and level < len(levels) - 1:
-            return cls._slumber_candidates(text, level + 1)
+            return cls._slumber_candidates(text, level + 1, target_token_size)
 
         candidates = []
         for split in splits:
-            if num_tokens_from_string(split) > cls._PARSER_CANDIDATE_TOKEN_SIZE:
-                candidates.extend(cls._slumber_candidates(split, level + 1))
+            if num_tokens_from_string(split) > target_token_size:
+                candidates.extend(cls._slumber_candidates(split, level + 1, target_token_size))
             else:
                 candidates.append(split)
         return candidates
@@ -128,22 +128,67 @@ class Compiler(ProcessBase, LLM):
         return bool(doc_type in {"table", "image"} or record.get("img_id") or record.get("image") or layout_type in {"figure", "table"} or record.get("bbox"))
 
     @classmethod
-    def _normalize_upstream_chunks(cls, upstream: dict, split_json_text: bool = False) -> list[dict]:
+    def _merge_small_text_chunks(cls, chunks: list[dict], target_token_size: int) -> list[dict]:
+        """Merge adjacent ordinary text chunks up to the coarse target."""
+        if target_token_size < cls._PARSER_MIN_COARSE_CHUNK_TOKEN_SIZE:
+            return chunks
+
+        merged = []
+        pending = None
+        for chunk in chunks:
+            text = chunk.get("text")
+            if not isinstance(text, str) or not text.strip() or cls._is_atomic_json_record(chunk):
+                if pending is not None:
+                    merged.append(pending)
+                    pending = None
+                merged.append(chunk)
+                continue
+
+            if pending is None:
+                pending = chunk
+                continue
+
+            combined = f"{pending['text']}\n\n{text}"
+            if num_tokens_from_string(pending["text"]) < cls._PARSER_MIN_COARSE_CHUNK_TOKEN_SIZE and num_tokens_from_string(combined) <= target_token_size:
+                pending["text"] = combined
+            else:
+                merged.append(pending)
+                pending = chunk
+
+        if pending is not None:
+            merged.append(pending)
+        return merged
+
+    @classmethod
+    def _normalize_upstream_chunks(
+        cls,
+        upstream: dict,
+        split_json_text: bool = False,
+        target_token_size: int | None = None,
+    ) -> list[dict]:
         """Normalize direct Parser output into Compiler chunks.
 
-        Parser JSON is already a list of chunk-like records, so preserve each
-        record and its metadata. Textual Parser outputs need a lightweight
-        token split before they enter the existing compilation pipeline.
+        Parser JSON is a list of chunk-like records. JSON records are split by
+        the requested token target while retaining their metadata; upstream
+        ``chunks`` preserve atomic table/image records unless rechunking is
+        explicitly requested. Textual Parser outputs use the same split.
         """
         output_format = upstream.get("output_format")
         if output_format == "chunks":
             chunks = upstream.get("chunks") or []
-            return deepcopy(chunks) if isinstance(chunks, list) else []
-
-        if output_format == "json":
+            if not isinstance(chunks, list):
+                return []
+            if not split_json_text:
+                return deepcopy(chunks)
+            records = chunks
+        elif output_format == "json":
             records = upstream.get("json") or upstream.get("json_result") or []
             if not isinstance(records, list):
                 return []
+        else:
+            records = None
+
+        if records is not None:
             chunks = []
             for record in records:
                 if not isinstance(record, dict):
@@ -157,10 +202,16 @@ class Compiler(ProcessBase, LLM):
                         chunk["text"] = text
                         chunks.append(chunk)
                     else:
-                        for part in Compiler._slumber_candidates(text):
+                        for part in Compiler._slumber_candidates(text, target_token_size=target_token_size):
                             split_chunk = deepcopy(chunk)
                             split_chunk["text"] = part
                             chunks.append(split_chunk)
+                else:
+                    # Keep metadata-only records (for example, an image
+                    # placeholder) instead of silently dropping them.
+                    chunks.append(chunk)
+            if split_json_text:
+                return cls._merge_small_text_chunks(chunks, target_token_size or cls._PARSER_TEXT_CHUNK_TOKEN_SIZE)
             return chunks
 
         if output_format in {"markdown", "text", "html"}:
@@ -169,7 +220,8 @@ class Compiler(ProcessBase, LLM):
                 text = upstream.get(f"{output_format}_result")
             if not isinstance(text, str) or not text.strip():
                 return []
-            return [{"text": part} for part in cls._slumber_candidates(text) if part.strip()]
+            chunks = [{"text": part} for part in cls._slumber_candidates(text, target_token_size=target_token_size) if part.strip()]
+            return cls._merge_small_text_chunks(chunks, target_token_size or cls._PARSER_TEXT_CHUNK_TOKEN_SIZE)
 
         return []
 
@@ -397,9 +449,25 @@ class Compiler(ProcessBase, LLM):
             raptor_cfg = cfg.get("raptor")
             return isinstance(raptor_cfg, dict) and bool(raptor_cfg.get("rechunk"))
 
-        should_split_json = any(_template_requests_rechunk(cfg) for _, cfg in active_templates)
-        if should_split_json and kwargs.get("output_format") == "json":
-            chunks = self._normalize_upstream_chunks(kwargs, split_json_text=True)
+        should_rechunk = any(_template_requests_rechunk(cfg) for _, cfg in active_templates)
+        target_token_size = self._PARSER_CANDIDATE_TOKEN_SIZE if should_rechunk else self._PARSER_TEXT_CHUNK_TOKEN_SIZE
+        if kwargs.get("output_format") in {"markdown", "text", "html"}:
+            chunks = self._normalize_upstream_chunks(kwargs, split_json_text=True, target_token_size=target_token_size)
+        elif kwargs.get("output_format") == "json":
+            chunks = self._normalize_upstream_chunks(
+                kwargs,
+                split_json_text=True,
+                target_token_size=target_token_size,
+            )
+            if not chunks:
+                self.set_output("chunks", chunks)
+                return
+        elif should_rechunk and kwargs.get("output_format") == "chunks":
+            chunks = self._normalize_upstream_chunks(
+                kwargs,
+                split_json_text=True,
+                target_token_size=target_token_size,
+            )
             if not chunks:
                 self.set_output("chunks", chunks)
                 return
