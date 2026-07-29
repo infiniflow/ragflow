@@ -461,11 +461,12 @@ class OpenAIAPICompatible(Base):
 
         return model_list
 
+
 class NVIDIA(OpenAIAPICompatible):
     _FACTORY_NAME = "NVIDIA"
     _HOSTED_API_HOST = "integrate.api.nvidia.com"
     _CATALOG_URL = "https://api.ngc.nvidia.com/v2/search/catalog/resources/ENDPOINT"
-    _CATALOG_QUERY = {"page": 0, "pageSize": 500}
+    _CATALOG_PAGE_SIZE = 500
     _MODEL_LIST_TIMEOUT = aiohttp.ClientTimeout(total=30)
 
     @staticmethod
@@ -474,17 +475,35 @@ class NVIDIA(OpenAIAPICompatible):
 
     @classmethod
     def _catalog_resources(cls, catalog):
-        if not isinstance(catalog, dict):
+        catalogs = catalog if isinstance(catalog, list) else [catalog]
+        resources = []
+        total_count = None
+        for catalog_page in catalogs:
+            page_resources, page_total_count = cls._catalog_page(catalog_page)
+            if page_resources is None:
+                return None
+            if total_count is None:
+                total_count = page_total_count
+            elif page_total_count != total_count:
+                return None
+            resources.extend(page_resources)
+        if total_count is None or len(resources) < total_count:
             return None
+        return resources
+
+    @staticmethod
+    def _catalog_page(catalog):
+        if not isinstance(catalog, dict):
+            return None, None
         for group in catalog.get("results", []):
             if not isinstance(group, dict) or group.get("groupValue") != "ENDPOINT":
                 continue
             resources = group.get("resources")
             total_count = group.get("totalCount")
-            if not isinstance(resources, list) or not isinstance(total_count, int) or len(resources) < total_count:
-                return None
-            return resources
-        return None
+            if not isinstance(resources, list) or not isinstance(total_count, int) or total_count < 0:
+                return None, None
+            return resources, total_count
+        return None, None
 
     @staticmethod
     def _label_values(resource, key):
@@ -529,6 +548,17 @@ class NVIDIA(OpenAIAPICompatible):
             return []
 
         now = now or datetime.now(timezone.utc)
+        active_endpoints = cls._active_endpoint_keys(resources, now)
+
+        filtered = []
+        for model in models:
+            publisher, separator, model_name = model["name"].partition("/")
+            if separator and (cls._normalized_publisher(publisher), model_name) in active_endpoints:
+                filtered.append(model)
+        return filtered
+
+    @classmethod
+    def _active_endpoint_keys(cls, resources, now):
         active_endpoints = set()
         for resource in resources:
             if not isinstance(resource, dict) or not cls._is_active_free_endpoint(resource, now):
@@ -538,13 +568,7 @@ class NVIDIA(OpenAIAPICompatible):
             if not publishers or not isinstance(display_name, str) or not display_name:
                 continue
             active_endpoints.add((cls._normalized_publisher(publishers[0]), display_name))
-
-        filtered = []
-        for model in models:
-            publisher, separator, model_name = model["name"].partition("/")
-            if separator and (cls._normalized_publisher(publisher), model_name) in active_endpoints:
-                filtered.append(model)
-        return filtered
+        return active_endpoints
 
     def _uses_hosted_catalog(self):
         model_list_url = self._get_model_list_url()
@@ -554,26 +578,53 @@ class NVIDIA(OpenAIAPICompatible):
         if not self._uses_hosted_catalog():
             return await super().get_model_list()
 
-        try:
-            async with aiohttp.ClientSession(timeout=self._MODEL_LIST_TIMEOUT) as session:
-                async with session.get(self._get_model_list_url(), headers={"Authorization": f"Bearer {self._get_api_key()}"}) as response:
-                    if response.status != 200:
-                        logging.warning("[NVIDIA] Model list request failed with HTTP %s", response.status)
-                        return []
-                    raw_models = await response.json()
+        async with aiohttp.ClientSession(timeout=self._MODEL_LIST_TIMEOUT) as session:
+            async with session.get(self._get_model_list_url(), headers={"Authorization": f"Bearer {self._get_api_key()}"}) as response:
+                response.raise_for_status()
+                raw_models = await response.json()
+
+            catalog_pages = []
+            resource_count = 0
+            total_count = None
+            page = 0
+            while total_count is None or resource_count < total_count:
+                catalog_query = {"page": page, "pageSize": self._CATALOG_PAGE_SIZE}
                 async with session.get(
                     self._CATALOG_URL,
-                    params={"q": json.dumps(self._CATALOG_QUERY, separators=(",", ":")), "group-labels-by-labelset": "true"},
+                    params={"q": json.dumps(catalog_query, separators=(",", ":")), "group-labels-by-labelset": "true"},
                 ) as response:
-                    if response.status != 200:
-                        logging.warning("[NVIDIA] Endpoint catalog request failed with HTTP %s", response.status)
-                        return []
-                    catalog = await response.json()
-        except (aiohttp.ClientError, TimeoutError, ValueError) as error:
-            logging.warning("[NVIDIA] Hosted model discovery failed: %s", error)
-            return []
+                    response.raise_for_status()
+                    catalog_page = await response.json()
 
-        return self._filter_hosted_models(self._format_model_list(raw_models), catalog)
+                page_resources, page_total_count = self._catalog_page(catalog_page)
+                if page_resources is None:
+                    raise ValueError("NVIDIA endpoint catalog response is missing a valid ENDPOINT group")
+                if total_count is None:
+                    total_count = page_total_count
+                elif page_total_count != total_count:
+                    raise ValueError(f"NVIDIA endpoint catalog total count changed from {total_count} to {page_total_count}")
+
+                catalog_pages.append(catalog_page)
+                resource_count += len(page_resources)
+                if resource_count < total_count and len(page_resources) < self._CATALOG_PAGE_SIZE:
+                    raise ValueError(f"NVIDIA endpoint catalog returned {resource_count} of {total_count} resources")
+                page += 1
+
+        formatted_models = self._format_model_list(raw_models)
+        resources = self._catalog_resources(catalog_pages)
+        if resources is None:
+            raise ValueError("NVIDIA endpoint catalog response is incomplete")
+        now = datetime.now(timezone.utc)
+        filtered_models = self._filter_hosted_models(formatted_models, catalog_pages, now)
+        raw_model_items = raw_models.get("data") if isinstance(raw_models, dict) else raw_models
+        raw_model_count = len(raw_model_items) if isinstance(raw_model_items, list) else 0
+        logging.info(
+            "[NVIDIA] Hosted model discovery succeeded: raw_models=%d active_endpoints=%d filtered_models=%d",
+            raw_model_count,
+            len(self._active_endpoint_keys(resources, now)),
+            len(filtered_models),
+        )
+        return filtered_models
 
     def _format_model_list(self, raw_model_list):
         models = super()._format_model_list(raw_model_list)
@@ -585,7 +636,8 @@ class NVIDIA(OpenAIAPICompatible):
             model["name"] = model_name
             unique_models[model_name] = model
         return [unique_models[name] for name in sorted(unique_models)]
-      
+
+
 class GreenPT(OpenAIAPICompatible):
     """Discover and classify GreenPT models from the live catalog."""
 

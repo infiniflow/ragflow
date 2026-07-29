@@ -3,6 +3,7 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -80,6 +81,23 @@ func TestParseNvidiaModelListPrefersPresetMetadata(t *testing.T) {
 	}
 }
 
+func TestParseNvidiaModelListInfersTypesForPresetWithoutTypes(t *testing.T) {
+	preset := &Model{Name: "nvidia/nv-embed-v1"}
+	models := parseNvidiaModelList(ModelList{Models: []ModelListItem{
+		{ID: "nvidia/nv-embed-v1", OwnedBy: "nvidia"},
+	}}, &Provider{Models: []*Model{preset}})
+
+	if len(models) != 1 {
+		t.Fatalf("len(models) = %d, want 1", len(models))
+	}
+	if got := models[0].ModelTypes; len(got) != 1 || got[0] != "embedding" {
+		t.Fatalf("ModelTypes = %v, want [embedding]", got)
+	}
+	if preset.ModelTypes != nil {
+		t.Fatalf("preset ModelTypes mutated to %v", preset.ModelTypes)
+	}
+}
+
 func TestNvidiaListModelsFiltersHostedCatalog(t *testing.T) {
 	const apiKey = "nvapi-test"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -120,6 +138,56 @@ func TestNvidiaListModelsFiltersHostedCatalog(t *testing.T) {
 
 	if got := joinModelNames(models, ","); got != "future/preserved-model,meta/llama-3.1-8b-instruct" {
 		t.Fatalf("model names = %q, want active hosted models", got)
+	}
+}
+
+func TestNvidiaFetchHostedCatalogPaginates(t *testing.T) {
+	resources := make([]nvidiaCatalogResource, nvidiaCatalogPageSize+1)
+	for i := range resources {
+		resources[i] = nvidiaCatalogResource{DisplayName: fmt.Sprintf("model-%d", i)}
+	}
+
+	requestedPages := make([]int, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var query struct {
+			Page     int `json:"page"`
+			PageSize int `json:"pageSize"`
+		}
+		if err := json.Unmarshal([]byte(r.URL.Query().Get("q")), &query); err != nil {
+			t.Errorf("decode catalog query: %v", err)
+			return
+		}
+		requestedPages = append(requestedPages, query.Page)
+		if query.PageSize != nvidiaCatalogPageSize {
+			t.Errorf("pageSize = %d, want %d", query.PageSize, nvidiaCatalogPageSize)
+			return
+		}
+
+		start := query.Page * query.PageSize
+		end := min(start+query.PageSize, len(resources))
+		pageResources := []nvidiaCatalogResource{}
+		if start < len(resources) {
+			pageResources = resources[start:end]
+		}
+		_ = json.NewEncoder(w).Encode(nvidiaCatalogResponse{Results: []nvidiaCatalogGroup{{
+			GroupValue: "ENDPOINT",
+			TotalCount: len(resources),
+			Resources:  pageResources,
+		}}})
+	}))
+	defer server.Close()
+
+	driver := NewNvidiaModel(nil, URLSuffix{})
+	driver.catalogURL = server.URL
+	catalog, err := driver.fetchHostedCatalog(t.Context())
+	if err != nil {
+		t.Fatalf("fetchHostedCatalog() error = %v", err)
+	}
+	if got := requestedPages; len(got) != 2 || got[0] != 0 || got[1] != 1 {
+		t.Fatalf("requested pages = %v, want [0 1]", got)
+	}
+	if got := len(catalog.Results[0].Resources); got != len(resources) {
+		t.Fatalf("resources = %d, want %d", got, len(resources))
 	}
 }
 

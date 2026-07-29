@@ -31,8 +31,9 @@ import (
 )
 
 const (
-	nvidiaHostedAPIHost = "integrate.api.nvidia.com"
-	nvidiaCatalogURL    = "https://api.ngc.nvidia.com/v2/search/catalog/resources/ENDPOINT"
+	nvidiaHostedAPIHost   = "integrate.api.nvidia.com"
+	nvidiaCatalogURL      = "https://api.ngc.nvidia.com/v2/search/catalog/resources/ENDPOINT"
+	nvidiaCatalogPageSize = 500
 )
 
 // NvidiaModel implements ModelDriver for Nvidia
@@ -535,10 +536,10 @@ func (n NvidiaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 	}
 	url := fmt.Sprintf("%s/%s", strings.TrimRight(resolvedBaseURL, "/"), strings.TrimLeft(n.baseModel.URLSuffix.Models, "/"))
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	modelListCtx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(modelListCtx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -576,7 +577,9 @@ func (n NvidiaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 	}
 	models := parseNvidiaModelList(modelList, provider)
 	if n.usesHostedCatalog(resolvedBaseURL) {
-		catalog, catalogErr := n.fetchHostedCatalog(ctx)
+		catalogCtx, catalogCancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+		catalog, catalogErr := n.fetchHostedCatalog(catalogCtx)
+		catalogCancel()
 		if catalogErr != nil {
 			return nil, catalogErr
 		}
@@ -626,12 +629,71 @@ func (n NvidiaModel) fetchHostedCatalog(ctx context.Context) (*nvidiaCatalogResp
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse Nvidia endpoint catalog URL: %w", err)
 	}
-	query := parsed.Query()
-	query.Set("q", `{"page":0,"pageSize":500}`)
-	query.Set("group-labels-by-labelset", "true")
-	parsed.RawQuery = query.Encode()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	var merged *nvidiaCatalogResponse
+	endpointGroupIndex := -1
+	totalCount := -1
+	for page := 0; ; page++ {
+		catalogQuery, err := json.Marshal(map[string]int{"page": page, "pageSize": nvidiaCatalogPageSize})
+		if err != nil {
+			return nil, fmt.Errorf("failed to encode Nvidia endpoint catalog query: %w", err)
+		}
+		pageURL := *parsed
+		query := pageURL.Query()
+		query.Set("q", string(catalogQuery))
+		query.Set("group-labels-by-labelset", "true")
+		pageURL.RawQuery = query.Encode()
+
+		catalogPage, err := n.fetchHostedCatalogPage(ctx, pageURL.String())
+		if err != nil {
+			return nil, err
+		}
+
+		pageGroupIndex := -1
+		for i := range catalogPage.Results {
+			if catalogPage.Results[i].GroupValue == "ENDPOINT" {
+				pageGroupIndex = i
+				break
+			}
+		}
+		if pageGroupIndex < 0 {
+			return nil, fmt.Errorf("Nvidia endpoint catalog response is missing the ENDPOINT group")
+		}
+
+		pageGroup := catalogPage.Results[pageGroupIndex]
+		if pageGroup.TotalCount < 0 {
+			return nil, fmt.Errorf("Nvidia endpoint catalog returned invalid total count %d", pageGroup.TotalCount)
+		}
+		if merged == nil {
+			merged = catalogPage
+			endpointGroupIndex = pageGroupIndex
+			totalCount = pageGroup.TotalCount
+			merged.Results[endpointGroupIndex].Resources = nil
+		} else if pageGroup.TotalCount != totalCount {
+			return nil, fmt.Errorf("Nvidia endpoint catalog total count changed from %d to %d", totalCount, pageGroup.TotalCount)
+		}
+
+		merged.Results[endpointGroupIndex].Resources = append(merged.Results[endpointGroupIndex].Resources, pageGroup.Resources...)
+		if len(pageGroup.Resources) < nvidiaCatalogPageSize {
+			break
+		}
+	}
+
+	if merged == nil || endpointGroupIndex < 0 {
+		return nil, fmt.Errorf("Nvidia endpoint catalog returned no pages")
+	}
+	if len(merged.Results[endpointGroupIndex].Resources) < totalCount {
+		return nil, fmt.Errorf(
+			"Nvidia endpoint catalog returned %d of %d resources",
+			len(merged.Results[endpointGroupIndex].Resources),
+			totalCount,
+		)
+	}
+	return merged, nil
+}
+
+func (n NvidiaModel) fetchHostedCatalogPage(ctx context.Context, pageURL string) (*nvidiaCatalogResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create Nvidia endpoint catalog request: %w", err)
 	}
@@ -790,6 +852,9 @@ func parseNvidiaModelList(modelList ModelList, provider *Provider) []ListModelRe
 		} else {
 			maxTokens := defaultMaxTokens
 			response.MaxTokens = &maxTokens
+			response.ModelTypes = InferModelTypes(modelName)
+		}
+		if len(response.ModelTypes) == 0 {
 			response.ModelTypes = InferModelTypes(modelName)
 		}
 
