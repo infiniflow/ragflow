@@ -334,6 +334,8 @@ func main() {
 	if config.Log.Path != "" {
 		fileOut.Path = config.Log.Path
 	}
+
+	common.SyncLog()
 	if err = common.Init(logLevel, fileOut, serverName); err != nil {
 		common.Error("Failed to reinitialize logger with configured level", err)
 	}

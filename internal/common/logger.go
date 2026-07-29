@@ -167,8 +167,8 @@ func Init(level string, file FileOutput, serviceName string) error {
 	return nil
 }
 
-// Sync flushes any buffered log entries.
-func Sync() {
+// SyncLog flushes any buffered log entries.
+func SyncLog() {
 	if Logger != nil {
 		_ = Logger.Sync()
 	}
@@ -242,15 +242,6 @@ func SetLevel(level string) error {
 	return nil
 }
 
-// ResolveCompress applies the project default (true) when the config-level
-// Compress is nil. When non-nil, the operator's choice is used as-is.
-//
-// The project default is compression on; operators can opt out by setting
-// log.compress: false in service_conf.yaml. Because Go's bool zero value is
-// false and would otherwise be indistinguishable from "not set", the YAML
-// struct uses *bool and this helper resolves the defaulting at the cmd/
-// boundary. The *bool does not live in this file because FileOutput itself
-// takes a plain bool (the caller has already resolved the default by then).
 func ResolveCompress(c *bool) bool {
 	if c == nil {
 		return true
@@ -319,7 +310,7 @@ func GinLogger() gin.HandlerFunc {
 				// Likely a panic recovered by gin.Recovery() with no c.Error attached.
 				// Use a sentinel so the err field is non-empty; operators can
 				// grep for this string in logs.
-				ginErr = errors.New("5xx response with no handler error attached")
+				ginErr = err5xxNoError
 			}
 			Error(msg, ginErr, fields...)
 		case status >= 400:
@@ -329,3 +320,5 @@ func GinLogger() gin.HandlerFunc {
 		}
 	}
 }
+
+var err5xxNoError = errors.New("5xx response with no handler error attached")
