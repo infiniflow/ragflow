@@ -62,7 +62,7 @@ func (infinityWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 func mergedChunkMap(tenant, kb string, p kccommon.Product) map[string]interface{} {
 	srcDocIDs := metaStringSlice(p.Meta, "source_doc_ids")
 	srcChunkIDs := metaStringSlice(p.Meta, "source_chunk_ids")
-	return map[string]interface{}{
+	m := map[string]interface{}{
 		"id":                  datasetLevelID(tenant, kb, p),
 		"doc_id":              kb,
 		"tenant_id":           tenant,
@@ -75,6 +75,14 @@ func mergedChunkMap(tenant, kb string, p kccommon.Product) map[string]interface{
 		"source_doc_ids":      srcDocIDs,
 		"source_chunk_ids":    srcChunkIDs,
 	}
+	// Persist the merged product's embedding under the dimension-suffixed column
+	// used elsewhere in the index, so dataset-level rows remain vector-searchable
+	// and Reader.LoadCompiledProducts can reconstruct them (otherwise the vector
+	// is silently dropped and search returns nothing for merged rows).
+	if dim := len(p.Vector); dim > 0 {
+		m[fmt.Sprintf("q_%d_vec", dim)] = p.Vector
+	}
+	return m
 }
 
 func (infinityWriter) DeleteMergedForDoc(ctx context.Context, tenant, kb, docID string) error {
@@ -83,27 +91,41 @@ func (infinityWriter) DeleteMergedForDoc(ctx context.Context, tenant, kb, docID 
 		return nil
 	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
-	res, err := eng.Search(ctx, &types.SearchRequest{
-		IndexNames:   []string{baseName},
-		KbIDs:        []string{kb},
-		Filter:       map[string]interface{}{"available_int": 1, "kc_merged": 1},
-		SelectFields: []string{"id", "source_doc_ids"},
-		Limit:        2000,
-	})
-	if err != nil {
-		return err
-	}
-	for _, c := range res.Chunks {
-		ids := metaStringSlice(c, "source_doc_ids")
-		// Fully orphaned: the only contributor is the deleted document.
-		if len(ids) == 1 && ids[0] == docID {
-			if _, err := eng.DeleteChunks(ctx, map[string]interface{}{
-				"id":            c["id"],
-				"kb_id":         kb,
-				"available_int": 1,
-			}, baseName, kb); err != nil {
-				return err
+	const batchSize = 2000
+	// Re-query from the start each iteration (deletions shift the result set),
+	// deleting every fully-orphaned merged row we find, until a page returns
+	// fewer than batchSize candidates. Without pagination, orphaned merged rows
+	// beyond the 2000 cap would never be cleaned up.
+	for {
+		res, err := eng.Search(ctx, &types.SearchRequest{
+			IndexNames:   []string{baseName},
+			KbIDs:        []string{kb},
+			Filter:       map[string]interface{}{"available_int": 1, "kc_merged": 1},
+			SelectFields: []string{"id", "source_doc_ids"},
+			Limit:        batchSize,
+			Offset:       0,
+		})
+		if err != nil {
+			return err
+		}
+		if len(res.Chunks) == 0 {
+			break
+		}
+		for _, c := range res.Chunks {
+			ids := metaStringSlice(c, "source_doc_ids")
+			// Fully orphaned: the only contributor is the deleted document.
+			if len(ids) == 1 && ids[0] == docID {
+				if _, err := eng.DeleteChunks(ctx, map[string]interface{}{
+					"id":            c["id"],
+					"kb_id":         kb,
+					"available_int": 1,
+				}, baseName, kb); err != nil {
+					return err
+				}
 			}
+		}
+		if len(res.Chunks) < batchSize {
+			break
 		}
 	}
 	return nil

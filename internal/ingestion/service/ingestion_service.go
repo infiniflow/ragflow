@@ -140,6 +140,18 @@ const consumeErrorBackoff = 1 * time.Second
 
 func (e *Ingestor) Start() error {
 	common.Info(fmt.Sprintf("Ingestor %s initialized", e.id))
+	var startErr error
+	e.startOnce.Do(func() {
+		startErr = e.start()
+	})
+	return startErr
+}
+
+// start runs the full startup sequence. It is invoked at most once (guarded by
+// startOnce in Start) so repeated Start calls cannot launch duplicate worker
+// pools, compile consumers, or consume loops, and the first initialization
+// error is retained and returned to every later caller.
+func (e *Ingestor) start() error {
 	msgQueueEngine := engine.GetMessageQueueEngine()
 	if err := msgQueueEngine.InitConsumer("tasks.RAGFLOW"); err != nil {
 		return err
@@ -149,7 +161,7 @@ func (e *Ingestor) Start() error {
 	// owned goroutines joined by Stop via workerWg/compileWg. Start follows
 	// the standard lifecycle contract: it returns immediately after kicking
 	// these off rather than blocking on the consume loop itself.
-	go e.startWorkerPool()
+	e.startWorkerPool()
 	e.startDatasetKnowledgeCompile()
 
 	// Run the main tasks.RAGFLOW consume loop off the caller's goroutine so
@@ -230,7 +242,7 @@ func (e *Ingestor) startDatasetKnowledgeCompile() {
 		return
 	}
 	knowledge_compile.SetModelConfig(e.kcLLMID, e.kcEmbedding)
-	if err := knowledge_compile.Provision(mq, dao.DB); err != nil {
+	if err := knowledge_compile.Provision(e.ctx, mq, dao.DB); err != nil {
 		common.Warn(fmt.Sprintf("dataset-level compile consumer unavailable; compiled chunks will not be merged: %v", err))
 		return
 	}

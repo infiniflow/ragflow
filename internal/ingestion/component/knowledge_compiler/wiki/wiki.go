@@ -137,6 +137,9 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		}
 	}
 	if len(products) > 0 {
+		if deps.Chat == nil {
+			return common.Outputs{}, fmt.Errorf("wiki: chat model required for page generation")
+		}
 		if deps.Embed == nil {
 			return common.Outputs{}, fmt.Errorf("wiki: embedder required (page + sections must carry vectors)")
 		}
@@ -341,6 +344,9 @@ func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
 		})
 		if err != nil {
 			return nil, err
+		}
+		if resp == nil {
+			return nil, fmt.Errorf("knowledge_compiler: wiki refine returned no response")
 		}
 		contentRaw := strings.TrimSpace(firstNonEmpty(resp.Content))
 		if contentRaw == "" {
@@ -607,6 +613,9 @@ func (p *wikiPipeline) mergeWikiPageContent(existingMD, newMD, slug string) (str
 	})
 	if err != nil {
 		return "", err
+	}
+	if resp == nil {
+		return fallback, nil
 	}
 	merged := strings.TrimSpace(firstNonEmpty(resp.Content))
 	if merged == "" {
@@ -928,16 +937,6 @@ func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPla
 			existing[page.Slug] = page
 			out = append(out, page)
 		}
-	}
-	for _, page := range fallback {
-		if page.Slug == "" {
-			continue
-		}
-		if _, ok := existing[page.Slug]; ok {
-			continue
-		}
-		existing[page.Slug] = page
-		out = append(out, page)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Priority == out[j].Priority {

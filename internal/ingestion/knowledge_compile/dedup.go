@@ -36,13 +36,15 @@ type DeduperFactory func(tenant string) (Deduper, error)
 // llmDeduper wraps the component's GroupedDeduper (which internally uses
 // LLMMergeDecider for duplicate-judging), scoped to the whole KB batch.
 type llmDeduper struct {
-	group *structure.GroupedDeduper
+	group   *structure.GroupedDeduper
+	decider *structure.LLMMergeDecider
+	embed   kccommon.Embedder
 }
 
 // NewLLMDeduper builds a KB-scoped deduper from the runtime chat/embed deps.
 func NewLLMDeduper(chat kccommon.ChatInvoker, embed kccommon.Embedder, llmID string, threshold float64) Deduper {
 	decider := structure.NewLLMMergeDecider(chat, llmID, embed, threshold)
-	return &llmDeduper{group: structure.NewGroupedDeduper(decider)}
+	return &llmDeduper{group: structure.NewGroupedDeduper(decider), decider: decider, embed: embed}
 }
 
 func (x *llmDeduper) Dedup(ctx context.Context, rows []kccommon.Product) ([]kccommon.Product, error) {
@@ -50,6 +52,11 @@ func (x *llmDeduper) Dedup(ctx context.Context, rows []kccommon.Product) ([]kcco
 		if err := x.group.Add(ctx, r); err != nil {
 			return nil, err
 		}
+	}
+	// Apply the aliases recorded by the LLM merge decider to relation endpoints
+	// so merged entities collapse consistently with the per-document dedup path.
+	if err := x.group.RewriteRelations(ctx, x.decider.Aliases(), x.embed); err != nil {
+		return nil, err
 	}
 	return x.group.Rows(), nil
 }

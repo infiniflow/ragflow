@@ -233,24 +233,26 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 	// union of all leaf-level summaries — otherwise the root would just
 	// re-summarize the same text multiple times.
 	rootSummary, err := summarizeTexts(ctx, deps, llmID, "Synthesize the overall document theme from these section summaries:\n\n"+strings.Join(topLevelTexts, "\n"))
-	if err == nil {
-		embedding, e2 := deps.Embed.Encode(ctx, []string{rootSummary})
-		if e2 == nil && len(embedding) > 0 {
-			if err := sink.Add(common.Product{
-				ID:       rootID,
-				DocID:    docID,
-				TenantID: tenantID,
-				Variant:  common.VariantRaptor,
-				Content:  rootSummary,
-				Vector:   embedding[0],
-				ParentID: "",
-				Meta:     map[string]any{"kind": "root", "level": -1},
-			}); err != nil {
-				return err
-			}
-		}
+	if err != nil {
+		return fmt.Errorf("raptor: root summarization failed: %w", err)
 	}
-	return nil
+	embedding, err := deps.Embed.Encode(ctx, []string{rootSummary})
+	if err != nil {
+		return fmt.Errorf("raptor: root embedding failed: %w", err)
+	}
+	if len(embedding) == 0 {
+		return fmt.Errorf("raptor: root embedding returned no vectors")
+	}
+	return sink.Add(common.Product{
+		ID:       rootID,
+		DocID:    docID,
+		TenantID: tenantID,
+		Variant:  common.VariantRaptor,
+		Content:  rootSummary,
+		Vector:   embedding[0],
+		ParentID: "",
+		Meta:     map[string]any{"kind": "root", "level": -1},
+	})
 }
 
 func summarizeTexts(ctx context.Context, deps common.Deps, llmID, text string) (string, error) {

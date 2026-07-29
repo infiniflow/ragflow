@@ -24,7 +24,11 @@ func PackBatches(chunks []Chunk, maxTokens int, tok Tokenizer) [][]Chunk {
 	}
 
 	for _, c := range chunks {
-		t := numTokens(tok, c.Text)
+		text := c.Text
+		if text == "" {
+			text = c.Content
+		}
+		t := numTokens(tok, text)
 		if t > maxTokens {
 			// Oversized chunk: emit current batch, then the chunk alone.
 			flush()

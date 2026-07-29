@@ -241,6 +241,7 @@ func chooseClusterCount(heights []float64, spec ClusterSpec) int {
 	if len(heights) == 0 {
 		return 1
 	}
+	n := len(heights) + 1
 	sorted := append([]float64{}, heights...)
 	sort.Float64s(sorted)
 	// Largest forward gap (heights sorted ascending; gaps between consecutive).
@@ -253,8 +254,11 @@ func chooseClusterCount(heights []float64, spec ClusterSpec) int {
 			cutIdx = i
 		}
 	}
-	// numClusters = number of merges below the cut point + 1.
-	numClusters := cutIdx + 1
+	// numClusters = points remaining after performing only the merges below the
+	// cut point (cutIdx of them); i.e. n - cutIdx. cutIdx == len(sorted) (no gap
+	// found) => single cluster. This is the gap-driven count; MinClusters/
+	// MaxClusters below still clamp it for production tuning.
+	numClusters := n - cutIdx
 	if spec.MaxClusters > 0 && numClusters > spec.MaxClusters {
 		numClusters = spec.MaxClusters
 	}

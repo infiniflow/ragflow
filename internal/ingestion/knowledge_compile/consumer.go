@@ -41,7 +41,7 @@ type Consumer struct {
 
 	mu    sync.Mutex
 	seqs  map[string]map[string]uint64 // dataset -> docID -> last applied seq (per-doc out-of-order guard)
-	tombs map[string]map[string]bool   // dataset -> docID -> deleted (tombstone)
+	tombs map[string]map[string]uint64 // dataset -> docID -> delete event seq (tombstone)
 }
 
 // NewConsumer constructs a Consumer driven by the given Scheduler. Tests pass a
@@ -58,7 +58,7 @@ func NewConsumer(scheduler Scheduler, opts ...Option) *Consumer {
 		pollInterval:  2 * time.Second,
 		sweepInterval: 30 * time.Second,
 		seqs:          map[string]map[string]uint64{},
-		tombs:         map[string]map[string]bool{},
+		tombs:         map[string]map[string]uint64{},
 	}
 	for _, o := range opts {
 		o(c)
@@ -187,7 +187,7 @@ func (c *Consumer) processDataset(ctx context.Context, datasetID string) {
 func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries []BacklogEntry) error {
 	c.mu.Lock()
 	if c.tombs == nil {
-		c.tombs = map[string]map[string]bool{}
+		c.tombs = map[string]map[string]uint64{}
 	}
 	if c.seqs == nil {
 		c.seqs = map[string]map[string]uint64{}
@@ -204,14 +204,23 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 		switch EventType(e.EventType) {
 		case EventTypeDeleted:
 			if tomb == nil {
-				tomb = map[string]bool{}
+				tomb = map[string]uint64{}
 				c.tombs[kb] = tomb
 			}
-			tomb[e.DocID] = true
+			tomb[e.DocID] = e.Seq
 			deleted = append(deleted, e.DocID)
 		case EventTypeCompleted:
-			if tomb != nil && tomb[e.DocID] {
-				continue // deleted before it completed
+			// A tombstone means the doc was deleted; a completion with a seq
+			// <= the delete seq is the stale original completion (skip it).
+			// A completion with a higher seq is a genuine re-ingest after
+			// deletion: clear the tombstone so the doc is processed again
+			// (otherwise the tombstone would skip it forever and grow
+			// unbounded across the consumer's lifetime).
+			if delSeq, ok := tomb[e.DocID]; ok {
+				if e.Seq <= delSeq {
+					continue // deleted (or a stale completion) before it completed
+				}
+				delete(tomb, e.DocID)
 			}
 			// Seq is per-document, so the stale/duplicate check must be scoped
 			// to the document, not the whole dataset (C4).

@@ -40,31 +40,43 @@ func (infinityReader) LoadCompiledProducts(ctx context.Context, tenant, kb strin
 		return nil, nil
 	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
-	res, err := eng.Search(ctx, &types.SearchRequest{
-		IndexNames: []string{baseName},
-		KbIDs:      []string{kb},
-		Filter:     map[string]interface{}{"available_int": 0},
-		SelectFields: []string{
-			"id", "doc_id", "tenant_id", "compile_kwd",
-			"content_with_weight", "kc_payload",
-			"source_chunk_ids", "source_doc_ids",
-			"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
-			"slug_kwd", "type",
-		},
-		Limit: 5000,
-	})
-	if err != nil {
-		return nil, err
-	}
-	out := make([]kccommon.Product, 0, len(res.Chunks))
-	for _, c := range res.Chunks {
-		// Only compiled products carry compile_kwd; skip ordinary source chunks.
-		if _, ok := c["compile_kwd"]; !ok {
-			continue
+	const batchSize = 5000
+	var out []kccommon.Product
+	offset := 0
+	for {
+		res, err := eng.Search(ctx, &types.SearchRequest{
+			IndexNames: []string{baseName},
+			KbIDs:      []string{kb},
+			Filter:     map[string]interface{}{"available_int": 0},
+			SelectFields: []string{
+				"id", "doc_id", "tenant_id", "compile_kwd",
+				"content_with_weight", "kc_payload",
+				"source_chunk_ids", "source_doc_ids",
+				"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
+				"slug_kwd", "type",
+			},
+			Limit:  batchSize,
+			Offset: offset,
+		})
+		if err != nil {
+			return nil, err
 		}
-		if p, ok := productFromChunkMap(c, tenant); ok {
-			out = append(out, p)
+		for _, c := range res.Chunks {
+			// Only compiled products carry compile_kwd; skip ordinary source chunks.
+			if _, ok := c["compile_kwd"]; !ok {
+				continue
+			}
+			if p, ok := productFromChunkMap(c, tenant); ok {
+				out = append(out, p)
+			}
 		}
+		// The KB-wide scan is paginated: keep fetching until a page returns
+		// fewer than batchSize rows, so a KB larger than the cap merges against
+		// the full compiled set instead of a truncated slice.
+		if len(res.Chunks) < batchSize {
+			break
+		}
+		offset += batchSize
 	}
 	return out, nil
 }

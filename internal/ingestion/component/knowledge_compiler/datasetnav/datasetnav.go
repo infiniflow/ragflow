@@ -147,14 +147,21 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// has no root row, but downstream consumers expect one overview product).
 	sink := common.NewProductSink(ctx, param.Guardrails, inputs.Sink)
 	clusterProductID := map[string]string{}
+	// Pre-compute every cluster id (deterministic from StableRowID) before
+	// resolving parent edges, so a child emitted before its (later-created)
+	// parent still gets the correct ParentID instead of "" (reparenting bug).
+	// Cluster ids are tenant-scoped (as the nav_doc ids already are) so two
+	// tenants whose datasetID falls back to the same docID cannot collide.
+	for _, name := range tree.order {
+		clusterProductID[name] = common.StableRowID("dataset_nav", tenantID, datasetID, "cluster", name)
+	}
 	for _, name := range tree.order {
 		c := tree.clusters[name]
 		pid := ""
 		if c.Parent != "" && c.Parent != "root" {
 			pid = clusterProductID[c.Parent]
 		}
-		id := common.StableRowID("dataset_nav", datasetID, "cluster", c.Name)
-		clusterProductID[c.Name] = id
+		id := clusterProductID[c.Name]
 		if err := sink.Add(common.Product{
 			ID:       id,
 			DocID:    docID,

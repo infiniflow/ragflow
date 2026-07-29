@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -121,7 +122,7 @@ type kcEmbedder struct {
 	svc      *service.ModelProviderService
 	tenantID string
 	embdID   string
-	dim      int
+	dim      atomic.Int64
 }
 
 func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, error) {
@@ -149,13 +150,13 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 	for i, v := range embeds {
 		out[i] = float64sToFloat32(v.Embedding)
 	}
-	if len(out) > 0 && e.dim == 0 {
-		e.dim = len(out[0])
+	if len(out) > 0 {
+		e.dim.CompareAndSwap(0, int64(len(out[0])))
 	}
 	return out, nil
 }
 
-func (e *kcEmbedder) Dimensions() int { return e.dim }
+func (e *kcEmbedder) Dimensions() int { return int(e.dim.Load()) }
 
 // float64sToFloat32 converts an embedding vector to the product schema's
 // []float32 representation.

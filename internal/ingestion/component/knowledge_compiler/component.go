@@ -129,7 +129,11 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	// ExceedFlush — so they are not skipped by the post-Run stamping below
 	// (which only sees the buffered remainder in out.Products). The post-Run
 	// loop still covers that buffered remainder (M1).
-	if len(templateIDs) > 0 {
+	// Only wrap a real sink. When no sink is supplied (in.Sink == nil) we must
+	// leave it nil so the product buffer is preserved under ExceedFlush; wrapping
+	// a nil sink would route flushed products into a delegate-less stamping sink
+	// that silently discards them (data loss).
+	if len(templateIDs) > 0 && in.Sink != nil {
 		in.Sink = &templateIDStampingSink{delegate: in.Sink, ids: templateIDs}
 	}
 

@@ -241,7 +241,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	// (available_int=1). The notification is sent only after a successful persist
 	// and is best-effort / non-fatal — a delivery failure is logged but does not
 	// fail the pipeline task.
-	if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, 0, nil); err != nil {
+	if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, 0); err != nil {
 		common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
 	}
 

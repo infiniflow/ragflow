@@ -128,12 +128,17 @@ func generateHolder() string {
 // being a standalone service. Best-effort: provisioning errors are returned so
 // the caller can log and continue (the pipeline still writes available_int=0
 // compiled chunks; they just won't be merged until a scheduler is available).
-func Provision(mq engine.MessageQueue, db *gorm.DB) error {
+func Provision(ctx context.Context, mq engine.MessageQueue, db *gorm.DB) error {
 	if db == nil {
 		return nil
 	}
 	s := newScheduler(db, mq, generateHolder(), 2*time.Minute)
-	if err := s.Provision(context.Background()); err != nil {
+	// Bound the startup AutoMigrate so a slow/unreachable DB cannot block
+	// startup indefinitely. The caller's ctx is also honoured (cancelled on
+	// shutdown).
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := s.Provision(ctx); err != nil {
 		return err
 	}
 	SetScheduler(s)

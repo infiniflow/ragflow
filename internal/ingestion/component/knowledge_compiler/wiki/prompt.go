@@ -64,6 +64,18 @@ exact schema:
   "topics": ["string"]
 }
 
+## Customization
+The following rules and schema customizations override the defaults above and
+must be honoured when extracting from this knowledge base:
+
+- Entity types (override default): {entity_type_rules}
+- Relation types (override default): {relation_type_rules}
+- Concept term guidance: {concept_term}
+- Concept definition guidance: {concept_definition_excerpt}
+- Claim statement guidance: {claim_statement}
+- Claim subject guidance: {claim_subject}
+{custom_rules}
+
 Rules:
 - source_chunk_id MUST be one of the chunk_id values listed above.
 - Do not invent opaque identifiers, hashes, or prompt scaffolding as names.

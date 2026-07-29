@@ -522,6 +522,9 @@ func (g *GroupedDeduper) RewriteRelations(ctx context.Context, aliases map[strin
 			continue
 		}
 		row.Content = payloadJSON(payload)
+		if row.Meta == nil {
+			row.Meta = map[string]any{}
+		}
 		if from := relationEndpoint(payload, "", "source", "src", "from"); from != "" {
 			row.Meta["from"] = from
 		}

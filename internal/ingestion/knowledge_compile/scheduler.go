@@ -152,9 +152,12 @@ func (s *mysqlScheduler) AppendBacklog(ctx context.Context, tenantID, datasetID,
 		return nil
 	}
 	entry := BacklogEntry{DocID: docID, EventType: eventType, Seq: seq}
-	// Insert the row (backlog seeded with the single entry); on the duplicate
-	// key, transactionally append the entry to the existing backlog array. The
-	// row lock below makes concurrent appends safe even across publishers.
+	// KnowledgeCompileDoc.dataset_id is the PRIMARY KEY, so the SELECT ... FOR
+	// UPDATE below also takes an InnoDB gap lock for a not-yet-existing dataset;
+	// concurrent publishers for the same dataset serialize on that lock and the
+	// loser observes the row already present. FirstOrCreate then reliably finds
+	// or inserts exactly one row, and the append below runs under the same row
+	// lock so concurrent appends from different publishers cannot interleave.
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Set the key/tenant fields on the struct itself (not only via a string
 		// Where) so the inserted row is fully populated and later queries by

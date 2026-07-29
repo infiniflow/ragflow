@@ -173,6 +173,9 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 // downstream writer has a ready structure to persist. The row id mirrors
 // Python's _struct_graph_row_id (doc : structure_graph : compile : template).
 func buildGraphProduct(ctx context.Context, deps common.Deps, cfg CompileConfig, prods []common.Product) (common.Product, error) {
+	if deps.Embed == nil {
+		return common.Product{}, fmt.Errorf("knowledge_compiler: embedding model is required to build the graph product")
+	}
 	graph := RebuildStructureGraph(prods)
 	graphContent := payloadJSON(graph)
 	vecs, err := deps.Embed.Encode(ctx, []string{graphContent})

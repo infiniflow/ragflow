@@ -50,13 +50,12 @@ const (
 // (doc_completed) or is deleted (doc_deleted). It is intentionally decoupled
 // from common.TaskMessage because the consumer reads the raw JSON body.
 type KCCompileEvent struct {
-	TenantID  string   `json:"tenant_id"`
-	DatasetID string   `json:"dataset_id"`          // the KB scope
-	DocID     string   `json:"doc_id"`              // the contributing document
-	EventType string   `json:"event_type"`          // EventType value
-	Seq       uint64   `json:"seq"`                 // per-doc monotonic sequence, for out-of-order correction
-	ChunkIDs  []string `json:"chunk_ids,omitempty"` // doc_completed only: per-doc compiled chunk ids, saves a re-scan
-	Timestamp int64    `json:"ts"`
+	TenantID  string `json:"tenant_id"`
+	DatasetID string `json:"dataset_id"` // the KB scope
+	DocID     string `json:"doc_id"`     // the contributing document
+	EventType string `json:"event_type"` // EventType value
+	Seq       uint64 `json:"seq"`        // per-doc monotonic sequence, for out-of-order correction
+	Timestamp int64  `json:"ts"`
 }
 
 // Subject returns the NATS subject for this event.
@@ -94,7 +93,7 @@ func DefaultScheduler() Scheduler { return defaultScheduler }
 // KB's durable MySQL backlog and wakes idle workers over NATS. It is a no-op
 // when no Scheduler has been installed (e.g. DB unavailable). A failure is
 // returned so callers can log but never fail the pipeline on it.
-func PublishCompleted(ctx context.Context, tenantID, datasetID, docID string, seq uint64, chunkIDs []string) error {
+func PublishCompleted(ctx context.Context, tenantID, datasetID, docID string, seq uint64) error {
 	if defaultScheduler == nil {
 		return nil
 	}
