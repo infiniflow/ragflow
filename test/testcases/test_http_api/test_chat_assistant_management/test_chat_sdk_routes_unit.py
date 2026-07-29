@@ -189,6 +189,10 @@ def _load_chat_module(monkeypatch):
     common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
 
+    settings_mod = ModuleType("common.settings")
+    monkeypatch.setitem(sys.modules, "common.settings", settings_mod)
+    common_pkg.settings = settings_mod
+
     common_constants_mod = ModuleType("common.constants")
 
     class _StubLLMType(str, Enum):
