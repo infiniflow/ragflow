@@ -1620,7 +1620,7 @@ func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
 	}
-	if err.Error() != "You don't own the dataset." {
+	if err.Error() != "you don't own the dataset" {
 		t.Fatalf("err = %q", err.Error())
 	}
 }

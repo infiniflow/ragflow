@@ -39,8 +39,15 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 		}
 	}
 
-	if _, err := s.IngestDocuments(ctx, doc.KbID, userID, []string{doc.ID}); err != nil {
+	responses, err := s.IngestDocuments(ctx, doc.KbID, userID, []string{doc.ID})
+	if err != nil {
 		return err
+	}
+	if len(responses) == 0 {
+		return fmt.Errorf("failed to enqueue document %s: empty ingestion response", doc.ID)
+	}
+	if !strings.HasPrefix(responses[0].Result, "task_id:") {
+		return fmt.Errorf("failed to enqueue document %s: %s", doc.ID, responses[0].Result)
 	}
 	return nil
 }

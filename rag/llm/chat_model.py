@@ -31,6 +31,7 @@ import openai
 from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
+from common.aimlapi_utils import attribution_headers
 from common.misc_utils import thread_pool_exec
 from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
@@ -1560,7 +1561,19 @@ class AIMLAPIChat(Base):
     def __init__(self, key, model_name, base_url="", **kwargs):
         base_url = base_url or os.environ.get("AIMLAPI_API_URL", "https://api.aimlapi.com/v1")
         super().__init__(key, model_name, base_url, **kwargs)
+        headers = attribution_headers()
+        self.client = self.client.with_options(default_headers=headers)
+        self.async_client = self.async_client.with_options(default_headers=headers)
         logging.info("[aimlapi.com] Chat initialized with model %s", model_name)
+
+
+class GreenPTChat(Base):
+    """GreenPT OpenAI-compatible chat adapter."""
+
+    _FACTORY_NAME = "GreenPT"
+
+    def __init__(self, key, model_name, base_url="https://api.greenpt.ai/v1", **kwargs):
+        super().__init__(key, model_name, base_url or "https://api.greenpt.ai/v1", **kwargs)
 
 
 class LiteLLMBase(ABC):

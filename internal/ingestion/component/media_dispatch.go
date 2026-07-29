@@ -77,8 +77,7 @@ func maybeDispatchVideo(
 	// video_url. Returning an explicit error is safer than silently producing
 	// a description from the prompt text alone. The real implementation must
 	// be provider-specific (OpenAI-compatible: frame extraction -> image_url;
-	// Gemini: raw-bytes inline_data; Qwen: file://) — see
-	// docs/migration_python_go_diff.md 2.7.
+	// Gemini: raw-bytes inline_data; Qwen: file://)
 	return parserDispatchResult{}, true,
 		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }

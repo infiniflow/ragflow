@@ -244,7 +244,7 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 	ctx := c.Request.Context()
 	if err := h.chatService.DeleteChat(ctx, userID, chatID); err != nil {
 		if err.Error() == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 			return
 		}
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
@@ -278,7 +278,7 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 		if req.ChatID != "" {
 			if err := h.chatService.DeleteChat(ctx, userID, req.ChatID); err != nil {
 				if err.Error() == "no authorization" {
-					common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
+					common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 					return
 				}
 				common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
@@ -344,7 +344,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		errMsg := err.Error()
 		// Check if it's an authorization error
 		if errMsg == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 			return
 		}
 		// Not found error
@@ -426,7 +426,7 @@ func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
 	}
 	if err != nil {
 		if err.Error() == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 			return
 		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())

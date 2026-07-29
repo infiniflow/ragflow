@@ -1,0 +1,68 @@
+{
+  "name": "GreenPT",
+  "url": {
+    "default": "https://api.greenpt.ai"
+  },
+  "url_suffix": {
+    "chat": "v1/chat/completions",
+    "models": "v1/models",
+    "embedding": "v1/embeddings",
+    "rerank": "v1/rerank",
+    "asr": "v1/listen"
+  },
+  "class": "greenpt",
+  "models": [
+    {
+      "name": "glm-5.2",
+      "max_tokens": 1000000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k2.7-code",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "green-embedding",
+      "max_tokens": 32768,
+      "max_dimension": 2560,
+      "dimensions": [
+        2560
+      ],
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "green-rerank",
+      "max_tokens": 32768,
+      "model_types": [
+        "rerank"
+      ]
+    },
+    {
+      "name": "green-s",
+      "max_tokens": 0,
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "green-s-pro",
+      "max_tokens": 0,
+      "model_types": [
+        "asr"
+      ]
+    }
+  ]
+}

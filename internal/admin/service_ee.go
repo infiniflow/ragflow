@@ -17,6 +17,7 @@
 package admin
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"mime/multipart"
@@ -31,6 +32,7 @@ func UpdateServer(serverName string, status *common.BaseMessage) (common.ErrorCo
 }
 
 // Role management methods
+
 // ListRoles list all roles
 func (s *Service) ListRoles() ([]map[string]interface{}, error) {
 	result := []map[string]interface{}{
@@ -1061,9 +1063,9 @@ func (s *Service) PurgeUsersData(preview bool, days int, userPlan *string, userA
 }
 
 // GenerateUserAPIKey create tenant API key for tenant
-func (s *Service) GenerateUserAPIKey(username string) (map[string]interface{}, error) {
+func (s *Service) GenerateUserAPIKey(ctx context.Context, username string) (map[string]interface{}, error) {
 
-	user, err := s.userDAO.GetByEmail(username)
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
@@ -1079,9 +1081,9 @@ func (s *Service) GenerateUserAPIKey(username string) (map[string]interface{}, e
 }
 
 // DeleteUserAPIKey delete user API key
-func (s *Service) DeleteUserAPIKey(username, key string) (map[string]interface{}, error) {
+func (s *Service) DeleteUserAPIKey(ctx context.Context, username, key string) (map[string]interface{}, error) {
 
-	user, err := s.userDAO.GetByEmail(username)
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
@@ -1098,9 +1100,9 @@ func (s *Service) DeleteUserAPIKey(username, key string) (map[string]interface{}
 }
 
 // ListUserAPIKeys list user API keys
-func (s *Service) ListUserAPIKeys(username string) ([]map[string]interface{}, error) {
+func (s *Service) ListUserAPIKeys(ctx context.Context, username string) ([]map[string]interface{}, error) {
 
-	user, err := s.userDAO.GetByEmail(username)
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}

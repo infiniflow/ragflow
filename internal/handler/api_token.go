@@ -45,14 +45,15 @@ func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 
 	// Get user's tenant with owner role
 	userTenantDAO := dao.NewUserTenantDAO()
-	tenants, err := userTenantDAO.GetByUserIDAndRole(userModel.ID, "owner")
+	ctx := c.Request.Context()
+
+	tenants, err := userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userModel.ID, "owner")
 	if err != nil || len(tenants) == 0 {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Tenant not found")
 		return
 	}
 
 	tenantID := tenants[0].TenantID
-	ctx := c.Request.Context()
 
 	// Get keys for the tenant
 	keys, err := h.systemService.ListAPIKeys(ctx, tenantID)
@@ -80,7 +81,9 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 
 	// Get user's tenant with owner role
 	userTenantDAO := dao.NewUserTenantDAO()
-	tenants, err := userTenantDAO.GetByUserIDAndRole(userModel.ID, "owner")
+	ctx := c.Request.Context()
+
+	tenants, err := userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userModel.ID, "owner")
 	if err != nil || len(tenants) == 0 {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Tenant not found")
 		return
@@ -95,8 +98,6 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Invalid request")
 		return
 	}
-
-	ctx := c.Request.Context()
 
 	// Create key
 	key, err := h.systemService.CreateAPIKey(ctx, tenantID, &req)
@@ -121,10 +122,12 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Invalid user data")
 		return
 	}
+	ctx := c.Request.Context()
 
 	// Get user's tenant with owner role
 	userTenantDAO := dao.NewUserTenantDAO()
-	tenants, err := userTenantDAO.GetByUserIDAndRole(userModel.ID, "owner")
+
+	tenants, err := userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userModel.ID, "owner")
 	if err != nil || len(tenants) == 0 {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Tenant not found")
 		return
@@ -138,8 +141,6 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Key is required")
 		return
 	}
-
-	ctx := c.Request.Context()
 
 	// Delete key
 	if err = h.systemService.DeleteAPIKey(ctx, tenantID, key); err != nil {

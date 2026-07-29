@@ -205,7 +205,7 @@ func unwrapChatChannelPayload(payload map[string]interface{}) map[string]interfa
 }
 
 func writeChatChannelError(c *gin.Context, code common.ErrorCode, message string) {
-	if code == common.CodeAuthenticationError && message == "No authorization." {
+	if code == common.CodeAuthenticationError && message == "no authorization" {
 		common.ResponseWithCodeData(c, code, false, message)
 		return
 	}

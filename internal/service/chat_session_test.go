@@ -158,7 +158,7 @@ type fakeTenantStore struct {
 	err       error
 }
 
-func (f *fakeTenantStore) GetTenantIDsByUserID(userID string) ([]string, error) {
+func (f *fakeTenantStore) GetTenantIDsByUserID(ctx context.Context, db *gorm.DB, userID string) ([]string, error) {
 	return f.tenantIDs, f.err
 }
 
@@ -395,7 +395,7 @@ func TestGetSession_NotOwner(t *testing.T) {
 
 	ctx := t.Context()
 	_, code, err := svc.GetSession(ctx, "user-1", "chat-1", "session-1")
-	if err == nil || err.Error() != "No authorization." {
+	if err == nil || err.Error() != "no authorization" {
 		t.Fatalf("err=%v", err)
 	}
 	if code != common.CodeAuthenticationError {
@@ -416,7 +416,7 @@ func TestGetSession_WrongChat(t *testing.T) {
 
 	ctx := t.Context()
 	_, code, err := svc.GetSession(ctx, "user-1", "chat-1", "session-1")
-	if err == nil || err.Error() != "Session does not belong to this chat!" {
+	if err == nil || err.Error() != "session does not belong to this chat" {
 		t.Fatalf("err=%v", err)
 	}
 	if code != common.CodeDataError {
@@ -487,11 +487,11 @@ func TestUpdateSession_ValidationErrors(t *testing.T) {
 		message string
 		code    common.ErrorCode
 	}{
-		{name: "empty body", req: map[string]interface{}{}, message: "Request body cannot be empty", code: common.CodeArgumentError},
-		{name: "message", req: map[string]interface{}{"message": []interface{}{}}, message: "`messages` cannot be changed.", code: common.CodeDataError},
-		{name: "messages", req: map[string]interface{}{"messages": []interface{}{}}, message: "`messages` cannot be changed.", code: common.CodeDataError},
-		{name: "reference", req: map[string]interface{}{"reference": []interface{}{}}, message: "`reference` cannot be changed.", code: common.CodeDataError},
-		{name: "empty name", req: map[string]interface{}{"name": "   "}, message: "`name` can not be empty.", code: common.CodeDataError},
+		{name: "empty body", req: map[string]interface{}{}, message: "request body cannot be empty", code: common.CodeArgumentError},
+		{name: "message", req: map[string]interface{}{"message": []interface{}{}}, message: "`messages` cannot be changed", code: common.CodeDataError},
+		{name: "messages", req: map[string]interface{}{"messages": []interface{}{}}, message: "`messages` cannot be changed", code: common.CodeDataError},
+		{name: "reference", req: map[string]interface{}{"reference": []interface{}{}}, message: "`reference` cannot be changed", code: common.CodeDataError},
+		{name: "empty name", req: map[string]interface{}{"name": "   "}, message: "`name` can not be empty", code: common.CodeDataError},
 	}
 
 	for _, tc := range cases {
@@ -520,7 +520,7 @@ func TestUpdateSession_NotFound(t *testing.T) {
 
 	ctx := t.Context()
 	_, code, err := svc.UpdateSession(ctx, "user-1", "chat-1", "missing", map[string]interface{}{"name": "renamed"})
-	if err == nil || err.Error() != "Session not found!" {
+	if err == nil || err.Error() != "session not found" {
 		t.Fatalf("err=%v", err)
 	}
 	if code != common.CodeDataError {
@@ -1158,8 +1158,8 @@ func TestCompletion_ConversationNotFound(t *testing.T) {
 	_, err := svc.Completion(ctx, "user-1", "missing", []map[string]interface{}{
 		{"role": "user", "content": "hi"},
 	}, "", nil, "msg-1")
-	if err == nil || err.Error() != "Conversation not found" {
-		t.Fatalf("expected 'Conversation not found', got %v", err)
+	if err == nil || err.Error() != "conversation not found" {
+		t.Fatalf("expected 'conversation not found', got %v", err)
 	}
 }
 
@@ -1181,8 +1181,8 @@ func TestCompletion_DialogNotFound(t *testing.T) {
 	_, err := svc.Completion(ctx, "user-1", "session-1", []map[string]interface{}{
 		{"role": "user", "content": "hi"},
 	}, "", nil, "msg-1")
-	if err == nil || err.Error() != "Dialog not found" {
-		t.Fatalf("expected 'Dialog not found', got %v", err)
+	if err == nil || err.Error() != "dialog not found" {
+		t.Fatalf("expected 'dialog not found', got %v", err)
 	}
 }
 

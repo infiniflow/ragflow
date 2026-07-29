@@ -139,11 +139,24 @@ func TestBuildTaskRow_Shape(t *testing.T) {
 	if row["progress"] != 0.0 {
 		t.Errorf("progress = %v, want 0.0", row["progress"])
 	}
+	if row["progress_msg"] != "" {
+		t.Errorf("progress_msg = %v, want empty string", row["progress_msg"])
+	}
 	if row["digest"] != "99" {
 		t.Errorf("digest = %v, want \"99\"", row["digest"])
 	}
 	if id, _ := row["id"].(string); len(id) != 32 {
 		t.Errorf("id = %q, want 32-char uuid", id)
+	}
+}
+
+func TestTaskFromRow_InitializesProgressMessage(t *testing.T) {
+	task := taskFromRow(buildTaskRow(99, "mem-1"))
+	if task.ProgressMsg == nil {
+		t.Fatal("ProgressMsg is nil")
+	}
+	if *task.ProgressMsg != "" {
+		t.Fatalf("ProgressMsg = %q, want empty string", *task.ProgressMsg)
 	}
 }
 

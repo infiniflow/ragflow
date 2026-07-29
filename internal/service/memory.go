@@ -886,6 +886,18 @@ func (s *MemoryService) AddMessage(ctx context.Context, currentUserID string, me
 	return true, "All add to task.", nil
 }
 
+func (s *MemoryService) saveAgentMessage(ctx context.Context, memoryIDs []string, msg MemoryMessage) (bool, string, error) {
+	res, err := NewMemoryMessageService(s).QueueSaveToMemoryTask(ctx, splitFilterValues(memoryIDs), msg)
+	if err != nil {
+		return false, err.Error(), err
+	}
+	errorMsg := memorySaveErrorMessage(res)
+	if errorMsg != "" {
+		return false, errorMsg, nil
+	}
+	return true, "All add to task.", nil
+}
+
 func missingRequestedMemoryIDs(requestedMemoryIDs, accessibleMemoryIDs []string) []string {
 	if len(requestedMemoryIDs) == 0 {
 		return []string{}

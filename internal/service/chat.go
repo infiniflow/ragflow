@@ -101,7 +101,7 @@ func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords st
 		}
 	} else {
 		var filterOwnerIDs []string
-		filterOwnerIDs, err = s.filterAccessibleChatOwnerIDs(userID, ownerIDs)
+		filterOwnerIDs, err = s.filterAccessibleChatOwnerIDs(ctx, userID, ownerIDs)
 		if err != nil {
 			return nil, err
 		}
@@ -150,8 +150,8 @@ func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords st
 	}, nil
 }
 
-func (s *ChatService) filterAccessibleChatOwnerIDs(userID string, ownerIDs []string) ([]string, error) {
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+func (s *ChatService) filterAccessibleChatOwnerIDs(ctx context.Context, userID string, ownerIDs []string) ([]string, error) {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1267,7 +1267,7 @@ type GetChatResponse struct {
 // GetChat gets chat detail by ID with permission check
 func (s *ChatService) GetChat(ctx context.Context, userID string, chatID string) (*GetChatResponse, error) {
 	// Step 1: Get user tenants (same as Python UserTenantService.query(user_id=current_user.id))
-	tenants, err := s.userTenantDAO.GetByUserID(userID)
+	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user tenants: %w", err)
 	}

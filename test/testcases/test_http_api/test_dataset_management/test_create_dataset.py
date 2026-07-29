@@ -163,9 +163,9 @@ class TestDatasetCreate:
     @pytest.mark.parametrize(
         "name, prefix, expected_message",
         [
-            ("empty_prefix", "", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("missing_comma", "data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+            ("empty_prefix", "", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("missing_comma", "data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
             ("invalid_mine_type", "data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
@@ -276,9 +276,9 @@ class TestDatasetCreate:
         res = create_dataset(HttpApiAuth, payload)
         assert res["code"] == 101, res
         if name in ["empty", "space", "missing_at"]:
-            assert "Embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
+            assert "embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
         else:
-            assert "Both model_name and provider must be non-empty strings" in res["message"], res
+            assert "both model_name and provider must be non-empty strings" in res["message"], res
 
     @pytest.mark.p2
     def test_embedding_model_unset(self, HttpApiAuth):
