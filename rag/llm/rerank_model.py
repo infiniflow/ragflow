@@ -519,10 +519,9 @@ class QWenRerank(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
     def __init__(self, key, model_name="gte-rerank-v2", **kwargs):
-        import dashscope
 
         self.api_key = key
-        self.model_name = dashscope.TextReRank.Models.gte_rerank if model_name is None else model_name
+        self.model_name = model_name if model_name else "gte-rerank-v2"
         # Remove invalid global timeout, use official SDK per-request timeout parameter
         self.request_timeout = 30.0
 
