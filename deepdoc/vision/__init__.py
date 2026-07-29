@@ -48,8 +48,8 @@ def init_in_out(args):
         nonlocal outputs, images
         with sys.modules[LOCK_KEY_pdfplumber]:
             pdf = pdfplumber.open(fnm)
-            images = [p.to_image(resolution=72 * zoomin).annotated for i, p in enumerate(pdf.pages)]
-
+            images.extend([p.to_image(...) for i, p in enumerate(pdf.pages)])
+            
         for i, page in enumerate(images):
             outputs.append(os.path.split(fnm)[-1] + f"_{i}.jpg")
         pdf.close()
