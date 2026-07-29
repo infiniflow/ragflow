@@ -341,10 +341,10 @@ func (o *OpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 }
 
 type openaiEmbeddingResponse struct {
-	Data   []openrouterEmbeddingData `json:"data"`
-	Model  string                    `json:"model"`
-	Object string                    `json:"object"`
-	Usage  openrouterUsage           `json:"usage"`
+	Data   []openaiEmbeddingData `json:"data"`
+	Model  string                `json:"model"`
+	Object string                `json:"object"`
+	Usage  openaiUsage           `json:"usage"`
 }
 
 type openaiEmbeddingData struct {

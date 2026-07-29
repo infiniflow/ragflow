@@ -90,6 +90,38 @@ func TestJinaChatHappyPath(t *testing.T) {
 	}
 }
 
+func TestJinaChatPreservesReasoningContent(t *testing.T) {
+	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id": "jina-chat",
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{
+					"content":           "answer",
+					"reasoning_content": "\nthought",
+				},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	thinking := true
+	response, err := newJinaForTest(srv.URL).ChatWithMessages(
+		t.Context(),
+		"jina-vlm",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{Thinking: &thinking},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if response.ReasonContent == nil || *response.ReasonContent != "thought" {
+		t.Fatalf("ReasonContent=%v, want thought", response.ReasonContent)
+	}
+}
+
 func TestJinaChatSupportsToolCalls(t *testing.T) {
 	testNonStreamingToolCall(t, "jina-vlm", "/chat/completions", func(baseURL string) ModelDriver {
 		return newJinaForTest(baseURL)
@@ -188,6 +220,22 @@ func TestJinaChatValidation(t *testing.T) {
 				t.Fatalf("expected %q error, got %v", tt.want, err)
 			}
 		})
+	}
+}
+
+func TestJinaChatStreamIsNotSupported(t *testing.T) {
+	apiKey := "test-key"
+	err := newJinaForTest("http://unused").ChatStreamlyWithSender(
+		t.Context(),
+		"jina-vlm",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+		func(*string, *string) error { return nil },
+	)
+	if err == nil || !strings.Contains(err.Error(), "stream") {
+		t.Fatalf("expected unsupported streaming error, got %v", err)
 	}
 }
 
