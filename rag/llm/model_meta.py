@@ -669,6 +669,60 @@ class GreenPT(OpenAIAPICompatible):
         return models
 
 
+class HuggingFace(Base):
+    """Discover models served by Hugging Face inference endpoints.
+
+    Supports Text Embeddings Inference (TEI) and Text Generation Inference (TGI),
+    both of which expose a ``GET /info`` endpoint.
+
+    TEI response example::
+        {"model_id":"BAAI/bge-base-zh-v1.5","model_type":{"embedding":{"pooling":"cls"}},...}
+    TGI response example::
+        {"model_id":"meta-llama/Llama-2-7b-chat-hf","model_type":"text-generation",...}
+    """
+
+    _FACTORY_NAME = "HuggingFace"
+
+    def _get_model_list_url(self):
+        if not self.base_url:
+            return None
+        return self.base_url.rstrip("/") + "/info"
+
+    @staticmethod
+    def _infer_model_types_from_info(info):
+        model_type = info.get("model_type")
+        # TEI format: {"embedding": {"pooling": "cls"}}
+        if isinstance(model_type, dict):
+            if "embedding" in model_type:
+                return [LLMType.EMBEDDING.value]
+            return [LLMType.CHAT.value]
+        # TGI format: "text-generation" / "text2text-generation"
+        if isinstance(model_type, str):
+            if "embedding" in model_type.lower():
+                return [LLMType.EMBEDDING.value]
+            return [LLMType.CHAT.value]
+        return [LLMType.CHAT.value]
+
+    def _format_model_list(self, raw_model_list):
+        if not isinstance(raw_model_list, dict):
+            return []
+        model_id = raw_model_list.get("model_id")
+        if not model_id:
+            return []
+        model_types = self._infer_model_types_from_info(raw_model_list)
+        if not model_types:
+            return []
+        max_tokens = raw_model_list.get("max_input_length") or raw_model_list.get("max_total_tokens") or 8192
+        return [
+            {
+                "name": model_id,
+                "model_types": model_types,
+                "features": [],
+                "max_tokens": max_tokens,
+            }
+        ]
+
+
 class FunASR(Base):
     _FACTORY_NAME = "FunASR"
 
