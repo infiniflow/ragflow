@@ -435,6 +435,15 @@ def ensure_tenant_model_ids_for_params(tenant_id: str, params: dict) -> dict:
 
 
 def get_api_key(tenant_id: str, model_name: str):
+    # Try direct model ID (UUID) lookup first
+    exist, model_obj = TenantModelService.get_by_id(model_name)
+    if exist:
+        exist_inst, instance_obj = TenantModelInstanceService.get_by_id(model_obj.instance_id)
+        if not exist_inst:
+            raise LookupError(f"Instance {model_obj.instance_id} not found for model {model_name}.")
+        return instance_obj.api_key
+
+    # Fall back to name-based resolution: model[@instance]@provider
     _, instance_name, provider_name = split_model_name(model_name)
 
     if not provider_name:
