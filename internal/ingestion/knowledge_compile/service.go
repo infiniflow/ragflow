@@ -39,16 +39,6 @@ func WithBatchSize(n int) Option {
 	}
 }
 
-// WithMaxIdle sets the idle wait between empty fetches (unused by the poll loop
-// but kept for parity with the option surface).
-func WithMaxIdle(d time.Duration) Option {
-	return func(c *Consumer) {
-		if d > 0 {
-			c.maxIdle = d
-		}
-	}
-}
-
 // WithTTL sets the per-KB claim lease TTL.
 func WithTTL(d time.Duration) Option {
 	return func(c *Consumer) {

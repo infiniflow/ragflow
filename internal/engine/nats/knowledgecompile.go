@@ -67,12 +67,15 @@ func (n *NatsEngine) InitKnowledgeCompileStream() error {
 	return nil
 }
 
-// PublishKnowledgeCompile publishes an arbitrary JSON payload onto the knowledge-compile stream.
+// PublishKnowledgeCompile publishes a wake-up payload on the notify subject via
+// core NATS. The subject (notify.kc.workers) is intentionally outside the
+// knowledge.compile.events stream, so it must go through core NATS rather than
+// the JetStream Publish API, which errors with "no stream matches subject".
 func (n *NatsEngine) PublishKnowledgeCompile(subject string, payload []byte) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	_, err := n.jetStream.Publish(ctx, subject, payload)
-	return err
+	if n.nc == nil {
+		return fmt.Errorf("knowledgecompile: nats not initialized")
+	}
+	return n.nc.Publish(subject, payload)
 }
 
 // InitKnowledgeCompileConsumer creates the competing-consumer (queue group) for the knowledge-compile stream.
@@ -150,8 +153,8 @@ func (n *NatsEngine) InitKnowledgeCompileLeases() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	kv, err := n.jetStream.CreateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: knowledgeCompileKVBucket})
-	if err != nil && !strings.Contains(err.Error(), "already exists") {
+	kv, err := n.jetStream.CreateOrUpdateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: knowledgeCompileKVBucket})
+	if err != nil {
 		return fmt.Errorf("knowledgecompile: create kv: %w", err)
 	}
 	n.kv = kv
@@ -240,6 +243,11 @@ func (n *NatsEngine) SubscribeNotify(ctx context.Context) (<-chan string, error)
 		return nil, fmt.Errorf("knowledgecompile: nats not initialized")
 	}
 	ch := make(chan string, 256)
+	// done guards the send so the callback never writes to a closed channel:
+	// Sub.Unsubscribe does not wait for an in-flight dispatcher callback, so we
+	// must not close(ch) while a callback may still run. The reader selects on
+	// ctx.Done as well, so leaving ch open is safe and avoids the panic.
+	done := make(chan struct{})
 	sub, err := n.nc.Subscribe(knowledgeCompileNotifySubject, func(m *nats.Msg) {
 		var p struct {
 			DatasetID string `json:"dataset_id"`
@@ -249,7 +257,7 @@ func (n *NatsEngine) SubscribeNotify(ctx context.Context) (<-chan string, error)
 		}
 		select {
 		case ch <- p.DatasetID:
-		default:
+		case <-done:
 		}
 	})
 	if err != nil {
@@ -258,7 +266,7 @@ func (n *NatsEngine) SubscribeNotify(ctx context.Context) (<-chan string, error)
 	go func() {
 		<-ctx.Done()
 		_ = sub.Unsubscribe()
-		close(ch)
+		close(done)
 	}()
 	return ch, nil
 }

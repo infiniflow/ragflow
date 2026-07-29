@@ -50,7 +50,7 @@
                         "auto_keywords": 0,
                         "auto_questions": 0,
                         "auto_tags": 0,
-                        "enable_metadata": 0,
+                        "enable_metadata": 1,
                         "metadata": []
                     }
                 },

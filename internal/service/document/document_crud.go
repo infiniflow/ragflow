@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -363,7 +364,11 @@ func (s *DocumentService) deleteDocEngineData(docID, tenantID, kbID string) {
 	// dataset-scoped merged products and triggers incremental re-dedup. Best-
 	// effort, non-fatal: the synchronous deletion above already removed the
 	// source/per-doc chunks, so the consumer only owns merged-product cleanup.
-	if err := knowledge_compile.PublishDeleted(ctx, tenantID, kbID, docID, 0); err != nil {
+	// Bound the publish with a timeout so a stalled scheduler (MySQL/NATS) can
+	// never block the document delete, which already succeeded above.
+	pubCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := knowledge_compile.PublishDeleted(pubCtx, tenantID, kbID, docID, 0); err != nil {
 		common.Logger.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	if s.metadataSvc != nil {

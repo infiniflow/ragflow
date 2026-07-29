@@ -110,6 +110,15 @@ func reducePCA(embeddings [][]float64, targetDim int) [][]float64 {
 	if k > d {
 		k = d
 	}
+	// With SVDThin, V has only min(n, d) columns, so k must also be bounded by
+	// the sample count; otherwise vt.Slice below panics on a small corpus
+	// (e.g. a handful of chunks) feeding high-dimensional embeddings.
+	if k > n {
+		k = n
+	}
+	if k <= 0 {
+		return embeddings
+	}
 	u, vt := &mat.Dense{}, &mat.Dense{}
 	svd.UTo(u)
 	svd.VTo(vt)
@@ -148,6 +157,7 @@ func wardAHC(embeddings [][]float64, spec ClusterSpec) ([]int, [][]float64) {
 			members:  []int{i},
 			centroid: cloneRow(embeddings[i]),
 			size:     1,
+			id:       i,
 		}
 	}
 
@@ -165,6 +175,7 @@ func wardAHC(embeddings [][]float64, spec ClusterSpec) ([]int, [][]float64) {
 	}
 
 	heights := []float64{}
+	merges := make([]mergeRec, 0, n-1)
 	for len(clusters) > 1 {
 		// Ward linkage: min of (sizeA*sizeB/(sizeA+sizeB)) * ||cA-cB||^2.
 		bestA, bestB := -1, -1
@@ -182,29 +193,39 @@ func wardAHC(embeddings [][]float64, spec ClusterSpec) ([]int, [][]float64) {
 		}
 		height := math.Sqrt(bestCost)
 		heights = append(heights, height)
-		// Merge bestB into bestA.
+		// Record the merge (before the cluster slice is mutated) and merge
+		// bestB into bestA.
 		ca, cb := clusters[bestA], clusters[bestB]
+		merges = append(merges, mergeRec{ca.id, cb.id, height})
 		merged := &cluster{
 			members:  append(append([]int{}, ca.members...), cb.members...),
 			centroid: meanCentroid([][]float64{ca.centroid, cb.centroid}, ca.size+cb.size),
 			size:     ca.size + cb.size,
+			id:       ca.id,
 		}
 		clusters[bestA] = merged
 		clusters = append(clusters[:bestB], clusters[bestB+1:]...)
 	}
 
-	// Dendrogram gap: diffs of sorted heights; cut at largest gap * (1+threshold).
-	// We approximate by scanning merges from the top: stop when a merge height
-	// exceeds the threshold-scaled gap. Re-run a simple top-down cut.
+	// Dendrogram gap: choose the cluster count from the merge heights, then
+	// replay the exact recorded merge sequence via union-find (cutTree) instead
+	// of re-running the O(n^2) greedy scan a second time.
 	numClusters := chooseClusterCount(heights, spec)
-	// Re-run merges but stop early at numClusters.
-	return recluster(embeddings, dist, numClusters)
+	return cutTree(embeddings, merges, numClusters)
 }
 
 type cluster struct {
 	members  []int
 	centroid []float64
 	size     int
+	id       int // stable leaf representative, used to record merges for replay
+}
+
+// mergeRec records one Ward merge between two clusters, keyed by their stable
+// leaf representatives, so the cut can be replayed without re-scanning pairs.
+type mergeRec struct {
+	a, b int
+	h    float64
 }
 
 func chooseClusterCount(heights []float64, spec ClusterSpec) int {
@@ -237,8 +258,12 @@ func chooseClusterCount(heights []float64, spec ClusterSpec) int {
 	return numClusters
 }
 
-// recluster re-runs Ward but stops when the requested number of clusters remains.
-func recluster(embeddings [][]float64, dist [][]float64, numClusters int) ([]int, [][]float64) {
+// cutTree replays the recorded Ward merge sequence with a union-find and stops
+// once numClusters remain. Replaying the exact recorded order (instead of
+// re-running the O(n^2) greedy scan a second time, as the old recluster did)
+// yields identical clusters while dropping the duplicate full pass. Centroids
+// are recomputed from the final partition over the original embeddings.
+func cutTree(embeddings [][]float64, merges []mergeRec, numClusters int) ([]int, [][]float64) {
 	n := len(embeddings)
 	if n == 0 {
 		return nil, nil
@@ -247,7 +272,6 @@ func recluster(embeddings [][]float64, dist [][]float64, numClusters int) ([]int
 	for i := range parent {
 		parent[i] = i
 	}
-	rank := make([]int, n)
 	var find func(int) int
 	find = func(x int) int {
 		for parent[x] != x {
@@ -256,53 +280,22 @@ func recluster(embeddings [][]float64, dist [][]float64, numClusters int) ([]int
 		}
 		return x
 	}
-	// Greedily merge the closest clusters until numClusters remain.
-	active := make([]int, n)
-	for i := range active {
-		active[i] = i
+	stop := n - numClusters
+	if stop < 0 {
+		stop = 0
 	}
-	centroids := make([][]float64, n)
-	sizes := make([]int, n)
-	for i := range centroids {
-		centroids[i] = cloneRow(embeddings[i])
-		sizes[i] = 1
+	if stop > len(merges) {
+		stop = len(merges)
 	}
-	for len(active) > numClusters {
-		bestA, bestB := -1, -1
-		bestCost := math.Inf(1)
-		for a := 0; a < len(active); a++ {
-			for b := a + 1; b < len(active); b++ {
-				ra, rb := active[a], active[b]
-				da := dist[ra][rb]
-				cost := (float64(sizes[ra]) * float64(sizes[rb]) /
-					float64(sizes[ra]+sizes[rb])) * da
-				if cost < bestCost {
-					bestCost = cost
-					bestA, bestB = ra, rb
-				}
-			}
+	for i := 0; i < stop; i++ {
+		ra, rb := find(merges[i].a), find(merges[i].b)
+		if ra == rb {
+			continue
 		}
-		if bestA < 0 {
-			break
-		}
-		// Union bestB into bestA (bestA keeps lower id as root).
-		rootA, rootB := find(bestA), find(bestB)
-		if rootA == rootB {
-			break
-		}
-		if rank[rootA] < rank[rootB] {
-			rootA, rootB = rootB, rootA
-		}
-		parent[rootB] = rootA
-		// Update centroid/size of rootA.
-		centroids[rootA] = meanCentroid([][]float64{centroids[rootA], centroids[rootB]}, sizes[rootA]+sizes[rootB])
-		sizes[rootA] += sizes[rootB]
-		// Remove rootB from active.
-		for i, v := range active {
-			if v == rootB {
-				active = append(active[:i], active[i+1:]...)
-				break
-			}
+		if ra < rb {
+			parent[rb] = ra
+		} else {
+			parent[ra] = rb
 		}
 	}
 	labels := make([]int, n)
@@ -316,14 +309,26 @@ func recluster(embeddings [][]float64, dist [][]float64, numClusters int) ([]int
 		}
 		labels[i] = rootID[r]
 	}
-	centroidsOut := make([][]float64, 0, len(rootID))
-	seen := map[int]bool{}
+	// Centroids from the final partition (ordered by first appearance).
+	sums := make([][]float64, idx)
+	counts := make([]int, idx)
 	for i := 0; i < n; i++ {
-		r := find(i)
-		if !seen[r] {
-			seen[r] = true
-			centroidsOut = append(centroidsOut, centroids[r])
+		c := labels[i]
+		if sums[c] == nil {
+			sums[c] = make([]float64, len(embeddings[i]))
 		}
+		for j, v := range embeddings[i] {
+			sums[c][j] += v
+		}
+		counts[c]++
+	}
+	centroidsOut := make([][]float64, 0, idx)
+	for c := 0; c < idx; c++ {
+		centroid := make([]float64, len(sums[c]))
+		for j, s := range sums[c] {
+			centroid[j] = s / float64(counts[c])
+		}
+		centroidsOut = append(centroidsOut, centroid)
 	}
 	return labels, centroidsOut
 }

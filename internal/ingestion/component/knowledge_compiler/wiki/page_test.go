@@ -217,12 +217,12 @@ func TestSlugify(t *testing.T) {
 		{"  Trim Me  ", "trim-me"},
 		{"Punctuation!@#Stripped", "punctuationstripped"},
 		{"", "page"},
-		// Non-ASCII runes are dropped, leaving the trailing ASCII word
-		// attached to the leading "-" (the space before "title" became "-"
-		// before the CJK chars were filtered). Document the actual behavior
-		// — change it here if a smarter slugifier is added.
-		{"中文 title", "-title"},
+		// Non-ASCII (CJK) letters are preserved (M17), so the slug keeps the
+		// Chinese characters and the trailing ASCII word.
+		{"中文 title", "中文-title"},
 		{"a-b-c", "a-b-c"},
+		// Punctuation-only title yields a hash fallback, not the bare "page".
+		{"!@#", "page-8b024aa5"},
 	}
 	for _, c := range cases {
 		if got := slugify(c.in); got != c.want {

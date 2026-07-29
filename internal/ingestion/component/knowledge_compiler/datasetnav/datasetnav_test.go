@@ -175,8 +175,10 @@ func TestMaybeSplit(t *testing.T) {
 	if len(tree.order) != 3 {
 		t.Fatalf("clusters after split = %d, want 3 (P + 2 groups): %v", len(tree.order), tree.order)
 	}
-	if _, ok := tree.children["P"]; ok {
-		t.Fatalf("split parent must hold no direct children after reparenting")
+	// The split parent must now point at exactly the two new sub-clusters so
+	// findBestCluster can descend into the split subtree (M3).
+	if got := len(tree.children["P"]); got != 2 {
+		t.Fatalf("split parent children = %d, want 2 (the two new sub-clusters)", got)
 	}
 	subDocs := 0
 	for _, name := range tree.order[1:] {

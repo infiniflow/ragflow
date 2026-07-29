@@ -34,15 +34,14 @@ type Consumer struct {
 	factory   DeduperFactory
 
 	batchSize     int
-	maxIdle       time.Duration
 	ttl           time.Duration
 	heartbeat     time.Duration
 	pollInterval  time.Duration
 	sweepInterval time.Duration
 
 	mu    sync.Mutex
-	seqs  map[string]uint64          // dataset -> last applied seq (out-of-order guard)
-	tombs map[string]map[string]bool // dataset -> docID -> deleted (tombstone)
+	seqs  map[string]map[string]uint64 // dataset -> docID -> last applied seq (per-doc out-of-order guard)
+	tombs map[string]map[string]bool   // dataset -> docID -> deleted (tombstone)
 }
 
 // NewConsumer constructs a Consumer driven by the given Scheduler. Tests pass a
@@ -54,12 +53,11 @@ func NewConsumer(scheduler Scheduler, opts ...Option) *Consumer {
 		writer:        infinityWriter{},
 		factory:       defaultDeduperFactory,
 		batchSize:     32,
-		maxIdle:       30 * time.Second,
 		ttl:           2 * time.Minute,
 		heartbeat:     20 * time.Second,
 		pollInterval:  2 * time.Second,
 		sweepInterval: 30 * time.Second,
-		seqs:          map[string]uint64{},
+		seqs:          map[string]map[string]uint64{},
 		tombs:         map[string]map[string]bool{},
 	}
 	for _, o := range opts {
@@ -152,9 +150,10 @@ func (c *Consumer) processDataset(ctx context.Context, datasetID string) {
 	}()
 
 	done := make(chan struct{})
+	var batchErr error
 	go func() {
 		defer close(done)
-		c.processBatch(ctx, cr.TenantID, datasetID, cr.Entries)
+		batchErr = c.processBatch(ctx, cr.TenantID, datasetID, cr.Entries)
 	}()
 
 	select {
@@ -170,25 +169,35 @@ func (c *Consumer) processDataset(ctx context.Context, datasetID string) {
 		close(stopHb)
 	}
 
-	// Ack only the batch we claimed. A token mismatch (lease taken over between
-	// claim and now) surfaces as an error; the batch was already merged
-	// idempotently, so skipping the ack just leaves it for reclamation.
+	// Ack only on success. A batch error (reader/dedup/writer failure) means we
+	// must leave the claimed batch in the backlog for reclamation/retry rather
+	// than silently dropping it (C5: never ack what we failed to merge).
+	if batchErr != nil {
+		return
+	}
 	if _, err := c.scheduler.Ack(ctx, datasetID, cr.Token, cr.Entries); err != nil {
 		_ = err
 	}
 }
 
 // processBatch applies out-of-order / tombstone handling, then recomputes and
-// writes the dataset-level merged products for the claimed closed batch.
-func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries []BacklogEntry) {
+// writes the dataset-level merged products for the claimed closed batch. It
+// returns an error if any reader/dedup/writer step fails so the caller can
+// leave the batch for reclamation instead of acking dropped work.
+func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries []BacklogEntry) error {
 	c.mu.Lock()
 	if c.tombs == nil {
 		c.tombs = map[string]map[string]bool{}
 	}
 	if c.seqs == nil {
-		c.seqs = map[string]uint64{}
+		c.seqs = map[string]map[string]uint64{}
 	}
 	tomb := c.tombs[kb]
+	docSeqs := c.seqs[kb]
+	if docSeqs == nil {
+		docSeqs = map[string]uint64{}
+		c.seqs[kb] = docSeqs
+	}
 	var completed []BacklogEntry
 	var deleted []string
 	for _, e := range entries {
@@ -204,17 +213,19 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 			if tomb != nil && tomb[e.DocID] {
 				continue // deleted before it completed
 			}
-			if prev, ok := c.seqs[kb]; ok && e.Seq <= prev {
-				continue // stale / duplicate completion
+			// Seq is per-document, so the stale/duplicate check must be scoped
+			// to the document, not the whole dataset (C4).
+			if prev, ok := docSeqs[e.DocID]; ok && e.Seq <= prev {
+				continue // stale / duplicate completion for this doc
 			}
-			c.seqs[kb] = e.Seq
+			docSeqs[e.DocID] = e.Seq
 			completed = append(completed, e)
 		}
 	}
 	c.mu.Unlock()
 
 	if len(deleted) == 0 && len(completed) == 0 {
-		return
+		return nil
 	}
 
 	deduper, err := c.factory(tenant)
@@ -223,13 +234,16 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 	}
 
 	products, err := c.reader.LoadCompiledProducts(ctx, tenant, kb)
-	if err != nil || len(products) == 0 {
-		// Nothing to merge (or reader unavailable). Still drop fully-orphaned
-		// merged products for deleted docs.
+	if err != nil {
+		return err
+	}
+	if len(products) == 0 {
+		// Nothing to merge. Still drop fully-orphaned merged products for
+		// deleted docs, then treat as success (nothing to do).
 		for _, d := range deleted {
 			_ = c.writer.DeleteMergedForDoc(ctx, tenant, kb, d)
 		}
-		return
+		return nil
 	}
 
 	// With deletions present, recompute the whole KB; otherwise scope to the
@@ -250,12 +264,13 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 
 	merged, err := deduper.Dedup(ctx, products)
 	if err != nil {
-		return
+		return err
 	}
 	if err := c.writer.WriteMerged(ctx, tenant, kb, merged); err != nil {
-		return
+		return err
 	}
 	for _, d := range deleted {
 		_ = c.writer.DeleteMergedForDoc(ctx, tenant, kb, d)
 	}
+	return nil
 }

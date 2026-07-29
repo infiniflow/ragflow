@@ -84,7 +84,7 @@ func (m *MemStore) DedupeAdd(row Product, threshold float64, cb DedupCallback) (
 		}
 	}
 	var best Product
-	if bestIdx >= 0 {
+	if bestIdx >= 0 && bestIdx < len(m.items) {
 		best = m.items[bestIdx]
 	}
 	m.mu.RUnlock()
@@ -96,19 +96,30 @@ func (m *MemStore) DedupeAdd(row Product, threshold float64, cb DedupCallback) (
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// Re-resolve the candidate by ID under the write lock. The unlocked
+	// callback may have allowed a concurrent Delete to delete or reindex the
+	// slice, so the index captured under the read lock (bestIdx) is stale and
+	// unsafe to index — it could point at a different product or be
+	// out-of-range (M11).
+	resolvedIdx := -1
+	if best.ID != "" {
+		if idx, ok := m.byID[best.ID]; ok && idx < len(m.items) && m.items[idx].ID == best.ID {
+			resolvedIdx = idx
+		}
+	}
 	switch action {
 	case KeepDrop:
 		return KeepDrop, nil
 	case KeepMerge:
-		if bestIdx < 0 {
+		if resolvedIdx < 0 {
 			m.addLocked(row)
 			return KeepAdd, nil
 		}
 		// Merges preserve the existing entry's identity (Python preserve_id).
-		replacement.ID = m.items[bestIdx].ID
-		m.items[bestIdx] = replacement
-		m.vectors[bestIdx] = replacement.Vector
-		m.norms[bestIdx] = l2Norm(replacement.Vector)
+		replacement.ID = m.items[resolvedIdx].ID
+		m.items[resolvedIdx] = replacement
+		m.vectors[resolvedIdx] = replacement.Vector
+		m.norms[resolvedIdx] = l2Norm(replacement.Vector)
 		return KeepMerge, nil
 	default:
 		m.addLocked(row)

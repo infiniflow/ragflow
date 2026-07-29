@@ -2,7 +2,10 @@ package wiki
 
 import (
 	"context"
+	"fmt"
+	"hash/fnv"
 	"strings"
+	"unicode"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
@@ -282,18 +285,28 @@ func firstParagraph(md string) string {
 	return ""
 }
 
-// slugify produces a filesystem-safe slug from a heading.
+// slugify produces a filesystem-safe slug from a heading. ASCII letters/digits
+// and hyphens are kept verbatim, and unicode letters/digits (e.g. CJK titles)
+// are preserved too so distinct non-Latin titles don't all collapse to "page"
+// (M17). When the result is empty (punctuation-only or whitespace-only title)
+// a stable hash of the input is used so different such titles stay distinct.
 func slugify(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return "page"
+	}
+	s = strings.ToLower(trimmed)
 	s = strings.ReplaceAll(s, " ", "-")
 	var b strings.Builder
 	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || unicode.IsLetter(r) || unicode.IsDigit(r) {
 			b.WriteRune(r)
 		}
 	}
 	if b.Len() == 0 {
-		return "page"
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(trimmed))
+		return "page-" + fmt.Sprintf("%08x", h.Sum32())
 	}
 	return b.String()
 }

@@ -142,7 +142,7 @@ func (ExtractorParam) Defaults() ExtractorParam {
 		AutoQuestions:  0,
 		AutoTags:       0,
 		TagFileID:      "",
-		EnableMetadata: 0,
+		EnableMetadata: 1,
 		Metadata:       nil,
 	}
 }

@@ -1206,11 +1206,15 @@ func TestKnowledgeCompiler_GroupIDsResolvedToTemplateIDs(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	want := map[string]bool{"tpl-grp1-a": true, "tpl-grp1-b": true}
+	checked := 0
 	for _, r := range out["chunks"].([]any) {
 		cm := r.(map[string]any)
-		if cm["compile_kwd"] != "structure" {
+		// No parser_config is supplied, so InferType returns "list" and the
+		// structure variant stamps compile_kwd="list" (not "structure").
+		if cm["compile_kwd"] != "list" {
 			continue
 		}
+		checked++
 		var got []string
 		switch v := cm["compilation_template_ids"].(type) {
 		case []any:
@@ -1223,6 +1227,9 @@ func TestKnowledgeCompiler_GroupIDsResolvedToTemplateIDs(t *testing.T) {
 		if len(got) != 2 || !want[got[0]] || !want[got[1]] {
 			t.Fatalf("compiled chunk %v: compilation_template_ids = %v, want %v (group ids must resolve to template ids)", cm["id"], got, want)
 		}
+	}
+	if checked == 0 {
+		t.Fatalf("no compiled chunks inspected (compile_kwd=list expected); assertion was vacuous")
 	}
 }
 

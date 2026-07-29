@@ -23,10 +23,18 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
+// buildTreeMaxDepth caps recursive summarization depth so a pathological
+// clustering input (e.g. all-non-negative embeddings that never separate) can
+// never drive unbounded recursion in buildTree (M14).
+const buildTreeMaxDepth = 12
+
 // Run executes the raptor variant.
 func Run(ctx context.Context, deps common.Deps, param common.Param, inputs common.Inputs) (common.Outputs, error) {
 	if deps.Embed == nil {
 		return common.Outputs{}, fmt.Errorf("raptor: embedder required")
+	}
+	if deps.Chat == nil {
+		return common.Outputs{}, fmt.Errorf("raptor: chat model required")
 	}
 	docID := firstNonEmpty(inputs.DocID, deps.DatasetID)
 	if docID == "" {
@@ -154,13 +162,17 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		if err != nil {
 			return err
 		}
+		var vec []float32
+		if len(embedding) > 0 {
+			vec = embedding[0]
+		}
 		if err := sink.Add(common.Product{
 			ID:       nodeID,
 			DocID:    docID,
 			TenantID: tenantID,
 			Variant:  common.VariantRaptor,
 			Content:  summary,
-			Vector:   embedding[0],
+			Vector:   vec,
 			ParentID: task.parentID,
 			Meta: map[string]any{
 				"kind":             "summary",
@@ -181,11 +193,14 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 			topLevelTexts = append(topLevelTexts, summary)
 		}
 
-		// If this cluster is large, recurse: re-cluster its points and enqueue
-		// sub-clusters under this node. The sub-clustering uses the same
-		// method as the top-level pass (via clusterByMethod) so a user who
-		// picks AHC gets AHC at every level, not Psi below AHC.
-		if len(task.pointIdxs) > RecursionMinClusterSize {
+		// If this cluster is large and we are still below the depth cap,
+		// recurse: re-cluster its points and enqueue sub-clusters under this
+		// node. The sub-clustering uses the same method as the top-level pass
+		// (via clusterByMethod) so a user who picks AHC gets AHC at every level,
+		// not Psi below AHC. The depth cap guarantees termination even when a
+		// pathological clustering input (e.g. all-non-negative embeddings that
+		// never separate) would otherwise recurse without progress (M14).
+		if task.level < buildTreeMaxDepth && len(task.pointIdxs) > RecursionMinClusterSize {
 			subEmb := make([][]float64, 0, len(task.pointIdxs))
 			for _, pi := range task.pointIdxs {
 				subEmb = append(subEmb, embeddings[pi])
@@ -220,7 +235,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 	rootSummary, err := summarizeTexts(ctx, deps, llmID, "Synthesize the overall document theme from these section summaries:\n\n"+strings.Join(topLevelTexts, "\n"))
 	if err == nil {
 		embedding, e2 := deps.Embed.Encode(ctx, []string{rootSummary})
-		if e2 == nil {
+		if e2 == nil && len(embedding) > 0 {
 			if err := sink.Add(common.Product{
 				ID:       rootID,
 				DocID:    docID,

@@ -160,27 +160,6 @@ func (g CapacityGuardrails) Exceeded(o Outputs) bool {
 	return false
 }
 
-// FlushIfNeeded emits the current products via sink (resetting the buffer)
-// when guardrails are breached and OnExceed==flush. It returns whether a
-// flush happened. A nil sink disables flushing.
-//
-// NOTE: FlushIfNeeded no longer mutates o.Items. Callers that accumulate
-// through ProductSink own the item count (ProductSink.TotalItems); callers
-// that build a plain Outputs set o.Items themselves. This keeps a single
-// source of truth for the count and avoids double-counting when a variant
-// both streams through a sink and then applies the final guardrail.
-func (o *Outputs) FlushIfNeeded(g CapacityGuardrails, sink ChunkedSink, ctx context.Context) (bool, error) {
-	if g.OnExceed != ExceedFlush || !g.Exceeded(*o) || sink == nil {
-		return false, nil
-	}
-	if err := sink.Emit(ctx, o.Products); err != nil {
-		return false, err
-	}
-	o.Flushed = true
-	o.Products = o.Products[:0]
-	return true, nil
-}
-
 // EnforceGuardrails applies the variant's capacity policy uniformly:
 //   - OnExceed == ExceedError: returns ErrCapacityExceeded when any guardrail
 //     is breached (caller must propagate the error and drop the outputs).
@@ -208,7 +187,8 @@ func (o *Outputs) EnforceGuardrails(g CapacityGuardrails, sink ChunkedSink, ctx 
 			return err
 		}
 		o.Flushed = true
-		o.Products = o.Products[:0]
+		// Hand off ownership to the sink (see FlushIfNeeded, M9).
+		o.Products = nil
 		return nil
 	default:
 		return nil
@@ -259,7 +239,8 @@ func (s *ProductSink) Add(p Product) error {
 				return err
 			}
 			s.flushed = true
-			s.products = s.products[:0]
+			// Hand off ownership of the backing array to the sink (M9).
+			s.products = nil
 			s.bytes = 0
 		}
 	}

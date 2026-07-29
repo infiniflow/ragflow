@@ -1,30 +1,32 @@
 package common
 
 import (
-	"fmt"
+	"crypto/sha256"
+	"encoding/hex"
 	"strings"
-
-	"github.com/cespare/xxhash/v2"
 )
 
 // StableRowID returns a deterministic, collision-resistant hex id from the
 // given parts (e.g. tenant_id, doc_id, variant, content hash). Field
-// separators are NUL bytes so distinct part orderings never collide.
+// separators are NUL bytes so distinct part orderings never collide. The
+// digest is SHA-256 (not a 64-bit hash) so distinct products cannot
+// accidentally share an id and be overwritten by Upsert/merge paths (M10).
 func StableRowID(parts ...string) string {
-	h := xxhash.New()
+	h := sha256.New()
 	for i, p := range parts {
 		if i > 0 {
 			h.Write([]byte{0})
 		}
-		h.WriteString(p)
+		_, _ = h.Write([]byte(p))
 	}
-	return fmt.Sprintf("%016x", h.Sum64())
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // ContentHash returns a stable hash of arbitrary text, used as a dedup key
-// component for row ids and for in-run equality checks.
+// component for row ids and for in-run equality checks. SHA-256 for the same
+// collision-resistance reason as StableRowID (M10).
 func ContentHash(text string) string {
-	h := xxhash.New()
-	h.WriteString(strings.TrimSpace(text))
-	return fmt.Sprintf("%016x", h.Sum64())
+	h := sha256.New()
+	_, _ = h.Write([]byte(strings.TrimSpace(text)))
+	return hex.EncodeToString(h.Sum(nil))
 }

@@ -124,6 +124,15 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		return nil, err
 	}
 
+	// Stamp the resolved template ids onto every product as it leaves the
+	// variant — including products streamed out through a sink under
+	// ExceedFlush — so they are not skipped by the post-Run stamping below
+	// (which only sees the buffered remainder in out.Products). The post-Run
+	// loop still covers that buffered remainder (M1).
+	if len(templateIDs) > 0 {
+		in.Sink = &templateIDStampingSink{delegate: in.Sink, ids: templateIDs}
+	}
+
 	var out common.Outputs
 	switch param.Variant {
 	case common.VariantStructure:
@@ -596,6 +605,31 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 		}
 	}
 	return in, nil
+}
+
+// templateIDStampingSink wraps a ChunkedSink so every emitted product carries
+// the resolved compilation template ids. It is used to stamp products that
+// leave the variant through a streaming sink (ExceedFlush) — those never reach
+// the buffered out.Products and would otherwise skip the template-id stamping
+// (M1).
+type templateIDStampingSink struct {
+	delegate common.ChunkedSink
+	ids      []string
+}
+
+// Emit stamps the template ids onto each product before delegating (a nil
+// delegate is treated as a no-op drain).
+func (s *templateIDStampingSink) Emit(ctx context.Context, items []common.Product) error {
+	for i := range items {
+		if items[i].Meta == nil {
+			items[i].Meta = map[string]any{}
+		}
+		items[i].Meta["compilation_template_ids"] = s.ids
+	}
+	if s.delegate == nil {
+		return nil
+	}
+	return s.delegate.Emit(ctx, items)
 }
 
 func init() {

@@ -178,7 +178,10 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 	for _, d := range tree.docs {
 		if err := sink.Add(common.Product{
-			ID:       common.StableRowID("dataset_nav", "doc", d.ChunkID),
+			// Scope nav_doc ids by tenant and dataset (not just chunk id) so
+			// synthetic/positional chunk ids from different docs/datasets do not
+			// collide and overwrite each other across tenants (M5).
+			ID:       common.StableRowID("dataset_nav", tenantID, datasetID, "doc", d.ChunkID),
 			DocID:    docID,
 			TenantID: tenantID,
 			Variant:  common.VariantDatasetnav,
@@ -403,6 +406,10 @@ func (t *navTree) maybeSplit(ctx context.Context, deps common.Deps, llmID, clust
 	if parent != nil {
 		depth = parent.Depth + 1
 	}
+	// navChild collects the new sub-cluster names so the split parent keeps a
+	// children entry pointing at them; without it findBestCluster can no longer
+	// descend into the split subtree (M3).
+	var subChildren []navChild
 	for gi := 0; gi < 2; gi++ {
 		var kidIdx []int
 		for i, lb := range labels {
@@ -457,6 +464,7 @@ func (t *navTree) maybeSplit(ctx context.Context, deps common.Deps, llmID, clust
 		}
 		nc := &navCluster{Name: gname, Desc: desc, Parent: clusterName, Depth: depth, DocIDs: docIDs, Vector: gvec}
 		t.addCluster(nc)
+		subChildren = append(subChildren, navChild{name: gname})
 
 		// Reparent the group's children to the new sub-cluster.
 		for _, i := range kidIdx {
@@ -475,8 +483,10 @@ func (t *navTree) maybeSplit(ctx context.Context, deps common.Deps, llmID, clust
 			t.children[gname] = append(t.children[gname], k)
 		}
 	}
-	// Every child moved to a sub-cluster; the split parent keeps none.
-	delete(t.children, clusterName)
+	// The split parent's children become the new sub-clusters so findBestCluster
+	// can still descend into the split subtree (M3). When no sub-cluster was
+	// actually created the parent keeps an empty children list.
+	t.children[clusterName] = subChildren
 	return nil
 }
 

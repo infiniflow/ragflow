@@ -116,9 +116,9 @@ func TestGuardrails(t *testing.T) {
 		}
 		return nil
 	})
-	ok, err := o.FlushIfNeeded(CapacityGuardrails{MaxItems: 2, OnExceed: ExceedFlush}, sink, context.Background())
-	if err != nil || !ok || !flushed {
-		t.Fatalf("flush path failed: ok=%v err=%v flushed=%v", ok, err, flushed)
+	err := o.EnforceGuardrails(CapacityGuardrails{MaxItems: 2, OnExceed: ExceedFlush}, sink, context.Background())
+	if err != nil || !o.Flushed || !flushed {
+		t.Fatalf("flush path failed: flushed=%v err=%v", flushed, err)
 	}
 	if len(o.Products) != 0 {
 		t.Fatalf("buffer should be reset after flush, got %d", len(o.Products))

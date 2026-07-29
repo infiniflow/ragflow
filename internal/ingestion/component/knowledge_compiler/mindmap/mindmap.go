@@ -12,6 +12,7 @@ package mindmap
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
@@ -26,6 +27,10 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 	llmID := firstNonEmpty(param.LLMID, inputs.LLMID)
 	tenantID := deps.TenantID
+
+	if deps.Chat == nil {
+		return common.Outputs{}, fmt.Errorf("mindmap: chat model required")
+	}
 
 	sections := chunkTexts(inputs.Chunks)
 	if len(sections) == 0 {

@@ -735,14 +735,8 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 // keyword/question goroutines stay race-free. The existence check and
 // the map writes are both guarded by mu. Keyword extraction pins
 // temperature to extractorTemperature (0.2) to mirror generator.py.
-func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string, mu *sync.Mutex) error {
-	if mu != nil {
-		mu.Lock()
-	}
+func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
 	_, exists := ck["important_kwd"]
-	if mu != nil {
-		mu.Unlock()
-	}
 	if exists {
 		return nil
 	}
@@ -768,30 +762,17 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	}
 	tok := tokenizer.New(in.lang)
 	tks, tkErr := tok.Tokenize(strings.Join(kwds, " "))
-	if mu != nil {
-		mu.Lock()
-	}
 	ck["important_kwd"] = kwds
 	if tkErr == nil {
 		ck["important_tks"] = tks
-	}
-	if mu != nil {
-		mu.Unlock()
 	}
 	return nil
 }
 
 // runAutoQuestions extracts questions for the current chunk and stores
-// them on ck["question_kwd"]. See runAutoKeywords for the mu contract
-// and the temperature pin.
-func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string, mu *sync.Mutex) error {
-	if mu != nil {
-		mu.Lock()
-	}
+// them on ck["question_kwd"]. See runAutoKeywords for the temperature pin.
+func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
 	_, exists := ck["question_kwd"]
-	if mu != nil {
-		mu.Unlock()
-	}
 	if exists {
 		return nil
 	}
@@ -825,15 +806,9 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	}
 	tok := tokenizer.New(in.lang)
 	tks, tkErr := tok.Tokenize(strings.Join(filtered, "\n"))
-	if mu != nil {
-		mu.Lock()
-	}
 	ck["question_kwd"] = filtered
 	if tkErr == nil {
 		ck["question_tks"] = tks
-	}
-	if mu != nil {
-		mu.Unlock()
 	}
 	return nil
 }
@@ -900,12 +875,12 @@ func (c *ExtractorComponent) runAutoExtractions(ctx context.Context, db *gorm.DB
 func (c *ExtractorComponent) autoExtractionJob(ctx context.Context, db *gorm.DB, in extractorInputs, idx int, ck map[string]any, chunkText string) extractorJob {
 	return func() error {
 		if c.Param.AutoKeywords > 0 {
-			if err := c.runAutoKeywords(ctx, db, in, ck, chunkText, nil); err != nil {
+			if err := c.runAutoKeywords(ctx, db, in, ck, chunkText); err != nil {
 				return fmt.Errorf("chunk %d keywords: %w", idx, err)
 			}
 		}
 		if c.Param.AutoQuestions > 0 {
-			if err := c.runAutoQuestions(ctx, db, in, ck, chunkText, nil); err != nil {
+			if err := c.runAutoQuestions(ctx, db, in, ck, chunkText); err != nil {
 				return fmt.Errorf("chunk %d questions: %w", idx, err)
 			}
 		}

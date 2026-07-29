@@ -156,10 +156,18 @@ func (s *mysqlScheduler) AppendBacklog(ctx context.Context, tenantID, datasetID,
 	// key, transactionally append the entry to the existing backlog array. The
 	// row lock below makes concurrent appends safe even across publishers.
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var row entity.KnowledgeCompileDoc
+		// Set the key/tenant fields on the struct itself (not only via a string
+		// Where) so the inserted row is fully populated and later queries by
+		// dataset_id find it (M19: a raw-string Where alone leaves DatasetID
+		// blank on the created row).
+		row := entity.KnowledgeCompileDoc{
+			DatasetID:      datasetID,
+			TenantID:       tenantID,
+			BacklogDocIDs:  "[]",
+			InflightDocIDs: "[]",
+		}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("dataset_id = ?", datasetID).
-			Attrs(entity.KnowledgeCompileDoc{BacklogDocIDs: "[]", InflightDocIDs: "[]"}).
 			FirstOrCreate(&row).Error; err != nil {
 			return err
 		}
