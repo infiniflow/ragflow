@@ -275,10 +275,10 @@ func main() {
 	// override default port if provided
 	switch *arguments.mode {
 	case "api":
-		port := config.Server.Port
+		port := config.APIServer.Port
 		if arguments.port != nil {
 			port = *arguments.port
-			config.Server.Port = port
+			config.APIServer.Port = port
 		}
 		if arguments.name == nil {
 			serverName = fmt.Sprintf("api_server_%d", port)
@@ -343,7 +343,7 @@ func main() {
 	server.SetLogger(common.Logger)
 
 	// Print all configuration settings
-	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, config.Server.Mode))
+	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, config.General.Mode))
 	server.PrintAll()
 
 	// Initialize database
@@ -418,10 +418,10 @@ func main() {
 func runAdmin(ctx context.Context, args *serverArgs, config *server.Config) error {
 
 	// Set Gin mode
-	if config.Server.Mode == "release" {
-		gin.SetMode(gin.ReleaseMode)
-	} else {
+	if config.General.Mode == "debug" {
 		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
 	}
 
 	adminService := admin.NewService()
@@ -662,10 +662,10 @@ func runAPI(ctx context.Context, args *serverArgs, config *server.Config) error 
 func startServer(ctx context.Context, config *server.Config) {
 
 	// Set Gin mode
-	if config.Server.Mode == "release" {
-		gin.SetMode(gin.ReleaseMode)
-	} else {
+	if config.General.Mode == "debug" {
 		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
 	}
 
 	// Initialize service layer
@@ -847,7 +847,7 @@ func startServer(ctx context.Context, config *server.Config) {
 	r.Setup(ginEngine)
 
 	// Create HTTP server with timeouts to prevent slow clients from blocking shutdown
-	addr := fmt.Sprintf(":%d", config.Server.Port)
+	addr := fmt.Sprintf(":%d", config.APIServer.Port)
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           ginEngine,
@@ -867,7 +867,7 @@ func startServer(ctx context.Context, config *server.Config) {
 				"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
 		)
 		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
-		common.Info(fmt.Sprintf("Server starting on port: %d", config.Server.Port))
+		common.Info(fmt.Sprintf("Server starting on port: %d", config.APIServer.Port))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			common.Fatal("Failed to start server", zap.Error(err))
 		}
@@ -876,8 +876,8 @@ func startServer(ctx context.Context, config *server.Config) {
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeAPI,
-		fmt.Sprintf("ragflow-server-%d", config.Server.Port),
-		config.Server.Port,
+		fmt.Sprintf("ragflow-server-%d", config.APIServer.Port),
+		config.APIServer.Port,
 		config,
 	); hb != nil {
 		defer hb.Stop()
