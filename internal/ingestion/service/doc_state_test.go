@@ -111,6 +111,56 @@ func TestDocStateUpdater_PreservesExistingKey(t *testing.T) {
 	}
 }
 
+func TestDocStateUpdater_UnionsListValues(t *testing.T) {
+	// Stored doc metadata already has a list value; a new run extracts more
+	// (possibly overlapping) values. The merge must union + de-dupe, matching
+	// Python update_metadata_to(metadata, existing_meta).
+	svc := &stubDocStateSvc{metaData: map[string]any{"people": []string{"关羽", "张辽"}}}
+	u := &docStateUpdater{docSvc: svc}
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{
+		DocID:      "doc-1",
+		Metadata:   map[string]any{"people": []string{"张辽", "刘备"}},
+		ChunkCount: 1, TokenConsumption: 10,
+	})
+	got, ok := svc.metaData["people"].([]string)
+	if !ok {
+		t.Fatalf("people should be []string, got %T", svc.metaData["people"])
+	}
+	want := []string{"张辽", "刘备", "关羽"}
+	if len(got) != len(want) {
+		t.Fatalf("people=%v, want union %v", got, want)
+	}
+	seen := map[string]bool{}
+	for _, p := range got {
+		if seen[p] {
+			t.Fatalf("duplicate %q in %v", p, got)
+		}
+		seen[p] = true
+	}
+	for _, w := range want {
+		if !seen[w] {
+			t.Fatalf("missing %q in %v", w, got)
+		}
+	}
+}
+
+func TestDocStateUpdater_PreservesExistingScalar(t *testing.T) {
+	// Python update_metadata_to keeps the stored scalar when both sides carry
+	// a scalar for the same key (stored wins).
+	svc := &stubDocStateSvc{metaData: map[string]any{"author": "Alice"}}
+	u := &docStateUpdater{docSvc: svc}
+	ctx := t.Context()
+	u.apply(ctx, &taskpkg.PipelineResult{
+		DocID:      "doc-1",
+		Metadata:   map[string]any{"author": "Bob"},
+		ChunkCount: 1, TokenConsumption: 10,
+	})
+	if svc.metaData["author"] != "Alice" {
+		t.Fatalf("stored scalar must win: got %q", svc.metaData["author"])
+	}
+}
+
 func TestDocStateUpdater_IncrementArgs(t *testing.T) {
 	svc := &stubDocStateSvc{}
 	u := &docStateUpdater{docSvc: svc}
