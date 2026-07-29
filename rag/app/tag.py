@@ -92,11 +92,12 @@ def chunk(filename, binary=None, lang="Chinese", callback=None, **kwargs):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
         lines = txt.split("\n")
+        delimiter = "\t" if any("\t" in line for line in lines) else ","
 
         fails = []
         content = ""
         res = []
-        reader = csv.reader((line + "\n" for line in lines))
+        reader = csv.reader((line + "\n" for line in lines), delimiter=delimiter)
         prev_line_num = 0
 
         # line_num tracks the physical span when quoted fields cross lines.
