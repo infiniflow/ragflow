@@ -236,9 +236,8 @@ func main() {
 	// Initialize local variables (runtime variables from Redis)
 	err = server.InitLocalVariables()
 	if err != nil {
-
 		fmt.Printf("Failed to start %s server: %v\n", *arguments.mode, err)
-		os.Exit(1)
+		return
 	}
 
 	// Temporary logger initialization
@@ -268,7 +267,7 @@ func main() {
 
 	if err = server.Init(configPath); err != nil {
 		common.Error("Failed to initialize configuration", err)
-		os.Exit(1)
+		return
 	}
 
 	config := server.GetConfig()
@@ -305,7 +304,7 @@ func main() {
 		}
 	default:
 		common.Error("invalid server mode", errors.New(*arguments.mode))
-		os.Exit(1)
+		return
 	}
 
 	// set server name and log file path
@@ -378,7 +377,7 @@ func main() {
 
 	if err = server.StartServer(ctx, cancel, serverName); err != nil {
 		common.Error("Failed to start EE server", err)
-		os.Exit(1)
+		return
 	}
 	defer server.ShutdownServer(ctx)
 
@@ -390,26 +389,26 @@ func main() {
 	case "api":
 		if err = runAPI(ctx, arguments, config); err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
-			os.Exit(1)
+			return
 		}
 	case "admin":
 		if err = runAdmin(ctx, arguments, config); err != nil {
 			fmt.Printf("Failed to start ADMIN server: %v\n", err)
-			os.Exit(1)
+			return
 		}
 	case "ingestor":
 		if err = runIngestor(ctx, arguments, config); err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
-			os.Exit(1)
+			return
 		}
 	case "syncer":
 		if err = runSyncer(ctx, arguments, config); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
-			os.Exit(1)
+			return
 		}
 	default:
 		fmt.Printf("Invalid server mode: %s\n", *arguments.mode)
-		os.Exit(1)
+		return
 	}
 }
 
@@ -789,14 +788,13 @@ func startServer(ctx context.Context, config *server.Config) {
 	fileCommitHandler := handler.NewFileCommitHandler(file.NewFileCommitService())
 
 	// Dify retrieval handler
-	docDAO := documentDAO
-	retrievalService := nlp.NewRetrievalService(docEngine, docDAO)
+	retrievalService := nlp.NewRetrievalService(docEngine, documentDAO)
 	difyRetrievalHandler := handler.NewDifyRetrievalHandler(
 		datasetsService,
 		modelProviderService,
 		metadataService,
 		retrievalService,
-		docDAO,
+		documentDAO,
 		docEngine,
 	)
 	componentsSvc := service.NewComponentsService()
@@ -908,7 +906,7 @@ func startServer(ctx context.Context, config *server.Config) {
 	// Wait for shutdown signal from main's signal.NotifyContext
 	<-ctx.Done()
 
-	common.Info(fmt.Sprintf("Receives shutdown signal"))
+	common.Info(fmt.Sprintf("Received shutdown signal"))
 	common.Info("Shutting down server...")
 
 	// Create context with timeout for graceful shutdown
