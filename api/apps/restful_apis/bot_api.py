@@ -354,7 +354,7 @@ async def retrieval_test_embedded(tenant_id=None):
 
     async def _retrieval():
         nonlocal similarity_threshold, vector_similarity_weight, top, rerank_id
-        local_doc_ids = list(doc_ids) if doc_ids else []
+        local_doc_ids = list(doc_ids) if doc_ids else None
         tenant_ids = []
         _question = question
 

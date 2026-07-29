@@ -23,7 +23,6 @@ from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
 from common.constants import LLMType
 from api.db.services.doc_metadata_service import DocMetadataService
 from common.temporal_retrieval import resolve_temporal_retrieval_context
-from common.metadata_utils import apply_meta_data_filter
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.llm_service import LLMBundle
 from api.db.services.memory_service import MemoryService
@@ -130,41 +129,8 @@ class Retrieval(ToolBase, ABC):
         vars = {k: o["value"] for k, o in vars.items()}
         query = self.string_format(query_text, vars)
 
-        def _load_metas() -> dict:
-            return DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
+        doc_ids = None
 
-        def _resolve_manual_filter(flt: dict) -> dict:
-            # Keep variable substitution scoped to this invocation.
-            pat = re.compile(self.variable_ref_patt)
-            s = flt.get("value", "")
-            out_parts = []
-            last = 0
-
-            for m in pat.finditer(s):
-                out_parts.append(s[last:m.start()])
-                key = m.group(1)
-                v = self._canvas.get_variable_value(key)
-                if v is None:
-                    rep = ""
-                elif isinstance(v, partial):
-                    buf = []
-                    for chunk in v():
-                        buf.append(chunk)
-                    rep = "".join(buf)
-                elif isinstance(v, str):
-                    rep = v
-                else:
-                    rep = json.dumps(v, ensure_ascii=False)
-
-                out_parts.append(rep)
-                last = m.end()
-
-            out_parts.append(s[last:])
-            resolved = dict(flt)
-            resolved["value"] = "".join(out_parts)
-            return resolved
-
-        doc_ids = []
         def _load_metas() -> dict:
             return DocMetadataService.get_flatted_meta_by_kbs(kb_ids)
 
@@ -205,26 +171,12 @@ class Retrieval(ToolBase, ABC):
 
         chat_mdl = None
         method = self._param.meta_data_filter.get("method")
-        temporal_method = getattr(self._param, "temporal_retrieval", {}).get("method") if getattr(self._param, "temporal_retrieval", {}) else None
-        
-        if method in ["auto", "semi_auto"] or temporal_method in ["auto", "semi_auto"]:
+        if method in ["auto", "semi_auto"]:
             tenant_id = self._canvas.get_tenant_id()
             chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
         raw_query = query
-
-        if self._param.meta_data_filter != {}:
-            doc_ids = await apply_meta_data_filter(
-                self._param.meta_data_filter,
-                None,
-                query,
-                chat_mdl,
-                doc_ids,
-                _resolve_manual_filter if self._param.meta_data_filter.get("method") == "manual" else None,
-                kb_ids=kb_ids,
-                metas_loader=_load_metas,
-            )
 
         if self._param.cross_languages:
             query = await cross_languages(kbs[0].tenant_id, None, query, self._param.cross_languages)

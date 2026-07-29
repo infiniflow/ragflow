@@ -1091,7 +1091,7 @@ async def search(dataset_id: str, tenant_id: str, req: dict):
 
     if doc_ids is not None and not isinstance(doc_ids, list):
         return False, "`doc_ids` should be a list"
-    local_doc_ids = list(doc_ids) if doc_ids else []
+    local_doc_ids = list(doc_ids) if doc_ids else None
 
     meta_data_filter = {}
     search_id = req.get("search_id", "")
@@ -1484,7 +1484,7 @@ async def search_datasets(tenant_id: str, req: dict):
 
     if doc_ids is not None and not isinstance(doc_ids, list):
         return False, "`doc_ids` should be a list"
-    local_doc_ids = list(doc_ids) if doc_ids else []
+    local_doc_ids = list(doc_ids) if doc_ids else None
 
     meta_data_filter = {}
     search_id = req.get("search_id", "")

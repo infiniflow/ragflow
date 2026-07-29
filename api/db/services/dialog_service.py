@@ -1679,7 +1679,7 @@ async def _stream_with_think_delta(stream_iter, min_tokens: int = 16):
 
 
 async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_config={}, search_id=None):
-    doc_ids = search_config.get("doc_ids", [])
+    doc_ids = search_config.get("doc_ids") or None
     rerank_mdl = None
     kb_ids = search_config.get("kb_ids", kb_ids)
     chat_llm_name = search_config.get("chat_id", chat_llm_name)
@@ -1811,7 +1811,7 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
 async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
     meta_data_filter = search_config.get("meta_data_filter", {})
     temporal_retrieval = search_config.get("temporal_retrieval") or {}
-    doc_ids = search_config.get("doc_ids", [])
+    doc_ids = search_config.get("doc_ids") or None
     rerank_id = search_config.get("rerank_id", "")
     rerank_mdl = None
     kbs = KnowledgebaseService.get_by_ids(kb_ids)

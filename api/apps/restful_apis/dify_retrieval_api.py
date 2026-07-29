@@ -274,7 +274,7 @@ async def retrieval(tenant_id):
             "logic": metadata_condition.get("logic", "and"),
         }
 
-    doc_ids = []
+    doc_ids = None
     try:
         e, kb = KnowledgebaseService.get_by_id(kb_id)
         if not e:

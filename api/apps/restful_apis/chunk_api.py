@@ -331,12 +331,13 @@ async def retrieval_test(tenant_id):
     question = req["question"].strip() if isinstance(req["question"], str) else req["question"]
     if not question:
         return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
-    doc_ids = req.get("document_ids", [])
+    doc_ids = req.get("document_ids")
     use_kg = req.get("use_kg", False)
     toc_enhance = req.get("toc_enhance", False)
     langs = req.get("cross_languages", [])
-    if not isinstance(doc_ids, list):
+    if doc_ids is not None and not isinstance(doc_ids, list):
         return get_error_data_result("`documents` should be a list")
+    doc_ids = doc_ids or None
     if doc_ids:
         doc_ids_list = KnowledgebaseService.list_documents_by_ids(kb_ids)
         for doc_id in doc_ids:

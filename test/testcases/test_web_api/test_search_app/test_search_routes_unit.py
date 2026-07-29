@@ -466,6 +466,74 @@ def test_update_and_detail_route_matrix_unit(monkeypatch):
 
 
 @pytest.mark.p2
+def test_update_validates_and_merges_temporal_retrieval(monkeypatch):
+    module = _load_search_api(monkeypatch)
+    existing = _SearchRecord(
+        search_id="s1",
+        name="search",
+        search_config={
+            "temporal_retrieval": {
+                "enabled": True,
+                "mode": "auto",
+                "temporal_field": "published_at",
+                "half_life_days": 14,
+            }
+        },
+    )
+    monkeypatch.setattr(module.SearchService, "query", lambda **_kwargs: [existing])
+
+    _set_request_json(
+        monkeypatch,
+        module,
+        {
+            "name": "search",
+            "search_config": {
+                "temporal_retrieval": {
+                    "enabled": True,
+                    "temporal_field": "",
+                }
+            },
+        },
+    )
+    res = _run(module.update(search_id="s1"))
+    assert res["code"] == module.RetCode.DATA_ERROR
+    assert "temporal_field" in res["message"]
+
+    captured = {}
+
+    def _update(search_id, req):
+        captured["search_id"] = search_id
+        captured["req"] = deepcopy(req)
+        return True
+
+    monkeypatch.setattr(module.SearchService, "update_by_id", _update)
+    monkeypatch.setattr(
+        module.SearchService,
+        "get_by_id",
+        lambda search_id: (True, _SearchRecord(search_id=search_id, name="search")),
+    )
+    _set_request_json(
+        monkeypatch,
+        module,
+        {
+            "name": "search",
+            "search_config": {"temporal_retrieval": {"half_life_days": 7}},
+        },
+    )
+
+    res = _run(module.update(search_id="s1"))
+
+    assert res["code"] == module.RetCode.SUCCESS
+    assert captured["search_id"] == "s1"
+    assert captured["req"]["search_config"]["temporal_retrieval"] == {
+        "enabled": True,
+        "mode": "auto",
+        "temporal_field": "published_at",
+        "half_life_days": 7,
+    }
+
+
+@pytest.mark.p2
 def test_list_and_delete_route_matrix_unit(monkeypatch):
     module = _load_search_api(monkeypatch)
 
