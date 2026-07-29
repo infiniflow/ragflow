@@ -127,8 +127,14 @@ func (f *fakeSessionStore) ListByChatID(ctx context.Context, db *gorm.DB, chatID
 		if sessionID != "" && s.ID != sessionID {
 			continue
 		}
-		if name != "" && s.Name != name {
-			continue
+		if name != "" {
+			var sessionName string
+			if s.Name != nil {
+				sessionName = *s.Name
+			}
+			if sessionName != name {
+				continue
+			}
 		}
 		result = append(result, s)
 	}
@@ -487,7 +493,7 @@ func TestUpdateSession_ValidationErrors(t *testing.T) {
 		message string
 		code    common.ErrorCode
 	}{
-		{name: "empty body", req: map[string]interface{}{}, message: "request body cannot be empty", code: common.CodeArgumentError},
+		// Empty body is now a valid no-op per the contract.
 		{name: "message", req: map[string]interface{}{"message": []interface{}{}}, message: "`messages` cannot be changed", code: common.CodeDataError},
 		{name: "messages", req: map[string]interface{}{"messages": []interface{}{}}, message: "`messages` cannot be changed", code: common.CodeDataError},
 		{name: "reference", req: map[string]interface{}{"reference": []interface{}{}}, message: "`reference` cannot be changed", code: common.CodeDataError},
