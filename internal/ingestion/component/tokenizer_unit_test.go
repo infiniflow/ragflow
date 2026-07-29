@@ -91,8 +91,8 @@ func (s *stubEmbedder) Encode(ctx context.Context, texts []string) ([]EmbeddingR
 }
 
 // newStubEmbedder returns a stub embedder for instance-level resolver injection.
-// maxTokens defaults to 2048 so truncateForEmbedding (Diff 14: maxTokens <= 10 -> "")
-// does not empty the content text; tests that exercise truncation set maxTokens explicitly.
+// maxTokens defaults to 2048 so truncateForEmbedding truncates to the first
+// 2048 tokens; tests that exercise truncation set maxTokens explicitly.
 func newStubEmbedder(dim int) *stubEmbedder {
 	return &stubEmbedder{dim: dim, maxTokens: 2048}
 }
@@ -376,20 +376,57 @@ func TestIsPhantomChunk(t *testing.T) {
 	}
 }
 
-// TestTruncateForEmbedding_SmallMaxTokens covers Tokenizer Diff-14: when
-// maxTokens <= 10, Go must truncate to empty, matching Python's
-// truncation-to-empty behaviour (common/token_utils.py:183-185).
+// TestTruncateForEmbedding_SmallMaxTokens covers Tokenizer Diff-14. For any
+// positive maxTokens, truncateForEmbedding keeps the first maxTokens tokens
+// (non-empty) and the result is strictly shorter than the input.
+//
+// The unconfigured case (maxTokens <= 0) is covered separately by
+// TestTruncateForEmbedding_UnconfiguredClampsToDefault: rather than mirroring
+// Python's `truncate` (which returns "" for max_len <= 0 and would make the
+// embeddings API reject the batch), Go clamps the limit to a safe default so
+// every path still truncates instead of passing the full text through.
 func TestTruncateForEmbedding_SmallMaxTokens(t *testing.T) {
-	long := strings.Repeat("a", 100)
-	if got := truncateForEmbedding(long, 5); got != "" {
-		t.Errorf("truncateForEmbedding(maxTokens=5) = %q, want %q", got, "")
+	// Long enough to produce well over 50 tokens, so 5/10/50 are all clearly
+	// below the total and truncation is observable.
+	long := strings.Repeat("a", 2000)
+	if got := truncateForEmbedding(long, 5); got == "" {
+		t.Error("truncateForEmbedding(maxTokens=5) returned empty, want first 5 tokens")
 	}
-	if got := truncateForEmbedding(long, 10); got != "" {
-		t.Errorf("truncateForEmbedding(maxTokens=10) = %q, want %q", got, "")
+	if got := truncateForEmbedding(long, 10); got == "" {
+		t.Error("truncateForEmbedding(maxTokens=10) returned empty, want first 10 tokens")
 	}
 	// Normal path: maxTokens > 10 should truncate (not return empty).
 	if got := truncateForEmbedding(long, 50); got == "" {
 		t.Error("truncateForEmbedding(maxTokens=50) returned empty, want truncated text")
+	}
+	if got := truncateForEmbedding(long, 50); len(got) >= len(long) {
+		t.Errorf("truncateForEmbedding(maxTokens=50) len = %d, want strictly shorter than %d", len(got), len(long))
+	}
+}
+
+// TestTruncateForEmbedding_UnconfiguredClampsToDefault is the regression gate
+// for the root cause behind embedding truncation: an embedder that reports no
+// token limit (maxTokens <= 0) must NOT be passed through verbatim. Before the
+// central clamp, the generic model_service branch left maxTokens = 0, which
+// silently disabled truncation for the whole generic path. The fix clamps
+// maxTokens <= 0 to defaultEmbeddingTokenLimit (8192) inside
+// truncateForEmbedding itself, so every caller — Builtin and generic alike —
+// keeps truncation active.
+//
+// For a clearly-over-limit input and maxTokens = 0, the result must be non-empty
+// AND strictly shorter than the input: proof that it was truncated to the
+// default, not returned verbatim.
+func TestTruncateForEmbedding_UnconfiguredClampsToDefault(t *testing.T) {
+	// ~10000+ CL100K tokens, comfortably above the 8192 default so truncation
+	// is observable.
+	long := strings.Repeat("hello world ", 5000)
+	got := truncateForEmbedding(long, 0)
+	if got == "" {
+		t.Fatal("truncateForEmbedding(maxTokens=0) returned empty; clamp must keep truncation active")
+	}
+	if len(got) >= len(long) {
+		t.Errorf("truncateForEmbedding(maxTokens=0) len = %d, want strictly shorter than %d; clamp to default must truncate",
+			len(got), len(long))
 	}
 }
 

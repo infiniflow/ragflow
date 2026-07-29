@@ -37,15 +37,21 @@
 //     a non-regex text record whose layout flags it as a
 //     section/title/head and whose text passes not_title is promoted to
 //     fallback_level = len(selected_group) + 1. Strategy (1) —
-//     PDF-outline detection — still requires deepdoc/parser binary
-//     access and remains the only parity gap.
+//     PDF-outline detection — is also ported: newLevelContext
+//     (title.go) reads the Parser-supplied file.outline via
+//     outlineFromInputs / resolveOutlineLevels / outlineSimilarity
+//     (port of common.py:_outline_similarity) before falling back to
+//     the regex/layout branch, wired into group.go / hierarchy.go
+//     (Chunker omission 1.5, Gap C closed).
 //
-//   - The Go port has NO hardcoded BULLET_PATTERN fallback. Heading
-//     detection relies entirely on the user-supplied `levels` param
-//     (which templates carry as comprehensive regex families) paired
-//     with the layout-hint fallback. A PDF without matching levels
-//     produces BODY_LEVEL-only records — Python's BULLET_PATTERN-based
-//     tree_merge / hierarchical_merge would still find structure.
+//   - The Go port SHIPS a hardcoded BULLET_PATTERN fallback
+//     (Chunker omission 1.7, Gap C closed): when the regex/layout
+//     branch yields BODY_LEVEL-only records, resolveTitleLevels
+//     (title.go) calls bulletsCategory over bulletPatterns (title.go,
+//     mirroring Python BULLET_PATTERN at rag/nlp/__init__.py:258) to
+//     recover structure from numbered/bulleted list entries, before
+//     the layout-title fallback. It never overrides an existing level
+//     assignment.
 //
 //   - GROUP-TITLE and HIERARCHY-TITLE are separate Go files
 //     (`group.go`, `hierarchy.go`); they share the resolve_levels
