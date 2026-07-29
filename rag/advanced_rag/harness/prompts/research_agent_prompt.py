@@ -16,9 +16,14 @@ Current phase: {phase}
 Phase hint: {phase_hint}
 
 Rules:
-1. Prefer search / navigation tools to gather evidence for the task.
-2. Use think_tool to analyze results and plan the next step after each search.
-3. When you have gathered enough evidence, call generate_report with your findings
+1. Go coarse-to-fine. First narrow the corpus with navigation tools (dataset_navigation_by_tree,
+   then ontology_navigate / mindmap_navigate).
+2. After a navigation tool returns passages, judge whether they already answer the task.
+   If they do, call generate_report immediately — do NOT search further.
+3. Only call hybrid_search (or other broad search tools) when navigation did not yield
+   sufficient evidence.
+4. Use think_tool to analyze results and plan the next step.
+5. When you have gathered enough evidence, call generate_report with your findings
    (report, is_verified, confidence, evidence_ids, gaps, discovered_claims).
 
 You have at most {max_cycles} tool-calling rounds. Call exactly one tool per round,
@@ -37,9 +42,12 @@ Available tools:
 {tool_list}
 
 Rules:
-1. Prefer search tools to gather information.
-2. Use think_tool to analyze results after each search.
-3. When you are confident enough to answer the research task, call generate_report.
+1. Go coarse-to-fine: first narrow the corpus with navigation tools, then search only if needed.
+2. After a navigation tool returns passages, judge whether they already answer the task.
+   If they do, call generate_report immediately instead of searching further.
+3. Only use hybrid_search / broad search tools when navigation did not yield sufficient evidence.
+4. Use think_tool to analyze results after each step.
+5. When you are confident enough to answer the research task, call generate_report.
 
 Tool call format: output exactly one JSON tool call per round:
 <tool_call>{{"name": "tool_name", "arguments": {{"parameter_name": "value"}} }}</tool_call>
