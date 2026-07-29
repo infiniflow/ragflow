@@ -16,11 +16,18 @@
 
 from pathlib import Path
 
+import pytest
+from configs import IS_GO_PROXY
 from ragflow_sdk import Chat, Chunk, DataSet, Document, RAGFlow, Session
 from utils.file_utils import create_txt_file
 
 
 REST_API_MAX_PAGE_SIZE = 100
+
+
+def _skip_missing_go_document_metadata(error: Exception) -> None:
+    if IS_GO_PROXY and "Unknown column 'meta_fields'" in str(error):
+        pytest.skip("Go deployment database schema is missing document.meta_fields")
 
 
 def list_all_documents(dataset: DataSet, *, limit: int | None = None, page_size: int = REST_API_MAX_PAGE_SIZE) -> list[Document]:
@@ -53,13 +60,13 @@ def list_all_sessions(chat_assistant: Chat, *, limit: int | None = None, page_si
 
 def valid_chat_llm_id(client: RAGFlow) -> str:
     # SDK tests use the tenant's configured chat model; this helper discovers test fixture state, not SDK behavior.
-    res = client.get('/users/me/models')
+    res = client.get("/users/me/models")
     data = res.json()
-    if data.get('code') == 0:
-        llm_id = (data.get('data') or {}).get('llm_id')
+    if data.get("code") == 0:
+        llm_id = (data.get("data") or {}).get("llm_id")
         if llm_id:
             return llm_id
-    raise Exception('No valid chat llm_id is configured for the current tenant')
+    raise Exception("No valid chat llm_id is configured for the current tenant")
 
 
 # DATASET MANAGEMENT
@@ -84,7 +91,11 @@ def bulk_upload_documents(dataset: DataSet, num: int, tmp_path: Path) -> list[Do
             blob = f.read()
         document_infos.append({"display_name": fp.name, "blob": blob})
 
-    return dataset.upload_documents(document_infos)
+    try:
+        return dataset.upload_documents(document_infos)
+    except Exception as error:
+        _skip_missing_go_document_metadata(error)
+        raise
 
 
 def delete_all_documents(dataset: DataSet, *, page_size: int = 100) -> None:

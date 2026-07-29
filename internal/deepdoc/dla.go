@@ -50,16 +50,16 @@ type DLAResult struct {
 // at indices 4/6/7/9 are kept verbatim for backward compatibility
 // with existing inference servers.
 var DLAClasses = []string{
-	"title",            // 0
-	"text",             // 1
-	"reference",        // 2
-	"figure",           // 3
-	"figure caption",   // 4
-	"table",            // 5
-	"table caption",    // 6
-	"table caption",    // 7  duplicate
-	"equation",         // 8
-	"figure caption",   // 9  duplicate
+	"title",          // 0
+	"text",           // 1
+	"reference",      // 2
+	"figure",         // 3
+	"figure caption", // 4
+	"table",          // 5
+	"table caption",  // 6
+	"table caption",  // 7  duplicate
+	"equation",       // 8
+	"figure caption", // 9  duplicate
 }
 
 // rawDLA is the wire format the DLA server returns

@@ -298,8 +298,12 @@ func TestMiddleware_WrapModelReturnsError(t *testing.T) {
 	var lastErr error
 	for {
 		ev, ok := iter.Next()
-		if !ok { break }
-		if ev.Err != nil { lastErr = ev.Err }
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			lastErr = ev.Err
+		}
 	}
 	if lastErr == nil {
 		t.Error("expected error from WrapModel middleware")
@@ -307,4 +311,3 @@ func TestMiddleware_WrapModelReturnsError(t *testing.T) {
 }
 
 // ---- Tool integration with middleware chain ----
-

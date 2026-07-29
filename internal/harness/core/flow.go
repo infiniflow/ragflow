@@ -39,7 +39,9 @@ func (a *flowAgent) deepCopy() *flowAgent {
 	cp := &flowAgent{Agent: a.Agent, parentAgent: a.parentAgent,
 		disallowTransferToParent: a.disallowTransferToParent, historyRewriter: a.historyRewriter,
 		checkPointStore: a.checkPointStore}
-	for _, sa := range a.subAgents { cp.subAgents = append(cp.subAgents, sa.deepCopy()) }
+	for _, sa := range a.subAgents {
+		cp.subAgents = append(cp.subAgents, sa.deepCopy())
+	}
 	return cp
 }
 
@@ -52,7 +54,9 @@ func SetSubAgents(ctx context.Context, agent Agent, subs []Agent) (ResumableAgen
 	if fa.historyRewriter == nil {
 		fa.historyRewriter = defaultHistoryRewriter(agent.Name(ctx))
 	}
-	if len(fa.subAgents) > 0 { return nil, errors.New("sub-agents already set") }
+	if len(fa.subAgents) > 0 {
+		return nil, errors.New("sub-agents already set")
+	}
 	for _, s := range subs {
 		fa.subAgents = append(fa.subAgents, toFlowAgent(ctx, s, WithDisallowTransferToParent()))
 	}
@@ -80,16 +84,24 @@ func toFlowAgent(ctx context.Context, agent Agent, opts ...AgentOption) *flowAge
 	} else {
 		fa = fa.deepCopy()
 	}
-	for _, o := range opts { o(fa) }
-	if fa.historyRewriter == nil { fa.historyRewriter = defaultHistoryRewriter(agent.Name(ctx)) }
+	for _, o := range opts {
+		o(fa)
+	}
+	if fa.historyRewriter == nil {
+		fa.historyRewriter = defaultHistoryRewriter(agent.Name(ctx))
+	}
 	return fa
 }
 
 func (a *flowAgent) getAgent(ctx context.Context, name string) *flowAgent {
 	for _, sa := range a.subAgents {
-		if sa.Name(ctx) == name { return sa }
+		if sa.Name(ctx) == name {
+			return sa
+		}
 	}
-	if a.parentAgent != nil && a.parentAgent.Name(ctx) == name { return a.parentAgent }
+	if a.parentAgent != nil && a.parentAgent.Name(ctx) == name {
+		return a.parentAgent
+	}
 	return nil
 }
 
@@ -101,7 +113,9 @@ func defaultHistoryRewriter(name string) HistoryRewriter {
 			if !e.IsUserInput && e.AgentName != name {
 				m = rewriteMsg(m, e.AgentName)
 			}
-			if m != nil { msgs = append(msgs, m) }
+			if m != nil {
+				msgs = append(msgs, m)
+			}
 		}
 		return msgs, nil
 	}
@@ -117,7 +131,9 @@ func rewriteMsg(msg Message, agentName string) Message {
 	var sb strings.Builder
 	sb.WriteString("For context:")
 	if msg.Role == schema.RoleAssistant {
-		if msg.Content != "" { sb.WriteString(fmt.Sprintf(" [%s] said: %s.", agentName, msg.Content)) }
+		if msg.Content != "" {
+			sb.WriteString(fmt.Sprintf(" [%s] said: %s.", agentName, msg.Content))
+		}
 		for _, tc := range msg.ToolCalls {
 			sb.WriteString(fmt.Sprintf(" [%s] called tool `%s` args: %s.", agentName, tc.Function.Name, tc.Function.Arguments))
 		}
@@ -125,7 +141,9 @@ func rewriteMsg(msg Message, agentName string) Message {
 		sb.WriteString(fmt.Sprintf(" [%s] `%s` returned: %s.", agentName, msg.ToolName, msg.Content))
 	}
 	r := schema.UserMessage(sb.String())
-	if msg.Extra != nil { r.Extra = copyMap(msg.Extra) }
+	if msg.Extra != nil {
+		r.Extra = copyMap(msg.Extra)
+	}
 	return r
 }
 
@@ -145,7 +163,9 @@ func (a *flowAgent) genInput(ctx context.Context, rc *runContext, skipTransfer b
 	}
 	for _, ev := range rc.Session.getEvents() {
 		ae, ok := ev.(*AgentEvent)
-		if !ok { continue }
+		if !ok {
+			continue
+		}
 		if skipTransfer && ae.Action != nil && ae.Action.TransferToAgent != nil {
 			if ae.Output != nil && ae.Output.MessageOutput != nil && ae.Output.MessageOutput.Role == schema.RoleTool && len(entries) > 0 {
 				entries = entries[:len(entries)-1]
@@ -153,19 +173,27 @@ func (a *flowAgent) genInput(ctx context.Context, rc *runContext, skipTransfer b
 			continue
 		}
 		msg := msgFromEvent(ae)
-		if msg == nil { continue }
+		if msg == nil {
+			continue
+		}
 		entries = append(entries, &HistoryEntry{AgentName: ae.AgentName, Message: msg})
 	}
 	msgs, err := a.historyRewriter(ctx, entries)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	input.Messages = msgs
 	return input, nil
 }
 
 func msgFromEvent(ev *AgentEvent) Message {
-	if ev == nil || ev.Output == nil || ev.Output.MessageOutput == nil { return nil }
+	if ev == nil || ev.Output == nil || ev.Output.MessageOutput == nil {
+		return nil
+	}
 	mv := ev.Output.MessageOutput
-	if mv.IsStreaming { return nil }
+	if mv.IsStreaming {
+		return nil
+	}
 	return mv.Message
 }
 
@@ -178,7 +206,9 @@ func (a *flowAgent) Run(ctx context.Context, input *AgentInput, opts ...RunOptio
 
 	pi, err := a.genInput(ctx, rc, o.skipTransferMessages)
 	if err != nil {
-		if cc != nil { cc.markDone() }
+		if cc != nil {
+			cc.markDone()
+		}
 		_ = &AgentCallbackInput{Input: input}
 		return wrapIterEnd(ctx, errorIterMsg(err))
 	}
@@ -201,23 +231,36 @@ func (a *flowAgent) runLoop(ctx, subCtx context.Context, rc *runContext, ai *Asy
 	var lastAction *AgentAction
 	for {
 		ev, ok := ai.Next()
-		if !ok { break }
+		if !ok {
+			break
+		}
 		curRunPath := rc.getRunPath()
-		if len(ev.RunPath) == 0 { ev.AgentName = a.Name(ctx); ev.RunPath = curRunPath }
+		if len(ev.RunPath) == 0 {
+			ev.AgentName = a.Name(ctx)
+			ev.RunPath = curRunPath
+		}
 		if (ev.Action == nil || ev.Action.Interrupted == nil) && pathMatch(curRunPath, ev.RunPath) {
 			cp := copyTypedAgentEvent(ev)
-			setAutomaticClose(cp); setAutomaticClose(ev)
+			setAutomaticClose(cp)
+			setAutomaticClose(ev)
 			rc.Session.addEvent(cp)
 		}
-		if pathMatch(curRunPath, ev.RunPath) { lastAction = ev.Action }
+		if pathMatch(curRunPath, ev.RunPath) {
+			lastAction = ev.Action
+		}
 		cp := copyTypedAgentEvent(ev)
-		setAutomaticClose(cp); setAutomaticClose(ev)
+		setAutomaticClose(cp)
+		setAutomaticClose(ev)
 		gen.Send(cp)
 	}
 	var dest string
 	if lastAction != nil {
-		if lastAction.Interrupted != nil || lastAction.Exit { return }
-		if lastAction.TransferToAgent != nil { dest = lastAction.TransferToAgent.DestAgentName }
+		if lastAction.Interrupted != nil || lastAction.Exit {
+			return
+		}
+		if lastAction.TransferToAgent != nil {
+			dest = lastAction.TransferToAgent.DestAgentName
+		}
 	}
 	if dest != "" {
 		if cc := getCancelContext(subCtx); cc != nil && cc.shouldCancel() {
@@ -230,7 +273,9 @@ func (a *flowAgent) runLoop(ctx, subCtx context.Context, rc *runContext, ai *Asy
 		}
 		for {
 			se, ok := next.Run(subCtx, nil, opts...).Next()
-			if !ok { break }
+			if !ok {
+				break
+			}
 			setAutomaticClose(se)
 			if se.Action == nil || se.Action.Interrupted == nil {
 				rc.Session.addEvent(copyTypedAgentEvent(se))
@@ -254,12 +299,16 @@ func (a *flowAgent) Resume(ctx context.Context, info *ResumeInfo, opts ...RunOpt
 			go a.runLoop(withCancelContext(ctx, cc), withCancelContext(ctx, cc), getRunCtx(ctx), ai, gen, filterCancelOption(opts)...)
 			return wrapIterWithCancelCtx(it, cc)
 		}
-		if cc != nil { cc.markDone() }
+		if cc != nil {
+			cc.markDone()
+		}
 		return wrapIterEnd(ctx, errorIterMsg(fmt.Errorf("agent '%s' not ResumableAgent", name)))
 	}
 	next, err := getNextResumeAgent(ctx, info)
 	if err != nil {
-		if cc != nil { cc.markDone() }
+		if cc != nil {
+			cc.markDone()
+		}
 		return wrapIterEnd(ctx, errorIterMsg(err))
 	}
 	sa := a.getAgent(ctx, next)
@@ -271,7 +320,9 @@ func (a *flowAgent) Resume(ctx context.Context, info *ResumeInfo, opts ...RunOpt
 			}
 			return wrapIterEnd(ctx, errorIterMsg(fmt.Errorf("agent '%s' has no sub-agents and not ResumableAgent", name)))
 		}
-		if cc != nil { cc.markDone() }
+		if cc != nil {
+			cc.markDone()
+		}
 		return wrapIterEnd(ctx, errorIterMsg(fmt.Errorf("sub-agent '%s' not found", next)))
 	}
 	inner := sa.Resume(withCancelContext(ctx, cc), info, filterCancelOption(opts)...)
@@ -279,8 +330,14 @@ func (a *flowAgent) Resume(ctx context.Context, info *ResumeInfo, opts ...RunOpt
 }
 
 func pathMatch(a, b []RunStep) bool {
-	if len(a) != len(b) { return false }
-	for i := range a { if !a[i].Equals(b[i]) { return false } }
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !a[i].Equals(b[i]) {
+			return false
+		}
+	}
 	return true
 }
 
@@ -290,8 +347,12 @@ func wrapIterEnd(ctx context.Context, iter *AsyncIterator[*AgentEvent]) *AsyncIt
 		defer gen.Close()
 		for {
 			ev, ok := iter.Next()
-			if !ok { break }
-			if !gen.SendCtx(ctx, ev) { return }
+			if !ok {
+				break
+			}
+			if !gen.SendCtx(ctx, ev) {
+				return
+			}
 		}
 	}()
 	return it
@@ -312,7 +373,9 @@ type typedFlowAgent[M MessageType] struct {
 }
 
 func toTypedFlowAgent[M MessageType](a TypedAgent[M]) *typedFlowAgent[M] {
-	if fa, ok := a.(*typedFlowAgent[M]); ok { return fa }
+	if fa, ok := a.(*typedFlowAgent[M]); ok {
+		return fa
+	}
 	return &typedFlowAgent[M]{TypedAgent: a}
 }
 
@@ -342,12 +405,18 @@ func (a *typedFlowAgent[M]) runLoop(ctx context.Context, rc *runContext, ai *Asy
 	}()
 	for {
 		ev, ok := ai.Next()
-		if !ok { break }
+		if !ok {
+			break
+		}
 		curRunPath := rc.getRunPath()
-		if len(ev.RunPath) == 0 { ev.AgentName = a.Name(ctx); ev.RunPath = curRunPath }
+		if len(ev.RunPath) == 0 {
+			ev.AgentName = a.Name(ctx)
+			ev.RunPath = curRunPath
+		}
 		if (ev.Action == nil || ev.Action.Interrupted == nil) && pathMatch(curRunPath, ev.RunPath) {
 			cp := copyTypedAgentEvent(ev)
-			typedSetAutomaticClose(cp); typedSetAutomaticClose(ev)
+			typedSetAutomaticClose(cp)
+			typedSetAutomaticClose(ev)
 			addTypedEvent(rc.Session, cp)
 		}
 		gen.Send(ev)
@@ -366,7 +435,9 @@ func (a *typedFlowAgent[M]) Resume(ctx context.Context, info *ResumeInfo, opts .
 			go a.runLoop(withCancelContext(ctx, cc), getRunCtx(ctx), ai, gen)
 			return wrapIterWithCancelCtx(it, cc)
 		}
-		if cc != nil { cc.markDone() }
+		if cc != nil {
+			cc.markDone()
+		}
 		return typedErrorIterEnd[M](ctx, fmt.Errorf("agent '%s' not ResumableAgent", name))
 	}
 	if ra, ok := a.TypedAgent.(TypedResumableAgent[M]); ok {
@@ -392,8 +463,12 @@ func typedWrapIterEnd[M MessageType](ctx context.Context, iter *AsyncIterator[*T
 		defer gen.Close()
 		for {
 			ev, ok := iter.Next()
-			if !ok { break }
-			if !gen.SendCtx(ctx, ev) { return }
+			if !ok {
+				break
+			}
+			if !gen.SendCtx(ctx, ev) {
+				return
+			}
 		}
 	}()
 	return it

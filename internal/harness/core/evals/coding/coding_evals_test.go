@@ -94,12 +94,12 @@ type localBackend struct {
 func (b *localBackend) Read(path string) (string, error) {
 	return "", nil
 }
-func (b *localBackend) Write(path, content string) error { return nil }
-func (b *localBackend) Edit(path, old, new string) error { return nil }
-func (b *localBackend) Ls(path string) ([]string, error) { return nil, nil }
-func (b *localBackend) Glob(pattern string) ([]string, error) { return nil, nil }
+func (b *localBackend) Write(path, content string) error          { return nil }
+func (b *localBackend) Edit(path, old, new string) error          { return nil }
+func (b *localBackend) Ls(path string) ([]string, error)          { return nil, nil }
+func (b *localBackend) Glob(pattern string) ([]string, error)     { return nil, nil }
 func (b *localBackend) Grep(pattern, path string) (string, error) { return "", nil }
-func (b *localBackend) Execute(command string) (string, error) { return "", nil }
+func (b *localBackend) Execute(command string) (string, error)    { return "", nil }
 
 // ---- E2E Tests ----
 
@@ -233,7 +233,7 @@ func TestE2E_MultipleCases(t *testing.T) {
 		MaxConcurrency: 2,
 		Cases: []evals.EvalCase{
 			{
-				Name: "write_main",
+				Name:  "write_main",
 				Query: "create main.go",
 				Agent: coding.New(&coding.Config{
 					Model: newScriptedModel(
@@ -245,7 +245,7 @@ func TestE2E_MultipleCases(t *testing.T) {
 				Scorers: []evals.Scorer{evals.ToolCalled("write_file")},
 			},
 			{
-				Name: "list_files",
+				Name:  "list_files",
 				Query: "show files",
 				Agent: coding.New(&coding.Config{
 					Model: newScriptedModel(

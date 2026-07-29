@@ -109,12 +109,12 @@ type branchEvents struct {
 
 // runSession holds per-execution mutable state for an agent run.
 type runSession struct {
-	mu          sync.Mutex
-	Values      map[string]any
-	valuesMx    *sync.Mutex
-	events      []*eventWrapEntry
-	BranchEvents  *branchEvents
-	TypedEvents any // *[]*typedAgentEventWrapper[M] for AgenticMessage path (gob-encodable)
+	mu           sync.Mutex
+	Values       map[string]any
+	valuesMx     *sync.Mutex
+	events       []*eventWrapEntry
+	BranchEvents *branchEvents
+	TypedEvents  any // *[]*typedAgentEventWrapper[M] for AgenticMessage path (gob-encodable)
 }
 
 func newRunSession() *runSession {
@@ -188,7 +188,9 @@ type runContext struct {
 
 // getRunPath safely returns a copy of RunPath under lock.
 func (rc *runContext) getRunPath() []RunStep {
-	if rc == nil { return nil }
+	if rc == nil {
+		return nil
+	}
 	rc.mu.Lock()
 	defer rc.mu.Unlock()
 	cp := make([]RunStep, len(rc.RunPath))
@@ -198,7 +200,9 @@ func (rc *runContext) getRunPath() []RunStep {
 
 // setRunPath safely replaces RunPath under lock.
 func (rc *runContext) setRunPath(v []RunStep) {
-	if rc == nil { return }
+	if rc == nil {
+		return
+	}
 	rc.mu.Lock()
 	rc.RunPath = v
 	rc.mu.Unlock()
@@ -206,7 +210,9 @@ func (rc *runContext) setRunPath(v []RunStep) {
 
 // appendRunPath safely appends to RunPath under lock.
 func (rc *runContext) appendRunPath(v RunStep) {
-	if rc == nil { return }
+	if rc == nil {
+		return
+	}
 	rc.mu.Lock()
 	rc.RunPath = append(rc.RunPath, v)
 	rc.mu.Unlock()
@@ -261,7 +267,7 @@ func forkRunCtx(ctx context.Context) context.Context {
 
 	childSession := &runSession{
 		events:   eventsCopy,
-		Values:   parent.Session.Values,   // Share values map
+		Values:   parent.Session.Values, // Share values map
 		valuesMx: parent.Session.valuesMx,
 	}
 

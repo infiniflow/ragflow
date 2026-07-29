@@ -31,7 +31,6 @@ func TestQWeather_BuildURL(t *testing.T) {
 	// `qweatherEndpoint` var, which other tests (running in parallel)
 	// temporarily replace with a httptest.Server URL.
 
-
 	cases := []struct {
 		name     string
 		params   qweatherParams

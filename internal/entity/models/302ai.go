@@ -28,6 +28,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 )
@@ -70,7 +71,7 @@ func validateAI302DocumentURL(rawURL string) (string, error) {
 	return documentURL, nil
 }
 
-func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (a *AI302Model) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -88,39 +89,10 @@ func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
 	// Build request body
-	reqBody := map[string]interface{}{
-		"model":       strings.TrimSpace(modelName),
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(chatModelConfig, strings.TrimSpace(modelName), messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
 
 		if chatModelConfig.Effort != nil {
 			reqBody["reasoning"] = map[string]interface{}{
@@ -146,7 +118,7 @@ func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -194,7 +166,8 @@ func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiC
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -213,12 +186,13 @@ func (a *AI302Model) ChatWithMessages(modelName string, messages []Message, apiC
 	chatResponse := &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}
 
 	return chatResponse, nil
 }
 
-func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (a *AI302Model) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -239,43 +213,10 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 	}
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), a.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
 	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":       strings.TrimSpace(modelName),
-		"messages":    apiMessages,
-		"stream":      true,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(modelConfig, strings.TrimSpace(modelName), messages, true)
 
 	if modelConfig != nil {
-		if modelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *modelConfig.MaxTokens
-		}
-
-		if modelConfig.Temperature != nil {
-			reqBody["temperature"] = *modelConfig.Temperature
-		}
-
-		if modelConfig.DoSample != nil {
-			reqBody["do_sample"] = *modelConfig.DoSample
-		}
-
-		if modelConfig.TopP != nil {
-			reqBody["top_p"] = *modelConfig.TopP
-		}
-
-		if modelConfig.Stop != nil {
-			reqBody["stop"] = *modelConfig.Stop
-		}
 
 		if modelConfig.Effort != nil {
 			reqBody["reasoning"] = map[string]interface{}{
@@ -301,7 +242,7 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -324,7 +265,8 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+	accumulatedToolCalls := make(map[int]map[string]any)
+	if _, err = ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
 			return nil
@@ -340,16 +282,18 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 			return nil
 		}
 
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
+
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
+			if err = sender(nil, &reasoningContent); err != nil {
 				return err
 			}
 		}
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
+			if err = sender(&content, nil); err != nil {
 				return err
 			}
 		}
@@ -359,12 +303,14 @@ func (a *AI302Model) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
 
+	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
+
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
 	return sender(&endOfStream, nil)
 }
 
-func (a *AI302Model) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (a *AI302Model) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -393,7 +339,7 @@ func (a *AI302Model) Embed(modelName *string, texts []string, apiConfig *APIConf
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -445,7 +391,7 @@ func (a *AI302Model) Embed(modelName *string, texts []string, apiConfig *APIConf
 	return embeddings, nil
 }
 
-func (a *AI302Model) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (a *AI302Model) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -485,7 +431,7 @@ func (a *AI302Model) Rerank(modelName *string, query string, documents []string,
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -534,7 +480,7 @@ func (a *AI302Model) Rerank(modelName *string, query string, documents []string,
 	return &rerankResponse, nil
 }
 
-func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (a *AI302Model) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -559,6 +505,10 @@ func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig 
 	writer := multipart.NewWriter(&body)
 
 	// open audio file
+	// file path the caller passes in to upload. The user (or
+	// operator-supplied pipeline) explicitly chose this path, and the
+	// OS access check enforces permissions anyway.
+	// codeql[go/path-injection] False positive: *file is the audio
 	audioFile, err := os.Open(strings.TrimSpace(*file))
 	if err != nil {
 		return nil, fmt.Errorf("failed to open audio file: %w", err)
@@ -618,7 +568,7 @@ func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig 
 	}
 
 	// build request
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
@@ -658,20 +608,20 @@ func (a *AI302Model) TranscribeAudio(modelName *string, file *string, apiConfig 
 	return &ASRResponse{Text: result.Text}, nil
 }
 
-func (a *AI302Model) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (a *AI302Model) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s no such method", a.Name())
 }
 
-func (a *AI302Model) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (a *AI302Model) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	// TODO https://302ai-en.apifox.cn/225254060e0
 	return nil, fmt.Errorf("%s no such method", a.Name())
 }
 
-func (a *AI302Model) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (a *AI302Model) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s no such method", a.Name())
 }
 
-func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (a *AI302Model) OCRFile(ctx context.Context, modelName *string, content []byte, urls *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -716,7 +666,7 @@ func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, ap
 		return nil, fmt.Errorf("failed to marshal json payload: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -766,7 +716,7 @@ func (a *AI302Model) OCRFile(modelName *string, content []byte, urls *string, ap
 	}, nil
 }
 
-func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (a *AI302Model) ParseFile(ctx context.Context, modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -798,7 +748,7 @@ func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *s
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewBuffer(jsonData))
@@ -838,7 +788,7 @@ func (a *AI302Model) ParseFile(modelName *string, content []byte, documentURL *s
 	}, nil
 }
 
-func (a *AI302Model) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (a *AI302Model) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -850,7 +800,7 @@ func (a *AI302Model) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -890,20 +840,20 @@ func (a *AI302Model) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 	return models, nil
 }
 
-func (a *AI302Model) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (a *AI302Model) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s no such method", a.Name())
 }
 
-func (a *AI302Model) CheckConnection(apiConfig *APIConfig) error {
-	_, err := a.ListModels(apiConfig)
+func (a *AI302Model) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := a.ListModels(ctx, apiConfig)
 	return err
 }
 
-func (a *AI302Model) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (a *AI302Model) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s no such method", a.Name())
 }
 
-func (a *AI302Model) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (a *AI302Model) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -919,7 +869,7 @@ func (a *AI302Model) ShowTask(taskID string, apiConfig *APIConfig) (*TaskRespons
 	}
 	apiURL := fmt.Sprintf("%s/%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.DocumentParse, url.PathEscape(strings.TrimSpace(taskID)))
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", apiURL, nil)

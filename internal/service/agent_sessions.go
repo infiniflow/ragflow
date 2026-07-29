@@ -17,16 +17,15 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/utility"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
-	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -73,8 +72,8 @@ type DeleteAgentSessionsResponse struct {
 
 // CheckCanvasAccess returns true when the user is the canvas owner or
 // holds team-level permission for the owner's tenant.
-func (s *AgentService) CheckCanvasAccess(userID, canvasID string) (bool, error) {
-	canvas, err := s.canvasDAO.GetByID(canvasID)
+func (s *AgentService) CheckCanvasAccess(ctx context.Context, userID, canvasID string) (bool, error) {
+	canvas, err := s.canvasDAO.GetByID(ctx, dao.DB, canvasID)
 	if err != nil {
 		return false, err
 	}
@@ -84,7 +83,7 @@ func (s *AgentService) CheckCanvasAccess(userID, canvasID string) (bool, error) 
 	if canvas.Permission != string(entity.TenantPermissionTeam) {
 		return false, nil
 	}
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(userID)
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return false, err
 	}
@@ -101,9 +100,9 @@ func parseAgentSessionDate(value string, isEnd bool) (*time.Time, error) {
 		return nil, nil
 	}
 
+	// Try flexible ISO 8601 / RFC3339 parsing first (PR #16483).
 	if strings.Contains(value, "T") {
-		normalized := strings.ReplaceAll(value, "Z", "+00:00")
-		parsed, err := time.Parse(time.RFC3339, normalized)
+		parsed, err := common.ParseISO8601(value)
 		if err != nil {
 			return nil, err
 		}
@@ -311,12 +310,12 @@ func checkDuplicateSessionIDs(ids []string) ([]string, []string) {
 }
 
 // ListAgentSessions returns paginated agent sessions visible to the caller.
-func (s *AgentService) ListAgentSessions(userID, tenantID, agentID string, req ListAgentSessionsRequest) (*ListAgentSessionsResponse, common.ErrorCode, error) {
+func (s *AgentService) ListAgentSessions(ctx context.Context, userID, tenantID, agentID string, req ListAgentSessionsRequest) (*ListAgentSessionsResponse, common.ErrorCode, error) {
 	if agentID == "" {
 		return nil, common.CodeArgumentError, errors.New("agent_id is required")
 	}
 
-	ok, err := s.CheckCanvasAccess(userID, agentID)
+	ok, err := s.CheckCanvasAccess(ctx, userID, agentID)
 	if err != nil {
 		// The Python agent API folds "canvas does not exist" into
 		// the same 103 access envelope as a permission mismatch
@@ -324,18 +323,18 @@ func (s *AgentService) ListAgentSessions(userID, tenantID, agentID string, req L
 		// shape here instead of a 500 record not found so the
 		// front-end does not log a server error for unknown ids.
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
-			return nil, common.CodeOperatingError, errors.New("Agent not found or no permission.")
+			return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
 		}
 		return nil, common.CodeServerError, fmt.Errorf("failed to check agent permission: %w", err)
 	}
 	if !ok {
-		return nil, common.CodeOperatingError, errors.New("Agent not found or no permission.")
+		return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
 	}
 
 	sessionDAO := dao.NewChatSessionDAO()
 
 	if req.ExpUserID != "" {
-		rows, err := sessionDAO.ListAgentSessionNames(agentID, req.ExpUserID)
+		rows, err := sessionDAO.ListAgentSessionNames(ctx, dao.DB, agentID, req.ExpUserID)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -351,7 +350,7 @@ func (s *AgentService) ListAgentSessions(userID, tenantID, agentID string, req L
 		return nil, common.CodeArgumentError, err
 	}
 
-	total, sessions, err := sessionDAO.ListAgentSessions(dao.ListAgentSessionsParams{
+	total, sessions, err := sessionDAO.ListAgentSessions(ctx, dao.DB, dao.ListAgentSessionsParams{
 		AgentID:    agentID,
 		Page:       req.Page,
 		PageSize:   req.PageSize,
@@ -377,22 +376,22 @@ func (s *AgentService) ListAgentSessions(userID, tenantID, agentID string, req L
 }
 
 // GetAgentSession fetches a single conversation belonging to agentID.
-func (s *AgentService) GetAgentSession(userID, agentID, sessionID string) (*entity.API4Conversation, common.ErrorCode, error) {
+func (s *AgentService) GetAgentSession(ctx context.Context, userID, agentID, sessionID string) (*entity.API4Conversation, common.ErrorCode, error) {
 	if sessionID == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("session_id is required")
 	}
-	ok, err := s.CheckCanvasAccess(userID, agentID)
+	ok, err := s.CheckCanvasAccess(ctx, userID, agentID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
-			return nil, common.CodeOperatingError, errors.New("Agent not found or no permission.")
+			return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
 		}
 		return nil, common.CodeServerError, fmt.Errorf("failed to check agent permission: %w", err)
 	}
 	if !ok {
-		return nil, common.CodeOperatingError, errors.New("Agent not found or no permission.")
+		return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
 	}
 
-	data, err := s.api4ConversationDAO.GetBySessionID(sessionID, agentID)
+	data, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to fetch session: %w", err)
 	}
@@ -403,22 +402,22 @@ func (s *AgentService) GetAgentSession(userID, agentID, sessionID string) (*enti
 }
 
 // DeleteAgentSessionItem removes one conversation if it belongs to agentID.
-func (s *AgentService) DeleteAgentSessionItem(userID, agentID, sessionID string) (bool, common.ErrorCode, error) {
+func (s *AgentService) DeleteAgentSessionItem(ctx context.Context, userID, agentID, sessionID string) (bool, common.ErrorCode, error) {
 	if sessionID == "" {
 		return false, common.CodeArgumentError, errors.New("session_id is required")
 	}
-	ok, err := s.CheckCanvasAccess(userID, agentID)
+	ok, err := s.CheckCanvasAccess(ctx, userID, agentID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
-			return false, common.CodeOperatingError, errors.New("Agent not found or no permission.")
+			return false, common.CodeOperatingError, errors.New("agent not found or no permission")
 		}
 		return false, common.CodeServerError, fmt.Errorf("failed to check agent permission: %w", err)
 	}
 	if !ok {
-		return false, common.CodeOperatingError, errors.New("Agent not found or no permission.")
+		return false, common.CodeOperatingError, errors.New("agent not found or no permission")
 	}
 
-	row, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(sessionID, agentID)
+	row, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(ctx, dao.DB, sessionID, agentID)
 	if err != nil {
 		return false, common.CodeServerError, err
 	}
@@ -431,7 +430,7 @@ func (s *AgentService) DeleteAgentSessionItem(userID, agentID, sessionID string)
 // DeleteAgentSessions removes multiple conversations owned by agentID.
 // When ids is empty and deleteAll is true, every session under agentID is
 // removed.
-func (s *AgentService) DeleteAgentSessions(userID, agentID string, ids []string, deleteAll bool) (*DeleteAgentSessionsResult, common.ErrorCode, error) {
+func (s *AgentService) DeleteAgentSessions(ctx context.Context, userID, agentID string, ids []string, deleteAll bool) (*DeleteAgentSessionsResult, common.ErrorCode, error) {
 	if agentID == "" {
 		return nil, common.CodeArgumentError, errors.New("agent_id is required")
 	}
@@ -440,9 +439,9 @@ func (s *AgentService) DeleteAgentSessions(userID, agentID string, ids []string,
 	// not be available to team members even when the canvas has team
 	// permission. CheckCanvasAccess (used elsewhere) would also allow team
 	// access, which is too permissive for this operation.
-	canvas, err := s.canvasDAO.GetByID(agentID)
+	canvas, err := s.canvasDAO.GetByID(ctx, dao.DB, agentID)
 	if err != nil || canvas == nil || canvas.UserID != userID {
-		return nil, common.CodeDataError, fmt.Errorf("You don't own the agent %s", agentID)
+		return nil, common.CodeDataError, fmt.Errorf("you don't own the agent %s", agentID)
 	}
 
 	if len(ids) == 0 {
@@ -450,7 +449,7 @@ func (s *AgentService) DeleteAgentSessions(userID, agentID string, ids []string,
 			return &DeleteAgentSessionsResult{}, common.CodeSuccess, nil
 		}
 
-		ids, err = s.api4ConversationDAO.ListIDsByAgentID(agentID)
+		ids, err = s.api4ConversationDAO.ListIDsByAgentID(ctx, dao.DB, agentID)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -470,7 +469,7 @@ func (s *AgentService) DeleteAgentSessions(userID, agentID string, ids []string,
 			continue
 		}
 
-		conv, err := s.api4ConversationDAO.GetBySessionID(sessionID, agentID)
+		conv, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -479,7 +478,7 @@ func (s *AgentService) DeleteAgentSessions(userID, agentID string, ids []string,
 			continue
 		}
 
-		if _, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(sessionID, agentID); err != nil {
+		if _, err = s.api4ConversationDAO.DeleteBySessionIDAndAgentID(ctx, dao.DB, sessionID, agentID); err != nil {
 			return nil, common.CodeServerError, err
 		}
 		successCount++
@@ -511,8 +510,43 @@ func (s *AgentService) DeleteAgentSessions(userID, agentID string, ids []string,
 	return &DeleteAgentSessionsResult{}, common.CodeSuccess, nil
 }
 
+// ListAgentTags list agent tags
+func (s *AgentService) ListAgentTags(ctx context.Context, userID, canvasCategory string) ([]AgentTagCount, common.ErrorCode, error) {
+	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	ownerSet := make(map[string]struct{}, len(tenantIDs)+1)
+	ownerSet[userID] = struct{}{}
+	for _, id := range tenantIDs {
+		ownerSet[id] = struct{}{}
+	}
+	ownerIDs := make([]string, 0, len(ownerSet))
+	for id := range ownerSet {
+		ownerIDs = append(ownerIDs, id)
+	}
+
+	counts, err := s.canvasDAO.ListTags(ctx, dao.DB, ownerIDs, userID, canvasCategory)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+
+	tags := make([]AgentTagCount, 0, len(counts))
+	for tag, count := range counts {
+		tags = append(tags, AgentTagCount{Tag: tag, Count: count})
+	}
+	sort.Slice(tags, func(i, j int) bool {
+		if tags[i].Count == tags[j].Count {
+			return tags[i].Tag < tags[j].Tag
+		}
+		return tags[i].Count > tags[j].Count
+	})
+	return tags, common.CodeSuccess, nil
+}
+
 // normalizeAgentTags returns an error for unsupported tag payload types.
-// The branch behaviour intentionally mirrors the Python implementation:
+// The branch behavior intentionally mirrors the Python implementation:
 //   - string: treat the value as a CSV — split on "," and use each piece
 //     as a separate tag ("alpha,beta" → ["alpha", "beta"]).
 //   - []string / []interface{}: the caller already chose the boundary;
@@ -587,29 +621,29 @@ func truncateRunes(value string, maxLen int) string {
 }
 
 // UpdateAgentTags normalises tags and persists them on a single canvas.
-func (s *AgentService) UpdateAgentTags(userID, canvasID string, tags interface{}) (bool, common.ErrorCode, error) {
-	ok, err := s.CheckCanvasAccess(userID, canvasID)
+func (s *AgentService) UpdateAgentTags(ctx context.Context, userID, canvasID string, tags interface{}) (bool, common.ErrorCode, error) {
+	ok, err := s.CheckCanvasAccess(ctx, userID, canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
-			return false, common.CodeOperatingError, errors.New("Agent not found or no permission.")
+			return false, common.CodeOperatingError, errors.New("agent not found or no permission")
 		}
 		return false, common.CodeServerError, fmt.Errorf("failed to check agent permission: %w", err)
 	}
 	if !ok {
-		return false, common.CodeOperatingError, errors.New("Agent not found or no permission.")
+		return false, common.CodeOperatingError, errors.New("agent not found or no permission")
 	}
 
 	normalized, nErr := normalizeAgentTags(tags)
 	if nErr != nil {
 		return false, common.CodeBadRequest, nErr
 	}
-	rows, err := s.canvasDAO.UpdateTags(canvasID, normalized)
+	rows, err := s.canvasDAO.UpdateTags(ctx, dao.DB, canvasID, normalized)
 	if err != nil {
 		return false, common.CodeServerError, fmt.Errorf("failed to update agent tags: %w", err)
 	}
 	if rows == 0 {
-		if _, getErr := s.canvasDAO.GetByCanvasID(canvasID); getErr != nil {
-			return false, common.CodeOperatingError, errors.New("Agent not found or no permission.")
+		if _, getErr := s.canvasDAO.GetByCanvasID(ctx, dao.DB, canvasID); getErr != nil {
+			return false, common.CodeOperatingError, errors.New("agent not found or no permission")
 		}
 		return true, common.CodeSuccess, nil
 	}
@@ -629,12 +663,12 @@ type CreateAgentSessionRequest struct {
 
 // CreateAgentSession inserts a fresh conversation row tied to the
 // given agent canvas. The Phase 5 stub intentionally does NOT run
-// Canvas(dsl).reset() (eino runtime is still unimplemented in the Go
+// Canvas(dsl).reset() (Eino runtime is still unimplemented in the Go
 // port); instead it stores a minimal but well-shaped row so that
 // subsequent ListAgentSessions / GetAgentSession / chat-completion
 // stubs can return a stable id and the integration suite can verify
-// the create + read + delete cycle without depending on a real LLM
-// run. When eino lands, the function will gain a pre-run prologue
+// the creation + read + delete cycle without depending on a real LLM
+// run. When Eino lands, the function will gain a pre-run prologue
 // pass that calls Canvas.Reset() and stores the assistant message.
 //
 // Required columns (per the API4Conversation entity, see
@@ -642,16 +676,16 @@ type CreateAgentSessionRequest struct {
 //   - id          : 32-hex uuid, matches Python uuid.uuid4().hex
 //   - dialog_id   : agent canvas id
 //   - user_id     : caller's id
-//   - message     : JSON array (default []); GET path normalises it
+//   - message     : JSON array (default []); GET path normalizes it
 //   - reference   : JSON object (default {}) so GET-side parsing
-//                   does not crash on .chunks
+//     does not crash on .chunks
 //   - dsl         : JSON map; copied from user_canvas.dsl if the
-//                   caller did not pass one
+//     caller did not pass one
 //   - create_time : unix-millis
 //   - update_time : unix-millis
 //   - create_date : local-time.Truncate(time.Second)
 //   - update_date : local-time.Truncate(time.Second)
-func (s *AgentService) CreateAgentSession(req *CreateAgentSessionRequest) (*entity.API4Conversation, common.ErrorCode, error) {
+func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentSessionRequest) (*entity.API4Conversation, common.ErrorCode, error) {
 	if req == nil {
 		return nil, common.CodeArgumentError, errors.New("create agent session: nil request")
 	}
@@ -662,12 +696,15 @@ func (s *AgentService) CreateAgentSession(req *CreateAgentSessionRequest) (*enti
 		return nil, common.CodeArgumentError, errors.New("create agent session: user_id is required")
 	}
 
-	ok, err := s.CheckCanvasAccess(req.UserID, req.AgentID)
+	ok, err := s.CheckCanvasAccess(ctx, req.UserID, req.AgentID)
 	if err != nil {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
+			return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
+		}
 		return nil, common.CodeServerError, fmt.Errorf("check canvas access: %w", err)
 	}
 	if !ok {
-		return nil, common.CodeOperatingError, errors.New("Agent not found or no permission.")
+		return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
 	}
 
 	messages := req.Messages
@@ -681,10 +718,10 @@ func (s *AgentService) CreateAgentSession(req *CreateAgentSessionRequest) (*enti
 		_ = json.Unmarshal(req.DSL, &dsl)
 	}
 	if len(dsl) == 0 {
-		canvas, gErr := s.canvasDAO.GetByID(req.AgentID)
+		canvas, gErr := s.canvasDAO.GetByID(ctx, dao.DB, req.AgentID)
 		if gErr != nil {
-			if errors.Is(gErr, gorm.ErrRecordNotFound) {
-				return nil, common.CodeOperatingError, errors.New("Agent not found or no permission.")
+			if errors.Is(gErr, dao.ErrUserCanvasNotFound) {
+				return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
 			}
 			return nil, common.CodeServerError, fmt.Errorf("load canvas dsl: %w", gErr)
 		}
@@ -701,7 +738,7 @@ func (s *AgentService) CreateAgentSession(req *CreateAgentSessionRequest) (*enti
 		sourcePtr = &req.Source
 	}
 
-	id := strings.ReplaceAll(uuid.New().String(), "-", "")[:32]
+	id := utility.GenerateUUID()
 
 	// CreateTime / UpdateTime / CreateDate / UpdateDate are filled in
 	// by entity.BaseModel.BeforeCreate when the DAO Create() call runs,
@@ -711,12 +748,13 @@ func (s *AgentService) CreateAgentSession(req *CreateAgentSessionRequest) (*enti
 		Name:      namePtr,
 		DialogID:  req.AgentID,
 		UserID:    req.UserID,
+		ExpUserID: &req.UserID,
 		Message:   messages,
 		Reference: reference,
 		Source:    sourcePtr,
 		DSL:       dsl,
 	}
-	if err := s.api4ConversationDAO.Create(row); err != nil {
+	if err := s.api4ConversationDAO.Create(ctx, dao.DB, row); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("create agent session: %w", err)
 	}
 	return row, common.CodeSuccess, nil

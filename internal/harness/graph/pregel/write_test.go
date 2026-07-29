@@ -155,7 +155,7 @@ func TestPrefixWriteTransformer(t *testing.T) {
 }
 
 func TestMetadataWriteTransformer(t *testing.T) {
-	tf := NewMetadataWriteTransformer(map[string]interface{}{"ctx": "test"})
+	tf := NewMetadataWriteTransformer(map[string]any{"ctx": "test"})
 	entry := &ChannelWriteEntry{Channel: "c", Value: "v"}
 	result, err := tf.Transform(entry)
 	if err != nil {

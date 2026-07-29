@@ -96,7 +96,9 @@ func TestMiddleware_ChainErrorRecovery(t *testing.T) {
 
 	found := false
 	for _, s := range order {
-		if s == "failing_beforeAgent" { found = true }
+		if s == "failing_beforeAgent" {
+			found = true
+		}
 	}
 	if !found {
 		t.Error("failingMW.BeforeAgent should have been called")
@@ -178,7 +180,13 @@ func TestSession_ConcurrentValueAccess(t *testing.T) {
 
 	ctx := context.Background()
 	iter := agent.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("test")}})
-	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		_ = ev
+	}
 
 	var wg sync.WaitGroup
 	errs := make(chan error, 20)

@@ -193,9 +193,9 @@ def _load_chat_module(monkeypatch):
 
     class _StubLLMType(str, Enum):
         CHAT = "chat"
-        IMAGE2TEXT = "image2text"
+        VISION = "vision"
         RERANK = "rerank"
-        SPEECH2TEXT = "speech2text"
+        ASR = "asr"
         TTS = "tts"
 
     class _StubRetCode(int, Enum):
@@ -212,6 +212,7 @@ def _load_chat_module(monkeypatch):
     common_constants_mod.StatusEnum = _StubStatusEnum
     # Import pure-Python constants from the real module (no heavy deps)
     from common.constants import MAXIMUM_PAGE_NUMBER as _MPN, MAXIMUM_TASK_PAGE_NUMBER as _MTPN
+
     common_constants_mod.MAXIMUM_PAGE_NUMBER = _MPN
     common_constants_mod.MAXIMUM_TASK_PAGE_NUMBER = _MTPN
     monkeypatch.setitem(sys.modules, "common.constants", common_constants_mod)
@@ -329,6 +330,7 @@ def _load_chat_module(monkeypatch):
             return False, None
 
     kb_service_mod.KnowledgebaseService = _StubKnowledgebaseService
+    kb_service_mod.validate_dataset_embedding_models = lambda _kbs: None
     monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", kb_service_mod)
 
     tenant_llm_service_mod = ModuleType("api.db.services.tenant_llm_service")
@@ -366,6 +368,7 @@ def _load_chat_module(monkeypatch):
 
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
+    tenant_model_service_mod.resolve_model_config = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "api.db.joint_services.tenant_model_service", tenant_model_service_mod)
 
@@ -410,7 +413,7 @@ def _load_chat_module(monkeypatch):
     api_utils_mod.get_json_result = lambda data=None, message="", code=0: {"code": code, "data": data, "message": message}
     api_utils_mod.get_request_json = lambda: _AwaitableValue({})
     api_utils_mod.server_error_response = lambda ex: {"code": 500, "data": None, "message": str(ex)}
-    api_utils_mod.validate_request = lambda *_args, **_kwargs: (lambda func: func)
+    api_utils_mod.validate_request = lambda *_args, **_kwargs: lambda func: func
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
 
     rag_pkg = ModuleType("rag")
@@ -510,7 +513,7 @@ def test_create_chat_blank_name_is_treated_as_missing(monkeypatch):
     res = _run(module.create.__wrapped__())
 
     assert res["code"] == 102
-    assert res["message"] == "`name` is required."
+    assert res["message"] == "`name` is required"
 
 
 @pytest.mark.p1
@@ -889,7 +892,7 @@ def test_chat_session_create_and_update_guard_matrix_unit(monkeypatch):
     _set_request_json(monkeypatch, module, {"name": "session"})
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
     res = _run(module.create_session.__wrapped__("chat-1"))
-    assert res["message"] == "No authorization."
+    assert res["message"] == "no authorization"
 
     dia = SimpleNamespace(prompt_config={"prologue": "hello"})
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [dia])
@@ -907,20 +910,20 @@ def test_chat_session_create_and_update_guard_matrix_unit(monkeypatch):
     monkeypatch.setattr(module.ConversationService, "query", lambda **_kwargs: [SimpleNamespace(id="session-1")])
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [])
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
-    assert res["message"] == "No authorization."
+    assert res["message"] == "no authorization"
 
     monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
     _set_request_json(monkeypatch, module, {"message": []})
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
-    assert "`messages` cannot be changed." in res["message"]
+    assert "`messages` cannot be changed" in res["message"]
 
     _set_request_json(monkeypatch, module, {"reference": []})
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
-    assert "`reference` cannot be changed." in res["message"]
+    assert "`reference` cannot be changed" in res["message"]
 
     _set_request_json(monkeypatch, module, {"name": ""})
     res = _run(module.update_session.__wrapped__("chat-1", "session-1"))
-    assert "`name` can not be empty." in res["message"]
+    assert "`name` can not be empty" in res["message"]
 
     _set_request_json(monkeypatch, module, {"name": "renamed"})
     monkeypatch.setattr(module.ConversationService, "update_by_id", lambda *_args, **_kwargs: False)

@@ -13,9 +13,13 @@ const clearSensitiveFields = <T>(obj: T): T =>
   cloneDeepWith(obj, (value) => {
     if (
       isPlainObject(value) &&
-      [Operator.TavilySearch, Operator.TavilyExtract, Operator.Google].includes(
-        value.component_name,
-      ) &&
+      [
+        Operator.TavilySearch,
+        Operator.TavilyExtract,
+        Operator.Google,
+        Operator.KeenableSearch,
+        Operator.BGPT,
+      ].includes(value.component_name) &&
       get(value, 'params.api_key')
     ) {
       return { ...value, params: { ...value.params, api_key: '' } };

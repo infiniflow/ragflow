@@ -15,12 +15,16 @@ type memoryBackend struct {
 }
 
 func (b *memoryBackend) Store(key, content string) error {
-	if b.data == nil { b.data = make(map[string]string) }
+	if b.data == nil {
+		b.data = make(map[string]string)
+	}
 	b.data[key] = content
 	return nil
 }
 func (b *memoryBackend) Load(key string) (string, error) {
-	if b.data == nil { return "", nil }
+	if b.data == nil {
+		return "", nil
+	}
 	return b.data[key], nil
 }
 
@@ -28,7 +32,9 @@ func (b *memoryBackend) Load(key string) (string, error) {
 
 func TestNew_NilConfig(t *testing.T) {
 	mw := NewTyped[*schema.Message](nil)
-	if mw == nil { t.Fatal("expected non-nil middleware") }
+	if mw == nil {
+		t.Fatal("expected non-nil middleware")
+	}
 }
 
 func TestBeforeModelRewrite_Truncation(t *testing.T) {
@@ -43,7 +49,9 @@ func TestBeforeModelRewrite_Truncation(t *testing.T) {
 	}
 	state := core.NewReActAgentState(msgs, nil, 10)
 	_, newState, err := mw.BeforeModelRewrite(context.Background(), state, nil)
-	if err != nil { t.Fatalf("BeforeModelRewrite: %v", err) }
+	if err != nil {
+		t.Fatalf("BeforeModelRewrite: %v", err)
+	}
 
 	found := false
 	for _, m := range newState.Messages {
@@ -57,12 +65,13 @@ func TestBeforeModelRewrite_Truncation(t *testing.T) {
 	}
 }
 
-
 func TestNewWithConfig_DefaultValues(t *testing.T) {
 	cfg := &TypedConfig[*schema.Message]{
 		MaxToolOutputLen: 0,
 		MaxToolCalls:     0,
 	}
 	mw := NewTyped[*schema.Message](cfg)
-	if mw == nil { t.Fatal("nil middleware") }
+	if mw == nil {
+		t.Fatal("nil middleware")
+	}
 }

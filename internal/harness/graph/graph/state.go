@@ -201,13 +201,13 @@ var reducers = map[string]types.ReducerFunc{
 
 // ValidateStateSchema validates the graph's state schema.
 // This should be called during graph compilation or explicitly by users.
-func (g *StateGraph) ValidateStateSchema() error {
+func (g *stateGraph) ValidateStateSchema() error {
 	_, err := validateStateSchema(g.stateSchema)
 	return err
 }
 
 // GetStateSchemaInfo returns processed information about the state schema.
 // Useful for debugging and tooling.
-func (g *StateGraph) GetStateSchemaInfo() (map[string]*fieldInfo, error) {
+func (g *stateGraph) GetStateSchemaInfo() (map[string]*fieldInfo, error) {
 	return validateStateSchema(g.stateSchema)
 }

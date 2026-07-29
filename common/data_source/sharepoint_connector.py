@@ -76,9 +76,7 @@ class SharePointConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
             token = app.acquire_token_for_client(scopes=GRAPH_SCOPES)
             if "access_token" not in token:
                 detail = token.get("error_description") or token.get("error") or token
-                raise ConnectorMissingCredentialError(
-                    f"Failed to acquire SharePoint access token: {detail}"
-                )
+                raise ConnectorMissingCredentialError(f"Failed to acquire SharePoint access token: {detail}")
             return token
 
         self.graph_client = GraphClient(_acquire_token)
@@ -98,9 +96,7 @@ class SharePointConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
         except Exception as e:
             message = str(e)
             if "401" in message or "403" in message:
-                raise ConnectorValidationError(
-                    "Invalid credentials or insufficient permissions for SharePoint"
-                )
+                raise ConnectorValidationError("Invalid credentials or insufficient permissions for SharePoint")
             raise ConnectorValidationError(f"SharePoint validation error: {e}")
 
     # -- traversal helpers ---------------------------------------------------
@@ -205,9 +201,7 @@ class SharePointConnector(CheckpointedConnectorWithPermSync, SlimConnectorWithPe
                     logging.exception("SharePoint failed to process drive item")
                     yield ConnectorFailure(
                         failed_document=DocumentFailure(
-                            document_id=self._composite_doc_id(drive_id, drive_item)
-                            if getattr(drive_item, "id", None) is not None
-                            else "unknown",
+                            document_id=self._composite_doc_id(drive_id, drive_item) if getattr(drive_item, "id", None) is not None else "unknown",
                             document_link=getattr(drive_item, "web_url", "") or "",
                         ),
                         failure_message=str(e),

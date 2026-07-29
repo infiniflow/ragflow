@@ -99,8 +99,8 @@ type mockTool struct {
 	mu        sync.Mutex
 }
 
-func (t *mockTool) Name() string             { return t.name }
-func (t *mockTool) Description() string       { return t.desc }
+func (t *mockTool) Name() string        { return t.name }
+func (t *mockTool) Description() string { return t.desc }
 func (t *mockTool) Invoke(ctx context.Context, args string, opts ...core.ToolOption) (string, error) {
 	t.mu.Lock()
 	t.executed = true
@@ -161,8 +161,8 @@ type panicTool struct {
 	desc string
 }
 
-func (t *panicTool) Name() string               { return t.name }
-func (t *panicTool) Description() string         { return t.desc }
+func (t *panicTool) Name() string        { return t.name }
+func (t *panicTool) Description() string { return t.desc }
 func (t *panicTool) Invoke(ctx context.Context, args string, opts ...core.ToolOption) (string, error) {
 	panic("unexpected error in tool execution")
 }
@@ -178,8 +178,8 @@ type slowTool struct {
 	delay time.Duration
 }
 
-func (t *slowTool) Name() string               { return t.name }
-func (t *slowTool) Description() string         { return t.desc }
+func (t *slowTool) Name() string        { return t.name }
+func (t *slowTool) Description() string { return t.desc }
 func (t *slowTool) Invoke(ctx context.Context, args string, opts ...core.ToolOption) (string, error) {
 	select {
 	case <-ctx.Done():
@@ -195,15 +195,15 @@ func (t *slowTool) Stream(ctx context.Context, args string, opts ...core.ToolOpt
 // ---- Enhanced Error Tool ----
 
 type enhancedErrorTool struct {
-	name      string
-	desc      string
-	errMsg    string
-	executed  bool
-	mu        sync.Mutex
+	name     string
+	desc     string
+	errMsg   string
+	executed bool
+	mu       sync.Mutex
 }
 
-func (t *enhancedErrorTool) Name() string               { return t.name }
-func (t *enhancedErrorTool) Description() string         { return t.desc }
+func (t *enhancedErrorTool) Name() string        { return t.name }
+func (t *enhancedErrorTool) Description() string { return t.desc }
 func (t *enhancedErrorTool) Invoke(ctx context.Context, args string, opts ...core.ToolOption) (string, error) {
 	return "", nil
 }
@@ -732,7 +732,7 @@ func TestSubAgent_MiddlewareInheritance(t *testing.T) {
 			AgentConfig: &AgentConfig{
 				Model: func() *mockModel { m := &mockModel{}; m.addResp("inheritor done"); return m }(),
 			},
-			InheritParentMiddlewares: true,
+			InheritParentMiddlewares:      true,
 			ExcludedParentMiddlewareNames: nil,
 		},
 	}, nil)
@@ -871,7 +871,7 @@ func TestSubAgent_SubAgentOwnMiddlewares(t *testing.T) {
 			Name:        "tracked",
 			Description: "Tracked sub-agent",
 			AgentConfig: &AgentConfig{
-				Model: func() *mockModel { m := &mockModel{}; m.addResp("tracked done"); return m }(),
+				Model:       func() *mockModel { m := &mockModel{}; m.addResp("tracked done"); return m }(),
 				Middlewares: []core.ReActMiddleware{subTracker},
 			},
 			InheritParentMiddlewares: true,
@@ -1350,7 +1350,7 @@ func TestSubAgent_ParallelToolCallsOneFails(t *testing.T) {
 // sub-agent's internal error events without panicking or deadlocking.
 func TestSubAgent_EmitInternalEventsWithError(t *testing.T) {
 	failTool := &mockTool{
-		name:      "flaky", desc: "Flaky tool",
+		name: "flaky", desc: "Flaky tool",
 		invokeErr: errors.New("internal error"),
 	}
 

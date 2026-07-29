@@ -46,39 +46,39 @@ func NewOpenAIChatHandler(svc *service.OpenAIChatService) *OpenAIChatHandler {
 func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		jsonError(c, common.CodeDataError, "You don't own the chat "+chatID)
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "You don't own the chat "+chatID)
 		return
 	}
 
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		jsonError(c, code, msg)
+		common.ResponseWithCodeData(c, code, nil, msg)
 		return
 	}
 
 	bodyBytes, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		jsonError(c, common.CodeArgumentError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
 	// Parse body into the typed request
 	var req service.OpenAIChatRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
-		jsonError(c, common.CodeArgumentError, err.Error())
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
 	// Messages presence
 	if len(req.Messages) == 0 {
-		jsonError(c, common.CodeDataError, "You have to provide messages.")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "You have to provide messages.")
 		return
 	}
 
 	// extra_body shape validation
 	extraBody, extraBodyOK := req.ExtraBody.(map[string]interface{})
 	if req.ExtraBody != nil && !extraBodyOK {
-		jsonError(c, common.CodeArgumentError, "extra_body must be an object.")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "extra_body must be an object.")
 		return
 	}
 
@@ -87,12 +87,14 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 		if rm, ok := extraBody["reference_metadata"].(map[string]interface{}); ok {
 			if rawFields, has := rm["fields"]; has {
 				if rawArr, ok := rawFields.([]interface{}); !ok {
-					jsonError(c, common.CodeArgumentError, "reference_metadata.fields must be an array.")
+					common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+						"reference_metadata.fields must be an array.")
 					return
 				} else {
 					for _, item := range rawArr {
 						if _, ok := item.(string); !ok {
-							jsonError(c, common.CodeArgumentError, "reference_metadata.fields must be an array.")
+							common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+								"reference_metadata.fields must be an array.")
 							return
 						}
 					}
@@ -105,7 +107,8 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 	if extraBody != nil {
 		if mc, ok := extraBody["metadata_condition"]; ok && mc != nil {
 			if _, ok := mc.(map[string]interface{}); !ok {
-				jsonError(c, common.CodeArgumentError, "metadata_condition must be an object.")
+				common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
+					"metadata_condition must be an object.")
 				return
 			}
 		}
@@ -114,7 +117,7 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 	// Last message must be from the user
 	if last := req.Messages[len(req.Messages)-1]; last != nil {
 		if role, _ := last["role"].(string); role != "user" {
-			jsonError(c, common.CodeDataError, "The last content of this conversation is not from user.")
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, "The last content of this conversation is not from user.")
 			return
 		}
 	}

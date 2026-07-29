@@ -37,8 +37,10 @@ package canvas
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/agent/workflowx"
 
 	"github.com/cloudwego/eino/compose"
@@ -240,12 +242,17 @@ func buildSubWorkflow(
 		if name == "" {
 			return nil, fmt.Errorf("canvas: loop %q member %q has empty component_name", loopID, cpnID)
 		}
-		body, err := buildNodeBody(cpnID, name, c.Components[cpnID].Obj.Params)
+		deferToMessage := directMessageDownstream(c, cpnID)
+		nodeOpts := runtime.ComponentExecutionOptions{
+			DeferAgentToMessage:        deferToMessage,
+			SuppressAgentMessageEvents: strings.EqualFold(name, "Agent") && !deferToMessage,
+		}
+		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].Obj.Params, nodeOpts)
 		if err != nil {
 			return nil, err
 		}
 		nodes[cpnID] = sub.AddLambdaNode(cpnID,
-			compose.InvokableLambda[map[string]any, map[string]any](withStateBracket(body)),
+			compose.InvokableLambda[map[string]any, map[string]any](withStateBracket(cpnID, name, body)),
 			compose.WithNodeName(cpnID),
 		)
 	}
@@ -707,9 +714,9 @@ func evalDictOp(m map[string]any, op string, _ any) (bool, error) {
 func evalListOp(lst []any, op string, value any) (bool, error) {
 	switch op {
 	case "contains":
-		return listContains(lst, value), nil
+		return slices.Contains(lst, value), nil
 	case "not contains":
-		return !listContains(lst, value), nil
+		return !slices.Contains(lst, value), nil
 	case "is":
 		return listEqual(lst, value), nil
 	case "is not":
@@ -720,15 +727,6 @@ func evalListOp(lst []any, op string, value any) (bool, error) {
 		return len(lst) > 0, nil
 	}
 	return false, fmt.Errorf("invalid operator: %s (list variable)", op)
-}
-
-func listContains(lst []any, value any) bool {
-	for _, x := range lst {
-		if x == value {
-			return true
-		}
-	}
-	return false
 }
 
 func listEqual(lst []any, value any) bool {

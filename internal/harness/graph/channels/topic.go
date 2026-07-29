@@ -7,7 +7,7 @@ import (
 // Topic is a configurable PubSub Topic.
 type Topic struct {
 	BaseChannel
-	values    []interface{}
+	values     []interface{}
 	accumulate bool
 }
 

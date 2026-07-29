@@ -6,22 +6,22 @@ import "ragflow/internal/harness/graph/constants"
 type RunnableConfig struct {
 	// Configurable values that can be used by nodes and checkpointers
 	Configurable map[string]interface{}
-	
+
 	// RecursionLimit is the maximum number of steps before raising GraphRecursionError
 	RecursionLimit int
-	
+
 	// Tags for the execution
 	Tags []string
-	
+
 	// Metadata for the execution
 	Metadata map[string]interface{}
-	
+
 	// RunID is a unique identifier for this run
 	RunID string
-	
+
 	// ThreadID is the thread identifier for checkpointing
 	ThreadID string
-	
+
 	// Durability controls when checkpoint writes are persisted
 	Durability Durability
 }
@@ -59,40 +59,40 @@ func (c *RunnableConfig) Merge(other *RunnableConfig) *RunnableConfig {
 	if other == nil {
 		return c
 	}
-	
+
 	// Merge configurable
 	for k, v := range other.Configurable {
 		c.Set(k, v)
 	}
-	
+
 	// Use other's recursion limit if set
 	if other.RecursionLimit > 0 {
 		c.RecursionLimit = other.RecursionLimit
 	}
-	
+
 	// Merge tags
 	c.Tags = append(c.Tags, other.Tags...)
-	
+
 	// Merge metadata
 	for k, v := range other.Metadata {
 		c.Metadata[k] = v
 	}
-	
+
 	// Use other's RunID if set
 	if other.RunID != "" {
 		c.RunID = other.RunID
 	}
-	
+
 	// Use other's ThreadID if set
 	if other.ThreadID != "" {
 		c.ThreadID = other.ThreadID
 	}
-	
+
 	// Use other's Durability if set (not default)
 	if other.Durability != "" && other.Durability != DurabilitySync {
 		c.Durability = other.Durability
 	}
-	
+
 	return c
 }
 
@@ -160,13 +160,13 @@ func PatchConfig(config *RunnableConfig, patchers ...ConfigPatcher) *RunnableCon
 	if config == nil {
 		config = NewRunnableConfig()
 	}
-	
+
 	for _, patcher := range patchers {
 		if patcher != nil {
 			config = patcher(config)
 		}
 	}
-	
+
 	return config
 }
 
@@ -181,10 +181,10 @@ func EnsureConfig(config *RunnableConfig) *RunnableConfig {
 // MergeConfigs merges multiple configs into one.
 func MergeConfigs(configs ...*RunnableConfig) *RunnableConfig {
 	result := NewRunnableConfig()
-	
+
 	for _, config := range configs {
 		result.Merge(config)
 	}
-	
+
 	return result
 }

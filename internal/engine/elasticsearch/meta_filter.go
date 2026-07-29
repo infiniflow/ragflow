@@ -35,33 +35,33 @@ var dateRegex = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 
 // Supported operators
 var supportedOperators = map[string]bool{
-	"=":          true,
-	"≠":          true,
-	">":          true,
-	"<":          true,
-	"≥":          true,
-	"≤":          true,
-	"in":         true,
-	"not in":     true,
-	"contains":   true,
+	"=":            true,
+	"≠":            true,
+	">":            true,
+	"<":            true,
+	"≥":            true,
+	"≤":            true,
+	"in":           true,
+	"not in":       true,
+	"contains":     true,
 	"not contains": true,
-	"start with": true,
-	"end with":   true,
-	"empty":      true,
-	"not empty":  true,
+	"start with":   true,
+	"end with":     true,
+	"empty":        true,
+	"not empty":    true,
 }
 
 // Range operators mapping
 var rangeOps = map[string]string{
-	">":  "gt",
-	"<":  "lt",
-	"≥":  "gte",
-	"≤":  "lte",
+	">": "gt",
+	"<": "lt",
+	"≥": "gte",
+	"≤": "lte",
 }
 
 // Negative operators unsafe for multi-valued fields
 var multivalueUnsafeNegativeOps = map[string]bool{
-	"≠":     true,
+	"≠":      true,
 	"not in": true,
 }
 
@@ -77,8 +77,8 @@ func (e *UnsupportedMetaFilterError) Error() string {
 
 // TranslatedFilter represents a single filter rendered as ES bool clauses
 type TranslatedFilter struct {
-	Must      []map[string]interface{}
-	MustNot   []map[string]interface{}
+	Must    []map[string]interface{}
+	MustNot []map[string]interface{}
 }
 
 // ToClauses converts to ES clauses
@@ -97,7 +97,7 @@ func (f *TranslatedFilter) ToClauses() []map[string]interface{} {
 
 // MetaFilterPushdownPlan represents composed ES bool query body
 type MetaFilterPushdownPlan struct {
-	Logic     string
+	Logic      string
 	translated []*TranslatedFilter
 }
 
@@ -522,7 +522,7 @@ func termOrMatch(fieldPath string, value interface{}) map[string]interface{} {
 		return map[string]interface{}{
 			"term": map[string]interface{}{
 				keywordPath(fieldPath): map[string]interface{}{
-					"value":           s,
+					"value":            s,
 					"case_insensitive": true,
 				},
 			},
@@ -556,7 +556,7 @@ func termsStringOrNumeric(fieldPath string, members []interface{}) map[string]in
 
 	return map[string]interface{}{
 		"bool": map[string]interface{}{
-			"should":              shouldClauses,
+			"should":               shouldClauses,
 			"minimum_should_match": 1,
 		},
 	}
@@ -567,7 +567,7 @@ func wildcard(fieldPath string, pattern string) map[string]interface{} {
 	return map[string]interface{}{
 		"wildcard": map[string]interface{}{
 			keywordPath(fieldPath): map[string]interface{}{
-				"value":           pattern,
+				"value":            pattern,
 				"case_insensitive": true,
 			},
 		},

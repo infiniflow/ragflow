@@ -256,10 +256,7 @@ def test_yield_webdav_documents_skips_missing_size_metadata(caplog):
         "webdav:https://webdav.example:/small.txt",
     ]
     assert connector.client.downloaded_paths == ["/small.txt"]
-    assert (
-        "missing.txt: size metadata missing from WebDAV server response, "
-        "skipping to avoid processing potentially large files."
-    ) in caplog.text
+    assert ("missing.txt: size metadata missing from WebDAV server response, skipping to avoid processing potentially large files.") in caplog.text
 
 
 @pytest.mark.p1
@@ -301,7 +298,4 @@ def test_retrieve_all_slim_docs_skips_missing_size_metadata(caplog):
     assert [doc.id for batch in batches for doc in batch] == [
         "webdav:https://webdav.example:/small.txt",
     ]
-    assert (
-        "missing.txt: size metadata missing from WebDAV server response, "
-        "skipping to avoid processing potentially large files."
-    ) in caplog.text
+    assert ("missing.txt: size metadata missing from WebDAV server response, skipping to avoid processing potentially large files.") in caplog.text

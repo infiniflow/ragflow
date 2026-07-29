@@ -90,3 +90,34 @@ def test_non_multiple_unchanged():
     chunks = RAGFlowExcelParser().html(_make_xlsx(13), chunk_rows=12)
     assert len(chunks) == 2
     assert all(not _chunk_has_no_data_cells(c) for c in chunks)
+
+
+def _make_xlsx_with_values(header, row):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(header)
+    ws.append(row)
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf.read()
+
+
+@pytest.mark.p2
+def test_call_keeps_zero_valued_cells():
+    # __call__ produces the text used for indexing. A numeric 0 (and 0.0 / False)
+    # is real data, not an empty cell, so it must survive. The header is only
+    # emitted alongside a kept value, so a dropped 0 also loses its "stock" label.
+    lines = RAGFlowExcelParser()(_make_xlsx_with_values(["name", "stock"], ["widget", 0]))
+    joined = " ".join(lines)
+    assert "stock" in joined and "0" in joined, lines
+
+
+@pytest.mark.p2
+def test_call_skips_truly_empty_cells():
+    # None / empty-string cells carry no value and should still be skipped.
+    lines = RAGFlowExcelParser()(_make_xlsx_with_values(["name", "note"], ["widget", None]))
+    joined = " ".join(lines)
+    assert "note" not in joined, lines

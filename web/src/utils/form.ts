@@ -64,3 +64,16 @@ export function setLLMSettingEnabledValues(
   }, {});
   return values;
 }
+
+/**
+ * Add prefix to form field name
+ * @param prefix - The prefix to add (e.g., 'chat.', 'settings.')
+ * @param name - The field name
+ * @returns The prefixed field name
+ * @example
+ * prefixName('chat.', 'icon') // returns 'chat.icon'
+ * prefixName('', 'name') // returns 'name'
+ */
+export function prefixName(prefix: string, name: string): string {
+  return `${prefix}${name}`;
+}

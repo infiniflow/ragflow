@@ -397,7 +397,15 @@ func TestRetry_SequentialWorkflow_NonRetryableError_StopsFlow(t *testing.T) {
 	ctx := context.Background()
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}})
 	var lastErr error
-	for { ev, ok := iter.Next(); if !ok { break }; if ev.Err != nil { lastErr = ev.Err } }
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			lastErr = ev.Err
+		}
+	}
 	if lastErr == nil {
 		t.Log("workflow completed")
 	} else {

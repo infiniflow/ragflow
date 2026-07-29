@@ -16,8 +16,8 @@ func BenchmarkReActAgent_ReActLoop(b *testing.B) {
 		model.addResp("tool")
 		model.addResp("done")
 		agent := NewReActAgent(&ReActConfig[*schema.Message]{
-			Model: model,
-			Tools: []Tool{tool},
+			Model:       model,
+			Tools:       []Tool{tool},
 			ToolsConfig: &ToolsNodeConfig{Tools: []Tool{tool}},
 		})
 		agent.name = "bench"

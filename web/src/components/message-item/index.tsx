@@ -1,17 +1,17 @@
 import { MessageType } from '@/constants/chat';
+import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import {
   IMessage,
   IReference,
   IReferenceChunk,
   UploadResponseDataType,
 } from '@/interfaces/database/chat';
-import classNames from 'classnames';
-import { memo, useCallback, useMemo } from 'react';
-
-import { IRegenerateMessage, IRemoveMessageById } from '@/hooks/logic-hooks';
 import { cn } from '@/lib/utils';
+import classNames from 'classnames';
 import { isEmpty } from 'lodash';
+import { memo, useCallback, useMemo } from 'react';
 import { DocumentDownloadButton } from '../document-download-button';
+import { LoadingDots } from '../loading-dots';
 import MarkdownContent from '../markdown-content';
 import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
 import { ReferenceImageList } from '../next-message-item/reference-image-list';
@@ -149,7 +149,7 @@ const MessageItem = ({
                 )}
               >
                 {sendLoading && isEmpty(messageContent) ? (
-                  'running...'
+                  <LoadingDots className="text-text-secondary" />
                 ) : (
                   <MarkdownContent
                     loading={loading}

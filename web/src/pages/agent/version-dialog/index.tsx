@@ -116,7 +116,8 @@ export function VersionDialog({
                         )}
                       </div>
                       <p className="text-text-secondary text-xs">
-                        Created: {formatDate(agent?.create_date)}
+                        {t('flow.version.created')}:{' '}
+                        {formatDate(agent?.create_date)}
                       </p>
                     </div>
 

@@ -46,16 +46,33 @@ type middleware[M core.MessageType] struct {
 }
 
 func NewTyped[M core.MessageType](cfg *Config) *middleware[M] {
-	if cfg == nil { cfg = &Config{ReadBytes: 1 << 20} }
-	if cfg.ReadBytes <= 0 { cfg.ReadBytes = 1 << 20 }
+	if cfg == nil {
+		cfg = &Config{ReadBytes: 1 << 20}
+	}
+	if cfg.ReadBytes <= 0 {
+		cfg.ReadBytes = 1 << 20
+	}
 	return &middleware[M]{cfg: cfg}
 }
 
 func New(cfg *Config) *middleware[*schema.Message] { return NewTyped[*schema.Message](cfg) }
 
+func (m *middleware[M]) ContributeTools(ctx context.Context) []core.Tool {
+	if m.cfg.Backend == nil {
+		return nil
+	}
+	return m.buildTools()
+}
+
+func (m *middleware[M]) ContributeToolInfos(ctx context.Context) []*schema.ToolInfo { return nil }
+
+func (m *middleware[M]) ContributeReturnDirectly(ctx context.Context) map[string]bool { return nil }
+
+// BeforeAgent is retained for backward compatibility with code that calls
+// BeforeAgent directly (e.g., existing tests). The preferred path is
+// ToolContributor (ContributeTools), which is automatically collected
+// during agent build.
 func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *core.ReActAgentContext) (context.Context, *core.ReActAgentContext, error) {
-	if m.cfg.Backend == nil { return ctx, rc, nil }
-	rc.Tools = append(rc.Tools, m.buildTools()...)
 	return ctx, rc, nil
 }
 
@@ -88,12 +105,20 @@ func (m *middleware[M]) buildTools() []core.Tool {
 func (m *middleware[M]) maybeTool(name, defaultDesc string, defaultFn func(ctx context.Context, args string) (string, error)) core.Tool {
 	if m.cfg.ToolConfig != nil {
 		if tc, ok := m.cfg.ToolConfig[name]; ok {
-			if tc.Disabled { return nil }
+			if tc.Disabled {
+				return nil
+			}
 			desc := defaultDesc
-			if tc.Description != "" { desc = tc.Description }
-			if tc.Custom != nil { return core.NewBaseTool(tc.Name, desc, tc.Custom) }
+			if tc.Description != "" {
+				desc = tc.Description
+			}
+			if tc.Custom != nil {
+				return core.NewBaseTool(tc.Name, desc, tc.Custom)
+			}
 			toolName := name
-			if tc.Name != "" { toolName = tc.Name }
+			if tc.Name != "" {
+				toolName = tc.Name
+			}
 			return core.NewBaseTool(toolName, desc, defaultFn)
 		}
 	}
@@ -103,7 +128,9 @@ func (m *middleware[M]) maybeTool(name, defaultDesc string, defaultFn func(ctx c
 func (m *middleware[M]) newReadTool() func(ctx context.Context, args string) (string, error) {
 	return func(ctx context.Context, args string) (string, error) {
 		content, err := m.cfg.Backend.Read(args)
-		if err != nil { return "", err }
+		if err != nil {
+			return "", err
+		}
 		if len(content) > m.cfg.ReadBytes {
 			content = content[:m.cfg.ReadBytes] + "\n...(truncated)"
 		}
@@ -129,7 +156,9 @@ func (m *middleware[M]) newWriteTool() func(ctx context.Context, args string) (s
 			return fmt.Sprintf("OK: wrote %d bytes to %s", len(jsonArgs.Content), jsonArgs.Path), nil
 		}
 		parts := strings.SplitN(args, "|", 2)
-		if len(parts) < 2 { return "", fmt.Errorf("expected path|content or JSON with 'path' and 'content'") }
+		if len(parts) < 2 {
+			return "", fmt.Errorf("expected path|content or JSON with 'path' and 'content'")
+		}
 		if err := m.cfg.Backend.Write(parts[0], parts[1]); err != nil {
 			return "", err
 		}
@@ -148,7 +177,9 @@ func (m *middleware[M]) newEditTool() func(ctx context.Context, args string) (st
 			return "", m.cfg.Backend.Edit(jsonArgs.Path, jsonArgs.Old, jsonArgs.New)
 		}
 		parts := strings.SplitN(args, "|", 3)
-		if len(parts) < 3 { return "", fmt.Errorf("expected path|old|new or JSON with 'path', 'old', 'new'") }
+		if len(parts) < 3 {
+			return "", fmt.Errorf("expected path|old|new or JSON with 'path', 'old', 'new'")
+		}
 		return "", m.cfg.Backend.Edit(parts[0], parts[1], parts[2])
 	}
 }
@@ -156,8 +187,12 @@ func (m *middleware[M]) newEditTool() func(ctx context.Context, args string) (st
 func (m *middleware[M]) newLsTool() func(ctx context.Context, args string) (string, error) {
 	return func(ctx context.Context, args string) (string, error) {
 		results, err := m.cfg.Backend.Ls(args)
-		if err != nil { return "", err }
-		if len(results) == 0 { return "(empty directory)", nil }
+		if err != nil {
+			return "", err
+		}
+		if len(results) == 0 {
+			return "(empty directory)", nil
+		}
 		return strings.Join(results, "\n"), nil
 	}
 }
@@ -165,8 +200,12 @@ func (m *middleware[M]) newLsTool() func(ctx context.Context, args string) (stri
 func (m *middleware[M]) newGlobTool() func(ctx context.Context, args string) (string, error) {
 	return func(ctx context.Context, args string) (string, error) {
 		results, err := m.cfg.Backend.Glob(args)
-		if err != nil { return "", err }
-		if len(results) == 0 { return "No matches", nil }
+		if err != nil {
+			return "", err
+		}
+		if len(results) == 0 {
+			return "No matches", nil
+		}
 		return strings.Join(results, "\n"), nil
 	}
 }
@@ -180,18 +219,26 @@ func (m *middleware[M]) newGrepTool() func(ctx context.Context, args string) (st
 		}
 		if err := json.Unmarshal([]byte(args), &jsonArgs); err == nil && jsonArgs.Pattern != "" {
 			result, err := m.cfg.Backend.Grep(jsonArgs.Pattern, jsonArgs.Path)
-			if err != nil { return "", err }
+			if err != nil {
+				return "", err
+			}
 			return formatGrepResult(result, jsonArgs.OutputMode)
 		}
 		// Fall back to | separator
 		parts := strings.SplitN(args, "|", 3)
 		pattern, path := parts[0], "."
-		if len(parts) > 1 { path = parts[1] }
+		if len(parts) > 1 {
+			path = parts[1]
+		}
 		outputMode := "content"
-		if len(parts) > 2 { outputMode = parts[2] }
+		if len(parts) > 2 {
+			outputMode = parts[2]
+		}
 
 		result, err := m.cfg.Backend.Grep(pattern, path)
-		if err != nil { return "", err }
+		if err != nil {
+			return "", err
+		}
 		return formatGrepResult(result, outputMode)
 	}
 }
@@ -199,18 +246,26 @@ func (m *middleware[M]) newGrepTool() func(ctx context.Context, args string) (st
 func formatGrepResult(result, outputMode string) (string, error) {
 	switch outputMode {
 	case "count":
-		if result == "" { return "0 matches", nil }
+		if result == "" {
+			return "0 matches", nil
+		}
 		lines := strings.Count(result, "\n") + 1
 		return fmt.Sprintf("%d matches", lines), nil
 	case "files":
 		unique := make(map[string]bool)
 		for _, line := range strings.Split(result, "\n") {
-			if line == "" { continue }
+			if line == "" {
+				continue
+			}
 			parts := strings.SplitN(line, ":", 2)
-			if len(parts) > 0 { unique[parts[0]] = true }
+			if len(parts) > 0 {
+				unique[parts[0]] = true
+			}
 		}
 		names := make([]string, 0, len(unique))
-		for n := range unique { names = append(names, n) }
+		for n := range unique {
+			names = append(names, n)
+		}
 		return strings.Join(names, "\n"), nil
 	default:
 		return result, nil

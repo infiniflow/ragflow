@@ -8,9 +8,9 @@ import (
 func TestErrorCodeConstants(t *testing.T) {
 	// Test that all error codes are defined
 	tests := []struct {
-		name      string
-		code      ErrorCode
-		expected  string
+		name     string
+		code     ErrorCode
+		expected string
 	}{
 		{"GraphRecursionLimit", ErrorCodeGraphRecursionLimit, "GRAPH_RECURSION_LIMIT"},
 		{"InvalidConcurrentGraphUpdate", ErrorCodeInvalidConcurrentGraphUpdate, "INVALID_CONCURRENT_GRAPH_UPDATE"},

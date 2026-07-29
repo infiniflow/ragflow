@@ -23,17 +23,25 @@ func NewPromptBuilder() *PromptBuilder {
 
 // PromptBudget defines character limits for prompt sections.
 type PromptBudget struct {
-	PerFile         int // Max chars per instruction file (default: 4000)
-	TotalFiles      int // Max total chars from all instruction files (default: 12000)
-	GitDiff         int // Max chars for git diff (default: 50000)
-	MaxSections     int // Max number of sections (default: 20)
+	PerFile     int // Max chars per instruction file (default: 4000)
+	TotalFiles  int // Max total chars from all instruction files (default: 12000)
+	GitDiff     int // Max chars for git diff (default: 50000)
+	MaxSections int // Max number of sections (default: 20)
 }
 
 func (b *PromptBudget) defaults() {
-	if b.PerFile <= 0 { b.PerFile = 4000 }
-	if b.TotalFiles <= 0 { b.TotalFiles = 12000 }
-	if b.GitDiff <= 0 { b.GitDiff = 50000 }
-	if b.MaxSections <= 0 { b.MaxSections = 20 }
+	if b.PerFile <= 0 {
+		b.PerFile = 4000
+	}
+	if b.TotalFiles <= 0 {
+		b.TotalFiles = 12000
+	}
+	if b.GitDiff <= 0 {
+		b.GitDiff = 50000
+	}
+	if b.MaxSections <= 0 {
+		b.MaxSections = 20
+	}
 }
 
 // Build constructs the final prompt string.
@@ -63,10 +71,10 @@ func (pb *PromptBuilder) Build(parts []PromptSection, budget *PromptBudget) stri
 
 // PromptSection is a named section of the prompt.
 type PromptSection struct {
-	Name          string
-	Content       string
-	TruncateTo    int  // Max chars for this section (0 = no limit)
-	AppendNewline bool
+	Name           string
+	Content        string
+	TruncateTo     int // Max chars for this section (0 = no limit)
+	AppendNewline  bool
 	PrependNewline bool
 }
 
@@ -140,9 +148,9 @@ func InstructionFileSections(files []InstructionFile, budget *PromptBudget) []Pr
 
 		name := filepath.Base(f.Path)
 		sections = append(sections, PromptSection{
-			Name:          "Instruction: " + name,
-			Content:       content,
-			AppendNewline: true,
+			Name:           "Instruction: " + name,
+			Content:        content,
+			AppendNewline:  true,
 			PrependNewline: true,
 		})
 	}
@@ -161,7 +169,7 @@ func EnvSection() PromptSection {
 		Name: "Environment",
 		Content: fmt.Sprintf("Date: %s\nOS: %s/%s\nHost: %s\nCWD: %s",
 			now, runtime.GOOS, runtime.GOARCH, hostname, cwd),
-		AppendNewline: true,
+		AppendNewline:  true,
 		PrependNewline: true,
 	}
 }

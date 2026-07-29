@@ -84,12 +84,18 @@ func TestGraphIntegration_ParallelWorkflow(t *testing.T) {
 // TestGraphIntegration_LoopWorkflow verifies NewLoopGraph with
 // a sub-agent running in a bounded loop.
 func TestGraphIntegration_LoopWorkflow(t *testing.T) {
-	m := &mockModel{}
-	// loop body runs up to 2 iterations
-	m.addResp("loop iteration A")
-	m.addResp("loop iteration B")
-
-	body := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("loop_body")
+	// Use forcedToolModel so the mock never exhausts, and disable retries.
+	body := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model: &forcedToolModel{
+			toolCalls: []schema.ToolCall{{
+				ID:       "c1",
+				Function: schema.ToolCallFunction{Name: "mock_tool", Arguments: "{}"},
+			}},
+			finalResp: "loop iteration done",
+		},
+		RetryConfig: &TypedModelRetryConfig[*schema.Message]{MaxRetries: 0},
+		Tools:       []Tool{&mockTool{name: "mock_tool", desc: "mock"}},
+	}).WithName("loop_body")
 
 	gwf, err := NewLoopGraph(context.Background(), &LoopConfig{
 		Name:          "loop_graph",
@@ -211,9 +217,9 @@ func TestGraphIntegration_ReActWithCheckpointResume(t *testing.T) {
 	tool := &mockTool{name: "calculator", desc: "math tool"}
 
 	agent := NewReActAgent(&ReActConfig[*schema.Message]{
-		Model:        model,
-		Tools:        []Tool{tool},
-		ToolsConfig:  &ToolsNodeConfig{Tools: []Tool{tool}},
+		Model:         model,
+		Tools:         []Tool{tool},
+		ToolsConfig:   &ToolsNodeConfig{Tools: []Tool{tool}},
 		MaxIterations: 3,
 	}).WithName("react_cp_agent")
 
@@ -222,7 +228,7 @@ func TestGraphIntegration_ReActWithCheckpointResume(t *testing.T) {
 		Checkpointer:    saver,
 		InterruptBefore: []string{"execute_tools"},
 		RecursionLimit:  20,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
@@ -304,4 +310,3 @@ func TestGraphIntegration_WorkflowGraphCompile(t *testing.T) {
 		t.Fatal("Compile() returned nil")
 	}
 }
-

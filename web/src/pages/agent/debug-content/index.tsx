@@ -1,4 +1,5 @@
 import MarkdownContent from '@/components/next-markdown-content';
+import JsonEditor from '@/components/json-edit';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { ButtonLoading } from '@/components/ui/button';
 import {
@@ -72,6 +73,9 @@ const DebugContent = ({
           fieldSchema = z.coerce.number();
         } else if (type === BeginQueryType.File) {
           fieldSchema = z.array(z.record(z.any())).min(1);
+        } else if (type === BeginQueryType.Object) {
+          fieldSchema = z.union([z.record(z.any()), z.array(z.any())]);
+          value = {};
         } else {
           fieldSchema = z.record(z.any());
         }
@@ -212,6 +216,25 @@ const DebugContent = ({
                     checked={field.value}
                     onCheckedChange={field.onChange}
                   ></Switch>
+                </FormControl>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        ),
+        [BeginQueryType.Object]: (
+          <FormField
+            control={form.control}
+            name={props.name}
+            render={({ field }) => (
+              <FormItem className="flex-1">
+                <FormLabel>{props.label}</FormLabel>
+                <FormControl>
+                  <JsonEditor
+                    value={field.value ?? {}}
+                    onChange={field.onChange}
+                    height="200px"
+                  />
                 </FormControl>
                 <FormMessage />
               </FormItem>

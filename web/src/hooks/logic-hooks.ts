@@ -26,7 +26,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { v4 as uuid } from 'uuid';
 import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
 import { useSaveSetting } from './use-user-setting-request';
@@ -111,6 +110,24 @@ export const useGetPaginationWithRouter = () => {
   };
 };
 
+// When the current page becomes empty (e.g. after deleting the last card on
+// the last page), navigate back to the previous page automatically.
+export const useGoToPreviousPageOnEmpty = (
+  listLength: number | undefined,
+  loading: boolean = false,
+) => {
+  const { pagination, setPagination } = useGetPaginationWithRouter();
+
+  useEffect(() => {
+    if (!loading && listLength === 0 && pagination.current > 1) {
+      setPagination({
+        page: pagination.current - 1,
+        pageSize: pagination.pageSize,
+      });
+    }
+  }, [listLength, loading, pagination, setPagination]);
+};
+
 export const useHandleSearchChange = () => {
   const [searchString, setSearchString] = useState('');
   const { pagination, setPagination } = useGetPaginationWithRouter();
@@ -126,8 +143,11 @@ export const useHandleSearchChange = () => {
   return { handleInputChange, searchString, pagination, setPagination };
 };
 
-export const useGetPagination = () => {
-  const [pagination, setPagination] = useState({ page: 1, pageSize: 10 });
+export const useGetPagination = (options?: { pageSize?: number }) => {
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: options?.pageSize ?? 10,
+  });
   const { t } = useTranslate('common');
 
   const onPageChange: Pagination['onChange'] = useCallback(
@@ -152,6 +172,7 @@ export const useGetPagination = () => {
 
   return {
     pagination: currentPagination,
+    setPagination,
   };
 };
 
@@ -263,7 +284,7 @@ export const useSendMessageWithSse = () => {
           .pipeThrough(new EventSourceParserStream())
           .getReader();
 
-        // eslint-disable-next-line no-constant-condition
+        // oxlint-disable-next-line no-constant-condition
         while (true) {
           try {
             const x = await reader?.read();
@@ -710,12 +731,14 @@ export const useRegenerateMessage = ({
       if (message.id) {
         removeMessagesAfterCurrentMessage(message.id);
         const index = messages.findIndex((x) => x.id === message.id);
-        let nextMessages;
-        if (index !== -1) {
-          nextMessages = messages.slice(0, index);
-        }
+        // Always pass the truncated history explicitly, even when it is
+        // empty (regenerating the first question), so the backend can
+        // overwrite the session with it via pass_all_history_messages.
+        const nextMessages = index !== -1 ? messages.slice(0, index) : [];
         sendMessage({
-          message: { ...message, id: uuid() },
+          // Keep the original id so the question/answer pair id stays
+          // consistent between local state and the persisted session.
+          message: { ...message },
           messages: nextMessages,
         });
       }

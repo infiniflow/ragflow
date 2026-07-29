@@ -14,11 +14,15 @@
 #  limitations under the License.
 #
 import json
+import logging
 import aiohttp
 from abc import ABC
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 from json.decoder import JSONDecodeError
+from typing import ClassVar
 
+from common.aimlapi_utils import attribution_headers
 from common.constants import LLMType
 
 
@@ -77,10 +81,11 @@ class VolcEngine(Base):
         serving_model = [model for model in raw_model_list["data"] if model.get("status", "") != "Shutdown"]
         res = []
         for model in serving_model:
-
             model_types = []
 
             if model.get("domain", "") == "Embedding":
+                model_types.append(LLMType.EMBEDDING.value)
+            elif set(model.get("task_type", [])) & {"TextEmbedding", "ImageEmbedding"}:
                 model_types.append(LLMType.EMBEDDING.value)
             else:
                 modalities = model.get("modalities", {})
@@ -92,9 +97,9 @@ class VolcEngine(Base):
                 if "embeddings" in output_modalities:
                     model_types.append(LLMType.EMBEDDING.value)
                 if "image" in input_modalities and "text" in output_modalities:
-                    model_types.append(LLMType.IMAGE2TEXT.value)
+                    model_types.append(LLMType.VISION.value)
                 if "audio" in input_modalities and "text" in output_modalities:
-                    model_types.append(LLMType.SPEECH2TEXT.value)
+                    model_types.append(LLMType.ASR.value)
                 if "audio" in output_modalities:
                     model_types.append(LLMType.TTS.value)
 
@@ -107,13 +112,9 @@ class VolcEngine(Base):
             if model.get("token_limits", {}).get("max_reasoning_token_length", 0) > 0:
                 features.append("thinking")
 
-            res.append({
-                "name": model["id"],
-                "model_types": model_types,
-                "features": features,
-                "max_tokens": model.get("token_limits", {}).get("max_input_token_length", 8192),
-                "status": model.get("status")
-            })
+            res.append(
+                {"name": model["id"], "model_types": model_types, "features": features, "max_tokens": model.get("token_limits", {}).get("max_input_token_length", 8192), "status": model.get("status")}
+            )
         return res
 
 
@@ -141,7 +142,7 @@ class Ollama(Base):
                 if not models:
                     return []
             res = []
-            capability_to_model_type_mapping = {"completion": LLMType.CHAT.value, "vision": LLMType.IMAGE2TEXT.value, "embedding": LLMType.EMBEDDING.value}
+            capability_to_model_type_mapping = {"completion": LLMType.CHAT.value, "vision": LLMType.VISION.value, "embedding": LLMType.EMBEDDING.value}
             capability_to_feature_mapping = {"thinking": "thinking", "tools": "is_tools"}
 
             for model in models:
@@ -177,9 +178,9 @@ class Xinference(Base):
             "chat": LLMType.CHAT.value,
             "embedding": LLMType.EMBEDDING.value,
             "rerank": LLMType.RERANK.value,
-            "image": LLMType.IMAGE2TEXT.value,
+            "image": LLMType.VISION.value,
             "TTS": LLMType.TTS.value,
-            "speech2text": LLMType.SPEECH2TEXT.value,
+            "asr": LLMType.ASR.value,
         }
         return mapping.get(model_type_str, LLMType.CHAT.value)
 
@@ -239,7 +240,7 @@ class LocalAI(Base):
             res = []
             capability_to_model_type_mapping = {
                 "completion": LLMType.CHAT.value,
-                "vision": LLMType.IMAGE2TEXT.value,
+                "vision": LLMType.VISION.value,
                 "embedding": LLMType.EMBEDDING.value,
             }
             capability_to_feature_mapping = {
@@ -368,9 +369,9 @@ class OpenRouter(Base):
             if "embeddings" in output_modalities:
                 model_types.append(LLMType.EMBEDDING.value)
             if "image" in input_modalities and "text" in output_modalities:
-                model_types.append(LLMType.IMAGE2TEXT.value)
+                model_types.append(LLMType.VISION.value)
             if "audio" in input_modalities and "text" in output_modalities:
-                model_types.append(LLMType.SPEECH2TEXT.value)
+                model_types.append(LLMType.ASR.value)
             if "audio" in output_modalities:
                 model_types.append(LLMType.TTS.value)
 
@@ -399,7 +400,7 @@ class OpenAIAPICompatible(Base):
 
     _EMBEDDING_HINTS = ("embed", "embedding", "bge")
     _RERANK_HINTS = ("rerank", "reranker")
-    _SPEECH2TEXT_HINTS = ("asr", "stt", "transcribe", "transcriber", "whisper")
+    _ASR_HINTS = ("asr", "stt", "transcribe", "transcriber", "whisper")
     _TTS_HINTS = ("tts", "text-to-speech")
     _VISION_HINTS = (
         "vl",
@@ -424,14 +425,14 @@ class OpenAIAPICompatible(Base):
             return [LLMType.RERANK.value]
         if cls._contains_hint(model_name, cls._EMBEDDING_HINTS):
             return [LLMType.EMBEDDING.value]
-        if cls._contains_hint(model_name, cls._SPEECH2TEXT_HINTS):
-            return [LLMType.SPEECH2TEXT.value]
+        if cls._contains_hint(model_name, cls._ASR_HINTS):
+            return [LLMType.ASR.value]
         if cls._contains_hint(model_name, cls._TTS_HINTS):
             return [LLMType.TTS.value]
 
         model_types = [LLMType.CHAT.value]
         if cls._contains_hint(model_name, cls._VISION_HINTS):
-            model_types.append(LLMType.IMAGE2TEXT.value)
+            model_types.append(LLMType.VISION.value)
         return model_types
 
     def _format_model_list(self, raw_model_list):
@@ -461,9 +462,364 @@ class OpenAIAPICompatible(Base):
         return model_list
 
 
+class NVIDIA(OpenAIAPICompatible):
+    _FACTORY_NAME = "NVIDIA"
+    _HOSTED_API_HOST = "integrate.api.nvidia.com"
+    _CATALOG_URL = "https://api.ngc.nvidia.com/v2/search/catalog/resources/ENDPOINT"
+    _CATALOG_PAGE_SIZE = 500
+    _MODEL_LIST_TIMEOUT = aiohttp.ClientTimeout(total=30)
+
+    @staticmethod
+    def _normalized_publisher(value):
+        return value.strip().lower().replace("_", "-")
+
+    @classmethod
+    def _catalog_resources(cls, catalog):
+        catalogs = catalog if isinstance(catalog, list) else [catalog]
+        resources = []
+        total_count = None
+        for catalog_page in catalogs:
+            page_resources, page_total_count = cls._catalog_page(catalog_page)
+            if page_resources is None:
+                return None
+            if total_count is None:
+                total_count = page_total_count
+            elif page_total_count != total_count:
+                return None
+            resources.extend(page_resources)
+        if total_count is None or len(resources) < total_count:
+            return None
+        return resources
+
+    @staticmethod
+    def _catalog_page(catalog):
+        if not isinstance(catalog, dict):
+            return None, None
+        for group in catalog.get("results", []):
+            if not isinstance(group, dict) or group.get("groupValue") != "ENDPOINT":
+                continue
+            resources = group.get("resources")
+            total_count = group.get("totalCount")
+            if not isinstance(resources, list) or not isinstance(total_count, int) or total_count < 0:
+                return None, None
+            return resources, total_count
+        return None, None
+
+    @staticmethod
+    def _label_values(resource, key):
+        for label in resource.get("labels", []):
+            if isinstance(label, dict) and label.get("key") == key:
+                values = label.get("values", [])
+                return values if isinstance(values, list) else []
+        return []
+
+    @staticmethod
+    def _unresolved_label_values(resource, key):
+        for label in resource.get("labels", []):
+            if isinstance(label, dict) and label.get("key") == key:
+                values = label.get("unresolvedValues", [])
+                return values if isinstance(values, list) else []
+        return []
+
+    @staticmethod
+    def _attribute_value(resource, key):
+        for attribute in resource.get("attributes", []):
+            if isinstance(attribute, dict) and attribute.get("key") == key:
+                return attribute.get("value")
+        return None
+
+    @classmethod
+    def _is_active_free_endpoint(cls, resource, now):
+        if "Free Endpoint" not in cls._label_values(resource, "nimType"):
+            return False
+        deprecation = cls._attribute_value(resource, "DEPRECATION")
+        if not deprecation:
+            return True
+        try:
+            cutoff = datetime.strptime(deprecation, "%m/%d/%Y").replace(tzinfo=timezone.utc)
+        except (TypeError, ValueError):
+            return False
+        return cutoff.date() > now.date()
+
+    @classmethod
+    def _filter_hosted_models(cls, models, catalog, now=None):
+        resources = cls._catalog_resources(catalog)
+        if resources is None:
+            return []
+
+        now = now or datetime.now(timezone.utc)
+        active_endpoints = cls._active_endpoint_keys(resources, now)
+
+        filtered = []
+        for model in models:
+            publisher, separator, model_name = model["name"].partition("/")
+            if separator and (cls._normalized_publisher(publisher), model_name) in active_endpoints:
+                filtered.append(model)
+        return filtered
+
+    @classmethod
+    def _active_endpoint_keys(cls, resources, now):
+        active_endpoints = set()
+        for resource in resources:
+            if not isinstance(resource, dict) or not cls._is_active_free_endpoint(resource, now):
+                continue
+            publishers = cls._unresolved_label_values(resource, "publisher")
+            display_name = resource.get("displayName") or resource.get("name")
+            if not publishers or not isinstance(display_name, str) or not display_name:
+                continue
+            active_endpoints.add((cls._normalized_publisher(publishers[0]), display_name))
+        return active_endpoints
+
+    def _uses_hosted_catalog(self):
+        model_list_url = self._get_model_list_url()
+        return bool(model_list_url and urlparse(model_list_url).hostname == self._HOSTED_API_HOST)
+
+    async def get_model_list(self):
+        if not self._uses_hosted_catalog():
+            return await super().get_model_list()
+
+        async with aiohttp.ClientSession(timeout=self._MODEL_LIST_TIMEOUT) as session:
+            async with session.get(self._get_model_list_url(), headers={"Authorization": f"Bearer {self._get_api_key()}"}) as response:
+                response.raise_for_status()
+                raw_models = await response.json()
+
+            catalog_pages = []
+            resource_count = 0
+            total_count = None
+            page = 0
+            while total_count is None or resource_count < total_count:
+                catalog_query = {"page": page, "pageSize": self._CATALOG_PAGE_SIZE}
+                async with session.get(
+                    self._CATALOG_URL,
+                    params={"q": json.dumps(catalog_query, separators=(",", ":")), "group-labels-by-labelset": "true"},
+                ) as response:
+                    response.raise_for_status()
+                    catalog_page = await response.json()
+
+                page_resources, page_total_count = self._catalog_page(catalog_page)
+                if page_resources is None:
+                    raise ValueError("NVIDIA endpoint catalog response is missing a valid ENDPOINT group")
+                if total_count is None:
+                    total_count = page_total_count
+                elif page_total_count != total_count:
+                    raise ValueError(f"NVIDIA endpoint catalog total count changed from {total_count} to {page_total_count}")
+
+                catalog_pages.append(catalog_page)
+                resource_count += len(page_resources)
+                if resource_count < total_count and len(page_resources) < self._CATALOG_PAGE_SIZE:
+                    raise ValueError(f"NVIDIA endpoint catalog returned {resource_count} of {total_count} resources")
+                page += 1
+
+        formatted_models = self._format_model_list(raw_models)
+        resources = self._catalog_resources(catalog_pages)
+        if resources is None:
+            raise ValueError("NVIDIA endpoint catalog response is incomplete")
+        now = datetime.now(timezone.utc)
+        filtered_models = self._filter_hosted_models(formatted_models, catalog_pages, now)
+        raw_model_items = raw_models.get("data") if isinstance(raw_models, dict) else raw_models
+        raw_model_count = len(raw_model_items) if isinstance(raw_model_items, list) else 0
+        logging.info(
+            "[NVIDIA] Hosted model discovery succeeded: raw_models=%d active_endpoints=%d filtered_models=%d",
+            raw_model_count,
+            len(self._active_endpoint_keys(resources, now)),
+            len(filtered_models),
+        )
+        return filtered_models
+
+    def _format_model_list(self, raw_model_list):
+        models = super()._format_model_list(raw_model_list)
+        unique_models = {}
+        for model in models:
+            model_name = model["name"].strip()
+            if not model_name or model_name in unique_models:
+                continue
+            model["name"] = model_name
+            unique_models[model_name] = model
+        return [unique_models[name] for name in sorted(unique_models)]
+
+
+class GreenPT(OpenAIAPICompatible):
+    """Discover and classify GreenPT models from the live catalog."""
+
+    _FACTORY_NAME = "GreenPT"
+
+    _MODEL_TYPES: ClassVar[dict[str, list[str]]] = {
+        "green-embedding": [LLMType.EMBEDDING.value],
+        "qwen3-embedding-8b": [LLMType.EMBEDDING.value],
+        "green-rerank": [LLMType.RERANK.value],
+        "green-s": [LLMType.ASR.value],
+        "green-s-pro": [LLMType.ASR.value],
+    }
+    _MAX_TOKENS: ClassVar[dict[str, int]] = {
+        "glm-5.2": 1_000_000,
+        "kimi-k2.7-code": 262_144,
+        "green-embedding": 32_768,
+        "qwen3-embedding-8b": 32_768,
+        "green-rerank": 32_768,
+    }
+
+    def _format_model_list(self, raw_model_list):
+        """Apply GreenPT capability metadata to discovered models."""
+        models = super()._format_model_list(raw_model_list)
+        for model in models:
+            model["model_types"] = self._MODEL_TYPES.get(model["name"], model["model_types"])
+            model["max_tokens"] = self._MAX_TOKENS.get(model["name"], model["max_tokens"])
+            if model["model_types"] == [LLMType.CHAT.value]:
+                model["features"] = ["is_tools"]
+        return models
+
+
+class FunASR(Base):
+    _FACTORY_NAME = "FunASR"
+
+    def _format_model_list(self, raw_model_list):
+        models = raw_model_list.get("data") if isinstance(raw_model_list, dict) else None
+        if not isinstance(models, list):
+            return []
+
+        model_list = []
+        for model in models:
+            if not isinstance(model, dict) or not model.get("id"):
+                continue
+            model_list.append(
+                {
+                    "name": model["id"],
+                    "model_types": [LLMType.ASR.value],
+                    "features": [],
+                    "max_tokens": 8192,
+                }
+            )
+        return model_list
+
+
 class VLLM(OpenAIAPICompatible):
     _FACTORY_NAME = "VLLM"
 
 
 class LMStudio(OpenAIAPICompatible):
     _FACTORY_NAME = "LM-Studio"
+
+
+class NewAPI(OpenAIAPICompatible):
+    _FACTORY_NAME = "New API"
+
+    def _get_api_key(self):
+        try:
+            parsed = json.loads(self.api_key)
+            if isinstance(parsed, dict):
+                return parsed.get("api_key", self.api_key)
+        except (JSONDecodeError, TypeError):
+            pass
+        return self.api_key
+
+
+class RAGcon(OpenAIAPICompatible):
+    _FACTORY_NAME = "RAGcon"
+
+
+class AIMLAPI(Base):
+    """AIMLAPI (aimlapi.com) aggregates 700+ models behind an OpenAI-compatible
+    API. ``GET /v1/models`` returns one record per model *and* endpoint, so a
+    single model id repeats under different ``type`` values (e.g.
+    ``openai/chat-completions`` and ``openai/responses/submit``); records are
+    de-duplicated by id and their RAGFlow model types unioned.
+
+    The ``type`` (endpoint family) field drives classification. Families RAGFlow
+    cannot consume — image/video/audio generation, batch, OCR — are intentionally
+    left out of the map, so those models are skipped. The listing carries no
+    modality flag, so image-capable chat models are detected from the id, the
+    same way OpenAIAPICompatible does.
+    """
+
+    _FACTORY_NAME = "aimlapi.com"
+
+    _TYPE_TO_MODEL_TYPE = {
+        "openai/chat-completions": LLMType.CHAT.value,
+        "openai/responses/submit": LLMType.CHAT.value,
+        "anthropic/messages": LLMType.CHAT.value,
+        "openai/embeddings": LLMType.EMBEDDING.value,
+        "internal/text-to-speech": LLMType.TTS.value,
+        "internal/speech-to-text/submit": LLMType.ASR.value,
+    }
+
+    # Chat models whose id hints at image input also serve VISION (VLM).
+    # Heuristic: the /v1/models listing exposes no structured modality field.
+    _VISION_HINTS = (
+        "gpt-4o",
+        "gpt-4.1",
+        "gpt-4-turbo",
+        "gpt-5",
+        "chatgpt-4o",
+        "claude-3",
+        "claude-opus-4",
+        "claude-sonnet-4",
+        "claude-haiku-4",
+        "gemini",
+        "qwen-vl",
+        "qwen2-vl",
+        "qwen2.5-vl",
+        "qwen3-vl",
+        "internvl",
+        "llava",
+        "pixtral",
+        "minicpm-v",
+        "glm-4v",
+        "glm-4.1v",
+        "llama-3.2",
+        "llama-4",
+        "grok-2-vision",
+        "grok-4",
+        "vision",
+        "-vl",
+    )
+
+    # aiohttp defaults to a 5-minute total timeout, long enough for a stalled catalog
+    # request to hold the task; 60s matches the timeout the other providers here use.
+    _MODEL_LIST_TIMEOUT = aiohttp.ClientTimeout(total=60)
+
+    async def _get_raw_model_list(self):
+        url = self._get_model_list_url()
+        if not url:
+            logging.warning("[aimlapi.com] Model list skipped: no base URL configured")
+            return None
+        headers = {"Authorization": f"Bearer {self._get_api_key()}", **attribution_headers()}
+        async with aiohttp.ClientSession(timeout=self._MODEL_LIST_TIMEOUT) as session:
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    logging.warning("[aimlapi.com] Model list request to %s failed with HTTP %s", url, resp.status)
+                    return None
+                return await resp.json()
+
+    def _format_model_list(self, raw_model_list):
+        models = raw_model_list.get("data") if isinstance(raw_model_list, dict) else raw_model_list
+        if not isinstance(models, list):
+            return []
+
+        merged = {}
+        for model in models:
+            if not isinstance(model, dict):
+                continue
+            model_id = model.get("id")
+            if not model_id:
+                continue
+            model_type = self._TYPE_TO_MODEL_TYPE.get(model.get("type"))
+            if not model_type:
+                continue
+
+            entry = merged.get(model_id)
+            if entry is None:
+                info = model.get("info") or {}
+                entry = {
+                    "name": model_id,
+                    "model_types": [],
+                    "features": [],
+                    "max_tokens": info.get("contextLength") or 8192,
+                }
+                merged[model_id] = entry
+
+            if model_type not in entry["model_types"]:
+                entry["model_types"].append(model_type)
+            if model_type == LLMType.CHAT.value and LLMType.VISION.value not in entry["model_types"] and any(hint in model_id.lower() for hint in self._VISION_HINTS):
+                entry["model_types"].append(LLMType.VISION.value)
+
+        return list(merged.values())

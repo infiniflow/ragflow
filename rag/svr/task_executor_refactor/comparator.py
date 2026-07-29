@@ -102,19 +102,17 @@ class ContextComparator:
             A new dictionary with non-deterministic fields removed.
         """
         import copy
+
         result = copy.copy(data)
         for key, value in result.items():
             if isinstance(value, dict):
                 # Create a new dict without the non-deterministic keys
-                cleaned = {
-                    k: v for k, v in value.items()
-                    if k not in self.DICT_KEYS_TO_STRIP
-                }
+                cleaned = {k: v for k, v in value.items() if k not in self.DICT_KEYS_TO_STRIP}
                 result[key] = cleaned
         return result
 
     @staticmethod
-    def _get_key_values_to_compare(prod_data_all:dict):
+    def _get_key_values_to_compare(prod_data_all: dict):
         prod_data = dict()
         for key, value in prod_data_all.items():
             if key in ALLOWED_METHOD_NAMES:

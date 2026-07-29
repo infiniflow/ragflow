@@ -77,7 +77,7 @@ class TestRquest:
         dataset_id = add_dataset_func
         res = update_dataset(HttpApiAuth, dataset_id, {})
         assert res["code"] == 102, res
-        assert res["message"] == "No properties were modified", res
+        assert res["message"] == "no properties were modified", res
 
     @pytest.mark.p3
     def test_payload_unset(self, HttpApiAuth, add_dataset_func):
@@ -105,14 +105,14 @@ class TestDatasetUpdate:
         payload = {"name": "not uuid"}
         res = update_dataset(HttpApiAuth, "not_uuid", payload)
         assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert "Invalid UUID format" in res["message"], res
 
     @pytest.mark.p3
     def test_dataset_id_not_uuid1(self, HttpApiAuth):
         payload = {"name": "not uuid1"}
         res = update_dataset(HttpApiAuth, uuid.uuid4().hex, payload)
-        assert res["code"] == 101, res
-        assert "Invalid UUID1 format" in res["message"], res
+        assert res["code"] == 102, res
+        assert "lacks permission for dataset" in res["message"], res
 
     @pytest.mark.p3
     def test_dataset_id_wrong_uuid(self, HttpApiAuth):
@@ -214,9 +214,9 @@ class TestDatasetUpdate:
     @pytest.mark.parametrize(
         "avatar_prefix, expected_message",
         [
-            ("", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+            ("", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
             ("data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
@@ -349,9 +349,9 @@ class TestDatasetUpdate:
         res = update_dataset(HttpApiAuth, dataset_id, payload)
         assert res["code"] == 101, res
         if name in ["empty", "space", "missing_at"]:
-            assert "Embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
+            assert "embedding model identifier must follow <model_name>@<provider> format" in res["message"], res
         else:
-            assert "Both model_name and provider must be non-empty strings" in res["message"], res
+            assert "both model_name and provider must be non-empty strings" in res["message"], res
 
     @pytest.mark.p2
     def test_embedding_model_none(self, HttpApiAuth, add_dataset_func):

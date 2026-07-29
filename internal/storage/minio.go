@@ -175,7 +175,7 @@ func (m *MinioStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, erro
 	for i := 0; i < 2; i++ {
 		obj, err := m.client.GetObject(ctx, bucket, fnm, minio.GetObjectOptions{})
 		if err != nil {
-			common.Warn("Failed to get object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
+			common.Warn("failed to get object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			m.reconnect()
 			time.Sleep(time.Second)
 			continue
@@ -183,8 +183,8 @@ func (m *MinioStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, erro
 		defer obj.Close()
 
 		buf := new(bytes.Buffer)
-		if _, err := buf.ReadFrom(obj); err != nil {
-			common.Warn("Failed to read object data", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
+		if _, err = buf.ReadFrom(obj); err != nil {
+			common.Warn("failed to read object data", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			m.reconnect()
 			time.Sleep(time.Second)
 			continue
@@ -271,6 +271,24 @@ func (m *MinioStorage) BucketExists(bucket string) bool {
 	}
 
 	return exists
+}
+
+func (m *MinioStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+	ctx := context.Background()
+
+	var objects []string
+	for obj := range m.client.ListObjects(ctx, bucket, minio.ListObjectsOptions{
+		Prefix:    "",
+		Recursive: true,
+	}) {
+		if obj.Err != nil {
+			common.Warn("Failed to list objects", zap.Error(obj.Err))
+			return nil, obj.Err
+		}
+		objects = append(objects, obj.Key)
+	}
+
+	return objects, nil
 }
 
 // RemoveBucket removes a bucket and all its objects
@@ -384,3 +402,5 @@ func (m *MinioStorage) Move(srcBucket, srcPath, destBucket, destPath string) boo
 	}
 	return false
 }
+
+func (m *MinioStorage) Close() error { return nil }

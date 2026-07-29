@@ -1,4 +1,4 @@
-import Image from '@/components/image';
+import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
 
 import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
@@ -24,7 +24,7 @@ import classNames from 'classnames';
 import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
 import { omit } from 'lodash';
-import { pipe } from 'lodash/fp';
+import pipe from 'lodash/fp/pipe';
 import { Info } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -197,7 +197,7 @@ const FloatingChatWidgetMarkdown = ({
             {documentId && (
               <section className="flex gap-1 justify-center">
                 {fileThumbnail ? (
-                  <img
+                  <AuthenticatedImg
                     src={fileThumbnail}
                     alt={document?.doc_name}
                     className="w-6 h-6 rounded"
@@ -294,7 +294,7 @@ const FloatingChatWidgetMarkdown = ({
   return (
     <div className="floating-chat-widget" dir={dir}>
       <Markdown
-        rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
+        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
         remarkPlugins={MarkdownRemarkPlugins}
         className="text-sm leading-relaxed space-y-2 prose-sm max-w-full"
         components={
@@ -307,7 +307,7 @@ const FloatingChatWidgetMarkdown = ({
             'custom-typography': ({ children }: { children: string }) =>
               renderReference(children),
             code(props: any) {
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              // oxlint-disable-next-line typescript/no-unused-vars
               const { children, className, node, ...rest } = props;
               const match = /language-(\w+)/.exec(className || '');
               return match ? (

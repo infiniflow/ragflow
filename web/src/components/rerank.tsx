@@ -1,5 +1,6 @@
 import { ModelTreeSelect } from '@/components/model-tree-select';
 import { useTranslate } from '@/hooks/common-hooks';
+import { prefixName } from '@/utils/form';
 import { useFormContext } from 'react-hook-form';
 import { z } from 'zod';
 import { SliderInputFormField } from './slider-input-form-field';
@@ -19,16 +20,25 @@ export const initialTopKValue = {
   top_k: 1024,
 };
 
-const RerankId = 'rerank_id';
+const DefaultRerankId = 'rerank_id';
+const DefaultTopK = 'top_k';
 
-function RerankFormField() {
+interface RerankFormFieldProps {
+  name?: string;
+  ownerTenantId?: string;
+}
+
+function RerankFormField({
+  name = DefaultRerankId,
+  ownerTenantId,
+}: RerankFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeDetails');
 
   return (
     <FormField
       control={form.control}
-      name={RerankId}
+      name={name}
       render={({ field }) => (
         <FormItem>
           <FormLabel tooltip={t('rerankTip')}>{t('rerankModel')}</FormLabel>
@@ -37,6 +47,7 @@ function RerankFormField() {
               modelTypes={['rerank']}
               allowClear
               placeholder={t('rerankPlaceholder')}
+              ownerTenantId={ownerTenantId}
               {...field}
             />
           </FormControl>
@@ -48,21 +59,35 @@ function RerankFormField() {
 }
 
 export const rerankFormSchema = {
-  [RerankId]: z.string().optional(),
+  [DefaultRerankId]: z.string().optional(),
   top_k: z.coerce.number().optional(),
 };
 
-export function RerankFormFields() {
+interface RerankFormFieldsProps {
+  prefix?: string;
+  ownerTenantId?: string;
+}
+
+export function RerankFormFields({
+  prefix = '',
+  ownerTenantId,
+}: RerankFormFieldsProps) {
   const { watch } = useFormContext();
   const { t } = useTranslate('knowledgeDetails');
-  const rerankId = watch(RerankId);
+  const rerankIdName = prefixName(prefix, DefaultRerankId);
+  const topKName = prefixName(prefix, DefaultTopK);
+
+  const rerankId = watch(rerankIdName);
 
   return (
     <>
-      <RerankFormField></RerankFormField>
+      <RerankFormField
+        name={rerankIdName}
+        ownerTenantId={ownerTenantId}
+      ></RerankFormField>
       {rerankId && (
         <SliderInputFormField
-          name={'top_k'}
+          name={topKName}
           label={t('topK')}
           max={2048}
           min={1}

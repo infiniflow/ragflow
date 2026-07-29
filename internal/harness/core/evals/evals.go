@@ -81,7 +81,7 @@ type EvalResult struct {
 	Messages []*schema.Message // full conversation trajectory
 	Events   []*core.AgentEvent
 	Duration time.Duration
-	Err      error // agent execution error (if any)
+	Err      error             // agent execution error (if any)
 	Snapshot map[string]string // file snapshots after execution
 }
 

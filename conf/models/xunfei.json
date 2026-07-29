@@ -1,5 +1,5 @@
 {
-  "name": "XunFei",
+  "name": "XunFei Spark",
   "url": {
     "default": "https://spark-api-open.xf-yun.com"
   },
@@ -17,6 +17,9 @@
       "thinking": {
         "default_value": true,
         "clear_thinking": true
+      },
+      "tools": {
+        "support": true
       }
     }
   ]

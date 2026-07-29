@@ -150,6 +150,7 @@ func normalize(dsl map[string]any, foldLegacy bool) map[string]any {
 		// LoopItem/IterationItem names stay in components but
 		// downstream compile/expand paths must tolerate them).
 		foldLegacyLoopVariants(out)
+
 		rewriteLegacyIterationAliases(out)
 	}
 
@@ -587,36 +588,40 @@ func stringsToAny(s []string) []any {
 // type is still rendered (just possibly in a generic shape). The user
 // can re-pick a type from the operator palette to refine.
 var componentNameToNodeTypeMap = map[string]string{
-	"Begin":              "beginNode",
-	"Retrieval":          "ragNode",
-	"Categorize":         "categorizeNode",
-	"Message":            "messageNode",
-	"Answer":             "messageNode",
-	"RewriteQuestion":    "rewriteNode",
-	"ExeSQL":             "toolNode",
-	"Switch":             "switchNode",
-	"Agent":              "agentNode",
-	"Tool":               "toolNode",
-	"File":               "fileNode",
-	"Parser":             "parserNode",
-	"Tokenizer":          "tokenizerNode",
-	"TokenChunker":       "chunkerNode",
-	"TitleChunker":       "chunkerNode",
-	"Extractor":          "contextNode",
-	"Loop":               "loopNode",
-	"LoopStart":          "loopStartNode",
-	"ExitLoop":           "exitLoopNode",
-	"Iteration":          "iterationNode",
-	"IterationStart":     "iterationStartNode",
-	"Parallel":           "parallelNode",
-	"DataOperations":     "dataOperationsNode",
-	"ListOperations":     "listOperationsNode",
-	"VariableAssigner":   "variableAssignerNode",
-	"VariableAggregator": "variableAggregatorNode",
-	"Keyword":            "keywordNode",
-	"Note":               "noteNode",
-	"Placeholder":        "placeholderNode",
-	"Code":               "toolNode",
+	"Begin":               "beginNode",
+	"Retrieval":           "ragNode",
+	"Categorize":          "categorizeNode",
+	"Message":             "messageNode",
+	"Answer":              "messageNode",
+	"RewriteQuestion":     "rewriteNode",
+	"ExeSQL":              "toolNode",
+	"Switch":              "switchNode",
+	"Agent":               "agentNode",
+	"Tool":                "toolNode",
+	"File":                "fileNode",
+	"Parser":              "parserNode",
+	"Tokenizer":           "tokenizerNode",
+	"TokenChunker":        "chunkerNode",
+	"TitleChunker":        "chunkerNode",
+	"OneChunker":          "chunkerNode",
+	"TagChunker":          "chunkerNode",
+	"TableChunker":        "chunkerNode",
+	"PresentationChunker": "chunkerNode",
+	"Extractor":           "contextNode",
+	"Loop":                "loopNode",
+	"LoopStart":           "loopStartNode",
+	"ExitLoop":            "exitLoopNode",
+	"Iteration":           "iterationNode",
+	"IterationStart":      "iterationStartNode",
+	"Parallel":            "parallelNode",
+	"DataOperations":      "dataOperationsNode",
+	"ListOperations":      "listOperationsNode",
+	"VariableAssigner":    "variableAssignerNode",
+	"VariableAggregator":  "variableAggregatorNode",
+	"Keyword":             "keywordNode",
+	"Note":                "noteNode",
+	"Placeholder":         "placeholderNode",
+	"Code":                "toolNode",
 }
 
 func componentNameToNodeType(name string) string {

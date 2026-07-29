@@ -489,15 +489,30 @@ func TestIntegration_LoopAgentSimple(t *testing.T) {
 	// 2 iterations * 1 call each = 2 calls
 	m2.addResp("loop_a2")
 	m2.addResp("loop_a2")
-	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}); a1.name = "la1"
-	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}); a2.name = "la2"
+	a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1})
+	a1.name = "la1"
+	a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2})
+	a2.name = "la2"
 	ctx := context.Background()
 	wf, err := NewLoop(ctx, &LoopConfig{Name: "loop_simple", Description: "test", SubAgents: []Agent{a1, a2}, MaxIterations: 2})
-	if err != nil { t.Fatalf("NewLoop: %v", err) }
+	if err != nil {
+		t.Fatalf("NewLoop: %v", err)
+	}
 	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("go")}})
 	var count int
-	for { ev, ok := iter.Next(); if !ok { break }; if ev.Err != nil { t.Fatalf("err: %v", ev.Err) }; count++ }
-	if count == 0 { t.Error("expected events from loop") }
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Fatalf("err: %v", ev.Err)
+		}
+		count++
+	}
+	if count == 0 {
+		t.Error("expected events from loop")
+	}
 }
 
 func TestIntegration_PlanExecuteSimple(t *testing.T) {
@@ -509,7 +524,15 @@ func TestIntegration_PlanExecuteSimple(t *testing.T) {
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, CheckPointStore: store})
 	ctx := context.Background()
 	iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("test")})
-	for { ev, ok := iter.Next(); if !ok { break }; if ev.Err != nil { t.Fatalf("err: %v", ev.Err) } }
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Fatalf("err: %v", ev.Err)
+		}
+	}
 }
 
 // ---- Runner-level integration tests ----
@@ -536,8 +559,12 @@ func TestIntegration_RunnerToolCall(t *testing.T) {
 	var lastContent string
 	for {
 		ev, ok := iter.Next()
-		if !ok { break }
-		if ev.Err != nil { t.Fatalf("err: %v", ev.Err) }
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Fatalf("err: %v", ev.Err)
+		}
 		if ev.Output != nil && ev.Output.MessageOutput != nil && !ev.Output.MessageOutput.IsStreaming && ev.Output.MessageOutput.Message != nil {
 			lastContent = ev.Output.MessageOutput.Message.Content
 		}
@@ -560,13 +587,21 @@ func TestIntegration_RunnerSimple(t *testing.T) {
 	var found bool
 	for {
 		ev, ok := iter.Next()
-		if !ok { break }
-		if ev.Err != nil { t.Fatalf("err: %v", ev.Err) }
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Fatalf("err: %v", ev.Err)
+		}
 		if ev.Output != nil && ev.Output.MessageOutput != nil && !ev.Output.MessageOutput.IsStreaming && ev.Output.MessageOutput.Message != nil {
-			if ev.Output.MessageOutput.Message.Content == "hello world" { found = true }
+			if ev.Output.MessageOutput.Message.Content == "hello world" {
+				found = true
+			}
 		}
 	}
-	if !found { t.Error("expected 'hello world' in output") }
+	if !found {
+		t.Error("expected 'hello world' in output")
+	}
 }
 
 // TestIntegration_RunnerResume verifies the full cancel-then-resume cycle.
@@ -587,7 +622,12 @@ func TestIntegration_RunnerResume(t *testing.T) {
 
 	time.Sleep(10 * time.Millisecond)
 	cancelFunc(WithCancelMode(CancelImmediate))
-	for { _, ok := iter.Next(); if !ok { break } }
+	for {
+		_, ok := iter.Next()
+		if !ok {
+			break
+		}
+	}
 
 	// Resume from the known checkpoint ID.
 	resumedIter, err := runner.Resume(ctx, cid)
@@ -598,8 +638,12 @@ func TestIntegration_RunnerResume(t *testing.T) {
 	var outputs []string
 	for {
 		ev, ok := resumedIter.Next()
-		if !ok { break }
-		if ev.Err != nil { break }
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			break
+		}
 		if ev.Output != nil && ev.Output.MessageOutput != nil && ev.Output.MessageOutput.Message != nil {
 			outputs = append(outputs, ev.Output.MessageOutput.Message.Content)
 		}
@@ -626,14 +670,20 @@ func TestIntegration_RunnerCancel(t *testing.T) {
 	var gotCancel bool
 	for {
 		ev, ok := iter.Next()
-		if !ok { break }
+		if !ok {
+			break
+		}
 		if ev.Err != nil {
 			var ce *CancelError
-			if errors.As(ev.Err, &ce) { gotCancel = true }
+			if errors.As(ev.Err, &ce) {
+				gotCancel = true
+			}
 			break
 		}
 	}
-	if !gotCancel { t.Log("cancel may not have been delivered (expected with non-graceful cancel)") }
+	if !gotCancel {
+		t.Log("cancel may not have been delivered (expected with non-graceful cancel)")
+	}
 }
 
 // TestIntegration_RunnerStreamMode verifies that streaming events are received.
@@ -649,8 +699,12 @@ func TestIntegration_RunnerStreamMode(t *testing.T) {
 	var streamingEvents int
 	for {
 		ev, ok := iter.Next()
-		if !ok { break }
-		if ev.Err != nil { t.Fatalf("err: %v", ev.Err) }
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Fatalf("err: %v", ev.Err)
+		}
 		if ev.Output != nil && ev.Output.MessageOutput != nil && ev.Output.MessageOutput.IsStreaming {
 			streamingEvents++
 		}
@@ -682,8 +736,12 @@ func TestIntegration_AgentToolViaRunner(t *testing.T) {
 	var lastContent string
 	for {
 		ev, ok := iter.Next()
-		if !ok { break }
-		if ev.Err != nil { t.Fatalf("err: %v", ev.Err) }
+		if !ok {
+			break
+		}
+		if ev.Err != nil {
+			t.Fatalf("err: %v", ev.Err)
+		}
 		if ev.Output != nil && ev.Output.MessageOutput != nil && !ev.Output.MessageOutput.IsStreaming && ev.Output.MessageOutput.Message != nil {
 			lastContent = ev.Output.MessageOutput.Message.Content
 		}

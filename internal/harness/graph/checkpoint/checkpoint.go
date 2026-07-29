@@ -45,11 +45,11 @@ type CheckpointMetadata struct {
 type CheckpointSource string
 
 const (
-	SourceNode     CheckpointSource = "node"     // Created after node execution
-	SourceEdge     CheckpointSource = "edge"     // Created after edge traversal
+	SourceNode      CheckpointSource = "node"      // Created after node execution
+	SourceEdge      CheckpointSource = "edge"      // Created after edge traversal
 	SourceInterrupt CheckpointSource = "interrupt" // Created on interrupt
-	SourceManual   CheckpointSource = "manual"   // Manually created
-	SourceResume   CheckpointSource = "resume"   // Created on resume
+	SourceManual    CheckpointSource = "manual"    // Manually created
+	SourceResume    CheckpointSource = "resume"    // Created on resume
 )
 
 // PendingWrite represents a write that hasn't been applied yet.
@@ -106,7 +106,7 @@ func NewCheckpoint(threadID string, step int) *Checkpoint {
 	return &Checkpoint{
 		ID:              id,
 		Version:         0,
-		ChannelVersions:  make(map[string]int),
+		ChannelVersions: make(map[string]int),
 		VersionsSeen:    make(map[string]map[string]int),
 		State:           make(map[string]interface{}),
 		PendingWrites:   make([]PendingWrite, 0),
@@ -142,12 +142,12 @@ func (c *Checkpoint) Clone() *Checkpoint {
 			Metadata:  make(map[string]interface{}),
 		},
 	}
-	
+
 	// Copy channel versions
 	for k, v := range c.ChannelVersions {
 		clone.ChannelVersions[k] = v
 	}
-	
+
 	// Copy versions seen
 	for node, versions := range c.VersionsSeen {
 		clone.VersionsSeen[node] = make(map[string]int)
@@ -155,25 +155,25 @@ func (c *Checkpoint) Clone() *Checkpoint {
 			clone.VersionsSeen[node][k] = v
 		}
 	}
-	
+
 	// Copy state
 	for k, v := range c.State {
 		clone.State[k] = deepCopy(v)
 	}
-	
-// Deep-copy pending writes — each Value must be independently copied so that
-// mutating the clone's Value never affects the original.
-clone.PendingWrites = make([]PendingWrite, len(c.PendingWrites))
-for i, pw := range c.PendingWrites {
-	clone.PendingWrites[i] = pw
-	clone.PendingWrites[i].Value = deepCopy(pw.Value)
-}
-	
-	// Copy metadata
-	for k, v := range c.Metadata.Metadata {
-		clone.Metadata.Metadata[k] = v
+
+	// Deep-copy pending writes — each Value must be independently copied so that
+	// mutating the clone's Value never affects the original.
+	clone.PendingWrites = make([]PendingWrite, len(c.PendingWrites))
+	for i, pw := range c.PendingWrites {
+		clone.PendingWrites[i] = pw
+		clone.PendingWrites[i].Value = deepCopy(pw.Value)
 	}
-	
+
+	// Copy metadata — deep copy to avoid shared maps/slices.
+	for k, v := range c.Metadata.Metadata {
+		clone.Metadata.Metadata[k] = deepCopy(v)
+	}
+
 	return clone
 }
 
@@ -218,17 +218,17 @@ func (c *Checkpoint) ClearPendingWrites() {
 // ToMap converts the checkpoint to a map for storage.
 func (c *Checkpoint) ToMap() map[string]interface{} {
 	result := make(map[string]interface{})
-	
+
 	result["id"] = c.ID
 	result["version"] = c.Version
 	result["parent_id"] = c.ParentID
-	
+
 	channelVersions := make(map[string]int)
 	for k, v := range c.ChannelVersions {
 		channelVersions[k] = v
 	}
 	result["channel_versions"] = channelVersions
-	
+
 	versionsSeen := make(map[string]map[string]int)
 	for node, versions := range c.VersionsSeen {
 		versionsSeen[node] = make(map[string]int)
@@ -237,13 +237,13 @@ func (c *Checkpoint) ToMap() map[string]interface{} {
 		}
 	}
 	result["versions_seen"] = versionsSeen
-	
+
 	state := make(map[string]interface{})
 	for k, v := range c.State {
 		state[k] = deepCopy(v)
 	}
 	result["state"] = state
-	
+
 	pendingWrites := make([]map[string]interface{}, len(c.PendingWrites))
 	for i, pw := range c.PendingWrites {
 		pendingWrites[i] = map[string]interface{}{
@@ -254,7 +254,7 @@ func (c *Checkpoint) ToMap() map[string]interface{} {
 		}
 	}
 	result["pending_writes"] = pendingWrites
-	
+
 	metadata := map[string]interface{}{
 		"id":         c.Metadata.ID,
 		"parent_id":  c.Metadata.ParentID,
@@ -267,7 +267,7 @@ func (c *Checkpoint) ToMap() map[string]interface{} {
 		metadata[k] = v
 	}
 	result["metadata"] = metadata
-	
+
 	return result
 }
 
@@ -277,12 +277,12 @@ func FromMap(data map[string]interface{}) (*Checkpoint, error) {
 		ID:              getString(data, "id"),
 		ParentID:        getString(data, "parent_id"),
 		Version:         getInt(data, "version", 0),
-		ChannelVersions:  make(map[string]int),
+		ChannelVersions: make(map[string]int),
 		VersionsSeen:    make(map[string]map[string]int),
 		State:           make(map[string]interface{}),
 		PendingWrites:   make([]PendingWrite, 0),
 	}
-	
+
 	// Parse channel versions
 	if cv, ok := data["channel_versions"].(map[string]interface{}); ok {
 		for k, v := range cv {
@@ -291,7 +291,7 @@ func FromMap(data map[string]interface{}) (*Checkpoint, error) {
 			}
 		}
 	}
-	
+
 	// Parse versions seen
 	if vs, ok := data["versions_seen"].(map[string]interface{}); ok {
 		for node, versions := range vs {
@@ -305,14 +305,14 @@ func FromMap(data map[string]interface{}) (*Checkpoint, error) {
 			}
 		}
 	}
-	
+
 	// Parse state
 	if state, ok := data["state"].(map[string]interface{}); ok {
 		for k, v := range state {
 			c.State[k] = deepCopy(v)
 		}
 	}
-	
+
 	// Parse pending writes
 	if pws, ok := data["pending_writes"].([]interface{}); ok {
 		for _, pw := range pws {
@@ -326,24 +326,24 @@ func FromMap(data map[string]interface{}) (*Checkpoint, error) {
 			}
 		}
 	}
-	
+
 	// Parse metadata
 	if md, ok := data["metadata"].(map[string]interface{}); ok {
 		c.Metadata = CheckpointMetadata{
-			ID:        getString(md, "id"),
-			ParentID:  getString(md, "parent_id"),
-			ThreadID:  getString(md, "thread_id"),
-			Step:      getInt(md, "step", 0),
-			Source:    CheckpointSource(getString(md, "source")),
-			Metadata:  make(map[string]interface{}),
+			ID:       getString(md, "id"),
+			ParentID: getString(md, "parent_id"),
+			ThreadID: getString(md, "thread_id"),
+			Step:     getInt(md, "step", 0),
+			Source:   CheckpointSource(getString(md, "source")),
+			Metadata: make(map[string]interface{}),
 		}
-		
+
 		if createdAtStr := getString(md, "created_at"); createdAtStr != "" {
 			if t, err := time.Parse(time.RFC3339Nano, createdAtStr); err == nil {
 				c.Metadata.CreatedAt = t
 			}
 		}
-		
+
 		// Copy custom metadata
 		for k, v := range md {
 			if k != "id" && k != "parent_id" && k != "thread_id" && k != "step" && k != "created_at" && k != "source" {
@@ -351,28 +351,28 @@ func FromMap(data map[string]interface{}) (*Checkpoint, error) {
 			}
 		}
 	}
-	
+
 	return c, nil
 }
 
 // Helper functions
-func getString(m map[string]interface{}, key string) string {
-	if v, ok := m[key].(string); ok {
-		return v
+func getString(data map[string]any, key string) string {
+	if val, ok := data[key].(string); ok {
+		return val
 	}
 	return ""
 }
 
-func getInt(m map[string]interface{}, key string, defaultVal int) int {
-	if v, ok := m[key].(float64); ok {
-		return int(v)
+func getInt(data map[string]any, key string, defaultVal int) int {
+	if val, ok := data[key].(float64); ok {
+		return int(val)
 	}
 	return defaultVal
 }
 
-func getBool(m map[string]interface{}, key string, defaultVal bool) bool {
-	if v, ok := m[key].(bool); ok {
-		return v
+func getBool(data map[string]any, key string, defaultVal bool) bool {
+	if val, ok := data[key].(bool); ok {
+		return val
 	}
 	return defaultVal
 }
@@ -394,7 +394,7 @@ func NewCheckpointTuple(config *types.RunnableConfig, checkpoint *Checkpoint, pa
 	if config == nil {
 		config = types.NewRunnableConfig()
 	}
-	
+
 	metadata := make(map[string]interface{})
 	if checkpoint != nil {
 		metadata["id"] = checkpoint.ID
@@ -404,12 +404,12 @@ func NewCheckpointTuple(config *types.RunnableConfig, checkpoint *Checkpoint, pa
 		metadata["source"] = string(checkpoint.Metadata.Source)
 		metadata["created_at"] = checkpoint.Metadata.CreatedAt
 	}
-	
+
 	return &CheckpointTuple{
 		Config:       config,
 		Checkpoint:   checkpoint,
 		ParentConfig: parentConfig,
-		Metadata:    metadata,
+		Metadata:     metadata,
 	}
 }
 
@@ -440,11 +440,11 @@ type CheckpointListFilter struct {
 
 // CheckpointListResponse represents a checkpoint in list results.
 type CheckpointListResponse struct {
-	ID         string
-	ThreadID   string
-	Version    int
-	CreatedAt  time.Time
-	Metadata   map[string]interface{}
+	ID        string
+	ThreadID  string
+	Version   int
+	CreatedAt time.Time
+	Metadata  map[string]interface{}
 }
 
 // LineageEntry represents an entry in a checkpoint lineage.
@@ -455,7 +455,7 @@ type LineageEntry struct {
 
 // VersionConflictError is raised when there is a version conflict.
 type VersionConflictError struct {
-	CurrentVersion int
+	CurrentVersion  int
 	ExpectedVersion int
 	CheckpointID    string
 	ThreadID        string
@@ -475,7 +475,7 @@ func (e *VersionConflictError) Error() string {
 type CheckpointManager struct {
 	mu          sync.RWMutex
 	checkpoints map[string][]*Checkpoint // threadID -> checkpoints
-	maxVersions int // Maximum versions to keep per thread
+	maxVersions int                      // Maximum versions to keep per thread
 }
 
 // NewCheckpointManager creates a new checkpoint manager.
@@ -614,12 +614,12 @@ func (cm *CheckpointManager) PutWrites(ctx context.Context, config *types.Runnab
 func (cm *CheckpointManager) Load(ctx context.Context, threadID string) (*Checkpoint, error) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	
+
 	checkpoints := cm.checkpoints[threadID]
 	if len(checkpoints) == 0 {
 		return nil, nil
 	}
-	
+
 	return checkpoints[len(checkpoints)-1].Clone(), nil
 }
 
@@ -627,7 +627,7 @@ func (cm *CheckpointManager) Load(ctx context.Context, threadID string) (*Checkp
 func (cm *CheckpointManager) LoadByCheckpointID(ctx context.Context, checkpointID string) (*Checkpoint, error) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	
+
 	for _, checkpoints := range cm.checkpoints {
 		for _, cp := range checkpoints {
 			if cp.ID == checkpointID {
@@ -635,7 +635,7 @@ func (cm *CheckpointManager) LoadByCheckpointID(ctx context.Context, checkpointI
 			}
 		}
 	}
-	
+
 	return nil, fmt.Errorf("checkpoint not found: %s", checkpointID)
 }
 
@@ -643,23 +643,23 @@ func (cm *CheckpointManager) LoadByCheckpointID(ctx context.Context, checkpointI
 func (cm *CheckpointManager) List(ctx context.Context, threadID string, limit int) ([]*Checkpoint, error) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
-	
+
 	checkpoints := cm.checkpoints[threadID]
 	if len(checkpoints) == 0 {
 		return nil, nil
 	}
-	
+
 	if limit <= 0 || limit > len(checkpoints) {
 		limit = len(checkpoints)
 	}
-	
+
 	// Return most recent checkpoints first
 	result := make([]*Checkpoint, limit)
 	start := len(checkpoints) - limit
 	for i := 0; i < limit; i++ {
 		result[i] = checkpoints[start+i].Clone()
 	}
-	
+
 	return result, nil
 }
 
@@ -788,7 +788,7 @@ func (cm *CheckpointManager) GetVersion(ctx context.Context, threadID string, ve
 func (cm *CheckpointManager) Delete(ctx context.Context, checkpointID string) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	
+
 	for threadID, checkpoints := range cm.checkpoints {
 		for i, cp := range checkpoints {
 			if cp.ID == checkpointID {
@@ -798,7 +798,7 @@ func (cm *CheckpointManager) Delete(ctx context.Context, checkpointID string) er
 			}
 		}
 	}
-	
+
 	return fmt.Errorf("checkpoint not found: %s", checkpointID)
 }
 
@@ -806,7 +806,7 @@ func (cm *CheckpointManager) Delete(ctx context.Context, checkpointID string) er
 func (cm *CheckpointManager) ClearThread(ctx context.Context, threadID string) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	
+
 	delete(cm.checkpoints, threadID)
 	return nil
 }
@@ -815,7 +815,7 @@ func (cm *CheckpointManager) ClearThread(ctx context.Context, threadID string) e
 func (cm *CheckpointManager) ClearAll(ctx context.Context) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
-	
+
 	cm.checkpoints = make(map[string][]*Checkpoint)
 	return nil
 }
@@ -827,25 +827,25 @@ func (cm *CheckpointManager) ClearAll(ctx context.Context) error {
 // On serialization failure (channels, functions, circular references),
 // returns nil rather than a shared reference that would silently
 // propagate mutations between checkpoint and its clone.
-func deepCopy(v interface{}) interface{} {
-	if v == nil {
+func deepCopy(val any) any {
+	if val == nil {
 		return nil
 	}
-	
+
 	// Handle common collection types with dedicated helpers
-	if m, ok := v.(map[string]interface{}); ok {
+	if m, ok := val.(map[string]any); ok {
 		return deepCopyMap(m)
 	}
-	if s, ok := v.([]interface{}); ok {
-		return deepCopySlice(s)
+	if slice, ok := val.([]any); ok {
+		return deepCopySlice(slice)
 	}
-	
+
 	// For all other types, JSON round-trip provides reliable deep copy.
-	data, err := json.Marshal(v)
+	data, err := json.Marshal(val)
 	if err != nil {
 		return nil
 	}
-	var result interface{}
+	var result any
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil
 	}
@@ -853,19 +853,19 @@ func deepCopy(v interface{}) interface{} {
 }
 
 // deepCopyMap creates a deep copy of a map.
-func deepCopyMap(m map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{}, len(m))
-	for k, v := range m {
-		result[k] = deepCopy(v)
+func deepCopyMap(src map[string]any) map[string]any {
+	result := make(map[string]any, len(src))
+	for key, val := range src {
+		result[key] = deepCopy(val)
 	}
 	return result
 }
 
 // deepCopySlice creates a deep copy of a slice.
-func deepCopySlice(s []interface{}) []interface{} {
-	result := make([]interface{}, len(s))
-	for i, v := range s {
-		result[i] = deepCopy(v)
+func deepCopySlice(slice []any) []any {
+	result := make([]any, len(slice))
+	for i, val := range slice {
+		result[i] = deepCopy(val)
 	}
 	return result
 }

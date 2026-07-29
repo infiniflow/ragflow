@@ -342,9 +342,7 @@ class TestThinkStreamParser(unittest.TestCase):
             with self.subTest(case=case_name):
                 buf = io.StringIO()
                 with redirect_stdout(buf):
-                    think_text, answer_text, markers = asyncio.run(
-                        _collect_case(case["chunks"], case["min_tokens"])
-                    )
+                    think_text, answer_text, markers = asyncio.run(_collect_case(case["chunks"], case["min_tokens"]))
 
                 expected = case["expected"]
                 self.assertEqual(think_text, expected["think"], case_name)

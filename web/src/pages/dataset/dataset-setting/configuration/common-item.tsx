@@ -14,10 +14,8 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { Radio } from '@/components/ui/radio';
 import { Spin } from '@/components/ui/spin';
 import { Switch } from '@/components/ui/switch';
-import { ParseType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import { history } from '@/utils/simple-history-util';
@@ -67,8 +65,10 @@ export function ChunkMethodItem(props: IProps) {
       control={form.control}
       name={name}
       render={({ field }) => (
-        <FormItem className=" items-center space-y-1">
-          <div className={line === 1 ? 'flex items-center' : ''}>
+        <FormItem className="items-center gap-1">
+          <div
+            className={line === 1 ? 'flex items-center' : 'flex flex-col gap-1'}
+          >
             <FormLabel
               required
               tooltip={t('chunkMethodTip')}
@@ -78,7 +78,7 @@ export function ChunkMethodItem(props: IProps) {
             >
               {t('builtIn')}
             </FormLabel>
-            <div className={line === 1 ? 'w-3/4 ' : 'w-full'}>
+            <div className={line === 1 ? 'w-3/4' : 'w-full'}>
               <FormControl>
                 <SelectWithSearch
                   {...field}
@@ -104,12 +104,14 @@ export const EmbeddingSelect = ({
   name,
   disabled = false,
   testId,
+  ownerTenantId,
 }: {
   isEdit: boolean;
   field: FieldValues;
   name?: string;
   disabled?: boolean;
   testId?: string;
+  ownerTenantId?: string;
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
@@ -123,7 +125,7 @@ export const EmbeddingSelect = ({
   return (
     <Spin
       spinning={loading}
-      className={cn(' rounded-lg after:bg-bg-base', {
+      className={cn('rounded-lg after:bg-bg-base', {
         'opacity-20': loading,
       })}
     >
@@ -142,6 +144,7 @@ export const EmbeddingSelect = ({
             setLoading(false);
           }
         }}
+        ownerTenantId={ownerTenantId}
         disabled={disabled && !isEdit}
         value={field.value}
         placeholder={t('embeddingModelPlaceholder')}
@@ -151,7 +154,11 @@ export const EmbeddingSelect = ({
   );
 };
 
-export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
+export function EmbeddingModelItem({
+  line = 1,
+  isEdit,
+  ownerTenantId,
+}: IProps & { ownerTenantId?: string }) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   const disabled = useHasParsedDocument(isEdit);
@@ -161,17 +168,17 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
         control={form.control}
         name={'embedding_model'}
         render={({ field }) => (
-          <FormItem className={cn(' items-center space-y-0 ')}>
+          <FormItem className={cn('items-center space-y-0')}>
             <div
               className={cn('flex', {
-                ' items-center': line === 1,
+                'items-center': line === 1,
                 'flex-col gap-1': line === 2,
               })}
             >
               <FormLabel
                 required
                 tooltip={t('embeddingModelTip')}
-                className={cn('text-sm  whitespace-wrap ', {
+                className={cn('text-sm whitespace-wrap', {
                   'w-1/4': line === 1,
                 })}
               >
@@ -186,6 +193,7 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
                     field={field}
                     disabled={disabled}
                     testId="ds-settings-basic-embedding-model-select"
+                    ownerTenantId={ownerTenantId}
                   ></EmbeddingSelect>
                 </FormControl>
               </div>
@@ -201,64 +209,6 @@ export function EmbeddingModelItem({ line = 1, isEdit }: IProps) {
   );
 }
 
-export function ParseTypeItem({
-  line = 2,
-  name = 'parseType',
-}: {
-  line?: number;
-  name?: string;
-}) {
-  const { t } = useTranslate('knowledgeConfiguration');
-  const form = useFormContext();
-
-  return (
-    <FormField
-      control={form.control}
-      name={name}
-      render={({ field }) => (
-        <FormItem className=" items-center space-y-0 ">
-          <div
-            className={cn('flex', {
-              ' items-center': line === 1,
-              'flex-col gap-1': line === 2,
-            })}
-          >
-            <FormLabel
-              // tooltip={t('parseTypeTip')}
-              className={cn('text-sm  whitespace-wrap ', {
-                'w-1/4': line === 1,
-              })}
-            >
-              {t('parseType')}
-            </FormLabel>
-            <div
-              className={cn('text-muted-foreground', { 'w-3/4': line === 1 })}
-            >
-              <FormControl>
-                <Radio.Group {...field}>
-                  <div
-                    className={cn(
-                      'flex gap-2 justify-between text-muted-foreground',
-                      line === 1 ? 'w-1/2' : 'w-3/4',
-                    )}
-                  >
-                    <Radio value={ParseType.BuiltIn}>{t('builtIn')}</Radio>
-                    <Radio value={ParseType.Pipeline}>{t('manualSetup')}</Radio>
-                  </div>
-                </Radio.Group>
-              </FormControl>
-            </div>
-          </div>
-          <div className="flex pt-1">
-            <div className={line === 1 ? 'w-1/4' : ''}></div>
-            <FormMessage />
-          </div>
-        </FormItem>
-      )}
-    />
-  );
-}
-
 export function EnableAutoGenerateItem() {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
@@ -268,7 +218,7 @@ export function EnableAutoGenerateItem() {
       control={form.control}
       name={'enableAutoGenerate'}
       render={({ field }) => (
-        <FormItem className=" items-center space-y-0 ">
+        <FormItem className="items-center space-y-0">
           <div className="flex items-center">
             <FormLabel
               tooltip={t('enableAutoGenerateTip')}
@@ -304,7 +254,7 @@ export function EnableTocToggle() {
       control={form.control}
       name={'parser_config.toc_extraction'}
       render={({ field }) => (
-        <FormItem className=" items-center space-y-0 ">
+        <FormItem className="items-center space-y-0">
           <div className="flex items-center">
             <FormLabel
               tooltip={t('tocExtractionTip')}
@@ -531,11 +481,13 @@ export const LLMSelect = ({
   isEdit,
   field,
   disabled = false,
+  ownerTenantId,
 }: {
   isEdit: boolean;
   field: FieldValues;
   name?: string;
   disabled?: boolean;
+  ownerTenantId?: string;
 }) => {
   const { t } = useTranslate('knowledgeConfiguration');
   return (
@@ -547,11 +499,18 @@ export const LLMSelect = ({
       disabled={disabled && !isEdit}
       value={field.value}
       placeholder={t('embeddingModelPlaceholder')}
+      ownerTenantId={ownerTenantId}
     />
   );
 };
 
-export function LLMModelItem({ line = 1, isEdit, label, name }: IProps) {
+export function LLMModelItem({
+  line = 1,
+  isEdit,
+  label,
+  name,
+  ownerTenantId,
+}: IProps & { ownerTenantId?: string }) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   // const disabled = useHasParsedDocument(isEdit);
@@ -561,10 +520,10 @@ export function LLMModelItem({ line = 1, isEdit, label, name }: IProps) {
         control={form.control}
         name={name ?? 'llm_id'}
         render={({ field }) => (
-          <FormItem className={cn(' items-center space-y-0 ')}>
+          <FormItem className={cn('items-center space-y-0')}>
             <div
               className={cn('flex', {
-                ' items-center': line === 1,
+                'items-center': line === 1,
                 'flex-col gap-1': line === 2,
               })}
             >
@@ -584,6 +543,7 @@ export function LLMModelItem({ line = 1, isEdit, label, name }: IProps) {
                     isEdit={!!isEdit}
                     field={field}
                     disabled={false}
+                    ownerTenantId={ownerTenantId}
                   ></LLMSelect>
                 </FormControl>
               </div>

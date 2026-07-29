@@ -47,6 +47,7 @@ func newReasoningFamilyChatServer(t *testing.T, handler func(t *testing.T, body 
 }
 
 func TestGiteeChatExtractsQwenThinkingFromInlineContent(t *testing.T) {
+	ctx := t.Context()
 	srv := newReasoningFamilyChatServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "qwen3-8b" {
 			t.Errorf("model=%v, want qwen3-8b", body["model"])
@@ -72,10 +73,12 @@ func TestGiteeChatExtractsQwenThinkingFromInlineContent(t *testing.T) {
 		map[string]string{"default": srv.URL},
 		URLSuffix{Chat: "chat/completions"},
 	).ChatWithMessages(
+		ctx,
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Thinking: &thinking, ModelClass: &modelClass},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
@@ -84,11 +87,12 @@ func TestGiteeChatExtractsQwenThinkingFromInlineContent(t *testing.T) {
 }
 
 func TestSiliconflowChatExtractsProviderPrefixedQwenThinkingFromInlineContent(t *testing.T) {
+	ctx := t.Context()
 	srv := newReasoningFamilyChatServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "qwen/qwen3-8b" {
 			t.Errorf("model=%v, want qwen/qwen3-8b", body["model"])
 		}
-		if !assertThinkingEnabled(t, body) {
+		if !assertSiliconflowThinkingEnabled(t, body) {
 			return
 		}
 
@@ -109,15 +113,35 @@ func TestSiliconflowChatExtractsProviderPrefixedQwenThinkingFromInlineContent(t 
 		map[string]string{"default": srv.URL},
 		URLSuffix{Chat: "chat/completions"},
 	).ChatWithMessages(
+		ctx,
 		"qwen/qwen3-8b",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Thinking: &thinking, ModelClass: &modelClass},
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
 	assertThinkingResponse(t, resp)
+}
+
+// SiliconFlow's wire format uses a boolean `enable_thinking` field rather than
+// the DeepSeek-style `thinking: {type: "enabled"}` object. See siliconflow.go
+// for the rationale.
+func assertSiliconflowThinkingEnabled(t *testing.T, body map[string]interface{}) bool {
+	t.Helper()
+
+	et, ok := body["enable_thinking"].(bool)
+	if !ok {
+		t.Errorf("enable_thinking=%#v, want true", body["enable_thinking"])
+		return false
+	}
+	if !et {
+		t.Errorf("enable_thinking=%v, want true", et)
+		return false
+	}
+	return true
 }
 
 func assertThinkingEnabled(t *testing.T, body map[string]interface{}) bool {

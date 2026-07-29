@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/utility"
 	"regexp"
 	"strings"
 	"sync"
@@ -31,11 +32,10 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/service/kg"
+	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/tokenizer"
 
-	"github.com/google/uuid"
 	"github.com/kaptinlin/jsonrepair"
 	"go.uber.org/zap"
 )
@@ -66,8 +66,8 @@ Requirements:
 4. The missing_information should only be filled when insufficient, otherwise empty array.
 `
 
-const multiQueriesGenTemplate = `You are a query optimization expert. 
-The user's original query failed to retrieve sufficient information; 
+const multiQueriesGenTemplate = `You are a query optimization expert.
+The user's original query failed to retrieve sufficient information;
 please generate multiple complementary improved questions and corresponding queries.
 
 Original query:
@@ -102,8 +102,8 @@ Requirements:
 1. Questions array contains 1-3 questions and corresponding queries.
 2. Each question length is between 5-200 characters.
 3. Each query length is between 1-5 keywords.
-4. Each query MUST be in the same language as the retrieved content in. 
-5. DO NOT generate question and query that is similar to the original query. 
+4. Each query MUST be in the same language as the retrieved content in.
+5. DO NOT generate question and query that is similar to the original query.
 6. Reasoning explains the generation strategy.
 `
 
@@ -266,6 +266,10 @@ func (dr *DeepResearcher) _research(
 
 	if suff.IsSufficient {
 		if callback != nil {
+			// string-emitting function (SSE delta to the chat client),
+			// not SQL or a shell. The single-quotes here are typographic
+			// punctuation, not string delimiters in a structured sink.
+			// codeql[go/unsafe-quoting] False positive: callback is a
 			callback(fmt.Sprintf("Yes, the retrieved information is sufficient for '%s'.", question))
 		}
 		return retContent, nil
@@ -382,7 +386,7 @@ func (dr *DeepResearcher) _retrieve_information(ctx context.Context, query strin
 
 	// 3. Knowledge graph retrieval
 	if useKG, _ := dr.PromptConfig["use_kg"].(bool); useKG && dr.ChatModel != nil && len(dr.KbIDs) > 0 {
-		kgPipeline := kg.NewPipeline(dr.DocEngine, dr.KbIDs, dr.TenantIDs, query)
+		kgPipeline := graph.NewPipeline(dr.DocEngine, dr.KbIDs, dr.TenantIDs, query)
 		kgPipeline.SetChatModel(dr.ChatModel)
 		if dr.EmbModel != nil {
 			kgPipeline.SetEmbModel(dr.EmbModel)
@@ -455,7 +459,7 @@ func (dr *DeepResearcher) tavilyRetrieve(ctx context.Context, query string) (map
 	chunks := make([]map[string]interface{}, 0, len(apiResp.Results))
 	aggs := make([]interface{}, 0, len(apiResp.Results))
 	for _, r := range apiResp.Results {
-		id := strings.ReplaceAll(uuid.New().String(), "-", "")
+		id := utility.GenerateToken()
 		chunks = append(chunks, map[string]interface{}{
 			"chunk_id":            id,
 			"content_ltks":        tokenizeText(r.Content),
@@ -667,7 +671,7 @@ func (dr *DeepResearcher) chatOnce(
 		modelModule.Message{Role: "user", Content: userPrompt},
 	}
 	resp, err := dr.ChatModel.ModelDriver.ChatWithMessages(
-		modelName, msgs, dr.ChatModel.APIConfig, cfg,
+		ctx, modelName, msgs, dr.ChatModel.APIConfig, cfg, nil,
 	)
 	if err != nil {
 		return "", err

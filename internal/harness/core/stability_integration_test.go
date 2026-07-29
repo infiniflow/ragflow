@@ -35,7 +35,7 @@ func TestStability_ReActGraph_FullLifecycle(t *testing.T) {
 		Checkpointer:    store,
 		RecursionLimit:  10,
 		InterruptBefore: nil, // no interrupts for this test
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("NewReActGraph: %v", err)
 	}
@@ -280,8 +280,8 @@ func TestStability_NestedAgentCancelPropagation(t *testing.T) {
 		inner := current
 		outer := agents[i]
 		seq, err := NewSequential(ctx, &SequentialConfig{
-			Name:       fmt.Sprintf("seq_%c", 'a'+i),
-			SubAgents:  []Agent{outer, inner},
+			Name:      fmt.Sprintf("seq_%c", 'a'+i),
+			SubAgents: []Agent{outer, inner},
 		})
 		if err != nil {
 			t.Fatalf("NewSequential depth %d: %v", i, err)
@@ -342,7 +342,13 @@ func TestStability_GoroutineLeak_AllPaths(t *testing.T) {
 				agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("leak_test")
 				runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
 				iter := runner.Run(context.Background(), []*schema.Message{schema.UserMessage("test")})
-				for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+				for {
+					ev, ok := iter.Next()
+					if !ok {
+						break
+					}
+					_ = ev
+				}
 			},
 		},
 		{
@@ -365,42 +371,65 @@ func TestStability_GoroutineLeak_AllPaths(t *testing.T) {
 				}).WithName("parent")
 				runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: parent})
 				iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("go")})
-				for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+				for {
+					ev, ok := iter.Next()
+					if !ok {
+						break
+					}
+					_ = ev
+				}
 			},
 		},
 		{
 			name: "sequential_workflow",
 			run: func(t *testing.T) {
-				m1 := &mockModel{}; m1.addResp("a")
-				m2 := &mockModel{}; m2.addResp("b")
+				m1 := &mockModel{}
+				m1.addResp("a")
+				m2 := &mockModel{}
+				m2.addResp("b")
 				a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("a")
 				a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("b")
 				ctx := context.Background()
 				seq, _ := NewSequential(ctx, &SequentialConfig{Name: "seq", SubAgents: []Agent{a1, a2}})
 				runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: seq})
 				iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("go")})
-				for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+				for {
+					ev, ok := iter.Next()
+					if !ok {
+						break
+					}
+					_ = ev
+				}
 			},
 		},
 		{
 			name: "parallel_workflow",
 			run: func(t *testing.T) {
-				m1 := &mockModel{}; m1.addResp("a")
-				m2 := &mockModel{}; m2.addResp("b")
+				m1 := &mockModel{}
+				m1.addResp("a")
+				m2 := &mockModel{}
+				m2.addResp("b")
 				a1 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m1}).WithName("a")
 				a2 := NewReActAgent(&ReActConfig[*schema.Message]{Model: m2}).WithName("b")
 				ctx := context.Background()
 				par, _ := NewParallel(ctx, &ParallelConfig{Name: "par", SubAgents: []Agent{a1, a2}})
 				runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: par})
 				iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("go")})
-				for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+				for {
+					ev, ok := iter.Next()
+					if !ok {
+						break
+					}
+					_ = ev
+				}
 			},
 		},
 		{
 			name: "cancel_immediate",
 			run: func(t *testing.T) {
 				m := newCancelTestChatModel(nil)
-				m.addResp("slow"); m.setDelay(100 * time.Millisecond)
+				m.addResp("slow")
+				m.setDelay(100 * time.Millisecond)
 				agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: m}).WithName("cancel_leak")
 				cancelOpt, cancelFunc := WithCancel()
 				runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
@@ -408,7 +437,13 @@ func TestStability_GoroutineLeak_AllPaths(t *testing.T) {
 				iter := runner.Run(ctx, []*schema.Message{schema.UserMessage("go")}, cancelOpt)
 				time.Sleep(10 * time.Millisecond)
 				cancelFunc(WithCancelMode(CancelImmediate))
-				for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+				for {
+					ev, ok := iter.Next()
+					if !ok {
+						break
+					}
+					_ = ev
+				}
 			},
 		},
 		{
@@ -419,7 +454,13 @@ func TestStability_GoroutineLeak_AllPaths(t *testing.T) {
 				agent := NewReActAgent(&ReActConfig[*schema.Message]{Model: model}).WithName("stream_leak")
 				runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent, EnableStreaming: true})
 				iter := runner.Run(context.Background(), []*schema.Message{schema.UserMessage("test")})
-				for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+				for {
+					ev, ok := iter.Next()
+					if !ok {
+						break
+					}
+					_ = ev
+				}
 			},
 		},
 	}
@@ -483,7 +524,7 @@ func TestStability_RetryStorm_CircuitBreaker(t *testing.T) {
 		agent := NewReActAgent(&ReActConfig[*schema.Message]{
 			Model: failModel,
 			RetryConfig: &ModelRetryConfig{
-				MaxRetries:  2,
+				MaxRetries: 2,
 				ShouldRetry: func(ctx context.Context, rc *RetryContext) *RetryDecision {
 					return &RetryDecision{Retry: true}
 				},
@@ -520,7 +561,7 @@ func TestStability_RetryStorm_CircuitBreaker(t *testing.T) {
 		agent := NewReActAgent(&ReActConfig[*schema.Message]{
 			Model: failModel,
 			RetryConfig: &ModelRetryConfig{
-				MaxRetries:  2,
+				MaxRetries: 2,
 				ShouldRetry: func(ctx context.Context, rc *RetryContext) *RetryDecision {
 					return &RetryDecision{Retry: true}
 				},

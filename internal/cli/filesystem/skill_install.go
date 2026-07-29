@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 
@@ -58,7 +59,7 @@ type SkillInstallCommand struct {
 // sourceHTTPClientAdapter adapts filesystem.HTTPClientInterface to source.HTTPClientInterface
 // This allows us to use the existing HTTP client infrastructure with the source package
 type sourceHTTPClientAdapter struct {
-	client HTTPClientInterface
+	client     HTTPClientInterface
 	httpClient *http.Client
 }
 
@@ -79,10 +80,10 @@ func (a *sourceHTTPClientAdapter) Get(url string) (*http.Response, error) {
 // NewInstallSkillCommand creates a new install-skill command handler
 func NewInstallSkillCommand(client HTTPClientInterface, fileProvider *FileProvider, skillProvider Provider) *SkillInstallCommand {
 	// Log proxy settings
-	if httpProxy := os.Getenv("http_proxy"); httpProxy != "" {
+	if httpProxy := common.GetEnv(common.EnvHttpHTTPProxy); httpProxy != "" {
 		fmt.Printf("Using HTTP proxy: %s\n", httpProxy)
 	}
-	if httpsProxy := os.Getenv("https_proxy"); httpsProxy != "" {
+	if httpsProxy := common.GetEnv(common.EnvHttpHTTPSProxy); httpsProxy != "" {
 		fmt.Printf("Using HTTPS proxy: %s\n", httpsProxy)
 	}
 
@@ -121,9 +122,9 @@ func NewInstallSkillCommand(client HTTPClientInterface, fileProvider *FileProvid
 	adaptedClient := &sourceHTTPClientAdapter{
 		client: client,
 		httpClient: &http.Client{
-			Timeout:       60 * time.Second,
-			Transport:     transport,
-			Jar:           jar,
+			Timeout:   60 * time.Second,
+			Transport: transport,
+			Jar:       jar,
 		},
 	}
 

@@ -25,6 +25,8 @@ import (
 	"strings"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
@@ -136,7 +138,7 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 	// Execute bulk request
 	req := esapi.BulkRequest{
 		Body:    bytes.NewReader(buf.Bytes()),
-		Refresh: "false",
+		Refresh: "wait_for",
 	}
 
 	res, err := req.Do(ctx, e.client)
@@ -193,14 +195,14 @@ func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, 
 	}
 
 	// Build the document ID for update
-	docID = strings.ReplaceAll(docID, "'", "''")
+	docIDStr := strings.ReplaceAll(docID, "'", "''")
 	datasetIDStr := strings.ReplaceAll(datasetID, "'", "''")
 
 	// Build update body - merge meta_fields with existing
 	query := map[string]interface{}{
 		"bool": map[string]interface{}{
 			"must": []map[string]interface{}{
-				{"term": map[string]interface{}{"id": docID}},
+				{"term": map[string]interface{}{"id": docIDStr}},
 				{"term": map[string]interface{}{"kb_id": datasetIDStr}},
 			},
 		},
@@ -241,6 +243,24 @@ func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, 
 	if res.IsError() {
 		common.Sugar.Errorw("Elasticsearch update by query returned error", "status", res.Status())
 		return fmt.Errorf("elasticsearch update by query returned error: %s", res.Status())
+	}
+
+	var updateResponse map[string]interface{}
+	if err := json.NewDecoder(res.Body).Decode(&updateResponse); err != nil {
+		common.Error("Failed to parse update response", err)
+		return fmt.Errorf("failed to parse update response: %w", err)
+	}
+	if total, ok := updateResponse["total"].(float64); ok && total == 0 {
+		_, err := e.InsertMetadata(ctx, []map[string]interface{}{
+			{
+				"id":          docID,
+				"kb_id":       datasetID,
+				"meta_fields": metaFields,
+			},
+		}, tenantID)
+		if err != nil {
+			return fmt.Errorf("failed to insert metadata: %w", err)
+		}
 	}
 
 	common.Info("ElasticsearchConnection.UpdateMetadata completes", zap.String("index_name", indexName), zap.String("docID", docID))
@@ -546,10 +566,7 @@ func (e *elasticsearchEngine) SearchMetadata(ctx context.Context, req *types.Sea
 		}, nil
 	}
 
-	offset := req.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(req.Offset, 0)
 	limit := req.Limit
 	if limit <= 0 {
 		limit = 30
@@ -705,7 +722,7 @@ const metaPushdownMaxSize = 10000
 //	nil        -> push-down was not viable / errored / result overflowed the
 //	              push-down cap (caller should fall back to in-memory)
 //	[]string{} -> push-down succeeded but found 0 matching docs (empty result is definitive)
-func (e *elasticsearchEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kbIDs []string, conditions []map[string]interface{}, logic string) []string {
+func (e *elasticsearchEngine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB, kbIDs []string, conditions []map[string]interface{}, logic string) []string {
 	if len(conditions) == 0 || len(kbIDs) == 0 {
 		return nil
 	}
@@ -718,7 +735,7 @@ func (e *elasticsearchEngine) FilterDocIdsByMetaPushdown(ctx context.Context, kb
 
 	// Execute search for each tenant (use first KB to get tenant)
 	kb := kbIDs[0]
-	tenantID, err := dao.GetTenantIDByKBID(kb)
+	tenantID, err := dao.GetTenantIDByKBID(ctx, sqlDB, kb)
 	if err != nil {
 		common.Warn("FilterDocIdsByMetaPushdown: failed to get tenant for KB", zap.String("kbID", kb), zap.Error(err))
 		return nil

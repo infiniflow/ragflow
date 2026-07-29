@@ -51,10 +51,14 @@ type defaultPlan struct {
 
 func (p *defaultPlan) Steps() []string { return p.StepList }
 func (p *defaultPlan) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct{ Steps []string `json:"steps"` }{Steps: p.StepList})
+	return json.Marshal(struct {
+		Steps []string `json:"steps"`
+	}{Steps: p.StepList})
 }
 func (p *defaultPlan) UnmarshalJSON(data []byte) error {
-	var aux struct{ Steps []string `json:"steps"` }
+	var aux struct {
+		Steps []string `json:"steps"`
+	}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
@@ -234,9 +238,9 @@ func New(ctx context.Context, cfg *Config) (core.ResumableAgent, error) {
 	}
 
 	planner := core.NewReActAgent(&core.ReActConfig[*schema.Message]{
-		Model:       cfg.Planner.Model,
-		Instruction: plannerInstruction,
-		Tools:       []core.Tool{planToolDef},
+		Model:         cfg.Planner.Model,
+		Instruction:   plannerInstruction,
+		Tools:         []core.Tool{planToolDef},
 		MaxIterations: 5,
 		GenModelInput: genPlannerInput,
 	}).WithName(agentNamePlanner).WithDescription("Generates a step-by-step plan")
@@ -271,12 +275,12 @@ func New(ctx context.Context, cfg *Config) (core.ResumableAgent, error) {
 	returnDirectly := map[string]bool{toolRespond: true}
 
 	replanner := core.NewReActAgent(&core.ReActConfig[*schema.Message]{
-		Model:         cfg.Replanner.Model,
-		Instruction:   replannerInstruction,
-		Tools:         replannerTools,
+		Model:          cfg.Replanner.Model,
+		Instruction:    replannerInstruction,
+		Tools:          replannerTools,
 		ReturnDirectly: returnDirectly,
-		MaxIterations: 5,
-		GenModelInput: genReplannerInput,
+		MaxIterations:  5,
+		GenModelInput:  genReplannerInput,
 	}).WithName(agentNameReplanner).WithDescription("Evaluates progress and replans or responds")
 
 	// ---- Compose: Sequential(Planner, Loop(Executor, Replanner)) ----

@@ -11,10 +11,9 @@ def encrypt_password(password_plain: str) -> str:
     try:
         from api.utils.crypt import crypt
     except Exception as exc:
-        raise AuthError(
-            "Password encryption unavailable; install pycryptodomex (uv sync --python 3.13 --group test)."
-        ) from exc
+        raise AuthError("Password encryption unavailable; install pycryptodomex (uv sync --python 3.13 --group test).") from exc
     return crypt(password_plain)
+
 
 def register_user(client: HttpClient, email: str, nickname: str, password_enc: str) -> None:
     payload = {"email": email, "nickname": nickname, "password": password_enc}
@@ -82,8 +81,7 @@ def set_llm_api_key(
         "region": "default",
         "base_url": base_url or "",
     }
-    instance_res = client.request_json("POST", f"/providers/{llm_factory}/instances", use_api_base=True,
-                                      auth_kind="login", json_body=instance_payload)
+    instance_res = client.request_json("POST", f"/providers/{llm_factory}/instances", use_api_base=True, auth_kind="login", json_body=instance_payload)
     instance_msg = instance_res.get("message", "")
     if instance_res.get("code") != 0 and "already exist" not in instance_msg.lower():
         raise AuthError(f"Failed to add instance: {instance_msg}")

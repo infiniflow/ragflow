@@ -16,8 +16,8 @@ type searchableTool struct {
 	desc string
 }
 
-func (t *searchableTool) Name() string                                     { return t.name }
-func (t *searchableTool) Description() string                               { return t.desc }
+func (t *searchableTool) Name() string        { return t.name }
+func (t *searchableTool) Description() string { return t.desc }
 func (t *searchableTool) Invoke(ctx context.Context, args string, opts ...core.ToolOption) (string, error) {
 	return "result", nil
 }
@@ -38,7 +38,9 @@ func TestNew_SmallToolset(t *testing.T) {
 	})
 	rc := &core.ReActAgentContext{Instruction: "Help", Tools: make([]core.Tool, 0)}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
-	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
+	if err != nil {
+		t.Fatalf("BeforeAgent: %v", err)
+	}
 	// With small toolset (<= threshold), all tools are passed through
 	t.Logf("tools count for small set: %d", len(newRc.Tools))
 	_ = newRc
@@ -57,7 +59,9 @@ func TestNew_LargeToolset(t *testing.T) {
 	})
 	rc := &core.ReActAgentContext{Instruction: "Help", Tools: make([]core.Tool, 0)}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
-	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
+	if err != nil {
+		t.Fatalf("BeforeAgent: %v", err)
+	}
 	// With large toolset, middleware registers a search tool
 	t.Logf("tools count for large set: %d", len(newRc.Tools))
 	_ = newRc
@@ -122,7 +126,9 @@ func TestToolNames(t *testing.T) {
 	})
 	rc := &core.ReActAgentContext{Instruction: "Help", Tools: make([]core.Tool, 0)}
 	_, newRc, err := mw.BeforeAgent(context.Background(), rc)
-	if err != nil { t.Fatalf("BeforeAgent: %v", err) }
+	if err != nil {
+		t.Fatalf("BeforeAgent: %v", err)
+	}
 	if len(newRc.Tools) > 0 {
 		t.Logf("search tool added: %q", newRc.Tools[0].Name())
 	}

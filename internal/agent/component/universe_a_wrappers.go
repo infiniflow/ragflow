@@ -14,73 +14,50 @@
 //  limitations under the License.
 //
 
-// Universe A delegation wrappers. Canvas-facing components that
-// delegate to their corresponding Universe B eino tool
-// implementations. The delegation pattern keeps the canvas
-// scheduler's Component contract thin and the eino tool's
-// InvokableRun interface as the actual implementation seam.
-//
-// Primary registration: TavilySearch, Retrieval (incl. the
-// Python-typo SearchMyDataset alias), and ExeSQL all delegate to
-// the real Universe B tools. fixture_stubs.go's init() wires the
-// registry to these wrappers; the legacy stub-only path is
-// preserved as NewRetrievalStub / NewExeSQLStub for unit tests
-// that want to assert the "no service wired" state directly.
+// Package component contains the remaining specialized Canvas adapters for
+// Retrieval and CodeExec. Tools with a standard Canvas surface are registered
+// through ToolBackedComponent instead.
 package component
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"log"
+	"regexp"
 	"strconv"
 	"strings"
 
-	einotool "github.com/cloudwego/eino/components/tool"
-
+	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+
+	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
-// tavilySearchComponent delegates to internal/agent/tool/TavilyTool.
-// The underlying tool makes a real HTTP call; the wrapper is the
-// canvas-facing surface.
-type tavilySearchComponent struct {
-	inner *agenttool.TavilyTool
-}
-
-func newTavilySearchComponent(_ map[string]any) (Component, error) {
-	return &tavilySearchComponent{inner: agenttool.NewTavilyTool()}, nil
-}
-
-func (c *tavilySearchComponent) Name() string { return "TavilySearch" }
-
-func (c *tavilySearchComponent) Inputs() map[string]string {
-	return map[string]string{
-		"query":        "Search query.",
-		"api_key":      "Tavily API key (overrides TAVILY_API_KEY env var).",
-		"max_results":  "Maximum results to return (default 5).",
-		"search_depth": "\"basic\" (default) or \"advanced\".",
+func stringParam(v any) string {
+	if s, ok := v.(string); ok {
+		return s
 	}
+	return ""
 }
 
-func (c *tavilySearchComponent) Outputs() map[string]string {
-	return map[string]string{
-		"formalized_content": "Rendered search results for downstream LLM prompts.",
-		"results":            "Raw result list (url, title, content).",
+func anySlice(v any) []any {
+	switch x := v.(type) {
+	case []any:
+		return x
+	case []map[string]any:
+		out := make([]any, 0, len(x))
+		for _, item := range x {
+			out = append(out, item)
+		}
+		return out
+	default:
+		return []any{}
 	}
-}
-
-func (c *tavilySearchComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	argsJSON, _ := json.Marshal(inputs)
-	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
-	if err != nil {
-		return nil, fmt.Errorf("canvas: TavilySearch: %w", err)
-	}
-	return parseToolEnvelope(out), nil
-}
-
-func (c *tavilySearchComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
-	return nil, nil
 }
 
 // retrievalParams mirrors the Python RetrievalParam shape: the
@@ -103,9 +80,7 @@ type retrievalParams struct {
 // "default everything". This matches Python's
 // component.retrieval.RetrievalParam.__init__ tolerance.
 func parseRetrievalParams(params map[string]any) retrievalParams {
-	out := retrievalParams{
-		EmptyResponse: "Sorry, no relevant content was found in the knowledge base.",
-	}
+	out := retrievalParams{}
 	if params == nil {
 		return out
 	}
@@ -151,6 +126,8 @@ type retrievalComponent struct {
 	params retrievalParams
 }
 
+var legacyRetrievalQueryPattern = regexp.MustCompile(`(?s)^\s*UserFillUp:\s*(.*?)\s+Input\s+(.*?)\s*$`)
+
 func newRetrievalComponent(params map[string]any) (Component, error) {
 	return &retrievalComponent{
 		inner:  agenttool.NewRetrievalTool(),
@@ -169,6 +146,15 @@ func (c *retrievalComponent) Inputs() map[string]string {
 	}
 }
 
+func (c *retrievalComponent) GetInputForm() map[string]any {
+	return map[string]any{
+		"query": map[string]any{
+			"name": "Query",
+			"type": "line",
+		},
+	}
+}
+
 func (c *retrievalComponent) Outputs() map[string]string {
 	return map[string]string{
 		"formalized_content": "Rendered chunks for downstream LLM prompts.",
@@ -176,17 +162,25 @@ func (c *retrievalComponent) Outputs() map[string]string {
 	}
 }
 
-func (c *retrievalComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	merged := c.applyDefaults(inputs)
+	normalizeLegacyRetrievalInputs(ctx, db, merged)
+	common.Debug("agent retrieval component: invoke",
+		zap.Any("inputs", inputs),
+		zap.Any("merged", merged),
+	)
 	argsJSON, _ := json.Marshal(merged)
 	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
 	if err != nil {
 		return nil, fmt.Errorf("canvas: Retrieval: %w", err)
 	}
+	common.Debug("agent retrieval component: output",
+		zap.String("tool_output", out),
+	)
 	return parseToolEnvelope(out), nil
 }
 
-func (c *retrievalComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
 	// V1: retrieval is a non-streaming node (the Python
 	// Retrieval component also blocks on Dealer.search). A
 	// streaming retrieval lands with the streaming-dealer
@@ -259,123 +253,121 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 	return out
 }
 
-// exesqlComponent delegates to internal/agent/tool/ExeSQLTool. The
-// connection params (db_type, host, port, database, username,
-// password) are passed via the canvas node's params map at build
-// time, matching Python's ExeSQLParam semantics.
-//
-// v1 → tool param translation: the legacy v1 ExeSQL canvas node
-// surface used (database, username, host, port, password, top_n)
-// and did NOT declare db_type. The tool, by contrast, REQUIRES
-// db_type (and uses max_records for the row cap, not top_n). A
-// naive passthrough would turn every v1 canvas into a build-time
-// error (NewExeSQLConnParams returns "missing required connection
-// params (db_type/host/database/username)"). The adapter below
-// bridges the two surfaces so existing v1 DSLs keep compiling.
-//
-// Defaults applied: db_type defaults to "mysql" (matches the v1
-// Python default); top_n is mapped to max_records; port is coerced
-// from JSON-decoded float64 to int. See TestExeSQL_V1DSLParamsAccepted.
-func newExeSQLComponent(params map[string]any) (Component, error) {
-	toolParams := translateExeSQLParamsToToolShape(params)
-	conn, err := agenttool.NewExeSQLConnParams(toolParams)
-	if err != nil {
-		return nil, fmt.Errorf("canvas: ExeSQL: %w", err)
+func normalizeLegacyRetrievalInputs(ctx context.Context, db *gorm.DB, out map[string]any) {
+	if normalizeStructuredRetrievalInputs(ctx, db, out) {
+		return
 	}
-	return &exesqlComponent{inner: agenttool.NewExeSQLTool(conn)}, nil
+	rawQuery, _ := out["query"].(string)
+	rawQuery = strings.TrimSpace(rawQuery)
+	if rawQuery == "" {
+		return
+	}
+	matches := legacyRetrievalQueryPattern.FindStringSubmatch(rawQuery)
+	if len(matches) != 3 {
+		return
+	}
+	kbName := strings.TrimSpace(matches[1])
+	queryText := strings.TrimSpace(matches[2])
+	if queryText != "" {
+		out["query"] = queryText
+	}
+	if _, hasDatasetIDs := out["dataset_ids"]; hasDatasetIDs {
+		return
+	}
+	if kbName == "" {
+		return
+	}
+	if datasetID := resolveRetrievalDatasetID(ctx, db, kbName); datasetID != "" {
+		out["dataset_ids"] = []string{datasetID}
+	}
 }
 
-// translateExeSQLParamsToToolShape adapts a v1 DSL ExeSQL params
-// map into the tool's expected param surface. Idempotent: callers
-// that already supply db_type / max_records / int-typed port pass
-// through unchanged.
-//
-// Field map:
-//
-//	v1 surface          → tool surface
-//	-------------------   --------------
-//	db_type (optional)  → db_type        (defaults to "mysql")
-//	database            → database
-//	username            → username
-//	host                → host
-//	port (float64)      → port           (coerced to int)
-//	password            → password
-//	top_n (numeric)     → max_records    (and dropped from out)
-//
-// Returns a fresh map; the input is not mutated.
-func translateExeSQLParamsToToolShape(v1Params map[string]any) map[string]any {
-	out := make(map[string]any, len(v1Params)+2)
-	for k, v := range v1Params {
-		out[k] = v
-	}
-	// db_type: required by the tool, absent in v1 DSL — default
-	// to mysql to match the v1 Python default and most legacy
-	// canvases. Operators wanting a different engine can set
-	// db_type explicitly in the params map.
-	if _, ok := out["db_type"]; !ok {
-		out["db_type"] = "mysql"
-	}
-	// port: JSON-decoded numeric comes through as float64, but
-	// NewExeSQLConnParams asserts on int via type-switch. Coerce.
-	if v, ok := out["port"]; ok {
-		switch x := v.(type) {
-		case float64:
-			out["port"] = int(x)
-		case int64:
-			out["port"] = int(x)
+func normalizeStructuredRetrievalInputs(ctx context.Context, db *gorm.DB, out map[string]any) bool {
+	_, hasDatasetIDs := out["dataset_ids"]
+	candidateMaps := []map[string]any{}
+	if stateMap, ok := out["state"].(map[string]any); ok {
+		if raw, ok := stateMap["UserFillUp:KBInput"].(map[string]any); ok {
+			candidateMaps = append(candidateMaps, raw)
 		}
 	}
-	// top_n: v1's row-limit param. Map to max_records (the tool's
-	// equivalent). If both keys are present, max_records wins — the
-	// tool's name is the canonical one.
-	if v, ok := out["top_n"]; ok {
-		if _, hasMaxRecords := out["max_records"]; !hasMaxRecords {
-			switch x := v.(type) {
-			case float64:
-				out["max_records"] = int(x)
-			case int:
-				out["max_records"] = x
-			case int64:
-				out["max_records"] = int(x)
+	candidateMaps = append(candidateMaps, out)
+
+	consumed := false
+	for _, candidate := range candidateMaps {
+		kbName, _ := candidate["kb"].(string)
+		queryText, _ := candidate["query"].(string)
+		if kbName == "" && legacyRetrievalQueryPattern.MatchString(strings.TrimSpace(queryText)) {
+			continue
+		}
+		if kbName == "" && queryText == "" {
+			continue
+		}
+		consumed = true
+		if queryText != "" {
+			out["query"] = queryText
+		}
+		if kbName != "" && !hasDatasetIDs {
+			if datasetID := resolveRetrievalDatasetID(ctx, db, strings.TrimSpace(kbName)); datasetID != "" {
+				out["dataset_ids"] = []string{datasetID}
+				common.Debug("agent retrieval component: resolved dataset id")
 			}
 		}
-		delete(out, "top_n")
+		if queryText != "" {
+			return true
+		}
+		if kbName != "" && out["dataset_ids"] != nil {
+			return true
+		}
 	}
-	return out
+	return consumed
 }
 
-type exesqlComponent struct {
-	inner *agenttool.ExeSQLTool
-}
-
-func (c *exesqlComponent) Name() string { return "ExeSQL" }
-
-func (c *exesqlComponent) Inputs() map[string]string {
-	return map[string]string{
-		"sql":      "SQL statement to execute (SELECT-only; DML/DDL rejected).",
-		"database": "Optional target database/schema (overrides the tool's configured DB).",
+func resolveRetrievalDatasetID(ctx context.Context, db *gorm.DB, kbName string) string {
+	if kbName == "" {
+		return ""
 	}
-}
-
-func (c *exesqlComponent) Outputs() map[string]string {
-	return map[string]string{
-		"columns": "Result-set column names.",
-		"rows":    "Result-set rows as column→value maps.",
-		"sql":     "Resolved SQL string (after parameter substitution).",
+	if kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, kbName); err == nil && kb != nil {
+		common.Debug("agent retrieval component: resolved dataset id by direct id")
+		return kb.ID
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		common.Warn("agent retrieval component: resolve dataset id by id failed",
+			zap.Error(err))
 	}
-}
-
-func (c *exesqlComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	argsJSON, _ := json.Marshal(inputs)
-	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
-	if err != nil {
-		return nil, fmt.Errorf("canvas: ExeSQL: %w", err)
+	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+		common.Debug("agent retrieval component: resolve dataset id context")
+		if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
+			if kb, lookupErr := dao.NewKnowledgebaseDAO().GetByName(ctx, db, kbName, tenantID); lookupErr == nil && kb != nil {
+				common.Debug("agent retrieval component: resolved dataset id by tenant")
+				return kb.ID
+			} else if lookupErr != nil && !errors.Is(lookupErr, gorm.ErrRecordNotFound) {
+				common.Warn("agent retrieval component: resolve dataset id by tenant failed",
+					zap.Error(lookupErr))
+			} else {
+				common.Debug("agent retrieval component: tenant lookup missed")
+			}
+		}
+		if userID, _ := state.Sys["user_id"].(string); userID != "" {
+			if kbs, lookupErr := dao.NewKnowledgebaseDAO().GetKBByNameAndUserID(ctx, db, kbName, userID); lookupErr == nil && len(kbs) > 0 {
+				for _, kb := range kbs {
+					if kb == nil || kb.Status == nil || *kb.Status != string(entity.StatusValid) {
+						continue
+					}
+					common.Debug("agent retrieval component: resolved dataset id by user visibility")
+					return kb.ID
+				}
+			} else if lookupErr != nil {
+				common.Warn("agent retrieval component: resolve dataset id by name failed",
+					zap.Error(lookupErr))
+			} else {
+				common.Debug("agent retrieval component: user visibility lookup missed")
+			}
+		}
+	} else {
+		common.Debug("agent retrieval component: resolve dataset id missing canvas state",
+			zap.Error(err))
 	}
-	return parseToolEnvelope(out), nil
-}
-
-func (c *exesqlComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
-	return nil, nil
+	common.Debug("agent retrieval component: dataset id unresolved")
+	return ""
 }
 
 // codeExecComponent delegates to internal/agent/tool/CodeExecTool.
@@ -412,6 +404,17 @@ func (c *codeExecComponent) Inputs() map[string]string {
 	}
 }
 
+func (c *codeExecComponent) GetInputForm() map[string]any {
+	res := make(map[string]any, len(c.params))
+	for k, _ := range c.params {
+		res[k] = map[string]any{
+			"type": "line",
+			"name": k,
+		}
+	}
+	return res
+}
+
 func (c *codeExecComponent) Outputs() map[string]string {
 	return map[string]string{
 		"result":      "The main(...) return value rendered as the legacy CodeExec result field.",
@@ -424,7 +427,7 @@ func (c *codeExecComponent) Outputs() map[string]string {
 	}
 }
 
-func (c *codeExecComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *codeExecComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	merged := make(map[string]any, len(c.params)+len(inputs))
 	for k, v := range c.params {
 		merged[k] = v
@@ -433,9 +436,14 @@ func (c *codeExecComponent) Invoke(ctx context.Context, inputs map[string]any) (
 		merged[k] = v
 	}
 	if rawArgs, ok := merged["arguments"].(map[string]any); ok {
-		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged)
+		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged, state)
 	}
-	log.Printf("DEBUG CodeExec wrapper invoke: params=%#v inputs=%#v merged=%#v", c.params, inputs, merged)
+	common.Debug("CodeExec wrapper invoke",
+		zap.Int("params_keys", len(c.params)),
+		zap.Int("inputs_keys", len(inputs)),
+		zap.Int("merged_keys", len(merged)),
+		zap.Bool("has_arguments", merged["arguments"] != nil))
 	argsJSON, _ := json.Marshal(merged)
 	out, err := c.inner.InvokableRun(ctx, string(argsJSON))
 	decoded := parseToolEnvelope(out)
@@ -458,7 +466,7 @@ func (c *codeExecComponent) Invoke(ctx context.Context, inputs map[string]any) (
 	return decoded, nil
 }
 
-func (c *codeExecComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+func (c *codeExecComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
 	return nil, nil
 }
 
@@ -480,8 +488,11 @@ func applyCodeExecBusinessOutputs(decoded map[string]any, outputs map[string]any
 		return
 	}
 	rawResult := resolveCodeExecBusinessResult(decoded)
-	log.Printf("DEBUG CodeExec wrapper: decoded=%#v resolved_raw_result=%#v content=%#v outputs=%#v",
-		decoded, rawResult, decoded["content"], outputs)
+	common.Debug("CodeExec wrapper",
+		zap.Int("decoded_keys", len(decoded)),
+		zap.Bool("has_raw_result", rawResult != nil),
+		zap.Bool("has_content", decoded["content"] != nil),
+		zap.Int("outputs_keys", len(outputs)))
 	if existingErr, _ := decoded["_ERROR"].(string); strings.TrimSpace(existingErr) != "" {
 		for name := range outputs {
 			if isCodeExecSystemOutput(name) {
@@ -565,29 +576,29 @@ func cloneAnyMap(in map[string]any) map[string]any {
 	return out
 }
 
-func resolveCodeExecArguments(args map[string]any, merged map[string]any) map[string]any {
+func resolveCodeExecArguments(args map[string]any, merged map[string]any, state *runtime.CanvasState) map[string]any {
 	if args == nil {
 		return nil
 	}
 	out := make(map[string]any, len(args))
 	for k, v := range args {
-		out[k] = resolveCodeExecArgumentValue(v, merged)
+		out[k] = resolveCodeExecArgumentValue(v, merged, state)
 	}
 	return out
 }
 
-func resolveCodeExecArgumentValue(v any, merged map[string]any) any {
+func resolveCodeExecArgumentValue(v any, merged map[string]any, state *runtime.CanvasState) any {
 	switch x := v.(type) {
 	case map[string]any:
-		return resolveCodeExecArguments(x, merged)
+		return resolveCodeExecArguments(x, merged, state)
 	case []any:
 		out := make([]any, 0, len(x))
 		for _, item := range x {
-			out = append(out, resolveCodeExecArgumentValue(item, merged))
+			out = append(out, resolveCodeExecArgumentValue(item, merged, state))
 		}
 		return out
 	case string:
-		if resolved, ok := lookupCodeExecArgumentRef(x, merged); ok {
+		if resolved, ok := lookupCodeExecArgumentRef(x, merged, state); ok {
 			return resolved
 		}
 		return x
@@ -596,10 +607,15 @@ func resolveCodeExecArgumentValue(v any, merged map[string]any) any {
 	}
 }
 
-func lookupCodeExecArgumentRef(ref string, merged map[string]any) (any, bool) {
+func lookupCodeExecArgumentRef(ref string, merged map[string]any, state *runtime.CanvasState) (any, bool) {
 	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return nil, false
+	}
+	if state != nil {
+		if v, err := state.GetVar(ref); err == nil && v != nil {
+			return v, true
+		}
 	}
 	at := strings.Index(ref, "@")
 	if at <= 0 || at >= len(ref)-1 {
@@ -657,11 +673,8 @@ func toFloatParam(v any) float64 {
 // Compile-time interface checks.
 var (
 	_ Component = (*retrievalComponent)(nil)
-	_ Component = (*tavilySearchComponent)(nil)
-	_ Component = (*exesqlComponent)(nil)
 	_ Component = (*codeExecComponent)(nil)
 )
 
 // Compile-time check that the eino InvokableTool methods we call
 // are reachable (catches a future refactor that renames them).
-var _ einotool.InvokableTool = (*agenttool.TavilyTool)(nil)

@@ -73,7 +73,7 @@ func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, co
 	}
 
 	// Call LLM using ChatModel
-	response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, modelConfig)
+	response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, modelConfig, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to extract keywords: %w", err)
 	}
@@ -111,7 +111,7 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	var err error
 
 	if llmID != "" {
-		modelTypes, err := modelProviderSvc.GetModelTypeByName(tenantID, llmID)
+		modelTypes, err := modelProviderSvc.ResolveModelType(ctx, tenantID, llmID)
 		if err != nil {
 			return query, fmt.Errorf("failed to get model type: %w", err)
 		}
@@ -122,13 +122,13 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 				break
 			}
 		}
-		driver, modelName, apiConfig, _, err := modelProviderSvc.GetModelConfigFromProviderInstance(tenantID, resolvedType, llmID)
+		driver, modelName, apiConfig, _, err := modelProviderSvc.ResolveModelConfig(ctx, tenantID, resolvedType, llmID)
 		if err != nil {
 			return query, fmt.Errorf("failed to get chat model: %w", err)
 		}
 		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
 	} else {
-		driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(tenantID, entity.ModelTypeChat)
+		driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(ctx, tenantID, entity.ModelTypeChat)
 		if err != nil {
 			return query, fmt.Errorf("failed to get default chat model: %w", err)
 		}
@@ -176,7 +176,7 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	}
 
 	// Call LLM using ChatModel
-	response, err := chatModel.ModelDriver.ChatWithMessages(*chatModel.ModelName, messages, chatModel.APIConfig, modelConfig)
+	response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, modelConfig, nil)
 	if err != nil {
 		return query, fmt.Errorf("failed to translate question: %w", err)
 	}
@@ -341,7 +341,7 @@ func FullQuestion(
 		{Role: "user", Content: "Output: "},
 	}
 	resp, err := chatModel.ModelDriver.ChatWithMessages(
-		modelName, msgs, chatModel.APIConfig, nil,
+		ctx, modelName, msgs, chatModel.APIConfig, nil, nil,
 	)
 	if err != nil {
 		return fallbackToLatestUser(messages), err

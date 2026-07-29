@@ -69,6 +69,39 @@ func TestStagehandRuntime_ValidatesRequiredFields(t *testing.T) {
 	}
 }
 
+func TestStagehandRuntime_RunExtractModelConfig(t *testing.T) {
+	model := stagehandExtractModelConfig(RunExtractRequest{
+		ModelName: "openai/gpt-4o",
+		BaseURL:   "https://example.test/v1",
+		APIKey:    "sk-test",
+	})
+
+	if got := model.GetModelName(); got == nil || *got != "openai/gpt-4o" {
+		t.Fatalf("modelName = %v, want openai/gpt-4o", got)
+	}
+	if got := model.GetAPIKey(); got == nil || *got != "sk-test" {
+		t.Fatalf("apiKey = %v, want sk-test", got)
+	}
+	if got := model.GetBaseURL(); got == nil || *got != "https://example.test/v1" {
+		t.Fatalf("baseURL = %v, want https://example.test/v1", got)
+	}
+	if got := model.GetProvider(); got == nil || *got != "openai" {
+		t.Fatalf("provider = %v, want openai", got)
+	}
+}
+
+func TestStagehandRuntime_RunExtractModelConfigOmitsEmptyBaseURL(t *testing.T) {
+	model := stagehandExtractModelConfig(RunExtractRequest{
+		ModelName: "openai/gpt-4o",
+		BaseURL:   " \t\n ",
+		APIKey:    "sk-test",
+	})
+
+	if got := model.GetBaseURL(); got != nil {
+		t.Fatalf("baseURL = %q, want omitted", *got)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Cache hit / miss / key formula
 // ---------------------------------------------------------------------------
@@ -191,12 +224,10 @@ func TestStagehandRuntime_Cache_ConcurrentSameKey_NoDuplicateBuild(t *testing.T)
 	var wg sync.WaitGroup
 	var calls atomic.Int32
 	for i := 0; i < N; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, _ = r.clientFor(req)
 			calls.Add(1)
-		}()
+		})
 	}
 	wg.Wait()
 	if calls.Load() != N {
@@ -217,15 +248,13 @@ func TestStagehandRuntime_Cache_ConcurrentDifferentKeys(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := 0; i < N; i++ {
 		i := i
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, _ = r.clientFor(RunTaskRequest{
 				ModelName: "openai/gpt-4o",
 				BaseURL:   "https://api.openai.com/v1",
 				APIKey:    "sk-" + string(rune('a'+i%26)) + string(rune('A'+(i/26)%26)),
 			})
-		}()
+		})
 	}
 	wg.Wait()
 	// 32 goroutines, but the apiKey pattern has 26*2 = 52 unique

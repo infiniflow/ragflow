@@ -151,8 +151,8 @@ type anthropicToolDef struct {
 }
 
 type anthropicResponse struct {
-	Content []contentBlock `json:"content"`
-	StopReason string     `json:"stop_reason"`
+	Content    []contentBlock `json:"content"`
+	StopReason string         `json:"stop_reason"`
 }
 
 func (m *anthropicModel) Generate(ctx context.Context, msgs []*schema.Message, opts ...core.ModelOption) (*schema.Message, error) {
@@ -338,10 +338,10 @@ type openAIModel struct {
 // ---- OpenAI API types ----
 
 type openAIMessage struct {
-	Role        string           `json:"role"`
-	Content     any              `json:"content,omitempty"` // string or []contentPart
-	ToolCalls   []openAIToolCall `json:"tool_calls,omitempty"`
-	ToolCallID  string           `json:"tool_call_id,omitempty"`
+	Role       string           `json:"role"`
+	Content    any              `json:"content,omitempty"` // string or []contentPart
+	ToolCalls  []openAIToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string           `json:"tool_call_id,omitempty"`
 }
 
 type contentPart struct {
@@ -350,9 +350,9 @@ type contentPart struct {
 }
 
 type openAIToolCall struct {
-	ID       string           `json:"id"`
-	Type     string           `json:"type"`
-	Function openAIFunction   `json:"function"`
+	ID       string         `json:"id"`
+	Type     string         `json:"type"`
+	Function openAIFunction `json:"function"`
 }
 
 type openAIFunction struct {
@@ -361,16 +361,16 @@ type openAIFunction struct {
 }
 
 type openAIRequest struct {
-	Model       string           `json:"model"`
-	Messages    []openAIMessage  `json:"messages"`
-	Temperature float64          `json:"temperature,omitempty"`
-	MaxTokens   int              `json:"max_tokens,omitempty"`
-	Tools       []openAIToolDef  `json:"tools,omitempty"`
+	Model       string          `json:"model"`
+	Messages    []openAIMessage `json:"messages"`
+	Temperature float64         `json:"temperature,omitempty"`
+	MaxTokens   int             `json:"max_tokens,omitempty"`
+	Tools       []openAIToolDef `json:"tools,omitempty"`
 }
 
 type openAIToolDef struct {
-	Type     string         `json:"type"`
-	Function openAIFuncDef  `json:"function"`
+	Type     string        `json:"type"`
+	Function openAIFuncDef `json:"function"`
 }
 
 type openAIFuncDef struct {

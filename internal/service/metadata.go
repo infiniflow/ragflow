@@ -50,22 +50,31 @@ func NewMetadataService() *MetadataService {
 	}
 }
 
+// NewMetadataServiceForTest creates a MetadataService with injected dependencies
+// for tests that need to control the DAO and engine.
+func NewMetadataServiceForTest(kbDAO *dao.KnowledgebaseDAO, docEngine engine.DocEngine) *MetadataService {
+	return &MetadataService{
+		kbDAO:     kbDAO,
+		docEngine: docEngine,
+	}
+}
+
 // BuildMetadataIndexName constructs the metadata index name for a tenant
 func BuildMetadataIndexName(tenantID string) string {
 	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
 }
 
 // GetTenantIDByKBID retrieves tenant ID from knowledge base ID
-func (s *MetadataService) GetTenantIDByKBID(kbID string) (string, error) {
-	return dao.GetTenantIDByKBID(kbID)
+func (s *MetadataService) GetTenantIDByKBID(ctx context.Context, kbID string) (string, error) {
+	return dao.GetTenantIDByKBID(ctx, dao.DB, kbID)
 }
 
 // GetTenantIDByKBIDs retrieves tenant ID from the first knowledge base ID in the list
-func (s *MetadataService) GetTenantIDByKBIDs(kbIDs []string) (string, error) {
+func (s *MetadataService) GetTenantIDByKBIDs(ctx context.Context, kbIDs []string) (string, error) {
 	if len(kbIDs) == 0 {
 		return "", fmt.Errorf("no kb_ids provided")
 	}
-	return dao.GetTenantIDByKBID(kbIDs[0])
+	return dao.GetTenantIDByKBID(ctx, dao.DB, kbIDs[0])
 }
 
 // SearchMetadataResponse holds the result of a metadata search
@@ -98,12 +107,12 @@ func (s *MetadataService) SearchMetadata(kbID, tenantID string, docIDs []string,
 }
 
 // SearchMetadataByKBs searches the metadata index for multiple knowledge bases
-func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*SearchMetadataResponse, error) {
+func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []string, size int) (*SearchMetadataResponse, error) {
 	if len(kbIDs) == 0 {
 		return &SearchMetadataResponse{MetadataRecords: []map[string]interface{}{}}, nil
 	}
 
-	tenantID, err := s.GetTenantIDByKBIDs(kbIDs)
+	tenantID, err := s.GetTenantIDByKBIDs(ctx, kbIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +126,7 @@ func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*Search
 		},
 	}
 
-	searchResult, err := s.docEngine.SearchMetadata(context.Background(), searchReq)
+	searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
@@ -130,13 +139,13 @@ func (s *MetadataService) SearchMetadataByKBs(kbIDs []string, size int) (*Search
 
 // GetFlattedMetaByKBs returns flattened metadata in the format:
 // {field_name: {value: [doc_ids]}}
-func (s *MetadataService) GetFlattedMetaByKBs(kbIDs []string) (common.MetaData, error) {
+func (s *MetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error) {
 	if len(kbIDs) == 0 {
 		return make(common.MetaData), nil
 	}
 
 	// Get metadata for all docs in KBs (use large limit like Python's 10000)
-	result, err := s.SearchMetadataByKBs(kbIDs, 10000)
+	result, err := s.SearchMetadataByKBs(ctx, kbIDs, 10000)
 	if err != nil {
 		return nil, err
 	}
@@ -390,7 +399,7 @@ func ExtractMetaFields(chunk map[string]interface{}) (map[string]interface{}, er
 				for k, val := range result {
 					if existing, exists := metaFields[k]; exists {
 						// Key already exists - merge values
-						metaFields[k] = mergeFieldValues(existing, val)
+						metaFields[k] = MergeFieldValues(existing, val)
 					} else {
 						metaFields[k] = val
 					}
@@ -409,7 +418,7 @@ func ExtractMetaFields(chunk map[string]interface{}) (map[string]interface{}, er
 // mergeFieldValues merges two field values when the same key appears multiple times
 // If both are arrays, append all elements. If one is array and other is string, append string to array.
 // Returns []interface{} with all merged values (flattened).
-func mergeFieldValues(existing, new interface{}) []interface{} {
+func MergeFieldValues(existing, new interface{}) []interface{} {
 	result := []interface{}{}
 
 	var addValue func(v interface{})
@@ -422,7 +431,13 @@ func mergeFieldValues(existing, new interface{}) []interface{} {
 			if val != "" {
 				result = append(result, val)
 			}
+		case float64, float32, int, int8, int16, int32, int64, bool:
+			result = append(result, val)
 		case []interface{}:
+			for _, item := range val {
+				addValue(item)
+			}
+		case []string:
 			for _, item := range val {
 				addValue(item)
 			}

@@ -34,7 +34,6 @@ const (
 	TokenCreate
 	TokenService
 	TokenShutdown
-	TokenStartup
 	TokenRestart
 	TokenUsers
 	TokenDrop
@@ -46,6 +45,8 @@ const (
 	TokenServer
 	TokenAPI
 	TokenAdd
+	TokenLive
+	TokenHealth
 	TokenHost
 	TokenDelete
 	TokenPassword
@@ -102,6 +103,9 @@ const (
 	TokenParser
 	TokenPipeline
 	TokenSearch
+	TokenAgent
+	TokenMemories
+	TokenMemory
 	TokenRetrieve
 	TokenCurrent
 	TokenFingerprint
@@ -133,6 +137,7 @@ const (
 	TokenVector
 	TokenSize
 	TokenStore
+	TokenEngine
 	TokenName // For ALTER PROVIDER <name> NAME <new_name>
 	TokenBalance
 	TokenInstance
@@ -174,6 +179,7 @@ const (
 	TokenStart
 	TokenStop
 	TokenIngestion
+	TokenCache
 	TokenMQ
 	TokenPublish
 	TokenPull
@@ -181,10 +187,14 @@ const (
 	TokenNoACK
 	TokenAnalyze
 	TokenSummary
+	TokenStats
 	TokenStorage
 	TokenQuota
 	TokenTree
 	TokenOrphan
+	TokenHour
+	TokenDay
+	TokenMonth
 	TokenDays
 	TokenWindow
 	TokenActivity
@@ -194,6 +204,7 @@ const (
 	TokenPreview
 	TokenOpenaiChat
 	TokenLog
+	TokenLogs
 	TokenLevel
 	TokenDebug
 	TokenInfo

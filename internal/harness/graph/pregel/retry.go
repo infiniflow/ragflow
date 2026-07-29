@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"ragflow/internal/harness/graph/errors"
 	"ragflow/internal/harness/graph/types"
 )
 
@@ -24,40 +25,43 @@ func NewRetryExecutor(policy *types.RetryPolicy) *RetryExecutor {
 }
 
 // Execute executes a function with retry logic.
-func (e *RetryExecutor) Execute(ctx context.Context, name string, fn func(context.Context) (interface{}, error)) (output interface{}, err error) {
+func (e *RetryExecutor) Execute(ctx context.Context, name string, fn func(context.Context) (any, error)) (output any, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			output = nil
 			err = fmt.Errorf("node %s panicked: %v", name, r)
 		}
 	}()
-	
+
 	var lastErr error
-	var lastOutput interface{}
-	
+	var lastOutput any
+
 	for attempt := 1; attempt <= e.policy.MaxAttempts; attempt++ {
 		// Execute the function
 		output, err = fn(ctx)
 		if err == nil {
 			return output, nil
 		}
-		
+
 		// Check if this is a non-retryable error
+		if errors.IsGraphInterrupt(err) {
+			return nil, err // propagate GraphInterrupt immediately without wrapping
+		}
 		if e.policy.RetryOn != nil && !e.policy.RetryOn(err) {
 			return nil, fmt.Errorf("node %s failed with non-retryable error: %w", name, err)
 		}
-		
+
 		lastErr = err
 		lastOutput = output
-		
+
 		// If we've exhausted attempts, break
 		if attempt >= e.policy.MaxAttempts {
 			break
 		}
-		
+
 		// Calculate backoff with jitter
 		backoff := e.calculateBackoff(attempt)
-		
+
 		// Wait before retry
 		select {
 		case <-ctx.Done():
@@ -66,11 +70,11 @@ func (e *RetryExecutor) Execute(ctx context.Context, name string, fn func(contex
 			// Continue to next attempt
 		}
 	}
-	
+
 	return nil, &RetryExhaustedError{
-		NodeName:  name,
-		Attempts:  e.policy.MaxAttempts,
-		LastErr:   lastErr,
+		NodeName:   name,
+		Attempts:   e.policy.MaxAttempts,
+		LastErr:    lastErr,
 		LastOutput: lastOutput,
 	}
 }
@@ -90,7 +94,7 @@ type RetryExhaustedError struct {
 	NodeName   string
 	Attempts   int
 	LastErr    error
-	LastOutput interface{}
+	LastOutput any
 }
 
 // Error implements the error interface.
@@ -172,11 +176,11 @@ var RetryPredicates = struct {
 
 // contains checks if a string contains a substring (case-insensitive).
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && 
-		(s == substr || 
-		 len(s) > len(substr) && 
-		 (s[0:len(substr)] == substr || 
-		  containsIgnoreCase(s, substr)))
+	return len(s) >= len(substr) &&
+		(s == substr ||
+			len(s) > len(substr) &&
+				(s[0:len(substr)] == substr ||
+					containsIgnoreCase(s, substr)))
 }
 
 // containsIgnoreCase performs case-insensitive substring check.

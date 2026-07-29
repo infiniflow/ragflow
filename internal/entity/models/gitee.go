@@ -50,11 +50,39 @@ func (g *GiteeModel) NewInstance(baseURL map[string]string) ModelDriver {
 }
 
 func (g *GiteeModel) Name() string {
-	return "gitee"
+	return "GiteeAI"
+}
+
+// GiteeChatResponse mirrors GiteeAI's OpenAI-compatible chat response.
+type GiteeChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Logprobs     any    `json:"logprobs"`
+		Message      struct {
+			Content          string           `json:"content"`
+			ReasoningContent string           `json:"reasoning_content"`
+			Role             string           `json:"role"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+	SystemFingerprint string `json:"system_fingerprint"`
+	Usage             struct {
+		CompletionTokens    int `json:"completion_tokens"`
+		PromptTokens        int `json:"prompt_tokens"`
+		TotalTokens         int `json:"total_tokens"`
+		PromptTokensDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	} `json:"usage"`
 }
 
 // ChatWithMessages sends multiple messages with roles and returns response
-func (g *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (g *GiteeModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -68,46 +96,9 @@ func (g *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, err
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.Chat)
-
-	// Convert messages to the format expected by API
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-	common.Info(fmt.Sprintf("GiteeAPI messages: %+v", apiMessages))
-
-	// Build request body
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
 				reqBody["thinking"] = map[string]interface{}{
@@ -128,7 +119,7 @@ func (g *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 
 	common.Info(fmt.Sprintf("GiteeAPI request body: %s", string(jsonData)))
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -154,61 +145,52 @@ func (g *GiteeModel) ChatWithMessages(modelName string, messages []Message, apiC
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result GiteeChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
+		choice := result.Choices[0]
+		content := choice.Message.Content
+		if content == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("response contains neither content nor tool calls")
+		}
 
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	// Handle thinking/reasoning if enabled
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		// Try to get reasoning_content directly first
-		if rc, ok := messageMap["reasoning_content"].(string); ok && rc != "" {
-			reasonContent = rc
-			if reasonContent[0] == '\n' {
+		reasonContent := ""
+		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
+			reasonContent = choice.Message.ReasoningContent
+			if reasonContent == "" {
+				reasoning, answer := GetThinkingAndAnswer(chatConfig.ModelClass, &content)
+				if reasoning != nil {
+					reasonContent = *reasoning
+					content = *answer
+				}
+			}
+			if strings.HasPrefix(reasonContent, "\n") {
 				reasonContent = reasonContent[1:]
 			}
-		} else {
-			// Fall back to parsing <think> tags from content
-			reasoning, answer := GetThinkingAndAnswer(chatModelConfig.ModelClass, &content)
-			if reasoning != nil {
-				reasonContent = *reasoning
-				content = *answer
-			}
 		}
-	}
 
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}
-
-	return chatResponse, nil
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &content,
+			ReasonContent: &reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -216,64 +198,32 @@ func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
+	if chatModelConfig != nil {
+		chatModelConfig.ToolCallsResult = nil
+		chatModelConfig.UsageResult = nil
+	}
 
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/chat/completions", resolvedBaseURL)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), g.baseModel.URLSuffix.Chat)
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      true,
-		"temperature": 1,
-	}
-
-	if chatModelConfig.Stream != nil {
-		reqBody["stream"] = *chatModelConfig.Stream
-	}
-
-	if chatModelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-	}
-
-	if chatModelConfig.Temperature != nil {
-		reqBody["temperature"] = *chatModelConfig.Temperature
-	}
-
-	if chatModelConfig.DoSample != nil {
-		reqBody["do_sample"] = *chatModelConfig.DoSample
-	}
-
-	if chatModelConfig.TopP != nil {
-		reqBody["top_p"] = *chatModelConfig.TopP
-	}
-
-	if chatModelConfig.Stop != nil {
-		reqBody["stop"] = *chatModelConfig.Stop
-	}
-
-	if chatModelConfig.Thinking != nil {
-		if *chatModelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "enabled",
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
+	if chatModelConfig != nil {
+		if chatModelConfig.Thinking != nil {
+			if *chatModelConfig.Thinking {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "enabled",
+				}
+			} else {
+				reqBody["thinking"] = map[string]interface{}{
+					"type": "disabled",
+				}
 			}
 		}
+
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -281,7 +231,7 @@ func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -308,20 +258,38 @@ func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 	answerPhase := false
 	sawTerminal := false
 
-	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		choices, ok := event["choices"].([]interface{})
+	accumulatedToolCalls := make(map[int]map[string]any)
+	done, err := ParseSSEStream[map[string]any](resp.Body, func(event map[string]any) error {
+		common.Info(fmt.Sprintf("%v", event))
+
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
+		}
+		choices, ok := event["choices"].([]any)
 		if !ok || len(choices) == 0 {
 			return nil
 		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
+		choice, ok := choices[0].(map[string]any)
+		if !ok {
+			return nil
+		}
+		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
+		delta, ok := choice["delta"].(map[string]any)
 		if !ok {
 			return nil
 		}
 
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
+		if reasoning, ok := delta["reasoning_content"].(string); ok && reasoning != "" {
+			if err := sender(nil, &reasoning); err != nil {
+				return err
+			}
 		}
 
 		content, ok := delta["content"].(string)
@@ -356,10 +324,6 @@ func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 			}
 		}
 
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			sawTerminal = true
-		}
 		return nil
 	})
 	if err != nil {
@@ -375,6 +339,8 @@ func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 		}
 	}
 
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
+
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
 	if err = sender(&endOfStream, nil); err != nil {
@@ -384,26 +350,25 @@ func (g *GiteeModel) ChatStreamlyWithSender(modelName string, messages []Message
 	return nil
 }
 
-type giteeEmbeddingResponse struct {
-	Object string               `json:"object"`
-	Data   []giteeEmbeddingData `json:"data"`
-	Model  string               `json:"model"`
-	Usage  giteeUsage           `json:"usage"`
-}
-
-type giteeEmbeddingData struct {
-	Object    string    `json:"object"`
-	Embedding []float64 `json:"embedding"`
-	Index     int       `json:"index"`
-}
-
-type giteeUsage struct {
-	PromptTokens int `json:"prompt_tokens"`
-	TotalTokens  int `json:"total_tokens"`
+// GiteeEmbeddingResponse mirrors GiteeAI's embeddings response.
+type GiteeEmbeddingResponse struct {
+	ID     string `json:"id"`
+	Object string `json:"object"`
+	Model  string `json:"model"`
+	Data   []struct {
+		Object    string    `json:"object"`
+		Embedding []float64 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // Embed embeds a list of texts into embeddings
-func (g *GiteeModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (g *GiteeModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -437,7 +402,7 @@ func (g *GiteeModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -463,10 +428,15 @@ func (g *GiteeModel) Embed(modelName *string, texts []string, apiConfig *APIConf
 		return nil, fmt.Errorf("Gitee embeddings API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var parsed giteeEmbeddingResponse
+	var parsed GiteeEmbeddingResponse
 	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens:     parsed.Usage.PromptTokens,
+		CompletionTokens: parsed.Usage.CompletionTokens,
+		TotalTokens:      parsed.Usage.TotalTokens,
+	}, "embedding")
 
 	var embeddings []EmbeddingData
 	for _, dataElem := range parsed.Data {
@@ -487,8 +457,26 @@ type giteeRerankRequest struct {
 	ReturnDocuments bool     `json:"return_documents"`
 }
 
+// GiteeRerankResponse mirrors GiteeAI's rerank response.
+type GiteeRerankResponse struct {
+	ID      string `json:"id"`
+	Model   string `json:"model"`
+	Results []struct {
+		Index    int `json:"index"`
+		Document struct {
+			Text string `json:"text"`
+		} `json:"document"`
+		RelevanceScore float64 `json:"relevance_score"`
+	} `json:"results"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
 // Rerank calculates similarity scores between query and documents
-func (g *GiteeModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (g *GiteeModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -509,9 +497,9 @@ func (g *GiteeModel) Rerank(modelName *string, query string, documents []string,
 
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.Rerank)
 
-	var topN = rerankConfig.TopN
-	if rerankConfig.TopN == 0 {
-		topN = len(documents)
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 {
+		topN = rerankConfig.TopN
 	}
 
 	reqBody := giteeRerankRequest{
@@ -527,7 +515,7 @@ func (g *GiteeModel) Rerank(modelName *string, query string, documents []string,
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -553,29 +541,42 @@ func (g *GiteeModel) Rerank(modelName *string, query string, documents []string,
 		return nil, fmt.Errorf("gitee rerank API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	var rerankResponse RerankResponse
-	if err = json.Unmarshal(body, &rerankResponse); err != nil {
+	var parsed GiteeRerankResponse
+	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens:     parsed.Usage.PromptTokens,
+		CompletionTokens: parsed.Usage.CompletionTokens,
+		TotalTokens:      parsed.Usage.TotalTokens,
+	}, "rerank")
+
+	rerankResponse := RerankResponse{Data: make([]RerankResult, 0, len(parsed.Results))}
+	for _, result := range parsed.Results {
+		rerankResponse.Data = append(rerankResponse.Data, RerankResult{
+			Index:          result.Index,
+			RelevanceScore: result.RelevanceScore,
+		})
 	}
 
 	return &rerankResponse, nil
 }
 
 // TranscribeAudio transcribe audio
-func (g *GiteeModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (g *GiteeModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (g *GiteeModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (g *GiteeModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", g.Name())
 }
 
 // AudioSpeech convert text to audio
-func (g *GiteeModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (g *GiteeModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", g.Name())
 }
 
-func (g *GiteeModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (g *GiteeModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", g.Name())
 }
 
@@ -585,7 +586,7 @@ type giteeOCRResponse struct {
 }
 
 // OCRFile OCR file
-func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (g *GiteeModel) OCRFile(ctx context.Context, modelName *string, content []byte, imageURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -631,7 +632,7 @@ func (g *GiteeModel) OCRFile(modelName *string, content []byte, imageURL *string
 
 	writer.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, payload)
@@ -682,7 +683,7 @@ type giteeURLs struct {
 }
 
 // ParseFile parse file
-func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (g *GiteeModel) ParseFile(ctx context.Context, modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -728,7 +729,7 @@ func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *s
 
 	writer.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, payload)
@@ -759,7 +760,7 @@ func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *s
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
-	_, err = g.getParseFile(&baseURL, apiConfig.ApiKey, &giteeParseFileResp.TaskID, 5*time.Second, 10)
+	_, err = g.getParseFile(ctx, &baseURL, apiConfig.ApiKey, &giteeParseFileResp.TaskID, 5*time.Second, 10)
 	if err != nil {
 		return nil, err
 	}
@@ -772,7 +773,7 @@ func (g *GiteeModel) ParseFile(modelName *string, content []byte, documentURL *s
 type giteeGetParseFileResponse struct {
 }
 
-func (g *GiteeModel) getParseFile(baseURL *string, apiKey, taskID *string, timeOut time.Duration, count int) (*giteeGetParseFileResponse, error) {
+func (g *GiteeModel) getParseFile(ctx context.Context, baseURL *string, apiKey, taskID *string, timeOut time.Duration, count int) (*giteeGetParseFileResponse, error) {
 	url := fmt.Sprintf("%s/task/%s/status", strings.TrimSuffix(*baseURL, "/"), *taskID)
 
 	reqBody := map[string]interface{}{}
@@ -782,7 +783,7 @@ func (g *GiteeModel) getParseFile(baseURL *string, apiKey, taskID *string, timeO
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	for i := 0; i < count; i++ {
@@ -828,7 +829,7 @@ func (g *GiteeModel) getParseFile(baseURL *string, apiKey, taskID *string, timeO
 	return nil, nil
 }
 
-func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (g *GiteeModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 
 	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -844,7 +845,7 @@ func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
@@ -878,7 +879,7 @@ func (g *GiteeModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, erro
 	return ParseListModel(modelList), nil
 }
 
-func (g *GiteeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (g *GiteeModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -897,7 +898,7 @@ func (g *GiteeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
@@ -939,7 +940,7 @@ func (g *GiteeModel) Balance(apiConfig *APIConfig) (map[string]interface{}, erro
 	return response, nil
 }
 
-func (g *GiteeModel) CheckConnection(apiConfig *APIConfig) error {
+func (g *GiteeModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -958,7 +959,7 @@ func (g *GiteeModel) CheckConnection(apiConfig *APIConfig) error {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
@@ -1017,7 +1018,7 @@ type giteeTaskURLs struct {
 	Cancel string `json:"cancel"`
 }
 
-func (g *GiteeModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (g *GiteeModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -1036,7 +1037,7 @@ func (g *GiteeModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
@@ -1078,7 +1079,7 @@ func (g *GiteeModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return taskListResp, nil
 }
 
-func (g *GiteeModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (g *GiteeModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -1097,7 +1098,7 @@ func (g *GiteeModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskRespons
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))

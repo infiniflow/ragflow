@@ -12,8 +12,14 @@ import (
 type dtTestStore struct{ data map[string][]byte }
 
 func newDTTestStore() *dtTestStore { return &dtTestStore{data: make(map[string][]byte)} }
-func (s *dtTestStore) Set(_ context.Context, key string, value []byte) error { s.data[key] = value; return nil }
-func (s *dtTestStore) Get(_ context.Context, key string) ([]byte, bool, error) { v, ok := s.data[key]; return v, ok, nil }
+func (s *dtTestStore) Set(_ context.Context, key string, value []byte) error {
+	s.data[key] = value
+	return nil
+}
+func (s *dtTestStore) Get(_ context.Context, key string) ([]byte, bool, error) {
+	v, ok := s.data[key]
+	return v, ok, nil
+}
 
 type dtTestAgent struct {
 	name     string
@@ -27,7 +33,9 @@ func (a *dtTestAgent) Run(ctx context.Context, input *AgentInput, options ...Run
 	return a.runFn(ctx, input, options...)
 }
 func (a *dtTestAgent) Resume(ctx context.Context, info *ResumeInfo, opts ...RunOption) *AsyncIterator[*AgentEvent] {
-	if a.resumeFn != nil { return a.resumeFn(ctx, info, opts...) }
+	if a.resumeFn != nil {
+		return a.resumeFn(ctx, info, opts...)
+	}
 	return a.runFn(ctx, &AgentInput{}, opts...)
 }
 
@@ -53,7 +61,9 @@ func TestDeterministicTransfer_Basic(t *testing.T) {
 		},
 		resumeFn: func(ctx context.Context, info *ResumeInfo, opts ...RunOption) *AsyncIterator[*AgentEvent] {
 			runCount++
-			if !info.WasInterrupted { t.Error("should be interrupted") }
+			if !info.WasInterrupted {
+				t.Error("should be interrupted")
+			}
 			runCtx := getRunCtx(ctx)
 			_ = runCtx
 			iter, gen := NewAsyncIteratorPair[*AgentEvent]()

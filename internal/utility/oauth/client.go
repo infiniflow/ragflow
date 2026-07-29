@@ -21,7 +21,7 @@
 //   - "oauth2": vanilla OAuth 2.0 authorization-code flow with a
 //     provider-supplied /userinfo endpoint
 //   - "oidc": OAuth 2.0 + OIDC discovery via .well-known/openid-configuration
-//   - "github": OAuth 2.0 plus GitHub's split user / emails endpoints
+//   - "GitHub": OAuth 2.0 plus GitHub's split user / emails endpoints
 //
 // Note on OIDC ID-token validation: the Python OIDCClient verifies the
 // id_token signature against the discovered JWKS and pulls extra claims out
@@ -107,7 +107,7 @@ func NewClient(cfg Config) (Client, error) {
 	case "github":
 		return newGitHubClient(cfg)
 	default:
-		return nil, fmt.Errorf("Unsupported type: %s", t)
+		return nil, fmt.Errorf("unsupported type: %s", t)
 	}
 }
 
@@ -169,23 +169,23 @@ func (c *oauthClient) ExchangeCodeForToken(ctx context.Context, code string) (*T
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return nil, fmt.Errorf("Failed to exchange authorization code for token: %w", err)
+		return nil, fmt.Errorf("failed to exchange authorization code for token: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to exchange authorization code for token: %w", err)
+		return nil, fmt.Errorf("failed to exchange authorization code for token: %w", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return nil, fmt.Errorf("Failed to exchange authorization code for token: %w", err)
+		return nil, fmt.Errorf("failed to exchange authorization code for token: %w", err)
 	}
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("Failed to exchange authorization code for token: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("failed to exchange authorization code for token: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	token := &TokenResponse{}
@@ -198,11 +198,11 @@ func (c *oauthClient) ExchangeCodeForToken(ctx context.Context, code string) (*T
 			token.IDToken = values.Get("id_token")
 			token.Scope = values.Get("scope")
 		} else {
-			return nil, fmt.Errorf("Failed to exchange authorization code for token: parse response: %w", jerr)
+			return nil, fmt.Errorf("failed to exchange authorization code for token: parse response: %w", jerr)
 		}
 	}
 	if token.AccessToken == "" {
-		return nil, fmt.Errorf("Failed to exchange authorization code for token: empty access_token")
+		return nil, fmt.Errorf("failed to exchange authorization code for token: empty access_token")
 	}
 	return token, nil
 }
@@ -211,11 +211,11 @@ func (c *oauthClient) ExchangeCodeForToken(ctx context.Context, code string) (*T
 // Mirrors OAuthClient.fetch_user_info / normalize_user_info.
 func (c *oauthClient) FetchUserInfo(ctx context.Context, accessToken, idToken string) (*UserInfo, error) {
 	if c.cfg.UserinfoURL == "" {
-		return nil, fmt.Errorf("Failed to fetch user info: userinfo_url is required")
+		return nil, fmt.Errorf("failed to fetch user info: userinfo_url is required")
 	}
 	raw, err := c.fetchUserinfoRaw(ctx, c.cfg.UserinfoURL, accessToken)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to fetch user info: %w", err)
+		return nil, fmt.Errorf("failed to fetch user info: %w", err)
 	}
 	return normalizeUserInfo(raw), nil
 }

@@ -15,7 +15,10 @@
       "max_tokens": 128000,
       "model_types": [
         "chat"
-      ]
+      ],
+      "tools": {
+        "support": true
+      }
     },
     {
       "name": "openai/tts-1",

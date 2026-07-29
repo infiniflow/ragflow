@@ -28,8 +28,10 @@ const Menus = [
       Operator.DuckDuckGo,
       Operator.Wikipedia,
       Operator.SearXNG,
+      Operator.KeenableSearch,
       Operator.YahooFinance,
       Operator.PubMed,
+      Operator.BGPT,
       Operator.GoogleScholar,
       Operator.ArXiv,
       Operator.WenCai,
@@ -106,7 +108,7 @@ function useHandleSelectChange({ onChange, value }: ToolCommandProps) {
   };
 }
 
-// eslint-disable-next-line
+// oxlint-disable-next-line
 export function ToolCommand({ value, onChange }: ToolCommandProps) {
   const { t } = useTranslation();
 

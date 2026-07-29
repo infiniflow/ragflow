@@ -27,9 +27,9 @@ docker/oceanbase/
 docker/seekdb/
 
 # ── Go and C++ build outputs ────────────────────────────────────────────────
-internal/cpp/build/
-internal/cpp/cmake-build-release/
-internal/cpp/cmake-build-debug/
+internal/binding/cpp/build/
+internal/binding/cpp/cmake-build-release/
+internal/binding/cpp/cmake-build-debug/
 target/
 
 # ── ragflow_deps build context (built as a separate image, mounted ──

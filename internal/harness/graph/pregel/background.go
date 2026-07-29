@@ -14,7 +14,7 @@ import (
 type BackgroundTask struct {
 	ID       string
 	Name     string
-	Func     func(context.Context) (interface{}, error)
+	Func     func(context.Context) (any, error)
 	Context  context.Context
 	Result   chan *BackgroundTaskResult
 	Cancel   context.CancelFunc
@@ -26,30 +26,30 @@ type BackgroundTask struct {
 type BackgroundTaskResult struct {
 	TaskID   string
 	Name     string
-	Output   interface{}
+	Output   any
 	Err      error
 	Duration time.Duration
 }
 
 // BackgroundExecutor executes tasks in a background worker pool.
 type BackgroundExecutor struct {
-	maxWorkers   int
-	taskQueue    chan *BackgroundTask
-	results      chan *BackgroundTaskResult
-	workers      []*backgroundWorker
-	mu           sync.RWMutex
-	running      bool
-	stopCh       chan struct{}
-	wg           sync.WaitGroup
-	activeTasks  map[string]*BackgroundTask
+	maxWorkers      int
+	taskQueue       chan *BackgroundTask
+	results         chan *BackgroundTaskResult
+	workers         []*backgroundWorker
+	mu              sync.RWMutex
+	running         bool
+	stopCh          chan struct{}
+	wg              sync.WaitGroup
+	activeTasks     map[string]*BackgroundTask
 	shutdownTimeout time.Duration
 }
 
 // backgroundWorker represents a worker goroutine.
 type backgroundWorker struct {
-	id      int
+	id       int
 	executor *BackgroundExecutor
-	stopCh  chan struct{}
+	stopCh   chan struct{}
 }
 
 // NewBackgroundExecutor creates a new background executor.
@@ -87,9 +87,9 @@ func (e *BackgroundExecutor) Start(ctx context.Context) {
 	// Start workers
 	for i := 0; i < e.maxWorkers; i++ {
 		worker := &backgroundWorker{
-			id:      i,
+			id:       i,
 			executor: e,
-			stopCh:  make(chan struct{}),
+			stopCh:   make(chan struct{}),
 		}
 		e.workers = append(e.workers, worker)
 		e.wg.Add(1)
@@ -127,7 +127,7 @@ func (e *BackgroundExecutor) Stop() {
 }
 
 // Submit submits a task for background execution.
-func (e *BackgroundExecutor) Submit(ctx context.Context, name string, fn func(context.Context) (interface{}, error), priority int) (*BackgroundTask, error) {
+func (e *BackgroundExecutor) Submit(ctx context.Context, name string, fn func(context.Context) (any, error), priority int) (*BackgroundTask, error) {
 	e.mu.RLock()
 	if !e.running {
 		e.mu.RUnlock()

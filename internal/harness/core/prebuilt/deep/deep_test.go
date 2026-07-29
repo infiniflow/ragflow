@@ -39,7 +39,9 @@ func TestNewTyped_WithModel(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Model = &mockModel{}
 	agent := NewTyped(cfg)
-	if agent == nil { t.Fatal("nil agent") }
+	if agent == nil {
+		t.Fatal("nil agent")
+	}
 	name := agent.Name(context.Background())
 	if name != "deep_agent" {
 		t.Errorf("name = %q", name)
@@ -50,7 +52,9 @@ func TestNew(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Model = &mockModel{}
 	agent := New(cfg)
-	if agent == nil { t.Fatal("nil agent") }
+	if agent == nil {
+		t.Fatal("nil agent")
+	}
 	_ = agent
 }
 
@@ -139,10 +143,10 @@ func TestWithFailoverModel(t *testing.T) {
 
 func TestNewWithSubAgents_BasicCreation(t *testing.T) {
 	subAgent := core.NewReActAgent(&core.ReActConfig[*schema.Message]{
-		Model: &mockModel{},
+		Model:       &mockModel{},
 		Instruction: "You handle data processing.",
 	}).WithName("data_processor")
-	
+
 	cfg := &Config{
 		Model: &mockModel{},
 		SubAgents: []SubAgentSpec{

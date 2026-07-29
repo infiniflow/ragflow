@@ -52,11 +52,11 @@ func newGitHubClient(cfg Config) (*gitHubClient, error) {
 func (c *gitHubClient) FetchUserInfo(ctx context.Context, accessToken, idToken string) (*UserInfo, error) {
 	raw, err := c.fetchUserinfoRaw(ctx, c.cfg.UserinfoURL, accessToken)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to fetch github user info: %w", err)
+		return nil, fmt.Errorf("failed to fetch github user info: %w", err)
 	}
 	email, err := c.fetchPrimaryEmail(ctx, accessToken)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to fetch github user info: %w", err)
+		return nil, fmt.Errorf("failed to fetch github user info: %w", err)
 	}
 	if email != "" {
 		raw["email"] = email

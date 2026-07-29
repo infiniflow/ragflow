@@ -3,42 +3,47 @@ import { TFunction } from 'i18next';
 
 export const bitbucketConstant = (t: TFunction) => [
   {
-    label: 'Bitbucket Account Email',
+    label: t('setting.dataSourceFieldBitbucketAccountEmail'),
     name: 'config.credentials.bitbucket_account_email',
     type: FormFieldType.Email,
     required: true,
   },
   {
-    label: 'Bitbucket API Token',
+    label: t('setting.dataSourceFieldBitbucketApiToken'),
     name: 'config.credentials.bitbucket_api_token',
     type: FormFieldType.Password,
     required: true,
   },
   {
-    label: 'Workspace',
+    label: t('setting.dataSourceFieldWorkspace'),
     name: 'config.workspace',
     type: FormFieldType.Text,
     required: true,
     tooltip: t('setting.bitbucketTopWorkspaceTip'),
   },
   {
-    label: 'Index Mode',
+    label: t('setting.dataSourceFieldIndexMode'),
     name: 'config.index_mode',
     type: FormFieldType.Segmented,
     options: [
-      { label: 'Repositories', value: 'repositories' },
-      { label: 'Project(s)', value: 'projects' },
-      { label: 'Workspace', value: 'workspace' },
+      {
+        label: t('setting.dataSourceOptionRepositories'),
+        value: 'repositories',
+      },
+      { label: t('setting.dataSourceOptionProjects'), value: 'projects' },
+      { label: t('setting.dataSourceOptionWorkspace'), value: 'workspace' },
     ],
   },
   {
-    label: 'Repository Slugs',
+    label: t('setting.dataSourceFieldRepositorySlugs'),
     name: 'config.repository_slugs',
     type: FormFieldType.Text,
     customValidate: (val: string, formValues: any) => {
       const index_mode = formValues?.config?.index_mode;
       if (!val && index_mode === 'repositories') {
-        return 'Repository Slugs is required';
+        return t('setting.dataSourceValidationFieldRequired', {
+          label: t('setting.dataSourceFieldRepositorySlugs'),
+        });
       }
       return true;
     },
@@ -49,13 +54,15 @@ export const bitbucketConstant = (t: TFunction) => [
     tooltip: t('setting.bitbucketRepositorySlugsTip'),
   },
   {
-    label: 'Projects',
+    label: t('setting.dataSourceFieldProjects'),
     name: 'config.projects',
     type: FormFieldType.Text,
     customValidate: (val: string, formValues: any) => {
       const index_mode = formValues?.config?.index_mode;
       if (!val && index_mode === 'projects') {
-        return 'Projects is required';
+        return t('setting.dataSourceValidationFieldRequired', {
+          label: t('setting.dataSourceFieldProjects'),
+        });
       }
       return true;
     },

@@ -13,9 +13,13 @@ import (
 
 // GenTransferInstruction generates an instruction string for agent transfer.
 func GenTransferInstruction(names []string) string {
-	if len(names) == 0 { return "" }
+	if len(names) == 0 {
+		return ""
+	}
 	s := "You can transfer to the following agents:\n"
-	for _, n := range names { s += fmt.Sprintf("- %s\n", n) }
+	for _, n := range names {
+		s += fmt.Sprintf("- %s\n", n)
+	}
 	return s
 }
 
@@ -27,8 +31,14 @@ func GenToolInstruction(name, desc string) string {
 // exactRunPathMatch checks if two run paths are exactly equal.
 // This prevents sub-agents from forging paths to access restricted agents.
 func exactRunPathMatch(a, b []RunStep) bool {
-	if len(a) != len(b) { return false }
-	for i := range a { if !a[i].Equals(b[i]) { return false } }
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !a[i].Equals(b[i]) {
+			return false
+		}
+	}
 	return true
 }
 
@@ -66,9 +76,11 @@ type agentWithDeterministicTransfer struct {
 	toAgentNames []string
 }
 
-func (a *agentWithDeterministicTransfer) Description(ctx context.Context) string { return a.agent.Description(ctx) }
-func (a *agentWithDeterministicTransfer) Name(ctx context.Context) string        { return a.agent.Name(ctx) }
-func (a *agentWithDeterministicTransfer) GetType() string                        { return "DeterministicTransfer" }
+func (a *agentWithDeterministicTransfer) Description(ctx context.Context) string {
+	return a.agent.Description(ctx)
+}
+func (a *agentWithDeterministicTransfer) Name(ctx context.Context) string { return a.agent.Name(ctx) }
+func (a *agentWithDeterministicTransfer) GetType() string                 { return "DeterministicTransfer" }
 
 func (a *agentWithDeterministicTransfer) Run(ctx context.Context, input *AgentInput, opts ...RunOption) *AsyncIterator[*AgentEvent] {
 	if fa, ok := a.agent.(*flowAgent); ok {
@@ -85,9 +97,13 @@ type resumableAgentWithDeterministicTransfer struct {
 	toAgentNames []string
 }
 
-func (a *resumableAgentWithDeterministicTransfer) Description(ctx context.Context) string { return a.agent.Description(ctx) }
-func (a *resumableAgentWithDeterministicTransfer) Name(ctx context.Context) string        { return a.agent.Name(ctx) }
-func (a *resumableAgentWithDeterministicTransfer) GetType() string                        { return "DeterministicTransfer" }
+func (a *resumableAgentWithDeterministicTransfer) Description(ctx context.Context) string {
+	return a.agent.Description(ctx)
+}
+func (a *resumableAgentWithDeterministicTransfer) Name(ctx context.Context) string {
+	return a.agent.Name(ctx)
+}
+func (a *resumableAgentWithDeterministicTransfer) GetType() string { return "DeterministicTransfer" }
 
 func (a *resumableAgentWithDeterministicTransfer) Run(ctx context.Context, input *AgentInput, opts ...RunOption) *AsyncIterator[*AgentEvent] {
 	if fa, ok := a.agent.(*flowAgent); ok {
@@ -120,7 +136,9 @@ func forwardEventsAndAppendTransfer(iter *AsyncIterator[*AgentEvent], generator 
 	var lastEvent *AgentEvent
 	for {
 		event, ok := iter.Next()
-		if !ok { break }
+		if !ok {
+			break
+		}
 		generator.Send(event)
 		lastEvent = event
 	}
@@ -227,7 +245,9 @@ func handleFlowAgentEvents(ctx context.Context, iter *AsyncIterator[*AgentEvent]
 
 	for {
 		event, ok := iter.Next()
-		if !ok { break }
+		if !ok {
+			break
+		}
 
 		if parentSession != nil && (event.Action == nil || event.Action.Interrupted == nil) {
 			copied := copyTypedAgentEvent(event)
@@ -297,19 +317,25 @@ func GenTransferMessages(ctx context.Context, agentName string) (*schema.Message
 const EinoMsgIDKey = "_eino_msg_id"
 
 func GetMessageID(extra map[string]any) string {
-	if extra == nil { return "" }
+	if extra == nil {
+		return ""
+	}
 	id, _ := extra[EinoMsgIDKey].(string)
 	return id
 }
 
 func SetMessageID(extra map[string]any, id string) map[string]any {
-	if extra == nil { extra = make(map[string]any) }
+	if extra == nil {
+		extra = make(map[string]any)
+	}
 	extra[EinoMsgIDKey] = id
 	return extra
 }
 
 func EnsureMessageID(extra map[string]any) map[string]any {
-	if GetMessageID(extra) != "" { return extra }
+	if GetMessageID(extra) != "" {
+		return extra
+	}
 	return SetMessageID(extra, uuidV4())
 }
 

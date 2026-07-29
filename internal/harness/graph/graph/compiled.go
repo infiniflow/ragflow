@@ -6,44 +6,52 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/google/uuid"
 	"ragflow/internal/harness/graph/constants"
 	"ragflow/internal/harness/graph/types"
+
+	"github.com/google/uuid"
 )
 
 // CompiledStateGraph represents a compiled state graph with full subgraph support.
 // This corresponds to Python's CompiledStateGraph in graph/state.py
 type CompiledStateGraph struct {
-	*CompiledGraph
-	
+	*compiledGraph
+
 	// subgraphs maps subgraph names to their compiled graphs
 	subgraphs map[string]*CompiledStateGraph
-	
+
 	// parent is the parent graph (nil for root graph)
 	parent *CompiledStateGraph
-	
+
 	// namespace is the checkpoint namespace for this graph
 	namespace string
-	
+
 	// checkpointMap maps parent checkpoint IDs to child checkpoint IDs
 	checkpointMap map[string]string
-	
+
 	mu sync.RWMutex
 }
 
 // NewCompiledStateGraph creates a new compiled state graph.
-func NewCompiledStateGraph(base *CompiledGraph) *CompiledStateGraph {
-	return &CompiledStateGraph{
-		CompiledGraph:   base,
-		subgraphs:       make(map[string]*CompiledStateGraph),
-		parent:          nil,
-		namespace:       "",
-		checkpointMap:   make(map[string]string),
+func NewCompiledStateGraph(base types.CompiledGraph) *CompiledStateGraph {
+	switch v := base.(type) {
+	case *compiledGraph:
+		return &CompiledStateGraph{
+			compiledGraph: v,
+			subgraphs:     make(map[string]*CompiledStateGraph),
+			parent:        nil,
+			namespace:     "",
+			checkpointMap: make(map[string]string),
+		}
+	case *CompiledStateGraph:
+		return v
+	default:
+		panic(fmt.Sprintf("NewCompiledStateGraph requires *compiledGraph or *CompiledStateGraph, got %T", base))
 	}
 }
 
 // AddSubgraph adds a subgraph to this compiled graph.
-func (c *CompiledStateGraph) AddSubgraph(name string, subgraph *StateGraph) error {
+func (c *CompiledStateGraph) AddSubgraph(name string, subgraph types.StateGraph) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -51,15 +59,18 @@ func (c *CompiledStateGraph) AddSubgraph(name string, subgraph *StateGraph) erro
 		return fmt.Errorf("subgraph '%s' already exists", name)
 	}
 
-	// Compile the subgraph
-	compiled, err := subgraph.Compile()
+	sg, ok := subgraph.(*stateGraph)
+	if !ok {
+		return fmt.Errorf("subgraph type %T does not support Compile", subgraph)
+	}
+	compiled, err := sg.Compile()
 	if err != nil {
 		return fmt.Errorf("failed to compile subgraph '%s': %w", name, err)
 	}
 
 	// Wrap in CompiledStateGraph
 	subgraphCSG := &CompiledStateGraph{
-		CompiledGraph: compiled,
+		compiledGraph: compiled.(*compiledGraph),
 		subgraphs:     make(map[string]*CompiledStateGraph),
 		parent:        c,
 		namespace:     buildSubgraphNamespace(c.namespace, name),
@@ -107,7 +118,7 @@ func (c *CompiledStateGraph) Invoke(ctx context.Context, input interface{}, conf
 	rc.Configurable[constants.ConfigKeyCheckpointNS] = c.namespace
 
 	// Invoke base graph
-	return c.CompiledGraph.Invoke(ctx, input, rc)
+	return c.compiledGraph.Invoke(ctx, input, rc)
 }
 
 // Stream executes the graph with streaming and subgraph support.
@@ -123,7 +134,7 @@ func (c *CompiledStateGraph) Stream(ctx context.Context, input interface{}, mode
 	rc.Configurable[constants.ConfigKeyCheckpointNS] = c.namespace
 
 	// Stream from base graph
-	return c.CompiledGraph.Stream(ctx, input, mode, rc)
+	return c.compiledGraph.Stream(ctx, input, mode, rc)
 }
 
 // MigrateCheckpoint migrates a checkpoint from parent to subgraph or vice versa.
@@ -141,13 +152,13 @@ func (c *CompiledStateGraph) MigrateCheckpoint(
 		if c.parent == nil {
 			return "", fmt.Errorf("no parent graph to migrate to")
 		}
-		
+
 		// Get parent checkpoint ID from map
 		parentCheckpointID, exists := c.checkpointMap[checkpointID]
 		if !exists {
 			return "", fmt.Errorf("no parent checkpoint mapping found for %s", checkpointID)
 		}
-		
+
 		return parentCheckpointID, nil
 	}
 
@@ -159,7 +170,7 @@ func (c *CompiledStateGraph) MigrateCheckpoint(
 
 	// Create new checkpoint ID for subgraph
 	newCheckpointID := generateCheckpointID()
-	
+
 	// Store mapping
 	subgraph.checkpointMap[newCheckpointID] = checkpointID
 	c.checkpointMap[checkpointID] = newCheckpointID
@@ -219,5 +230,5 @@ func buildTaskPath(namespace, subgraphName string) string {
 
 // generateCheckpointID generates a new checkpoint ID.
 func generateCheckpointID() string {
-	return "cp_" + uuid.New().String()
+	return "ckp_" + uuid.New().String()
 }

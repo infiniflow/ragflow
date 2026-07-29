@@ -256,8 +256,6 @@ func TestNew_CustomReplannerPrompt(t *testing.T) {
 // Test custom NewPlan factory
 // ============================================================
 
-
-
 // ============================================================
 // Test Executor with tools
 // ============================================================
@@ -275,8 +273,8 @@ func TestNew_ExecutorWithTools(t *testing.T) {
 	)
 
 	flow, err := New(ctx, &Config{
-		Planner:  &PlannerConfig{Model: model},
-		Executor: &ExecutorConfig{Model: model, Tools: []core.Tool{tool}},
+		Planner:   &PlannerConfig{Model: model},
+		Executor:  &ExecutorConfig{Model: model, Tools: []core.Tool{tool}},
 		Replanner: &ReplannerConfig{Model: model},
 	})
 	if err != nil {
@@ -346,6 +344,7 @@ func TestPlanExecute_Integration(t *testing.T) {
 	}
 	t.Logf("integration test: final content=%q", lastContent)
 }
+
 // ============================================================
 
 func TestPlanJSON_Marshal(t *testing.T) {
@@ -487,5 +486,3 @@ func TestReplannerPrompt(t *testing.T) {
 		t.Error("ReplannerPrompt should mention respond_tool")
 	}
 }
-
-

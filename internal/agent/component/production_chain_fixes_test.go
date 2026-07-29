@@ -34,7 +34,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
+	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 )
 
 type codeExecSandboxRecorder struct {
@@ -53,12 +59,8 @@ func (s *codeExecSandboxRecorder) ExecuteCode(_ context.Context, req agenttool.S
 // host/port/password/top_n, no db_type) into the tool's required shape
 // (db_type/database/username/host/port/password/max_records).
 //
-// Without the translator, NewExeSQLConnParams would reject the v1
-// shape with "missing required connection params (db_type/host/
-// database/username)" and every legacy v1 ExeSQL canvas would fail
-// at buildNodeBody time. With the translator in place, the v1 shape
-// compiles cleanly (db_type defaults to "mysql"; port is coerced from
-// float64; top_n is mapped to max_records).
+// The tool factory accepts the v1 shape directly: db_type defaults to mysql,
+// JSON numeric ports are accepted, and top_n becomes max_records.
 func TestExeSQL_V1DSLParamsAccepted(t *testing.T) {
 	t.Parallel()
 
@@ -84,39 +86,8 @@ func TestExeSQL_V1DSLParamsAccepted(t *testing.T) {
 		t.Errorf("ExeSQL c.Name() = %q, want %q", got, componentNameExeSQL)
 	}
 
-	// translateExeSQLParamsToToolShape should also be directly
-	// testable as a pure function: the same shape, the same result.
-	got := translateExeSQLParamsToToolShape(v1Params)
-	if got["db_type"] != "mysql" {
-		t.Errorf("translated db_type = %v, want %q", got["db_type"], "mysql")
-	}
-	if v, ok := got["port"].(int); !ok || v != 3306 {
-		t.Errorf("translated port = %v (%T), want int 3306", got["port"], got["port"])
-	}
-	if v, ok := got["max_records"].(int); !ok || v != 50 {
-		t.Errorf("translated max_records = %v (%T), want int 50", got["max_records"], got["max_records"])
-	}
-	if _, ok := got["top_n"]; ok {
-		t.Errorf("translated map should drop top_n (mapped to max_records)")
-	}
-
-	// Idempotency: a second pass must not double-default.
-	got2 := translateExeSQLParamsToToolShape(got)
-	if got2["db_type"] != "mysql" {
-		t.Errorf("idempotent db_type = %v, want %q", got2["db_type"], "mysql")
-	}
-	if v, ok := got2["port"].(int); !ok || v != 3306 {
-		t.Errorf("idempotent port = %v (%T), want int 3306", got2["port"], got2["port"])
-	}
-
-	// Explicit override wins: passing db_type=postgres must be
-	// preserved through the translator.
-	override := translateExeSQLParamsToToolShape(map[string]any{
-		"db_type": "postgres",
-		"host":    "10.0.0.1",
-	})
-	if override["db_type"] != "postgres" {
-		t.Errorf("override db_type = %v, want %q", override["db_type"], "postgres")
+	if _, ok := c.(*ToolBackedComponent); !ok {
+		t.Fatalf("New(ExeSQL) returned %T, want *ToolBackedComponent", c)
 	}
 }
 
@@ -190,6 +161,203 @@ func TestRetrieval_KbIDsTranslatedToDatasetIDs(t *testing.T) {
 	}
 }
 
+func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to unwrap sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatalf("failed to migrate knowledgebase: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+		t.Fatalf("failed to migrate user_tenant: %v", err)
+	}
+	origDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = origDB })
+	activeStatus := "1"
+	if err := db.Create(&entity.UserTenant{
+		ID:        "ut-1",
+		UserID:    "user-1",
+		TenantID:  "tenant-1",
+		Role:      "owner",
+		InvitedBy: "user-1",
+		Status:    &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed user_tenant: %v", err)
+	}
+
+	if err := db.Create(&entity.Knowledgebase{
+		ID:         "kb-da1",
+		Name:       "da1",
+		TenantID:   "tenant-1",
+		EmbdID:     "BAAI/bge-m3@yy2@SILICONFLOW",
+		Permission: "me",
+		CreatedBy:  "user-1",
+		Status:     func() *string { s := string(entity.StatusValid); return &s }(),
+	}).Error; err != nil {
+		t.Fatalf("failed to seed kb: %v", err)
+	}
+
+	c, err := newRetrievalComponent(nil)
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+	rc := c.(*retrievalComponent)
+	merged := rc.applyDefaults(map[string]any{
+		"query": "UserFillUp:   da1\nInput diamond necklace\n",
+	})
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["user_id"] = "user-1"
+	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), db, merged)
+
+	if got, _ := merged["query"].(string); got != "diamond necklace" {
+		t.Fatalf("query = %q, want diamond necklace", got)
+	}
+	ds, ok := merged["dataset_ids"].([]string)
+	if !ok || len(ds) != 1 || ds[0] != "kb-da1" {
+		t.Fatalf("dataset_ids = %#v, want []string{\"kb-da1\"}", merged["dataset_ids"])
+	}
+}
+
+func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to unwrap sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err = db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("failed to migrate tables: %v", err)
+	}
+	origDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = origDB })
+
+	activeStatus := "1"
+	if err = db.Create(&entity.UserTenant{
+		ID:        "ut-1",
+		UserID:    "user-1",
+		TenantID:  "tenant-1",
+		Role:      "owner",
+		InvitedBy: "user-1",
+		Status:    &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed user_tenant: %v", err)
+	}
+	if err = db.Create(&entity.Knowledgebase{
+		ID:         "kb-da1",
+		Name:       "da1",
+		TenantID:   "tenant-1",
+		EmbdID:     "BAAI/bge-m3@yy2@SILICONFLOW",
+		Permission: "me",
+		CreatedBy:  "user-1",
+		Status:     func() *string { s := string(entity.StatusValid); return &s }(),
+	}).Error; err != nil {
+		t.Fatalf("failed to seed kb: %v", err)
+	}
+
+	c, err := newRetrievalComponent(nil)
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+	rc := c.(*retrievalComponent)
+	merged := rc.applyDefaults(map[string]any{
+		"state": map[string]any{
+			"UserFillUp:KBInput": map[string]any{
+				"kb":    "da1",
+				"query": "合同",
+			},
+		},
+	})
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["user_id"] = "user-1"
+	normalizeLegacyRetrievalInputs(runtime.WithState(context.Background(), state), db, merged)
+
+	if got, _ := merged["query"].(string); got != "合同" {
+		t.Fatalf("query = %q, want 合同", got)
+	}
+	ds, ok := merged["dataset_ids"].([]string)
+	if !ok || len(ds) != 1 || ds[0] != "kb-da1" {
+		t.Fatalf("dataset_ids = %#v, want []string{\"kb-da1\"}", merged["dataset_ids"])
+	}
+}
+
+func TestRetrieval_ResolveDatasetIDByTenantName(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to unwrap sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatalf("failed to migrate knowledgebase: %v", err)
+	}
+	origDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = origDB })
+
+	if err := db.Create(&entity.Knowledgebase{
+		ID:         "kb-da1",
+		Name:       "da1",
+		TenantID:   "tenant-1",
+		EmbdID:     "BAAI/bge-m3@yy2@SILICONFLOW",
+		Permission: "me",
+		CreatedBy:  "user-1",
+		Status:     func() *string { s := string(entity.StatusValid); return &s }(),
+	}).Error; err != nil {
+		t.Fatalf("failed to seed kb: %v", err)
+	}
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := runtime.WithState(context.Background(), state)
+
+	if got := resolveRetrievalDatasetID(ctx, db, "da1"); got != "kb-da1" {
+		t.Fatalf("resolveRetrievalDatasetID = %q, want kb-da1", got)
+	}
+}
+
+func TestRetrieval_StructuredInputPreservesQueryWhenDatasetIDsAlreadyPresent(t *testing.T) {
+	c, err := newRetrievalComponent(nil)
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+	rc := c.(*retrievalComponent)
+	merged := rc.applyDefaults(map[string]any{
+		"dataset_ids": []string{"kb-fixed"},
+		"state": map[string]any{
+			"UserFillUp:KBInput": map[string]any{
+				"kb":    "da1",
+				"query": "合同",
+			},
+		},
+	})
+
+	consumed := normalizeStructuredRetrievalInputs(context.Background(), nil, merged)
+	if !consumed {
+		t.Fatal("normalizeStructuredRetrievalInputs should consume structured query")
+	}
+	if got, _ := merged["query"].(string); got != "合同" {
+		t.Fatalf("query = %q, want 合同", got)
+	}
+	ds, ok := merged["dataset_ids"].([]string)
+	if !ok || len(ds) != 1 || ds[0] != "kb-fixed" {
+		t.Fatalf("dataset_ids = %#v, want []string{\"kb-fixed\"}", merged["dataset_ids"])
+	}
+}
+
 // TestRetrieval_KbIDsEndToEndThroughTool is the wire-level
 // companion to TestRetrieval_KbIDsTranslatedToDatasetIDs: it
 // installs the simple retrieval service, builds a wrapper with
@@ -219,7 +387,7 @@ func TestRetrieval_KbIDsEndToEndThroughTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(Retrieval): %v", err)
 	}
-	out, err := wrapper.Invoke(context.Background(), map[string]any{"query": "ragflow"})
+	out, err := wrapper.Invoke(context.Background(), nil, map[string]any{"query": "ragflow"})
 	if err != nil {
 		t.Fatalf("Retrieval.Invoke: %v", err)
 	}
@@ -233,7 +401,7 @@ func TestRetrieval_KbIDsEndToEndThroughTool(t *testing.T) {
 // variants must also resolve to the Universe B tool. The Universe
 // B tool registry has always
 // accepted all three spellings (search_my_dataset /
-// search_my_dateset) plus PascalCase; Universe A now mirrors that
+// search_my_dataset) plus PascalCase; Universe A now mirrors that
 // surface so older DSLs don't fail with "unknown component" at
 // buildNodeBody time.
 //
@@ -333,7 +501,7 @@ func TestCodeExec_LegacyDSLWrapperBridgesParamsAndOutputs(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"arguments": map[string]any{
 			"x": 7,
 		},
@@ -405,7 +573,7 @@ func TestCodeExec_LegacyDSLWrapperResolvesArgumentRefsFromState(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"state": map[string]map[string]any{
 			"UserFillUp:CodeInput": {
 				"x": "8",
@@ -420,6 +588,52 @@ func TestCodeExec_LegacyDSLWrapperResolvesArgumentRefsFromState(t *testing.T) {
 	}
 	if got := out["result"]; got != float64(16) {
 		t.Fatalf("CodeExec result = %v, want 16", got)
+	}
+}
+
+func TestCodeExec_LegacyDSLWrapperResolvesSysArgumentRefsFromCanvasState(t *testing.T) {
+	prev := agenttool.GetSandboxClient()
+	recorder := &codeExecSandboxRecorder{
+		resp: &agenttool.SandboxResponse{
+			ExitCode: 0,
+			StructuredResult: map[string]any{
+				"present": true,
+				"value":   "532",
+			},
+		},
+	}
+	agenttool.SetSandboxClient(recorder)
+	t.Cleanup(func() { agenttool.SetSandboxClient(prev) })
+
+	c, err := New(componentNameCodeExec, map[string]any{
+		"lang": "python",
+		"script": "def main(num):\n" +
+			"    return num\n",
+		"arguments": map[string]any{
+			"num": "sys.query",
+		},
+		"outputs": map[string]any{
+			"result": map[string]any{
+				"type": "String",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(CodeExec): %v", err)
+	}
+
+	state := runtime.NewCanvasState("run-codeexec", "task-codeexec")
+	state.Sys["query"] = "532"
+	ctx := runtime.WithState(context.Background(), state)
+	out, err := c.Invoke(ctx, nil, nil)
+	if err != nil {
+		t.Fatalf("CodeExec.Invoke: %v", err)
+	}
+	if got := recorder.req.Arguments["num"]; got != "532" {
+		t.Fatalf("sandbox arguments[num] = %#v, want \"532\"", got)
+	}
+	if got := out["result"]; got != "532" {
+		t.Fatalf("CodeExec result = %v, want 532", got)
 	}
 }
 
@@ -450,7 +664,7 @@ func TestCodeExec_LegacyDSLWrapperContractMismatchSetsError(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("CodeExec.Invoke: %v", err)
 	}
@@ -490,7 +704,7 @@ func TestCodeExec_LegacyDSLWrapperPreservesExecutionError(t *testing.T) {
 		t.Fatalf("New(CodeExec): %v", err)
 	}
 
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err == nil {
 		t.Fatal("CodeExec.Invoke: want wrapped execution error, got nil")
 	}
@@ -509,7 +723,7 @@ type countingInvoker struct {
 	calls int
 }
 
-func (c *countingInvoker) Invoke(_ context.Context, _ ChatInvokeRequest) (*ChatInvokeResponse, error) {
+func (c *countingInvoker) Invoke(_ context.Context, _ *gorm.DB, _ ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	c.calls++
 	return nil, errLLMRetryTestAlwaysFail
 }
@@ -582,7 +796,7 @@ func TestLLM_RetryStackingSemantics(t *testing.T) {
 			}
 			// The retry chain always returns errLLMRetryTestAlwaysFail
 			// so we can count attempts deterministically.
-			_, _ = comp.Invoke(context.Background(), nil)
+			_, _ = comp.Invoke(context.Background(), nil, nil)
 			if counter.calls < tc.wantMinAttempts {
 				t.Errorf("counter.calls = %d, want >= %d (MaxRetries=%d stacking regression?)",
 					counter.calls, tc.wantMinAttempts, tc.maxRetries)

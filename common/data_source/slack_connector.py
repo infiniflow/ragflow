@@ -14,22 +14,9 @@ from slack_sdk.errors import SlackApiError
 from slack_sdk.http_retry import ConnectionErrorRetryHandler
 from slack_sdk.http_retry.builtin_interval_calculators import FixedValueRetryIntervalCalculator
 
-from common.data_source.config import (
-    INDEX_BATCH_SIZE, SLACK_NUM_THREADS, ENABLE_EXPENSIVE_EXPERT_CALLS,
-    _SLACK_LIMIT, FAST_TIMEOUT, MAX_RETRIES, MAX_CHANNELS_TO_LOG
-)
-from common.data_source.exceptions import (
-    ConnectorMissingCredentialError,
-    ConnectorValidationError,
-    CredentialExpiredError,
-    InsufficientPermissionsError,
-    UnexpectedValidationError
-)
-from common.data_source.interfaces import (
-    CheckpointedConnectorWithPermSync,
-    CredentialsConnector,
-    SlimConnectorWithPermSync
-)
+from common.data_source.config import INDEX_BATCH_SIZE, SLACK_NUM_THREADS, ENABLE_EXPENSIVE_EXPERT_CALLS, _SLACK_LIMIT, FAST_TIMEOUT, MAX_RETRIES, MAX_CHANNELS_TO_LOG
+from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError, CredentialExpiredError, InsufficientPermissionsError, UnexpectedValidationError
+from common.data_source.interfaces import CheckpointedConnectorWithPermSync, CredentialsConnector, SlimConnectorWithPermSync
 from common.data_source.models import (
     BasicExpertInfo,
     ConnectorCheckpoint,
@@ -38,18 +25,33 @@ from common.data_source.models import (
     DocumentFailure,
     SlimDocument,
     SecondsSinceUnixEpoch,
-    GenerateSlimDocumentOutput, MessageType, SlackMessageFilterReason, ChannelType, ThreadType, ProcessedSlackMessage,
-    CheckpointOutput
+    GenerateSlimDocumentOutput,
+    MessageType,
+    SlackMessageFilterReason,
+    ChannelType,
+    ThreadType,
+    ProcessedSlackMessage,
+    CheckpointOutput,
 )
-from common.data_source.utils import make_paginated_slack_api_call, SlackTextCleaner, expert_info_from_slack_id, \
-    get_message_link
+from common.data_source.utils import make_paginated_slack_api_call, SlackTextCleaner, expert_info_from_slack_id, get_message_link
 
 # Disallowed message subtypes list
 _DISALLOWED_MSG_SUBTYPES = {
-    "channel_join", "channel_leave", "channel_archive", "channel_unarchive",
-    "pinned_item", "unpinned_item", "ekm_access_denied", "channel_posting_permissions",
-    "group_join", "group_leave", "group_archive", "group_unarchive",
-    "channel_leave", "channel_name", "channel_join",
+    "channel_join",
+    "channel_leave",
+    "channel_archive",
+    "channel_unarchive",
+    "pinned_item",
+    "unpinned_item",
+    "ekm_access_denied",
+    "channel_posting_permissions",
+    "group_join",
+    "group_leave",
+    "group_archive",
+    "group_unarchive",
+    "channel_leave",
+    "channel_name",
+    "channel_join",
 }
 
 
@@ -97,7 +99,7 @@ def get_channels(
         channel_types.append("public_channel")
     if get_private:
         channel_types.append("private_channel")
-    
+
     # First try to get public and private channels
     try:
         channels = _collect_paginated_channels(
@@ -153,9 +155,7 @@ def get_channel_messages(
 
 def get_thread(client: WebClient, channel_id: str, thread_id: str) -> ThreadType:
     threads: list[MessageType] = []
-    for result in make_paginated_slack_api_call(
-        client.conversations_replies, channel=channel_id, ts=thread_id
-    ):
+    for result in make_paginated_slack_api_call(client.conversations_replies, channel=channel_id, ts=thread_id):
         threads.extend(result["messages"])
     return threads
 
@@ -179,40 +179,20 @@ def thread_to_doc(
 ) -> Document:
     channel_id = channel["id"]
 
-    initial_sender_expert_info = expert_info_from_slack_id(
-        user_id=thread[0].get("user"), client=client, user_cache=user_cache
-    )
-    initial_sender_name = (
-        initial_sender_expert_info.get_semantic_name()
-        if initial_sender_expert_info
-        else "Unknown"
-    )
+    initial_sender_expert_info = expert_info_from_slack_id(user_id=thread[0].get("user"), client=client, user_cache=user_cache)
+    initial_sender_name = initial_sender_expert_info.get_semantic_name() if initial_sender_expert_info else "Unknown"
 
     valid_experts = None
     if ENABLE_EXPENSIVE_EXPERT_CALLS:
         all_sender_ids = [m.get("user") for m in thread]
-        experts = [
-            expert_info_from_slack_id(
-                user_id=sender_id, client=client, user_cache=user_cache
-            )
-            for sender_id in all_sender_ids
-            if sender_id
-        ]
+        experts = [expert_info_from_slack_id(user_id=sender_id, client=client, user_cache=user_cache) for sender_id in all_sender_ids if sender_id]
         valid_experts = [expert for expert in experts if expert]
 
-    cleaned_messages = [
-        slack_cleaner.index_clean(cast(str, m["text"])) for m in thread
-    ]
+    cleaned_messages = [slack_cleaner.index_clean(cast(str, m["text"])) for m in thread]
     first_message = cleaned_messages[0] if cleaned_messages else ""
-    snippet = (
-        first_message[:50].rstrip() + "..."
-        if len(first_message) > 50
-        else first_message
-    )
+    snippet = first_message[:50].rstrip() + "..." if len(first_message) > 50 else first_message
 
-    doc_sem_id = f"{initial_sender_name} in #{channel['name']}: {snippet}".replace(
-        "\n", " "
-    )
+    doc_sem_id = f"{initial_sender_name} in #{channel['name']}: {snippet}".replace("\n", " ")
 
     # The Document model is blob-based (no sections), so flatten the thread's
     # cleaned messages into a single UTF-8 text blob.
@@ -242,14 +222,7 @@ def filter_channels(
         return all_channels
 
     if regex_enabled:
-        return [
-            channel
-            for channel in all_channels
-            if any(
-                re.fullmatch(channel_to_connect, channel["name"])
-                for channel_to_connect in channels_to_connect
-            )
-        ]
+        return [channel for channel in all_channels if any(re.fullmatch(channel_to_connect, channel["name"]) for channel_to_connect in channels_to_connect)]
 
     # Validate all specified channels are valid
     all_channel_names = {channel["name"] for channel in all_channels}
@@ -262,9 +235,7 @@ def filter_channels(
                 f"{list(itertools.islice(all_channel_names, MAX_CHANNELS_TO_LOG))}"
             )
 
-    return [
-        channel for channel in all_channels if channel["name"] in channels_to_connect
-    ]
+    return [channel for channel in all_channels if channel["name"] in channels_to_connect]
 
 
 def _get_channel_by_id(client: WebClient, channel_id: str) -> ChannelType:
@@ -309,9 +280,7 @@ def _get_messages(
 
     messages = cast(list[MessageType], response.get("messages", []))
 
-    cursor = cast(dict[str, Any], response.get("response_metadata", {})).get(
-        "next_cursor", ""
-    )
+    cursor = cast(dict[str, Any], response.get("response_metadata", {})).get("next_cursor", "")
     has_more = bool(cursor)
     return messages, has_more
 
@@ -324,9 +293,7 @@ def _message_to_doc(
     user_cache: dict[str, BasicExpertInfo | None],
     seen_thread_ts: set[str],
     channel_access: Any | None,
-    msg_filter_func: Callable[
-        [MessageType], SlackMessageFilterReason | None
-    ] = default_msg_filter,
+    msg_filter_func: Callable[[MessageType], SlackMessageFilterReason | None] = default_msg_filter,
 ) -> tuple[Document | None, SlackMessageFilterReason | None]:
     """Convert message to document"""
     filtered_thread: ThreadType | None = None
@@ -337,9 +304,7 @@ def _message_to_doc(
         if thread_ts in seen_thread_ts:
             return None, None
 
-        thread = get_thread(
-            client=client, channel_id=channel["id"], thread_id=thread_ts
-        )
+        thread = get_thread(client=client, channel_id=channel["id"], thread_id=thread_ts)
 
         filtered_thread = []
         for message in thread:
@@ -377,9 +342,7 @@ def _process_message(
     user_cache: dict[str, BasicExpertInfo | None],
     seen_thread_ts: set[str],
     channel_access: Any | None,
-    msg_filter_func: Callable[
-        [MessageType], SlackMessageFilterReason | None
-    ] = default_msg_filter,
+    msg_filter_func: Callable[[MessageType], SlackMessageFilterReason | None] = default_msg_filter,
 ) -> ProcessedSlackMessage:
     thread_ts = message.get("thread_ts")
     thread_or_message_ts = thread_ts or message["ts"]
@@ -408,9 +371,7 @@ def _process_message(
             filter_reason=None,
             failure=ConnectorFailure(
                 failed_document=DocumentFailure(
-                    document_id=_build_doc_id(
-                        channel_id=channel["id"], thread_ts=thread_or_message_ts
-                    ),
+                    document_id=_build_doc_id(channel_id=channel["id"], thread_ts=thread_or_message_ts),
                     document_link=get_message_link(message, client, channel["id"]),
                 ),
                 failure_message=str(e),
@@ -423,15 +384,11 @@ def _get_all_doc_ids(
     client: WebClient,
     channels: list[str] | None = None,
     channel_name_regex_enabled: bool = False,
-    msg_filter_func: Callable[
-        [MessageType], SlackMessageFilterReason | None
-    ] = default_msg_filter,
+    msg_filter_func: Callable[[MessageType], SlackMessageFilterReason | None] = default_msg_filter,
     callback: Any = None,
 ) -> GenerateSlimDocumentOutput:
     all_channels = get_channels(client)
-    filtered_channels = filter_channels(
-        all_channels, channels, channel_name_regex_enabled
-    )
+    filtered_channels = filter_channels(all_channels, channels, channel_name_regex_enabled)
 
     for channel in filtered_channels:
         channel_id = channel["id"]
@@ -451,9 +408,7 @@ def _get_all_doc_ids(
 
                 slim_doc_batch.append(
                     SlimDocument(
-                        id=_build_doc_id(
-                            channel_id=channel_id, thread_ts=message["ts"]
-                        ),
+                        id=_build_doc_id(channel_id=channel_id, thread_ts=message["ts"]),
                         external_access=external_access,
                     )
                 )
@@ -493,9 +448,7 @@ class SlackConnector(
 
     @channels.setter
     def channels(self, channels: list[str] | None) -> None:
-        self._channels = (
-            [channel.removeprefix("#") for channel in channels] if channels else None
-        )
+        self._channels = [channel.removeprefix("#") for channel in channels] if channels else None
 
     def load_credentials(self, credentials: dict[str, Any]) -> dict[str, Any] | None:
         """Load credentials"""
@@ -518,14 +471,10 @@ class SlackConnector(
             ],
         )
 
-        self.client = WebClient(
-            token=bot_token, retry_handlers=[connection_error_retry_handler]
-        )
+        self.client = WebClient(token=bot_token, retry_handlers=[connection_error_retry_handler])
 
         # For fast response requests
-        self.fast_client = WebClient(
-            token=bot_token, timeout=FAST_TIMEOUT
-        )
+        self.fast_client = WebClient(token=bot_token, timeout=FAST_TIMEOUT)
         self.text_cleaner = SlackTextCleaner(client=self.client)
         self.credentials_provider = credentials_provider
 
@@ -560,9 +509,7 @@ class SlackConnector(
             raise ConnectorMissingCredentialError("Slack")
 
         all_channels = get_channels(self.client)
-        filtered_channels = filter_channels(
-            all_channels, self.channels, self.channel_regex_enabled
-        )
+        filtered_channels = filter_channels(all_channels, self.channels, self.channel_regex_enabled)
 
         batch: list[Document] = []
         for channel in filtered_channels:
@@ -655,70 +602,47 @@ class SlackConnector(
             # 1) Validate workspace connection
             auth_response = self.fast_client.auth_test()
             if not auth_response.get("ok", False):
-                error_msg = auth_response.get(
-                    "error", "Unknown error from Slack auth_test"
-                )
+                error_msg = auth_response.get("error", "Unknown error from Slack auth_test")
                 raise ConnectorValidationError(f"Failed Slack auth_test: {error_msg}")
 
             # 2) Confirm listing channels functionality works
-            test_resp = self.fast_client.conversations_list(
-                limit=1, types=["public_channel"]
-            )
+            test_resp = self.fast_client.conversations_list(limit=1, types=["public_channel"])
             if not test_resp.get("ok", False):
                 error_msg = test_resp.get("error", "Unknown error from Slack")
                 if error_msg == "invalid_auth":
-                    raise ConnectorValidationError(
-                        f"Invalid Slack bot token ({error_msg})."
-                    )
+                    raise ConnectorValidationError(f"Invalid Slack bot token ({error_msg}).")
                 elif error_msg == "not_authed":
-                    raise CredentialExpiredError(
-                        f"Invalid or expired Slack bot token ({error_msg})."
-                    )
-                raise UnexpectedValidationError(
-                    f"Slack API returned a failure: {error_msg}"
-                )
+                    raise CredentialExpiredError(f"Invalid or expired Slack bot token ({error_msg}).")
+                raise UnexpectedValidationError(f"Slack API returned a failure: {error_msg}")
 
             # 3) Confirm users:read scope is available (required by thread_to_doc)
             users_resp = self.fast_client.users_info(user="USLACKBOT")
             if not users_resp.get("ok", False):
                 error_msg = users_resp.get("error", "")
                 if error_msg in ("missing_scope", "not_allowed_token_type"):
-                    raise InsufficientPermissionsError(
-                        "Slack bot token lacks the 'users:read' scope required to look up message senders. "
-                        "Please add 'users:read' to your Slack app's OAuth scopes."
-                    )
+                    raise InsufficientPermissionsError("Slack bot token lacks the 'users:read' scope required to look up message senders. Please add 'users:read' to your Slack app's OAuth scopes.")
 
         except SlackApiError as e:
             slack_error = e.response.get("error", "")
             if slack_error == "ratelimited":
                 retry_after = int(e.response.headers.get("Retry-After", 1))
                 logging.warning(
-                    f"Slack API rate limited during validation. Retry suggested after {retry_after} seconds. "
-                    "Proceeding with validation, but be aware that connector operations might be throttled."
+                    f"Slack API rate limited during validation. Retry suggested after {retry_after} seconds. Proceeding with validation, but be aware that connector operations might be throttled."
                 )
                 return
             elif slack_error == "missing_scope":
                 raise InsufficientPermissionsError(
-                    "Slack bot token lacks the necessary scope to list/access channels. "
-                    "Please ensure your Slack app has 'channels:read' (and/or 'groups:read' for private channels)."
+                    "Slack bot token lacks the necessary scope to list/access channels. Please ensure your Slack app has 'channels:read' (and/or 'groups:read' for private channels)."
                 )
             elif slack_error == "invalid_auth":
-                raise CredentialExpiredError(
-                    f"Invalid Slack bot token ({slack_error})."
-                )
+                raise CredentialExpiredError(f"Invalid Slack bot token ({slack_error}).")
             elif slack_error == "not_authed":
-                raise CredentialExpiredError(
-                    f"Invalid or expired Slack bot token ({slack_error})."
-                )
-            raise UnexpectedValidationError(
-                f"Unexpected Slack error '{slack_error}' during settings validation."
-            )
+                raise CredentialExpiredError(f"Invalid or expired Slack bot token ({slack_error}).")
+            raise UnexpectedValidationError(f"Unexpected Slack error '{slack_error}' during settings validation.")
         except ConnectorValidationError as e:
             raise e
         except Exception as e:
-            raise UnexpectedValidationError(
-                f"Unexpected error during Slack settings validation: {e}"
-            )
+            raise UnexpectedValidationError(f"Unexpected error during Slack settings validation: {e}")
 
 
 if __name__ == "__main__":
@@ -731,9 +655,7 @@ if __name__ == "__main__":
     )
 
     # Simplified version, directly using credentials dictionary
-    credentials = {
-        "slack_bot_token": os.environ.get("SLACK_BOT_TOKEN", "test-token")
-    }
+    credentials = {"slack_bot_token": os.environ.get("SLACK_BOT_TOKEN", "test-token")}
 
     class SimpleCredentialsProvider:
         def get_credentials(self):

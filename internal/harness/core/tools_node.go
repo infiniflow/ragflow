@@ -51,7 +51,7 @@ type ToolsNodeConfig struct {
 // collecting results, and applying middleware chains.
 type ToolsNode[M MessageType] struct {
 	config  *ToolsNodeConfig
-	toolMap  map[string]Tool
+	toolMap map[string]Tool
 }
 
 // NewToolsNode creates a new ToolsNode with the given configuration.
@@ -325,11 +325,11 @@ func parseToolArgs(argsJSON string, target any) error {
 // LoopGuard prevents infinite loops where the model repeatedly calls a tool
 // with identical parameters. It tracks consecutive same-args calls per tool.
 type LoopGuard struct {
-	mu        sync.Mutex
-	sameArgs  map[string]int // key = toolName+"|"+argsHash
-	failures  map[string]int // key = toolName
-	maxSame   int
-	maxFails  int
+	mu       sync.Mutex
+	sameArgs map[string]int // key = toolName+"|"+argsHash
+	failures map[string]int // key = toolName
+	maxSame  int
+	maxFails int
 }
 
 // NewLoopGuard creates a LoopGuard with the given thresholds.

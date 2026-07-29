@@ -24,6 +24,7 @@ import (
 
 	"ragflow/internal/harness/core/schema"
 	"ragflow/internal/harness/graph/channels"
+	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/constants"
 	"ragflow/internal/harness/graph/graph"
 	"ragflow/internal/harness/graph/pregel"
@@ -56,14 +57,16 @@ type ReActGraphState struct {
 // ReActGraph wraps a ChatModelAgent's loop into a StateGraph with automatic
 // checkpoint at each iteration and interrupt before tool execution.
 type ReActGraph struct {
-	compiled *graph.CompiledGraph
+	compiled types.CompiledGraph
 	config   *ReActConfig[*schema.Message]
 	agent    *ReActAgent[*schema.Message]
+	allInfos []*schema.ToolInfo // merged config + contributor tool infos
+	allTools []Tool             // merged config + contributor tools
 }
 
 // ReActGraphConfig holds options for building a ReActGraph.
 type ReActGraphConfig struct {
-	Checkpointer    graph.Checkpointer
+	Checkpointer    checkpoint.BaseCheckpointer
 	InterruptBefore []string // node names to interrupt before (default: "execute_tools")
 	RecursionLimit  int
 }
@@ -80,11 +83,19 @@ type ReActGraphConfig struct {
 //   - prepare_input: BeforeAgent
 //   - model_generate: BeforeModelRewrite → model call → AfterModelRewrite
 //   - check_done (on exit): AfterAgent
-func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig) (*ReActGraph, error) {
+func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig, allToolInfos []*schema.ToolInfo) (*ReActGraph, error) {
 	if cfg == nil {
 		cfg = &ReActGraphConfig{}
 	}
 	agentCfg := agent.config
+	// Fallback: when allToolInfos is nil, derive from the agent's tools
+	// so model wrappers always have tool metadata.
+	if allToolInfos == nil {
+		allToolInfos = toolsToInfosTyped[*schema.Message](agentCfg.Tools)
+		if agentCfg.ToolsConfig != nil {
+			allToolInfos = append(allToolInfos, toolsToInfosTyped[*schema.Message](agentCfg.ToolsConfig.Tools)...)
+		}
+	}
 	sg := graph.NewStateGraph(&ReActGraphState{})
 
 	// Register channels for state fields used by the graph engine.
@@ -95,12 +106,26 @@ func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig) (*
 
 	// --- Node: prepare_input ---
 	// Runs once at the start. Applies BeforeAgent middleware.
+	// Build allTools and allRD from config + contributor tools.
+	allTools := make([]Tool, 0, len(agent.config.Tools))
+	allTools = append(allTools, agent.config.Tools...)
+	allRD := make(map[string]bool)
+	for k, v := range agent.config.ReturnDirectly {
+		allRD[k] = v
+	}
+	if ec := agent.exeCtx; ec != nil {
+		allTools = append(allTools, ec.contribTools...)
+		for k, v := range ec.contribReturnDirectly {
+			allRD[k] = v
+		}
+	}
+
 	sg.AddNode("prepare_input", func(ctx context.Context, state interface{}) (interface{}, error) {
 		s := state.(*ReActGraphState)
 		rc := &ReActAgentContext{
 			Instruction:    s.Instruction,
-			Tools:          agentCfg.Tools,
-			ReturnDirectly: agentCfg.ReturnDirectly,
+			Tools:          allTools,
+			ReturnDirectly: allRD,
 		}
 		for _, mw := range agentCfg.Middlewares {
 			if mw == nil {
@@ -129,16 +154,16 @@ func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig) (*
 		// Clear tool cache at start of each iteration.
 		s.ToolExecutedCache = nil
 
-		model := BuildModelWrapperChain(agentCfg.Model, nil, agentCfg)
+		model := BuildModelWrapperChain(agentCfg.Model, nil, agentCfg, allToolInfos)
 
 		agentState := NewReActAgentState(
 			messageSliceToAny(s.Messages),
-			s.ToolInfos,
+			allToolInfos,
 			s.IterationsLeft+1,
 		)
 		typedState := (*TypedReActAgentState[*schema.Message])(agentState)
 		mc := &TypedModelContext[*schema.Message]{
-			Tools:               s.ToolInfos,
+			Tools:               allToolInfos,
 			ModelRetryConfig:    agentCfg.RetryConfig,
 			ModelFailoverConfig: agentCfg.FailoverConfig,
 		}
@@ -247,7 +272,15 @@ func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig) (*
 		)
 		typedState := (*TypedReActAgentState[*schema.Message])(agentState)
 
-		tn := NewToolsNode[*schema.Message](agentCfg.ToolsConfig)
+		// Build ToolsNode from config ToolsConfig (for ToolInvokeMiddlewares etc.)
+		// but overlay allTools (config + contributor).
+		tnCfg := &ToolsNodeConfig{}
+		if agentCfg.ToolsConfig != nil {
+			*tnCfg = *agentCfg.ToolsConfig
+		}
+		tnCfg.Tools = allTools
+		tnCfg.ReturnDirectly = allRD
+		tn := NewToolsNode[*schema.Message](tnCfg)
 
 		// Execute pending calls one at a time so we can track per-call results.
 		// Each call uses a single-tool-call message to keep tracking simple.
@@ -256,8 +289,8 @@ func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig) (*
 		for _, tc := range pendingCalls {
 			// Build a fresh message containing only this tool call.
 			singleMsg := &schema.Message{
-				Role:    schema.RoleAssistant,
-				Content: "",
+				Role:      schema.RoleAssistant,
+				Content:   "",
 				ToolCalls: []schema.ToolCall{tc},
 			}
 			var action *AgentAction
@@ -369,9 +402,8 @@ func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig) (*
 		rl = constants.DefaultRecursionLimit
 	}
 
-	compileOpts := []graph.CompileOption{
-		graph.WithRecursionLimit(rl),
-	}
+	var compileOpts []interface{}
+	compileOpts = append(compileOpts, graph.WithRecursionLimit(rl))
 	if cfg.Checkpointer != nil {
 		compileOpts = append(compileOpts, graph.WithCheckpointer(cfg.Checkpointer))
 	}
@@ -388,6 +420,8 @@ func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig) (*
 		compiled: compiled,
 		config:   agentCfg,
 		agent:    agent,
+		allInfos: allToolInfos,
+		allTools: allTools,
 	}, nil
 }
 
@@ -439,7 +473,7 @@ func (rg *ReActGraph) ResumeStream(ctx context.Context, config *types.RunnableCo
 }
 
 // Compile returns the underlying compiled graph for direct access.
-func (rg *ReActGraph) Compile() *graph.CompiledGraph { return rg.compiled }
+func (rg *ReActGraph) Compile() types.CompiledGraph { return rg.compiled }
 
 // ---- helpers ----
 
@@ -455,14 +489,9 @@ func (rg *ReActGraph) buildInitialState(input *AgentInput) *ReActGraphState {
 		AgentName:      rg.agent.name,
 		Instruction:    rg.config.Instruction,
 	}
-	state.ToolInfos = make([]*schema.ToolInfo, len(rg.config.Tools))
-	for i, t := range rg.config.Tools {
-		if p, ok := t.(ToolInfoProvider); ok {
-			state.ToolInfos[i] = p.ToolInfo()
-		} else {
-			state.ToolInfos[i] = &schema.ToolInfo{Name: t.Name(), Description: t.Description()}
-		}
-	}
+	// Use merged tool infos (config + contributor).
+	state.ToolInfos = make([]*schema.ToolInfo, len(rg.allInfos))
+	copy(state.ToolInfos, rg.allInfos)
 	return state
 }
 

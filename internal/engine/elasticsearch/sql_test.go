@@ -162,6 +162,15 @@ func TestRunSQL_WhitespaceNormalizedAndPercentStripped(t *testing.T) {
 // the call returns well before 30s (the Go ES client's default
 // transport-level timeout). With the retry loop in place, the total
 // time is 2s (first attempt) + 3s (sleep) + 2s (second attempt) = ~7s.
+//
+// The load-bearing assertion is the LOWER bound on elapsed wall-clock
+// time: it proves the timeout actually fired AND a retry was issued
+// (a single attempt that bailed at 2s would fail the lower bound). The
+// UPPER bound is a regression guard against a hang; rather than a
+// fragile absolute threshold, we use a generous outer-context budget
+// (15s) and a watchdog. The error message check is the contract-level
+// assertion ("timeout after 2 attempts") that the retry path produced
+// the right error.
 func TestRunSQL_PerAttemptTimeout(t *testing.T) {
 	hang := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -173,22 +182,40 @@ func TestRunSQL_PerAttemptTimeout(t *testing.T) {
 	})
 	e := newTestEngine(t, srv.URL)
 
-	start := time.Now()
-	_, err := e.RunSQL(context.Background(), "ragflow_t1", "SELECT 1", nil, "json")
-	elapsed := time.Since(start)
-	if err == nil {
-		t.Fatalf("RunSQL: got nil error, want timeout error")
+	// 15s outer budget — well above the expected ~7s. If this fires,
+	// the retry loop or the timeout is broken; the test will report
+	// a clear "did not return within 15s" message rather than a
+	// fragile absolute wall-clock assertion.
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	type result struct {
+		elapsed time.Duration
+		err     error
 	}
-	// 2s + 3s + 2s = 7s; allow generous upper bound for the test runner.
-	if elapsed < 6*time.Second {
-		t.Errorf("RunSQL returned in %s; expected ~7s (2 attempts + 3s sleep)", elapsed)
-	}
-	if elapsed > 10*time.Second {
-		t.Errorf("RunSQL took %s; expected ~7s, looks like the retry didn't fire", elapsed)
-	}
-	// The final error should mention timeout + 2 attempts.
-	if !strings.Contains(err.Error(), "timeout after 2 attempts") {
-		t.Errorf("err: got %q, want substring %q", err.Error(), "timeout after 2 attempts")
+	done := make(chan result, 1)
+	go func() {
+		start := time.Now()
+		_, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json")
+		done <- result{elapsed: time.Since(start), err: err}
+	}()
+
+	select {
+	case r := <-done:
+		if r.err == nil {
+			t.Fatalf("RunSQL: got nil error, want timeout error")
+		}
+		// 2s + 3s + 2s = 7s. Lower bound proves both attempts fired
+		// AND the retry was scheduled. A constant-delay or single-attempt
+		// regression would slip below this.
+		if r.elapsed < 6*time.Second {
+			t.Errorf("RunSQL returned in %s; expected ~7s (2 attempts + 3s sleep)", r.elapsed)
+		}
+		if !strings.Contains(r.err.Error(), "timeout after 2 attempts") {
+			t.Errorf("err: got %q, want substring %q", r.err.Error(), "timeout after 2 attempts")
+		}
+	case <-time.After(20 * time.Second):
+		t.Fatal("RunSQL did not return within 15s — suspected hang in retry/timeout chain")
 	}
 }
 

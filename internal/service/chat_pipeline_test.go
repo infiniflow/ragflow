@@ -80,7 +80,7 @@ func TestAsyncChat_RejectsNonUserLastMessage(t *testing.T) {
 		{"role": "user", "content": "first"},
 		{"role": "assistant", "content": "last message must not be assistant"},
 	}
-	_, err := s.AsyncChat(context.Background(), dialForTest(""), messages, false, nil)
+	_, err := s.AsyncChat(context.Background(), "user-1", dialForTest(""), messages, false, nil)
 	if err == nil {
 		t.Fatal("expected error for non-user last message, got nil")
 	}
@@ -93,7 +93,7 @@ func TestAsyncChat_RejectsNonUserLastMessage(t *testing.T) {
 // service should return an error before spawning the goroutine.
 func TestAsyncChat_EmptyMessages(t *testing.T) {
 	s := &ChatPipelineService{}
-	_, err := s.AsyncChat(context.Background(), dialForTest(""), nil, false, nil)
+	_, err := s.AsyncChat(context.Background(), "user-1", dialForTest(""), nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for empty messages, got nil")
 	}
@@ -1317,10 +1317,10 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	if len(docAggs) != 2 {
 		t.Fatalf("docAggs len = %d, want 2", len(docAggs))
 	}
-	// Each chunk must carry kb_id from the single-KB dialog.
+	// Each chunk must carry dataset_id (remapped from kb_id by chunksFormat) from the single-KB dialog.
 	for i, cm := range chunks {
-		if cm["kb_id"] != "kb_a" {
-			t.Errorf("chunks[%d].kb_id = %v, want kb_a", i, cm["kb_id"])
+		if cm["dataset_id"] != "kb_a" {
+			t.Errorf("chunks[%d].dataset_id = %v, want kb_a", i, cm["dataset_id"])
 		}
 	}
 }

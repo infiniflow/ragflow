@@ -48,7 +48,29 @@ func (o *OrcaRouterModel) Name() string {
 	return "orcarouter"
 }
 
-func (o *OrcaRouterModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+type OrcaRouterChatResponse struct {
+	ID      string `json:"id"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Message      struct {
+			Content   string           `json:"content"`
+			Role      string           `json:"role"`
+			ToolCalls []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+		Logprobs interface{} `json:"logprobs"`
+	} `json:"choices"`
+	Created int    `json:"created"`
+	Model   string `json:"model"`
+	Object  string `json:"object"`
+	Usage   struct {
+		CompletionTokens int `json:"completion_tokens"`
+		PromptTokens     int `json:"prompt_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+func (o *OrcaRouterModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -61,41 +83,9 @@ func (o *OrcaRouterModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, err
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
-
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	// Build request body
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-		// TODO gpt and claude
 		if chatModelConfig.Effort != nil {
 			reqBody["reasoning_effort"] = *chatModelConfig.Effort
 		}
@@ -106,7 +96,7 @@ func (o *OrcaRouterModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -133,42 +123,37 @@ func (o *OrcaRouterModel) ChatWithMessages(modelName string, messages []Message,
 	}
 
 	// Parse response
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result OrcaRouterChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no choices in response")
-	}
+		choice := &result.Choices[0]
+		content := choice.Message.Content
+		if content == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no message in response")
+		}
 
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no message in response")
-	}
-
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("no message in response")
-	}
-
-	// baichuan not support think
-	emptyReason := ""
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &emptyReason,
-	}
-
-	return chatResponse, nil
+		emptyReason := ""
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &content,
+			ReasonContent: &emptyReason,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
-func (o *OrcaRouterModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (o *OrcaRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -183,41 +168,11 @@ func (o *OrcaRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      true,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
 	if modelConfig != nil {
-		if modelConfig.Stream != nil {
-			reqBody["stream"] = *modelConfig.Stream
-		}
-
-		if modelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *modelConfig.MaxTokens
-		}
-
-		if modelConfig.Temperature != nil {
-			reqBody["temperature"] = *modelConfig.Temperature
-		}
-
-		if modelConfig.TopP != nil {
-			reqBody["top_p"] = *modelConfig.TopP
-		}
-
-		if modelConfig.Stop != nil {
-			reqBody["stop"] = *modelConfig.Stop
+		if modelConfig.Effort != nil {
+			reqBody["reasoning_effort"] = *modelConfig.Effort
 		}
 	}
 
@@ -226,7 +181,7 @@ func (o *OrcaRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -250,8 +205,17 @@ func (o *OrcaRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 
 	// SSE parsing: read line by line
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
+
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(modelConfig, modelUsage, tokenUsage)
+		}
 
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
@@ -267,6 +231,8 @@ func (o *OrcaRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 		if !ok {
 			return nil
 		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		content, ok := delta["content"].(string)
 		if ok && content != "" {
@@ -284,6 +250,7 @@ func (o *OrcaRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
 	_ = done
 	_ = sawTerminal
 
@@ -296,23 +263,23 @@ func (o *OrcaRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 	return nil
 }
 
-func (o *OrcaRouterModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (o *OrcaRouterModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
-func (o *OrcaRouterModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (o *OrcaRouterModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
-func (o *OrcaRouterModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (o *OrcaRouterModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
-func (o *OrcaRouterModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (o *OrcaRouterModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s no such method", o.Name())
 }
 
-func (o *OrcaRouterModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (o *OrcaRouterModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -347,7 +314,7 @@ func (o *OrcaRouterModel) AudioSpeech(modelName *string, audioContent *string, a
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -376,19 +343,19 @@ func (o *OrcaRouterModel) AudioSpeech(modelName *string, audioContent *string, a
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (o *OrcaRouterModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (o *OrcaRouterModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s no such method", o.Name())
 }
 
-func (o *OrcaRouterModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (o *OrcaRouterModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
-func (o *OrcaRouterModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (o *OrcaRouterModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
-func (o *OrcaRouterModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (o *OrcaRouterModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -406,7 +373,7 @@ func (o *OrcaRouterModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse,
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
@@ -433,7 +400,6 @@ func (o *OrcaRouterModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse,
 	}
 
 	// Parse response
-	// Parse response
 	var modelList ModelList
 	if err = json.Unmarshal(body, &modelList); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
@@ -445,19 +411,19 @@ func (o *OrcaRouterModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse,
 	return ParseListModel(modelList), nil
 }
 
-func (o *OrcaRouterModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (o *OrcaRouterModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
-func (o *OrcaRouterModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := o.ListModels(apiConfig)
+func (o *OrcaRouterModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := o.ListModels(ctx, apiConfig)
 	return err
 }
 
-func (o *OrcaRouterModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (o *OrcaRouterModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s no such method", o.Name())
 }
 
-func (o *OrcaRouterModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (o *OrcaRouterModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s no such method", o.Name())
 }

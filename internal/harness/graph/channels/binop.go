@@ -24,10 +24,10 @@ func NewBinaryOperatorAggregate(typ interface{}, operator BinaryOperator) *Binar
 		BaseChannel: BaseChannel{Typ: typ},
 		operator:    operator,
 	}
-	
+
 	// Try to initialize with zero value
 	c.value = createZeroValue(typ)
-	
+
 	return c
 }
 
@@ -37,9 +37,9 @@ func createZeroValue(typ interface{}) (result interface{}) {
 	if typ == nil {
 		return
 	}
-	
+
 	rt := reflect.TypeOf(typ)
-	
+
 	// Handle special collection types
 	switch rt.String() {
 	case "[]interface {}":
@@ -47,27 +47,27 @@ func createZeroValue(typ interface{}) (result interface{}) {
 	case "map[string]interface {}":
 		return make(map[string]interface{})
 	}
-	
+
 	// Try to create instance
 	if rt.Kind() == reflect.Ptr {
 		rt = rt.Elem()
 	}
-	
+
 	if rt.Kind() == reflect.Slice {
 		return reflect.MakeSlice(rt, 0, 0).Interface()
 	}
-	
+
 	if rt.Kind() == reflect.Map {
 		return reflect.MakeMap(rt).Interface()
 	}
-	
+
 	// Use named return so the deferred recovery can return Missing.
 	defer func() {
 		if r := recover(); r != nil {
 			result = Missing
 		}
 	}()
-	
+
 	// Create a zero value using reflect.Zero
 	zero := reflect.Zero(rt)
 	result = zero.Interface()
@@ -92,7 +92,7 @@ func isOverwrite(value interface{}) (bool, interface{}) {
 	if value == nil {
 		return false, nil
 	}
-	
+
 	// Check for Overwrite type
 	type overwriter interface {
 		GetValue() interface{}
@@ -100,7 +100,7 @@ func isOverwrite(value interface{}) (bool, interface{}) {
 	if ow, ok := value.(overwriter); ok {
 		return true, ow.GetValue()
 	}
-	
+
 	// Check for map with __overwrite__ key
 	if m, ok := value.(map[string]interface{}); ok {
 		if len(m) == 1 {
@@ -109,7 +109,7 @@ func isOverwrite(value interface{}) (bool, interface{}) {
 			}
 		}
 	}
-	
+
 	return false, nil
 }
 
@@ -118,13 +118,13 @@ func (c *BinaryOperatorAggregate) Update(values []interface{}) (bool, error) {
 	if len(values) == 0 {
 		return false, nil
 	}
-	
+
 	// Initialize with first value if empty
 	if IsMissing(c.value) {
 		c.value = values[0]
 		values = values[1:]
 	}
-	
+
 	seenOverwrite := false
 	for _, value := range values {
 		isOver, overwriteValue := isOverwrite(value)
@@ -138,12 +138,12 @@ func (c *BinaryOperatorAggregate) Update(values []interface{}) (bool, error) {
 			seenOverwrite = true
 			continue
 		}
-		
+
 		if !seenOverwrite {
 			c.value = c.operator(c.value, value)
 		}
 	}
-	
+
 	return true, nil
 }
 

@@ -15,9 +15,9 @@ import (
 type ExecMode int
 
 const (
-	ModeInline ExecMode = iota // Skill content injected into instruction
-	ModeFork                   // Skill loaded via a tool
-	ModeForkWithContext        // Skill loaded via a tool with parent context
+	ModeInline          ExecMode = iota // Skill content injected into instruction
+	ModeFork                            // Skill loaded via a tool
+	ModeForkWithContext                 // Skill loaded via a tool with parent context
 )
 
 // FileSystemBackend reads skill definitions from a file system.
@@ -38,13 +38,13 @@ type Config struct {
 
 // TypedConfig configures the skill middleware.
 type TypedConfig[M core.MessageType] struct {
-	Skills       []Config
-	Backend      FileSystemBackend
-	CustomSystemPrompt  func(name, desc string) string
-	CustomToolParams    func(name string) string
-	BuildContent        func(ctx context.Context, cfg Config) (string, error)
-	BuildForkMessages   func(ctx context.Context, cfg Config, request string) (string, error)
-	FormatForkResult    func(ctx context.Context, result string) (string, error)
+	Skills             []Config
+	Backend            FileSystemBackend
+	CustomSystemPrompt func(name, desc string) string
+	CustomToolParams   func(name string) string
+	BuildContent       func(ctx context.Context, cfg Config) (string, error)
+	BuildForkMessages  func(ctx context.Context, cfg Config, request string) (string, error)
+	FormatForkResult   func(ctx context.Context, result string) (string, error)
 }
 
 type middleware[M core.MessageType] struct {
@@ -60,15 +60,49 @@ func New(cfg *TypedConfig[*schema.Message]) core.TypedReActMiddleware[*schema.Me
 	return NewTyped[*schema.Message](cfg)
 }
 
+func (m *middleware[M]) ContributeTools(ctx context.Context) []core.Tool {
+	if m.cfg == nil {
+		return nil
+	}
+	var tools []core.Tool
+	for _, s := range m.loadSkills() {
+		switch s.ExecutionMode {
+		case ModeFork, ModeForkWithContext:
+			tools = append(tools, m.newSkillTool(s))
+		}
+	}
+	return tools
+}
+
+func (m *middleware[M]) ContributeToolInfos(ctx context.Context) []*schema.ToolInfo   { return nil }
+func (m *middleware[M]) ContributeReturnDirectly(ctx context.Context) map[string]bool { return nil }
+
 func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *core.ReActAgentContext) (context.Context, *core.ReActAgentContext, error) {
-	if m.cfg == nil { return ctx, rc, nil }
+	if m.cfg == nil {
+		return ctx, rc, nil
+	}
+	for _, s := range m.loadSkills() {
+		if s.ExecutionMode == ModeInline {
+			rc.Instruction = applyCustomInstruction(rc.Instruction, s, m.cfg.CustomSystemPrompt)
+		}
+	}
+	return ctx, rc, nil
+}
+
+// loadSkills returns all skills from config and backend.
+func (m *middleware[M]) loadSkills() []Config {
+	if m.cfg == nil {
+		return nil
+	}
 	skills := m.cfg.Skills
 	if len(skills) == 0 && m.cfg.Backend != nil {
 		names, err := m.cfg.Backend.List()
 		if err == nil {
 			for _, name := range names {
 				content, err := m.cfg.Backend.Read(name)
-				if err != nil { continue }
+				if err != nil {
+					continue
+				}
 				parsed := parseSkill(content)
 				if parsed != nil {
 					skills = append(skills, *parsed)
@@ -76,16 +110,7 @@ func (m *middleware[M]) BeforeAgent(ctx context.Context, rc *core.ReActAgentCont
 			}
 		}
 	}
-
-	for _, s := range skills {
-		switch s.ExecutionMode {
-		case ModeInline:
-			rc.Instruction = applyCustomInstruction(rc.Instruction, s, m.cfg.CustomSystemPrompt)
-		case ModeFork, ModeForkWithContext:
-			rc.Tools = append(rc.Tools, m.newSkillTool(s))
-		}
-	}
-	return ctx, rc, nil
+	return skills
 }
 
 func (m *middleware[M]) newSkillTool(s Config) core.Tool {
@@ -94,7 +119,9 @@ func (m *middleware[M]) newSkillTool(s Config) core.Tool {
 		func(ctx context.Context, args string) (string, error) {
 			if m.cfg.BuildContent != nil {
 				content, err := m.cfg.BuildContent(ctx, s)
-				if err != nil { return "", err }
+				if err != nil {
+					return "", err
+				}
 				if m.cfg.FormatForkResult != nil {
 					return m.cfg.FormatForkResult(ctx, content)
 				}
@@ -103,11 +130,15 @@ func (m *middleware[M]) newSkillTool(s Config) core.Tool {
 			content := s.Content
 			if content == "" && m.cfg.Backend != nil {
 				loaded, err := m.cfg.Backend.Read(s.Name)
-				if err == nil { content = loaded }
+				if err == nil {
+					content = loaded
+				}
 			}
 			if m.cfg.BuildForkMessages != nil {
 				result, err := m.cfg.BuildForkMessages(ctx, s, args)
-				if err != nil { return "", err }
+				if err != nil {
+					return "", err
+				}
 				return result, nil
 			}
 			if m.cfg.FormatForkResult != nil {
@@ -156,6 +187,8 @@ func applyCustomInstruction(instruction string, s Config, customFn func(name, de
 }
 
 func truncate(s string, n int) string {
-	if len(s) <= n { return s }
+	if len(s) <= n {
+		return s
+	}
 	return s[:n] + "\n...(truncated)"
 }

@@ -160,9 +160,10 @@ func TestLoop_DoWhileContract(t *testing.T) {
 	}
 }
 
-// TestLoop_MaxIterationsExceeded asserts that exceeding the
-// configured cap returns ErrLoopMaxIterationsExceeded.
-func TestLoop_MaxIterationsExceeded(t *testing.T) {
+// TestLoop_ExplicitMaxIterationsStops asserts that reaching an
+// explicitly configured cap returns the final iteration output. Canvas
+// maximum_loop_count uses this as normal termination.
+func TestLoop_ExplicitMaxIterationsStops(t *testing.T) {
 	shouldQuit := func(_ context.Context, _ int, _, _ int) (bool, error) {
 		return false, nil
 	}
@@ -180,9 +181,33 @@ func TestLoop_MaxIterationsExceeded(t *testing.T) {
 	if err != nil {
 		t.Fatalf("compile: %v", err)
 	}
-	_, err = compiled.Invoke(context.Background(), 0)
+	out, err := compiled.Invoke(context.Background(), 0)
+	if err != nil {
+		t.Fatalf("invoke: %v", err)
+	}
+	if out != 3 {
+		t.Fatalf("output: got %d, want 3", out)
+	}
+}
+
+// TestLoop_DefaultSafetyMaxIterationsExceeded asserts that the non-explicit
+// safety cap remains an error. The test lowers the internal cap to keep the
+// case small while preserving the "not user configured" option state.
+func TestLoop_DefaultSafetyMaxIterationsExceeded(t *testing.T) {
+	shouldQuit := func(_ context.Context, _ int, _, _ int) (bool, error) {
+		return false, nil
+	}
+	compiledSub, err := buildSubIncrement(t).Compile(context.Background())
+	if err != nil {
+		t.Fatalf("compile sub: %v", err)
+	}
+	options := getLoopOptions(nil)
+	options.maxIterations = 3
+	options.enableSubCheckpoint = false
+
+	_, err = runLoopInvoke(context.Background(), "loop", compiledSub, 0, shouldQuit, options)
 	if !errors.Is(err, ErrLoopMaxIterationsExceeded) {
-		t.Fatalf("invoke: got %v, want ErrLoopMaxIterationsExceeded", err)
+		t.Fatalf("runLoopInvoke: got %v, want ErrLoopMaxIterationsExceeded", err)
 	}
 }
 

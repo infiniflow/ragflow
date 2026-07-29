@@ -40,6 +40,7 @@
 package component
 
 import (
+	"encoding/json"
 	"html"
 	"regexp"
 	"strings"
@@ -64,11 +65,14 @@ const (
 // entry. Mirrors agent/component/message.py:_is_download_info
 // (the {doc_id, filename, mime_type} tuple).
 type DownloadInfo struct {
-	DocID    string `json:"doc_id"`
-	Filename string `json:"filename"`
-	MimeType string `json:"mime_type"`
-	URL      string `json:"url,omitempty"`
-	Content  string `json:"content,omitempty"`
+	DocID                        string `json:"doc_id"`
+	Filename                     string `json:"filename"`
+	MimeType                     string `json:"mime_type"`
+	URL                          string `json:"url,omitempty"`
+	Content                      string `json:"content,omitempty"`
+	Size                         int    `json:"size,omitempty"`
+	PreviewURL                   string `json:"preview_url,omitempty"`
+	IncludeDownloadInfoInContent bool   `json:"include_download_info_in_content,omitempty"`
 }
 
 // RenderRequest is the renderer input. Text is the resolved
@@ -206,16 +210,26 @@ func ExtractDownloads(value any) []DownloadInfo {
 	case nil:
 		return nil
 	case string:
-		// A plain string is not a download descriptor. (Python also
-		// tries json.loads here; we deliberately do not — the
-		// message component resolves templates into strings, and
-		// download descriptors are passed through as maps.)
-		return nil
+		var parsed any
+		if err := json.Unmarshal([]byte(v), &parsed); err != nil {
+			return nil
+		}
+		return ExtractDownloads(parsed)
 	case map[string]any:
 		if IsDownloadInfo(v) {
 			return []DownloadInfo{downloadFromMap(v)}
 		}
-		return nil
+		var out []DownloadInfo
+		for _, item := range v {
+			out = append(out, ExtractDownloads(item)...)
+		}
+		return out
+	case map[string]string:
+		m := make(map[string]any, len(v))
+		for key, value := range v {
+			m[key] = value
+		}
+		return ExtractDownloads(m)
 	case []any:
 		var out []DownloadInfo
 		for _, item := range v {
@@ -226,6 +240,56 @@ func ExtractDownloads(value any) []DownloadInfo {
 		return v
 	}
 	return nil
+}
+
+func appendUniqueDownloads(dst []DownloadInfo, src []DownloadInfo) []DownloadInfo {
+	for _, candidate := range src {
+		duplicate := false
+		for _, existing := range dst {
+			if candidate.DocID != "" && candidate.DocID == existing.DocID {
+				duplicate = true
+				break
+			}
+			if candidate.DocID == "" && candidate.Filename == existing.Filename && candidate.URL == existing.URL {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			dst = append(dst, candidate)
+		}
+	}
+	return dst
+}
+
+func downloadInfoString(value any) bool {
+	switch v := value.(type) {
+	case string:
+		var parsed any
+		if err := json.Unmarshal([]byte(v), &parsed); err != nil {
+			return false
+		}
+		return isDownloadInfoValue(parsed)
+	default:
+		return isDownloadInfoValue(v)
+	}
+}
+
+func isDownloadInfoValue(value any) bool {
+	switch v := value.(type) {
+	case map[string]any:
+		return IsDownloadInfo(v)
+	case map[string]string:
+		for _, k := range []string{"doc_id", "filename", "mime_type"} {
+			if _, ok := v[k]; !ok {
+				return false
+			}
+		}
+		return true
+	case DownloadInfo:
+		return v.DocID != "" && v.Filename != "" && v.MimeType != ""
+	}
+	return false
 }
 
 func downloadFromMap(m map[string]any) DownloadInfo {
@@ -242,8 +306,27 @@ func downloadFromMap(m map[string]any) DownloadInfo {
 	if s, ok := m["url"].(string); ok {
 		d.URL = s
 	}
+	if d.URL == "" {
+		if s, ok := m["download"].(string); ok {
+			d.URL = s
+		}
+	}
+	if s, ok := m["preview_url"].(string); ok {
+		d.PreviewURL = s
+		if d.URL == "" {
+			d.URL = s
+		}
+	}
 	if s, ok := m["content"].(string); ok {
 		d.Content = s
+	}
+	if f, ok := m["size"].(float64); ok {
+		d.Size = int(f)
+	} else if i, ok := m["size"].(int); ok {
+		d.Size = i
+	}
+	if b, ok := m["include_download_info_in_content"].(bool); ok {
+		d.IncludeDownloadInfoInContent = b
 	}
 	return d
 }

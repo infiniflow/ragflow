@@ -27,16 +27,11 @@ from common.decorator import singleton
 
 @singleton
 class InfinityConnectionPool:
-
     def __init__(self):
         if hasattr(settings, "INFINITY"):
             self.INFINITY_CONFIG = settings.INFINITY
         else:
-            self.INFINITY_CONFIG = settings.get_base_config("infinity", {
-                "uri": "infinity:23817",
-                "postgres_port": 5432,
-                "db_name": "default_db"
-            })
+            self.INFINITY_CONFIG = settings.get_base_config("infinity", {"uri": "infinity:23817", "postgres_port": 5432, "db_name": "default_db"})
 
         raw_pool_max_size = os.environ.get("INFINITY_POOL_MAX_SIZE", "4")
         try:

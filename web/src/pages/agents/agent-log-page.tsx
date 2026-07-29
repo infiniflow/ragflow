@@ -126,7 +126,7 @@ const AgentLogPage: React.FC = () => {
     },
   ];
 
-  const { data: logData, loading } = useFetchAgentLog(searchParams);
+  const { data: logData, loading, refetch } = useFetchAgentLog(searchParams);
   const { sessions: data, total } = logData || {};
   const { handleExport, loading: exportLoading } = useExportAgentLogToCSV();
   const [currentDate, setCurrentDate] = useState<DateRange>({
@@ -191,8 +191,18 @@ const AgentLogPage: React.FC = () => {
   };
 
   const handleClickSearch = () => {
-    setPagination((pre) => ({ ...pre, current: 1 }));
-    handleSearch({ page: 1, keywords });
+    const sameParams =
+      pagination.current === 1 &&
+      searchParams.keywords === keywords &&
+      searchParams.from_date === currentDate.from &&
+      searchParams.to_date === currentDate.to;
+
+    if (sameParams) {
+      refetch();
+    } else {
+      setPagination((pre) => ({ ...pre, current: 1 }));
+      handleSearch({ page: 1, keywords });
+    }
   };
   useEffect(() => {
     handleSearch();

@@ -121,9 +121,9 @@ func (s *MemorySaver) List(ctx context.Context, config map[string]interface{}, l
 		result = append(result, map[string]interface{}{
 			constants.ConfigKeyCheckpointID: entry.ID,
 			constants.ConfigKeyThreadID:     entry.ThreadID,
-			"metadata":   deepCopyMap(entry.Metadata),
-			"created_at": entry.CreatedAt,
-			"parent_id":  entry.ParentID,
+			"metadata":                      deepCopyMap(entry.Metadata),
+			"created_at":                    entry.CreatedAt,
+			"parent_id":                     entry.ParentID,
 		})
 	}
 
@@ -171,5 +171,3 @@ type CheckpointState struct {
 	Checkpoint map[string]interface{}
 	Metadata   map[string]interface{}
 }
-
-

@@ -32,5 +32,17 @@ def normalize_layout_recognizer(layout_recognizer_raw: Any) -> tuple[Any, str | 
         elif lowered.endswith("@opendataloader"):
             parser_model_name = layout_recognizer_raw
             layout_recognizer = "OpenDataLoader"
+        elif lowered.endswith("@somark"):
+            # Keep the full 3-segment form ``<llm_name>@<instance_name>@<provider>``
+            # produced by the new Tenant LLM Provider UI (#14595); downstream
+            # ``get_model_config_from_provider_instance`` -> ``split_model_name``
+            # expects all three segments to locate the provider/instance row.
+            parser_model_name = layout_recognizer_raw
+            layout_recognizer = "SoMark"
+        elif lowered.endswith("@mistral ocr"):
+            # Separate OCR-only factory (never the multi-type "Mistral" factory),
+            # so this suffix cannot collide with pixtral vision models.
+            parser_model_name = layout_recognizer_raw
+            layout_recognizer = "Mistral OCR"
 
     return layout_recognizer, parser_model_name

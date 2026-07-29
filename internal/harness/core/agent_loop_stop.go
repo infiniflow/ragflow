@@ -257,4 +257,4 @@ func WithPushStrategy[T any](fn func(ctx context.Context, tc *TurnContext[T]) []
 // ---- Deprecated aliases ----
 
 func WithImmediateStop() StopOption { return WithImmediate() }
-func WithGracefulStop() StopOption { return WithGraceful() }
+func WithGracefulStop() StopOption  { return WithGraceful() }

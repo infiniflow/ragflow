@@ -116,7 +116,7 @@ type Knowledgebase = entity.Knowledgebase
 
 // GetAllTagsInPortion returns all tag_kwd values and their occurrence counts
 // for documents belonging to the given kbIDs.
-func (s *MetadataService) GetAllTagsInPortion(tenantID string, kbIDs []string) (map[string]float64, error) {
+func (s *MetadataService) GetAllTagsInPortion(ctx context.Context, tenantID string, kbIDs []string) (map[string]float64, error) {
 	if len(kbIDs) == 0 {
 		return make(map[string]float64), nil
 	}
@@ -133,7 +133,7 @@ func (s *MetadataService) GetAllTagsInPortion(tenantID string, kbIDs []string) (
 		SelectFields: []string{"tag_kwd"},
 	}
 
-	searchResp, err := s.docEngine.Search(context.Background(), searchReq)
+	searchResp, err := s.docEngine.Search(ctx, searchReq)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ func (s *MetadataService) GetAllTagsInPortion(tenantID string, kbIDs []string) (
 }
 
 // TagQuery returns weighted tag features for a question
-func (s *MetadataService) TagQuery(question string, tenantIDs []string, kbIDs []string, allTags map[string]float64, topnTags int) (map[string]float64, error) {
+func (s *MetadataService) TagQuery(ctx context.Context, question string, tenantIDs []string, kbIDs []string, allTags map[string]float64, topnTags int) (map[string]float64, error) {
 	if len(kbIDs) == 0 || len(allTags) == 0 || len(tenantIDs) == 0 {
 		return make(map[string]float64), nil
 	}
@@ -195,7 +195,7 @@ func (s *MetadataService) TagQuery(question string, tenantIDs []string, kbIDs []
 		MatchExprs: []interface{}{matchTextExpr},
 	}
 
-	searchResp, err := s.docEngine.Search(context.Background(), searchReq)
+	searchResp, err := s.docEngine.Search(ctx, searchReq)
 	if err != nil {
 		return nil, err
 	}
@@ -261,7 +261,7 @@ func (s *MetadataService) TagQuery(question string, tenantIDs []string, kbIDs []
 //  3. If cache miss, call GetAllTagsInPortion and cache the result (via SetTagsToCache)
 //  4. Get tag KBs by IDs
 //  5. Call TagQuery to get weighted tag features for the question
-func (s *MetadataService) LabelQuestion(question string, kbs []*Knowledgebase) map[string]float64 {
+func (s *MetadataService) LabelQuestion(ctx context.Context, question string, kbs []*Knowledgebase) map[string]float64 {
 	if len(kbs) == 0 || question == "" {
 		return nil
 	}
@@ -296,20 +296,20 @@ func (s *MetadataService) LabelQuestion(question string, kbs []*Knowledgebase) m
 	}
 	if allTags == nil {
 		// Cache miss - compute all_tags_in_portion
-		allTags, err = s.GetAllTagsInPortion(lastKB.TenantID, tagKBIDs)
+		allTags, err = s.GetAllTagsInPortion(ctx, lastKB.TenantID, tagKBIDs)
 		if err != nil {
 			common.Warn("Failed to get all tags in portion", zap.Error(err))
 			return nil
 		}
 		// Store in cache for future lookups
-		if err := SetTagsToCache(tagKBIDs, allTags); err != nil {
+		if err = SetTagsToCache(tagKBIDs, allTags); err != nil {
 			common.Warn("Failed to set tags cache", zap.Error(err))
 		}
 	}
 
 	// Get tag_kbs by IDs
 	kbDAO := dao.NewKnowledgebaseDAO()
-	tagKBs, err := kbDAO.GetByIDs(tagKBIDs)
+	tagKBs, err := kbDAO.GetByIDs(ctx, dao.DB, tagKBIDs)
 	if err != nil || len(tagKBs) == 0 {
 		// Return nil if no tag_kbs found
 		return nil
@@ -347,7 +347,7 @@ func (s *MetadataService) LabelQuestion(question string, kbs []*Knowledgebase) m
 	}
 
 	// Query tags for the question using unique tenant IDs
-	tagFeatures, err := s.TagQuery(question, uniqueTenantIDs, tagKBIDs, allTags, topnTags)
+	tagFeatures, err := s.TagQuery(ctx, question, uniqueTenantIDs, tagKBIDs, allTags, topnTags)
 	if err != nil {
 		return nil
 	}

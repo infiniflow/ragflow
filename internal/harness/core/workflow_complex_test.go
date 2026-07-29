@@ -38,7 +38,7 @@ type workflowNodeToolImpl struct {
 }
 
 func (t *workflowNodeToolImpl) Name() string        { return t.name }
-func (t *workflowNodeToolImpl) Description() string  { return t.desc }
+func (t *workflowNodeToolImpl) Description() string { return t.desc }
 func (t *workflowNodeToolImpl) Invoke(ctx context.Context, args string, opts ...ToolOption) (string, error) {
 	t.mu.Lock()
 	*t.order = append(*t.order, t.name)
@@ -128,9 +128,9 @@ func drainEventsChan(iter *AsyncIterator[*AgentEvent]) <-chan *AgentEvent {
 type toolCategory int
 
 const (
-	toolCatQuery toolCategory = iota // read-only, fast
-	toolCatWrite                     // write, medium
-	toolCatCompute                   // CPU-intensive, slow
+	toolCatQuery   toolCategory = iota // read-only, fast
+	toolCatWrite                       // write, medium
+	toolCatCompute                     // CPU-intensive, slow
 )
 
 func (c toolCategory) String() string {
@@ -159,8 +159,8 @@ func newTypedTool(nodeID string, cat toolCategory, executed *[]string, mu *sync.
 	return &typedTool{name: "tool_" + nodeID, desc: fmt.Sprintf("%s tool for %s", cat, nodeID), category: cat, executed: executed, mu: mu}
 }
 
-func (t *typedTool) Name() string                          { return t.name }
-func (t *typedTool) Description() string                    { return t.desc }
+func (t *typedTool) Name() string        { return t.name }
+func (t *typedTool) Description() string { return t.desc }
 func (t *typedTool) Invoke(ctx context.Context, args string, opts ...ToolOption) (string, error) {
 	result := fmt.Sprintf("%s(%s) executed", t.name, t.category)
 	t.mu.Lock()

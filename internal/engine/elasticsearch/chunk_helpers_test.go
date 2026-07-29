@@ -1,10 +1,75 @@
 package elasticsearch
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/elastic/go-elasticsearch/v8"
+
+	"ragflow/internal/engine/types"
 )
+
+func TestBuildQueryStringQueryMapsSkillFieldsToTokenFields(t *testing.T) {
+	query := buildQueryStringQuery(&types.MatchTextExpr{
+		MatchingText: "test",
+		Fields:       []string{"name^10", "tags^5", "description^3", "content^1"},
+	}, 0, true, false)
+
+	queryString, ok := query["query_string"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query_string missing from %#v", query)
+	}
+	assertEqual(t, queryString["fields"], []string{"name_tks^10", "tags_tks^5", "description_tks^3", "content_tks^1"})
+	assertEqual(t, queryString["query"], "test")
+}
+
+func TestBuildQueryStringQueryKeepsDocumentFieldsUnchanged(t *testing.T) {
+	query := buildQueryStringQuery(&types.MatchTextExpr{
+		MatchingText: "test",
+		Fields:       []string{"name^10"},
+	}, 0, false, false)
+
+	queryString, ok := query["query_string"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query_string missing from %#v", query)
+	}
+	assertEqual(t, queryString["fields"], []string{"name^10"})
+}
+
+func TestUpdateSingleMemoryMessageWaitsForRefresh(t *testing.T) {
+	var gotRefresh string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/memory_tenant/_update/memory-1_42" {
+			t.Errorf("path=%s, want /memory_tenant/_update/memory-1_42", r.URL.Path)
+			http.Error(w, "unexpected request path", http.StatusNotFound)
+			return
+		}
+		gotRefresh = r.URL.Query().Get("refresh")
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"result":"updated"}`))
+	}))
+	defer server.Close()
+
+	client, err := elasticsearch.NewClient(elasticsearch.Config{
+		Addresses: []string{server.URL},
+	})
+	if err != nil {
+		t.Fatalf("new elasticsearch client: %v", err)
+	}
+
+	engine := &elasticsearchEngine{client: client}
+	if err := engine.updateSingleMemoryMessage(context.Background(), "memory_tenant", "memory-1_42", map[string]interface{}{"forget_at": "2026-07-27 10:00:00"}); err != nil {
+		t.Fatalf("updateSingleMemoryMessage: %v", err)
+	}
+	if gotRefresh != "wait_for" {
+		t.Fatalf("refresh=%q, want wait_for", gotRefresh)
+	}
+}
 
 func TestElasticsearchGetFieldsFiltersAndUsesIDFallback(t *testing.T) {
 	engine := &elasticsearchEngine{}

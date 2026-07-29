@@ -78,7 +78,13 @@ func TestCallbacks_WithAgentNamesFilter_CallbackSavedAndFiltered(t *testing.T) {
 	iter := agent.Run(context.Background(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},
 	}, opts...)
-	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		_ = ev
+	}
 }
 
 func TestCallbacks_EmptyCallbacks(t *testing.T) {
@@ -89,7 +95,13 @@ func TestCallbacks_EmptyCallbacks(t *testing.T) {
 	iter := agent.Run(context.Background(), &AgentInput{
 		Messages: []Message{schema.UserMessage("test")},
 	})
-	for { ev, ok := iter.Next(); if !ok { break }; _ = ev }
+	for {
+		ev, ok := iter.Next()
+		if !ok {
+			break
+		}
+		_ = ev
+	}
 }
 
 func TestFilterOptions_Empty(t *testing.T) {
@@ -221,7 +233,9 @@ func TestCheckGobEncodability_NilValue(t *testing.T) {
 // ---- AsAgentExecError helper ----
 
 func AsAgentExecError(err error, target **AgentExecError) bool {
-	if err == nil { return false }
+	if err == nil {
+		return false
+	}
 	*target = &AgentExecError{Message: err.Error()}
 	return true
 }
@@ -230,33 +244,45 @@ func AsAgentExecError(err error, target **AgentExecError) bool {
 
 func TestWithSessionValues(t *testing.T) {
 	o := getCommonOptions(nil, WithSessionValues(map[string]any{"k": "v"}))
-	if o.sessionValues["k"] != "v" { t.Error("session value not set") }
+	if o.sessionValues["k"] != "v" {
+		t.Error("session value not set")
+	}
 }
 
 func TestWithCheckPointID(t *testing.T) {
 	o := getCommonOptions(nil, WithCheckPointID("cp1"))
-	if *o.checkPointID != "cp1" { t.Error("checkpoint ID not set") }
+	if *o.checkPointID != "cp1" {
+		t.Error("checkpoint ID not set")
+	}
 }
 
 func TestWithSkipTransferMessages(t *testing.T) {
 	o := getCommonOptions(nil, WithSkipTransferMessages())
-	if !o.skipTransferMessages { t.Error("skipTransferMessages not set") }
+	if !o.skipTransferMessages {
+		t.Error("skipTransferMessages not set")
+	}
 }
 
 func TestWithSharedParentSession(t *testing.T) {
 	o := getCommonOptions(nil, WithSharedParentSession())
-	if !o.sharedParentSession { t.Error("sharedParentSession not set") }
+	if !o.sharedParentSession {
+		t.Error("sharedParentSession not set")
+	}
 }
 
 func TestWithAfterToolCallsHook(t *testing.T) {
 	fn := func(ctx context.Context) error { return nil }
 	o := getCommonOptions(nil, WithAfterToolCallsHook(fn))
-	if o.afterToolCallsHook == nil { t.Error("afterToolCallsHook not set") }
+	if o.afterToolCallsHook == nil {
+		t.Error("afterToolCallsHook not set")
+	}
 }
 
 func TestWithCallbacks_Nil(t *testing.T) {
 	o := getCommonOptions(nil, WithCallbacks())
-	if len(o.callbacks) != 0 { t.Error("expected empty callbacks") }
+	if len(o.callbacks) != 0 {
+		t.Error("expected empty callbacks")
+	}
 }
 
 // ---- getCallbacks/withCallbacks tests ----
@@ -265,15 +291,21 @@ func TestWithCallbacks_Context(t *testing.T) {
 	cb := callbackHandler{}
 	ctx := withCallbacks(context.Background(), []callbackHandler{cb})
 	cbs := getCallbacks(ctx)
-	if len(cbs) != 1 { t.Errorf("expected 1 callback, got %d", len(cbs)) }
+	if len(cbs) != 1 {
+		t.Errorf("expected 1 callback, got %d", len(cbs))
+	}
 }
 
 func TestGetCallbacks_NoCallbacks(t *testing.T) {
 	cbs := getCallbacks(context.Background())
-	if cbs != nil { t.Error("expected nil") }
+	if cbs != nil {
+		t.Error("expected nil")
+	}
 }
 
 func TestWithCallbacks_Empty(t *testing.T) {
 	ctx := withCallbacks(context.Background(), nil)
-	if ctx != context.Background() { t.Errorf("empty callbacks should return original context") }
+	if ctx != context.Background() {
+		t.Errorf("empty callbacks should return original context")
+	}
 }
