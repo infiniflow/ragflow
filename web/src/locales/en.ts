@@ -1897,6 +1897,9 @@ Example: Virtual Hosted Style`,
       rechunkByTreeLeaves: 'Re-chunk by tree leaves',
       rechunkByTreeLeavesTip:
         "Merge each leaf cluster's source chunks into a single replacement chunk. Originals are kept but marked unavailable for retrieval. Only one tree template per group may enable this.",
+      rechunkInput: 'Re-chunk parser output',
+      rechunkInputTip:
+        'Let the LLM determine chunk boundaries based on the knowledge compilation task.',
       jsonPreview: 'JSON preview',
       processFlow: 'Process flow',
       processFlowComingSoon: 'Process flow preview coming soon',

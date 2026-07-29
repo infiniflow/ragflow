@@ -310,7 +310,7 @@ async def run_structure_compile_over_batches(
     # compile_kwd(s) each template actually wrote, harvested from flush results
     # so a dataset-scope template can rebuild its dataset graph once at the end.
     compile_kwds_by_tid: dict[str, set[str]] = {tid: set() for tid, _ in active_templates}
-    agg_infos: dict[str, dict] = {tid: {"inserted": 0, "updated": 0, "duplicates_dropped": 0} for tid, _ in active_templates}
+    agg_infos: dict[str, dict] = {tid: {"inserted": 0, "updated": 0, "duplicates_dropped": 0, "rechunked_chunks": []} for tid, _ in active_templates}
     chunks_by_id: dict[str, str] = {}
     flush_sequence = 0
     flush_tasks: set[asyncio.Task[None]] = set()
@@ -414,6 +414,10 @@ async def run_structure_compile_over_batches(
     async def _commit_result(batch_no: int, batch_len: int, template_id: str, docs: list[dict]) -> None:
         if docs:
             accumulators[template_id].extend(docs)
+        rechunked_chunks = getattr(docs, "rechunked_chunks", None)
+        if rechunked_chunks:
+            known_ids = {chunk.get("id") for chunk in agg_infos[template_id]["rechunked_chunks"]}
+            agg_infos[template_id]["rechunked_chunks"].extend(chunk for chunk in rechunked_chunks if chunk.get("id") not in known_ids)
         if len(accumulators[template_id]) >= DOC_STRUCTURE_MERGE_MAX_DOCS:
             progress_cb(msg=f"  merge flush ({len(accumulators[template_id])} docs) for batch {batch_no} ({batch_len} chunks) for template ({template_ids_by_id[template_id]}/{total})")
             await _flush(template_id)
@@ -489,9 +493,6 @@ async def run_structure_compile_over_batches(
                 for template_id, parser_cfg in active_templates:
                     if cancel_check():
                         raise TaskCanceledException("Task was cancelled during document knowledge compilation")
-                    if template_kinds[template_id] == "knowledge_graph":
-                        await _submit_one(incoming_batch, template_id, parser_cfg)
-                        continue
                     buffer = dynamic_buffers[template_id]
                     budget = _dynamic_batch_budget(template_id)
                     buffer_tokens = dynamic_buffer_tokens[template_id]

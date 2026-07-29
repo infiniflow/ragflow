@@ -125,7 +125,68 @@ class Compiler(ProcessBase, LLM):
         """Keep structured or position-bound Parser records intact."""
         doc_type = str(record.get("doc_type_kwd") or "").strip().lower()
         layout_type = str(record.get("layout_type") or "").strip().lower()
-        return bool(doc_type in {"table", "image"} or record.get("img_id") or record.get("image") or layout_type in {"figure", "table"} or record.get("bbox"))
+        text = record.get("text") or record.get("content_with_weight")
+        has_markdown_table = False
+        has_html_table = False
+        if isinstance(text, str):
+            lines = text.splitlines()
+            has_markdown_table = any(index + 1 < len(lines) and "|" in lines[index] and Compiler._is_markdown_table_separator(lines[index + 1]) for index in range(len(lines)))
+            has_html_table = bool(re.search(r"<table(?:\s|>)", text, flags=re.IGNORECASE))
+        return bool(doc_type in {"table", "image"} or record.get("img_id") or record.get("image") or layout_type in {"figure", "table"} or record.get("bbox") or has_markdown_table or has_html_table)
+
+    @staticmethod
+    def _formalize_rechunked_chunks(chunks: list[dict], rechunked_chunks: list[dict], doc_id: str) -> list[dict]:
+        """Replace parser chunks with the semantic groups produced by rechunking."""
+        originals = {str(chunk.get("id")): chunk for chunk in chunks if chunk.get("id")}
+        result = []
+        for grouped in rechunked_chunks:
+            source_ids = [str(value) for value in grouped.get("source_chunk_ids") or []]
+            source = next((originals[source_id] for source_id in source_ids if source_id in originals), {})
+            item = deepcopy(source)
+            item["id"] = str(grouped.get("id"))
+            item["doc_id"] = doc_id
+            item["text"] = grouped.get("text") or ""
+            for key in list(item):
+                if key.startswith("q_") and key.endswith("_vec"):
+                    del item[key]
+            for key in ("content_with_weight", "content_ltks", "content_sm_ltks", "position_int", "page_num_int", "top_int"):
+                item.pop(key, None)
+            result.append(item)
+        return result
+
+    @staticmethod
+    def _is_markdown_table_separator(line: str) -> bool:
+        cells = line.strip().strip("|").split("|")
+        return len(cells) >= 1 and all(re.fullmatch(r"\s*:?-{3,}:?\s*", cell) for cell in cells)
+
+    @classmethod
+    def _split_markdown_blocks(cls, text: str) -> list[tuple[str, bool]]:
+        """Separate Markdown tables so rechunking cannot split their rows."""
+        lines = text.splitlines(keepends=True)
+        blocks: list[tuple[str, bool]] = []
+        ordinary: list[str] = []
+        index = 0
+
+        def flush_ordinary() -> None:
+            if ordinary:
+                blocks.append(("".join(ordinary), False))
+                ordinary.clear()
+
+        while index < len(lines):
+            if index + 1 < len(lines) and "|" in lines[index] and cls._is_markdown_table_separator(lines[index + 1]):
+                flush_ordinary()
+                table = [lines[index], lines[index + 1]]
+                index += 2
+                while index < len(lines) and "|" in lines[index]:
+                    table.append(lines[index])
+                    index += 1
+                blocks.append(("".join(table), True))
+                continue
+            ordinary.append(lines[index])
+            index += 1
+
+        flush_ordinary()
+        return blocks
 
     @classmethod
     def _merge_small_text_chunks(cls, chunks: list[dict], target_token_size: int) -> list[dict]:
@@ -220,7 +281,15 @@ class Compiler(ProcessBase, LLM):
                 text = upstream.get(f"{output_format}_result")
             if not isinstance(text, str) or not text.strip():
                 return []
-            chunks = [{"text": part} for part in cls._slumber_candidates(text, target_token_size=target_token_size) if part.strip()]
+            if output_format == "markdown":
+                chunks = []
+                for block, is_table in cls._split_markdown_blocks(text):
+                    if is_table:
+                        chunks.append({"text": block, "doc_type_kwd": "table"})
+                    else:
+                        chunks.extend({"text": part} for part in cls._slumber_candidates(block, target_token_size=target_token_size) if part.strip())
+            else:
+                chunks = [{"text": part} for part in cls._slumber_candidates(text, target_token_size=target_token_size) if part.strip()]
             return cls._merge_small_text_chunks(chunks, target_token_size or cls._PARSER_TEXT_CHUNK_TOKEN_SIZE)
 
         return []
@@ -508,6 +577,17 @@ class Compiler(ProcessBase, LLM):
             )
 
         if non_tree_templates:
+            first_rechunk_index = next(
+                (index for index, (_, cfg) in enumerate(non_tree_templates) if isinstance(cfg, dict) and bool(cfg.get("rechunk"))),
+                None,
+            )
+            if first_rechunk_index is not None:
+                # Keep the stable hash IDs for Tree. Non-tree rechunking uses
+                # compact positional IDs to keep the LLM grouping response
+                # small (e.g. t1-t3 instead of three long hash IDs).
+                for index, chunk in enumerate(chunks, start=1):
+                    chunk["id"] = f"t{index}"
+
             task_id = getattr(self._canvas, "task_id", None)
 
             def _cancelled() -> bool:
@@ -517,17 +597,41 @@ class Compiler(ProcessBase, LLM):
                 for i in range(0, len(chunks), DOC_STRUCTURE_COMPILE_BATCH_CHUNKS):
                     yield chunks[i : i + DOC_STRUCTURE_COMPILE_BATCH_CHUNKS]
 
-            await run_structure_compile_over_batches(
-                active_templates=non_tree_templates,
-                chat_mdl_by_tid=chat_mdl_by_tid,
-                embedding_model=embedding_model,
-                tenant_id=tenant_id,
-                kb_id=kb_id,
-                doc_id=doc_id,
-                language=language,
-                chunk_batches=_chunk_batches(),
-                progress_cb=self._compile_progress,
-                cancel_check=_cancelled,
-            )
+            async def _run_templates(template_specs):
+                return await run_structure_compile_over_batches(
+                    active_templates=template_specs,
+                    chat_mdl_by_tid=chat_mdl_by_tid,
+                    embedding_model=embedding_model,
+                    tenant_id=tenant_id,
+                    kb_id=kb_id,
+                    doc_id=doc_id,
+                    language=language,
+                    chunk_batches=_chunk_batches(),
+                    progress_cb=self._compile_progress,
+                    cancel_check=_cancelled,
+                )
+
+            if first_rechunk_index is None:
+                await _run_templates(non_tree_templates)
+            else:
+                if first_rechunk_index:
+                    await _run_templates(non_tree_templates[:first_rechunk_index])
+                first_template = [non_tree_templates[first_rechunk_index]]
+                compile_info = await _run_templates(first_template)
+                first_template_id = first_template[0][0]
+                formal_chunks = (compile_info.get(first_template_id) or {}).get("rechunked_chunks")
+                if formal_chunks:
+                    chunks = self._formalize_rechunked_chunks(chunks, formal_chunks, doc_id)
+
+                # The first rechunk template defines the semantic boundaries
+                # for all later templates. They consume those formal chunks
+                # and must not perform another independent rechunking pass.
+                later_templates = []
+                for template_id, parser_cfg in non_tree_templates[first_rechunk_index + 1 :]:
+                    later_config = dict(parser_cfg or {})
+                    later_config["rechunk"] = False
+                    later_templates.append((template_id, later_config))
+                if later_templates:
+                    await _run_templates(later_templates)
 
         self.set_output("chunks", chunks)

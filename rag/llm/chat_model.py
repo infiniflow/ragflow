@@ -1686,8 +1686,20 @@ class LiteLLMBase(ABC):
             gen_conf=gen_conf,
         )
 
-        gen_conf.pop("max_tokens", None)
+        deepseek_max_tokens = None
+        if self.provider == SupportedLiteLLMProvider.DeepSeek:
+            # DeepSeek's API uses the legacy OpenAI-compatible max_tokens field.
+            # LiteLLM accepts max_completion_tokens generically, but does not
+            # translate it for DeepSeek and the provider then falls back to 8192.
+            deepseek_max_tokens = gen_conf.get("max_completion_tokens", gen_conf.get("max_tokens"))
+            gen_conf.pop("max_completion_tokens", None)
+            gen_conf.pop("max_tokens", None)
+        else:
+            gen_conf.pop("max_tokens", None)
+
         gen_conf = {k: v for k, v in gen_conf.items() if k in LITELLM_ALLOWED_GEN_CONF_KEYS}
+        if deepseek_max_tokens is not None:
+            gen_conf["max_tokens"] = deepseek_max_tokens
         return gen_conf
 
     def _need_reasoning_content_back(self) -> bool:
