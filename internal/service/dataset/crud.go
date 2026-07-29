@@ -117,14 +117,9 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 
 	kbID := utility.GenerateToken()
 	status := string(entity.StatusValid)
-	// Reject duplicate name within tenant to match the established API contract.
-	existing, err := d.kbDAO.GetByName(ctx, dao.DB, name, tenantID)
-	if err != nil && !dao.IsNotFoundErr(err) {
-		return nil, common.CodeServerError, errors.New("database operation failed")
-	}
-	if existing != nil {
-		return nil, common.CodeDataError, fmt.Errorf("dataset name '%s' already exists", name)
-	}
+	// Mirror Python's duplicate_name: append (1), (2), ... until the name is
+	// unique within the tenant.
+	name = d.dedupeDatasetName(ctx, name, tenantID)
 
 	kb := &entity.Knowledgebase{
 		ID:           kbID,
@@ -155,15 +150,31 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	return datasetToMap(createdKB), common.CodeSuccess, nil
 }
 
+// dedupeDatasetName mirrors Python's duplicate_name: if the name already
+// exists within the tenant, append (1), (2), ... until it is unique.
+func (d *DatasetService) dedupeDatasetName(ctx context.Context, name, tenantID string) string {
+	candidate := name
+	for i := 1; i < 1000; i++ {
+		existing, err := d.kbDAO.GetByName(ctx, dao.DB, candidate, tenantID)
+		if err != nil || existing == nil {
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s(%d)", name, i)
+	}
+	return candidate
+}
+
 func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New("lack of \"Dataset ID\"")
 	}
 
+	// Mirror Python's get_dataset: no UUID validation up front — any unknown
+	// or malformed id simply fails the permission check.
 	normalizedID, err := normalizeDatasetID(datasetID)
 	if err != nil {
-		return nil, common.CodeDataError, err
+		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, datasetID)
 	}
 	datasetID = normalizedID
 
@@ -199,7 +210,7 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 	for _, id := range ids {
 		normalizedID, err := normalizeDatasetID(id)
 		if err != nil {
-			return nil, common.CodeDataError, err
+			return nil, common.CodeArgumentError, err
 		}
 		if _, seen := seenIDs[normalizedID]; seen {
 			continue
@@ -318,7 +329,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	if id != "" {
 		normalizedID, err := normalizeDatasetID(id)
 		if err != nil {
-			return nil, 0, common.CodeDataError, err
+			return nil, 0, common.CodeArgumentError, err
 		}
 		id = normalizedID
 

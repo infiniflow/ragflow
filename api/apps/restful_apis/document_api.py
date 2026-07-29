@@ -213,6 +213,10 @@ async def update_document(tenant_id, dataset_id, document_id):
     """
     req = await get_request_json()
 
+    # An explicit null name is a type error, not an unset field.
+    if "name" in req and req["name"] is None:
+        return get_error_data_result(message="Field: <name> - Message: <Input should be a valid string> - Value: <None>")
+
     # Verify ownership and existence of dataset and document
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
         return get_error_data_result(message="You don't own the dataset.")
@@ -852,10 +856,25 @@ def _get_docs_with_request(req, dataset_id: str):
     """
     q = req.args
 
-    page = int(q.get("page", 1))
-    page_size = validate_rest_api_page_size(int(q.get("page_size", 30)))
+    # Invalid or negative pagination values fall back to defaults
+    # instead of leaking internal conversion/SQL errors.
+    try:
+        page = int(q.get("page", 1))
+    except (TypeError, ValueError):
+        page = 1
+    if page < 1:
+        page = 1
+    try:
+        parsed_page_size = int(q.get("page_size", 30))
+    except (TypeError, ValueError):
+        parsed_page_size = 30
+    if parsed_page_size < 0:
+        parsed_page_size = 30
+    page_size = validate_rest_api_page_size(parsed_page_size)
 
     orderby = q.get("orderby", "create_time")
+    if orderby not in ("create_time", "update_time", "name"):
+        return RetCode.ARGUMENT_ERROR, f"invalid orderby field: {orderby}", [], 0
     desc = str(q.get("desc", "true")).strip().lower() != "false"
     keywords = q.get("keywords", "")
 

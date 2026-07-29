@@ -114,12 +114,12 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 			continue
 		}
 
-		// Action line: use json.Marshal to properly escape string values
-		compositeID := fmt.Sprintf("%d:%s|%d:%s", len(docID), docID, len(kbID), kbID)
+		// Action line: use the plain document id as _id, matching Python's
+		// es_conn.insert (readers shim hit._id back into the "id" field).
 		action, err := json.Marshal(map[string]interface{}{
 			"index": map[string]interface{}{
 				"_index": indexName,
-				"_id":    compositeID,
+				"_id":    docID,
 			},
 		})
 		if err != nil {
@@ -191,7 +191,21 @@ func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, 
 		return fmt.Errorf("failed to check index existence: %w", err)
 	}
 	if !exists {
-		return fmt.Errorf("index '%s' does not exist", indexName)
+		// Mirror Python: create the metadata index on first write and insert.
+		if err := e.CreateMetadataStore(ctx, tenantID); err != nil {
+			return fmt.Errorf("failed to create metadata index: %w", err)
+		}
+		_, err := e.InsertMetadata(ctx, []map[string]interface{}{
+			{
+				"id":          docID,
+				"kb_id":       datasetID,
+				"meta_fields": metaFields,
+			},
+		}, tenantID)
+		if err != nil {
+			return fmt.Errorf("failed to insert metadata: %w", err)
+		}
+		return nil
 	}
 
 	// Build the document ID for update
@@ -208,14 +222,13 @@ func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, 
 		},
 	}
 
-	// Painless script: for every (key, value) in params.meta_fields,
-	// set ctx._source.meta_fields[key] = value. Existing keys not
-	// present in params.meta_fields are preserved. If the row has no
-	// meta_fields at all yet, initialize it to an empty map first.
+	// Painless script: fully replace meta_fields (mirrors Python's
+	// replace_meta_fields — stale keys must not survive the update).
 	updateReq := map[string]interface{}{
-		"query": query,
+		"query":     query,
+		"conflicts": "proceed",
 		"script": map[string]interface{}{
-			"source": "if (ctx._source.meta_fields == null) { ctx._source.meta_fields = new HashMap(); } for (entry in params.meta_fields.entrySet()) { ctx._source.meta_fields[entry.getKey()] = entry.getValue(); }",
+			"source": "ctx._source.meta_fields = params.meta_fields;",
 			"lang":   "painless",
 			"params": map[string]interface{}{
 				"meta_fields": metaFields,
@@ -229,8 +242,9 @@ func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, 
 	}
 
 	req := esapi.UpdateByQueryRequest{
-		Index: []string{indexName},
-		Body:  bytes.NewReader(updateBytes),
+		Index:   []string{indexName},
+		Body:    bytes.NewReader(updateBytes),
+		Refresh: func(b bool) *bool { return &b }(true),
 	}
 
 	res, err := req.Do(ctx, e.client)
@@ -300,10 +314,12 @@ func (e *elasticsearchEngine) DeleteMetadata(ctx context.Context, condition map[
 		return 0, fmt.Errorf("failed to marshal delete body: %w", err)
 	}
 
-	// Execute delete by query
+	// Execute delete by query. Refresh so follow-up reads/writes do not see
+	// the stale pre-delete state (mirrors Python's refresh semantics).
 	req := esapi.DeleteByQueryRequest{
-		Index: []string{indexName},
-		Body:  bytes.NewReader(bodyBytes),
+		Index:   []string{indexName},
+		Body:    bytes.NewReader(bodyBytes),
+		Refresh: func(b bool) *bool { return &b }(true),
 	}
 
 	res, err := req.Do(ctx, e.client)
@@ -346,7 +362,7 @@ func (e *elasticsearchEngine) DeleteMetadataKeys(ctx context.Context, docID stri
 		return fmt.Errorf("failed to check index existence: %w", err)
 	}
 	if !exists {
-		return fmt.Errorf("index '%s' does not exist", indexName)
+		return fmt.Errorf("%w: '%s'", types.ErrIndexNotFound, indexName)
 	}
 
 	// Build the document ID for query (no escaping needed for ES term queries)
@@ -508,8 +524,9 @@ func (e *elasticsearchEngine) DeleteMetadataKeys(ctx context.Context, docID stri
 	}
 
 	req := esapi.UpdateByQueryRequest{
-		Index: []string{indexName},
-		Body:  bytes.NewReader(updateBytes),
+		Index:   []string{indexName},
+		Body:    bytes.NewReader(updateBytes),
+		Refresh: func(b bool) *bool { return &b }(true),
 	}
 
 	res, err := req.Do(ctx, e.client)

@@ -1643,7 +1643,7 @@ func TestUpdateDatasetDocumentRejectsCounterMutation(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
 	}
-	if err.Error() != "can't change `chunk_count`" {
+	if err.Error() != "Can't change `chunk_count`." {
 		t.Fatalf("err = %q", err.Error())
 	}
 }

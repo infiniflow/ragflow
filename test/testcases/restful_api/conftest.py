@@ -38,63 +38,28 @@ GO_ONLY_SKIPS = {
         "test_cancel_missing_task_sets_cancel_contract",
     },
     "Go validation or response contract does not match the established API contract": {
-        "test_chat_list_page_and_page_size_contract",
-        "test_chat_list_sorting_contract",
         "test_dataset_update_parser_config_valid_matrix_contract",
         "test_dataset_update_parser_config_with_chunk_method_change_contract",
-        "test_dataset_update_pagerank_contract",
-        "test_dataset_update_pagerank_set_to_zero_contract",
-        "test_dataset_update_content_type_and_payload_contract",
         "test_dataset_update_parser_config_invalid_contract",
-        "test_dataset_update_field_unset_and_unsupported_contract",
-        "test_dataset_update_name_invalid_and_duplicate_contract",
-        "test_dataset_create_name_and_case_insensitive_contract",
         # Updating with `{"parser_config": {}}` / `None` is a valid no-op in Go (handled by
         # ParserConfigProvided). But the final GET asserts the stored parser_config equals Python's
         # DEFAULT_PARSER_CONFIG, which embeds a CI-specific tenant `llm_id` and a richer `graphrag` /
         # `parent_child` structure than Go's common.GetParserConfig produces. Exact equality is a
         # Python/CI-specific contract, not a meaningful Go behavior difference.
         "test_dataset_update_parser_config_defaults_contract",
+        # Go CreateDataset does not accept parser_config in the request body.
         "test_dataset_create_parser_config_different_chunk_methods_contract",
         "test_dataset_create_parser_config_missing_raptor_and_graphrag",
-        "test_dataset_create_embedding_model_contract",
         "test_dataset_create_parser_config_bugfix_contract",
-        "test_dataset_create_content_type_and_payload_bad_contract",
         "test_dataset_create_parser_config_invalid_contract",
         "test_dataset_create_parser_config_defaults_and_extra_fields_contract",
-        "test_dataset_list_query_contract_matrix",
-        "test_dataset_delete_contract_matrix",
-        # "test_memory_update_invalid_name",
-        # "test_memory_crud_cycle",
-        # "test_messages_add_list_recent_content_update_forget",
-        # "test_message_status_validation_requires_boolean",
-        # "test_message_search_route_contract",
-        # "test_memory_crud_and_config",
-        # "test_messages_list_and_search_validation_contracts",
-        # "test_message_update_forget_and_content_error_contracts",
+        "test_dataset_create_embedding_model_contract",
+        # Empty path (e.g. /chats//sessions) triggers a 405/404 framework
+        # response in Go rather than the Python contract's code-100 envelope.
         "test_session_create_validation_and_deleted_chat_contract",
-        "test_session_delete_basic_scenarios",
-        "test_session_list_filter_and_deleted_chat_contract",
-        "test_session_list_page_and_sort_contract",
-        "test_session_update_name_and_param_contract",
         "test_session_update_requires_auth_and_invalid_target_contract",
-        "test_search_completion_sse_shape_when_kb_ids_provided",
-        # --- exposed after meta_fields skip guard removal ---
-        "test_chunk_add_keyword_question_and_tag_contract",
-        "test_chunk_add_repeated_and_deleted_document_contract",
-        "test_chunk_concurrent_add_contract",
-        "test_documents_list_error_and_sorting_contract",
-        "test_documents_update_patch_and_delete",
-        "test_documents_update_name_contract",
-        "test_documents_update_chunk_method_contract",
-        "test_documents_update_meta_fields_contract",
-        "test_documents_update_invalid_field_and_guard_contract",
+        # Go response data omits the parser_config key that the contract asserts.
         "test_documents_update_parser_config_contract",
-        "test_documents_metadata_batch_update_contract",
-        "test_documents_metadata_update_path",
-        "test_documents_delete_contract_matrix",
-        "test_documents_delete_invalid_dataset_partial_duplicate_repeat_and_cross_dataset",
-        "test_documents_delete_concurrent_and_bulk_contract",
     },
     "Go ingestion pipeline does not complete document parsing within the test timeout": {
         "test_chat_list_concurrent_and_dataset_delete_contract",

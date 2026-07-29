@@ -96,10 +96,16 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 	}
 
 	orderby := c.DefaultQuery("orderby", "create_time")
+	switch orderby {
+	case "create_time", "update_time", "name":
+	default:
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("invalid orderby field: %s", orderby))
+		return
+	}
 
 	desc := true
 	if descStr := c.Query("desc"); descStr != "" {
-		desc = descStr != "false"
+		desc = !strings.EqualFold(descStr, "false")
 	}
 
 	ownerIDs := getOwnerIDs(c)

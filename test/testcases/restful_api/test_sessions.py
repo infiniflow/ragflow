@@ -242,7 +242,7 @@ def test_session_delete_basic_scenarios(rest_client, create_chat):
     cases = [
         ("none payload", None, 0, 5, {}),
         ("invalid only", {"ids": ["invalid_id"]}, 102, 5, "The chat doesn't own the session invalid_id"),
-        ("not json", "not json", 100, 5, "<BadRequest '400: Bad Request'>"),
+        ("not json", "not json", 101, 5, "Malformed JSON syntax: Missing commas/brackets or invalid encoding"),
         ("single id", lambda sessions: {"ids": [sessions[0]["id"]]}, 0, 4, True),
         ("all ids", lambda sessions: {"ids": [session["id"] for session in sessions]}, 0, 0, True),
         ("delete all", {"delete_all": True}, 0, 0, True),
@@ -420,14 +420,14 @@ def test_session_list_page_and_sort_contract(rest_client, create_chat):
         ("page two", {"page": 2, "page_size": 2}, 0, 2, ""),
         ("page three", {"page": 3, "page_size": 2}, 0, 1, ""),
         ("page string", {"page": "3", "page_size": 2}, 0, 1, ""),
-        ("page negative", {"page": -1, "page_size": 2}, 100, 0, "ProgrammingError(1064"),
-        ("page alpha", {"page": "a", "page_size": 2}, 100, 0, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page negative", {"page": -1, "page_size": 2}, 0, 2, ""),
+        ("page alpha", {"page": "a", "page_size": 2}, 0, 2, ""),
         ("page_size none", {"page_size": None}, 0, 5, ""),
         ("page_size zero", {"page_size": 0}, 0, 0, ""),
         ("page_size one", {"page_size": 1}, 0, 1, ""),
         ("page_size six", {"page_size": 6}, 0, 5, ""),
         ("page_size negative", {"page_size": -1}, 0, 5, ""),
-        ("page_size alpha", {"page_size": "a"}, 100, 0, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page_size alpha", {"page_size": "a"}, 0, 5, ""),
     ]
     for scenario_name, params, expected_code, expected_count, expected_message in page_cases:
         res = rest_client.get(f"/chats/{chat_id}/sessions", params=params)
@@ -444,7 +444,7 @@ def test_session_list_page_and_sort_contract(rest_client, create_chat):
         ("orderby create", {"orderby": "create_time", "page_size": 30}, "create_time", True, descending_names, ""),
         ("orderby update", {"orderby": "update_time", "page_size": 30}, "update_time", True, descending_names, ""),
         ("orderby name ascending", {"orderby": "name", "desc": "False", "page_size": 30}, "name", False, created_names, ""),
-        ("orderby unknown", {"orderby": "unknown", "page_size": 30}, None, None, None, "AttributeError(\"type object 'Conversation' has no attribute 'unknown'\")"),
+        ("orderby unknown", {"orderby": "unknown", "page_size": 30}, None, None, None, "invalid orderby field"),
         ("desc none", {"desc": None, "page_size": 30}, "create_time", True, descending_names, ""),
         ("desc true", {"desc": "true", "page_size": 30}, "create_time", True, descending_names, ""),
         ("desc True", {"desc": "True", "page_size": 30}, "create_time", True, descending_names, ""),
@@ -457,7 +457,7 @@ def test_session_list_page_and_sort_contract(rest_client, create_chat):
         res = rest_client.get(f"/chats/{chat_id}/sessions", params=params)
         assert res.status_code == 200, (scenario_name, res.text)
         payload = res.json()
-        expected_code = 0 if expected_names is not None else 100
+        expected_code = 0 if expected_names is not None else 101
         assert payload["code"] == expected_code, (scenario_name, payload)
         if expected_code == 0:
             assert is_sorted(payload["data"], field, descending), (scenario_name, payload)

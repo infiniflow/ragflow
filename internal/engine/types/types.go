@@ -27,6 +27,11 @@ import (
 
 var ErrDocumentNotFound = errors.New("document not found")
 
+// ErrIndexNotFound marks operations against a document-engine index that does
+// not exist yet (e.g. no chunks were ever indexed). Callers may treat it as a
+// tolerable no-op, mirroring Python's docStoreConn behavior.
+var ErrIndexNotFound = errors.New("index does not exist")
+
 // SearchRequest unified search request for all engines
 type SearchRequest struct {
 	// Search target

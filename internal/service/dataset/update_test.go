@@ -385,7 +385,7 @@ func TestDatasetServiceUpdateDatasetValidatesName(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if err.Error() != "`name` is required" {
+	if err.Error() != "String should have at least 1 character" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

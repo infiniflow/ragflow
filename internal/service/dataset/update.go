@@ -9,6 +9,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/service"
@@ -63,7 +64,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return nil, common.CodeDataError, errors.New("`name` is required")
+			return nil, common.CodeDataError, errors.New("String should have at least 1 character")
 		}
 		if len(name) > 128 {
 			return nil, common.CodeDataError, errors.New("String should have at most 128 characters")
@@ -196,7 +197,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			}
 			if lookupErr == nil {
 				txCode = common.CodeDataError
-				return fmt.Errorf("dataset name '%s' already exists", nameValue)
+				return fmt.Errorf("Dataset name '%s' already exists", nameValue)
 			}
 		}
 
@@ -291,7 +292,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				if dao.IsDuplicateKeyErr(err) {
 					if nameValue, ok := updates["name"].(string); ok {
 						txCode = common.CodeDataError
-						return fmt.Errorf("dataset name '%s' already exists", nameValue)
+						return fmt.Errorf("Dataset name '%s' already exists", nameValue)
 					}
 					txCode = common.CodeDataError
 					return errors.New("dataset name already exists")
@@ -347,10 +348,18 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 func (d *DatasetService) updateDatasetPagerankChunks(update datasetPagerankUpdate) error {
 	ctx, cancel := context.WithTimeout(context.Background(), datasetPagerankUpdateTimeout)
 	defer cancel()
+	var err error
 	if update.value > 0 {
-		return d.docEngine.UpdateChunks(ctx, map[string]interface{}{"kb_id": update.datasetID}, map[string]interface{}{common.PAGERANK_FLD: update.value}, update.index, update.datasetID)
+		err = d.docEngine.UpdateChunks(ctx, map[string]interface{}{"kb_id": update.datasetID}, map[string]interface{}{common.PAGERANK_FLD: update.value}, update.index, update.datasetID)
+	} else {
+		err = d.docEngine.UpdateChunks(ctx, map[string]interface{}{"exists": common.PAGERANK_FLD}, map[string]interface{}{"remove": common.PAGERANK_FLD}, update.index, update.datasetID)
 	}
-	return d.docEngine.UpdateChunks(ctx, map[string]interface{}{"exists": common.PAGERANK_FLD}, map[string]interface{}{"remove": common.PAGERANK_FLD}, update.index, update.datasetID)
+	if errors.Is(err, types.ErrIndexNotFound) {
+		// Python's docStoreConn.update logs and returns False on a missing
+		// index; the dataset-level pagerank update tolerates it.
+		return nil
+	}
+	return err
 }
 
 func (d *DatasetService) lockAccessibleDatasetForUpdate(tx *gorm.DB, datasetID, userID string) (*entity.Knowledgebase, common.ErrorCode, error) {

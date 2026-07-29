@@ -250,6 +250,15 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 
 	docs, err := s.validateDocsInDataset(ctx, deduped, datasetID)
 	if err != nil {
+		// Mirror the Python parse/stop endpoint's "Documents not found" message.
+		var notInDataset *documentsNotInDatasetError
+		if errors.As(err, &notInDataset) {
+			quoted := make([]string, len(notInDataset.ids))
+			for i, id := range notInDataset.ids {
+				quoted[i] = "'" + id + "'"
+			}
+			return nil, fmt.Errorf("Documents not found: [%s]", strings.Join(quoted, ", "))
+		}
 		return nil, err
 	}
 
@@ -270,6 +279,18 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 	return result, nil
 }
 
+// documentsNotInDatasetError carries the ids that are missing from (or do not
+// belong to) a dataset so each endpoint can format its own contract message.
+type documentsNotInDatasetError struct {
+	datasetID string
+	ids       []string
+}
+
+// Error mirrors the Python delete endpoint's message.
+func (e *documentsNotInDatasetError) Error() string {
+	return fmt.Sprintf("These documents do not belong to dataset %s or Document not found: %s", e.datasetID, strings.Join(e.ids, ", "))
+}
+
 // validateDocsInDataset deduplicates IDs, fetches the documents, and ensures
 // every document exists and belongs to the given dataset. Returns the resolved
 // documents.
@@ -278,17 +299,26 @@ func (s *DocumentService) validateDocsInDataset(ctx context.Context, docIDs []st
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch documents: %w", err)
 	}
+	invalid := make([]string, 0)
 	if len(docs) != len(docIDs) {
-		return nil, fmt.Errorf("some document IDs not found in dataset %s", datasetID)
-	}
-	var invalid []string
-	for _, d := range docs {
-		if d.KbID != datasetID {
-			invalid = append(invalid, d.ID)
+		found := make(map[string]struct{}, len(docs))
+		for _, d := range docs {
+			found[d.ID] = struct{}{}
+		}
+		for _, id := range docIDs {
+			if _, ok := found[id]; !ok {
+				invalid = append(invalid, id)
+			}
+		}
+	} else {
+		for _, d := range docs {
+			if d.KbID != datasetID {
+				invalid = append(invalid, d.ID)
+			}
 		}
 	}
 	if len(invalid) > 0 {
-		return nil, fmt.Errorf("These documents do not belong to dataset %s: %v", datasetID, invalid)
+		return nil, &documentsNotInDatasetError{datasetID: datasetID, ids: invalid}
 	}
 	return docs, nil
 }

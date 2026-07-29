@@ -200,7 +200,7 @@ def test_chunk_add_keyword_question_and_tag_contract(rest_client, create_documen
             [
                 ({"content": "chunk test", "important_keywords": ["a", "b", "c"]}, 0, ""),
                 ({"content": "chunk test", "important_keywords": [""]}, 0, ""),
-                ({"content": "chunk test", "important_keywords": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
+                ({"content": "chunk test", "important_keywords": [1]}, 102, "`important_keywords` must be a list of strings"),
                 ({"content": "chunk test", "important_keywords": ["a", "a"]}, 0, ""),
                 ({"content": "chunk test", "important_keywords": "abc"}, 102, "`important_keywords` is required to be a list"),
                 ({"content": "chunk test", "important_keywords": 123}, 102, "`important_keywords` is required to be a list"),
@@ -211,7 +211,7 @@ def test_chunk_add_keyword_question_and_tag_contract(rest_client, create_documen
             [
                 ({"content": "chunk test", "questions": ["a", "b", "c"]}, 0, ""),
                 ({"content": "chunk test", "questions": [""]}, 0, ""),
-                ({"content": "chunk test", "questions": [1]}, 100, "TypeError('sequence item 0: expected str instance, int found')"),
+                ({"content": "chunk test", "questions": [1]}, 102, "`questions` must be a list of strings"),
                 ({"content": "chunk test", "questions": ["a", "a"]}, 0, ""),
                 ({"content": "chunk test", "questions": "abc"}, 102, "`questions` is required to be a list"),
                 ({"content": "chunk test", "questions": 123}, 102, "`questions` is required to be a list"),

@@ -576,7 +576,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 			}
 		}
 		if len(invalidIDs) > 0 {
-			return nil, common.CodeDataError, fmt.Errorf("these documents do not belong to dataset %s: %s",
+			return nil, common.CodeDataError, fmt.Errorf("These documents do not belong to dataset %s: %s",
 				datasetID, strings.Join(invalidIDs, ", "))
 		}
 		for _, id := range selector.DocumentIDs {
