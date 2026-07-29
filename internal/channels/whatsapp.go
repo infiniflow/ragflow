@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package whatsapp
+package channels
 
 import (
 	"bytes"
@@ -45,7 +45,7 @@ const (
 	messageTTL            = time.Hour
 )
 
-type Account struct {
+type whatsappAccount struct {
 	AccountID      string
 	GatewayBaseURL string
 	GatewayToken   string
@@ -53,7 +53,7 @@ type Account struct {
 	Timeout        time.Duration
 }
 
-type RuntimeSnapshot struct {
+type whatsappRuntimeSnapshot struct {
 	AccountID      string   `json:"account_id"`
 	SessionKey     string   `json:"session_key"`
 	Status         string   `json:"status"`
@@ -67,8 +67,8 @@ type RuntimeSnapshot struct {
 	EventCursor    int64    `json:"event_cursor"`
 }
 
-type Channel struct {
-	account Account
+type whatsappChannel struct {
+	account whatsappAccount
 
 	mu             sync.Mutex
 	cancel         context.CancelFunc
@@ -85,10 +85,10 @@ type Channel struct {
 	seen           map[string]time.Time
 }
 
-var liveChannels sync.Map
+var liveWhatsAppChannels sync.Map
 
-// NewChannel creates a WhatsApp channel instance with default runtime settings filled in.
-func NewChannel(account Account) *Channel {
+// newWhatsAppChannel creates a WhatsApp channel instance with default runtime settings filled in.
+func newWhatsAppChannel(account whatsappAccount) *whatsappChannel {
 	if account.GatewayBaseURL == "" {
 		account.GatewayBaseURL = defaultGatewayBaseURL
 	}
@@ -98,7 +98,7 @@ func NewChannel(account Account) *Channel {
 	if account.Timeout <= 0 {
 		account.Timeout = defaultTimeout
 	}
-	return &Channel{
+	return &whatsappChannel{
 		account: account,
 		client:  &http.Client{Timeout: account.Timeout},
 		status:  "stopped",
@@ -106,8 +106,8 @@ func NewChannel(account Account) *Channel {
 	}
 }
 
-// NewChannelFromConfig builds a WhatsApp channel from chat_channel.config.credential.
-func NewChannelFromConfig(accountID string, cfg map[string]any) (*Channel, error) {
+// newWhatsAppChannelFromConfig builds a WhatsApp channel from chat_channel.config.credential.
+func newWhatsAppChannelFromConfig(accountID string, cfg map[string]any) (*whatsappChannel, error) {
 	timeout := defaultTimeout
 	if raw, ok := cfg["timeout_secs"]; ok {
 		switch v := raw.(type) {
@@ -127,7 +127,7 @@ func NewChannelFromConfig(accountID string, cfg map[string]any) (*Channel, error
 	if sessionKey == "" {
 		sessionKey = accountID
 	}
-	return NewChannel(Account{
+	return newWhatsAppChannel(whatsappAccount{
 		AccountID:      accountID,
 		GatewayBaseURL: baseURL,
 		GatewayToken:   token,
@@ -136,44 +136,34 @@ func NewChannelFromConfig(accountID string, cfg map[string]any) (*Channel, error
 	}), nil
 }
 
-// GetRuntimeSnapshot returns the in-memory runtime snapshot for a live WhatsApp channel.
-func GetRuntimeSnapshot(accountID string) (*RuntimeSnapshot, bool) {
-	raw, ok := liveChannels.Load(accountID)
+// getWhatsAppRuntimeSnapshot returns the in-memory runtime snapshot for a live WhatsApp channel.
+func getWhatsAppRuntimeSnapshot(accountID string) (*whatsappRuntimeSnapshot, bool) {
+	raw, ok := liveWhatsAppChannels.Load(accountID)
 	if !ok {
 		return nil, false
 	}
-	return raw.(*Channel).Snapshot(), true
-}
-
-// WaitingSnapshot returns the API fallback snapshot for a WhatsApp channel not yet running.
-func WaitingSnapshot(accountID string) RuntimeSnapshot {
-	return RuntimeSnapshot{
-		AccountID:   accountID,
-		SessionKey:  accountID,
-		Status:      "waiting",
-		EventCursor: 0,
-	}
+	return raw.(*whatsappChannel).Snapshot(), true
 }
 
 // ChannelID returns the platform identifier used by the chat-channel runtime.
-func (c *Channel) ChannelID() string {
+func (c *whatsappChannel) ChannelID() string {
 	return "whatsapp"
 }
 
 // AccountID returns the chat_channel.id bound to this WhatsApp runtime instance.
-func (c *Channel) AccountID() string {
+func (c *whatsappChannel) AccountID() string {
 	return c.account.AccountID
 }
 
 // SetMessageHandler installs the RAGFlow bridge invoked for inbound WhatsApp messages.
-func (c *Channel) SetMessageHandler(handler core.MessageHandler) {
+func (c *whatsappChannel) SetMessageHandler(handler core.MessageHandler) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.handler = handler
 }
 
 // Start begins the WhatsApp gateway session and event websocket loop.
-func (c *Channel) Start(ctx context.Context) error {
+func (c *whatsappChannel) Start(ctx context.Context) error {
 	c.mu.Lock()
 	if c.cancel != nil {
 		c.mu.Unlock()
@@ -185,13 +175,13 @@ func (c *Channel) Start(ctx context.Context) error {
 	c.lastErr = ""
 	c.mu.Unlock()
 
-	liveChannels.Store(c.account.AccountID, c)
+	liveWhatsAppChannels.Store(c.account.AccountID, c)
 	go c.run(runCtx)
 	return nil
 }
 
 // Stop cancels the WhatsApp event loop and asks the gateway to stop the session.
-func (c *Channel) Stop(ctx context.Context) error {
+func (c *whatsappChannel) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	cancel := c.cancel
 	c.cancel = nil
@@ -209,7 +199,7 @@ func (c *Channel) Stop(ctx context.Context) error {
 	if cancel != nil {
 		cancel()
 	}
-	liveChannels.Delete(c.account.AccountID)
+	liveWhatsAppChannels.Delete(c.account.AccountID)
 	_ = c.requestJSON(ctx, http.MethodPost, fmt.Sprintf("whatsapp/%s/stop", url.PathEscape(c.sessionKey())), map[string]any{
 		"account_id":  c.account.AccountID,
 		"session_key": c.sessionKey(),
@@ -218,7 +208,7 @@ func (c *Channel) Stop(ctx context.Context) error {
 }
 
 // Send posts an outgoing RAGFlow answer to the WhatsApp gateway.
-func (c *Channel) Send(ctx context.Context, msg core.OutgoingMessage) error {
+func (c *whatsappChannel) Send(ctx context.Context, msg core.OutgoingMessage) error {
 	if strings.TrimSpace(msg.ChatID) == "" {
 		return errors.New("chat_id is required")
 	}
@@ -236,11 +226,11 @@ func (c *Channel) Send(ctx context.Context, msg core.OutgoingMessage) error {
 }
 
 // Snapshot copies the current WhatsApp runtime state for the runtime API.
-func (c *Channel) Snapshot() *RuntimeSnapshot {
+func (c *whatsappChannel) Snapshot() *whatsappRuntimeSnapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	baseURL := strings.TrimRight(c.account.GatewayBaseURL, "/")
-	return &RuntimeSnapshot{
+	return &whatsappRuntimeSnapshot{
 		AccountID:      c.account.AccountID,
 		SessionKey:     c.sessionKey(),
 		Status:         c.status,
@@ -256,7 +246,7 @@ func (c *Channel) Snapshot() *RuntimeSnapshot {
 }
 
 // run starts the gateway session and reconnects the websocket event stream when needed.
-func (c *Channel) run(ctx context.Context) {
+func (c *whatsappChannel) run(ctx context.Context) {
 	if err := c.startSession(ctx); err != nil {
 		c.setError(err)
 		return
@@ -272,7 +262,7 @@ func (c *Channel) run(ctx context.Context) {
 }
 
 // startSession asks the gateway to start the session and accepts an already-created session after timeout.
-func (c *Channel) startSession(ctx context.Context) error {
+func (c *whatsappChannel) startSession(ctx context.Context) error {
 	err := c.requestJSONWithTimeout(ctx, startTimeout, http.MethodPost, fmt.Sprintf("whatsapp/%s/start", url.PathEscape(c.sessionKey())), map[string]any{
 		"account_id":       c.account.AccountID,
 		"session_key":      c.sessionKey(),
@@ -289,7 +279,7 @@ func (c *Channel) startSession(ctx context.Context) error {
 }
 
 // runEvents reads gateway websocket messages until the connection closes or the context ends.
-func (c *Channel) runEvents(ctx context.Context) error {
+func (c *whatsappChannel) runEvents(ctx context.Context) error {
 	wsURL, err := c.eventsURL()
 	if err != nil {
 		return err
@@ -325,7 +315,7 @@ func (c *Channel) runEvents(ctx context.Context) error {
 }
 
 // waitForStatus waits briefly until the gateway exposes the started session status.
-func (c *Channel) waitForStatus(ctx context.Context) error {
+func (c *whatsappChannel) waitForStatus(ctx context.Context) error {
 	deadline := time.Now().Add(startTimeout)
 	for ctx.Err() == nil {
 		var response map[string]any
@@ -348,7 +338,7 @@ func (c *Channel) waitForStatus(ctx context.Context) error {
 }
 
 // handleWSPayload dispatches a gateway websocket payload to snapshot or event handling.
-func (c *Channel) handleWSPayload(ctx context.Context, payload []byte) {
+func (c *whatsappChannel) handleWSPayload(ctx context.Context, payload []byte) {
 	var obj map[string]any
 	if err := json.Unmarshal(payload, &obj); err != nil {
 		return
@@ -363,7 +353,7 @@ func (c *Channel) handleWSPayload(ctx context.Context, payload []byte) {
 }
 
 // handleEvent converts a WhatsApp message event into the shared channel message format.
-func (c *Channel) handleEvent(ctx context.Context, item map[string]any) {
+func (c *whatsappChannel) handleEvent(ctx context.Context, item map[string]any) {
 	if fmt.Sprint(item["kind"]) != "message" {
 		return
 	}
@@ -393,7 +383,7 @@ func (c *Channel) handleEvent(ctx context.Context, item map[string]any) {
 }
 
 // isSeen records and filters duplicate WhatsApp message IDs for a bounded time window.
-func (c *Channel) isSeen(messageID string) bool {
+func (c *whatsappChannel) isSeen(messageID string) bool {
 	now := time.Now()
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -410,7 +400,7 @@ func (c *Channel) isSeen(messageID string) bool {
 }
 
 // applySnapshot updates the cached connection and QR-code state from the gateway.
-func (c *Channel) applySnapshot(snapshot map[string]any) {
+func (c *whatsappChannel) applySnapshot(snapshot map[string]any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.lastSnapshotAt = float64(time.Now().Unix())
@@ -429,7 +419,7 @@ func (c *Channel) applySnapshot(snapshot map[string]any) {
 }
 
 // setError records a runtime failure in the snapshot exposed to the API.
-func (c *Channel) setError(err error) {
+func (c *whatsappChannel) setError(err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.status = "error"
@@ -438,19 +428,19 @@ func (c *Channel) setError(err error) {
 }
 
 // requestJSON sends an authenticated JSON request to the WhatsApp gateway.
-func (c *Channel) requestJSON(ctx context.Context, method, path string, body map[string]any, out any) error {
+func (c *whatsappChannel) requestJSON(ctx context.Context, method, path string, body map[string]any, out any) error {
 	return c.requestJSONWithClient(ctx, c.client, method, path, body, out)
 }
 
 // requestJSONWithTimeout sends a JSON request with a one-off timeout override.
-func (c *Channel) requestJSONWithTimeout(ctx context.Context, timeout time.Duration, method, path string, body map[string]any, out any) error {
+func (c *whatsappChannel) requestJSONWithTimeout(ctx context.Context, timeout time.Duration, method, path string, body map[string]any, out any) error {
 	client := *c.client
 	client.Timeout = timeout
 	return c.requestJSONWithClient(ctx, &client, method, path, body, out)
 }
 
 // requestJSONWithClient sends an authenticated JSON request using the provided HTTP client.
-func (c *Channel) requestJSONWithClient(ctx context.Context, client *http.Client, method, path string, body map[string]any, out any) error {
+func (c *whatsappChannel) requestJSONWithClient(ctx context.Context, client *http.Client, method, path string, body map[string]any, out any) error {
 	payload, _ := json.Marshal(body)
 	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.account.GatewayBaseURL, "/")+"/"+strings.TrimLeft(path, "/"), bytes.NewReader(payload))
 	if err != nil {
@@ -476,7 +466,7 @@ func (c *Channel) requestJSONWithClient(ctx context.Context, client *http.Client
 }
 
 // sessionKey returns the configured WhatsApp gateway session key.
-func (c *Channel) sessionKey() string {
+func (c *whatsappChannel) sessionKey() string {
 	if strings.TrimSpace(c.account.SessionKey) == "" {
 		return "default"
 	}
@@ -484,7 +474,7 @@ func (c *Channel) sessionKey() string {
 }
 
 // authHeader formats the optional gateway token as an Authorization header.
-func (c *Channel) authHeader() string {
+func (c *whatsappChannel) authHeader() string {
 	token := strings.TrimSpace(c.account.GatewayToken)
 	if token == "" {
 		return ""
@@ -496,7 +486,7 @@ func (c *Channel) authHeader() string {
 }
 
 // eventsURL builds the websocket URL used to consume gateway events after the cursor.
-func (c *Channel) eventsURL() (string, error) {
+func (c *whatsappChannel) eventsURL() (string, error) {
 	base, err := url.Parse(strings.TrimRight(c.account.GatewayBaseURL, "/"))
 	if err != nil {
 		return "", err

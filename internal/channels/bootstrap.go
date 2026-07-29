@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"ragflow/internal/channels/core"
-	"ragflow/internal/channels/whatsapp"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
@@ -67,6 +66,7 @@ func NewRuntime() *Runtime {
 // Start launches the chat-channel runtime reconciler in the background.
 func Start(ctx context.Context) *Runtime {
 	rt := NewRuntime()
+	service.SetChatChannelRuntimeProvider(whatsappRuntimeSnapshotMap)
 	go rt.Run(ctx)
 	return rt
 }
@@ -124,7 +124,7 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 			break
 		}
 	}
-	if err := whatsapp.SyncGateway(ctx, activeWhatsApp); err != nil && activeWhatsApp {
+	if err := syncWhatsAppGateway(ctx, activeWhatsApp); err != nil && activeWhatsApp {
 		log.Printf("failed to sync WhatsApp gateway: %v", err)
 	}
 
@@ -278,10 +278,31 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 func buildChannel(accountID string, wanted desiredChannel) (core.Channel, error) {
 	switch wanted.channel {
 	case "whatsapp":
-		return whatsapp.NewChannelFromConfig(accountID, wanted.credential)
+		return newWhatsAppChannelFromConfig(accountID, wanted.credential)
 	default:
 		return nil, fmt.Errorf("unknown channel: %s", wanted.channel)
 	}
+}
+
+// whatsappRuntimeSnapshotMap returns the API payload for a live WhatsApp runtime snapshot.
+func whatsappRuntimeSnapshotMap(accountID string) (map[string]any, bool) {
+	snapshot, ok := getWhatsAppRuntimeSnapshot(accountID)
+	if !ok {
+		return nil, false
+	}
+	return map[string]any{
+		"account_id":       snapshot.AccountID,
+		"session_key":      snapshot.SessionKey,
+		"status":           snapshot.Status,
+		"connected_at":     snapshot.ConnectedAt,
+		"qr_updated_at":    snapshot.QRUpdatedAt,
+		"qr_data_url":      snapshot.QRDataURL,
+		"last_error":       snapshot.LastError,
+		"session_id":       snapshot.SessionID,
+		"last_snapshot_at": snapshot.LastSnapshotAt,
+		"gateway_base_url": snapshot.GatewayBaseURL,
+		"event_cursor":     snapshot.EventCursor,
+	}, true
 }
 
 // stopAll stops every running channel and shuts down shared gateway processes.
@@ -293,7 +314,7 @@ func (r *Runtime) stopAll(ctx context.Context) {
 	for _, entry := range running {
 		stopChannel(ctx, entry.channel)
 	}
-	_ = whatsapp.SyncGateway(ctx, false)
+	_ = syncWhatsAppGateway(ctx, false)
 }
 
 // stopChannel stops one platform channel and logs any shutdown error.

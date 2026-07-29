@@ -17,6 +17,8 @@
 package channels
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -80,5 +82,38 @@ func TestClearStartFailure(t *testing.T) {
 
 	if _, ok := rt.failed["account-1"]; ok {
 		t.Fatal("clearStartFailure left failed entry behind")
+	}
+}
+
+func TestGatewayWorkdirDefaultContainsNodeEntrypoint(t *testing.T) {
+	t.Setenv("WHATSAPP_GATEWAY_WORKDIR", "")
+
+	entry := filepath.Join(gatewayWorkdir(), "index.js")
+	if _, err := os.Stat(entry); err != nil {
+		t.Fatalf("default gateway entry %s is not available: %v", entry, err)
+	}
+}
+
+func TestGatewayEnabledDefaultsToUserManaged(t *testing.T) {
+	t.Setenv("WHATSAPP_GATEWAY_ENABLED", "")
+
+	if gatewayEnabled() {
+		t.Fatal("gatewayEnabled() = true, want false by default")
+	}
+}
+
+func TestGatewayEnabledCanBeExplicitlyEnabled(t *testing.T) {
+	t.Setenv("WHATSAPP_GATEWAY_ENABLED", "true")
+
+	if !gatewayEnabled() {
+		t.Fatal("gatewayEnabled() = false, want true")
+	}
+}
+
+func TestGatewayEnabledRejectsInvalidValue(t *testing.T) {
+	t.Setenv("WHATSAPP_GATEWAY_ENABLED", "maybe")
+
+	if gatewayEnabled() {
+		t.Fatal("gatewayEnabled() = true for invalid value, want false")
 	}
 }

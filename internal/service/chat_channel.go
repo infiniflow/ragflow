@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"sync"
 
-	"ragflow/internal/channels/whatsapp"
 	"ragflow/internal/utility"
 
 	"ragflow/internal/common"
@@ -53,6 +53,28 @@ type ChatChannelIncomingMessage struct {
 	MessageID string
 	SenderID  string
 	Text      string
+}
+
+// ChatChannelRuntimeProvider reads runtime metadata for one live chat-channel instance.
+type ChatChannelRuntimeProvider func(channelID string) (map[string]any, bool)
+
+var (
+	chatChannelRuntimeProviderMu sync.RWMutex
+	chatChannelRuntimeProvider   ChatChannelRuntimeProvider
+)
+
+// SetChatChannelRuntimeProvider installs the runtime snapshot reader used by the chat-channel API.
+func SetChatChannelRuntimeProvider(provider ChatChannelRuntimeProvider) {
+	chatChannelRuntimeProviderMu.Lock()
+	defer chatChannelRuntimeProviderMu.Unlock()
+	chatChannelRuntimeProvider = provider
+}
+
+// getChatChannelRuntimeProvider returns the current runtime snapshot reader.
+func getChatChannelRuntimeProvider() ChatChannelRuntimeProvider {
+	chatChannelRuntimeProviderMu.RLock()
+	defer chatChannelRuntimeProviderMu.RUnlock()
+	return chatChannelRuntimeProvider
 }
 
 func (s *ChatChannelService) Insert(ctx context.Context, channel *entity.ChatChannel) error {
@@ -249,12 +271,12 @@ func (s *ChatChannelService) GetChatChannelRuntime(ctx context.Context, userID, 
 		return nil, common.CodeDataError, errors.New("runtime snapshot is only available for WhatsApp")
 	}
 
-	snapshot, ok := whatsapp.GetRuntimeSnapshot(channelID)
-	if !ok {
-		waiting := whatsapp.WaitingSnapshot(channelID)
-		return runtimeSnapshotMap(waiting), common.CodeSuccess, nil
+	if provider := getChatChannelRuntimeProvider(); provider != nil {
+		if snapshot, ok := provider(channelID); ok {
+			return snapshot, common.CodeSuccess, nil
+		}
 	}
-	return runtimeSnapshotMap(*snapshot), common.CodeSuccess, nil
+	return waitingRuntimeSnapshotMap(channelID), common.CodeSuccess, nil
 }
 
 // HandleIncomingMessage routes one external channel message through the bound RAGFlow dialog.
@@ -332,19 +354,19 @@ func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, userID, chan
 	return true, common.CodeSuccess, nil
 }
 
-// runtimeSnapshotMap converts a WhatsApp snapshot into the Python-compatible API payload.
-func runtimeSnapshotMap(snapshot whatsapp.RuntimeSnapshot) map[string]any {
+// waitingRuntimeSnapshotMap returns the API fallback payload before a runtime instance starts.
+func waitingRuntimeSnapshotMap(channelID string) map[string]any {
 	return map[string]any{
-		"account_id":       snapshot.AccountID,
-		"session_key":      snapshot.SessionKey,
-		"status":           snapshot.Status,
-		"connected_at":     snapshot.ConnectedAt,
-		"qr_updated_at":    snapshot.QRUpdatedAt,
-		"qr_data_url":      snapshot.QRDataURL,
-		"last_error":       snapshot.LastError,
-		"session_id":       snapshot.SessionID,
-		"last_snapshot_at": snapshot.LastSnapshotAt,
-		"gateway_base_url": snapshot.GatewayBaseURL,
-		"event_cursor":     snapshot.EventCursor,
+		"account_id":       channelID,
+		"session_key":      channelID,
+		"status":           "waiting",
+		"connected_at":     nil,
+		"qr_updated_at":    nil,
+		"qr_data_url":      nil,
+		"last_error":       nil,
+		"session_id":       nil,
+		"last_snapshot_at": nil,
+		"gateway_base_url": nil,
+		"event_cursor":     int64(0),
 	}
 }

@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package whatsapp
+package channels
 
 import (
 	"context"
@@ -50,10 +50,13 @@ type gatewayRuntime struct {
 
 var gateway gatewayRuntime
 
-// SyncGateway starts or stops the shared WhatsApp gateway process.
-func SyncGateway(ctx context.Context, enabled bool) error {
-	if !gatewayEnabled() || !enabled {
+// syncWhatsAppGateway starts or stops the shared WhatsApp gateway process when management is enabled.
+func syncWhatsAppGateway(ctx context.Context, enabled bool) error {
+	if !enabled {
 		return gateway.stop()
+	}
+	if !gatewayEnabled() {
+		return nil
 	}
 	return gateway.start(ctx)
 }
@@ -62,7 +65,7 @@ func SyncGateway(ctx context.Context, enabled bool) error {
 func gatewayEnabled() bool {
 	raw := strings.TrimSpace(os.Getenv("WHATSAPP_GATEWAY_ENABLED"))
 	if raw == "" {
-		return true
+		return false
 	}
 	v, err := strconv.ParseBool(raw)
 	return err == nil && v
@@ -90,7 +93,7 @@ func gatewayWorkdir() string {
 	if !ok {
 		return "."
 	}
-	return filepath.Clean(filepath.Join(filepath.Dir(file), "../../../api/channels/whatsapp/gateway-node"))
+	return filepath.Clean(filepath.Join(filepath.Dir(file), "../../api/channels/whatsapp/gateway-node"))
 }
 
 // start launches the gateway process if it is not already running.

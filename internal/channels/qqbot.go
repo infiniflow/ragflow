@@ -14,4 +14,4 @@
 //  limitations under the License.
 //
 
-package feishu
+package channels
