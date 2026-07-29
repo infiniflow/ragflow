@@ -467,9 +467,7 @@ class TemporalRetrievalPolicy:
             logging.debug("Temporal retrieval skipped: invalid mode type=%s", type(mode_raw).__name__)
             return _skipped_policy("invalid_mode")
         mode = mode_raw.lower()
-        query_text = " ".join(
-            part for part in [normalize_arabic_digits(raw_query), normalize_arabic_digits(refined_query)] if part
-        )
+        query_text = " ".join(part for part in [normalize_arabic_digits(raw_query), normalize_arabic_digits(refined_query)] if part)
         explicit_window = extract_date_window(raw_query) or extract_date_window(refined_query)
         intent, confidence = _detect_temporal_intent(query_text, explicit_window)
         detected_intent, detected_confidence = intent, confidence

@@ -57,7 +57,7 @@ from api.utils.reference_metadata_utils import (
 from common import settings
 from common.constants import LLMType, ParserType, RetCode, TaskStatus
 from common.doc_store.doc_store_base import OrderByExpr
-from common.metadata_utils import convert_conditions, meta_filter
+from common.metadata_utils import convert_conditions
 from common.temporal_retrieval import merge_temporal_reference_fields, resolve_temporal_retrieval_context
 from common.misc_utils import thread_pool_exec
 from common.string_utils import is_content_empty, remove_redundant_spaces

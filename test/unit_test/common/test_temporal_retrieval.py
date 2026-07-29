@@ -49,9 +49,7 @@ def test_profile_temporal_field_and_hide_internal_metadata():
     assert profile.detected_format == "date"
     assert profile.parsed_documents == 1
     assert profile.oldest_date == "2026-06-15"
-    assert filter_visible_metadata_dict({"post_date": "2026-06-15", "_temporal_ts_norm": 1}) == {
-        "post_date": "2026-06-15"
-    }
+    assert filter_visible_metadata_dict({"post_date": "2026-06-15", "_temporal_ts_norm": 1}) == {"post_date": "2026-06-15"}
 
 
 @pytest.mark.p2
@@ -109,14 +107,8 @@ def test_validate_half_life_days(value, expected_error):
 @pytest.mark.p1
 def test_validate_temporal_retrieval_config_rejects_bad_payloads():
     assert validate_temporal_retrieval_config("bad") == "`temporal_retrieval` should be an object."
-    assert (
-        validate_temporal_retrieval_config({"enabled": True})
-        == "`temporal_retrieval.temporal_field` is required when temporal retrieval is enabled."
-    )
-    assert (
-        validate_temporal_retrieval_config({"enabled": True, "temporal_field": "post_date", "half_life_days": 0})
-        == "`temporal_retrieval.half_life_days` should be a finite number greater than 0."
-    )
+    assert validate_temporal_retrieval_config({"enabled": True}) == "`temporal_retrieval.temporal_field` is required when temporal retrieval is enabled."
+    assert validate_temporal_retrieval_config({"enabled": True, "temporal_field": "post_date", "half_life_days": 0}) == "`temporal_retrieval.half_life_days` should be a finite number greater than 0."
     assert validate_temporal_retrieval_config({"future_date_policy": "bad"}) is not None
 
 
@@ -147,10 +139,7 @@ def test_merge_temporal_retrieval_config_invalid_partial_fails_cleanly():
         "half_life_days": 30,
     }
     merged = merge_config(existing, {"half_life_days": float("nan")})
-    assert (
-        validate_temporal_retrieval_config(merged)
-        == "`temporal_retrieval.half_life_days` should be a finite number greater than 0."
-    )
+    assert validate_temporal_retrieval_config(merged) == "`temporal_retrieval.half_life_days` should be a finite number greater than 0."
 
 
 @pytest.mark.p1

@@ -995,11 +995,7 @@ class DocMetadataService:
                     doc_meta = cls._extract_metadata(doc)
                     if not isinstance(doc_meta, dict):
                         continue
-                    keys.update(
-                        str(k)
-                        for k in doc_meta.keys()
-                        if include_internal or not is_internal_metadata_key(k)
-                    )
+                    keys.update(str(k) for k in doc_meta.keys() if include_internal or not is_internal_metadata_key(k))
             logging.debug(f"get_metadata_keys_by_kbs end: n_keys={len(keys)}, kb_ids={kb_ids}")
             return sorted(keys)
         except Exception as e:

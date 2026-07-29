@@ -750,12 +750,7 @@ def profile_temporal_field(dataset_ids: list[str], temporal_field: str, tenant_i
     metadata_by_doc = {}
     sampled_total = 0
     for dataset_id in dataset_ids:
-        sample_ids = [
-            row.id
-            for row in DocumentService.model.select(DocumentService.model.id)
-            .where(DocumentService.model.kb_id == dataset_id)
-            .limit(MAX_TEMPORAL_PROFILE_SAMPLE)
-        ]
+        sample_ids = [row.id for row in DocumentService.model.select(DocumentService.model.id).where(DocumentService.model.kb_id == dataset_id).limit(MAX_TEMPORAL_PROFILE_SAMPLE)]
         sampled_total += len(sample_ids)
         if sample_ids:
             metadata_by_doc.update(DocMetadataService.get_metadata_for_documents(sample_ids, dataset_id))
@@ -1525,7 +1520,6 @@ async def search_datasets(tenant_id: str, req: dict):
         if meta_data_filter.get("method") in ["auto", "semi_auto"]:
             chat_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.CHAT)
             chat_mdl = LLMBundle(tenant_id, chat_model_config)
-
 
     tenant_ids = []
     tenants = UserTenantService.query(user_id=tenant_id)
