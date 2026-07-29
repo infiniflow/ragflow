@@ -113,7 +113,7 @@ export function TemplateConfiguration({
       return (
         sectionName === activeSectionTab && (
           <SectionFieldGrid
-            key={activeFieldsPath}
+            key={`${activeFieldsPath}-${kind}`}
             fieldsPath={activeFieldsPath}
             sectionName={sectionName}
             onOpenAddField={handleOpenAddField}
@@ -125,6 +125,7 @@ export function TemplateConfiguration({
     [
       activeFieldsPath,
       activeSectionTab,
+      kind,
       handleOpenAddField,
       handleOpenEditField,
     ],
