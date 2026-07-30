@@ -22,6 +22,7 @@ import {
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  sanitizeMarkdown,
 } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
@@ -66,11 +67,8 @@ const MarkdownContent = ({
   const { setDocumentIds, data: fileThumbnails } =
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
-    let text = DOMPurify.sanitize(content, {
-      ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
-      ADD_ATTR: ['class'],
-    });
-    // let text = content;
+    let text = content;
+
     if (text === '') {
       text = t('chat.searching');
     }
@@ -79,6 +77,9 @@ const MarkdownContent = ({
       replaceThinkToSection,
       replaceRetrievingToSection,
       preprocessLaTeX,
+      // Sanitize last: preprocessLaTeX() decodes entities back into raw markup,
+      // which rehypeRaw then parses.
+      sanitizeMarkdown,
     )(nextText);
   }, [content, t]);
 
