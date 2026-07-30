@@ -33,8 +33,15 @@ export function TreeTemplateFields({ index }: TreeTemplateFieldsProps) {
           step={1}
         />
         <SliderInputFormField
-          name={`templates.${index}.config.raptor.threshold`}
-          label={t('setting.threshold')}
+          name={`templates.${index}.config.raptor.clustering_threshold`}
+          label={'Clustering Threshold'}
+          step={0.01}
+          max={1}
+          min={0}
+        />
+        <SliderInputFormField
+          name={`templates.${index}.config.raptor.clustering_ratio`}
+          label={'Clustering Ratio'}
           step={0.01}
           max={1}
           min={0}

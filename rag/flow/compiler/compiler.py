@@ -127,10 +127,9 @@ class Compiler(ProcessBase, LLM):
             raptor_config = {
                 "prompt": raptor_cfg.get("prompt") or "Please write a concise summary of the following texts:\n{cluster_content}",
                 "max_token": int(raptor_cfg.get("max_token") or 512),
-                "threshold": float(raptor_cfg.get("threshold") or 0.1),
                 "random_seed": int(raptor_cfg.get("random_seed") or 0),
-                "max_cluster": int(raptor_cfg.get("max_cluster") or 64),
-                "ext": raptor_cfg.get("ext") or {},
+                "clustering_threshold": float(raptor_cfg.get("clustering_threshold") or 0.3),
+                "clustering_ratio": float(raptor_cfg.get("clustering_ratio") or 0.5),
             }
             self._compile_progress(msg=f"tree-template ({idx + 1}/{len(templates)}): building tree for doc={doc_id}")
             try:
@@ -139,8 +138,6 @@ class Compiler(ProcessBase, LLM):
                     raptor_config=raptor_config,
                     chat_mdl=chat_mdl_by_tid[template_id],
                     embd_mdl=embedding_model,
-                    tree_builder="raptor",
-                    clustering_method="ahc",
                     max_errors=3,
                 )
             except Exception:

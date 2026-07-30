@@ -43,18 +43,17 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         embd_model,
         prompt,
         max_token=512,
-        threshold=0.1,
         small_layer_collapse=8,
         max_errors=3,
-        similarity_threshold=0.3,
-        cluster_ratio=0.5,
+        clustering_threshold=0.3,
+        clustering_ratio=0.5,
     ):
         """Configure RAPTOR summarization and clustering.
 
         Args:
-            similarity_threshold: Adjacent chunks with cosine similarity
+            clustering_threshold: Adjacent chunks with cosine similarity
                 below this value become cluster boundaries.  Default 0.3.
-            cluster_ratio: Maximum number of clusters as a fraction of
+            clustering_ratio: Maximum number of clusters as a fraction of
                 chunk count (e.g. 0.5 means at most 50% of chunks become
                 cluster representatives).  If the threshold-based watershed
                 produces more clusters than this cap, the threshold is
@@ -63,11 +62,10 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         """
         self._max_cluster = max_cluster
         self._small_layer_collapse = small_layer_collapse
-        self._similarity_threshold = similarity_threshold
-        self._cluster_ratio = cluster_ratio
+        self._clustering_threshold = clustering_threshold
+        self._clustering_ratio = clustering_ratio
         self._llm_model = llm_model
         self._embd_model = embd_model
-        self._threshold = threshold
         self._prompt = prompt
         self._max_token = max_token
         self._max_errors = max(1, max_errors)
@@ -144,7 +142,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         sorted_sims = np.sort(adj_sims)  # ascending
 
         # Max clusters allowed by the ratio cap
-        max_clusters = max(1, int(round(n * self._cluster_ratio)))
+        max_clusters = max(1, int(round(n * self._clustering_ratio)))
 
         def _watershed(th: float) -> np.ndarray:
             lbl = np.zeros(n, dtype=int)
@@ -158,7 +156,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             return lbl
 
         # ---- Phase 1: watershed at the user-specified threshold ----
-        threshold = self._similarity_threshold
+        threshold = self._clustering_threshold
         labels = _watershed(threshold)
         n_clusters = int(np.unique(labels).size)
 
@@ -176,7 +174,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             n_clusters,
             max_clusters,
             n,
-            self._cluster_ratio,
+            self._clustering_ratio,
         )
         return labels
 

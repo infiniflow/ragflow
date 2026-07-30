@@ -375,8 +375,9 @@ class RaptorService:
             embd_mdl,
             raptor_config["prompt"],
             raptor_config["max_token"],
-            raptor_config["threshold"],
             max_errors=max_errors,
+            clustering_threshold=float(raptor_config.get("clustering_threshold", 0.3)),
+            clustering_ratio=float(raptor_config.get("clustering_ratio", 0.5)),
         )
 
         # Seed each leaf with its own id as the start of its
@@ -492,8 +493,9 @@ class RaptorService:
             embd_mdl,
             raptor_config["prompt"],
             raptor_config["max_token"],
-            raptor_config["threshold"],
             max_errors=max_errors,
+            clustering_threshold=float(raptor_config.get("clustering_threshold", 0.3)),
+            clustering_ratio=float(raptor_config.get("clustering_ratio", 0.5)),
         )
 
         raptor_input = [(content, vctr, [chunk_id] if chunk_id else []) for content, vctr, chunk_id in chunks]
