@@ -255,7 +255,7 @@ class TaskHandler:
                 await self._run_graphrag(embedding_model)
             elif task_type == "mindmap":
                 ctx.progress_cb(1, "place holder")
-            elif task_type == "artifact":
+            elif task_type == "wiki":
                 from rag.svr.task_executor_refactor.dataset_wiki_generator import (
                     run_wiki,
                 )
