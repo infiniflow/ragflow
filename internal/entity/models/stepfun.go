@@ -71,8 +71,15 @@ type StepFunChatResponse struct {
 		} `json:"message"`
 	} `json:"choices"`
 	Usage struct {
-		InputTokens int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
+		PromptTokens        int `json:"prompt_tokens"`
+		CompletionTokens    int `json:"completion_tokens"`
+		TotalTokens         int `json:"total_tokens"`
+		PromptTokensDetails *struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details,omitempty"`
+		CompletionTokensDetails *struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details,omitempty"`
 	} `json:"usage"`
 }
 
