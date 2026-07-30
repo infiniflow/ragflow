@@ -18,9 +18,16 @@ package config
 
 import "github.com/spf13/viper"
 
+type AuthenticationConfig struct {
+	DisablePasswordLogin bool `mapstructure:"disable_password_login"`
+	RegisterEnabled      bool `mapstructure:"register_enabled"`
+}
+
 type APIServerConfig struct {
 	Host     string `mapstructure:"host"`
 	HTTPPort int    `mapstructure:"http_port"`
+
+	Authentication AuthenticationConfig `mapstructure:"authentication"`
 }
 
 func ParseAPIServerConfig(config *Config, v *viper.Viper) error {
@@ -48,5 +55,28 @@ func ParseAPIServerConfig(config *Config, v *viper.Viper) error {
 		config.APIServer.HTTPPort = 9384
 	}
 
+	ParseAuthenticationConfig(&config.APIServer, v)
+
 	return nil
+}
+
+func ParseAuthenticationConfig(apiServerConfig *APIServerConfig, v *viper.Viper) {
+	apiServerConfig.Authentication.DisablePasswordLogin = false
+	apiServerConfig.Authentication.RegisterEnabled = true
+
+	if !v.IsSet("authentication") {
+		return
+	}
+	sub := v.Sub("authentication")
+	if sub == nil {
+		return
+	}
+
+	if sub.IsSet("disable_password_login") {
+		apiServerConfig.Authentication.DisablePasswordLogin = sub.GetBool("disable_password_login")
+	}
+
+	if sub.IsSet("enable_register") {
+		apiServerConfig.Authentication.RegisterEnabled = sub.GetBool("enable_register")
+	}
 }

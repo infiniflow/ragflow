@@ -33,6 +33,7 @@ type GeneralConfig struct {
 	CacheEngine       string        `mapstructure:"cache_engine"`    // Redis
 	QueueEngine       string        `mapstructure:"queue_engine"`    // NATS
 	AnalyticEngine    string        `mapstructure:"analytic_engine"` // Clickhouse
+	Language          string        `mapstructure:"language"`
 }
 
 func ParseGeneralConfig(config *Config, v *viper.Viper) error {
@@ -47,6 +48,7 @@ func ParseGeneralConfig(config *Config, v *viper.Viper) error {
 	config.General.CacheEngine = "redis"
 	config.General.QueueEngine = "nats"
 	config.General.AnalyticEngine = "clickhouse"
+	config.General.Language = "english"
 
 	if !v.IsSet("general") {
 		return nil
@@ -82,6 +84,9 @@ func ParseGeneralConfig(config *Config, v *viper.Viper) error {
 	}
 	if sub.IsSet("analytic_engine") {
 		config.General.AnalyticEngine = sub.GetString("analytic_engine")
+	}
+	if sub.IsSet("language") {
+		config.General.Language = sub.GetString("language")
 	}
 	return nil
 }

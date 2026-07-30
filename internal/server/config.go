@@ -728,6 +728,31 @@ func FromConfigFile(configPath string) error {
 		return fmt.Errorf("parse syncer config error: %w", err)
 	}
 
+	err = config.ParseLogConfig(newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse log config error: %w", err)
+	}
+
+	err = config.ParseSMTPConfig(newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse SMTP config error: %w", err)
+	}
+
+	err = config.ParseBillingConfig(newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse billing config error: %w", err)
+	}
+
+	err = config.ParseDefaultModelsConfig(newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse default models config error: %w", err)
+	}
+
+	err = config.ParseOAuthConfig(newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse OAuth config error: %w", err)
+	}
+
 	// Set default values for admin configuration if not configured
 	if globalConfig.Admin.Host == "" {
 		globalConfig.Admin.Host = "127.0.0.1"

@@ -16,31 +16,11 @@
 
 package config
 
-import "ragflow/internal/common"
+import "github.com/spf13/viper"
 
-type Config struct {
-	General        GeneralConfig
-	Database       DatabaseConfig
-	DocEngine      DocEngineConfig
-	StorageEngine  StorageConfig
-	CacheEngine    CacheEngineConfig
-	QueueEngine    QueueEngineConfig
-	AnalyticEngine AnalyticEngineConfig
-	OTel           OpenTelemetryConfig
+type BillingConfig struct {
+}
 
-	Admin     AdminConfig
-	APIServer APIServerConfig
-	Ingestor  IngestorConfig
-	Syncer    SyncerConfig
-
-	Log  LogConfig
-	SMTP common.SMTPConfig
-
-	// From environments
-	Environments Environments
-
-	// For EE
-	DefaultModels DefaultModelsConfig
-	Billing       BillingConfig
-	OAuth         OAuthConfig
+func ParseBillingConfig(config *Config, v *viper.Viper) error {
+	return nil
 }

@@ -16,31 +16,13 @@
 
 package config
 
-import "ragflow/internal/common"
+type Environments struct {
+	CreateDefaultSuperUser bool             `mapstructure:"create_default_super_user"`
+	DefaultSuperUser       DefaultSuperUser `mapstructure:"default_super_user"`
+}
 
-type Config struct {
-	General        GeneralConfig
-	Database       DatabaseConfig
-	DocEngine      DocEngineConfig
-	StorageEngine  StorageConfig
-	CacheEngine    CacheEngineConfig
-	QueueEngine    QueueEngineConfig
-	AnalyticEngine AnalyticEngineConfig
-	OTel           OpenTelemetryConfig
-
-	Admin     AdminConfig
-	APIServer APIServerConfig
-	Ingestor  IngestorConfig
-	Syncer    SyncerConfig
-
-	Log  LogConfig
-	SMTP common.SMTPConfig
-
-	// From environments
-	Environments Environments
-
-	// For EE
-	DefaultModels DefaultModelsConfig
-	Billing       BillingConfig
-	OAuth         OAuthConfig
+type DefaultSuperUser struct {
+	Email    string `mapstructure:"email"`
+	Password string `mapstructure:"password"`
+	Nickname string `mapstructure:"nickname"`
 }
