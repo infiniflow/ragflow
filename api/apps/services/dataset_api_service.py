@@ -1959,7 +1959,7 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
             tid = _row_template_id(row) or ""
             stamped = row.get("compilation_template_kind_kwd") or ""
             if isinstance(stamped, list):
-                stamped = stamped_kind[0].strip()
+                stamped = stamped[0].strip()
             scope_kwd = template_scope_by_id.get(tid, "dataset") if tid else "dataset"
             meta = _bucket_meta_for(tid, stamped) if tid else {"template_id": f"kind:{resolved_kind}", "template_name": f"kind:{resolved_kind}", "kind": resolved_kind}
             if tid:
