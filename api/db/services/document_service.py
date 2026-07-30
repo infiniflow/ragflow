@@ -512,6 +512,20 @@ class DocumentService(CommonService):
         except Exception as e:
             logging.error(f"Failed to delete chunks from doc store for document {doc.id}: {e}")
 
+        # Record doc deletion for incremental structure-merge ghost cleanup.
+        # Runs after the doc_id sweep so the marker (stored under
+        # deleted_doc_id to avoid matching the same sweep) survives.
+        try:
+            from rag.svr.task_executor_refactor.dataset_structure_merger import (
+                record_doc_deletion,
+            )
+
+            record_doc_deletion(tenant_id, doc.kb_id, doc.id)
+        except Exception as e:
+            logging.warning(
+                f"Failed to record doc deletion for structure merge: {e}",
+            )
+
         # Ref-counted cleanup of wiki/artifact products this doc fed into
         # (non-critical, log and continue). A product shared by other docs
         # survives; one this doc solely owned is removed.

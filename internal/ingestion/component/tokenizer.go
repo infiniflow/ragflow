@@ -403,13 +403,14 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 	texts := make([]string, 0, len(chunks))
 	pairs := make([]int, 0, len(chunks))
 	for i, ck := range chunks {
-		txt := concatFields(ck, c.param.Fields)
-		txt = htmlTableRE.ReplaceAllString(txt, " ")
+		raw := concatFields(ck, c.param.Fields)
+		txt := htmlTableRE.ReplaceAllString(raw, " ")
 		txt = strings.TrimSpace(txt)
+		trunc := truncateForEmbedding(txt, embedder.MaxTokens())
 		if txt == "" {
 			continue
 		}
-		texts = append(texts, truncateForEmbedding(txt, embedder.MaxTokens()))
+		texts = append(texts, trunc)
 		pairs = append(pairs, i)
 	}
 	if len(texts) == 0 {
@@ -476,15 +477,35 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 	return chunks, tokenCount, nil
 }
 
-// truncateForEmbedding truncates text to fit within maxTokens,
-// reserving 10 tokens for special/model overhead. Mirrors Python
-// tokenizer.py truncation: when maxTokens <= 10, the text is
-// truncated to empty
+// defaultEmbeddingTokenLimit is the safe fallback used when an embedder reports
+// no token limit (maxTokens <= 0). It both prevents empty embedding inputs and
+// keeps truncation active for every path instead of passing the full text through.
+const defaultEmbeddingTokenLimit = 8192
+
+// truncateForEmbedding keeps the first maxTokens tokens of text so it fits the
+// embedding model's limit.
+//
+// For a positive maxTokens it mirrors Python common/token_utils.py:183-185
+// `truncate(string, max_len)` (keep the first max_len tokens).
+//
+// An unconfigured embedder reports maxTokens <= 0. Rather than mirror Python's
+// behaviour of returning "" (which would make the embeddings API reject the whole
+// batch with "inputs cannot be empty"), Go clamps the limit to a safe default
+// (defaultEmbeddingTokenLimit = 8192). This both prevents empty inputs AND keeps
+// truncation active for every path (Builtin and generic) instead of silently
+// passing the full, untruncated text when no limit is configured.
 func truncateForEmbedding(text string, maxTokens int) string {
-	if maxTokens <= 10 {
-		return ""
+	if maxTokens <= 0 {
+		maxTokens = defaultEmbeddingTokenLimit
 	}
-	return tokenizer.TrimContentToTokenLimit(text, maxTokens-10)
+	// Keep a 10-token safety margin, mirroring Python's embedding path
+	// (rag/svr/task_executor.py uses `mdl.max_length - 10`). Only apply it
+	// when the limit is large enough; for small limits (<=10) keep the full
+	// value so the result stays non-empty instead of collapsing to "".
+	if maxTokens > 10 {
+		maxTokens -= 10
+	}
+	return tokenizer.TrimContentToTokenLimit(text, maxTokens)
 }
 
 func mergeEmbeddingVectors(titleVec, contentVec []float64, titleWeight float64) ([]float64, error) {
