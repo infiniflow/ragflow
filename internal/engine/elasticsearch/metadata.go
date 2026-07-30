@@ -89,19 +89,6 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 		return nil, fmt.Errorf("index name cannot be empty")
 	}
 
-	// Check if index exists, create if not
-	exists, err := e.indexExists(ctx, indexName)
-	if err != nil {
-		common.Error("Failed to check index existence", err)
-		return nil, fmt.Errorf("failed to check index existence: %w", err)
-	}
-	if !exists {
-		// Create metadata index
-		if createErr := e.CreateMetadataStore(ctx, tenantID); createErr != nil {
-			return nil, fmt.Errorf("failed to create metadata index: %w", createErr)
-		}
-	}
-
 	// Build bulk request body
 	var buf bytes.Buffer
 	for _, doc := range metadata {
@@ -170,48 +157,18 @@ func (e *elasticsearchEngine) InsertMetadata(ctx context.Context, metadata []map
 	return []string{}, nil
 }
 
-// UpdateMetadata updates or inserts document metadata in tenant's metadata index.
-//
-// Examples (existing row → input → resulting meta_fields):
-//
-//	{character:["曹操","孙权"], year:2025}
-//	  + {author:["John","Tom"], category:"tech"}
-//	  = {character:["曹操","孙权"], year:2025, author:["John","Tom"], category:"tech"}
-//
-//	{character:["曹操","孙权"], year:2025}
-//	  + {year:2026}
-//	  = {character:["曹操","孙权"], year:2026}
+// UpdateMetadata fully replaces the meta_fields for a document in tenant's metadata index.
 //
 // UpdateMetadata fully replaces the meta_fields for a document in the
 // document engine. Callers must send the complete desired meta_fields map —
 // unchanged keys are NOT preserved (unlike a merge). This mirrors Python's
 // replace_meta_fields semantics: stale keys must not survive an update.
+//
+// The metadata index must already exist; the service layer is responsible
+// for creating it before writing.
 func (e *elasticsearchEngine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
 	indexName := buildMetadataIndexName(tenantID)
 	common.Info("ElasticsearchConnection.UpdateMetadata called", zap.String("index_name", indexName), zap.String("docID", docID), zap.String("datasetID", datasetID))
-
-	// Check if index exists
-	exists, err := e.indexExists(ctx, indexName)
-	if err != nil {
-		return fmt.Errorf("failed to check index existence: %w", err)
-	}
-	if !exists {
-		// Mirror Python: create the metadata index on first write and insert.
-		if err := e.CreateMetadataStore(ctx, tenantID); err != nil {
-			return fmt.Errorf("failed to create metadata index: %w", err)
-		}
-		_, err := e.InsertMetadata(ctx, []map[string]interface{}{
-			{
-				"id":          docID,
-				"kb_id":       datasetID,
-				"meta_fields": metaFields,
-			},
-		}, tenantID)
-		if err != nil {
-			return fmt.Errorf("failed to insert metadata: %w", err)
-		}
-		return nil
-	}
 
 	// Build the document ID for update
 	docIDStr := strings.ReplaceAll(docID, "'", "''")

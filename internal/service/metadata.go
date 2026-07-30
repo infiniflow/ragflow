@@ -64,6 +64,27 @@ func BuildMetadataIndexName(tenantID string) string {
 	return fmt.Sprintf("ragflow_doc_meta_%s", tenantID)
 }
 
+// EnsureMetadataStore creates the metadata index/table for a tenant if it
+// does not already exist. This is the create-on-first-write logic that
+// belongs in the service layer; the engine layer should assume the store
+// already exists when performing insert/update operations.
+func (s *MetadataService) EnsureMetadataStore(ctx context.Context, tenantID string) error {
+	if s.docEngine == nil {
+		return fmt.Errorf("doc engine is not initialized")
+	}
+	exists, err := s.docEngine.MetadataStoreExists(ctx, tenantID)
+	if err != nil {
+		return fmt.Errorf("failed to check metadata store existence: %w", err)
+	}
+	if exists {
+		return nil
+	}
+	if err := s.docEngine.CreateMetadataStore(ctx, tenantID); err != nil {
+		return fmt.Errorf("failed to create metadata store: %w", err)
+	}
+	return nil
+}
+
 // GetTenantIDByKBID retrieves tenant ID from knowledge base ID
 func (s *MetadataService) GetTenantIDByKBID(ctx context.Context, kbID string) (string, error) {
 	return dao.GetTenantIDByKBID(ctx, dao.DB, kbID)

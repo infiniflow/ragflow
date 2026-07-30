@@ -48,6 +48,12 @@ func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string,
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
 
+	// Ensure the metadata store exists before writing (service-layer
+	// create-on-first-write logic; the engine layer assumes it exists).
+	if err := s.metadataSvc.EnsureMetadataStore(ctx, tenantID); err != nil {
+		return fmt.Errorf("failed to ensure metadata store: %w", err)
+	}
+
 	if err = s.docEngine.UpdateMetadata(ctx, docID, doc.KbID, meta, tenantID); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
