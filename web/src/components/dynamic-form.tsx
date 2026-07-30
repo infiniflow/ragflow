@@ -93,6 +93,14 @@ export interface FormFieldConfig {
   labelClassName?: string;
   className?: string;
   disabled?: boolean;
+  /**
+   * HTML `autocomplete` attribute forwarded to the underlying `<input>`.
+   * Use `'new-password'` to suppress browser autofill — Chrome ignores
+   * `'off'` on forms that contain a password field (treats them as login
+   * forms), so `'new-password'` is the reliable value for autofill-prone
+   * fields like api_key / instance_name / base_url / group_id.
+   */
+  autoComplete?: string;
 }
 
 // Component props interface
@@ -613,6 +621,7 @@ export const RenderField = ({
                   type={field.type}
                   placeholder={field.placeholder}
                   disabled={field.disabled}
+                  autoComplete={field.autoComplete}
                 />
               </div>
             );
