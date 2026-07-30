@@ -144,7 +144,11 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		if dao.IsDuplicateKeyErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("dataset name '%s' already exists", name)
 		}
-		return nil, common.CodeServerError, errors.New("failed to save dataset")
+		// Surface the real underlying DB error instead of masking it. The
+		// generic "failed to save dataset" message made schema/constraint
+		// mismatches in the go scheme impossible to diagnose in CI.
+		common.Error("failed to save dataset", err, zap.String("name", name), zap.String("tenant_id", tenantID))
+		return nil, common.CodeServerError, fmt.Errorf("failed to save dataset: %w", err)
 	}
 
 	createdKB, err := d.kbDAO.GetByID(ctx, dao.DB, kbID)
