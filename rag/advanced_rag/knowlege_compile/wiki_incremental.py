@@ -147,7 +147,10 @@ async def _load_canonical_entities(
                 for fld in ("aliases", "source_doc_ids"):
                     val = row.get(fld)
                     if isinstance(val, str):
-                        row[fld] = json.loads(val) if val else []
+                        try:
+                            row[fld] = json.loads(val) if val else []
+                        except (json.JSONDecodeError, TypeError):
+                            row[fld] = []
                 mc = row.get("mention_count_int", 0)
                 if isinstance(mc, str):
                     mc = int(mc) if mc.isdigit() else 0
@@ -202,7 +205,7 @@ async def _save_canonical_entity(
     if settings.docStoreConn.get_fields(existing, ["entity_kwd"]):
         await thread_pool_exec(
             settings.docStoreConn.update,
-            {"entity_kwd": entity_name},
+            {"compile_kwd": [WIKI_CANONICAL_ENTITY_COMPILE_KWD], "entity_kwd": entity_name},
             doc,
             index,
             kb_id,
@@ -358,8 +361,6 @@ async def _wiki_match_entities(
         canonical_map: {canonical_name: merged_entry}
         name_resolution: {raw_name: canonical_name}
     """
-    from common.misc_utils import thread_pool_exec
-
     # Step 1: Exact match against canonical index
     exact_flat: dict[str, str] = {}  # normalized_name → canonical_name
     for cname, centry in existing_canonical.items():
@@ -380,55 +381,43 @@ async def _wiki_match_entities(
             unmatched.append(entry)
 
     # Step 2: KNN match for unmatched entities
+    # Single search at ENTITY_AMBIGUOUS_LOW (0.75), classify by score:
+    #   0.90+  → auto-merge (direct_match)
+    #   0.75-0.90 → LLM confirm for entity types only
+    #   <0.75  → no match
     if unmatched and embd_mdl and existing_canonical:
         query_texts = [_entity_to_query_text(e) for e in unmatched]
         embeddings, _ = await thread_pool_exec(embd_mdl.encode, query_texts)
 
-        async def _knn_one(entry: dict, vec) -> str | None:
-            if hasattr(vec, "tolist"):
-                vec = vec.tolist()
-            result = await _knn_search_canonical(tenant_id, kb_id, vec, ENTITY_MERGE_THRESHOLD)
-            if result:
-                cname, score = result
-                return cname
-            return None
-
         sem = asyncio.Semaphore(ENTITY_MATCH_KNN_CONCURRENT)
 
-        async def _knn_match(entry: dict, vec) -> tuple[dict, str | None]:
-            async with sem:
-                cname = await _knn_one(entry, vec)
-                return entry, cname
+        async def _knn_one(entry: dict, vec) -> tuple[dict, str | None, float]:
+            if hasattr(vec, "tolist"):
+                vec = vec.tolist()
+            result = await _knn_search_canonical(tenant_id, kb_id, vec, ENTITY_AMBIGUOUS_LOW)
+            if result:
+                return entry, result[0], result[1]
+            return entry, None, 0.0
 
-        knn_tasks = [_knn_match(entry, emb) for entry, emb in zip(unmatched, embeddings)]
+        async def _async_knn(entry: dict, vec):
+            async with sem:
+                return await _knn_one(entry, vec)
+
+        knn_tasks = [_async_knn(entry, emb) for entry, emb in zip(unmatched, embeddings)]
         knn_results = await asyncio.gather(*knn_tasks)
 
-        # Split matched vs still unmatched (need LLM check for entity type)
         still_unmatched: list[dict] = []
-        maybe_pairs: list[tuple[dict, str]] = []  # (entry, canonical_name for LLM confirm)
-        for entry, cname in knn_results:
-            if cname:
-                raw_name = entry["name"]
+        maybe_pairs: list[tuple[dict, str]] = []
+        for entry, cname, score in knn_results:
+            if cname and score >= ENTITY_MERGE_THRESHOLD:
+                # Direct merge
+                name_resolution[entry["name"]] = cname
+            elif cname and score >= ENTITY_AMBIGUOUS_LOW:
+                # Ambiguous: LLM confirm for entity types only
                 if entry["type"] == "concept":
-                    # Concept: KNN >= 0.90 is enough, no LLM
-                    name_resolution[raw_name] = cname
+                    name_resolution[entry["name"]] = cname
                 else:
-                    # Entity: check if it needs LLM confirm
-                    _vec = None
-                    for i, e in enumerate(unmatched):
-                        if e["name"] == raw_name:
-                            _vec = embeddings[i]
-                            break
-                    if _vec is not None:
-                        if hasattr(_vec, "tolist"):
-                            _vec = _vec.tolist()
-                        result = await _knn_search_canonical(tenant_id, kb_id, _vec, ENTITY_AMBIGUOUS_LOW)
-                        if result and result[1] >= ENTITY_AMBIGUOUS_LOW and result[1] < ENTITY_MERGE_THRESHOLD:
-                            maybe_pairs.append((entry, cname))
-                        else:
-                            name_resolution[raw_name] = cname
-                    else:
-                        name_resolution[raw_name] = cname
+                    maybe_pairs.append((entry, cname))
             else:
                 still_unmatched.append(entry)
 
@@ -1846,26 +1835,27 @@ async def _wiki_mode_a_run(
         elif entry.get("action") != "delete":
             entry["action"] = d.get("action")
 
-    # Also enrich concept pages with entity claims from canonical_map
-    # that share source_chunk_ids with this concept's claims
+    # Enrich concept pages with entity claims that share source_chunk_ids.
+    # Build a chunk_id → first-claim-text index from non-concept canonical entries.
     if canonical_map:
-        for pid, entry in concept_deltas.items():
+        chunk_claims: dict[str, list[str]] = {}
+        for _cname, centry in canonical_map.items():
+            if centry.get("type") == "concept":
+                continue
+            for claim in centry.get("claims", []):
+                cid = claim.get("source_chunk_id")
+                if cid:
+                    chunk_claims.setdefault(cid, []).append(claim.get("statement", claim.get("text", "")))
+
+        for _pid, entry in concept_deltas.items():
             concept_chunk_ids = {c.get("id") for c in entry.get("source_chunks", []) if c.get("id")}
             if not concept_chunk_ids:
                 continue
-            for cname, centry in canonical_map.items():
-                if centry.get("type") == "concept":
-                    continue  # skip other concepts
-                for claim in centry.get("claims", []):
-                    cid = claim.get("source_chunk_id")
-                    if cid and cid in concept_chunk_ids:
-                        # Add this entity claim to the concept page's source chunks
-                        entry["source_chunks"].append(
-                            {
-                                "id": cid,
-                                "text": claim.get("statement", claim.get("text", "")),
-                            }
-                        )
+            for cid in concept_chunk_ids:
+                texts = chunk_claims.get(cid)
+                if texts:
+                    # Append one source-chunk entry per chunk id
+                    entry["source_chunks"].append({"id": cid, "text": texts[0]})
 
     # Concept depth check: thin concepts don't create pages
     if not existing_pages:
@@ -2269,12 +2259,21 @@ async def wiki_handle_document_deleted(
             centry = canonical_index.get(ename)
             if centry:
                 src_ids = centry.get("source_doc_ids", [])
+                if isinstance(src_ids, str):
+                    try:
+                        src_ids = json.loads(src_ids) if src_ids else []
+                    except (json.JSONDecodeError, TypeError):
+                        src_ids = []
                 if doc_id in src_ids:
                     src_ids.remove(doc_id)
-                new_count = max(0, (centry.get("mention_count_int", 0) - 1))
-                if new_count <= 0 and not src_ids:
+
+                if not src_ids:
                     await _delete_canonical_entity(tenant_id, kb_id, ename)
                 else:
+                    # Keep existing mention_count_int; the next REFINE phase
+                    # will recalculate claims precisely from wiki pages.
+                    # Removing the doc_id from source_doc_ids prevents future
+                    # incremental runs from re-tracking this deletion.
                     await _save_canonical_entity(
                         tenant_id,
                         kb_id,
@@ -2282,7 +2281,7 @@ async def wiki_handle_document_deleted(
                         centry.get("entity_type_kwd", "entity"),
                         centry.get("aliases", []),
                         src_ids,
-                        new_count,
+                        centry.get("mention_count_int", len(src_ids)),
                     )
 
     affected_page_ids = dps.get("page_ids", [])
