@@ -17,6 +17,7 @@
 import base64
 from contextlib import contextmanager
 import json
+import logging
 import os
 import re
 import threading
@@ -128,13 +129,13 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
 
         driver.set_page_load_timeout(BROWSER_FETCH_TIMEOUT)
         driver.set_script_timeout(BROWSER_FETCH_TIMEOUT)
-        driver.get(path)
 
-        WebDriverWait(driver, timeout).until(staleness_of(driver.find_element(by=By.TAG_NAME, value="html")))
-    except TimeoutException:
-        pass
+        try:
+            driver.get(path)
+            WebDriverWait(driver, timeout).until(staleness_of(driver.find_element(by=By.TAG_NAME, value="html")))
+        except TimeoutException:
+            logging.warning("Timed out loading %s; printing current page state", path)
 
-    try:
         calculated_print_options = {
             "landscape": False,
             "displayHeaderFooter": False,
@@ -145,7 +146,7 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
         result = __send_devtools(driver, "Page.printToPDF", calculated_print_options)
         return base64.b64decode(result["data"])
     finally:
-        if driver:
+        if driver is not None:
             driver.quit()
 
 
