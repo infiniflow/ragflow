@@ -82,7 +82,7 @@ class RAGTools:
         thinking_mode: str = "medium",
     ):
         self.tenant_ids = tenant_ids
-        self.chat_mdl = chat_mdl
+        self.chat_mdl = chat_mdl.clone()
         self.embed_mdl = embed_mdl
         self.thinking_mode = thinking_mode
         self.field_map = {}
