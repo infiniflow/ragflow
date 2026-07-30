@@ -240,13 +240,32 @@ func parseStringList(m map[string]any, keys ...string) []string {
 // SetExtraValue and flattened into the map by ChunkDoc.ToMap. The value may
 // arrive as []float32 (store read) or []float64 (pipeline map); both are
 // normalised to []float32. A nil result means the chunk has no embedding yet.
-func VectorFromChunkMap(m map[string]any) []float32 {
-	for k, v := range m {
-		if strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec") {
-			return toFloat32Slice(v)
+//
+// dim selects the exact "q_<dim>_vec" key when the embedding dimension is known
+// (dim > 0); otherwise every "q_*_vec" key is considered. A chunk must carry at
+// most one embedding vector: multiple q_*_vec fields signal mixed embedding
+// models, and because Go map iteration order is nondeterministic, picking among
+// them would be unstable across runs — such chunks are rejected with an error.
+func VectorFromChunkMap(m map[string]any, dim int) ([]float32, error) {
+	if dim > 0 {
+		if v, ok := m[fmt.Sprintf("q_%d_vec", dim)]; ok {
+			return toFloat32Slice(v), nil
 		}
 	}
-	return nil
+	var keys []string
+	for k := range m {
+		if strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec") {
+			keys = append(keys, k)
+		}
+	}
+	switch len(keys) {
+	case 0:
+		return nil, nil
+	case 1:
+		return toFloat32Slice(m[keys[0]]), nil
+	default:
+		return nil, fmt.Errorf("knowledge_compiler: chunk carries %d embedding vectors %v; expected exactly one", len(keys), keys)
+	}
 }
 
 // toFloat32Slice normalises a numeric slice (any of []float32, []float64, or

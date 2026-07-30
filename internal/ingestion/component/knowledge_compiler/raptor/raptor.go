@@ -285,6 +285,13 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 	// standard task prompt Python applies to every cluster — NOT a separate
 	// "Synthesize the overall theme" prompt, and NOT the union of all leaf
 	// summaries (which would just re-summarize the same text repeatedly).
+	if len(topLevelTexts) == 0 {
+		// No summaries survived (e.g. every deepest cluster failed while the
+		// error budget was not yet exhausted). Return the partial tree without a
+		// root node — Python drops the root in this case rather than crashing.
+		log.Printf("raptor: no top-level summaries produced, skipping root node")
+		return nil
+	}
 	rootContent := buildClusterContent(topLevelTexts, allIndices(len(topLevelTexts)), deps.LLMMaxLength, maxToken)
 	rootSummary, err := summarizeTexts(ctx, deps, llmID,
 		raptorSystemHelper+strings.Replace(taskPrompt, "{cluster_content}", rootContent, 1),
@@ -383,6 +390,9 @@ func titleOf(summary string) string {
 // budget uses the cl100k_base encoder, mirroring Python's truncate (token-level,
 // not character-level).
 func buildClusterContent(texts []string, idxs []int, llmMaxLength, maxToken int) string {
+	if len(idxs) == 0 {
+		return ""
+	}
 	if llmMaxLength <= 0 {
 		llmMaxLength = common.DefaultLLMContextLength
 	}

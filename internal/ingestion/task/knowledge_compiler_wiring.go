@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -74,7 +75,11 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		// Resolve the chat model's context window so RAPTOR can truncate each
 		// cluster's texts to fit the LLM context (mirrors Python self._llm_model.max_length).
 		llmMax := kc.DefaultLLMContextLength
-		if _, _, _, ml, merr := svc.ResolveModelConfig(context.Background(), tenantID, entity.ModelTypeChat, llmID); merr == nil && ml > 0 {
+		// Bound the model-config lookup so a stalled provider/instance DB read
+		// cannot block document ingestion indefinitely.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, _, _, ml, merr := svc.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, llmID); merr == nil && ml > 0 {
 			llmMax = ml
 		}
 

@@ -120,3 +120,29 @@ func TestBuildClusterContentTruncatesPerChunk(t *testing.T) {
 		t.Fatalf("output exceeded per-chunk budget: %d > %d", tokenizer.NumTokensFromString(out), per)
 	}
 }
+
+// TestBuildTreeNoPanicWhenAllSummariesFail guards the divide-by-zero that
+// occurred when every deepest cluster failed: buildClusterContent divides by
+// len(idxs), and the root synthesis built a cluster from allIndices(0) when
+// topLevelTexts was empty. The root is now skipped and the partial tree is
+// returned without error.
+func TestBuildTreeNoPanicWhenAllSummariesFail(t *testing.T) {
+	errs := make([]error, 16)
+	for i := range errs {
+		errs[i] = context.DeadlineExceeded
+	}
+	f := &fakeChat{errs: errs}
+	deps := common.Deps{Chat: f, Embed: nil, TenantID: "t"}
+	// Pre-computed vectors so the tree never needs to call the embedder.
+	chunks := []common.Chunk{
+		{Text: "alpha", Vector: []float32{1, 0, 0, 0}},
+		{Text: "beta", Vector: []float32{0, 1, 0, 0}},
+	}
+	var products []common.Product
+	if err := buildTree(context.Background(), deps, "llm", "t", "d", chunks, 4, "", common.Param{}, &products); err != nil {
+		t.Fatalf("buildTree returned unexpected error: %v", err)
+	}
+	if len(products) != 0 {
+		t.Fatalf("expected no products when every summary fails, got %d", len(products))
+	}
+}

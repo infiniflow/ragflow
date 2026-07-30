@@ -128,13 +128,14 @@ func productFromChunkMap(c map[string]interface{}, tenant string) (kccommon.Prod
 		meta["source_doc_ids"] = v
 	}
 
+	vec, _ := kccommon.VectorFromChunkMap(c, 0)
 	return kccommon.Product{
 		ID:       id,
 		DocID:    docID,
 		TenantID: tenant,
 		Variant:  kccommon.Variant(variant),
 		Content:  content,
-		Vector:   kccommon.VectorFromChunkMap(c),
+		Vector:   vec,
 		Meta:     meta,
 	}, true
 }

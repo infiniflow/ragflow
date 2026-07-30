@@ -589,8 +589,12 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 			}
 			// Reuse the embedding the upstream pipeline already computed on the
 			// chunk (stored under q_<dim>_vec); variants fall back to embedding
-			// on demand when it is absent.
-			ch.Vector = common.VectorFromChunkMap(m)
+			// on demand when it is absent. A chunk must carry exactly one vector.
+			vec, err := common.VectorFromChunkMap(m, 0)
+			if err != nil {
+				return in, err
+			}
+			ch.Vector = vec
 			in.Chunks = append(in.Chunks, ch)
 		}
 	}
