@@ -90,6 +90,6 @@ Third-party visual models are marked **Experimental**, because we have not fully
 
 Use a visual model to extract data if your PDFs contain formatted or image-based text rather than plain text. DeepDoc is the default visual model but can be time-consuming. You can also choose a lightweight or high-performance VLM depending on your needs and hardware capabilities.
 
-### Can I Select a Visual Model to Parse My Docx Files?
+### Can I Select a Visual Model to Parse My DOCX Files?
 
 No, you cannot. This dropdown menu is for PDFs only. To use this feature, convert your DOCX files to PDF first.

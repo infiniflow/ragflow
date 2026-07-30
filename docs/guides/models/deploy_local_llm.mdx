@@ -87,7 +87,6 @@ $ curl http://${IP_OF_OLLAMA_MACHINE}:11434/
 
 In RAGFlow, click on your logo on the top right of the page **>** **Model providers** and add Ollama to RAGFlow:
 
-![add ollama](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
 
 ### 4. Complete Basic Ollama Settings
@@ -148,7 +147,6 @@ $ xinference launch -u mistral --model-name mistral-v0.1 --size-in-billions 7 --
 
 In RAGFlow, click on your logo on the top right of the page **>** **Model providers** and add Xinference to RAGFlow:
 
-![add xinference](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
 ### 5. Complete Basic Xinference Settings
 
@@ -165,7 +163,7 @@ Click on your logo **>** **Model providers** **>** **System Model Settings** to 
 
 Update your chat model accordingly in **Chat Configuration**:
 
-## Deploy a Local Model Using Ipex-Llm
+## Deploy a Local Model Using IPEX-LLM
 
 [IPEX-LLM](https://github.com/intel-analytics/ipex-llm) is a PyTorch library for running LLMs on local Intel CPUs or GPUs (including iGPU or discrete GPUs like Arc, Flex, and Max) with low latency. It supports Ollama on Linux and Windows systems.
 
@@ -179,9 +177,9 @@ Ensure that your host machine's firewall allows inbound connections on port 1143
 sudo ufw allow 11434/tcp
 ```
 
-### 2. Launch Ollama Service Using Ipex-Llm
+### 2. Launch Ollama Service Using IPEX-LLM
 
-#### 2.1 Install Ipex-Llm for Ollama
+#### 2.1 Install IPEX-LLM for Ollama
 
 :::tip NOTE 
 IPEX-LLM's supports Ollama on Linux and Windows systems.
@@ -274,9 +272,8 @@ For detailed information about installing IPEX-LLM for Ollama, see [Run llama.cp
 To enable the Ollama service to accept connections from all IP addresses, use `OLLAMA_HOST=0.0.0.0 ./ollama serve` rather than simply `./ollama serve`.
 :::
 
-*The console displays messages similar to the following:*
+The console displays service startup messages.
 
-![](https://llm-assets.readthedocs.io/en/latest/_images/ollama_serve.png)
 
 ### 3. Pull and Run Ollama Model
 
@@ -284,7 +281,6 @@ To enable the Ollama service to accept connections from all IP addresses, use `O
 
 With the Ollama service running, open a new terminal and run `./ollama pull <model_name>` (Linux) or `ollama.exe pull <model_name>` (Windows) to pull the desired model. e.g., `qwen2:latest`:
 
-![](https://llm-assets.readthedocs.io/en/latest/_images/ollama_pull.png)
 
 #### 3.2 Run Ollama Model
 
@@ -325,7 +321,7 @@ ubuntu 22.04/24.04
 ```bash
 pip install vllm
 ```
-### 5.1 Run Vllm with Best Practise
+### 5.1 Run vLLM with Best Practise
 
 ```bash
 nohup vllm serve /data/Qwen3-8B --served-model-name Qwen3-8B-FP8 --dtype auto --port 1025 --gpu-memory-utilization 0.90 --tool-call-parser hermes --enable-auto-tool-choice  > /var/log/vllm_startup1.log 2>&1 &
@@ -340,7 +336,7 @@ Starting vLLM API server 0 on http://0.0.0.0:1025
 Started server process [19177]
 Application startup complete.
 ```
-### 5.2 Intergrateing RAGFlow with Vllm Chat/Em/Rerank LLM with Webui
+### 5.2 Intergrateing RAGFlow with vLLM Chat/Em/Rerank LLM with WebUI
 
 setting->model providers->search->vllm->add ,configure as follow:
 
@@ -348,7 +344,7 @@ setting->model providers->search->vllm->add ,configure as follow:
 
 select vllm chat model as default llm model as follow:
 ![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm1.png)
-### 5.3 Chat with Vllm Chat Model
+### 5.3 Chat with vLLM Chat Model
 create chat->create conversations-chat as follow:
 ![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm2.png)
 
@@ -376,7 +372,7 @@ root@gpustack-prod:~# docker ps
 CONTAINER ID   IMAGE               COMMAND                  CREATED       STATUS       PORTS                                                                                  NAMES
 abf59be84b1a   gpustack/gpustack   "/usr/bin/entrypoint…"   6 hours ago   Up 6 hours   0.0.0.0:80->80/tcp, [::]:80->80/tcp, 0.0.0.0:10161->10161/tcp, [::]:10161->10161/tcp   gpustack
 ```
-### 6.2 Intergrateing RAGFlow with Gpustack Chat/Em/Rerank LLM with Webui
+### 6.2 Intergrateing RAGFlow with GPUStack Chat/Em/Rerank LLM with WebUI
 
 setting->model providers->search->gpustack->add ,configure as follow:
 

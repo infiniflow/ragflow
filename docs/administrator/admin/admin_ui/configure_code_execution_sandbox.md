@@ -22,7 +22,7 @@ The current page supports the following `Provider` options:
 
 After selecting a `Provider`, the page displays the corresponding configuration area.
 
-![Select Sandbox Provider](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/select_sandbox_provider.jpg)
+![Select Sandbox Provider](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_sandbox_provider.jpg)
 
 **Caution:** Sandbox configuration affects not only connection availability, but also code isolation, network access, file access, and runtime resource limits. In production environments, prefer `Self-Managed`, cloud, or independent remote execution solutions with isolation capabilities. Direct use of `Local` is not recommended.
 
@@ -78,7 +78,7 @@ If Python or Node.js is not installed, or the executable path is wrong, the conn
 
 `Deployment Defaults` displays the current default deployment parameters of `SandboxExecutorManager`.
 
-## Ssh Configuration
+## SSH Configuration
 
 `SSH` configuration connects to a remote Linux host and executes Python, Node.js, and other code tasks on the remote server. After configuration, the system logs in to the specified server through SSH and executes code in the remote working directory.
 
@@ -89,7 +89,7 @@ If Python or Node.js is not installed, or the executable path is wrong, the conn
 5. Click **Test connection** to test whether the connection is normal.
 6. After the test succeeds, click **Save**.
 
-### Ssh Connection Configuration
+### SSH Connection Configuration
 
 | Parameter | Description | Recommendation |
 | --- | --- | --- |
@@ -120,7 +120,7 @@ The system supports `Password` and `PrivateKey` authentication.
 
 Make sure the remote server has SSH enabled and allows the current user to log in. The configured user must have read and write permissions on the remote working directory and be able to execute Python, Node.js, and other runtime environments. When using private-key authentication, make sure the private key matches the server configuration.
 
-## Alibaba Cloud CodeInterpreter Configuration
+## Alibaba Cloud Codeinterpreter Configuration
 
 Alibaba Cloud `CodeInterpreter` configuration connects to Alibaba Cloud CodeInterpreter. The system executes code tasks through this service.
 

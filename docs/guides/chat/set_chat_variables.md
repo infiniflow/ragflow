@@ -21,13 +21,13 @@ In RAGFlow, variables are closely linked with the system prompt. When you add a 
 
 ## Where to Set Variables
 
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_variables.jpg)
+![Chat variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_variables.jpg)
 
 ## 1. Manage Variables
 
 In the **Variable** section, you add, remove, or update variables.
 
-### `{knowledge}` - a Reserved Variable
+### `{knowledge}` - A Reserved Variable
 
 `{knowledge}` is the system's reserved variable, representing the chunks retrieved from the dataset(s) specified by **Knowledge bases** under the **Assistant settings** tab. If your chat assistant is associated with certain datasets, you can keep it as is.
 

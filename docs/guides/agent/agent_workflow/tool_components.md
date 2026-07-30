@@ -22,7 +22,7 @@ Tool components extend an Agent's ability to retrieve information, query data, c
 
 ## Web Page and Information Retrieval
 
-### Tavily Search (TavilySearch)
+### Tavily Search (Tavilysearch)
 
 Tavily Search retrieves web results through Tavily. It is suitable for public web search, news search and supplementing knowledge base retrieval with external information.
 
@@ -57,7 +57,7 @@ The component returns search result items, including titles, URLs, snippets and 
 ![Tavily Search](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/tavily_search.jpg)
 
 
-### Tavily Extract (TavilyExtract)
+### Tavily Extract (Tavilyextract)
 
 Tavily Extract extracts content from specified web pages. It is suitable for reading known URLs, article pages, documentation pages or web pages found by a previous search step.
 
@@ -117,7 +117,7 @@ The component returns search result titles, URLs and summaries for downstream pr
 ![Google Search](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/google_search.jpg)
 
 
-### DuckDuckGo (DuckDuckGo)
+### Duckduckgo (Duckduckgo)
 
 DuckDuckGo is a privacy-focused search engine component. It does not require a separate API key and can be used for general web and news retrieval.
 
@@ -147,7 +147,7 @@ The component returns web search result items. Confirm parameter mapping in the 
 ![Duckduckgo](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/duckduckgo_2.jpg)
 
 
-### SearXNG (SearXNG)
+### Searxng (Searxng)
 
 SearXNG searches through a configured SearXNG instance. It is suitable for teams that need self-hosted or privacy-oriented meta-search.
 
@@ -172,7 +172,7 @@ SearXNG searches through a configured SearXNG instance. It is suitable for teams
 
 The component returns normalized search results from the configured SearXNG service.
 
-### Keenable (KeenableSearch)
+### Keenable (Keenablesearch)
 
 Keenable Search retrieves information through the configured Keenable service. Use it when the workflow requires that search provider.
 
@@ -227,7 +227,7 @@ The component returns matching entries, summaries and related metadata.
 
 ## Academic Literature Retrieval
 
-### Google Scholar (GoogleScholar)
+### Google Scholar (Googlescholar)
 
 Google Scholar retrieves papers, theses, books, abstracts and other academic materials. It is suitable for preliminary literature discovery and should not replace verification of original papers and citation details.
 
@@ -257,7 +257,7 @@ The component returns paper titles, authors, abstracts, links and related metada
 ![Google Scholar](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/google_scholar.jpg)
 
 
-### ArXiv (ArXiv)
+### Arxiv (Arxiv)
 
 ArXiv retrieves preprints from arXiv. It is suitable for computer science, mathematics, physics and related research scenarios.
 
@@ -283,7 +283,7 @@ The component returns paper metadata such as title, authors, abstract, publicati
 ![Arxiv](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/arxiv.jpg)
 
 
-### PubMed (PubMed)
+### Pubmed (Pubmed)
 
 PubMed retrieves biomedical and life science literature. It is suitable for medical, pharmaceutical and biological literature searches.
 
@@ -309,7 +309,7 @@ The component returns PubMed records, abstracts and publication metadata when av
 ![Pubmed](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pubmed.jpg)
 
 
-### BGPT (BGPT)
+### Bgpt (Bgpt)
 
 BGPT is used for literature or biomedical-related retrieval scenarios supported by the configured BGPT service.
 
@@ -337,7 +337,7 @@ The component returns retrieval results from the BGPT service for downstream ref
 
 ## Data and Financial Queries
 
-### Execute SQL (ExeSQL)
+### Execute SQL (Exesql)
 
 Execute SQL runs SQL queries against configured databases. It is suitable for structured data query, report generation and business data analysis.
 
@@ -368,7 +368,7 @@ The component returns query results, error information or structured rows for do
 ![Execute SQL](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/execute_sql.jpg)
 
 
-### Yahoo Finance (YahooFinance)
+### Yahoo Finance (Yahoofinance)
 
 Yahoo Finance queries market and financial information. It is suitable for stocks, funds, indexes and other market data supported by the service.
 
@@ -396,7 +396,7 @@ Symbols and markets depend on Yahoo Finance data availability.
 
 The component returns financial data, market summaries or related metadata.
 
-### WenCai (WenCai)
+### Wencai (Wencai)
 
 WenCai performs financial data screening through natural-language conditions, covering stocks, indexes, funds, Hong Kong stocks, U.S. stocks, futures and other query types.
 
@@ -504,7 +504,7 @@ The component returns HTTP response content, status information and error detail
 
 ## Content Generation and Automation
 
-### Document Generator (DocGenerator)
+### Document Generator (Docgenerator)
 
 Document Generator creates documents from workflow inputs and templates. It is suitable for reports, contracts, summaries and structured document output.
 

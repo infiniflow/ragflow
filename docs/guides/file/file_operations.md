@@ -12,7 +12,7 @@ sidebar_custom_props: {
 
 After you hover over a file row, the **Operations** column displays the available operation buttons. The available operations for folders and regular files are slightly different. For files from external data sources, some operations, such as moving, renaming, or deleting, may be restricted by the data source permissions.
 
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/file_operations.jpg)
+![File operations](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/file_operations.jpg)
 
 **Add to Knowledge Base**: Applies to files. Associates the file with one or more knowledge bases, allowing the knowledge base to use the file as a data source.
 

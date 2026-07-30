@@ -165,7 +165,7 @@ The **Single Bucket Mode** allows you to configure RAGFlow to use a single bucke
 
 ### How It Works
 
-#### Default Mode (multiple Buckets)
+#### Default Mode (Multiple Buckets)
 
 ```
 bucket: kb_12345/
@@ -176,7 +176,7 @@ bucket: folder_abc/
   └── file_3.txt
 ```
 
-#### Single Bucket Mode (with prefix_path)
+#### Single Bucket Mode (With Prefix_path)
 
 ```
 bucket: ragflow-bucket/
@@ -244,7 +244,7 @@ s3:
 
 See [S3 (Tigris)](/configurations#s3-tigris) for full setup instructions.
 
-### IAM Policy Example
+### Iam Policy Example
 
 When using single bucket mode, you only need permissions for one bucket:
 

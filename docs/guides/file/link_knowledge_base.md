@@ -12,9 +12,9 @@ sidebar_custom_props: {
 
 The file management page allows you to add files directly to a knowledge base. After the association is created, you can continue operations such as parsing, chunking, and retrieval from the knowledge base side. The specific processing status is subject to the knowledge base document page.
 
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/parse_file.jpg)
+![Parse file](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/parse_file.jpg)
 
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/file_chunks.jpg)
+![File chunks](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/file_chunks.jpg)
 
 ## Link a Single File
 
@@ -23,7 +23,7 @@ The file management page allows you to add files directly to a knowledge base. A
 3. In the pop-up window, select one or more knowledge bases.
 4. Click **Save** to save the association.
 
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/link_a_single_file.jpg)
+![Link a single file](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/link_a_single_file.jpg)
 
 ## Batch Link
 

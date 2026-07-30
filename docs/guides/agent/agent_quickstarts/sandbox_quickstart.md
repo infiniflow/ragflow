@@ -28,7 +28,6 @@ Configure sandbox providers from the admin page:
 - `ssh`: Runs code on a remote machine over SSH.
 - `aliyun_codeinterpreter`, `e2b`, and `tenki`: Cloud providers.
 
-<img width="2547" height="1475" alt="admin-sandbox-settings" src="https://github.com/user-attachments/assets/59ab948e-b98a-45a8-9db4-f1afbf6c3685" />
 
 ## Provider Options
 

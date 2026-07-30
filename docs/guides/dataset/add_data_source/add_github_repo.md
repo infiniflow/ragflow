@@ -28,7 +28,7 @@ To ensure smooth identity matching and permission synchronization between your o
 2. Uncheck "Keep my email addresses private".
 3. Go to **Public profile** and ensure your primary email is selected in the **Public email** dropdown.
 
-### Step B: Generate a Personal Access Token (pat)
+### Step B: Generate a Personal Access Token (PAT)
 
 1. Navigate to **Settings** > **Developer settings** > **Personal access tokens** > **Tokens (classic)**.
 2. Click **Generate new token (classic)**.

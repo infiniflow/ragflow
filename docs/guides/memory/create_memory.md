@@ -12,7 +12,7 @@ sidebar_custom_props: {
 
 This chapter describes how to create and configure memories in RAGFlow, view and manage messages, and save and retrieve memories in Agents. Memories are used to save conversation content and extraction results generated during Agent execution, helping Agents reuse historical context in subsequent conversations or tasks.
 
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/memory_interface.PNG)
+![Memory interface](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/memory_interface.PNG)
 
 ## Create Memory
 
@@ -22,4 +22,4 @@ This chapter describes how to create and configure memories in RAGFlow, view and
 4. Select the memory type, embedding model, and large language model.
 5. After confirmation, enter the memory list or details page.
 
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_memory.jpg)
+![Create memory](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_memory.jpg)

@@ -27,7 +27,7 @@ RAGFlow file management lets you build your own file system through nested folde
 
 After clicking **Add File** in the upper-right corner of the page, select **Upload File** to open the upload window. The upload control contains two tabs: **File** and **Folder**. You can select one or more files, or upload an entire folder.
 
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_files.jpg)
+![Upload files](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_files.jpg)
 
 ### Upload File
 
@@ -37,7 +37,7 @@ After clicking **Add File** in the upper-right corner of the page, select **Uplo
 4. Confirm the list of files to be uploaded. If you selected a file by mistake, click the delete button on the right side of the file row to remove it.
 5. Click **Confirm** or **Save**, then wait for the upload progress to complete.
 
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_file_1.jpg)
+![Upload file 1](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_file_1.jpg)
 
 ### Upload Folder
 
@@ -46,7 +46,7 @@ After clicking **Add File** in the upper-right corner of the page, select **Uplo
 3. Click the **Upload Folder** area and select a local folder. The system will upload the files inside that folder.
 4. After the upload is complete, check the result in the current directory or the corresponding folder.
 
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_file_2.jpg)
+![Upload file 2](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_file_2.jpg)
 
 The upload process displays progress. If an upload failure message appears, check the file size, network connection, login status, and whether the file format is allowed by the current deployment.
 

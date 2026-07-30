@@ -10,17 +10,17 @@ title: Manage User Accounts
 
 User accounts are managed on the **User management** page. Administrators can view the user list, including `Email`, `Nickname`, `Status`, `User type`, and `Last login time`.
 
-![User Management](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/user_management_1.jpg)
+![User Management](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/user_management_1.jpg)
 
-![User Management](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/user_management_2.jpg)
+![User Management](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/user_management_2.jpg)
 
-![User Management](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/user_management_3.jpg)
+![User Management](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/user_management_3.jpg)
 
 Use the search box in the upper-right corner to search users by `Email` or `Nickname`. You can also filter `Active` or `Inactive` users by `Status`.
 
-![View And Search Users](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/view_and_search_users_1.jpg)
+![View And Search Users](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_and_search_users_1.jpg)
 
-![View And Search Users](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/view_and_search_users_2.jpg)
+![View And Search Users](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_and_search_users_2.jpg)
 
 ## Create a New User
 
@@ -33,9 +33,9 @@ To create an account for a new member, go to **User management** and click **New
 5. Enter the same password again in `Confirm password`.
 6. Click **Confirm** to create the account.
 
-![Create A New User](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/create_a_new_user_1.jpg)
+![Create A New User](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_a_new_user_1.jpg)
 
-![Create A New User](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/create_a_new_user_2.jpg)
+![Create A New User](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_a_new_user_2.jpg)
 
 After creation, return to the user list and confirm that the account appears and that its status matches expectations. Then send the login information to the user through a secure channel.
 
@@ -55,7 +55,7 @@ The `Status` field in the user list controls whether an account can log in to th
 1. Go to the **User management** page and find the target user in the user list.
 2. In the `Status` column of that user's row, click the current status dropdown and select `Active` or `Inactive` as needed.
 
-![Disable Or Restore Accounts](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/disable_or_restore_accounts.jpg)
+![Disable Or Restore Accounts](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/disable_or_restore_accounts.jpg)
 
 **Caution:** The currently logged-in administrator cannot disable their own account. Disabling an account does not delete user data; it only prevents the user from logging in. If you need to permanently remove a user, confirm that the account no longer needs to be retained before deleting it.
 
@@ -68,7 +68,7 @@ The `Status` field in the user list controls whether an account can log in to th
 3. Select `Normal` or `Superuser`.
 4. Wait for the system to submit the change and refresh the user list.
 
-![Set Backend Administrator Identity](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/set_backend_administrator_identity.jpg)
+![Set Backend Administrator Identity](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_backend_administrator_identity.jpg)
 
 **Caution:** The currently logged-in administrator cannot modify their own `Superuser` type in the list.
 
@@ -81,9 +81,9 @@ When a user forgets their password or must be forced to change it, administrator
 3. Enter the new password and confirm it again.
 4. Click **Change password**.
 
-![Reset User Passwords](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/reset_user_passwords_1.jpg)
+![Reset User Passwords](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/reset_user_passwords_1.jpg)
 
-![Reset User Passwords](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/reset_user_passwords_2.jpg)
+![Reset User Passwords](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/reset_user_passwords_2.jpg)
 
 **Caution:** The currently logged-in administrator cannot reset their own password through list **Actions**.
 
@@ -95,7 +95,7 @@ When a user no longer needs system access and related resources have been handed
 2. Check the user's `Email` in the confirmation dialog.
 3. Click **Delete** to delete the user.
 
-![Delete Users](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/delete_users.jpg)
+![Delete Users](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/delete_users.jpg)
 
 **Caution:** The currently logged-in administrator cannot delete their own account through list **Actions**.
 
@@ -105,6 +105,6 @@ Deleting a user is a high-risk operation. Before doing it, confirm whether the u
 
 Click the detail button in **Actions** on the user list to enter the user detail page. The detail page displays the user's `Email`, account status, `Last login time`, `Create time`, `Last update time`, `Language`, `Is anonymous`, and `Is superuser`.
 
-Before disabling, deleting, or downgrading `Superuser`, administrators should check the detail page to confirm whether the user still has important resources or recent login activity.
+**Caution:** Before disabling, deleting, or downgrading `Superuser`, administrators should check the detail page to confirm whether the user still has important resources or recent login activity.
 
-![View User Details And Resource Impact](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/view_user_details_and_resource_impact.jpg)
+![View User Details And Resource Impact](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_user_details_and_resource_impact.jpg)

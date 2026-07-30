@@ -82,11 +82,9 @@ This field is where you put in your testing query.
 1. Navigate to the **Retrieval testing** page of your dataset, enter your query in **Test text**, and click **Testing** to run the test.
 2. If the results are unsatisfactory, tune the options listed in the Configuration section and rerun the test.
 
-   *The following is a screenshot of a retrieval test conducted without using knowledge graph. It demonstrates a hybrid search combining weighted keyword similarity and weighted vector cosine similarity. The overall hybrid similarity score is 28.56, calculated as 25.17 (term similarity score) x 0.7 + 36.49 (vector similarity score) x 0.3:*  
-   ![Image](https://github.com/user-attachments/assets/541554d4-3f3e-44e1-954b-0ae77d7372c6)
+   A retrieval test without a knowledge graph uses hybrid search, combining weighted keyword similarity and weighted vector cosine similarity.
 
-   *The following is a screenshot of a retrieval test conducted using a knowledge graph. It shows that only vector similarity is used for knowledge graph-generated chunks:*  
-   ![Image](https://github.com/user-attachments/assets/30a03091-0f7b-4058-901a-f4dc5ca5aa6b)
+   A retrieval test using a knowledge graph uses vector similarity for knowledge graph-generated chunks.
 
 :::caution WARNING
 If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the **Retrieval** agent component settings.
