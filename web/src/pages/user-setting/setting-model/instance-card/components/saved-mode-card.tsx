@@ -165,7 +165,7 @@ export function SavedModeCard({
                 className="text-sm font-medium truncate overflow-hidden flex-1 cursor-text"
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  startRename();
+                  // startRename();
                 }}
                 title={tSetting('editInstanceName')}
                 data-testid="instance-name-static"
