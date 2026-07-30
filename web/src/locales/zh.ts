@@ -1581,6 +1581,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       instruction: 'Instruction',
       globalRules: '全局规则',
       globalRulesPlaceholder: '请输入全局编译规则',
+      plan: 'Plan (LLM 分组合并 wiki 页面)',
       raptorTreeSettings: 'RAPTOR 树设置',
       summarizationPrompt: '摘要提示词',
       maxToken: '最大 token 数',
