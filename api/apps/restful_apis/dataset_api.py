@@ -792,16 +792,21 @@ def delete_dataset_structure(tenant_id, dataset_id):
 @login_required
 @add_tenant_id_to_kwargs
 async def get_wiki_alteration(tenant_id, dataset_id):
-    """Return document drift for the dataset Artifact wiki.
+    """Return document drift for a compiled dataset product.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts/alteration
+    GET /api/v1/datasets/<dataset_id>/artifacts/alteration?kind=<kind>
+    ``kind`` (default ``wiki``) is one of: wiki | graph | mindmap | timeline |
+    tree (tree covers both ``tree`` and ``page_index``).
     Success: {"code": 0, "data": {"removed": int, "newly_uploaded": int, ...}}
     """
+    kind = (request.args.get("kind") or "wiki").strip().lower()
+    if kind not in {"wiki", "graph", "mindmap", "timeline", "tree"}:
+        return get_error_data_result(message=f"Unsupported kind: {kind!r}. Expected one of: wiki, graph, mindmap, timeline, tree.")
     try:
-        success, result = await dataset_api_service.get_wiki_alteration(
-            dataset_id,
-            tenant_id,
-        )
+        if kind == "wiki":
+            success, result = await dataset_api_service.get_wiki_alteration(dataset_id, tenant_id)
+        else:
+            success, result = await dataset_api_service.get_structure_alteration(dataset_id, tenant_id, kind)
         if success:
             return get_result(data=result)
         return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)

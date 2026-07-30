@@ -637,7 +637,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             config = template.get("config") if isinstance(template.get("config"), dict) else {}
             raw_kind = (config.get("kind") if isinstance(config, dict) else "") or template.get("kind") or ""
             kind_norm = _compilation_template_kind(raw_kind)
-            if kind_norm == "artifacts":
+            if kind_norm == "wiki":
                 continue
             seen_configured_ids.add(template_id)
             configured_ids.append(template_id)
