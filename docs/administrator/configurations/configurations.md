@@ -166,7 +166,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `password`: The password for MinIO.
 - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
 
-### `s3` (tigris)
+### `S3` (Tigris)
 
 To use [Tigris](https://www.tigrisdata.com) as an S3-compatible storage backend, set `STORAGE_IMPL=AWS_S3` in `.env` and configure the `s3:` section:
 

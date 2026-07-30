@@ -214,7 +214,7 @@ export MINIO_BUCKET=ragflow-bucket
 export MINIO_PREFIX_PATH=ragflow
 ```
 
-#### S3 Configuration (already Supported)
+#### S3 Configuration (Already Supported)
 
 ```yaml
 s3:
@@ -244,7 +244,7 @@ s3:
 
 See [S3 (Tigris)](/configurations#s3-tigris) for full setup instructions.
 
-### Iam Policy Example
+### IAM Policy Example
 
 When using single bucket mode, you only need permissions for one bucket:
 
@@ -295,7 +295,7 @@ minio:
   prefix_path: "ragflow"
 ```
 
-#### Disable (use Multi-Bucket Mode)
+#### Disable (Use Multi-Bucket Mode)
 
 ```yaml
 minio:
