@@ -1,10 +1,10 @@
 import importlib.util
+import json
 import logging
 import sys
 from io import BytesIO
 from pathlib import Path
 from types import ModuleType
-import json
 
 
 def _load_mineru_parser(monkeypatch):
@@ -285,6 +285,81 @@ class _FakePageImage:
         self.size = (width, height)
 
 
+class _FakePdfPage:
+    def __init__(self, width: int, height: int, *, render_error: bool = False):
+        self.width = width
+        self.height = height
+        self._render_error = render_error
+
+    def to_image(self, **_kwargs):
+        if self._render_error:
+            raise RuntimeError("PDFium: Data format error")
+        return type("RenderedPage", (), {"original": _FakePageImage(self.width, self.height)})()
+
+
+class _FakePdf:
+    def __init__(self, pages):
+        self.pages = pages
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+
+def test_media_bbox_uses_page_metadata_when_rendering_fails(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    pages = [_FakePdfPage(612, 792) for _ in range(13)] + [_FakePdfPage(612, 792, render_error=True)]
+    monkeypatch.setattr(module.pdfplumber, "open", lambda *_args, **_kwargs: _FakePdf(pages))
+
+    parser.__images__("sample.pdf", page_from=13, page_to=14)
+
+    assert parser.page_images is None
+    assert parser.page_sizes == {13: (612.0, 792.0)}
+    output = {
+        "type": module.MinerUContentType.IMAGE,
+        "bbox": [196, 210, 823, 763],
+        "page_idx": 13,
+    }
+    assert parser._line_tag(output) == "@@14\t120.0\t503.7\t166.3\t604.3##"
+
+    monkeypatch.setattr(parser, "_resolve_output_image", lambda *_args, **_kwargs: object())
+    media_blocks = parser._transfer_to_media_blocks([output])
+    assert media_blocks[0][1] == [(13, 120.0, 503.7, 166.3, 604.3)]
+
+
+def test_media_bbox_is_omitted_when_page_size_is_unavailable(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_sizes = {0: (100.0, 200.0)}
+    monkeypatch.setattr(module.pdfplumber, "open", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("cannot open PDF")))
+
+    parser.__images__("sample.pdf")
+
+    assert parser.page_sizes == {}
+    output = {
+        "type": module.MinerUContentType.IMAGE,
+        "bbox": [100, 100, 900, 900],
+        "page_idx": 0,
+    }
+    assert parser._line_tag(output) == ""
+    monkeypatch.setattr(parser, "_resolve_output_image", lambda *_args, **_kwargs: object())
+    assert parser._transfer_to_media_blocks([output])[0][1] == []
+    assert parser._middle_positions_for_output(
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "<table><tr><td>row</td></tr></table>",
+            "table_caption": [],
+            "table_footnote": [],
+            "bbox": [100, 100, 900, 900],
+            "page_idx": 0,
+        },
+        [{"type": "table", "page_idx": 0, "bbox": (10, 10, 90, 90), "text": "row"}],
+    ) == []
+
+
 def test_read_output_enriches_cross_page_table_positions_from_middle_json(monkeypatch, tmp_path):
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser()
@@ -353,12 +428,13 @@ def test_read_output_enriches_cross_page_table_positions_from_middle_json(monkey
 
     outputs = parser._read_output(tmp_path, "sample", method="auto", backend="pipeline")
     sections = parser._transfer_to_sections(outputs, parse_method="raw", table_enable=True)
+    media_blocks = parser._transfer_to_media_blocks(outputs, table_enable=True)
 
-    assert len(sections) == 1
-    _, line_tag = sections[0]
-    assert module.MinerUParser.extract_positions(line_tag) == [
-        ([0], 20.0, 180.0, 40.0, 360.0),
-        ([1], 20.0, 180.0, 0.0, 80.0),
+    assert sections == []
+    assert len(media_blocks) == 1
+    assert media_blocks[0][1] == [
+        (0, 20.0, 180.0, 40.0, 360.0),
+        (1, 20.0, 180.0, 0.0, 80.0),
     ]
 
 
@@ -481,10 +557,9 @@ def test_read_output_keeps_original_tag_when_middle_json_has_single_table_positi
 
     outputs = parser._read_output(tmp_path, "sample", method="auto", backend="pipeline")
     sections = parser._transfer_to_sections(outputs, parse_method="raw", table_enable=True)
+    media_blocks = parser._transfer_to_media_blocks(outputs, table_enable=True)
 
     assert "_mineru_positions" not in outputs[0]
-    assert len(sections) == 1
-    _, line_tag = sections[0]
-    assert module.MinerUParser.extract_positions(line_tag) == [
-        ([0], 20.0, 170.0, 40.0, 340.0),
-    ]
+    assert sections == []
+    assert len(media_blocks) == 1
+    assert media_blocks[0][1] == [(0, 20.0, 170.0, 40.0, 340.0)]

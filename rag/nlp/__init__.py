@@ -874,6 +874,11 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
     res = []
     contexts = []
     for (img, tb), poss in tabls:
+        if not poss:
+            # Keep searchable media when no reliable PDF position is available.
+            contexts.append(("", ""))
+            res.append(((img, tb), poss))
+            continue
         page, left, right, top, bott = poss[0]
         _page, _left, _right, _top, _bott = poss[-1]
         if isinstance(tb, list):
