@@ -14,6 +14,8 @@
 // limitations under the License.
 //
 
+//go:build e2e
+
 package task
 
 import (

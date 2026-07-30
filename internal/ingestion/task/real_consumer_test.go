@@ -1,4 +1,4 @@
-//go:build integration
+//go:build e2e
 
 //
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
