@@ -1,15 +1,14 @@
 import { FormLayout } from '@/constants/form';
-import { DocumentParserType } from '@/constants/knowledge';
+import { DocumentParserType, GenerateType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
-import { GenerateType } from '@/pages/dataset/dataset/generate-button/constants';
-import {
-  GenerateLogButton,
-  IGenerateLogButtonProps,
-} from '@/pages/dataset/dataset/generate-button/generate-log-button';
 import random from 'lodash/random';
 import { Shuffle } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
+import {
+  GenerateLogButton,
+  IGenerateLogButtonProps,
+} from '../generate-log-button';
 import { SliderInputFormField } from '../slider-input-form-field';
 import {
   FormControl,
