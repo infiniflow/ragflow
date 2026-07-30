@@ -1039,7 +1039,10 @@ export const useFetchKnowledgeList = (
         };
       },
       getNextPageParam: (lastPage, allPages) => {
-        const loaded = allPages.reduce((total, page) => total + page.items.length, 0);
+        const loaded = allPages.reduce(
+          (total, page) => total + page.items.length,
+          0,
+        );
         return loaded < lastPage.total ? allPages.length + 1 : undefined;
       },
     });
