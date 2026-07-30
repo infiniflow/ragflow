@@ -67,7 +67,7 @@ _INDEX_TYPE_TO_TASK_ID_FIELD = {
     "graph": "graphrag_task_id",
     "raptor": "raptor_task_id",
     "mindmap": "mindmap_task_id",
-    "artifact": "artifact_task_id",
+    "artifact": "wiki_task_id",
     "skill": "skill_task_id",
     **{t: f"{t}_task_id" for t in _STRUCTURE_INDEX_TYPES},
 }
@@ -1525,7 +1525,7 @@ async def search_datasets(tenant_id: str, req: dict):
 # Artifact (knowledge compilation) page surface
 #
 # These three helpers power the dataset-level "Artifact" tab. They query rows
-# with ``compile_kwd="artifact_page"`` written by TaskHandler's
+# with ``compile_kwd="wiki_page"`` written by TaskHandler's
 # ``_persist_wiki_pages_to_es``. The schema fields they rely on are:
 #   slug_kwd, title_kwd, page_type_kwd, content_with_weight,
 #   topic_kwd, entity_names_kwd, outlinks_kwd, related_kb_pages_kwd,
@@ -2867,11 +2867,11 @@ async def update_wiki_page(
     ``outlinks_kwd`` is rebuilt from the link-transform pass.
 
     Per the v1 contract, only the page row is updated. The canvas
-    ``artifact_page_graph`` / ``artifact_entity`` / ``artifact_relation``
+    ``wiki_page_graph`` / ``wiki_entity`` / ``wiki_relation``
     rows stay stale until the next full artifact compile.
 
     Side effect: when the rendered post-save markdown differs from the
-    prior stored content, one ``artifact_commit`` row is recorded
+    prior stored content, one ``wiki_commit`` row is recorded
     (git-style audit). No-op saves are silently skipped — empty diff,
     no row.
 
@@ -3005,29 +3005,29 @@ async def update_wiki_page(
 
 # All seven row types the artifact pipeline writes. Listed in dependency
 # order so partial failures of earlier deletes don't leave behind state
-# that downstream phases would silently reuse. ``artifact_page_graph``
+# that downstream phases would silently reuse. ``wiki_page_graph``
 # is the materialized canvas graph derived from the refined pages —
 # the dataset Artifact tab's graph view reads exactly this row.
 _WIKI_COMPILE_KWDS = (
-    "artifact_map_extract",
-    "artifact_reduce_result",
-    "artifact_compilation_plan",
-    "artifact_page_draft",
-    "artifact_page",
-    "artifact_page_topic",
-    "artifact_entity",
-    "artifact_relation",
+    "wiki_map_extract",
+    "wiki_reduce_result",
+    "wiki_compilation_plan",
+    "wiki_page_draft",
+    "wiki_page",
+    "wiki_page_topic",
+    "wiki_entity",
+    "wiki_relation",
 )
 
 # Tunables for the incremental graph loader. See ``get_wiki_graph``.
-_WIKI_GRAPH_ENTITY_KWD = "artifact_entity"
-_WIKI_GRAPH_RELATION_KWD = "artifact_relation"
+_WIKI_GRAPH_ENTITY_KWD = "wiki_entity"
+_WIKI_GRAPH_RELATION_KWD = "wiki_relation"
 _WIKI_GRAPH_ENTITY_PAGE_SIZE = 32
 _WIKI_GRAPH_MAX_LOADING_ENTITY = 512
 
 
 def _wiki_entity_payload(row: dict) -> dict | None:
-    """Project one ``artifact_entity`` ES row onto the canvas entity shape.
+    """Project one ``wiki_entity`` ES row onto the canvas entity shape.
 
     The row stores the canvas payload pre-built as JSON in
     ``content_with_weight``; we parse it back and overlay the columns
@@ -3085,11 +3085,11 @@ async def _wiki_search_entity_page(
     limit: int,
     keywords: str = "",
 ):
-    """One page of artifact_entity rows.
+    """One page of wiki_entity rows.
 
     Without ``keywords``: ordered by ``weight_int DESC`` (heaviest nodes first).
     With ``keywords``: BM25 full-text match over ``content_ltks`` (slug +
-    summary), ordered by relevance. ``artifact_entity`` rows are BM25-only (no
+    summary), ordered by relevance. ``wiki_entity`` rows are BM25-only (no
     embedding vector), so this is a lexical search, not a dense KNN.
     """
     from common.doc_store.doc_store_base import OrderByExpr
@@ -3214,23 +3214,23 @@ async def get_wiki_graph(
 
     ``top_n`` overrides the entity budget (default ``_WIKI_GRAPH_MAX_LOADING_ENTITY``).
     ``keywords`` (overview mode only; ignored when ``node`` is given) seeds the
-    graph from the best BM25 matches on ``artifact_entity`` rows instead of the
+    graph from the best BM25 matches on ``wiki_entity`` rows instead of the
     heaviest-weighted ones. Only entities referenced by a relation are returned.
 
     Two modes:
 
-    * **Overview** (``node`` is None) — paginate ``artifact_entity`` rows
+    * **Overview** (``node`` is None) — paginate ``wiki_entity`` rows
       ordered by ``weight_int DESC`` in pages of
       ``_WIKI_GRAPH_ENTITY_PAGE_SIZE``. For each page, append entities
       to a running set while the **cumulative** weight stays within
-      ``_WIKI_GRAPH_MAX_LOADING_ENTITY``. Pull ``artifact_relation``
+      ``_WIKI_GRAPH_MAX_LOADING_ENTITY``. Pull ``wiki_relation``
       rows whose ``from_kwd`` is in the just-added entities; pull the
       ``to`` targets that we haven't seen yet (they count toward the same
       cap). Stop once the cap is hit, or the page is empty, or no entry
       from the page fit under the budget.
 
     * **Click** (``node`` is a slug) — load the centre entity (always
-      included), pull every ``artifact_relation`` with ``from_kwd=node``,
+      included), pull every ``wiki_relation`` with ``from_kwd=node``,
       then pull the ``to`` entities. Capped at
       ``_WIKI_GRAPH_MAX_LOADING_ENTITY`` for hub-node safety.
 
