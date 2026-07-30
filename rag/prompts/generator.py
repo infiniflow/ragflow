@@ -354,19 +354,35 @@ async def content_tagging(chat_mdl, content, all_tags, examples, topn=3):
     return res
 
 
+def _is_english(lang: str | None) -> bool:
+    """Determine if the language parameter indicates English."""
+    if not isinstance(lang, str):
+        return False
+    return lang.strip().lower() in ("english", "en")
+
+
 def vision_llm_describe_prompt(page=None) -> str:
     template = PROMPT_JINJA_ENV.from_string(VISION_LLM_DESCRIBE_PROMPT)
-
     return template.render(page=page)
 
 
-def vision_llm_figure_describe_prompt() -> str:
-    template = PROMPT_JINJA_ENV.from_string(VISION_LLM_FIGURE_DESCRIBE_PROMPT)
+def vision_llm_figure_describe_prompt(language="zh") -> str:
+    """Load vision figure describe prompt based on language parameter"""
+    suffix = "_en" if _is_english(language) else ""
+    prompt_name = f"vision_llm_figure_describe_prompt{suffix}"
+    logging.debug(f"Loading vision figure describe prompt: {prompt_name} (language={language})")
+    prompt_content = load_prompt(prompt_name)
+    template = PROMPT_JINJA_ENV.from_string(prompt_content)
     return template.render()
 
 
-def vision_llm_figure_describe_prompt_with_context(context_above: str, context_below: str) -> str:
-    template = PROMPT_JINJA_ENV.from_string(VISION_LLM_FIGURE_DESCRIBE_PROMPT_WITH_CONTEXT)
+def vision_llm_figure_describe_prompt_with_context(context_above: str, context_below: str, language="zh") -> str:
+    """Load vision figure describe prompt with context based on language parameter"""
+    suffix = "_en" if _is_english(language) else ""
+    prompt_name = f"vision_llm_figure_describe_prompt_with_context{suffix}"
+    logging.debug(f"Loading vision figure describe prompt with context: {prompt_name} (language={language})")
+    prompt_content = load_prompt(prompt_name)
+    template = PROMPT_JINJA_ENV.from_string(prompt_content)
     return template.render(context_above=context_above, context_below=context_below)
 
 
