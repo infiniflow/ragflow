@@ -27,11 +27,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"
+	goredis "github.com/redis/go-redis/v9"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/task"
 	"ragflow/internal/service"
 )
 
@@ -1293,5 +1296,93 @@ func TestGetAgentbotLogs_MissingMessageID(t *testing.T) {
 	}
 	if !strings.Contains(resp.Message, "message_id") {
 		t.Errorf("message = %q, want it to mention 'message_id'", resp.Message)
+	}
+}
+
+// TestGetAgentbotLogs_ReadsViaStore locks the read wiring AND the decode shape
+// after the fix: GetAgentbotLogs must read the debug log through
+// task.ReadDebugLog (the same task.DebugLogStore the writer uses), never by
+// reconstructing the key and calling redis directly, and it must echo an ARRAY
+// payload verbatim (the shape the debug-run writer actually produces:
+// [{component_id, trace}]). A map-typed decode would fail on that array and
+// return a 500 — this test pins the regression so the bot endpoint behaves
+// like Python's agent_bot_logs (data=json.loads(payload)).
+func TestGetAgentbotLogs_ReadsViaStore(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mr, err := miniredis.Run()
+	if err != nil {
+		t.Fatalf("miniredis.Run: %v", err)
+	}
+	t.Cleanup(mr.Close)
+	rdb := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = rdb.Close() })
+
+	const (
+		agentID   = "shared-a"
+		messageID = "msg-7"
+	)
+	// Seed under the canonical key the writer would produce. This is the REAL
+	// shape written by the debug-run sink: an array of {component_id, trace}.
+	payload := `[` +
+		`{"component_id":"File","trace":[{"progress":1,"message":"start","datetime":"10:00:00","timestamp":1.0,"elapsed_time":0}]},` +
+		`{"component_id":"END","trace":[{"progress":1,"message":"done","datetime":"10:00:01","timestamp":2.0,"elapsed_time":1.0}]}` +
+		`]`
+	if err := rdb.Set(context.Background(), task.DebugLogKey(agentID, messageID), payload, 0).Err(); err != nil {
+		t.Fatalf("seed redis: %v", err)
+	}
+
+	h := NewBotHandler(nil).WithRedisStore(miniredisDebugStore{rdb: rdb})
+
+	call := func(agent, msg, bound string) map[string]interface{} {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest("GET", "/api/v1/agentbots/"+agent+"/logs/"+msg, nil)
+		c.Set("user", &entity.User{ID: "u1"})
+		c.Set("agent_id", bound)
+		c.Params = gin.Params{
+			{Key: "agent_id", Value: agent},
+			{Key: "message_id", Value: msg},
+		}
+		h.GetAgentbotLogs(c)
+		var resp map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode: %v body=%s", err, w.Body.String())
+		}
+		return resp
+	}
+
+	// Present key -> data must echo the seeded ARRAY (proving task.ReadDebugLog
+	// resolved the correct key, not an empty miss, AND the array decoded
+	// successfully instead of 500-ing). Compare semantically: the handler
+	// re-encodes the JSON, so byte-exact equality is not expected.
+	present := call(agentID, messageID, agentID)
+	if code, _ := present["code"].(float64); int(code) != int(common.CodeSuccess) {
+		t.Fatalf("present code=%v want 0 body=%s", code, mustJSON(present))
+	}
+	arr, ok := present["data"].([]any)
+	if !ok {
+		t.Fatalf("present data not array (array payload must be echoed verbatim): %v", present["data"])
+	}
+	if len(arr) != 2 {
+		t.Fatalf("present data array len=%d want 2 (File, END): %v", len(arr), arr)
+	}
+	first, _ := arr[0].(map[string]any)
+	if first["component_id"] != "File" {
+		t.Fatalf("present first component_id=%v want File", first["component_id"])
+	}
+	last, _ := arr[len(arr)-1].(map[string]any)
+	if last["component_id"] != "END" {
+		t.Fatalf("present last component_id=%v want END", last["component_id"])
+	}
+
+	// Missing key -> the bot endpoint surfaces the read error as a server
+	// error (500), by design (bot.go returns 500 on a Redis/decoder failure
+	// rather than masking it as an empty log). This proves the read path
+	// actually hit the store and returned its error, not a silently-empty {}.
+	missing := call(agentID, "absent", agentID)
+	if code, _ := missing["code"].(float64); int(code) != int(common.CodeServerError) {
+		t.Fatalf("missing code=%v want %d (server error on read failure) body=%s",
+			code, common.CodeServerError, mustJSON(missing))
 	}
 }

@@ -94,15 +94,11 @@ type AgentHandler struct {
 	// tenant-only authorization (i.e. cannot verify the doc, so the
 	// check is skipped — same shape as the pre-port behaviour).
 	documentService documentAccessChecker
-	// redisGet fetches a raw string from Redis. Defaults to the global
-	// client (redis.Get) so production behaviour is unchanged; tests inject
-	// a miniredis-backed getter to exercise GetAgentLogs without a live
-	// Redis (mirrors the newExecutor injection pattern).
-	redisGet func(key string) (string, error)
-	// redisStore writes the debug-run log array. Defaults to the global
+	// redisStore is the single Redis seam for the debug-run log: it serves
+	// BOTH the write path (runCanvasPipelineDebug -> DebugLogSink.Flush) and the
+	// read path (GetAgentLogs -> task.ReadDebugLog). Defaults to the global
 	// client (redis.Get, which satisfies task.DebugLogStore); tests inject a
-	// miniredis-backed writer so runCanvasPipelineDebug can be exercised without a
-	// live Redis.
+	// miniredis-backed writer so the debug paths run without a live Redis.
 	redisStore task.DebugLogStore
 	// newExecutor builds the pipeline executor for a debug run. Defaults to
 	// task.NewPipelineExecutor; tests inject a fake so the debug path can be
@@ -135,7 +131,6 @@ func NewAgentHandler(agentService *service.AgentService, fileService *file.FileS
 		chatRunner:   agentService,
 		fileService:  fileService,
 		loader:       agentService,
-		redisGet:     func(key string) (string, error) { return redis.Get().Get(key) },
 		redisStore:   redis.Get(),
 		newExecutor: func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {
 			return task.NewPipelineExecutor(taskCtx, canvasID, docBulkSize)
@@ -143,16 +138,10 @@ func NewAgentHandler(agentService *service.AgentService, fileService *file.FileS
 	}
 }
 
-// WithRedisGetter overrides the Redis string getter used by GetAgentLogs.
-// Tests pass a miniredis-backed getter so the debug-log polling endpoint can
-// be exercised end-to-end without a live Redis.
-func (h *AgentHandler) WithRedisGetter(f func(key string) (string, error)) *AgentHandler {
-	h.redisGet = f
-	return h
-}
-
-// WithRedisStore overrides the Redis writer used by runCanvasPipelineDebug to persist
-// the debug-run log. Tests pass a miniredis-backed writer.
+// WithRedisStore injects the task.DebugLogStore used by BOTH the debug-run
+// write path (runCanvasPipelineDebug -> DebugLogSink.Flush) and the read path
+// (GetAgentLogs -> task.ReadDebugLog). Tests pass a miniredis-backed writer so
+// the debug paths run end-to-end without a live Redis.
 func (h *AgentHandler) WithRedisStore(s task.DebugLogStore) *AgentHandler {
 	h.redisStore = s
 	return h
@@ -1550,14 +1539,17 @@ func parseAgentLogs(payload string) interface{} {
 
 // GetAgentLogs GET /api/v1/agents/:canvas_id/logs/:message_id
 //
-// Reads "{agent_id}-{message_id}-logs" from Redis (same key format
-// used by the Python agent API in api/apps/restful_apis/agent_api.py) and
-// returns it as-is. Because runCanvasPipelineDebug flushes the ENTIRE log (including
-// the END marker) before returning the run response, this endpoint returns a
-// completed snapshot on the first poll — it is a replay/fetch of an already
-// finished debug log, not a streaming subscription. Missing key returns an
-// empty dict so the test contract `data is dict` and `code == 0` are both
-// satisfied when nothing has been written yet.
+// Reads the debug-run log written under "{canvas_id}-{message_id}-logs" and
+// returns it as-is. The key format is owned by task.DebugLogKey and the read
+// itself is delegated to task.ReadDebugLog — the handler never reaches into
+// Redis directly, so the read key can never drift from the key DebugLogSink
+// wrote. This mirrors the Python agent API in
+// api/apps/restful_apis/agent_api.py. Because runCanvasPipelineDebug flushes the
+// ENTIRE log (including the END marker) before returning the run response, this
+// endpoint returns a completed snapshot on the first poll — it is a replay/fetch
+// of an already finished debug log, not a streaming subscription. Missing key
+// returns an empty dict so the test contract `data is dict` and `code == 0` are
+// both satisfied when nothing has been written yet.
 func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -1572,8 +1564,7 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 		return
 	}
 
-	key := fmt.Sprintf("%s-%s-logs", canvasID, messageID)
-	payload, rerr := h.redisGet(key)
+	payload, rerr := task.ReadDebugLog(h.redisStore, canvasID, messageID)
 	var data interface{} = map[string]interface{}{}
 	if rerr == nil {
 		data = parseAgentLogs(payload)

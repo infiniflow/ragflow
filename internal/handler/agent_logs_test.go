@@ -107,8 +107,8 @@ func TestParseAgentLogs(t *testing.T) {
 //   - missing key  -> response.data is an empty object ("{}"), matching the
 //     Python get_agent_logs missing-key contract.
 //
-// The Redis client is injected via WithRedisGetter (a miniredis-backed
-// go-redis client); the canvas-access gate is satisfied by a real in-memory
+// The Redis store is injected via WithRedisStore (a miniredis-backed
+// task.DebugLogStore); the canvas-access gate is satisfied by a real in-memory
 // UserCanvas row, mirroring TestGetAgentWebhookLogsReturnsEmptyPoll.
 func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -138,10 +138,10 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 		t.Fatalf("seed redis: %v", err)
 	}
 
+	// Read and write go through ONE store (miniredisDebugStore), proving the
+	// reader's key matches the writer's key (both delegated to task.DebugLogKey).
 	h := NewAgentHandler(service.NewAgentService(), nil).
-		WithRedisGetter(func(key string) (string, error) {
-			return rdb.Get(context.Background(), key).Result()
-		})
+		WithRedisStore(miniredisDebugStore{rdb: rdb})
 
 	run := func(messageID string) map[string]interface{} {
 		w := httptest.NewRecorder()
@@ -261,10 +261,10 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 		t.Fatalf("seed redis: %v", err)
 	}
 
+	// Read and write go through ONE store (miniredisDebugStore), proving the
+	// reader's key matches the writer's key (both delegated to task.DebugLogKey).
 	h := NewAgentHandler(service.NewAgentService(), nil).
-		WithRedisGetter(func(key string) (string, error) {
-			return rdb.Get(context.Background(), key).Result()
-		})
+		WithRedisStore(miniredisDebugStore{rdb: rdb})
 
 	call := func(messageID string) []map[string]interface{} {
 		w := httptest.NewRecorder()
@@ -318,6 +318,12 @@ func (s *capturedStore) Set(key, value string, _ time.Duration) bool {
 	}
 	s.data[key] = value
 	return true
+}
+
+func (s *capturedStore) Get(key string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.data[key], nil
 }
 
 func (s *capturedStore) get(key string) (string, bool) {
@@ -577,15 +583,20 @@ func (s miniredisDebugStore) Set(key, value string, ttl time.Duration) bool {
 	return true
 }
 
+func (s miniredisDebugStore) Get(key string) (string, error) {
+	return s.rdb.Get(context.Background(), key).Result()
+}
+
 // TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis locks the write/read contract
 // end-to-end: runCanvasPipelineDebug writes the debug log array under
 // "{canvasID}-{messageID}-logs" into a real (miniredis) Redis via the injected
 // DebugLogStore, and the SAME handler's GetAgentLogs reads it back through the
-// injected redisGetter — proving the writer's key shape exactly matches the
-// reader's and that the stored bytes round-trip into the [{component_id,
-// trace}] array the front-end polls for (File first, END last, non-empty END
-// message). This is the only test that would catch a key-format drift between
-// the two sides, since the write test uses a capturedStore and the read test
+// very same store via task.ReadDebugLog — proving the writer's key shape
+// exactly matches the reader's and that the stored bytes round-trip into the
+// [{component_id, trace}] array the front-end polls for (File first, END last,
+// non-empty END message). This is the only test that would catch a key-format
+// drift between the two sides, since the write test uses a capturedStore and the
+// read test
 // seeds Redis directly rather than going through the writer.
 func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -605,14 +616,12 @@ func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 	rdb := goredis.NewClient(&goredis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = rdb.Close() })
 
-	// Both seams point at the same miniredis: the writer stores via
-	// WithRedisStore and the reader fetches via WithRedisGetter, mirroring
-	// production where both hit one Redis.
+	// Both seams point at the SAME miniredisDebugStore: the writer stores via
+	// WithRedisStore and the reader (GetAgentLogs -> task.ReadDebugLog) fetches
+	// through the very same store. This proves the reader's key is identical to
+	// the writer's key — the desync bug this refactor eliminates.
 	h := NewAgentHandler(service.NewAgentService(), nil).
 		WithRedisStore(miniredisDebugStore{rdb: rdb}).
-		WithRedisGetter(func(key string) (string, error) {
-			return rdb.Get(ctx, key).Result()
-		}).
 		WithNewExecutor(func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {
 			return &fakeDebugExecutor{
 				result: &task.PipelineResult{Chunks: []map[string]any{{"content": "chunk-1"}}},
