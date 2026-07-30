@@ -564,7 +564,6 @@ export function useInstanceSaveState({
   }, [
     isDraft,
     providerName,
-    instanceName,
     instanceId,
     instanceDetails?.id,
     formRef,

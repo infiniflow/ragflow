@@ -17,6 +17,7 @@
 package common
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -369,4 +370,137 @@ func toString(v interface{}) string {
 	default:
 		return ""
 	}
+}
+
+// MetadataFieldDef describes one auto-metadata field, mirroring the
+// {key, type, description, enum} shape stored in parser_config.metadata /
+// built_in_metadata and the Python metadata_utils.py field contract.
+type MetadataFieldDef struct {
+	Key         string   `json:"key"`
+	Type        string   `json:"type,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Enum        []string `json:"enum,omitempty"`
+}
+
+// Turn2JSONSchema converts a metadata field list into a JSON-Schema object,
+// mirroring Python common/metadata_utils.py::turn2jsonschema /
+// metadata_schema. The result is rendered into the auto-metadata extraction
+// prompt (rag/prompts/meta_data.md equivalent) so the LLM knows the exact
+// keys, descriptions and allowed enum values to extract.
+func Turn2JSONSchema(fields []MetadataFieldDef) map[string]any {
+	properties := make(map[string]any, len(fields))
+	for _, f := range fields {
+		if strings.TrimSpace(f.Key) == "" {
+			continue
+		}
+		prop := map[string]any{}
+		if f.Description != "" {
+			prop["description"] = f.Description
+		}
+		if len(f.Enum) > 0 {
+			prop["enum"] = f.Enum
+			prop["type"] = "string"
+		} else if f.Type != "" {
+			prop["type"] = f.Type
+		}
+		properties[f.Key] = prop
+	}
+	if len(properties) == 0 {
+		return map[string]any{}
+	}
+	return map[string]any{
+		"type":                 "object",
+		"properties":           properties,
+		"additionalProperties": false,
+	}
+}
+
+// combinedValueDelim splits a single combined metadata value into its parts.
+// Mirrors Python doc_metadata_service.py _split_combined_values regex
+// r"[、,，;；|]+" (Chinese comma 、, ASCII comma ,, full-width comma ，,
+// semicolon ;, full-width semicolon ；, pipe |).
+var combinedValueDelim = regexp.MustCompile(`[、,，;；|]+`)
+
+// SplitCombinedMetadataValues post-processes a metadata map by splitting
+// combined values written to the doc-metadata index, mirroring Python
+// api/db/services/doc_metadata_service.py:_split_combined_values (applied at
+// both insert_document_metadata:383 and update_document_metadata:468).
+//
+// Only list-typed values are split (each string element is split on the
+// delimiter, trimmed, empties dropped, then flattened and de-duplicated);
+// scalar string values are left untouched, matching the Python implementation.
+// Non-string / non-list values pass through unchanged.
+func SplitCombinedMetadataValues(meta map[string]any) map[string]any {
+	if len(meta) == 0 {
+		return meta
+	}
+	out := make(map[string]any, len(meta))
+	for k, v := range meta {
+		switch val := v.(type) {
+		case []string:
+			out[k] = splitCombinedStringList(val)
+		case []any:
+			strs, allStr := toStringSlice(val)
+			if !allStr {
+				out[k] = v
+				continue
+			}
+			out[k] = splitCombinedStringList(strs)
+		default:
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// splitCombinedStringList splits each element on the combined-value delimiter,
+// trims, drops empties, keeps single elements intact, and de-duplicates.
+func splitCombinedStringList(items []string) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if item == "" {
+			continue
+		}
+		parts := combinedValueDelim.Split(strings.TrimSpace(item), -1)
+		got := false
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			out = append(out, p)
+			got = true
+		}
+		if !got {
+			out = append(out, item)
+		}
+	}
+	return dedupeMetaStrings(out)
+}
+
+// toStringSlice converts a []any to []string when every element is a string,
+// reporting allStr=false otherwise.
+func toStringSlice(val []any) ([]string, bool) {
+	strs := make([]string, 0, len(val))
+	for _, e := range val {
+		s, ok := e.(string)
+		if !ok {
+			return nil, false
+		}
+		strs = append(strs, s)
+	}
+	return strs, true
+}
+
+// dedupeMetaStrings removes duplicates while preserving order.
+func dedupeMetaStrings(input []string) []string {
+	seen := make(map[string]struct{}, len(input))
+	out := make([]string, 0, len(input))
+	for _, s := range input {
+		if _, ok := seen[s]; !ok {
+			seen[s] = struct{}{}
+			out = append(out, s)
+		}
+	}
+	return out
 }

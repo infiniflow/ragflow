@@ -24,9 +24,9 @@ import { useTranslation } from 'react-i18next';
 
 import {
   StructureKind,
-  StructureKindLabelKeyMap,
   ViewMode,
   ViewModeGenerateTypeMap,
+  ViewModeLabelKeyMap,
 } from './constants';
 import CompilationEmptyState from './empty-state';
 import { CompilationLoadingCard } from './loading-card';
@@ -126,7 +126,7 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
       <div className="flex justify-between gap-4 px-4 pt-4">
         <ConfirmDeleteDialog
           title={t('knowledgeDetails.deleteStructureConfirm', {
-            name: t(StructureKindLabelKeyMap[kind]),
+            name: t(ViewModeLabelKeyMap[kind]),
           })}
           onOk={handleDeleteStructure}
         >

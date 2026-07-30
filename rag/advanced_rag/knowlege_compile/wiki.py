@@ -1671,6 +1671,11 @@ DEFAULT_WIKI_PLAN_TIMEOUT = 600  # ~10 min — the planning call emits one big
 # Override via the ``llm_timeout`` arg to
 # ``wiki_plan_from_reduction``.
 DEFAULT_WIKI_PLAN_RECONCILE_BATCH = 50
+_WIKI_PLAN_MAX_OUTPUT_TOKENS = 4096
+_WIKI_PLAN_OUTPUT_SAFETY_TOKENS = 256
+_WIKI_PLAN_PAGE_TOKEN_ESTIMATE = 48
+_WIKI_PLAN_ITEMS_PER_BATCH = 40
+_WIKI_PLAN_MAX_CONCURRENT_BATCHES = 4
 
 
 WIKI_PLAN_PLANNING_SYSTEM = (
@@ -1770,6 +1775,8 @@ Examples of BAD slugs (do NOT produce):
 - entity_names must match the names in the entities / concepts lists above.
 - Target approximately {target_page_count} total pages (feel free to deviate
   by ±50% if the KB content warrants it).
+- Return no more than {max_page_count} page objects. This is a hard limit;
+  never continue the JSON beyond this number.
 - Return ONLY the JSON object.
 """
 
@@ -2043,6 +2050,7 @@ async def _wiki_planning_call(
     kb_description: str | None,
     target_page_count: int,
     llm_timeout: int,
+    _batch_depth: int = 0,
 ) -> dict:
     """Single LLM call → Compilation Plan JSON."""
     # Sort by mention count descending so the planner sees the most important
@@ -2057,6 +2065,67 @@ async def _wiki_planning_call(
         key=lambda x: x.get("mention_count", 0),
         reverse=True,
     )
+
+    model_context = int(getattr(chat_mdl, "max_length", 8192) or 8192)
+    output_tokens = min(
+        _WIKI_PLAN_MAX_OUTPUT_TOKENS,
+        max(1024, int(model_context * 0.4)),
+    )
+    output_page_capacity = max(
+        1,
+        (output_tokens - _WIKI_PLAN_OUTPUT_SAFETY_TOKENS) // _WIKI_PLAN_PAGE_TOKEN_ESTIMATE,
+    )
+    max_page_count = min(
+        output_page_capacity,
+        max(target_page_count + 8, target_page_count * 2),
+    )
+
+    all_items = [("entity", item) for item in sorted_entities] + [("concept", item) for item in sorted_concepts]
+    if _batch_depth == 0 and len(all_items) > _WIKI_PLAN_ITEMS_PER_BATCH:
+        batches = [all_items[offset : offset + _WIKI_PLAN_ITEMS_PER_BATCH] for offset in range(0, len(all_items), _WIKI_PLAN_ITEMS_PER_BATCH)]
+        total_items = len(all_items)
+        semaphore = asyncio.Semaphore(_WIKI_PLAN_MAX_CONCURRENT_BATCHES)
+
+        async def _plan_batch(batch):
+            async with semaphore:
+                batch_entities = [item for kind, item in batch if kind == "entity"]
+                batch_concepts = [item for kind, item in batch if kind == "concept"]
+                batch_keys = {item.get("name") if kind == "entity" else item.get("term") for kind, item in batch}
+                batch_reconciliation = {key: value for key, value in reconciliation.items() if key in batch_keys}
+                batch_target = max(1, round(target_page_count * len(batch) / total_items))
+                return await _wiki_planning_call(
+                    batch_entities,
+                    batch_concepts,
+                    raw_topics,
+                    batch_reconciliation,
+                    chat_mdl,
+                    kb_name,
+                    kb_description,
+                    batch_target,
+                    llm_timeout,
+                    _batch_depth=1,
+                )
+
+        batch_plans = await asyncio.gather(*(_plan_batch(batch) for batch in batches))
+        merged_pages = []
+        seen_slugs = set()
+        for batch_plan in batch_plans:
+            for page in batch_plan.get("pages") or []:
+                slug = page.get("slug")
+                if slug and slug not in seen_slugs:
+                    seen_slugs.add(slug)
+                    merged_pages.append(page)
+        logging.info(
+            "wiki_plan: batched planning items=%d batches=%d merged_pages=%d",
+            total_items,
+            len(batches),
+            len(merged_pages),
+        )
+        return {
+            "pages": merged_pages,
+            "estimated_page_count": len(merged_pages),
+            "compilation_notes": "planned in batches",
+        }
 
     entities_summary = "\n".join(_wiki_format_entity_for_plan(e, reconciliation) for e in sorted_entities[:200]) or "  (none)"
     concepts_summary = "\n".join(_wiki_format_concept_for_plan(c, reconciliation) for c in sorted_concepts[:200]) or "  (none)"
@@ -2076,6 +2145,7 @@ async def _wiki_planning_call(
         topics_summary=topics_summary,
         kb_reconciliation=kb_reconciliation,
         target_page_count=target_page_count,
+        max_page_count=max_page_count,
     )
 
     try:
@@ -2084,7 +2154,10 @@ async def _wiki_planning_call(
                 WIKI_PLAN_PLANNING_SYSTEM,
                 user_prompt,
                 chat_mdl,
-                gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}),
+                gen_conf=_knowledge_compile_gen_conf(
+                    chat_mdl,
+                    {"temperature": 0.1, "max_tokens": output_tokens},
+                ),
             ),
             timeout=llm_timeout,
         )
@@ -2099,15 +2172,41 @@ async def _wiki_planning_call(
         return {"pages": [], "estimated_page_count": 0, "compilation_notes": "planner returned non-object"}
     if "pages" not in res or not isinstance(res.get("pages"), list):
         res["pages"] = []
+
+    valid_pages = []
     for page in res["pages"]:
         if not isinstance(page, dict):
             continue
+        action = page.get("action")
+        slug = page.get("slug")
+        title = page.get("title")
+        page_type = page.get("page_type")
         topic = page.get("topic")
+        if action not in {"CREATE", "UPDATE"}:
+            continue
+        if not isinstance(slug, str) or not re.fullmatch(r"(?:entity|concept|topic)/[a-z0-9]+(?:-[a-z0-9]+)*", slug):
+            logging.warning("wiki_plan: dropped invalid planner slug %r", slug)
+            continue
+        if not isinstance(title, str) or not title.strip():
+            logging.warning("wiki_plan: dropped page with missing title slug=%s", slug)
+            continue
+        if page_type not in {"entity", "concept", "topic"}:
+            logging.warning("wiki_plan: dropped page with invalid page_type slug=%s", slug)
+            continue
+        if slug.split("/", 1)[0] != page_type:
+            logging.warning("wiki_plan: dropped page with mismatched page_type slug=%s page_type=%s", slug, page_type)
+            continue
+        if action == "UPDATE" and not any(rec.get("action") == "UPDATE" and rec.get("page_slug") == slug for rec in reconciliation.values()):
+            logging.warning("wiki_plan: dropped UPDATE for unreconciled slug=%s", slug)
+            continue
         if not isinstance(topic, str) or not topic.strip():
-            fallback = page.get("title") or page.get("slug") or page.get("page_type") or "General"
-            page["topic"] = str(fallback).strip() or "General"
-    if "estimated_page_count" not in res:
-        res["estimated_page_count"] = len(res["pages"])
+            logging.warning("wiki_plan: dropped page with missing topic slug=%s", slug)
+            continue
+        valid_pages.append(page)
+        if len(valid_pages) >= max_page_count:
+            break
+    res["pages"] = valid_pages
+    res["estimated_page_count"] = len(valid_pages)
     res.setdefault("compilation_notes", "")
     return res
 
@@ -2922,7 +3021,12 @@ _WIKILINK_SIMPLE_RE = re.compile(r"\[\[([^\[\]\|]+?)\]\]")
 _ARTIFACT_MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
 
-def _wiki_transform_links(content_md: str, kb_id: str, page_titles: dict[str, str] | None = None) -> tuple[str, list[str]]:
+def _wiki_transform_links(
+    content_md: str,
+    kb_id: str,
+    page_titles: dict[str, str] | None = None,
+    valid_slugs: set[str] | None = None,
+) -> tuple[str, list[str]]:
     """Normalize wiki links and return ``(rendered_md, unique_outlinks)``.
 
     Both the canonical ``[[slug]]`` form and Markdown links emitted by an LLM
@@ -2933,6 +3037,8 @@ def _wiki_transform_links(content_md: str, kb_id: str, page_titles: dict[str, st
     """
     kb_id_str = str(kb_id)
     page_titles = page_titles or {}
+    if valid_slugs is not None:
+        valid_slugs = {str(slug).strip() for slug in valid_slugs if str(slug).strip()}
     seen: set[str] = set()
     outlinks: list[str] = []
 
@@ -2951,6 +3057,9 @@ def _wiki_transform_links(content_md: str, kb_id: str, page_titles: dict[str, st
             return planned_title
         readable = slug.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").strip()
         return readable.title() or label
+
+    def _is_valid(slug: str) -> bool:
+        return valid_slugs is None or slug in valid_slugs
 
     def _artifact_slug(href: str) -> str | None:
         parsed = urlsplit(href)
@@ -2971,17 +3080,23 @@ def _wiki_transform_links(content_md: str, kb_id: str, page_titles: dict[str, st
         slug = _artifact_slug(m.group(2))
         if not slug:
             return m.group(0)
+        if not _is_valid(slug):
+            return _display_text(m.group(1), slug)
         _track(slug)
         return f"[{_display_text(m.group(1), slug)}](artifact/{kb_id_str}/{slug})"
 
     def _piped(m: re.Match) -> str:
         slug = m.group(1).strip()
         text = m.group(2).strip()
+        if not _is_valid(slug):
+            return text
         _track(slug)
         return f"[{text}](artifact/{kb_id_str}/{slug})"
 
     def _simple(m: re.Match) -> str:
         slug = m.group(1).strip()
+        if not _is_valid(slug):
+            return _display_text(slug, slug)
         _track(slug)
         return f"[{_display_text(slug, slug)}](artifact/{kb_id_str}/{slug})"
 
@@ -3602,7 +3717,12 @@ async def wiki_refine_from_plan(
                     )
 
                 # Render artifactlinks once, here, after all LLM transforms.
-                content_md_rendered, outlinks = _wiki_transform_links(content_md_raw, kb_id, page_titles=page_titles)
+                content_md_rendered, outlinks = _wiki_transform_links(
+                    content_md_raw,
+                    kb_id,
+                    page_titles=page_titles,
+                    valid_slugs=set(all_plan_slugs),
+                )
                 source_doc_ids = await _wiki_collect_doc_ids(source_chunk_ids, tenant_id, kb_id)
                 summary = _wiki_extract_summary(content_md_rendered) or title
 
@@ -3690,6 +3810,33 @@ async def wiki_refine_from_plan(
                 if np and np.get("slug") == slug:
                     results.append(np)
                     break
+
+    # A planned page can still fail during REFINE, and cached pages may carry
+    # links from an older plan. Re-render against the pages that actually
+    # survived this run so no dangling artifact link reaches persistence.
+    actual_slugs = {str(p.get("slug")).strip() for p in results if p.get("slug")}
+    actual_titles = {str(p.get("slug")).strip(): str(p.get("title") or "").strip() for p in results if p.get("slug") and str(p.get("title") or "").strip()}
+    for page in results:
+        raw_content = page.get("content_md_raw") or page.get("content_md") or ""
+        rendered, outlinks = _wiki_transform_links(
+            raw_content,
+            kb_id,
+            page_titles=actual_titles,
+            valid_slugs=actual_slugs,
+        )
+        page["content_md"] = rendered
+        page["content_md_rendered"] = rendered
+        page["outlinks"] = outlinks
+        page["summary"] = _wiki_extract_summary(rendered) or page.get("title") or page.get("slug") or ""
+        try:
+            await _wiki_persist_draft(
+                page,
+                tenant_id,
+                kb_id,
+                plan_input_hash=plan_input_hash,
+            )
+        except Exception:
+            logging.exception("wiki_refine: persist cleaned draft failed for slug=%s", page.get("slug"))
 
     logging.info(
         "wiki_refine: kb=%s done — pages written=%d (cached=%d new=%d)",

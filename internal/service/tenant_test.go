@@ -36,7 +36,8 @@ var daoModelProviderManager *models.ProviderManager
 // CodeAuthenticationError without hitting the database.
 func TestListMembersAuthCheck(t *testing.T) {
 	s := &TenantService{}
-	_, code, err := s.ListMembers("user-abc", "tenant-xyz")
+	ctx := t.Context()
+	_, code, err := s.ListMembers(ctx, "user-abc", "tenant-xyz")
 	if err == nil {
 		t.Fatal("expected error for non-owner, got nil")
 	}
@@ -48,7 +49,8 @@ func TestListMembersAuthCheck(t *testing.T) {
 // TestAddMemberAuthCheck verifies that a non-owner gets CodeAuthenticationError.
 func TestAddMemberAuthCheck(t *testing.T) {
 	s := &TenantService{}
-	_, code, err := s.AddMember("user-abc", "tenant-xyz", &AddMemberRequest{Email: "a@b.com"})
+	ctx := t.Context()
+	_, code, err := s.AddMember(ctx, "user-abc", "tenant-xyz", &AddMemberRequest{Email: "a@b.com"})
 	if err == nil {
 		t.Fatal("expected error for non-owner, got nil")
 	}
@@ -61,7 +63,8 @@ func TestAddMemberAuthCheck(t *testing.T) {
 func TestAddMemberEmailRequired(t *testing.T) {
 	// When userID == tenantID (owner) but no email, expect CodeArgumentError.
 	s := &TenantService{}
-	_, code, err := s.AddMember("owner-id", "owner-id", &AddMemberRequest{Email: ""})
+	ctx := t.Context()
+	_, code, err := s.AddMember(ctx, "owner-id", "owner-id", &AddMemberRequest{Email: ""})
 	if err == nil {
 		t.Fatal("expected error for empty email, got nil")
 	}
@@ -73,7 +76,8 @@ func TestAddMemberEmailRequired(t *testing.T) {
 // TestRemoveMemberAuthCheck verifies that an unrelated user gets CodeAuthenticationError.
 func TestRemoveMemberAuthCheck(t *testing.T) {
 	s := &TenantService{}
-	code, err := s.RemoveMember("user-abc", "tenant-xyz", "user-def")
+	ctx := t.Context()
+	code, err := s.RemoveMember(ctx, "user-abc", "tenant-xyz", "user-def")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
@@ -87,7 +91,8 @@ func TestRemoveMemberAuthCheck(t *testing.T) {
 func TestRemoveMemberSelfAllowed(t *testing.T) {
 	s := &TenantService{}
 	// userID == targetUserID: auth check should pass.
-	code, err := s.RemoveMember("user-abc", "tenant-xyz", "user-abc")
+	ctx := t.Context()
+	code, err := s.RemoveMember(ctx, "user-abc", "tenant-xyz", "user-abc")
 	if code == common.CodeAuthenticationError {
 		t.Errorf("self-removal should pass auth check, got CodeAuthenticationError: %v", err)
 	}
@@ -103,7 +108,8 @@ func TestRemoveMemberSelfAllowed(t *testing.T) {
 func TestAcceptInviteAuthCheck(t *testing.T) {
 	s := &TenantService{}
 	// nil userTenantDAO: nil guard returns CodeServerError.
-	code, err := s.AcceptInvite("user-abc", "tenant-xyz")
+	ctx := t.Context()
+	code, err := s.AcceptInvite(ctx, "user-abc", "tenant-xyz")
 	if err == nil {
 		t.Fatal("expected error when userTenantDAO is nil, got nil")
 	}

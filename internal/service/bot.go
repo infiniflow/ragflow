@@ -238,11 +238,11 @@ func (s *BotService) loadCanvas(ctx context.Context, tenantID, agentID string) (
 		return nil, dao.ErrUserCanvasNotFound
 	}
 	userTenantDAO := dao.NewUserTenantDAO()
-	tenants, err := userTenantDAO.GetTenantIDsByUserID(tenantID)
+	tenants, err := userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, fmt.Errorf("bot: tenants for user %s: %w", tenantID, err)
 	}
-	return s.canvasDAO.GetByIDForUser(agentID, tenantID, tenants)
+	return s.canvasDAO.GetByIDForUser(ctx, dao.DB, agentID, tenantID, tenants)
 }
 
 // canvasDSLMap projects a UserCanvas.DSL JSONMap into a

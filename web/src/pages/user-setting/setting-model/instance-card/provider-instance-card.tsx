@@ -230,6 +230,7 @@ const GenericProviderInstanceCard = forwardRef<
           modelInfoRef={modelInfoRef}
           draftName={draftName}
           setDraftName={setDraftName}
+          verifyTransform={providerConfig.verifyTransform}
         />
       ) : (
         <SavedModeCard
@@ -249,6 +250,7 @@ const GenericProviderInstanceCard = forwardRef<
           draftName={draftName}
           open={open}
           setOpen={setOpen}
+          verifyTransform={providerConfig.verifyTransform}
         />
       )}
     </div>

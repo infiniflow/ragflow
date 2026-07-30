@@ -17,6 +17,7 @@
 package admin
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"mime/multipart"
@@ -31,6 +32,7 @@ func UpdateServer(serverName string, status *common.BaseMessage) (common.ErrorCo
 }
 
 // Role management methods
+
 // ListRoles list all roles
 func (s *Service) ListRoles() ([]map[string]interface{}, error) {
 	result := []map[string]interface{}{
@@ -439,10 +441,10 @@ func (s *Service) ShowUserDatasetSummary(email, dataset string) (map[string]inte
 }
 
 // ShowUserSummary show user summary for enterprise edition
-func (s *Service) ShowUserSummary(email string) (map[string]interface{}, error) {
+func (s *Service) ShowUserSummary(ctx context.Context, email string) (map[string]interface{}, error) {
 	// Query user by email
 	var user entity.User
-	err := dao.DB.Where("email = ?", email).First(&user).Error
+	err := dao.DB.WithContext(ctx).Where("email = ?", email).First(&user).Error
 	if err != nil {
 		return nil, common.ErrUserNotFound
 	}
@@ -475,10 +477,10 @@ func (s *Service) ShowUserStorage(email string) (map[string]interface{}, error) 
 }
 
 // ShowUserQuota show user quota for enterprise edition
-func (s *Service) ShowUserQuota(email string) (map[string]interface{}, error) {
+func (s *Service) ShowUserQuota(ctx context.Context, email string) (map[string]interface{}, error) {
 	// Query user by email
 	var user entity.User
-	err := dao.DB.Where("email = ?", email).First(&user).Error
+	err := dao.DB.WithContext(ctx).Where("email = ?", email).First(&user).Error
 	if err != nil {
 		return nil, common.ErrUserNotFound
 	}
@@ -792,7 +794,7 @@ func (s *Service) ShowUsersActivity(days, windows *int) (map[string]interface{},
 	return result, nil
 }
 
-func (s *Service) ListUsersEE(pageIndex, pageSize int, name string, status, role, sort, orderBy, plan string, top, days int, quota *int) ([]map[string]interface{}, error) {
+func (s *Service) ListUsersEE(ctx context.Context, pageIndex, pageSize int, name string, status, role, sort, orderBy, plan string, top, days int, quota *int) ([]map[string]interface{}, error) {
 	item := map[string]interface{}{}
 	item["pageIndex"] = pageIndex
 	item["pageSize"] = pageSize
@@ -1061,9 +1063,9 @@ func (s *Service) PurgeUsersData(preview bool, days int, userPlan *string, userA
 }
 
 // GenerateUserAPIKey create tenant API key for tenant
-func (s *Service) GenerateUserAPIKey(username string) (map[string]interface{}, error) {
+func (s *Service) GenerateUserAPIKey(ctx context.Context, username string) (map[string]interface{}, error) {
 
-	user, err := s.userDAO.GetByEmail(username)
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
@@ -1079,9 +1081,9 @@ func (s *Service) GenerateUserAPIKey(username string) (map[string]interface{}, e
 }
 
 // DeleteUserAPIKey delete user API key
-func (s *Service) DeleteUserAPIKey(username, key string) (map[string]interface{}, error) {
+func (s *Service) DeleteUserAPIKey(ctx context.Context, username, key string) (map[string]interface{}, error) {
 
-	user, err := s.userDAO.GetByEmail(username)
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
@@ -1098,9 +1100,9 @@ func (s *Service) DeleteUserAPIKey(username, key string) (map[string]interface{}
 }
 
 // ListUserAPIKeys list user API keys
-func (s *Service) ListUserAPIKeys(username string) ([]map[string]interface{}, error) {
+func (s *Service) ListUserAPIKeys(ctx context.Context, username string) ([]map[string]interface{}, error) {
 
-	user, err := s.userDAO.GetByEmail(username)
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
 	if err != nil {
 		return nil, fmt.Errorf("user not found: %w", err)
 	}
@@ -1117,7 +1119,7 @@ func (s *Service) ListUserAPIKeys(username string) ([]map[string]interface{}, er
 	return result, nil
 }
 
-func (s *Service) ListIngestionTasksByCondition(email, status *string) ([]map[string]interface{}, error) {
+func (s *Service) ListIngestionTasksByCondition(ctx context.Context, email, status *string) ([]map[string]interface{}, error) {
 
 	if email == nil && status == nil {
 		return nil, fmt.Errorf("email or status are required")
@@ -1297,7 +1299,7 @@ func (s *Service) BatchDeleteWhiteList(ids []int) (map[string]interface{}, error
 }
 
 // GetTokenStats returns API token statistics for the user.
-func (s *Service) GetTokenStats(userName, fromDate, toDate, granularity string) ([]map[string]interface{}, error) {
+func (s *Service) GetTokenStats(ctx context.Context, userName, fromDate, toDate, granularity string) ([]map[string]interface{}, error) {
 	result := []map[string]interface{}{
 		{
 			"command":     "get_token_stats",
@@ -1338,7 +1340,7 @@ func (s *Service) GetTokenStatsSummary(fromDate, toDate string) (map[string]inte
 }
 
 // ListLogs lists operation logs for the user.
-func (s *Service) ListLogs(userName string, days int) ([]map[string]interface{}, error) {
+func (s *Service) ListLogs(ctx context.Context, userName string, days int) ([]map[string]interface{}, error) {
 	result := []map[string]interface{}{
 		{
 			"command":   "list_logs",

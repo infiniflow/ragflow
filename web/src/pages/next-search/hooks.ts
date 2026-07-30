@@ -333,6 +333,7 @@ export const useSendQuestion = (
       if (isEmpty(q)) return;
       setIsFirstRender(false);
       setCurrentAnswer({} as IAnswer);
+      setSelectedDocumentIds([]);
       if (enableAI) {
         if (!sharedId && !searchId) {
           message.error('Search ID is required.');

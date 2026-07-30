@@ -94,7 +94,7 @@ class TestDatasetCreate:
             if name == "":
                 expected_message = "failed on the 'required' tag"
             elif isinstance(name, str) and not name.strip():
-                expected_message = "Dataset name can't be empty."
+                expected_message = "dataset name can't be empty"
             elif isinstance(name, str):
                 expected_message = f"Dataset name length is {len(name)} which is large than {DATASET_NAME_LIMIT}"
         assert expected_message in str(exception_info.value), str(exception_info.value)
@@ -138,9 +138,9 @@ class TestDatasetCreate:
     @pytest.mark.parametrize(
         "name, prefix, expected_message",
         [
-            ("empty_prefix", "", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("missing_comma", "data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+            ("empty_prefix", "", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("missing_comma", "data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
             ("invalid_mine_type", "data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
@@ -236,9 +236,9 @@ class TestDatasetCreate:
         with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
         if name in ["empty", "space", "missing_at"]:
-            assert "Embedding model identifier must follow <model_name>@<provider> format" in str(exception_info.value), str(exception_info.value)
+            assert "embedding model identifier must follow <model_name>@<provider> format" in str(exception_info.value), str(exception_info.value)
         else:
-            assert "Both model_name and provider must be non-empty strings" in str(exception_info.value), str(exception_info.value)
+            assert "both model_name and provider must be non-empty strings" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_embedding_model_unset(self, client):

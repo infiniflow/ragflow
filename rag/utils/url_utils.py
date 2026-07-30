@@ -48,3 +48,17 @@ def ensure_v1(url: str) -> str:
     # No versioned segment found – append /v1
     new_path = (path + "/v1") if path else "/v1"
     return urlunparse((parsed.scheme, parsed.netloc, new_path, parsed.params, parsed.query, parsed.fragment))
+
+
+def append_api_path(url: str, endpoint: str) -> str:
+    """Append an API endpoint path exactly once while preserving the base path."""
+    if not url:
+        return url
+
+    parsed = urlparse(url)
+    path = parsed.path.rstrip("/")
+    endpoint_path = f"/{endpoint.strip('/')}"
+    if not path.endswith(endpoint_path):
+        path = f"{path}{endpoint_path}"
+
+    return urlunparse((parsed.scheme, parsed.netloc, path, parsed.params, parsed.query, parsed.fragment))

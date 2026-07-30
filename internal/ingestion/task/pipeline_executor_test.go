@@ -22,6 +22,34 @@ import (
 
 func strPtr(s string) *string { return &s }
 
+// TestMarkCompiledProductsHidden verifies the pipeline caller hides
+// per-document compiled knowledge products (compile_kwd present) as
+// available_int=0 while leaving ordinary source chunks searchable
+// (available_int=1, the index default). Merged dataset-level products are written
+// by the consumer and never reach this path, so they are never double-marked.
+func TestMarkCompiledProductsHidden(t *testing.T) {
+	chunks := []map[string]any{
+		{"id": "src-1", "content_with_weight": "ordinary source chunk"},
+		{"id": "struct-1", "compile_kwd": "structure", "content_with_weight": "entity A"},
+		{"id": "wiki-1", "compile_kwd": "artifact_page", "content_with_weight": "page X"},
+		{"id": "src-2", "content_with_weight": "another source chunk"},
+	}
+	markCompiledProductsHidden(chunks)
+
+	if v, ok := chunks[0]["available_int"]; ok {
+		t.Fatalf("ordinary source chunk should keep default available_int, got %v", v)
+	}
+	if chunks[1]["available_int"] != 0 {
+		t.Fatalf("compiled structure chunk should be available_int=0, got %v", chunks[1]["available_int"])
+	}
+	if chunks[2]["available_int"] != 0 {
+		t.Fatalf("compiled wiki chunk should be available_int=0, got %v", chunks[2]["available_int"])
+	}
+	if v, ok := chunks[3]["available_int"]; ok {
+		t.Fatalf("source chunk without compile_kwd should keep default available_int, got %v", v)
+	}
+}
+
 func makeTaskCtx() *TaskContext {
 	return &TaskContext{
 		IngestionTask: &entity.IngestionTask{

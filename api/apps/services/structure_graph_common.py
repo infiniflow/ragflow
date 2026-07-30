@@ -133,11 +133,65 @@ def dedup_entities(entities: list[dict]) -> list[dict]:
     return out
 
 
+def _entity_response_id(entity: dict) -> str:
+    for field in ("id", "name", "slug"):
+        value = entity.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _endpoint_terms(value: str) -> list[str]:
+    value = value.strip()
+    if not value:
+        return []
+    return sorted({value, value.lower()})
+
+
+def normalize_relation_endpoints(entities: list[dict], relations: list[dict]) -> list[dict]:
+    """Align relation endpoints to the returned entity ids/names."""
+    if not entities or not relations:
+        return relations
+
+    lookup: dict[str, str] = {}
+    ambiguous: set[str] = set()
+    for entity in entities:
+        response_id = _entity_response_id(entity)
+        if not response_id:
+            continue
+        for field in ("id", "name", "slug"):
+            value = entity.get(field)
+            if not isinstance(value, str) or not value.strip():
+                continue
+            key = value.strip().lower()
+            if key in lookup and lookup[key] != response_id:
+                ambiguous.add(key)
+                continue
+            lookup[key] = response_id
+    for key in ambiguous:
+        lookup.pop(key, None)
+
+    normalized: list[dict] = []
+    for relation in relations:
+        if not isinstance(relation, dict):
+            continue
+        item = dict(relation)
+        for field in ("from", "to"):
+            value = item.get(field)
+            if isinstance(value, str):
+                item[field] = lookup.get(value.strip().lower(), value)
+        normalized.append(item)
+    return normalized
+
+
 def filter_entities_with_relations(entities: list[dict], relations: list[dict]) -> list[dict]:
     """Keep only entities that are referenced by at least one relation."""
     if not entities or not relations:
         return []
 
+    # Match case-insensitively: the dataset-scoped merge lowercases relation
+    # endpoints while entity names keep their original case, so exact matching
+    # would drop connected nodes from graph-like views.
     connected: set[str] = set()
     for relation in relations:
         if not isinstance(relation, dict):
@@ -145,7 +199,7 @@ def filter_entities_with_relations(entities: list[dict], relations: list[dict]) 
         for endpoint_key in ("from", "to"):
             endpoint = relation.get(endpoint_key)
             if isinstance(endpoint, str):
-                endpoint = endpoint.strip()
+                endpoint = endpoint.strip().lower()
                 if endpoint:
                     connected.add(endpoint)
 
@@ -164,7 +218,7 @@ def filter_entities_with_relations(entities: list[dict], relations: list[dict]) 
         for field in ("id", "name", "slug"):
             value = entity.get(field)
             if isinstance(value, str):
-                value = value.strip()
+                value = value.strip().lower()
                 if value:
                     keys.add(value)
         if keys & connected:
@@ -198,7 +252,8 @@ async def build_bucket(index_name, kb_id, scope: dict) -> tuple[list[dict], list
                 node = project_entity(row)
                 if node:
                     entities.append(node)
-        return dedup_entities(entities), relations
+        entities = dedup_entities(entities)
+        return entities, normalize_relation_endpoints(entities, relations)
 
     # Large bucket: sample. A = top entities by mention_count_int desc.
     order_by = OrderByExpr()
@@ -209,12 +264,13 @@ async def build_bucket(index_name, kb_id, scope: dict) -> tuple[list[dict], list
     ent_a_map, _ = await graph_search(index_name, kb_id, GRAPH_ENTITY_FIELDS, dict(scope, knowledge_graph_kwd=["entity"]), order_by, GRAPH_TOP_ENTITIES)
     set_a = [n for n in (project_entity(r) for r in ent_a_map.values()) if n]
     a_names = sorted({str(e.get("name") or "").strip() for e in set_a if str(e.get("name") or "").strip()})
+    a_name_terms = sorted({term for name in a_names for term in _endpoint_terms(name)})
 
     # relations whose source is one of A.
     relations = []
     target_names_lower: set[str] = set()
-    if a_names:
-        rel_map, _ = await graph_search(index_name, kb_id, GRAPH_RELATION_FIELDS, dict(scope, knowledge_graph_kwd=["relation"], from_entity_kwd=a_names), OrderByExpr(), GRAPH_EXPANSION_CAP)
+    if a_name_terms:
+        rel_map, _ = await graph_search(index_name, kb_id, GRAPH_RELATION_FIELDS, dict(scope, knowledge_graph_kwd=["relation"], from_entity_kwd=a_name_terms), OrderByExpr(), GRAPH_EXPANSION_CAP)
         for row in rel_map.values():
             edge = project_relation(row)
             if edge:
@@ -229,7 +285,8 @@ async def build_bucket(index_name, kb_id, scope: dict) -> tuple[list[dict], list
         tgt_map, _ = await graph_search(index_name, kb_id, GRAPH_ENTITY_FIELDS, dict(scope, knowledge_graph_kwd=["entity"], name_kwd=sorted(target_names_lower)), OrderByExpr(), GRAPH_EXPANSION_CAP)
         set_t = [n for n in (project_entity(r) for r in tgt_map.values()) if n]
 
-    return dedup_entities(set_a + set_t), relations
+    entities = dedup_entities(set_a + set_t)
+    return entities, normalize_relation_endpoints(entities, relations)
 
 
 async def keyword_subgraph(index_name, kb_id, embd_mdl, base_entity_condition, keywords, scope_for_template, log_ctx="") -> tuple[dict | None, list[dict], list[dict]]:
@@ -280,8 +337,9 @@ async def keyword_subgraph(index_name, kb_id, embd_mdl, base_entity_condition, k
     relations: list[dict] = []
     seen_rel: set[tuple[str, str, str]] = set()
     neighbor_names_lower: set[str] = set()
+    top_name_terms = _endpoint_terms(top_name)
     for field in ("from_entity_kwd", "to_entity_kwd"):
-        rel_map, _ = await graph_search(index_name, kb_id, GRAPH_RELATION_FIELDS, dict(scope, knowledge_graph_kwd=["relation"], **{field: [top_name]}), OrderByExpr(), GRAPH_EXPANSION_CAP)
+        rel_map, _ = await graph_search(index_name, kb_id, GRAPH_RELATION_FIELDS, dict(scope, knowledge_graph_kwd=["relation"], **{field: top_name_terms}), OrderByExpr(), GRAPH_EXPANSION_CAP)
         for row in rel_map.values():
             edge = project_relation(row)
             if not edge:
@@ -301,4 +359,5 @@ async def keyword_subgraph(index_name, kb_id, embd_mdl, base_entity_condition, k
         nb_map, _ = await graph_search(index_name, kb_id, GRAPH_ENTITY_FIELDS, dict(scope, knowledge_graph_kwd=["entity"], name_kwd=sorted(neighbor_names_lower)), OrderByExpr(), GRAPH_EXPANSION_CAP)
         entities.extend(n for n in (project_entity(r) for r in nb_map.values()) if n)
 
-    return bucket_meta, dedup_entities(entities), relations
+    entities = dedup_entities(entities)
+    return bucket_meta, entities, normalize_relation_endpoints(entities, relations)

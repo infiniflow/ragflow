@@ -213,8 +213,8 @@ func TestDatasetServiceListTagsRejectsUnauthorizedDataset(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("code=%d want=%d", code, common.CodeDataError)
 	}
-	if err.Error() != "No authorization." {
-		t.Fatalf("error=%q want=%q", err.Error(), "No authorization.")
+	if err.Error() != "no authorization" {
+		t.Fatalf("error=%q want=%q", err.Error(), "no authorization")
 	}
 }
 

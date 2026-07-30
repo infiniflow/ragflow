@@ -403,6 +403,13 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		}
 		defaults.KeywordsSimilarityWeight = &v
 	}
+	if value, ok := params["empty_response"]; ok {
+		emptyResponse, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires string node-level param empty_response")
+		}
+		defaults.EmptyResponse = emptyResponse
+	}
 	return NewRetrievalToolWithDefaults(defaults), nil
 }
 
