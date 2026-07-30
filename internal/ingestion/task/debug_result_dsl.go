@@ -191,6 +191,12 @@ func deepCopy(v any) any {
 			cp[k] = deepCopy(vv)
 		}
 		return cp
+	case []map[string]any:
+		cp := make([]any, len(val))
+		for i, vv := range val {
+			cp[i] = deepCopy(vv)
+		}
+		return cp
 	case []any:
 		cp := make([]any, len(val))
 		for i, vv := range val {
@@ -213,6 +219,12 @@ func deepCopyStrip(v any) any {
 				continue
 			}
 			cp[k] = deepCopyStrip(vv)
+		}
+		return cp
+	case []map[string]any:
+		cp := make([]any, len(val))
+		for i, vv := range val {
+			cp[i] = deepCopyStrip(vv)
 		}
 		return cp
 	case []any:

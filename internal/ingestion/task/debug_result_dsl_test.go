@@ -297,6 +297,102 @@ func TestLookupComponentOutput(t *testing.T) {
 	}
 }
 
+// TestDeepCopyStrip_StripsVectorsFromMapSlice locks the regression for review
+// comment #5: real component chunk output is []map[string]any (as produced by
+// ChunkDocsToMaps), which the type switch MUST recurse into AND strip vectorKeys
+// from. Previously []map[string]any fell into the default branch — no recursion,
+// no stripping — so embedding vectors leaked into the Redis debug log and the
+// copy shared mutable state with the source.
+func TestDeepCopyStrip_StripsVectorsFromMapSlice(t *testing.T) {
+	src := []map[string]any{
+		{
+			"text":      "real chunk",
+			"vector":    []float64{0.1, 0.2},
+			"embedding": []float64{0.3},
+			"nested":    map[string]any{"q_vec": []float64{0.9}, "keep": "x"},
+		},
+		{"text": "second", "feature": []float64{0.4}},
+	}
+
+	got := deepCopyStrip(src)
+
+	// Returned slice must be a deep copy (new []any holding new maps), not the
+	// original slice/map identity.
+	cp, ok := got.([]any)
+	if !ok {
+		t.Fatalf("deepCopyStrip returned %T, want []any", got)
+	}
+	if len(cp) != 2 {
+		t.Fatalf("len=%d want 2", len(cp))
+	}
+
+	// First chunk: vector & embedding dropped, text kept, nested vector dropped.
+	c0, ok := cp[0].(map[string]any)
+	if !ok {
+		t.Fatalf("element 0 type %T, want map[string]any", cp[0])
+	}
+	if _, exists := c0["vector"]; exists {
+		t.Errorf("vector must be stripped, but present: %#v", c0)
+	}
+	if _, exists := c0["embedding"]; exists {
+		t.Errorf("embedding must be stripped, but present: %#v", c0)
+	}
+	if c0["text"] != "real chunk" {
+		t.Errorf("text=%v want 'real chunk'", c0["text"])
+	}
+	nested, _ := c0["nested"].(map[string]any)
+	if _, exists := nested["q_vec"]; exists {
+		t.Errorf("nested q_vec must be stripped, but present: %#v", nested)
+	}
+	if nested["keep"] != "x" {
+		t.Errorf("nested.keep=%v want x", nested["keep"])
+	}
+
+	// Second chunk: feature (a vectorKey) stripped, text kept.
+	c1, ok := cp[1].(map[string]any)
+	if !ok {
+		t.Fatalf("element 1 type %T, want map[string]any", cp[1])
+	}
+	if _, exists := c1["feature"]; exists {
+		t.Errorf("feature must be stripped, but present: %#v", c1)
+	}
+	if c1["text"] != "second" {
+		t.Errorf("text=%v want 'second'", c1["text"])
+	}
+
+	// Mutation isolation: mutating the copy must not touch the source.
+	c0["text"] = "mutated"
+	if src[0]["text"] != "real chunk" {
+		t.Errorf("copy mutation leaked into source: %#v", src[0])
+	}
+}
+
+// TestDeepCopy_MapSliceIsDeep locks that deepCopy also recurses []map[string]any
+// (structure preservation, no vector-strip concern for plain deepCopy).
+func TestDeepCopy_MapSliceIsDeep(t *testing.T) {
+	src := []map[string]any{{"text": "a", "n": map[string]any{"v": 1}}}
+	got := deepCopy(src)
+	cp, ok := got.([]any)
+	if !ok {
+		t.Fatalf("deepCopy returned %T, want []any", got)
+	}
+	m, ok := cp[0].(map[string]any)
+	if !ok {
+		t.Fatalf("element type %T, want map[string]any", cp[0])
+	}
+	if m["text"] != "a" {
+		t.Errorf("text=%v want a", m["text"])
+	}
+	if n, _ := m["n"].(map[string]any); n["v"] != 1 {
+		t.Errorf("nested not copied: %#v", m["n"])
+	}
+	// isolate
+	m["text"] = "mut"
+	if src[0]["text"] != "a" {
+		t.Errorf("deepCopy shares mutable state: %#v", src[0])
+	}
+}
+
 // TestDetectFormat_Priority locks the format selection order
 // (chunks > json > text > html > markdown) used to pick a component's payload
 // key. A component that emits multiple recognized keys must surface the
