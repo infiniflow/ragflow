@@ -54,7 +54,7 @@ class ElasticSearchConnectionPool:
                         logging.exception(
                             "Failed to close partially-initialized Elasticsearch client before retry.",
                         )
-                time.sleep(HEALTH_CHECK_BASE_DELAY_SECONDS * (2 ** attempt))
+                time.sleep(HEALTH_CHECK_BASE_DELAY_SECONDS * (2**attempt))
                 continue
 
         if not hasattr(self, "es_conn") or not self.es_conn or not self.es_conn.ping():

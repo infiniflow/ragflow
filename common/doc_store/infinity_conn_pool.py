@@ -72,7 +72,7 @@ class InfinityConnectionPool:
                     msg = f"Infinity {infinity_uri} status {res.server_status} after {MAX_RETRIES} attempts."
                     logging.error(msg)
                     raise Exception(msg)
-                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2 ** attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
+                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2**attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
             except Exception as e:
                 logging.warning(
                     "Infinity connection attempt %d/%d to %s failed: %s",
@@ -83,7 +83,7 @@ class InfinityConnectionPool:
                 )
                 if attempt == MAX_RETRIES - 1:
                     raise
-                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2 ** attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
+                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2**attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
             finally:
                 if inf_conn is not None and conn_pool is not None:
                     conn_pool.release_conn(inf_conn)
@@ -130,8 +130,8 @@ class InfinityConnectionPool:
                 return self.conn_pool
 
     def __del__(self):
-            if hasattr(self, "conn_pool") and self.conn_pool:
-                self.conn_pool.destroy()
+        if hasattr(self, "conn_pool") and self.conn_pool:
+            self.conn_pool.destroy()
 
 
 INFINITY_CONN = InfinityConnectionPool()

@@ -198,7 +198,7 @@ class InfinityConnectionBase(DocStoreConnection):
                     msg = f"Infinity {infinity_uri} status {res.server_status} after {MAX_RETRIES} attempts."
                     self.logger.error(msg)
                     raise Exception(msg)
-                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2 ** attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
+                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2**attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
             except Exception as e:
                 self.logger.warning(
                     "Infinity connection attempt %d/%d to %s failed: %s",
@@ -210,7 +210,7 @@ class InfinityConnectionBase(DocStoreConnection):
                 if attempt == MAX_RETRIES - 1:
                     raise
                 conn_pool = INFINITY_CONN.refresh_conn_pool()
-                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2 ** attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
+                time.sleep(min(HEALTH_CHECK_BASE_DELAY_SECONDS * (2**attempt), HEALTH_CHECK_MAX_DELAY_SECONDS))
         if self.connPool is None:
             msg = f"Infinity {infinity_uri} is unhealthy after {MAX_RETRIES} attempts."
             self.logger.error(msg)
