@@ -1109,6 +1109,7 @@ async def list_instance_models(tenant_id: str, provider_id_or_name: str, instanc
                 "verify": model_extra.get("verify", ModelVerifyStatusEnum.UNKNOWN.value),
                 "features": (["is_tools"] if model_extra.get("is_tools") else []) + (["thinking"] if model_extra.get("thinking") else []),
                 "rank": model_rank_map.get(model.model_name, 500),
+                "extra": model_extra,
             }
         )
     model_list.sort(key=lambda x: (-x["rank"], x["name"]))
