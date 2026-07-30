@@ -1,5 +1,4 @@
 import { useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
 
 import {
   Sheet,
@@ -7,28 +6,28 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { GenerateStatus } from '@/pages/dataset/dataset/generate-button/constants';
-import { ITraceInfo } from '@/pages/dataset/dataset/generate-button/hook';
-import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
+import { GenerateStatus } from '@/constants/knowledge';
+import { ITraceInfo, useGenerateStatus } from '@/hooks/use-dataset-generate';
 
-import { ProgressLogPanel } from '../progress-log-panel';
+import { ProgressLogPanel } from './progress-log-panel';
 
-type WikiUpdateSheetProps = {
+type UpdateLogSheetProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   data?: ITraceInfo;
+  title: string;
 };
 
-export function WikiUpdateSheet({
+export function UpdateLogSheet({
   open,
   onOpenChange,
   data,
-}: WikiUpdateSheetProps) {
-  const { t } = useTranslation();
+  title,
+}: UpdateLogSheetProps) {
   const { status } = useGenerateStatus(data);
 
   useEffect(() => {
-    if (status === GenerateStatus.completed) {
+    if (status === GenerateStatus.Completed) {
       onOpenChange(false);
     }
   }, [status, onOpenChange]);
@@ -37,11 +36,7 @@ export function WikiUpdateSheet({
     <Sheet open={open} onOpenChange={onOpenChange} modal={false}>
       <SheetContent className="flex flex-col">
         <SheetHeader>
-          <SheetTitle>
-            {t('knowledgeDetails.updateSheetTitle', {
-              defaultValue: 'Update Wiki',
-            })}
-          </SheetTitle>
+          <SheetTitle>{title}</SheetTitle>
         </SheetHeader>
         <div className="flex-1 min-h-0 flex flex-col pt-4">
           <ProgressLogPanel

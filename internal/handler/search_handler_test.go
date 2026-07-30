@@ -94,7 +94,7 @@ func TestSearchHandlerUpdateRejectsInvalidSearchID(t *testing.T) {
 	if resp["code"] != float64(common.CodeAuthenticationError) {
 		t.Fatalf("expected code 109, got %v", resp["code"])
 	}
-	if !strings.Contains(resp["message"].(string), "No authorization") {
-		t.Fatalf("expected 'No authorization' in message, got %v", resp["message"])
+	if !strings.Contains(resp["message"].(string), "no authorization") {
+		t.Fatalf("expected 'no authorization' in message, got %v", resp["message"])
 	}
 }
