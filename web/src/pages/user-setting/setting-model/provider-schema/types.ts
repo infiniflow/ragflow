@@ -86,6 +86,12 @@ export interface FieldConfig {
   /** Default value */
   defaultValue?: any;
   /**
+   * HTML `autocomplete` attribute forwarded to the underlying `<input>`.
+   * Use `'new-password'` to suppress browser autofill (Chrome ignores
+   * `'off'` on forms containing a password field).
+   */
+  autoComplete?: string;
+  /**
    * Validation rules.
    * `message` is treated as an i18n key by the ProviderModal and translated
    * via `t()` at field-build time. In `Number` fields, `min` / `max` bound
