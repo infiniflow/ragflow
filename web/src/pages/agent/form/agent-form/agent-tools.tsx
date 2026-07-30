@@ -20,7 +20,7 @@ import { Operator } from '../../constant';
 import { AgentInstanceContext } from '../../context';
 import { useFindMcpById } from '../../hooks/use-find-mcp-by-id';
 import { INextOperatorForm } from '../../interface';
-import OperatorIcon from '../../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import useGraphStore from '../../store';
 import { filterDownstreamAgentNodeIds } from '../../utils/filter-downstream-nodes';
 import { ToolPopover } from './tool-popover';

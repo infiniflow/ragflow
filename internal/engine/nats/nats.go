@@ -37,6 +37,11 @@ type NatsEngine struct {
 	jetStream jetstream.JetStream
 	stream    jetstream.Stream
 	consumer  jetstream.Consumer
+
+	// dataset-level compile consumer (§11) state.
+	knowledgeCompileStream   jetstream.Stream
+	knowledgeCompileConsumer jetstream.Consumer
+	kv                       jetstream.KeyValue
 }
 
 func NewNatsEngine(host string, port int) *NatsEngine {

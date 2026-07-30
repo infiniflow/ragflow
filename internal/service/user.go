@@ -23,7 +23,6 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"hash"
 	"ragflow/internal/common"
@@ -34,6 +33,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/crypto/scrypt"
@@ -392,6 +393,7 @@ func (s *UserService) Login(ctx context.Context, req *LoginRequest) (*entity.Use
 func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) (*entity.User, common.ErrorCode, error) {
 	user, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Email)
 	if err != nil {
+		common.Error("user not found by email", err)
 		return nil, common.CodeAuthenticationError, fmt.Errorf("email: %s is not registered", req.Email)
 	}
 

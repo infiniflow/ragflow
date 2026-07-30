@@ -1701,12 +1701,6 @@
                     "is_tools": false
                 },
                 {
-                    "llm_name": "gte-rerank",
-                    "tags": "RE-RANK,4k",
-                    "max_tokens": 4000,
-                    "model_type": "rerank"
-                },
-                {
                     "llm_name": "qwen3-asr-flash",
                     "tags": "SPEECH2TEXT,8k",
                     "max_tokens": 8000,

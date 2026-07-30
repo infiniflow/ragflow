@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/common"
 	taskpkg "ragflow/internal/ingestion/task"
 	documentpkg "ragflow/internal/service/document"
+	"ragflow/internal/utility"
 )
 
 // docStateSvc is the subset of *service.DocumentService needed to finalize a
@@ -65,10 +66,14 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 	}
 }
 
-// mergeDocMetadata reads existing metadata, fills in keys not already present
-// (existing keys are preserved, not overwritten), and writes the merged map back.
-// A read failure aborts the merge: SetDocumentMetadata is a full overwrite, so
-// writing with an empty baseline would destroy existing keys.
+// mergeDocMetadata reads existing metadata, unions it with the freshly
+// aggregated doc metadata (list values merged + de-duplicated, scalars from the
+// stored map winning — matching Python task_executor.py:572
+// update_metadata_to(metadata, existing_meta)), then splits combined values
+// before writing the merged map back (Python doc_metadata_service.py:468
+// _split_combined_values). A read failure aborts the merge: SetDocumentMetadata
+// is a full overwrite, so writing with an empty baseline would destroy existing
+// keys.
 func mergeDocMetadata(ctx context.Context, svc docStateSvc, docID string, metadata map[string]any) error {
 	existing, err := svc.GetDocumentMetadataByID(ctx, docID)
 	if err != nil {
@@ -77,10 +82,7 @@ func mergeDocMetadata(ctx context.Context, svc docStateSvc, docID string, metada
 	if existing == nil {
 		existing = map[string]any{}
 	}
-	for k, v := range metadata {
-		if _, exists := existing[k]; !exists {
-			existing[k] = v
-		}
-	}
-	return svc.SetDocumentMetadata(ctx, docID, existing)
+	merged := utility.UpdateMetadataTo(metadata, existing)
+	merged = common.SplitCombinedMetadataValues(merged)
+	return svc.SetDocumentMetadata(ctx, docID, merged)
 }

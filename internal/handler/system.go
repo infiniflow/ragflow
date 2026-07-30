@@ -144,7 +144,7 @@ func (h *SystemHandler) GetVersion(c *gin.Context) {
 // table carried (e.g. "peewee", "pdfminer") were inert for the Go
 // side and are no longer returned.
 func (h *SystemHandler) GetLogLevel(c *gin.Context) {
-	common.SuccessWithData(c, gin.H{"level": common.GetLevel()}, "success")
+	common.SuccessWithData(c, gin.H{"level": common.GetLogLevel()}, "success")
 }
 
 // SetLogLevelRequest set log level request. PkgName is accepted for
@@ -172,13 +172,13 @@ func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 		return
 	}
 
-	if err := common.SetLevel(req.Level); err != nil {
+	if err := common.SetLogLevel(req.Level); err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, "Invalid log level: "+req.Level)
 		return
 	}
 
 	if config := server.GetConfig(); config != nil {
-		config.Log.Level = common.GetLevel()
+		config.Log.Level = common.GetLogLevel()
 	}
 
 	common.SuccessWithData(c, gin.H{"level": req.Level}, "SUCCESS")
