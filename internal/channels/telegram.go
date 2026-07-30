@@ -63,6 +63,19 @@ type telegramAPIResponse struct {
 	Description string          `json:"description"`
 }
 
+type telegramTransportError struct {
+	method string
+	err    error
+}
+
+func (e *telegramTransportError) Error() string {
+	return fmt.Sprintf("Telegram API %s transport request failed", e.method)
+}
+
+func (e *telegramTransportError) Unwrap() error {
+	return e.err
+}
+
 type telegramUpdate struct {
 	UpdateID          int64            `json:"update_id"`
 	Message           *telegramMessage `json:"message"`
@@ -277,7 +290,13 @@ func (c *telegramChannel) getUpdates(ctx context.Context) ([]telegramUpdate, err
 // Telegram -> AI
 func (c *telegramChannel) handleUpdate(ctx context.Context, update telegramUpdate) {
 	msg := update.effectiveMessage()
-	if msg == nil || msg.From == nil || msg.From.IsBot {
+	if msg == nil {
+		return
+	}
+	if msg.From == nil && msg != update.ChannelPost && msg != update.EditedChannelPost {
+		return
+	}
+	if msg.From != nil && msg.From.IsBot {
 		return
 	}
 
@@ -285,13 +304,17 @@ func (c *telegramChannel) handleUpdate(ctx context.Context, update telegramUpdat
 	if text == "" {
 		text = msg.Caption
 	}
+	senderID := strconv.FormatInt(msg.Chat.ID, 10)
+	if msg.From != nil {
+		senderID = strconv.FormatInt(msg.From.ID, 10)
+	}
 	incoming := core.IncomingMessage{
 		Channel:   c.ChannelID(),
 		AccountID: c.account.AccountID,
 		ChatID:    strconv.FormatInt(msg.Chat.ID, 10),
 		ChatType:  telegramChatType(msg.Chat.Type),
 		MessageID: strconv.FormatInt(msg.MessageID, 10),
-		SenderID:  strconv.FormatInt(msg.From.ID, 10),
+		SenderID:  senderID,
 		Text:      text,
 		Raw:       update.Raw,
 	}
@@ -351,7 +374,7 @@ func (c *telegramChannel) callAPI(ctx context.Context, method string, params map
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return err
+		return &telegramTransportError{method: method, err: err}
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))

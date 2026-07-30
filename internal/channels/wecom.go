@@ -45,6 +45,7 @@ const (
 	weComHTTPTimeout        = 30 * time.Second
 	weComWSHandshakeTimeout = 10 * time.Second
 	weComSubscribeTimeout   = 10 * time.Second
+	weComWSWriteTimeout     = 10 * time.Second
 	weComReconnectDelay     = 3 * time.Second
 	weComHeartbeatInterval  = 25 * time.Second
 	weComTokenSafetyMargin  = 60 * time.Second
@@ -383,6 +384,9 @@ func (c *wecomChannel) runWebSocketOnce(ctx context.Context) error {
 	go c.runWebSocketHeartbeat(ctx, conn, heartbeatDone)
 
 	for ctx.Err() == nil {
+		if err := conn.SetReadDeadline(time.Now().Add(2 * weComHeartbeatInterval)); err != nil {
+			return err
+		}
 		_, payload, err := conn.ReadMessage()
 		if err != nil {
 			return err
@@ -528,6 +532,9 @@ func (c *wecomChannel) sendWebSocketMessage(msg core.OutgoingMessage) error {
 func (c *wecomChannel) writeWebSocketJSON(conn *websocket.Conn, payload any) error {
 	c.wsWriteMu.Lock()
 	defer c.wsWriteMu.Unlock()
+	if err := conn.SetWriteDeadline(time.Now().Add(weComWSWriteTimeout)); err != nil {
+		return err
+	}
 	return conn.WriteJSON(payload)
 }
 

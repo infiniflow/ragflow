@@ -19,14 +19,22 @@ package channels
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
 
 	"ragflow/internal/channels/core"
 )
+
+type telegramRoundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f telegramRoundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
 
 func TestNewTelegramChannelFromConfigRequiresToken(t *testing.T) {
 	if _, err := newTelegramChannelFromConfig("account-1", map[string]any{}); err == nil {
@@ -88,6 +96,59 @@ func TestTelegramHandleUpdateMapsCaptionAndIgnoresBots(t *testing.T) {
 	case msg := <-messages:
 		t.Fatalf("bot message was dispatched: %+v", msg)
 	case <-time.After(20 * time.Millisecond):
+	}
+}
+
+func TestTelegramHandleUpdateMapsChannelPostWithoutSender(t *testing.T) {
+	ch := newTelegramChannel(telegramAccount{AccountID: "account-1", Token: "token"})
+	messages := make(chan core.IncomingMessage, 1)
+	ch.SetMessageHandler(func(_ context.Context, msg core.IncomingMessage) error {
+		messages <- msg
+		return nil
+	})
+
+	ch.handleUpdate(context.Background(), telegramUpdate{
+		ChannelPost: &telegramMessage{
+			MessageID: 42,
+			Chat:      telegramChat{ID: -100123, Type: "channel"},
+			Text:      "channel post",
+		},
+	})
+
+	select {
+	case msg := <-messages:
+		if msg.ChatID != "-100123" || msg.ChatType != "channel" || msg.MessageID != "42" || msg.SenderID != "-100123" || msg.Text != "channel post" {
+			t.Fatalf("unexpected incoming message: %+v", msg)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for channel post")
+	}
+}
+
+func TestTelegramCallAPISanitizesTransportError(t *testing.T) {
+	const token = "sensitive-bot-token"
+	transportErr := &url.Error{
+		Op:  "Post",
+		URL: "https://api.telegram.org/bot" + token + "/sendMessage",
+		Err: errors.New("connection refused"),
+	}
+	ch := newTelegramChannel(telegramAccount{AccountID: "account-1", Token: token})
+	ch.client = &http.Client{Transport: telegramRoundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, transportErr
+	})}
+
+	err := ch.callAPI(context.Background(), "sendMessage", map[string]any{}, nil)
+	if err == nil {
+		t.Fatal("callAPI() error = nil")
+	}
+	if strings.Contains(err.Error(), token) {
+		t.Fatalf("callAPI() exposed token in error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "sendMessage") {
+		t.Fatalf("callAPI() error = %q, want method context", err)
+	}
+	if !errors.Is(err, transportErr) {
+		t.Fatalf("callAPI() error does not unwrap transport error: %v", err)
 	}
 }
 
