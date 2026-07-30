@@ -505,8 +505,10 @@ OPTIONS:
     --cpp, -c       Build only C++ static library
     --cpp-test      Build C++ test executable (requires --cpp first)
     --go, -g        Build only Go server (requires C++ library to be built)
-    --test, -t      Run Go unit tests (no build tag; sets up CGO env for
-                    office_oxide). Extra args are forwarded to `go test`, e.g.
+    --test, -t      Run Go unit tests (no build tag). Sets up the CGO env and
+                    native static libs (office_oxide/pdfium/pdf_oxide) needed to
+                    build (same contract as the Go tier table in AGENTS.md).
+                    Extra args are forwarded to `go test`, e.g.
                     `$0 --test -run TestFoo ./internal/admin/...`
     --test-integration   Run Go tests tagged 'integration' (need real services,
                     e.g. MySQL/MinIO/ES/Infinity/LLM). e.g.

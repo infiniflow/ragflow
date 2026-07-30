@@ -56,7 +56,7 @@ Go tests are classified by build tag so the default `go test ./...` run stays se
 
 | Tier | Build tag | Runs by default? | Needs |
 |---|---|---|---|
-| Unit | (none) | Yes (`go test ./...`) | Nothing — use in-memory SQLite, miniredis, or `httptest` stubs. |
+| Unit | (none) | Yes (`go test ./...`) | Native CGO static libs (wired by `build.sh --test`); no external services — uses in-memory SQLite, miniredis, or `httptest` stubs. |
 | Integration | `integration` | No (`-tags integration`) | A real service: MySQL/MinIO/Elasticsearch/Infinity/LLM. Single component, reasonably fast. |
 | E2E | `e2e` | No (`-tags e2e`) | Full cross-component pipeline (ingest → index → retrieve) against real services; heavy/slow. |
 | Manual | `manual` | No (`-tags manual`) | Very slow/expensive (deepdoc render/parity/snapshot/bench). **Local opt-in ONLY — never run in CI.** |
@@ -73,7 +73,7 @@ bash build.sh --test-all                  # integration + e2e (never includes ma
 Rules:
 - New tests that touch a real external service MUST carry `integration`/`e2e`/`manual` — do not rely on `t.Skip` + env vars to soft-isolate them in the default unit run. Keep an env guard as a harmless secondary safety net if desired.
 - `manual` is never wired into CI or any automated pipeline.
-- `unit` (no tag) must stay dependency-free so `go test ./...` passes without external services.
+- `unit` (no tag) must stay free of external-service dependencies so `go test ./...` passes without MySQL/MinIO/ES/Infinity/LLM. The native CGO static libraries (`office_oxide`/`pdfium`/`pdf_oxide`) are still required at build time and are wired automatically by `build.sh --test`; that is expected, not an external service.
 
 ## Working Rules
 - Before editing, inspect the nearest code path that actually owns the behavior.

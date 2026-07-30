@@ -26,8 +26,6 @@ import (
 	"ragflow/internal/agent/runtime"
 	// Blank-import the parent component package so its init registers the
 	// File/Parser/TokenChunker components this test's template references.
-	// (Previously pulled in transitively by template_integration_test.go, which
-	// is now gated behind the `integration` build tag.)
 	_ "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
 	_ "ragflow/internal/ingestion/component/knowledge_compiler"
