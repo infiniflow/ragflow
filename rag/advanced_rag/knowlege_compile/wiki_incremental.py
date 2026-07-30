@@ -27,7 +27,12 @@ from common.misc_utils import thread_pool_exec
 from rag.nlp import search
 
 
-# ----- constants -----
+# ----- REFINE concurrency control -----
+
+WIKI_REFINE_MAX_CONCURRENT = 12  # max LLM calls at once for page REFINE
+
+
+# ----- constants ----
 
 # compile_kwd values
 WIKI_PAGE_COMPILE_KWD = "wiki_page"
@@ -100,9 +105,6 @@ async def _search_existing_pages(
     select_fields: list[str],
 ) -> dict[str, dict]:
     """Load all wiki_page rows in this KB."""
-    from rag.nlp import search
-    from common.misc_utils import thread_pool_exec
-
     index = search.index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
         return {}
@@ -1019,15 +1021,18 @@ async def wiki_compile_incremental(
         affected_doc_ids = affected_doc_ids | (deleted_doc_ids or set())
 
         affected_names: set[str] = set()
-        for did in affected_doc_ids:
-            dps = await _wiki_load_doc_page_source(tenant_id, kb_id, did)
-            if dps:
-                # Find the entities from this doc
-                dps_ents = dps.get("entity_names", [])
-                for name in dps_ents:
-                    if name in all_names:
-                        affected_names.add(name)
-        if not affected_names and deleted_doc_ids:
+        # Parallel doc_page_source loading — avoid serial ES queries
+        if affected_doc_ids:
+            dps_tasks = [_wiki_load_doc_page_source(tenant_id, kb_id, did) for did in affected_doc_ids]
+            dps_results = await asyncio.gather(*dps_tasks)
+            for dps in dps_results:
+                if dps:
+                    for name in dps.get("entity_names", []):
+                        if name in all_names:
+                            affected_names.add(name)
+        # Fallback: if doc_page_source is empty (cancelled prev run) or all_names
+        # changed significantly, do full rebuild from MAP.
+        if not affected_names:
             affected_names = all_names
     else:
         affected_names = all_names
@@ -1109,25 +1114,44 @@ async def _wiki_mode_a_run(
             except Exception:
                 pass
 
-    # Group deltas by concept page
-    # For Mode A, each concept maps to exactly one page.
-    # We need to find which concepts are affected and their pages.
+    # Group deltas by concept page.
+    # Build reverse index: entity_name → page_id to avoid O(N*M) loop.
+    entity_to_page: dict[str, str] = {}
+    for pid, page in existing_pages.items():
+        names = page.get("entity_names_kwd", [])
+        if isinstance(names, str):
+            names = json.loads(names) if names else []
+        for n in names:
+            entity_to_page[n] = pid  # uses last match by default
+
+    # Populate claims and source_chunks per page from deltas
+    # Build lookup from delta's entity_name for fast per-page access
+    page_to_claims: dict[str, list[dict]] = {}
+    page_to_chunks: dict[str, list[dict]] = {}
+    for d in deltas:
+        name = d.get("entity_name", "")
+        if not name:
+            continue
+        pid = entity_to_page.get(name) or _wiki_derive_page_id(name)
+
+        page_to_claims.setdefault(pid, []).extend(d.get("claims", []))
+        # Collect source chunks from claim source_chunk_ids
+        for claim in d.get("claims", []):
+            cid = claim.get("source_chunk_id")
+            if cid:
+                page_to_chunks.setdefault(pid, []).append(
+                    {
+                        "id": cid,
+                        "text": claim.get("statement", claim.get("text", "")),
+                    }
+                )
+
     concept_deltas: dict[str, dict] = {}
     for d in deltas:
         name = d.get("entity_name", "")
         if not name:
             continue
-        # Check if there's an existing page for this concept
-        page_id = None
-        for pid, page in existing_pages.items():
-            names = page.get("entity_names_kwd", [])
-            if isinstance(names, str):
-                names = json.loads(names) if names else []
-            if name in names:
-                page_id = pid
-                break
-        if not page_id:
-            page_id = _wiki_derive_page_id(name)
+        page_id = entity_to_page.get(name) or _wiki_derive_page_id(name)
 
         concept_deltas.setdefault(
             page_id,
@@ -1138,11 +1162,14 @@ async def _wiki_mode_a_run(
                 "additions": [],
                 "retractions": [],
                 "claims": [],
+                "source_chunks": [],
             },
         )
         entry = concept_deltas[page_id]
         entry["additions"].extend(d.get("additions", []))
         entry["retractions"].extend(d.get("retractions", []))
+        entry["claims"].extend(page_to_claims.get(page_id, []))
+        entry["source_chunks"] = page_to_chunks.get(page_id, [])
 
         if d.get("action") == "delete":
             entry["action"] = "delete"
@@ -1152,39 +1179,44 @@ async def _wiki_mode_a_run(
     # Load available pages for wikilinks
     all_page_ids = list(existing_pages.keys())
 
-    total = len(concept_deltas)
-    done = 0
+    # Parallel page REFINE — doc_page_source updates deferred to avoid races
+    doc_updates: dict[str, list[str]] = {}  # doc_id → [page_ids]
 
-    # Determine refine mode for each page
-    for pid, entry in concept_deltas.items():
-        try:
-            existing = entry["existing_page"]
-            next_version = (existing.get("page_version_int", 0) if existing else 0) + 1
-            new_doc_ids = {c.get("source_doc_id") for c in entry["additions"] if c.get("source_doc_id")}
+    sem = asyncio.Semaphore(WIKI_REFINE_MAX_CONCURRENT)
 
-            if entry.get("action") == "delete":
-                refine_mode = "delete"
-            elif existing and _wiki_should_re_synthesize(existing, new_doc_ids, next_version):
-                refine_mode = "re-synthesize"
-            elif existing:
-                refine_mode = "modify"
-            else:
-                refine_mode = "generate"
+    async def _refine_one(pid: str, entry: dict) -> None:
+        async with sem:
+            try:
+                existing = entry["existing_page"]
+                if entry.get("action") == "delete":
+                    await _wiki_mode_a_refine(
+                        mode="delete",
+                        page_id=pid,
+                        page_title=entry["page_title"],
+                        existing_page=existing,
+                        additions=None,
+                        retractions=None,
+                        source_chunks=[],
+                        claims=[],
+                        available_pages=all_page_ids,
+                        contextual_hints="",
+                        chat_mdl=chat_mdl,
+                        embd_mdl=embd_mdl,
+                        tenant_id=tenant_id,
+                        kb_id=kb_id,
+                        page_version=existing.get("page_version_int", 0) if existing else 0,
+                    )
+                    summary["pages_deleted"] += 1
+                    return
 
-            _progress(f"({done + 1}/{total}) {refine_mode} {pid}")
-
-            if refine_mode in ("generate", "modify", "re-synthesize"):
-                # Load source chunks for this concept
-                source_chunks = []
-                all_claims = []
-                for d in deltas:
-                    src_chunks = d.get("additions", [])
-                    for claim in src_chunks:
-                        chunk_id = claim.get("source_chunk_id")
-                        if chunk_id:
-                            source_chunks.append({"id": chunk_id, "text": claim.get("statement", claim.get("text", ""))})
-                    for claim in d.get("claims", []) if d.get("has_delta") else []:
-                        all_claims.append(claim)
+                next_version = (existing.get("page_version_int", 0) if existing else 0) + 1
+                new_doc_ids = {c.get("source_doc_id") for c in entry["additions"] if c.get("source_doc_id")}
+                if existing and _wiki_should_re_synthesize(existing, new_doc_ids, next_version):
+                    refine_mode = "re-synthesize"
+                elif existing:
+                    refine_mode = "modify"
+                else:
+                    refine_mode = "generate"
 
                 result = await _wiki_mode_a_refine(
                     mode=refine_mode,
@@ -1193,8 +1225,8 @@ async def _wiki_mode_a_run(
                     existing_page=existing,
                     additions=entry["additions"],
                     retractions=entry["retractions"],
-                    source_chunks=source_chunks,
-                    claims=all_claims or entry["claims"],
+                    source_chunks=entry["source_chunks"],
+                    claims=entry["claims"],
                     available_pages=all_page_ids,
                     contextual_hints="",
                     chat_mdl=chat_mdl,
@@ -1203,34 +1235,38 @@ async def _wiki_mode_a_run(
                     kb_id=kb_id,
                     page_version=existing.get("page_version_int", 0) if existing else 0,
                 )
-
                 if refine_mode == "generate":
                     summary["pages_created"] += 1
-                elif refine_mode == "delete":
-                    summary["pages_deleted"] += 1
                 else:
                     summary["pages_modified"] += 1
 
-                # Update doc_page_source (only for Mode A: concept directly tracks page_id)
+                # Collect doc_page_source updates (deferred — no await calls)
                 if result:
-                    affected_doc_ids = set(c.get("source_doc_id") for c in entry["additions"] if c.get("source_doc_id"))
-                    for did in affected_doc_ids:
-                        existing_dps = await _wiki_load_doc_page_source(tenant_id, kb_id, did) or {}
-                        existing_pids = existing_dps.get("page_ids", [])
-                        if pid not in existing_pids:
-                            existing_pids.append(pid)
-                        await _wiki_update_doc_page_source(
-                            tenant_id,
-                            kb_id,
-                            did,
-                            existing_pids,
-                        )
+                    for c in entry["additions"]:
+                        did = c.get("source_doc_id")
+                        if did:
+                            doc_updates.setdefault(did, []).append(pid)
 
-            done += 1
+            except Exception:
+                logging.exception("wiki A: REFINE failed for %s", pid)
+                summary["errors"].append(f"REFINE_FAILED:{pid}")
+
+    tasks = [_refine_one(pid, entry) for pid, entry in concept_deltas.items()]
+    if tasks:
+        _progress(f"REFINE A: {len(tasks)} pages (max {WIKI_REFINE_MAX_CONCURRENT} concurrent) ...")
+        await asyncio.gather(*tasks)
+
+    # Apply doc_page_source updates serially (no race)
+    for did, pids in doc_updates.items():
+        try:
+            existing_dps = (await _wiki_load_doc_page_source(tenant_id, kb_id, did)) or {}
+            existing_pids = existing_dps.get("page_ids", [])
+            for pid in pids:
+                if pid not in existing_pids:
+                    existing_pids.append(pid)
+            await _wiki_update_doc_page_source(tenant_id, kb_id, did, existing_pids)
         except Exception:
-            logging.exception("wiki A: REFINE failed for %s", pid)
-            summary["errors"].append(f"REFINE_FAILED:{pid}")
-            done += 1
+            logging.exception("wiki A: doc_page_source update failed for doc %s", did)
 
     _progress(f"done: +{summary['pages_created']} ~{summary['pages_modified']} -{summary['pages_deleted']}")
     return summary
@@ -1290,113 +1326,123 @@ async def _wiki_mode_b_run(
     # Load available pages for wikilinks
     all_page_ids = list(existing_pages.keys())
 
-    total = len(assignments)
-    done = 0
+    # Collect source chunks per assignment for the REFINE prompt
+    page_source_chunks: dict[str, list[dict]] = {}
+    for pid, entities in assignments.items():
+        page_key = pid[5:] if pid.startswith("_new_") else pid
+        chunks: list[dict] = []
+        for ent in entities:
+            for c in ent.get("claims", []):
+                cid = c.get("source_chunk_id")
+                if cid:
+                    chunks.append({"id": cid, "text": c.get("statement", c.get("text", ""))})
+        if chunks:
+            page_source_chunks[page_key] = chunks
 
-    for page_id, entities in assignments.items():
-        try:
-            is_new = page_id.startswith("_new_")
-            page_key = page_id[5:] if is_new else page_id
-            existing = existing_pages.get(page_key) if not is_new else None
+    doc_updates: dict[str, list[str]] = {}  # doc_id → [page_ids]
+    sem = asyncio.Semaphore(WIKI_REFINE_MAX_CONCURRENT)
 
-            # Build claims from entities
-            additions = []
-            retractions = []
-            action = "create" if is_new else "update"
+    async def _refine_one(page_id: str, entities: list) -> None:
+        async with sem:
+            try:
+                is_new = page_id.startswith("_new_")
+                page_key = page_id[5:] if is_new else page_id
+                existing = existing_pages.get(page_key) if not is_new else None
 
-            for entity in entities:
-                additions.extend(entity.get("claims", []))
-                if entity.get("action") == "delete":
-                    action = "delete"
+                additions = []
+                action = "create" if is_new else "update"
+                for ent in entities:
+                    additions.extend(ent.get("claims", []))
+                    if ent.get("action") == "delete":
+                        action = "delete"
 
-            _progress(f"({done + 1}/{total}) {action} {page_key}")
+                if action == "delete":
+                    await _wiki_mode_a_refine(
+                        mode="delete",
+                        page_id=page_key,
+                        page_title=existing.get("title_kwd", page_key) if existing else page_key,
+                        existing_page=existing,
+                        additions=None,
+                        retractions=None,
+                        source_chunks=[],
+                        claims=[],
+                        available_pages=all_page_ids,
+                        contextual_hints="",
+                        chat_mdl=chat_mdl,
+                        embd_mdl=embd_mdl,
+                        tenant_id=tenant_id,
+                        kb_id=kb_id,
+                        page_version=existing.get("page_version_int", 0) if existing else 0,
+                    )
+                    summary["pages_deleted"] += 1
+                    return
 
-            if action == "delete":
-                await _wiki_mode_a_refine(
-                    mode="delete",
+                refine_mode = "generate" if is_new else "modify"
+                if existing and _wiki_should_re_synthesize(
+                    existing,
+                    {c.get("source_doc_id") for c in additions if c.get("source_doc_id")},
+                    existing.get("page_version_int", 0) + 1,
+                ):
+                    refine_mode = "re-synthesize"
+
+                result = await _wiki_mode_a_refine(
+                    mode=refine_mode,
                     page_id=page_key,
-                    page_title=existing.get("title_kwd", page_key) if existing else page_key,
+                    page_title=existing.get("title_kwd", page_key) if existing else entities[0].get("entity_name", page_key),
                     existing_page=existing,
-                    additions=None,
-                    retractions=None,
-                    source_chunks=[],
-                    claims=[],
+                    additions=additions,
+                    retractions=[],
+                    source_chunks=page_source_chunks.get(page_key, []),
+                    claims=additions,
                     available_pages=all_page_ids,
-                    contextual_hints="",
+                    contextual_hints=_wiki_build_contextual_hints(page_key, existing, {}),
                     chat_mdl=chat_mdl,
                     embd_mdl=embd_mdl,
                     tenant_id=tenant_id,
                     kb_id=kb_id,
                     page_version=existing.get("page_version_int", 0) if existing else 0,
                 )
-                summary["pages_deleted"] += 1
-                done += 1
-                continue
+                if is_new:
+                    summary["pages_created"] += 1
+                else:
+                    summary["pages_modified"] += 1
 
-            # Determine refine mode
-            if is_new:
-                refine_mode = "generate"
-            elif existing and _wiki_should_re_synthesize(
-                existing,
-                {c.get("source_doc_id") for c in additions if c.get("source_doc_id")},
-                existing.get("page_version_int", 0) + 1,
-            ):
-                refine_mode = "re-synthesize"
-            else:
-                refine_mode = "modify"
+                if result:
+                    await _wiki_update_plan_group(
+                        tenant_id,
+                        kb_id,
+                        page_key,
+                        entity_names=[e.get("entity_name", "") for e in entities],
+                        page_version=result.get("page_version_int", 1),
+                    )
 
-            result = await _wiki_mode_a_refine(
-                mode=refine_mode,
-                page_id=page_key,
-                page_title=existing.get("title_kwd", page_key) if existing else entities[0].get("entity_name", page_key),
-                existing_page=existing,
-                additions=additions,
-                retractions=retractions,
-                source_chunks=[],
-                claims=additions,
-                available_pages=all_page_ids,
-                contextual_hints=_wiki_build_contextual_hints(page_key, existing, {}),
-                chat_mdl=chat_mdl,
-                embd_mdl=embd_mdl,
-                tenant_id=tenant_id,
-                kb_id=kb_id,
-                page_version=existing.get("page_version_int", 0) if existing else 0,
-            )
+                    # Collect doc_page_source updates (deferred)
+                    for ent in entities:
+                        for c in ent.get("claims", []):
+                            did = c.get("source_doc_id")
+                            if did:
+                                doc_updates.setdefault(did, []).append(page_key)
 
-            if is_new:
-                summary["pages_created"] += 1
-            else:
-                summary["pages_modified"] += 1
+            except Exception:
+                logging.exception("wiki B: REFINE failed for %s", page_id)
+                summary["errors"].append(f"REFINE_FAILED:{page_id}")
 
-            # Update plan_group (Mode B)
-            if result:
-                await _wiki_update_plan_group(
-                    tenant_id,
-                    kb_id,
-                    page_key,
-                    entity_names=[e.get("entity_name", "") for e in entities],
-                    page_version=result.get("page_version_int", 1),
-                )
+    tasks = [_refine_one(pid, ents) for pid, ents in assignments.items()]
+    if tasks:
+        _progress(f"REFINE B: {len(tasks)} pages (max {WIKI_REFINE_MAX_CONCURRENT} concurrent) ...")
+        await asyncio.gather(*tasks)
 
-            # Update doc_page_source
-            affected_doc_ids = set(c.get("source_doc_id") for c in additions if c.get("source_doc_id"))
-            for did in affected_doc_ids:
-                existing_dps = await _wiki_load_doc_page_source(tenant_id, kb_id, did) or {}
-                existing_pids = existing_dps.get("page_ids", [])
-                if page_key not in existing_pids:
-                    existing_pids.append(page_key)
-                await _wiki_update_doc_page_source(
-                    tenant_id,
-                    kb_id,
-                    did,
-                    existing_pids,
-                )
-
-            done += 1
+    # Apply doc_page_source updates serially (no race)
+    for did, pids in doc_updates.items():
+        try:
+            existing_dps = (await _wiki_load_doc_page_source(tenant_id, kb_id, did)) or {}
+            existing_pids = existing_dps.get("page_ids", [])
+            for pid in pids:
+                if pid not in existing_pids:
+                    existing_pids.append(pid)
+            await _wiki_update_doc_page_source(tenant_id, kb_id, did, existing_pids)
         except Exception:
-            logging.exception("wiki B: REFINE failed for %s", page_id)
-            summary["errors"].append(f"REFINE_FAILED:{page_id}")
-            done += 1
+            logging.exception("wiki B: doc_page_source update failed for doc %s", did)
 
     _progress(f"done: +{summary['pages_created']} ~{summary['pages_modified']} -{summary['pages_deleted']}")
     return summary
@@ -1482,14 +1528,16 @@ async def wiki_handle_document_deleted(
     if not affected_page_ids:
         return summary
 
+    # Load all existing pages once (not per-page)
+    all_existing_pages = await _search_existing_pages(
+        tenant_id,
+        kb_id,
+        ["slug_kwd", "title_kwd", "md_with_weight", "claims", "source_doc_ids", "page_version_int", "entity_names_kwd"],
+    )
+
     for page_id in affected_page_ids:
         try:
-            existing_pages = await _search_existing_pages(
-                tenant_id,
-                kb_id,
-                ["slug_kwd", "title_kwd", "md_with_weight", "claims", "source_doc_ids", "page_version_int", "entity_names_kwd"],
-            )
-            existing = existing_pages.get(page_id)
+            existing = all_existing_pages.get(page_id)
 
             if not existing:
                 continue
@@ -1540,7 +1588,7 @@ async def wiki_handle_document_deleted(
                     retractions=retractions,
                     source_chunks=[],
                     claims=retained,
-                    available_pages=list(existing_pages.keys()),
+                    available_pages=list(all_existing_pages.keys()),
                     contextual_hints=_wiki_build_contextual_hints(page_id, existing, {}),
                     chat_mdl=chat_mdl,
                     embd_mdl=embd_mdl,
