@@ -1,4 +1,4 @@
-import { GenerateType } from '@/pages/dataset/dataset/generate-button/constants';
+import { GenerateType } from '@/constants/knowledge';
 
 export enum ViewMode {
   LlmWiki = 'llm-wiki',

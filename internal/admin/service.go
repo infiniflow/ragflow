@@ -143,7 +143,7 @@ func generateRandomHex(n int) string {
 
 // ListUsers list all users
 func (s *Service) ListUsers(ctx context.Context, pageIndex, pageSize int, name, status, sort, orderBy string) ([]map[string]interface{}, error) {
-	users, _, err := s.userDAO.List(ctx, dao.DB, pageIndex*pageSize, pageSize, name, status, sort, orderBy)
+	users, _, err := s.userDAO.List(ctx, dao.DB, (pageIndex-1)*pageSize, pageSize, name, status, sort, orderBy)
 	if err != nil {
 		return nil, err
 	}

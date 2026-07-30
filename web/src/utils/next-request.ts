@@ -125,7 +125,8 @@ request.interceptors.response.use(
       }
     }
 
-    const skipErrorNotification = (response.config as any)?.skipGlobalErrorNotification;
+    const skipErrorNotification = (response.config as any)
+      ?.skipGlobalErrorNotification;
     if (data?.code === 100 && !skipErrorNotification) {
       message.error(data?.message);
     } else if (data?.code === 401) {
