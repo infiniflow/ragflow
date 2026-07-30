@@ -1,5 +1,7 @@
 ---
 sidebar_position: 3
+title: Launch service from source
+sidebar_label: Launch service from source
 slug: /launch_ragflow_from_source
 sidebar_custom_props: {
   categoryIcon: LucideMonitorPlay

@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Embed Agent via Webpage
+sidebar_label: Embed Agent via Webpage
 slug: /embed_agent_via_webpage
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

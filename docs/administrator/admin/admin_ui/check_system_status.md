@@ -1,6 +1,7 @@
 ---
 sidebar_position: 2
-sidebar_label: "Check System Status"
+sidebar_label: Check System Status
+title: Check System Status
 ---
 
 # Check System Status

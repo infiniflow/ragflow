@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Launch RAGFlow MCP server
+sidebar_label: Launch RAGFlow MCP server
 slug: /launch_mcp_server
 sidebar_custom_props: {
   categoryIcon: LucideTvMinimalPlay

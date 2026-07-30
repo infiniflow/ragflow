@@ -1,10 +1,11 @@
 ---
 sidebar_position: 3
+title: RAGFlow MCP client examples
+sidebar_label: RAGFlow MCP client examples
 slug: /mcp_client
 sidebar_custom_props: {
   categoryIcon: LucideBookMarked
 }
-
 ---
 # RAGFlow MCP client examples
 

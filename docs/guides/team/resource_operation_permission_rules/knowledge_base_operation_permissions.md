@@ -1,9 +1,10 @@
 ---
 sidebar_position: 1
-sidebar_label: "Knowledge base operation permissions"
+sidebar_label: Knowledge base operation permissions
+title: Knowledge base operation permissions
 ---
 
-## Knowledge base operation permissions
+# Knowledge base operation permissions
 
 Knowledge base permissions are determined jointly by knowledge base-level permissions and document-level permissions. Knowledge base permissions include **Read permission**, **Write permission**, and **Manage permission**. Documents in a knowledge base can also have no permission, read permission, write permission, or manage permission.
 

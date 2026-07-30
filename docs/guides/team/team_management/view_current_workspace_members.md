@@ -1,9 +1,10 @@
 ---
 sidebar_position: 2
-sidebar_label: "View current workspace members"
+sidebar_label: View current workspace members
+title: View current workspace members
 ---
 
-## View current workspace members
+# View current workspace members
 
 The **Team members** list displays members in the current workspace. The owner is not included in the ordinary member list returned by the backend member query.
 

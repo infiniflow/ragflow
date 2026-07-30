@@ -1,5 +1,7 @@
 ---
 sidebar_position: 4
+title: Acquire RAGFlow API key
+sidebar_label: Acquire RAGFlow API key
 slug: /acquire_ragflow_api_key
 sidebar_custom_props: {
   categoryIcon: LucideKey

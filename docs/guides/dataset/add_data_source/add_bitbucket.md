@@ -1,5 +1,7 @@
 ---
 sidebar_position: 16
+title: Add Bitbucket
+sidebar_label: Add Bitbucket
 slug: /add_confluence
 sidebar_custom_props: {
   categoryIcon: SiGoogledrive

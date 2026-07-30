@@ -1,5 +1,7 @@
 ---
 sidebar_position: 3
+title: Switch document engine
+sidebar_label: Switch document engine
 slug: /switch_doc_engine
 sidebar_custom_props: {
   categoryIcon: LucideShuffle

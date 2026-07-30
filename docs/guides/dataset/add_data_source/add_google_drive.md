@@ -1,5 +1,7 @@
 ---
 sidebar_position: 3
+title: Add Google Drive
+sidebar_label: Add Google Drive
 slug: /add_google_drive
 sidebar_custom_props: {
   categoryIcon: SiGoogledrive

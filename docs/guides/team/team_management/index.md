@@ -5,6 +5,7 @@ sidebar_custom_props: {
   categoryIcon: LucideLogOut
 }
 sidebar_label: Overview
+title: Overview
 ---
 # Team management
 

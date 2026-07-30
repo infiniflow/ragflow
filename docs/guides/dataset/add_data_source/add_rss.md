@@ -1,5 +1,7 @@
 ---
 sidebar_position: 9
+title: Add RSS
+sidebar_label: Add RSS
 slug: /add_rss
 sidebar_custom_props: {
   categoryIcon: SiGoogledrive

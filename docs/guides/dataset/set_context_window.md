@@ -1,5 +1,7 @@
 ---
 sidebar_position: -8
+title: Set context window size
+sidebar_label: Set context window size
 slug: /set_context_window
 sidebar_custom_props: {
    categoryIcon: LucideListChevronsUpDown

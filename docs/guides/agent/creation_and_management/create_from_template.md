@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: Create from Template
+sidebar_label: Create from Template
 slug: /create_from_template
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

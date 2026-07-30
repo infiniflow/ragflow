@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: "What is Agent context engine?"
+sidebar_label: "What is Agent context engine?"
 slug: /what-is-agent-context-engine
 ---
 

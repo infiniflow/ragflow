@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Start AI chat
+sidebar_label: Start AI chat
 slug: /start_chat
 sidebar_custom_props: {
   categoryIcon: LucideBot

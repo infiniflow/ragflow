@@ -1,9 +1,10 @@
 ---
 sidebar_position: 7
-sidebar_label: "Model permissions"
+sidebar_label: Model permissions
+title: Model permissions
 ---
 
-## Model permissions
+# Model permissions
 
 Model permissions use provider-level and owner-level checks. The table below uses **No permission**, **Read permission**, and **Owner** columns.
 

@@ -1,6 +1,7 @@
 ---
 sidebar_position: 4
-sidebar_label: "Configure Code Execution Sandbox"
+sidebar_label: Configure Code Execution Sandbox
+title: Configure Code Execution Sandbox
 ---
 
 # Configure Code Execution Sandbox

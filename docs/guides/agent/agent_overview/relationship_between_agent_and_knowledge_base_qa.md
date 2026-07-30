@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: "Relationship Between Agent and Knowledge Base Q&A"
+sidebar_label: "Relationship Between Agent and Knowledge Base Q&A"
 slug: /relationship_between_agent_and_knowledge_base_qa
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

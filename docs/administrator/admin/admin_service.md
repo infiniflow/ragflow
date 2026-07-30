@@ -1,5 +1,7 @@
 ---
 sidebar_position: 0
+title: Admin Service
+sidebar_label: Admin Service
 slug: /admin_service
 sidebar_custom_props: {
   categoryIcon: LucideActivity

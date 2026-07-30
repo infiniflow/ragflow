@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: "Backup & migration"
+sidebar_label: "Backup & migration"
 slug: /migration
 sidebar_custom_props: {
   categoryIcon: LucideLocateFixed

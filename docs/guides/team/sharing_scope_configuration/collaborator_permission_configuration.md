@@ -1,9 +1,10 @@
 ---
 sidebar_position: 3
-sidebar_label: "Collaborator permission configuration"
+sidebar_label: Collaborator permission configuration
+title: Collaborator permission configuration
 ---
 
-## Collaborator permission configuration
+# Collaborator permission configuration
 
 In RAGFlow Enterprise, you can configure permissions separately for different collaborator objects, including **Member**, **Department**, and **Group**. Each collaborator can have an independent permission level.
 

@@ -1,9 +1,10 @@
 ---
 sidebar_position: 4
-sidebar_label: "Document-level permissions (Enterprise edition)"
+sidebar_label: Document-level permissions (Enterprise edition)
+title: Document-level permissions (Enterprise edition)
 ---
 
-## Document-level permissions (Enterprise edition)
+# Document-level permissions (Enterprise edition)
 
 Document-level permissions refine knowledge base permissions. The knowledge base owner can configure different collaborator permissions for different documents in the same knowledge base.
 

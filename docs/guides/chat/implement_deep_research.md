@@ -1,5 +1,7 @@
 ---
 sidebar_position: 3
+title: Implement deep research
+sidebar_label: Implement deep research
 slug: /implement_deep_research
 sidebar_custom_props: {
   categoryIcon: LucideScanSearch

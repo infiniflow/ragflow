@@ -1,6 +1,7 @@
 ---
 sidebar_position: 1
-sidebar_label: "Before You Begin"
+sidebar_label: Before You Begin
+title: Before You Begin
 ---
 
 # Before You Begin

@@ -1,9 +1,10 @@
 ---
 sidebar_position: 1
-sidebar_label: "Enter the Team page"
+sidebar_label: Enter the Team page
+title: Enter the Team page
 ---
 
-## Enter the Team page
+# Enter the Team page
 
 Click your avatar in the upper-right corner of the page, then select **Team** in the left-side panel to access the **Team** page.
 

@@ -1,12 +1,14 @@
 ---
 sidebar_position: 3
 slug: /configure_memory
+title: Configure Memory
+sidebar_label: Configure Memory
 sidebar_custom_props: {
   categoryIcon: LucideBox
 }
 ---
 
-## Configure Memory
+# Configure Memory
 
 The configuration page is used to maintain a memory's basic information, model configuration, capacity configuration, and advanced settings. After making changes, click **Confirm** to save them, or click **Cancel** to discard unsaved content.
 

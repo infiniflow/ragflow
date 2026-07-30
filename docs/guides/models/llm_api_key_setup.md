@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Configure model API key
+sidebar_label: Configure model API key
 slug: /llm_api_key_setup
 sidebar_custom_props: {
   categoryIcon: LucideKey

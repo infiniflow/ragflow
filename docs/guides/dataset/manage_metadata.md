@@ -1,5 +1,7 @@
 ---
 sidebar_position: -5
+title: Manage metadata
+sidebar_label: Manage metadata
 slug: /manage_metadata
 sidebar_custom_props: {
   categoryIcon: LucideCode

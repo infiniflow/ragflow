@@ -1,6 +1,7 @@
 ---
 sidebar_position: 7
-sidebar_label: "Manage System Settings (Enterprise Edition)"
+sidebar_label: Manage System Settings (Enterprise Edition)
+title: Manage System Settings (Enterprise Edition)
 ---
 
 # Manage System Settings (Enterprise Edition)

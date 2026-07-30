@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: Search
+sidebar_label: Search
 slug: /ai_search
 sidebar_custom_props: {
   categoryIcon: LucideSearch

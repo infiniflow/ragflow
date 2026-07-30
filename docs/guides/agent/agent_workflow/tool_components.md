@@ -1,5 +1,7 @@
 ---
 sidebar_position: 4
+title: Tool Components
+sidebar_label: Tool Components
 slug: /tool_components
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

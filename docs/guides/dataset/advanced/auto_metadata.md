@@ -1,5 +1,7 @@
 ---
 sidebar_position: 4
+title: Auto-extract metadata
+sidebar_label: Auto-extract metadata
 slug: /auto_metadata
 sidebar_custom_props: {
    categoryIcon: LucideFileCodeCorner

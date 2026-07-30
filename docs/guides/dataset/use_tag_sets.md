@@ -1,5 +1,7 @@
 ---
 sidebar_position: 6
+title: Use tag set
+sidebar_label: Use tag set
 slug: /use_tag_sets
 sidebar_custom_props: {
   categoryIcon: LucideTags

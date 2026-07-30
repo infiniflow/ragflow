@@ -1,5 +1,7 @@
 ---
 sidebar_position: 5
+title: Add Notion
+sidebar_label: Add Notion
 slug: /add_notion
 sidebar_custom_props: {
   categoryIcon: SiGoogledrive

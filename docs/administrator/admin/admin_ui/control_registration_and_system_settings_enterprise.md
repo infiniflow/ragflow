@@ -1,6 +1,7 @@
 ---
 sidebar_position: 5
-sidebar_label: "Control Registration and System Settings (Enterprise Edition)"
+sidebar_label: Control Registration and System Settings (Enterprise Edition)
+title: Control Registration and System Settings (Enterprise Edition)
 ---
 
 # Control Registration and System Settings (Enterprise Edition)

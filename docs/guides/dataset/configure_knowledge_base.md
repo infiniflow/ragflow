@@ -1,5 +1,7 @@
 ---
 sidebar_position: -10
+title: Configure dataset
+sidebar_label: Configure dataset
 slug: /configure_knowledge_base
 sidebar_custom_props: {
   categoryIcon: LucideCog

@@ -1,6 +1,7 @@
 ---
 sidebar_position: 6
-sidebar_label: "Configure User Roles and Permissions (Enterprise Edition)"
+sidebar_label: Configure User Roles and Permissions (Enterprise Edition)
+title: Configure User Roles and Permissions (Enterprise Edition)
 ---
 
 # Configure User Roles and Permissions (Enterprise Edition)

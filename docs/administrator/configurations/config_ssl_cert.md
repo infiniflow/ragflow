@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Configure SSL certificates
+sidebar_label: Configure SSL certificates
 slug: /config_ssl_cert
 sidebar_custom_props: {
   categoryIcon: LucideCog

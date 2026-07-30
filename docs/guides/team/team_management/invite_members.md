@@ -1,9 +1,10 @@
 ---
 sidebar_position: 3
-sidebar_label: "Invite members"
+sidebar_label: Invite members
+title: Invite members
 ---
 
-## Invite members
+# Invite members
 
 The team owner can invite RAGFlow users to join the team.
 

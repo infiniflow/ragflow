@@ -1,9 +1,10 @@
 ---
 sidebar_position: 9
-sidebar_label: "Resource sharing from the team perspective"
+sidebar_label: Resource sharing from the team perspective
+title: Resource sharing from the team perspective
 ---
 
-## Resource sharing from the team perspective
+# Resource sharing from the team perspective
 
 Joining a team does not automatically grant access to all resources in that team. The resource itself must be shared with the team or authorized to the user.
 

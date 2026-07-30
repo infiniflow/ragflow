@@ -1,5 +1,7 @@
 ---
 sidebar_position: 7
+title: Add Discord
+sidebar_label: Add Discord
 slug: /add_discord
 sidebar_custom_props: {
   categoryIcon: SiGoogledrive

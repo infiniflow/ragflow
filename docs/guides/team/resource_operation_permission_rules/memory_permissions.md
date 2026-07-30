@@ -1,9 +1,10 @@
 ---
 sidebar_position: 5
-sidebar_label: "Memory permissions"
+sidebar_label: Memory permissions
+title: Memory permissions
 ---
 
-## Memory permissions
+# Memory permissions
 
 Memory settings include a sharing scope. Memory permissions cover memory configuration, memory messages, SDK-related message access, and message status operations.
 

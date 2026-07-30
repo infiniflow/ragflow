@@ -1,9 +1,10 @@
 ---
 sidebar_position: 8
-sidebar_label: "Permission effective rules"
+sidebar_label: Permission effective rules
+title: Permission effective rules
 ---
 
-## Permission effective rules
+# Permission effective rules
 
 Resource permissions take effect according to the following general rules:
 

@@ -1,5 +1,7 @@
 ---
 sidebar_position: 4
+title: Enable Excel2HTML
+sidebar_label: Enable Excel2HTML
 slug: /enable_excel2html
 sidebar_custom_props: {
   categoryIcon: LucideToggleRight

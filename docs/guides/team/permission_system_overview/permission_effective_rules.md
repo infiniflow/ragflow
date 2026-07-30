@@ -1,9 +1,10 @@
 ---
 sidebar_position: 5
-sidebar_label: "Permission effective rules"
+sidebar_label: Permission effective rules
+title: Permission effective rules
 ---
 
-## Permission effective rules
+# Permission effective rules
 
 When a user performs an operation on a resource, RAGFlow evaluates permissions in the following order:
 

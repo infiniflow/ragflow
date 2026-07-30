@@ -1,5 +1,7 @@
 ---
 sidebar_position: 10
+title: Run retrieval test
+sidebar_label: Run retrieval test
 slug: /run_retrieval_test
 sidebar_custom_props: {
   categoryIcon: LucideTextSearch

@@ -1,5 +1,7 @@
 ---
 sidebar_position: 4
+title: Add Confluence
+sidebar_label: Add Confluence
 slug: /add_confluence
 sidebar_custom_props: {
   categoryIcon: SiGoogledrive

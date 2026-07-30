@@ -1,9 +1,10 @@
 ---
 sidebar_position: 2
-sidebar_label: "Team and resource permissions"
+sidebar_label: Team and resource permissions
+title: Team and resource permissions
 ---
 
-## Team and resource permissions
+# Team and resource permissions
 
 Team membership and resource permissions are separate concepts.
 

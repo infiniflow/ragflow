@@ -1,9 +1,10 @@
 ---
 sidebar_position: 3
-sidebar_label: "Resource sharing scope"
+sidebar_label: Resource sharing scope
+title: Resource sharing scope
 ---
 
-## Resource sharing scope
+# Resource sharing scope
 
 Sharing scope controls the visible scope of a resource, that is, which users can access the current resource.
 

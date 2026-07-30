@@ -1,9 +1,10 @@
 ---
 sidebar_position: 11
-sidebar_label: "FAQ"
+sidebar_label: FAQ
+title: FAQ
 ---
 
-## FAQ
+# FAQ
 
 ### Why does inviting a member fail?
 

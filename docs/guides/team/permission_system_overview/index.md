@@ -5,6 +5,7 @@ sidebar_custom_props: {
   categoryIcon: LucideUserCog
 }
 sidebar_label: Overview
+title: Overview
 ---
 # Permission system overview
 

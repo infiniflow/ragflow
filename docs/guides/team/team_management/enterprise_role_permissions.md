@@ -1,9 +1,10 @@
 ---
 sidebar_position: 10
-sidebar_label: "Enterprise role permissions"
+sidebar_label: Enterprise role permissions
+title: Enterprise role permissions
 ---
 
-## Enterprise role permissions
+# Enterprise role permissions
 
 Enterprise role permissions are separate from the team page.
 

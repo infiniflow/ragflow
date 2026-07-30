@@ -1,9 +1,10 @@
 ---
 sidebar_position: 8
-sidebar_label: "Manage departments"
+sidebar_label: Manage departments
+title: Manage departments
 ---
 
-## Manage departments
+# Manage departments
 
 In RAGFlow Enterprise, administrators can create departments according to the enterprise's actual organization structure. Departments can be used as collaborator objects when configuring resource permissions.
 

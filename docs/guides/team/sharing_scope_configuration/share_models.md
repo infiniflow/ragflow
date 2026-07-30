@@ -1,8 +1,9 @@
 ---
 sidebar_position: 8
-sidebar_label: "Share models"
+sidebar_label: Share models
+title: Share models
 ---
 
-## Share models
+# Share models
 
 Sharing models is currently exclusive to RAGFlow Enterprise.

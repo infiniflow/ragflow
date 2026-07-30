@@ -1,5 +1,7 @@
 ---
 sidebar_position: 3
+title: Extract table of contents
+sidebar_label: Extract table of contents
 slug: /enable_table_of_contents
 sidebar_custom_props: {
   categoryIcon: LucideTableOfContents

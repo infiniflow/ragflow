@@ -1,5 +1,7 @@
 ---
 sidebar_position: 20
+title: Sandbox quickstart
+sidebar_label: Sandbox quickstart
 slug: /sandbox_quickstart
 sidebar_custom_props: {
   categoryIcon: LucideCodesandbox

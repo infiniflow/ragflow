@@ -1,5 +1,7 @@
 ---
 sidebar_position: -7
+title: Set metadata
+sidebar_label: Set metadata
 slug: /set_metadata
 sidebar_custom_props: {
   categoryIcon: LucideCode

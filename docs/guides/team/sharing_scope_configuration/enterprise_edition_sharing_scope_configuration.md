@@ -1,9 +1,10 @@
 ---
 sidebar_position: 2
-sidebar_label: "Enterprise edition sharing scope configuration"
+sidebar_label: Enterprise edition sharing scope configuration
+title: Enterprise edition sharing scope configuration
 ---
 
-## Enterprise edition sharing scope configuration
+# Enterprise edition sharing scope configuration
 
 RAGFlow Enterprise supports finer-grained team permission management and team permission control. After a resource is set to **Team**, it does not automatically authorize all team members to access the resource.
 

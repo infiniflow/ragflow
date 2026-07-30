@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Construct knowledge graph
+sidebar_label: Construct knowledge graph
 slug: /construct_knowledge_graph
 sidebar_custom_props: {
   categoryIcon: LucideWandSparkles

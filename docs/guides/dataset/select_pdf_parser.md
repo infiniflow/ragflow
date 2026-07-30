@@ -1,5 +1,7 @@
 ---
 sidebar_position: -3
+title: Select PDF parser
+sidebar_label: Select PDF parser
 slug: /select_pdf_parser
 sidebar_custom_props: {
   categoryIcon: LucideFileText

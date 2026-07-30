@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: Enable RAPTOR
+sidebar_label: Enable RAPTOR
 slug: /enable_raptor
 sidebar_custom_props: {
   categoryIcon: LucideNetwork

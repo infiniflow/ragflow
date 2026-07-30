@@ -1,6 +1,7 @@
 ---
 sidebar_position: 8
-sidebar_label: "View Monitoring Dashboard (Enterprise Edition)"
+sidebar_label: View Monitoring Dashboard (Enterprise Edition)
+title: View Monitoring Dashboard (Enterprise Edition)
 ---
 
 # View Monitoring Dashboard (Enterprise Edition)

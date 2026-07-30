@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: RAGFlow CLI
+sidebar_label: RAGFlow CLI
 slug: /admin_cli
 sidebar_custom_props: {
   categoryIcon: LucideSquareTerminal

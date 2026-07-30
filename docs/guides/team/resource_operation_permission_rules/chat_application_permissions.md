@@ -1,9 +1,10 @@
 ---
 sidebar_position: 2
-sidebar_label: "Chat application permissions"
+sidebar_label: Chat application permissions
+title: Chat application permissions
 ---
 
-## Chat application permissions
+# Chat application permissions
 
 Chat application permissions control viewing, configuration, creation, deletion, generation, and retrieval operations for chat assistants.
 

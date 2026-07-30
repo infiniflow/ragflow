@@ -1,5 +1,7 @@
 ---
 sidebar_position: 4
+title: Set variables
+sidebar_label: Set variables
 slug: /set_chat_variables
 sidebar_custom_props: {
   categoryIcon: LucideVariable

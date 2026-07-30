@@ -1,5 +1,7 @@
 ---
 sidebar_position: -4
+title: Configure child chunking strategy
+sidebar_label: Configure child chunking strategy
 slug: /configure_child_chunking_strategy
 sidebar_custom_props: {
   categoryIcon: LucideGroup

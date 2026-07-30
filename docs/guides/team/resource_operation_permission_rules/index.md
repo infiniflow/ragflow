@@ -5,6 +5,7 @@ sidebar_custom_props: {
   categoryIcon: LucideKeyRound
 }
 sidebar_label: Overview
+title: Overview
 ---
 # Resource operation permission rules
 

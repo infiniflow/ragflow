@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Database schema and migration
+sidebar_label: Database schema and migration
 slug: /database_schema_and_migration
 sidebar_custom_props: {
   categoryIcon: LucideLocateFixed
