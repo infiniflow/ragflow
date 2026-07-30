@@ -95,14 +95,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
     UV_HTTP_RETRIES=3
 ENV PATH=/root/.local/bin:$PATH
 
-# nodejs 12.22 on Ubuntu 22.04 is too old
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt purge -y nodejs npm && \
-    apt autoremove -y && \
-    apt update && \
-    apt install -y nodejs
-
 # stagehand-server-v3 (Node.js SEA binary used by Browser component
 # in local mode).
 #
@@ -198,6 +190,16 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
 
 # install dependencies from uv.lock file
 COPY pyproject.toml uv.lock ./
+
+# Node.js is only needed in the builder for the frontend build.
+# Kept out of the production image to eliminate npm-bundled CVEs
+# (tar, minimatch, glob, cross-spawn, etc.).
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt purge -y nodejs npm && \
+    apt autoremove -y && \
+    apt update && \
+    apt install -y nodejs
 
 # https://github.com/astral-sh/uv/issues/10462
 # uv records index url into uv.lock but doesn't failover among multiple indexes
