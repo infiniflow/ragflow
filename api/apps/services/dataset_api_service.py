@@ -50,13 +50,13 @@ _STRUCTURE_INDEX_TYPE_TO_KIND = {
 }
 _STRUCTURE_INDEX_TYPES = frozenset(_STRUCTURE_INDEX_TYPE_TO_KIND)
 
-_VALID_INDEX_TYPES = {"graph", "raptor", "mindmap", "artifact", "skill"} | set(_STRUCTURE_INDEX_TYPES)
+_VALID_INDEX_TYPES = {"graph", "raptor", "mindmap", "wiki", "skill"} | set(_STRUCTURE_INDEX_TYPES)
 
 _INDEX_TYPE_TO_TASK_TYPE = {
     "graph": "structure_graph",
     "raptor": "raptor",
     "mindmap": "structure_mindmap",
-    "artifact": "artifact",
+    "wiki": "wiki",
     "skill": "skill",
     # Structure merge types carry their own task_type (== index_type) so the
     # executor can resolve which kind to merge from the task body.
@@ -67,7 +67,7 @@ _INDEX_TYPE_TO_TASK_ID_FIELD = {
     "graph": "graphrag_task_id",
     "raptor": "raptor_task_id",
     "mindmap": "mindmap_task_id",
-    "artifact": "wiki_task_id",
+    "wiki": "wiki_task_id",
     "skill": "skill_task_id",
     **{t: f"{t}_task_id" for t in _STRUCTURE_INDEX_TYPES},
 }
@@ -76,7 +76,7 @@ _INDEX_TYPE_TO_DISPLAY_NAME = {
     "graph": "Graph",
     "raptor": "RAPTOR",
     "mindmap": "Mindmap",
-    "artifact": "Artifact",
+    "wiki": "Wiki",
     "skill": "Skill",
     "structure_graph": "Structure Graph",
     "structure_mindmap": "Structure Mindmap",
