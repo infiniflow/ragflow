@@ -170,7 +170,10 @@ class MinerUNetOcrModel(Base):
             if item_type == MinerUContentType.TEXT:
                 section = item.get("text", "")
             elif item_type == MinerUContentType.TABLE:
-                section = item.get("table_body", "") + "\n".join(item.get("table_caption", [])) + "\n".join(item.get("table_footnote", []))
+                parts = [item.get("table_body", "")]
+                parts.extend(item.get("table_caption", []))
+                parts.extend(item.get("table_footnote", []))
+                section = "\n".join(p for p in parts if p)
                 if not section.strip():
                     section = "FAILED TO PARSE TABLE"
             elif item_type == MinerUContentType.IMAGE:
@@ -229,8 +232,10 @@ class MinerUNetOcrModel(Base):
     def _submit_by_upload(self, filepath: str, binary, headers: dict, **kwargs) -> str:
         if isinstance(binary, bytes):
             file_obj = io.BytesIO(binary)
+        elif hasattr(binary, "read"):
+            file_obj = io.BytesIO(binary.read())
         else:
-            file_obj = io.BytesIO(binary.read() if hasattr(binary, "read") else binary)
+            raise TypeError(f"_submit_by_upload expects bytes or a file-like object, got {type(binary).__name__}")
 
         filename = Path(filepath).name or "document.pdf"
         files = {"file": (filename, file_obj, "application/octet-stream")}
