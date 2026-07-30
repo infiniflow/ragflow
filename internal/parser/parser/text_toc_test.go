@@ -106,3 +106,58 @@ func TestRemoveContentsTable(t *testing.T) {
 		})
 	}
 }
+
+// TestIsEnglishTexts mirrors rag/nlp/__init__.py:is_english — >80% of sampled
+// segments ASCII → English.
+func TestIsEnglishTexts(t *testing.T) {
+	cases := []struct {
+		name  string
+		texts []string
+		want  bool
+	}{
+		{name: "empty", texts: nil, want: false},
+		{name: "all english", texts: []string{"Chapter One", "Section Two", "Body text here"}, want: true},
+		{name: "all chinese", texts: []string{"第一章 概述", "第二章 方法", "正文内容"}, want: false},
+		{name: "mostly english (>80%)", texts: []string{
+			"Introduction to the system", "Background and related work",
+			"Methodology details", "Evaluation results", "Conclusion",
+			"第一章", // single CJK line among 6 (>80% english)
+		}, want: true},
+		{name: "mostly chinese (<80% english)", texts: []string{
+			"第一章 概述", "第二章 方法", "第三章 结果", "English abstract only",
+		}, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isEnglishTexts(tc.texts); got != tc.want {
+				t.Errorf("isEnglishTexts(%v) = %v, want %v", tc.texts, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRemoveTOCWordEnglishDetection verifies the previously-hardcoded
+// `eng=false` is replaced by content detection: an English document now uses
+// the 2-word prefix, so "Chapter 2 Method" is NOT over-deleted (the old
+// `eng=false` took the 3-char "Cha" prefix and dropped it).
+func TestRemoveTOCWordEnglishDetection(t *testing.T) {
+	items := []map[string]any{
+		{"text": "Intro"},
+		{"text": "Contents"},
+		{"text": "Chapter 1 Overview"},
+		{"text": "Chapter 2 Method"},
+		{"text": "Body starts"},
+	}
+	if !isEnglishItems(items) {
+		t.Fatalf("expected isEnglishItems=true for English content")
+	}
+	got := removeContentsTable(items, isEnglishItems(items))
+	want := []map[string]any{
+		{"text": "Intro"},
+		{"text": "Chapter 2 Method"},
+		{"text": "Body starts"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("English TOC detection: got %v, want %v", got, want)
+	}
+}
