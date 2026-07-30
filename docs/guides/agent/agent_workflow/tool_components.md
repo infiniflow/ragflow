@@ -198,7 +198,7 @@ The component returns search results that can be used by downstream Agent or Mes
 ![Keenable Search](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/keenable_search.jpg)
 
 
-### Wikipedia (Wikipedia)(Wikipedia)
+### Wikipedia (Wikipedia)
 
 Wikipedia searches encyclopedia entries and extracts summaries. It is suitable for querying clear entities, concepts and historical events.
 
