@@ -224,6 +224,18 @@ async def _wiki_reduce_batch(
     deleted_doc_ids: set[str],
 ) -> list[dict]:
     """Parallel per-entity REDUCE over a batch of affected names."""
+    # Build name→page index so entity names resolve to page records
+    name_to_page: dict[str, dict] = {}
+    for pid, page in existing_pages.items():
+        names = page.get("entity_names_kwd", [])
+        if isinstance(names, str):
+            names = json.loads(names) if names else []
+        for n in names:
+            name_to_page[n] = page
+        # Also index by the page_id last segment (concept/xxx → xxx)
+        slug = pid.split("/")[-1] if "/" in pid else pid
+        name_to_page.setdefault(slug, page)
+
     name_to_claims: dict[str, list[dict]] = {}
     for mr in map_results:
         for c in mr.get("claims", []):
@@ -237,7 +249,7 @@ async def _wiki_reduce_batch(
         _wiki_reduce_entity(
             entity_name=name,
             new_claims=claims,
-            existing_page=existing_pages.get(name),
+            existing_page=name_to_page.get(name, existing_pages.get(name)),
             deleted_doc_ids=deleted_doc_ids,
         )
         for name, claims in name_to_claims.items()
@@ -278,7 +290,19 @@ async def _wiki_update_doc_page_source(
         index,
         [kb_id],
     )
-    existing_map = settings.docStoreConn.get_fields(existing, ["id", "page_ids", "source_chunk_hashes"])
+    existing_map = settings.docStoreConn.get_fields(existing, ["id", "page_ids", "source_chunk_hashes", "map_checksum"])
+
+    # Preserve existing metadata when omitted (prevent overwriting with empty)
+    if chunk_hashes is None and existing_map:
+        for row in existing_map.values():
+            saved = row.get("source_chunk_hashes", "{}")
+            chunk_hashes = json.loads(saved) if isinstance(saved, str) else saved
+    if map_checksum is None and existing_map:
+        for row in existing_map.values():
+            val = row.get("map_checksum", "") or ""
+            if val:
+                map_checksum = val
+                break
 
     doc = {
         "doc_id": doc_id,
@@ -289,14 +313,13 @@ async def _wiki_update_doc_page_source(
         "compile_kwd": WIKI_DOC_PAGE_SOURCE_COMPILE_KWD,
     }
     if existing_map:
-        for row in existing_map.values():
-            await thread_pool_exec(
-                settings.docStoreConn.update,
-                {"doc_id": doc_id},
-                doc,
-                index,
-                kb_id,
-            )
+        await thread_pool_exec(
+            settings.docStoreConn.update,
+            {"doc_id": doc_id},
+            doc,
+            index,
+            kb_id,
+        )
     else:
         await thread_pool_exec(
             settings.docStoreConn.insert,
@@ -457,7 +480,8 @@ async def _wiki_mode_a_refine(
     # Build the wiki_page dict
     existing = existing_page or {}
     new_version = page_version + 1
-    doc_ids = existing.get("source_doc_ids", [])
+    raw_doc_ids = existing.get("source_doc_ids", [])
+    doc_ids = json.loads(raw_doc_ids) if isinstance(raw_doc_ids, str) else list(raw_doc_ids)
     if source_chunks:
         for chunk in source_chunks:
             did = chunk.get("doc_id") or chunk.get("source_doc_id")
@@ -468,6 +492,10 @@ async def _wiki_mode_a_refine(
     from common.misc_utils import thread_pool_exec
 
     embeddings, _ = await thread_pool_exec(embd_mdl.encode, [summary or content[:200]])
+
+    # Derive vector dimension from the embedding shape
+    emb_arr = np.asarray(embeddings[0])
+    vec_dim = int(emb_arr.shape[0]) if emb_arr.ndim >= 1 and emb_arr.shape[0] else 768
 
     page = {
         "slug_kwd": page_id,
@@ -484,7 +512,7 @@ async def _wiki_mode_a_refine(
         "knowledge_graph_kwd": WIKI_PAGE_COMPILE_KWD,
     }
     # Insert vector (adds q_{dim}_vec field)
-    vec_col = f"q_{len(embeddings[0]) if len(np.asarray(embeddings[0])) else 768}_vec"
+    vec_col = f"q_{vec_dim}_vec"
     page[vec_col] = embeddings[0].tolist() if hasattr(embeddings[0], "tolist") else embeddings[0]
 
     # Persist
@@ -889,24 +917,32 @@ async def _wiki_finalize(
 
     # Gather all valid page IDs for wikilink validation
     valid_ids = set(all_pages.keys())
+    # Only process pages selected by page_ids when filter is provided
+    if page_ids is not None:
+        target_ids = [pid for pid in page_ids if pid in valid_ids]
+    else:
+        target_ids = list(all_pages.keys())
 
-    # Build cross-reference map
+    # Build cross-reference map from [[wikilinks]] using regex
+    import re as _re
+
+    wikilink_re = _re.compile(r"\[\[([^\]]+)\]\]")
     relation_map: dict[str, list[dict]] = {}
-    for pid, page in all_pages.items():
+    for pid in target_ids:
+        page = all_pages[pid]
         content = page.get("md_with_weight", "")
-        for vid in valid_ids:
-            if vid in content and vid != pid:
+        for match in wikilink_re.finditer(content):
+            link = match.group(1).strip()
+            if link in valid_ids and link != pid:
                 relation_map.setdefault(pid, []).append(
                     {
-                        "entity_name": vid.split("/")[-1] if "/" in vid else vid,
+                        "entity_name": link.split("/")[-1] if "/" in link else link,
                         "relation": "see_also",
                     }
                 )
 
     # Update each page's outlinks and related_pages
-    for pid, page in all_pages.items():
-        if page_ids is not None and pid not in page_ids:
-            continue
+    for pid in target_ids:
         relations = relation_map.get(pid, [])
         # Only update if there's a meaningful change
         update = {}
@@ -1029,6 +1065,17 @@ async def wiki_compile_incremental(
                 if dps:
                     for name in dps.get("entity_names", []):
                         if name in all_names:
+                            affected_names.add(name)
+        # For newly added documents (no doc_page_source yet), derive affected
+        # names directly from their MAP claims.
+        new_doc_ids = affected_doc_ids - (deleted_doc_ids or set())
+        if new_doc_ids:
+            for mr in map_results:
+                did = mr.get("doc_id")
+                if did in new_doc_ids:
+                    for c in mr.get("claims", []):
+                        name = c.get("entity_name") or c.get("subject") or c.get("term")
+                        if name and name in all_names:
                             affected_names.add(name)
         # Fallback: if doc_page_source is empty (cancelled prev run) or all_names
         # changed significantly, do full rebuild from MAP.
@@ -1264,7 +1311,14 @@ async def _wiki_mode_a_run(
             for pid in pids:
                 if pid not in existing_pids:
                     existing_pids.append(pid)
-            await _wiki_update_doc_page_source(tenant_id, kb_id, did, existing_pids)
+            await _wiki_update_doc_page_source(
+                tenant_id,
+                kb_id,
+                did,
+                existing_pids,
+                chunk_hashes=existing_dps.get("source_chunk_hashes"),
+                map_checksum=existing_dps.get("map_checksum"),
+            )
         except Exception:
             logging.exception("wiki A: doc_page_source update failed for doc %s", did)
 
@@ -1432,7 +1486,7 @@ async def _wiki_mode_b_run(
         _progress(f"REFINE B: {len(tasks)} pages (max {WIKI_REFINE_MAX_CONCURRENT} concurrent) ...")
         await asyncio.gather(*tasks)
 
-    # Apply doc_page_source updates serially (no race)
+    # Apply doc_page_source updates serially (no race), preserving metadata
     for did, pids in doc_updates.items():
         try:
             existing_dps = (await _wiki_load_doc_page_source(tenant_id, kb_id, did)) or {}
@@ -1440,7 +1494,14 @@ async def _wiki_mode_b_run(
             for pid in pids:
                 if pid not in existing_pids:
                     existing_pids.append(pid)
-            await _wiki_update_doc_page_source(tenant_id, kb_id, did, existing_pids)
+            await _wiki_update_doc_page_source(
+                tenant_id,
+                kb_id,
+                did,
+                existing_pids,
+                chunk_hashes=existing_dps.get("source_chunk_hashes"),
+                map_checksum=existing_dps.get("map_checksum"),
+            )
         except Exception:
             logging.exception("wiki B: doc_page_source update failed for doc %s", did)
 

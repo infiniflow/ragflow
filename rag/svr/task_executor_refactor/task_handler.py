@@ -260,15 +260,18 @@ class TaskHandler:
                     run_wiki_incremental,
                 )
 
-                # Parse plan: yes/no from the template config (default yes)
-                plan_enabled = True
+                # Parse plan: yes/no from the template config (default no-plan)
+                plan_enabled = False
                 try:
                     from api.db.services.compilation_template_service import (
                         CompilationTemplateService,
                     )
+                    from rag.svr.task_executor_refactor.dataset_wiki_generator import (
+                        _parser_config_compilation_template_ids,
+                    )
 
                     pc = self._task_context.parser_config or {}
-                    for tid in pc.get("compilation_template_ids", []):
+                    for tid in _parser_config_compilation_template_ids(pc, self._task_context.tenant_id):
                         tpl = CompilationTemplateService.get_saved(tid, self._task_context.tenant_id)
                         cfg = (tpl.get("config") or {}) if tpl else {}
                         if isinstance(cfg, dict) and cfg.get("plan") in (True, "yes", "true"):

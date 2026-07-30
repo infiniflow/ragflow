@@ -200,9 +200,13 @@ export function TemplateConfiguration({
             <RAGFlowFormItem
               name={`templates.${selectedTemplateIndex}.config.plan`}
               label={t('setting.plan')}
-              valuePropName="checked"
             >
-              <Checkbox />
+              {({ field }: { field: any }) => (
+                <Checkbox
+                  checked={!!field.value}
+                  onCheckedChange={(v: boolean) => field.onChange(v)}
+                />
+              )}
             </RAGFlowFormItem>
           )}
 

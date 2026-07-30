@@ -1365,7 +1365,9 @@ async def run_wiki_incremental(
         )
         current_doc_ids = {str(d.get("id")) for d in all_docs or [] if d.get("id")}
         deleted_doc_ids = existing_map_doc_ids - current_doc_ids
-        progress(0.02, f"Detected {len(deleted_doc_ids)} deleted document(s) ...")
+        if deleted_doc_ids:
+            progress(0.02, f"Cleaning {len(deleted_doc_ids)} deleted doc(s) ...")
+            await _wiki_delete_deleted_doc_state(ctx.tenant_id, ctx.kb_id, deleted_doc_ids)
 
     # 2. Pick eligible docs
     all_docs, _ = await thread_pool_exec(
@@ -1429,6 +1431,23 @@ async def run_wiki_incremental(
     n_docs = len(eligible)
     all_map_results: list[dict] = []
 
+    # Pre-resolve parser_cfg for each eligible doc (avoids sync DB call in worker)
+    doc_configs: dict[str, dict] = {}
+    for d, template_id in eligible:
+        try:
+            template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
+            cfg = (template.get("config") or {}) if template else {}
+            doc_configs[d["id"]] = cfg
+            if not first_template_found and isinstance(cfg, dict):
+                first_template_found = True
+                llm_id = (cfg.get("llm_id") or "").strip()
+                kb_chat_llm_id = llm_id or None
+                if not kb_chat_llm_id:
+                    kb_chat_llm_id = None
+        except Exception:
+            logging.exception("wiki: config resolve failed for doc %s", d["id"])
+            doc_configs[d["id"]] = {}
+
     async def _produce_doc(i: int, job: tuple[dict, str]) -> None:
         doc, template_id = job
         doc_id = doc["id"]
@@ -1440,7 +1459,7 @@ async def run_wiki_incremental(
                 doc_id,
                 batch_size=WIKI_MAP_BATCH_CHUNKS,
             ):
-                await map_queue.put((i, doc, template_id, batch))
+                await map_queue.put((i, doc, template_id, doc_configs.get(doc_id, {}), batch))
         except Exception:
             logging.exception("wiki: MAP chunk loading failed for doc %s", doc_id)
 
@@ -1450,16 +1469,9 @@ async def run_wiki_incremental(
             try:
                 if item is None:
                     return
-                _, doc, template_id, batch = item
+                _, doc, template_id, parser_cfg, batch = item
                 doc_id = doc["id"]
-                template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
-                parser_cfg = (template.get("config") or {}) if template else {}
                 map_llm_id = (parser_cfg.get("llm_id") or "").strip() if isinstance(parser_cfg, dict) else ""
-                nonlocal first_template_found, kb_chat_llm_id
-                if not first_template_found and isinstance(parser_cfg, dict):
-                    first_template_found = True
-                    llm_id = (parser_cfg.get("llm_id") or "").strip()
-                    kb_chat_llm_id = llm_id or None
 
                 result = await wiki_map_from_chunks(
                     chunks=batch,
