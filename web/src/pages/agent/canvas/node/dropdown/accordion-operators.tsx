@@ -109,6 +109,7 @@ export function AccordionOperators({
             operators={[
               Operator.TavilySearch,
               Operator.TavilyExtract,
+              Operator.QueritSearch,
               Operator.ExeSQL,
               Operator.Google,
               Operator.YahooFinance,
