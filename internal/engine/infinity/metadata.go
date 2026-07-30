@@ -135,7 +135,8 @@ func (e *infinityEngine) createMetadataStoreWithDB(db *infinity.Database, tenant
 }
 
 // InsertMetadata inserts document metadata into tenant's metadata table
-// Auto-create the table if it doesn't exist
+// The metadata table must already exist; the service layer is responsible
+// for creating it before writing.
 // Replace existing metadata with same id and kb_id
 func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
 	tableName := buildMetadataTableName(tenantID)
@@ -149,21 +150,7 @@ func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
-		// Table doesn't exist, try to create it
-		errMsg := strings.ToLower(err.Error())
-		if !strings.Contains(errMsg, "not found") && !strings.Contains(errMsg, "doesn't exist") {
-			return nil, fmt.Errorf("failed to get table %s: %w", tableName, err)
-		}
-
-		// Create metadata table
-		if createErr := e.createMetadataStoreWithDB(db, tenantID); createErr != nil {
-			return nil, fmt.Errorf("failed to create metadata table: %w", createErr)
-		}
-
-		table, err = db.GetTable(tableName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get table after creation: %w", err)
-		}
+		return nil, fmt.Errorf("failed to get table %s: %w", tableName, err)
 	}
 
 	// Transform metadata - convert meta_fields map to JSON string
@@ -421,6 +408,12 @@ func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, d
 
 	table, err := db.GetTable(tableName)
 	if err != nil {
+		// Tolerate missing metadata table (mirrors Python's docStoreConn
+		// which silently returns False on a non-existent table).
+		errMsg := strings.ToLower(err.Error())
+		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "doesn't exist") {
+			return nil
+		}
 		return fmt.Errorf("failed to get metadata table %s: %w", tableName, err)
 	}
 

@@ -1,4 +1,11 @@
 import message from '@/components/ui/message';
+import {
+  GenerateStatus,
+  GenerateType,
+  GenerateTypeMap,
+  ProcessingType,
+  TraceType,
+} from '@/constants/knowledge';
 import agentService from '@/services/agent-service';
 import {
   deletePipelineTask,
@@ -6,10 +13,9 @@ import {
   traceIndex,
 } from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
-import { ProcessingType } from '../../dataset-overview/dataset-common';
-import { GenerateType, GenerateTypeMap, TraceType } from './constants';
 
 enum DatasetKey {
   generate = 'generate',
@@ -111,6 +117,7 @@ export const useUnBindTask = () => {
   });
   return { handleUnbindTask };
 };
+
 export const useDatasetGenerate = () => {
   const queryClient = useQueryClient();
   const { id } = useParams();
@@ -164,3 +171,32 @@ export const useDatasetGenerate = () => {
   });
   return { runGenerate: mutateAsync, pauseGenerate, data, loading };
 };
+
+export function useGenerateStatus(data?: ITraceInfo) {
+  const status = useMemo(() => {
+    if (!data) {
+      return GenerateStatus.Start;
+    }
+    if (data.progress >= 1) {
+      return GenerateStatus.Completed;
+    } else if (!data.progress && data.progress !== 0) {
+      return GenerateStatus.Start;
+    } else if (data.progress < 0) {
+      return GenerateStatus.Failed;
+    } else if (data.progress < 1) {
+      return GenerateStatus.Running;
+    }
+    return GenerateStatus.Start;
+  }, [data]);
+
+  const percent = useMemo(() => {
+    if (status === GenerateStatus.Failed) {
+      return 100;
+    } else if (status === GenerateStatus.Running) {
+      return data!.progress * 100;
+    }
+    return 0;
+  }, [status, data]);
+
+  return { status, percent };
+}

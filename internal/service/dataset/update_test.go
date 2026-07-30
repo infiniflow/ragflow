@@ -309,7 +309,10 @@ func TestDatasetServiceUpdateDatasetRejectsMissingDataset(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if err.Error() != "dataset not found" {
+	// Nonexistent and not-owned datasets share the "lacks permission"
+	// error so existence is not revealed (IDOR), matching Python.
+	expected := "user 'tenant-1' lacks permission for dataset 'missing-kb'"
+	if err.Error() != expected {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -382,7 +385,7 @@ func TestDatasetServiceUpdateDatasetValidatesName(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	if err.Error() != "`name` is required" {
+	if err.Error() != "String should have at least 1 character" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

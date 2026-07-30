@@ -1,7 +1,7 @@
-kind: artifacts
-display_name: Artifacts — Graph-based wiki
+kind: wiki
+display_name: Wiki — Graph-based wiki
 config:
-  kind: artifacts
+  kind: wiki
   example: |
       - Each page must be a proper encyclopedic article, NOT a flat bullet list:
       - 1. Opening paragraph (2-4 sentences defining what this is). No heading.

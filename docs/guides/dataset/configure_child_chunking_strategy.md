@@ -35,4 +35,5 @@ Through this dual-layer structure of "precise localization + contextual suppleme
 
 3. This configuration applies to the **Chunker** component when it comes to ingestion pipeline settings:
 
-![Child chunking chunker](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/child_chunking_chunker.png)
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/child_chunking_chunker.png)
+

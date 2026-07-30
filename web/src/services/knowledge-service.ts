@@ -1,3 +1,4 @@
+import { ProcessingType } from '@/constants/knowledge';
 import { IRenameTag } from '@/interfaces/database/dataset';
 import {
   IFetchArtifactGraphRequestParams,
@@ -7,7 +8,6 @@ import {
   IFetchKnowledgeListRequestParams,
   IUpdateArtifactPageRequestBody,
 } from '@/interfaces/request/knowledge';
-import { ProcessingType } from '@/pages/dataset/dataset-overview/dataset-common';
 import api from '@/utils/api';
 import nextRequest from '@/utils/next-request';
 import registerServer from '@/utils/register-server';
@@ -419,8 +419,8 @@ export const getArtifactGraph = (
   params?: IFetchArtifactGraphRequestParams,
 ) => request.get(api.getArtifactGraph(datasetId), { params });
 
-export const getArtifactsAlteration = (datasetId: string) =>
-  request.get(api.artifactsAlteration(datasetId));
+export const getArtifactsAlteration = (datasetId: string, kind: string) =>
+  request.get(api.artifactsAlteration(datasetId), { params: { kind } });
 
 export const getArtifactsStructure = (
   datasetId: string,

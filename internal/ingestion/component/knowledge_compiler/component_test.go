@@ -336,8 +336,8 @@ func TestKnowledgeCompiler_Wiki_EndToEnd(t *testing.T) {
 
 func TestKnowledgeCompiler_Raptor_EndToEnd(t *testing.T) {
 	installProseDeps(t)
-	// Psi builder (default): zero clustering dependency.
-	chunks := runVariant(t, "raptor", map[string]any{"extra": map[string]any{"clustering_method": "PSI"}})
+	// watershed (default tree_order): zero external clustering dependency.
+	chunks := runVariant(t, "raptor", nil)
 	foundRoot := false
 	for _, c := range chunks {
 		if kind, _ := c["kc_kind"].(string); kind == "root" {
@@ -345,29 +345,23 @@ func TestKnowledgeCompiler_Raptor_EndToEnd(t *testing.T) {
 		}
 	}
 	if !foundRoot {
-		t.Fatalf("raptor(PSI): no 'root' chunk; got %d chunks", len(chunks))
+		t.Fatalf("raptor(default): no 'root' chunk; got %d chunks", len(chunks))
 	}
 
-	// AHC builder must also run (PCA + Ward).
-	chunksAHC := runVariant(t, "raptor", map[string]any{"extra": map[string]any{"clustering_method": "AHC"}})
-	if len(chunksAHC) == 0 {
-		t.Fatalf("raptor(AHC): produced no chunks")
+	// A smaller tree_order (more, smaller clusters) must also run and still
+	// produce a well-formed tree (root present, chunks non-empty).
+	chunksCoarse := runVariant(t, "raptor", map[string]any{"extra": map[string]any{"tree_order": 2}})
+	if len(chunksCoarse) == 0 {
+		t.Fatalf("raptor(tree_order=2): produced no chunks")
 	}
-
-	// GMM backend (diagonal-GMM EM + BIC) is implemented and must run,
-	// producing a well-formed tree (root present, chunks non-empty).
-	chunksGMM := runVariant(t, "raptor", map[string]any{"extra": map[string]any{"clustering_method": "GMM"}})
-	if len(chunksGMM) == 0 {
-		t.Fatalf("raptor(GMM): produced no chunks")
-	}
-	foundRootGMM := false
-	for _, c := range chunksGMM {
+	foundRootCoarse := false
+	for _, c := range chunksCoarse {
 		if kind, _ := c["kc_kind"].(string); kind == "root" {
-			foundRootGMM = true
+			foundRootCoarse = true
 		}
 	}
-	if !foundRootGMM {
-		t.Fatalf("raptor(GMM): no 'root' chunk; got %d chunks", len(chunksGMM))
+	if !foundRootCoarse {
+		t.Fatalf("raptor(tree_order=2): no 'root' chunk; got %d chunks", len(chunksCoarse))
 	}
 }
 
@@ -540,35 +534,20 @@ func (m constEmbedder) Encode(_ context.Context, texts []string) ([][]float32, e
 	return out, nil
 }
 
-// sinkRecorder is a ChunkedSink that tallies streamed products, used to assert
-// the flush policy actually emits incrementally instead of holding the full set.
-type sinkRecorder struct {
-	mu      sync.Mutex
-	total   int
-	batches int
-}
-
-func (s *sinkRecorder) Emit(_ context.Context, items []common.Product) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.total += len(items)
-	s.batches++
-	return nil
-}
-
 // TestKnowledgeCompiler_Raptor_DegenerateNoInfiniteLoop is a regression for the
 // High-1 bug: RAPTOR could recurse forever when a re-cluster returned a single
 // label covering all points. The default mockEmbedder emits non-negative
-// vectors, so under PSI (threshold=0) every pair has cosine >= 0 and the whole
-// corpus collapses into one cluster; with more than RecursionMinClusterSize
-// points the old code re-enqueued the identical work item at level+1 and hung.
-// This test uses 6 chunks and asserts the run terminates with a well-formed root.
-// (If the guard regresses, go test's timeout turns the hang into a failure.)
+// vectors, so under the watershed default (tree_order=4, ratio 25) every adjacent pair
+// has cosine >= 0 and a pathological input can collapse into one cluster; with
+// more than one point the old code re-enqueued the identical
+// work item at level+1 and hung. This test uses 6 chunks and asserts the run
+// terminates with a well-formed root. (If the guard regresses, go test's timeout
+// turns the hang into a failure.)
 func TestKnowledgeCompiler_Raptor_DegenerateNoInfiniteLoop(t *testing.T) {
 	installProseDeps(t)
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
 		"variant": "raptor", "llm_id": "llm1", "embedding_model": "emb1",
-		"extra": map[string]any{"clustering_method": "PSI"},
+		"extra": map[string]any{"tree_order": 4},
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -719,63 +698,6 @@ func TestKnowledgeCompiler_Wiki_UpdateMergesExistingPage(t *testing.T) {
 	}
 	if outlinks, ok := page["outlinks_kwd"].([]any); ok && len(outlinks) == 0 {
 		t.Fatalf("outlinks_kwd should include rewritten see-also link: %#v", page)
-	}
-}
-
-// TestKnowledgeCompiler_GuardrailFlushStreams is a regression for the Medium-1
-// bug: the flush policy used to run only AFTER the full result set was
-// materialised, so it could not cap peak memory. With the ProductSink, products
-// are emitted to the sink as they are produced; here a tiny MaxItems forces
-// streaming, and we assert the sink received every product while the returned
-// chunk list holds only the upstream inputs (the compiled units went to the sink).
-func TestKnowledgeCompiler_GuardrailFlushStreams(t *testing.T) {
-	installMockDeps(t)
-
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant": "structure", "llm_id": "llm1", "embedding_model": "emb1",
-	})
-	if err != nil {
-		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
-	}
-	// Override guardrails to a tiny cap with the flush policy. (Guardrails are
-	// not yet DSL-configurable; set directly on the exported Param.)
-	kc, ok := c.(*KnowledgeCompilerComponent)
-	if !ok {
-		t.Fatalf("component is not *KnowledgeCompilerComponent: %T", c)
-	}
-	kc.Param.Guardrails = common.CapacityGuardrails{
-		MaxItems: 2, OnExceed: common.ExceedFlush,
-	}
-
-	sink := &sinkRecorder{}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
-		"chunks": []any{
-			map[string]any{"id": "c1", "text": "Alpha is a Beta"},
-			map[string]any{"id": "c2", "text": "Beta related to Gamma"},
-		},
-		"doc_id":        "d1",
-		"tenant_id":     "t1",
-		"parser_config": graphParserConfig(),
-		"sink":          sink,
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	sink.mu.Lock()
-	emitted, batches := sink.total, sink.batches
-	sink.mu.Unlock()
-	if batches == 0 || emitted == 0 {
-		t.Fatalf("flush policy did not stream products to sink (batches=%d emitted=%d)", batches, emitted)
-	}
-	// The 6 compiled structure units were streamed to the sink; the returned
-	// chunk list must therefore hold only the 2 upstream inputs.
-	raw, ok := out["chunks"].([]any)
-	if !ok {
-		t.Fatalf("chunks = %T", out["chunks"])
-	}
-	if len(raw) != 2 {
-		t.Fatalf("after flush, returned chunks = %d, want 2 (upstream only; compiled streamed to sink)", len(raw))
 	}
 }
 
@@ -933,15 +855,14 @@ func (r *recordingNavChat) Chat(_ context.Context, req common.ChatRequest) (*com
 	return &common.ChatResponse{Content: strings.TrimSpace(req.UserPrompt)}, nil
 }
 
-// TestKnowledgeCompiler_Datasetnav_RootIncludesFlushedSummaries is a regression
-// for the Medium bug: the root overview used to be built from sink.Products()
-// (the not-yet-flushed buffer), so under OnExceed=flush any nav nodes already
-// emitted and cleared no longer contributed to the root, making the dataset
-// root incomplete precisely in the large-result case where streaming applies.
-// Here nav_radius > 1 forces each chunk into its own nav node, a MaxItems=1
-// flush cap drains earlier nodes from the sink before the root is built, and we
-// assert every child marker still appears in the recorded root-synthesis prompt.
-func TestKnowledgeCompiler_Datasetnav_RootIncludesFlushedSummaries(t *testing.T) {
+// TestKnowledgeCompiler_Datasetnav_RootIncludesAllSummaries is a regression for
+// root-overview completeness: the root synthesis must be built from ALL child
+// summaries, not from a partial buffer. The Go implementation buffers every
+// product in Outputs.Products (no streaming sink), so the root always sees the
+// full child set even when the result set is large. Here nav_radius>1 forces
+// each chunk into its own nav node, and we assert every child marker appears in
+// the recorded root-synthesis prompt.
+func TestKnowledgeCompiler_Datasetnav_RootIncludesAllSummaries(t *testing.T) {
 	chat := &recordingNavChat{}
 	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{
@@ -961,13 +882,6 @@ func TestKnowledgeCompiler_Datasetnav_RootIncludesFlushedSummaries(t *testing.T)
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
 	}
-	kc, ok := c.(*KnowledgeCompilerComponent)
-	if !ok {
-		t.Fatalf("component is not *KnowledgeCompilerComponent: %T", c)
-	}
-	// Tiny cap + flush so earlier nav nodes are emitted and cleared from the
-	// sink buffer before the root synthesis runs.
-	kc.Param.Guardrails = common.CapacityGuardrails{MaxItems: 1, OnExceed: common.ExceedFlush}
 
 	markers := []string{"NAVMARKA", "NAVMARKB", "NAVMARKC", "NAVMARKD", "NAVMARKE"}
 	chunks := make([]any, len(markers))
@@ -978,7 +892,6 @@ func TestKnowledgeCompiler_Datasetnav_RootIncludesFlushedSummaries(t *testing.T)
 		"chunks":    chunks,
 		"doc_id":    "d1",
 		"tenant_id": "t1",
-		"sink":      &sinkRecorder{},
 	}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -991,7 +904,7 @@ func TestKnowledgeCompiler_Datasetnav_RootIncludesFlushedSummaries(t *testing.T)
 	}
 	for _, m := range markers {
 		if !strings.Contains(root, m) {
-			t.Fatalf("root overview is missing flushed child summary %q; the root must be built from ALL child summaries, not just the not-yet-flushed sink buffer.\nroot prompt:\n%s", m, root)
+			t.Fatalf("root overview is missing child summary %q; the root must be built from ALL child summaries.\nroot prompt:\n%s", m, root)
 		}
 	}
 }

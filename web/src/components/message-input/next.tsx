@@ -75,8 +75,8 @@ export function NextMessageInput({
     null,
   );
 
-  const [enableThinking, setEnableThinking] = useState(
-    () => storage.getThinkingLevel(),
+  const [enableThinking, setEnableThinking] = useState(() =>
+    storage.getThinkingLevel(),
   );
   const [enableInternet, setEnableInternet] = useState(false);
 

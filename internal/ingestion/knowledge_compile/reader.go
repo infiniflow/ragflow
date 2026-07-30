@@ -18,7 +18,6 @@ package knowledge_compile
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
@@ -129,40 +128,14 @@ func productFromChunkMap(c map[string]interface{}, tenant string) (kccommon.Prod
 		meta["source_doc_ids"] = v
 	}
 
+	vec, _ := kccommon.VectorFromChunkMap(c, 0)
 	return kccommon.Product{
 		ID:       id,
 		DocID:    docID,
 		TenantID: tenant,
 		Variant:  kccommon.Variant(variant),
 		Content:  content,
-		Vector:   vectorFromChunkMap(c),
+		Vector:   vec,
 		Meta:     meta,
 	}, true
-}
-
-// vectorFromChunkMap extracts the embedding from the q_<dim>_vec column, whose
-// exact name depends on the embedding dimension.
-func vectorFromChunkMap(c map[string]interface{}) []float32 {
-	for k, v := range c {
-		if strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec") {
-			return toFloat32Slice(v)
-		}
-	}
-	return nil
-}
-
-func toFloat32Slice(v interface{}) []float32 {
-	switch arr := v.(type) {
-	case []float32:
-		return arr
-	case []interface{}:
-		out := make([]float32, 0, len(arr))
-		for _, e := range arr {
-			if f, ok := e.(float64); ok {
-				out = append(out, float32(f))
-			}
-		}
-		return out
-	}
-	return nil
 }
