@@ -541,23 +541,22 @@ func readUserInput(c *gin.Context) string {
 
 // runDataflowDebug runs a canvas in dataflow dry-run (debug) mode: it builds
 // an in-memory debug TaskContext and executes the pipeline synchronously,
-// returning the produced chunks. It performs no persistence (no MinIO upload,
-// index insert, or pipeline_log) because the debug context carries no KB
-// (KB.ID == ""), which is the single debug signal used across the ingestion
-// pipeline: the tokenizer skips embedding and the executor skips the persist
-// stage. kb_id == "" occurs ONLY in debug mode; production ingestion always
-// supplies a KB, so this path is never taken in normal operation.
+// returning the produced chunks. The run is fully synchronous: the complete
+// debug log (including the terminal END marker) is flushed to Redis BEFORE
+// this method returns, so the message_id it yields is for *replay* —
+// re-fetching the log after a page refresh or from a shared link — not for
+// incremental streaming; the front-end's poll therefore receives a finished
+// log on the first request.
 //
-// The request's kb_id is intentionally never forwarded: debug never resolves
-// an embedder or writes to a KB, and parse/chunk work without it. Callers
-// extract the (fileName, fileData) pair from their own request shape and pass
-// them in.
-// runDataflowDebug runs a canvas in dataflow dry-run (debug) mode and returns
-// the produced chunks. The run is fully synchronous: the complete debug log
-// (including the terminal END marker) is flushed to Redis BEFORE this method
-// returns, so the message_id it yields is for *replay* — re-fetching the log
-// after a page refresh or from a shared link — not for incremental streaming.
-// The front-end's poll therefore receives a finished log on the first request.
+// It performs no persistence (no MinIO upload, index insert, or pipeline_log)
+// because the debug context carries no KB (KB.ID == ""), which is the single
+// debug signal used across the ingestion pipeline: the tokenizer skips
+// embedding and the executor skips the persist stage. kb_id == "" occurs ONLY
+// in debug mode; production ingestion always supplies a KB, so this path is
+// never taken in normal operation. The request's kb_id is intentionally never
+// forwarded: debug never resolves an embedder or writes to a KB, and
+// parse/chunk work without it. Callers extract the (fileName, fileData) pair
+// from their own request shape and pass them in.
 func (h *AgentHandler) runDataflowDebug(ctx context.Context, user *entity.User,
 	canvasID, fileName string, fileData []byte) (*task.PipelineResult, error) {
 	// messageID is the polling key the front-end reads from the run response

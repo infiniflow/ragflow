@@ -306,10 +306,11 @@ func TestLookupComponentOutput(t *testing.T) {
 func TestDeepCopyStrip_StripsVectorsFromMapSlice(t *testing.T) {
 	src := []map[string]any{
 		{
-			"text":      "real chunk",
-			"vector":    []float64{0.1, 0.2},
-			"embedding": []float64{0.3},
-			"nested":    map[string]any{"q_vec": []float64{0.9}, "keep": "x"},
+			"text":       "real chunk",
+			"vector":     []float64{0.1, 0.2},
+			"embedding":  []float64{0.3},
+			"q_1024_vec": []float64{0.7},
+			"nested":     map[string]any{"q_vec": []float64{0.9}, "q_4_vec": []float64{0.8}, "keep": "x"},
 		},
 		{"text": "second", "feature": []float64{0.4}},
 	}
@@ -337,12 +338,18 @@ func TestDeepCopyStrip_StripsVectorsFromMapSlice(t *testing.T) {
 	if _, exists := c0["embedding"]; exists {
 		t.Errorf("embedding must be stripped, but present: %#v", c0)
 	}
+	if _, exists := c0["q_1024_vec"]; exists {
+		t.Errorf("q_1024_vec (dimension-scoped vector key) must be stripped, but present: %#v", c0)
+	}
 	if c0["text"] != "real chunk" {
 		t.Errorf("text=%v want 'real chunk'", c0["text"])
 	}
 	nested, _ := c0["nested"].(map[string]any)
 	if _, exists := nested["q_vec"]; exists {
 		t.Errorf("nested q_vec must be stripped, but present: %#v", nested)
+	}
+	if _, exists := nested["q_4_vec"]; exists {
+		t.Errorf("nested q_4_vec (dimension-scoped vector key) must be stripped, but present: %#v", nested)
 	}
 	if nested["keep"] != "x" {
 		t.Errorf("nested.keep=%v want x", nested["keep"])

@@ -29,6 +29,7 @@ package task
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // ResultSink is an OPTIONAL capability a ProgressSink may implement to receive
@@ -51,6 +52,19 @@ var vectorKeys = map[string]struct{}{
 	"embedding": {},
 	"q_vec":     {},
 	"feature":   {},
+}
+
+// isVectorKey reports whether k is a raw embedding-vector key that must be
+// stripped from debug payloads. It matches the fixed legacy keys
+// (vector/embedding/feature) AND the dimension-scoped pattern q_<dim>_vec that
+// the tokenizer actually emits (see hasEmbeddingVector, tokenizer.go:828, e.g.
+// q_4_vec, q_1024_vec). The literal "q_vec" entry never matches those, so a
+// bare map lookup would let real vectors leak into the Redis log.
+func isVectorKey(k string) bool {
+	if _, ok := vectorKeys[k]; ok {
+		return true
+	}
+	return strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec")
 }
 
 // BuildDebugResultDSL builds the `dsl` object the debug-log END marker carries
@@ -215,7 +229,7 @@ func deepCopyStrip(v any) any {
 	case map[string]any:
 		cp := make(map[string]any, len(val))
 		for k, vv := range val {
-			if _, drop := vectorKeys[k]; drop {
+			if isVectorKey(k) {
 				continue
 			}
 			cp[k] = deepCopyStrip(vv)
