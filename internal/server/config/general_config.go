@@ -35,7 +35,7 @@ type GeneralConfig struct {
 	AnalyticEngine    string        `mapstructure:"analytic_engine"` // Clickhouse
 }
 
-func ParseGeneralConfig(config *Config, v *viper.Viper) {
+func ParseGeneralConfig(config *Config, v *viper.Viper) error {
 
 	// Default General config
 	config.General.HeartbeatInterval = 3
@@ -49,49 +49,39 @@ func ParseGeneralConfig(config *Config, v *viper.Viper) {
 	config.General.AnalyticEngine = "clickhouse"
 
 	if !v.IsSet("general") {
-		return
+		return nil
 	}
 	sub := v.Sub("general")
 	if sub == nil {
-		return
+		return nil
 	}
 
-	if !sub.IsSet("heartbeat_interval") {
+	if sub.IsSet("heartbeat_interval") {
 		config.General.HeartbeatInterval = sub.GetDuration("heartbeat_interval")
 	}
-	if !sub.IsSet("mode") {
+	if sub.IsSet("mode") {
 		config.General.Mode = sub.GetString("mode")
 	}
-	if !sub.IsSet("secret_key") {
+	if sub.IsSet("secret_key") {
 		config.General.SecretKey = sub.GetString("secret_key")
 	}
-	if !sub.IsSet("database") {
+	if sub.IsSet("database") {
 		config.General.Database = sub.GetString("database")
 	}
-	if !sub.IsSet("doc_engine") {
+	if sub.IsSet("doc_engine") {
 		config.General.DocEngine = sub.GetString("doc_engine")
 	}
-	if !sub.IsSet("storage_engine") {
+	if sub.IsSet("storage_engine") {
 		config.General.StorageEngine = sub.GetString("storage_engine")
 	}
-	if !sub.IsSet("cache_engine") {
+	if sub.IsSet("cache_engine") {
 		config.General.CacheEngine = sub.GetString("cache_engine")
 	}
-	if !sub.IsSet("queue_engine") {
+	if sub.IsSet("queue_engine") {
 		config.General.QueueEngine = sub.GetString("queue_engine")
 	}
-	if !sub.IsSet("analytic_engine") {
+	if sub.IsSet("analytic_engine") {
 		config.General.AnalyticEngine = sub.GetString("analytic_engine")
 	}
-	config.General = GeneralConfig{
-		HeartbeatInterval: sub.GetDuration("heartbeat_interval"),
-		Mode:              sub.GetString("mode"),
-		SecretKey:         sub.GetString("secret_key"),
-		Database:          sub.GetString("database"),
-		DocEngine:         sub.GetString("doc_engine"),
-		StorageEngine:     sub.GetString("storage_engine"),
-		CacheEngine:       sub.GetString("cache_engine"),
-		QueueEngine:       sub.GetString("queue_engine"),
-		AnalyticEngine:    sub.GetString("analytic_engine"),
-	}
+	return nil
 }

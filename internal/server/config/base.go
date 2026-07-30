@@ -21,13 +21,14 @@ import (
 )
 
 type Config struct {
-	General          GeneralConfig
-	Authentication   AuthenticationConfig
-	Database         DatabaseConfig
+	General        GeneralConfig
+	Authentication AuthenticationConfig
+	Database       DatabaseConfig
+	DocEngine      DocEngineConfig
+
 	Redis            RedisConfig
 	Nats             NatsConfig
 	Log              LogConfig
-	DocEngine        DocEngineConfig
 	StorageEngine    StorageConfig
 	RegisterEnabled  int
 	OAuth            map[string]OAuthConfig
@@ -166,11 +167,6 @@ type LogConfig struct {
 }
 
 // DocEngineConfig document engine configuration
-type DocEngineConfig struct {
-	Type     EngineType           `mapstructure:"type"`
-	ES       *ElasticsearchConfig `mapstructure:"es"`
-	Infinity *InfinityConfig      `mapstructure:"infinity"`
-}
 
 // EngineType document engine type
 type EngineType string
@@ -180,83 +176,7 @@ const (
 	EngineInfinity      EngineType = "infinity"
 )
 
-// ElasticsearchConfig Elasticsearch configuration
-type ElasticsearchConfig struct {
-	Hosts    string `mapstructure:"hosts"`
-	Username string `mapstructure:"username"`
-	Password string `mapstructure:"password"`
-}
-
-// InfinityConfig Infinity configuration
-type InfinityConfig struct {
-	URI                    string `mapstructure:"uri"`
-	PostgresPort           int    `mapstructure:"postgres_port"`
-	DBName                 string `mapstructure:"db_name"`
-	MappingFileName        string `mapstructure:"mapping_file_name"`
-	DocMetaMappingFileName string `mapstructure:"doc_meta_mapping_file_name"`
-}
-
 type StorageType string
-
-// StorageConfig holds all storage-related configurations
-type StorageConfig struct {
-	Type  StorageType  `mapstructure:"type"`
-	Minio *MinioConfig `mapstructure:"minio"`
-	S3    *S3Config    `mapstructure:"s3"`
-	OSS   *OSSConfig   `mapstructure:"oss"`
-	GCS   *GCSConfig   `mapstructure:"gcs"`
-}
-
-const (
-	StorageOSS   StorageType = "oss"
-	StorageS3    StorageType = "s3"
-	StorageMinio StorageType = "minio"
-	StorageGCS   StorageType = "gcs"
-)
-
-// OSSConfig holds Aliyun OSS storage configuration
-// OSS is compatible with S3 API
-type OSSConfig struct {
-	AccessKey        string `mapstructure:"access_key"`        // OSS Access Key ID
-	SecretKey        string `mapstructure:"secret_key"`        // OSS Secret Access Key
-	EndpointURL      string `mapstructure:"endpoint_url"`      // OSS Endpoint (e.g., "https://oss-cn-hangzhou.aliyuncs.com")
-	Region           string `mapstructure:"region"`            // Region (e.g., "cn-hangzhou")
-	Bucket           string `mapstructure:"bucket"`            // Default bucket (optional)
-	PrefixPath       string `mapstructure:"prefix_path"`       // Path prefix (optional)
-	SignatureVersion string `mapstructure:"signature_version"` // Signature version
-	AddressingStyle  string `mapstructure:"addressing_style"`  // Addressing style
-}
-
-type GCSConfig struct {
-	Bucket      string `mapstructure:"bucket"`       // Default bucket (optional)
-	PrefixPath  string `mapstructure:"prefix_path"`  // Path prefix (optional)
-	EndpointURL string `mapstructure:"endpoint_url"` // Custom endpoint (optional)
-}
-
-// MinioConfig holds MinIO storage configuration
-type MinioConfig struct {
-	Host       string `mapstructure:"host"`        // MinIO server host (e.g., "localhost:9000")
-	User       string `mapstructure:"user"`        // Access key
-	Password   string `mapstructure:"password"`    // Secret key
-	Secure     bool   `mapstructure:"secure"`      // Use HTTPS
-	Verify     bool   `mapstructure:"verify"`      // Verify SSL certificates
-	Region     string `mapstructure:"region"`      // optional
-	Bucket     string `mapstructure:"bucket"`      // Default bucket (optional)
-	PrefixPath string `mapstructure:"prefix_path"` // Path prefix (optional)
-}
-
-// S3Config holds AWS S3 storage configuration
-type S3Config struct {
-	AccessKey        string `mapstructure:"access_key"`        // AWS Access Key ID
-	SecretKey        string `mapstructure:"secret_key"`        // AWS Secret Access Key
-	Region           string `mapstructure:"region_name"`       // AWS Region
-	SessionToken     string `mapstructure:"session_token"`     // AWS Session Token (optional)
-	EndpointURL      string `mapstructure:"endpoint_url"`      // Custom endpoint (optional)
-	SignatureVersion string `mapstructure:"signature_version"` // Signature version
-	AddressingStyle  string `mapstructure:"addressing_style"`  // Addressing style
-	Bucket           string `mapstructure:"bucket"`            // Default bucket (optional)
-	PrefixPath       string `mapstructure:"prefix_path"`       // Path prefix (optional)
-}
 
 // RedisConfig Redis configuration
 type RedisConfig struct {

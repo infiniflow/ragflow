@@ -667,8 +667,26 @@ func FromConfigFile(configPath string) error {
 	}
 
 	newConfig = &config.Config{}
-	config.ParseGeneralConfig(newConfig, v)
-	config.ParseDatabaseConfig(newConfig.General.Database, newConfig, v)
+
+	err := config.ParseGeneralConfig(newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse general config error: %w", err)
+	}
+
+	err = config.ParseDatabaseConfig(newConfig.General.Database, newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse database config error: %w", err)
+	}
+
+	err = config.ParseDocEngineConfig(newConfig.General.DocEngine, newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse doc engine config error: %w", err)
+	}
+
+	err = config.ParseStorageConfig(newConfig.General.StorageEngine, newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse storage config error: %w", err)
+	}
 
 	// Set default values for admin configuration if not configured
 	if globalConfig.Admin.Host == "" {
