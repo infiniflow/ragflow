@@ -7194,6 +7194,28 @@
             ]
         },
         {
+            "name": "MinerU.Net",
+            "logo": "",
+            "tags": "OCR",
+            "status": "1",
+            "url": "https://mineru.net",
+            "rank": "940",
+            "llm": [
+                {
+                    "llm_name": "vlm",
+                    "tags": "OCR,DOC PARSE",
+                    "max_tokens": 8192,
+                    "model_type": "ocr"
+                },
+                {
+                    "llm_name": "MinerU-HTML",
+                    "tags": "OCR,DOC PARSE",
+                    "max_tokens": 8192,
+                    "model_type": "ocr"
+                }
+            ]
+        },
+        {
             "name": "PaddleOCR",
             "logo": "",
             "tags": "OCR",

@@ -13,17 +13,23 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import io
 import json
 import logging
 import os
+import time
+import zipfile
+from pathlib import Path
 from typing import Any, Optional
 
-from deepdoc.parser.mineru_parser import MinerUParser
+from deepdoc.parser.mineru_parser import MinerUContentType, MinerUParser
 from deepdoc.parser.mistral_parser import MistralParser
 from deepdoc.parser.opendataloader_parser import OpenDataLoaderParser
 from deepdoc.parser.paddleocr_parser import PaddleOCRParser
 from deepdoc.parser.pdf_parser import MAXIMUM_PAGE_NUMBER
 from deepdoc.parser.somark_parser import SoMarkParser
+
+import requests
 
 
 class Base:
@@ -96,6 +102,210 @@ class MinerUOcrModel(Base, MinerUParser):
             **kwargs,
         )
         return sections, tables
+
+
+class MinerUNetOcrModel(Base):
+    _FACTORY_NAME = "MinerU.Net"
+
+    def __init__(self, key: str | dict, model_name: str, **kwargs):
+        Base.__init__(self, key, model_name, **kwargs)
+
+        self.api_key = key or os.environ.get("MINERUNET_API_KEY", "")
+        self.base_url = (kwargs.get("base_url") or "https://mineru.net").rstrip("/")
+
+        logging.info("Initialized MinerU.Net OCR model, base_url=%s", self.base_url)
+
+    def check_available(self) -> tuple[bool, str]:
+        if not self.api_key:
+            return False, "MinerU.Net API key is not configured."
+
+        try:
+            r = requests.get(
+                f"{self.base_url}/api/v4/extract/task/connection-check",
+                headers={"Authorization": f"Bearer {self.api_key}"},
+                timeout=10,
+            )
+            if r.status_code in (401, 403):
+                return False, f"authentication failed (HTTP {r.status_code}): {r.text[:200]}"
+            # 404 (task not found) confirms the key is valid and the server is reachable.
+            logging.info("[MinerU.Net] connection check passed, status=%d", r.status_code)
+            return True, ""
+        except Exception as exc:
+            reason = f"MinerU.Net connection failed: {exc}"
+            logging.warning(reason)
+            return False, reason
+
+    def parse_pdf(self, filepath: str, binary=None, callback=None, parse_method: str = "raw", **kwargs) -> tuple[Any, Any]:
+        ok, reason = self.check_available()
+        if not ok:
+            raise RuntimeError(f"MinerU.Net not accessible: {reason}")
+
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+
+        # Step 1: Submit file to MinerU.Net API
+        if callback:
+            callback(0.05, "[MinerU.Net] Submitting task...")
+
+        task_id = self._submit_task(filepath, binary, headers, **kwargs)
+
+        if callback:
+            callback(0.1, f"[MinerU.Net] Task {task_id} submitted, waiting for processing...")
+
+        # Step 2: Poll until done
+        zip_url = self._poll_until_done(task_id, headers, callback)
+
+        if callback:
+            callback(0.75, "[MinerU.Net] Downloading result...")
+
+        # Step 3: Download zip and extract content_list.json
+        json_data = self._download_and_extract(zip_url, headers)
+
+        if callback:
+            callback(0.85, "[MinerU.Net] Parsing result...")
+
+        # Step 4: Parse into sections/tables
+        sections = []
+        for item in json_data:
+            item_type = item.get("type", "")
+            if item_type == MinerUContentType.TEXT:
+                section = item.get("text", "")
+            elif item_type == MinerUContentType.TABLE:
+                section = item.get("table_body", "") + "\n".join(item.get("table_caption", [])) + "\n".join(item.get("table_footnote", []))
+                if not section.strip():
+                    section = "FAILED TO PARSE TABLE"
+            elif item_type == MinerUContentType.IMAGE:
+                section = "".join(item.get("image_caption", [])) + "\n" + "".join(item.get("image_footnote", []))
+            elif item_type == MinerUContentType.EQUATION:
+                section = item.get("text", "")
+            elif item_type == MinerUContentType.CODE:
+                section = item.get("code_body", "") + "\n".join(item.get("code_caption", []))
+            elif item_type == MinerUContentType.LIST:
+                section = "\n".join(item.get("list_items", []))
+            elif item_type in (MinerUContentType.HEADER, MinerUContentType.FOOTER, MinerUContentType.PAGE_NUMBER, MinerUContentType.DISCARDED):
+                continue
+            else:
+                logging.debug("[MinerU.Net] Skip unsupported type=%s", item_type)
+                continue
+
+            if not section:
+                continue
+
+            if parse_method in ("manual", "pipeline"):
+                sections.append((section, item_type, ""))
+            else:
+                sections.append((section, ""))
+
+        if callback:
+            callback(1.0, "[MinerU.Net] Done.")
+
+        return sections, []
+
+    def _submit_task(self, filepath: str, binary, headers: dict, **kwargs) -> str:
+        if binary is not None:
+            if isinstance(binary, str) and (binary.startswith("http://") or binary.startswith("https://")):
+                return self._submit_by_url(binary, kwargs.get("lang", ""), headers)
+            return self._submit_by_upload(filepath, binary, headers, **kwargs)
+
+        if isinstance(filepath, str) and (filepath.startswith("http://") or filepath.startswith("https://")):
+            return self._submit_by_url(filepath, kwargs.get("lang", ""), headers)
+
+        content = Path(filepath).read_bytes()
+        return self._submit_by_upload(filepath, content, headers, **kwargs)
+
+    def _submit_by_url(self, url: str, lang: str, headers: dict) -> str:
+        req_body: dict = {"url": url, "model_version": self.model_name}
+        if lang:
+            req_body["lang"] = lang
+
+        r = requests.post(
+            f"{self.base_url}/api/v4/extract/task",
+            json=req_body,
+            headers=headers,
+            timeout=30,
+        )
+        self._check_api_response(r, "submit task")
+        return r.json()["data"]["task_id"]
+
+    def _submit_by_upload(self, filepath: str, binary, headers: dict, **kwargs) -> str:
+        if isinstance(binary, bytes):
+            file_obj = io.BytesIO(binary)
+        else:
+            file_obj = io.BytesIO(binary.read() if hasattr(binary, "read") else binary)
+
+        filename = Path(filepath).name or "document.pdf"
+        files = {"file": (filename, file_obj, "application/octet-stream")}
+        data: dict = {"model_version": self.model_name}
+        if kwargs.get("lang"):
+            data["lang"] = kwargs["lang"]
+
+        r = requests.post(
+            f"{self.base_url}/api/v4/extract/task",
+            data=data,
+            files=files,
+            headers=headers,
+            timeout=30,
+        )
+        self._check_api_response(r, "upload file")
+        return r.json()["data"]["task_id"]
+
+    def _poll_until_done(self, task_id: str, headers: dict, callback=None) -> str:
+        max_wait = 600
+        interval = 2
+        elapsed = 0.0
+
+        while elapsed < max_wait:
+            time.sleep(interval)
+            elapsed += interval
+
+            r = requests.get(
+                f"{self.base_url}/api/v4/extract/task/{task_id}",
+                headers=headers,
+                timeout=15,
+            )
+            self._check_api_response(r, "poll task")
+
+            data = r.json()["data"]
+            state = data.get("state", "")
+
+            if callback:
+                progress = data.get("extract_progress", {})
+                extracted = progress.get("extracted_pages", 0)
+                total = progress.get("total_pages", 0)
+                page_info = f" ({extracted}/{total} pages)" if total else ""
+                callback(min(0.1 + 0.65 * (elapsed / max_wait), 0.74), f"[MinerU.Net] {state}{page_info}...")
+
+            if state == "done":
+                zip_url = data.get("full_zip_url", "")
+                if not zip_url:
+                    raise RuntimeError("MinerU.Net returned done state but no full_zip_url")
+                return zip_url
+            if state == "failed":
+                raise RuntimeError(f"MinerU.Net task failed: {data.get('err_msg', 'unknown error')}")
+
+            interval = min(interval * 1.5, 15)
+
+        raise TimeoutError(f"MinerU.Net task {task_id} timed out after {max_wait}s")
+
+    def _download_and_extract(self, zip_url: str, headers: dict) -> list[dict]:
+        r = requests.get(zip_url, headers=headers, timeout=60)
+        if r.status_code != 200:
+            raise RuntimeError(f"Failed to download result zip (HTTP {r.status_code}): {r.text[:500]}")
+
+        with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+            for name in zf.namelist():
+                if name.endswith("_content_list.json") or name.endswith("content_list.json"):
+                    return json.loads(zf.read(name))
+
+        names = "\n".join(zf.namelist())
+        raise FileNotFoundError(f"No content_list.json found in result zip. Contents:\n{names}")
+
+    @staticmethod
+    def _check_api_response(r, context: str):
+        if r.status_code not in (200, 201):
+            raise RuntimeError(f"MinerU.Net {context} failed (HTTP {r.status_code}): {r.text[:500]}")
+        resp = r.json()
+        if resp.get("code") != 0:
+            raise RuntimeError(f"MinerU.Net {context} failed (code {resp.get('code')}): {resp.get('msg', '')}")
 
 
 class PaddleOCROcrModel(Base, PaddleOCRParser):
