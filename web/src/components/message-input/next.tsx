@@ -26,6 +26,7 @@ import { AudioButton } from '../ui/audio-button';
 export type NextMessageInputOnPressEnterParameter = {
   enableThinking?: string;
   enableInternet?: boolean;
+  store_history_messages?: boolean;
 };
 
 interface NextMessageInputProps {
