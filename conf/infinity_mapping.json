@@ -66,6 +66,14 @@
 	"entity_names_kwd": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
 	"outlinks_kwd": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
 	"related_kb_pages_kwd": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
+
+	"page_version_int": {"type": "integer", "default": 1},
+	"synthesis_version_int": {"type": "integer", "default": 0},
+	"claims": {"type": "json", "default": "[]", "enabled": false},
+	"page_ids": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
+	"source_chunk_hashes": {"type": "json", "default": "{}", "enabled": false},
+	"map_checksum": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+
 	"type_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"from_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"to_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},

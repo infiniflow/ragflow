@@ -1300,3 +1300,229 @@ async def run_wiki(
         logging.exception("wiki: page-graph persist failed for kb %s", ctx.kb_id)
 
     progress(1.0, f"Wiki compiled {len(pages or [])} page(s).")
+
+
+# ----- dual-mode incremental entry point ---------------------------------
+
+
+async def run_wiki_incremental(
+    ctx: TaskContext,
+    embedding_model,
+    load_chunks_for_doc: Callable[..., AsyncIterator[list[dict]]],
+    plan: bool = False,
+) -> None:
+    """Dual-mode wiki compilation with incremental support.
+
+    Mode A (plan=False, default):
+        1 concept = 1 page (WeKnora style).
+        MAP → REDUCE → per-concept REFINE → FINALIZE.
+        Incremental: per-concept modify based on doc_change tracking.
+
+    Mode B (plan=True):
+        PLAN groups entities → per-page REFINE.
+        Incremental: Page Router (KNN) routes entities to existing pages.
+
+    Args:
+        ctx: Task context
+        embedding_model: Embedding model
+        load_chunks_for_doc: Chunk loader
+        plan: True=Mode B, False=Mode A (default)
+    """
+    from api.db.services.document_service import DocumentService
+    from api.db.services.compilation_template_service import CompilationTemplateService
+    from api.db.services.llm_service import LLMBundle
+    from api.db.joint_services.tenant_model_service import (
+        get_tenant_default_model_by_type,
+        resolve_model_config,
+    )
+    from api.apps.restful_apis.chunk_api import _compilation_template_kind
+    from rag.advanced_rag.knowlege_compile.wiki_incremental import (
+        wiki_compile_incremental,
+    )
+    from rag.advanced_rag.knowlege_compile.structure import LLMCallPool
+
+    progress = ctx.progress_cb
+    progress(0.0, f"Loading documents for wiki {'PLAN' if plan else 'no-plan'} compilation...")
+
+    # 1. Check if this is incremental (existing MAP rows present)
+    existing_map_doc_ids = await _wiki_existing_map_doc_ids(ctx.tenant_id, ctx.kb_id)
+    is_incremental = bool(existing_map_doc_ids)
+    deleted_doc_ids = set()
+
+    if is_incremental:
+        # Find deleted docs
+        all_docs, _ = await thread_pool_exec(
+            DocumentService.get_by_kb_id,
+            kb_id=ctx.kb_id,
+            page_number=0,
+            items_per_page=0,
+            orderby="create_time",
+            desc=False,
+            keywords="",
+            run_status=[],
+            types=[],
+            suffix=[],
+        )
+        current_doc_ids = {str(d.get("id")) for d in all_docs or [] if d.get("id")}
+        deleted_doc_ids = existing_map_doc_ids - current_doc_ids
+        progress(0.02, f"Detected {len(deleted_doc_ids)} deleted document(s) ...")
+
+    # 2. Pick eligible docs
+    all_docs, _ = await thread_pool_exec(
+        DocumentService.get_by_kb_id,
+        kb_id=ctx.kb_id,
+        page_number=0,
+        items_per_page=0,
+        orderby="create_time",
+        desc=False,
+        keywords="",
+        run_status=[],
+        types=[],
+        suffix=[],
+    )
+    eligible = []
+    for d in all_docs or []:
+        if str(d.get("id")) in deleted_doc_ids:
+            continue
+        pc = d.get("parser_config") or {}
+        for template_id in _parser_config_compilation_template_ids(pc, ctx.tenant_id):
+            template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
+            config = template.get("config") if template else {}
+            kind = _compilation_template_kind(config.get("kind") if isinstance(config, dict) else "")
+            if kind == "wiki":
+                eligible.append((d, template_id))
+                break
+
+    if not eligible and not is_incremental:
+        progress(1.0, "No documents configured for wiki compilation.")
+        return
+
+    # 3. Resolve chat model
+    llm_bundle_cache: dict[str, LLMBundle] = {}
+
+    def _bundle_for(llm_id: str | None) -> LLMBundle:
+        key = (llm_id or "").strip() or "__tenant_default__"
+        cached = llm_bundle_cache.get(key)
+        if cached is not None:
+            return cached
+        try:
+            if key == "__tenant_default__":
+                cfg = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
+            else:
+                cfg = resolve_model_config(ctx.tenant_id, LLMType.CHAT, key)
+        except Exception:
+            cfg = get_tenant_default_model_by_type(ctx.tenant_id, LLMType.CHAT)
+            key = "__tenant_default__"
+            cached = llm_bundle_cache.get(key)
+            if cached is not None:
+                return cached
+        bundle = LLMBundle(ctx.tenant_id, cfg, lang=ctx.language)
+        llm_bundle_cache[key] = bundle
+        return bundle
+
+    map_llm_pool = LLMCallPool(WIKI_MAP_LLM_POOL_SIZE, max_pending=WIKI_MAP_MAX_PENDING)
+    kb_chat_llm_id = None
+    first_template_found = False
+
+    # 4. MAP per doc (same as run_wiki's MAP phase)
+    map_queue: asyncio.Queue = asyncio.Queue(maxsize=WIKI_MAP_QUEUE_SIZE)
+    n_docs = len(eligible)
+    all_map_results: list[dict] = []
+
+    async def _produce_doc(i: int, job: tuple[dict, str]) -> None:
+        doc, template_id = job
+        doc_id = doc["id"]
+        progress(0.05 + 0.6 * (i / max(n_docs, 1)), f"MAP {i + 1}/{n_docs}: {doc.get('name', doc_id)}")
+        try:
+            async for batch in load_chunks_for_doc(
+                ctx.tenant_id,
+                ctx.kb_id,
+                doc_id,
+                batch_size=WIKI_MAP_BATCH_CHUNKS,
+            ):
+                await map_queue.put((i, doc, template_id, batch))
+        except Exception:
+            logging.exception("wiki: MAP chunk loading failed for doc %s", doc_id)
+
+    async def _map_worker() -> None:
+        while True:
+            item = await map_queue.get()
+            try:
+                if item is None:
+                    return
+                _, doc, template_id, batch = item
+                doc_id = doc["id"]
+                template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
+                parser_cfg = (template.get("config") or {}) if template else {}
+                map_llm_id = (parser_cfg.get("llm_id") or "").strip() if isinstance(parser_cfg, dict) else ""
+                nonlocal first_template_found, kb_chat_llm_id
+                if not first_template_found and isinstance(parser_cfg, dict):
+                    first_template_found = True
+                    llm_id = (parser_cfg.get("llm_id") or "").strip()
+                    kb_chat_llm_id = llm_id or None
+
+                result = await wiki_map_from_chunks(
+                    chunks=batch,
+                    chat_mdl=map_llm_pool.wrap(
+                        _bundle_for(map_llm_id),
+                        priority=30,
+                        label=f"wiki-map:{doc_id}",
+                        context=f"{ctx.kb_id}:{doc_id}:map",
+                    ),
+                    embd_mdl=embedding_model,
+                    doc_id=doc_id,
+                    tenant_id=ctx.tenant_id,
+                    kb_id=ctx.kb_id,
+                    language=ctx.language,
+                    parser_config=parser_cfg,
+                    batch_size_cap=8,
+                    window_fraction=0.5,
+                    max_workers=6,
+                )
+                if result:
+                    result["doc_id"] = doc_id
+                    all_map_results.append(result)
+            except Exception:
+                logging.exception("wiki: MAP failed for doc %s", doc_id)
+            finally:
+                map_queue.task_done()
+
+    producers = [asyncio.create_task(_produce_doc(i, job)) for i, job in enumerate(eligible)]
+    workers = [asyncio.create_task(_map_worker()) for _ in range(WIKI_MAP_LLM_POOL_SIZE)]
+    try:
+        await asyncio.gather(*producers)
+        await map_queue.join()
+    finally:
+        for task in producers + workers:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*producers, *workers, return_exceptions=True)
+
+    if not all_map_results and not is_incremental:
+        progress(1.0, "No MAP results. Skipping wiki compilation.")
+        return
+
+    # 5. Run incremental wiki compilation (Mode A or Mode B)
+    kb_chat_mdl = _bundle_for(kb_chat_llm_id) if kb_chat_llm_id else _bundle_for(None)
+
+    progress(0.65, f"Wiki {'PLAN' if plan else 'no-plan'} incremental compilation ...")
+    summary = await wiki_compile_incremental(
+        chat_mdl=map_llm_pool.wrap(
+            kb_chat_mdl,
+            priority=20,
+            label=f"wiki-{'plan' if plan else 'noplan'}-refine",
+            context=f"{ctx.kb_id}:refine",
+        ),
+        embd_mdl=embedding_model,
+        tenant_id=ctx.tenant_id,
+        kb_id=ctx.kb_id,
+        plan=plan,
+        incremental=is_incremental,
+        map_results=all_map_results or None,
+        deleted_doc_ids=deleted_doc_ids or None,
+        callback=lambda p, msg: progress(p, msg),
+    )
+
+    progress(1.0, f"Wiki done: +{summary.get('pages_created', 0)} ~{summary.get('pages_modified', 0)} -{summary.get('pages_deleted', 0)}")
+    if summary.get("errors"):
+        logging.warning("wiki: non-fatal errors: %s", summary["errors"])
