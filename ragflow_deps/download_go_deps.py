@@ -5,7 +5,8 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "nltk",
-#   "huggingface-hub"
+#   "huggingface-hub",
+#   "requests",
 # ]
 # ///
 
