@@ -56,6 +56,7 @@ type feishuChannel struct {
 	account feishuAccount
 
 	mu       sync.Mutex
+	ctx      context.Context
 	cancel   context.CancelFunc
 	handler  core.MessageHandler
 	rest     *lark.Client
@@ -86,6 +87,7 @@ func newFeishuChannel(account feishuAccount) *feishuChannel {
 		account.AppSecret,
 		lark.WithOpenBaseUrl(feishuBaseURL(account.Domain)),
 		lark.WithLogLevel(larkcore.LogLevelInfo),
+		lark.WithReqTimeout(account.Timeout),
 	)
 	ch.wsClient = larkws.NewClient(
 		account.AppID,
@@ -147,6 +149,7 @@ func (c *feishuChannel) Start(ctx context.Context) error {
 	}
 
 	runCtx, cancel := context.WithCancel(ctx)
+	c.ctx = runCtx
 	c.cancel = cancel
 	c.mu.Unlock()
 
@@ -187,6 +190,7 @@ func (c *feishuChannel) Send(ctx context.Context, msg core.OutgoingMessage) erro
 	content, _ := json.Marshal(map[string]string{"text": msg.Text})
 	contentText := string(content)
 	msgType := "text"
+
 	if strings.TrimSpace(msg.ReplyToMessageID) != "" {
 		resp, err := c.rest.Im.Message.Reply(ctx, larkim.NewReplyMessageReqBuilder().
 			MessageId(msg.ReplyToMessageID).
@@ -228,14 +232,16 @@ func (c *feishuChannel) run(ctx context.Context) {
 
 // eventDispatcher builds the Feishu event handler used by the WebSocket client.
 func (c *feishuChannel) eventDispatcher() *dispatcher.EventDispatcher {
-	return dispatcher.NewEventDispatcher("", "").OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
-		incoming, ok := c.normalizeMessage(event)
-		if !ok {
+	return dispatcher.NewEventDispatcher("", "").OnP2MessageReceiveV1(
+		func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+			incoming, ok := c.normalizeMessage(event)
+			if !ok {
+				return nil
+			}
+			c.enqueueIncoming(incoming)
 			return nil
-		}
-		c.enqueueIncoming(ctx, incoming)
-		return nil
-	})
+		},
+	)
 }
 
 // normalizeMessage converts a Feishu SDK message event to the chat-channel message model.
@@ -268,11 +274,7 @@ func (c *feishuChannel) normalizeMessage(event *larkim.P2MessageReceiveV1) (core
 }
 
 // enqueueIncoming schedules Feishu message handling and marks it seen after a successful handoff.
-func (c *feishuChannel) enqueueIncoming(ctx context.Context, incoming core.IncomingMessage) bool {
-	if ctx.Err() != nil {
-		return false
-	}
-
+func (c *feishuChannel) enqueueIncoming(incoming core.IncomingMessage) bool {
 	now := time.Now()
 	var worker *feishuWorker
 	startWorker := false
@@ -300,10 +302,10 @@ func (c *feishuChannel) enqueueIncoming(ctx context.Context, incoming core.Incom
 		c.seen[incoming.MessageID] = now
 		c.mu.Unlock()
 		if startWorker {
-			go c.runWorker(ctx, incoming.ChatID, worker)
+			go c.runWorker(c.ctx, incoming.ChatID, worker)
 		}
 		return true
-	case <-ctx.Done():
+	case <-c.ctx.Done():
 		c.mu.Unlock()
 	default:
 		queueFull = true
@@ -311,7 +313,7 @@ func (c *feishuChannel) enqueueIncoming(ctx context.Context, incoming core.Incom
 	}
 
 	if startWorker {
-		go c.runWorker(ctx, incoming.ChatID, worker)
+		go c.runWorker(c.ctx, incoming.ChatID, worker)
 	}
 	if queueFull {
 		log.Printf("[feishu:%s] dropping message %s for chat %s: queue is full", c.account.AccountID, incoming.MessageID, incoming.ChatID)
@@ -331,7 +333,9 @@ func (c *feishuChannel) runWorker(ctx context.Context, chatID string, worker *fe
 			if ctx.Err() != nil {
 				return
 			}
-			c.handleIncoming(ctx, msg)
+			handlerCtx, cancel := context.WithTimeout(ctx, c.account.Timeout)
+			c.handleIncoming(handlerCtx, msg)
+			cancel()
 			resetTimer(idle, feishuWorkerIdle)
 		case <-idle.C:
 			if c.retireWorker(chatID, worker) {
