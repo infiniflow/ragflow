@@ -60,6 +60,7 @@ export function useSendSingleMessage({
       messages,
       enableInternet,
       enableThinking,
+      omit_session_id,
       ...params
     }: {
       message: IMessage;
@@ -71,7 +72,7 @@ export function useSendSingleMessage({
         api.completionUrl,
         {
           chat_id: chatId,
-          session_id: sessionId,
+          ...(omit_session_id ? {} : { session_id: sessionId }),
           messages: [
             ...(Array.isArray(messages) && messages?.length > 0
               ? messages
@@ -112,7 +113,7 @@ export function useSendSingleMessage({
       targetConversationId,
       ...params
     }: NextMessageInputOnPressEnterParameter &
-      CreateConversationBeforeSendMessageReturnType) => {
+      Partial<NonNullable<CreateConversationBeforeSendMessageReturnType>>) => {
       if (trim(value) === '' || !done) return;
       const id = uuid();
 

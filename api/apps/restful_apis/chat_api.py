@@ -181,7 +181,7 @@ def _build_default_completion_dialog():
     )
 
 
-async def _create_session_for_completion(chat_id, dialog, user_id):
+async def _create_session_for_completion(chat_id, dialog, user_id, save_session=True):
     conv = {
         "id": get_uuid(),
         "dialog_id": chat_id,
@@ -190,6 +190,9 @@ async def _create_session_for_completion(chat_id, dialog, user_id):
         "user_id": user_id,
         "reference": [],
     }
+    if not save_session:
+        conv["id"] = None
+        return SimpleNamespace(**conv)
     await thread_pool_exec(ConversationService.save, **conv)
     ok, conv_obj = await thread_pool_exec(ConversationService.get_by_id, conv["id"])
     if not ok:
@@ -1195,7 +1198,7 @@ async def session_completion(chat_id_in_arg=""):
                 if conv.dialog_id != chat_id:
                     return get_data_error_result(message="Session does not belong to this chat!")
             else:
-                conv = await _create_session_for_completion(chat_id, dia, current_user.id)
+                conv = await _create_session_for_completion(chat_id, dia, current_user.id, save_session=store_history_messages)
                 session_id = conv.id
 
             if pass_all_history_messages:

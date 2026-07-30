@@ -50,7 +50,6 @@ import {
   useGetSendButtonDisabled,
   useSendButtonDisabled,
 } from '../../hooks/use-button-disabled';
-import { useCreateConversationBeforeSendMessage } from '../../hooks/use-chat-url';
 import { useCreateConversationBeforeUploadDocument } from '../../hooks/use-create-conversation';
 import {
   HandlePressEnterType,
@@ -139,7 +138,7 @@ const ChatCard = forwardRef(function ChatCard(
   // resend with the card's model settings (llm_id, temperature, ...).
   const sendCardMessage = useCallback(
     ({ message, messages }: { message: IMessage; messages?: IMessage[] }) =>
-      sendMessage({ message, messages, ...form.getValues(), store_history_messages: false }),
+      sendMessage({ message, messages, ...form.getValues(), store_history_messages: false, omit_session_id: true }),
     [sendMessage, form],
   );
 
@@ -182,7 +181,7 @@ const ChatCard = forwardRef(function ChatCard(
   useImperativeHandle(
     ref,
     (): HandlePressEnterType => (params) =>
-      handlePressEnter({ ...params, ...form.getValues(), store_history_messages: false }),
+      handlePressEnter({ ...params, ...form.getValues(), store_history_messages: false, omit_session_id: true }),
   );
 
   useEffect(() => {
@@ -279,6 +278,7 @@ const ChatCard = forwardRef(function ChatCard(
                   regenerateMessage={regenerateMessage}
                   sendLoading={sendLoading}
                   clickDocumentButton={clickDocumentButton}
+                  showLikeButton={false}
                 ></MessageItem>
               );
             })}
@@ -298,9 +298,6 @@ export function MultipleChatBox({
   stopOutputMessage,
   conversation,
 }: MultipleChatBoxProps) {
-  const { createConversationBeforeSendMessage } =
-    useCreateConversationBeforeSendMessage();
-
   const { createConversationBeforeUploadDocument } =
     useCreateConversationBeforeUploadDocument();
   const { conversationId } = useGetChatSearchParams();
@@ -342,21 +339,14 @@ export function MultipleChatBox({
     }: NextMessageInputOnPressEnterParameter) => {
       if (trim(value) === '') return;
 
-      const data = await createConversationBeforeSendMessage(value);
-
-      if (data === undefined) {
-        return;
-      }
-
       Object.values(boxesRef.current).forEach((box) => {
         box?.({
           enableInternet,
           enableThinking,
-          ...data,
         });
       });
     },
-    [createConversationBeforeSendMessage, value],
+    [value],
   );
 
   return (
