@@ -53,18 +53,13 @@ export function RAGFlowFormItem({
         <FormItem
           className={cn(
             {
-              'flex items-center w-full space-y-0': horizontal,
+              'flex items-center w-full space-y-0 justify-between': horizontal,
             },
             className,
           )}
         >
           {label && (
-            <div
-              className={cn('flex items-center gap-2', {
-                'w-full justify-between': !horizontal,
-                'w-1/4': horizontal,
-              })}
-            >
+            <div className={cn('flex items-center gap-2 justify-between')}>
               <FormLabel
                 required={required}
                 tooltip={tooltip}
