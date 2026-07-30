@@ -1,32 +1,29 @@
 // Package raptor implements the "raptor" variant of KnowledgeCompiler: a
 // recursive abstractive summarization tree (RAPTOR). It builds a clustering of
 // chunk embeddings and summarizes each cluster with the LLM, recursing upward
-// until a single root summary remains. Two builders are delivered:
+// until a single root summary remains.
 //
-//   - Psi (ClusteringPsi): cosine-similarity union-find forest, zero clustering
-//     dependency (lowest risk).
-//   - classic (ClusteringAHC): Ward agglomerative clustering with dendrogram-gap
-//     cut, preceded by PCA dimensionality reduction (gonum), standing in for
-//     Python's unconditional UMAP pre-step.
-//   - gmm (ClusteringGMM): diagonal-covariance Gaussian mixture model selected
-//     by BIC (pure-Go reimplementation of Python's covariance_type="diag" GMM).
+// Clustering uses a single method, watershed (raptor.go::watershed): a 1D
+// watershed over the document-ordered embeddings. The granularity of each
+// level's clustering is controlled by the "tree_order" integer parameter
+// (raptor.go::resolveTreeOrder) — the branching factor of the RAPTOR tree
+// (the B+ tree "order"): the average chunk count per level-0 cluster. It
+// defaults to DefaultTreeOrder.
 //
-// See PORT_PLAN.md §3.3 and the M6 validation gate (缺口 C): classic must meet
-// the NMI/ARI/coverage gate or the caller falls back to Psi-only.
+// See PORT_PLAN.md §3.3.
 package raptor
 
 import (
 	"context"
 	"fmt"
+	"log"
+	"regexp"
 	"strings"
+	"time"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/tokenizer"
 )
-
-// buildTreeMaxDepth caps recursive summarization depth so a pathological
-// clustering input (e.g. all-non-negative embeddings that never separate) can
-// never drive unbounded recursion in buildTree (M14).
-const buildTreeMaxDepth = 12
 
 // Run executes the raptor variant.
 func Run(ctx context.Context, deps common.Deps, param common.Param, inputs common.Inputs) (common.Outputs, error) {
@@ -43,82 +40,130 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	llmID := firstNonEmpty(param.LLMID, inputs.LLMID)
 	tenantID := deps.TenantID
 
-	texts := chunkTexts(inputs.Chunks)
-	if len(texts) == 0 {
-		return common.Outputs{}, nil
-	}
-	chunkIDs := chunkIDsOf(inputs.Chunks)
-
-	// Embed all source chunks once.
-	vectors, err := deps.Embed.Encode(ctx, texts)
-	if err != nil {
-		return common.Outputs{}, err
-	}
-	embeddings := toFloat64Matrix(vectors)
-
-	spec := resolveSpec(param)
-
-	labels, _ := clusterByMethod(embeddings, spec)
+	treeOrder := resolveTreeOrder(param)
+	taskPrompt := resolveRaptorPrompt(param)
 
 	// Build leaf summary products (one per cluster) and recursively summarize up,
-	// streaming nodes into the sink so the flush policy caps peak memory.
-	sink := common.NewProductSink(ctx, param.Guardrails, inputs.Sink)
-	if err := buildTree(ctx, deps, llmID, tenantID, docID, texts, chunkIDs, embeddings, labels, spec, sink); err != nil {
+	// collecting every node into a plain slice. The component merges these into
+	// the upstream chunk stream (matching Python, which appends summaries onto the
+	// chunk list). buildTree reads the texts, ids, and embeddings directly from
+	// the source chunks.
+	var products []common.Product
+	if err := buildTree(ctx, deps, llmID, tenantID, docID, inputs.Chunks, treeOrder, taskPrompt, param, &products); err != nil {
 		return common.Outputs{}, err
 	}
 
 	out := common.Outputs{
-		Products:    sink.Products(),
-		VectorBytes: sink.Bytes(),
-		Items:       sink.TotalItems(),
-		Flushed:     sink.Flushed(),
+		Products: products,
 	}
 
-	if err := out.EnforceGuardrails(param.Guardrails, inputs.Sink, ctx); err != nil {
-		return common.Outputs{}, err
-	}
 	return out, nil
 }
 
-func resolveSpec(param common.Param) ClusterSpec {
-	spec := ClusterSpec{
-		Method:      ClusteringPsi,
-		Threshold:   0.0,
-		MinClusters: 2,
-		MaxClusters: 20,
+// resolveTreeOrder reads the watershed "tree_order" parameter (an integer
+// branching factor, the B+ tree "order", in [MinTreeOrder, MaxTreeOrder]) from
+// the component extra map, defaulting to DefaultTreeOrder when absent or invalid.
+func resolveTreeOrder(param common.Param) int {
+	raw, ok := param.Extra["tree_order"]
+	if !ok {
+		return DefaultTreeOrder
 	}
-	if m, ok := param.Extra["clustering_method"].(string); ok && m != "" {
-		spec.Method = ClusteringMethod(strings.ToUpper(m))
+	v, ok := toInt(raw)
+	if !ok || v < MinTreeOrder || v > MaxTreeOrder {
+		return DefaultTreeOrder
 	}
-	if t, ok := param.Extra["clustering_threshold"].(float64); ok {
-		spec.Threshold = t
+	return v
+}
+
+// toInt coerces the common param-extra value types to int.
+func toInt(v any) (int, bool) {
+	switch x := v.(type) {
+	case int:
+		return x, true
+	case int64:
+		return int(x), true
+	case float64:
+		return int(x), true
+	case float32:
+		return int(x), true
+	default:
+		return 0, false
 	}
-	if v, ok := param.Extra["min_clusters"].(float64); ok {
-		spec.MinClusters = int(v)
+}
+
+const (
+	raptorMaxRetries       = 3
+	raptorDefaultMaxToken  = 512
+	raptorDefaultMaxErrors = 3
+)
+
+// raptorTruncationMarkerRE strips model truncation notices that some LLMs emit
+// when a response is cut short. Mirrors Python _summarize_texts (raptor.py:405).
+var raptorTruncationMarkerRE = regexp.MustCompile(
+	strings.Repeat("\u00b7", 6) + "\n由于长度的原因，回答被截断了，要继续吗？|For the content length reason, it stopped, continue?",
+)
+
+// resolveMaxToken returns the generation cap (max_tokens) for summaries. Python
+// uses max(self._max_token, 512) (raptor.py:403, issue #10235); we honour an
+// extra["max_token"] override with the same 512 floor.
+func resolveMaxToken(param common.Param) int {
+	if v, ok := param.Extra["max_token"]; ok {
+		if n, ok := toInt(v); ok && n > 0 {
+			if n < raptorDefaultMaxToken {
+				return raptorDefaultMaxToken
+			}
+			return n
+		}
 	}
-	if v, ok := param.Extra["max_clusters"].(float64); ok {
-		spec.MaxClusters = int(v)
+	return raptorDefaultMaxToken
+}
+
+// resolveMaxErrors returns the per-tree error ceiling before RAPTOR aborts.
+// Python defaults _max_errors to 3 and skips individual failed clusters below
+// that threshold (raptor.py:_summarize_texts).
+func resolveMaxErrors(param common.Param) int {
+	if v, ok := param.Extra["max_errors"]; ok {
+		if n, ok := toInt(v); ok && n > 0 {
+			return n
+		}
 	}
-	if spec.Method == ClusteringAHC && spec.Threshold == 0 {
-		// AHC uses the dendrogram gap; threshold acts as a *scale* on the gap.
-		spec.Threshold = 1.0
-	}
-	if spec.Method == ClusteringGMM && spec.Threshold == 0 {
-		// GMM soft-assign threshold (Python default 0.1).
-		spec.Threshold = 0.1
-	}
-	return spec
+	return raptorDefaultMaxErrors
 }
 
 // buildTree summarizes each cluster (level 0) and recurses upward: each parent
 // node is the LLM summary of its child cluster's texts. The root is a single
-// "raptor" product with a stable id. Nodes are streamed into sink as they are
-// produced (so the flush policy can cap peak memory rather than holding the
-// whole tree), and only the deepest-level summaries are retained for the root
-// synthesis. spec controls both the top-level clustering (already applied by
-// the caller via clusterByMethod) and the recursive sub-clustering, so the same
-// method is used at every level of the tree.
-func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID string, texts, chunkIDs []string, embeddings [][]float64, labels []int, spec ClusterSpec, sink *common.ProductSink) error {
+// "raptor" product with a stable id. Every node is appended to products (a
+// caller-owned slice), and only the deepest-level summaries are retained for the
+// root synthesis. buildTree reads the source texts, ids, and embeddings directly
+// from the passed chunks; when the embeddings are missing or incomplete, it
+// embeds the texts itself. Every summary node is embedded here too, so the caller
+// never calls the embedder directly. treeOrder drives both the top-level
+// clustering (performed inside buildTree via watershed) and the recursive
+// sub-clustering, so the same method is used at every level of the tree.
+func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID string, chunks []common.Chunk, treeOrder int, taskPrompt string, param common.Param, products *[]common.Product) error {
+	maxToken := resolveMaxToken(param)
+	maxErrors := resolveMaxErrors(param)
+	errorCount := 0
+	texts := chunkTexts(chunks)
+	if len(texts) == 0 {
+		return nil
+	}
+	chunkIDs := chunkIDsOf(chunks)
+	// Reuse the embeddings already carried on the source chunks when they are
+	// complete; only re-embed the texts as a fallback (e.g. the caller has not
+	// pre-embedded, or some rows lack a vector).
+	embeddings := chunkVectors(chunks)
+	if !embeddingsReady(embeddings, len(texts)) {
+		vectors, err := deps.Embed.Encode(ctx, texts)
+		if err != nil {
+			return err
+		}
+		embeddings = toFloat64Matrix(vectors)
+	}
+	labels, err := watershed(embeddings, treeOrder)
+	if err != nil {
+		return err
+	}
 	n := len(labels)
 	// Group point indices by cluster label.
 	groups := map[int][]int{}
@@ -146,15 +191,20 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		task := queue[0]
 		queue = queue[1:]
 
-		// Gather the source text for this cluster's points.
-		var sb strings.Builder
-		for _, pi := range task.pointIdxs {
-			sb.WriteString(texts[pi])
-			sb.WriteString("\n\n")
-		}
-		summary, err := summarizeTexts(ctx, deps, llmID, sb.String())
+		// Gather the source text for this cluster's points and truncate each
+		// text to a per-chunk token budget so the cluster fits the LLM context
+		// (Python: len_per_chunk = (max_length - max_token) / len(texts);
+		// truncate(t, len_per_chunk), raptor.py:389-390).
+		content := buildClusterContent(texts, task.pointIdxs, deps.LLMMaxLength, maxToken)
+		system := raptorSystemHelper + strings.Replace(taskPrompt, "{cluster_content}", content, 1)
+		summary, err := summarizeTexts(ctx, deps, llmID, system, raptorTitleInstruction, maxToken)
 		if err != nil {
-			return err
+			errorCount++
+			if errorCount >= maxErrors {
+				return fmt.Errorf("raptor: aborted after %d summarization errors: %w", errorCount, err)
+			}
+			log.Printf("raptor: skipping cluster due to summarization error (continuing): %v", err)
+			continue
 		}
 		nodeID := common.StableRowID(tenantID, docID, string(common.VariantRaptor),
 			fmt.Sprintf("L%d", task.level), summary)
@@ -166,7 +216,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		if len(embedding) > 0 {
 			vec = embedding[0]
 		}
-		if err := sink.Add(common.Product{
+		*products = append(*products, common.Product{
 			ID:       nodeID,
 			DocID:    docID,
 			TenantID: tenantID,
@@ -175,13 +225,12 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 			Vector:   vec,
 			ParentID: task.parentID,
 			Meta: map[string]any{
+				"title":            titleOf(summary),
 				"kind":             "summary",
 				"level":            task.level,
 				"source_chunk_ids": collectIDs(chunkIDs, task.pointIdxs),
 			},
-		}); err != nil {
-			return err
-		}
+		})
 		// Track the deepest-level summaries for the root synthesis: only those
 		// are fed to the root, so the root summarises the top of the tree
 		// rather than re-summarising every leaf.
@@ -193,57 +242,69 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 			topLevelTexts = append(topLevelTexts, summary)
 		}
 
-		// If this cluster is large and we are still below the depth cap,
-		// recurse: re-cluster its points and enqueue sub-clusters under this
-		// node. The sub-clustering uses the same method as the top-level pass
-		// (via clusterByMethod) so a user who picks AHC gets AHC at every level,
-		// not Psi below AHC. The depth cap guarantees termination even when a
-		// pathological clustering input (e.g. all-non-negative embeddings that
-		// never separate) would otherwise recurse without progress (M14).
-		if task.level < buildTreeMaxDepth && len(task.pointIdxs) > RecursionMinClusterSize {
-			subEmb := make([][]float64, 0, len(task.pointIdxs))
-			for _, pi := range task.pointIdxs {
-				subEmb = append(subEmb, embeddings[pi])
-			}
-			subLabels, _ := clusterByMethod(subEmb, spec)
-			subGroups := map[int][]int{}
-			for i, li := range subLabels {
-				subGroups[li] = append(subGroups[li], task.pointIdxs[i])
-			}
-			// Only recurse when the sub-cluster was actually split into more than
-			// one group. If clustering returns a single label covering every point
-			// (the degenerate case — e.g. PSI threshold=0 on a corpus whose vectors
-			// all share one sign, or AHC/GMM forced to a single component), the
-			// subGroups map has exactly one entry equal to task.pointIdxs. Re-enqueuing
-			// that same work item at level+1 would loop forever with no progress and
-			// OOM. A single group means the cluster is already atomic, so stop.
-			if len(subGroups) > 1 {
-				for _, idxs := range subGroups {
-					if len(idxs) <= 1 {
-						continue
-					}
-					queue = append(queue, nodeTask{pointIdxs: idxs, parentID: nodeID, level: task.level + 1})
+		// Recurse: re-cluster this cluster's points and enqueue sub-clusters
+		// under this node. The sub-clustering uses the same watershed pass as the
+		// top-level (treeOrder is carried through), so every level of the tree is
+		// built with the same method. Recursion terminates because the
+		// sub-clustering is only re-enqueued when it actually splits the cluster
+		// into more than one group (the degenerate single-label guard after the
+		// watershed call); once a cluster cannot be split further it stops, and a
+		// cluster is always driven down to single-point leaves, so depth is
+		// naturally bounded by log_2(len(embeddings)).
+		subEmb := make([][]float64, 0, len(task.pointIdxs))
+		for _, pi := range task.pointIdxs {
+			subEmb = append(subEmb, embeddings[pi])
+		}
+		subLabels, err := watershed(subEmb, treeOrder)
+		if err != nil {
+			return err
+		}
+		subGroups := map[int][]int{}
+		for i, li := range subLabels {
+			subGroups[li] = append(subGroups[li], task.pointIdxs[i])
+		}
+		// Only recurse when the sub-cluster was actually split into more than
+		// one group. If clustering returns a single label covering every point
+		// (the degenerate case — e.g. a corpus whose vectors all share one sign
+		// so the watershed never cuts), the subGroups map has exactly one entry
+		// equal to task.pointIdxs. Re-enqueuing that same work item at level+1
+		// would loop forever with no progress and OOM. A single group means the
+		// cluster is already atomic, so stop.
+		if len(subGroups) > 1 {
+			for _, idxs := range subGroups {
+				if len(idxs) <= 1 {
+					continue
 				}
+				queue = append(queue, nodeTask{pointIdxs: idxs, parentID: nodeID, level: task.level + 1})
 			}
 		}
 	}
 
-	// Root product ties the tree together. The root summary is the synthesis
-	// of the highest-level summaries (the leaves of the upper tree), NOT the
-	// union of all leaf-level summaries — otherwise the root would just
-	// re-summarize the same text multiple times.
-	rootSummary, err := summarizeTexts(ctx, deps, llmID, "Synthesize the overall document theme from these section summaries:\n\n"+strings.Join(topLevelTexts, "\n"))
+	// Root product ties the tree together. The root summary is the synthesis of
+	// the highest-level summaries (the leaves of the upper tree) using the same
+	// standard task prompt Python applies to every cluster — NOT a separate
+	// "Synthesize the overall theme" prompt, and NOT the union of all leaf
+	// summaries (which would just re-summarize the same text repeatedly).
+	rootContent := buildClusterContent(topLevelTexts, allIndices(len(topLevelTexts)), deps.LLMMaxLength, maxToken)
+	rootSummary, err := summarizeTexts(ctx, deps, llmID,
+		raptorSystemHelper+strings.Replace(taskPrompt, "{cluster_content}", rootContent, 1),
+		raptorTitleInstruction, maxToken)
 	if err != nil {
-		return fmt.Errorf("raptor: root summarization failed: %w", err)
+		// A failed root must not abort the whole tree: Python drops the root
+		// node and returns the rest of the tree.
+		log.Printf("raptor: root synthesis failed, skipping root node: %v", err)
+		return nil
 	}
 	embedding, err := deps.Embed.Encode(ctx, []string{rootSummary})
 	if err != nil {
-		return fmt.Errorf("raptor: root embedding failed: %w", err)
+		log.Printf("raptor: root embedding failed, skipping root node: %v", err)
+		return nil
 	}
 	if len(embedding) == 0 {
-		return fmt.Errorf("raptor: root embedding returned no vectors")
+		log.Printf("raptor: root embedding returned no vectors, skipping root node")
+		return nil
 	}
-	return sink.Add(common.Product{
+	*products = append(*products, common.Product{
 		ID:       rootID,
 		DocID:    docID,
 		TenantID: tenantID,
@@ -251,30 +312,120 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		Content:  rootSummary,
 		Vector:   embedding[0],
 		ParentID: "",
-		Meta:     map[string]any{"kind": "root", "level": -1},
+		Meta:     map[string]any{"title": titleOf(rootSummary), "kind": "root", "level": -1},
 	})
+	return nil
 }
 
-func summarizeTexts(ctx context.Context, deps common.Deps, llmID, text string) (string, error) {
-	resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
-		LLMID:        llmID,
-		SystemPrompt: raptorSystemPrompt,
-		UserPrompt:   text,
-	})
-	if err != nil {
-		return "", err
+// summarizeTexts asks the LLM for a summary and normalises the response to match
+// Python _summarize_texts / _chat:
+//   - retries up to raptorMaxRetries times with linear backoff (Python: 3 attempts);
+//   - strips a reasoning-model preamble up to the final </think> / </think:6124c78e> tag;
+//   - treats a "**ERROR**" marker as a transient failure (Python raises on it, so
+//     it is retried like any other LLM error);
+//   - strips model truncation notices (raptor.py:405);
+//   - trims surrounding whitespace.
+//
+// systemText is the fully-built system prompt (helper + filled task template) and
+// userText is the user turn; the title instruction is passed as the user turn so
+// the model emits a one-line title on the first line of the summary.
+func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, userText string, maxToken int) (string, error) {
+	mt := maxToken
+	for attempt := 0; attempt < raptorMaxRetries; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(time.Duration(1+attempt) * time.Second):
+			}
+		}
+		resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
+			LLMID:        llmID,
+			SystemPrompt: systemText,
+			UserPrompt:   userText,
+			MaxTokens:    &mt,
+		})
+		if err != nil {
+			continue
+		}
+		content := resp.Content
+		// Strip reasoning preamble up to the final thinking close tag
+		// (Python: re.sub(r"^.*</think>", "", response, DOTALL)).
+		if i := strings.LastIndex(content, "</think>"); i >= 0 {
+			content = content[i+len("</think>"):]
+		} else if i := strings.LastIndex(content, "</think:6124c78e>"); i >= 0 {
+			content = content[i+len("</think:6124c78e>"):]
+		}
+		// Python raises on the "**ERROR**" marker; treat it as a retryable error.
+		if strings.Contains(content, "**ERROR**") {
+			continue
+		}
+		// Strip model truncation notices (Python _summarize_texts).
+		content = raptorTruncationMarkerRE.ReplaceAllString(content, "")
+		return strings.TrimSpace(content), nil
 	}
-	return strings.TrimSpace(resp.Content), nil
+	return "", fmt.Errorf("raptor: summarization failed after %d attempts", raptorMaxRetries)
+}
+
+// titleOf returns the first line of a summary completion (Python stores
+// summary_ti = cnt.split("\n")[0]).
+func titleOf(summary string) string {
+	if i := strings.IndexByte(summary, '\n'); i >= 0 {
+		return summary[:i]
+	}
+	return summary
+}
+
+// buildClusterContent joins the selected texts with a single newline (matching
+// Python's "\n".join) and truncates each text to a per-chunk token budget so the
+// whole cluster fits the LLM context window (Python: len_per_chunk =
+// (max_length - max_token) / len(texts); truncate(t, len_per_chunk)). The token
+// budget uses the cl100k_base encoder, mirroring Python's truncate (token-level,
+// not character-level).
+func buildClusterContent(texts []string, idxs []int, llmMaxLength, maxToken int) string {
+	if llmMaxLength <= 0 {
+		llmMaxLength = common.DefaultLLMContextLength
+	}
+	per := (llmMaxLength - maxToken) / len(idxs)
+	if per < 1 {
+		per = 1
+	}
+	parts := make([]string, 0, len(idxs))
+	for _, i := range idxs {
+		parts = append(parts, tokenizer.TrimContentToTokenLimit(texts[i], per))
+	}
+	return strings.Join(parts, "\n")
+}
+
+// allIndices returns [0, 1, ..., n-1] so a whole slice can be fed to
+// buildClusterContent without copying.
+func allIndices(n int) []int {
+	idxs := make([]int, n)
+	for i := range idxs {
+		idxs[i] = i
+	}
+	return idxs
+}
+
+// chunkTextOf returns the text of a chunk, preferring Text over Content.
+func chunkTextOf(c common.Chunk) string {
+	return firstNonEmpty(c.Text, c.Content)
+}
+
+// chunkHasText reports whether a chunk carries non-blank text. Empty chunks
+// contribute nothing to clustering or summarization and are skipped uniformly
+// across chunkTexts, chunkIDsOf, and chunkVectors.
+func chunkHasText(c common.Chunk) bool {
+	return strings.TrimSpace(chunkTextOf(c)) != ""
 }
 
 func chunkTexts(chunks []common.Chunk) []string {
 	var out []string
 	for _, c := range chunks {
-		t := firstNonEmpty(c.Text, c.Content)
-		if strings.TrimSpace(t) == "" {
+		if !chunkHasText(c) {
 			continue
 		}
-		out = append(out, t)
+		out = append(out, chunkTextOf(c))
 	}
 	return out
 }
@@ -285,8 +436,7 @@ func chunkTexts(chunks []common.Chunk) []string {
 func chunkIDsOf(chunks []common.Chunk) []string {
 	var out []string
 	for i, c := range chunks {
-		t := firstNonEmpty(c.Text, c.Content)
-		if strings.TrimSpace(t) == "" {
+		if !chunkHasText(c) {
 			continue
 		}
 		id := c.ID
@@ -296,6 +446,48 @@ func chunkIDsOf(chunks []common.Chunk) []string {
 		out = append(out, id)
 	}
 	return out
+}
+
+// chunkVectors returns the pre-computed embedding of every non-empty chunk, in
+// document order and parallel to chunkTexts/chunkIDsOf. A chunk without a
+// Vector yields a nil entry; buildTree re-embeds the texts when any entry is
+// missing so the caller can choose whether to pre-embed.
+func chunkVectors(chunks []common.Chunk) [][]float64 {
+	out := make([][]float64, 0, len(chunks))
+	for _, c := range chunks {
+		if !chunkHasText(c) {
+			continue
+		}
+		out = append(out, toFloat64Slice(c.Vector))
+	}
+	return out
+}
+
+// toFloat64Slice converts a float32 vector to float64, returning nil for an
+// empty input (so a missing embedding is distinguishable from a zero vector).
+func toFloat64Slice(v []float32) []float64 {
+	if len(v) == 0 {
+		return nil
+	}
+	out := make([]float64, len(v))
+	for i, x := range v {
+		out[i] = float64(x)
+	}
+	return out
+}
+
+// embeddingsReady reports whether emb is a complete, usable embedding set for
+// n points: exactly n rows, none empty.
+func embeddingsReady(emb [][]float64, n int) bool {
+	if len(emb) != n {
+		return false
+	}
+	for _, e := range emb {
+		if len(e) == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // collectIDs returns the chunk ids at the given point indices, de-duplicated
@@ -338,4 +530,30 @@ func toFloat64Matrix(vecs [][]float32) [][]float64 {
 	return out
 }
 
-const raptorSystemPrompt = `You are a summarization assistant. Produce a concise, information-dense summary of the provided text that preserves key entities, facts, and relationships. Output the summary only.`
+// defaultRaptorPrompt is the summary task template. It mirrors Python
+// rag/advanced_rag/knowlege_compile/raptor.py, whose _summarize_texts uses
+// "Please write a concise summary of the following texts:\n{cluster_content}".
+// The {cluster_content} placeholder is filled with the joined cluster text. A
+// caller may override it via extra["prompt"] (Python: raptor_cfg["prompt"]).
+const defaultRaptorPrompt = "Please write a concise summary of the following texts:\n{cluster_content}"
+
+// raptorSystemHelper mirrors the leading "You're a helpful assistant.\n\nHelp me
+// with the following task.\n\n" wrapper Python prepends to the task prompt.
+const raptorSystemHelper = "You're a helpful assistant.\n\nHelp me with the following task.\n\n"
+
+// raptorTitleInstruction is sent as the user turn so the model also emits a
+// one-line title on the first line of the summary (Python: "Beside the
+// summarization, give a title at the first line of your summarization. Must be
+// in the same language as the paragraphs.").
+const raptorTitleInstruction = "Beside the summarization, give a title at the first line of your summarization. Must be in the same language as the paragraphs."
+
+// resolveRaptorPrompt returns the summary task template, honouring an
+// extra["prompt"] override; falls back to defaultRaptorPrompt.
+func resolveRaptorPrompt(param common.Param) string {
+	if raw, ok := param.Extra["prompt"]; ok {
+		if s, ok := raw.(string); ok && strings.TrimSpace(s) != "" {
+			return s
+		}
+	}
+	return defaultRaptorPrompt
+}

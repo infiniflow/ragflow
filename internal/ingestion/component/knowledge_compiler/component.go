@@ -124,19 +124,9 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		return nil, err
 	}
 
-	// Stamp the resolved template ids onto every product as it leaves the
-	// variant — including products streamed out through a sink under
-	// ExceedFlush — so they are not skipped by the post-Run stamping below
-	// (which only sees the buffered remainder in out.Products). The post-Run
-	// loop still covers that buffered remainder (M1).
-	// Only wrap a real sink. When no sink is supplied (in.Sink == nil) we must
-	// leave it nil so the product buffer is preserved under ExceedFlush; wrapping
-	// a nil sink would route flushed products into a delegate-less stamping sink
-	// that silently discards them (data loss).
-	if len(templateIDs) > 0 && in.Sink != nil {
-		in.Sink = &templateIDStampingSink{delegate: in.Sink, ids: templateIDs}
-	}
-
+	// Stamp the resolved template ids onto every compiled product after the
+	// variant returns. All products are buffered in out.Products (there is no
+	// streaming sink path), so the post-Run loop below covers every row (M1).
 	var out common.Outputs
 	switch param.Variant {
 	case common.VariantStructure:
@@ -565,6 +555,13 @@ func mergeChunks(inputs map[string]any, compiled []schema.ChunkDoc) map[string]a
 }
 
 // buildInputs converts the runtime inputs map into a typed common.Inputs.
+// It is necessary because the pipeline passes components a generic
+// map[string]any contract while every variant Run consumes a strongly-typed
+// common.Inputs: this function is the single translation seam that decouples
+// the dependency-light common package (and thus the variants) from the raw
+// serialization shape, and the one place where inputs are validated, defaulted,
+// and enriched (e.g. extracting each chunk's pre-computed embedding) before any
+// LLM/embedding work begins.
 func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, error) {
 	in := common.Inputs{
 		LLMID:           param.LLMID,
@@ -590,17 +587,18 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 			if cw, ok := m["content_with_weight"].(string); ok {
 				ch.Content = cw
 			}
+			// Reuse the embedding the upstream pipeline already computed on the
+			// chunk (stored under q_<dim>_vec); variants fall back to embedding
+			// on demand when it is absent.
+			ch.Vector = common.VectorFromChunkMap(m)
 			in.Chunks = append(in.Chunks, ch)
 		}
 	}
 	if hc, ok := inputs["historical_candidates"].([]common.Candidate); ok {
 		in.HistoricalCandidates = hc
 	}
-	if sink, ok := inputs["sink"].(common.ChunkedSink); ok {
-		in.Sink = sink
-	}
 	known := map[string]bool{
-		"doc_id": true, "chunks": true, "historical_candidates": true, "sink": true,
+		"doc_id": true, "chunks": true, "historical_candidates": true,
 		"llm_id": true, "embedding_model": true, "tenant_id": true, "dataset_id": true,
 	}
 	for k, v := range inputs {
@@ -609,31 +607,6 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 		}
 	}
 	return in, nil
-}
-
-// templateIDStampingSink wraps a ChunkedSink so every emitted product carries
-// the resolved compilation template ids. It is used to stamp products that
-// leave the variant through a streaming sink (ExceedFlush) — those never reach
-// the buffered out.Products and would otherwise skip the template-id stamping
-// (M1).
-type templateIDStampingSink struct {
-	delegate common.ChunkedSink
-	ids      []string
-}
-
-// Emit stamps the template ids onto each product before delegating (a nil
-// delegate is treated as a no-op drain).
-func (s *templateIDStampingSink) Emit(ctx context.Context, items []common.Product) error {
-	for i := range items {
-		if items[i].Meta == nil {
-			items[i].Meta = map[string]any{}
-		}
-		items[i].Meta["compilation_template_ids"] = s.ids
-	}
-	if s.delegate == nil {
-		return nil
-	}
-	return s.delegate.Emit(ctx, items)
 }
 
 func init() {

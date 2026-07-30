@@ -1,7 +1,7 @@
 // Package common holds the shared, dependency-light foundation for the
-// KnowledgeCompiler component: parameter/IO types, capacity guardrails,
-// the in-memory product store, tokenization/batching helpers, the LLM
-// chat seam, and the concurrency pool.
+// KnowledgeCompiler component: parameter/IO types, the in-memory product
+// store, tokenization/batching helpers, the LLM chat seam, and the
+// concurrency pool.
 //
 // It deliberately imports only the standard library plus a stable-hash
 // dependency, so it (and the M1 unit tests) build without the CGO native
@@ -9,7 +9,6 @@
 package common
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -29,9 +28,8 @@ const (
 
 // Sentinel errors.
 var (
-	ErrCapacityExceeded = errors.New("knowledge_compiler: capacity exceeded")
-	ErrUnknownVariant   = errors.New("knowledge_compiler: unknown variant")
-	ErrNotImplemented   = errors.New("knowledge_compiler: variant not yet implemented")
+	ErrUnknownVariant = errors.New("knowledge_compiler: unknown variant")
+	ErrNotImplemented = errors.New("knowledge_compiler: variant not yet implemented")
 )
 
 // Param is built from the DSL params map. Missing keys fall back to
@@ -47,7 +45,6 @@ type Param struct {
 	MaxWorkers            int
 	EnableHistoricalDedup bool
 	Extra                 map[string]any
-	Guardrails            CapacityGuardrails
 }
 
 // Defaults returns a Param populated with safe production fallbacks.
@@ -55,12 +52,6 @@ func (p Param) Defaults() Param {
 	p.SimilarityThreshold = 0.99
 	p.MaxWorkers = 4
 	p.Extra = map[string]any{}
-	p.Guardrails = CapacityGuardrails{
-		MaxItems:       50000,
-		MaxVectorBytes: 200 << 20, // 200 MiB
-		MaxOutputBytes: 400 << 20, // 400 MiB
-		OnExceed:       ExceedError,
-	}
 	return p
 }
 
@@ -75,7 +66,11 @@ type Chunk struct {
 	ID      string
 	Text    string // "text" field from upstream
 	Content string // "content_with_weight" field from upstream
-	Meta    map[string]any
+	// Vector is the pre-computed embedding of the chunk, when the caller has
+	// already embedded it. Variants reuse it instead of re-embedding; a nil
+	// Vector means "not embedded yet" and the variant computes one on demand.
+	Vector []float32
+	Meta   map[string]any
 }
 
 // Inputs is the resolved input set passed to a variant Run.
@@ -86,18 +81,11 @@ type Inputs struct {
 	EmbeddingModel       string
 	VariantSpecific      map[string]any
 	HistoricalCandidates []Candidate // optional override path (test/offline)
-	Sink                 ChunkedSink // optional; used when guardrails flush
 }
 
 // LogDeprecated emits a one-line deprecation notice for legacy param names.
 func LogDeprecated(old, replacement string) {
 	log.Printf("[knowledge_compiler] deprecated variant name %q; use %q", old, replacement)
-}
-
-// ChunkedSink receives products incrementally when capacity guardrails
-// demand flushing instead of a single-shot Outputs().
-type ChunkedSink interface {
-	Emit(ctx context.Context, items []Product) error
 }
 
 // Product is one compiled output row (schema_version=1).
@@ -112,157 +100,12 @@ type Product struct {
 	Meta     map[string]any
 }
 
-// Outputs is the result of a variant Run.
+// Outputs is the result of a variant Run. All compiled products are buffered
+// here; the component merges them into the upstream chunk stream.
 type Outputs struct {
 	Products          []Product
 	DuplicatesDropped int
-	Items             int
-	VectorBytes       int64
-	Flushed           bool
 }
-
-// SerializedBytes estimates the serialized footprint of the products.
-func (o Outputs) SerializedBytes() int64 {
-	var n int64
-	for _, p := range o.Products {
-		n += int64(len(p.Content)) + int64(len(p.Vector)*4) + 64
-	}
-	return n
-}
-
-// CapacityGuardrails bounds a single Invoke's product volume.
-type CapacityGuardrails struct {
-	MaxItems       int
-	MaxVectorBytes int64
-	MaxOutputBytes int64
-	OnExceed       ExceedAction
-}
-
-// ExceedAction controls behaviour when a guardrail is breached.
-type ExceedAction string
-
-const (
-	ExceedError ExceedAction = "error"
-	ExceedFlush ExceedAction = "flush"
-)
-
-// Exceeded reports whether any guardrail is breached by o.
-func (g CapacityGuardrails) Exceeded(o Outputs) bool {
-	if g.MaxItems > 0 && len(o.Products) > g.MaxItems {
-		return true
-	}
-	if g.MaxVectorBytes > 0 && o.VectorBytes > g.MaxVectorBytes {
-		return true
-	}
-	if g.MaxOutputBytes > 0 && o.SerializedBytes() > g.MaxOutputBytes {
-		return true
-	}
-	return false
-}
-
-// EnforceGuardrails applies the variant's capacity policy uniformly:
-//   - OnExceed == ExceedError: returns ErrCapacityExceeded when any guardrail
-//     is breached (caller must propagate the error and drop the outputs).
-//   - OnExceed == ExceedFlush: emits the current products via sink and resets
-//     the buffer; subsequent variant Run iterations can keep producing
-//     without holding the full result set in memory. When sink is nil the
-//     policy degrades to "no-op" (the buffer is preserved; downstream
-//     callers may still see all products in the final merged chunks).
-//
-// Centralising the policy here keeps the five variants (structure/wiki/
-// raptor/mindmap/datasetnav) consistent and prevents the gap where only
-// structure used to honour the flush path.
-func (o *Outputs) EnforceGuardrails(g CapacityGuardrails, sink ChunkedSink, ctx context.Context) error {
-	if !g.Exceeded(*o) {
-		return nil
-	}
-	switch g.OnExceed {
-	case ExceedError:
-		return ErrCapacityExceeded
-	case ExceedFlush:
-		if sink == nil {
-			return nil
-		}
-		if err := sink.Emit(ctx, o.Products); err != nil {
-			return err
-		}
-		o.Flushed = true
-		// Hand off ownership to the sink (see FlushIfNeeded, M9) and reset all
-		// per-buffer accounting so a reused Outputs starts empty and does not
-		// re-trigger flushes on stale thresholds (M9 follow-up).
-		o.Products = nil
-		o.Items = 0
-		o.VectorBytes = 0
-		return nil
-	default:
-		return nil
-	}
-}
-
-// ProductSink accumulates compiled products and flushes them to a ChunkedSink
-// as the capacity guardrails are exceeded, bounding peak memory. A variant that
-// may produce a large result set should accumulate through a ProductSink
-// instead of appending to a plain slice and calling EnforceGuardrails only at
-// the end: the end-of-run flush in EnforceGuardrails can only release memory
-// AFTER the full result set has already been materialized, which defeats the
-// anti-OOM goal (缺口 A).
-//
-// When OnExceed != ExceedFlush, or no sink is supplied, the sink behaves like a
-// plain slice — every product stays in Products() until the caller decides what
-// to do with it. This keeps the default (no-sink) pipeline behaviour unchanged:
-// the full result set is returned in Outputs.Products for the component to merge
-// into the upstream chunk stream.
-type ProductSink struct {
-	products []Product
-	bytes    int64
-	total    int
-	flushed  bool
-	g        CapacityGuardrails
-	sink     ChunkedSink
-	ctx      context.Context
-}
-
-// NewProductSink constructs a sink bound to the given guardrails and (optional)
-// flush target.
-func NewProductSink(ctx context.Context, g CapacityGuardrails, sink ChunkedSink) *ProductSink {
-	return &ProductSink{g: g, sink: sink, ctx: ctx}
-}
-
-// Add appends p to the buffer and, when the flush policy is active and the
-// guardrails are breached, emits the current buffer to the sink and resets it.
-// This is what keeps peak memory near the guardrail threshold rather than the
-// full result-set size.
-func (s *ProductSink) Add(p Product) error {
-	s.products = append(s.products, p)
-	s.bytes += int64(len(p.Vector) * 4)
-	s.total++
-	if s.g.OnExceed == ExceedFlush && s.sink != nil {
-		o := Outputs{Products: s.products, VectorBytes: s.bytes, Items: len(s.products)}
-		if s.g.Exceeded(o) {
-			if err := s.sink.Emit(s.ctx, s.products); err != nil {
-				return err
-			}
-			s.flushed = true
-			// Hand off ownership of the backing array to the sink (M9).
-			s.products = nil
-			s.bytes = 0
-		}
-	}
-	return nil
-}
-
-// Products returns the not-yet-flushed buffer.
-func (s *ProductSink) Products() []Product { return s.products }
-
-// Bytes returns the serialized-vector footprint of the not-yet-flushed buffer.
-func (s *ProductSink) Bytes() int64 { return s.bytes }
-
-// TotalItems returns the cumulative number of products added (flushed + buffered),
-// suitable for Outputs.Items.
-func (s *ProductSink) TotalItems() int { return s.total }
-
-// Flushed reports whether at least one incremental flush has happened.
-func (s *ProductSink) Flushed() bool { return s.flushed }
 
 // ParseParam builds a Param from the DSL params map, applying variant-name
 // aliases (mind_map=>mindmap, dataset_nav=>datasetnav) and deprecation logs.
@@ -387,6 +230,46 @@ func parseStringList(m map[string]any, keys ...string) []string {
 				return out
 			}
 		}
+	}
+	return nil
+}
+
+// VectorFromChunkMap extracts a pre-computed embedding from a chunk map. The
+// upstream pipeline (and the knowledge-compile store) carry the vector under a
+// dimension-specific column key "q_<dim>_vec" — set by the tokenizer via
+// SetExtraValue and flattened into the map by ChunkDoc.ToMap. The value may
+// arrive as []float32 (store read) or []float64 (pipeline map); both are
+// normalised to []float32. A nil result means the chunk has no embedding yet.
+func VectorFromChunkMap(m map[string]any) []float32 {
+	for k, v := range m {
+		if strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec") {
+			return toFloat32Slice(v)
+		}
+	}
+	return nil
+}
+
+// toFloat32Slice normalises a numeric slice (any of []float32, []float64, or
+// []any of float64) to []float32, returning nil when the value is not a usable
+// vector.
+func toFloat32Slice(v any) []float32 {
+	switch arr := v.(type) {
+	case []float32:
+		return arr
+	case []float64:
+		out := make([]float32, len(arr))
+		for i, x := range arr {
+			out[i] = float32(x)
+		}
+		return out
+	case []any:
+		out := make([]float32, 0, len(arr))
+		for _, e := range arr {
+			if f, ok := e.(float64); ok {
+				out = append(out, float32(f))
+			}
+		}
+		return out
 	}
 	return nil
 }
