@@ -703,6 +703,26 @@ func FromConfigFile(configPath string) error {
 		return fmt.Errorf("parse analytic engine config error: %w", err)
 	}
 
+	err = config.ParseAdminConfig(newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse admin config error: %w", err)
+	}
+
+	err = config.ParseAPIServerConfig(newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse API server config error: %w", err)
+	}
+
+	err = config.ParseIngestorConfig(newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse ingestor config error: %w", err)
+	}
+
+	err = config.ParseSyncerConfig(newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse syncer config error: %w", err)
+	}
+
 	// Set default values for admin configuration if not configured
 	if globalConfig.Admin.Host == "" {
 		globalConfig.Admin.Host = "127.0.0.1"

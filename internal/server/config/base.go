@@ -29,33 +29,25 @@ type Config struct {
 	QueueEngine    QueueEngineConfig
 	AnalyticEngine AnalyticEngineConfig
 
-	Redis            RedisConfig
-	Nats             NatsConfig
-	Log              LogConfig
-	StorageEngine    StorageConfig
-	RegisterEnabled  int
-	OAuth            map[string]OAuthConfig
-	SMTP             common.SMTPConfig
-	Admin            AdminConfig
-	APIServer        APIServerConfig
+	Admin     AdminConfig
+	APIServer APIServerConfig
+	Ingestor  IngestorConfig
+	Syncer    SyncerConfig
+
+	Redis           RedisConfig
+	Nats            NatsConfig
+	Log             LogConfig
+	StorageEngine   StorageConfig
+	RegisterEnabled int
+	OAuth           map[string]OAuthConfig
+	SMTP            common.SMTPConfig
+
 	UserDefaultLLM   UserDefaultLLMConfig
 	DefaultSuperUser DefaultSuperUser
 	Language         string
-	Ingestor         IngestorConfig
-	FileSyncer       FileSyncerConfig
-	OTel             OtelConfig
-	Clickhouse       ClickhouseConfig
-}
 
-// AdminConfig admin server configuration
-type AdminConfig struct {
-	Host string `mapstructure:"host"`
-	Port int    `mapstructure:"http_port"`
-}
-
-type APIServerConfig struct {
-	Host string `mapstructure:"host"`
-	Port int    `mapstructure:"http_port"`
+	OTel       OtelConfig
+	Clickhouse ClickhouseConfig
 }
 
 type AuthenticationConfig struct {
@@ -69,17 +61,8 @@ type DefaultSuperUser struct {
 	Nickname string `mapstructure:"nickname"`
 }
 
-type IngestorConfig struct {
-	MQType string `mapstructure:"mq_type"`
-}
-
 type TaskExecutorConfig struct {
 	MessageQueueType string `mapstructure:"message_queue_type"`
-}
-
-type FileSyncerConfig struct {
-	MaxConcurrentSyncs int `mapstructure:"max_concurrent_syncs"`
-	SyncInterval       int `mapstructure:"sync_interval"`
 }
 
 type OtelConfig struct {
