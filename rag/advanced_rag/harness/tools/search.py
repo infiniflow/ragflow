@@ -298,23 +298,39 @@ async def _expand_with_compiled(tools, query: str, keywords: str, kbinfos: dict)
         return
 
     for kb_id, tenant_id, doc_ids in scopes:
-        for compile_kwd in ("page_index", "tree", None):  # None = all compiled (KG)
+        for compile_kwd in ("page_index", "tree", "wiki_page", None):  # None = all compiled (KG/including knowledge_graph, timeline, mind_map)
             label = compile_kwd or "kg"
-            chunks = await _expand_compiled_strategy(
-                tools,
-                kb_id,
-                tenant_id,
-                doc_ids,
-                query,
-                seen_ids,
-                compile_kwd=compile_kwd,
-                max_chunks=5,
-            )
+            if compile_kwd == "wiki_page":
+                chunks = await _expand_wiki_page_strategy(
+                    tools,
+                    kb_id,
+                    tenant_id,
+                    doc_ids,
+                    query,
+                    seen_ids,
+                    max_chunks=5,
+                )
+            else:
+                chunks = await _expand_compiled_strategy(
+                    tools,
+                    kb_id,
+                    tenant_id,
+                    doc_ids,
+                    query,
+                    seen_ids,
+                    compile_kwd=compile_kwd,
+                    max_chunks=5,
+                )
             if chunks:
                 kbinfos.setdefault("chunks", []).extend(chunks)
                 _LOG.debug("[Compiled expand] %s: +%d chunks", label, len(chunks))
 
-    after = len(kbinfos.get("chunks", []))
+    # Re-sort so compiled-expansion chunks blend by similarity with regular ones.
+    chunks = kbinfos.get("chunks", [])
+    if chunks:
+        chunks.sort(key=lambda c: c.get("similarity", 0.0), reverse=True)
+
+    after = len(chunks)
     _LOG.info("[Hybrid search] Compiled expansion added %d chunks.", after - before)
 
 
@@ -557,6 +573,129 @@ async def _expand_compiled_strategy(
             cid = c.get("chunk_id") or c.get("id")
             if cid and cid not in seen_ids:
                 seen_ids.add(cid)
+                new_chunks.append(c)
+
+    return new_chunks
+
+
+async def _search_wiki_pages(
+    tools,
+    kb_id: str,
+    tenant_id: str,
+    doc_ids: list[str] | None,
+    text: str,
+    *,
+    top_n: int = 8,
+) -> dict:
+    """Search wiki_page compiled articles (no knowledge_graph_kwd filter).
+
+    Wiki pages are standalone articles with ``content_with_weight``,
+    ``content_ltks``/``content_sm_ltks`` for keyword search, and
+    ``q_..._vec`` for vector search. They do NOT have the
+    ``knowledge_graph_kwd`` field (unlike entity/relation rows).
+    """
+    from common import settings
+    from common.doc_store.doc_store_base import MatchTextExpr, OrderByExpr
+    from common.misc_utils import thread_pool_exec
+    from rag.nlp import search
+
+    condition: dict = {"compile_kwd": "wiki_page", "available_int": 1}
+    if doc_ids:
+        condition["source_doc_ids"] = list(doc_ids)
+
+    fields = [
+        "content_with_weight",
+        "summary_with_weight",
+        "source_chunk_ids",
+        "doc_id",
+        "title_kwd",
+        "topic_kwd",
+    ]
+
+    exprs = []
+    if text:
+        embd_mdl = getattr(tools, "embed_mdl", None)
+        if embd_mdl:
+            try:
+                exprs.append(await settings.retriever.get_vector(text, embd_mdl, top_n, 0.1))
+            except Exception:
+                _LOG.exception("[Wiki expand] vector build failed; using keyword match")
+        if not exprs:
+            exprs.append(
+                MatchTextExpr(
+                    ["content_ltks", "content_sm_ltks"],
+                    text,
+                    top_n,
+                )
+            )
+
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields,
+            [],
+            condition,
+            exprs,
+            OrderByExpr(),
+            0,
+            top_n,
+            search.index_name(tenant_id),
+            [kb_id],
+        )
+        return settings.docStoreConn.get_fields(res, fields) or {}
+    except Exception:
+        _LOG.exception("[Wiki expand] search failed for kb=%s", kb_id)
+        return {}
+
+
+async def _expand_wiki_page_strategy(
+    tools,
+    kb_id: str,
+    tenant_id: str,
+    doc_ids: list[str] | None,
+    query: str,
+    seen_ids: set[str],
+    *,
+    max_chunks: int = 5,
+) -> list[dict]:
+    """Expand wiki_page compiled articles: semantic search → load source chunks.
+
+    Unlike ``_expand_compiled_strategy`` (which does 1-hop entity-graph
+    navigation), wiki pages are standalone rendered articles — we search
+    them directly and load the referenced source chunks as context.
+    """
+    # -- 1. Search wiki_page rows --
+    wiki_rows = await _search_wiki_pages(
+        tools,
+        kb_id,
+        tenant_id,
+        doc_ids,
+        query,
+        top_n=5,
+    )
+    if not wiki_rows:
+        return []
+
+    # -- 2. Collect source_chunk_ids from matching pages --
+    by_doc: dict[str, set[str]] = {}
+    for r in wiki_rows.values():
+        doc_id = r.get("doc_id") or ""
+        for cid in r.get("source_chunk_ids") or []:
+            if cid and cid not in seen_ids:
+                by_doc.setdefault(doc_id, set()).add(cid)
+
+    # -- 3. Load chunks, assign high similarity for priority ranking --
+    new_chunks: list[dict] = []
+    for doc_id, cids in by_doc.items():
+        if len(new_chunks) >= max_chunks:
+            break
+        limit = max_chunks - len(new_chunks)
+        chunks = await _load_chunks_for_doc(tools, doc_id, list(cids)[:limit])
+        for c in chunks:
+            cid = c.get("chunk_id") or c.get("id")
+            if cid and cid not in seen_ids:
+                seen_ids.add(cid)
+                c.setdefault("similarity", 0.9)  # wiki pages rank high
                 new_chunks.append(c)
 
     return new_chunks

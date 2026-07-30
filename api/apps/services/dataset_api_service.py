@@ -1619,7 +1619,7 @@ def _template_is_wiki(template: dict | None) -> bool:
         return False
     config = template.get("config") if isinstance(template.get("config"), dict) else {}
     raw_kind = config.get("kind") or template.get("kind") or ""
-    return _compilation_template_kind(raw_kind) == "artifacts"
+    return _compilation_template_kind(raw_kind) == "wiki"
 
 
 def _group_has_wiki_template(group_id: str, tenant_id: str, group_cache: dict[str, bool]) -> bool:
