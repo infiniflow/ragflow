@@ -1841,48 +1841,63 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     # fields only) to enumerate the distinct template ids whose top-level kind
     # matches the request; ``build_bucket`` below then reads each template's rows.
     meta_fields = ["id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"]
-    kind_template_ids: list[str] = []
-    seen_tid: set[str] = set()
-    has_templateless = False
-    offset = 0
     page_size = 1000
-    pages = 0
-    while True:
-        pages += 1
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                meta_fields,
-                [],
-                {"knowledge_graph_kwd": ["entity", "relation"], "scope_kwd": ["dataset"]},
-                [],
-                OrderByExpr(),
-                offset,
-                page_size,
-                index_nm,
-                [dataset_id],
-            )
-            meta_rows = settings.docStoreConn.get_fields(res, meta_fields) or {}
-        except Exception:
-            logging.exception("get_dataset_structure: docStore discovery failed for kb=%s", dataset_id)
-            return True, empty
-        if not meta_rows:
-            break
-        for row in meta_rows.values():
-            tid = _row_template_id(row)
-            stamped_kind = (row.get("compilation_template_kind_kwd") or "").strip()
-            row_kind = stamped_kind or _template_meta(tid) or ""
-            if _resolve_dataset_structure_kind(row_kind) != resolved_kind:
-                continue
-            if tid:
-                if tid not in seen_tid:
-                    seen_tid.add(tid)
-                    kind_template_ids.append(tid)
-            else:
-                has_templateless = True
-        if len(meta_rows) < page_size:
-            break
-        offset += page_size
+
+    async def _discover_scope_templates(scope_kwd: str) -> tuple[list[str], bool, int]:
+        scope_template_ids: list[str] = []
+        seen_scope_tid: set[str] = set()
+        scope_has_templateless = False
+        offset = 0
+        pages = 0
+        while True:
+            pages += 1
+            try:
+                res = await thread_pool_exec(
+                    settings.docStoreConn.search,
+                    meta_fields,
+                    [],
+                    {"knowledge_graph_kwd": ["entity", "relation"], "scope_kwd": [scope_kwd]},
+                    [],
+                    OrderByExpr(),
+                    offset,
+                    page_size,
+                    index_nm,
+                    [dataset_id],
+                )
+                meta_rows = settings.docStoreConn.get_fields(res, meta_fields) or {}
+            except Exception:
+                logging.exception("get_dataset_structure: docStore discovery failed for kb=%s scope=%s", dataset_id, scope_kwd)
+                return [], False, pages
+            if not meta_rows:
+                break
+            for row in meta_rows.values():
+                tid = _row_template_id(row)
+                stamped_kind = row.get("compilation_template_kind_kwd") or ""
+                if isinstance(stamped_kind, list):
+                    stamped_kind = stamped_kind[0].strip()
+                row_kind = stamped_kind or _template_meta(tid) or ""
+                if _resolve_dataset_structure_kind(row_kind) != resolved_kind:
+                    continue
+                if tid:
+                    if tid not in seen_scope_tid:
+                        seen_scope_tid.add(tid)
+                        scope_template_ids.append(tid)
+                else:
+                    scope_has_templateless = True
+            if len(meta_rows) < page_size:
+                break
+            offset += page_size
+        return scope_template_ids, scope_has_templateless, pages
+
+    dataset_template_ids, has_templateless, dataset_pages = await _discover_scope_templates("dataset")
+    kind_template_ids: list[str] = list(dataset_template_ids)
+    template_scope_by_id: dict[str, str] = {tid: "dataset" for tid in dataset_template_ids}
+
+    doc_template_ids, _, doc_pages = await _discover_scope_templates("doc")
+    for tid in doc_template_ids:
+        if tid not in template_scope_by_id:
+            template_scope_by_id[tid] = "doc"
+            kind_template_ids.append(tid)
 
     # Detect datasets that have ONLY the legacy dataset_graph blob (no
     # entity/relation rows yet) so the fallback path below handles them.
@@ -1907,9 +1922,11 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
             pass
 
     logging.debug(
-        "get_dataset_structure: discovered %d template(s) in %d page(s) for kb=%s kind=%s",
-        len(kind_template_ids),
-        pages,
+        "get_dataset_structure: discovered %d dataset template(s) and %d doc template(s) in %d/%d page(s) for kb=%s kind=%s",
+        len(dataset_template_ids),
+        len(doc_template_ids),
+        dataset_pages,
+        doc_pages,
         dataset_id,
         resolved_kind,
     )
@@ -1927,17 +1944,20 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
 
         def _scope_for_template(row: dict):
             tid = _row_template_id(row) or ""
-            stamped = (row.get("compilation_template_kind_kwd") or "").strip()
+            stamped = row.get("compilation_template_kind_kwd") or ""
+            if isinstance(stamped, list):
+                stamped = stamped_kind[0].strip()
+            scope_kwd = template_scope_by_id.get(tid, "dataset") if tid else "dataset"
             meta = _bucket_meta_for(tid, stamped) if tid else {"template_id": f"kind:{resolved_kind}", "template_name": f"kind:{resolved_kind}", "kind": resolved_kind}
             if tid:
-                return meta, {"compilation_template_ids": [tid], "scope_kwd": ["dataset"]}
-            return meta, {"compilation_template_kind_kwd": [stamped], "scope_kwd": ["dataset"]}
+                return meta, {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]}
+            return meta, {"compilation_template_kind_kwd": [stamped], "scope_kwd": [scope_kwd]}
 
         bucket_meta, kw_entities, kw_relations = await sgc.keyword_subgraph(
             index_nm,
             dataset_id,
             embd_mdl,
-            {"compilation_template_ids": kind_template_ids, "knowledge_graph_kwd": ["entity"], "scope_kwd": ["dataset"]},
+            {"compilation_template_ids": kind_template_ids, "knowledge_graph_kwd": ["entity"], "scope_kwd": ["dataset", "doc"]},
             keywords,
             _scope_for_template,
             log_ctx=f"kb={dataset_id}",
@@ -1956,11 +1976,18 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     # ── normal mode: per-template subgraph sampling from raw KB-wide rows. ──
     templates_out: list[dict] = []
     for tid in kind_template_ids:
+        scope_kwd = template_scope_by_id.get(tid, "dataset")
         try:
-            entities, relations = await sgc.build_bucket(index_nm, dataset_id, {"compilation_template_ids": [tid], "scope_kwd": ["dataset"]})
+            entities, relations = await sgc.build_bucket(index_nm, dataset_id, {"compilation_template_ids": [tid], "scope_kwd": [scope_kwd]})
         except Exception:
             logging.exception("get_dataset_structure: bucket build failed for kb=%s template=%s", dataset_id, tid)
             continue
+        if scope_kwd == "dataset" and not entities and not relations:
+            try:
+                entities, relations = await sgc.build_bucket(index_nm, dataset_id, {"compilation_template_ids": [tid], "scope_kwd": ["doc"]})
+            except Exception:
+                logging.exception("get_dataset_structure: doc fallback bucket build failed for kb=%s template=%s", dataset_id, tid)
+                continue
         if resolved_kind in {"knowledge_graph", "mind_map", "timeline"}:
             entities = sgc.filter_entities_with_relations(entities, relations)
             if not entities:
@@ -1993,7 +2020,10 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
             legacy_rows = {}
         legacy_bucket = {"template_id": f"kind:{resolved_kind}", "template_name": f"kind:{resolved_kind}", "kind": resolved_kind, "entities": [], "relations": []}
         for row in legacy_rows.values():
-            if _resolve_dataset_structure_kind((row.get("compilation_template_kind_kwd") or "").strip()) != resolved_kind:
+            stamped_kind = row.get("compilation_template_kind_kwd") or ""
+            if isinstance(stamped_kind, list):
+                stamped_kind = stamped_kind[0].strip()
+            if _resolve_dataset_structure_kind((stamped_kind or "").strip()) != resolved_kind:
                 continue
             try:
                 graph = json.loads(row.get("content_with_weight") or "{}")
