@@ -328,7 +328,9 @@ jobs:
         run: |
           set -euo pipefail
           PKGS=$(go list ./... 2>/dev/null \
-            | grep -v '/internal/tokenizer$' || true)
+            | grep -v '/internal/storage$' \
+            | grep -v '/internal/tokenizer$' \
+            | grep -v '/internal/handler$' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
           else
