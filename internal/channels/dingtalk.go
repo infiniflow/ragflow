@@ -164,12 +164,12 @@ func (c *dingTalkChannel) Stop(ctx context.Context) error {
 	c.mu.Lock()
 	cancel := c.cancel
 	c.cancel = nil
+	c.ctx = nil
 	c.sessionWebhooks = map[string]string{}
 	c.processed = map[string]time.Time{}
 	c.inflight = map[string]time.Time{}
 	c.workers = map[string]*dingTalkWorker{}
 	c.mu.Unlock()
-	c.ctx = nil
 
 	if cancel != nil {
 		cancel()
@@ -194,14 +194,14 @@ func (c *dingTalkChannel) Send(ctx context.Context, msg core.OutgoingMessage) er
 		return nil
 	}
 
-	payload := map[string]any{
+	p := map[string]any{
 		"msgtype": "markdown",
 		"markdown": map[string]string{
 			"title": "RAGFlow",
 			"text":  msg.Text,
 		},
 	}
-	return c.postWebhook(ctx, sessionWebhook, payload)
+	return c.postWebhook(ctx, sessionWebhook, p)
 }
 
 // run keeps the DingTalk SDK stream client active until the channel stops.
