@@ -147,7 +147,7 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, paylo
 // skip raw-only memories, run LLM extraction, embed and persist the
 // extracted messages under the raw message's id.
 func (s *MemoryMessageService) saveExtractedToMemory(ctx context.Context, memoryID string, msg MemoryMessage, sourceID int64, taskID string) error {
-	mem, err := s.memories.GetMemoryConfig(ctx, memoryID)
+	mem, err := s.memories.getMemoryConfig(ctx, memoryID)
 	if err != nil {
 		return err
 	}
