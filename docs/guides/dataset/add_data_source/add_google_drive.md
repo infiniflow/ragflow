@@ -29,25 +29,25 @@ You can either create a dedicated project for RAGFlow or use an existing Google 
 ![Google Drive image 3](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image3.jpeg)
 4: Click **Create** to confirm creation.
 
-## 2. Configure Oauth Consent Screen
+## 2. Configure OAuth Consent Screen
 
 You need to configure the OAuth Consent Screen because it is the step where you define how your app asks for permission and what specific data it wants to access on behalf of a user. It's a mandatory part of setting up OAuth 2.0 authentication with Google. Think of it as creating a standardized permission slip for your app. Without it, Google will not allow your app to request access to user data.
 
 1. Go to **APIs & Services** → **OAuth consent screen**.
 2. Ensure **User Type** is set to **External**:  
 ![Google Drive image 4](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image4.jpeg)
-3. Under Under **Test Users**, click **+ Add users** to add test users:  
+3. Under **Test Users**, click **+ Add users** to add test users:
 ![Google Drive image 5](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image5.jpeg)
 ![Google Drive image 6](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image6.jpeg)
 
-## 3. Create Oauth Client Credentials
+## 3. Create OAuth Client Credentials
 
 1. Navigate to `https://console.cloud.google.com/auth/clients`.
 2. Select **Web Application** as **Application type** for the created project:  
 ![Google Drive image 7](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image7.png)
 3. Enter a client name.
-4. Add `http://localhost:9380/api/v1/connectors/google-drive/oauth/web/callback` as **Authorised redirect URIs**:
-5. Add **Authorised JavaScript origins**:
+4. Add `http://localhost:9380/api/v1/connectors/google-drive/oauth/web/callback` as **Authorized redirect URIs**:
+5. Add **Authorized JavaScript origins**:
    - If deploying RAGFlow from Docker, use `http://localhost:80`:  
      ![Google Drive image 8](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image8.png)
    - If building RAGFlow from source, use `http://localhost:9222`
@@ -100,7 +100,7 @@ You need to enable the required APIs (such as the Google Drive API) to formally 
 ## 6. Add Google Drive as a Data Source in RAGFlow
 
 1. Go to **Data Sources** inside RAGFlow and select **Google Drive**.
-2. Under **OAuth Token JSON**, upload the previously downloaded JSON credentials you saved in [Section 2](#2-configure-oauth-consent-screen):  
+2. Under **OAuth Token JSON**, upload the previously downloaded JSON credentials you saved in [Section 3](#3-create-oauth-client-credentials):
 ![Google Drive image 22](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image22.jpeg)
 3. Enter the url of the shared Google Drive folder link:
 ![Google Drive image 23](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image23.png)
