@@ -11,7 +11,7 @@ import rehypeRaw from 'rehype-raw';
 
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
-import { preprocessLaTeX } from '@/utils/chat';
+import { preprocessLaTeX, sanitizeMarkdown } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
 import { omit } from 'lodash';
@@ -28,8 +28,10 @@ const HighLightMarkdown = ({
   // IMPORTANT: preprocessLaTeX() decodes &lt;/&gt;/&amp; back to raw HTML before
   // rehypeRaw parses the markdown. Sanitizing children *before* preprocessLaTeX
   // would let entity-encoded payloads bypass DOMPurify and inject HTML.
-  // Sanitize the *post*-processed string instead. (Coderabbit CRITICAL #3486038798)
-  const processed = children ? preprocessLaTeX(children) : children;
+  // Sanitize the *post*-processed string instead.
+  const processed = children
+    ? sanitizeMarkdown(preprocessLaTeX(children))
+    : children;
   const dir = children
     ? getDirAttribute(children.replace(citationMarkerReg, ''))
     : undefined;
