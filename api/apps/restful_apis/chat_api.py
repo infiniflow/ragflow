@@ -24,6 +24,7 @@ from copy import deepcopy
 from types import SimpleNamespace
 
 from quart import Response, request
+from werkzeug.exceptions import BadRequest
 
 from api.apps import current_user, login_required
 from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
@@ -454,9 +455,21 @@ async def list_chats():
     if chat_id or name:
         keywords = ""
 
+    if orderby not in ("create_time", "update_time", "name"):
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"invalid orderby field: {orderby}")
+
     try:
-        page_number = int(request.args.get("page", 0))
-        items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
+        # Invalid or negative pagination values fall back to defaults
+        # instead of leaking internal conversion/SQL errors.
+        try:
+            page_number = max(int(request.args.get("page", 0)), 0)
+        except (TypeError, ValueError):
+            page_number = 0
+        try:
+            parsed_page_size = int(request.args.get("page_size", 0))
+        except (TypeError, ValueError):
+            parsed_page_size = 0
+        items_per_page = validate_rest_api_page_size(parsed_page_size)
 
         if owner_ids:
             chats, total = await thread_pool_exec(
@@ -794,9 +807,22 @@ async def list_sessions(chat_id):
                 message="no authorization",
                 code=RetCode.AUTHENTICATION_ERROR,
             )
-        page_number = int(request.args.get("page", 1))
-        items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 30)))
+        # Invalid or negative pagination values fall back to defaults
+        # instead of leaking internal conversion/SQL errors.
+        try:
+            page_number = int(request.args.get("page", 1))
+        except (TypeError, ValueError):
+            page_number = 1
+        if page_number < 1:
+            page_number = 1
+        try:
+            parsed_page_size = int(request.args.get("page_size", 30))
+        except (TypeError, ValueError):
+            parsed_page_size = 30
+        items_per_page = validate_rest_api_page_size(parsed_page_size)
         orderby = request.args.get("orderby", "create_time")
+        if orderby not in ("create_time", "update_time", "name"):
+            return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"invalid orderby field: {orderby}")
         desc = request.args.get("desc", "true").lower() != "false"
         session_id = request.args.get("id")
         name = request.args.get("name")
@@ -868,7 +894,10 @@ async def delete_sessions(chat_id):
     if not await _ensure_owned_chat(chat_id):
         return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
-        req = await get_request_json()
+        try:
+            req = await get_request_json()
+        except BadRequest:
+            return get_json_result(code=RetCode.ARGUMENT_ERROR, message="Malformed JSON syntax: Missing commas/brackets or invalid encoding")
         if not req:
             return get_json_result(data={})
 
