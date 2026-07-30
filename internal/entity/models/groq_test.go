@@ -380,7 +380,7 @@ func TestGroqBaseURLTrimsTrailingSlash(t *testing.T) {
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newGroqForTest(srv.URL+"/").ChatWithMessages(
+	resp, err := newGroqForTest(srv.URL+"/").ChatWithMessages(
 		ctx,
 		"llama-3.3-70b-versatile",
 		[]Message{{Role: "user", Content: "x"}},
@@ -390,6 +390,9 @@ func TestGroqBaseURLTrimsTrailingSlash(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if resp.Usage != nil {
+		t.Fatalf("Usage=%#v, want nil for usage-less response", resp.Usage)
 	}
 }
 
@@ -409,7 +412,7 @@ func TestGroqUsesEmptyRegionCustomBaseURL(t *testing.T) {
 		map[string]string{"": srv.URL},
 		URLSuffix{Chat: "chat/completions", Models: "models"},
 	)
-	_, err := model.ChatWithMessages(
+	resp, err := model.ChatWithMessages(
 		ctx,
 		"llama-3.3-70b-versatile",
 		[]Message{{Role: "user", Content: "x"}},
@@ -419,6 +422,9 @@ func TestGroqUsesEmptyRegionCustomBaseURL(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if resp.Usage != nil {
+		t.Fatalf("Usage=%#v, want nil for usage-less response", resp.Usage)
 	}
 }
 

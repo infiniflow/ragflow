@@ -91,7 +91,7 @@ type groqChatResponse struct {
 	ID                string           `json:"id"`
 	Choices           []groqChatChoice `json:"choices"`
 	Error             interface{}      `json:"error"`
-	Usage             groqChatUsage    `json:"usage"`
+	Usage             *groqChatUsage   `json:"usage"`
 	Created           int64            `json:"created"`
 	Model             string           `json:"model"`
 	Object            string           `json:"object"`
@@ -170,16 +170,19 @@ func (g *GroqModel) ChatWithMessages(ctx context.Context, modelName string, mess
 			reasonContent = result.Choices[0].Message.Reasoning
 		}
 
-		return chatResponseParts{
+		parts := chatResponseParts{
 			RequestID:     result.ID,
 			Content:       &content,
 			ReasonContent: &reasonContent,
-			Usage: &TokenUsage{
+		}
+		if result.Usage != nil {
+			parts.Usage = &TokenUsage{
 				PromptTokens:     result.Usage.PromptTokens,
 				CompletionTokens: result.Usage.CompletionTokens,
 				TotalTokens:      result.Usage.TotalTokens,
-			},
-		}, nil
+			}
+		}
+		return parts, nil
 	})
 }
 
