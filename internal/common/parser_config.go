@@ -26,6 +26,104 @@ func InjectExtractorLLMID(parserConfig map[string]interface{}, llmID string) boo
 	return updated
 }
 
+// InjectExtractorEnableMetadata enables auto-metadata (enable_metadata) extraction
+// on every Extractor node when the dataset has enable_metadata on and a
+// non-empty field set (metadata and/or built_in_metadata). The dataset-level
+// enable_metadata flag is authoritative (mirrors Python task_executor.py:519,
+// which reads parser_config directly and never consults a per-node flag): a
+// shipped DSL that defaults enable_metadata to 0 is still turned on. Only a
+// node the user already turned ON (enable_metadata truthy) is left untouched,
+// so an explicit per-node enablement keeps its own config. The field schema is
+// taken from parserConfig["metadata"] and parserConfig["built_in_metadata"]
+// (combined). Returns whether any entry was updated.
+func InjectExtractorEnableMetadata(parserConfig map[string]interface{}) bool {
+	if parserConfig == nil {
+		return false
+	}
+	if !isTruthy(parserConfig["enable_metadata"]) {
+		return false
+	}
+	fields := metadataFieldDefs(parserConfig)
+	if len(fields) == 0 {
+		return false
+	}
+	updated := false
+	for cid, raw := range parserConfig {
+		compMap, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		cidLower := strings.ToLower(cid)
+		if !strings.HasPrefix(cidLower, "extractor:") && !strings.HasPrefix(cidLower, "extractor_") {
+			continue
+		}
+		// The dataset-level enable_metadata flag is authoritative (mirrors
+		// Python task_executor.py:519, which reads parser_config directly and
+		// never consults a per-node flag). Only a node the user already turned
+		// ON (truthy) is left alone; a shipped DSL that defaults the field to
+		// 0 must still be enabled by the dataset flag, otherwise auto-metadata
+		// could never turn on for any of the built-in pipelines.
+		if isTruthy(compMap["enable_metadata"]) {
+			continue
+		}
+		compMap["enable_metadata"] = 1
+		compMap["metadata"] = fields
+		updated = true
+	}
+	return updated
+}
+
+// metadataFieldDefs combines parserConfig["metadata"] and
+// parserConfig["built_in_metadata"] into the field list injected as
+// metadata (each entry keeps key/type/description/enum, mirroring the
+// stored shape from dataset/helpers.go normalizeMetadataConfigFields).
+//
+// It returns []any (i.e. []interface{}) rather than []map[string]interface{}
+// because the injected value is handed to NewExtractorComponent, which reads
+// params["metadata"].([]any). A []map[string]interface{} value would fail that
+// type assertion (Go slice types are not covariant) and the field schema would
+// be silently dropped, so auto-metadata never reached ExtractorParam.Metadata.
+func metadataFieldDefs(parserConfig map[string]interface{}) []any {
+	var out []any
+	for _, key := range []string{"metadata", "built_in_metadata"} {
+		raw, ok := parserConfig[key].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, item := range raw {
+			m, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			k, _ := m["key"].(string)
+			if strings.TrimSpace(k) == "" {
+				continue
+			}
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// isTruthy reports whether a parserConfig flag (e.g. enable_metadata) is on.
+// It tolerates bool, numeric >0 and the strings "true"/"1" so storage
+// representation differences don't silently disable the feature.
+func isTruthy(v interface{}) bool {
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		return t == "true" || t == "1" || t == "True" || t == "TRUE"
+	case float64:
+		return t > 0
+	case int:
+		return t > 0
+	case int64:
+		return t > 0
+	}
+	return false
+}
+
 // deepCopyMap duplicates a JSON-like map so later merges do not mutate shared defaults.
 func deepCopyMap(source map[string]interface{}) map[string]interface{} {
 	if source == nil {

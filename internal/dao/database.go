@@ -157,6 +157,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.IngestionTaskLog{},
 		&entity.FileCommit{},
 		&entity.FileCommitItem{},
+		&entity.KnowledgeCompileDoc{},
 	}
 
 	if migrateDB {

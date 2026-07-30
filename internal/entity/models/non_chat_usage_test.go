@@ -60,6 +60,71 @@ func TestProviderEmbeddingAndRerankUsage(t *testing.T) {
 			embeddingBody: `{"id":"embed-volc","data":{"embedding":[0.1,0.2]},"usage":{"prompt_tokens":7,"total_tokens":7}}`,
 			embedInput:    7, embedTotal: 7,
 		},
+		{
+			name: "jina",
+			newModel: func(baseURL string) ModelDriver {
+				return NewJinaModel(map[string]string{"default": baseURL}, URLSuffix{Embedding: "embedding", Rerank: "rerank"})
+			},
+			embeddingBody:  `{"id":"embed-jina","data":[{"embedding":[0.1,0.2],"index":0}],"usage":{"prompt_tokens":7,"total_tokens":7}}`,
+			rerankBody:     `{"id":"rerank-jina","results":[{"index":0,"relevance_score":0.9}],"usage":{"prompt_tokens":7,"total_tokens":9}}`,
+			embedInput:     7,
+			embedTotal:     7,
+			rerankInput:    7,
+			rerankOutput:   0,
+			rerankTotal:    9,
+			supportsRerank: true,
+		},
+		{
+			name: "gitee",
+			newModel: func(baseURL string) ModelDriver {
+				return NewGiteeModel(map[string]string{"default": baseURL}, URLSuffix{Embedding: "embedding", Rerank: "rerank"})
+			},
+			embeddingBody:  `{"id":"embed-gitee","data":[{"embedding":[0.1,0.2],"index":0}],"usage":{"prompt_tokens":7,"total_tokens":7}}`,
+			rerankBody:     `{"id":"rerank-gitee","results":[{"index":0,"relevance_score":0.9}],"usage":{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}`,
+			embedInput:     7,
+			embedTotal:     7,
+			rerankInput:    7,
+			rerankOutput:   2,
+			rerankTotal:    9,
+			supportsRerank: true,
+		},
+		{
+			name: "openrouter",
+			newModel: func(baseURL string) ModelDriver {
+				return NewOpenRouterModel(map[string]string{"default": baseURL}, URLSuffix{Embedding: "embedding", Rerank: "rerank"})
+			},
+			embeddingBody:  `{"id":"embed-openrouter","data":[{"embedding":[0.1,0.2],"index":0}],"usage":{"prompt_tokens":7,"total_tokens":7}}`,
+			rerankBody:     `{"id":"rerank-openrouter","results":[{"index":0,"relevance_score":0.9}],"usage":{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}`,
+			embedInput:     7,
+			embedTotal:     7,
+			rerankInput:    7,
+			rerankOutput:   2,
+			rerankTotal:    9,
+			supportsRerank: true,
+		},
+		{
+			name: "jiekouai",
+			newModel: func(baseURL string) ModelDriver {
+				return NewJieKouAIModel(map[string]string{"default": baseURL}, URLSuffix{Embedding: "embedding", Rerank: "rerank"})
+			},
+			embeddingBody:  `{"id":"embed-jiekouai","data":[{"embedding":[0.1,0.2],"index":0}],"usage":{"prompt_tokens":7,"total_tokens":7}}`,
+			rerankBody:     `{"id":"rerank-jiekouai","results":[{"index":0,"relevance_score":0.9}],"usage":{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}`,
+			embedInput:     7,
+			embedTotal:     7,
+			rerankInput:    7,
+			rerankOutput:   2,
+			rerankTotal:    9,
+			supportsRerank: true,
+		},
+		{
+			name: "hunyuan",
+			newModel: func(baseURL string) ModelDriver {
+				return NewHunyuanModel(map[string]string{"default": baseURL}, URLSuffix{Embedding: "embedding"})
+			},
+			embeddingBody: `{"id":"embed-hunyuan","data":[{"embedding":[0.1,0.2],"index":0}],"usage":{"prompt_tokens":7,"total_tokens":7}}`,
+			embedInput:    7,
+			embedTotal:    7,
+		},
 	}
 
 	for _, tc := range cases {
