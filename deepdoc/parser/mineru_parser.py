@@ -928,9 +928,9 @@ class MinerUParser(RAGFlowPdfParser):
                 continue
             if output_type in {MinerUContentType.DISCARDED, MinerUContentType.HEADER, MinerUContentType.FOOTER, MinerUContentType.PAGE_NUMBER}:
                 continue
-            # Non-paper chunkers consume media through _transfer_to_media_blocks; keeping
-            # them in sections would create duplicate caption/text chunks.
-            if parse_method != "paper" and (output_type == MinerUContentType.IMAGE or (output_type == MinerUContentType.TABLE and table_enable)):
+            # Media blocks are the single owner of enabled tables and images for
+            # every chunk method; also returning them as sections duplicates text.
+            if output_type == MinerUContentType.IMAGE or (output_type == MinerUContentType.TABLE and table_enable):
                 continue
 
             match output_type:

@@ -86,6 +86,40 @@ def test_transfer_to_sections_skips_page_chrome_without_duplicating_text(monkeyp
     assert "Online Edition for Part no." not in " ".join(texts)
 
 
+def test_paper_routes_tables_and_images_only_to_media_blocks(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    media_image = object()
+    monkeypatch.setattr(parser, "_resolve_output_image", lambda *_args, **_kwargs: media_image)
+    table_html = "<table><tr><td>Table cell</td></tr></table>"
+    outputs = [
+        {
+            "type": module.MinerUContentType.TEXT,
+            "text": "Document text",
+        },
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": table_html,
+            "table_caption": [],
+            "table_footnote": [],
+        },
+        {
+            "type": module.MinerUContentType.IMAGE,
+            "image_caption": ["Figure caption"],
+            "image_footnote": [],
+        },
+    ]
+
+    sections = parser._transfer_to_sections(outputs, parse_method="paper", table_enable=True)
+    media_blocks = parser._transfer_to_media_blocks(outputs, table_enable=True)
+
+    assert sections == [("Document text", module.MinerUContentType.TEXT.value)]
+    assert media_blocks == [
+        ((media_image, table_html), []),
+        ((media_image, ["Figure caption"]), []),
+    ]
+
+
 def test_transfer_to_sections_skips_unknown_types_without_duplicating_text(monkeypatch, caplog):
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser()
