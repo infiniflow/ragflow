@@ -18,6 +18,10 @@ package channels
 
 import (
 	"context"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -101,5 +105,68 @@ func TestDiscordEnqueueDoesNotMarkDroppedMessageSeen(t *testing.T) {
 	}
 	if _, seen := ch.seen["dropped"]; seen {
 		t.Fatal("dropped message was marked seen")
+	}
+}
+
+func TestDiscordRequestJSONReturnsRateLimitError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Retry-After", "0.001")
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"message":"rate limited","retry_after":0.001,"global":true}`))
+	}))
+	defer server.Close()
+
+	ch := newDiscordChannel(discordAccount{
+		AccountID:  "account-1",
+		Token:      "token-1",
+		APIBaseURL: server.URL,
+	})
+
+	err := ch.requestJSON(context.Background(), http.MethodGet, "/gateway/bot", nil, nil)
+	var rateLimitErr *discordRateLimitError
+	if !errors.As(err, &rateLimitErr) {
+		t.Fatalf("requestJSON error = %v, want discordRateLimitError", err)
+	}
+	if rateLimitErr.RetryAfter != time.Millisecond {
+		t.Fatalf("retry after = %s, want 1ms", rateLimitErr.RetryAfter)
+	}
+	if !rateLimitErr.Global {
+		t.Fatal("global rate limit flag was not preserved")
+	}
+}
+
+func TestDiscordSendRetriesRateLimit(t *testing.T) {
+	var attempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/channels/chat-1/messages" {
+			t.Fatalf("request path = %q, want /channels/chat-1/messages", got)
+		}
+		if attempts.Add(1) == 1 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"message":"rate limited","retry_after":0.001}`))
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"message-2"}`))
+	}))
+	defer server.Close()
+
+	ch := newDiscordChannel(discordAccount{
+		AccountID:  "account-1",
+		Token:      "token-1",
+		APIBaseURL: server.URL,
+	})
+
+	err := ch.Send(context.Background(), core.OutgoingMessage{
+		ChatID: "chat-1",
+		Text:   "hello",
+	})
+	if err != nil {
+		t.Fatalf("Send returned error: %v", err)
+	}
+	if got := attempts.Load(); got != 2 {
+		t.Fatalf("attempts = %d, want 2", got)
 	}
 }

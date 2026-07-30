@@ -49,6 +49,8 @@ const (
 	discordMessageTTL        = time.Hour
 	discordChatWorkerIdle    = 5 * time.Minute
 	discordDefaultIntents    = 1<<0 | 1<<9 | 1<<12 | 1<<15
+	discordSendMaxAttempts   = 3
+	discordMaxRetryAfter     = 30 * time.Second
 )
 
 type discordAccount struct {
@@ -111,6 +113,21 @@ type discordMessageCreate struct {
 		ID  string `json:"id"`
 		Bot bool   `json:"bot"`
 	} `json:"author"`
+}
+
+type discordRateLimitError struct {
+	RetryAfter time.Duration
+	Global     bool
+	Response   string
+}
+
+// Error formats a Discord rate-limit response with retry metadata.
+func (e *discordRateLimitError) Error() string {
+	scope := "route"
+	if e.Global {
+		scope = "global"
+	}
+	return fmt.Sprintf("discord api rate limited (%s), retry_after=%s, response: %s", scope, e.RetryAfter, e.Response)
 }
 
 // newDiscordChannel creates a Discord bot channel with default REST and Gateway settings.
@@ -229,7 +246,35 @@ func (c *discordChannel) Send(ctx context.Context, msg core.OutgoingMessage) err
 			"fail_if_not_exists": false,
 		}
 	}
-	return c.requestJSON(ctx, http.MethodPost, "/channels/"+url.PathEscape(msg.ChatID)+"/messages", payload, nil)
+
+	path := "/channels/" + url.PathEscape(msg.ChatID) + "/messages"
+	var lastErr error
+	for attempt := 1; attempt <= discordSendMaxAttempts; attempt++ {
+		err := c.requestJSON(ctx, http.MethodPost, path, payload, nil)
+		if err == nil {
+			return nil
+		}
+
+		var rateLimitErr *discordRateLimitError
+		if !errors.As(err, &rateLimitErr) {
+			return err
+		}
+		lastErr = err
+		if attempt == discordSendMaxAttempts || rateLimitErr.RetryAfter > discordMaxRetryAfter {
+			return err
+		}
+
+		wait := rateLimitErr.RetryAfter
+		if wait <= 0 {
+			wait = time.Second
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(wait):
+		}
+	}
+	return lastErr
 }
 
 // run reconnects to Discord Gateway until the channel is stopped.
@@ -581,12 +626,72 @@ func (c *discordChannel) requestJSON(ctx context.Context, method, path string, b
 
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	if resp.StatusCode >= 400 {
+		if resp.StatusCode == http.StatusTooManyRequests {
+			return newDiscordRateLimitError(resp.Header, respBody)
+		}
 		return fmt.Errorf("discord api status: %d, response: %s", resp.StatusCode, string(respBody))
 	}
 	if out != nil && len(bytes.TrimSpace(respBody)) > 0 {
 		return json.Unmarshal(respBody, out)
 	}
 	return nil
+}
+
+// newDiscordRateLimitError extracts Discord 429 retry metadata from headers and response body.
+func newDiscordRateLimitError(header http.Header, body []byte) *discordRateLimitError {
+	var payload struct {
+		RetryAfter any    `json:"retry_after"`
+		Global     bool   `json:"global"`
+		Message    string `json:"message"`
+	}
+	_ = json.Unmarshal(body, &payload)
+
+	retryAfter := retryAfterFromHeader(header)
+	if retryAfter <= 0 {
+		retryAfter = retryAfterFromValue(payload.RetryAfter)
+	}
+
+	return &discordRateLimitError{
+		RetryAfter: retryAfter,
+		Global:     payload.Global,
+		Response:   strings.TrimSpace(string(body)),
+	}
+}
+
+// retryAfterFromHeader converts Discord Retry-After headers to a duration.
+func retryAfterFromHeader(header http.Header) time.Duration {
+	for _, key := range []string{"Retry-After", "X-RateLimit-Reset-After"} {
+		if duration := retryAfterFromValue(header.Get(key)); duration > 0 {
+			return duration
+		}
+	}
+	return 0
+}
+
+// retryAfterFromValue converts Discord retry_after seconds into a duration.
+func retryAfterFromValue(value any) time.Duration {
+	switch v := value.(type) {
+	case float64:
+		return time.Duration(v * float64(time.Second))
+	case int:
+		return time.Duration(v) * time.Second
+	case int64:
+		return time.Duration(v) * time.Second
+	case json.Number:
+		n, err := v.Float64()
+		if err != nil {
+			return 0
+		}
+		return time.Duration(n * float64(time.Second))
+	case string:
+		n, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
+		if err != nil {
+			return 0
+		}
+		return time.Duration(n * float64(time.Second))
+	default:
+		return 0
+	}
 }
 
 // gatewayURL returns the websocket URL used to receive Discord Gateway events.
