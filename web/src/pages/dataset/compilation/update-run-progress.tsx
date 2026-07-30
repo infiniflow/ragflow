@@ -2,20 +2,24 @@ import { CircleX } from 'lucide-react';
 import { useCallback, type MouseEvent } from 'react';
 
 import { IconFontFill } from '@/components/icon-font';
-import { cn } from '@/lib/utils';
-import { GenerateType } from '@/pages/dataset/dataset/generate-button/constants';
+import { GenerateType } from '@/constants/knowledge';
 import {
   ITraceInfo,
   useDatasetGenerate,
-} from '@/pages/dataset/dataset/generate-button/hook';
-import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
+  useGenerateStatus,
+} from '@/hooks/use-dataset-generate';
+import { cn } from '@/lib/utils';
 import { toFixed } from '@/utils/common-util';
 
-type WikiUpdateProgressProps = {
+type UpdateRunProgressProps = {
   data?: ITraceInfo;
+  generateType: GenerateType;
 };
 
-export function WikiUpdateProgress({ data }: WikiUpdateProgressProps) {
+export function UpdateRunProgress({
+  data,
+  generateType,
+}: UpdateRunProgressProps) {
   const { pauseGenerate } = useDatasetGenerate();
   const { status, percent } = useGenerateStatus(data);
 
@@ -23,12 +27,10 @@ export function WikiUpdateProgress({ data }: WikiUpdateProgressProps) {
     (e: MouseEvent) => {
       e.stopPropagation();
       if (data?.id) {
-        pauseGenerate({ task_id: data.id, type: GenerateType.Artifact }).catch(
-          () => {},
-        );
+        pauseGenerate({ task_id: data.id, type: generateType }).catch(() => {});
       }
     },
-    [pauseGenerate, data?.id],
+    [pauseGenerate, data?.id, generateType],
   );
 
   return (

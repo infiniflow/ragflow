@@ -1161,6 +1161,9 @@ async def session_completion(chat_id_in_arg=""):
         return error
     request_messages, request_msg = normalized
     pass_all_history_messages = _get_bool_request_flag(req, "pass_all_history_messages", "pass_all_history", default=False)
+    store_history_messages = _get_bool_request_flag(req, "store_history_messages", "store_history", default=True)
+    if not store_history_messages and not pass_all_history_messages:
+        return get_data_error_result(message="`pass_all_history_messages` must be true when `store_history_messages` is false.")
     msg = request_msg
     message_id = request_msg[-1].get("id")
     chat_id = req.pop("chat_id", "") or ""
@@ -1299,7 +1302,7 @@ async def session_completion(chat_id_in_arg=""):
                         ans = _format_answer(ans)
                         payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
                         yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
-                if conv is not None:
+                if conv is not None and store_history_messages:
                     await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             except Exception as ex:
                 logging.exception(ex)
@@ -1317,7 +1320,7 @@ async def session_completion(chat_id_in_arg=""):
         answer = None
         async for ans in rag_agent(dia, msg, False, session_id=session_id, **req):
             answer = _format_answer(ans)
-            if conv is not None:
+            if conv is not None and store_history_messages:
                 await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             break
         return get_json_result(data=_sanitize_json_floats(answer))
