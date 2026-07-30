@@ -14,6 +14,7 @@ import {
   replaceRetrievingToSection,
   replaceTextByOldReg,
   replaceThinkToSection,
+  sanitizeMarkdown,
   showImage,
 } from '@/utils/chat';
 import { citationMarkerReg } from '@/utils/citation-utils';
@@ -70,6 +71,9 @@ const FloatingChatWidgetMarkdown = ({
       replaceThinkToSection,
       replaceRetrievingToSection,
       preprocessLaTeX,
+      // Sanitize last: this renderer previously passed message content to
+      // rehypeRaw without any sanitization at all.
+      sanitizeMarkdown,
     )(nextText);
   }, [content, t]);
 
