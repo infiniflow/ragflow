@@ -342,20 +342,13 @@ func (c *discordChannel) runGateway(ctx context.Context) error {
 		return err
 	}
 
-	heartbeatDone := make(chan struct{})
-	defer close(heartbeatDone)
-	go c.heartbeatLoop(ctx, conn, time.Duration(hello.HeartbeatInterval)*time.Millisecond, heartbeatDone)
-
-	for ctx.Err() == nil {
-		_ = conn.SetReadDeadline(time.Now().Add(discordReadTimeout))
-		var payload discordGatewayPayload
-		if err := conn.ReadJSON(&payload); err != nil {
-			return err
-		}
-		if payload.S != nil {
-			c.lastSeq.Store(*payload.S)
-			c.hasSeq.Store(true)
-		}
+	hello, err := c.readHello(conn)
+	if err != nil {
+		return err
+	}
+	c.hasSeq.Store(false)
+	c.lastSeq.Store(0)
+	if err := c.writeGatewayPayload(conn, 2, map[string]any{
 		if err := c.handleGatewayPayload(ctx, conn, payload); err != nil {
 			return err
 		}
