@@ -59,6 +59,7 @@ type dingTalkChannel struct {
 	account dingTalkAccount
 
 	mu              sync.Mutex
+	ctx             context.Context
 	cancel          context.CancelFunc
 	handler         core.MessageHandler
 	client          *http.Client
@@ -150,6 +151,7 @@ func (c *dingTalkChannel) Start(ctx context.Context) error {
 		return nil
 	}
 	runCtx, cancel := context.WithCancel(ctx)
+	c.ctx = runCtx
 	c.cancel = cancel
 	c.mu.Unlock()
 
@@ -167,6 +169,7 @@ func (c *dingTalkChannel) Stop(ctx context.Context) error {
 	c.inflight = map[string]time.Time{}
 	c.workers = map[string]*dingTalkWorker{}
 	c.mu.Unlock()
+	c.ctx = nil
 
 	if cancel != nil {
 		cancel()
@@ -203,6 +206,13 @@ func (c *dingTalkChannel) Send(ctx context.Context, msg core.OutgoingMessage) er
 
 // run keeps the DingTalk SDK stream client active until the channel stops.
 func (c *dingTalkChannel) run(ctx context.Context) {
+	defer func() {
+		c.mu.Lock()
+		if c.cancel != nil {
+			c.cancel = nil
+		}
+		c.mu.Unlock()
+	}()
 	if c.stream == nil {
 		log.Printf("[dingtalk:%s] stream client is not initialized", c.account.AccountID)
 		return
@@ -214,6 +224,12 @@ func (c *dingTalkChannel) run(ctx context.Context) {
 
 // handleBotCallback receives DingTalk bot messages from the official stream SDK.
 func (c *dingTalkChannel) handleBotCallback(data *chatbot.BotCallbackDataModel) (*chatbot.BotCallbackRespModel, error) {
+	c.mu.Lock()
+	ctx := c.ctx
+	c.mu.Unlock()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	incoming, dedupKey, ok := c.normalizeBotMessage(data)
 	if !ok {
 		return &chatbot.BotCallbackRespModel{}, nil
@@ -222,7 +238,7 @@ func (c *dingTalkChannel) handleBotCallback(data *chatbot.BotCallbackDataModel) 
 		log.Printf("[dingtalk:%s] skipping duplicate message=%s", c.account.AccountID, dedupKey)
 		return &chatbot.BotCallbackRespModel{}, nil
 	}
-	if !c.enqueueIncoming(context.Background(), dingTalkQueuedMessage{incoming: incoming, dedupKey: dedupKey}) && dedupKey != "" {
+	if !c.enqueueIncoming(ctx, dingTalkQueuedMessage{incoming: incoming, dedupKey: dedupKey}) && dedupKey != "" {
 		c.cancelInflight(dedupKey)
 	}
 	return &chatbot.BotCallbackRespModel{}, nil

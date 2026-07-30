@@ -125,7 +125,8 @@ func TestDingTalkSendUsesCachedSessionWebhook(t *testing.T) {
 	requestBody := map[string]any{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
-			t.Fatalf("decode body: %v", err)
+			t.Errorf("decode body: %v", err)
+			return
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
