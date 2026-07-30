@@ -14,7 +14,7 @@ import {
 import { BeginFormSchemaType } from '../../form/begin-form/schema';
 import { useBuildWebhookUrl } from '../../hooks/use-build-webhook-url';
 import { useIsPipeline } from '../../hooks/use-is-pipeline';
-import OperatorIcon from '../../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import { LabelCard } from './card';
 import { CommonHandle } from './handle';
 import { RightHandleStyle } from './handle-icon';

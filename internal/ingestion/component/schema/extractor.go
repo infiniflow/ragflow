@@ -16,6 +16,8 @@
 
 package schema
 
+import "ragflow/internal/common"
+
 // TagLabel is a single labeled record from the tag definition file:
 // a piece of content and the tags associated with it.
 type TagLabel struct {
@@ -114,19 +116,34 @@ type ExtractorParam struct {
 	// storage. Used only when AutoTags > 0 and no inline tag
 	// source text is wired in.
 	TagFileID string `json:"tag_file_id"`
+
+	// EnableMetadata enables automatic structured metadata extraction
+	// with a fixed prompt. When > 0, runEnableMetadata asks the LLM to
+	// fill the fields listed in Metadata as a JSON object and
+	// merges the result into chunk["metadata"] (mirrors Python's
+	// gen_metadata_task path; see doc_metadata_go_port_research.md).
+	EnableMetadata int `json:"enable_metadata,omitempty"`
+
+	// Metadata lists the target field definitions for
+	// EnableMetadata (mirrors parser_config.metadata / built_in_metadata:
+	// {key, type, description, enum}). When empty, EnableMetadata is a
+	// no-op (nothing to extract).
+	Metadata []common.MetadataFieldDef `json:"metadata,omitempty"`
 }
 
 // Defaults returns the default ExtractorParam.
 func (ExtractorParam) Defaults() ExtractorParam {
 	return ExtractorParam{
-		FieldName:     "",
-		LLMID:         "",
-		SystemPrompt:  "",
-		Prompt:        "",
-		AutoKeywords:  0,
-		AutoQuestions: 0,
-		AutoTags:      0,
-		TagFileID:     "",
+		FieldName:      "",
+		LLMID:          "",
+		SystemPrompt:   "",
+		Prompt:         "",
+		AutoKeywords:   0,
+		AutoQuestions:  0,
+		AutoTags:       0,
+		TagFileID:      "",
+		EnableMetadata: 0,
+		Metadata:       nil,
 	}
 }
 

@@ -108,6 +108,35 @@ func TestJieKouAIChatForcesNonStreaming(t *testing.T) {
 	}
 }
 
+func TestJieKouAIChatSendsExplicitThinkingFalse(t *testing.T) {
+	srv := newJieKouAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		if body["enable_thinking"] != false {
+			t.Errorf("enable_thinking=%v, want false", body["enable_thinking"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id": "jiekou-chat",
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{"content": "answer"},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	thinking := false
+	_, err := newJieKouAIForTest(srv.URL).ChatWithMessages(
+		t.Context(),
+		"gpt-5",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{Thinking: &thinking},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+}
+
 func TestJieKouAIStreamForcesStreaming(t *testing.T) {
 	srv := newJieKouAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/openai/v1/chat/completions" {

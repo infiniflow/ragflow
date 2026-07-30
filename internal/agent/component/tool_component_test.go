@@ -25,6 +25,7 @@ import (
 	"net/url"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -193,6 +194,13 @@ func TestToolBackedComponentRegisteredFactories(t *testing.T) {
 			inputKey:  "to_email",
 		},
 		{
+			name:      "QueritSearch",
+			toolName:  "QueritSearch",
+			params:    map[string]any{"api_key": "stored-key", "count": float64(10), "chunks_per_doc": float64(3), "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+		{
 			name:      "SearXNG",
 			toolName:  "SearXNG",
 			params:    map[string]any{"top_n": "10", "searxng_url": "https://searx.example.com", "outputs": map[string]any{"json": map[string]any{}}},
@@ -275,7 +283,7 @@ func TestToolBackedComponentWenCaiInvoke(t *testing.T) {
 }
 
 func TestToolBackedComponentRegisteredBuildWorkflow(t *testing.T) {
-	for _, componentName := range []string{"ArXiv", "BGPT", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "SearXNG", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance"} {
+	for _, componentName := range []string{"ArXiv", "BGPT", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "QueritSearch", "SearXNG", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance"} {
 		t.Run(componentName, func(t *testing.T) {
 			c := &canvas.Canvas{
 				Components: map[string]canvas.CanvasComponent{
@@ -465,6 +473,65 @@ func TestToolBackedComponentTavilyIntegration(t *testing.T) {
 	chunks := state.GetRetrievalChunks()
 	if len(chunks) != 1 || chunks[0]["document_name"] != "RAGFlow" || chunks[0]["similarity"] != float64(0.8) {
 		t.Fatalf("recorded references = %#v", chunks)
+	}
+}
+
+func TestToolBackedComponentQueritIntegration(t *testing.T) {
+	var serverCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		serverCalls.Add(1)
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"results":{"result":[{"title":"RAGFlow","url":"https://ragflow.io","snippet":"RAG article","custom":"preserved"}]},"search_id":11099848653006015581,"query_context":{"rewritten":"rag flow"}}`))
+	}))
+	defer server.Close()
+	target, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	helper := agenttool.NewHTTPHelper().WithClient(&http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		cloned := request.Clone(request.Context())
+		cloned.URL.Scheme = target.Scheme
+		cloned.URL.Host = target.Host
+		return http.DefaultTransport.RoundTrip(cloned)
+	})})
+	querit := agenttool.NewQueritToolWithEnvKey(helper, func() string { return "key" })
+	component := &ToolBackedComponent{name: "QueritSearch", tool: querit, spec: querit.ComponentSpec()}
+	state := runtime.NewCanvasState("run-querit", "task-querit")
+	empty, err := component.Invoke(context.Background(), nil, map[string]any{"query": ""})
+	if err != nil {
+		t.Fatalf("Invoke(empty query): %v", err)
+	}
+	emptyJSON, emptyJSONOK := empty["json"].(map[string]any)
+	if serverCalls.Load() != 0 || empty["formalized_content"] != "" || !emptyJSONOK || len(emptyJSON) != 0 {
+		t.Fatalf("empty query result = %#v, server calls = %d", empty, serverCalls.Load())
+	}
+	out, err := component.Invoke(runtime.WithState(context.Background(), state), nil, map[string]any{"query": "ragflow"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	rendered, _ := out["formalized_content"].(string)
+	if !strings.Contains(rendered, "Title: RAGFlow") || !strings.Contains(rendered, "RAG article") {
+		t.Fatalf("formalized_content = %q", rendered)
+	}
+	complete, ok := out["json"].(map[string]any)
+	searchID, searchIDOK := complete["search_id"].(json.Number)
+	if !ok || !searchIDOK || searchID.String() != "11099848653006015581" || complete["query_context"] == nil {
+		t.Fatalf("complete json = %#v", out["json"])
+	}
+	encoded, err := json.Marshal(complete)
+	if err != nil || !strings.Contains(string(encoded), `"search_id":11099848653006015581`) {
+		t.Fatalf("re-encoded complete json = %s, %v", encoded, err)
+	}
+	chunks := state.GetRetrievalChunks()
+	if len(chunks) != 1 || chunks[0]["document_name"] != "RAGFlow" || chunks[0]["similarity"] != 1 {
+		t.Fatalf("recorded references = %#v", chunks)
+	}
+}
+
+func TestParseToolEnvelopeLosslessRejectsTrailingContent(t *testing.T) {
+	out := parseToolEnvelopeLossless(`{"results":{"result":[]}} trailing`)
+	if out["_raw"] == nil {
+		t.Fatalf("trailing content was accepted: %#v", out)
 	}
 }
 
