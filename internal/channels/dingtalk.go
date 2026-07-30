@@ -207,11 +207,17 @@ func (c *dingTalkChannel) Send(ctx context.Context, msg core.OutgoingMessage) er
 // run keeps the DingTalk SDK stream client active until the channel stops.
 func (c *dingTalkChannel) run(ctx context.Context) {
 	defer func() {
+		var runCancel context.CancelFunc
 		c.mu.Lock()
-		if c.cancel != nil {
+		if c.ctx == ctx {
+			runCancel = c.cancel
 			c.cancel = nil
+			c.ctx = nil
 		}
 		c.mu.Unlock()
+		if runCancel != nil {
+			runCancel()
+		}
 	}()
 	if c.stream == nil {
 		log.Printf("[dingtalk:%s] stream client is not initialized", c.account.AccountID)
