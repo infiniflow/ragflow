@@ -5,10 +5,11 @@ sidebar_custom_props: {
   categoryIcon: LucideLogOut
 }
 sidebar_label: Overview
+title: Overview
 ---
-# Team management
+# Team Management
 
-Manage team members, team invitations, joined teams, departments, and groups.
+Manage team members, team invitations, and joined teams.
 
 ---
 
@@ -20,5 +21,4 @@ By default, each RAGFlow user is assigned a single team named after the user's n
 
 :::tip NOTE
 - Team members cannot invite users to your team. Only the team owner can invite users or remove members.
-- Sharing added models with team members is only available in RAGFlow Enterprise.
 :::

@@ -444,6 +444,8 @@ func runAdmin(ctx context.Context, args *serverArgs, config *server.Config) erro
 
 	// Create Gin engine
 	ginEngine := gin.New()
+	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
+	ginEngine.RemoveExtraSlash = true
 
 	// Middleware
 	ginEngine.Use(common.GinLogger())
@@ -848,6 +850,8 @@ func startServer(ctx context.Context, config *server.Config) {
 
 	// Create Gin engine
 	ginEngine := gin.New()
+	// Mirror Quart's merge_slashes: collapse duplicate slashes before routing.
+	ginEngine.RemoveExtraSlash = true
 
 	// Middleware
 	// Note: common.GinLogger() is registered inside router.Setup so the

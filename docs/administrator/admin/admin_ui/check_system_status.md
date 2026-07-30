@@ -1,6 +1,7 @@
 ---
 sidebar_position: 2
-sidebar_label: "Check System Status"
+sidebar_label: Check System Status
+title: Check System Status
 ---
 
 # Check System Status
@@ -9,11 +10,11 @@ sidebar_label: "Check System Status"
 
 After entering the Admin UI, open the **Service status** page to view the runtime status of RAGFlow and its dependent services. The page displays each service's name, service type, host, port, and current status, so administrators can confirm whether all system components are running normally.
 
-![Check Whether Services Are Normal](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/check_whether_services_are_normal.jpg)
+![Check Whether Services Are Normal](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/check_whether_services_are_normal.jpg)
 
 When **Status** is `Alive`, the service is running normally. Any other status may affect the corresponding features.
 
-![System Status](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/system_status.jpg)
+![System Status](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/system_status.jpg)
 
 | Service name | Main purpose | Possible issues when abnormal | Affected features |
 | --- | --- | --- | --- |
@@ -31,15 +32,15 @@ On the **Service status** page, administrators can view the service `ID`, `Name`
 
 Administrators can open service details from **Actions**. Different services display different details. For example, the `mysql` service details show current database connection and process information, including `command`, `db`, `host`, `id`, `info`, `state`, `time`, and `user`. Administrators can use this information to determine whether there are long-running connections, waiting states, or abnormal queries.
 
-![View Service Details](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/view_service_details_1.jpg)
+![View Service Details](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_service_details_1.jpg)
 
-![View Service Details](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/view_service_details_2.jpg)
+![View Service Details](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_service_details_2.jpg)
 
 Some services also provide an **Extra information** dialog that displays supplementary configuration information. For example, an object storage service may display information such as `store_type` and `user`. This information is mainly used to confirm service configuration.
 
-![View Service Details](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/view_service_details_3.jpg)
+![View Service Details](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_service_details_3.jpg)
 
-![View Service Details](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/view_service_details_4.jpg)
+![View Service Details](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_service_details_4.jpg)
 
 If a service's `Status` is not `Alive`, first record its `ID`, `Name`, `Service type`, `Host`, `Port`, and any abnormal information visible in the details dialog or **Extra information**.
 

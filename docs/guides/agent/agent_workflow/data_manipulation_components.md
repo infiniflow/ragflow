@@ -1,5 +1,7 @@
 ---
 sidebar_position: 3
+title: Data Manipulation Components
+sidebar_label: Data Manipulation Components
 slug: /data_manipulation_components
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

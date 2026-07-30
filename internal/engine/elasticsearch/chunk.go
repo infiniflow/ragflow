@@ -287,7 +287,7 @@ func (e *elasticsearchEngine) UpdateChunks(ctx context.Context, condition map[st
 		return fmt.Errorf("failed to check index existence: %w", err)
 	}
 	if !exists {
-		return fmt.Errorf("index '%s' does not exist", fullIndexName)
+		return fmt.Errorf("%w: '%s'", types.ErrIndexNotFound, fullIndexName)
 	}
 
 	if strings.HasPrefix(fullIndexName, "memory_") {

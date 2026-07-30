@@ -209,6 +209,7 @@ export const useProviderFields = ({
             value: o.value,
           })) as any,
           defaultValue: field.defaultValue,
+          autoComplete: field.autoComplete,
           validation,
           shouldRender: resolveShouldRender(field.shouldRender),
           // In viewMode, only the model-related fields are editable.
@@ -245,7 +246,11 @@ export const useProviderFields = ({
                   placeholder={placeholderText}
                 />
               ) : (
-                <Input {...fieldProps} placeholder={placeholderText} />
+                <Input
+                  {...fieldProps}
+                  placeholder={placeholderText}
+                  autoComplete={field.autoComplete}
+                />
               );
             },
           };

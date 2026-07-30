@@ -47,7 +47,7 @@ type chatSessionStore interface {
 	Create(ctx context.Context, db *gorm.DB, conv *entity.ChatSession) error
 	UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error
 	DeleteByID(ctx context.Context, db *gorm.DB, id string) error
-	ListByChatID(ctx context.Context, db *gorm.DB, chatID string) ([]*entity.ChatSession, error)
+	ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int) ([]*entity.ChatSession, error)
 	GetDialogByID(ctx context.Context, db *gorm.DB, chatID string) (*entity.Chat, error)
 	CheckDialogExists(ctx context.Context, db *gorm.DB, tenantID, chatID string) (bool, error)
 }
@@ -243,7 +243,7 @@ type ChatSessionPayload struct {
 }
 
 // ListChatSessions lists chat sessions for a dialog
-func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID string, chatID string) (*ListChatSessionsResponse, error) {
+func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatID, sessionID, name, orderby string, desc bool, page, pageSize int) (*ListChatSessionsResponse, error) {
 	// Get user's tenants
 	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
 	if err != nil {
@@ -275,11 +275,16 @@ func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID string
 	}
 
 	if !isOwner {
-		return nil, errors.New("only owner of dialog authorized for this operation")
+		return nil, errors.New("No authorization.")
+	}
+
+	// items_per_page == 0 returns an empty list (mirrors Python's list_sessions).
+	if pageSize == 0 {
+		return &ListChatSessionsResponse{Sessions: []*entity.ChatSession{}}, nil
 	}
 
 	// List chat sessions
-	sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID)
+	sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, sessionID, name, orderby, desc, page, pageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +299,7 @@ func (s *ChatSessionService) GetSession(ctx context.Context, userID, chatID, ses
 		return nil, common.CodeServerError, err
 	}
 	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
 	}
 
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
@@ -323,7 +328,7 @@ func (s *ChatSessionService) CreateSession(ctx context.Context, userID, chatID s
 		return nil, common.CodeServerError, err
 	}
 	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
 	}
 
 	dialog, err := s.chatSessionDAO.GetDialogByID(ctx, dao.DB, chatID)
@@ -389,7 +394,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 		return nil, "", common.CodeServerError, err
 	}
 	if !ok {
-		return false, "no authorization", common.CodeAuthenticationError, errors.New("no authorization")
+		return false, "No authorization.", common.CodeAuthenticationError, errors.New("No authorization.")
 	}
 
 	if len(req) == 0 {
@@ -400,7 +405,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 	if !hasIDs || len(sessionIDs) == 0 {
 		deleteAll, _ := req["delete_all"].(bool)
 		if deleteAll {
-			sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID)
+			sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, "", "", "create_time", true, 0, -1)
 			if err != nil {
 				return nil, "", common.CodeServerError, err
 			}
@@ -547,10 +552,7 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, 
 		return nil, common.CodeServerError, err
 	}
 	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
-	}
-	if len(req) == 0 {
-		return nil, common.CodeArgumentError, errors.New("request body cannot be empty")
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
 	}
 
 	if _, err = s.chatSessionDAO.GetBySessionIDAndChatID(ctx, dao.DB, sessionID, chatID); err != nil {
@@ -592,11 +594,14 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, 
 		}
 	}
 
-	if err = s.chatSessionDAO.UpdateByID(ctx, dao.DB, sessionID, updateFields); err != nil {
-		if isChatSessionNotFound(err) {
-			return nil, common.CodeDataError, errors.New("session not found")
+	// An empty payload is a no-op: skip the write and return the current state.
+	if len(updateFields) > 0 {
+		if err = s.chatSessionDAO.UpdateByID(ctx, dao.DB, sessionID, updateFields); err != nil {
+			if isChatSessionNotFound(err) {
+				return nil, common.CodeDataError, errors.New("Session not found!")
+			}
+			return nil, common.CodeServerError, err
 		}
-		return nil, common.CodeServerError, err
 	}
 
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
@@ -616,7 +621,7 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 		return nil, common.CodeServerError, err
 	}
 	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
 	}
 
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
@@ -706,7 +711,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 	}
 	ok := ownerTenantID != ""
 	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
+		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
 	}
 
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
@@ -1472,12 +1477,12 @@ func (s *ChatSessionService) ChatCompletions(
 	// --- 1. Normalize messages ---
 	requestMessages, requestMsg, messageID, err := s.normalizeCompletionMessages(messages, question, files)
 	if err != nil {
-		return fail(err)
+		return fail(common.NewCodedError(common.CodeArgumentError, err.Error()))
 	}
 
 	// --- 2. Validate ---
 	if sessionID != "" && chatID == "" {
-		return fail(errors.New("`chat_id` is required when `session_id` is provided"))
+		return fail(common.NewCodedError(common.CodeDataError, "`chat_id` is required when `session_id` is provided."))
 	}
 
 	// --- 3. Resolve dialog and session ---
@@ -1485,19 +1490,19 @@ func (s *ChatSessionService) ChatCompletions(
 	var session *entity.ChatSession
 	if chatID != "" {
 		if err = s.checkDialogOwnership(ctx, userID, chatID); err != nil {
-			return fail(err)
+			return fail(common.NewCodedError(common.CodeAuthenticationError, "No authorization."))
 		}
 		dialog, err = s.chatSessionDAO.GetDialogByID(ctx, dao.DB, chatID)
 		if err != nil {
-			return fail(errors.New("chat not found"))
+			return fail(common.NewCodedError(common.CodeDataError, "Chat not found!"))
 		}
 		if sessionID != "" {
 			session, err = s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
 			if err != nil {
-				return fail(errors.New("session not found"))
+				return fail(common.NewCodedError(common.CodeDataError, "Session not found!"))
 			}
 			if session.DialogID != chatID {
-				return fail(errors.New("session does not belong to this chat"))
+				return fail(common.NewCodedError(common.CodeDataError, "Session does not belong to this chat!"))
 			}
 		} else {
 			session, err = s.createSessionForCompletion(ctx, chatID, dialog, userID)
@@ -1534,7 +1539,7 @@ func (s *ChatSessionService) ChatCompletions(
 	if llmID != "" {
 		hasKey, err := s.checkTenantLLMAPIKey(ctx, dialog.TenantID, llmID)
 		if err != nil || !hasKey {
-			return fail(fmt.Errorf("cannot use specified model %s", llmID))
+			return fail(common.NewCodedError(common.CodeDataError, fmt.Sprintf("Cannot use specified model %s.", llmID)))
 		}
 		dialog.LLMID = llmID
 		dialog.LLMSetting = genConfig
@@ -1668,26 +1673,7 @@ func (s *ChatSessionService) ChatCompletions(
 			s.updateSessionMessages(ctx, session, s.getSessionMessagesAsSlice(session), reference)
 		}
 	} else {
-		var answer strings.Builder
-		var finalRef map[string]interface{}
-		for result := range resultChan {
-			if result.Final && result.Answer != "" {
-				// The final event carries the complete (decorated) answer;
-				// it replaces any accumulated deltas rather than appending.
-				answer.Reset()
-				answer.WriteString(result.Answer)
-			} else if result.Answer != "" {
-				answer.WriteString(result.Answer)
-			}
-			if result.Reference != nil {
-				finalRef = result.Reference
-			}
-		}
-		ans := map[string]interface{}{
-			"answer":    answer.String(),
-			"reference": finalRef,
-			"final":     true,
-		}
+		ans := accumulateNonStreamAnswer(resultChan)
 		if session != nil {
 			result := s.structureAnswerWithConv(session, ans, messageID, sessionID, reference)
 			if chatID != "" {
@@ -1708,6 +1694,53 @@ func (s *ChatSessionService) ChatCompletions(
 }
 
 // --- Helpers for ChatCompletions ---
+
+// accumulateNonStreamAnswer drains the pipeline result channel of a non-stream
+// completion and builds the response answer map.
+//
+// Response metadata (audio_binary, prompt, created_at) is captured only from
+// the final event, assigned as-is. Intermediate events may carry conflicting
+// or placeholder metadata; accepting it would mix values from different events
+// into one response. This mirrors the stream path, which reads these fields
+// from result.Final.
+func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]interface{} {
+	var answer strings.Builder
+	var finalRef map[string]interface{}
+	var audioBinary interface{}
+	var prompt string
+	var createdAt float64
+	for result := range resultChan {
+		if result.Final {
+			// The final event carries the complete (decorated) answer;
+			// it replaces any accumulated deltas rather than appending.
+			if result.Answer != "" {
+				answer.Reset()
+				answer.WriteString(result.Answer)
+			}
+			audioBinary = result.AudioBinary
+			prompt = result.Prompt
+			createdAt = result.CreatedAt
+		} else if result.Answer != "" {
+			answer.WriteString(result.Answer)
+		}
+		if result.Reference != nil {
+			finalRef = result.Reference
+		}
+	}
+	// Mirror Python's non-stream response shape: decorate_answer's
+	// {answer, reference, prompt, created_at} plus audio_binary.
+	ans := map[string]interface{}{
+		"answer":       answer.String(),
+		"reference":    finalRef,
+		"audio_binary": audioBinary,
+		"prompt":       prompt,
+		"final":        true,
+	}
+	if createdAt != 0 {
+		ans["created_at"] = createdAt
+	}
+	return ans
+}
 
 // normalizeCompletionMessages mirrors Python _normalize_completion_messages.
 func (s *ChatSessionService) normalizeCompletionMessages(
@@ -1776,7 +1809,7 @@ func (s *ChatSessionService) checkDialogOwnership(ctx context.Context, userID, c
 		return err
 	}
 	if !ok {
-		return errors.New("no authorization")
+		return errors.New("No authorization.")
 	}
 	return nil
 }

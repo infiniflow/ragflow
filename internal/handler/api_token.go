@@ -17,6 +17,8 @@
 package handler
 
 import (
+	"errors"
+	"io"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -89,9 +91,10 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 
 	tenantID := tenants[0].TenantID
 
-	// Parse request
+	// Parse request. An empty body is valid (all fields are optional);
+	// ShouldBind reports io.EOF for it.
 	var req service.CreateAPIKeyRequest
-	if err = c.ShouldBind(&req); err != nil {
+	if err = c.ShouldBind(&req); err != nil && !errors.Is(err, io.EOF) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Invalid request")
 		return
 	}

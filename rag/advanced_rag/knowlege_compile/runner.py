@@ -135,7 +135,7 @@ def load_active_templates(template_ids, tenant_id: str) -> list[tuple[str, dict]
             logging.warning("document_structure_compile: template %s config is invalid", template_id)
             continue
         kind = _compilation_template_kind(parser_cfg.get("kind"))
-        if not kind or kind == "artifacts":
+        if not kind or kind == "wiki":
             continue
         active_templates.append((template_id, parser_cfg))
     return active_templates

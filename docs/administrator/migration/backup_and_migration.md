@@ -1,17 +1,19 @@
 ---
 sidebar_position: 2
+title: "Backup & Migration"
+sidebar_label: "Backup & Migration"
 slug: /migration
 sidebar_custom_props: {
   categoryIcon: LucideLocateFixed
 }
 ---
 
-# Backup & migration
+# Backup & Migration
 
 - [Data migration](#data-migration)
 - [Migrate from multi-bucket to single-bucket mode](#migrate-from-multi-bucket-to-single-bucket-mode)
 
-## Data migration
+## Data Migration
 
 :::info KUDOS
 This document is contributed by our community contributor [TreeDy](https://github.com/Treedy2020). We may not actively maintain this document.
@@ -19,7 +21,7 @@ This document is contributed by our community contributor [TreeDy](https://githu
 
 A common scenario is processing large datasets on a powerful instance (e.g., with a GPU) and then migrating the entire RAGFlow service to a different production environment (e.g., a CPU-only server). This guide explains how to safely back up and restore your data using our provided migration script.
 
-### Identify your data
+### Identify Your Data
 
 By default, RAGFlow uses Docker volumes to store all persistent data, including your database, uploaded files, and search indexes. You can see these volumes by running:
 
@@ -43,7 +45,7 @@ These volumes contain all the data you need to migrate.
 The volume name prefix (e.g., `docker_`) comes from the Docker Compose project name. By default it is `docker` (derived from the directory name). If you started RAGFlow with `docker compose -p <project_name>`, your volumes will be prefixed with `<project_name>_` instead, for example `ragflow_mysql_data`.
 :::
 
-### Step 1: Stop RAGFlow services
+### Step 1: Stop RAGFlow Services
 
 Before starting the migration, you must stop all running RAGFlow services on the **source machine**. Navigate to the project's root directory and run:
 
@@ -59,7 +61,7 @@ docker compose -p ragflow -f docker/docker-compose.yml down
 
 **Important:** Do **not** use the `-v` flag (e.g., `docker compose down -v`), as this will delete all your data volumes. The migration script includes a check and will prevent you from running it if services are active.
 
-### Step 2: Back up your data
+### Step 2: Back Up Your Data
 
 We provide a convenient script to package all your data volumes into a single backup folder.
 
@@ -91,11 +93,11 @@ bash docker/migration.sh -p ragflow backup
 bash docker/migration.sh -p ragflow backup my_ragflow_backup
 ```
 
-### Step 3: Transfer the backup folder
+### Step 3: Transfer the Backup Folder
 
 Copy the entire backup folder (e.g., `backup/` or `my_ragflow_backup/`) from your source machine to the RAGFlow project directory on your **target machine**. You can use tools like `scp`, `rsync`, or a physical drive for the transfer.
 
-### Step 4: Restore your data
+### Step 4: Restore Your Data
 
 On the **target machine**, ensure that RAGFlow services are not running. Then, use the migration script to restore your data from the backup folder.
 
@@ -122,7 +124,7 @@ The script will automatically create the necessary Docker volumes and unpack the
 
 **Note:** If the script detects that Docker volumes with the same names already exist on the target machine, it will warn you that restoring will overwrite the existing data and ask for confirmation before proceeding.
 
-### Step 5: Start RAGFlow services
+### Step 5: Start RAGFlow Services
 
 Once the restore process is complete, you can start the RAGFlow services on your new machine:
 
@@ -147,7 +149,7 @@ docker compose -f docker/docker-compose.yml up -d
 
 Your RAGFlow instance is now running with all the data from your original machine.
 
-## Migrate from multi-bucket to single-bucket mode
+## Migrate from Multi-Bucket to Single-Bucket Mode
 
 :::info KUDOS
 This document is contributed by our community contributor [arogan178](https://github.com/arogan178). We may not actively maintain this document.
@@ -161,9 +163,9 @@ By default, RAGFlow creates one bucket per Knowledge Base (dataset) and one buck
 
 The **Single Bucket Mode** allows you to configure RAGFlow to use a single bucket with a directory structure instead of multiple buckets.
 
-### How it works
+### How It Works
 
-#### Default mode (Multiple buckets)
+#### Default Mode (Multiple Buckets)
 
 ```
 bucket: kb_12345/
@@ -174,7 +176,7 @@ bucket: folder_abc/
   └── file_3.txt
 ```
 
-#### Single bucket mode (with prefix_path)
+#### Single Bucket Mode (With Prefix_path)
 
 ```
 bucket: ragflow-bucket/
@@ -189,7 +191,7 @@ bucket: ragflow-bucket/
 
 ### Configuration
 
-#### MinIO configuration
+#### MinIO Configuration
 
 Edit your `service_conf.yaml` or set environment variables:
 
@@ -212,7 +214,7 @@ export MINIO_BUCKET=ragflow-bucket
 export MINIO_PREFIX_PATH=ragflow
 ```
 
-#### S3 configuration (already supported)
+#### S3 Configuration (Already Supported)
 
 ```yaml
 s3:
@@ -224,7 +226,7 @@ s3:
   region_name: "us-east-1"
 ```
 
-#### Tigris configuration
+#### Tigris Configuration
 
 [Tigris](https://www.tigrisdata.com) is an S3-compatible object storage service that works with RAGFlow's `AWS_S3` backend. Set `STORAGE_IMPL=AWS_S3` in your `.env` file:
 
@@ -242,7 +244,7 @@ s3:
 
 See [S3 (Tigris)](/configurations#s3-tigris) for full setup instructions.
 
-### IAM policy example
+### Iam Policy Example
 
 When using single bucket mode, you only need permissions for one bucket:
 
@@ -262,7 +264,7 @@ When using single bucket mode, you only need permissions for one bucket:
 }
 ```
 
-### Migration from multi-bucket to single bucket
+### Migration from Multi-Bucket to Single Bucket
 
 If you're migrating from multi-bucket mode to single-bucket mode:
 
@@ -283,9 +285,9 @@ mc ls old-minio/ | grep kb_ | while read -r line; do
 done
 ```
 
-### Toggle between modes
+### Toggle Between Modes
 
-#### Enable single bucket mode
+#### Enable Single Bucket Mode
 
 ```yaml
 minio:
@@ -293,7 +295,7 @@ minio:
   prefix_path: "ragflow"
 ```
 
-#### Disable (Use multi-bucket mode)
+#### Disable (Use Multi-Bucket Mode)
 
 ```yaml
 minio:
@@ -304,19 +306,19 @@ minio:
 
 ### Troubleshooting
 
-#### Issue: Access Denied errors
+#### Issue: Access Denied Errors
 
 **Solution**: Ensure your IAM policy grants access to the bucket specified in the configuration.
 
-#### Issue: Files not found after switching modes
+#### Issue: Files Not Found After Switching Modes
 
 **Solution**: The path structure changes between modes. You'll need to migrate existing data.
 
-#### Issue: Connection fails with HTTPS
+#### Issue: Connection Fails with HTTPS
 
 **Solution**: Ensure `secure: True` is set in the MinIO connection (automatically handled for port 443).
 
-### Storage backends supported
+### Storage Backends Supported
 
 - ✅ **MinIO** - Full support with single bucket mode
 - ✅ **AWS S3** - Full support with single bucket mode
@@ -325,7 +327,7 @@ minio:
 - ✅ **Azure Blob** - Uses container-based structure (different paradigm)
 - ⚠️ **OpenDAL** - Depends on underlying storage backend
 
-### Performance considerations
+### Performance Considerations
 
 - **Single bucket mode** may have slightly better performance for bucket listing operations
 - **Multi-bucket mode** provides better isolation and organization for large deployments
