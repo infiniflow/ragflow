@@ -2625,7 +2625,7 @@ async def validate_and_correct_chain(
         logging.exception("chain validate: detection failed; skipping correction")
         return docs
 
-    bad_edge_set = set(bad_edges)
+    bad_edge_set = set(bad_edges)  #####
     keep_set: set[tuple[str, str]] = set()
     correction_batches = [bad_edges[i : i + _CHAIN_CORRECTION_MAX_RELATIONS] for i in range(0, len(bad_edges), _CHAIN_CORRECTION_MAX_RELATIONS)]
     correction_semaphore = asyncio.Semaphore(_CHAIN_CORRECTION_CONCURRENCY)
