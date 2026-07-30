@@ -330,6 +330,30 @@ def test_media_bbox_uses_page_metadata_when_rendering_fails(monkeypatch):
     assert media_blocks[0][1] == [(13, 120.0, 503.7, 166.3, 604.3)]
 
 
+def test_pdf_open_and_render_use_shared_pdfplumber_lock(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    lock = module.sys.modules[module.LOCK_KEY_pdfplumber]
+
+    class _LockCheckingPage(_FakePdfPage):
+        def to_image(self, **kwargs):
+            assert lock.locked()
+            return super().to_image(**kwargs)
+
+    pages = [_LockCheckingPage(612, 792)]
+
+    def open_pdf(*_args, **_kwargs):
+        assert lock.locked()
+        return _FakePdf(pages)
+
+    monkeypatch.setattr(module.pdfplumber, "open", open_pdf)
+
+    parser.__images__("sample.pdf")
+
+    assert parser.page_images is not None
+    assert not lock.locked()
+
+
 def test_media_bbox_is_omitted_when_page_size_is_unavailable(monkeypatch):
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser()

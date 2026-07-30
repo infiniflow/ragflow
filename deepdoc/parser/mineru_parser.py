@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from os import PathLike
 from pathlib import Path
-from typing import Any, Callable, Optional, Sequence
+from typing import Any, Callable, Optional, Sequence, cast
 
 import numpy as np
 import pdfplumber
@@ -363,14 +363,15 @@ class MinerUParser(RAGFlowPdfParser):
         self.page_sizes = {}
         self.total_page = 0
         try:
-            with pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm)) as pdf:
-                self.pdf = pdf
-                pages = self.pdf.pages[page_from:page_to]
-                # Bbox projection needs page dimensions, not rendered pixels. Keep
-                # these available even when PDFium cannot rasterize the pages.
-                self.page_sizes = {page_idx: (float(page.width), float(page.height)) for page_idx, page in enumerate(pages, start=page_from)}
-                self.total_page = len(pages)
-                self.page_images = [page.to_image(resolution=72 * zoomin, antialias=True).original for page in pages]
+            with cast(threading.Lock, sys.modules[LOCK_KEY_pdfplumber]):
+                with pdfplumber.open(fnm) if isinstance(fnm, (str, PathLike)) else pdfplumber.open(BytesIO(fnm)) as pdf:
+                    self.pdf = pdf
+                    pages = self.pdf.pages[page_from:page_to]
+                    # Bbox projection needs page dimensions, not rendered pixels. Keep
+                    # these available even when PDFium cannot rasterize the pages.
+                    self.page_sizes = {page_idx: (float(page.width), float(page.height)) for page_idx, page in enumerate(pages, start=page_from)}
+                    self.total_page = len(pages)
+                    self.page_images = [page.to_image(resolution=72 * zoomin, antialias=True).original for page in pages]
         except Exception:
             self.logger.exception("[MinerU] Failed to render PDF pages; using page metadata for bbox projection when available.")
 
