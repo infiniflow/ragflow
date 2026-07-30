@@ -106,11 +106,11 @@ func tocPrefix(text string, eng bool) string {
 	return string(runes[:3])
 }
 
-// isEnglishTexts mirrors rag/nlp/__init__.py:is_english — returns true when
-// more than 80% of the (up to 200) sampled non-empty segments consist solely
-// of ASCII letters/digits/punctuation. It decides the TOC-entry prefix
-// strategy (2-word English prefix vs CJK 3-char prefix) used by
-// removeContentsTable / tocPrefix.
+// isEnglishTexts reports whether the given texts read as English. It returns
+// true when more than 80% of the (up to 200) sampled non-empty segments consist
+// solely of ASCII letters/digits/punctuation. The result selects the TOC-entry
+// prefix strategy: a 2-word prefix for English content, otherwise a 3-character
+// prefix (used by removeContentsTable / tocPrefix).
 func isEnglishTexts(texts []string) bool {
 	var sampled []string
 	for _, t := range texts {
@@ -134,10 +134,9 @@ func isEnglishTexts(texts []string) bool {
 	return float64(eng)/float64(len(sampled)) > 0.8
 }
 
-// isEnglishItems reports whether the parser items read as English, using the
-// same content heuristic as Python _is_english (rag/flow/parser/utils.py:155).
-// This replaces the previously hardcoded `eng=false` so English documents use
-// the 2-word TOC prefix instead of the CJK 3-char prefix.
+// isEnglishItems reports whether the parser items read as English, classifying
+// each item's text with isEnglishTexts. It is passed to removeTOCWord /
+// removeContentsTable so English documents use the 2-word TOC prefix.
 func isEnglishItems(items []map[string]any) bool {
 	texts := make([]string, 0, len(items))
 	for _, it := range items {

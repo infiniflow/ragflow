@@ -107,8 +107,8 @@ func TestRemoveContentsTable(t *testing.T) {
 	}
 }
 
-// TestIsEnglishTexts mirrors rag/nlp/__init__.py:is_english — >80% of sampled
-// segments ASCII → English.
+// TestIsEnglishTexts classifies text as English when >80% of sampled segments
+// are ASCII.
 func TestIsEnglishTexts(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -123,6 +123,9 @@ func TestIsEnglishTexts(t *testing.T) {
 			"Methodology details", "Evaluation results", "Conclusion",
 			"第一章", // single CJK line among 6 (>80% english)
 		}, want: true},
+		{name: "exactly 80% english", texts: []string{
+			"Introduction", "Background", "Method", "Conclusion", "第一章",
+		}, want: false}, // 4/5 == 80% is NOT > 80%
 		{name: "mostly chinese (<80% english)", texts: []string{
 			"第一章 概述", "第二章 方法", "第三章 结果", "English abstract only",
 		}, want: false},
@@ -136,10 +139,9 @@ func TestIsEnglishTexts(t *testing.T) {
 	}
 }
 
-// TestRemoveTOCWordEnglishDetection verifies the previously-hardcoded
-// `eng=false` is replaced by content detection: an English document now uses
-// the 2-word prefix, so "Chapter 2 Method" is NOT over-deleted (the old
-// `eng=false` took the 3-char "Cha" prefix and dropped it).
+// TestRemoveTOCWordEnglishDetection verifies English content uses the 2-word
+// TOC prefix, so "Chapter 2 Method" is NOT over-deleted (a 3-character prefix
+// would have dropped it).
 func TestRemoveTOCWordEnglishDetection(t *testing.T) {
 	items := []map[string]any{
 		{"text": "Intro"},
