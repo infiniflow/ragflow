@@ -27,6 +27,7 @@ import {
 } from '@/hooks/use-llm-request';
 import { IInstanceModel, IProviderInstance } from '@/interfaces/database/llm';
 import { IModelInfo, IProviderModelItem } from '@/interfaces/request/llm';
+import llmService from '@/services/llm-service';
 import {
   Dispatch,
   SetStateAction,
@@ -391,6 +392,78 @@ interface UseModelVerifyArgs {
   resolveCreds: () => ResolvedCreds;
   instanceModels: IInstanceModel[] | undefined;
   instance?: IProviderInstance;
+  /**
+   * Host card's current form values. Required when `verifyTransform` is
+   * supplied so the transform can map provider-specific field names
+   * (e.g. PaddleOCR's `paddleocr_api_url`) onto the structured `api_key`
+   * object the verify endpoint expects.
+   */
+  getFormValues?: () => Record<string, any>;
+  /**
+   * Provider-specific transform that maps form values onto the verify
+   * payload's `api_key` / `base_url` / `region`. When present it takes
+   * precedence over the generic `resolveCreds()` mapping. The
+   * `modelInfo` it returns is ignored - per-model verify always sends
+   * only the single model being verified.
+   */
+  verifyTransform?: (values: Record<string, any>) => {
+    apiKey: string | object | Record<string, any>;
+    baseUrl?: string;
+    region?: string;
+    modelInfo?: IModelInfo[];
+  };
+}
+
+/**
+ * Build the verify call arguments for a single model. Shared by
+ * per-model `handleVerify` and batch `handleBatchVerify` so both paths
+ * use identical credential resolution logic.
+ */
+function buildVerifyArgs(
+  model: IProviderModelItem,
+  providerName: string,
+  resolveCreds: () => ResolvedCreds,
+  instance: IProviderInstance | undefined,
+  getFormValues: (() => Record<string, any>) | undefined,
+  verifyTransform: UseModelVerifyArgs['verifyTransform'],
+) {
+  const modelInfo: IModelInfo[] = [
+    {
+      model_name: model.name,
+      model_type: model.model_types ?? [],
+      max_tokens: model.max_tokens ?? 0,
+    },
+  ];
+
+  let apiKey: string | object;
+  let baseUrl: string | undefined;
+  let region: string | undefined;
+
+  if (verifyTransform) {
+    const formValues = getFormValues?.() ?? {};
+    const transformed = verifyTransform(formValues);
+    apiKey = transformed.apiKey;
+    baseUrl = transformed.baseUrl;
+    region = transformed.region;
+  } else {
+    const creds = resolveCreds();
+    apiKey = creds.apiKey;
+    baseUrl = creds.baseUrl;
+  }
+
+  // `api_key` is typed `string` on the service signature, but
+  // providers with a `verifyTransform` may legitimately produce an
+  // object (e.g. PaddleOCR's nested config). The backend accepts
+  // both shapes, so cast to `any` to match the existing card-level
+  // verify path in `useVerifyProvider`.
+  return {
+    provider_name: providerName,
+    api_key: apiKey as any,
+    base_url: baseUrl,
+    model_info: modelInfo,
+    ...(region ? { region } : {}),
+    ...(instance?.id ? { instance_id: instance.id } : {}),
+  };
 }
 
 export function useModelVerify({
@@ -398,9 +471,12 @@ export function useModelVerify({
   resolveCreds,
   instanceModels,
   instance,
+  getFormValues,
+  verifyTransform,
 }: UseModelVerifyArgs) {
   const { verifyProviderConnection } = useVerifyProviderConnection();
   const [verify, setVerify] = useState<Record<string, VerifyStatus>>({});
+  const [batchVerifying, setBatchVerifying] = useState(false);
 
   // Seed the per-model verify status from the backend's persisted `verify`
   // flag on each instance model.
@@ -426,20 +502,16 @@ export function useModelVerify({
   const handleVerify = async (model: IProviderModelItem) => {
     setVerify((prev) => ({ ...prev, [model.name]: 'loading' }));
     try {
-      const { apiKey, baseUrl } = resolveCreds();
-      const ret = await verifyProviderConnection({
-        provider_name: providerName,
-        api_key: apiKey,
-        base_url: baseUrl,
-        model_info: [
-          {
-            model_name: model.name,
-            model_type: model.model_types ?? [],
-            max_tokens: model.max_tokens ?? 0,
-          },
-        ],
-        ...(instance?.id ? { instance_id: instance.id } : {}),
-      });
+      const ret = await verifyProviderConnection(
+        buildVerifyArgs(
+          model,
+          providerName,
+          resolveCreds,
+          instance,
+          getFormValues,
+          verifyTransform,
+        ),
+      );
       setVerify((prev) => ({
         ...prev,
         [model.name]: ret.code === 0 ? 'success' : 'error',
@@ -449,7 +521,66 @@ export function useModelVerify({
     }
   };
 
-  return { verify, handleVerify };
+  // Batch verify: loop through the given models in chunks of 3 parallel
+  // requests, suppressing the global error toast for each call. Per-model
+  // verify status is updated on the same map used by `handleVerify`.
+  const handleBatchVerify = async (models: IProviderModelItem[]) => {
+    if (models.length === 0) return;
+    setBatchVerifying(true);
+
+    const CHUNK_SIZE = 3;
+    for (let i = 0; i < models.length; i += CHUNK_SIZE) {
+      const chunk = models.slice(i, i + CHUNK_SIZE);
+
+      // Mark only the current chunk as loading; the remaining models
+      // stay idle until their chunk is reached.
+      const loadingMap: Record<string, VerifyStatus> = {};
+      chunk.forEach((m) => {
+        loadingMap[m.name] = 'loading';
+      });
+      setVerify((prev) => ({ ...prev, ...loadingMap }));
+
+      const results = await Promise.allSettled(
+        chunk.map(async (model) => {
+          const args = buildVerifyArgs(
+            model,
+            providerName,
+            resolveCreds,
+            instance,
+            getFormValues,
+            verifyTransform,
+          );
+          // Pass `provider_name` at the top level so the URL function
+          // can build `/providers/{provider_name}/connection`; the body
+          // goes in `data`. `skipGlobalErrorNotification` suppresses the
+          // global toast for each call during batch verify.
+          const { data } = await llmService.verifyProviderConnection(
+            {
+              provider_name: providerName,
+              data: args,
+              skipGlobalErrorNotification: true,
+            },
+            true,
+          );
+          return { name: model.name, code: data?.code ?? -1 };
+        }),
+      );
+
+      const statusUpdate: Record<string, VerifyStatus> = {};
+      results.forEach((result, idx) => {
+        const modelName = chunk[idx].name;
+        statusUpdate[modelName] =
+          result.status === 'fulfilled' && result.value.code === 0
+            ? 'success'
+            : 'error';
+      });
+      setVerify((prev) => ({ ...prev, ...statusUpdate }));
+    }
+
+    setBatchVerifying(false);
+  };
+
+  return { verify, handleVerify, batchVerifying, handleBatchVerify };
 }
 
 // ---------------------------------------------------------------------------

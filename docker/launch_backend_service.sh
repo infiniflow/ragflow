@@ -10,7 +10,7 @@ usage() {
     echo "Without arguments, starts ragflow and task_executor."
     echo "Available service types:"
     echo "  ragflow         Start RAGFlow server based on API_PROXY_SCHEME"
-    echo "  task_executor   Start rag/svr/task_executor.py workers"
+    echo "  task_executor   Start task workers based on API_PROXY_SCHEME"
     echo "  admin           Start Admin server based on API_PROXY_SCHEME"
     echo "  data_sync       Start rag/svr/sync_data_source.py"
     echo
@@ -90,23 +90,34 @@ trap cleanup SIGINT SIGTERM
 # Function to execute task_executor with retry logic
 task_exe(){
     local task_id=$1
+    local task_name="task_executor.py for task $task_id"
+    local -a task_cmd=("$PY" "rag/svr/task_executor.py" "-i" "$task_id")
+    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        prepare_for_go
+        task_name="ragflow_server --ingestor"
+        task_cmd=("bin/ragflow_server" "--ingestor")
+    fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting task_executor.py for task $task_id (Attempt $((retry_count+1)))"
-        LD_PRELOAD=$JEMALLOC_PATH $PY rag/svr/task_executor.py -i "$task_id"
+        echo "Starting $task_name (Attempt $((retry_count+1)))"
+        if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+            "${task_cmd[@]}"
+        else
+            LD_PRELOAD=$JEMALLOC_PATH "${task_cmd[@]}"
+        fi
         EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
-            echo "task_executor.py for task $task_id exited successfully."
+            echo "$task_name exited successfully."
             break
         else
-            echo "task_executor.py for task $task_id failed with exit code $EXIT_CODE. Retrying..." >&2
+            echo "$task_name failed with exit code $EXIT_CODE. Retrying..." >&2
             retry_count=$((retry_count + 1))
             sleep 2
         fi
     done
 
     if [ $retry_count -ge $MAX_RETRIES ]; then
-        echo "task_executor.py for task $task_id failed after $MAX_RETRIES attempts. Exiting..." >&2
+        echo "$task_name failed after $MAX_RETRIES attempts. Exiting..." >&2
         cleanup
     fi
 }
@@ -233,7 +244,7 @@ for arg in "$@"; do
     ragflow|server|webserver)
       START_RAGFLOW=1
       ;;
-    task_executor|task-executor|taskexecutor)
+    task_executor|task-executor|taskexecutor|ingestor)
       START_TASK_EXECUTOR=1
       ;;
     admin|admin_server|admin-server)

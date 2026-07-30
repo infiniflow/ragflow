@@ -9,7 +9,9 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { IArtifact } from '@/interfaces/database/dataset';
+import { GenerateStatus } from '@/pages/dataset/dataset/generate-button/constants';
 import { ITraceInfo } from '@/pages/dataset/dataset/generate-button/hook';
+import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
 import { Trash2, WandSparkles } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -19,6 +21,7 @@ import { useWikiClear } from './hooks/use-wiki-clear';
 import { useWikiUpdate } from './hooks/use-wiki-update';
 import { WikiGraphPanel } from './wiki-graph-panel';
 import { WikiNavBar } from './wiki-nav-bar';
+import { WikiUpdateProgress } from './wiki-update-progress';
 import { WikiUpdateSheet } from './wiki-update-sheet';
 
 type WikiLeftPanelProps = {
@@ -58,15 +61,22 @@ export function WikiLeftPanel({
     loading: updateLoading,
   } = useWikiUpdate();
 
+  const { status } = useGenerateStatus(traceData);
+  const isGenerating =
+    status === GenerateStatus.running || status === GenerateStatus.failed;
+
   const handleUpdateClick = useCallback(async () => {
     onUpdateSheetOpenChange(true);
+    if (status === GenerateStatus.running) {
+      return;
+    }
     await handleUpdate();
-  }, [handleUpdate, onUpdateSheetOpenChange]);
+  }, [status, handleUpdate, onUpdateSheetOpenChange]);
 
   return (
     <aside className="size-full flex flex-col p-5">
       <div className="flex items-center justify-between pb-5">
-        {hasChanges && (
+        {(hasChanges || isGenerating) && (
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -75,27 +85,37 @@ export function WikiLeftPanel({
                   onClick={handleUpdateClick}
                   disabled={updateLoading}
                 >
-                  {t('knowledgeDetails.update', { defaultValue: 'Update' })}
-                  {newlyUploaded > 0 && (
-                    <Badge variant="success" className="ml-1">
-                      {newlyUploaded}
-                    </Badge>
+                  {isGenerating ? (
+                    <WikiUpdateProgress data={traceData} />
+                  ) : (
+                    <>
+                      {t('knowledgeDetails.update', { defaultValue: 'Update' })}
+                      {newlyUploaded > 0 && (
+                        <Badge variant="success" className="ml-1">
+                          {newlyUploaded}
+                        </Badge>
+                      )}
+                      {removed > 0 && (
+                        <Badge variant="destructive" className="ml-1">
+                          {removed}
+                        </Badge>
+                      )}
+                      <WandSparkles />
+                    </>
                   )}
-                  {removed > 0 && (
-                    <Badge variant="destructive" className="ml-1">
-                      {removed}
-                    </Badge>
-                  )}
-                  <WandSparkles />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {t('knowledgeDetails.updateTooltip', {
-                  newlyUploaded,
-                  removed,
-                  defaultValue:
-                    '{{newlyUploaded}} new, {{removed}} removed documents found. Click to compile and merge into current Wiki.',
-                })}
+                {isGenerating
+                  ? t('knowledgeDetails.viewUpdateLogs', {
+                      defaultValue: 'View update logs',
+                    })
+                  : t('knowledgeDetails.updateTooltip', {
+                      newlyUploaded,
+                      removed,
+                      defaultValue:
+                        '{{newlyUploaded}} new, {{removed}} removed documents found. Click to compile and merge into current Wiki.',
+                    })}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

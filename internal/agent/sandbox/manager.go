@@ -299,8 +299,10 @@ func buildProvider(t ProviderType) (SandboxProvider, error) {
 		return newLocalProviderFromEnv(), nil
 	case ProviderSSH:
 		return newSSHProviderFromEnv(), nil
+	case ProviderTenki:
+		return newTenkiProviderFromEnv(), nil
 	default:
-		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh)", t)
+		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh, tenki)", t)
 	}
 }
 
@@ -320,7 +322,9 @@ func buildProviderFromConfig(t ProviderType, cfg map[string]any) (SandboxProvide
 		return newLocalProviderFromConfig(cfg), nil
 	case ProviderSSH:
 		return newSSHProviderFromConfig(cfg), nil
+	case ProviderTenki:
+		return newTenkiProviderFromConfig(cfg), nil
 	default:
-		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh)", t)
+		return nil, fmt.Errorf("unknown provider type %q (known: self_managed, aliyun_codeinterpreter, e2b, local, ssh, tenki)", t)
 	}
 }

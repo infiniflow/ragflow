@@ -43,7 +43,7 @@ LOGGER = logging.getLogger(__name__)
 def _connector_auth_error(connector_id: str, user_id: str):
     """Return the connector authorization failure response and log the denial."""
     LOGGER.warning("connector access denied: connector_id=%s user_id=%s", connector_id, user_id)
-    return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
 
 @manager.route("/connectors/<connector_id>", methods=["PATCH"])  # noqa: F821

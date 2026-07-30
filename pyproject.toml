@@ -82,7 +82,7 @@ dependencies = [
     "opendal>=0.45.0,<0.46.0",
     "opensearch-py==2.7.1",
     "ormsgpack>=1.6.0",
-    "pdfplumber==0.10.4",
+    "pdfplumber==0.11.10",
     "pluginlib>=0.10.0",
     "psycopg2-binary>=2.9.11,<3.0.0",
     "pyclipper>=1.4.0,<2.0.0",
@@ -202,8 +202,9 @@ test = [
 [tool.uv]
 constraint-dependencies = [
     # CVE-2026-30922: Denial of Service via unbounded recursion in ASN.1 decoding (CVSS 7.5 HIGH)
-    # pyasn1 < 0.6.3 is vulnerable; pulled in transitively via google-auth / rsa / pyasn1-modules
-    "pyasn1>=0.6.3",
+    # CVE-2026-59884, CVE-2026-59885, CVE-2026-59886: additional HIGH vulnerabilities fixed in 0.6.4
+    # pyasn1 < 0.6.4 is vulnerable; pulled in transitively via google-auth / rsa / pyasn1-modules
+    "pyasn1>=0.6.4",
     # Python 3.13 added pathlib.PurePath.parser as a public class attribute holding
     # the posixpath/ntpath module. trio<0.26 introspects all Path class attributes to
     # generate async forwards and raises TypeError on any non-callable attribute it
@@ -229,6 +230,9 @@ constraint-dependencies = [
     # CVE-2026-33236, CVE-2026-54293 (HIGH), CVE-2026-33230 (MEDIUM):
     # nltk < 3.10.0 vulnerable; pulled in transitively via crawl4ai, infinity-sdk
     "nltk>=3.10.0",
+    # CVE-2026-0994: protobuf < 5.29.6 vulnerable; pulled in transitively via
+    # google-api-core, googleapis-common-protos, grpcio-status, opentelemetry-proto
+    "protobuf>=5.29.6",
 ]
 exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same

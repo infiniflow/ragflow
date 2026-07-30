@@ -256,15 +256,20 @@ export const useFetchDocumentList = (loop = true) => {
   };
 };
 
-export const useFetchDocumentsByIds = (ids: string[]) => {
+export const useFetchDocumentsByIds = (
+  ids: string[],
+  options?: { enabled?: boolean; refetchInterval?: number | false },
+) => {
   const { id: datasetId } = useParams();
+  const { enabled, refetchInterval } = options ?? {};
 
   const { data, isFetching: loading } = useQuery<{
     docs: IDocumentInfo[];
     total: number;
   }>({
     queryKey: DocumentKeys.byIds(ids),
-    enabled: ids.length > 0 && !!datasetId,
+    enabled: (enabled ?? true) && ids.length > 0 && !!datasetId,
+    refetchInterval,
     initialData: { docs: [], total: 0 },
     queryFn: async () => {
       const ret = await listDocument(

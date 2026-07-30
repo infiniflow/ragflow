@@ -347,6 +347,32 @@ func TestHunyuanStreamFailsWithoutTerminal(t *testing.T) {
 	}
 }
 
+func TestHunyuanStreamAcceptsTerminalWithoutDelta(t *testing.T) {
+	srv := newHunyuanSSEServer(t, "/chat/completions",
+		`data: {"choices":[{"finish_reason":"stop"}]}`+"\n\n",
+	)
+	defer srv.Close()
+
+	apiKey := "test-key"
+	var sawDone bool
+	err := newHunyuanForTest(srv.URL).ChatStreamlyWithSender(
+		t.Context(),
+		"hunyuan-pro",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey}, nil, nil,
+		func(content *string, _ *string) error {
+			sawDone = content != nil && *content == "[DONE]"
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("stream: %v", err)
+	}
+	if !sawDone {
+		t.Fatal("expected [DONE] sentinel")
+	}
+}
+
 func TestHunyuanStreamRejectsMalformedFrame(t *testing.T) {
 	srv := newHunyuanSSEServer(t, "/chat/completions",
 		`data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+

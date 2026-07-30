@@ -169,7 +169,7 @@ type CheckConnectionRequest struct {
 func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerName, userID string) (common.ErrorCode, error) {
 	providerName = strings.TrimSpace(providerName)
 
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -204,7 +204,7 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 
 func (m *ModelProviderService) ListProvidersOfTenant(ctx context.Context, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
 
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -284,7 +284,7 @@ func isExcludedTenantProvider(name string) bool {
 }
 
 func (m *ModelProviderService) DeleteModelProvider(ctx context.Context, userID, providerName string) (common.ErrorCode, error) {
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -329,7 +329,7 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 	providerName = strings.TrimSpace(providerName)
 
 	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return nil, errors.New("fail to get tenant")
 	}
@@ -385,6 +385,11 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 	if err != nil {
 		return nil, err
 	}
+	if strings.EqualFold(provider.ProviderName, "NVIDIA") {
+		if err = m.reconcileNvidiaInstanceModels(ctx, dao.DB, provider, instance, modelList); err != nil {
+			return nil, err
+		}
+	}
 
 	var result []map[string]interface{}
 	for _, model := range modelList {
@@ -398,6 +403,122 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 		})
 	}
 	return result, nil
+}
+
+func (m *ModelProviderService) reconcileNvidiaInstanceModels(
+	ctx context.Context,
+	db *gorm.DB,
+	provider *entity.TenantModelProvider,
+	instance *entity.TenantModelInstance,
+	remoteModels []modelModule.ListModelResponse,
+) error {
+	if provider == nil || instance == nil || provider.ID == "" || instance.ID == "" || instance.ProviderID != provider.ID {
+		return errors.New("invalid NVIDIA provider instance scope")
+	}
+
+	normalized := make([]modelModule.ListModelResponse, 0, len(remoteModels))
+	seen := make(map[string]struct{}, len(remoteModels))
+	for _, remote := range remoteModels {
+		remote.Name = strings.TrimSpace(remote.Name)
+		if remote.Name == "" {
+			continue
+		}
+		if _, ok := seen[remote.Name]; ok {
+			continue
+		}
+		seen[remote.Name] = struct{}{}
+		if len(remote.ModelTypes) == 0 {
+			remote.ModelTypes = modelModule.InferModelTypes(remote.Name)
+		}
+		normalized = append(normalized, remote)
+	}
+	if len(normalized) == 0 {
+		return errors.New("NVIDIA model discovery returned no usable models")
+	}
+
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		existingModels, err := m.modelDAO.GetModelsByInstanceID(ctx, tx, instance.ID)
+		if err != nil {
+			return err
+		}
+		existingByName := make(map[string]*entity.TenantModel, len(existingModels))
+		for _, existing := range existingModels {
+			existingByName[existing.ModelName] = existing
+		}
+
+		for _, remote := range normalized {
+			maxTokens := 8192
+			if remote.MaxTokens != nil && *remote.MaxTokens > 0 {
+				maxTokens = *remote.MaxTokens
+			}
+			modelType := int(entity.ModelTypeFromStrings(remote.ModelTypes))
+
+			if existing, ok := existingByName[remote.Name]; ok {
+				extra := make(map[string]interface{})
+				if existing.Extra != "" {
+					if err := json.Unmarshal([]byte(existing.Extra), &extra); err != nil {
+						return fmt.Errorf("decode metadata for NVIDIA model %q: %w", remote.Name, err)
+					}
+				}
+				setDiscoveredModelMetadata(extra, remote, maxTokens)
+				extraBytes, err := json.Marshal(extra)
+				if err != nil {
+					return fmt.Errorf("encode metadata for NVIDIA model %q: %w", remote.Name, err)
+				}
+				if err = m.modelDAO.UpdateByID(ctx, tx, existing.ID, map[string]interface{}{
+					"model_type": modelType,
+					"extra":      string(extraBytes),
+				}); err != nil {
+					return err
+				}
+				delete(existingByName, remote.Name)
+				continue
+			}
+
+			extra := map[string]interface{}{"verify": entity.ModelVerifyUnknown}
+			setDiscoveredModelMetadata(extra, remote, maxTokens)
+			extraBytes, err := json.Marshal(extra)
+			if err != nil {
+				return fmt.Errorf("encode metadata for NVIDIA model %q: %w", remote.Name, err)
+			}
+			if err = m.modelDAO.Create(ctx, tx, &entity.TenantModel{
+				ID:         utility.GenerateToken(),
+				ModelName:  remote.Name,
+				ModelType:  modelType,
+				ProviderID: provider.ID,
+				InstanceID: instance.ID,
+				Status:     "active",
+				Extra:      string(extraBytes),
+			}); err != nil {
+				return err
+			}
+		}
+
+		staleIDs := make([]string, 0, len(existingByName))
+		for _, stale := range existingByName {
+			staleIDs = append(staleIDs, stale.ID)
+		}
+		if len(staleIDs) > 0 {
+			if _, err := m.modelDAO.DeleteByIDs(ctx, tx, staleIDs); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func setDiscoveredModelMetadata(extra map[string]interface{}, model modelModule.ListModelResponse, maxTokens int) {
+	extra["max_tokens"] = maxTokens
+	if model.MaxDimension != nil {
+		extra["max_dimension"] = *model.MaxDimension
+	}
+	if len(model.Dimensions) > 0 {
+		extra["dimensions"] = model.Dimensions
+	}
+	if model.Thinking != nil {
+		extra["thinking"] = model.Thinking.DefaultValue
+		extra["clear_thinking"] = model.Thinking.ClearThinking
+	}
 }
 
 type CreateInstanceModelInfo struct {
@@ -419,7 +540,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
 	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -538,7 +659,7 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 		return common.CodeBadRequest, errors.New("instance name cannot be 'default'")
 	}
 
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -685,7 +806,7 @@ func (m *ModelProviderService) ListProviderInstances(ctx context.Context, provid
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
 	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -746,7 +867,7 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 	providerName = strings.ToLower(providerName)
 
 	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -809,7 +930,7 @@ func (m *ModelProviderService) ShowProviderInstance(ctx context.Context, provide
 func (m *ModelProviderService) ShowInstanceBalance(ctx context.Context, providerName, instanceName, userID string) (map[string]interface{}, common.ErrorCode, error) {
 
 	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -919,7 +1040,7 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 // present in the request body.
 func (m *ModelProviderService) updateModelVerifyResults(ctx context.Context, userID, providerName, instanceID string, modelVerifyResult map[string]string) error {
 	// Resolve tenant from user.
-	userTenants, err := m.userTenantDAO.GetByUserID(userID)
+	userTenants, err := m.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil || len(userTenants) == 0 {
 		return fmt.Errorf("no tenant found for user %s", userID)
 	}
@@ -1224,7 +1345,7 @@ func minimalPNG() []byte {
 func (m *ModelProviderService) CheckInstanceConnection(ctx context.Context, providerName, instanceName, userID string) (common.ErrorCode, error) {
 
 	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -1284,7 +1405,7 @@ func (m *ModelProviderService) CheckInstanceConnection(ctx context.Context, prov
 func (m *ModelProviderService) ListTasks(ctx context.Context, providerName, instanceName, userID string) ([]modelModule.ListTaskStatus, common.ErrorCode, error) {
 
 	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1345,7 +1466,7 @@ func (m *ModelProviderService) ListTasks(ctx context.Context, providerName, inst
 func (m *ModelProviderService) ShowTask(ctx context.Context, providerName, instanceName, taskID, userID string) (*modelModule.TaskResponse, common.ErrorCode, error) {
 
 	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -1637,7 +1758,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 
 func (m *ModelProviderService) resolveModelListTenant(ctx context.Context, userID, ownerTenantID string) (*entity.Tenant, common.ErrorCode, error) {
 	if ownerTenantID == "" {
-		tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+		tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -1646,7 +1767,7 @@ func (m *ModelProviderService) resolveModelListTenant(ctx context.Context, userI
 		}
 		ownerTenantID = tenants[0].TenantID
 	} else {
-		relations, err := m.userTenantDAO.GetByUserID(userID)
+		relations, err := m.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
@@ -1838,7 +1959,7 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 func (m *ModelProviderService) AlterProviderInstance(ctx context.Context, userID, providerIDOrName, instanceIDOrName, newInstanceName, apiKey, baseURL, region string, modelInfo []CreateInstanceModelInfo, verify bool) (common.ErrorCode, error) {
 	providerIDOrName = strings.TrimSpace(providerIDOrName)
 
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -2011,7 +2132,7 @@ func (m *ModelProviderService) DropProviderInstances(ctx context.Context, provid
 	}
 
 	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -2080,7 +2201,7 @@ func (m *ModelProviderService) DropProviderInstances(ctx context.Context, provid
 
 func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerIDOrName, instanceIDOrName, userID string, modelNames []string) (common.ErrorCode, error) {
 	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -2148,7 +2269,7 @@ func (m *ModelProviderService) DropInstanceModels(ctx context.Context, providerI
 
 func (m *ModelProviderService) ListInstanceModels(ctx context.Context, providerName, instanceName, userID string) ([]map[string]interface{}, error) {
 	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return nil, err
 	}
@@ -2243,7 +2364,7 @@ func (m *ModelProviderService) AlterModel(ctx context.Context, providerName, ins
 	}
 
 	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -2456,7 +2577,7 @@ func maxTokensFromTenantModelExtra(modelEntity *entity.TenantModel, fallback int
 
 func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Context, providerName, instanceName, modelName *string, userID string, apiConfig *modelModule.APIConfig) (*ModelInstanceAndProviderInfo, error) {
 	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return nil, err
 	}
@@ -2529,7 +2650,7 @@ func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Con
 
 func (m *ModelProviderService) getModelInstanceAndProviderByID(ctx context.Context, modelID *string, userID string, apiConfig *modelModule.APIConfig) (*ModelInstanceAndProviderInfo, error) {
 	// Get tenant ID from user
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return nil, err
 	}
@@ -3584,7 +3705,7 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 		return common.CodeBadRequest, errors.New("model_type is required")
 	}
 
-	tenants, err := m.userTenantDAO.GetByUserIDAndRole(userID, "owner")
+	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
 	}

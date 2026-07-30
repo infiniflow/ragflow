@@ -1,4 +1,9 @@
-import { Authorization, Token, UserInfo } from '@/constants/authorization';
+import {
+  Authorization,
+  ThinkingLevel,
+  Token,
+  UserInfo,
+} from '@/constants/authorization';
 import { getSearchValue } from './common-util';
 const KeySet = [Authorization, Token, UserInfo];
 
@@ -44,6 +49,12 @@ const storage = {
   },
   getLanguage: (): string => {
     return localStorage.getItem('lng') as string;
+  },
+  setThinkingLevel: (level: string) => {
+    localStorage.setItem(ThinkingLevel, level);
+  },
+  getThinkingLevel: (): string => {
+    return localStorage.getItem(ThinkingLevel) || '1';
   },
 };
 

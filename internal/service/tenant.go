@@ -287,8 +287,8 @@ func (s *TenantLLMService) EnsureTenantModelIDForParams(ctx context.Context, ten
 }
 
 // GetTenantList get tenant list for a user
-func (s *TenantService) GetTenantList(userID string) ([]*TenantListItem, error) {
-	tenants, err := s.userTenantDAO.GetTenantsByUserID(userID)
+func (s *TenantService) GetTenantList(ctx context.Context, userID string) ([]*TenantListItem, error) {
+	tenants, err := s.userTenantDAO.GetTenantsByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -867,11 +867,11 @@ type TenantMemberResponse struct {
 
 // ListMembers returns all non-owner members of tenantID.
 // Only the tenant owner (userID == tenantID) may call this.
-func (s *TenantService) ListMembers(userID, tenantID string) ([]*TenantMemberResponse, common.ErrorCode, error) {
+func (s *TenantService) ListMembers(ctx context.Context, userID, tenantID string) ([]*TenantMemberResponse, common.ErrorCode, error) {
 	if userID != tenantID {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
-	rows, err := s.userTenantDAO.GetMembersByTenantID(tenantID)
+	rows, err := s.userTenantDAO.GetMembersByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -912,7 +912,7 @@ type AddMemberResponse struct {
 
 // AddMember invites a user (by email) to the tenant.
 // Only the tenant owner (userID == tenantID) may call this.
-func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest) (*AddMemberResponse, common.ErrorCode, error) {
+func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, req *AddMemberRequest) (*AddMemberResponse, common.ErrorCode, error) {
 	if userID != tenantID {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
@@ -920,13 +920,13 @@ func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest
 		return nil, common.CodeArgumentError, fmt.Errorf("email is required")
 	}
 
-	invitee, err := s.userDAO.GetByEmail(req.Email)
+	invitee, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Email)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("user not found")
 	}
 
 	// Reject if already a member or has a pending invitation.
-	existing, _ := s.userTenantDAO.FilterByUserIDAndTenantID(invitee.ID, tenantID)
+	existing, _ := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, invitee.ID, tenantID)
 	if existing != nil {
 		switch existing.Role {
 		case TenantRoleOwner:
@@ -947,7 +947,7 @@ func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest
 		InvitedBy: userID,
 		Status:    &status,
 	}
-	if err = s.userTenantDAO.Create(ut); err != nil {
+	if err = s.userTenantDAO.Create(ctx, dao.DB, ut); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create invitation: %w", err)
 	}
 
@@ -966,7 +966,7 @@ func (s *TenantService) AddMember(userID, tenantID string, req *AddMemberRequest
 // RemoveMember removes a user from the tenant.
 // Either the owner (userID == tenantID) or the member themselves (userID == targetUserID) may call this.
 // The tenant owner (targetUserID == tenantID) cannot be removed.
-func (s *TenantService) RemoveMember(userID, tenantID, targetUserID string) (common.ErrorCode, error) {
+func (s *TenantService) RemoveMember(ctx context.Context, userID, tenantID, targetUserID string) (common.ErrorCode, error) {
 	if userID != tenantID && userID != targetUserID {
 		return common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
@@ -976,25 +976,25 @@ func (s *TenantService) RemoveMember(userID, tenantID, targetUserID string) (com
 	if s.userTenantDAO == nil {
 		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
 	}
-	if err := s.userTenantDAO.DeleteByUserAndTenant(targetUserID, tenantID); err != nil {
+	if err := s.userTenantDAO.DeleteByUserAndTenant(ctx, dao.DB, targetUserID, tenantID); err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to remove member: %w", err)
 	}
 	return common.CodeSuccess, nil
 }
 
 // AcceptInvite transitions the calling user's role from "invite" → "normal" for the given tenant.
-func (s *TenantService) AcceptInvite(userID, tenantID string) (common.ErrorCode, error) {
+func (s *TenantService) AcceptInvite(ctx context.Context, userID, tenantID string) (common.ErrorCode, error) {
 	if s.userTenantDAO == nil {
 		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
 	}
-	existing, err := s.userTenantDAO.FilterByUserIDAndTenantID(userID, tenantID)
+	existing, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, tenantID)
 	if err != nil || existing == nil {
 		return common.CodeDataError, fmt.Errorf("no pending invitation found")
 	}
 	if existing.Role != TenantRoleInvite {
 		return common.CodeArgumentError, fmt.Errorf("no pending invitation to accept")
 	}
-	if err := s.userTenantDAO.UpdateRoleByUserAndTenant(userID, tenantID, TenantRoleNormal); err != nil {
+	if err := s.userTenantDAO.UpdateRoleByUserAndTenant(ctx, dao.DB, userID, tenantID, TenantRoleNormal); err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to accept invitation: %w", err)
 	}
 	return common.CodeSuccess, nil

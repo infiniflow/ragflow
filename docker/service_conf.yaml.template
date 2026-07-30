@@ -1,3 +1,5 @@
+general:
+  heartbeat_interval: 3
 ragflow:
   host: ${RAGFLOW_HOST:-0.0.0.0}
   http_port: 9380

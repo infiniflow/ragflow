@@ -780,7 +780,7 @@ def delete_dataset_structure(tenant_id, dataset_id):
         )
         if success:
             return get_result(data=result)
-        if result == "No authorization.":
+        if result == "no authorization":
             return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
         return get_error_data_result(message=result)
     except Exception as e:

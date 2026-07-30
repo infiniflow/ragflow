@@ -160,14 +160,20 @@ export function useProviderBaseUrlOptions(providerName: string) {
  * - Draft: empty form, with `base_url` pre-filled from the
  *   provider's `default` URL when available.
  * - Saved: prefer `instanceDetails` (which carries api_key / base_url);
- *   normalise api_key into the bare key plus any nested credential
- *   fields (see {@link unwrapApiKey}).
+ *   when `echoTransform` is supplied (provider-specific field mapping,
+ *   e.g. Google Cloud's top-level `google_project_id` or XunFei Spark's
+ *   nested `spark_api_password`), use it to reverse the corresponding
+ *   `submitTransform` so the provider-specific credential fields
+ *   pre-fill. Otherwise fall back to the generic `unwrapApiKey` path
+ *   which lifts the bare `api_key` plus `API_KEY_NESTED_FIELDS`
+ *   (`group_id` / `api_version` / `provider_order`).
  */
 export function useProviderInitialValues(
   instance: IProviderInstance,
   instanceDetails: IProviderInstance | undefined,
   isDraft: boolean,
   baseUrlOptions: SelectOption[] | undefined,
+  echoTransform?: (instance: Record<string, any>) => Record<string, any>,
 ) {
   return useMemo(() => {
     const defaultBaseUrl = pickDefaultUrl(baseUrlOptions);
@@ -187,12 +193,19 @@ export function useProviderInitialValues(
     const values: Record<string, any> = {
       instance_name: merged.instance_name,
     };
-    // api_key may come back as a JSON string, an already-parsed object,
-    // or a plain bare key (see `unwrapApiKey`). Normalise it so the
-    // api_key text field shows the bare key and the nested credential
-    // fields (MiniMax group_id, Azure api_version, OpenRouter
-    // provider_order) pre-fill their own form inputs.
-    if (merged.api_key) {
+    if (echoTransform) {
+      // Provider-specific echo: reverse the `submitTransform` mapping so
+      // credential fields that the backend persists either at the top
+      // level (Google Cloud, Tencent Cloud, Fish Audio) or nested inside
+      // `api_key` (XunFei Spark, Baidu YiYan, OpenDataLoader, PaddleOCR,
+      // MinerU) are restored into their own form inputs.
+      Object.assign(values, echoTransform(merged));
+    } else if (merged.api_key) {
+      // api_key may come back as a JSON string, an already-parsed object,
+      // or a plain bare key (see `unwrapApiKey`). Normalise it so the
+      // api_key text field shows the bare key and the nested credential
+      // fields (MiniMax group_id, Azure api_version, OpenRouter
+      // provider_order) pre-fill their own form inputs.
       const { apiKey, nested } = unwrapApiKey(merged.api_key);
       values.api_key = apiKey;
       Object.assign(values, nested);
@@ -215,7 +228,7 @@ export function useProviderInitialValues(
       }
     }
     return values;
-  }, [instance, instanceDetails, isDraft, baseUrlOptions]);
+  }, [instance, instanceDetails, isDraft, baseUrlOptions, echoTransform]);
 }
 
 // ---------------------------------------------------------------------------
@@ -542,7 +555,6 @@ export function useInstanceSaveState({
   }, [
     isDraft,
     providerName,
-    instanceName,
     instanceId,
     instanceDetails?.id,
     formRef,
