@@ -1614,40 +1614,53 @@ def _extract_pipeline_compiler_group_ids(dsl) -> list[str]:
     return group_ids
 
 
-def _template_is_wiki(template: dict | None) -> bool:
+def _normalize_template_kind(raw) -> str:
+    """Lowercase a template's raw kind WITHOUT folding.
+
+    Unlike :func:`_compilation_template_kind` (which folds ``page_index`` /
+    ``knowledge_graph`` into ``timeline``), this keeps kinds distinct so the
+    alteration API can tell ``graph`` / ``timeline`` / ``tree`` apart.
+    """
+    if not isinstance(raw, str):
+        return ""
+    return raw.strip().lower().replace("-", "_")
+
+
+def _template_matches_kind(template: dict | None, accepted: set[str]) -> bool:
     if not isinstance(template, dict):
         return False
     config = template.get("config") if isinstance(template.get("config"), dict) else {}
     raw_kind = config.get("kind") or template.get("kind") or ""
-    return _compilation_template_kind(raw_kind) == "artifacts"
+    return _normalize_template_kind(raw_kind) in accepted
 
 
-def _group_has_wiki_template(group_id: str, tenant_id: str, group_cache: dict[str, bool]) -> bool:
+def _group_has_template_of_kind(group_id: str, tenant_id: str, accepted: set[str], group_cache: dict[str, bool]) -> bool:
     if group_id in group_cache:
         return group_cache[group_id]
     from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
 
     group = CompilationTemplateGroupService.get_saved(group_id, tenant_id)
-    has_wiki = any(_template_is_wiki(template) for template in (group or {}).get("templates") or [])
-    group_cache[group_id] = has_wiki
-    return has_wiki
+    matched = any(_template_matches_kind(template, accepted) for template in (group or {}).get("templates") or [])
+    group_cache[group_id] = matched
+    return matched
 
 
-def _parser_config_has_wiki_template(parser_config, tenant_id: str, template_cache: dict[str, bool]) -> bool:
+def _parser_config_has_template_of_kind(parser_config, tenant_id: str, accepted: set[str], template_cache: dict[str, bool]) -> bool:
     from api.db.services.compilation_template_service import CompilationTemplateService
     from rag.svr.task_executor_refactor.chunk_post_processor import _parser_config_compilation_template_ids
 
     for template_id in _parser_config_compilation_template_ids(parser_config, tenant_id):
         if template_id not in template_cache:
-            template_cache[template_id] = _template_is_wiki(CompilationTemplateService.get_saved(template_id, tenant_id))
+            template_cache[template_id] = _template_matches_kind(CompilationTemplateService.get_saved(template_id, tenant_id), accepted)
         if template_cache[template_id]:
             return True
     return False
 
 
-def _pipeline_has_wiki_compiler(
+def _pipeline_has_compiler_of_kind(
     pipeline_id: str,
     tenant_id: str,
+    accepted: set[str],
     pipeline_cache: dict[str, bool],
     group_cache: dict[str, bool],
 ) -> bool:
@@ -1665,9 +1678,9 @@ def _pipeline_has_wiki_compiler(
         return False
 
     group_ids = _extract_pipeline_compiler_group_ids(getattr(canvas, "dsl", None))
-    has_wiki = any(_group_has_wiki_template(group_id, tenant_id, group_cache) for group_id in group_ids)
-    pipeline_cache[pipeline_id] = has_wiki
-    return has_wiki
+    matched = any(_group_has_template_of_kind(group_id, tenant_id, accepted, group_cache) for group_id in group_ids)
+    pipeline_cache[pipeline_id] = matched
+    return matched
 
 
 def _skill_index_or_none(tenant_id: str, kb_id: str):
@@ -2042,14 +2055,39 @@ async def get_dataset_structure(dataset_id: str, tenant_id: str, kind: str, keyw
     return True, {"kind": kind, "templates": templates_out}
 
 
-async def get_wiki_alteration(dataset_id: str, tenant_id: str):
-    """Return doc-level drift between current dataset docs and compiled wiki provenance."""
-    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
-        return False, "no authorization"
-    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
-    if not ok:
-        return False, "Invalid Dataset ID"
+# ── artifacts/alteration: per-``kind`` provenance & eligibility mapping ──
+#
+# Alteration is a pure set operation shared by every kind:
+#   removed        = involved (product provenance) − current (dataset docs)
+#   newly_uploaded = eligible (should be compiled) − involved
+# Only two inputs vary by kind: how ``involved`` provenance is gathered, and
+# which template kinds make a doc ``eligible``.
 
+# Non-folded template kinds that make a doc eligible for each API kind.
+_ALTERATION_ELIGIBLE_TEMPLATE_KINDS = {
+    "wiki": {"artifacts"},
+    "graph": {"knowledge_graph"},
+    "mindmap": {"mind_map"},
+    "timeline": {"timeline"},
+    "tree": {"tree", "page_index"},
+}
+
+# Dataset-merged structure kinds carry provenance in ``source_doc_ids`` on
+# ``scope_kwd="dataset"`` rows, discovered by their stamped top-level kind.
+_ALTERATION_KIND_TO_MERGED_ROW_KIND = {
+    "graph": "knowledge_graph",
+    "mindmap": "mind_map",
+    "timeline": "timeline",
+}
+
+# Per-document structure kinds keep one product row per document; provenance is
+# the row's own ``doc_id`` (no dataset merge, no ``source_doc_ids``). ``tree`` and
+# ``page_index`` write distinct ``compile_kwd`` values.
+_ALTERATION_TREE_COMPILE_KWDS = ["tree", "page_index"]
+
+
+async def _current_dataset_docs(dataset_id: str):
+    """Return ``(docs, current_doc_id_set)`` for the dataset."""
     docs, _ = await thread_pool_exec(
         DocumentService.get_by_kb_id,
         kb_id=dataset_id,
@@ -2062,81 +2100,147 @@ async def get_wiki_alteration(dataset_id: str, tenant_id: str):
         types=[],
         suffix=[],
     )
-    current_doc_ids = {str(doc.get("id")) for doc in docs or [] if doc.get("id")}
+    docs = docs or []
+    current_doc_ids = {str(doc.get("id")) for doc in docs if doc.get("id")}
+    return docs, current_doc_ids
 
-    wiki_involved_doc_ids: set[str] = set()
-    pack = _wiki_index_or_none(kb.tenant_id, dataset_id)
-    if pack is not None:
-        index_nm, _ = pack
-        from common.doc_store.doc_store_base import OrderByExpr
 
-        select_fields = ["id", "source_doc_ids"]
-        offset = 0
-        page_size = 1000
-        while True:
-            try:
-                res = await thread_pool_exec(
-                    settings.docStoreConn.search,
-                    select_fields=select_fields,
-                    highlight_fields=[],
-                    condition={"compile_kwd": [WIKI_PAGE_COMPILE_KWD]},
-                    match_expressions=[],
-                    order_by=OrderByExpr(),
-                    offset=offset,
-                    limit=page_size,
-                    index_names=index_nm,
-                    knowledgebase_ids=[dataset_id],
-                )
-                rows = settings.docStoreConn.get_fields(res, select_fields) or {}
-            except Exception:
-                logging.exception("get_wiki_alteration: docStore search failed for kb=%s", dataset_id)
-                rows = {}
+def _alteration_result(current_doc_ids: set, involved_doc_ids: set, eligible_doc_ids: set) -> dict:
+    """Build the drift response dict shared by every ``kind``."""
+    removed_doc_ids = sorted(involved_doc_ids - current_doc_ids)
+    newly_uploaded_doc_ids = sorted(eligible_doc_ids - involved_doc_ids)
+    return {
+        "removed": len(removed_doc_ids),
+        "newly_uploaded": len(newly_uploaded_doc_ids),
+        "removed_doc_ids": removed_doc_ids,
+        "newly_uploaded_doc_ids": newly_uploaded_doc_ids,
+        "involved_doc_ids": sorted(involved_doc_ids),
+        "eligible_doc_ids": sorted(eligible_doc_ids),
+    }
 
-            if not rows:
-                break
-            for row in rows.values():
-                source_doc_ids = row.get("source_doc_ids")
-                if isinstance(source_doc_ids, str):
-                    source_doc_ids = [source_doc_ids]
-                if not isinstance(source_doc_ids, list):
-                    continue
-                wiki_involved_doc_ids.update(str(doc_id) for doc_id in source_doc_ids if doc_id)
 
-            offset += page_size
-            total = settings.docStoreConn.get_total(res)
-            if not total or offset >= int(total):
-                break
-
+def _eligible_doc_ids_for_kind(docs, tenant_id: str, kind: str) -> set:
+    """Doc ids whose parser_config or pipeline carries a template of ``kind``."""
+    accepted = _ALTERATION_ELIGIBLE_TEMPLATE_KINDS.get(kind) or set()
     template_cache: dict[str, bool] = {}
     group_cache: dict[str, bool] = {}
     pipeline_cache: dict[str, bool] = {}
-    eligible_wiki_doc_ids: set[str] = set()
+    eligible: set[str] = set()
     for doc in docs or []:
         doc_id = str(doc.get("id") or "")
         if not doc_id:
             continue
         parser_config = doc.get("parser_config") or {}
-        if _parser_config_has_wiki_template(parser_config, kb.tenant_id, template_cache):
-            eligible_wiki_doc_ids.add(doc_id)
+        if _parser_config_has_template_of_kind(parser_config, tenant_id, accepted, template_cache):
+            eligible.add(doc_id)
             continue
-        if _pipeline_has_wiki_compiler(
-            doc.get("pipeline_id") or "",
-            kb.tenant_id,
-            pipeline_cache,
-            group_cache,
-        ):
-            eligible_wiki_doc_ids.add(doc_id)
+        if _pipeline_has_compiler_of_kind(doc.get("pipeline_id") or "", tenant_id, accepted, pipeline_cache, group_cache):
+            eligible.add(doc_id)
+    return eligible
 
-    removed_doc_ids = sorted(wiki_involved_doc_ids - current_doc_ids)
-    newly_uploaded_doc_ids = sorted(eligible_wiki_doc_ids - wiki_involved_doc_ids)
-    return True, {
-        "removed": len(removed_doc_ids),
-        "newly_uploaded": len(newly_uploaded_doc_ids),
-        "removed_doc_ids": removed_doc_ids,
-        "newly_uploaded_doc_ids": newly_uploaded_doc_ids,
-        "involved_doc_ids": sorted(wiki_involved_doc_ids),
-        "eligible_doc_ids": sorted(eligible_wiki_doc_ids),
-    }
+
+async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, field: str, from_list: bool) -> set:
+    """Page a docStore search, folding each row's ``field`` into a doc-id set.
+
+    ``from_list`` reads ``field`` as ``source_doc_ids`` (a list of provenance doc
+    ids); otherwise ``field`` is the row's own ``doc_id`` scalar.
+    """
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    involved: set[str] = set()
+    select_fields = ["id", field]
+    offset = 0
+    page_size = 1000
+    while True:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                select_fields=select_fields,
+                highlight_fields=[],
+                condition=condition,
+                match_expressions=[],
+                order_by=OrderByExpr(),
+                offset=offset,
+                limit=page_size,
+                index_names=index_nm,
+                knowledgebase_ids=[dataset_id],
+            )
+            rows = settings.docStoreConn.get_fields(res, select_fields) or {}
+        except Exception:
+            logging.exception("alteration: docStore search failed for kb=%s cond=%s", dataset_id, condition)
+            rows = {}
+
+        if not rows:
+            break
+        for row in rows.values():
+            value = row.get(field)
+            if from_list:
+                if isinstance(value, str):
+                    value = [value]
+                if isinstance(value, list):
+                    involved.update(str(d) for d in value if d)
+            elif value:
+                involved.add(str(value))
+
+        offset += page_size
+        total = settings.docStoreConn.get_total(res)
+        if not total or offset >= int(total):
+            break
+    return involved
+
+
+async def _involved_doc_ids_for_kind(index_nm, dataset_id: str, kind: str) -> set:
+    """Gather the doc ids baked into the compiled product for ``kind``."""
+    if kind == "wiki":
+        return await _involved_doc_ids_paged(index_nm, dataset_id, {"compile_kwd": [WIKI_PAGE_COMPILE_KWD]}, "source_doc_ids", from_list=True)
+    if kind in _ALTERATION_KIND_TO_MERGED_ROW_KIND:
+        condition = {
+            "knowledge_graph_kwd": ["entity", "relation"],
+            "scope_kwd": ["dataset"],
+            "compilation_template_kind_kwd": [_ALTERATION_KIND_TO_MERGED_ROW_KIND[kind]],
+        }
+        return await _involved_doc_ids_paged(index_nm, dataset_id, condition, "source_doc_ids", from_list=True)
+    if kind == "tree":
+        return await _involved_doc_ids_paged(index_nm, dataset_id, {"compile_kwd": list(_ALTERATION_TREE_COMPILE_KWDS)}, "doc_id", from_list=False)
+    return set()
+
+
+async def _get_alteration(dataset_id: str, tenant_id: str, kind: str):
+    """Shared driver: doc-level drift between the ``kind`` product and the dataset."""
+    if not KnowledgebaseService.accessible(dataset_id, tenant_id):
+        return False, "no authorization"
+    ok, kb = KnowledgebaseService.get_by_id(dataset_id)
+    if not ok:
+        return False, "Invalid Dataset ID"
+
+    docs, current_doc_ids = await _current_dataset_docs(dataset_id)
+
+    involved_doc_ids: set[str] = set()
+    pack = _compiled_index_or_none(kb.tenant_id, dataset_id)
+    if pack is not None:
+        index_nm, _ = pack
+        involved_doc_ids = await _involved_doc_ids_for_kind(index_nm, dataset_id, kind)
+
+    eligible_doc_ids = _eligible_doc_ids_for_kind(docs, kb.tenant_id, kind)
+    return True, _alteration_result(current_doc_ids, involved_doc_ids, eligible_doc_ids)
+
+
+async def get_wiki_alteration(dataset_id: str, tenant_id: str):
+    """Return doc-level drift between current dataset docs and compiled wiki provenance."""
+    return await _get_alteration(dataset_id, tenant_id, "wiki")
+
+
+async def get_structure_alteration(dataset_id: str, tenant_id: str, kind: str):
+    """Return doc-level drift for a non-wiki structure ``kind``.
+
+    ``kind`` is one of ``graph`` / ``mindmap`` / ``timeline`` (dataset-merged
+    products, provenance from ``source_doc_ids``) or ``tree`` (per-document
+    products covering ``tree`` + ``page_index``, provenance from ``doc_id``).
+    """
+    kind = (kind or "").strip().lower()
+    if kind not in _ALTERATION_KIND_TO_MERGED_ROW_KIND and kind != "tree":
+        return False, f"Unsupported structure kind: {kind!r}. Expected one of: graph, mindmap, timeline, tree."
+    return await _get_alteration(dataset_id, tenant_id, kind)
 
 
 async def list_wiki_pages(
