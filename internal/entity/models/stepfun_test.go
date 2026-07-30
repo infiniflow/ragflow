@@ -180,7 +180,6 @@ func TestStepFunChatParsesExtendedUsage(t *testing.T) {
 				"prompt_tokens":     83,
 				"completion_tokens": 176,
 				"total_tokens":      259,
-				"cached_tokens":     10,
 				"prompt_tokens_details": map[string]interface{}{
 					"cached_tokens": 10,
 				},
@@ -448,7 +447,7 @@ func TestStepFunStreamParsesUsage(t *testing.T) {
 	}
 }
 
-func TestStreamNullUsage(t *testing.T) {
+func TestStepFunStreamNullUsage(t *testing.T) {
 	ctx := t.Context()
 	// StepFun may send usage: null on intermediate chunks.
 	srv := newStepFunSSEServer(t, "/v1/chat/completions",

@@ -63,11 +63,15 @@ type StepFunChatResponse struct {
 		Index        int    `json:"index"`
 		FinishReason string `json:"finish_reason"`
 		Message      struct {
-			Role             string           `json:"role"`
-			Content          string           `json:"content"`
-			Reasoning        string           `json:"reasoning"`
-			ReasoningContent string           `json:"reasoning_content"`
-			ToolCalls        []map[string]any `json:"tool_calls"`
+			Role             string `json:"role"`
+			Content          string `json:"content"`
+			Reasoning        string `json:"reasoning"`
+			ReasoningContent string `json:"reasoning_content"`
+			Audio            *struct {
+				Data       string `json:"data"`
+				Transcript string `json:"transcript"`
+			} `json:"audio,omitempty"`
+			ToolCalls []map[string]any `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
 	Usage struct {
@@ -236,6 +240,8 @@ func (s *StepFunModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	sawTerminal := false
 	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+		common.Info(fmt.Sprintf("%v", event))
+
 		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
 		if usageErr != nil {
 			return usageErr
