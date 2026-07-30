@@ -5,6 +5,7 @@ All imports of the target module use importlib to avoid namespace conflicts.
 """
 
 import importlib.util
+import os
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,7 +13,8 @@ import numpy as np
 import pytest
 
 # ---- Import target module via importlib (avoids namespace conflicts) ----
-_MODULE_PATH = "/home/infominer/codebase/ragflow/rag/advanced_rag/knowlege_compile/wiki_incremental.py"
+_TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+_MODULE_PATH = os.path.normpath(os.path.join(_TEST_DIR, "../../../../../rag/advanced_rag/knowlege_compile/wiki_incremental.py"))
 _spec = importlib.util.spec_from_file_location(
     "rag.advanced_rag.knowlege_compile.wiki_incremental",
     _MODULE_PATH,

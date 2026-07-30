@@ -126,7 +126,7 @@ async def _load_canonical_entities(
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                ["entity_kwd", "entity_type_kwd", "aliases", "aliases_flat_kwd", "source_doc_ids", "mention_count_int", "q_768_vec"],
+                ["entity_kwd", "entity_type_kwd", "aliases", "aliases_flat_kwd", "source_doc_ids", "mention_count_int"],
                 [],
                 {"compile_kwd": [WIKI_CANONICAL_ENTITY_COMPILE_KWD]},
                 [],
@@ -136,7 +136,7 @@ async def _load_canonical_entities(
                 index,
                 [kb_id],
             )
-            field_map = settings.docStoreConn.get_fields(res, ["entity_kwd", "entity_type_kwd", "aliases", "aliases_flat_kwd", "source_doc_ids", "mention_count_int", "q_768_vec"]) or {}
+            field_map = settings.docStoreConn.get_fields(res, ["entity_kwd", "entity_type_kwd", "aliases", "aliases_flat_kwd", "source_doc_ids", "mention_count_int"]) or {}
         except Exception:
             logging.exception("wiki: failed to load canonical entities for kb=%s", kb_id)
             return results
