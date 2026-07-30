@@ -123,7 +123,7 @@ docker compose -f docker-compose.yml down
 docker compose -f docker-compose.yml up -d
 ```
 
-## Running with RAGFlow 
+## Running with RAGFlow
 
 1. Verify that gVisor is properly installed and operational.
 

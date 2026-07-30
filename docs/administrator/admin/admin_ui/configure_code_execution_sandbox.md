@@ -120,7 +120,7 @@ The system supports `Password` and `PrivateKey` authentication.
 
 Make sure the remote server has SSH enabled and allows the current user to log in. The configured user must have read and write permissions on the remote working directory and be able to execute Python, Node.js, and other runtime environments. When using private-key authentication, make sure the private key matches the server configuration.
 
-## Alibaba Cloud Codeinterpreter Configuration
+## Alibaba Cloud CodeInterpreter Configuration
 
 Alibaba Cloud `CodeInterpreter` configuration connects to Alibaba Cloud CodeInterpreter. The system executes code tasks through this service.
 

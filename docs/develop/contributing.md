@@ -27,7 +27,7 @@ The list below mentions some contributions you can make, but it is not a complet
 - Updates to existing documents, codes, or annotations.
 - Suggesting more user-friendly error codes
 
-## File a Pull Request (pr)
+## File a Pull Request (PR)
 
 ### General Workflow
 
@@ -42,18 +42,18 @@ The list below mentions some contributions you can make, but it is not a complet
 `git push origin my-branch.`
 6. Submit a pull request for review.
 
-### Before Filing a Pr
+### Before Filing a PR
 
 - Consider splitting a large PR into multiple smaller, standalone PRs to keep a traceable development history.
 - Ensure that your PR addresses just one issue, or keep any unrelated changes small.
 - Add test cases when contributing new features. They demonstrate that your code functions correctly and protect against potential issues from future changes.
 
-### Describing Your Pr
+### Describing Your PR
 
 - Ensure that your PR title is concise and clear, providing all the required information.
 - Refer to a corresponding GitHub issue in your PR description if applicable.
 - Include sufficient design details for *breaking changes* or *API changes* in your description.
 
-### Reviewing & Merging a Pr
+### Reviewing & Merging a PR
 
 Ensure that your PR passes all Continuous Integration (CI) tests before merging it.
