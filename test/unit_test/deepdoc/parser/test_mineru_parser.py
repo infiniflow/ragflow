@@ -405,17 +405,20 @@ def test_media_bbox_is_omitted_when_page_size_is_unavailable(monkeypatch):
     assert parser._line_tag(output) == ""
     monkeypatch.setattr(parser, "_resolve_output_image", lambda *_args, **_kwargs: object())
     assert parser._transfer_to_media_blocks([output])[0][1] == []
-    assert parser._middle_positions_for_output(
-        {
-            "type": module.MinerUContentType.TABLE,
-            "table_body": "<table><tr><td>row</td></tr></table>",
-            "table_caption": [],
-            "table_footnote": [],
-            "bbox": [100, 100, 900, 900],
-            "page_idx": 0,
-        },
-        [{"type": "table", "page_idx": 0, "bbox": (10, 10, 90, 90), "text": "row"}],
-    ) == []
+    assert (
+        parser._middle_positions_for_output(
+            {
+                "type": module.MinerUContentType.TABLE,
+                "table_body": "<table><tr><td>row</td></tr></table>",
+                "table_caption": [],
+                "table_footnote": [],
+                "bbox": [100, 100, 900, 900],
+                "page_idx": 0,
+            },
+            [{"type": "table", "page_idx": 0, "bbox": (10, 10, 90, 90), "text": "row"}],
+        )
+        == []
+    )
 
 
 def test_read_output_enriches_cross_page_table_positions_from_middle_json(monkeypatch, tmp_path):

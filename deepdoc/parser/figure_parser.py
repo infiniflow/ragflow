@@ -214,11 +214,7 @@ class VisionFigureParser:
 
         for item in figures_data:
             has_position_shape = (
-                len(item) == 2
-                and isinstance(item[0], tuple)
-                and len(item[0]) == 2
-                and isinstance(item[1], list)
-                and (not item[1] or (isinstance(item[1][0], tuple) and len(item[1][0]) == 5))
+                len(item) == 2 and isinstance(item[0], tuple) and len(item[0]) == 2 and isinstance(item[1], list) and (not item[1] or (isinstance(item[1][0], tuple) and len(item[1][0]) == 5))
             )
             if has_position_shape:
                 img_desc = item[0]
