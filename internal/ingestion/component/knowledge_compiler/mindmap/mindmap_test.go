@@ -1,6 +1,7 @@
 package mindmap
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -76,5 +77,28 @@ func TestSerializeNode_Shape(t *testing.T) {
 	js := serializeNode(root)
 	if !strings.HasPrefix(js, `{"id":"Top \"quoted\""`) {
 		t.Errorf("serializeNode = %q", js)
+	}
+}
+
+// TestSerializeNode_EscapesControlChars locks that serializeNode uses
+// encoding/json: control characters such as CR/LF/TAB/FF are escaped (not
+// embedded raw), so the output is always valid JSON.
+func TestSerializeNode_EscapesControlChars(t *testing.T) {
+	root := &utility.Node{ID: "a\rb\tc\fd", Children: []*utility.Node{{ID: "x\ny"}}}
+	js := serializeNode(root)
+	var dec struct {
+		ID       string `json:"id"`
+		Children []struct {
+			ID string `json:"id"`
+		} `json:"children"`
+	}
+	if err := json.Unmarshal([]byte(js), &dec); err != nil {
+		t.Fatalf("serializeNode produced invalid JSON: %v (%q)", err, js)
+	}
+	if dec.ID != "a\rb\tc\fd" {
+		t.Errorf("root id round-trip = %q, want %q", dec.ID, "a\rb\tc\fd")
+	}
+	if len(dec.Children) != 1 || dec.Children[0].ID != "x\ny" {
+		t.Errorf("child id round-trip = %+v", dec.Children)
 	}
 }
