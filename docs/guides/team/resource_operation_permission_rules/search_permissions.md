@@ -1,10 +1,10 @@
 ---
 sidebar_position: 6
-sidebar_label: Search permissions
-title: Search permissions
+sidebar_label: Search Permissions
+title: Search Permissions
 ---
 
-# Search permissions
+# Search Permissions
 
 Search permissions control creating Search applications, listing and viewing Search applications, Q&A, related questions, mind map generation, editing, and deletion.
 

@@ -7,7 +7,7 @@ sidebar_custom_props: {
 sidebar_label: Overview
 title: Overview
 ---
-# Resource operation permission rules
+# Resource Operation Permission Rules
 
 Resource operation permission rules define what users can do with shared resources.
 

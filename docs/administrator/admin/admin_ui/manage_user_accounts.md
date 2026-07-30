@@ -8,7 +8,7 @@ title: Manage User Accounts
 
 ## View and Search Users
 
-User accounts are managed on the **User management** page. Administrators can view the user list, including `Email`, `Nickname`, `Status`, `User type`, and `Last login time`. The current Enterprise Edition page also displays `Role`.
+User accounts are managed on the **User management** page. Administrators can view the user list, including `Email`, `Nickname`, `Status`, `User type`, and `Last login time`.
 
 ![User Management](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/user_management_1.jpg)
 
@@ -16,7 +16,7 @@ User accounts are managed on the **User management** page. Administrators can vi
 
 ![User Management](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/user_management_3.jpg)
 
-Use the search box in the upper-right corner to search users by `Email` or `Nickname`. You can also filter `Active` or `Inactive` users by `Status`. In Enterprise Edition, you can also filter users by `Role`.
+Use the search box in the upper-right corner to search users by `Email` or `Nickname`. You can also filter `Active` or `Inactive` users by `Status`.
 
 ![View And Search Users](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/view_and_search_users_1.jpg)
 
@@ -24,25 +24,24 @@ Use the search box in the upper-right corner to search users by `Email` or `Nick
 
 ## Create a New User
 
-To create an account for a new member, go to **User management** and click **New user**. In the dialog, fill in `Email`, `Password`, and `Confirm password`. The current Enterprise Edition page also allows you to select a `Role` when creating a user.
+To create an account for a new member, go to **User management** and click **New user**. In the dialog, fill in `Email`, `Password`, and `Confirm password`.
 
 1. Go to the **User management** page.
 2. Click **New user**.
 3. Enter the user's `Email`.
 4. Enter the initial password.
 5. Enter the same password again in `Confirm password`.
-6. In Enterprise Edition, select a `Role` according to the user's responsibilities.
-7. Click **Confirm** to create the account.
+6. Click **Confirm** to create the account.
 
 ![Create A New User](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/create_a_new_user_1.jpg)
 
 ![Create A New User](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/create_a_new_user_2.jpg)
 
-After creation, return to the user list and confirm that the account appears, and that its status and role match expectations. Then send the login information to the user through a secure channel.
+After creation, return to the user list and confirm that the account appears and that its status matches expectations. Then send the login information to the user through a secure channel.
 
 **Caution:** `Email` must use a valid email format. After email verification is enabled, users must complete email verification before they can use the account normally. If email verification is not enabled, the system only validates the email format.
 
-When creating a new user, the password and confirmation password must match. The frontend validation for the current create-user form requires at least 6 characters. Password reset requires a new password of at least 8 characters. In production environments, use a stronger unified password policy. In Enterprise Edition, `Role` affects the resources and operations a user can access, so confirm role permissions before creating the account.
+When creating a new user, the password and confirmation password must match. The frontend validation for the current create-user form requires at least 6 characters. Password reset requires a new password of at least 8 characters. In production environments, use a stronger unified password policy.
 
 ## Disable or Restore an Account
 
@@ -104,8 +103,8 @@ Deleting a user is a high-risk operation. Before doing it, confirm whether the u
 
 ## View User Details and Resource Impact
 
-Click the detail button in **Actions** on the user list to enter the user detail page. The detail page displays the user's `Email`, account status, Enterprise Edition role, `Last login time`, `Create time`, `Last update time`, `Language`, `Is anonymous`, and `Is superuser`.
+Click the detail button in **Actions** on the user list to enter the user detail page. The detail page displays the user's `Email`, account status, `Last login time`, `Create time`, `Last update time`, `Language`, `Is anonymous`, and `Is superuser`.
 
-The current Enterprise Edition detail page also displays the user's associated `Dataset` and `Agent` resources by resource type. Before disabling, deleting, downgrading `Superuser`, or adjusting an Enterprise Edition role, administrators should check the detail page to confirm whether the user still has important resources or recent login activity.
+Before disabling, deleting, or downgrading `Superuser`, administrators should check the detail page to confirm whether the user still has important resources or recent login activity.
 
 ![View User Details And Resource Impact](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/view_user_details_and_resource_impact.jpg)

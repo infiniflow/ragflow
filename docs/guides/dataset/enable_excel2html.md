@@ -39,8 +39,8 @@ Works with complex tables that cannot be represented as key-value pairs. Example
 3. Leave **Excel to HTML** disabled if your dataset has no spreadsheet tables or if its spreadsheet tables can be represented as key-value pairs.
 4. If question-answering regarding complex tables is unsatisfactory, check if **Excel to HTML** is enabled.
 
-## Frequently asked questions
+## Frequently Asked Questions
 
-### Should I enable this feature for PDFs with complex tables?
+### Should I Enable This Feature for PDFs with Complex Tables?
 
 Nope. This feature applies to spreadsheet files only. Enabling **Excel to HTML** does not affect your PDFs.

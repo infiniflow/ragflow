@@ -1,14 +1,14 @@
 ---
 sidebar_position: 2
-sidebar_label: Chat application permissions
-title: Chat application permissions
+sidebar_label: Chat Application Permissions
+title: Chat Application Permissions
 ---
 
-# Chat application permissions
+# Chat Application Permissions
 
 Chat application permissions control viewing, configuration, creation, deletion, generation, and retrieval operations for chat assistants.
 
-### Chat management
+### Chat Management
 
 | Operation | No permission | Read | Write | Manage | Owner |
 | --- | --- | --- | --- | --- | --- |
@@ -20,7 +20,7 @@ Chat application permissions control viewing, configuration, creation, deletion,
 | Batch delete chats through `ids`, `delete_all`, or request-body `chat_id` | X | X | X | X | Y |
 | Delete a single chat | X | X | X | X | Y |
 
-### Sessions and messages
+### Sessions and Messages
 
 | Operation | No permission | Read | Write | Manage | Owner |
 | --- | --- | --- | --- | --- | --- |
@@ -34,7 +34,7 @@ Chat application permissions control viewing, configuration, creation, deletion,
 
 For read permission, session operations are limited to the user's own sessions. Write permission can cover all sessions. Batch deletion and message deletion with write permission are limited to the user's own sessions; manage permission and owner permission cover all sessions.
 
-### Chat generation and retrieval
+### Chat Generation and Retrieval
 
 | Operation | No permission | Read | Write | Manage | Owner |
 | --- | --- | --- | --- | --- | --- |

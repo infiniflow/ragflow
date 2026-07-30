@@ -1,14 +1,14 @@
 ---
 sidebar_position: 1
-sidebar_label: Knowledge base operation permissions
-title: Knowledge base operation permissions
+sidebar_label: Knowledge Base Operation Permissions
+title: Knowledge Base Operation Permissions
 ---
 
-# Knowledge base operation permissions
+# Knowledge Base Operation Permissions
 
 Knowledge base permissions are determined jointly by knowledge base-level permissions and document-level permissions. Knowledge base permissions include **Read permission**, **Write permission**, and **Manage permission**. Documents in a knowledge base can also have no permission, read permission, write permission, or manage permission.
 
-### File and file permission operations
+### File and File Permission Operations
 
 The following operations require document read permission or higher. If the user has no permission on the target document, the operation is not allowed even when the user has knowledge base-level permission.
 
@@ -42,7 +42,7 @@ The following operations require document manage permission.
 | Modify file configuration | X | X | X | Y | Y |
 | Rename file | X | X | X | Y | Y |
 
-### Knowledge base permission operations
+### Knowledge Base Permission Operations
 
 The following knowledge base operations are available to users with knowledge base read permission or higher.
 
@@ -75,7 +75,7 @@ The following knowledge base operations require knowledge base manage permission
 | Modify knowledge base configuration | X | X | X | Y | Y |
 | Delete knowledge base | X | X | X | Y | Y |
 
-### Knowledge base permission judgment order
+### Knowledge Base Permission Judgment Order
 
 When a user performs a knowledge base or document operation, permissions are evaluated in the following order:
 

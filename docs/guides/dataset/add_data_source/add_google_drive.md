@@ -16,7 +16,7 @@ Add Google Drive as one of the data sources in RAGFlow.
 
 This document provides step-by-step instructions for integrating Google Drive as a data source in RAGFlow.
 
-## 1. Create a Google Cloud project
+## 1. Create a Google Cloud Project
 
 You can either create a dedicated project for RAGFlow or use an existing Google Cloud external project. In this case, we create a Google Cloud project from scratch:
 
@@ -77,7 +77,7 @@ https://www.googleapis.com/auth/admin.directory.user.readonly
 
 ![](https://github.com/infiniflow/ragflow-docs/blob/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image13.jpeg?raw=true)
 
-## 5. Enable required APIs
+## 5. Enable Required APIs
 
 You need to enable the required APIs (such as the Google Drive API) to formally grant your Google Cloud project permission to communicate with Google's services on behalf of your application. These APIs act as a gateway; even if you have valid OAuth credentials, Google will block requests to a disabled API. Enabling them ensures that when RAGFlow attempts to list or retrieve files, Google's servers recognize and authorize the request.
 
@@ -97,7 +97,7 @@ You need to enable the required APIs (such as the Google Drive API) to formally 
 ![](https://github.com/infiniflow/ragflow-docs/blob/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image19.png?raw=true)
 ![](https://github.com/infiniflow/ragflow-docs/blob/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image21.png?raw=true)
 
-## 6. Add Google Drive as a data source in RAGFlow
+## 6. Add Google Drive as a Data Source in RAGFlow
 
 1. Go to **Data Sources** inside RAGFlow and select **Google Drive**.
 2. Under **OAuth Token JSON**, upload the previously downloaded JSON credentials you saved in [Section 2](#2-configure-oauth-consent-screen):  

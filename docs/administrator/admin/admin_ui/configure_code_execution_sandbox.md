@@ -78,7 +78,7 @@ If Python or Node.js is not installed, or the executable path is wrong, the conn
 
 `Deployment Defaults` displays the current default deployment parameters of `SandboxExecutorManager`.
 
-## SSH Configuration
+## Ssh Configuration
 
 `SSH` configuration connects to a remote Linux host and executes Python, Node.js, and other code tasks on the remote server. After configuration, the system logs in to the specified server through SSH and executes code in the remote working directory.
 
@@ -89,7 +89,7 @@ If Python or Node.js is not installed, or the executable path is wrong, the conn
 5. Click **Test connection** to test whether the connection is normal.
 6. After the test succeeds, click **Save**.
 
-### SSH Connection Configuration
+### Ssh Connection Configuration
 
 | Parameter | Description | Recommendation |
 | --- | --- | --- |

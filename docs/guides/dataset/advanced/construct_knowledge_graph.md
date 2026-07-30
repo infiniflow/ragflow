@@ -1,13 +1,13 @@
 ---
 sidebar_position: 1
-title: Construct knowledge graph
-sidebar_label: Construct knowledge graph
+title: Construct Knowledge Graph
+sidebar_label: Construct Knowledge Graph
 slug: /construct_knowledge_graph
 sidebar_custom_props: {
   categoryIcon: LucideWandSparkles
 }
 ---
-# Construct knowledge graph
+# Construct Knowledge Graph
 
 Generate a knowledge graph for your dataset.
 
@@ -39,7 +39,7 @@ The system's default chat model is used to generate knowledge graph. Before proc
 
 ## Configurations
 
-### Entity types (*Required*)
+### Entity Types (*required*)
 
 The types of the entities to extract from your dataset. The default types are: **organization**, **person**, **event**, and **category**. Add or remove types to suit your specific dataset.
 
@@ -50,14 +50,14 @@ The method to use to construct knowledge graph:
 - **General**: Use prompts provided by [GraphRAG](https://github.com/microsoft/graphrag) to extract entities and relationships.
 - **Light**: (Default) Use prompts provided by [LightRAG](https://github.com/HKUDS/LightRAG) to extract entities and relationships. This option consumes fewer tokens, less memory, and fewer computational resources.
 
-### Entity resolution
+### Entity Resolution
 
 Whether to enable entity resolution. You can think of this as an entity deduplication switch. When enabled, the LLM will combine similar entities - e.g., '2025' and 'the year of 2025', or 'IT' and 'Information Technology' - to construct a more effective graph.
 
 - (Default) Disable entity resolution.
 - Enable entity resolution. This option consumes more tokens.
 
-### Community reports
+### Community Reports
 
 In a knowledge graph, a community is a cluster of entities linked by relationships. You can have the LLM generate an abstract for each community, known as a community report. See [here](https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/) for more information. This indicates whether to generate community reports:
 
@@ -87,20 +87,20 @@ In a knowledge graph, a community is a cluster of entities linked by relationshi
    - In the **Chat setting** panel of your chat app, switch on the **Use knowledge graph** toggle.
    - If you are using an agent, click the **Retrieval** agent component to specify the dataset(s) and switch on the **Use knowledge graph** toggle.
 
-## Frequently asked questions
+## Frequently Asked Questions
 
-### Does the knowledge graph automatically update when I remove a related file?
+### Does the Knowledge Graph Automatically Update When I Remove a Related File?
 
 Nope. The knowledge graph does *not* update *until* you regenerate a knowledge graph for your dataset.
 
-### How to remove a generated knowledge graph?
+### How to Remove a Generated Knowledge Graph?
 
 On the **Configuration** page of your dataset, find the **Knowledge graph** field and click the recycle bin button to the right of the field.
 
-### Where is the created knowledge graph stored?
+### Where Is the Created Knowledge Graph Stored?
 
 All chunks of the created knowledge graph are stored in RAGFlow's document engine: either Elasticsearch or [Infinity](https://github.com/infiniflow/infinity).
 
-### How to export a created knowledge graph?
+### How to Export a Created Knowledge Graph?
 
 Nope. Exporting a created knowledge graph is not supported. If you still consider this feature essential, please [raise an issue](https://github.com/infiniflow/ragflow/issues) explaining your use case and its importance.

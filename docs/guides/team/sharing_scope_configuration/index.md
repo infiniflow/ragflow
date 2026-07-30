@@ -7,7 +7,7 @@ sidebar_custom_props: {
 sidebar_label: Overview
 title: Overview
 ---
-# Sharing scope configuration
+# Sharing Scope Configuration
 
 Configure the visible scope of resources in RAGFlow.
 

@@ -1,14 +1,14 @@
 ---
 sidebar_position: 5
-sidebar_label: Memory permissions
-title: Memory permissions
+sidebar_label: Memory Permissions
+title: Memory Permissions
 ---
 
-# Memory permissions
+# Memory Permissions
 
 Memory settings include a sharing scope. Memory permissions cover memory configuration, memory messages, SDK-related message access, and message status operations.
 
-### Memory operations
+### Memory Operations
 
 | Resource | Operation | No permission | Read | Write | Manage | Owner |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -21,7 +21,7 @@ Memory settings include a sharing scope. Memory permissions cover memory configu
 
 Creating a memory creates a new resource. The frontend creation entry is on the memories list page. Listing memories returns accessible memories, including private and shared memories. Modifying memory basic configuration includes fields such as name, model, and prompts.
 
-### Message operations
+### Message Operations
 
 | Resource | Operation | No permission | Read | Write | Manage | Owner |
 | --- | --- | --- | --- | --- | --- | --- |

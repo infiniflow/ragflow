@@ -1,10 +1,10 @@
 ---
 sidebar_position: 4
-sidebar_label: MCP permissions
-title: MCP permissions
+sidebar_label: MCP Permissions
+title: MCP Permissions
 ---
 
-# MCP permissions
+# MCP Permissions
 
 MCP permission rules control MCP server creation, connection testing, listing, details, configuration, deletion, and export.
 

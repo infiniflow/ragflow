@@ -198,7 +198,7 @@ The component returns search results that can be used by downstream Agent or Mes
 ![Keenable Search](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/keenable_search.jpg)
 
 
-### Wikipedia (Wikipedia)
+### Wikipedia (wikipedia)
 
 Wikipedia searches encyclopedia entries and extracts summaries. It is suitable for querying clear entities, concepts and historical events.
 
@@ -456,7 +456,7 @@ The component returns send status and error information when sending fails.
 ![Email](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/email.jpg)
 
 
-### HTTP Request (Invoke)
+### HTTP Request (invoke)
 
 HTTP Request calls external HTTP interfaces. It is suitable for querying order status, writing work orders, triggering third-party services and integrating business systems.
 
@@ -537,7 +537,7 @@ The component returns generated file information and downloadable output variabl
 ![Document Generator](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/document_generator.jpg)
 
 
-### Browser (Browser)
+### Browser (browser)
 
 Browser performs browser-based automation tasks. It is suitable for opening pages, collecting page information and executing browser workflows that require visual interaction.
 

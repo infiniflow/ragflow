@@ -1,13 +1,13 @@
 ---
 sidebar_position: -8
-title: Set context window size
-sidebar_label: Set context window size
+title: Set Context Window Size
+sidebar_label: Set Context Window Size
 slug: /set_context_window
 sidebar_custom_props: {
    categoryIcon: LucideListChevronsUpDown
 }
 ---
-# Set context window size
+# Set Context Window Size
 
 Set context window size for images and tables to improve long-context RAG performances.
 

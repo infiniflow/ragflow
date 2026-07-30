@@ -24,7 +24,7 @@ Recommendations:
 ![User Input Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/user_input_component.jpg)
 
 
-## Switch (Conditional) Component
+## Switch (conditional) Component
 Switch executes rule-based judgment and routes workflows to different downstream paths according to results.
 
 Configuration:

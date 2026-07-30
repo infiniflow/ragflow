@@ -1,13 +1,13 @@
 ---
 sidebar_position: 4
-title: Auto-extract metadata
-sidebar_label: Auto-extract metadata
+title: Auto-Extract Metadata
+sidebar_label: Auto-Extract Metadata
 slug: /auto_metadata
 sidebar_custom_props: {
    categoryIcon: LucideFileCodeCorner
 }
 ---
-# Auto-extract metadata
+# Auto-Extract Metadata
 
 Automatically extract metadata from uploaded files.
 

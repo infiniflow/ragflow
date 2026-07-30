@@ -1,10 +1,10 @@
 ---
 sidebar_position: 3
-sidebar_label: Agent permissions
-title: Agent permissions
+sidebar_label: Agent Permissions
+title: Agent Permissions
 ---
 
-# Agent permissions
+# Agent Permissions
 
 Agent settings include a sharing scope such as **Only me** or **Team**. Agent operation permissions determine whether the user can view, debug, run, update, or delete an Agent.
 

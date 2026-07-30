@@ -1,13 +1,13 @@
 ---
 sidebar_position: -4
-title: Configure child chunking strategy
-sidebar_label: Configure child chunking strategy
+title: Configure Child Chunking Strategy
+sidebar_label: Configure Child Chunking Strategy
 slug: /configure_child_chunking_strategy
 sidebar_custom_props: {
   categoryIcon: LucideGroup
 }
 ---
-# Configure child chunking strategy
+# Configure Child Chunking Strategy
 
 Set parent-child chunking strategy to improve retrieval.
 

@@ -1,14 +1,14 @@
 ---
 sidebar_position: 1
-title: Database schema and migration
-sidebar_label: Database schema and migration
+title: Database Schema and Migration
+sidebar_label: Database Schema and Migration
 slug: /database_schema_and_migration
 sidebar_custom_props: {
   categoryIcon: LucideLocateFixed
 }
 ---
 
-# Database schema and migration
+# Database Schema and Migration
 
 Sync schemas and migrate data using official RAGFlow scripts.
 
@@ -23,7 +23,7 @@ RAGFlow handles schema updates and migrations automatically at startup. However,
 
 The [mysql_migration.py](https://github.com/infiniflow/ragflow/blob/main/tools/scripts/mysql_migration.py) script is a specialized tool for re-organizing RAGFlow’s model-related data. It transitions data from older unified tables into a modern, multi-table structure to support advanced model management.
 
-### Key functions
+### Key Functions
 
 - **Sequential migration**: Moves data through three distinct stages—Provider, Instance, and Model—to maintain database integrity and satisfy dependencies.
 - **Flexible setup**: Connects to MySQL using either a YAML configuration file or direct command-line arguments.
@@ -31,7 +31,7 @@ The [mysql_migration.py](https://github.com/infiniflow/ragflow/blob/main/tools/s
 - **Automated mapping**: Generates unique IDs and handles complex joins between legacy records and new table structures.
 - **Batch logging**: Processes records in sets of 100 and provides a final summary of total duration and row counts.
 
-### When to use
+### When to Use
 
 - **Version upgrades**: Essential when moving to RAGFlow v0.25 or later to ensure your models are correctly categorized in the new schema.
 - **Data normalization**: Necessary when consolidating multiple API keys or LLM providers into the updated system format.
@@ -42,7 +42,7 @@ The [mysql_migration.py](https://github.com/infiniflow/ragflow/blob/main/tools/s
 
 The [db_schema_sync.py](https://github.com/infiniflow/ragflow/blob/main/tools/scripts/db_schema_sync.py) script is a synchronization utility that ensures your MySQL database structure matches the Peewee ORM models defined in the RAGFlow source code.
 
-### Key functions
+### Key Functions
 
 - **Change detection**: Compares Python model definitions in `api/db/db_models.py` against the live database to identify new tables, added fields, or type mismatches.
 - **Migration generation**: Automatically creates Python migration files (containing `migrate()` and `rollback()` logic) in version-specific directories (e.g., `tools/migrate/v0_26_4/`).
@@ -50,7 +50,7 @@ The [db_schema_sync.py](https://github.com/infiniflow/ragflow/blob/main/tools/sc
 - **Execution management**: Applies pending migrations to the database to bring it up to date with the current software version.
 - **Safety controls**: Prevents accidental data loss by requiring an explicit `--drop` flag to generate `DROP COLUMN` statements for removed fields.
 
-### When to use
+### When to Use
 
 - **Version upgrades**: When moving to a new version of RAGFlow that introduces structural database changes.
 - **Development**: When modifying `db_models.py` and needing to update your local database without manual SQL.

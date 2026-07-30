@@ -7,7 +7,7 @@ sidebar_custom_props: {
 sidebar_label: Overview
 title: Overview
 ---
-# Permission system overview
+# Permission System Overview
 
 RAGFlow manages team collaboration and resource permissions through three layers: team membership, resource sharing scope, and resource operation permissions.
 
