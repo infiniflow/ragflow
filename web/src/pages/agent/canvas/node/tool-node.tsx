@@ -6,7 +6,7 @@ import { memo } from 'react';
 import { NodeHandleId, Operator } from '../../constant';
 import { ToolCard } from '../../form/agent-form/agent-tools';
 import { useFindMcpById } from '../../hooks/use-find-mcp-by-id';
-import OperatorIcon from '../../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import useGraphStore from '../../store';
 import { NodeWrapper } from './node-wrapper';
 

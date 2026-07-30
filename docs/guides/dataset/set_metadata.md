@@ -15,7 +15,7 @@ On the **Dataset** page of your dataset, you can add metadata to any uploaded fi
 
 For example, if you have a dataset of HTML files and want the LLM to cite the source URL when responding to your query, add a `"url"` parameter to each file's metadata.
 
-![Set metadata](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_metadata.jpg)
+![Set metadata](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_metadata.png)
 
 :::tip NOTE
 Ensure that your metadata is in JSON format; otherwise, your updates will not be applied.

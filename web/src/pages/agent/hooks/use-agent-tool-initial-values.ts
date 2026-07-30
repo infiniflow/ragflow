@@ -1,6 +1,7 @@
 import { omit, pick } from 'lodash';
 import { useCallback } from 'react';
 import { Operator } from '../constant';
+import { getQueritAgentInitialValues } from './querit-agent-initial-values';
 import { useInitializeOperatorParams } from './use-add-node';
 
 export function useAgentToolInitialValues() {
@@ -20,6 +21,8 @@ export function useAgentToolInitialValues() {
           return {
             api_key: '',
           };
+        case Operator.QueritSearch:
+          return getQueritAgentInitialValues(initialValues);
         case Operator.ExeSQL:
           return omit(initialValues, 'sql');
         case Operator.Bing:
