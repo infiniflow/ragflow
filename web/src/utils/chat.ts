@@ -3,6 +3,7 @@ import {
   EmptyConversationId,
 } from '@/constants/chat';
 import { IMessage, Message } from '@/interfaces/database/chat';
+import DOMPurify from 'dompurify';
 import { omit } from 'lodash';
 import { v4 as uuid } from 'uuid';
 import {
@@ -77,6 +78,20 @@ export const preprocessLaTeX = (content: string) => {
 
   return inlineProcessedContent;
 };
+
+// Sanitize a *fully preprocessed* markdown string, i.e. run this as the LAST
+// step before handing the value to <Markdown rehypePlugins={[rehypeRaw, ...]}>.
+//
+// preprocessLaTeX() decodes &lt;/&gt;/&amp; back into raw markup, so any
+// sanitization performed before it can be bypassed by entity-encoding the
+// payload: DOMPurify sees inert text, preprocessLaTeX turns that text back into
+// live HTML, and rehypeRaw then parses it. Keeping the sanitizer at the end of
+// the pipeline is what makes the allow-list actually apply to what is rendered.
+export const sanitizeMarkdown = (content: string) =>
+  DOMPurify.sanitize(content, {
+    ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
+    ADD_ATTR: ['class'],
+  });
 
 export function replaceThinkToSection(
   text: string = '',
