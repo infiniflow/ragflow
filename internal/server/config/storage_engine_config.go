@@ -31,7 +31,7 @@ type StorageConfig struct {
 	GCS         GCSConfig   `mapstructure:"gcs"`
 }
 
-func ParseStorageConfig(storageType string, config *Config, v *viper.Viper) error {
+func ParseStorageEngineConfig(storageType string, config *Config, v *viper.Viper) error {
 	switch storageType {
 	case "minio":
 		parseMinioConfig(config, v)

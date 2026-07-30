@@ -25,6 +25,9 @@ type Config struct {
 	Authentication AuthenticationConfig
 	Database       DatabaseConfig
 	DocEngine      DocEngineConfig
+	CacheEngine    CacheEngineConfig
+	QueueEngine    QueueEngineConfig
+	AnalyticEngine AnalyticEngineConfig
 
 	Redis            RedisConfig
 	Nats             NatsConfig
@@ -86,14 +89,6 @@ type OtelConfig struct {
 	Secure      bool    `mapstructure:"secure"`
 	Stdout      bool    `mapstructure:"stdout"`
 	Enable      bool    `mapstructure:"enable"`
-}
-
-type ClickhouseConfig struct {
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	User     string `mapstructure:"user"`
-	Password string `mapstructure:"password"`
-	Database string `mapstructure:"database"`
 }
 
 type UserDefaultLLMConfig struct {
@@ -177,14 +172,6 @@ const (
 )
 
 type StorageType string
-
-// RedisConfig Redis configuration
-type RedisConfig struct {
-	Host     string `mapstructure:"host"`
-	Port     int    `mapstructure:"port"`
-	Password string `mapstructure:"password"`
-	DB       int    `mapstructure:"db"`
-}
 
 type NatsConfig struct {
 	Host string `mapstructure:"host"`

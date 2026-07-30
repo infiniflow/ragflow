@@ -683,9 +683,24 @@ func FromConfigFile(configPath string) error {
 		return fmt.Errorf("parse doc engine config error: %w", err)
 	}
 
-	err = config.ParseStorageConfig(newConfig.General.StorageEngine, newConfig, v)
+	err = config.ParseStorageEngineConfig(newConfig.General.StorageEngine, newConfig, v)
 	if err != nil {
-		return fmt.Errorf("parse storage config error: %w", err)
+		return fmt.Errorf("parse storage engine config error: %w", err)
+	}
+
+	err = config.ParseCacheEngineConfig(newConfig.General.CacheEngine, newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse cache engine config error: %w", err)
+	}
+
+	err = config.ParseQueueEngineConfig(newConfig.General.QueueEngine, newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse queue engine config error: %w", err)
+	}
+
+	err = config.ParseAnalyticEngineConfig(newConfig.General.AnalyticEngine, newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse analytic engine config error: %w", err)
 	}
 
 	// Set default values for admin configuration if not configured
