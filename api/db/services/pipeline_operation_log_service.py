@@ -40,7 +40,7 @@ _PIPELINE_TASK_TYPE_TO_FINISH_FIELD = {
     PipelineTaskType.GRAPH_RAG: "graphrag_task_finish_at",
     PipelineTaskType.RAPTOR: "raptor_task_finish_at",
     PipelineTaskType.MINDMAP: "mindmap_task_finish_at",
-    PipelineTaskType.ARTIFACT: "artifact_task_finish_at",
+    PipelineTaskType.ARTIFACT: "wiki_task_finish_at",
     PipelineTaskType.SKILL: "skill_task_finish_at",
     PipelineTaskType.STRUCTURE_GRAPH: "structure_graph_task_finish_at",
     PipelineTaskType.STRUCTURE_MINDMAP: "structure_mindmap_task_finish_at",
