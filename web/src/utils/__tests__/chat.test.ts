@@ -1,4 +1,8 @@
-import { preprocessLaTeX } from '../chat';
+import {
+  preprocessLaTeX,
+  replaceRetrievingToSection,
+  replaceThinkToSection,
+} from '../chat';
 
 describe('preprocessLaTeX', () => {
   it('converts block \\[ \\] to $$ $$', () => {
@@ -31,5 +35,26 @@ describe('preprocessLaTeX', () => {
     const content = 'First \\[ a \\] then \\[ b \\right] c \\]';
     const result = preprocessLaTeX(content);
     expect(result).toBe('First $$a$$ then $$ b \\right] c $$');
+  });
+});
+
+describe('reasoning block markdown boundaries', () => {
+  it('keeps markdown parseable after a think block', () => {
+    const result = replaceThinkToSection('<think>reasoning</think>### Heading');
+    expect(result).toContain('</details>\n\n### Heading');
+  });
+
+  it('keeps markdown parseable after a retrieving block', () => {
+    const result = replaceRetrievingToSection(
+      '<retrieving>sources</retrieving>| A | B |\n| --- | --- |\n| 1 | 2 |',
+    );
+    expect(result).toContain(
+      '</details>\n\n| A | B |\n| --- | --- |\n| 1 | 2 |',
+    );
+  });
+
+  it('keeps markdown parseable for a list after a think block', () => {
+    const result = replaceThinkToSection('<think>reasoning</think>1. First');
+    expect(result).toContain('</details>\n\n1. First');
   });
 });
