@@ -41,7 +41,7 @@ func TestVariableAssigner_Append(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAssignerComponent: %v", err)
 	}
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestVariableAssigner_Overwrite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAssignerComponent: %v", err)
 	}
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err = c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got, want := state.Outputs["cpn_0"]["x"], "fresh"; got != want {
@@ -101,7 +101,7 @@ func TestVariableAssigner_DivideByZero(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAssignerComponent: %v", err)
 	}
-	out, err := c.Invoke(ctx, nil)
+	out, err := c.Invoke(ctx, nil, nil)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestVariableAssigner_Clear(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAssignerComponent: %v", err)
 	}
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err = c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got := state.Outputs["cpn_0"]["a"]; reflect.DeepEqual(got, []any{1, 2}) {
@@ -178,7 +178,7 @@ func TestVariableAssigner_Arithmetic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewVariableAssignerComponent: %v", err)
 	}
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err = c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	// 10 + 5 = 15, 15 - 3 = 12, 12 * 2 = 24, 24 / 4 = 6
@@ -197,7 +197,7 @@ func TestVariableAssigner_RemoveFirstLast(t *testing.T) {
 		{"variable": "cpn_0@xs", "operator": "remove_first", "parameter": "x"},
 	}
 	c, _ := NewVariableAssignerComponent(map[string]any{"variables": vars})
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err := c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got, want := state.Outputs["cpn_0"]["xs"], []any{"b", "c", "d"}; !reflect.DeepEqual(got, want) {
@@ -208,7 +208,7 @@ func TestVariableAssigner_RemoveFirstLast(t *testing.T) {
 		{"variable": "cpn_0@xs", "operator": "remove_last", "parameter": "x"},
 	}
 	c, _ = NewVariableAssignerComponent(map[string]any{"variables": vars})
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err := c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got, want := state.Outputs["cpn_0"]["xs"], []any{"b", "c"}; !reflect.DeepEqual(got, want) {
@@ -225,7 +225,7 @@ func TestVariableAssigner_SysTarget(t *testing.T) {
 		{"variable": "sys.x", "operator": "set", "parameter": "hello"},
 	}
 	c, _ := NewVariableAssignerComponent(map[string]any{"variables": vars})
-	if _, err := c.Invoke(ctx, nil); err != nil {
+	if _, err := c.Invoke(ctx, nil, nil); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got, want := state.Sys["x"], "hello"; got != want {

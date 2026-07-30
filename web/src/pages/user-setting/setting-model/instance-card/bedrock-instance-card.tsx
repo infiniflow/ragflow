@@ -167,7 +167,7 @@ export const BedrockInstanceCard = forwardRef<
   const { data: instanceDetails, refetch: refetchInstanceDetails } =
     useFetchProviderInstance(
       isDraft ? '' : providerName,
-      isDraft ? '' : instance.instance_name,
+      isDraft ? '' : instance.id,
     );
 
   // Lazily fetch full instance details only when the card is open.
@@ -212,7 +212,7 @@ export const BedrockInstanceCard = forwardRef<
   useEffect(() => {
     // Reset form when initial values change (e.g. instance details load).
     form.reset(initialValues);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-deps
   }, [initialValues]);
 
   const authMode = useWatch({ control: form.control, name: 'auth_mode' });
@@ -365,6 +365,12 @@ export const BedrockInstanceCard = forwardRef<
         apiKind: 'add' as const,
       };
     }
+    // Skip cards the user hasn't actually edited. Collapsed cards
+    // never fetch `instanceDetails`, so their form is still on empty
+    // defaults - the signature check below would false-positive on
+    // defaulting differences. `form.formState.isDirty` tracks real
+    // user interaction.
+    if (!form.formState.isDirty) return null;
     const values = form.getValues();
     const payload = buildPayload(values, instance.instance_name);
     const finalPayload = {

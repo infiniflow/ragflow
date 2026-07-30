@@ -55,6 +55,25 @@ export interface ModelsSectionProps {
    */
   getFormValues?: () => Record<string, any>;
   /**
+   * Optional provider-specific transform used to build the verify
+   * payload's `api_key` / `base_url` / `region` from the host card's
+   * current form values. Providers whose credential field names don't
+   * map directly onto `api_key` / `base_url` (e.g. PaddleOCR's nested
+   * `paddleocr_api_url` / `paddleocr_access_token` / `paddleocr_algorithm`)
+   * supply this so the per-model verify can forward the structured
+   * `api_key` object the backend expects. When absent the generic
+   * `values.api_key` / `values.base_url` mapping is used.
+   *
+   * `modelInfo` returned by the transform is ignored for per-model
+   * verify - the single model being verified always overrides it.
+   */
+  verifyTransform?: (values: Record<string, any>) => {
+    apiKey: string | object | Record<string, any>;
+    baseUrl?: string;
+    region?: string;
+    modelInfo?: IModelInfo[];
+  };
+  /**
    * Notifies the host that ModelsSection has opened (or closed) a modal
    * dialog whose contents live in a React Portal outside the host's
    * `onBlurCapture` container. The host should temporarily disable its
@@ -119,6 +138,10 @@ export interface ModelRowProps {
   onRemove: () => void;
   onEdit: () => void;
   editLabel: string;
+  /** Whether this row is currently selected for batch operations. */
+  isSelected?: boolean;
+  /** Toggle this row's selection state. */
+  onToggleSelect?: () => void;
 }
 
 export interface TagFilterButtonProps {

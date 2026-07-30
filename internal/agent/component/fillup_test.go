@@ -32,7 +32,7 @@ func TestFillup_PassesThroughInputs(t *testing.T) {
 	state := canvas.NewCanvasState("run-1", "task-1")
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"inputs": map[string]any{
 			"a": map[string]any{"value": 1},
 			"b": map[string]any{"value": "x"},
@@ -62,7 +62,7 @@ func TestFillup_NoTipsKey(t *testing.T) {
 	state := canvas.NewCanvasState("run-2", "task-2")
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"inputs": map[string]any{
 			"x": map[string]any{"value": "y"},
 		},
@@ -88,7 +88,7 @@ func TestFillup_NonDictInput(t *testing.T) {
 	state := canvas.NewCanvasState("run-3", "task-3")
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"inputs": map[string]any{
 			"plain_str":  "just a string",
 			"plain_int":  42,
@@ -119,7 +119,7 @@ func TestFillup_FileInputStub(t *testing.T) {
 	state := canvas.NewCanvasState("run-4", "task-4")
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"inputs": map[string]any{
 			"cv": map[string]any{
 				"value": []any{"file-1"},

@@ -17,6 +17,7 @@
 package dao
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"ragflow/internal/common"
@@ -32,8 +33,8 @@ func NewIngestionTaskDAO() *IngestionTaskDAO {
 	return &IngestionTaskDAO{}
 }
 
-func (dao *IngestionTaskDAO) Create(ingestionTask *entity.IngestionTask) (*entity.IngestionTask, error) {
-	existing, err := dao.GetByDocumentID(ingestionTask.DocumentID)
+func (dao *IngestionTaskDAO) Create(ctx context.Context, db *gorm.DB, ingestionTask *entity.IngestionTask) (*entity.IngestionTask, error) {
+	existing, err := dao.GetByDocumentID(ctx, db, ingestionTask.DocumentID)
 	if err != nil {
 		return nil, err
 	}
@@ -43,9 +44,9 @@ func (dao *IngestionTaskDAO) Create(ingestionTask *entity.IngestionTask) (*entit
 	if ingestionTask.ID == "" {
 		ingestionTask.ID = utility.GenerateUUID()
 	}
-	if err := DB.Create(ingestionTask).Error; err != nil {
+	if err = db.WithContext(ctx).Create(ingestionTask).Error; err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
-			existing, getErr := dao.GetByDocumentID(ingestionTask.DocumentID)
+			existing, getErr := dao.GetByDocumentID(ctx, db, ingestionTask.DocumentID)
 			if getErr != nil {
 				return nil, getErr
 			}
@@ -58,8 +59,8 @@ func (dao *IngestionTaskDAO) Create(ingestionTask *entity.IngestionTask) (*entit
 	return ingestionTask, nil
 }
 
-func (dao *IngestionTaskDAO) UpdateStatusIfCurrent(taskID, fromStatus, toStatus string) (bool, error) {
-	result := DB.Model(&entity.IngestionTask{}).
+func (dao *IngestionTaskDAO) UpdateStatusIfCurrent(ctx context.Context, db *gorm.DB, taskID, fromStatus, toStatus string) (bool, error) {
+	result := db.WithContext(ctx).Model(&entity.IngestionTask{}).
 		Where("id = ? AND status = ?", taskID, fromStatus).
 		Update("status", toStatus)
 	if result.Error != nil {
@@ -70,8 +71,8 @@ func (dao *IngestionTaskDAO) UpdateStatusIfCurrent(taskID, fromStatus, toStatus 
 
 // UpdateComponentTotal records the number of components in the task's DSL
 // graph. It is the authoritative denominator for progress percentage.
-func (dao *IngestionTaskDAO) UpdateComponentTotal(taskID string, total int) error {
-	return DB.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("component_total", total).Error
+func (dao *IngestionTaskDAO) UpdateComponentTotal(ctx context.Context, db *gorm.DB, taskID string, total int) error {
+	return db.WithContext(ctx).Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("component_total", total).Error
 }
 
 type TaskInfo struct {
@@ -79,8 +80,8 @@ type TaskInfo struct {
 	FilesToDelete []string `json:"files_to_delete"`
 }
 
-func (dao *IngestionTaskDAO) Delete(taskID string, userID *string) (*TaskInfo, error) {
-	tx := DB.Begin()
+func (dao *IngestionTaskDAO) Delete(ctx context.Context, db *gorm.DB, taskID string, userID *string) (*TaskInfo, error) {
+	tx := db.WithContext(ctx).Begin()
 	if tx.Error != nil {
 		return nil, tx.Error
 	}
@@ -141,50 +142,50 @@ func (dao *IngestionTaskDAO) Delete(taskID string, userID *string) (*TaskInfo, e
 	}
 }
 
-func (dao *IngestionTaskDAO) GetAllTasks(page, pageSize int) ([]*entity.IngestionTask, error) {
+func (dao *IngestionTaskDAO) GetAllTasks(ctx context.Context, db *gorm.DB, page, pageSize int) ([]*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
 	var err error
 	if pageSize == 0 {
-		err = DB.Find(&tasks).Error
+		err = db.WithContext(ctx).Find(&tasks).Error
 	} else {
-		err = DB.Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
+		err = db.WithContext(ctx).Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
 	}
 	return tasks, err
 }
 
-func (dao *IngestionTaskDAO) ListByUserID(userID string, page, pageSize int) ([]*entity.IngestionTask, error) {
+func (dao *IngestionTaskDAO) ListByUserID(ctx context.Context, db *gorm.DB, userID string, page, pageSize int) ([]*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
 	var err error
 	if pageSize == 0 {
-		err = DB.Where("user_id = ?", userID).Order("create_time DESC").Find(&tasks).Error
+		err = db.WithContext(ctx).Where("user_id = ?", userID).Order("create_time DESC").Find(&tasks).Error
 	} else {
-		err = DB.Where("user_id = ?", userID).Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
-	}
-
-	return tasks, err
-}
-
-func (dao *IngestionTaskDAO) ListByUserIDAndDatasetID(userID, datasetID string, page, pageSize int) ([]*entity.IngestionTask, error) {
-	var tasks []*entity.IngestionTask
-	var err error
-	if pageSize == 0 {
-		err = DB.Where("user_id = ? AND dataset_id = ?", userID, datasetID).Order("create_time DESC").Find(&tasks).Error
-	} else {
-		err = DB.Where("user_id = ? AND dataset_id = ?", userID, datasetID).Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
+		err = db.WithContext(ctx).Where("user_id = ?", userID).Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
 	}
 
 	return tasks, err
 }
 
-func (dao *IngestionTaskDAO) GetByID(id string) (*entity.IngestionTask, error) {
+func (dao *IngestionTaskDAO) ListByUserIDAndDatasetID(ctx context.Context, db *gorm.DB, userID, datasetID string, page, pageSize int) ([]*entity.IngestionTask, error) {
+	var tasks []*entity.IngestionTask
+	var err error
+	if pageSize == 0 {
+		err = db.WithContext(ctx).Where("user_id = ? AND dataset_id = ?", userID, datasetID).Order("create_time DESC").Find(&tasks).Error
+	} else {
+		err = db.WithContext(ctx).Where("user_id = ? AND dataset_id = ?", userID, datasetID).Order("create_time DESC").Offset((page - 1) * pageSize).Limit(pageSize).Find(&tasks).Error
+	}
+
+	return tasks, err
+}
+
+func (dao *IngestionTaskDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.IngestionTask, error) {
 	var task *entity.IngestionTask
-	err := DB.Where("id = ?", id).First(&task).Error
+	err := db.WithContext(ctx).Where("id = ?", id).First(&task).Error
 	return task, err
 }
 
-func (dao *IngestionTaskDAO) GetByDocumentID(documentId string) (*entity.IngestionTask, error) {
+func (dao *IngestionTaskDAO) GetByDocumentID(ctx context.Context, db *gorm.DB, documentId string) (*entity.IngestionTask, error) {
 	var tasks []*entity.IngestionTask
-	err := DB.Where("document_id = ?", documentId).Limit(1).Find(&tasks).Error
+	err := db.WithContext(ctx).Where("document_id = ?", documentId).Limit(1).Find(&tasks).Error
 	if err != nil {
 		return nil, err
 	}
@@ -199,8 +200,8 @@ func (dao *IngestionTaskDAO) GetByDocumentID(documentId string) (*entity.Ingesti
 // RUNNING and STOPPING tasks are NOT deleted because an in-flight worker
 // would keep writing chunks and corrupt a new run's results.
 // Returns the number of rows deleted.
-func (dao *IngestionTaskDAO) DeleteIfTerminal(documentID string) (int64, error) {
-	result := DB.Where("document_id = ? AND status NOT IN (?, ?)",
+func (dao *IngestionTaskDAO) DeleteIfTerminal(ctx context.Context, db *gorm.DB, documentID string) (int64, error) {
+	result := db.WithContext(ctx).Where("document_id = ? AND status NOT IN (?, ?)",
 		documentID, common.RUNNING, common.STOPPING).
 		Delete(&entity.IngestionTask{})
 	if result.Error != nil {
@@ -215,12 +216,12 @@ func NewIngestionTaskLogDAO() *IngestionTaskLogDAO {
 	return &IngestionTaskLogDAO{}
 }
 
-func (dao *IngestionTaskLogDAO) Create(ingestionLog *entity.IngestionTaskLog) error {
-	return DB.Create(ingestionLog).Error
+func (dao *IngestionTaskLogDAO) Create(ctx context.Context, db *gorm.DB, ingestionLog *entity.IngestionTaskLog) error {
+	return db.WithContext(ctx).Create(ingestionLog).Error
 }
 
-func (dao *IngestionTaskLogDAO) Update(ingestionLog *entity.IngestionTaskLog) error {
-	return DB.Save(ingestionLog).Error
+func (dao *IngestionTaskLogDAO) Update(ctx context.Context, db *gorm.DB, ingestionLog *entity.IngestionTaskLog) error {
+	return db.WithContext(ctx).Save(ingestionLog).Error
 }
 
 // ListLogsByTaskID returns the task's logs in chronological (write) order.
@@ -229,9 +230,9 @@ func (dao *IngestionTaskLogDAO) Update(ingestionLog *entity.IngestionTaskLog) er
 // arbitrarily; `id` is monotonic and always reflects write order. This
 // feeds the frontend log stream (GET .../logs), which renders each row by
 // phase (0 started / 1 done / -1 failed).
-func (dao *IngestionTaskLogDAO) ListLogsByTaskID(taskID string) ([]*entity.IngestionTaskLog, error) {
+func (dao *IngestionTaskLogDAO) ListLogsByTaskID(ctx context.Context, db *gorm.DB, taskID string) ([]*entity.IngestionTaskLog, error) {
 	var tasks []*entity.IngestionTaskLog
-	err := DB.Where("task_id = ?", taskID).Order("id ASC").Find(&tasks).Error
+	err := db.WithContext(ctx).Where("task_id = ?", taskID).Order("id ASC").Find(&tasks).Error
 	return tasks, err
 }
 
@@ -257,9 +258,9 @@ type TaskProgress struct {
 // `total` is the authoritative denominator from ingestion_task.component_total.
 // The classification is forward-compatible with the §5.1 ProgressPhase
 // renumbering (exit=1 stays; error moves -1 -> 2).
-func (dao *IngestionTaskLogDAO) AggregateProgress(taskID string, total int) (*TaskProgress, error) {
+func (dao *IngestionTaskLogDAO) AggregateProgress(ctx context.Context, db *gorm.DB, taskID string, total int) (*TaskProgress, error) {
 	// Latest row id per component for this task.
-	latestIDs := DB.Model(&entity.IngestionTaskLog{}).
+	latestIDs := db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
 		Select("MAX(id)").
 		Where("task_id = ?", taskID).
 		Group("component")
@@ -268,7 +269,7 @@ func (dao *IngestionTaskLogDAO) AggregateProgress(taskID string, total int) (*Ta
 		Phase int
 	}
 	var rows []phaseRow
-	err := DB.Model(&entity.IngestionTaskLog{}).
+	err := db.WithContext(ctx).Model(&entity.IngestionTaskLog{}).
 		Select("phase").
 		Where("id IN (?)", latestIDs).
 		Scan(&rows).Error
@@ -293,19 +294,19 @@ func (dao *IngestionTaskLogDAO) AggregateProgress(taskID string, total int) (*Ta
 	return progress, nil
 }
 
-func (dao *IngestionTaskLogDAO) LatestLogByTaskID(taskID string) (*entity.IngestionTaskLog, error) {
+func (dao *IngestionTaskLogDAO) LatestLogByTaskID(ctx context.Context, db *gorm.DB, taskID string) (*entity.IngestionTaskLog, error) {
 	var task *entity.IngestionTaskLog
-	err := DB.Where("task_id = ?", taskID).Order("create_time DESC").First(&task).Error
+	err := db.WithContext(ctx).Where("task_id = ?", taskID).Order("create_time DESC").First(&task).Error
 	return task, err
 }
 
-func (dao *IngestionTaskLogDAO) GetLogByLogID(logID string) (*entity.IngestionTaskLog, error) {
+func (dao *IngestionTaskLogDAO) GetLogByLogID(ctx context.Context, db *gorm.DB, logID string) (*entity.IngestionTaskLog, error) {
 	var task *entity.IngestionTaskLog
-	err := DB.Where("id = ?", logID).First(&task).Error
+	err := db.WithContext(ctx).Where("id = ?", logID).First(&task).Error
 	return task, err
 }
 
-func (dao *IngestionTaskLogDAO) DeleteByTaskID(taskID string) (int64, error) {
-	result := DB.Unscoped().Where("task_id = ?", taskID).Delete(&entity.IngestionTaskLog{})
+func (dao *IngestionTaskLogDAO) DeleteByTaskID(ctx context.Context, db *gorm.DB, taskID string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("task_id = ?", taskID).Delete(&entity.IngestionTaskLog{})
 	return result.RowsAffected, result.Error
 }

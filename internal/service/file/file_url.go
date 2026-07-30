@@ -1,6 +1,7 @@
 package file
 
 import (
+	"context"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -20,7 +21,7 @@ import (
 // carries connect and overall timeouts, and the response body is bounded with
 // truncation detection so an oversized file is rejected rather than silently
 // clipped.
-func (s *FileService) UploadFromURL(tenantID, rawURL string) (map[string]interface{}, error) {
+func (s *FileService) UploadFromURL(ctx context.Context, tenantID, rawURL string) (map[string]interface{}, error) {
 	if rawURL == "" {
 		return nil, fmt.Errorf("url is required")
 	}
@@ -29,7 +30,7 @@ func (s *FileService) UploadFromURL(tenantID, rawURL string) (map[string]interfa
 		return nil, fmt.Errorf("invalid or unsafe URL")
 	}
 
-	data, headers, finalURL, err := utility.FetchRemoteFileSafely(rawURL, maxRemoteFileSize)
+	data, headers, finalURL, err := utility.FetchRemoteFileSafely(ctx, rawURL, maxRemoteFileSize)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +42,7 @@ func (s *FileService) UploadFromURL(tenantID, rawURL string) (map[string]interfa
 
 	contentType := headers.Get("Content-Type")
 	filename := normalizeRemoteUploadFilename(finalURL, contentType, data)
-	if err := s.checkUploadInfoHealth(tenantID, filename); err != nil {
+	if err = s.checkUploadInfoHealth(ctx, tenantID, filename); err != nil {
 		return nil, err
 	}
 	filename, contentType, data = utility.NormalizeUploadInfoContent(filename, contentType, data)

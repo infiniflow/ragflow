@@ -109,7 +109,7 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	setAnthropicHeaders(req, apiKey)
+	setAnthropicHeaders(req, apiKey, false)
 
 	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -153,9 +153,13 @@ func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *C
 	}
 }
 
-func setAnthropicHeaders(req *http.Request, apiKey string) {
+func setAnthropicHeaders(req *http.Request, apiKey string, streaming bool) {
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	if streaming {
+		req.Header.Set("Accept", "text/event-stream")
+	} else {
+		req.Header.Set("Accept", "application/json")
+	}
 	req.Header.Set("x-api-key", apiKey)
 	req.Header.Set("anthropic-version", anthropicVersion)
 }
@@ -393,7 +397,7 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
-	setAnthropicHeaders(req, apiKey)
+	setAnthropicHeaders(req, apiKey, false)
 
 	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -434,7 +438,137 @@ func (a *AnthropicModel) CheckConnection(ctx context.Context, apiConfig *APIConf
 }
 
 func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", a.Name())
+	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
+	}
+
+	apiMessages, systemPrompt, err := anthropicMessages(messages)
+	if err != nil {
+		return err
+	}
+
+	baseURLRegion := a.region(apiConfig)
+	baseURLConfig := &APIConfig{Region: &baseURLRegion}
+	if apiConfig != nil {
+		baseURLConfig.BaseURL = apiConfig.BaseURL
+	}
+	baseURL, err := a.baseModel.GetBaseURL(baseURLConfig)
+	if err != nil {
+		return err
+	}
+	baseURL = strings.TrimSpace(strings.TrimSuffix(baseURL, "/"))
+	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.baseModel.URLSuffix.Chat, "/"))
+
+	reqBody := map[string]interface{}{
+		"model":      modelName,
+		"messages":   apiMessages,
+		"max_tokens": 1024,
+		"stream":     true,
+	}
+	if systemPrompt != "" {
+		reqBody["system"] = systemPrompt
+	}
+	applyAnthropicChatConfig(reqBody, modelConfig)
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	setAnthropicHeaders(req, apiKey, true)
+
+	resp, err := a.baseModel.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("Anthropic messages API error: %s, body: %s", resp.Status, string(body))
+	}
+
+	sawTerminal := false
+	var streamUsage TokenUsage
+	sawUsage := false
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+		eventType, _ := event["type"].(string)
+		switch eventType {
+		case "content_block_delta":
+			delta, ok := event["delta"].(map[string]interface{})
+			if !ok {
+				return nil
+			}
+			deltaType, _ := delta["type"].(string)
+			switch deltaType {
+			case "text_delta":
+				if text, ok := delta["text"].(string); ok && text != "" {
+					if err := sender(&text, nil); err != nil {
+						return err
+					}
+				}
+			case "thinking_delta":
+				if thinking, ok := delta["thinking"].(string); ok && thinking != "" {
+					if err := sender(nil, &thinking); err != nil {
+						return err
+					}
+				}
+			}
+		case "message_start":
+			message, ok := event["message"].(map[string]interface{})
+			if !ok {
+				return nil
+			}
+			if usage, ok := message["usage"].(map[string]interface{}); ok {
+				if inputTokens, ok := usage["input_tokens"].(float64); ok {
+					streamUsage.PromptTokens = int(inputTokens)
+					sawUsage = true
+				}
+			}
+		case "message_delta":
+			// message_delta carries the running total of output tokens
+			// generated so far; the last event before message_stop is
+			// authoritative.
+			if usage, ok := event["usage"].(map[string]interface{}); ok {
+				if outputTokens, ok := usage["output_tokens"].(float64); ok {
+					streamUsage.CompletionTokens = int(outputTokens)
+					sawUsage = true
+				}
+			}
+		case "message_stop":
+			sawTerminal = true
+		case "error":
+			errInfo, _ := event["error"].(map[string]interface{})
+			message, _ := errInfo["message"].(string)
+			return fmt.Errorf("Anthropic stream error: %s", message)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+	if !done && !sawTerminal {
+		return fmt.Errorf("anthropic: stream ended before message_stop")
+	}
+
+	if sawUsage {
+		streamUsage.TotalTokens = streamUsage.PromptTokens + streamUsage.CompletionTokens
+		applyStreamUsage(modelConfig, modelUsage, &streamUsage)
+	}
+
+	endOfStream := "[DONE]"
+	return sender(&endOfStream, nil)
 }
 
 func (a *AnthropicModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {

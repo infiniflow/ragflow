@@ -18,6 +18,7 @@ package models
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
 	"strings"
@@ -119,6 +120,240 @@ func (g *GoogleModel) baseURL(apiConfig *APIConfig) string {
 	return strings.TrimSpace(baseURL)
 }
 
+func googleChatContents(messages []Message) []*genai.Content {
+	var contents []*genai.Content
+	toolCallNames := make(map[string]string)
+
+	for _, msg := range messages {
+		switch msg.Role {
+		case "tool":
+			name := toolCallNames[msg.ToolCallID]
+			if name == "" {
+				name = msg.ToolCallID
+			}
+			contents = append(contents, &genai.Content{
+				Role: genai.RoleUser,
+				Parts: []*genai.Part{{
+					FunctionResponse: &genai.FunctionResponse{
+						ID:       msg.ToolCallID,
+						Name:     name,
+						Response: googleFunctionResponse(msg.Content),
+					},
+				}},
+			})
+			continue
+		}
+
+		var role genai.Role
+		switch msg.Role {
+		case "model", "assistant":
+			role = genai.RoleModel
+		default:
+			role = genai.RoleUser
+		}
+
+		parts := googleMessageParts(msg.Content)
+		for _, toolCall := range msg.ToolCalls {
+			id, _ := toolCall["id"].(string)
+			fn, _ := toolCall["function"].(map[string]interface{})
+			name, _ := fn["name"].(string)
+			if name == "" {
+				continue
+			}
+			args := map[string]any{}
+			if arguments, ok := fn["arguments"].(string); ok && strings.TrimSpace(arguments) != "" {
+				_ = json.Unmarshal([]byte(arguments), &args)
+			}
+			if id != "" {
+				toolCallNames[id] = name
+			}
+			parts = append(parts, &genai.Part{FunctionCall: &genai.FunctionCall{
+				ID:   id,
+				Name: name,
+				Args: args,
+			}})
+		}
+		if len(parts) > 0 {
+			contents = append(contents, genai.NewContentFromParts(parts, role))
+		}
+	}
+
+	return contents
+}
+
+func googleMessageParts(content interface{}) []*genai.Part {
+	switch c := content.(type) {
+	case string:
+		if c == "" {
+			return nil
+		}
+		return []*genai.Part{genai.NewPartFromText(c)}
+	case []interface{}:
+		var parts []*genai.Part
+		for _, item := range c {
+			itemMap, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			contentType, _ := itemMap["type"].(string)
+			switch contentType {
+			case "text":
+				if text, ok := itemMap["text"].(string); ok && text != "" {
+					parts = append(parts, genai.NewPartFromText(text))
+				}
+			case "image_url":
+				if imgMap, ok := itemMap["image_url"].(map[string]interface{}); ok {
+					if url, ok := imgMap["url"].(string); ok && url != "" {
+						parts = append(parts, genai.NewPartFromURI(url, "image/jpeg"))
+					}
+				}
+			}
+		}
+		return parts
+	default:
+		return nil
+	}
+}
+
+func googleFunctionResponse(content interface{}) map[string]any {
+	switch c := content.(type) {
+	case map[string]any:
+		return c
+	case string:
+		var response map[string]any
+		if err := json.Unmarshal([]byte(c), &response); err == nil && response != nil {
+			return response
+		}
+		return map[string]any{"output": c}
+	default:
+		return map[string]any{"output": c}
+	}
+}
+
+func googleGenerateContentConfig(chatModelConfig *ChatConfig) *genai.GenerateContentConfig {
+	if chatModelConfig == nil {
+		return nil
+	}
+
+	cfg := &genai.GenerateContentConfig{}
+	if chatModelConfig.Temperature != nil {
+		value := float32(*chatModelConfig.Temperature)
+		cfg.Temperature = &value
+	}
+	if chatModelConfig.TopP != nil {
+		value := float32(*chatModelConfig.TopP)
+		cfg.TopP = &value
+	}
+	if chatModelConfig.MaxTokens != nil {
+		cfg.MaxOutputTokens = int32(*chatModelConfig.MaxTokens)
+	}
+	if chatModelConfig.Stop != nil {
+		cfg.StopSequences = *chatModelConfig.Stop
+	}
+	if tools := googleTools(chatModelConfig.Tools); len(tools) > 0 {
+		cfg.Tools = tools
+		cfg.ToolConfig = &genai.ToolConfig{
+			FunctionCallingConfig: &genai.FunctionCallingConfig{Mode: googleFunctionCallingMode(chatModelConfig.ToolChoice)},
+		}
+	}
+
+	if cfg.Temperature == nil && cfg.TopP == nil && cfg.MaxOutputTokens == 0 && len(cfg.StopSequences) == 0 && len(cfg.Tools) == 0 {
+		return nil
+	}
+	return cfg
+}
+
+func googleFunctionCallingMode(toolChoice *string) genai.FunctionCallingConfigMode {
+	if toolChoice == nil {
+		return genai.FunctionCallingConfigModeAuto
+	}
+	switch strings.ToLower(strings.TrimSpace(*toolChoice)) {
+	case "none":
+		return genai.FunctionCallingConfigModeNone
+	case "required", "any":
+		return genai.FunctionCallingConfigModeAny
+	default:
+		return genai.FunctionCallingConfigModeAuto
+	}
+}
+
+func googleTools(rawTools interface{}) []*genai.Tool {
+	var declarations []*genai.FunctionDeclaration
+	for _, rawTool := range normalizeToolList(rawTools) {
+		toolMap, ok := rawTool.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		fn, ok := toolMap["function"].(map[string]interface{})
+		if !ok {
+			fn = toolMap
+		}
+		name, _ := fn["name"].(string)
+		if name == "" {
+			continue
+		}
+		description, _ := fn["description"].(string)
+		declaration := &genai.FunctionDeclaration{
+			Name:        name,
+			Description: description,
+		}
+		if parameters, ok := fn["parameters"]; ok {
+			declaration.ParametersJsonSchema = parameters
+		}
+		declarations = append(declarations, declaration)
+	}
+	if len(declarations) == 0 {
+		return nil
+	}
+	return []*genai.Tool{{FunctionDeclarations: declarations}}
+}
+
+func normalizeToolList(rawTools interface{}) []interface{} {
+	switch tools := rawTools.(type) {
+	case nil:
+		return nil
+	case []interface{}:
+		return tools
+	case []map[string]interface{}:
+		result := make([]interface{}, 0, len(tools))
+		for _, tool := range tools {
+			result = append(result, tool)
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
+func googleToolCalls(functionCalls []*genai.FunctionCall) []map[string]interface{} {
+	if len(functionCalls) == 0 {
+		return nil
+	}
+	toolCalls := make([]map[string]interface{}, 0, len(functionCalls))
+	for idx, functionCall := range functionCalls {
+		if functionCall == nil || functionCall.Name == "" {
+			continue
+		}
+		id := functionCall.ID
+		if id == "" {
+			id = fmt.Sprintf("gemini-call-%d", idx)
+		}
+		arguments, err := json.Marshal(functionCall.Args)
+		if err != nil {
+			arguments = []byte("{}")
+		}
+		toolCalls = append(toolCalls, map[string]interface{}{
+			"id":   id,
+			"type": "function",
+			"function": map[string]interface{}{
+				"name":      functionCall.Name,
+				"arguments": string(arguments),
+			},
+		})
+	}
+	return toolCalls
+}
+
 func (g *GoogleModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -136,51 +371,10 @@ func (g *GoogleModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, err
 	}
 
-	// Convert messages to Google SDK format
-	var contents []*genai.Content
-	for _, msg := range messages {
-		var role genai.Role
-		switch msg.Role {
-		case "user":
-			role = genai.RoleUser
-		case "model", "assistant":
-			role = genai.RoleModel
-		default:
-			role = genai.RoleUser
-		}
-
-		// Handle content based on type
-		switch c := msg.Content.(type) {
-		case string:
-			contents = append(contents, genai.NewContentFromText(c, role))
-		case []interface{}:
-			// Multimodal content - group parts within a single content
-			var parts []*genai.Part
-			for _, item := range c {
-				if itemMap, ok := item.(map[string]interface{}); ok {
-					contentType, _ := itemMap["type"].(string)
-					switch contentType {
-					case "text":
-						if text, ok := itemMap["text"].(string); ok {
-							parts = append(parts, genai.NewPartFromText(text))
-						}
-					case "image_url":
-						if imgMap, ok := itemMap["image_url"].(map[string]interface{}); ok {
-							if url, ok := imgMap["url"].(string); ok {
-								parts = append(parts, genai.NewPartFromURI(url, "image/jpeg"))
-							}
-						}
-					}
-				}
-			}
-			if len(parts) > 0 {
-				contents = append(contents, genai.NewContentFromParts(parts, role))
-			}
-		}
-	}
+	contents := googleChatContents(messages)
 
 	// Generate content (non-streaming)
-	response, err := client.Models.GenerateContent(ctx, modelName, contents, nil)
+	response, err := client.Models.GenerateContent(ctx, modelName, contents, googleGenerateContentConfig(chatModelConfig))
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +382,7 @@ func (g *GoogleModel) ChatWithMessages(ctx context.Context, modelName string, me
 	// Extract text from response
 	answer := response.Text()
 
-	return &ChatResponse{Answer: &answer}, nil
+	return &ChatResponse{Answer: &answer, ToolCalls: googleToolCalls(response.FunctionCalls())}, nil
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -212,58 +406,20 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return err
 	}
 
-	// Convert messages to Google SDK format
-	var contents []*genai.Content
-	for _, msg := range messages {
-		var role genai.Role
-		switch msg.Role {
-		case "user":
-			role = genai.RoleUser
-		case "model", "assistant":
-			role = genai.RoleModel
-		default:
-			role = genai.RoleUser
-		}
-
-		// Handle content based on type
-		switch c := msg.Content.(type) {
-		case string:
-			contents = append(contents, genai.NewContentFromText(c, role))
-		case []interface{}:
-			// Multimodal content - group parts within a single content
-			var parts []*genai.Part
-			for _, item := range c {
-				if itemMap, ok := item.(map[string]interface{}); ok {
-					contentType, _ := itemMap["type"].(string)
-					switch contentType {
-					case "text":
-						if text, ok := itemMap["text"].(string); ok {
-							parts = append(parts, genai.NewPartFromText(text))
-						}
-					case "image_url":
-						if imgMap, ok := itemMap["image_url"].(map[string]interface{}); ok {
-							if url, ok := imgMap["url"].(string); ok {
-								parts = append(parts, genai.NewPartFromURI(url, "image/jpeg"))
-							}
-						}
-					}
-				}
-			}
-			if len(parts) > 0 {
-				contents = append(contents, genai.NewContentFromParts(parts, role))
-			}
-		}
-	}
+	contents := googleChatContents(messages)
+	var toolCalls []map[string]interface{}
 
 	for response, err := range client.Models.GenerateContentStream(
 		ctx,
 		modelName,
 		contents,
-		nil,
+		googleGenerateContentConfig(chatModelConfig),
 	) {
 		if err != nil {
 			return err
 		}
+
+		toolCalls = append(toolCalls, googleToolCalls(response.FunctionCalls())...)
 
 		content := response.Text()
 
@@ -289,6 +445,10 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 				return err
 			}
 		}
+	}
+
+	if chatModelConfig != nil && len(toolCalls) > 0 {
+		chatModelConfig.ToolCallsResult = &toolCalls
 	}
 
 	return err

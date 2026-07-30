@@ -41,7 +41,7 @@
 
 <h4 align="center">
   <a href="https://cloud.ragflow.io">Cloud</a> |
-  <a href="https://ragflow.io/docs/dev/">Document</a> |
+  <a href="https://ragflow.io/docs/dev/">Documentation</a> |
   <a href="https://github.com/infiniflow/ragflow/issues/12241">Roadmap</a> |
   <a href="https://discord.gg/NjYzJD3GM3">Discord</a>
 </h4>
@@ -59,13 +59,13 @@
 
 - 💡 [What is RAGFlow?](#-what-is-ragflow)
 - 🎮 [Get Started](#-get-started)
-- 📌 [Latest Updates](#-latest-updates)
+- 🔥 [Latest Updates](#-latest-updates)
 - 🌟 [Key Features](#-key-features)
 - 🔎 [System Architecture](#-system-architecture)
 - 🎬 [Self-Hosting](#-self-hosting)
 - 🔧 [Configurations](#-configurations)
-- 🔧 [Build a Docker image](#-build-a-docker-image)
-- 🔨 [Launch service from source for development](#-launch-service-from-source-for-development)
+- 🔧 [Build a Docker Image](#-build-a-docker-image)
+- 🔨 [Launch Service from Source for Development](#-launch-service-from-source-for-development)
 - 📚 [Documentation](#-documentation)
 - 📜 [Roadmap](#-roadmap)
 - 🏄 [Community](#-community)
@@ -130,7 +130,7 @@ releases! 🌟
 
 ### 🍔 **Compatibility with heterogeneous data sources**
 
-- Supports Word, slides, excel, txt, images, scanned copies, structured data, web pages, and more.
+- Supports Word, Slides, Excel, TXT, images, scanned copies, structured data, web pages, and more.
 
 ### 🛀 **Automated and effortless RAG workflow**
 
@@ -299,7 +299,7 @@ RAGFlow uses Elasticsearch by default for storing full text and vectors. To swit
 > [!WARNING]
 > Switching to Infinity on a Linux/arm64 machine is not yet officially supported.
 
-## 🔧 Build a Docker image
+## 🔧 Build a Docker Image
 
 This image is approximately 2 GB in size and relies on external LLM and embedding services.
 
@@ -318,7 +318,7 @@ docker build --platform linux/amd64 \
   -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
-## 🔨 Launch service from source for development
+## 🔨 Launch Service from Source for Development
 
 > [!IMPORTANT]
 > After cloning the repository for the first time, run `git config --local --unset core.hooksPath`, `uv tool install lefthook` and `lefthook install` once from the repo root to enable local Git hooks.

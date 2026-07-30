@@ -49,7 +49,7 @@ func TestExcelProcessor_WriteThenRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewExcelProcessorComponent (write): %v", err)
 	}
-	out, err := w.Invoke(excelCtx(t), map[string]any{})
+	out, err := w.Invoke(excelCtx(t), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("write Invoke: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestExcelProcessor_WriteThenRead(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewExcelProcessorComponent (read): %v", err)
 	}
-	rout, err := r.Invoke(excelCtx(t), map[string]any{"bytes": raw})
+	rout, err := r.Invoke(excelCtx(t), nil, map[string]any{"bytes": raw})
 	if err != nil {
 		t.Fatalf("read Invoke: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestExcelProcessor_ReadSheetNames(t *testing.T) {
 	}
 
 	r, _ := NewExcelProcessorComponent(map[string]any{"operation": "read"})
-	out, err := r.Invoke(excelCtx(t), map[string]any{"bytes": buf.Bytes()})
+	out, err := r.Invoke(excelCtx(t), nil, map[string]any{"bytes": buf.Bytes()})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestExcelProcessor_EmptyFile(t *testing.T) {
 		"operation":   "write",
 		"output_data": [][]any{},
 	})
-	out, err := w.Invoke(excelCtx(t), map[string]any{})
+	out, err := w.Invoke(excelCtx(t), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("write Invoke: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestExcelProcessor_EmptyFile(t *testing.T) {
 	}
 
 	r, _ := NewExcelProcessorComponent(map[string]any{"operation": "read"})
-	rout, err := r.Invoke(excelCtx(t), map[string]any{"bytes": raw})
+	rout, err := r.Invoke(excelCtx(t), nil, map[string]any{"bytes": raw})
 	if err != nil {
 		t.Fatalf("read Invoke: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestExcelProcessor_ParamCheck(t *testing.T) {
 // surfaces a ParamError.
 func TestExcelProcessor_ReadMissingBytes(t *testing.T) {
 	r, _ := NewExcelProcessorComponent(map[string]any{"operation": "read"})
-	_, err := r.Invoke(excelCtx(t), map[string]any{})
+	_, err := r.Invoke(excelCtx(t), nil, map[string]any{})
 	if err == nil {
 		t.Fatal("expected error for missing bytes, got nil")
 	}

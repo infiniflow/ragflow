@@ -114,7 +114,6 @@ func (f *waitFakeAgentService) RunAgent(ctx context.Context, userID, canvasID, s
 	}), nil
 }
 
-func (f *waitFakeAgentService) CancelAgent(context.Context, string, string) error { return nil }
 func (f *waitFakeAgentService) PublishAgent(context.Context, string, string, *service.PublishAgentRequest) (*entity.UserCanvasVersion, error) {
 	return &entity.UserCanvasVersion{}, nil
 }

@@ -15,7 +15,10 @@
  */
 
 import { DynamicFormRef } from '@/components/dynamic-form';
+import message from '@/components/ui/message';
 import { IModelInfo } from '@/interfaces/request/llm';
+import { useTranslation } from 'react-i18next';
+import { LIST_MODEL_PROVIDERS } from '../provider-schema/constants';
 import {
   forwardRef,
   useEffect,
@@ -88,6 +91,7 @@ const GenericProviderInstanceCard = forwardRef<
   const formRef = useRef<DynamicFormRef>(null);
   // Mirror of the per-instance model list - written by ModelsSection
   // via `setModelInfo`, read by the payload builder.
+  const { t } = useTranslation();
   const modelInfoRef = useRef<IModelInfo[]>([]);
 
   // Provider-specific config: carries `verifyTransform` / `submitTransform`
@@ -123,7 +127,7 @@ const GenericProviderInstanceCard = forwardRef<
   const { baseUrlOptions } = useProviderBaseUrlOptions(providerName);
   const { instanceDetails } = useLazyInstanceDetails(
     providerName,
-    instance.instance_name,
+    instance.id,
     isDraft,
     open,
   );
@@ -134,6 +138,7 @@ const GenericProviderInstanceCard = forwardRef<
     instanceDetails,
     isDraft,
     baseUrlOptions,
+    providerConfig.echoTransform,
   );
   const { formFields, formDefaultValues } = useFormFields(
     providerName,
@@ -189,13 +194,21 @@ const GenericProviderInstanceCard = forwardRef<
         // catch it). For both drafts and saved cards, run the form's
         // own validation so errors surface in the UI.
         if (isDraft && !draftName.trim()) return false;
+        // List-model providers (list picker) require at least one selected model.
+        if (
+          LIST_MODEL_PROVIDERS.has(providerName) &&
+          modelInfoRef.current.length === 0
+        ) {
+          message.error(t('setting.selectModelBeforeVerify'));
+          return false;
+        }
         const isValid = await formRef.current?.trigger();
         return !!isValid;
       },
       getSavePayload,
       markSaved,
     }),
-    [isDraft, draftName, getSavePayload, markSaved],
+    [isDraft, draftName, getSavePayload, markSaved, providerName, t],
   );
 
   return (
@@ -217,6 +230,7 @@ const GenericProviderInstanceCard = forwardRef<
           modelInfoRef={modelInfoRef}
           draftName={draftName}
           setDraftName={setDraftName}
+          verifyTransform={providerConfig.verifyTransform}
         />
       ) : (
         <SavedModeCard
@@ -236,6 +250,7 @@ const GenericProviderInstanceCard = forwardRef<
           draftName={draftName}
           open={open}
           setOpen={setOpen}
+          verifyTransform={providerConfig.verifyTransform}
         />
       )}
     </div>

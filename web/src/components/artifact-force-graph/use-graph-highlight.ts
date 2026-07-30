@@ -7,14 +7,14 @@ import {
   HighlightLinkWidth,
 } from './node-style';
 import { type ArtifactGraphLink, type ArtifactGraphNode } from './types';
-import { withAlpha } from './utils';
+import { getBaseLinkColor, withAlpha } from './utils';
 
 type PaintNodeFn = NonNullable<
   ComponentProps<typeof ForceGraph2D>['nodeCanvasObject']
 >;
 
 export const useGraphHighlight = (
-  getBaseLinkColor: () => string,
+  containerRef: React.RefObject<HTMLElement>,
   pinnedNode?: ArtifactGraphNode | null,
 ) => {
   const [hoverNode, setHoverNode] = useState<ArtifactGraphNode | null>(null);
@@ -50,12 +50,12 @@ export const useGraphHighlight = (
 
   const getLinkColor = useCallback(
     (link: ArtifactGraphLink) => {
-      const baseColor = getBaseLinkColor();
+      const baseColor = getBaseLinkColor(containerRef.current);
       return activeNode && !highlightLinks.has(link)
         ? withAlpha(baseColor, DimmedAlpha)
         : baseColor;
     },
-    [getBaseLinkColor, activeNode, highlightLinks],
+    [containerRef, activeNode, highlightLinks],
   );
 
   const getLinkWidth = useCallback(

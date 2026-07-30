@@ -1,6 +1,6 @@
 """Research Agent — inner tool-calling loop for high/ultra modes.
 
-Native tool-calling: a chat model deep-copied from ``tools.chat_mdl`` is bound
+Native tool-calling: a chat model cloned from ``tools.chat_mdl`` is bound
 (via ``bind_tools``) to the phase-gated tool schemas plus ``think_tool`` /
 ``generate_report``, and a lightweight session routes each tool call to the
 harness pipeline. Binding onto a *copy* keeps the shared ``tools.chat_mdl``
@@ -14,7 +14,6 @@ that the loop parses.
 import json
 import logging
 import re
-from copy import deepcopy
 
 from rag.advanced_rag.harness.types import ClaimTarget, ExecutionStrategy, ToolResult
 from rag.advanced_rag.harness.pipeline import Pipeline
@@ -32,6 +31,11 @@ from rag.advanced_rag.harness.prompts.research_agent_prompt import (
 _LOG = logging.getLogger(__name__)
 
 
+# Navigation tools that return passages (evidence chunks). After one of these
+# runs, we judge sufficiency before the agent broadens into a full search.
+_NAV_CHUNK_TOOLS = {"ontology_navigate", "mindmap_navigate"}
+
+
 class ResearchToolSession:
     """ToolCallSession adapter routing native tool calls to the harness pipeline.
 
@@ -41,9 +45,10 @@ class ResearchToolSession:
       return its structured arguments as the claim result.
     """
 
-    def __init__(self, pipeline: Pipeline, phase: str):
+    def __init__(self, pipeline: Pipeline, phase: str, claim: ClaimTarget | None = None):
         self.pipeline = pipeline
         self.phase = phase
+        self.claim = claim
         self.report: dict | None = None
         self.got_evidence = False
         self.evidence_ids: list[int] = []
@@ -60,7 +65,33 @@ class ResearchToolSession:
         if result.chunks:
             self.got_evidence = True
             self._record_evidence_ids(result.chunks)
-        return _fmt_tool_result(result)
+        message = _fmt_tool_result(result)
+        # Post-navigation sufficiency gate: once a navigation tool has returned
+        # passages, decide whether they already answer the task and, if so, steer
+        # the agent to finalize instead of running a broader (noisier) search.
+        if name in _NAV_CHUNK_TOOLS and result.chunks and self.claim is not None:
+            if await self._navigation_sufficient(result.chunks):
+                ev = ", ".join(str(i) for i in self.evidence_ids) or "the passages above"
+                message += f"\n\n[sufficiency check] These passages appear to answer the task. Call generate_report now with evidence_ids=[{ev}] — do not run further searches."
+        return message
+
+    async def _navigation_sufficient(self, chunks: list[dict]) -> bool:
+        """One-shot LLM judge: do the given passages already answer the claim?"""
+        try:
+            passages = "\n\n".join((c.get("content_with_weight") or c.get("text") or "")[:500] for c in chunks[:8])
+            if not passages.strip():
+                return False
+            system = "Judge whether the passages already contain enough information to answer the task. Reply with a single word: YES or NO."
+            user = f"Task:\n{self.claim.description}\n\nPassages:\n{passages}\n\nAnswer (YES or NO):"
+            ans = await self.pipeline.tools.chat_mdl.async_chat(system, [{"role": "user", "content": user}], {"temperature": 0.0})
+            if isinstance(ans, tuple):
+                ans = ans[0]
+            ans = re.sub(r"^.*</think>", "", ans or "", flags=re.DOTALL)
+            _LOG.exception("[Navigation] sufficiency check: %s", ans)
+            return ans.strip().lower().startswith("yes")
+        except Exception:
+            _LOG.exception("[Navigation] sufficiency check failed")
+            return False
 
     def _normalize_report(self, report: dict) -> dict:
         normalized = dict(report)
@@ -123,10 +154,11 @@ async def research_agent_loop(
         available_tools=mode.available_tools,
         compilation_map=compilation_map,
         context=context,
+        has_routed_scope=bool(getattr(pipeline, "_routed_docs", None)),
     )
 
-    # Deep-copy so binding tools never leaks onto the shared chat model.
-    agent_mdl = deepcopy(tools.chat_mdl)
+    # Clone so binding tools never leaks onto the shared chat model.
+    agent_mdl = tools.chat_mdl.clone()
     if getattr(agent_mdl, "is_tools", False):
         return await _research_native(claim, agent_mdl, pipeline, phase, phase_config, gated_defs, mode)
 
@@ -145,7 +177,7 @@ async def _research_native(
 ) -> dict:
     """Bind tools onto ``agent_mdl`` and let its native tool loop drive research."""
     schemas = _build_tool_schemas(gated_defs)
-    session = ResearchToolSession(pipeline, phase)
+    session = ResearchToolSession(pipeline, phase, claim)
     agent_mdl.bind_tools(session, schemas)
     # Bound the model's internal tool loop to the mode's agent-cycle budget.
     if hasattr(agent_mdl, "mdl") and hasattr(agent_mdl.mdl, "max_rounds"):
@@ -339,7 +371,7 @@ def _fmt_tool_result(result: ToolResult) -> str:
     if result.error:
         return f"[tool error] {result.error}"
     parts: list[str] = []
-    # Some tools (catalog_navigate, structured_query) answer directly rather than
+    # Some tools (ontology_navigate, structured_query) answer directly rather than
     # only returning passages — surface that, or the agent never sees it.
     answer = (result.metadata or {}).get("answer") if isinstance(result.metadata, dict) else ""
     if answer:

@@ -172,7 +172,7 @@ func TestPollCancel_ExitsWhenDoneClosed(t *testing.T) {
 	// Block cancelCheck until released — simulate a stuck DB call.
 	blocking := make(chan struct{})
 	released := make(chan struct{})
-	ingestor.cancelCheck = func(taskID string) bool {
+	ingestor.cancelCheck = func(ctx context.Context, taskID string) bool {
 		close(blocking)
 		<-released
 		return false

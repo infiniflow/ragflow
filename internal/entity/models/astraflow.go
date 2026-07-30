@@ -139,7 +139,8 @@ func (a *AstraflowModel) ChatWithMessages(ctx context.Context, modelName string,
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -151,6 +152,7 @@ func (a *AstraflowModel) ChatWithMessages(ctx context.Context, modelName string,
 	return &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}, nil
 }
 
@@ -205,6 +207,7 @@ func (a *AstraflowModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	}
 
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		if apiErr, ok := event["error"]; ok {
 			return fmt.Errorf("astraflow: upstream stream error: %v", apiErr)
@@ -219,6 +222,7 @@ func (a *AstraflowModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 			return nil
 		}
 		if delta, ok := firstChoice["delta"].(map[string]interface{}); ok {
+			accumulateToolCallDeltas(delta, accumulatedToolCalls)
 			if r, ok := delta["reasoning_content"].(string); ok && r != "" {
 				rr := r
 				if err := sender(nil, &rr); err != nil {
@@ -240,6 +244,7 @@ func (a *AstraflowModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 	if !done && !sawTerminal {
 		return fmt.Errorf("astraflow: stream ended before [DONE] or finish_reason")
 	}

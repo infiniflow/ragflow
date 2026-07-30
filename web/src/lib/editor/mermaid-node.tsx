@@ -3,7 +3,7 @@
  * Ported from Nimbalyst — supports click-to-edit source code.
  */
 
-/* eslint-disable @typescript-eslint/no-unused-vars */
+/* oxlint-disable typescript/no-unused-vars */
 
 import { addClassNamesToElement } from '@lexical/utils';
 import type {

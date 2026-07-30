@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/xuri/excelize/v2"
+	"gorm.io/gorm"
 
 	"github.com/cespare/xxhash/v2"
 	eschema "github.com/cloudwego/eino/schema"
@@ -134,7 +135,7 @@ func (c *boundedTagCache) markRecentLocked(key string) {
 
 var tagSourceFileIndexCache = newBoundedTagCache(tagSourceCacheMax)
 
-func (c *ExtractorComponent) runAutoTags(ctx context.Context, in extractorInputs) ([]map[string]any, error) {
+func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in extractorInputs) ([]map[string]any, error) {
 	indexed, ok := c.resolveTagSource(ctx)
 	if !ok || len(in.chunks) == 0 {
 		common.Info("extractor tags: skipped",
@@ -165,13 +166,13 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, in extractorInputs
 		matched := matchAndTagChunk(d, indexed.examples, indexed.tagTokens, indexed.allTags, topN)
 		if matched != nil {
 			examples = append(examples, *matched)
-		} else if in.llmID != "" {
+		} else {
 			docsToTag = append(docsToTag, d)
 		}
 	}
 
-	if len(docsToTag) > 0 && in.llmID != "" {
-		driver, model, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, in.llmID)
+	if len(docsToTag) > 0 {
+		driver, model, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
 		if err != nil {
 			common.Warn("extractor tag: resolve model failed, skipping LLM tagging", zap.Error(err))
 		}
@@ -224,7 +225,7 @@ func (c *ExtractorComponent) resolveTagSource(ctx context.Context) (*indexedTagS
 }
 
 func (c *ExtractorComponent) loadTagFileIndexed(ctx context.Context) (*indexedTagSource, bool) {
-	f, err := dao.NewFileDAO().GetByID(c.Param.TagFileID)
+	f, err := dao.NewFileDAO().GetByID(ctx, dao.DB, c.Param.TagFileID)
 	if err != nil || f == nil || f.Location == nil || *f.Location == "" {
 		common.Warn(fmt.Sprintf("extractor tags: resolve tag_file_id %q: %v", c.Param.TagFileID, err))
 		return nil, false
@@ -727,7 +728,7 @@ func buildTaggerPrompt(topN int, tagSetStr string, examples []schema.TaggedChunk
 
 func parseTaggerResponse(raw string, topN int) map[string]int {
 	raw = strings.TrimSpace(raw)
-	if idx := strings.Index(raw, "</think>"); idx >= 0 {
+	if idx := strings.LastIndex(raw, "</think>"); idx >= 0 {
 		raw = strings.TrimSpace(raw[idx+len("</think>"):])
 	}
 	if strings.Contains(raw, "**ERROR**") {

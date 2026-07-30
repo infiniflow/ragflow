@@ -178,6 +178,7 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	searchConfig := map[string]interface{}{}
 	modelTenantID := user.ID
 	if req.SearchID != "" {
@@ -185,7 +186,7 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 			jsonInternalError(c, fmt.Errorf("search service not configured"))
 			return
 		}
-		detail, err := h.searchSvc.GetDetail(req.SearchID)
+		detail, err := h.searchSvc.GetDetail(ctx, req.SearchID)
 		if err != nil {
 			jsonInternalError(c, err)
 			return
@@ -202,7 +203,7 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		return
 	}
 
-	mindMap, err := runMindMap(mindMapRunConfig{
+	mindMap, err := runMindMap(ctx, mindMapRunConfig{
 		Question:      req.Question,
 		KbIDs:         kbIDs,
 		SearchID:      req.SearchID,
@@ -237,7 +238,7 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 	ctx := c.Request.Context()
 	if err := h.chatService.DeleteChat(ctx, userID, chatID); err != nil {
 		if err.Error() == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 			return
 		}
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
@@ -271,7 +272,7 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 		if req.ChatID != "" {
 			if err := h.chatService.DeleteChat(ctx, userID, req.ChatID); err != nil {
 				if err.Error() == "no authorization" {
-					common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
+					common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 					return
 				}
 				common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
@@ -337,7 +338,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 		errMsg := err.Error()
 		// Check if it's an authorization error
 		if errMsg == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 			return
 		}
 		// Not found error
@@ -419,7 +420,7 @@ func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
 	}
 	if err != nil {
 		if err.Error() == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 			return
 		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())

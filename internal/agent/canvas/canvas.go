@@ -38,8 +38,8 @@ var legacyNoOpNames = map[string]bool{
 type CanvasState = runtime.CanvasState
 
 // NewCanvasState re-exports runtime.NewCanvasState.
-func NewCanvasState(runID, taskID string) *CanvasState {
-	return runtime.NewCanvasState(runID, taskID)
+func NewCanvasState(runID, sessionID string) *CanvasState {
+	return runtime.NewCanvasState(runID, sessionID)
 }
 
 // Canvas is the in-memory DSL representation loaded from a user_canvas row.

@@ -137,7 +137,8 @@ func (d *DeepInfraModel) ChatWithMessages(ctx context.Context, modelName string,
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -216,6 +217,7 @@ func (d *DeepInfraModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	}
 
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
 
@@ -233,6 +235,8 @@ func (d *DeepInfraModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 		if !ok {
 			return nil
 		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		reasoningContent, ok := delta["reasoning_content"].(string)
 		if ok && reasoningContent != "" {
@@ -257,6 +261,7 @@ func (d *DeepInfraModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
 	if !done && !sawTerminal {
 		return fmt.Errorf("deepinfra: stream ended before [DONE] or finish_reason")
 	}

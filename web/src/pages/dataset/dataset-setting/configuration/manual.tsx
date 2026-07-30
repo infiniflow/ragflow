@@ -15,7 +15,9 @@ export function ManualConfiguration() {
   return (
     <MainContainer>
       <ConfigurationFormContainer>
-        <LayoutRecognizeFormField ownerTenantId={ownerTenantId}></LayoutRecognizeFormField>
+        <LayoutRecognizeFormField
+          ownerTenantId={ownerTenantId}
+        ></LayoutRecognizeFormField>
       </ConfigurationFormContainer>
 
       <ConfigurationFormContainer>

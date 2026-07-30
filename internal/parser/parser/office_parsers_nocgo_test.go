@@ -3,13 +3,12 @@
 package parser
 
 import (
-	"context"
 	"errors"
 	"testing"
 )
 
 func TestOfficeParsers_ParseWithResult_NoCGO(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	cases := []struct {
 		name string
 		res  ParseResult

@@ -44,7 +44,7 @@ import (
 
 type fixedEmbedder struct{}
 
-func (fixedEmbedder) MaxTokens() int { return 0 }
+func (fixedEmbedder) MaxTokens() int { return 2048 }
 
 func (fixedEmbedder) Encode(ctx context.Context, texts []string) ([]componentpkg.EmbeddingResult, error) {
 	out := make([]componentpkg.EmbeddingResult, 0, len(texts))
@@ -811,6 +811,9 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			if templateUsesComponent(t, templateBytes, "TagChunker") {
 				t.Skip("template uses TagChunker which requires tag-structured content and parser setups not available for generic .md input; covered separately")
 			}
+			if templateUsesComponent(t, templateBytes, "KnowledgeCompiler") {
+				t.Skip("template uses KnowledgeCompiler which requires LLM/embedder/ES wiring not available in the headless smoke run; covered by the knowledge_compiler component E2E tests")
+			}
 			terminalIDs := terminalComponentIDsFromTemplate(t, templateBytes)
 			if len(terminalIDs) != 1 {
 				t.Fatalf("terminal ids = %v, want exactly 1 terminal", terminalIDs)
@@ -842,7 +845,7 @@ func attachFixedEmbedderFactory(t *testing.T, pipe *Pipeline) {
 	t.Helper()
 	pipe.WithComponentFactory(func(name string, params map[string]any) (runtime.Component, error) {
 		if name == componentpkg.ComponentNameTokenizer {
-			return componentpkg.NewTokenizerComponentWithResolver(params, func(_, _, _ string) (componentpkg.Embedder, error) {
+			return componentpkg.NewTokenizerComponentWithResolver(params, func(ctx context.Context, _, _, _ string) (componentpkg.Embedder, error) {
 				return fixedEmbedder{}, nil
 			})
 		}

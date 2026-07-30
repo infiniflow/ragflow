@@ -32,6 +32,8 @@ import (
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
 	"ragflow/internal/utility/oauth"
+
+	"gorm.io/gorm"
 )
 
 // Sentinel errors surfaced by the OAuth login + callback endpoints. The
@@ -169,7 +171,7 @@ func (s *UserService) OAuthCallback(ctx context.Context, channel, code, callback
 		return nil, common.CodeDataError, ErrOAuthEmailMissing
 	}
 
-	existing, err := s.userDAO.GetByEmail(info.Email)
+	existing, err := s.userDAO.GetByEmail(ctx, dao.DB, info.Email)
 	if err == nil && existing != nil {
 		if existing.IsActive == "0" {
 			return nil, common.CodeForbidden, ErrOAuthUserInactive
@@ -178,14 +180,14 @@ func (s *UserService) OAuthCallback(ctx context.Context, channel, code, callback
 		existing.AccessToken = &newToken
 		now := time.Now().Truncate(time.Second)
 		existing.LastLoginTime = &now
-		if uerr := s.userDAO.Update(existing); uerr != nil {
-			return nil, common.CodeServerError, fmt.Errorf("update user: %w", uerr)
+		if err = s.userDAO.Update(ctx, dao.DB, existing); err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("update user: %w", err)
 		}
 		return &OAuthCallbackResult{User: existing, IsNewUser: false}, common.CodeSuccess, nil
 	}
 
 	// New user — register a fresh account bound to this channel.
-	created, ecode, cerr := s.registerOAuthUser(channel, info)
+	created, ecode, cerr := s.registerOAuthUser(ctx, channel, info)
 	if cerr != nil {
 		return nil, ecode, cerr
 	}
@@ -195,7 +197,7 @@ func (s *UserService) OAuthCallback(ctx context.Context, channel, code, callback
 // registerOAuthUser provisions a new user + tenant for an OAuth identity.
 // Models the relevant fields the email-password Register path sets so the
 // rest of the app (kbs, files, llm config) sees a fully-shaped tenant.
-func (s *UserService) registerOAuthUser(channel string, info *oauth.UserInfo) (*entity.User, common.ErrorCode, error) {
+func (s *UserService) registerOAuthUser(ctx context.Context, channel string, info *oauth.UserInfo) (*entity.User, common.ErrorCode, error) {
 	cfg := server.GetConfig()
 	userID := utility.GenerateToken()
 	accessToken := utility.GenerateToken()
@@ -260,24 +262,25 @@ func (s *UserService) registerOAuthUser(channel string, info *oauth.UserInfo) (*
 	userTenantDAO := dao.NewUserTenantDAO()
 	fileDAO := dao.NewFileDAO()
 
-	if err := s.userDAO.Create(user); err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("Failed to register %s: %w", info.Email, err)
+	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.userDAO.Create(ctx, tx, user); err != nil {
+			return fmt.Errorf("failed to register %s: %w", info.Email, err)
+		}
+		if err := tenantDAO.Create(ctx, tx, tenant); err != nil {
+			return fmt.Errorf("failed to register %s: %w", info.Email, err)
+		}
+		if err := userTenantDAO.Create(ctx, tx, userTenant); err != nil {
+			return fmt.Errorf("failed to register %s: %w", info.Email, err)
+		}
+		if err := fileDAO.Create(ctx, tx, rootFile); err != nil {
+			return fmt.Errorf("failed to register %s: %w", info.Email, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, common.CodeServerError, err
 	}
-	if err := tenantDAO.Create(tenant); err != nil {
-		_ = s.userDAO.DeleteByID(userID)
-		return nil, common.CodeServerError, fmt.Errorf("Failed to register %s: %w", info.Email, err)
-	}
-	if err := userTenantDAO.Create(userTenant); err != nil {
-		_ = s.userDAO.DeleteByID(userID)
-		_ = tenantDAO.Delete(userID)
-		return nil, common.CodeServerError, fmt.Errorf("Failed to register %s: %w", info.Email, err)
-	}
-	if err := fileDAO.Create(rootFile); err != nil {
-		_ = s.userDAO.DeleteByID(userID)
-		_ = tenantDAO.Delete(userID)
-		_ = userTenantDAO.Delete(userTenantID)
-		return nil, common.CodeServerError, fmt.Errorf("Failed to register %s: %w", info.Email, err)
-	}
+
 	return user, common.CodeSuccess, nil
 }
 

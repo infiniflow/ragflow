@@ -136,7 +136,7 @@ async def update(search_id):
         return get_data_error_result(message="Authorized identity.")
 
     if not SearchService.accessible4deletion(search_id, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         search_app = SearchService.query(tenant_id=current_user.id, id=search_id)[0]
@@ -181,7 +181,7 @@ async def update(search_id):
 @login_required
 def delete_search(search_id):
     if not SearchService.accessible4deletion(search_id, current_user.id):
-        return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     try:
         if not SearchService.delete_by_id(search_id):
@@ -199,7 +199,7 @@ async def completion(search_id):
     if not SearchService.accessible4deletion(search_id, current_user.id):
         return get_json_result(
             data=False,
-            message="No authorization.",
+            message="no authorization",
             code=RetCode.AUTHENTICATION_ERROR,
         )
 

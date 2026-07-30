@@ -17,7 +17,6 @@
 package component
 
 import (
-	"context"
 	"strings"
 	"testing"
 
@@ -89,7 +88,7 @@ func TestFileComponent_Invoke_HappyPath(t *testing.T) {
 	}
 
 	c := &FileComponent{}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"file":   []map[string]any{{"name": "file.txt"}},
 		"bucket": "bucketA",
 		"path":   "path/to/file.txt",
@@ -135,7 +134,7 @@ func TestFileComponent_Invoke_ResolvesDocIDViaDocumentLocation(t *testing.T) {
 	}
 
 	c := &FileComponent{}
-	out, err := c.Invoke(context.Background(), map[string]any{"doc_id": "doc-loc"})
+	out, err := c.Invoke(t.Context(), db, map[string]any{"doc_id": "doc-loc"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -192,7 +191,7 @@ func TestFileComponent_Invoke_ResolvesDocIDViaFileMapping(t *testing.T) {
 	}
 
 	c := &FileComponent{}
-	out, err := c.Invoke(context.Background(), map[string]any{"doc_id": "doc-file"})
+	out, err := c.Invoke(t.Context(), db, map[string]any{"doc_id": "doc-file"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -223,7 +222,7 @@ func TestFileComponent_Invoke_DocIDWithoutStorageLocationStillSucceeds(t *testin
 	}
 
 	c := &FileComponent{}
-	out, err := c.Invoke(context.Background(), map[string]any{"doc_id": "doc-empty"})
+	out, err := c.Invoke(t.Context(), db, map[string]any{"doc_id": "doc-empty"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -237,7 +236,7 @@ func TestFileComponent_Invoke_DocIDWithoutStorageLocationStillSucceeds(t *testin
 func TestFileComponent_Invoke_MissingDoc(t *testing.T) {
 	withMemoryStorage(t)
 	c := &FileComponent{}
-	_, err := c.Invoke(context.Background(), map[string]any{})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{})
 	if err == nil {
 		t.Fatal("expected error for empty inputs, got nil")
 	}
@@ -255,7 +254,7 @@ func TestFileComponent_Invoke_IncludesCheckpointPath(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 	c := &FileComponent{}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"file":   []map[string]any{{"name": "checkpoint.bin"}},
 		"bucket": "b",
 		"path":   wantPath,

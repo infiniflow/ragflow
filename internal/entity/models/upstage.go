@@ -127,7 +127,8 @@ func (u *UpstageModel) ChatWithMessages(ctx context.Context, modelName string, m
 	}
 
 	content, ok := messageMap["content"].(string)
-	if !ok {
+	toolCalls := extractToolCalls(messageMap)
+	if !ok && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("invalid content format")
 	}
 
@@ -139,6 +140,7 @@ func (u *UpstageModel) ChatWithMessages(ctx context.Context, modelName string, m
 	return &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
+		ToolCalls:     toolCalls,
 	}, nil
 }
 
@@ -199,6 +201,7 @@ func (u *UpstageModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
@@ -214,6 +217,8 @@ func (u *UpstageModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		if !ok {
 			return nil
 		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		if r, ok := delta["reasoning"].(string); ok && r != "" {
 			if err := sender(nil, &r); err != nil {
@@ -240,6 +245,8 @@ func (u *UpstageModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	if !done && !sawTerminal {
 		return fmt.Errorf("upstage: stream ended before [DONE] or finish_reason")
 	}
+
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	endOfStream := "[DONE]"
 	if err := sender(&endOfStream, nil); err != nil {

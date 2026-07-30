@@ -408,7 +408,9 @@ func (r *stagehandRuntime) RunTask(ctx context.Context, req RunTaskRequest) (str
 		// Best-effort End. The deferred call's error is intentionally
 		// dropped — the agent result has already been returned; the
 		// End failure is logged by the stagehand server.
-		_, _ = client.Sessions.End(context.Background(), sessionID, stagehand.SessionEndParams{})
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_, _ = client.Sessions.End(cleanupCtx, sessionID, stagehand.SessionEndParams{})
 	}()
 
 	// Sessions.Execute runs the multi-step agent. MaxSteps defaults
@@ -558,7 +560,9 @@ func (r *stagehandRuntime) RunExtract(ctx context.Context, req RunExtractRequest
 	}
 	sessionID := startResp.Data.SessionID
 	defer func() {
-		_, _ = client.Sessions.End(context.Background(), sessionID, stagehand.SessionEndParams{})
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_, _ = client.Sessions.End(cleanupCtx, sessionID, stagehand.SessionEndParams{})
 	}()
 
 	// Optional: navigate to the target URL before extracting.

@@ -81,7 +81,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 
 	// Set log level
 	var gormLogLevel gormLogger.LogLevel
-	if cfg.Server.Mode == "debug" {
+	if cfg.General.Mode == "debug" {
 		gormLogLevel = gormLogger.Info
 	} else {
 		gormLogLevel = gormLogger.Silent
@@ -157,6 +157,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.IngestionTaskLog{},
 		&entity.FileCommit{},
 		&entity.FileCommitItem{},
+		&entity.KnowledgeCompileDoc{},
 	}
 
 	if migrateDB {
@@ -217,7 +218,7 @@ func GetModelProviderManager() *models.ProviderManager {
 	if err != nil {
 		common.Fatal("Failed to locate model providers", zap.Error(err))
 	}
-	if err := models.InitProviderManager(modelConfigDir); err != nil {
+	if err = models.InitProviderManager(modelConfigDir); err != nil {
 		common.Fatal("Failed to load model providers", zap.Error(err))
 	}
 	modelProviderManager = models.GetProviderManager()

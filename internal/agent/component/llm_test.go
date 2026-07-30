@@ -21,6 +21,7 @@ import (
 	"ragflow/internal/entity"
 
 	"github.com/cloudwego/eino/schema"
+	"gorm.io/gorm"
 )
 
 // stubInvoker is a programmable ChatInvoker used by these tests.
@@ -31,7 +32,7 @@ type stubInvoker struct {
 	calls    int
 }
 
-func (s *stubInvoker) Invoke(_ context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+func (s *stubInvoker) Invoke(_ context.Context, _ *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	s.calls++
 	cp := req
 	s.captured = &cp
@@ -54,7 +55,7 @@ func TestLLM_Invoke_HappyPath(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo-model"})
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"user_prompt": "hi",
 	})
 	if err != nil {
@@ -85,7 +86,7 @@ func TestLLM_Invoke_JSONOutput(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"user_prompt": "give me json",
 		"json_output": true,
 	})
@@ -109,7 +110,7 @@ func TestLLM_Invoke_SystemAndUser(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"system_prompt": "you are helpful",
 		"user_prompt":   "say hi",
 	})
@@ -132,7 +133,7 @@ func TestLLM_Stream(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	ch, err := c.Stream(context.Background(), map[string]any{"user_prompt": "go"})
+	ch, err := c.Stream(t.Context(), nil, map[string]any{"user_prompt": "go"})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestLLM_Stream(t *testing.T) {
 func TestLLM_Invoke_MissingModelID(t *testing.T) {
 	withStubInvoker(t, &stubInvoker{resp: &ChatInvokeResponse{Content: "should not be called"}})
 	c := NewLLMComponent(LLMParam{}) // no model_id
-	_, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected ParamError for missing model_id")
 	}
@@ -170,7 +171,7 @@ func TestLLM_Invoke_InvokerError(t *testing.T) {
 	stub := &stubInvoker{err: errors.New("upstream blew up")}
 	withStubInvoker(t, stub)
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "x"})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "x"})
 	if err == nil {
 		t.Fatal("expected error to propagate")
 	}
@@ -298,7 +299,7 @@ func TestLLM_ResolvesTenantModelID(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "3d2d824e7e5d11f1a845455b140cef90"})
-	_, err := c.Invoke(stateWithTenant("tenant-1"), map[string]any{"user_prompt": "hi"})
+	_, err := c.Invoke(stateWithTenant("tenant-1"), db, map[string]any{"user_prompt": "hi"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	_ "ragflow/internal/agent/component" // registers the production factory
 	agentruntime "ragflow/internal/agent/runtime"
@@ -329,7 +330,7 @@ func TestDebugComponent_HappyPath_Begin(t *testing.T) {
 
 type sysEchoComponent struct{}
 
-func (s *sysEchoComponent) Invoke(ctx context.Context, _ map[string]any) (map[string]any, error) {
+func (s *sysEchoComponent) Invoke(ctx context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	state, _, err := agentruntime.GetStateFromContext[*agentruntime.CanvasState](ctx)
 	if err != nil {
 		return nil, err

@@ -17,6 +17,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { useParams } from 'react-router';
 
+import { ViewMode } from './constants';
 import CompilationEmptyState from './empty-state';
 import { useCompilationSkill } from './hooks/use-compilation-skill';
 import { CompilationLoadingCard } from './loading-card';
@@ -56,7 +57,7 @@ export function SkillsView() {
   if (isEmpty) {
     return (
       <CompilationEmptyState
-        type="skills"
+        type={ViewMode.Skills}
         disabled={!canGenerate}
         data={skillRunData}
       />

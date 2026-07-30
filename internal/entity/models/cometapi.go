@@ -287,29 +287,43 @@ func (c *CometAPIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	}
 
 	sawTerminal := false
-	done, err := ParseSSEStream[cometapiChatResponsePayload](resp.Body, func(event cometapiChatResponsePayload) error {
-		if len(event.Choices) == 0 {
+	accumulatedToolCalls := make(map[int]map[string]any)
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+		choices, ok := event["choices"].([]interface{})
+		if !ok || len(choices) == 0 {
 			return nil
 		}
-		choice := event.Choices[0]
-		reasoningContent := choice.Delta.ReasoningContent
-		content := choice.Delta.Content
 
-		if reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
+		firstChoice, ok := choices[0].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+
+		delta, ok := firstChoice["delta"].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
+
+		reasoningContent, ok := delta["reasoning_content"].(string)
+		if ok && reasoningContent != "" {
+			if err = sender(nil, &reasoningContent); err != nil {
 				return err
 			}
 		}
 
-		if content != "" {
-			if err := sender(&content, nil); err != nil {
+		content, ok := delta["content"].(string)
+		if ok && content != "" {
+			if err = sender(&content, nil); err != nil {
 				return err
 			}
 		}
 
-		if choice.FinishReason != "" {
+		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
 			sawTerminal = true
 		}
+
 		return nil
 	})
 	if err != nil {
@@ -318,6 +332,8 @@ func (c *CometAPIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	if !done && !sawTerminal {
 		return fmt.Errorf("cometapi: stream ended before [DONE] or finish_reason")
 	}
+
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
 
 	endOfStream := "[DONE]"
 	if err := sender(&endOfStream, nil); err != nil {

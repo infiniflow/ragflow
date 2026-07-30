@@ -58,3 +58,10 @@ func (dao *ChatChannelDAO) ListByTenantID(ctx context.Context, db *gorm.DB, tena
 
 	return results, err
 }
+
+// ListActive returns all enabled chat-channel rows for the runtime reconciler.
+func (dao *ChatChannelDAO) ListActive(ctx context.Context, db *gorm.DB) ([]*entity.ChatChannel, error) {
+	rows := make([]*entity.ChatChannel, 0)
+	err := db.WithContext(ctx).Where("status = ?", 1).Find(&rows).Error
+	return rows, err
+}

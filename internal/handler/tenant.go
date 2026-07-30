@@ -75,7 +75,8 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 		return
 	}
 
-	err := h.tenantService.SetTenantDefaultModels(user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType, req.ModelID)
+	ctx := c.Request.Context()
+	err := h.tenantService.SetTenantDefaultModels(ctx, user.ID, req.ModelProvider, req.ModelInstance, req.ModelName, req.ModelType, req.ModelID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -100,8 +101,9 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
+	ctx := c.Request.Context()
 
-	defaultModels, err := h.tenantService.ListTenantDefaultModels(user.ID)
+	defaultModels, err := h.tenantService.ListTenantDefaultModels(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -121,8 +123,6 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 // @Summary Get Tenant Information
 // @Description Get current user's tenant information (owner tenant)
 // @Tags tenants
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/tenant_info [get]
@@ -132,8 +132,9 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
+	ctx := c.Request.Context()
 
-	tenantInfo, err := h.tenantService.GetTenantInfo(user.ID)
+	tenantInfo, err := h.tenantService.GetTenantInfo(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -151,8 +152,6 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 // @Summary Get Tenant List
 // @Description Get all tenants that the current user belongs to
 // @Tags tenants
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/tenant/list [get]
@@ -162,8 +161,9 @@ func (h *TenantHandler) TenantList(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
+	ctx := c.Request.Context()
 
-	tenantList, err := h.tenantService.GetTenantList(user.ID)
+	tenantList, err := h.tenantService.GetTenantList(ctx, user.ID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
 		return
@@ -257,9 +257,10 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Check authorization - user must have access to this kb
-	if !h.datasetService.Accessible(req.KBID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+	if !h.datasetService.Accessible(ctx, req.KBID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
@@ -267,7 +268,7 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 		KBID:       req.KBID,
 		VectorSize: req.VectorSize,
 	}
-	result, code, err := h.tenantService.CreateChunkStore(serviceReq)
+	result, code, err := h.tenantService.CreateChunkStore(ctx, serviceReq)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -298,6 +299,7 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	var req DeleteChunkTableRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
@@ -305,12 +307,12 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	}
 
 	// Check authorization
-	if !h.datasetService.Accessible(req.KBID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization.")
+	if !h.datasetService.Accessible(ctx, req.KBID, user.ID) {
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
 		return
 	}
 
-	code, err := h.tenantService.DeleteChunkStore(req.KBID)
+	code, err := h.tenantService.DeleteChunkStore(ctx, req.KBID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -324,11 +326,9 @@ type InsertChunksFromFileRequest struct {
 	FilePath string `json:"file_path" binding:"required"`
 }
 
-// @Summary Insert chunks into dataset from JSON file
+// InsertChunksFromFile @Summary Insert chunks into dataset from JSON file
 // @Description Internal: Insert chunks into dataset table from a JSON file
 // @Tags tenants
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Param request body InsertChunksFromFileRequest true "insert chunks request"
 // @Success 200 {object} map[string]interface{}
@@ -402,11 +402,9 @@ type InsertMetadataFromFileRequest struct {
 	FilePath string `json:"file_path" binding:"required"`
 }
 
-// @Summary Insert document metadata from JSON file
+// InsertMetadataFromFile @Summary Insert document metadata from JSON file
 // @Description Internal: Insert metadata into tenant's metadata table from a JSON file
 // @Tags tenants
-// @Accept json
-// @Produce json
 // @Security ApiKeyAuth
 // @Param request body InsertMetadataFromFileRequest true "insert metadata request"
 // @Success 200 {object} map[string]interface{}
@@ -430,10 +428,10 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 	}
 
 	// Read the JSON file
-	// JSON file path the operator configured (tenant import flow). The
+	// codeql[go/path-injection] False positive: req.FilePath is the
+	// path the operator configured (tenant import flow). The
 	// OS access check enforces permissions, and the handler is gated
 	// to admin/owner roles upstream.
-	// codeql[go/path-injection] False positive: req.FilePath is the
 	data, err := os.ReadFile(req.FilePath)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to read file: "+err.Error())
@@ -472,7 +470,6 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 // ListTenantMembers lists all non-owner members of a tenant.
 // @Summary List tenant members
 // @Tags tenants
-// @Produce json
 // @Param tenant_id path string true "Tenant ID"
 // @Router /api/v1/tenants/{tenant_id}/users [get]
 func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
@@ -488,7 +485,8 @@ func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 		return
 	}
 
-	members, code, err := h.tenantService.ListMembers(user.ID, tenantID)
+	ctx := c.Request.Context()
+	members, code, err := h.tenantService.ListMembers(ctx, user.ID, tenantID)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
@@ -523,7 +521,8 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 		return
 	}
 
-	resp, code, err := h.tenantService.AddMember(user.ID, tenantID, &req)
+	ctx := c.Request.Context()
+	resp, code, err := h.tenantService.AddMember(ctx, user.ID, tenantID, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
@@ -534,8 +533,6 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 // RemoveTenantMember removes a user from the tenant.
 // @Summary Remove a user from a tenant
 // @Tags tenants
-// @Accept json
-// @Produce json
 // @Param tenant_id path string true "Tenant ID"
 // @Param request body object true "Remove member request" SchemaExample({"user_id":"string"})
 // @Router /api/v1/tenants/{tenant_id}/users [delete]
@@ -560,7 +557,8 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 		return
 	}
 
-	code, err := h.tenantService.RemoveMember(user.ID, tenantID, body.UserID)
+	ctx := c.Request.Context()
+	code, err := h.tenantService.RemoveMember(ctx, user.ID, tenantID, body.UserID)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
@@ -587,7 +585,8 @@ func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 		return
 	}
 
-	code, err := h.tenantService.AcceptInvite(user.ID, tenantID)
+	ctx := c.Request.Context()
+	code, err := h.tenantService.AcceptInvite(ctx, user.ID, tenantID)
 	if err != nil {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return

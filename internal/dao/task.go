@@ -17,7 +17,10 @@
 package dao
 
 import (
+	"context"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // TaskDAO task data access object
@@ -29,22 +32,22 @@ func NewTaskDAO() *TaskDAO {
 }
 
 // Create creates a new task
-func (dao *TaskDAO) Create(task *entity.Task) error {
-	return DB.Create(task).Error
+func (dao *TaskDAO) Create(ctx context.Context, db *gorm.DB, task *entity.Task) error {
+	return db.WithContext(ctx).Create(task).Error
 }
 
 // CreateMany creates multiple tasks in one batch.
-func (dao *TaskDAO) CreateMany(tasks []*entity.Task) error {
+func (dao *TaskDAO) CreateMany(ctx context.Context, db *gorm.DB, tasks []*entity.Task) error {
 	if len(tasks) == 0 {
 		return nil
 	}
-	return DB.Create(&tasks).Error
+	return db.WithContext(ctx).Create(&tasks).Error
 }
 
 // GetByID gets task by ID
-func (dao *TaskDAO) GetByID(id string) (*entity.Task, error) {
+func (dao *TaskDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Task, error) {
 	var task entity.Task
-	err := DB.Where("id = ?", id).First(&task).Error
+	err := db.WithContext(ctx).Where("id = ?", id).First(&task).Error
 	if err != nil {
 		return nil, err
 	}
@@ -52,38 +55,38 @@ func (dao *TaskDAO) GetByID(id string) (*entity.Task, error) {
 }
 
 // DeleteIngestionTasksByDocIDs deletes ingestion tasks by document IDs (hard delete)
-func (dao *TaskDAO) DeleteIngestionTasksByDocIDs(docIDs []string) (int64, error) {
+func (dao *TaskDAO) DeleteIngestionTasksByDocIDs(ctx context.Context, db *gorm.DB, docIDs []string) (int64, error) {
 	if len(docIDs) == 0 {
 		return 0, nil
 	}
-	result := DB.Unscoped().Where("document_id IN ?", docIDs).Delete(&entity.IngestionTask{})
+	result := db.WithContext(ctx).Unscoped().Where("document_id IN ?", docIDs).Delete(&entity.IngestionTask{})
 	return result.RowsAffected, result.Error
 }
 
 // DeleteByDocIDs deletes tasks by document IDs (hard delete)
-func (dao *TaskDAO) DeleteByDocIDs(docIDs []string) (int64, error) {
+func (dao *TaskDAO) DeleteByDocIDs(ctx context.Context, db *gorm.DB, docIDs []string) (int64, error) {
 	if len(docIDs) == 0 {
 		return 0, nil
 	}
-	result := DB.Unscoped().Where("doc_id IN ?", docIDs).Delete(&entity.Task{})
+	result := db.WithContext(ctx).Unscoped().Where("doc_id IN ?", docIDs).Delete(&entity.Task{})
 	return result.RowsAffected, result.Error
 }
 
 // DeleteByTenantID deletes all tasks by tenant ID (hard delete via document join)
-func (dao *TaskDAO) DeleteByTenantID(tenantID string) (int64, error) {
-	result := DB.Unscoped().Where("doc_id IN (SELECT id FROM document WHERE tenant_id = ?)", tenantID).Delete(&entity.Task{})
+func (dao *TaskDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("doc_id IN (SELECT id FROM document WHERE tenant_id = ?)", tenantID).Delete(&entity.Task{})
 	return result.RowsAffected, result.Error
 }
 
 // GetByDocID gets all tasks by document ID
-func (dao *TaskDAO) GetByDocID(docID string) ([]*entity.Task, error) {
+func (dao *TaskDAO) GetByDocID(ctx context.Context, db *gorm.DB, docID string) ([]*entity.Task, error) {
 	var tasks []*entity.Task
-	err := DB.Where("doc_id = ?", docID).Order("from_page ASC, create_time ASC").Find(&tasks).Error
+	err := db.WithContext(ctx).Where("doc_id = ?", docID).Order("from_page ASC, create_time ASC").Find(&tasks).Error
 	return tasks, err
 }
 
-func (dao *TaskDAO) GetAllTasks() ([]*entity.Task, error) {
+func (dao *TaskDAO) GetAllTasks(ctx context.Context, db *gorm.DB) ([]*entity.Task, error) {
 	var tasks []*entity.Task
-	err := DB.Find(&tasks).Error
+	err := db.WithContext(ctx).Find(&tasks).Error
 	return tasks, err
 }

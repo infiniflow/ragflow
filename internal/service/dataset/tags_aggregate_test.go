@@ -169,8 +169,9 @@ func TestDatasetServiceAggregateTagsMergesAcrossTenants(t *testing.T) {
 			},
 		},
 	}
+	ctx := t.Context()
 
-	result, code, err := testDatasetServiceForAggregateTags(t, docEngine).AggregateTags([]string{kb1Input, kb2Input}, "user-1")
+	result, code, err := testDatasetServiceForAggregateTags(t, docEngine).AggregateTags(ctx, []string{kb1Input, kb2Input}, "user-1")
 	if err != nil {
 		t.Fatalf("AggregateTags failed: %v", err)
 	}
@@ -252,8 +253,9 @@ func TestDatasetServiceAggregateTagsPagesThroughAllChunks(t *testing.T) {
 			},
 		},
 	}
+	ctx := t.Context()
 
-	result, code, err := testDatasetServiceForAggregateTags(t, docEngine).AggregateTags([]string{kbInput}, "user-1")
+	result, code, err := testDatasetServiceForAggregateTags(t, docEngine).AggregateTags(ctx, []string{kbInput}, "user-1")
 	if err != nil {
 		t.Fatalf("AggregateTags failed: %v", err)
 	}
@@ -287,8 +289,9 @@ func TestDatasetServiceAggregateTagsRejectsUnauthorizedDataset(t *testing.T) {
 	kbInput := "323e4567-e89b-12d3-a456-426614174002"
 	kbID := strings.ReplaceAll(kbInput, "-", "")
 	insertAggregateTagsKB(t, kbID, "tenant-9", string(entity.TenantPermissionMe), 1)
+	ctx := t.Context()
 
-	_, code, err := testDatasetServiceForAggregateTags(t, &aggregateTagsMockEngine{}).AggregateTags([]string{kbInput}, "user-1")
+	_, code, err := testDatasetServiceForAggregateTags(t, &aggregateTagsMockEngine{}).AggregateTags(ctx, []string{kbInput}, "user-1")
 	if err == nil {
 		t.Fatal("expected authorization error")
 	}
@@ -301,7 +304,8 @@ func TestDatasetServiceAggregateTagsRejectsUnauthorizedDataset(t *testing.T) {
 }
 
 func TestDatasetServiceAggregateTagsRequiresDocumentEngine(t *testing.T) {
-	_, code, err := testDatasetServiceForAggregateTags(t, nil).AggregateTags([]string{"123e4567-e89b-12d3-a456-426614174000"}, "user-1")
+	ctx := t.Context()
+	_, code, err := testDatasetServiceForAggregateTags(t, nil).AggregateTags(ctx, []string{"123e4567-e89b-12d3-a456-426614174000"}, "user-1")
 	if err == nil {
 		t.Fatal("expected missing doc engine error")
 	}
@@ -334,8 +338,9 @@ func TestDatasetServiceAggregateTagsSkipsDatasetsWithoutDocuments(t *testing.T) 
 			},
 		},
 	}
+	ctx := t.Context()
 
-	result, code, err := testDatasetServiceForAggregateTags(t, docEngine).AggregateTags([]string{emptyInput, liveInput}, "user-1")
+	result, code, err := testDatasetServiceForAggregateTags(t, docEngine).AggregateTags(ctx, []string{emptyInput, liveInput}, "user-1")
 	if err != nil {
 		t.Fatalf("AggregateTags failed: %v", err)
 	}
@@ -362,9 +367,10 @@ func TestDatasetServiceAggregateTagsReturnsSearchError(t *testing.T) {
 	kbInput := "623e4567-e89b-12d3-a456-426614174005"
 	kbID := strings.ReplaceAll(kbInput, "-", "")
 	insertAggregateTagsKB(t, kbID, "user-1", string(entity.TenantPermissionMe), 1)
+	ctx := t.Context()
 
 	docEngine := &aggregateTagsMockEngine{searchErr: errors.New("boom")}
-	_, code, err := testDatasetServiceForAggregateTags(t, docEngine).AggregateTags([]string{kbInput}, "user-1")
+	_, code, err := testDatasetServiceForAggregateTags(t, docEngine).AggregateTags(ctx, []string{kbInput}, "user-1")
 	if err == nil {
 		t.Fatal("expected search error")
 	}

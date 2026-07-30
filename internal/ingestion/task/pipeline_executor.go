@@ -28,7 +28,10 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+
+	"gorm.io/gorm"
 )
 
 // PipelineResult is the outcome of a pipeline run: chunks have been
@@ -49,7 +52,7 @@ type PipelineExecutor struct {
 	docBulkSize int
 
 	indexWriter     *chunkIndexWriter
-	logCreateFunc   func(log *entity.PipelineOperationLog) error
+	logCreateFunc   func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error
 	loadDSLFunc     func(ctx context.Context, canvasID string) (string, string, error)
 	runPipelineFunc func(ctx context.Context, dsl string) (map[string]any, string, error)
 	progressSink    pipelinepkg.ProgressSink
@@ -113,7 +116,7 @@ func (s *PipelineExecutor) WithInsertFunc(f InsertFunc) *PipelineExecutor {
 	return s
 }
 
-func (s *PipelineExecutor) WithLogCreateFunc(f func(log *entity.PipelineOperationLog) error) *PipelineExecutor {
+func (s *PipelineExecutor) WithLogCreateFunc(f func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error) *PipelineExecutor {
 	s.logCreateFunc = f
 	return s
 }
@@ -168,7 +171,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	if s.taskCtx.Doc.ID == CANVAS_DEBUG_DOC_ID {
-		s.recordPipelineLog(s.taskCtx.Doc.ID, pipelineDSL, "done")
+		s.recordPipelineLog(ctx, dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "done")
 		return nil, nil
 	}
 
@@ -178,8 +181,9 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	if pipelineDSL != "" {
-		s.recordPipelineLog(s.taskCtx.Doc.ID, pipelineDSL, "done")
+		s.recordPipelineLog(ctx, dao.DB, s.taskCtx.Doc.ID, pipelineDSL, "done")
 	}
+
 	return result, nil
 }
 
@@ -220,8 +224,25 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		}
 	}
 
+	// Per-document compiled knowledge products (those emitted by the
+	// KnowledgeCompiler component and stamped with `compile_kwd`) are persisted
+	// as available_int=0: invisible to the normal retriever until the dataset-level
+	// post-processing consumer (§11) merges them into available_int=1 products.
+	// Ordinary source chunks stay available_int=1 (the index default).
+	markCompiledProductsHidden(chunks)
+
 	if err := s.indexWriter.Write(ctx, chunks); err != nil {
 		return nil, err
+	}
+
+	// All chunks are now persisted. Notify the dataset-level post-processing consumer
+	// (§11) that this document is complete: its compiled products were written
+	// available_int=0 and the consumer later merges them into dataset-level products
+	// (available_int=1). The notification is sent only after a successful persist
+	// and is best-effort / non-fatal — a delivery failure is logged but does not
+	// fail the pipeline task.
+	if err := knowledge_compile.PublishCompleted(ctx, s.taskCtx.Tenant.ID, s.taskCtx.Doc.KbID, s.taskCtx.Doc.ID, 0); err != nil {
+		common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", s.taskCtx.Doc.ID, err))
 	}
 
 	chunkCount := countDistinctChunkIDs(chunks)
@@ -254,7 +275,24 @@ func countDistinctChunkIDs(chunks []map[string]any) int {
 	return len(seen)
 }
 
-func (s *PipelineExecutor) recordPipelineLog(docID, dsl, status string) {
+// markCompiledProductsHidden sets available_int=0 on the per-document compiled
+// knowledge products so they are hidden from the retriever until the dataset-level
+// post-processing consumer merges them into available_int=1 products (§11). A
+// chunk is a compiled product iff it carries the compile_kwd discriminator the
+// KnowledgeCompiler component stamps; ordinary source chunks (no compile_kwd)
+// keep the index default available_int=1 and remain immediately searchable.
+// Merged dataset-level products are written by the consumer, never here, so they are
+// never double-marked.
+func markCompiledProductsHidden(chunks []map[string]any) {
+	for _, ck := range chunks {
+		if _, ok := ck["compile_kwd"]; !ok {
+			continue
+		}
+		ck["available_int"] = 0
+	}
+}
+
+func (s *PipelineExecutor) recordPipelineLog(ctx context.Context, db *gorm.DB, docID, dsl, status string) {
 	var dslMap entity.JSONMap
 	if err := json.Unmarshal([]byte(dsl), &dslMap); err != nil {
 		dslMap = entity.JSONMap{"raw": dsl}
@@ -274,7 +312,7 @@ func (s *PipelineExecutor) recordPipelineLog(docID, dsl, status string) {
 		SourceFrom:      s.taskCtx.Doc.SourceType,
 		OperationStatus: status,
 	}
-	if err := s.logCreateFunc(log); err != nil {
+	if err := s.logCreateFunc(ctx, db, log); err != nil {
 		common.Warn(fmt.Sprintf("failed to record pipeline log: %v", err))
 	}
 }
@@ -286,7 +324,7 @@ func (s *PipelineExecutor) loadDSLFromCanvas(ctx context.Context, canvasID strin
 	if canvasID == "" {
 		return "", "", fmt.Errorf("pipeline executor: empty canvas id")
 	}
-	canvas, err := dao.NewUserCanvasDAO().GetByID(canvasID)
+	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, canvasID)
 	if err != nil {
 		return "", "", fmt.Errorf("load canvas %s: %w", canvasID, err)
 	}
@@ -338,6 +376,13 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 
 	parserConfig := map[string]interface{}(s.taskCtx.Doc.ParserConfig)
 	common.InjectExtractorLLMID(parserConfig, s.taskCtx.Tenant.LLMID)
+	// When the dataset enables auto-metadata, ensure the Extractor node(s)
+	// carry the enable_metadata mode + field schema so the LLM extraction fires
+	// (mirrors Python task_executor.py:519 enabling gen_metadata_task). The
+	// dataset flag is authoritative: a node that already has enable_metadata
+	// turned on keeps its own config, but a shipped DSL defaulting it to 0 is
+	// still overridden so auto-metadata can activate.
+	common.InjectExtractorEnableMetadata(parserConfig)
 
 	// Surface component params whose cpnID is absent from the DSL. The
 	// runtime merge (override_params) silently drops such entries;

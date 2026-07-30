@@ -89,7 +89,8 @@ func TestCleanupFailedDatasetIndexTaskDeletesTaskAndRestoresDocument(t *testing.
 		t.Fatalf("expected task to be deleted, got err=%v task=%#v", err, persistedTask)
 	}
 
-	persistedDoc, err := dao.NewDocumentDAO().GetByID(doc.ID)
+	ctx := t.Context()
+	persistedDoc, err := dao.NewDocumentDAO().GetByID(ctx, db, doc.ID)
 	if err != nil {
 		t.Fatalf("fetch document: %v", err)
 	}
@@ -101,7 +102,7 @@ func TestCleanupFailedDatasetIndexTaskDeletesTaskAndRestoresDocument(t *testing.
 	}
 
 	var persistedKB entity.Knowledgebase
-	if err := dao.DB.Where("id = ?", kb.ID).First(&persistedKB).Error; err != nil {
+	if err = dao.DB.Where("id = ?", kb.ID).First(&persistedKB).Error; err != nil {
 		t.Fatalf("fetch kb: %v", err)
 	}
 	if persistedKB.GraphragTaskID != nil {

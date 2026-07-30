@@ -45,7 +45,7 @@ func pushExtractorTagTargetResolverStub(t *testing.T) {
 func TestExtractorTags_NoTagFileID(t *testing.T) {
 	pushExtractorTagChatStub(t, nil)
 	comp, _ := NewExtractorComponent(map[string]any{"auto_tags": 3})
-	out, err := comp.Invoke(context.Background(), map[string]any{
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
 			{"content_with_weight": "test"},
 		},
@@ -65,7 +65,7 @@ func TestExtractorTags_NoTagFileID(t *testing.T) {
 func TestExtractorTags_NoLLMID(t *testing.T) {
 	pushExtractorTagChatStub(t, nil)
 	comp, _ := NewExtractorComponent(map[string]any{"auto_tags": 3})
-	out, err := comp.Invoke(context.Background(), map[string]any{
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
 			{"content_with_weight": "some unrelated text"},
 		},
@@ -88,7 +88,7 @@ func TestExtractorTags_WithKeywords(t *testing.T) {
 		"auto_tags":     3,
 		"auto_keywords": 3,
 	})
-	out, err := comp.Invoke(context.Background(), map[string]any{
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
 			{"content_with_weight": "some unrelated textxyz"},
 		},
@@ -396,6 +396,54 @@ func TestJsonRepairExtract(t *testing.T) {
 			case float64:
 				if int(v) != tt.want && tt.want != 0 {
 					t.Fatalf("expected %s=%d, got %d", tt.hasField, tt.want, int(v))
+				}
+			}
+		})
+	}
+}
+
+// TestParseTaggerResponse_LastThinkTag verifies that when the LLM
+// response contains multiple </think> tags, parseTaggerResponse strips
+// up to the LAST one (greedy, matching Python's re.sub), not just the
+// first (which would leave a residual think block).
+func TestParseTaggerResponse_LastThinkTag(t *testing.T) {
+	tests := []struct {
+		name     string
+		raw      string
+		wantKeys []string
+	}{
+		{
+			name:     "single think block",
+			raw:      `<think>reasoning</think>{"tag": 5}`,
+			wantKeys: []string{"tag"},
+		},
+		{
+			name:     "nested think blocks",
+			raw:      `<think>outer</think>mid<think>inner</think>{"real": 3}`,
+			wantKeys: []string{"real"},
+		},
+		{
+			name:     "no think tag",
+			raw:      `{"simple": 7}`,
+			wantKeys: []string{"simple"},
+		},
+		{
+			name: "error sentinel",
+			raw:  "**ERROR**",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseTaggerResponse(tt.raw, 5)
+			if len(tt.wantKeys) == 0 {
+				if len(got) != 0 {
+					t.Errorf("expected empty result, got %v", got)
+				}
+				return
+			}
+			for _, k := range tt.wantKeys {
+				if _, ok := got[k]; !ok {
+					t.Errorf("expected key %q in result, got %v", k, got)
 				}
 			}
 		})

@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -9,25 +10,25 @@ import (
 	"ragflow/internal/entity"
 )
 
-func (d *DatasetService) GetIngestionSummary(datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
-		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
+		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
-	if !d.kbDAO.Accessible(datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("No authorization.")
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("no authorization")
 	}
 
-	kb, err := d.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, fmt.Errorf("Invalid Dataset ID '%s'", datasetID)
+			return nil, common.CodeDataError, fmt.Errorf("invalid Dataset ID '%s'", datasetID)
 		}
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 
-	status, err := d.documentDAO.GetParsingStatusByKBID(datasetID)
+	status, err := d.documentDAO.GetParsingStatusByKBID(ctx, dao.DB, datasetID)
 	if err != nil {
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 
 	return map[string]interface{}{
@@ -38,12 +39,12 @@ func (d *DatasetService) GetIngestionSummary(datasetID, userID string) (map[stri
 	}, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) ListIngestionLogs(datasetID, userID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, logType, keywords string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userID string, page, pageSize int, orderby string, desc bool, operationStatus []string, createDateFrom, createDateTo, logType, keywords string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
-		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
+		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
-	if !d.kbDAO.Accessible(datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("No authorization.")
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("no authorization")
 	}
 
 	if page <= 0 {
@@ -62,9 +63,9 @@ func (d *DatasetService) ListIngestionLogs(datasetID, userID string, page, pageS
 		err   error
 	)
 	if logType == "file" {
-		logs, total, err = d.pipelineLogDAO.GetFileLogsByKBID(datasetID, page, pageSize, orderby, desc, keywords, operationStatus, createDateFrom, createDateTo)
+		logs, total, err = d.pipelineLogDAO.GetFileLogsByKBID(ctx, dao.DB, datasetID, page, pageSize, orderby, desc, keywords, operationStatus, createDateFrom, createDateTo)
 	} else {
-		logs, total, err = d.pipelineLogDAO.GetDatasetLogsByKBID(datasetID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, keywords)
+		logs, total, err = d.pipelineLogDAO.GetDatasetLogsByKBID(ctx, dao.DB, datasetID, page, pageSize, orderby, desc, operationStatus, createDateFrom, createDateTo, keywords)
 	}
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("list ingestion logs: %w", err)
@@ -88,23 +89,23 @@ func (d *DatasetService) ListIngestionLogs(datasetID, userID string, page, pageS
 	}, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) GetIngestionLog(datasetID, userID, logID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, userID, logID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
-		return nil, common.CodeDataError, errors.New(`Lack of "Dataset ID"`)
+		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
 	if logID == "" {
-		return nil, common.CodeDataError, errors.New(`Lack of "Log ID"`)
+		return nil, common.CodeDataError, errors.New(`lack of "Log ID"`)
 	}
-	if !d.kbDAO.Accessible(datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("No authorization.")
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
+		return nil, common.CodeDataError, errors.New("no authorization")
 	}
 
-	log, err := d.pipelineLogDAO.GetByIDAndKBID(logID, datasetID)
+	log, err := d.pipelineLogDAO.GetByIDAndKBID(ctx, dao.DB, logID, datasetID)
 	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, common.CodeDataError, errors.New("log not found")
+		}
 		return nil, common.CodeServerError, fmt.Errorf("get ingestion log: %w", err)
-	}
-	if log == nil {
-		return nil, common.CodeDataError, errors.New("Log not found")
 	}
 
 	return datasetIngestionLogToMap(log), common.CodeSuccess, nil

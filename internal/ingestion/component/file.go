@@ -46,6 +46,8 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/storage"
+
+	"gorm.io/gorm"
 )
 
 const ComponentNameFile = "File"
@@ -128,10 +130,10 @@ func (c *FileComponent) Outputs() map[string]string {
 //     the document name and emit metadata only.
 //  2. doc_id is empty — pull the first file descriptor out of
 //     `file` and use its `name`/`id` directly.
-func (c *FileComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *FileComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// Parse the wire input through the schema type so the
 	// validation errors match the package convention.
-	in, err := parseFileInputs(inputs)
+	in, err := parseFileInputs(ctx, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +174,7 @@ type fileInputs struct {
 // parseFileInputs parses and validates the upstream input map.
 // Mirrors python's branching on `self._canvas._doc_id` vs.
 // `kwargs.get("file")[0]`.
-func parseFileInputs(inputs map[string]any) (fileInputs, error) {
+func parseFileInputs(ctx context.Context, inputs map[string]any) (fileInputs, error) {
 	if inputs == nil {
 		return fileInputs{}, fmt.Errorf("file: inputs map is nil")
 	}
@@ -229,7 +231,7 @@ func parseFileInputs(inputs map[string]any) (fileInputs, error) {
 		out.path = v
 	}
 	if out.docID != "" {
-		name, err := resolveDocumentName(out.docID)
+		name, err := resolveDocumentName(ctx, out.docID)
 		if err != nil {
 			return fileInputs{}, fmt.Errorf("file: resolve doc_id %q: %w", out.docID, err)
 		}

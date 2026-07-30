@@ -50,6 +50,37 @@ func (q *QiniuModel) Name() string {
 	return "qiniu"
 }
 
+// QiniuChatResponse captures the OpenAI-compatible fields consumed by RAGFlow.
+type QiniuChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Logprobs     any    `json:"logprobs"`
+		Message      struct {
+			Content          string           `json:"content"`
+			ReasoningContent string           `json:"reasoning_content"`
+			Role             string           `json:"role"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+	SystemFingerprint string `json:"system_fingerprint"`
+	Usage             struct {
+		CompletionTokens        int `json:"completion_tokens"`
+		PromptTokens            int `json:"prompt_tokens"`
+		TotalTokens             int `json:"total_tokens"`
+		CompletionTokensDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+		PromptTokensDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	} `json:"usage"`
+}
+
 var qiniuQwenThinkingModels = map[string]struct{}{
 	"qwen3-next-80b-a3b-thinking":   {},
 	"qwen3-235b-a22b-thinking-2507": {},
@@ -191,51 +222,47 @@ func (q *QiniuModel) ChatWithMessages(ctx context.Context, modelName string, mes
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	toolCalls := extractToolCalls(messageMap)
-	content, hasContent := messageMap["content"].(string)
-	if !hasContent && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning_content"].(string)
-		if !ok && len(toolCalls) == 0 {
-			return nil, fmt.Errorf("invalid reasoning content format")
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result QiniuChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
 		}
 
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
+		choice := &result.Choices[0]
+		content := choice.Message.Content
+		if content == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("invalid content format")
 		}
-	}
+		reasonContent := ""
+		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
+			reasonContent = choice.Message.ReasoningContent
+			if reasonContent == "" {
+				reasoning, answer := GetThinkingAndAnswer(chatConfig.ModelClass, &content)
+				if reasoning != nil {
+					reasonContent = *reasoning
+					content = *answer
+				}
+			}
+			if reasonContent != "" && reasonContent[0] == '\n' {
+				reasonContent = reasonContent[1:]
+			}
+		}
 
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}
-
-	return chatResponse, nil
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &content,
+			ReasonContent: &reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 func (q *QiniuModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -254,6 +281,7 @@ func (q *QiniuModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	url := fmt.Sprintf("%s/%s", baseURL, q.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
 	if chatModelConfig != nil {
 		applyQiniuThinkingConfig(reqBody, modelName, chatModelConfig)
@@ -290,6 +318,14 @@ func (q *QiniuModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	accumulatedToolCalls := make(map[int]map[string]interface{})
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
 		common.Info(fmt.Sprintf("%v", event))
+
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
+		}
 
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
