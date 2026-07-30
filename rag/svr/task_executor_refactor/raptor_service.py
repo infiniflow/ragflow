@@ -348,8 +348,6 @@ class RaptorService:
         raptor_config: Dict,
         chat_mdl,
         embd_mdl,
-        tree_builder: str,
-        clustering_method: str,
         max_errors: int,
         doc_info_by_id: Dict,
         is_tree: bool = False,
@@ -410,7 +408,6 @@ class RaptorService:
                 raptor_config,
                 doc_id,
                 effective_doc_name,
-                tree_builder,
                 vctr_nm,
             )
 
@@ -422,7 +419,7 @@ class RaptorService:
             "docnm_kwd": effective_doc_name,
             "title_tks": rag_tokenizer.tokenize(effective_doc_name),
             "raptor_kwd": "raptor",
-            "extra": {"raptor_method": tree_builder},
+            "extra": {"raptor_method": "raptor"},
             "create_time": str(datetime.now()).replace("T", " ")[:19],
             "create_timestamp_flt": datetime.now().timestamp(),
         }
@@ -455,7 +452,7 @@ class RaptorService:
             return res, tk_count
 
         row_id = xxhash.xxh64(
-            f"raptor_tree:{doc_id}:{tree_builder}".encode("utf-8", "surrogatepass"),
+            f"raptor_tree:{doc_id}:raptor".encode("utf-8", "surrogatepass"),
         ).hexdigest()
         row = {
             **doc,
@@ -472,8 +469,6 @@ class RaptorService:
         raptor_config: Dict,
         chat_mdl,
         embd_mdl,
-        tree_builder: str,
-        clustering_method: str,
         max_errors: int,
     ) -> Optional[Dict]:
         """Build a RAPTOR tree dict for one document — no ES IO.
@@ -523,7 +518,6 @@ class RaptorService:
         raptor_config,
         doc_id,
         effective_doc_name,
-        tree_builder,
         vctr_nm,
     ) -> Tuple[List[Dict], int]:
         """Legacy per-summary materialization, kept only for PSI builds.
@@ -549,7 +543,7 @@ class RaptorService:
             "docnm_kwd": effective_doc_name,
             "title_tks": rag_tokenizer.tokenize(effective_doc_name),
             "raptor_kwd": "raptor",
-            "extra": {"raptor_method": tree_builder},
+            "extra": {"raptor_method": "raptor"},
         }
         if ctx.pagerank:
             doc[PAGERANK_FLD] = int(ctx.pagerank)

@@ -120,11 +120,10 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
         Only adjacent embeddings are compared (O(N) instead of O(N²)).
 
-        The watershed threshold starts at ``similarity_threshold`` and is
-        lowered dynamically if the resulting cluster count exceeds the
-        ``cluster_ratio`` cap (max_clusters = ratio × N).  The adjusted
-        threshold is taken directly from the distribution of recorded
-        adjacent similarities.
+        The split threshold is taken from the ``clustering_threshold``
+        percentile of the adjacent-similarity distribution.  If the resulting
+        cluster count exceeds the ``clustering_ratio`` cap, the threshold is
+        further lowered.
         """
         n = len(embeddings)
         if n <= 1:
@@ -155,8 +154,12 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     lbl[i] = cid
             return lbl
 
-        # ---- Phase 1: watershed at the user-specified threshold ----
-        threshold = self._clustering_threshold
+        # ---- Phase 1: watershed at percentile-based threshold ----
+        # clustering_threshold (e.g. 0.3) denotes the percentile of the
+        # adjacent-similarity distribution to use as the split threshold.
+        # This adapts to each layer's similarity range automatically.
+        pct = max(1, min(99, int(round(self._clustering_threshold * 100))))
+        threshold = float(np.percentile(adj_sims, pct))
         labels = _watershed(threshold)
         n_clusters = int(np.unique(labels).size)
 
@@ -169,7 +172,8 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 n_clusters = int(np.unique(labels).size)
 
         logging.info(
-            "RAPTOR seq-clus: sim_threshold=%.4f n_clusters=%d/%d (%d chunks) cluster_ratio=%.2f",
+            "RAPTOR seq-clus: pct=%d threshold=%.4f n_clusters=%d/%d (%d chunks) cluster_ratio=%.2f",
+            pct,
             threshold,
             n_clusters,
             max_clusters,
@@ -245,7 +249,6 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                 raise RuntimeError(f"RAPTOR aborted after {self._error_count} errors. Last error: {exc}") from exc
             return None
 
-    @staticmethod
     async def __call__(
         self,
         chunks,
@@ -463,18 +466,30 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
         def _build_node(idx: int) -> dict:
             children_idx = parent_child_map.get(idx, [])
-            # If every immediate child is a layer-0 original, this
-            # node is a "leaf" in the tree contract — collapse to
-            # source_chunk_ids.
+            # If every immediate child is a layer-0 original, create
+            # actual child dicts so the graph projector can walk them.
             if children_idx and all(c < n_originals for c in children_idx):
-                ids: list[str] = []
+                leaf_ids: list[str] = []
                 seen: set[str] = set()
+                children: list[dict] = []
                 for c in children_idx:
                     for s in chunks[c][2]:
                         if s and s not in seen:
                             seen.add(s)
-                            ids.append(s)
-                return {"title": _title_at(idx), "source_chunk_ids": ids, "description": _desc_at(idx)}
+                            leaf_ids.append(s)
+                    chunk_text = chunks[c][0] if chunks[c] else ""
+                    children.append(
+                        {
+                            "title": chunk_text[:80],
+                            "description": chunk_text,
+                            "source_chunk_ids": [s for s in chunks[c][2] if s],
+                        }
+                    )
+                return {
+                    "title": _title_at(idx),
+                    "children": children,
+                    "description": _desc_at(idx),
+                }
             return {"children": [_build_node(c) for c in children_idx], "title": _title_at(idx), "description": _desc_at(idx)}
 
         top_nodes = [_build_node(i) for i in range(top_start, top_end)]
