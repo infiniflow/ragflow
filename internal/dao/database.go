@@ -81,7 +81,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 
 	// Set log level
 	var gormLogLevel gormLogger.LogLevel
-	if cfg.Server.Mode == "debug" {
+	if cfg.General.Mode == "debug" {
 		gormLogLevel = gormLogger.Info
 	} else {
 		gormLogLevel = gormLogger.Silent
@@ -157,6 +157,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.IngestionTaskLog{},
 		&entity.FileCommit{},
 		&entity.FileCommitItem{},
+		&entity.KnowledgeCompileDoc{},
 	}
 
 	if migrateDB {

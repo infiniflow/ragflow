@@ -39,6 +39,8 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 var (
@@ -75,6 +77,7 @@ var (
 // markdown branch only concatenates text and never calls the vision model.
 func maybeDispatchDOCXVision(
 	ctx context.Context,
+	db *gorm.DB,
 	fileType utility.FileType,
 	dispatched parserDispatchResult,
 	inputs map[string]any,
@@ -95,7 +98,7 @@ func maybeDispatchDOCXVision(
 	}
 
 	// Resolve the tenant's IMAGE2TEXT model.
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(tenantID, entity.ModelTypeImage2Text)
+	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 	if err != nil {
 		// Model not available — skip vision enhancement silently,
 		// matching Python's try/except pass behaviour.

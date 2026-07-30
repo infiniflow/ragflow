@@ -111,7 +111,7 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	var err error
 
 	if llmID != "" {
-		modelTypes, err := modelProviderSvc.ResolveModelType(tenantID, llmID)
+		modelTypes, err := modelProviderSvc.ResolveModelType(ctx, tenantID, llmID)
 		if err != nil {
 			return query, fmt.Errorf("failed to get model type: %w", err)
 		}

@@ -252,7 +252,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 	// Create default search config for this space
 	defaultEmbdID := req.EmbdID
 	if defaultEmbdID == "" {
-		tenant, err := s.tenantDAO.GetByID(req.TenantID)
+		tenant, err := s.tenantDAO.GetByID(ctx, dao.DB, req.TenantID)
 		if err == nil && tenant != nil && tenant.EmbdID != "" {
 			defaultEmbdID = tenant.EmbdID
 			common.Info("Using tenant default embedding model", zap.String("tenantID", req.TenantID), zap.String("embdID", defaultEmbdID))

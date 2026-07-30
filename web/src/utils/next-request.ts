@@ -125,7 +125,9 @@ request.interceptors.response.use(
       }
     }
 
-    if (data?.code === 100) {
+    const skipErrorNotification = (response.config as any)
+      ?.skipGlobalErrorNotification;
+    if (data?.code === 100 && !skipErrorNotification) {
       message.error(data?.message);
     } else if (data?.code === 401) {
       if (!isRedirecting) {
@@ -138,7 +140,7 @@ request.interceptors.response.use(
         authorizationUtil.removeAll();
         redirectToLogin();
       }
-    } else if (data?.code !== 0) {
+    } else if (data?.code !== 0 && !skipErrorNotification) {
       notification.error({
         message: `${i18n.t('message.hint')} : ${data?.code}`,
         description: data?.message,
@@ -167,7 +169,9 @@ request.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    errorHandler(error);
+    if (!(error?.config as any)?.skipGlobalErrorNotification) {
+      errorHandler(error);
+    }
     return Promise.reject(error);
   },
 );

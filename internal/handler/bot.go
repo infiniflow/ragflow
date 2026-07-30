@@ -120,13 +120,18 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 // AgentbotCompletion POST /api/v1/agentbots/<agent_id>/completions
 //
 // Mirrors python bot_api.py:157 (canvas_service.completion wrapper).
-// Streams SSE frames in the Python envelope shape. The URL-bound
-// agent_id is authoritative — the body must NOT override it.
+// The URL-bound agent_id is authoritative — the body must NOT
+// override it.
 //
-// Each canvas.RunEvent is re-formatted into the Python
-// {code, message, data} envelope: a "message" event's Data string is
-// treated as the assistant text, "message_end" terminates the
-// stream with the python completion marker.
+// The shared/embedded agent chat page (web/src/pages/agent/share)
+// parses the stream with the same use-send-message.ts parser as the
+// in-app agent chat, so frames must carry the agent canvas envelope
+// — {event, message_id, session_id, task_id, created_at, data} —
+// terminated by `data:[DONE]`. Forwarding raw canvas.RunEvent via
+// WriteChatbotRunEvent keeps this endpoint byte-compatible with the
+// python canvas_service.completion output (which yields every
+// canvas event, including node_* telemetry used by the "Thinking"
+// log panel).
 func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -159,50 +164,17 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
+	doneSent := false
 	for ev := range events {
-		switch ev.Type {
-		case "message":
-			// The python iframe_completion wrapper flattens each
-			// message chunk into a {code:0, data:{answer:...}}
-			// frame. We forward the message Data as the assistant
-			// text payload so the iframe SDK's `data.answer`
-			// parser keeps working. The agentbot path uses
-			// WriteAgentbotFrame (a thin alias for
-			// WriteChatbotFrame) to keep the two paths visually
-			// distinct in the handler.
-			frame := service.ChatbotSSEFrame{
-				Data:      ev.Data,
-				Reference: map[string]any{},
-				SessionID: ev.SessionID,
-			}
-			if err := service.WriteAgentbotFrame(c.Writer, frame); err != nil {
-				return
-			}
-		case "message_end", "done":
-			// Terminator events. message_end occasionally carries
-			// a final payload (e.g. structured output); forward
-			// it as a final answer frame when present, then close
-			// the stream with the standard python completion
-			// marker. A bare `done` event closes the stream
-			// directly.
-			if ev.Data != "" {
-				frame := service.ChatbotSSEFrame{
-					Data:      ev.Data,
-					Reference: map[string]any{},
-					SessionID: ev.SessionID,
-				}
-				_ = service.WriteAgentbotFrame(c.Writer, frame)
-			}
-			_ = service.WriteDoneFrame(c.Writer)
-			return
-		default:
-			// Non-message events (node_started, node_finished, …)
-			// are silently dropped on the agentbot path. The
-			// python canvas_service.completion wrapper only
-			// forwards the assistant text frames, not the run
-			// telemetry; we mirror that behaviour so external
-			// widgets see the same wire shape.
+		if ev.Type == "done" {
+			doneSent = true
 		}
+		if err := service.WriteChatbotRunEvent(c.Writer, ev); err != nil {
+			return
+		}
+	}
+	if !doneSent {
+		_ = service.WriteChatbotRunEvent(c.Writer, canvas.RunEvent{Type: "done"})
 	}
 }
 

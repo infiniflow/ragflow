@@ -387,6 +387,17 @@ class MistralParser(RAGFlowPdfParser):
     def check_installation(self) -> tuple[bool, str]:
         if not self.api_key:
             return False, "Mistral API key is not configured."
+
+        try:
+            r = requests.get(f"{self.base_url}/models", headers=self._headers(), timeout=10)
+            self.logger.info(f"[Mistral] API models endpoint reachable, status={r.status_code}")
+            if r.status_code != 200:
+                return False, f"Mistral API check failed: HTTP {r.status_code} {r.text[:200]}"
+        except Exception as exc:
+            reason = f"Mistral API check failed: {exc}"
+            self.logger.warning(reason)
+            return False, reason
+
         return True, ""
 
     def _raise_for_status(self, resp, action: str) -> None:

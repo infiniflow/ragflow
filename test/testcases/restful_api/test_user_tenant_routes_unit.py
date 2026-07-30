@@ -208,7 +208,7 @@ def test_user_list_auth_success_exception_matrix_unit(monkeypatch):
     module.current_user.id = "other-user"
     res = module.user_list("tenant-1")
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
-    assert res["message"] == "No authorization.", res
+    assert res["message"] == "no authorization", res
 
     module.current_user.id = "tenant-1"
     monkeypatch.setattr(
@@ -235,7 +235,7 @@ def test_create_invite_role_and_email_failure_matrix_unit(monkeypatch):
     _set_request_json(monkeypatch, module, {"email": "invitee@example.com"})
     res = _run(module.create("tenant-1"))
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
-    assert res["message"] == "No authorization.", res
+    assert res["message"] == "no authorization", res
 
     module.current_user.id = "tenant-1"
     monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [])
@@ -283,7 +283,7 @@ def test_rm_and_tenant_list_matrix_unit(monkeypatch):
     _set_request_json(monkeypatch, module, {"user_id": "user-2"})
     res = _run(module.rm("tenant-1"))
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
-    assert res["message"] == "No authorization.", res
+    assert res["message"] == "no authorization", res
 
     module.current_user.id = "tenant-1"
     deleted = []

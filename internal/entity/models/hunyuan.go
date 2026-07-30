@@ -51,6 +51,49 @@ func (h *HunyuanModel) Name() string {
 	return "Tencent Hunyuan"
 }
 
+// HunyuanChatResponse mirrors Tencent Hunyuan's OpenAI-compatible chat response.
+type HunyuanChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Logprobs     any    `json:"logprobs"`
+		Message      struct {
+			Content          string           `json:"content"`
+			Reasoning        string           `json:"reasoning"`
+			ReasoningContent string           `json:"reasoning_content"`
+			Role             string           `json:"role"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+	SystemFingerprint string `json:"system_fingerprint"`
+	Usage             struct {
+		CompletionTokens int `json:"completion_tokens"`
+		PromptTokens     int `json:"prompt_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+// HunyuanEmbeddingResponse mirrors Tencent Hunyuan's embeddings response.
+type HunyuanEmbeddingResponse struct {
+	ID     string `json:"id"`
+	Object string `json:"object"`
+	Model  string `json:"model"`
+	Data   []struct {
+		Object    string    `json:"object"`
+		Embedding []float64 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
 func (h *HunyuanModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := h.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -96,42 +139,35 @@ func (h *HunyuanModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, _ *ChatConfig) (chatResponseParts, error) {
+		var result HunyuanChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
 
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	content, ok := messageMap["content"].(string)
-	toolCalls := extractToolCalls(messageMap)
-	if !ok && len(toolCalls) == 0 {
-		return nil, fmt.Errorf("invalid content format")
-	}
-
-	reasonContent := ""
-	if r, ok := messageMap["reasoning_content"].(string); ok {
-		reasonContent = r
-	}
-
-	return &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}, nil
+		choice := result.Choices[0]
+		if choice.Message.Content == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("response contains neither content nor tool calls")
+		}
+		reasonContent := choice.Message.ReasoningContent
+		if reasonContent == "" {
+			reasonContent = choice.Message.Reasoning
+		}
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &choice.Message.Content,
+			ReasonContent: &reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 // ChatStreamlyWithSender opens the SSE chat-completions
@@ -149,6 +185,10 @@ func (h *HunyuanModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	if err := validateStreamConfig(chatModelConfig); err != nil {
 		return err
 	}
+	if chatModelConfig != nil {
+		chatModelConfig.ToolCallsResult = nil
+		chatModelConfig.UsageResult = nil
+	}
 
 	baseURL, err := h.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
@@ -157,13 +197,17 @@ func (h *HunyuanModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	url := fmt.Sprintf("%s/%s", baseURL, h.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -183,36 +227,50 @@ func (h *HunyuanModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 
 	sawTerminal := false
 	accumulatedToolCalls := make(map[int]map[string]any)
-	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+	done, err := ParseSSEStream[map[string]any](resp.Body, func(event map[string]any) error {
+		common.Info(fmt.Sprintf("%v", event))
+
 		if apiErr, ok := event["error"]; ok {
 			return fmt.Errorf("hunyuan: upstream stream error: %v", apiErr)
 		}
-
-		choices, ok := event["choices"].([]interface{})
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
+		}
+		choices, ok := event["choices"].([]any)
 		if !ok || len(choices) == 0 {
 			return nil
 		}
-		firstChoice, ok := choices[0].(map[string]interface{})
+
+		choice, ok := choices[0].(map[string]any)
 		if !ok {
 			return nil
 		}
-		if delta, ok := firstChoice["delta"].(map[string]interface{}); ok {
-			accumulateToolCallDeltas(delta, accumulatedToolCalls)
-			if r, ok := delta["reasoning_content"].(string); ok && r != "" {
-				rr := r
-				if err := sender(nil, &rr); err != nil {
-					return err
-				}
-			}
-			if c, ok := delta["content"].(string); ok && c != "" {
-				cc := c
-				if err := sender(&cc, nil); err != nil {
-					return err
-				}
+		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
+		delta, ok := choice["delta"].(map[string]any)
+		if !ok {
+			return nil
+		}
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
+		if reasoning, ok := delta["reasoning_content"].(string); ok && reasoning != "" {
+			if err := sender(nil, &reasoning); err != nil {
+				return err
 			}
 		}
-		if finish, ok := firstChoice["finish_reason"].(string); ok && finish != "" {
-			sawTerminal = true
+		if reasoning, ok := delta["reasoning"].(string); ok && reasoning != "" {
+			if err := sender(nil, &reasoning); err != nil {
+				return err
+			}
+		}
+		if content, ok := delta["content"].(string); ok && content != "" {
+			if err := sender(&content, nil); err != nil {
+				return err
+			}
 		}
 		return nil
 	})
@@ -338,12 +396,7 @@ func (h *HunyuanModel) Embed(ctx context.Context, modelName *string, texts []str
 		return nil, fmt.Errorf("Hunyuan embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var parsedResponse struct {
-		Data []struct {
-			Embedding []float64 `json:"embedding"`
-			Index     int       `json:"index"`
-		} `json:"data"`
-	}
+	var parsedResponse HunyuanEmbeddingResponse
 
 	if err = json.Unmarshal(body, &parsedResponse); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
@@ -352,6 +405,11 @@ func (h *HunyuanModel) Embed(ctx context.Context, modelName *string, texts []str
 	if len(parsedResponse.Data) == 0 {
 		return nil, fmt.Errorf("hunyuan embedding response contains no data: %s", string(body))
 	}
+	recordResponseUsage(modelUsage, parsedResponse.ID, &TokenUsage{
+		PromptTokens:     parsedResponse.Usage.PromptTokens,
+		CompletionTokens: parsedResponse.Usage.CompletionTokens,
+		TotalTokens:      parsedResponse.Usage.TotalTokens,
+	}, "embedding")
 
 	embeddings := make([]EmbeddingData, 0, len(parsedResponse.Data))
 	for _, dataElem := range parsedResponse.Data {

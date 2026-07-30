@@ -14,7 +14,6 @@
 #  limitations under the License.
 #
 
-import json
 import uuid
 
 import pytest
@@ -102,7 +101,7 @@ def test_search_update_invalid_search_id(rest_client):
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 109, payload
-    assert "No authorization" in payload["message"], payload
+    assert "no authorization" in payload["message"], payload
 
 
 @pytest.mark.p2
@@ -151,4 +150,3 @@ def test_search_completion_sse_shape_when_kb_ids_provided(rest_client, search_re
     payload = res.json()
     assert payload["code"] == 102, payload
     assert "You don't own the dataset nonexistent_dataset" in payload["message"], payload
-

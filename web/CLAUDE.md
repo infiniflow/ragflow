@@ -18,7 +18,8 @@ RAGFlow frontend is a React/TypeScript application built with UmiJS:
 npm install
 npm run dev        # Development server
 npm run build      # Production build
-npm run lint       # ESLint
+npm run lint       # oxlint
+npm run format     # oxfmt
 npm run test       # Jest tests
 ```
 

@@ -5,14 +5,39 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { AgentCategory } from '@/constants/agent';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { IFlow } from '@/interfaces/database/agent';
-import { Route } from 'lucide-react';
+import { AgentListItemType, IFlow } from '@/interfaces/database/agent';
+import { CanvasCategoryToFlowType, FlowType, FlowTypeConfig } from './constant';
 import { AgentDropdown } from './agent-dropdown';
 import { useRenameAgent } from './use-rename-agent';
 
 export type DatasetCardProps = {
-  data: IFlow;
+  data: IFlow & { type?: AgentListItemType };
 } & Pick<ReturnType<typeof useRenameAgent>, 'showAgentRenameModal'>;
+
+function AgentTypeIcon({
+  data,
+}: {
+  data: IFlow & { type?: AgentListItemType };
+}) {
+  const flowType =
+    data.type === AgentListItemType.CompilationTemplateGroup
+      ? FlowType.Compiler
+      : CanvasCategoryToFlowType[data.canvas_category ?? ''];
+
+  const icon = flowType ? FlowTypeConfig[flowType].icon : null;
+
+  if (!icon) {
+    return null;
+  }
+
+  const Icon = icon;
+
+  return (
+    <Button variant={'ghost'} size={'sm'}>
+      <Icon />
+    </Button>
+  );
+}
 
 function AgentTags({ tags }: { tags?: string }) {
   const list = (tags || '')
@@ -55,13 +80,7 @@ export function AgentCard({ data, showAgentRenameModal }: DatasetCardProps) {
         //   :
         navigateToAgent(data?.id, data.canvas_category as AgentCategory)
       }
-      icon={
-        data.canvas_category === AgentCategory.DataflowCanvas && (
-          <Button variant={'ghost'} size={'sm'}>
-            <Route />
-          </Button>
-        )
-      }
+      icon={<AgentTypeIcon data={data} />}
       extra={<AgentTags tags={data.tags} />}
       showReleaseTime
     />

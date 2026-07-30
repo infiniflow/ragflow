@@ -5,6 +5,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -53,6 +55,7 @@ func newMistralForTest(baseURL string) *MistralModel {
 			Chat:      "chat/completions",
 			Models:    "models",
 			Embedding: "embeddings",
+			ASR:       "audio/transcriptions",
 		},
 	)
 }
@@ -411,6 +414,104 @@ func TestMistralRerankReturnsNoSuchMethod(t *testing.T) {
 	}
 }
 
+func TestMistralTranscribeAudio(t *testing.T) {
+	ctx := t.Context()
+	audioPath := filepath.Join(t.TempDir(), "sample.wav")
+	if err := os.WriteFile(audioPath, []byte("fake-audio"), 0o600); err != nil {
+		t.Fatalf("write audio file: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/audio/transcriptions" {
+			t.Errorf("path=%s, want /audio/transcriptions", r.URL.Path)
+		}
+		if r.Method != http.MethodPost {
+			t.Errorf("method=%s, want POST", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Errorf("Authorization=%q, want Bearer test-key", got)
+		}
+		if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data;") {
+			t.Errorf("Content-Type=%q, want multipart/form-data", r.Header.Get("Content-Type"))
+		}
+		if got := r.Header.Get("Accept"); got != "application/json" {
+			t.Errorf("Accept=%q, want application/json", got)
+		}
+
+		reader, err := r.MultipartReader()
+		if err != nil {
+			t.Fatalf("MultipartReader: %v", err)
+		}
+		fields := make(map[string]string)
+		var fileName, fileBody string
+		for {
+			part, err := reader.NextPart()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatalf("NextPart: %v", err)
+			}
+			data, err := io.ReadAll(part)
+			if err != nil {
+				t.Fatalf("ReadAll part: %v", err)
+			}
+			if part.FormName() == "file" {
+				fileName = part.FileName()
+				fileBody = string(data)
+				continue
+			}
+			fields[part.FormName()] = string(data)
+		}
+		if fileName != "sample.wav" {
+			t.Errorf("file name=%q, want sample.wav", fileName)
+		}
+		if fileBody != "fake-audio" {
+			t.Errorf("file body=%q, want fake-audio", fileBody)
+		}
+		if fields["model"] != "voxtral-mini-latest" {
+			t.Errorf("model=%q, want voxtral-mini-latest", fields["model"])
+		}
+		if fields["language"] != "en" {
+			t.Errorf("language=%q, want en", fields["language"])
+		}
+		if fields["diarize"] != "true" {
+			t.Errorf("diarize=%q, want true", fields["diarize"])
+		}
+		if fields["timestamp_granularities"] != `["segment","word"]` {
+			t.Errorf("timestamp_granularities=%q", fields["timestamp_granularities"])
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"language": "en",
+			"model":    "voxtral-mini-latest",
+			"text":     "hello world",
+		})
+	}))
+	defer srv.Close()
+
+	apiKey := " test-key "
+	modelName := " voxtral-mini-latest "
+	resp, err := newMistralForTest(srv.URL).TranscribeAudio(
+		ctx,
+		&modelName,
+		&audioPath,
+		&APIConfig{ApiKey: &apiKey},
+		&ASRConfig{Params: map[string]interface{}{
+			"language":                "en",
+			"diarize":                 true,
+			"timestamp_granularities": []string{"segment", "word"},
+		}},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("TranscribeAudio: %v", err)
+	}
+	if resp.Text != "hello world" {
+		t.Fatalf("Text=%q, want hello world", resp.Text)
+	}
+}
+
 func TestMistralUnsupportedDefaultsReturnNoSuchMethod(t *testing.T) {
 	ctx := t.Context()
 	m := newMistralForTest("http://unused")
@@ -420,16 +521,8 @@ func TestMistralUnsupportedDefaultsReturnNoSuchMethod(t *testing.T) {
 		name string
 		call func() error
 	}{
-		{"TranscribeAudio", func() error {
-			_, err := m.TranscribeAudio(ctx, &modelName, nil, &APIConfig{}, nil, nil)
-			return err
-		}},
 		{"TranscribeAudioWithSender", func() error {
 			return m.TranscribeAudioWithSender(ctx, &modelName, nil, &APIConfig{}, nil, nil, nil)
-		}},
-		{"AudioSpeech", func() error {
-			_, err := m.AudioSpeech(ctx, &modelName, nil, &APIConfig{}, nil, nil)
-			return err
 		}},
 		{"AudioSpeechWithSender", func() error {
 			return m.AudioSpeechWithSender(ctx, &modelName, nil, &APIConfig{}, nil, nil, nil)

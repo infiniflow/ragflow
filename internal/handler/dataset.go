@@ -78,7 +78,8 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 	}
 
 	if c.Query("type") == "filter" {
-		data, code, err := h.datasetsService.ListDatasetFilters(user.ID)
+		ctx := c.Request.Context()
+		data, code, err := h.datasetsService.ListDatasetFilters(ctx, user.ID)
 		if err != nil {
 			common.ErrorWithCode(c, code, err.Error())
 			return

@@ -747,20 +747,66 @@ async def get_dataset_structure(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
+@manager.route("/datasets/<dataset_id>/artifacts_structure", methods=["DELETE"])  # noqa: F821
+@login_required
+@add_tenant_id_to_kwargs
+def delete_dataset_structure(tenant_id, dataset_id):
+    """Delete the dataset-scope (KB-wide) structure graph for one kind.
+
+    DELETE /api/v1/datasets/<dataset_id>/artifacts_structure?kind=<kind>
+    Optional query param: wipe=false cancels the task without deleting stored rows.
+    """
+    kind = request.args.get("kind", "")
+    if isinstance(kind, str):
+        kind = kind.strip()
+    if not kind:
+        return get_error_data_result(
+            message="`kind` is required (one of: graph, mindmap, timeline, session_essence, session_graph).",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+    if dataset_api_service._resolve_dataset_structure_kind(kind) is None:
+        return get_error_data_result(
+            message=f"Unsupported structure kind: {kind!r}. Expected one of: graph, mindmap, timeline, session_essence, session_graph.",
+            code=RetCode.ARGUMENT_ERROR,
+        )
+    wipe_arg = (request.args.get("wipe", "true") or "true").strip().lower()
+    wipe = wipe_arg not in ("false", "0", "no", "off")
+    try:
+        success, result = dataset_api_service.delete_dataset_structure(
+            dataset_id,
+            tenant_id,
+            kind,
+            wipe=wipe,
+        )
+        if success:
+            return get_result(data=result)
+        if result == "no authorization":
+            return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        return get_error_data_result(message=result)
+    except Exception as e:
+        logging.exception(e)
+        return get_error_data_result(message="Internal server error")
+
+
 @manager.route("/datasets/<dataset_id>/artifacts/alteration", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def get_wiki_alteration(tenant_id, dataset_id):
-    """Return document drift for the dataset Artifact wiki.
+    """Return document drift for a compiled dataset product.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts/alteration
+    GET /api/v1/datasets/<dataset_id>/artifacts/alteration?kind=<kind>
+    ``kind`` (default ``wiki``) is one of: wiki | graph | mindmap | timeline |
+    tree (tree covers both ``tree`` and ``page_index``).
     Success: {"code": 0, "data": {"removed": int, "newly_uploaded": int, ...}}
     """
+    kind = (request.args.get("kind") or "wiki").strip().lower()
+    if kind not in {"wiki", "graph", "mindmap", "timeline", "tree"}:
+        return get_error_data_result(message=f"Unsupported kind: {kind!r}. Expected one of: wiki, graph, mindmap, timeline, tree.")
     try:
-        success, result = await dataset_api_service.get_wiki_alteration(
-            dataset_id,
-            tenant_id,
-        )
+        if kind == "wiki":
+            success, result = await dataset_api_service.get_wiki_alteration(dataset_id, tenant_id)
+        else:
+            success, result = await dataset_api_service.get_structure_alteration(dataset_id, tenant_id, kind)
         if success:
             return get_result(data=result)
         return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)

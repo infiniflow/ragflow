@@ -54,7 +54,7 @@ export interface IDeleteProviderInstanceRequestBody {
 
 export interface IShowProviderInstanceRequestParams {
   provider_name: string;
-  instance_name: string;
+  id: string;
 }
 
 export interface IAddInstanceModelRequestBody {
@@ -104,7 +104,7 @@ export interface IDeleteInstanceModelsRequestBody {
 export interface IUpdateProviderInstanceRequestBody {
   provider_name: string;
   instance_name: string;
-  id?: string;
+  id: string;
   /**
    * Either a plain API-key string, or — for providers that need an
    * extra credential such as MiniMax's `group_id` — an object bundling

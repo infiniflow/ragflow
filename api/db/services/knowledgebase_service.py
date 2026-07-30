@@ -306,8 +306,8 @@ class KnowledgebaseService(CommonService):
             cls.model.raptor_task_finish_at,
             cls.model.mindmap_task_id,
             cls.model.mindmap_task_finish_at,
-            cls.model.artifact_task_id,
-            cls.model.artifact_task_finish_at,
+            cls.model.wiki_task_id,
+            cls.model.wiki_task_finish_at,
             cls.model.skill_task_id,
             cls.model.skill_task_finish_at,
             cls.model.structure_graph_task_id,
@@ -427,7 +427,7 @@ class KnowledgebaseService(CommonService):
             return False, get_data_error_result(message="Dataset name must be string.")
         dataset_name = name.strip()
         if dataset_name == "":
-            return False, get_data_error_result(message="Dataset name can't be empty.")
+            return False, get_data_error_result(message="dataset name can't be empty")
         if len(dataset_name.encode("utf-8")) > DATASET_NAME_LIMIT:
             return False, get_data_error_result(message=f"Dataset name length is {len(dataset_name)} which is large than {DATASET_NAME_LIMIT}")
 

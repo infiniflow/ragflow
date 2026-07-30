@@ -141,10 +141,12 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 			return emptyOutputs()
 		}
 		out := schema.ChunkDoc{
-			Text:    text,
-			DocType: docType,
-			CKType:  docType,
-			Image:   it.Image,
+			Text:         text,
+			DocType:      docType,
+			CKType:       docType,
+			Image:        it.Image,
+			Positions:    it.Positions,
+			PDFPositions: it.PDFPositions,
 		}
 		return chunkOutputs([]schema.ChunkDoc{out})
 	}
@@ -164,6 +166,11 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 		return emptyOutputs()
 	}
 	out := schema.ChunkDoc{Text: merged, DocType: "text", CKType: "text"}
+	// Multi-item merge produces a single text-only chunk mirroring Python
+	// one.py:166-168. Per-item Positions/PDFPositions are intentionally
+	// not carried — merging coordinates from different source items would
+	// produce meaningless composite geometry, and the downstream
+	// processChunkPositions would map them to incorrect pages.
 	if img != "" {
 		out.Image = img
 	}

@@ -41,7 +41,7 @@ Knowledge graphs can also be used for multi-hop question-answering tasks. See [C
 
 The system's default chat model is used to summarize clustered content. Before proceeding, ensure that you have a chat model properly configured:
 
-![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.jpg)
+![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.png)
 
 ## Configurations
 
@@ -78,7 +78,7 @@ A random seed. Click **+** to change the seed value.
 ## Quickstart
 
 1. Navigate to the **Configuration** page of your dataset and update:
-   
+
    - Prompt: *Optional* - We recommend that you keep it as-is until you understand the mechanism behind.
    - Max token: *Optional*
    - Threshold: *Optional*
@@ -88,8 +88,8 @@ A random seed. Click **+** to change the seed value.
 
    *You can click the pause button in the dropdown to halt the build process when necessary.*
 
-3. Go back to the **Configuration** page:  
-   
+3. Go back to the **Configuration** page:
+
    *The **RAPTOR** field changes from `Not generated` to `Generated at a specific timestamp` when a RAPTOR hierarchical tree structure is generated. You can delete it by clicking the recycle bin button to the right of the field.*
 
 4. Once a RAPTOR hierarchical tree structure is generated, your chat assistant and **Retrieval** agent component will use it for retrieval as a default.

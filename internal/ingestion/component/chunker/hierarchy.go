@@ -41,6 +41,7 @@ package chunker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -139,7 +140,7 @@ func (n *chunkNode) getPaths(paths *[][]int, titles []int, depth int, includeHea
 }
 
 // invokeHierarchy runs the HierarchyTitleChunker strategy.
-func invokeHierarchy(_ context.Context, inputs map[string]any, p *titleChunkerParam) (map[string]any, error) {
+func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]any, p *titleChunkerParam) (map[string]any, error) {
 	records := extractLineRecords(inputs)
 	common.Debug("chunker stage",
 		zap.String("component", "Chunker"),
@@ -246,6 +247,21 @@ func invokeHierarchy(_ context.Context, inputs map[string]any, p *titleChunkerPa
 		zap.Int("chunks", len(chunks)),
 		zap.Bool("plain_text", isPlainTextFormat(inputs)),
 	)
+
+	// On-demand PDF preview cropping for image/table/text chunks,
+	// mirroring the TokenChunker JSON path (token.go:513). Best-effort:
+	// a missing or unreadable PDF simply skips cropping.
+	if upstream, uErr := decodeChunkerFromUpstream(inputs); uErr == nil {
+		engine, eErr := newPDFEngineFromUpstream(parentCtx, db, upstream)
+		if eErr != nil {
+			slog.Warn("HierarchyTitleChunker: could not open PDF for on-demand cropping", "err", eErr)
+		}
+		if engine != nil {
+			defer engine.Close()
+			chunks = cropTitleChunks(parentCtx, engine, chunks)
+		}
+	}
+
 	if len(chunks) == 0 {
 		return emptyOutputs(), nil
 	}
@@ -302,7 +318,7 @@ func (c *HierarchyTitleChunkerComponent) Invoke(ctx context.Context, db *gorm.DB
 			"_ERROR":        "HierarchyTitleChunker: missing required upstream field \"name\"",
 		}, nil
 	}
-	return invokeHierarchy(ctx, withName(inputs, name), &c.param)
+	return invokeHierarchy(ctx, db, withName(inputs, name), &c.param)
 }
 
 // init registers HierarchyTitleChunker under CategoryIngestion.

@@ -24,13 +24,13 @@ from abc import ABC
 from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
-from urllib.parse import urljoin
 from json.decoder import JSONDecodeError
 
 import requests
 from openai import OpenAI, AsyncOpenAI
 from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 
+from common.aimlapi_utils import attribution_headers
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
@@ -1100,86 +1100,13 @@ class GeminiCV(Base):
                 tmp_path.unlink()
 
 
-class NvidiaCV(Base):
+class NvidiaCV(GptV4):
     _FACTORY_NAME = "NVIDIA"
 
-    def __init__(self, key, model_name, lang="Chinese", base_url="https://ai.api.nvidia.com/v1/vlm", **kwargs):
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://integrate.api.nvidia.com/v1", **kwargs):
         if not base_url:
-            base_url = ("https://ai.api.nvidia.com/v1/vlm",)
-        self.lang = lang
-        factory, llm_name = model_name.split("/")
-        if factory != "liuhaotian":
-            self.base_url = urljoin(base_url, f"{factory}/{llm_name}")
-        else:
-            self.base_url = urljoin(f"{base_url}/community", llm_name.replace("-v1.6", "16"))
-        self.key = key
-        Base.__init__(self, **kwargs)
-
-    def _image_prompt(self, text, images):
-        if not images:
-            return text
-        htmls = ""
-        for img in images:
-            htmls += ' <img src="{}"/>'.format(f"data:image/jpeg;base64,{img}" if img[:4] != "data" else img)
-        return text + htmls
-
-    def describe(self, image):
-        b64 = self.image2base64(image)
-        response = requests.post(
-            url=self.base_url,
-            headers={
-                "accept": "application/json",
-                "content-type": "application/json",
-                "Authorization": f"Bearer {self.key}",
-            },
-            json={"messages": self.prompt(b64)},
-            timeout=60,
-        )
-        response = response.json()
-        return (
-            response["choices"][0]["message"]["content"].strip(),
-            total_token_count_from_response(response),
-        )
-
-    def _request(self, msg, gen_conf=None):
-        gen_conf = dict(gen_conf or {})
-        response = requests.post(
-            url=self.base_url,
-            headers={
-                "accept": "application/json",
-                "content-type": "application/json",
-                "Authorization": f"Bearer {self.key}",
-            },
-            json={"messages": msg, **gen_conf},
-            timeout=60,
-        )
-        return response.json()
-
-    def describe_with_prompt(self, image, prompt=None):
-        b64 = self.image2base64(image)
-        vision_prompt = self.vision_llm_prompt(b64, prompt) if prompt else self.vision_llm_prompt(b64)
-        response = self._request(vision_prompt)
-        return (response["choices"][0]["message"]["content"].strip(), total_token_count_from_response(response))
-
-    async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
-        try:
-            response = await thread_pool_exec(self._request, self._form_history(system, history, images), gen_conf)
-            return (response["choices"][0]["message"]["content"].strip(), total_token_count_from_response(response))
-        except Exception as e:
-            return "**ERROR**: " + str(e), 0
-
-    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
-        total_tokens = 0
-        try:
-            response = await thread_pool_exec(self._request, self._form_history(system, history, images), gen_conf)
-            cnt = response["choices"][0]["message"]["content"]
-            total_tokens += total_token_count_from_response(response)
-            for resp in cnt:
-                yield resp
-        except Exception as e:
-            yield "\n**ERROR**: " + str(e)
-
-        yield total_tokens
+            base_url = "https://integrate.api.nvidia.com/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
 
 
 class AnthropicCV(Base):
@@ -1404,6 +1331,9 @@ class AIMLAPICV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
         base_url = base_url or os.environ.get("AIMLAPI_API_URL", "https://api.aimlapi.com/v1")
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        headers = attribution_headers()
+        self.client = self.client.with_options(default_headers=headers)
+        self.async_client = self.async_client.with_options(default_headers=headers)
         logging.info("[aimlapi.com] CV initialized with model %s", model_name)
 
 

@@ -19,6 +19,8 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 type pdfVisionPage struct {
@@ -44,6 +46,7 @@ var (
 
 func maybeDispatchPDFVision(
 	ctx context.Context,
+	db *gorm.DB,
 	fileType utility.FileType,
 	filename string,
 	binary []byte,
@@ -69,9 +72,9 @@ func maybeDispatchPDFVision(
 		tenantID := getStringOr(inputs, "tenant_id", "")
 		if tenantID == "" {
 			return parserDispatchResult{}, true,
-				fmt.Errorf("Parser: mineru requires tenant_id")
+				fmt.Errorf("parser: MinerU requires tenant_id")
 		}
-		res, err := dispatchMinerUPDF(filename, binary, tenantID, setup)
+		res, err := dispatchMinerUPDF(ctx, db, filename, binary, tenantID, setup)
 		if err != nil {
 			return parserDispatchResult{}, true, err
 		}
@@ -85,9 +88,9 @@ func maybeDispatchPDFVision(
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	if tenantID == "" {
 		return parserDispatchResult{}, true, fmt.Errorf(
-			`Parser: pdf parse_method %q requires tenant_id to resolve IMAGE2TEXT model`, modelID)
+			`parser: pdf parse_method %q requires tenant_id to resolve VLM model`, modelID)
 	}
-	res, err := dispatchPDFVision(ctx, filename, binary, tenantID, modelID, setup)
+	res, err := dispatchPDFVision(ctx, db, filename, binary, tenantID, modelID, setup)
 	if err != nil {
 		return parserDispatchResult{}, true, err
 	}
@@ -96,21 +99,23 @@ func maybeDispatchPDFVision(
 
 // dispatchMinerUPDF submits a PDF to the tenant's MinerU OCR model
 // via the streaming /file_parse endpoint and returns parsed sections.
-// Mirrors Python's mineru_parser.py:parse_pdf which POSTs with
+// Mirrors Python's mineru_parser.py:parse_PDF which POSTs with
 // stream=True and reads the zip response body directly (no polling).
 func dispatchMinerUPDF(
+	ctx context.Context,
+	db *gorm.DB,
 	_ string,
 	binary []byte,
 	tenantID string,
 	setup schema.ParserSetup,
 ) (parserDispatchResult, error) {
-	driver, _, apiConfig, _, err := resolveTenantModelByType(tenantID, entity.ModelTypeOCR)
+	driver, _, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeOCR)
 	if err != nil {
-		return parserDispatchResult{}, fmt.Errorf("Parser: mineru model: %w", err)
+		return parserDispatchResult{}, fmt.Errorf("parser: MinerU model: %w", err)
 	}
 	if !isMinerUDriver(driver) {
 		return parserDispatchResult{}, fmt.Errorf(
-			"Parser: mineru requires a MinerU OCR model; found %q. Please add a MinerU OCR model to your tenant.", driver.Name())
+			"parser: MinerU requires a MinerU OCR model; found %q. Please add a MinerU OCR model to your tenant", driver.Name())
 	}
 
 	baseURL := ""
@@ -130,12 +135,12 @@ func dispatchMinerUPDF(
 
 	zipBytes, err := mineruStreamParse(apiURL, apiConfig.ApiKey, binary, parseMethod, mineruLang, backend)
 	if err != nil {
-		return parserDispatchResult{}, fmt.Errorf("Parser: mineru stream: %w", err)
+		return parserDispatchResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
 	}
 
 	sections, err := mineruExtractSections(zipBytes)
 	if err != nil {
-		return parserDispatchResult{}, fmt.Errorf("Parser: mineru extract: %w", err)
+		return parserDispatchResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
 	}
 
 	var parts []string
@@ -277,7 +282,7 @@ func mineruExtractSections(zipBytes []byte) ([]string, error) {
 	}
 
 	var items []map[string]any
-	if err := json.Unmarshal(contentList, &items); err != nil {
+	if err = json.Unmarshal(contentList, &items); err != nil {
 		return nil, fmt.Errorf("parse content_list.json: %w", err)
 	}
 
@@ -293,12 +298,12 @@ func mineruExtractSections(zipBytes []byte) ([]string, error) {
 			if tb, ok := item["table_body"].(string); ok {
 				sections = append(sections, tb)
 			}
-			for _, cap := range stringSlice(item["table_caption"]) {
-				sections = append(sections, cap)
+			for _, caption := range stringSlice(item["table_caption"]) {
+				sections = append(sections, caption)
 			}
 		case "image":
-			for _, cap := range stringSlice(item["image_caption"]) {
-				sections = append(sections, cap)
+			for _, caption := range stringSlice(item["image_caption"]) {
+				sections = append(sections, caption)
 			}
 			if desc, ok := item["vlm_description"].(string); ok && desc != "" {
 				sections = append(sections, desc)
@@ -386,6 +391,7 @@ func isNamedPDFParseMethod(raw string) bool {
 
 func dispatchPDFVision(
 	ctx context.Context,
+	db *gorm.DB,
 	filename string,
 	binary []byte,
 	tenantID string,
@@ -394,15 +400,15 @@ func dispatchPDFVision(
 ) (parserDispatchResult, error) {
 	renderedPages, err := pdfVisionPageRenderer(binary)
 	if err != nil {
-		return parserDispatchResult{}, fmt.Errorf("Parser: pdf vision render: %w", err)
+		return parserDispatchResult{}, fmt.Errorf("parser: pdf vision render: %w", err)
 	}
-	driver, resolvedModelName, apiConfig, err := pdfVisionModelResolver(tenantID, modelID)
+	driver, resolvedModelName, apiConfig, err := pdfVisionModelResolver(ctx, db, tenantID, modelID)
 	if err != nil {
-		return parserDispatchResult{}, fmt.Errorf("Parser: pdf vision model %q: %w", modelID, err)
+		return parserDispatchResult{}, fmt.Errorf("parser: pdf vision model %q: %w", modelID, err)
 	}
 	promptTemplate, err := pdfVisionPromptLoader("vision_llm_describe_prompt")
 	if err != nil {
-		return parserDispatchResult{}, fmt.Errorf("Parser: load vision prompt: %w", err)
+		return parserDispatchResult{}, fmt.Errorf("parser: load vision prompt: %w", err)
 	}
 
 	items := make([]map[string]any, 0, len(renderedPages))
@@ -411,7 +417,7 @@ func dispatchPDFVision(
 		prompt := renderPDFVisionPrompt(promptTemplate, page.PageNumber)
 		resp, err := pdfVisionChatInvoker(ctx, driver, resolvedModelName, buildPDFVisionMessages(prompt, page.ImageURL), apiConfig)
 		if err != nil {
-			return parserDispatchResult{}, fmt.Errorf("Parser: pdf vision page %d: %w", page.PageNumber, err)
+			return parserDispatchResult{}, fmt.Errorf("parser: pdf vision page %d: %w", page.PageNumber, err)
 		}
 		text := extractPDFVisionAnswer(resp)
 		positions := [][]any{{page.PageNumber, 0.0, page.WidthPts, 0.0, page.HeightPts}}
@@ -451,7 +457,7 @@ func dispatchPDFVision(
 			Markdown:     strings.TrimSpace(strings.Join(markdownParts, "\n\n")),
 		}, nil
 	default:
-		return parserDispatchResult{}, fmt.Errorf("Parser: unsupported PDF output_format %q for vision parse_method %q", outputFormat, modelID)
+		return parserDispatchResult{}, fmt.Errorf("parser: unsupported PDF output_format %q for vision parse_method %q", outputFormat, modelID)
 	}
 }
 
@@ -473,14 +479,16 @@ func extractPDFVisionAnswer(resp *modelModule.ChatResponse) string {
 }
 
 func defaultPDFVisionModelResolver(
+	ctx context.Context,
+	db *gorm.DB,
 	tenantID string,
 	modelID string,
 ) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
 	if strings.TrimSpace(modelID) == "" {
-		driver, modelName, apiConfig, _, err := resolveTenantModelByType(tenantID, entity.ModelTypeImage2Text)
+		driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 		return driver, modelName, apiConfig, err
 	}
-	driver, modelName, apiConfig, _, err := resolveModelConfig(tenantID, entity.ModelTypeImage2Text, modelID)
+	driver, modelName, apiConfig, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelID)
 	return driver, modelName, apiConfig, err
 }
 
@@ -550,3 +558,96 @@ func isMinerUDriver(driver modelModule.ModelDriver) bool {
 	}
 	return false
 }
+
+// maybeDispatchPDFVisionEnhancement mirrors Python's
+// enhance_media_sections_with_vision for PDF
+// After the normal PDF parser produces JSON items, this function
+// enriches image/table items by calling the tenant's IMAGE2TEXT
+// model and appending vision descriptions to each item's text field.
+// The markdown/text output paths are not enhanced (Python does the same).
+//
+// This follows the exact same convention as maybeDispatchDOCXVision and
+// maybeDispatchMarkdownVision: it is not gated by a separate setup flag,
+// it simply resolves the tenant's IMAGE2TEXT model and skips silently
+// when none is configured — matching Python's try/except pass behaviour.
+func maybeDispatchPDFVisionEnhancement(
+	ctx context.Context,
+	db *gorm.DB,
+	fileType utility.FileType,
+	dispatched parserDispatchResult,
+	inputs map[string]any,
+) (parserDispatchResult, bool, error) {
+	if fileType != utility.FileTypePDF {
+		return dispatched, false, nil
+	}
+	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
+		return dispatched, false, nil
+	}
+	tenantID := getStringOr(inputs, "tenant_id", "")
+	if tenantID == "" {
+		return dispatched, false, nil
+	}
+	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+	if err != nil {
+		return dispatched, false, nil
+	}
+	type target struct{ idx int }
+	var targets []target
+	for i, item := range dispatched.JSON {
+		kd, _ := item["doc_type_kwd"].(string)
+		if kd != "image" && kd != "table" {
+			continue
+		}
+		img, _ := item["image"].(string)
+		if img == "" {
+			continue
+		}
+		targets = append(targets, target{idx: i})
+	}
+	if len(targets) == 0 {
+		return dispatched, false, nil
+	}
+	descriptions := make([]string, len(targets))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, pdfVisionEnhanceConcurrency)
+	for slot, tg := range targets {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func(slot int, itemIdx int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			img, _ := dispatched.JSON[itemIdx]["image"].(string)
+			if img == "" {
+				return
+			}
+			prompt, perr := docxVisionPromptBuilder("", "")
+			if perr != nil {
+				return
+			}
+			messages := buildVisionMessages(prompt, img)
+			resp, ierr := visionChatInvoker(ctx, driver, modelName, messages, apiConfig)
+			if ierr != nil {
+				return
+			}
+			descriptions[slot] = extractDOCXVisionAnswer(resp)
+		}(slot, tg.idx)
+	}
+	wg.Wait()
+	modified := false
+	for slot, tg := range targets {
+		desc := strings.TrimSpace(descriptions[slot])
+		if desc == "" {
+			continue
+		}
+		existing, _ := dispatched.JSON[tg.idx]["text"].(string)
+		if existing != "" {
+			dispatched.JSON[tg.idx]["text"] = existing + "\n" + desc
+		} else {
+			dispatched.JSON[tg.idx]["text"] = desc
+		}
+		modified = true
+	}
+	return dispatched, modified, nil
+}
+
+var pdfVisionEnhanceConcurrency = 10

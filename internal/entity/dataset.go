@@ -121,8 +121,8 @@ type Knowledgebase struct {
 	RaptorTaskFinishAt     *time.Time `gorm:"column:raptor_task_finish_at" json:"raptor_task_finish_at,omitempty"`
 	MindmapTaskID          *string    `gorm:"column:mindmap_task_id;size:32;index" json:"mindmap_task_id,omitempty"`
 	MindmapTaskFinishAt    *time.Time `gorm:"column:mindmap_task_finish_at" json:"mindmap_task_finish_at,omitempty"`
-	ArtifactTaskID         *string    `gorm:"column:artifact_task_id;size:32;index" json:"artifact_task_id,omitempty"`
-	ArtifactTaskFinishAt   *time.Time `gorm:"column:artifact_task_finish_at" json:"artifact_task_finish_at,omitempty"`
+	WikiTaskID             *string    `gorm:"column:wiki_task_id;size:32;index" json:"wiki_task_id,omitempty"`
+	WikiTaskFinishAt       *time.Time `gorm:"column:wiki_task_finish_at" json:"wiki_task_finish_at,omitempty"`
 	SkillTaskID            *string    `gorm:"column:skill_task_id;size:32;index" json:"skill_task_id,omitempty"`
 	SkillTaskFinishAt      *time.Time `gorm:"column:skill_task_finish_at" json:"skill_task_finish_at,omitempty"`
 	Status                 *string    `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
@@ -235,6 +235,7 @@ type KnowledgebaseListItem struct {
 	ChunkNum     int64   `json:"chunk_num"`
 	ParserID     string  `json:"parser_id"`
 	EmbdID       string  `json:"embd_id"`
+	TenantEmbdID *string `json:"tenant_embd_id,omitempty"`
 	Nickname     string  `json:"nickname"`
 	TenantAvatar *string `json:"tenant_avatar,omitempty"`
 	UpdateTime   *int64  `json:"update_time,omitempty"`

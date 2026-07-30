@@ -36,6 +36,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
@@ -108,7 +109,7 @@ func buildSectionIDs(levels []int, targetLevel int) []int {
 // supplied inputs. Detected headings + adjacent merges happen in two
 // goroutines (heading detection sequential, then a fan-out over
 // record-buckets for the merge pass).
-func invokeGroup(_ context.Context, inputs map[string]any, p *titleChunkerParam) (map[string]any, error) {
+func invokeGroup(parentCtx context.Context, db *gorm.DB, inputs map[string]any, p *titleChunkerParam) (map[string]any, error) {
 	records := extractLineRecords(inputs)
 	common.Debug("chunker stage",
 		zap.String("component", "Chunker"),
@@ -161,6 +162,21 @@ func invokeGroup(_ context.Context, inputs map[string]any, p *titleChunkerParam)
 		zap.Int("chunks", len(chunks)),
 		zap.Bool("plain_text", isPlainTextFormat(inputs)),
 	)
+
+	// On-demand PDF preview cropping for image/table/text chunks,
+	// mirroring the TokenChunker JSON path (token.go:513). Best-effort:
+	// a missing or unreadable PDF simply skips cropping.
+	if upstream, uErr := decodeChunkerFromUpstream(inputs); uErr == nil {
+		engine, eErr := newPDFEngineFromUpstream(parentCtx, db, upstream)
+		if eErr != nil {
+			slog.Warn("GroupTitleChunker: could not open PDF for on-demand cropping", "err", eErr)
+		}
+		if engine != nil {
+			defer engine.Close()
+			chunks = cropTitleChunks(parentCtx, engine, chunks)
+		}
+	}
+
 	if len(chunks) == 0 {
 		return emptyOutputs(), nil
 	}
@@ -484,7 +500,7 @@ func (c *GroupTitleChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 			"_ERROR":        "GroupTitleChunker: missing required upstream field \"name\"",
 		}, nil
 	}
-	return invokeGroup(ctx, withName(inputs, name), &c.param)
+	return invokeGroup(ctx, db, withName(inputs, name), &c.param)
 }
 
 // init registers GroupTitleChunker under CategoryIngestion.

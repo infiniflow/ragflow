@@ -2,11 +2,14 @@ package document
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/knowledge_compile"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
@@ -276,10 +279,15 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	if err != nil {
 		return err
 	}
-	if _, delErr := s.taskDAO.DeleteByDocIDs([]string{docID}); delErr != nil {
+	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
 		common.Logger.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
 	}
-	s.deleteDocEngineData(docID, kb.TenantID, doc.KbID)
+	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
+		if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
+			return fmt.Errorf("RemoveDocumentKeepFile: failed to delete tasks for %s: %w", docID, delErr)
+		}
+		common.Logger.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
+	}
 	return s.deleteDocRecordWithCounters(ctx, doc, kb.ID)
 }
 
@@ -350,6 +358,18 @@ func (s *DocumentService) deleteDocEngineData(docID, tenantID, kbID string) {
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docID}, indexName, kbID); delErr != nil {
 		common.Logger.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
+	}
+	// Notify the dataset-level post-processing consumer (§11) that this document's
+	// source + per-doc compiled chunks are gone. The consumer removes the
+	// dataset-scoped merged products and triggers incremental re-dedup. Best-
+	// effort, non-fatal: the synchronous deletion above already removed the
+	// source/per-doc chunks, so the consumer only owns merged-product cleanup.
+	// Bound the publish with a timeout so a stalled scheduler (MySQL/NATS) can
+	// never block the document delete, which already succeeded above.
+	pubCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := knowledge_compile.PublishDeleted(pubCtx, tenantID, kbID, docID, 0); err != nil {
+		common.Logger.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	if s.metadataSvc != nil {
 		_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally

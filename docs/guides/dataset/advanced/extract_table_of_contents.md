@@ -21,7 +21,7 @@ Enabling PageIndex extraction requires significant memory, computational resourc
 
 The system's default chat model is used to summarize clustered content. Before proceeding, ensure that you have a chat model properly configured:
 
-![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.jpg)
+![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.png)
 
 ## Quickstart
 
@@ -30,7 +30,7 @@ The system's default chat model is used to summarize clustered content. Before p
 2. Enable **PageIndex**.
 
 3. To use this technique during retrieval, do either of the following:
-   
+
    - In the **Chat setting** panel of your chat app, switch on the **PageIndex** toggle.
    - If you are using an Agent, click the **Retrieval** agent component to specify the dataset(s) and switch on the **PageIndex** toggle.
 

@@ -10,10 +10,17 @@ import { buildChunkHighlights } from '@/utils/document-util';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { camelCase, upperFirst } from 'lodash';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  createElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import { IHighlight } from 'react-pdf-highlighter';
 import { useParams, useSearchParams } from 'react-router';
-import { ITimelineNodeObj, TimelineNodeObj } from './components/time-line';
+import OperatorIcon from '@/components/operator-icon';
+import { Operator } from '@/constants/agent';
 import {
   ChunkTextMode,
   PipelineResultSearchParams,
@@ -214,17 +221,16 @@ export const useRerunDataflow = ({
 
 export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
   const timelineNodes: TimelineNode[] = useMemo(() => {
-    const nodes: Array<ITimelineNodeObj & { id: number | string }> = [];
-    console.log('time-->', data);
+    const nodes: Array<
+      TimelineNode & { detail: { value: IDslComponent; key: string } }
+    > = [];
     const times = data?.dsl?.components;
     const graphNodes = data?.dsl?.graph?.nodes;
     if (times) {
       const getNode = (key: string, index: number, type: TimelineNodeType) => {
         const node = times[key].obj;
         const graphNode = graphNodes?.find((item) => item.id === key);
-        const name = camelCase(
-          node.component_name,
-        ) as keyof typeof TimelineNodeObj;
+        const name = camelCase(node.component_name);
 
         let tempType = type;
         if (name === TimelineNodeType.parser) {
@@ -237,9 +243,19 @@ export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
         ) {
           tempType = name;
         }
+        const operatorName = upperFirst(name) as keyof typeof Operator;
         const timeNode = {
-          ...TimelineNodeObj[name],
+          icon: Operator[operatorName]
+            ? createElement(OperatorIcon, {
+                name: Operator[operatorName],
+              })
+            : undefined,
           title: graphNode?.data?.name,
+          clickable: ![
+            TimelineNodeType.begin,
+            TimelineNodeType.tokenizer,
+            TimelineNodeType.compiler,
+          ].includes(name as TimelineNodeType),
           id: index,
           className: 'w-32',
           completed: false,
@@ -248,26 +264,18 @@ export const useTimelineDataFlow = (data: IPipelineFileLogDetail) => {
           ),
           type: tempType,
           detail: { value: times[key], key: key },
-        } as ITimelineNodeObj & {
-          id: number | string;
-          className: string;
-          completed: boolean;
-          date: string;
-          type: TimelineNodeType;
+        } as TimelineNode & {
           detail: { value: IDslComponent; key: string };
         };
-        console.log('timeNodetype-->', type);
         nodes.push(timeNode);
 
         if (times[key].downstream && times[key].downstream.length > 0) {
           const nextKey = times[key].downstream[0];
 
-          // nodes.push(timeNode);
           getNode(nextKey, index + 1, tempType);
         }
       };
       getNode(upperFirst(TimelineNodeType.begin), 1, TimelineNodeType.begin);
-      // setTimelineNodeArr(nodes as unknown as ITimelineNodeObj & {id: number | string})
     }
     return nodes;
   }, [data]);

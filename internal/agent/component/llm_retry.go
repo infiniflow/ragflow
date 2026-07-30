@@ -26,6 +26,8 @@ import (
 	"fmt"
 	"time"
 
+	"ragflow/internal/common"
+
 	"gorm.io/gorm"
 )
 
@@ -119,34 +121,16 @@ func (r *retryInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRe
 	if r.inner == nil {
 		return nil, fmt.Errorf("component: retryInvoker: nil inner")
 	}
-	delay := r.initialDelay
-	var lastErr error
-	for attempt := 0; attempt <= r.maxRetries; attempt++ {
-		resp, err := r.inner.Invoke(ctx, db, req)
-		if err == nil {
-			return resp, nil
-		}
-		lastErr = err
-		if attempt == r.maxRetries {
-			break
-		}
-		// Honour ctx cancellation during backoff. A short-circuited
-		// sleep avoids hanging on shutdown when a long initialDelay
-		// would otherwise block the goroutine.
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(delay):
-		}
-		// Cap the doubling at a sane upper bound (1 minute). Without
-		// this a misconfigured initialDelay (e.g. 10s) plus 5 retries
-		// would sleep 10+20+40+80+160 = 310s before giving up.
-		if delay > 0 {
-			delay *= 2
-			if delay > time.Minute {
-				delay = time.Minute
-			}
-		}
+	var resp *ChatInvokeResponse
+	err := common.RetryWithBackoff(ctx, r.maxRetries, r.initialDelay, func() error {
+		r, e := r.inner.Invoke(ctx, db, req)
+		resp = r
+		return e
+	})
+	// On failure, return nil (not the last partial response) so callers
+	// that check err first never dereference a half-formed resp.
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("component: LLM: chat failed after %d retries: %w", r.maxRetries, lastErr)
+	return resp, nil
 }

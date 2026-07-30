@@ -23,6 +23,7 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -90,8 +91,10 @@ func (s *stubEmbedder) Encode(ctx context.Context, texts []string) ([]EmbeddingR
 }
 
 // newStubEmbedder returns a stub embedder for instance-level resolver injection.
+// maxTokens defaults to 2048 so truncateForEmbedding truncates to the first
+// 2048 tokens; tests that exercise truncation set maxTokens explicitly.
 func newStubEmbedder(dim int) *stubEmbedder {
-	return &stubEmbedder{dim: dim}
+	return &stubEmbedder{dim: dim, maxTokens: 2048}
 }
 
 // withStubEmbedder constructs a TokenizerComponent with an instance-scoped
@@ -346,5 +349,186 @@ func TestChunkDocsToMaps_PreservesPDFPositions(t *testing.T) {
 	// to page_num_int (the executor owns that step).
 	if int(got[0][0]) != 1 {
 		t.Errorf("positions page already converted; want raw 1-indexed page 1, got %v", got[0][0])
+	}
+}
+
+// TestIsPhantomChunk verifies that zero-value ChunkDocs (no Text, no
+// Image, no ContentWithWeight, no Summary) are identified as phantom,
+// while any one of those fields being present keeps the chunk.
+func TestIsPhantomChunk(t *testing.T) {
+	if !isPhantomChunk(schema.ChunkDoc{}) {
+		t.Error("empty ChunkDoc must be phantom")
+	}
+	if !isPhantomChunk(schema.ChunkDoc{Text: ""}) {
+		t.Error("ChunkDoc with empty Text only must be phantom")
+	}
+	if isPhantomChunk(schema.ChunkDoc{Text: "hello"}) {
+		t.Error("ChunkDoc with Text must not be phantom")
+	}
+	if isPhantomChunk(schema.ChunkDoc{Image: "data:image/png;base64,abc"}) {
+		t.Error("ChunkDoc with Image must not be phantom")
+	}
+	if isPhantomChunk(schema.ChunkDoc{ContentWithWeight: "weight"}) {
+		t.Error("ChunkDoc with ContentWithWeight must not be phantom")
+	}
+	if isPhantomChunk(schema.ChunkDoc{Summary: "a summary"}) {
+		t.Error("ChunkDoc with Summary must not be phantom")
+	}
+}
+
+// TestTruncateForEmbedding_SmallMaxTokens covers Tokenizer Diff-14. For any
+// positive maxTokens, truncateForEmbedding keeps the first maxTokens tokens
+// (non-empty) and the result is strictly shorter than the input.
+//
+// The unconfigured case (maxTokens <= 0) is covered separately by
+// TestTruncateForEmbedding_UnconfiguredClampsToDefault: rather than mirroring
+// Python's `truncate` (which returns "" for max_len <= 0 and would make the
+// embeddings API reject the batch), Go clamps the limit to a safe default so
+// every path still truncates instead of passing the full text through.
+func TestTruncateForEmbedding_SmallMaxTokens(t *testing.T) {
+	// Long enough to produce well over 50 tokens, so 5/10/50 are all clearly
+	// below the total and truncation is observable.
+	long := strings.Repeat("a", 2000)
+	if got := truncateForEmbedding(long, 5); got == "" {
+		t.Error("truncateForEmbedding(maxTokens=5) returned empty, want first 5 tokens")
+	}
+	if got := truncateForEmbedding(long, 10); got == "" {
+		t.Error("truncateForEmbedding(maxTokens=10) returned empty, want first 10 tokens")
+	}
+	// Normal path: maxTokens > 10 should truncate (not return empty).
+	if got := truncateForEmbedding(long, 50); got == "" {
+		t.Error("truncateForEmbedding(maxTokens=50) returned empty, want truncated text")
+	}
+	if got := truncateForEmbedding(long, 50); len(got) >= len(long) {
+		t.Errorf("truncateForEmbedding(maxTokens=50) len = %d, want strictly shorter than %d", len(got), len(long))
+	}
+}
+
+// TestTruncateForEmbedding_UnconfiguredClampsToDefault is the regression gate
+// for the root cause behind embedding truncation: an embedder that reports no
+// token limit (maxTokens <= 0) must NOT be passed through verbatim. Before the
+// central clamp, the generic model_service branch left maxTokens = 0, which
+// silently disabled truncation for the whole generic path. The fix clamps
+// maxTokens <= 0 to defaultEmbeddingTokenLimit (8192) inside
+// truncateForEmbedding itself, so every caller — Builtin and generic alike —
+// keeps truncation active.
+//
+// For a clearly-over-limit input and maxTokens = 0, the result must be non-empty
+// AND strictly shorter than the input: proof that it was truncated to the
+// default, not returned verbatim.
+func TestTruncateForEmbedding_UnconfiguredClampsToDefault(t *testing.T) {
+	// ~10000+ CL100K tokens, comfortably above the 8192 default so truncation
+	// is observable.
+	long := strings.Repeat("hello world ", 5000)
+	got := truncateForEmbedding(long, 0)
+	if got == "" {
+		t.Fatal("truncateForEmbedding(maxTokens=0) returned empty; clamp must keep truncation active")
+	}
+	if len(got) >= len(long) {
+		t.Errorf("truncateForEmbedding(maxTokens=0) len = %d, want strictly shorter than %d; clamp to default must truncate",
+			len(got), len(long))
+	}
+}
+
+// TestEmbeddingBatchSizeEnvVar covers Tokenizer Omission-3: the batch size
+// must be configurable via TOKENIZER_EMBEDDING_BATCH_SIZE env var, matching
+// Python's configurable settings.EMBEDDING_BATCH_SIZE.
+func TestEmbeddingBatchSizeEnvVar(t *testing.T) {
+	if got := embeddingBatchSize(); got != 16 {
+		t.Errorf("embeddingBatchSize() default = %d, want 16", got)
+	}
+	os.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "32")
+	t.Cleanup(func() { os.Unsetenv("TOKENIZER_EMBEDDING_BATCH_SIZE") })
+	if got := embeddingBatchSize(); got != 32 {
+		t.Errorf("embeddingBatchSize() after env = %d, want 32", got)
+	}
+	// Invalid value falls back to default.
+	os.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "bad")
+	if got := embeddingBatchSize(); got != 16 {
+		t.Errorf("embeddingBatchSize() invalid env = %d, want 16", got)
+	}
+}
+
+// TestChunkOrderInt_EmbeddingOnly covers Tokenizer Diff-8: chunk_order_int
+// must be set even when search_method does not include "full_text" (i.e.
+// embedding-only path). tokenizeChunks previously only set it for the
+// full_text branch.
+func TestChunkOrderInt_EmbeddingOnly(t *testing.T) {
+	stub := newStubEmbedder(3)
+	comp, err := NewTokenizerComponentWithResolver(
+		map[string]any{"search_method": []string{"embedding"}, "fields": []string{"text"}},
+		func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+	)
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	inputs := map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "first chunk", "doc_type_kwd": "text"},
+			{"text": "second chunk", "doc_type_kwd": "text"},
+		},
+	}
+	out, err := comp.Invoke(context.Background(), nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	if len(chunks) != 2 {
+		t.Fatalf("want 2 chunks, got %d", len(chunks))
+	}
+	for i, ck := range chunks {
+		coi, ok := ck["chunk_order_int"]
+		if !ok {
+			t.Errorf("chunk %d: chunk_order_int missing (embedding-only path must set it)", i)
+		}
+		if coi == nil {
+			t.Errorf("chunk %d: chunk_order_int is nil", i)
+		}
+	}
+}
+
+// TestChunksFromTokenizerUpstream_FiltersPhantomChunks covers Tokenizer
+// Omission-2 at the pipeline level: when upstream input contains a
+// zero-value ChunkDoc (no Text, no Image, no ContentWithWeight), it must
+// be silently dropped from the output before tokenization and embedding.
+// This mirrors Python's `if not text and not d.get("image"): continue`
+// in tokenizer.py:80-82.
+func TestChunksFromTokenizerUpstream_FiltersPhantomChunks(t *testing.T) {
+	// JSON path: three items, the middle one is a phantom.
+	items := []map[string]any{
+		{"text": "valid chunk", "doc_type_kwd": "text"},
+		{}, // phantom: no text, no image, no content_with_weight
+		{"text": "another valid", "doc_type_kwd": "text"},
+	}
+	// Use embedding-only mode to avoid CGo tokenizer dependency.
+	stub := newStubEmbedder(3)
+	comp, err := NewTokenizerComponentWithResolver(
+		map[string]any{"search_method": []string{"embedding"}, "fields": []string{"text"}},
+		func(ctx context.Context, _, _, _ string) (Embedder, error) { return stub, nil },
+	)
+	if err != nil {
+		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
+	}
+	out, err := comp.Invoke(context.Background(), nil, map[string]any{
+		"name":          "doc.pdf",
+		"output_format": "json",
+		"json":          items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	// Must drop the phantom — only 2 valid chunks remain.
+	if len(chunks) != 2 {
+		t.Fatalf("want 2 chunks (phantom filtered), got %d", len(chunks))
+	}
+	// Verify the surviving chunks are the valid ones.
+	if chunks[0]["text"] != "valid chunk" {
+		t.Errorf("chunk 0 text = %q, want %q", chunks[0]["text"], "valid chunk")
+	}
+	if chunks[1]["text"] != "another valid" {
+		t.Errorf("chunk 1 text = %q, want %q", chunks[1]["text"], "another valid")
 	}
 }

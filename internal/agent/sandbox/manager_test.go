@@ -21,10 +21,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/dao"
 	"testing"
 	"time"
 
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 func TestProviderManager_SetGet(t *testing.T) {
@@ -399,7 +402,7 @@ type fakeSettingsReader struct {
 	fakeErr error
 }
 
-func (f *fakeSettingsReader) GetByName(name string) ([]entity.SystemSettings, error) {
+func (f *fakeSettingsReader) GetByName(_ context.Context, _ *gorm.DB, name string) ([]entity.SystemSettings, error) {
 	if f.fakeErr != nil {
 		return nil, f.fakeErr
 	}
@@ -440,7 +443,7 @@ func TestLoadFromSettingsWithReader_HappyPath(t *testing.T) {
 		},
 	}
 	m := &ProviderManager{}
-	if err := m.LoadFromSettingsWithReader(context.Background(), r); err != nil {
+	if err := m.LoadFromSettingsWithReader(context.Background(), dao.DB, r); err != nil {
 		t.Fatalf("LoadFromSettingsWithReader: %v", err)
 	}
 	if !m.IsConfigured() {
@@ -485,7 +488,7 @@ func TestLoadFromSettingsWithReader_EmptyFallback(t *testing.T) {
 
 	r := &fakeSettingsReader{rows: map[string][]entity.SystemSettings{}}
 	m := &ProviderManager{}
-	if err := m.LoadFromSettingsWithReader(context.Background(), r); err != nil {
+	if err := m.LoadFromSettingsWithReader(context.Background(), dao.DB, r); err != nil {
 		t.Fatalf("LoadFromSettingsWithReader: %v", err)
 	}
 	if !m.IsConfigured() {
@@ -515,7 +518,7 @@ func TestLoadFromSettingsWithReader_DAOErrorFallback(t *testing.T) {
 
 	r := &fakeSettingsReader{fakeErr: errors.New("db is down")}
 	m := &ProviderManager{}
-	if err := m.LoadFromSettingsWithReader(context.Background(), r); err != nil {
+	if err := m.LoadFromSettingsWithReader(context.Background(), dao.DB, r); err != nil {
 		t.Fatalf("LoadFromSettingsWithReader (DAO error fallback): %v", err)
 	}
 	if got := m.Provider().ProviderType(); got != ProviderSelfManaged {
@@ -547,7 +550,7 @@ func TestLoadFromSettingsWithReader_MalformedJSONFallback(t *testing.T) {
 		},
 	}
 	m := &ProviderManager{}
-	if err := m.LoadFromSettingsWithReader(context.Background(), r); err != nil {
+	if err := m.LoadFromSettingsWithReader(context.Background(), dao.DB, r); err != nil {
 		t.Fatalf("LoadFromSettingsWithReader (malformed JSON fallback): %v", err)
 	}
 	sm, ok := m.Provider().(*SelfManagedProvider)
@@ -586,7 +589,7 @@ func TestLoadFromSettingsWithReader_UnknownProviderType(t *testing.T) {
 		},
 	}
 	m := &ProviderManager{}
-	if err := m.LoadFromSettingsWithReader(context.Background(), r); err != nil {
+	if err := m.LoadFromSettingsWithReader(context.Background(), dao.DB, r); err != nil {
 		t.Fatalf("LoadFromSettingsWithReader (unknown type fallback): %v", err)
 	}
 	// Falls back to env-driven self_managed, NOT the unknown type.
@@ -610,7 +613,7 @@ func TestLoadFromSettingsWithReader_AlreadyLoaded_NoOp(t *testing.T) {
 			"sandbox.provider_type": {{Name: "sandbox.provider_type", Value: "local"}},
 		},
 	}
-	if err := m.LoadFromSettingsWithReader(context.Background(), r); err != nil {
+	if err := m.LoadFromSettingsWithReader(context.Background(), dao.DB, r); err != nil {
 		t.Fatalf("LoadFromSettingsWithReader: %v", err)
 	}
 	if m.Provider() != original {
@@ -644,7 +647,7 @@ func TestReloadFromSettingsWithReader(t *testing.T) {
 		},
 	}
 	m := &ProviderManager{}
-	if err := m.ReloadFromSettingsWithReader(context.Background(), r); err != nil {
+	if err := m.ReloadFromSettingsWithReader(context.Background(), dao.DB, r); err != nil {
 		t.Fatalf("ReloadFromSettingsWithReader: %v", err)
 	}
 	if got := m.Provider().ProviderType(); got != ProviderSelfManaged {

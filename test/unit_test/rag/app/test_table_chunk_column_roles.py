@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import sys
+from io import BytesIO
 from importlib import import_module, reload
 from unittest.mock import MagicMock, patch
 
@@ -126,6 +127,31 @@ def test_chunk_deduplicates_repeated_column_names(table_module, mock_update_kb: 
     assert "- name_2: Team A" in cww
     args, kwargs = mock_update_kb.call_args
     assert args[1]["table_column_names"] == ["name", "name_3", "name_2"]
+
+
+def test_excel_image_description_string_stays_single_cell(table_module, monkeypatch):
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["image", "note"])
+    ws.append([None, "keep"])
+    buf = BytesIO()
+    wb.save(buf)
+
+    monkeypatch.setattr(
+        table_module.Excel,
+        "_extract_images_from_worksheet",
+        staticmethod(
+            lambda ws, sheetname=None: [{"sheet": sheetname or ws.title, "image": None, "image_description": "", "row_from": 2, "col_from": 1, "row_to": 2, "col_to": 1, "span_type": "single_cell"}]
+        ),
+    )
+    monkeypatch.setattr(table_module, "vision_figure_parser_figure_xlsx_wrapper", lambda images, callback=None, **kwargs: [((None, "abcdef"), [(0, 0, 0, 0, 0)])])
+
+    dfs, tbls = table_module.Excel()("test.xlsx", binary=buf.getvalue(), callback=_noop_callback)
+
+    assert tbls == []
+    assert dfs[0].iat[0, 0] == "abcdef"
 
 
 def test_chunk_auto_mode_all_columns_in_text_and_stored(table_module, mock_update_kb: MagicMock):

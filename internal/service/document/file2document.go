@@ -40,8 +40,8 @@ var (
 	ErrLinkFileNotFound = errors.New("File not found!")
 	// ErrLinkDatasetNotFound mirrors Python "Can't find this dataset!".
 	ErrLinkDatasetNotFound = errors.New("Can't find this dataset!")
-	// ErrLinkNoAuthorization mirrors Python "No authorization.".
-	ErrLinkNoAuthorization = errors.New("No authorization.")
+	// ErrLinkNoAuthorization mirrors Python "no authorization".
+	ErrLinkNoAuthorization = errors.New("no authorization")
 	// ErrLinkInternal is a generic, safe-to-expose internal failure.
 	ErrLinkInternal = errors.New("Internal server error.")
 )
@@ -142,7 +142,7 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 
 	// ── 5. Validate KB permissions ────────────────────────────────────────────
 	for _, kb := range kbMap {
-		if !service.HasKBTeamPermission(kb, userID, dao.NewTenantDAO()) {
+		if !service.HasKBTeamPermission(ctx, kb, userID, dao.NewTenantDAO()) {
 			return ErrLinkNoAuthorization
 		}
 	}

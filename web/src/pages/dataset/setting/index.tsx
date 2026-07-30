@@ -24,6 +24,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import ChunkMethodLearnMore from '../dataset-setting/chunk-method-learn-more';
 import LinkDataSource, {
   IDataSourceNodeProps,
 } from './components/link-data-source';
@@ -177,7 +178,7 @@ export default function DatasetSetting() {
           </header>
         </CardHeader>
 
-        <CardContent className="p-0 flex-1 h-0 flex">
+        <CardContent className="p-0 flex-1 h-0 flex divide-x-0.5">
           <Form {...form}>
             <form
               onSubmit={form.handleSubmit(handleSubmit)}
@@ -249,6 +250,12 @@ export default function DatasetSetting() {
               </div>
             </form>
           </Form>
+
+          <div className="flex-1 p-5 overflow-auto">
+            {parseType === ParseType.BuiltIn && builtinPipelineId && (
+              <ChunkMethodLearnMore parserId={builtinPipelineId} />
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

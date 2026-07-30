@@ -572,7 +572,7 @@ class CreateDatasetReq(Base):
         Raises:
             PydanticCustomError: For structural errors in these cases:
                 - Missing MIME prefix header
-                - Invalid MIME prefix format
+                - invalid MIME prefix format
                 - Unsupported image MIME type
 
         Example:
@@ -591,7 +591,7 @@ class CreateDatasetReq(Base):
         if "," in v:
             prefix, _ = v.split(",", 1)
             if not prefix.startswith("data:"):
-                raise PydanticCustomError("format_invalid", "Invalid MIME prefix format. Must start with 'data:'")
+                raise PydanticCustomError("format_invalid", "invalid MIME prefix format. Must start with 'data:'")
 
             mime_type = prefix[5:].split(";")[0]
             supported_mime_types = ["image/jpeg", "image/png"]
@@ -600,7 +600,7 @@ class CreateDatasetReq(Base):
 
             return v
         else:
-            raise PydanticCustomError("format_invalid", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>")
+            raise PydanticCustomError("format_invalid", "missing MIME prefix. Expected format: data:<mime>;base64,<data>")
 
     @field_validator("embedding_model", mode="before")
     @classmethod
@@ -646,11 +646,11 @@ class CreateDatasetReq(Base):
                 return v
 
             if "@" not in v:
-                raise PydanticCustomError("format_invalid", "Embedding model identifier must follow <model_name>@<provider> format")
+                raise PydanticCustomError("format_invalid", "embedding model identifier must follow <model_name>@<provider> format")
 
             components = v.split("@", 1)
             if len(components) != 2 or not all(components):
-                raise PydanticCustomError("format_invalid", "Both model_name and provider must be non-empty strings")
+                raise PydanticCustomError("format_invalid", "both model_name and provider must be non-empty strings")
 
             model_name, provider = components
             if not model_name.strip() or not provider.strip():

@@ -4,23 +4,22 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
+import { GenerateStatus, GenerateType } from '@/constants/knowledge';
+import {
+  useGenerateStatus,
+  useTraceRunData,
+} from '@/hooks/use-dataset-generate';
 import {
   ArtifactKeys,
   ArtifactTopicKeys,
   useFetchArtifactTopicList,
   useFetchKnowledgeBaseConfiguration,
 } from '@/hooks/use-knowledge-request';
-import {
-  GenerateStatus,
-  GenerateType,
-} from '@/pages/dataset/dataset/generate-button/constants';
-import { useTraceRunData } from '@/pages/dataset/dataset/generate-button/hook';
-import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router';
 
-import { LeftPanelTab } from './constants';
+import { LeftPanelTab, ViewMode } from './constants';
 import CompilationEmptyState from './empty-state';
 import { useCompilationArtifact } from './hooks/use-compilation-artifact';
 import { CompilationLoadingCard } from './loading-card';
@@ -43,9 +42,11 @@ export function LlmWikiView() {
 
   const { data: artifactRunData } = useTraceRunData(GenerateType.Artifact);
   const { status: artifactStatus } = useGenerateStatus(artifactRunData);
+  const [updateSheetOpen, setUpdateSheetOpen] = useState(false);
 
   useEffect(() => {
-    if (artifactStatus === GenerateStatus.completed) {
+    if (artifactStatus === GenerateStatus.Completed) {
+      setUpdateSheetOpen(false);
       queryClient.invalidateQueries({
         queryKey: ArtifactKeys.listByDataset(id!),
       });
@@ -70,7 +71,7 @@ export function LlmWikiView() {
   if (isEmpty) {
     return (
       <CompilationEmptyState
-        type="llm-wiki"
+        type={ViewMode.LlmWiki}
         disabled={!canGenerate}
         data={artifactRunData}
       />
@@ -88,6 +89,9 @@ export function LlmWikiView() {
             onSelectArtifact={handleSelectArtifact}
             onClearArtifact={clearSelectedArtifact}
             onClearWiki={clearSelectedArtifact}
+            updateSheetOpen={updateSheetOpen}
+            onUpdateSheetOpenChange={setUpdateSheetOpen}
+            traceData={artifactRunData}
           />
         </ResizablePanel>
         <ResizableHandle withHandle />
