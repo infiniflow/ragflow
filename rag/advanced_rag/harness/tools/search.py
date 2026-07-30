@@ -179,7 +179,7 @@ def _normalize(kbinfos: dict, tenant_ids: list[str] | str | None) -> dict:
     return kbinfos
 
 
-async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, doc_scope: list[str] | None = None, keywords: str = "") -> dict:
+async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_n: int = 12, doc_scope: list[str] | None = None, keywords: str = "", use_compiled: bool = False) -> dict:
     if not tools.kb_ids and not kb_ids:
         return {"chunks": [], "doc_aggs": []}
     target_ids = kb_ids or tools.kb_ids
@@ -220,6 +220,9 @@ async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_
         length = len(kbinfos["chunks"])
         kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
         _LOG.info(f"[Hybrid search] Kept {len(kbinfos['chunks'])} of {length} passage(s) that actually mention the keywords.")
+    if use_compiled and kbinfos.get("chunks"):
+        _LOG.info("[Hybrid search] Compiled expansion enabled — enriching with page_index/tree/KG navigation.")
+        await _expand_with_compiled(tools, query, keywords, kbinfos)
     if cache is not None:
         cache[cache_key] = kbinfos
     return kbinfos
@@ -275,6 +278,288 @@ async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n:
         kbinfos["chunks"] = _narrow_by_keywords(kbinfos.get("chunks", []), keywords)
         _LOG.info(f"[BM25 search] Kept {len(kbinfos['chunks'])} of {length} passage(s) that actually mention the keywords.")
     return kbinfos
+
+
+# ─── Compiled product expansion (zero-LLM, used by hybrid_search with use_compiled=True) ───
+
+
+async def _expand_with_compiled(tools, query: str, keywords: str, kbinfos: dict) -> None:
+    """Zero-LLM compiled-product expansion: page_index → tree → KG.
+
+    For each bound KB, searches compiled entity rows matching the query,
+    hops 1-hop via relations to find neighbour entities, then appends
+    their source passages to ``kbinfos["chunks"]``.
+    """
+    before = len(kbinfos.get("chunks", []))
+    seen_ids = {c.get("chunk_id") or c.get("id") for c in kbinfos.get("chunks", [])}
+
+    scopes = await _compiled_scopes(tools)
+    if not scopes:
+        return
+
+    for kb_id, tenant_id, doc_ids in scopes:
+        for compile_kwd in ("page_index", "tree", None):  # None = all compiled (KG)
+            label = compile_kwd or "kg"
+            chunks = await _expand_compiled_strategy(
+                tools,
+                kb_id,
+                tenant_id,
+                doc_ids,
+                query,
+                seen_ids,
+                compile_kwd=compile_kwd,
+                max_chunks=5,
+            )
+            if chunks:
+                kbinfos.setdefault("chunks", []).extend(chunks)
+                _LOG.debug("[Compiled expand] %s: +%d chunks", label, len(chunks))
+
+    after = len(kbinfos.get("chunks", []))
+    _LOG.info("[Hybrid search] Compiled expansion added %d chunks.", after - before)
+
+
+async def _compiled_scopes(tools, doc_scope: list[str] | None = None) -> list[tuple[str, str, list[str] | None]]:
+    """Resolve (kb_id, tenant_id, doc_ids) tuples for compiled-product scoping."""
+    from common.misc_utils import thread_pool_exec
+
+    if doc_scope:
+        by_kb: dict[tuple, list[str]] = {}
+        for doc_id in doc_scope:
+            resolved = await thread_pool_exec(tools._resolve_doc_tenant, doc_id)
+            if resolved:
+                by_kb.setdefault(resolved, []).append(doc_id)
+        return [(kb, tenant, docs) for (kb, tenant), docs in by_kb.items()]
+    return [(kb.id, kb.tenant_id, None) for kb in getattr(tools, "kbs", []) or []]
+
+
+async def _search_compiled_rows(
+    tools,
+    kb_id: str,
+    tenant_id: str,
+    doc_ids: list[str] | None,
+    kind: str,
+    *,
+    text: str = "",
+    top_n: int = 8,
+    extra: dict | None = None,
+    compile_kwd: str | None = None,
+) -> dict:
+    """Search compiled KG rows in one KB, returning raw field maps.
+
+    When *compile_kwd* is set, only rows with ``compile_kwd == compile_kwd`` are
+    returned.  Set to ``None`` to search all compiled rows (KG expansion).
+    """
+    from common import settings
+    from common.doc_store.doc_store_base import MatchTextExpr, OrderByExpr
+    from common.misc_utils import thread_pool_exec
+    from rag.nlp import search
+
+    condition: dict = {"knowledge_graph_kwd": [kind]}
+    if compile_kwd:
+        condition["compile_kwd"] = compile_kwd
+    if doc_ids:
+        condition["doc_id"] = list(doc_ids)
+    if extra:
+        condition.update(extra)
+
+    fields = [
+        "content_with_weight",
+        "source_chunk_ids",
+        "doc_id",
+        "docnm_kwd",
+        "from_entity_kwd",
+        "to_entity_kwd",
+        "name_kwd",
+    ]
+    exprs = []
+    if text:
+        embd_mdl = getattr(tools, "embed_mdl", None)
+        if embd_mdl:
+            try:
+                exprs.append(await settings.retriever.get_vector(text, embd_mdl, top_n, 0.1))
+            except Exception:
+                _LOG.exception("[Compiled expand] vector build failed; using keyword match")
+        if not exprs:
+            exprs.append(
+                MatchTextExpr(
+                    ["content_ltks", "content_sm_ltks"],
+                    text,
+                    top_n,
+                )
+            )
+
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields,
+            [],
+            condition,
+            exprs,
+            OrderByExpr(),
+            0,
+            top_n,
+            search.index_name(tenant_id),
+            [kb_id],
+        )
+        return settings.docStoreConn.get_fields(res, fields) or {}
+    except Exception:
+        _LOG.exception("[Compiled expand] search failed (kind=%s compile_kwd=%s)", kind, compile_kwd)
+        return {}
+
+
+async def _load_chunks_for_doc(tools, doc_id: str, chunk_ids: list[str]) -> list[dict]:
+    """Load chunks by their IDs from the doc store."""
+    if not chunk_ids:
+        return []
+    from common import settings
+    from common.doc_store.doc_store_base import OrderByExpr
+    from common.misc_utils import thread_pool_exec
+    from rag.nlp import search
+
+    resolved = await thread_pool_exec(tools._resolve_doc_tenant, doc_id)
+    if not resolved:
+        return []
+    kb_id, tenant_id = resolved
+
+    fields = ["content_with_weight", "docnm_kwd", "doc_id"]
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            fields,
+            [],
+            {"id": list(chunk_ids)},
+            [],
+            OrderByExpr(),
+            0,
+            len(chunk_ids),
+            search.index_name(tenant_id),
+            [kb_id],
+        )
+        return settings.docStoreConn.get_fields(res, fields) or []
+    except Exception:
+        return []
+
+
+async def _expand_compiled_strategy(
+    tools,
+    kb_id: str,
+    tenant_id: str,
+    doc_ids: list[str] | None,
+    query: str,
+    seen_ids: set[str],
+    *,
+    compile_kwd: str | None = None,
+    max_chunks: int = 5,
+) -> list[dict]:
+    """Generic 1-hop compiled expansion: entity search → relation nav → chunk load.
+
+    1. Embedding-match seed entities (filtered by *compile_kwd* if set).
+    2. Fetch relations adjacent to seed entities (forward + backward).
+    3. Collect neighbour entity names (1-hop away).
+    4. Look up neighbour entities to get ``source_chunk_ids``.
+    5. Load actual chunks, deduplicate, respect *max_chunks*.
+    """
+    import json
+
+    # -- 1. Seed entities --
+    seed_rows = await _search_compiled_rows(
+        tools,
+        kb_id,
+        tenant_id,
+        doc_ids,
+        "entity",
+        text=query,
+        top_n=5,
+        compile_kwd=compile_kwd,
+    )
+    if not seed_rows:
+        return []
+
+    seed_names: set[str] = set()
+    for r in seed_rows.values():
+        try:
+            payload = json.loads(r.get("content_with_weight") or "{}")
+        except Exception:
+            continue
+        name = (payload.get("name") or payload.get("title") or "").strip().lower()
+        if name:
+            seed_names.add(name)
+    if not seed_names:
+        return []
+
+    # -- 2. Adjacent relations (outgoing + incoming) --
+    seed_list = list(seed_names)
+    fwd = await _search_compiled_rows(
+        tools,
+        kb_id,
+        tenant_id,
+        doc_ids,
+        "relation",
+        top_n=50,
+        compile_kwd=compile_kwd,
+        extra={"from_entity_kwd": seed_list},
+    )
+    bwd = await _search_compiled_rows(
+        tools,
+        kb_id,
+        tenant_id,
+        doc_ids,
+        "relation",
+        top_n=50,
+        compile_kwd=compile_kwd,
+        extra={"to_entity_kwd": seed_list},
+    )
+    all_rels = {**fwd, **bwd}
+
+    # -- 3. Neighbour names (1-hop, exclude seeds) --
+    neighbour_names: set[str] = set()
+    for r in all_rels.values():
+        frm = (r.get("from_entity_kwd") or "").strip().lower()
+        to = (r.get("to_entity_kwd") or "").strip().lower()
+        if frm in seed_names and to and to not in seed_names:
+            neighbour_names.add(to)
+        if to in seed_names and frm and frm not in seed_names:
+            neighbour_names.add(frm)
+    if not neighbour_names:
+        return []
+
+    # -- 4. Neighbour entity source_chunk_ids --
+    neigh_list = list(neighbour_names)
+    if len(neigh_list) > 100:
+        neigh_list = neigh_list[:100]  # reasonable cap for name_kwd search
+    neigh_rows = await _search_compiled_rows(
+        tools,
+        kb_id,
+        tenant_id,
+        doc_ids,
+        "entity",
+        top_n=len(neigh_list),
+        compile_kwd=compile_kwd,
+        extra={"name_kwd": neigh_list},
+    )
+
+    # Group chunk IDs by doc
+    by_doc: dict[str, set[str]] = {}
+    for r in neigh_rows.values():
+        doc_id = r.get("doc_id") or ""
+        for cid in r.get("source_chunk_ids") or []:
+            if cid and cid not in seen_ids:
+                by_doc.setdefault(doc_id, set()).add(cid)
+
+    # -- 5. Load and return --
+    new_chunks: list[dict] = []
+    for doc_id, cids in by_doc.items():
+        if len(new_chunks) >= max_chunks:
+            break
+        limit = max_chunks - len(new_chunks)
+        chunks = await _load_chunks_for_doc(tools, doc_id, list(cids)[:limit])
+        for c in chunks:
+            cid = c.get("chunk_id") or c.get("id")
+            if cid and cid not in seen_ids:
+                seen_ids.add(cid)
+                new_chunks.append(c)
+
+    return new_chunks
 
 
 async def web_search(tools, query: str, keywords: str = "") -> dict:
