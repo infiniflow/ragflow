@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { Checkbox } from '@/components/ui/checkbox';
 import { Minus, Plus } from 'lucide-react';
 import { ModelRowProps } from '../interface';
 import { ModelTypeBadges } from './model-type-badges';
@@ -25,6 +26,8 @@ export function ModelRow({
   isAdded,
   verifyStatus,
   hideActions,
+  isSelected,
+  onToggleSelect,
   onVerify,
   onAdd,
   onRemove,
@@ -39,6 +42,13 @@ export function ModelRow({
     >
       <div className="flex gap-1 min-w-0">
         <div className="flex items-center gap-2 min-w-0">
+          {onToggleSelect && (
+            <Checkbox
+              checked={isSelected ?? false}
+              onCheckedChange={onToggleSelect}
+              aria-label={`Select ${model.name}`}
+            />
+          )}
           <span className="font-medium text-sm text-text-primary truncate">
             {model.name}
           </span>

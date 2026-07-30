@@ -631,7 +631,7 @@ async def run_structure_compile_over_batches(
         synthesis_cfg = (parser_cfg or {}).get("synthesis") or {}
         if synthesis_cfg.get("enabled"):
             example = synthesis_cfg.get("example")
-            compile_kwd = synthesis_cfg.get("compile_kwd", "artifact_page")
+            compile_kwd = synthesis_cfg.get("compile_kwd", "wiki_page")
             plan_cfg = synthesis_cfg.get("plan") or {}
 
             # Reserved for future wiki_plan_from_reduction extension:

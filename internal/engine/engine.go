@@ -18,6 +18,8 @@ package engine
 
 import (
 	"context"
+	"time"
+
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 
@@ -105,4 +107,21 @@ type MessageQueue interface {
 	ListMessages(messageType string, pending bool) ([]map[string]string, error)
 	ShowMessageQueue() (map[string]string, error)
 	CheckStatus() string
+
+	// dataset-level compile consumer (§11) surface.
+	InitKnowledgeCompileStream() error
+	InitKnowledgeCompileConsumer() error
+	PublishKnowledgeCompile(subject string, payload []byte) error
+	FetchKnowledgeCompileMessages(n int) ([]common.RawMessage, error)
+	InitKnowledgeCompileLeases() error
+	AcquireKnowledgeCompileLease(key, holder string, ttl time.Duration) (uint64, bool, error)
+	HeartbeatKnowledgeCompileLease(key, holder string, ttl time.Duration, revision uint64) (uint64, bool, error)
+	ReleaseKnowledgeCompileLease(key, holder string, revision uint64) error
+
+	// SubscribeNotify returns a channel of dataset ids pushed by
+	// PublishKnowledgeCompile on the notify.kc.workers subject (Option E
+	// §11.4: NATS as a wake-up, MySQL as the scheduling system of record).
+	// Implementations return (nil, nil) when push wake-up is unavailable;
+	// callers must fall back to periodic polling in that case.
+	SubscribeNotify(ctx context.Context) (<-chan string, error)
 }

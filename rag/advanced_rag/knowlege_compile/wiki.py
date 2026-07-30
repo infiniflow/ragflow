@@ -25,7 +25,7 @@
     a byte position. The LLM is prompted to tag each extracted item with the
     ``[CHUNK_ID …]`` of the chunk it came from.
   - Resume: per-chunk extracts are persisted to ES under
-    ``compile_kwd="artifact_map_extract"`` with ``available_int=0`` and no vector
+    ``compile_kwd="wiki_map_extract"`` with ``available_int=0`` and no vector
     / token-list fields, so retrievers ignore them but downstream phases can
     fetch them by ``doc_id`` + ``source_chunk_ids``. Re-running MAP for the same
     ``doc_id`` skips chunks that already have an extract row.
@@ -56,8 +56,8 @@ from ._common import (
 
 
 # Global pipeline-rev — bumping this constant invalidates every cached
-# artifact_map_extract / artifact_reduce_result / artifact_compilation_plan
-# / artifact_page_draft / artifact_page row on the next re-run. Use it
+# wiki_map_extract / wiki_reduce_result / wiki_compilation_plan
+# / wiki_page_draft / wiki_page row on the next re-run. Use it
 # when a prompt or extraction schema changes in a way that should
 # invalidate prior caches.
 _WIKI_PIPELINE_REV = "v1"
@@ -85,7 +85,7 @@ from .structure import (
 # Constants
 # ---------------------------------------------------------------------------
 
-WIKI_MAP_COMPILE_KWD = "artifact_map_extract"
+WIKI_MAP_COMPILE_KWD = "wiki_map_extract"
 DEFAULT_WIKI_MAP_WORKERS = 6
 DEFAULT_WIKI_MAP_TIMEOUT = 600
 
@@ -675,7 +675,7 @@ async def _wiki_load_resume_map(
     tenant_id: str,
     kb_id: str,
 ) -> dict[str, str]:
-    """Query ES for chunks that already have a artifact_map_extract row for
+    """Query ES for chunks that already have a wiki_map_extract row for
     this doc. Returns ``{chunk_id → chunk_hash}``.
 
     ``chunk_hash`` may be empty for legacy rows that predate the field —
@@ -732,7 +732,7 @@ async def _wiki_delete_map_rows(
     tenant_id: str,
     kb_id: str,
 ) -> int:
-    """Delete ``artifact_map_extract`` rows for ``(doc_id, chunk_id)`` pairs.
+    """Delete ``wiki_map_extract`` rows for ``(doc_id, chunk_id)`` pairs.
 
     Used by the incremental MAP path:
       * stale rows whose chunk content has changed → re-extracted next.
@@ -945,7 +945,7 @@ async def wiki_map_from_chunks(
     Packs the provided RAGFlow chunks into batches via ``split_chunks``, runs
     one ``gen_json`` extraction call per batch in parallel (bounded by
     ``max_workers``), then splits each batch's output back to per-chunk
-    extracts and persists them to ES as non-searchable ``artifact_map_extract``
+    extracts and persists them to ES as non-searchable ``wiki_map_extract``
     rows so subsequent runs can skip chunks already processed.
 
     Args:
@@ -1141,16 +1141,8 @@ async def wiki_map_from_chunks(
 # REDUCE phase (KB-scoped)
 # ---------------------------------------------------------------------------
 #
-# Migrated from D:/git/arkon/app/ai/mrp/reducer.py, steps 2.1-2.4.
-# KB reconciliation (arkon 2.5-2.6) and the planning LLM call (arkon 2.7) are
-# deferred to the PLAN phase — they belong with the planner, not the dedup.
-#
-# Scope difference from arkon: arkon REDUCE runs per source document. Here it
-# runs per knowledge base — one set of canonical entities/concepts for the
-# entire KB. Inputs come from ES (every artifact_map_extract row in this KB across
-# all docs); the result lives in ES under artifact_reduce_result.
 
-WIKI_REDUCE_COMPILE_KWD = "artifact_reduce_result"
+WIKI_REDUCE_COMPILE_KWD = "wiki_reduce_result"
 DEFAULT_WIKI_REDUCE_MERGE_THRESHOLD = 0.95
 DEFAULT_WIKI_REDUCE_AMBIGUOUS_LOW = 0.75
 DEFAULT_WIKI_REDUCE_AMBIGUOUS_BATCH = 50
@@ -1168,7 +1160,7 @@ WIKI_REDUCE_DISAMBIGUATE_SYSTEM = "You are a named-entity resolution assistant. 
 
 
 async def _wiki_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
-    """Aggregate every artifact_map_extract row in this KB into one merged dict.
+    """Aggregate every wiki_map_extract row in this KB into one merged dict.
 
     Pages through ES if the KB has more than the per-call cap. Returns a dict
     in the same shape as wiki_map_from_chunks' return value.
@@ -1238,7 +1230,7 @@ async def _wiki_load_all_map_extracts(tenant_id: str, kb_id: str) -> dict:
 
 
 async def _wiki_all_map_doc_ids(tenant_id: str, kb_id: str) -> list[str]:
-    """Distinct ``doc_id`` across every ``artifact_map_extract`` row in this KB.
+    """Distinct ``doc_id`` across every ``wiki_map_extract`` row in this KB.
 
     These are the documents that fed the current compilation. Stamped onto
     the KB-wide aggregate rows (REDUCE / PLAN) as ``source_doc_ids`` so a
@@ -1291,7 +1283,7 @@ async def _wiki_all_map_doc_ids(tenant_id: str, kb_id: str) -> list[str]:
 
 
 async def _wiki_compute_map_input_hash(tenant_id: str, kb_id: str) -> str:
-    """xxh64 fingerprint of the **current** ``artifact_map_extract`` rows for
+    """xxh64 fingerprint of the **current** ``wiki_map_extract`` rows for
     this KB — used by REDUCE / PLAN to cache-bust when MAP changed.
 
     Built from ``sorted((chunk_id, chunk_hash))`` so:
@@ -1420,7 +1412,7 @@ async def _wiki_persist_reduce(
     input_hash: str = "",
     source_doc_ids: Optional[list[str]] = None,
 ) -> None:
-    """Upsert the single non-searchable artifact_reduce_result row for this KB.
+    """Upsert the single non-searchable wiki_reduce_result row for this KB.
 
     ``input_hash`` records the MAP-state fingerprint this reduction was
     computed from; the next call compares it before re-running.
@@ -1478,7 +1470,7 @@ async def wiki_reduce_from_extracts(
 ) -> dict:
     """Phase 2 (REDUCE/Dedup) — KB-scoped.
 
-    Loads every ``artifact_map_extract`` row in this KB (across all documents) and
+    Loads every ``wiki_map_extract`` row in this KB (across all documents) and
     produces a single canonical dict of entities/concepts via:
         1. Exact dedup by ``(normalize(name), type)`` for entities and by
            ``normalize(term)`` for concepts.
@@ -1492,9 +1484,9 @@ async def wiki_reduce_from_extracts(
            ``chunk_ids`` per canonical entity.
 
     The result is persisted to ES as a single non-searchable
-    ``artifact_reduce_result`` row per KB. Subsequent calls with
+    ``wiki_reduce_result`` row per KB. Subsequent calls with
     ``force_rerun=False`` (default) return the cached row immediately; pass
-    ``force_rerun=True`` after new ``artifact_map_extract`` rows have been added.
+    ``force_rerun=True`` after new ``wiki_map_extract`` rows have been added.
 
     Args:
         chat_mdl, embd_mdl: ragflow LLMBundle instances.
@@ -1503,7 +1495,7 @@ async def wiki_reduce_from_extracts(
         ambiguous_low: cosine in [ambiguous_low, merge_threshold) goes to LLM.
         ambiguous_batch_size: max pairs per LLM disambiguation call.
         llm_timeout: seconds per LLM disambiguation batch.
-        force_rerun: bypass the cached artifact_reduce_result.
+        force_rerun: bypass the cached wiki_reduce_result.
         callback: optional ``(progress: float, msg: str)`` callback.
 
     Returns the canonical extract dict::
@@ -1642,27 +1634,19 @@ async def wiki_reduce_from_extracts(
 # ---------------------------------------------------------------------------
 # PLAN phase (KB-scoped)
 # ---------------------------------------------------------------------------
-#
-# Migrated from D:/git/arkon/app/ai/mrp/reducer.py, steps 2.5-2.7 + 2.8 persist.
-# Scope: per KB (one Compilation Plan covering the entire knowledge base),
-# matching the REDUCE phase above.
-#
 # Flow:
-#   1. Resume — return cached artifact_compilation_plan ES row when present.
-#   2. Load REDUCE output from artifact_reduce_result.
+#   1. Resume — return cached wiki_compilation_plan ES row when present.
+#   2. Load REDUCE output from wiki_reduce_result.
 #   3. KB reconciliation — batch-embed entity/concept query texts and run a
-#      per-item KNN against existing artifact_page rows in this KB. Classify
+#      per-item KNN against existing wiki_page rows in this KB. Classify
 #      UPDATE / MAYBE / CREATE by similarity. Batched LLM resolves MAYBE.
 #   4. Planning call — one gen_json call producing the Compilation Plan JSON.
 #   5. Attach raw items as side context for REFINE (no extra ES round-trips).
-#   6. Persist as a single non-searchable artifact_compilation_plan row per KB.
+#   6. Persist as a single non-searchable wiki_compilation_plan row per KB.
 #
-# Differences vs arkon: KB-scoped instead of per-source; no `source` pages
-# emitted (chunk_ids attribution is enough); plan status defaults to
-# "approved" so REFINE can consume immediately (review workflow deferred).
 
-WIKI_PLAN_COMPILE_KWD = "artifact_compilation_plan"
-WIKI_PAGE_COMPILE_KWD = "artifact_page"
+WIKI_PLAN_COMPILE_KWD = "wiki_compilation_plan"
+WIKI_PAGE_COMPILE_KWD = "wiki_page"
 DEFAULT_WIKI_PLAN_UPDATE_THRESHOLD = 0.95
 DEFAULT_WIKI_PLAN_MAYBE_THRESHOLD = 0.60
 DEFAULT_WIKI_PLAN_TIMEOUT = 600  # ~10 min — the planning call emits one big
@@ -1821,7 +1805,7 @@ async def _wiki_reconcile_with_kb(
     update_threshold: float,
     maybe_threshold: float,
 ) -> dict[str, dict]:
-    """Per-entity / per-concept KNN against compile_kwd=artifact_page rows in this KB.
+    """Per-entity / per-concept KNN against compile_kwd=wiki_page rows in this KB.
 
     Returns ``{name_or_term: {"action", "page_slug", "page_title", "page_id",
     "similarity"}}``. When no artifact pages exist (first run before REFINE), every
@@ -2326,7 +2310,7 @@ async def _wiki_persist_plan(
     input_hash: str = "",
     source_doc_ids: Optional[list[str]] = None,
 ) -> None:
-    """Upsert the single non-searchable artifact_compilation_plan row for this KB.
+    """Upsert the single non-searchable wiki_compilation_plan row for this KB.
 
     ``input_hash`` records the REDUCE-state fingerprint this plan was
     derived from; the next call compares it before re-planning.
@@ -2384,11 +2368,11 @@ async def wiki_plan_from_reduction(
 ) -> dict:
     """Phase 3 (PLAN) — KB-scoped.
 
-    Loads the cached ``artifact_reduce_result`` for this KB, reconciles every
-    canonical entity/concept against existing ``artifact_page`` rows in the same
+    Loads the cached ``wiki_reduce_result`` for this KB, reconciles every
+    canonical entity/concept against existing ``wiki_page`` rows in the same
     KB (top-1 KNN, with MAYBE matches resolved by a batched LLM call), then
     asks the LLM for one Compilation Plan JSON. The plan is persisted under
-    ``compile_kwd="artifact_compilation_plan"`` with ``_status="approved"`` so
+    ``compile_kwd="wiki_compilation_plan"`` with ``_status="approved"`` so
     REFINE can consume it immediately.
 
     Args:
@@ -2400,7 +2384,7 @@ async def wiki_plan_from_reduction(
         maybe_threshold: cosine in [maybe_threshold, update_threshold) → ask LLM.
         reconcile_batch_size: max pairs per LLM MAYBE-resolution call.
         llm_timeout: seconds per LLM call (both MAYBE resolution and planning).
-        force_rerun: bypass the cached artifact_compilation_plan.
+        force_rerun: bypass the cached wiki_compilation_plan.
         callback: optional ``(progress: float, msg: str)`` callback.
 
     Returns the plan dict with this shape (plus underscore-prefixed side
@@ -2577,24 +2561,19 @@ async def wiki_plan_from_reduction(
 # REFINE phase (KB-scoped)
 # ---------------------------------------------------------------------------
 #
-# Migrated from D:/git/arkon/app/ai/mrp/writer.py (simple writer path) and
-# merger.py (merge_page_content).
 #
-# Scope: per KB. Consumes the artifact_compilation_plan row written by PLAN,
-# writes one artifact_page per planned page in parallel under a semaphore.
+# Scope: per KB. Consumes the wiki_compilation_plan row written by PLAN,
+# writes one wiki_page per planned page in parallel under a semaphore.
 # UPDATE actions LLM-merge new vs existing content with a 70 % shrink-check
 # fallback to the new content. Each written page is persisted to ES as a
-# searchable artifact_page row (with embedding) so PLAN reconciliation finds it
+# searchable wiki_page row (with embedding) so PLAN reconciliation finds it
 # on the next REDUCE→PLAN cycle.
 #
-# Resume: per-slug artifact_page_draft rows act as a cache; a re-entry skips
+# Resume: per-slug wiki_page_draft rows act as a cache; a re-entry skips
 # slugs already cached unless force_rerun=True.
-#
-# Differences vs arkon: no full_text — source context is the union of the
-# evidence chunks fetched from ES by id. Image-marker handling and the
-# complex tool-using writer are deliberately deferred.
 
-WIKI_DRAFT_COMPILE_KWD = "artifact_page_draft"
+
+WIKI_DRAFT_COMPILE_KWD = "wiki_page_draft"
 DEFAULT_WIKI_REFINE_WORKERS = 4
 DEFAULT_WIKI_REFINE_TIMEOUT = 300
 WIKI_REFINE_SOURCE_BUDGET_CHARS = 60_000
@@ -3018,7 +2997,7 @@ async def _wiki_build_source_context(
 
 _WIKILINK_PIPE_RE = re.compile(r"\[\[([^\[\]\|]+?)\|([^\[\]]+?)\]\]")
 _WIKILINK_SIMPLE_RE = re.compile(r"\[\[([^\[\]\|]+?)\]\]")
-_ARTIFACT_MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
+_WIKI_MARKDOWN_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
 
 def _wiki_transform_links(
@@ -3061,7 +3040,7 @@ def _wiki_transform_links(
     def _is_valid(slug: str) -> bool:
         return valid_slugs is None or slug in valid_slugs
 
-    def _artifact_slug(href: str) -> str | None:
+    def _wiki_slug(href: str) -> str | None:
         parsed = urlsplit(href)
         if parsed.scheme or parsed.netloc:
             if parsed.netloc != "artifact":
@@ -3077,7 +3056,7 @@ def _wiki_transform_links(
         return "/".join(parts[1:])
 
     def _markdown_artifact(m: re.Match) -> str:
-        slug = _artifact_slug(m.group(2))
+        slug = _wiki_slug(m.group(2))
         if not slug:
             return m.group(0)
         if not _is_valid(slug):
@@ -3100,7 +3079,7 @@ def _wiki_transform_links(
         _track(slug)
         return f"[{_display_text(slug, slug)}](artifact/{kb_id_str}/{slug})"
 
-    rewritten = _ARTIFACT_MARKDOWN_LINK_RE.sub(_markdown_artifact, content_md or "")
+    rewritten = _WIKI_MARKDOWN_LINK_RE.sub(_markdown_artifact, content_md or "")
     rewritten = _WIKILINK_PIPE_RE.sub(_piped, rewritten)
     rewritten = _WIKILINK_SIMPLE_RE.sub(_simple, rewritten)
     return rewritten, outlinks
@@ -3410,7 +3389,7 @@ async def _wiki_persist_draft(
         "id": _wiki_draft_row_id(kb_id, slug),
         "doc_id": str(kb_id),
         "compile_kwd": WIKI_DRAFT_COMPILE_KWD,
-        "artifact_slug_kwd": slug,
+        "wiki_slug_kwd": slug,
         "source_id": [str(kb_id)],
         "source_doc_ids": draft_doc_ids,
         "input_hash_kwd": plan_input_hash,
@@ -3421,7 +3400,7 @@ async def _wiki_persist_draft(
         try:
             await thread_pool_exec(
                 settings.docStoreConn.delete,
-                {"compile_kwd": WIKI_DRAFT_COMPILE_KWD, "artifact_slug_kwd": slug},
+                {"compile_kwd": WIKI_DRAFT_COMPILE_KWD, "wiki_slug_kwd": slug},
                 index,
                 kb_id,
             )
@@ -3449,7 +3428,7 @@ async def _wiki_load_refine_resume(
 
     index = _rag_search.index_name(tenant_id)
     condition = {"compile_kwd": [WIKI_DRAFT_COMPILE_KWD]}
-    select_fields = ["id", "artifact_slug_kwd", "content_with_weight", "input_hash_kwd"]
+    select_fields = ["id", "wiki_slug_kwd", "content_with_weight", "input_hash_kwd"]
 
     PAGE_SIZE = 500
     offset = 0
@@ -3475,7 +3454,7 @@ async def _wiki_load_refine_resume(
         if not field_map:
             break
         for row in field_map.values():
-            slug = row.get("artifact_slug_kwd")
+            slug = row.get("wiki_slug_kwd")
             content = row.get("content_with_weight")
             if not isinstance(slug, str) or not isinstance(content, str):
                 continue
@@ -3754,7 +3733,7 @@ async def wiki_refine_from_plan(
                 logging.exception("wiki_refine: writer failed for slug=%s", slug)
                 return None
 
-            # Searchable artifact_page persistence has moved to the task
+            # Searchable wiki_page persistence has moved to the task
             # handler so the doc-storage schema can be controlled in one
             # place at the ingest layer.
             # REFINE now just builds the page dict and resume cache.

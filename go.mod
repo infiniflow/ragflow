@@ -51,6 +51,7 @@ require (
 	github.com/xuri/excelize/v2 v2.11.0
 	github.com/yfedoseev/office_oxide/go v0.1.8
 	github.com/yfedoseev/pdf_oxide/go v0.3.67
+	github.com/yuin/goldmark v1.4.13
 	github.com/zeebo/xxh3 v1.0.2
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
 	go.opentelemetry.io/otel v1.44.0
@@ -62,6 +63,7 @@ require (
 	golang.org/x/sync v0.21.0
 	golang.org/x/term v0.44.0
 	golang.org/x/text v0.38.0
+	gonum.org/v1/gonum v0.17.0
 	google.golang.org/api v0.287.1
 	google.golang.org/genai v1.54.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1

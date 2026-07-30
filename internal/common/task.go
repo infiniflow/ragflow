@@ -36,3 +36,12 @@ type TaskHandle interface {
 	// periodically during long tasks to avoid in-flight redelivery.
 	InProgress() error
 }
+
+// RawMessage is a broker message carrying opaque bytes (used by the dataset-level
+// compile consumer, which publishes arbitrary JSON payloads rather than the
+// TaskMessage shape). The NATS engine returns RawMessage from FetchKnowledgeCompileMessages.
+type RawMessage interface {
+	Data() []byte
+	Ack() error
+	Nak() error
+}
