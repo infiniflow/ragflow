@@ -176,6 +176,8 @@ def test_message_fit_in_zero_budget_preserves_non_empty_messages(monkeypatch):
 @pytest.mark.p1
 def test_cross_languages_uses_deterministic_generation(monkeypatch):
     generator = _load_generator_module(monkeypatch)
+    generator.CROSS_LANGUAGES_SYS_PROMPT_TEMPLATE = "Translate the query."
+    generator.CROSS_LANGUAGES_USER_PROMPT_TEMPLATE = "Query: {{ query }}\nLanguages: {{ languages | join(', ') }}"
     captured = {}
 
     class _ChatModel:
@@ -202,4 +204,8 @@ def test_cross_languages_uses_deterministic_generation(monkeypatch):
 
     assert result == "English translation\n中文翻译"
     assert captured["generation_config"] == {"temperature": 0}
-    assert captured["messages"]
+    assert len(captured["messages"]) == 1
+    assert captured["messages"][0]["role"] == "user"
+    assert "original query" in captured["messages"][0]["content"]
+    assert "English" in captured["messages"][0]["content"]
+    assert "Chinese" in captured["messages"][0]["content"]
