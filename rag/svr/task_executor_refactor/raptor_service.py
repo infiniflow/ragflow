@@ -41,8 +41,6 @@ from rag.nlp import rag_tokenizer, search
 from rag.utils.raptor_utils import (
     collect_raptor_chunk_ids,
     collect_raptor_methods,
-    get_raptor_clustering_method,
-    get_raptor_tree_builder,
     get_skip_reason,
     make_raptor_summary_chunk_id,
     should_skip_raptor,
@@ -118,8 +116,6 @@ class RaptorService:
             Tuple of (chunks, token_count, cleanup_raptor_chunks).
         """
         raptor_config = kb_parser_config.get("raptor", {})
-        tree_builder = get_raptor_tree_builder(raptor_config)
-        clustering_method = get_raptor_clustering_method(raptor_config)
         vctr_nm = "q_%d_vec" % vector_size
 
         res = []
@@ -132,13 +128,9 @@ class RaptorService:
 
         # Determine scope
         if raptor_config.get("scope", "file") == "file":
-            res, tk_count = await self._run_file_level_raptor(
-                raptor_config, tree_builder, clustering_method, chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id, max_errors, res, tk_count, cleanup_raptor_chunks
-            )
+            res, tk_count = await self._run_file_level_raptor(raptor_config, chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id, max_errors, res, tk_count, cleanup_raptor_chunks)
         else:
-            res, tk_count = await self._run_dataset_level_raptor(
-                raptor_config, tree_builder, clustering_method, chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id, max_errors, res, tk_count, cleanup_raptor_chunks
-            )
+            res, tk_count = await self._run_dataset_level_raptor(raptor_config, chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id, max_errors, res, tk_count, cleanup_raptor_chunks)
 
         return res, tk_count, cleanup_raptor_chunks
 
@@ -158,7 +150,8 @@ class RaptorService:
             }
         return doc_info_by_id
 
-    async def _run_file_level_raptor(self, raptor_config, tree_builder, clustering_method, chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id, max_errors, res, tk_count, cleanup_raptor_chunks):
+    async def _run_file_level_raptor(self, raptor_config, chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id, max_errors, res, tk_count, cleanup_raptor_chunks):
+        tree_builder = "raptor"
         """Run RAPTOR at file level (per document)."""
         ctx = self._task_context
         fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
@@ -197,7 +190,7 @@ class RaptorService:
                 continue
 
             before_generate = len(res)
-            new_chunks, new_tk_count = await self._generate_raptor(chunks, doc_id, raptor_config, chat_mdl, embd_mdl, tree_builder, clustering_method, max_errors, doc_info_by_id)
+            new_chunks, new_tk_count = await self._generate_raptor(chunks, doc_id, raptor_config, chat_mdl, embd_mdl, max_errors, doc_info_by_id)
             res.extend(new_chunks)
             tk_count += new_tk_count
 
@@ -215,7 +208,8 @@ class RaptorService:
 
         return res, tk_count
 
-    async def _run_dataset_level_raptor(self, raptor_config, tree_builder, clustering_method, chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id, max_errors, res, tk_count, cleanup_raptor_chunks):
+    async def _run_dataset_level_raptor(self, raptor_config, chat_mdl, embd_mdl, vctr_nm, doc_ids, doc_info_by_id, max_errors, res, tk_count, cleanup_raptor_chunks):
+        tree_builder = "raptor"
         """Run RAPTOR at dataset level (all documents combined)."""
         ctx = self._task_context
         fake_doc_id = GRAPH_RAPTOR_FAKE_DOC_ID
@@ -264,7 +258,7 @@ class RaptorService:
             return res, tk_count
 
         before_generate = len(res)
-        new_chunks, new_tk_count = await self._generate_raptor(chunks, fake_doc_id, raptor_config, chat_mdl, embd_mdl, tree_builder, clustering_method, max_errors, doc_info_by_id)
+        new_chunks, new_tk_count = await self._generate_raptor(chunks, fake_doc_id, raptor_config, chat_mdl, embd_mdl, max_errors, doc_info_by_id)
         res.extend(new_chunks)
         tk_count += new_tk_count
 
@@ -372,7 +366,6 @@ class RaptorService:
         ctx = self._task_context
         from rag.advanced_rag.knowlege_compile.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 
-        raptor_ext_config = raptor_config.get("ext") or {}
         assert chunks, "_generate_raptor must not be called with empty chunks"
         vctr_nm = "q_%d_vec" % len(chunks[0][1])
 
@@ -384,10 +377,6 @@ class RaptorService:
             raptor_config["max_token"],
             raptor_config["threshold"],
             max_errors=max_errors,
-            tree_builder=tree_builder,
-            clustering_method=clustering_method,
-            psi_exact_max_leaves=raptor_ext_config.get("psi_exact_max_leaves", 4096),
-            psi_bucket_size=raptor_ext_config.get("psi_bucket_size", 1024),
         )
 
         # Seed each leaf with its own id as the start of its
@@ -497,7 +486,6 @@ class RaptorService:
             return None
         from rag.advanced_rag.knowlege_compile.raptor import RecursiveAbstractiveProcessing4TreeOrganizedRetrieval as Raptor
 
-        raptor_ext_config = raptor_config.get("ext") or {}
         raptor = Raptor(
             raptor_config.get("max_cluster", 64),
             chat_mdl,
@@ -506,10 +494,6 @@ class RaptorService:
             raptor_config["max_token"],
             raptor_config["threshold"],
             max_errors=max_errors,
-            tree_builder=tree_builder,
-            clustering_method=clustering_method,
-            psi_exact_max_leaves=raptor_ext_config.get("psi_exact_max_leaves", 4096),
-            psi_bucket_size=raptor_ext_config.get("psi_bucket_size", 1024),
         )
 
         raptor_input = [(content, vctr, [chunk_id] if chunk_id else []) for content, vctr, chunk_id in chunks]
