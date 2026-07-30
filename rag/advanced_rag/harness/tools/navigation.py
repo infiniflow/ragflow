@@ -558,7 +558,7 @@ _KG_NEIGHBORS = 128  # cap on neighbour entity rows resolved per hop
 _KG_REL_LIMIT = 32  # relations fetched per endpoint filter
 
 
-async def _kg_scopes(tools, doc_scope: list[str] | None):
+async def _kg_scopes(tools, doc_scope: list[str] | None = None):
     """Resolve the (kb_id, tenant_id, doc_ids|None) groups to search.
 
     With a ``doc_scope`` the graph is limited to those docs (grouped by their
@@ -815,18 +815,20 @@ async def graph_explore(tools, query: str, keywords: str = "", doc_scope: list[s
             relations.extend(hop_relations)
 
             seen_lower = {k.split(":", 1)[1] for k in ent_names if k.startswith(f"{kb_id}:")}
-            neigh_lower = {n.strip().lower() for r in hop_relations for n in (r["from"], r["to"]) if n and n.strip()} - seen_lower
-            if not neigh_lower:
+            neigh_names = {n.strip() for r in hop_relations for n in (r["from"], r["to"]) if n and n.strip()}
+            neigh_lower_set = {n.lower() for n in neigh_names} - seen_lower
+            if not neigh_lower_set:
                 break
+            neigh_filtered = {n for n in neigh_names if n.lower() in neigh_lower_set}
             neigh_rows = await _kg_search(
                 tools,
                 kb_id,
                 tenant_id,
                 doc_ids,
                 "entity",
-                top_n=min(max(len(neigh_lower), 1), _KG_NEIGHBORS),
+                top_n=min(max(len(neigh_filtered), 1), _KG_NEIGHBORS),
                 scope_kwd=scope_kwd,
-                extra={"name_kwd": sorted(neigh_lower)},
+                extra={"name_kwd": _endpoint_terms(neigh_filtered)},
             )
             neighbours = [e for e in (_kg_parse_entity(r) for r in neigh_rows.values()) if e]
             frontier = _add_entities(neighbours, kb_id)

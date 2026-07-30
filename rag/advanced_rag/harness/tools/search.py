@@ -4,6 +4,7 @@ import logging
 import re
 import hashlib
 from common import settings
+from .navigation import _kg_scopes
 
 _LOG = logging.getLogger(__name__)
 
@@ -293,34 +294,66 @@ async def _expand_with_compiled(tools, query: str, keywords: str, kbinfos: dict)
     before = len(kbinfos.get("chunks", []))
     seen_ids = {c.get("chunk_id") or c.get("id") for c in kbinfos.get("chunks", [])}
 
-    scopes = await _compiled_scopes(tools)
+    scopes = await _kg_scopes(tools)
     if not scopes:
         return
 
     for kb_id, tenant_id, doc_ids in scopes:
-        for compile_kwd in ("page_index", "tree", "wiki_page", None):  # None = all compiled (KG/including knowledge_graph, timeline, mind_map)
-            label = compile_kwd or "kg"
-            if compile_kwd == "wiki_page":
-                chunks = await _expand_wiki_page_strategy(
-                    tools,
-                    kb_id,
-                    tenant_id,
-                    doc_ids,
-                    query,
-                    seen_ids,
-                    max_chunks=5,
-                )
-            else:
-                chunks = await _expand_compiled_strategy(
-                    tools,
-                    kb_id,
-                    tenant_id,
-                    doc_ids,
-                    query,
-                    seen_ids,
-                    compile_kwd=compile_kwd,
-                    max_chunks=5,
-                )
+        # 1-hop entity-graph expansion per template kind.
+        # Each template writes entity/relation rows tagged with
+        # ``compilation_template_kind_kwd`` — search them independently.
+        for label, template_kind in (
+            ("knowledge_graph", "knowledge_graph"),
+            ("mind_map", "mind_map"),
+            ("timeline", "timeline"),
+            ("page_index", "page_index"),
+        ):
+            chunks = await _expand_compiled_strategy(
+                tools,
+                kb_id,
+                tenant_id,
+                doc_ids,
+                query,
+                seen_ids,
+                template_kind=template_kind,
+                max_chunks=5,
+            )
+            if chunks:
+                kbinfos.setdefault("chunks", []).extend(chunks)
+                _LOG.debug("[Compiled expand] %s: +%d chunks", label, len(chunks))
+
+        # Tree structure graph (uses ``compile_kwd``, not template kind).
+        chunks = await _expand_compiled_strategy(
+            tools,
+            kb_id,
+            tenant_id,
+            doc_ids,
+            query,
+            seen_ids,
+            compile_kwd="tree",
+            max_chunks=5,
+        )
+        if chunks:
+            kbinfos.setdefault("chunks", []).extend(chunks)
+            _LOG.debug("[Compiled expand] tree: +%d chunks", len(chunks))
+
+        # Synthesis pages — standalone rendered articles from wiki / session
+        # graph / session essence templates.  Searched directly (no entity-graph nav).
+        for label, ckwd in (
+            ("wiki_page", "wiki_page"),
+            ("artifact_page", "artifact_page"),
+            ("essence", "essence"),
+        ):
+            chunks = await _expand_wiki_page_strategy(
+                tools,
+                kb_id,
+                tenant_id,
+                doc_ids,
+                query,
+                seen_ids,
+                compile_kwd=ckwd,
+                max_chunks=5,
+            )
             if chunks:
                 kbinfos.setdefault("chunks", []).extend(chunks)
                 _LOG.debug("[Compiled expand] %s: +%d chunks", label, len(chunks))
@@ -334,20 +367,6 @@ async def _expand_with_compiled(tools, query: str, keywords: str, kbinfos: dict)
     _LOG.info("[Hybrid search] Compiled expansion added %d chunks.", after - before)
 
 
-async def _compiled_scopes(tools, doc_scope: list[str] | None = None) -> list[tuple[str, str, list[str] | None]]:
-    """Resolve (kb_id, tenant_id, doc_ids) tuples for compiled-product scoping."""
-    from common.misc_utils import thread_pool_exec
-
-    if doc_scope:
-        by_kb: dict[tuple, list[str]] = {}
-        for doc_id in doc_scope:
-            resolved = await thread_pool_exec(tools._resolve_doc_tenant, doc_id)
-            if resolved:
-                by_kb.setdefault(resolved, []).append(doc_id)
-        return [(kb, tenant, docs) for (kb, tenant), docs in by_kb.items()]
-    return [(kb.id, kb.tenant_id, None) for kb in getattr(tools, "kbs", []) or []]
-
-
 async def _search_compiled_rows(
     tools,
     kb_id: str,
@@ -359,11 +378,13 @@ async def _search_compiled_rows(
     top_n: int = 8,
     extra: dict | None = None,
     compile_kwd: str | None = None,
+    template_kind: str | None = None,
 ) -> dict:
     """Search compiled KG rows in one KB, returning raw field maps.
 
-    When *compile_kwd* is set, only rows with ``compile_kwd == compile_kwd`` are
-    returned.  Set to ``None`` to search all compiled rows (KG expansion).
+    *compile_kwd* filters by the ``compile_kwd`` field (e.g. "tree" for tree
+    structure nodes).  *template_kind* filters by ``compilation_template_kind_kwd``
+    (e.g. "knowledge_graph", "mind_map").  Leave both ``None`` to scan all rows.
     """
     from common import settings
     from common.doc_store.doc_store_base import MatchTextExpr, OrderByExpr
@@ -373,6 +394,8 @@ async def _search_compiled_rows(
     condition: dict = {"knowledge_graph_kwd": [kind]}
     if compile_kwd:
         condition["compile_kwd"] = compile_kwd
+    if template_kind:
+        condition["compilation_template_kind_kwd"] = template_kind
     if doc_ids:
         condition["doc_id"] = list(doc_ids)
     if extra:
@@ -437,7 +460,7 @@ async def _load_chunks_for_doc(tools, doc_id: str, chunk_ids: list[str]) -> list
         return []
     kb_id, tenant_id = resolved
 
-    fields = ["content_with_weight", "docnm_kwd", "doc_id"]
+    fields = ["content_with_weight", "docnm_kwd", "doc_id", "id"]
     try:
         res = await thread_pool_exec(
             settings.docStoreConn.search,
@@ -451,8 +474,12 @@ async def _load_chunks_for_doc(tools, doc_id: str, chunk_ids: list[str]) -> list
             search.index_name(tenant_id),
             [kb_id],
         )
-        return settings.docStoreConn.get_fields(res, fields) or []
+        rows = settings.docStoreConn.get_fields(res, fields)
+        if not rows:
+            return []
+        return [{**v, "chunk_id": k} for k, v in rows.items()]
     except Exception:
+        _LOG.exception("[Compiled expand] failed to load chunks for doc_id=%s", doc_id)
         return []
 
 
@@ -465,15 +492,19 @@ async def _expand_compiled_strategy(
     seen_ids: set[str],
     *,
     compile_kwd: str | None = None,
+    template_kind: str | None = None,
     max_chunks: int = 5,
 ) -> list[dict]:
     """Generic 1-hop compiled expansion: entity search → relation nav → chunk load.
 
-    1. Embedding-match seed entities (filtered by *compile_kwd* if set).
+    1. Embedding-match seed entities (filtered by *compile_kwd* or *template_kind*).
     2. Fetch relations adjacent to seed entities (forward + backward).
     3. Collect neighbour entity names (1-hop away).
     4. Look up neighbour entities to get ``source_chunk_ids``.
     5. Load actual chunks, deduplicate, respect *max_chunks*.
+
+    *compile_kwd* is used for structure graphs (e.g. "tree").
+    *template_kind* is used for entity extraction rows (e.g. "knowledge_graph").
     """
     import json
 
@@ -487,6 +518,7 @@ async def _expand_compiled_strategy(
         text=query,
         top_n=5,
         compile_kwd=compile_kwd,
+        template_kind=template_kind,
     )
     if not seed_rows:
         return []
@@ -497,14 +529,16 @@ async def _expand_compiled_strategy(
             payload = json.loads(r.get("content_with_weight") or "{}")
         except Exception:
             continue
-        name = (payload.get("name") or payload.get("title") or "").strip().lower()
+        name = (payload.get("name") or payload.get("title") or "").strip()
         if name:
             seed_names.add(name)
     if not seed_names:
         return []
 
     # -- 2. Adjacent relations (outgoing + incoming) --
-    seed_list = list(seed_names)
+    # Provide both original and lowercased names — dataset_structure_merger
+    # lowercases merged-row endpoints while per-doc rows keep original case.
+    seed_list = sorted({n.lower() for n in seed_names} | seed_names)
     fwd = await _search_compiled_rows(
         tools,
         kb_id,
@@ -513,6 +547,7 @@ async def _expand_compiled_strategy(
         "relation",
         top_n=50,
         compile_kwd=compile_kwd,
+        template_kind=template_kind,
         extra={"from_entity_kwd": seed_list},
     )
     bwd = await _search_compiled_rows(
@@ -523,24 +558,29 @@ async def _expand_compiled_strategy(
         "relation",
         top_n=50,
         compile_kwd=compile_kwd,
+        template_kind=template_kind,
         extra={"to_entity_kwd": seed_list},
     )
     all_rels = {**fwd, **bwd}
 
     # -- 3. Neighbour names (1-hop, exclude seeds) --
+    seed_lower = {n.lower() for n in seed_names}
     neighbour_names: set[str] = set()
     for r in all_rels.values():
-        frm = (r.get("from_entity_kwd") or "").strip().lower()
-        to = (r.get("to_entity_kwd") or "").strip().lower()
-        if frm in seed_names and to and to not in seed_names:
+        frm = (r.get("from_entity_kwd") or "").strip()
+        frm_lower = frm.lower()
+        to = (r.get("to_entity_kwd") or "").strip()
+        to_lower = to.lower()
+        if frm_lower in seed_lower and to and to_lower not in seed_lower:
             neighbour_names.add(to)
-        if to in seed_names and frm and frm not in seed_names:
+        if to_lower in seed_lower and frm and frm_lower not in seed_lower:
             neighbour_names.add(frm)
     if not neighbour_names:
         return []
 
     # -- 4. Neighbour entity source_chunk_ids --
-    neigh_list = list(neighbour_names)
+    # Provide both original and lowercased — same as seed_list above.
+    neigh_list = sorted({n.lower() for n in neighbour_names} | neighbour_names)
     if len(neigh_list) > 100:
         neigh_list = neigh_list[:100]  # reasonable cap for name_kwd search
     neigh_rows = await _search_compiled_rows(
@@ -551,6 +591,7 @@ async def _expand_compiled_strategy(
         "entity",
         top_n=len(neigh_list),
         compile_kwd=compile_kwd,
+        template_kind=template_kind,
         extra={"name_kwd": neigh_list},
     )
 
@@ -578,28 +619,29 @@ async def _expand_compiled_strategy(
     return new_chunks
 
 
-async def _search_wiki_pages(
+async def _search_synthesis_pages(
     tools,
     kb_id: str,
     tenant_id: str,
     doc_ids: list[str] | None,
     text: str,
     *,
+    compile_kwd: str = "wiki_page",
     top_n: int = 8,
 ) -> dict:
-    """Search wiki_page compiled articles (no knowledge_graph_kwd filter).
+    """Search synthesis-compiled page rows (no knowledge_graph_kwd filter).
 
-    Wiki pages are standalone articles with ``content_with_weight``,
-    ``content_ltks``/``content_sm_ltks`` for keyword search, and
-    ``q_..._vec`` for vector search. They do NOT have the
-    ``knowledge_graph_kwd`` field (unlike entity/relation rows).
+    Synthesis pages are standalone articles (wiki_page, artifact_page,
+    essence, etc.) with ``content_with_weight``, keyword index, and
+    vector.  They do NOT carry the ``knowledge_graph_kwd`` field (unlike
+    entity/relation rows from extraction).
     """
     from common import settings
     from common.doc_store.doc_store_base import MatchTextExpr, OrderByExpr
     from common.misc_utils import thread_pool_exec
     from rag.nlp import search
 
-    condition: dict = {"compile_kwd": "wiki_page", "available_int": 1}
+    condition: dict = {"compile_kwd": compile_kwd, "available_int": 1}
     if doc_ids:
         condition["source_doc_ids"] = list(doc_ids)
 
@@ -656,21 +698,26 @@ async def _expand_wiki_page_strategy(
     query: str,
     seen_ids: set[str],
     *,
+    compile_kwd: str = "wiki_page",
     max_chunks: int = 5,
 ) -> list[dict]:
-    """Expand wiki_page compiled articles: semantic search → load source chunks.
+    """Expand synthesis-compiled pages: semantic search → load source chunks.
 
     Unlike ``_expand_compiled_strategy`` (which does 1-hop entity-graph
-    navigation), wiki pages are standalone rendered articles — we search
+    navigation), synthesis pages are standalone rendered articles — we search
     them directly and load the referenced source chunks as context.
+
+    *compile_kwd* selects which synthesis type: "wiki_page" (Wiki template),
+    "artifact_page" (Session Graph synthesis), "essence" (Session Essence).
     """
-    # -- 1. Search wiki_page rows --
-    wiki_rows = await _search_wiki_pages(
+    # -- 1. Search synthesis pages --
+    wiki_rows = await _search_synthesis_pages(
         tools,
         kb_id,
         tenant_id,
         doc_ids,
         query,
+        compile_kwd=compile_kwd,
         top_n=5,
     )
     if not wiki_rows:
