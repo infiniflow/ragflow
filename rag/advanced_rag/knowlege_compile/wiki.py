@@ -1141,14 +1141,6 @@ async def wiki_map_from_chunks(
 # REDUCE phase (KB-scoped)
 # ---------------------------------------------------------------------------
 #
-# Migrated from D:/git/arkon/app/ai/mrp/reducer.py, steps 2.1-2.4.
-# KB reconciliation (arkon 2.5-2.6) and the planning LLM call (arkon 2.7) are
-# deferred to the PLAN phase — they belong with the planner, not the dedup.
-#
-# Scope difference from arkon: arkon REDUCE runs per source document. Here it
-# runs per knowledge base — one set of canonical entities/concepts for the
-# entire KB. Inputs come from ES (every wiki_map_extract row in this KB across
-# all docs); the result lives in ES under wiki_reduce_result.
 
 WIKI_REDUCE_COMPILE_KWD = "wiki_reduce_result"
 DEFAULT_WIKI_REDUCE_MERGE_THRESHOLD = 0.95
@@ -1642,11 +1634,6 @@ async def wiki_reduce_from_extracts(
 # ---------------------------------------------------------------------------
 # PLAN phase (KB-scoped)
 # ---------------------------------------------------------------------------
-#
-# Migrated from D:/git/arkon/app/ai/mrp/reducer.py, steps 2.5-2.7 + 2.8 persist.
-# Scope: per KB (one Compilation Plan covering the entire knowledge base),
-# matching the REDUCE phase above.
-#
 # Flow:
 #   1. Resume — return cached wiki_compilation_plan ES row when present.
 #   2. Load REDUCE output from wiki_reduce_result.
@@ -1657,9 +1644,6 @@ async def wiki_reduce_from_extracts(
 #   5. Attach raw items as side context for REFINE (no extra ES round-trips).
 #   6. Persist as a single non-searchable wiki_compilation_plan row per KB.
 #
-# Differences vs arkon: KB-scoped instead of per-source; no `source` pages
-# emitted (chunk_ids attribution is enough); plan status defaults to
-# "approved" so REFINE can consume immediately (review workflow deferred).
 
 WIKI_PLAN_COMPILE_KWD = "wiki_compilation_plan"
 WIKI_PAGE_COMPILE_KWD = "wiki_page"
@@ -2577,8 +2561,6 @@ async def wiki_plan_from_reduction(
 # REFINE phase (KB-scoped)
 # ---------------------------------------------------------------------------
 #
-# Migrated from D:/git/arkon/app/ai/mrp/writer.py (simple writer path) and
-# merger.py (merge_page_content).
 #
 # Scope: per KB. Consumes the wiki_compilation_plan row written by PLAN,
 # writes one wiki_page per planned page in parallel under a semaphore.
@@ -2589,10 +2571,7 @@ async def wiki_plan_from_reduction(
 #
 # Resume: per-slug wiki_page_draft rows act as a cache; a re-entry skips
 # slugs already cached unless force_rerun=True.
-#
-# Differences vs arkon: no full_text — source context is the union of the
-# evidence chunks fetched from ES by id. Image-marker handling and the
-# complex tool-using writer are deliberately deferred.
+
 
 WIKI_DRAFT_COMPILE_KWD = "wiki_page_draft"
 DEFAULT_WIKI_REFINE_WORKERS = 4
