@@ -180,7 +180,7 @@ export const FormConfigMap = {
   [Operator.Extractor]: {
     component: ExtractorForm,
   },
-  [Operator.Compilation]: {
+  [Operator.Compiler]: {
     component: CompilationForm,
   },
   [Operator.DataOperations]: {

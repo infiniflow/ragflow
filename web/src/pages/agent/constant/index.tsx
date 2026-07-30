@@ -759,7 +759,7 @@ export const RestrictedUpstreamMap = {
   [Operator.TitleChunker]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
   [Operator.Extractor]: [Operator.Begin],
-  [Operator.Compilation]: [Operator.Begin],
+  [Operator.Compiler]: [Operator.Begin],
   [Operator.File]: [Operator.Begin],
   [Operator.Loop]: [Operator.Begin],
   [Operator.LoopStart]: [Operator.Begin],
@@ -811,7 +811,7 @@ export const NodeMap = {
   [Operator.TokenChunker]: 'chunkerNode',
   [Operator.TitleChunker]: 'chunkerNode',
   [Operator.Extractor]: 'contextNode',
-  [Operator.Compilation]: 'compilationNode',
+  [Operator.Compiler]: 'compilationNode',
   [Operator.DataOperations]: 'dataOperationsNode',
   [Operator.ListOperations]: 'listOperationsNode',
   [Operator.VariableAssigner]: 'variableAssignerNode',
@@ -858,7 +858,7 @@ export const NoDebugOperatorsList = [
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Extractor,
-  Operator.Compilation,
+  Operator.Compiler,
   Operator.Tool,
   Operator.Loop,
 ];
@@ -870,7 +870,7 @@ export const NoCopyOperatorsList = [
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Extractor,
-  Operator.Compilation,
+  Operator.Compiler,
 ];
 
 export enum NodeHandleId {
