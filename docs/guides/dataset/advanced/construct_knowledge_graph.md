@@ -33,7 +33,7 @@ RAPTOR (Recursive Abstractive Processing for Tree Organized Retrieval) can also 
 
 The system's default chat model is used to generate knowledge graph. Before proceeding, ensure that you have a chat model properly configured:
 
-![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.jpg)
+![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.png)
 
 ## Configurations
 

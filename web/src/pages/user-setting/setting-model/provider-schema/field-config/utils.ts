@@ -42,6 +42,33 @@ export function applyChatToImage2Text(
 }
 
 /**
+ * Parse a backend `api_key` value (which may be a JSON string, an
+ * already-parsed object, or a bare string) into the underlying object.
+ * Used by `echoTransform` implementations to lift provider-specific
+ * credential fields that the backend persists nested inside `api_key`
+ * (e.g. XunFei Spark's `spark_api_password`, PaddleOCR's nested config,
+ * MinerU's full config bundle).
+ *
+ * Returns `undefined` for bare strings or unparseable input so callers
+ * can fall back to empty values via `??`.
+ */
+export function parseApiKeyAsObject(
+  raw: unknown,
+): Record<string, any> | undefined {
+  let obj: any = raw;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith('{')) return undefined;
+    try {
+      obj = JSON.parse(trimmed);
+    } catch {
+      return undefined;
+    }
+  }
+  return obj && typeof obj === 'object' ? obj : undefined;
+}
+
+/**
  * Build the IModelInfo[] payload for verify/submit from the form values.
  *
  * Resolution order:

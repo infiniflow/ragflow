@@ -10,6 +10,7 @@ export enum TimelineNodeType {
   titleChunker = 'titleChunker',
   tokenChunker = 'tokenChunker',
   tokenizer = 'tokenizer',
+  compiler = 'compiler',
   end = 'end',
 }
 

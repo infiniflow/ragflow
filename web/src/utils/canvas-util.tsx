@@ -4,7 +4,7 @@ import {
   Operator,
 } from '@/constants/agent';
 import { BaseNode } from '@/interfaces/database/agent';
-import OperatorIcon from '@/pages/agent/operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 
 import { Edge } from '@xyflow/react';
 import { get, isEmpty } from 'lodash';
