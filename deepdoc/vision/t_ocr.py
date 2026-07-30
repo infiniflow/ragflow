@@ -13,16 +13,16 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import os
+import sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../")))
 
 import asyncio
 import logging
-import os
-import sys
-
 
 from common.misc_utils import thread_pool_exec
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../")))
+
 
 from deepdoc.vision.seeit import draw_box
 from deepdoc.vision import OCR, init_in_out

@@ -213,7 +213,7 @@ def _normalize_docling_response(doc: dict, page_heights: dict[int, float] | None
         page_heights = {}
     elements: list[dict] = []
 
-    # --- texts ---
+    # --- texts ---  type text page_number bounding_box label
     for item in doc.get("texts") or []:
         if not isinstance(item, dict):
             continue

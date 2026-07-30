@@ -89,16 +89,21 @@ class RAGFlowPdfParser:
             self.layouter = LayoutRecognizer(recognizer_domain)
         self.tbl_det = TableStructureRecognizer()
 
-        self.updown_cnt_mdl = xgb.Booster()
-        # xgboost model is very small; using CPU explicitly
-        self.updown_cnt_mdl.set_param({"device": "cpu"})
-        logging.info("updown_cnt_mdl initialized on CPU")
+        self.updown_cnt_mdl = None
         try:
-            model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
-            self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
-        except Exception:
-            model_dir = snapshot_download(repo_id="InfiniFlow/text_concat_xgb_v1.0", local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"))
-            self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
+            self.updown_cnt_mdl = xgb.Booster()
+            # xgboost model is very small; using CPU explicitly
+            self.updown_cnt_mdl.set_param({"device": "cpu"})
+            logging.info("updown_cnt_mdl initialized on CPU")
+            try:
+                model_dir = os.path.join(get_project_base_directory(), "rag/res/deepdoc")
+                self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
+            except Exception:
+                model_dir = snapshot_download(repo_id="InfiniFlow/text_concat_xgb_v1.0", local_dir=os.path.join(get_project_base_directory(), "rag/res/deepdoc"))
+                self.updown_cnt_mdl.load_model(os.path.join(model_dir, "updown_concat_xgb.model"))
+        except Exception as e:
+            logging.warning(f"Failed to load xgboost model: {e}. Text concatenation will use fallback method.")
+            self.updown_cnt_mdl = None
 
         self.page_from = 0
         self.column_num = 1
@@ -1175,9 +1180,15 @@ class RAGFlowPdfParser:
                         continue
 
                     fea = self._updown_concat_features(up, down)
-                    if self.updown_cnt_mdl.predict(xgb.DMatrix([fea]))[0] <= 0.5:
-                        i += 1
-                        continue
+                    if self.updown_cnt_mdl is not None:
+                        if self.updown_cnt_mdl.predict(xgb.DMatrix([fea]))[0] <= 0.5:
+                            i += 1
+                            continue
+                    else:
+                        # Fallback: simple distance-based merge
+                        if self._y_dis(up, down) > self._height(up) * 1.5:
+                            i += 1
+                            continue
                     dfs(down, i + 1)
                     boxes.pop(i)
                     return
