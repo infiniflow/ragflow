@@ -1,11 +1,13 @@
 ---
 sidebar_position: 2
+title: Enable Raptor
+sidebar_label: Enable Raptor
 slug: /enable_raptor
 sidebar_custom_props: {
   categoryIcon: LucideNetwork
 }
 ---
-# Enable RAPTOR
+# Enable Raptor
 
 A recursive abstractive method used in long-context knowledge retrieval and summarization, balancing broad semantic understanding with fine details.
 
@@ -21,7 +23,7 @@ Our tests with this new approach demonstrate state-of-the-art (SOTA) results on 
 Enabling RAPTOR requires significant memory, computational resources, and tokens.
 :::
 
-## Basic principles
+## Basic Principles
 
 After the original documents are divided into chunks, the chunks are clustered by semantic similarity rather than by their original order in the text. Clusters are then summarized into higher-level chunks by your system's default chat model. This process is applied recursively, forming a tree structure with various levels of summarization from the bottom up. As illustrated in the figure below, the initial chunks form the leaf nodes (shown in blue) and are recursively summarized into a root node (shown in orange).
 
@@ -57,7 +59,7 @@ Please summarize the following paragraphs... Paragraphs as following:
 The above is the content you need to summarize.
 ```
 
-### Max token
+### Max Token
 
 The maximum number of tokens per generated summary chunk. Defaults to 256, with a maximum limit of 2048.
 
@@ -67,11 +69,11 @@ In RAPTOR, chunks are clustered by their semantic similarity. The **Threshold** 
 
 It defaults to 0.1, with a maximum limit of 1. A higher **Threshold** means fewer chunks in each cluster, while a lower one means more.
 
-### Max cluster
+### Max Cluster
 
 The maximum number of clusters to create. Defaults to 64, with a maximum limit of 1024.
 
-### Random seed
+### Random Seed
 
 A random seed. Click **+** to change the seed value.
 

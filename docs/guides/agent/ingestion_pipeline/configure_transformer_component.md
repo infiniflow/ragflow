@@ -1,5 +1,7 @@
 ---
 sidebar_position: 5
+title: Configure the Transformer Component
+sidebar_label: Configure the Transformer Component
 slug: /configure_transformer_component
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

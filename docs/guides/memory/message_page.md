@@ -1,14 +1,18 @@
 ---
 sidebar_position: 2
 slug: /message_page
+title: Message Page
+sidebar_label: Message Page
 sidebar_custom_props: {
   categoryIcon: LucideBox
 }
 ---
 
-## Message Page
+# Message Page
 
 The message page is used to view messages written to memory and control whether messages participate in subsequent retrieval. The left side provides **Messages** and **Configurations** entries, and the right side displays the message list, search, and filters.
+
+![Manage memory](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/manage_memory.PNG)
 
 Memory extraction uses the prompts and temperature in **Advanced Settings** on the configuration page. If the extraction result does not meet expectations, check these configurations first.
 

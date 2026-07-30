@@ -16,17 +16,17 @@ An AI-generated, always-up-to-date knowledge base for understanding RAGFlow's co
 The RAGFlow content on DeepWiki is maintained by DeepWiki, not by the RAGFlow team. It may lag behind the latest official release. Always refer to the official [RAGFlow documentation](https://ragflow.io/docs/dev/) and [source code](https://github.com/infiniflow/ragflow) for the most up-to-date information.
 :::
 
-## What is DeepWiki?
+## What Is DeepWiki?
 
 [DeepWiki](https://deepwiki.com) is an AI-powered tool that automatically reads a GitHub repository's source code, tests, and documentation to produce a structured, interactive wiki. It maps out architecture diagrams, module relationships, data flows, and design rationale — all without requiring manual documentation work.
 
-## The RAGFlow DeepWiki page
+## The RAGFlow DeepWiki Page
 
 The RAGFlow project is indexed at:
 
 **[https://deepwiki.com/infiniflow/ragflow](https://deepwiki.com/infiniflow/ragflow)**
 
-## Target audience
+## Target Audience
 
 This resource is primarily intended for:
 
@@ -38,7 +38,7 @@ This resource is primarily intended for:
 For general usage of RAGFlow (configuring knowledge bases, running chat, etc.), the [Guides](../guides/) section is a better starting point.
 :::
 
-## What you can find on DeepWiki
+## What You Can Find on DeepWiki
 
 | Topic | What to look for |
 |---|---|
@@ -49,7 +49,7 @@ For general usage of RAGFlow (configuring knowledge bases, running chat, etc.), 
 | **LLM / Embedding abstractions** | How `rag/llm/` wraps different model providers behind a unified interface |
 | **API layer** | How `api/apps/` Blueprint routes map to internal service calls |
 
-## Using DeepWiki alongside local development
+## Using DeepWiki Alongside Local Development
 
 When you are making changes to the codebase, DeepWiki can help you quickly answer questions such as:
 
@@ -59,11 +59,11 @@ When you are making changes to the codebase, DeepWiki can help you quickly answe
 
 You can also ask DeepWiki questions in natural language using its built-in chat interface — it will ground its answers in the actual source code.
 
-## Keeping the wiki current
+## Keeping the Wiki Current
 
 DeepWiki re-indexes the repository automatically when the upstream `main` branch is updated. If you notice the indexed content lagging behind a recent release, you can trigger a manual re-index from the DeepWiki page.
 
-## Related resources
+## Related Resources
 
 - [Launch service from source](./launch_ragflow_from_source.md) — set up a local RAGFlow development environment.
 - [Build RAGFlow Docker image](./build_docker_image.mdx) — build a custom image after code changes.
