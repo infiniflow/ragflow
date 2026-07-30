@@ -31,27 +31,28 @@ import (
 	"ragflow/internal/ingestion/pipeline"
 )
 
-// TestNewDebugTaskContext_InjectsDebugID asserts the debug context carries
-// the side-effect-free marker: the dataflow debug doc id (which disables
-// persistence in the executor). The parser page cap is no longer stored as a
-// flat ParserConfig key here — flat keys are dropped by the override_params
-// merge and never reach the parser. It is injected at run time by
-// injectDebugPageCap via Run's override_params channel (see
+// TestNewDebugTaskContext_InjectsDebugID asserts the debug context carries the
+// side-effect-free markers: a fresh non-empty Doc.ID (a throwaway uuid, not a
+// persisted row) and an empty KB (debug has no knowledgebase, so kb_id == "" is
+// the debug signal used across the pipeline). The parser page cap is no longer
+// stored as a flat ParserConfig key here — flat keys are dropped by the
+// override_params merge and never reach the parser. It is injected at run time
+// by injectDebugPageCap via Run's override_params channel (see
 // TestInjectDebugPageCap).
 func TestNewDebugTaskContext_InjectsDebugID(t *testing.T) {
-	taskCtx := NewDebugTaskContext("t1", "kb1", "canvas-1", "doc.pdf", []byte("page one\fpage two\fpage three"))
+	taskCtx := NewDebugTaskContext("t1", "canvas-1", "doc.pdf", []byte("page one\fpage two\fpage three"))
 
-	if taskCtx.Doc.ID != "dataflow_x" {
-		t.Errorf("Doc.ID = %q, want dataflow_x", taskCtx.Doc.ID)
+	if taskCtx.Doc.ID == "" {
+		t.Errorf("Doc.ID = %q, want non-empty (uuid)", taskCtx.Doc.ID)
 	}
 	if taskCtx.Doc.ParserConfig != nil {
 		t.Errorf("Doc.ParserConfig = %v, want nil (debug page cap is injected via override_params, not a flat ParserConfig key)", taskCtx.Doc.ParserConfig)
 	}
-	if taskCtx.Doc.KbID != "kb1" {
-		t.Errorf("Doc.KbID = %q, want kb1", taskCtx.Doc.KbID)
+	if taskCtx.Doc.KbID != "" {
+		t.Errorf("Doc.KbID = %q, want empty (debug has no KB)", taskCtx.Doc.KbID)
 	}
-	if taskCtx.KB.ID != "kb1" {
-		t.Errorf("KB.ID = %q, want kb1", taskCtx.KB.ID)
+	if taskCtx.KB.ID != "" {
+		t.Errorf("KB.ID = %q, want empty (debug has no KB)", taskCtx.KB.ID)
 	}
 	if taskCtx.Tenant.ID != "t1" {
 		t.Errorf("Tenant.ID = %q, want t1", taskCtx.Tenant.ID)
@@ -66,7 +67,7 @@ func TestNewDebugTaskContext_InjectsDebugID(t *testing.T) {
 // returns the pipeline's chunks WITHOUT persisting (no index insert, no
 // pipeline log).
 func TestExecute_DebugViaEntry(t *testing.T) {
-	taskCtx := NewDebugTaskContext("t1", "kb1", "canvas-1", "doc.pdf", []byte("page one\fpage two\fpage three"))
+	taskCtx := NewDebugTaskContext("t1", "canvas-1", "doc.pdf", []byte("page one\fpage two\fpage three"))
 
 	logCalled := false
 	insertCalled := false
@@ -109,10 +110,10 @@ func TestExecute_DebugViaEntry(t *testing.T) {
 		t.Errorf("len(result.Chunks) = %d, want 4", len(result.Chunks))
 	}
 	if logCalled {
-		t.Error("pipeline log should NOT be created in debug (non-persist) mode")
+		t.Error("pipeline log should NOT be created in a debug (kb_id == \"\") run")
 	}
 	if insertCalled {
-		t.Error("chunk insert should NOT be called in debug (non-persist) mode")
+		t.Error("chunk insert should NOT be called in a debug (kb_id == \"\") run")
 	}
 }
 

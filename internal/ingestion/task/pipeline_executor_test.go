@@ -139,7 +139,6 @@ func TestNewPipelineExecutor_RejectsIncompleteTaskContext(t *testing.T) {
 		{name: "missing doc id", mutate: func(ctx *TaskContext) { ctx.Doc.ID = "" }},
 		{name: "missing kb id", mutate: func(ctx *TaskContext) { ctx.Doc.KbID = "" }},
 		{name: "missing doc name", mutate: func(ctx *TaskContext) { ctx.Doc.Name = nil }},
-		{name: "missing knowledgebase id", mutate: func(ctx *TaskContext) { ctx.KB.ID = "" }},
 		{name: "missing tenant id", mutate: func(ctx *TaskContext) { ctx.Tenant.ID = "" }},
 	}
 
@@ -152,6 +151,19 @@ func TestNewPipelineExecutor_RejectsIncompleteTaskContext(t *testing.T) {
 				t.Fatal("expected validation error")
 			}
 		})
+	}
+}
+
+// TestNewPipelineExecutor_AcceptsDebugTaskContext verifies the canvas-debug
+// (dry-run) contract: a TaskContext with an empty KB.ID is valid because debug
+// mode carries no knowledgebase. KB.ID == "" never occurs in production
+// ingestion, which always supplies a KB.
+func TestNewPipelineExecutor_AcceptsDebugTaskContext(t *testing.T) {
+	ctx := makeTaskCtx()
+	ctx.KB = entity.Knowledgebase{ID: ""}
+	ctx.Doc.KbID = ""
+	if _, err := NewPipelineExecutor(ctx, "flow-1", 0); err != nil {
+		t.Fatalf("debug TaskContext rejected: %v", err)
 	}
 }
 

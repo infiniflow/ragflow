@@ -26,22 +26,24 @@ import (
 
 func strptr(s string) *string { return &s }
 
-// TestExecute_NonPersistSkipsPipelineLog asserts that a non-persist run
-// (Doc.ID == CANVAS_DEBUG_DOC_ID) returns before recording the pipeline
-// operation log. A non-persist run must produce no persistent side effects.
-func TestExecute_NonPersistSkipsPipelineLog(t *testing.T) {
+// TestExecute_DebugSkipsPipelineLog asserts that a debug run
+// (KB.ID == "") returns before recording the pipeline operation
+// log and before inserting chunks into the index. A debug run
+// must produce no persistent side effects: no pipeline_log and no
+// index insert.
+func TestExecute_DebugSkipsPipelineLog(t *testing.T) {
 	taskCtx := &TaskContext{
 		Ctx: context.Background(),
 		Doc: entity.Document{
-			ID:         CANVAS_DEBUG_DOC_ID,
-			KbID:       "kb-1",
+			ID:         "debug-run-1",
+			KbID:       "",
 			Name:       strptr("doc.pdf"),
 			ParserID:   "parser-1",
 			Suffix:     "pdf",
 			Type:       "pdf",
 			SourceType: "local",
 		},
-		KB:     entity.Knowledgebase{ID: "kb-1"},
+		KB:     entity.Knowledgebase{ID: ""},
 		Tenant: entity.Tenant{ID: "tenant-1"},
 	}
 
@@ -61,32 +63,40 @@ func TestExecute_NonPersistSkipsPipelineLog(t *testing.T) {
 		logCalled = true
 		return nil
 	})
+	var insertCalled bool
+	exec.WithInsertFunc(func(ctx context.Context, chunks []map[string]any, _, _ string) ([]string, error) {
+		insertCalled = true
+		return nil, nil
+	})
 
 	if _, err := exec.Execute(context.Background()); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if logCalled {
-		t.Errorf("recordPipelineLog must not be called in a non-persist (debug) run")
+		t.Errorf("recordPipelineLog must not be called in a debug (kb_id == \"\") run")
+	}
+	if insertCalled {
+		t.Errorf("index insert must not be called in a debug (kb_id == \"\") run")
 	}
 }
 
-// TestExecute_NonPersistReturnsChunks asserts that a non-persist (debug) run
+// TestExecute_DebugReturnsChunks asserts that a debug (kb_id == "") run
 // returns the pipeline's chunks in the result instead of discarding them. The
 // chunks are surfaced for a debug HTTP endpoint to render; no DB/index writes
 // happen and the pipeline operation log is never recorded.
-func TestExecute_NonPersistReturnsChunks(t *testing.T) {
+func TestExecute_DebugReturnsChunks(t *testing.T) {
 	taskCtx := &TaskContext{
 		Ctx: context.Background(),
 		Doc: entity.Document{
-			ID:         CANVAS_DEBUG_DOC_ID,
-			KbID:       "kb-1",
+			ID:         "debug-run-1",
+			KbID:       "",
 			Name:       strptr("doc.pdf"),
 			ParserID:   "parser-1",
 			Suffix:     "pdf",
 			Type:       "pdf",
 			SourceType: "local",
 		},
-		KB:     entity.Knowledgebase{ID: "kb-1"},
+		KB:     entity.Knowledgebase{ID: ""},
 		Tenant: entity.Tenant{ID: "tenant-1"},
 	}
 
@@ -113,13 +123,18 @@ func TestExecute_NonPersistReturnsChunks(t *testing.T) {
 		logCalled = true
 		return nil
 	})
+	var insertCalled bool
+	exec.WithInsertFunc(func(ctx context.Context, chunks []map[string]any, _, _ string) ([]string, error) {
+		insertCalled = true
+		return nil, nil
+	})
 
 	result, err := exec.Execute(context.Background())
 	if err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
 	if result == nil {
-		t.Fatalf("Execute returned nil result in non-persist (debug) mode; expected chunks")
+		t.Fatalf("Execute returned nil result in debug (kb_id == \"\") mode; expected chunks")
 	}
 	if len(result.Chunks) != 3 {
 		t.Errorf("expected 3 chunks in result, got %d", len(result.Chunks))
@@ -128,6 +143,9 @@ func TestExecute_NonPersistReturnsChunks(t *testing.T) {
 		t.Errorf("expected ChunkCount 3, got %d", result.ChunkCount)
 	}
 	if logCalled {
-		t.Errorf("recordPipelineLog must not be called in a non-persist (debug) run")
+		t.Errorf("recordPipelineLog must not be called in a debug (kb_id == \"\") run")
+	}
+	if insertCalled {
+		t.Errorf("index insert must not be called in a debug (kb_id == \"\") run")
 	}
 }

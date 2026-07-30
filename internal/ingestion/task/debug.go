@@ -19,6 +19,7 @@ package task
 import (
 	"strings"
 
+	"github.com/google/uuid"
 	"ragflow/internal/entity"
 )
 
@@ -26,8 +27,14 @@ import (
 // (dataflow dry-run) request. The returned context is intentionally
 // side-effect free:
 //
-//   - Doc.ID is set to CANVAS_DEBUG_DOC_ID, which disables the executor's
-//     persist gate (no MinIO upload, no index insert, no pipeline_log).
+//   - It carries no knowledgebase: KB.ID and Doc.KbID are empty. A canvas
+//     debug run has no KB, so kb_id == "" — this is the single debug signal
+//     used throughout the ingestion pipeline (the tokenizer skips embedding,
+//     the chunker skips image upload, the executor skips the persist stage).
+//     kb_id == "" occurs ONLY in debug mode; production ingestion always
+//     supplies a KB, so this branch is never reached in normal operation.
+//   - Doc.ID is a fresh uuid (a throwaway marker, not a persisted row); it
+//     only needs to be non-empty for the executor's input validation.
 //   - The parser page cap (debug preview only parses the first few pages)
 //     is injected at run time by the executor via Run's override_params
 //     channel, keyed by the Parser component's cpnID and the file's family
@@ -38,10 +45,13 @@ import (
 // fileData is the raw bytes of the uploaded debug document (may be nil for a
 // file-less dry-run). It is stored on TaskContext.File and threaded into the
 // pipeline run as the "file" / "binary" input.
-func NewDebugTaskContext(tenantID, kbID, canvasID, fileName string, fileData []byte) *TaskContext {
+//
+// The caller-supplied kb_id is deliberately ignored: debug never resolves an
+// embedder or writes to a KB, so a debug context has none.
+func NewDebugTaskContext(tenantID, canvasID, fileName string, fileData []byte) *TaskContext {
 	doc := entity.Document{
-		ID:   CANVAS_DEBUG_DOC_ID,
-		KbID: kbID,
+		ID:   uuid.New().String(),
+		KbID: "",
 		Name: &fileName,
 	}
 	if suffix, docType := deriveDocSuffixAndType(fileName); suffix != "" {
@@ -51,7 +61,7 @@ func NewDebugTaskContext(tenantID, kbID, canvasID, fileName string, fileData []b
 
 	return &TaskContext{
 		Doc:        doc,
-		KB:         entity.Knowledgebase{ID: kbID},
+		KB:         entity.Knowledgebase{ID: ""},
 		Tenant:     entity.Tenant{ID: tenantID},
 		PipelineID: canvasID,
 		File:       fileData,

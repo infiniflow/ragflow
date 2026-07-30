@@ -29,7 +29,6 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
-	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 
@@ -43,10 +42,14 @@ type PipelineResult struct {
 	DocID            string
 	KbID             string
 	Metadata         map[string]any
-	Chunks           []map[string]any // populated only in debug (non-persist) mode
+	Chunks           []map[string]any // populated only in debug (dry-run) mode
 	ChunkCount       int
 	TokenConsumption int
 	Duration         float64 // pipeline wall-clock seconds
+	// MessageID is the polling key for the debug-run log. The front-end reads
+	// it from the run response and polls GET /agents/:id/logs/:message_id to
+	// render progress; it is empty for non-debug (persist) runs.
+	MessageID string
 }
 
 type PipelineExecutor struct {
@@ -69,20 +72,14 @@ func validateTaskContext(taskCtx *TaskContext) error {
 	if taskCtx.Doc.ID == "" {
 		return fmt.Errorf("pipeline executor: empty document id")
 	}
-	// A canvas-debug (dataflow dry-run) runs against the synthetic
-	// CANVAS_DEBUG_DOC_ID with no persistent document row and no
-	// knowledgebase association. The kb_id is optional there: parse and
-	// chunk work without it, and only embedding resolution needs it (and
-	// only when the canvas does not carry an explicit embedding model).
-	// This mirrors the Python dataflow-debug path, which does not pass a
-	// kb_id to queue_dataflow. Relaxing the check here lets webhook /
-	// chat/completions DataFlow triggers run debug without supplying kb_id.
-	if taskCtx.Doc.ID != CANVAS_DEBUG_DOC_ID {
+	// A canvas-debug (dataflow dry-run) carries no knowledgebase (KB.ID == ""),
+	// so it must not be required to supply one. Production ingestion always
+	// carries a KB, so the KB.ID == "" branch below is never taken in normal
+	// operation. Relaxing the check here lets webhook / chat/completions
+	// DataFlow triggers run debug without supplying a kb_id.
+	if taskCtx.KB.ID != "" {
 		if taskCtx.Doc.KbID == "" {
 			return fmt.Errorf("pipeline executor: empty document knowledgebase id")
-		}
-		if taskCtx.KB.ID == "" {
-			return fmt.Errorf("pipeline executor: empty knowledgebase id")
 		}
 	}
 	if taskCtx.Doc.Name == nil || *taskCtx.Doc.Name == "" {
@@ -170,12 +167,14 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 		return nil, err
 	}
 
-	// A non-persist run (Doc.ID == CANVAS_DEBUG_DOC_ID) must not produce any
-	// persistent side effect. The flag is threaded through the pipeline run
-	// context so components can gate their writes; the branch below also
-	// short-circuits before the persist stage (log/index/metadata).
-	persist := s.taskCtx.Doc.ID != CANVAS_DEBUG_DOC_ID
-	ctx = globals.WithPersist(ctx, persist)
+	// A canvas-debug (dataflow dry-run) carries no KB (KB.ID == ""), so it
+	// must not produce any persistent side effect (no MinIO image upload, no
+	// index insert, no pipeline log). This is the single debug signal used
+	// across the ingestion pipeline: kb_id == "" occurs ONLY in debug mode;
+	// production ingestion always supplies a KB, so this branch is never
+	// taken in normal operation. Components gate their own writes on the same
+	// signal (the tokenizer skips embedding, the chunker skips image upload).
+	debug := s.taskCtx.KB.ID == ""
 
 	dsl, correctedID, err := s.loadDSLFunc(ctx, s.canvasID)
 	if err != nil {
@@ -190,7 +189,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 		return nil, err
 	}
 
-	if !persist {
+	if debug {
 		return s.collectDebugOutput(ctx, pipelineOutput, start)
 	}
 
@@ -206,7 +205,7 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	return result, nil
 }
 
-// collectDebugOutput builds a PipelineResult for a non-persist (debug) run.
+// collectDebugOutput builds a PipelineResult for a debug (dry-run) run.
 // It surfaces the pipeline's chunks so a debug endpoint can render them, but
 // performs no DB/index writes — the embedding vectors already computed by the
 // pipeline run are left on the chunks. This keeps debug runs side-effect free.
@@ -446,9 +445,9 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		inputs["doc_id"] = s.taskCtx.Doc.ID
 	}
 	// Run-level metadata shared by both persist and debug (dataflow
-	// dry-run) runs. For debug, KB.ID is the kb_id supplied by the caller
-	// (seeded in NewDebugTaskContext); for persist it is the document's own
-	// KB. Either way the Tokenizer reads it from CanvasState.Globals.
+	// dry-run) runs. In debug the KB is absent (NewDebugTaskContext forces
+	// KB.ID == ""); in persist it is the document's own KB. Either way the
+	// Tokenizer reads kb_id from CanvasState.Globals.
 	inputs["tenant_id"] = s.taskCtx.Tenant.ID
 	inputs["kb_id"] = s.taskCtx.KB.ID
 	if s.taskCtx.KB.Language != nil {
@@ -456,9 +455,9 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	}
 
 	// File delivery and doc metadata differ between the two run modes.
-	debug := s.taskCtx.Doc.ID == CANVAS_DEBUG_DOC_ID
+	debug := s.taskCtx.KB.ID == ""
 	if debug {
-		// A debug (non-persist) run has no DB document row, so the parser
+		// A debug (dry-run) run has no DB document row, so the parser
 		// cannot resolve its bytes via doc_id → storage. Deliver the
 		// uploaded bytes directly as `binary` (what the parser actually
 		// reads) and surface the doc name/type so family detection works.
@@ -486,7 +485,7 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	// inputs: the parser selects pages from ParserConfig[cpnID][family]
 	// ["pages"] (a list of 1-indexed inclusive ranges), exactly mirroring
 	// NormalizeParserConfigPages / pdf_pages_test.go. See injectDebugPageCap.
-	if s.taskCtx.Doc.ID == CANVAS_DEBUG_DOC_ID {
+	if s.taskCtx.KB.ID == "" {
 		injectDebugPageCap(dsl, parserConfig, s.taskCtx.Doc.Type)
 	}
 
@@ -498,6 +497,19 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	if err != nil {
 		return nil, dsl, err
 	}
+
+	// Surface the debug-run result DSL to any sink that implements ResultSink
+	// (the DebugLogSink used by canvas-debug runs). This mirrors Python's
+	// END-marker `dsl` attachment (rag/flow/pipeline.py:98) so the front-end
+	// "View result" page can render parsed chunks. The probe is an optional
+	// capability: non-debug (DB-backed) sinks ignore it and the ProgressSink
+	// contract is unchanged, keeping the coupling one-directional.
+	if rs, ok := s.progressSink.(ResultSink); ok {
+		if resultDSL, e := BuildDebugResultDSL(dsl, output); e == nil {
+			rs.SetResult(resultDSL)
+		}
+	}
+
 	payload, err := pipelinepkg.ExtractPayload(dsl, output)
 	if err != nil {
 		return nil, dsl, err

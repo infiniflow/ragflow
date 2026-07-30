@@ -14,33 +14,31 @@
 //  limitations under the License.
 //
 
-// Regression guard for the non-persist (canvas-debug) run contract. It lives in
-// the canvas-debug branch (not the ingestion-fixes branch) because it depends on
-// component/globals.WithPersist, which is defined by the debug feature, keeping
-// the ingestion-fixes branch compilable on its own.
+// Regression guard for the canvas-debug (dry-run) run contract: a debug run
+// carries no KB (kb_id == ""), so the tokenizer must skip embedding rather than
+// resolving an embedder. It lives in the canvas-debug branch (not the
+// ingestion-fixes branch) so the ingestion-fixes branch stays compilable on its
+// own.
 
 package component
 
 import (
 	"context"
 	"testing"
-
-	"ragflow/internal/ingestion/component/globals"
 )
 
-// TestTokenizerComponent_EmbeddingRunsWhenNonPersist is a regression gate for
-// the non-persist (canvas-debug) run contract: embedding MUST still execute
-// even when the run is flagged persist=false. The debug path exists to exercise
-// the whole pipeline — including the embedding service's capability — so only
-// the *persistent* side effects (MinIO image upload, index insert, pipeline
-// log) are gated by persist. A future "optimization" that skips embedding under
-// !persist would silently break debug verification of the embedding service;
-// this test fails loudly if that ever lands.
+// TestTokenizerComponent_DebugSkipsEmbedding is a regression gate for the
+// canvas-debug (dry-run) contract: a debug run has no KB (kb_id == ""), so
+// embedding MUST be skipped — there is no embedder (and no embd_id) to resolve
+// against, and a debug run must stay side-effect free. The tokenizer must
+// return its chunks without error, without invoking the embedder, and without
+// attaching embedding vectors. Conversely, when a kb_id is present the embedding
+// path must run.
 //
 // It uses embedding-only search_method so it runs without the C++ RAGAnalyzer
 // pool (plain `go test`, no -tags integration), keeping the regression gate
 // executable in every environment.
-func TestTokenizerComponent_EmbeddingRunsWhenNonPersist(t *testing.T) {
+func TestTokenizerComponent_DebugSkipsEmbedding(t *testing.T) {
 	stub := newStubEmbedder(4)
 	cIntf, err := NewTokenizerComponentWithResolver(
 		map[string]any{"search_method": []any{"embedding"}, "fields": []any{"text"}},
@@ -51,45 +49,61 @@ func TestTokenizerComponent_EmbeddingRunsWhenNonPersist(t *testing.T) {
 	}
 	c := cIntf.(*TokenizerComponent)
 
-	run := func(ctx context.Context) (int32, map[string]any) {
-		out, err := c.Invoke(ctx, nil, map[string]any{
+	run := func(kbID string) (int32, map[string]any) {
+		inputs := map[string]any{
 			"name":          "doc.pdf",
 			"output_format": "chunks",
 			"chunks": []map[string]any{
 				{"text": "alpha bravo"},
 				{"text": "charlie delta"},
 			},
-		})
+		}
+		if kbID != "" {
+			inputs["kb_id"] = kbID
+		}
+		out, err := c.Invoke(context.Background(), nil, inputs)
 		if err != nil {
-			t.Fatalf("Invoke: %v", err)
+			t.Fatalf("Invoke(kb_id=%q): %v", kbID, err)
 		}
 		return stub.calls.Load(), out
 	}
 
-	persistCalls, _ := run(globals.WithPersist(context.Background(), true))
+	// Debug (kb_id == ""): embedding must be skipped entirely.
 	stub.calls.Store(0)
-	nonPersistCalls, nonPersistOut := run(globals.WithPersist(context.Background(), false))
-
-	if nonPersistCalls == 0 {
-		t.Fatal("embedder NOT called under persist=false; embedding must run in non-persist (debug) runs")
+	debugCalls, debugOut := run("")
+	if debugCalls != 0 {
+		t.Fatalf("embedder called under debug (kb_id=\"\"): %d calls; embedding must be skipped", debugCalls)
 	}
-	// Embedding work must be identical regardless of the persist flag.
-	if nonPersistCalls != persistCalls {
-		t.Errorf("embedder call count differs by persist flag: non-persist=%d persist=%d; embedding work must not depend on persist",
-			nonPersistCalls, persistCalls)
+	if got := debugOut["embedding_token_consumption"]; got != nil {
+		t.Errorf("embedding_token_consumption = %v under debug; must be omitted when embedding is skipped", got)
 	}
-	if got := nonPersistOut["embedding_token_consumption"]; got == nil {
-		t.Error("embedding_token_consumption missing under persist=false; embedding accounting must run")
-	}
-
-	got, ok := nonPersistOut["chunks"].([]map[string]any)
+	got, ok := debugOut["chunks"].([]map[string]any)
 	if !ok || len(got) != 2 {
-		t.Fatalf("chunks malformed under persist=false: %v", nonPersistOut["chunks"])
+		t.Fatalf("chunks malformed under debug: %v", debugOut["chunks"])
 	}
 	for i, ck := range got {
+		if _, has := ck["q_4_vec"]; has {
+			t.Errorf("chunk[%d] carries q_4_vec under debug; embedding must be skipped", i)
+		}
+	}
+
+	// With a KB: embedding must run.
+	stub.calls.Store(0)
+	kbCalls, kbOut := run("kb-1")
+	if kbCalls != 2 {
+		t.Fatalf("embedder calls = %d with kb_id set; want 2", kbCalls)
+	}
+	if got := kbOut["embedding_token_consumption"]; got == nil {
+		t.Error("embedding_token_consumption missing with kb_id set; embedding accounting must run")
+	}
+	kbChunks, ok := kbOut["chunks"].([]map[string]any)
+	if !ok || len(kbChunks) != 2 {
+		t.Fatalf("chunks malformed with kb_id: %v", kbOut["chunks"])
+	}
+	for i, ck := range kbChunks {
 		vec, ok := ck["q_4_vec"].([]float64)
 		if !ok || len(vec) != 4 {
-			t.Fatalf("chunk[%d] missing q_4_vec under persist=false: %v", i, ck["q_4_vec"])
+			t.Fatalf("chunk[%d] missing q_4_vec with kb_id set: %v", i, ck["q_4_vec"])
 		}
 	}
 }

@@ -115,7 +115,6 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	tenantID := taskLimit32("it_tenant_" + suffix)
-	kbID := taskLimit32("it_kb_" + suffix)
 	canvasID := taskLimit32("it_canvas_" + suffix)
 
 	if err := realDB.Create(&entity.UserCanvas{
@@ -141,16 +140,20 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	}
 
 	newDebugCtx := func(parserConfig map[string]any) *TaskContext {
+		// A canvas-debug (dry-run) context carries no KB: KB.ID == "" is the
+		// single debug signal. The executor then skips the persist stage and
+		// injects the debug page cap (see injectDebugPageCap, gated on
+		// KB.ID == "").
 		return &TaskContext{
 			Doc: entity.Document{
-				ID:           CANVAS_DEBUG_DOC_ID,
-				KbID:         kbID,
+				ID:           "debug-run-1",
+				KbID:         "",
 				Name:         taskStrPtr("03_multipage.pdf"),
 				Type:         "pdf",
 				ParserConfig: parserConfig,
 			},
 			KB: entity.Knowledgebase{
-				ID:       kbID,
+				ID:       "",
 				TenantID: tenantID,
 				EmbdID:   "embd-1",
 			},

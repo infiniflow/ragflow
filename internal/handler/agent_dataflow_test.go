@@ -17,7 +17,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"testing"
@@ -27,31 +26,26 @@ import (
 	"ragflow/internal/ingestion/task"
 )
 
-// debugResultStub returns a fixed chunk list so the DataFlow entry points can
-// be exercised without standing up a real ingestion pipeline.
-func debugResultStub(chunks ...map[string]any) func(ctx context.Context, user *entity.User, kbID, canvasID, fileName string, fileData []byte) (*task.PipelineResult, error) {
-	return func(ctx context.Context, user *entity.User, kbID, canvasID, fileName string, fileData []byte) (*task.PipelineResult, error) {
-		return &task.PipelineResult{Chunks: chunks}, nil
-	}
-}
-
 func dataflowCanvas(id, userID string) *entity.UserCanvas {
 	cv := makeWebhookCanvas(id, userID, "Webhook", nil)
 	cv.CanvasCategory = "dataflow_canvas"
 	return cv
 }
 
-func decodeSuccess(t *testing.T, body []byte) (int, []map[string]any, string) {
+func decodeSuccess(t *testing.T, body []byte) (int, string, []map[string]any, string) {
 	t.Helper()
 	var resp struct {
-		Code    int              `json:"code"`
-		Data    []map[string]any `json:"data"`
-		Message string           `json:"message"`
+		Code int `json:"code"`
+		Data struct {
+			MessageID string           `json:"message_id"`
+			Chunks    []map[string]any `json:"chunks"`
+		} `json:"data"`
+		Message string `json:"message"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
 		t.Fatalf("decode response: %v (body=%s)", err, body)
 	}
-	return resp.Code, resp.Data, resp.Message
+	return resp.Code, resp.Data.MessageID, resp.Data.Chunks, resp.Message
 }
 
 // TestAgentChatCompletions_DataFlowReturnsChunks pins that the existing
@@ -65,7 +59,12 @@ func TestAgentChatCompletions_DataFlowReturnsChunks(t *testing.T) {
 		loader:      &fakeCanvasLoader{canvas: dataflowCanvas("c1", "u-1")},
 		fileService: &fakeAgentFileService{blob: []byte("file-bytes")},
 	}
-	h.debugRunner = debugResultStub(map[string]any{"text": "dbg-chunk"})
+	h.WithNewExecutor(func(_ *task.TaskContext, _ string, _ int) (debugExecutor, error) {
+		return &fakeDebugExecutor{result: &task.PipelineResult{Chunks: []map[string]any{{"text": "dbg-chunk"}}}}, nil
+	})
+	// runDataflowDebug flushes the debug log via redisStore; inject a no-op
+	// store so the (skipped in this test) log write does not nil-panic.
+	h.WithRedisStore(&capturedStore{})
 
 	// The web contract sends the file list wrapped one level:
 	// `files: [[{id, name}]]` (see use-run-dataflow.ts:34). The dataflow
@@ -78,31 +77,34 @@ func TestAgentChatCompletions_DataFlowReturnsChunks(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", w.Code, w.Body.String())
 	}
-	code, data, msg := decodeSuccess(t, w.Body.Bytes())
+	code, msgID, data, msg := decodeSuccess(t, w.Body.Bytes())
 	if code != int(common.CodeSuccess) {
 		t.Errorf("code = %d, want %d", code, common.CodeSuccess)
 	}
 	if msg != "success" {
 		t.Errorf("message = %q, want %q", msg, "success")
 	}
+	if msgID == "" {
+		t.Errorf("message_id empty; front-end needs it to poll the debug log")
+	}
 	if len(data) != 1 || data[0]["text"] != "dbg-chunk" {
-		t.Errorf("data = %#v, want one chunk with text %q", data, "dbg-chunk")
+		t.Errorf("data.chunks = %#v, want one chunk with text %q", data, "dbg-chunk")
 	}
 }
 
 // TestAgentChatCompletions_DataFlowWithKbID pins that an explicit kb_id on the
-// chat/completions DataFlow debug request is accepted and forwarded to the
-// debug runner (used by canvases whose embedding resolution needs it).
+// chat/completions DataFlow debug request is accepted (not rejected) even
+// though debug never forwards it: debug runs with an empty KB (kb_id == "") by
+// construction, so the KB-dependent embedding/tokenizer work is skipped.
 func TestAgentChatCompletions_DataFlowWithKbID(t *testing.T) {
-	var seenKbID string
 	h := &AgentHandler{
 		loader:      &fakeCanvasLoader{canvas: dataflowCanvas("c1", "u-1")},
 		fileService: &fakeAgentFileService{blob: []byte("file-bytes")},
 	}
-	h.debugRunner = func(_ context.Context, _ *entity.User, kbID, _, _ string, _ []byte) (*task.PipelineResult, error) {
-		seenKbID = kbID
-		return &task.PipelineResult{Chunks: []map[string]any{{"text": "dbg-kb"}}}, nil
-	}
+	h.WithNewExecutor(func(_ *task.TaskContext, _ string, _ int) (debugExecutor, error) {
+		return &fakeDebugExecutor{result: &task.PipelineResult{Chunks: []map[string]any{{"text": "dbg-kb"}}}}, nil
+	})
+	h.WithRedisStore(&capturedStore{})
 
 	c, w := webhookCtx("POST", "/api/v1/agents/c1/chat/completions",
 		`{"agent_id":"c1","kb_id":"kb-9","files":[[{"id":"f1","name":"doc.txt"}]]}`, "application/json")
@@ -112,7 +114,17 @@ func TestAgentChatCompletions_DataFlowWithKbID(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body=%s)", w.Code, w.Body.String())
 	}
-	if seenKbID != "kb-9" {
-		t.Errorf("debug runner kb_id = %q, want %q", seenKbID, "kb-9")
+	code, msgID, data, msg := decodeSuccess(t, w.Body.Bytes())
+	if code != int(common.CodeSuccess) {
+		t.Errorf("code = %d, want %d", code, common.CodeSuccess)
+	}
+	if msg != "success" {
+		t.Errorf("message = %q, want %q", msg, "success")
+	}
+	if msgID == "" {
+		t.Errorf("message_id empty; front-end needs it to poll the debug log")
+	}
+	if len(data) != 1 || data[0]["text"] != "dbg-kb" {
+		t.Errorf("data.chunks = %#v, want one chunk with text %q", data, "dbg-kb")
 	}
 }
