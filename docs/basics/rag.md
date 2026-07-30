@@ -3,11 +3,11 @@ sidebar_position: 1
 slug: /what-is-rag
 ---
 
-# What Is Retrieval-Augmented-Generation (RAG)?
+# What Is Retrieval-Augmented Generation (RAG)?
 
 Since large language models (LLMs) became the focus of technology, their ability to handle general knowledge has been astonishing. However, when questions shift to internal corporate documents, proprietary knowledge bases, or real-time data, the limitations of LLMs become glaringly apparent: they cannot access private information outside their training data. Retrieval-Augmented Generation (RAG) was born precisely to address this core need. Before an LLM generates an answer, it first retrieves the most relevant context from an external knowledge base and inputs it as "reference material" to the LLM, thereby guiding it to produce accurate answers. In short, RAG elevates LLMs from "relying on memory" to "having evidence to rely on," significantly improving their accuracy and trustworthiness in specialized fields and real-time information queries.
 
-## Why RAG Is Important?
+## Why Is RAG Important?
 
 Although LLMs excel in language understanding and generation, they have inherent limitations:
 
@@ -22,7 +22,7 @@ The introduction of RAG provides LLMs with real-time, credible "factual groundin
 
 This upgrades LLMs from "speaking from memory" to "speaking with documentation," significantly enhancing reliability in professional and enterprise-level applications.
 
-## How RAG Works?
+## How Does RAG Work?
 
 Retrieval-Augmented Generation enables LLMs to generate higher-quality responses by leveraging real-time, external, or private data sources through the introduction of an information retrieval mechanism. Its workflow can be divided into following key steps:
 
@@ -56,7 +56,7 @@ Core Challenge: Corporate knowledge mostly exists in the form of multimodal docu
 
 Advanced Practice: Leading solutions, such as RAGFlow, tend to use Visual Language Models (VLM) or specialized parsing models like DeepDoc to "translate" multimodal documents into unimodal text rich in structural and semantic information. Converting multimodal information into high-quality unimodal text has become standard practice for advanced RAG.
 
-### The Complexity of Chunking: the Trade-Off Between Precision and Context
+### The Complexity of Chunking: The Trade-Off Between Precision and Context
 
 A simple "chunk-embed-retrieve" pipeline has an inherent contradiction:
 - Semantic Matching requires small text chunks to ensure clear semantic focus.
