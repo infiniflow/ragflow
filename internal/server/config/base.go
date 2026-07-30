@@ -25,19 +25,18 @@ type Config struct {
 	Authentication AuthenticationConfig
 	Database       DatabaseConfig
 	DocEngine      DocEngineConfig
+	StorageEngine  StorageConfig
 	CacheEngine    CacheEngineConfig
 	QueueEngine    QueueEngineConfig
 	AnalyticEngine AnalyticEngineConfig
+	OTel           OpenTelemetryConfig
 
 	Admin     AdminConfig
 	APIServer APIServerConfig
 	Ingestor  IngestorConfig
 	Syncer    SyncerConfig
 
-	Redis           RedisConfig
-	Nats            NatsConfig
 	Log             LogConfig
-	StorageEngine   StorageConfig
 	RegisterEnabled int
 	OAuth           map[string]OAuthConfig
 	SMTP            common.SMTPConfig
@@ -45,9 +44,6 @@ type Config struct {
 	UserDefaultLLM   UserDefaultLLMConfig
 	DefaultSuperUser DefaultSuperUser
 	Language         string
-
-	OTel       OtelConfig
-	Clickhouse ClickhouseConfig
 }
 
 type AuthenticationConfig struct {

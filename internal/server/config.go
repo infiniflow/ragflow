@@ -703,6 +703,11 @@ func FromConfigFile(configPath string) error {
 		return fmt.Errorf("parse analytic engine config error: %w", err)
 	}
 
+	err = config.ParseOpenTelemetryConfig(newConfig, v)
+	if err != nil {
+		return fmt.Errorf("parse open telemetry config error: %w", err)
+	}
+
 	err = config.ParseAdminConfig(newConfig, v)
 	if err != nil {
 		return fmt.Errorf("parse admin config error: %w", err)
