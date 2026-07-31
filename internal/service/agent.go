@@ -698,9 +698,14 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 	if err != nil {
 		return err
 	}
+	ownerUserID := canvasInstance.UserID
 
-	// Only the canvas owner may change the permission field.
-	if _, ok := patch["permission"]; ok && canvasInstance.UserID != userID {
+	if v, ok := patch["permission"]; ok && ownerUserID != userID {
+		requested := strings.ToLower(strings.TrimSpace(fmt.Sprint(v)))
+		current := strings.ToLower(strings.TrimSpace(canvasInstance.Permission))
+		if requested != current {
+			return fmt.Errorf("user %s has no permission to edit permission", userID)
+		}
 		delete(patch, "permission")
 	}
 
@@ -734,7 +739,7 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 	updates["release"] = release
 	if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
 		canvasCategory := updatedAgentCanvasCategory(canvasInstance, updates)
-		if existing, err := s.canvasDAO.GetByUserAndTitle(ctx, dao.DB, userID, title, canvasCategory); err != nil {
+		if existing, err := s.canvasDAO.GetByUserAndTitle(ctx, dao.DB, ownerUserID, title, canvasCategory); err != nil {
 			return fmt.Errorf("check duplicate title: %w", err)
 		} else if existing != nil && existing.ID != canvasID {
 			return agentTitleAlreadyExistsError(title)

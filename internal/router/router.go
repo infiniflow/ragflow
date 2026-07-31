@@ -149,12 +149,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// User logout endpoint
 	engine.GET("/v1/user/logout", r.userHandler.Logout)
 
-	// OAuth callbacks are invoked by third-party providers and cannot rely on
-	// the RAGFlow auth middleware.
-	engine.GET("/connectors/gmail/oauth/web/callback", r.connectorHandler.GmailWebOAuthCallback)
-	engine.GET("/connectors/google-drive/oauth/web/callback", r.connectorHandler.GoogleDriveWebOAuthCallback)
-	engine.GET("/connectors/box/oauth/web/callback", r.connectorHandler.BoxWebOAuthCallback)
-
 	apiNoAuth := engine.Group("/api/v1")
 	{
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
