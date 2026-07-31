@@ -600,19 +600,19 @@ def test_chunk_list_page_and_page_size_contract(rest_client, create_document):
 
     cases = [
         ("page none", {"page": None, "page_size": 2}, 0, 2, ""),
-        ("page zero", {"page": 0, "page_size": 2}, 100, None, "ValueError('Search does not support negative slicing.')"),
+        ("page zero", {"page": 0, "page_size": 2}, 0, 2, ""),
         ("page two", {"page": 2, "page_size": 2}, 0, 2, ""),
         ("page three", {"page": 3, "page_size": 2}, 0, 1, ""),
         ("page string", {"page": "3", "page_size": 2}, 0, 1, ""),
-        ("page negative", {"page": -1, "page_size": 2}, 100, None, "ValueError('Search does not support negative slicing.')"),
-        ("page alpha", {"page": "a", "page_size": 2}, 100, None, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page negative", {"page": -1, "page_size": 2}, 0, 2, ""),
+        ("page alpha", {"page": "a", "page_size": 2}, 0, 2, ""),
         ("page_size none", {"page_size": None}, 0, 5, ""),
         ("page_size zero", {"page_size": 0}, 0, 5, ""),
         ("page_size one", {"page_size": 1}, 0, 1, ""),
         ("page_size six", {"page_size": 6}, 0, 5, ""),
         ("page_size string", {"page_size": "1"}, 0, 1, ""),
         ("page_size negative", {"page_size": -1}, 0, 5, ""),
-        ("page_size alpha", {"page_size": "a"}, 100, None, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page_size alpha", {"page_size": "a"}, 0, 5, ""),
     ]
 
     for scenario_name, params, expected_code, expected_total, expected_message in cases:

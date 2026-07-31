@@ -46,6 +46,33 @@ def test_qwen3_can_enable_thinking_explicitly():
     assert kwargs["extra_body"] == {"seed": 1, "enable_thinking": True}
 
 
+def test_qwen3_preview_variant_forces_thinking_true():
+    """qwen3.x-preview models (e.g. qwen3.8-max-preview) only accept enable_thinking=True."""
+    gen_conf, kwargs = _apply_model_family_policies(
+        "qwen3.8-max-preview",
+        backend="base",
+        gen_conf={},
+        request_kwargs={},
+    )
+
+    assert gen_conf == {}
+    assert kwargs["extra_body"]["enable_thinking"] is True
+
+
+def test_qwen3_preview_ignores_disabled_thinking():
+    """Even with thinking=disabled, -preview still forces enable_thinking=True."""
+    gen_conf, kwargs = _apply_model_family_policies(
+        "qwen3.8-max-preview",
+        backend="base",
+        gen_conf={"thinking": "disabled", "temperature": 0.2},
+        request_kwargs={},
+    )
+
+    assert "thinking" not in gen_conf
+    assert gen_conf == {"temperature": 0.2}
+    assert kwargs["extra_body"]["enable_thinking"] is True
+
+
 @pytest.mark.parametrize(
     "provider",
     [SupportedLiteLLMProvider.Tongyi_Qianwen, SupportedLiteLLMProvider.Dashscope],

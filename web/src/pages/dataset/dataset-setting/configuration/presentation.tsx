@@ -9,6 +9,7 @@ import {
 } from '../configuration-form-container';
 import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
 import { AutoMetadata } from './common-item';
+import { FormLayout } from '@/constants/form';
 
 export function PresentationConfiguration() {
   const ownerTenantId = useKnowledgeBaseContext().knowledgeBase?.tenant_id;
@@ -22,8 +23,12 @@ export function PresentationConfiguration() {
 
       <ConfigurationFormContainer>
         <AutoMetadata />
-        <AutoKeywordsFormField></AutoKeywordsFormField>
-        <AutoQuestionsFormField></AutoQuestionsFormField>
+        <AutoKeywordsFormField
+          layout={FormLayout.Horizontal}
+        ></AutoKeywordsFormField>
+        <AutoQuestionsFormField
+          layout={FormLayout.Horizontal}
+        ></AutoQuestionsFormField>
       </ConfigurationFormContainer>
 
       {/* <ConfigurationFormContainer>
