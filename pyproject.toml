@@ -233,6 +233,9 @@ constraint-dependencies = [
     # CVE-2026-0994: protobuf < 5.29.6 vulnerable; pulled in transitively via
     # google-api-core, googleapis-common-protos, grpcio-status, opentelemetry-proto
     "protobuf>=5.29.6",
+    # CVE-2026-59939: httplib2 < 0.32.0 vulnerable; pulled in transitively via
+    # google-api-python-client, google-auth-httplib2
+    "httplib2>=0.32.0",
 ]
 exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same
