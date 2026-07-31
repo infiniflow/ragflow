@@ -281,6 +281,8 @@ class Compiler(ProcessBase, LLM):
                 text = upstream.get(f"{output_format}_result")
             if not isinstance(text, str) or not text.strip():
                 return []
+            if not split_json_text:
+                return [{"text": text}]
             if output_format == "markdown":
                 chunks = []
                 for block, is_table in cls._split_markdown_blocks(text):
@@ -521,11 +523,15 @@ class Compiler(ProcessBase, LLM):
         should_rechunk = any(_template_requests_rechunk(cfg) for _, cfg in active_templates)
         target_token_size = self._PARSER_CANDIDATE_TOKEN_SIZE if should_rechunk else self._PARSER_TEXT_CHUNK_TOKEN_SIZE
         if kwargs.get("output_format") in {"markdown", "text", "html"}:
-            chunks = self._normalize_upstream_chunks(kwargs, split_json_text=True, target_token_size=target_token_size)
+            chunks = self._normalize_upstream_chunks(
+                kwargs,
+                split_json_text=should_rechunk,
+                target_token_size=target_token_size,
+            )
         elif kwargs.get("output_format") == "json":
             chunks = self._normalize_upstream_chunks(
                 kwargs,
-                split_json_text=True,
+                split_json_text=should_rechunk,
                 target_token_size=target_token_size,
             )
             if not chunks:

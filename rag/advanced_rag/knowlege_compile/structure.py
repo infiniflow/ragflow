@@ -302,6 +302,7 @@ def _struct_hypergraph_prompts(parser_config: dict, language: str = "en", rechun
     rules_r = _struct_localize(_struct_get(guideline, "rules_for_relations"), language)
     rules_t = _struct_localize(_struct_get(guideline, "rules_for_time"), language)
     global_rules = _struct_localize(_struct_get(parser_config, "global_rules"), language)
+    rechunk_rules = _struct_localize(_struct_get(parser_config, "rechunk_rules"), language)
 
     observation_time = _struct_get(options, "observation_time") or datetime.date.today().isoformat()
     if rules_t and "{observation_time}" in rules_t:
@@ -330,8 +331,10 @@ def _struct_hypergraph_prompts(parser_config: dict, language: str = "en", rechun
     node_parts.append(f"## Entity Fields:\n{ent_fields_text}")
     if rechunk:
         node_parts.append(
-            "## Semantic Chunking and Response Format:\n"
-            "First group adjacent source chunks into semantically coherent chunks for this knowledge compilation task. "
+            "## Semantic Chunking Rules:\n"
+            f"{rechunk_rules}\n\n"
+            "## Response Format:\n"
+            "First group the source chunks according to the rules above. "
             "Do not return chunk text. Return temporary chunk ids (c1, c2, ...) and the source chunk ids included in each group. "
             'Use compact inclusive ranges for consecutive source ids, for example ["t1-t3", "t8"]. '
             "Then extract entities and use only those temporary chunk ids in each entity's source_chunk_ids. "

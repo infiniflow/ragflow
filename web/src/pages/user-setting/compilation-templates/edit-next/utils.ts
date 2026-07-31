@@ -58,6 +58,7 @@ export const DefaultTemplateValues: TemplateSchemaType = {
     page_example: '',
     use_blueprint: false,
     rechunk: false,
+    rechunk_rules: '',
   },
 };
 
@@ -79,6 +80,7 @@ export const isConfigMetaKey = (key: string) =>
     'synthesis',
     'use_blueprint',
     'rechunk',
+    'rechunk_rules',
   ].includes(key);
 
 export const createEmptyField = (keys: string[]) =>
@@ -131,7 +133,13 @@ export const buildConfigFromBuiltin = (
     use_blueprint:
       kind === CompilationTemplateKind.Artifacts && example.length > 0,
     ...(kind !== CompilationTemplateKind.Tree
-      ? { rechunk: builtinTemplate.config?.rechunk === true }
+      ? {
+          rechunk: builtinTemplate.config?.rechunk === true,
+          rechunk_rules:
+            typeof builtinTemplate.config?.rechunk_rules === 'string'
+              ? builtinTemplate.config.rechunk_rules
+              : '',
+        }
       : {}),
   };
 
@@ -185,7 +193,13 @@ export const transformDetailToForm = (
     use_blueprint:
       detail.kind === CompilationTemplateKind.Artifacts && example.length > 0,
     ...(detail.kind !== CompilationTemplateKind.Tree
-      ? { rechunk: config.rechunk === true }
+      ? {
+          rechunk: config.rechunk === true,
+          rechunk_rules:
+            typeof config.rechunk_rules === 'string'
+              ? config.rechunk_rules
+              : '',
+        }
       : {}),
   };
 

@@ -1588,6 +1588,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '将每个叶簇的源数据块合并为单个替换数据块。原始数据块保留但标记为不可检索。每个分组最多只能有一个树模板启用此功能。',
       rechunkInput: '重新切分 Parser 输出',
       rechunkInputTip: '根据知识编译任务，由 LLM 决定 chunk 边界。',
+      rechunkRules: 'Rechunk 规则',
+      rechunkRulesPlaceholder:
+        '描述此知识编译任务下，LLM 应如何合并和划分源 chunk。',
       jsonPreview: 'JSON 预览',
       processFlow: '流程视图',
       processFlowComingSoon: '流程视图预览即将到来',

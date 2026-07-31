@@ -65,6 +65,9 @@ DOC_STRUCTURE_COMPILE_BATCH_CHUNKS = 4
 # before the LLM call.
 STRUCTURE_CONTEXT_FRACTION = 0.5
 STRUCTURE_DEFAULT_CONTEXT = 100_000
+KNOWLEDGE_GRAPH_CONTEXT_FRACTION = 0.1
+KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS = 2048
+KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS = 4096
 
 # Bound the number of batch/template extraction calls in flight. Results are
 # committed in submission order so accumulator updates and merge flushes stay
@@ -432,6 +435,11 @@ async def run_structure_compile_over_batches(
 
     def _dynamic_batch_budget(template_id: str) -> int:
         max_length = getattr(chat_mdl_by_tid[template_id], "max_length", None) or STRUCTURE_DEFAULT_CONTEXT
+        if template_kinds.get(template_id) == "knowledge_graph":
+            return min(
+                max(int(max_length * KNOWLEDGE_GRAPH_CONTEXT_FRACTION), KNOWLEDGE_GRAPH_MIN_BATCH_TOKENS),
+                KNOWLEDGE_GRAPH_MAX_BATCH_TOKENS,
+            )
         return max(int(max_length * STRUCTURE_CONTEXT_FRACTION), 1024)
 
     async def _commit_ready() -> None:
@@ -624,7 +632,17 @@ async def run_structure_compile_over_batches(
         agg = agg_infos[template_id]
         if record:
             record(f"document_structure_compile:{template_id}", agg)
-        progress_cb(msg=f"Document knowledge compilation done ({idx + 1}/{total}): {agg}")
+        rechunked_chunks = agg.get("rechunked_chunks") or []
+        if rechunked_chunks:
+            progress_cb(msg=f"Rechunk: {len(chunks_by_id)} -> {len(rechunked_chunks)} chunks")
+        else:
+            progress_cb(
+                msg=(
+                    f"Document knowledge compilation done ({idx + 1}/{total}): "
+                    f"inserted={agg.get('inserted', 0)}, updated={agg.get('updated', 0)}, "
+                    f"duplicates_dropped={agg.get('duplicates_dropped', 0)}"
+                )
+            )
 
         # ── Synthesis phase ──────────────────────────────────────────────
         # If the template has synthesis.enabled, run wiki PLAN+REFINE

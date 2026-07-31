@@ -2,6 +2,14 @@ kind: page_index
 display_name: PageIndex — Hierarchical table of contents
 config:
   kind: page_index
+  rechunk_rules: |
+    - Group only adjacent source chunks into coherent semantic units for this page-index task.
+    - Preserve source order: use every source chunk exactly once; do not omit, overlap, duplicate, or reorder chunks.
+    - Keep each heading with the content it introduces, and split when the topic, section, or semantic focus changes.
+    - Preserve document heading hierarchy: keep a parent heading with its introductory content and nearby child-section context.
+    - Do not combine separate sections merely because their subjects are related; keep each section boundary recoverable.
+    - Keep self-contained tables, lists, figures, and code blocks intact; do not split their internal rows or items.
+    - Do not merge unrelated content. Do not invent, rewrite, or return source text; return only chunk grouping metadata.
   entity:
     description: >-
       You are a source-grounded document index extractor. First extract every

@@ -1900,6 +1900,9 @@ Example: Virtual Hosted Style`,
       rechunkInput: 'Re-chunk parser output',
       rechunkInputTip:
         'Let the LLM determine chunk boundaries based on the knowledge compilation task.',
+      rechunkRules: 'Rechunking rules',
+      rechunkRulesPlaceholder:
+        'Describe how the LLM should group source chunks for this compilation task.',
       jsonPreview: 'JSON preview',
       processFlow: 'Process flow',
       processFlowComingSoon: 'Process flow preview coming soon',

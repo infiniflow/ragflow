@@ -59,6 +59,10 @@ export function TemplateConfiguration({
     control: form.control,
     name: `templates.${selectedTemplateIndex}.kind`,
   });
+  const rechunk = useWatch({
+    control: form.control,
+    name: `templates.${selectedTemplateIndex}.config.rechunk`,
+  });
 
   const availableKindOptions = useAvailableKindOptions(
     form,
@@ -194,12 +198,26 @@ export function TemplateConfiguration({
           ) : (
             <>
               {kind !== CompilationTemplateKind.Artifacts && (
-                <SwitchFormField
-                  name={`templates.${selectedTemplateIndex}.config.rechunk`}
-                  label={t('setting.rechunkInput')}
-                  tooltip={t('setting.rechunkInputTip')}
-                  vertical={false}
-                />
+                <>
+                  <SwitchFormField
+                    name={`templates.${selectedTemplateIndex}.config.rechunk`}
+                    label={t('setting.rechunkInput')}
+                    tooltip={t('setting.rechunkInputTip')}
+                    vertical={false}
+                  />
+                  {rechunk && (
+                    <RAGFlowFormItem
+                      name={`templates.${selectedTemplateIndex}.config.rechunk_rules`}
+                      label={t('setting.rechunkRules')}
+                    >
+                      <Textarea
+                        placeholder={t('setting.rechunkRulesPlaceholder')}
+                        rows={6}
+                        resize="vertical"
+                      />
+                    </RAGFlowFormItem>
+                  )}
+                </>
               )}
               {sectionNames.length > 0 && activeSectionTab && (
                 <Tabs

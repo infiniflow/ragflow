@@ -25,6 +25,7 @@ export interface ICompilationTemplateConfig {
   raptor?: ICompilationTemplateRaptorConfig;
   global_rules?: string;
   rechunk?: boolean;
+  rechunk_rules?: string;
   [section: string]:
     | ICompilationTemplateSection
     | ICompilationTemplateRaptorConfig
