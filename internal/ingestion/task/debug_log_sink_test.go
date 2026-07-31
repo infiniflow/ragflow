@@ -50,10 +50,68 @@ func (c *capturedStore) Set(key, value string, ttl time.Duration) bool {
 	return true
 }
 
+func (c *capturedStore) Get(key string) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.data[key], nil
+}
+
 func (c *capturedStore) get(key string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.data[key]
+}
+
+// TestDebugLogKeyFormat pins the canonical key shape so a future edit cannot
+// silently change it in one place (writer) but not the other (reader). This is
+// the guard for the "duplicated key format" layering bug: the handler must
+// build the read key through DebugLogKey, never by re-concatenating the string.
+func TestDebugLogKeyFormat(t *testing.T) {
+	cases := []struct {
+		canvasID, messageID, want string
+	}{
+		{"c1", "m1", "c1-m1-logs"},
+		{"canvas-9", "msg.xyz", "canvas-9-msg.xyz-logs"},
+		{"", "", "--logs"},
+	}
+	for _, tc := range cases {
+		if got := DebugLogKey(tc.canvasID, tc.messageID); got != tc.want {
+			t.Errorf("DebugLogKey(%q,%q)=%q want %q", tc.canvasID, tc.messageID, got, tc.want)
+		}
+	}
+}
+
+// TestReadDebugLog_RoundTrip locks the write/read contract with a single store:
+// whatever key DebugLogSink.Flush writes under must be exactly the key
+// ReadDebugLog reads. This is the regression guard for the desync bug where the
+// handler reconstructed the key itself and the two formats drifted apart.
+func TestReadDebugLog_RoundTrip(t *testing.T) {
+	store := &capturedStore{}
+	sink := NewDebugLogSink("c1", "m1", store)
+	sink.OnComponentProgress(context.Background(), pipeline.ProgressEvent{
+		Component: "File", Message: "File Done", Phase: phaseExit,
+	})
+	sink.Flush(context.Background(), nil)
+
+	// The writer's key is private; read through the public function and assert
+	// the payload round-trips unchanged.
+	got, err := ReadDebugLog(store, "c1", "m1")
+	if err != nil {
+		t.Fatalf("ReadDebugLog: %v", err)
+	}
+	if got == "" {
+		t.Fatalf("ReadDebugLog returned empty; writer/reader key mismatch")
+	}
+	arr := loadArray(t, got)
+	if !clientConsidersComplete(arr) {
+		t.Errorf("read payload not completion-complete: %s", got)
+	}
+
+	// A different (canvas, message) id MUST NOT resolve to this run's log.
+	miss, _ := ReadDebugLog(store, "c1", "other")
+	if miss != "" {
+		t.Errorf("ReadDebugLog(other) should miss, got %q", miss)
+	}
 }
 
 // clientConsidersComplete mirrors the front-end completion predicate in

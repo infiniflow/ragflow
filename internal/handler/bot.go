@@ -19,13 +19,13 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
+	"ragflow/internal/ingestion/task"
 	"ragflow/internal/service"
 )
 
@@ -36,6 +36,12 @@ import (
 // struct because they are wired to the same BotService.
 type BotHandler struct {
 	botService botService
+	// redisStore is the single Redis seam for the debug-run log: it serves
+	// BOTH the write path (DebugLogSink.Flush) used by the share/embedded
+	// chat flow and the read path (GetAgentbotLogs -> task.ReadDebugLog).
+	// Defaults to the global client (redis.Get, which satisfies
+	// task.DebugLogStore); tests inject a miniredis-backed writer.
+	redisStore task.DebugLogStore
 }
 
 // botService is the subset of BotService used by these handlers. It
@@ -52,9 +58,18 @@ type botService interface {
 		<-chan service.ChatbotSSEFrame, common.ErrorCode, error)
 }
 
-// NewBotHandler wires a BotHandler with the production BotService.
+// NewBotHandler wires a BotHandler with the production BotService. redisStore
+// defaults to the global client so production behaviour is unchanged.
 func NewBotHandler(svc *service.BotService) *BotHandler {
-	return &BotHandler{botService: svc}
+	return &BotHandler{botService: svc, redisStore: redis.Get()}
+}
+
+// WithRedisStore injects the task.DebugLogStore used by the debug-run read path
+// (GetAgentbotLogs -> task.ReadDebugLog). Tests pass a miniredis-backed writer
+// so the endpoint runs end-to-end without a live Redis.
+func (h *BotHandler) WithRedisStore(s task.DebugLogStore) *BotHandler {
+	h.redisStore = s
+	return h
 }
 
 // ChatbotInfo GET /api/v1/chatbots/<dialog_id>/info
@@ -260,8 +275,7 @@ func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "message_id is required")
 		return
 	}
-	key := fmt.Sprintf("%s-%s-logs", agentIDStr, messageID)
-	payload, rerr := redis.Get().Get(key)
+	payload, rerr := task.ReadDebugLog(h.redisStore, agentIDStr, messageID)
 	// Surface Redis / decode failures instead of silently returning
 	// `{code: 0, data: {}}` — the previous form made the endpoint
 	// indistinguishable from "logs not yet written", which masked
@@ -271,7 +285,11 @@ func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, "failed to read agent logs")
 		return
 	}
-	data := map[string]interface{}{}
+	// Decode into interface{} (not a map) so an ARRAY payload — the shape the
+	// debug-run writer actually produces ([{component_id, trace}]) — is echoed
+	// back verbatim instead of failing to unmarshal into a map and returning a
+	// 500. This mirrors Python's agent_bot_logs (data=json.loads(payload)).
+	var data interface{} = map[string]interface{}{}
 	if payload != "" {
 		if uerr := json.Unmarshal([]byte(payload), &data); uerr != nil {
 			common.ResponseWithCodeData(c, common.CodeServerError, nil, "failed to decode agent logs")

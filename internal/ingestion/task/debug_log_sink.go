@@ -32,18 +32,33 @@ const DebugLogTTL = 30 * time.Minute
 
 // DebugLogStore is the minimal Redis surface the debug log sink needs. In
 // production it is satisfied by *redis.Client (which exposes Set(key, value,
-// ttl)); tests pass a capturing closure. Keeping it to a single method keeps the
-// sink free of any redis-package import.
+// ttl) and Get(key)); tests pass a capturing closure. Keeping it to these two
+// methods keeps the sink free of any redis-package import and lets the same
+// store implementation serve BOTH the write path (Flush) and the read path
+// (ReadDebugLog) — the HTTP handler must never reach into Redis directly.
 type DebugLogStore interface {
 	Set(key, value string, ttl time.Duration) bool
+	// Get returns the raw log payload stored under key. It mirrors
+	// redis.Client.Get so the handler can read through ReadDebugLog instead of
+	// reconstructing the key and calling redis itself.
+	Get(key string) (string, error)
 }
 
-// funcStore adapts a plain function to DebugLogStore so tests (and callers that
-// already hold a go-redis client) can wire a sink without a named type.
-type funcStore func(key, value string, ttl time.Duration) bool
+// DebugLogKey is the single source of truth for the debug-log Redis key. Both
+// the writer (DebugLogSink.Flush) and the reader (ReadDebugLog) build the key
+// through this function so the two sides can never drift into different
+// formats — the latent correctness bug this design rule prevents.
+func DebugLogKey(canvasID, messageID string) string {
+	return canvasID + "-" + messageID + "-logs"
+}
 
-// Set implements DebugLogStore.
-func (f funcStore) Set(key, value string, ttl time.Duration) bool { return f(key, value, ttl) }
+// ReadDebugLog returns the flushed debug-log payload for a run, or the empty
+// string when nothing was written. It is the ONLY sanctioned read path: the
+// HTTP handler must call this instead of reaching into Redis itself or
+// reconstructing the key string, so the key format stays owned by this package.
+func ReadDebugLog(store DebugLogStore, canvasID, messageID string) (string, error) {
+	return store.Get(DebugLogKey(canvasID, messageID))
+}
 
 // component phases mirror runtime.ProgressPhase (Enter=0, Exit=1, Error=2).
 // They are copied locally so the sink stays decoupled from the agent runtime
@@ -249,7 +264,7 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 			return
 		}
 	}
-	key := s.canvasID + "-" + s.messageID + "-logs"
+	key := DebugLogKey(s.canvasID, s.messageID)
 	s.store.Set(key, string(payload), s.ttl)
 }
 
