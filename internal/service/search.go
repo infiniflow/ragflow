@@ -395,7 +395,8 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 	for _, datasetID := range datasetIDs {
 		accessible = s.datasetDAO.Accessible(ctx, dao.DB, datasetID, userID)
 		if !accessible {
-			return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization for dataset %s", datasetID)
+			// Mirror Python's search completion endpoint message.
+			return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
 		}
 	}
 

@@ -1,12 +1,12 @@
 import { Button } from '@/components/ui/button';
 import { Modal } from '@/components/ui/modal/modal';
+import { GenerateType, GenerateTypeMap } from '@/constants/knowledge';
+import { useUnBindTask } from '@/hooks/use-dataset-generate';
 import { cn } from '@/lib/utils';
 import { formatDate } from '@/utils/date';
 import { lowerFirst } from 'lodash';
 import { Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { GenerateType, GenerateTypeMap } from './constants';
-import { useUnBindTask } from './hook';
 
 export type IGenerateLogButtonProps = {
   finish_at: string;
@@ -112,5 +112,3 @@ export function GenerateLogButton(props: IGenerateLogProps) {
     </div>
   );
 }
-
-export default GenerateLogButton;

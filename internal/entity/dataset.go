@@ -224,16 +224,18 @@ type KnowledgebaseDetail struct {
 // KnowledgebaseListItem represents a knowledge base item in list responses
 type KnowledgebaseListItem struct {
 	ID           string  `json:"id"`
-	Avatar       *string `json:"avatar,omitempty"`
+	Avatar       *string `json:"avatar"`
 	Name         string  `json:"name"`
-	Language     *string `json:"language,omitempty"`
-	Description  *string `json:"description,omitempty"`
+	Language     *string `json:"language"`
+	Description  *string `json:"description"`
 	TenantID     string  `json:"tenant_id"`
 	Permission   string  `json:"permission"`
 	DocNum       int64   `json:"doc_num"`
 	TokenNum     int64   `json:"token_num"`
 	ChunkNum     int64   `json:"chunk_num"`
 	ParserID     string  `json:"parser_id"`
+	ParserConfig JSONMap `json:"parser_config"`
+	Pagerank     int64   `json:"pagerank"`
 	EmbdID       string  `json:"embd_id"`
 	TenantEmbdID *string `json:"tenant_embd_id,omitempty"`
 	Nickname     string  `json:"nickname"`

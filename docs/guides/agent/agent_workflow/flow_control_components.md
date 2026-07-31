@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: Flow Control Components
+sidebar_label: Flow Control Components
 slug: /flow_control_components
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

@@ -169,9 +169,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     });
 
   // 6a. Model selection for batch verify.
-  const [selectedModels, setSelectedModels] = useState<Set<string>>(
-    new Set(),
-  );
+  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
 
   const toggleModel = useCallback((name: string) => {
     setSelectedModels((prev) => {

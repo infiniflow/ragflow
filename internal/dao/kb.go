@@ -181,7 +181,8 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(ctx context.Context, db *gorm.DB, te
 		Select(`knowledgebase.id, knowledgebase.avatar, knowledgebase.name,
 			knowledgebase.language, knowledgebase.description, knowledgebase.tenant_id,
 			knowledgebase.permission, knowledgebase.doc_num, knowledgebase.token_num,
-			knowledgebase.chunk_num, knowledgebase.parser_id, knowledgebase.embd_id,
+			knowledgebase.chunk_num, knowledgebase.parser_id, knowledgebase.parser_config,
+			knowledgebase.pagerank, knowledgebase.embd_id,
 			knowledgebase.tenant_embd_id,
 			user.nickname, user.avatar as tenant_avatar, knowledgebase.update_time`).
 		Joins("LEFT JOIN user ON knowledgebase.tenant_id = user.id").
