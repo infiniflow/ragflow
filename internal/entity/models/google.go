@@ -64,14 +64,19 @@ var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]
 
 		var modelNames []ModelListItem
 		for _, m := range models.Items {
-			modelName := strings.TrimSpace(m.DisplayName)
+			// Use the API model ID ("models/gemini-2.5-flash" →
+			// "gemini-2.5-flash") so listed models match the static
+			// catalog (model types / max_tokens) and are directly
+			// usable in chat requests. Display names ("Gemini 2.5
+			// Flash") are not accepted by the Gemini API.
+			modelName := strings.TrimSpace(strings.TrimPrefix(m.Name, "models/"))
 			if modelName == "" {
-				modelName = strings.TrimSpace(m.Name)
+				modelName = strings.TrimSpace(m.DisplayName)
 			}
 			if modelName != "" {
 				modelNames = append(modelNames, ModelListItem{
 					ID:      modelName,
-					OwnedBy: "Google",
+					OwnedBy: "Gemini",
 				})
 			}
 		}
