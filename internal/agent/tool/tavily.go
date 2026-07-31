@@ -234,11 +234,13 @@ func (t *TavilyTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 			},
 			"include_domains": {
 				Type:     schema.Array,
+				ElemInfo: &schema.ParameterInfo{Type: schema.String},
 				Desc:     "Domains that search results must include.",
 				Required: false,
 			},
 			"exclude_domains": {
 				Type:     schema.Array,
+				ElemInfo: &schema.ParameterInfo{Type: schema.String},
 				Desc:     "Domains that search results must exclude.",
 				Required: false,
 			},
@@ -254,6 +256,7 @@ func (t *TavilyExtractTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"urls": {
 				Type:     schema.Array,
+				ElemInfo: &schema.ParameterInfo{Type: schema.String},
 				Desc:     "The URLs to extract content from.",
 				Required: true,
 			},
