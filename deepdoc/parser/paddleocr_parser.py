@@ -270,7 +270,17 @@ class PaddleOCRParser(RAGFlowPdfParser):
 
     # Public methods
     def check_installation(self) -> tuple[bool, str]:
-        """Check if the parser is properly installed and configured."""
+        """Check that the parser is configured and the OCR service is reachable.
+
+        The hosted service is validated with a minimal POST to the jobs
+        endpoint (model only, no file). It authenticates the token before
+        accepting a job, so an invalid token yields HTTP 401/403 without
+        creating a job or consuming page quota, while a valid token yields a
+        different error (e.g. 422 for a missing file). A self-hosted PaddleX
+        deployment only serves the synchronous layout-parsing endpoint, so
+        reachability there is probed with a plain GET; any HTTP response
+        counts as reachable.
+        """
         if not self.base_url:
             return False, "[PaddleOCR] Base URL not configured"
 
@@ -279,6 +289,31 @@ class PaddleOCRParser(RAGFlowPdfParser):
         if not self.local and not self.access_token:
             return False, "[PaddleOCR] Access token not configured"
 
+        headers: dict[str, str] = {"Client-Platform": "ragflow"}
+        if self.access_token:
+            if self.base_url.strip().lower().startswith("https://"):
+                headers["Authorization"] = f"Bearer {self.access_token}"
+            else:
+                self.logger.warning("[PaddleOCR] access token not sent: the endpoint is not HTTPS")
+
+        try:
+            if self.local:
+                probe_url = f"{self.base_url.rstrip('/')}/{self._LOCAL_ENDPOINT_PATH}"
+                resp = requests.get(probe_url, headers=headers, timeout=10)
+            else:
+                jobs_url = f"{self.base_url.rstrip('/')}/api/v2/ocr/jobs"
+                resp = requests.post(jobs_url, data={"model": self.algorithm}, headers=headers, timeout=10)
+        except Exception as exc:  # noqa: BLE001 - connectivity failures are expected here
+            reason = f"[PaddleOCR] service unreachable at {self.base_url}: {exc}"
+            self.logger.warning(reason)
+            return False, reason
+
+        if not self.local and resp.status_code in (401, 403):
+            reason = f"[PaddleOCR] access token rejected by {self.base_url} (HTTP {resp.status_code})"
+            self.logger.warning(reason)
+            return False, reason
+
+        self.logger.info(f"[PaddleOCR] service reachable at {self.base_url} (HTTP {resp.status_code})")
         return True, ""
 
     def parse_pdf(
