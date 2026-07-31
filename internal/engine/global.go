@@ -88,6 +88,13 @@ func GetMessageQueueEngine() MessageQueue {
 	return messageQueueEngine
 }
 
+// SetMessageQueueEngine installs the global message-queue engine. It exists
+// primarily as a test seam so callers can drive Start() without a real server
+// config; production code uses InitMessageQueueEngine.
+func SetMessageQueueEngine(mq MessageQueue) {
+	messageQueueEngine = mq
+}
+
 func InitMessageQueueEngine(messageQueueType string) error {
 	config := server.GetConfig()
 	switch messageQueueType {

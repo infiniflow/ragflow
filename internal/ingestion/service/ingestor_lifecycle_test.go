@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/ingestion/testutil"
@@ -199,4 +200,40 @@ func TestPollCancel_ExitsWhenDoneClosed(t *testing.T) {
 	}
 
 	close(released) // cleanup
+}
+
+// TestStart_FullPathReturnsAndStartsWorkers is a regression test for the
+// sync.Once re-entrancy deadlock. Before the fix, Start() wrapped the whole
+// startup (start()) in e.startOnce.Do, but start() also called startWorkerPool()
+// which nested the SAME startOnce. sync.Once.Do blocks forever when re-entered
+// from inside its own callback, so Start() hung after InitConsumer succeeded:
+// no worker pool, no consumeLoop, and ingestion tasks were never consumed.
+//
+// The test drives the real Start() path (start -> startWorkerPool -> consumeLoop)
+// against an embedded NATS server and asserts Start() returns within a deadline
+// and that workers are actually up.
+func TestStart_FullPathReturnsAndStartsWorkers(t *testing.T) {
+	engine.SetMessageQueueEngine(testutil.SetupNatsEngine(t))
+
+	const concurrency int32 = 2
+	ing := NewIngestor("test-start-fullpath", concurrency, nil)
+	t.Cleanup(func() { ing.Stop(context.Background()) })
+
+	done := make(chan error, 1)
+	go func() {
+		done <- ing.Start()
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Start() returned error: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Start() did not return within 10s; sync.Once re-entrancy deadlock likely")
+	}
+
+	if got := ing.activeWorkers.Load(); got <= 0 {
+		t.Fatalf("expected activeWorkers > 0 after Start(), got %d", got)
+	}
 }
