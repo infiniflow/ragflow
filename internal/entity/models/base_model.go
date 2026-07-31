@@ -148,11 +148,7 @@ func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
 	return nil
 }
 
-// doRequest sends a JSON POST request and returns the response body.
-func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APIConfig, reqBody map[string]any, timeout time.Duration) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
+func newJSONPostRequest(ctx context.Context, url string, apiConfig *APIConfig, reqBody map[string]any) (*http.Request, error) {
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
@@ -164,7 +160,22 @@ func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APICon
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+
+	return req, nil
+}
+
+// doRequest sends a JSON POST request and returns the response body.
+func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APIConfig, reqBody map[string]any, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := newJSONPostRequest(ctx, url, apiConfig, reqBody)
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := b.httpClient.Do(req)
 	if err != nil {
@@ -198,18 +209,10 @@ func (b *BaseModel) doStreamRequest(ctx context.Context, url string, apiConfig *
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	jsonData, err := json.Marshal(reqBody)
+	req, err := newJSONPostRequest(ctx, url, apiConfig, reqBody)
 	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
+		return err
 	}
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
 
 	resp, err := b.httpClient.Do(req)
 	if err != nil {
