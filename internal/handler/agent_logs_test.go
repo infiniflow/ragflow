@@ -304,7 +304,7 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 }
 
 // capturedStore is an in-memory task.DebugLogStore used to assert that
-// runDataflowDebug actually wrote the debug log array under the expected key.
+// runCanvasPipelineDebug actually wrote the debug log array under the expected key.
 type capturedStore struct {
 	mu   sync.Mutex
 	data map[string]string
@@ -327,7 +327,7 @@ func (s *capturedStore) get(key string) (string, bool) {
 	return v, ok
 }
 
-// fakeDebugExecutor is a debugExecutor stand-in for runDataflowDebug. It
+// fakeDebugExecutor is a debugExecutor stand-in for runCanvasPipelineDebug. It
 // captures the sink attached via WithProgressSink and replays a couple of
 // component lifecycle events on Execute, mirroring what the real
 // PipelineExecutor emits through its progress callback.
@@ -339,7 +339,7 @@ type fakeDebugExecutor struct {
 
 func (f *fakeDebugExecutor) WithProgressSink(sink pipelinepkg.ProgressSink) *task.PipelineExecutor {
 	f.capturedSink = sink
-	return nil // return ignored by runDataflowDebug
+	return nil // return ignored by runCanvasPipelineDebug
 }
 
 func (f *fakeDebugExecutor) Execute(ctx context.Context) (*task.PipelineResult, error) {
@@ -455,14 +455,14 @@ func TestRespondWithDebugResult_ErrorCarriesMessageID(t *testing.T) {
 	}
 }
 
-// TestRunDataflowDebug_ErrorStillExposesMessageID asserts the full write-side
-// wiring when the executor fails: runDataflowDebug must (a) still return a
+// TestRunCanvasPipelineDebug_ErrorStillExposesMessageID asserts the full write-side
+// wiring when the executor fails: runCanvasPipelineDebug must (a) still return a
 // non-nil result carrying MessageID even though exec.Execute returned nil, and
 // (b) have already flushed the failure log under "{canvasID}-{messageID}-logs"
 // so the front-end can poll that exact key. This is the scenario that broke
 // before — the failure log was written but unreachable because message_id was
 // dropped on the error path.
-func TestRunDataflowDebug_ErrorStillExposesMessageID(t *testing.T) {
+func TestRunCanvasPipelineDebug_ErrorStillExposesMessageID(t *testing.T) {
 	ctx := context.Background()
 	store := &capturedStore{}
 
@@ -476,7 +476,7 @@ func TestRunDataflowDebug_ErrorStillExposesMessageID(t *testing.T) {
 			}, nil
 		})
 
-	result, err := h.runDataflowDebug(ctx, &entity.User{ID: "u1"}, "c1", "f.txt", []byte("data"))
+	result, err := h.runCanvasPipelineDebug(ctx, &entity.User{ID: "u1"}, "c1", "f.txt", []byte("data"))
 	if err == nil {
 		t.Fatalf("expected run error")
 	}
@@ -502,15 +502,15 @@ func TestRunDataflowDebug_ErrorStillExposesMessageID(t *testing.T) {
 	}
 }
 
-// TestRunDataflowDebug_WiresMessageIDAndLog asserts the full write-side wiring
-// of runDataflowDebug without a live Redis or real canvas: a fake executor
+// TestRunCanvasPipelineDebug_WiresMessageIDAndLog asserts the full write-side wiring
+// of runCanvasPipelineDebug without a live Redis or real canvas: a fake executor
 // emits component progress, the injected DebugLogSink flushes the
 // [{component_id, trace}] array (with the END marker last) to the captured
 // store under the key "{canvasID}-{messageID}-logs", and the returned result
 // carries message_id so the front-end can poll that exact key. The array must
 // satisfy the completion predicate (END last, non-empty END message) so the
 // Log box stops polling.
-func TestRunDataflowDebug_WiresMessageIDAndLog(t *testing.T) {
+func TestRunCanvasPipelineDebug_WiresMessageIDAndLog(t *testing.T) {
 	ctx := context.Background()
 	store := &capturedStore{}
 
@@ -524,9 +524,9 @@ func TestRunDataflowDebug_WiresMessageIDAndLog(t *testing.T) {
 			}, nil
 		})
 
-	result, err := h.runDataflowDebug(ctx, &entity.User{ID: "u1"}, "c1", "f.txt", []byte("data"))
+	result, err := h.runCanvasPipelineDebug(ctx, &entity.User{ID: "u1"}, "c1", "f.txt", []byte("data"))
 	if err != nil {
-		t.Fatalf("runDataflowDebug: %v", err)
+		t.Fatalf("runCanvasPipelineDebug: %v", err)
 	}
 	if result == nil {
 		t.Fatalf("result is nil")
@@ -577,8 +577,8 @@ func (s miniredisDebugStore) Set(key, value string, ttl time.Duration) bool {
 	return true
 }
 
-// TestRunDataflowDebug_WriteThenReadViaMiniredis locks the write/read contract
-// end-to-end: runDataflowDebug writes the debug log array under
+// TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis locks the write/read contract
+// end-to-end: runCanvasPipelineDebug writes the debug log array under
 // "{canvasID}-{messageID}-logs" into a real (miniredis) Redis via the injected
 // DebugLogStore, and the SAME handler's GetAgentLogs reads it back through the
 // injected redisGetter — proving the writer's key shape exactly matches the
@@ -587,7 +587,7 @@ func (s miniredisDebugStore) Set(key, value string, ttl time.Duration) bool {
 // message). This is the only test that would catch a key-format drift between
 // the two sides, since the write test uses a capturedStore and the read test
 // seeds Redis directly rather than going through the writer.
-func TestRunDataflowDebug_WriteThenReadViaMiniredis(t *testing.T) {
+func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx := context.Background()
 
@@ -620,12 +620,12 @@ func TestRunDataflowDebug_WriteThenReadViaMiniredis(t *testing.T) {
 		})
 
 	// Write side.
-	writeResult, werr := h.runDataflowDebug(ctx, &entity.User{ID: "u1"}, "c1", "f.txt", []byte("data"))
+	writeResult, werr := h.runCanvasPipelineDebug(ctx, &entity.User{ID: "u1"}, "c1", "f.txt", []byte("data"))
 	if werr != nil {
-		t.Fatalf("runDataflowDebug: %v", werr)
+		t.Fatalf("runCanvasPipelineDebug: %v", werr)
 	}
 	if writeResult == nil || writeResult.MessageID == "" {
-		t.Fatalf("runDataflowDebug returned no message_id")
+		t.Fatalf("runCanvasPipelineDebug returned no message_id")
 	}
 	messageID := writeResult.MessageID
 

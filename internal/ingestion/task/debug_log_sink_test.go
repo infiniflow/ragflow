@@ -225,7 +225,7 @@ func TestPipelineExecutor_DebugRunWritesLogViaSink(t *testing.T) {
 	if _, err := exec.Execute(ctx); err != nil {
 		t.Fatalf("Execute: %v", err)
 	}
-	// Mirrors runDataflowDebug: flush (incl. END marker) after the run.
+	// Mirrors runCanvasPipelineDebug: flush (incl. END marker) after the run.
 	sink.Flush(ctx, nil)
 
 	raw := store.get("c1-m1-logs")

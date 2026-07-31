@@ -101,7 +101,7 @@ type AgentHandler struct {
 	redisGet func(key string) (string, error)
 	// redisStore writes the debug-run log array. Defaults to the global
 	// client (redis.Get, which satisfies task.DebugLogStore); tests inject a
-	// miniredis-backed writer so runDataflowDebug can be exercised without a
+	// miniredis-backed writer so runCanvasPipelineDebug can be exercised without a
 	// live Redis.
 	redisStore task.DebugLogStore
 	// newExecutor builds the pipeline executor for a debug run. Defaults to
@@ -110,7 +110,7 @@ type AgentHandler struct {
 	newExecutor func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error)
 }
 
-// debugExecutor is the minimal executor surface runDataflowDebug needs. It is an
+// debugExecutor is the minimal executor surface runCanvasPipelineDebug needs. It is an
 // interface (not *task.PipelineExecutor) so tests can substitute a fake that
 // emits progress through the attached sink. *task.PipelineExecutor satisfies it.
 type debugExecutor interface {
@@ -151,7 +151,7 @@ func (h *AgentHandler) WithRedisGetter(f func(key string) (string, error)) *Agen
 	return h
 }
 
-// WithRedisStore overrides the Redis writer used by runDataflowDebug to persist
+// WithRedisStore overrides the Redis writer used by runCanvasPipelineDebug to persist
 // the debug-run log. Tests pass a miniredis-backed writer.
 func (h *AgentHandler) WithRedisStore(s task.DebugLogStore) *AgentHandler {
 	h.redisStore = s
@@ -159,7 +159,7 @@ func (h *AgentHandler) WithRedisStore(s task.DebugLogStore) *AgentHandler {
 }
 
 // WithNewExecutor overrides the pipeline executor factory used by
-// runDataflowDebug. Tests inject a fake that emits progress through the
+// runCanvasPipelineDebug. Tests inject a fake that emits progress through the
 // attached sink without a real canvas/DSL.
 func (h *AgentHandler) WithNewExecutor(f func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error)) *AgentHandler {
 	h.newExecutor = f
@@ -539,7 +539,7 @@ func readUserInput(c *gin.Context) string {
 	return c.Query("user_input")
 }
 
-// runDataflowDebug runs a canvas in dataflow dry-run (debug) mode: it builds
+// runCanvasPipelineDebug runs a canvas in pipeline dry-run (debug) mode: it builds
 // an in-memory debug TaskContext and executes the pipeline synchronously,
 // returning the produced chunks. The run is fully synchronous: the complete
 // debug log (including the terminal END marker) is flushed to Redis BEFORE
@@ -553,11 +553,11 @@ func readUserInput(c *gin.Context) string {
 // debug signal used across the ingestion pipeline: the tokenizer skips
 // embedding and the executor skips the persist stage. kb_id == "" occurs ONLY
 // in debug mode; production ingestion always supplies a KB, so this path is
-// never taken in normal operation. The request's kb_id is intentionally never
-// forwarded: debug never resolves an embedder or writes to a KB, and
-// parse/chunk work without it. Callers extract the (fileName, fileData) pair
-// from their own request shape and pass them in.
-func (h *AgentHandler) runDataflowDebug(ctx context.Context, user *entity.User,
+// never taken in normal operation. Debug takes no kb_id at all: it never
+// resolves an embedder or writes to a KB, and parse/chunk work without it.
+// Callers extract the (fileName, fileData) pair from their own request shape
+// and pass them in.
+func (h *AgentHandler) runCanvasPipelineDebug(ctx context.Context, user *entity.User,
 	canvasID, fileName string, fileData []byte) (*task.PipelineResult, error) {
 	// messageID is the polling key the front-end reads from the run response
 	// (see web/src/pages/agent/hooks/use-run-dataflow.ts:40) to fetch the debug
@@ -595,7 +595,7 @@ func (h *AgentHandler) runDataflowDebug(ctx context.Context, user *entity.User,
 // respondWithDebugResult writes the outcome of a dataflow debug run. On a run
 // failure it keeps a non-success code (errors must not be masked as success)
 // but still carries message_id in the error envelope's data, because
-// runDataflowDebug already flushed the failure log to Redis — the front-end
+// runCanvasPipelineDebug already flushed the failure log to Redis — the front-end
 // needs that key to poll the failure timeline. On success it returns the
 // message_id (the polling key) together with the produced chunks. Empty chunk
 // slices become `[]` rather than `null` so the response shape stays stable.
@@ -1073,11 +1073,6 @@ type agentChatCompletionsRequest struct {
 	// is 2D, so a plain 1D `[]map[string]interface{}` would fail to decode
 	// and 400 the whole request.
 	Files [][]map[string]interface{} `json:"files"`
-	// KbID is optional for a dataflow debug (dry-run) trigger. It is not
-	// required: parse and chunk run without it, and only embedding
-	// resolution needs it (mirrors the Python dataflow-debug path, which
-	// passes no kb_id). When empty the debug run still executes.
-	KbID string `json:"kb_id"`
 }
 
 // extractLastUserContent returns the content of the last message in
@@ -1222,25 +1217,18 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// This mirrors the Python agent_api.py:1569 DataFlow branch, which is
 	// reached only on the non-openai, non-session path (openai-compatible
 	// requests return their choices shape above and never enter debug). The
-	// kb_id is optional (see runDataflowDebug); the canvas is loaded only to
-	// read its category, and the debug path is skipped when the loader is
-	// absent or the canvas is not a DataFlow.
+	// The canvas is loaded only to read its category, and the debug path is
+	// skipped when the loader is absent or the canvas is not a DataFlow. No
+	// kb_id is involved: the debug context always runs KB-less (see
+	// runCanvasPipelineDebug).
 	if h.loader != nil {
 		if cv, lerr := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, req.AgentID); lerr == nil && cv.CanvasCategory == "dataflow_canvas" {
-			kbID := req.KbID
-			if kbID == "" {
-				kbID = c.Query("kb_id")
-			}
-			common.Debug("dataflow debug request kb_id",
-				zap.String("req_kb_id", req.KbID),
-				zap.String("query_kb_id", c.Query("kb_id")),
-				zap.String("resolved_kb_id", kbID))
 			fileName, fileData := h.extractChatDebugFile(c.Request.Context(), req.Files, user)
 			if len(fileData) == 0 {
 				common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataflow debug requires an uploaded file")
 				return
 			}
-			result, derr := h.runDataflowDebug(c.Request.Context(), user, req.AgentID, fileName, fileData)
+			result, derr := h.runCanvasPipelineDebug(c.Request.Context(), user, req.AgentID, fileName, fileData)
 			respondWithDebugResult(c, result, derr)
 			return
 		}
@@ -1564,7 +1552,7 @@ func parseAgentLogs(payload string) interface{} {
 //
 // Reads "{agent_id}-{message_id}-logs" from Redis (same key format
 // used by the Python agent API in api/apps/restful_apis/agent_api.py) and
-// returns it as-is. Because runDataflowDebug flushes the ENTIRE log (including
+// returns it as-is. Because runCanvasPipelineDebug flushes the ENTIRE log (including
 // the END marker) before returning the run response, this endpoint returns a
 // completed snapshot on the first poll — it is a replay/fetch of an already
 // finished debug log, not a streaming subscription. Missing key returns an
