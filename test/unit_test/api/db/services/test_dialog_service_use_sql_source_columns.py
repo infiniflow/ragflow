@@ -100,7 +100,10 @@ class _StubRetriever:
         if idx >= len(self._results):
             raise AssertionError("sql_retrieval called more times than expected")
         self.sql_calls.append(sql)
-        return self._results[idx]
+        result = self._results[idx]
+        if isinstance(result, BaseException):
+            raise result
+        return result
 
 
 class _StubAsyncRetriever:
@@ -268,6 +271,57 @@ def test_use_sql_source_repair_is_bounded_to_single_retry(monkeypatch, force_es_
     assert "Source" not in result["answer"]
     assert len(chat_model.calls) == 2
     assert len(retriever.sql_calls) == 2
+
+
+@pytest.mark.p2
+def test_use_sql_quotes_unsafe_es_identifiers_in_initial_and_retry_prompts(monkeypatch, force_es_engine):
+    retriever = _StubRetriever(
+        [
+            RuntimeError("Unknown column [test]"),
+            {
+                "columns": [
+                    {"name": "doc_id"},
+                    {"name": "docnm_kwd"},
+                    {"name": "test items_tks"},
+                ],
+                "rows": [["doc-1", "tests.xlsx", "wstc hw 758"]],
+            },
+        ]
+    )
+    chat_model = _StubChatModel(
+        [
+            "SELECT doc_id, docnm_kwd, test items_tks FROM ragflow_tenant",
+            'SELECT doc_id, docnm_kwd, "test items_tks" FROM ragflow_tenant',
+        ]
+    )
+    monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
+
+    result = asyncio.run(
+        dialog_service.use_sql(
+            question="show me the test items",
+            field_map={
+                "test items_tks": "test items",
+                "123_priority_kwd": "priority",
+                "status_tks": "status",
+            },
+            tenant_id="tenant-id",
+            chat_mdl=chat_model,
+            quota=True,
+            kb_ids=None,
+        )
+    )
+
+    assert result is not None
+    assert "Keep the double quotes shown around identifiers" in chat_model.calls[0]["system_prompt"]
+    assert '"test items_tks"' in chat_model.calls[0]["message"]
+    assert '"123_priority_kwd"' in chat_model.calls[0]["message"]
+    assert "status_tks" in chat_model.calls[0]["message"]
+    assert '"test items_tks"' in chat_model.calls[1]["message"]
+    assert '"123_priority_kwd"' in chat_model.calls[1]["message"]
+    assert retriever.sql_calls == [
+        "SELECT doc_id, docnm_kwd, test items_tks FROM ragflow_tenant",
+        'SELECT doc_id, docnm_kwd, "test items_tks" FROM ragflow_tenant',
+    ]
 
 
 @pytest.mark.p2

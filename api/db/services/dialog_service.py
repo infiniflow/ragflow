@@ -1097,6 +1097,17 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
             return False
         return bool(re.search(r"\bdataset\b|\btable\b|\bspreadsheet\b|\bexcel\b", q))
 
+    def format_es_identifier(field_name: str) -> str:
+        """Return an Elasticsearch SQL identifier that can be copied into a query."""
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", field_name):
+            return field_name
+        escaped_field_name = field_name.replace('"', '""')
+        return f'"{escaped_field_name}"'
+
+    def format_es_fields() -> str:
+        """Render schema fields using the exact ES SQL identifier syntax."""
+        return "\n".join(f"  - {format_es_identifier(name)} ({description})" for name, description in field_map.items())
+
     # Generate engine-specific SQL prompts
     if doc_engine == "infinity":
         # Build Infinity prompts with JSON extraction context
@@ -1164,8 +1175,9 @@ Write SQL using json_extract_string() with exact field names. Include doc_id, do
         sys_prompt = """You are a Database Administrator. Write SQL queries.
 
 RULES:
-1. Use EXACT field names from the schema below (e.g., product_tks, not product)
-2. Quote field names starting with digit: "123_field"
+1. Copy field identifiers EXACTLY as shown in the schema below (e.g., product_tks, not product)
+2. Keep the double quotes shown around identifiers that contain spaces, punctuation,
+   or start with a digit (e.g., "test items_tks", "123_field")
 3. Add IS NOT NULL in WHERE clause when:
    - Question asks to "show me" or "display" specific columns
 4. Include doc_id/docnm in non-aggregate statement
@@ -1174,7 +1186,8 @@ RULES:
 Available fields:
 {}
 Question: {}
-Write SQL using exact field names above. Include doc_id, docnm_kwd for data queries. Only SQL.""".format(table_name, "\n".join([f"  - {k} ({v})" for k, v in field_map.items()]), question)
+Write SQL by copying the field identifiers exactly as shown above, including any double quotes.
+Include doc_id, docnm_kwd for data queries. Only SQL.""".format(table_name, format_es_fields(), question)
 
     tried_times = 0
 
@@ -1228,7 +1241,8 @@ Previous SQL:
 
 The previous SQL result is missing required source columns for citations.
 Rewrite SQL to keep the same query intent and include doc_id and docnm_kwd in the SELECT list.
-Return ONLY SQL.""".format(table_name, "\n".join([f"  - {k} ({v})" for k, v in field_map.items()]), question, previous_sql)
+Copy field identifiers exactly as shown above, including any double quotes.
+Return ONLY SQL.""".format(table_name, format_es_fields(), question, previous_sql)
         return await get_table(custom_user_prompt=repair_prompt)
 
     try:
@@ -1259,7 +1273,8 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
             # Build ES/OS error retry prompt
             user_prompt = """
         Table name: {};
-        Table of database fields are as follows (use the field names directly in SQL):
+        Table of database fields is below. Copy each identifier exactly as shown,
+        including any double quotes:
         {}
 
         Question are as follows:
@@ -1270,8 +1285,8 @@ Please correct the error and write SQL again using json_extract_string(chunk_dat
         The SQL error you provided last time is as follows:
         {}
 
-        Please correct the error and write SQL again using the exact field names above, only SQL, without any other explanations or text.
-        """.format(table_name, "\n".join([f"{k} ({v})" for k, v in field_map.items()]), question, e)
+        Please correct the error and write SQL again using the exact identifiers above, only SQL, without any other explanations or text.
+        """.format(table_name, format_es_fields(), question, e)
         try:
             tbl, sql = await get_table()
             logging.debug(f"use_sql: Retry SQL execution SUCCESS. SQL: {sql}")
