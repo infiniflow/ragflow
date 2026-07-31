@@ -1,28 +1,29 @@
 import { useFetchAgent } from '@/hooks/use-agent-request';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import {
+  GlobalVariableType,
+  RAGFlowNodeType,
+} from '@/interfaces/database/agent';
 import { useCallback } from 'react';
 import useGraphStore from '../store';
-import { buildDslComponentsByGraph } from '../utils';
+import { graphToDsl } from '../utils/dsl-bridge';
 
 export const useBuildDslData = () => {
   const { data } = useFetchAgent();
   const { nodes, edges } = useGraphStore((state) => state);
 
   const buildDslData = useCallback(
-    (currentNodes?: RAGFlowNodeType[]) => {
-      const dslComponents = buildDslComponentsByGraph(
+    (
+      currentNodes?: RAGFlowNodeType[],
+      otherParam?: { globalVariables: Record<string, GlobalVariableType> },
+    ) => {
+      return graphToDsl(
         currentNodes ?? nodes,
         edges,
-        data.dsl.components,
+        data?.dsl ?? {},
+        otherParam?.globalVariables,
       );
-
-      return {
-        ...data.dsl,
-        graph: { nodes: currentNodes ?? nodes, edges },
-        components: dslComponents,
-      };
     },
-    [data.dsl, edges, nodes],
+    [data?.dsl, edges, nodes],
   );
 
   return { buildDslData };

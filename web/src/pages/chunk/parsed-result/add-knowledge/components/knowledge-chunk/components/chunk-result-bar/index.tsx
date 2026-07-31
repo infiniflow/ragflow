@@ -1,15 +1,15 @@
-import { Input } from '@/components/originui/input';
 import { Button } from '@/components/ui/button';
+import { SearchInput } from '@/components/ui/input';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { Radio } from '@/components/ui/radio';
+import { Segmented } from '@/components/ui/segmented';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
-import { SearchOutlined } from '@ant-design/icons';
-import { ListFilter, Plus } from 'lucide-react';
+import { LucideFilter, Plus } from 'lucide-react';
 import { useState } from 'react';
 import { ChunkTextMode } from '../../constant';
 interface ChunkResultBarProps {
@@ -21,7 +21,8 @@ interface ChunkResultBarProps {
   handleInputChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   searchString: string;
 }
-export default ({
+export default function ChunkResultBar({
+  className,
   changeChunkTextMode,
   available,
   selectAllChunk,
@@ -29,7 +30,7 @@ export default ({
   createChunk,
   handleInputChange,
   searchString,
-}: ChunkResultBarProps) => {
+}: ChunkResultBarProps) {
   const { t } = useTranslate('chunk');
   const [textSelectValue, setTextSelectValue] = useState<string | number>(
     ChunkTextMode.Full,
@@ -41,7 +42,7 @@ export default ({
   };
   const filterContent = (
     <div className="w-[200px]">
-      <Radio.Group onChange={handleFilterChange} value={available}>
+      <Radio.Group onChange={handleFilterChange} value={available ?? -1}>
         <div className="flex flex-col gap-2 p-4">
           <Radio value={-1}>{t('all')}</Radio>
           <Radio value={1}>{t('enabled')}</Radio>
@@ -60,44 +61,48 @@ export default ({
     changeChunkTextMode(value);
   };
   return (
-    <div className="flex pr-[25px]">
-      <div className="flex items-center gap-4 bg-bg-card text-muted-foreground w-fit h-[35px] rounded-md px-4 py-2">
-        {textSelectOptions.map((option) => (
-          <div
-            key={option.value}
-            className={cn('flex items-center cursor-pointer', {
-              'text-primary': option.value === textSelectValue,
-            })}
-            onClick={() => changeTextSelectValue(option.value)}
-          >
-            {option.label}
-          </div>
-        ))}
-      </div>
-      <div className="ml-auto"></div>
-      <Input
-        className="bg-bg-card text-muted-foreground"
-        style={{ width: 200 }}
-        placeholder={t('search')}
-        icon={<SearchOutlined />}
-        onChange={handleInputChange}
-        value={searchString}
+    <div className={cn('flex justify-end gap-4', className)}>
+      <Segmented
+        className="gap-0 me-auto"
+        buttonSize="xs"
+        itemClassName="px-2"
+        options={textSelectOptions}
+        value={textSelectValue}
+        onChange={changeTextSelectValue}
       />
-      <div className="w-[20px]"></div>
+
       <Popover>
         <PopoverTrigger asChild>
-          <Button className="bg-bg-card text-muted-foreground hover:bg-card">
-            <ListFilter />
+          <Button
+            variant="outline"
+            size="icon"
+            // className="bg-bg-card text-text-secondary hover:bg-card"
+          >
+            <LucideFilter />
           </Button>
         </PopoverTrigger>
         <PopoverContent className="p-0 w-[200px]">
           {filterContent}
         </PopoverContent>
       </Popover>
-      <div className="w-[20px]"></div>
-      <Button onClick={() => createChunk()} className="bg-bg-card text-primary">
+
+      <SearchInput
+        className="w-28"
+        placeholder={t('search')}
+        onChange={handleInputChange}
+        value={searchString}
+      />
+
+      <Button
+        variant="outline"
+        size="icon"
+        onClick={() => createChunk()}
+        // className="bg-bg-card text-primary hover:bg-card"
+      >
         <Plus size={44} />
       </Button>
+      {/* <div className="w-[20px]"></div>
+      <div className="w-[20px]"></div> */}
     </div>
   );
-};
+}

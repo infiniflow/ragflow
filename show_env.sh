@@ -6,7 +6,7 @@ get_distro_info() {
     local distro_version=$(lsb_release -r -s 2>/dev/null)
     local kernel_version=$(uname -r)
 
-    # If lsd_release is not available, try parsing the/etc/* - release file
+    # If lsb_release is not available, try parsing the /etc/*-release file
     if [ -z "$distro_id" ] || [ -z "$distro_version" ]; then
         distro_id=$(grep '^ID=' /etc/*-release | cut -d= -f2 | tr -d '"')
         distro_version=$(grep '^VERSION_ID=' /etc/*-release | cut -d= -f2 | tr -d '"')
@@ -23,7 +23,7 @@ if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
         git_repo_name="(Can't get repo name)"
     fi
 else
-    git_repo_name="It NOT a Git repo"
+    git_repo_name="It is NOT a Git repo"
 fi
 
 # get CPU type
@@ -41,12 +41,7 @@ else
 fi
 
 # get python version
-python_version=''
-if command -v python &> /dev/null; then
-    python_version=$(python --version | cut -d ' ' -f2)
-else
-    python_version="Python not installed"
-fi
+python_version=$(python3 --version 2>&1 || python --version 2>&1 || echo "Python not installed")
 
 # Print all information
 echo "Current Repository: $git_repo_name"

@@ -1,11 +1,19 @@
-import { DocumentParserType } from '@/constants/knowledge';
+import { FormLayout } from '@/constants/form';
+import { DocumentParserType, GenerateType } from '@/constants/knowledge';
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
+import { useKnowledgeBaseContext } from '@/pages/dataset/contexts/knowledge-base-context';
+import { LLMModelItem } from '@/pages/dataset/dataset-setting/configuration/common-item';
 import { upperFirst } from 'lodash';
 import { useCallback, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { EntityTypesFormField } from '../entity-types-form-field';
 import { FormContainer } from '../form-container';
+import {
+  GenerateLogButton,
+  IGenerateLogButtonProps,
+} from '../generate-log-button';
+import { SliderInputFormField } from '../slider-input-form-field';
 import {
   FormControl,
   FormField,
@@ -29,6 +37,7 @@ export const showTagItems = (parserId: DocumentParserType) => {
 const enum MethodValue {
   General = 'general',
   Light = 'light',
+  NER = 'ner',
 }
 
 export const excludedParseMethods = [
@@ -47,9 +56,17 @@ export const showGraphRagItems = (parserId: DocumentParserType | undefined) => {
 type GraphRagItemsProps = {
   marginBottom?: boolean;
   className?: string;
+  data: IGenerateLogButtonProps;
+  onDelete?: () => void;
 };
 
-export function UseGraphRagFormField() {
+export function UseGraphRagFormField({
+  data,
+  onDelete,
+}: {
+  data: IGenerateLogButtonProps;
+  onDelete?: () => void;
+}) {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeConfiguration');
 
@@ -57,21 +74,28 @@ export function UseGraphRagFormField() {
     <FormField
       control={form.control}
       name="parser_config.graphrag.use_graphrag"
-      render={({ field }) => (
+      render={() => (
         <FormItem defaultChecked={false} className=" items-center space-y-0 ">
           <div className="flex items-center gap-1">
             <FormLabel
               tooltip={t('useGraphRagTip')}
-              className="text-sm text-muted-foreground whitespace-break-spaces w-1/4"
+              className="text-sm whitespace-break-spaces w-1/4"
             >
               {t('useGraphRag')}
             </FormLabel>
             <div className="w-3/4">
               <FormControl>
-                <Switch
+                {/* <Switch
                   checked={field.value}
                   onCheckedChange={field.onChange}
-                ></Switch>
+                ></Switch> */}
+                <GenerateLogButton
+                  {...data}
+                  onDelete={onDelete}
+                  className="w-full text-text-secondary"
+                  status={1}
+                  type={GenerateType.KnowledgeGraph}
+                />
               </FormControl>
             </div>
           </div>
@@ -86,10 +110,12 @@ export function UseGraphRagFormField() {
 }
 
 // The three types "table", "resume" and "one" do not display this configuration.
-const GraphRagItems = ({
+const GraphRagItems = function GraphRagItems({
   marginBottom = false,
   className = 'p-10',
-}: GraphRagItemsProps) => {
+  data,
+  onDelete,
+}: GraphRagItemsProps) {
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
 
@@ -99,10 +125,12 @@ const GraphRagItems = ({
   });
 
   const methodOptions = useMemo(() => {
-    return [MethodValue.Light, MethodValue.General].map((x) => ({
-      value: x,
-      label: upperFirst(x),
-    }));
+    return [MethodValue.Light, MethodValue.General /*, MethodValue.NER*/].map(
+      (x) => ({
+        value: x,
+        label: x === MethodValue.NER ? 'NER' : upperFirst(x),
+      }),
+    );
   }, []);
 
   const renderWideTooltip = useCallback(
@@ -114,10 +142,22 @@ const GraphRagItems = ({
 
   return (
     <FormContainer className={cn({ 'mb-4': marginBottom }, className)}>
-      <UseGraphRagFormField></UseGraphRagFormField>
+      <LLMModelItem
+        label={t('globalIndexModel')}
+        name={'parser_config.llm_id'}
+        ownerTenantId={useKnowledgeBaseContext().knowledgeBase?.tenant_id}
+      />
+      <UseGraphRagFormField
+        data={data}
+        onDelete={onDelete}
+      ></UseGraphRagFormField>
       {useRaptor && (
         <>
-          <EntityTypesFormField name="parser_config.graphrag.entity_types"></EntityTypesFormField>
+          <EntityTypesFormField
+            name="parser_config.graphrag.entity_types"
+            addButtonTestId="ds-settings-graph-entity-types-add-btn"
+            inputTestId="ds-settings-graph-entity-types-input"
+          ></EntityTypesFormField>
           <FormField
             control={form.control}
             name="parser_config.graphrag.method"
@@ -125,7 +165,7 @@ const GraphRagItems = ({
               <FormItem className=" items-center space-y-0 ">
                 <div className="flex items-center">
                   <FormLabel
-                    className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                    className="text-sm whitespace-nowrap w-1/4"
                     tooltip={renderWideTooltip(
                       <div
                         dangerouslySetInnerHTML={{
@@ -141,6 +181,7 @@ const GraphRagItems = ({
                       <RAGFlowSelect
                         {...field}
                         options={methodOptions}
+                        triggerTestId="ds-settings-graph-method-select"
                       ></RAGFlowSelect>
                     </FormControl>
                   </div>
@@ -153,6 +194,19 @@ const GraphRagItems = ({
             )}
           />
 
+          <SliderInputFormField
+            name="parser_config.graphrag.batch_chunk_token_size"
+            label={t('graphRagBatchChunkTokenSize')}
+            tooltip={t('graphRagBatchChunkTokenSizeTip')}
+            max={8196}
+            min={512}
+            step={1}
+            defaultValue={4096}
+            layout={FormLayout.Horizontal}
+            sliderTestId="ds-settings-graph-batch-chunk-token-size-slider"
+            numberInputTestId="ds-settings-graph-batch-chunk-token-size-input"
+          ></SliderInputFormField>
+
           <FormField
             control={form.control}
             name="parser_config.graphrag.resolution"
@@ -161,7 +215,7 @@ const GraphRagItems = ({
                 <div className="flex items-center">
                   <FormLabel
                     tooltip={renderWideTooltip('resolutionTip')}
-                    className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                    className="text-sm whitespace-nowrap w-1/4"
                   >
                     {t('resolution')}
                   </FormLabel>
@@ -170,6 +224,7 @@ const GraphRagItems = ({
                       <Switch
                         checked={field.value}
                         onCheckedChange={field.onChange}
+                        data-testid="ds-settings-graph-entity-resolution-switch"
                       ></Switch>
                     </FormControl>
                   </div>
@@ -190,7 +245,7 @@ const GraphRagItems = ({
                 <div className="flex items-center">
                   <FormLabel
                     tooltip={renderWideTooltip('communityTip')}
-                    className="text-sm text-muted-foreground whitespace-nowrap w-1/4"
+                    className="text-sm whitespace-nowrap w-1/4"
                   >
                     {t('community')}
                   </FormLabel>
@@ -199,6 +254,7 @@ const GraphRagItems = ({
                       <Switch
                         checked={field.value}
                         onCheckedChange={field.onChange}
+                        data-testid="ds-settings-graph-community-reports-switch"
                       ></Switch>
                     </FormControl>
                   </div>
@@ -210,6 +266,18 @@ const GraphRagItems = ({
               </FormItem>
             )}
           />
+          {/* {showGenerateItem && (
+            <div className="w-full flex items-center">
+              <div className="text-sm whitespace-nowrap w-1/4">
+                {t('extractKnowledgeGraph')}
+              </div>
+              <GenerateLogButton
+                className="w-3/4 text-text-secondary"
+                status={1}
+                type={GenerateType.KnowledgeGraph}
+              />
+            </div>
+          )} */}
         </>
       )}
     </FormContainer>

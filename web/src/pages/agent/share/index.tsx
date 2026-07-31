@@ -2,25 +2,22 @@ import { EmbedContainer } from '@/components/embed-container';
 import { FileUploadProps } from '@/components/file-upload';
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/next-message-item';
-import PdfDrawer from '@/components/pdf-drawer';
+import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { useSyncThemeFromParams } from '@/components/theme-provider';
 import { MessageType } from '@/constants/chat';
-import {
-  useFetchExternalAgentInputs,
-  useUploadCanvasFileWithProgress,
-} from '@/hooks/use-agent-request';
+import { useUploadAgentFileWithProgress } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
-import i18n from '@/locales/config';
+import i18n, { changeLanguageAsync } from '@/locales/config';
 import DebugContent from '@/pages/agent/debug-content';
 import { useCacheChatLog } from '@/pages/agent/hooks/use-cache-chat-log';
-import { useAwaitCompentData } from '@/pages/agent/hooks/use-chat-logic';
-import { IInputs } from '@/pages/agent/interface';
-import { useSendButtonDisabled } from '@/pages/chat/hooks';
+import { useAwaitComponentData } from '@/pages/agent/hooks/use-chat-logic';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 import { isEmpty } from 'lodash';
-import React, { forwardRef, useCallback, useState } from 'react';
+import React, { forwardRef, useCallback } from 'react';
 import {
   useGetSharedChatSearchParams,
+  useSendButtonDisabled,
   useSendNextSharedMessage,
 } from '../hooks/use-send-shared-message';
 import { ParameterDialog } from './parameter-dialog';
@@ -29,19 +26,22 @@ const ChatContainer = () => {
   const {
     sharedId: conversationId,
     locale,
+    theme,
     visibleAvatar,
   } = useGetSharedChatSearchParams();
+  useSyncThemeFromParams(theme);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
-  const { uploadCanvasFile, loading } =
-    useUploadCanvasFileWithProgress(conversationId);
+  const { uploadAgentFile, loading } =
+    useUploadAgentFileWithProgress(conversationId);
   const {
     addEventList,
     setCurrentMessageId,
     currentEventListWithoutMessageById,
     clearEventList,
   } = useCacheChatLog();
+
   const {
     handlePressEnter,
     handleInputChange,
@@ -51,6 +51,8 @@ const ChatContainer = () => {
     messageContainerRef,
     derivedMessages,
     hasError,
+    inputsData,
+    isTaskMode,
     stopOutputMessage,
     findReferenceByMessageId,
     appendUploadResponseList,
@@ -61,57 +63,45 @@ const ChatContainer = () => {
     ok,
     resetSession,
   } = useSendNextSharedMessage(addEventList);
-  const { buildInputList, handleOk, isWaitting } = useAwaitCompentData({
+
+  const { buildInputList, handleOk, isWaiting } = useAwaitComponentData({
     derivedMessages,
     sendFormMessage,
-    canvasId: conversationId as string,
   });
   const sendDisabled = useSendButtonDisabled(value);
-  const { data: inputsData } = useFetchExternalAgentInputs();
-  const [agentInfo, setAgentInfo] = useState<IInputs>({
-    avatar: '',
-    title: '',
-    inputs: {},
-    prologue: '',
-  });
-  const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
-    useCallback(
-      async (files, options) => {
-        const ret = await uploadCanvasFile({ files, options });
-        appendUploadResponseList(ret.data, files);
-      },
-      [appendUploadResponseList, uploadCanvasFile],
-    );
 
-  React.useEffect(() => {
-    if (locale && i18n.language !== locale) {
-      i18n.changeLanguage(locale);
-    }
-  }, [locale, visibleAvatar]);
-
-  React.useEffect(() => {
-    const { avatar, title, inputs } = inputsData;
-    setAgentInfo({
-      avatar,
-      title,
-      inputs: inputs,
-      prologue: '',
-    });
-  }, [inputsData, setAgentInfo]);
-
-  React.useEffect(() => {
-    if (inputsData.prologue) {
-      addNewestOneAnswer({
-        answer: inputsData.prologue,
-      });
-    }
-  }, [inputsData.prologue, addNewestOneAnswer]);
-
-  React.useEffect(() => {
+  const showBeginParameterDialog = useCallback(() => {
     if (inputsData && inputsData.inputs && !isEmpty(inputsData.inputs)) {
       showParameterDialog();
     }
   }, [inputsData, showParameterDialog]);
+
+  const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
+    useCallback(
+      async (files, options) => {
+        const ret = await uploadAgentFile({ files, options });
+        appendUploadResponseList(ret.data, files);
+      },
+      [appendUploadResponseList, uploadAgentFile],
+    );
+
+  React.useEffect(() => {
+    if (locale && i18n.language !== locale) {
+      changeLanguageAsync(locale);
+    }
+  }, [locale, visibleAvatar]);
+
+  React.useEffect(() => {
+    if (!isTaskMode && inputsData.prologue) {
+      addNewestOneAnswer({
+        answer: inputsData.prologue,
+      });
+    }
+  }, [inputsData.prologue, addNewestOneAnswer, isTaskMode]);
+
+  React.useEffect(() => {
+    showBeginParameterDialog();
+  }, [showBeginParameterDialog]);
 
   const handleInputsModalOk = (params: any[]) => {
     ok(params);
@@ -119,21 +109,23 @@ const ChatContainer = () => {
   const handleReset = () => {
     resetSession();
     clearEventList();
+    showBeginParameterDialog();
   };
   if (!conversationId) {
     return <div>empty</div>;
   }
+
   return (
     <>
       <EmbedContainer
-        title={agentInfo.title}
-        avatar={agentInfo.avatar}
+        title={inputsData.title}
+        avatar={inputsData.avatar}
         handleReset={handleReset}
       >
         <div className="flex flex-1 flex-col p-2.5  h-[90vh] m-3">
           <div
             className={cn(
-              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto w-5/6',
+              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto md:w-5/6',
             )}
             ref={messageContainerRef}
           >
@@ -157,8 +149,8 @@ const ChatContainer = () => {
                       derivedMessages?.length - 1 === i
                     }
                     isShare={true}
-                    avatarDialog={agentInfo.avatar}
-                    agentName={agentInfo.title}
+                    avatarDialog={inputsData.avatar}
+                    agentName={inputsData.title}
                     index={i}
                     clickDocumentButton={clickDocumentButton}
                     showLikeButton={false}
@@ -192,38 +184,41 @@ const ChatContainer = () => {
             </div>
             <div ref={scrollRef} />
           </div>
-          <div className="flex w-full justify-center mb-8">
-            <div className="w-5/6">
-              <NextMessageInput
-                isShared
-                value={value}
-                disabled={hasError || isWaitting}
-                sendDisabled={sendDisabled || isWaitting}
-                conversationId={conversationId}
-                onInputChange={handleInputChange}
-                onPressEnter={handlePressEnter}
-                sendLoading={sendLoading}
-                stopOutputMessage={stopOutputMessage}
-                onUpload={handleUploadFile}
-                isUploading={loading || isWaitting}
-              ></NextMessageInput>
+          {isTaskMode || (
+            <div className="flex w-full justify-center md:mb-8">
+              <div className="w-full md:w-5/6">
+                <NextMessageInput
+                  isShared
+                  value={value}
+                  disabled={hasError || isWaiting}
+                  sendDisabled={sendDisabled || isWaiting}
+                  resize="vertical"
+                  conversationId={conversationId}
+                  onInputChange={handleInputChange}
+                  onPressEnter={handlePressEnter}
+                  sendLoading={sendLoading}
+                  stopOutputMessage={stopOutputMessage}
+                  onUpload={handleUploadFile}
+                  isUploading={loading || isWaiting}
+                ></NextMessageInput>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </EmbedContainer>
       {visible && (
-        <PdfDrawer
+        <PdfSheet
           visible={visible}
           hideModal={hideModal}
           documentId={documentId}
           chunk={selectedChunk}
-        ></PdfDrawer>
+        ></PdfSheet>
       )}
       {parameterDialogVisible && (
         <ParameterDialog
           // hideModal={hideParameterDialog}
           ok={handleInputsModalOk}
-          data={agentInfo.inputs}
+          data={inputsData.inputs}
         ></ParameterDialog>
       )}
     </>

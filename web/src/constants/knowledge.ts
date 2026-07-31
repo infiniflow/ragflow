@@ -8,12 +8,38 @@ export enum KnowledgeRouteKey {
 export const DatasetBaseKey = 'dataset';
 
 export enum RunningStatus {
+  UNSTART = 'UNSTART', // need to run
+  RUNNING = 'RUNNING', // need to cancel
+  CANCEL = 'CANCEL', // need to refresh
+  DONE = 'DONE', // need to refresh
+  FAIL = 'FAIL', // need to refresh
+  SCHEDULE = 'SCHEDULE',
+}
+
+export enum RunningStatusOld {
   UNSTART = '0', // need to run
   RUNNING = '1', // need to cancel
   CANCEL = '2', // need to refresh
   DONE = '3', // need to refresh
   FAIL = '4', // need to refresh
+  SCHEDULE = '5',
 }
+
+export const RunningStatusMap = {
+  [RunningStatus.UNSTART]: 'Pending',
+  [RunningStatus.RUNNING]: 'Running',
+  [RunningStatus.CANCEL]: 'Cancel',
+  [RunningStatus.DONE]: 'Success',
+  [RunningStatus.FAIL]: 'Failed',
+  [RunningStatus.SCHEDULE]: 'Schedule',
+
+  [RunningStatusOld.UNSTART]: 'Pending',
+  [RunningStatusOld.RUNNING]: 'Running',
+  [RunningStatusOld.CANCEL]: 'Cancel',
+  [RunningStatusOld.DONE]: 'Success',
+  [RunningStatusOld.FAIL]: 'Failed',
+  [RunningStatusOld.SCHEDULE]: 'Schedule',
+};
 
 export enum ModelVariableType {
   Improvise = 'Improvise',
@@ -52,11 +78,13 @@ export enum LlmModelType {
   Speech2text = 'speech2text',
   Rerank = 'rerank',
   TTS = 'tts',
+  Ocr = 'ocr',
 }
 
 export enum KnowledgeSearchParams {
   DocumentId = 'doc_id',
   KnowledgeId = 'id',
+  Type = 'type',
 }
 
 export enum DocumentType {
@@ -81,3 +109,73 @@ export enum DocumentParserType {
   Tag = 'tag',
   KnowledgeGraph = 'knowledge_graph',
 }
+
+export const TagRenameId = 'tagRename';
+
+export enum ParseType {
+  BuiltIn = 1,
+  Pipeline = 2,
+}
+
+export enum ProcessingType {
+  knowledgeGraph = 'Graph',
+  raptor = 'RAPTOR',
+  artifact = 'Artifact',
+  skill = 'Skill',
+  mindmap = 'Mindmap',
+  timeline = 'Timeline',
+  sessionEssence = 'Session_Essence',
+  sessionGraph = 'Session_Graph',
+}
+
+export const ProcessingTypeMap = {
+  [ProcessingType.knowledgeGraph]: 'Knowledge Graph',
+  [ProcessingType.raptor]: 'RAPTOR',
+  [ProcessingType.artifact]: 'Artifact',
+  [ProcessingType.skill]: 'Skill',
+  [ProcessingType.mindmap]: 'Mind Map',
+  [ProcessingType.timeline]: 'Timeline',
+  [ProcessingType.sessionEssence]: 'Session Essence',
+  [ProcessingType.sessionGraph]: 'Session Graph',
+  GraphRAG: 'Knowledge Graph',
+};
+
+export enum GenerateStatus {
+  Running = 'running',
+  Completed = 'completed',
+  Start = 'start',
+  Failed = 'failed',
+}
+
+export enum GenerateType {
+  KnowledgeGraph = 'KnowledgeGraph',
+  Raptor = 'Raptor',
+  Artifact = 'Artifact',
+  ToSkills = 'ToSkills',
+  MindMap = 'MindMap',
+  Timeline = 'Timeline',
+  SessionEssence = 'SessionEssence',
+  SessionGraph = 'SessionGraph',
+}
+
+export enum TraceType {
+  Graph = 'graph',
+  Raptor = 'raptor',
+  Artifact = 'wiki',
+  Skill = 'skill',
+  MindMap = 'mindmap',
+  Timeline = 'timeline',
+  SessionEssence = 'session_essence',
+  SessionGraph = 'session_graph',
+}
+
+export const GenerateTypeMap = {
+  [GenerateType.KnowledgeGraph]: ProcessingType.knowledgeGraph,
+  [GenerateType.Raptor]: ProcessingType.raptor,
+  [GenerateType.Artifact]: ProcessingType.artifact,
+  [GenerateType.ToSkills]: ProcessingType.skill,
+  [GenerateType.MindMap]: ProcessingType.mindmap,
+  [GenerateType.Timeline]: ProcessingType.timeline,
+  [GenerateType.SessionEssence]: ProcessingType.sessionEssence,
+  [GenerateType.SessionGraph]: ProcessingType.sessionGraph,
+};

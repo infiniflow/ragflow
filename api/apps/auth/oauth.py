@@ -14,8 +14,8 @@
 #  limitations under the License.
 #
 
-import requests
 import urllib.parse
+from common.http_client import async_request, sync_request
 
 
 class UserInfo:
@@ -24,7 +24,7 @@ class UserInfo:
         self.username = username
         self.nickname = nickname
         self.avatar_url = avatar_url
-    
+
     def to_dict(self):
         return {key: value for key, value in self.__dict__.items()}
 
@@ -44,7 +44,6 @@ class OAuthClient:
 
         self.http_request_timeout = 7
 
-
     def get_authorization_url(self, state=None):
         """
         Generate the authorization URL for user login.
@@ -61,30 +60,47 @@ class OAuthClient:
         authorization_url = f"{self.authorization_url}?{urllib.parse.urlencode(params)}"
         return authorization_url
 
-
     def exchange_code_for_token(self, code):
         """
         Exchange authorization code for access token.
         """
         try:
-            payload = {
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
-                "code": code,
-                "redirect_uri": self.redirect_uri,
-                "grant_type": "authorization_code"
-            }
-            response = requests.post(
+            payload = {"client_id": self.client_id, "client_secret": self.client_secret, "code": code, "redirect_uri": self.redirect_uri, "grant_type": "authorization_code"}
+            response = sync_request(
+                "POST",
                 self.token_url,
                 data=payload,
                 headers={"Accept": "application/json"},
-                timeout=self.http_request_timeout
+                timeout=self.http_request_timeout,
             )
             response.raise_for_status()
             return response.json()
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             raise ValueError(f"Failed to exchange authorization code for token: {e}")
 
+    async def async_exchange_code_for_token(self, code):
+        """
+        Async variant of exchange_code_for_token using httpx.
+        """
+        payload = {
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "code": code,
+            "redirect_uri": self.redirect_uri,
+            "grant_type": "authorization_code",
+        }
+        try:
+            response = await async_request(
+                "POST",
+                self.token_url,
+                data=payload,
+                headers={"Accept": "application/json"},
+                timeout=self.http_request_timeout,
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            raise ValueError(f"Failed to exchange authorization code for token: {e}")
 
     def fetch_user_info(self, access_token, **kwargs):
         """
@@ -92,13 +108,28 @@ class OAuthClient:
         """
         try:
             headers = {"Authorization": f"Bearer {access_token}"}
-            response = requests.get(self.userinfo_url, headers=headers, timeout=self.http_request_timeout)
+            response = sync_request("GET", self.userinfo_url, headers=headers, timeout=self.http_request_timeout)
             response.raise_for_status()
             user_info = response.json()
             return self.normalize_user_info(user_info)
-        except requests.exceptions.RequestException as e:
+        except Exception as e:
             raise ValueError(f"Failed to fetch user info: {e}")
 
+    async def async_fetch_user_info(self, access_token, **kwargs):
+        """Async variant of fetch_user_info using httpx."""
+        headers = {"Authorization": f"Bearer {access_token}"}
+        try:
+            response = await async_request(
+                "GET",
+                self.userinfo_url,
+                headers=headers,
+                timeout=self.http_request_timeout,
+            )
+            response.raise_for_status()
+            user_info = response.json()
+            return self.normalize_user_info(user_info)
+        except Exception as e:
+            raise ValueError(f"Failed to fetch user info: {e}")
 
     def normalize_user_info(self, user_info):
         email = user_info.get("email")

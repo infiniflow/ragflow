@@ -1,11 +1,16 @@
 // src/pages/next-searches/hooks.ts
 
+import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
+import { useSetModalState } from '@/hooks/common-hooks';
+import { useHandleSearchChange } from '@/hooks/logic-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import searchService from '@/services/search-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useDebounce } from 'ahooks';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams, useSearchParams } from 'umi';
+import { useParams, useSearchParams } from 'react-router';
 interface CreateSearchProps {
   name: string;
   description?: string;
@@ -82,21 +87,36 @@ interface SearchListResponse {
   message: string;
 }
 
-export const useFetchSearchList = (params?: SearchListParams) => {
-  const [searchParams, setSearchParams] = useState<SearchListParams>({
-    page: 1,
-    page_size: 10,
-    ...params,
-  });
-
+export const useFetchSearchList = () => {
+  const { handleInputChange, searchString, pagination, setPagination } =
+    useHandleSearchChange();
+  const debouncedSearchString = useDebounce(searchString, { wait: 500 });
+  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
   const { data, isLoading, isError, refetch } = useQuery<
     SearchListResponse,
     Error
   >({
-    queryKey: ['searchList', searchParams],
+    queryKey: [
+      'searchList',
+      {
+        debouncedSearchString,
+        filterValue,
+        ...pagination,
+      },
+    ],
     queryFn: async () => {
-      const { data: response } =
-        await searchService.getSearchList(searchParams);
+      const { data: response } = await searchService.getSearchList(
+        {
+          params: {
+            keywords: debouncedSearchString,
+            page_size: pagination.pageSize,
+            page: pagination.current,
+            owner_ids: filterValue.owner,
+          },
+          paramsSerializer: { indexes: null },
+        },
+        true,
+      );
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to fetch search list');
       }
@@ -104,20 +124,17 @@ export const useFetchSearchList = (params?: SearchListParams) => {
     },
   });
 
-  const setSearchListParams = (newParams: SearchListParams) => {
-    setSearchParams((prevParams) => ({
-      ...prevParams,
-      ...newParams,
-    }));
-  };
-
   return {
     data,
     isLoading,
     isError,
-    searchParams,
-    setSearchListParams,
+    pagination,
+    searchString,
+    handleInputChange,
+    setPagination,
     refetch,
+    filterValue,
+    handleFilterSubmit,
   };
 };
 
@@ -154,6 +171,7 @@ export interface ISearchAppDetailProps {
   search_config: {
     cross_languages: string[];
     doc_ids: string[];
+    chat_id: string;
     highlight: boolean;
     kb_ids: string[];
     keyword: boolean;
@@ -173,6 +191,10 @@ export interface ISearchAppDetailProps {
       method: string;
       manual: { key: string; op: string; value: string }[];
     };
+    reference_metadata?: {
+      include?: boolean;
+      fields?: string[];
+    };
   };
   tenant_id: string;
   update_time: number;
@@ -190,24 +212,21 @@ export const useFetchSearchDetail = (tenantId?: string) => {
   const [searchParams] = useSearchParams();
   const shared_id = searchParams.get('shared_id');
   const searchId = id || shared_id;
-  let param: { search_id: string | null; tenant_id?: string } = {
-    search_id: searchId,
-  };
-  if (shared_id) {
-    param = {
-      search_id: searchId,
-      tenant_id: tenantId,
-    };
-  }
-  const fetchSearchDetailFunc = shared_id
-    ? searchService.getSearchDetailShare
-    : searchService.getSearchDetail;
 
   const { data, isLoading, isError } = useQuery<SearchDetailResponse, Error>({
     queryKey: ['searchDetail', searchId],
     enabled: !shared_id || !!tenantId,
     queryFn: async () => {
-      const { data: response } = await fetchSearchDetailFunc(param);
+      let res;
+      if (shared_id) {
+        res = await searchService.getSearchDetailShare(
+          { params: { search_id: searchId, tenant_id: tenantId } },
+          true,
+        );
+      } else {
+        res = await searchService.getSearchDetail({ search_id: searchId });
+      }
+      const response = res.data;
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to fetch search detail');
       }
@@ -281,9 +300,6 @@ export const useUpdateSearch = () => {
         queryKey: ['searchDetail', variables.search_id],
       });
     },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
-    },
   });
 
   const updateSearch = useCallback(
@@ -294,4 +310,74 @@ export const useUpdateSearch = () => {
   );
 
   return { data, isError, updateSearch };
+};
+
+export const useRenameSearch = () => {
+  const [search, setSearch] = useState<ISearchAppProps>({} as ISearchAppProps);
+  const { navigateToSearch } = useNavigatePage();
+  const {
+    visible: openCreateModal,
+    hideModal: hideChatRenameModal,
+    showModal: showChatRenameModal,
+  } = useSetModalState();
+  const { updateSearch } = useUpdateSearch();
+  const { createSearch } = useCreateSearch();
+  const [loading, setLoading] = useState(false);
+
+  const handleShowChatRenameModal = useCallback(
+    (record?: ISearchAppProps) => {
+      if (record) {
+        setSearch(record);
+      }
+      showChatRenameModal();
+    },
+    [showChatRenameModal],
+  );
+
+  const handleHideModal = useCallback(() => {
+    hideChatRenameModal();
+    setSearch({} as ISearchAppProps);
+  }, [hideChatRenameModal]);
+
+  const onSearchRenameOk = useCallback(
+    async (name: string, callBack?: () => void) => {
+      let res;
+      setLoading(true);
+      if (search?.id) {
+        try {
+          const response = await searchService.getSearchDetail({
+            search_id: search?.id,
+          });
+          const detail = response.data?.data;
+
+          // oxlint-disable-next-line typescript/no-unused-vars
+          const { id, created_by, update_time, ...searchDataTemp } = detail;
+          res = await updateSearch({
+            ...searchDataTemp,
+            name: name,
+            search_id: search?.id,
+          } as unknown as IUpdateSearchProps);
+        } catch (e) {
+          console.error('error', e);
+        }
+      } else {
+        res = await createSearch({ name: name });
+      }
+      if (res && !search?.id) {
+        navigateToSearch(res?.search_id)();
+      }
+      callBack?.();
+      setLoading(false);
+      handleHideModal();
+    },
+    [search, createSearch, handleHideModal, navigateToSearch, updateSearch],
+  );
+  return {
+    searchRenameLoading: loading,
+    initialSearchName: search?.name,
+    onSearchRenameOk,
+    openCreateModal,
+    hideSearchRenameModal: handleHideModal,
+    showSearchRenameModal: handleShowChatRenameModal,
+  };
 };

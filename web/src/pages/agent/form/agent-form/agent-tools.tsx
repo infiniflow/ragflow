@@ -1,4 +1,4 @@
-import { BlockButton } from '@/components/ui/button';
+import { BlockButton, Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
@@ -6,6 +6,7 @@ import {
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { Position } from '@xyflow/react';
+import { t } from 'i18next';
 import { PencilLine, X } from 'lucide-react';
 import {
   MouseEventHandler,
@@ -14,36 +15,44 @@ import {
   useContext,
   useMemo,
 } from 'react';
+import { LabelCard } from '../../canvas/node/card';
 import { Operator } from '../../constant';
 import { AgentInstanceContext } from '../../context';
 import { useFindMcpById } from '../../hooks/use-find-mcp-by-id';
 import { INextOperatorForm } from '../../interface';
-import OperatorIcon from '../../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import useGraphStore from '../../store';
 import { filterDownstreamAgentNodeIds } from '../../utils/filter-downstream-nodes';
 import { ToolPopover } from './tool-popover';
 import { useDeleteAgentNodeMCP } from './tool-popover/use-update-mcp';
 import { useDeleteAgentNodeTools } from './tool-popover/use-update-tools';
-import { useGetAgentMCPIds, useGetAgentToolNames } from './use-get-tools';
+import { useGetAgentMCPIds, useGetNodeTools } from './use-get-tools';
+
+type ToolCardProps = React.HTMLAttributes<HTMLLIElement> &
+  PropsWithChildren & {
+    isNodeTool?: boolean;
+  };
 
 export function ToolCard({
   children,
   className,
+  isNodeTool = true,
   ...props
-}: PropsWithChildren & React.HTMLAttributes<HTMLLIElement>) {
+}: ToolCardProps) {
   const element = useMemo(() => {
     return (
-      <li
+      <LabelCard
         {...props}
         className={cn(
-          'flex bg-bg-card p-1 rounded-sm justify-between',
+          'flex justify-between ',
+          { 'p-2.5 text-text-primary text-sm': !isNodeTool },
           className,
         )}
       >
         {children}
-      </li>
+      </LabelCard>
     );
-  }, [children, className, props]);
+  }, [children, className, isNodeTool, props]);
 
   if (children === Operator.Code) {
     return (
@@ -70,20 +79,33 @@ function ActionButton<T>({ deleteRecord, record, edit }: ActionButtonProps<T>) {
     deleteRecord(record);
   }, [deleteRecord, record]);
 
+  // Wrapping into buttons to solve the issue that clicking icon occasionally not jumping to corresponding form
   return (
-    <div className="flex items-center gap-2 text-text-secondary">
-      <PencilLine
-        className="size-4 cursor-pointer"
+    <div className="flex items-center gap-4 text-text-secondary">
+      <Button
+        variant="transparent"
+        size="icon"
+        className="size-3.5 !bg-transparent !border-none"
         data-tool={record}
         onClick={edit}
-      />
-      <X className="size-4 cursor-pointer" onClick={handleDelete} />
+      >
+        <PencilLine className="size-full" />
+      </Button>
+
+      <Button
+        variant="transparent"
+        size="icon"
+        className="size-3.5 !bg-transparent !border-none"
+        onClick={handleDelete}
+      >
+        <X className="size-full" />
+      </Button>
     </div>
   );
 }
 
 export function AgentTools() {
-  const { toolNames } = useGetAgentToolNames();
+  const tools = useGetNodeTools();
   const { deleteNodeTool } = useDeleteAgentNodeTools();
   const { mcpIds } = useGetAgentMCPIds();
   const { findMcpById } = useFindMcpById();
@@ -96,6 +118,7 @@ export function AgentTools() {
   const handleEdit: MouseEventHandler<SVGSVGElement> = useCallback(
     (e) => {
       const toolNodeId = findAgentToolNodeById(clickedNodeId);
+
       if (toolNodeId) {
         selectNodeIds([toolNodeId]);
         showFormDrawer(e, toolNodeId);
@@ -106,23 +129,24 @@ export function AgentTools() {
 
   return (
     <section className="space-y-2.5">
-      <span className="text-text-secondary">Tools</span>
-      <ul className="space-y-2">
-        {toolNames.map((x) => (
-          <ToolCard key={x}>
+      <span className="text-text-secondary text-sm">{t('flow.tools')}</span>
+      <ul className="space-y-2.5">
+        {tools.map(({ id, component_name, name }) => (
+          <ToolCard key={id} isNodeTool={false}>
             <div className="flex gap-2 items-center">
-              <OperatorIcon name={x as Operator}></OperatorIcon>
-              {x}
+              <OperatorIcon name={component_name as Operator}></OperatorIcon>
+              {component_name === Operator.Retrieval ? name : component_name}
             </div>
             <ActionButton
-              record={x}
-              deleteRecord={deleteNodeTool(x)}
+              record={id}
+              deleteRecord={deleteNodeTool(id)}
               edit={handleEdit}
-            ></ActionButton>
+            />
           </ToolCard>
         ))}
+
         {mcpIds.map((id) => (
-          <ToolCard key={id}>
+          <ToolCard key={id} isNodeTool={false}>
             {findMcpById(id)?.name}
             <ActionButton
               record={id}
@@ -133,7 +157,7 @@ export function AgentTools() {
         ))}
       </ul>
       <ToolPopover>
-        <BlockButton>Add Tool</BlockButton>
+        <BlockButton>{t('flow.addTools')}</BlockButton>
       </ToolPopover>
     </section>
   );
@@ -160,13 +184,13 @@ export function Agents({ node }: INextOperatorForm) {
 
   return (
     <section className="space-y-2.5">
-      <span className="text-text-secondary">Agents</span>
-      <ul className="space-y-2">
+      <span className="text-text-secondary text-sm">{t('flow.agent')}</span>
+      <ul className="space-y-2.5">
         {subBottomAgentNodeIds.map((id) => {
           const currentNode = getNode(id);
 
           return (
-            <ToolCard key={id}>
+            <ToolCard key={id} isNodeTool={false}>
               {currentNode?.data.name}
               <ActionButton
                 record={id}
@@ -183,7 +207,7 @@ export function Agents({ node }: INextOperatorForm) {
           position: Position.Bottom,
         })}
       >
-        Add Agent
+        {t('flow.addAgent')}
       </BlockButton>
     </section>
   );

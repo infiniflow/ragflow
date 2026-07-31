@@ -1,0 +1,477 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package models
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"net/http"
+	"ragflow/internal/common"
+	"strings"
+
+	"github.com/goccy/go-json"
+)
+
+type QiniuModel struct {
+	baseModel BaseModel
+}
+
+func NewQiniuModel(baseURL map[string]string, urlSuffix URLSuffix) *QiniuModel {
+	return &QiniuModel{
+		baseModel: BaseModel{
+			BaseURL:    baseURL,
+			URLSuffix:  urlSuffix,
+			httpClient: NewDriverHTTPClient(false),
+		},
+	}
+}
+
+func (q *QiniuModel) NewInstance(baseURL map[string]string) ModelDriver {
+	return NewQiniuModel(baseURL, q.baseModel.URLSuffix)
+}
+
+func (q *QiniuModel) Name() string {
+	return "qiniu"
+}
+
+// QiniuChatResponse captures the OpenAI-compatible fields consumed by RAGFlow.
+type QiniuChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Logprobs     any    `json:"logprobs"`
+		Message      struct {
+			Content          string           `json:"content"`
+			ReasoningContent string           `json:"reasoning_content"`
+			Role             string           `json:"role"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+	SystemFingerprint string `json:"system_fingerprint"`
+	Usage             struct {
+		CompletionTokens        int `json:"completion_tokens"`
+		PromptTokens            int `json:"prompt_tokens"`
+		TotalTokens             int `json:"total_tokens"`
+		CompletionTokensDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+		PromptTokensDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	} `json:"usage"`
+}
+
+var qiniuQwenThinkingModels = map[string]struct{}{
+	"qwen3-next-80b-a3b-thinking":   {},
+	"qwen3-235b-a22b-thinking-2507": {},
+	"qwen3-max-2026-01-23":          {},
+	"qwen-turbo":                    {},
+	"qwen3-32b":                     {},
+	"qwen3-30b-a3b":                 {},
+	"qwen3-30b-a3b-thinking-2507":   {},
+	"qwen3.5-397b-a17b":             {},
+	"qwen/qwen3.6-plus":             {},
+	"qwen/qwen3.7-max":              {},
+	"qwen/qwen3.6-27b":              {},
+	"qwen3.5-35b-a3b":               {},
+	"qwen3-vl-30b-a3b-thinking":     {},
+}
+
+var qiniuThinkingModels = map[string]struct{}{
+	"deepseek/deepseek-v4-flash":               {},
+	"deepseek/deepseek-v4-pro":                 {},
+	"moonshotai/kimi-k2.6":                     {},
+	"z-ai/glm-5.1":                             {},
+	"z-ai/glm-5":                               {},
+	"minimax/minimax-m2.7":                     {},
+	"minimax/minimax-m2.5":                     {},
+	"minimax/minimax-m2.5-highspeed":           {},
+	"kimi-k2-thinking":                         {},
+	"z-ai/glm-4.6":                             {},
+	"deepseek/deepseek-v3.2-251201":            {},
+	"deepseek/deepseek-v3.2-exp-thinking":      {},
+	"deepseek/deepseek-v3.1-terminus-thinking": {},
+	"deepseek-r1-0528":                         {},
+	"deepseek-r1":                              {},
+	"doubao-seed-1.6-flash":                    {},
+	"doubao-seed-1.6":                          {},
+	"doubao-seed-2.0-pro":                      {},
+	"doubao-seed-2.0-lite":                     {},
+	"doubao-seed-2.0-mini":                     {},
+	"doubao-seed-2.0-code":                     {},
+	"minimax-m1":                               {},
+	"glm-4.5":                                  {},
+	"glm-4.5-air":                              {},
+	"tencent/hy3-preview":                      {},
+}
+
+func applyQiniuThinkingConfig(reqBody map[string]interface{}, modelName string, chatModelConfig *ChatConfig) {
+	if chatModelConfig == nil || chatModelConfig.Thinking == nil {
+		return
+	}
+
+	lowerModelName := strings.ToLower(modelName)
+	if _, ok := qiniuQwenThinkingModels[lowerModelName]; ok {
+		enableThinking := *chatModelConfig.Thinking
+		if chatModelConfig.Effort != nil && strings.ToLower(*chatModelConfig.Effort) == "none" {
+			enableThinking = false
+		}
+		reqBody["enable_thinking"] = enableThinking
+		return
+	}
+
+	if _, ok := qiniuThinkingModels[lowerModelName]; !ok {
+		return
+	}
+
+	thinkingType := "disabled"
+	if *chatModelConfig.Thinking {
+		thinkingType = "enabled"
+		effort := "high"
+		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
+			effort = strings.ToLower(*chatModelConfig.Effort)
+		}
+
+		switch effort {
+		case "none":
+			thinkingType = "disabled"
+		case "default":
+			reqBody["reasoning_effort"] = "high"
+		case "low", "medium", "high":
+			reqBody["reasoning_effort"] = effort
+		case "max":
+			reqBody["reasoning_effort"] = "high"
+		default:
+			reqBody["reasoning_effort"] = effort
+		}
+	}
+
+	reqBody["thinking"] = map[string]interface{}{
+		"type": thinkingType,
+	}
+}
+
+func (q *QiniuModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+	if err := q.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("no messages")
+	}
+
+	resolvedBaseURL, err := q.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, q.baseModel.URLSuffix.Chat)
+
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+
+	if chatModelConfig != nil {
+		applyQiniuThinkingConfig(reqBody, modelName, chatModelConfig)
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := q.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result QiniuChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
+
+		choice := &result.Choices[0]
+		content := choice.Message.Content
+		if content == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("invalid content format")
+		}
+		reasonContent := ""
+		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
+			reasonContent = choice.Message.ReasoningContent
+			if reasonContent == "" {
+				reasoning, answer := GetThinkingAndAnswer(chatConfig.ModelClass, &content)
+				if reasoning != nil {
+					reasonContent = *reasoning
+					content = *answer
+				}
+			}
+			if reasonContent != "" && reasonContent[0] == '\n' {
+				reasonContent = reasonContent[1:]
+			}
+		}
+
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &content,
+			ReasonContent: &reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
+}
+
+func (q *QiniuModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if err := q.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+	if len(messages) == 0 {
+		return fmt.Errorf("messages is empty")
+	}
+
+	resolvedBaseURL, err := q.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, q.baseModel.URLSuffix.Chat)
+
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
+
+	if chatModelConfig != nil {
+		applyQiniuThinkingConfig(reqBody, modelName, chatModelConfig)
+		chatModelConfig.ToolCallsResult = nil
+	}
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := q.baseModel.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]interface{})
+	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+		common.Info(fmt.Sprintf("%v", event))
+
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
+		}
+
+		choices, ok := event["choices"].([]interface{})
+		if !ok || len(choices) == 0 {
+			return nil
+		}
+		firstChoice, ok := choices[0].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
+		delta, ok := firstChoice["delta"].(map[string]interface{})
+		if !ok {
+			return nil
+		}
+		if accumulateToolCallDeltas(delta, accumulatedToolCalls) {
+			return nil
+		}
+
+		reasoningContent, ok := delta["reasoning_content"].(string)
+		if ok && reasoningContent != "" {
+			if err = sender(nil, &reasoningContent); err != nil {
+				return err
+			}
+		}
+		content, ok := delta["content"].(string)
+		if ok && content != "" {
+			if err = sender(&content, nil); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+	if !done && !sawTerminal {
+		return fmt.Errorf("qiniu: stream ended before [DONE] or finish_reason")
+	}
+	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
+	// Send [DONE] marker for OpenAI compatibility
+	endOfStream := "[DONE]"
+	if err = sender(&endOfStream, nil); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (q *QiniuModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	return nil, fmt.Errorf("%s, no such method", q.Name())
+}
+
+func (q *QiniuModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", q.Name())
+}
+
+func (q *QiniuModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", q.Name())
+}
+
+func (q *QiniuModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", q.Name())
+}
+
+func (q *QiniuModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", q.Name())
+}
+
+func (q *QiniuModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	return fmt.Errorf("%s, no such method", q.Name())
+}
+
+func (q *QiniuModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", q.Name())
+}
+
+func (q *QiniuModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", q.Name())
+}
+
+func (q *QiniuModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := q.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+
+	resolvedBaseURL, err := q.baseModel.GetBaseURL(apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
+	url := fmt.Sprintf("%s/%s", baseURL, q.baseModel.URLSuffix.Models)
+
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := q.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Parse response
+	var modelList ModelList
+	if err = json.Unmarshal(body, &modelList); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if modelList.Models == nil {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+
+	return ParseListModel(modelList), nil
+}
+
+func (q *QiniuModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
+	return nil, fmt.Errorf("%s, no such method", q.Name())
+}
+
+func (q *QiniuModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := q.ListModels(ctx, apiConfig)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (q *QiniuModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
+	return nil, fmt.Errorf("%s, no such method", q.Name())
+}
+
+func (q *QiniuModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", q.Name())
+}

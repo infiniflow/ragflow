@@ -13,7 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from api.versions import get_ragflow_version
+from common.versions import get_ragflow_version
 from .reload_config_base import ReloadConfigBase
 
 

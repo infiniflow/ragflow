@@ -1,39 +1,47 @@
 import { Operator } from '../constant';
 import AgentForm from '../form/agent-form';
-import AkShareForm from '../form/akshare-form';
 import ArXivForm from '../form/arxiv-form';
-import BaiduFanyiForm from '../form/baidu-fanyi-form';
-import BaiduForm from '../form/baidu-form';
 import BeginForm from '../form/begin-form';
 import BingForm from '../form/bing-form';
+import BrowserForm from '../form/browser-use-form';
+import CompilationForm from '../form/compilation-form';
 import CategorizeForm from '../form/categorize-form';
 import CodeForm from '../form/code-form';
 import CrawlerForm from '../form/crawler-form';
-import DeepLForm from '../form/deepl-form';
+import DataOperationsForm from '../form/data-operations-form';
+import DocGeneratorForm from '../form/doc-generator-form';
 import DuckDuckGoForm from '../form/duckduckgo-form';
 import EmailForm from '../form/email-form';
 import ExeSQLForm from '../form/exesql-form';
+import ExtractorForm from '../form/extractor-form';
 import GithubForm from '../form/github-form';
 import GoogleForm from '../form/google-form';
 import GoogleScholarForm from '../form/google-scholar-form';
 import InvokeForm from '../form/invoke-form';
 import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
-import Jin10Form from '../form/jin10-form';
-import KeywordExtractForm from '../form/keyword-extract-form';
+import KeenableForm from '../form/keenable-form';
+import ListOperationsForm from '../form/list-operations-form';
+import LoopForm from '../form/loop-form';
 import MessageForm from '../form/message-form';
+import ParserForm from '../form/parser-form';
 import PubMedForm from '../form/pubmed-form';
-import QWeatherForm from '../form/qweather-form';
-import RelevantForm from '../form/relevant-form';
+import QueritForm from '../form/querit-form';
+import BGPTForm from '../form/bgpt-form';
 import RetrievalForm from '../form/retrieval-form/next';
 import RewriteQuestionForm from '../form/rewrite-question-form';
+import SearXNGForm from '../form/searxng-form';
 import StringTransformForm from '../form/string-transform-form';
 import SwitchForm from '../form/switch-form';
 import TavilyExtractForm from '../form/tavily-extract-form';
 import TavilyForm from '../form/tavily-form';
+import TitleChunkerForm from '../form/title-chunker-form';
+import TokenChunkerForm from '../form/token-chunker-form';
+import TokenizerForm from '../form/tokenizer-form';
 import ToolForm from '../form/tool-form';
-import TuShareForm from '../form/tushare-form';
 import UserFillUpForm from '../form/user-fill-up-form';
+import VariableAggregatorForm from '../form/variable-aggregator-form';
+import VariableAssignerForm from '../form/variable-assigner-form';
 import WenCaiForm from '../form/wencai-form';
 import WikipediaForm from '../form/wikipedia-form';
 import YahooFinanceForm from '../form/yahoo-finance-form';
@@ -51,9 +59,6 @@ export const FormConfigMap = {
   [Operator.Message]: {
     component: MessageForm,
   },
-  [Operator.Relevant]: {
-    component: RelevantForm,
-  },
   [Operator.RewriteQuestion]: {
     component: RewriteQuestionForm,
   },
@@ -66,20 +71,20 @@ export const FormConfigMap = {
   [Operator.Agent]: {
     component: AgentForm,
   },
-  [Operator.Baidu]: {
-    component: BaiduForm,
-  },
   [Operator.DuckDuckGo]: {
     component: DuckDuckGoForm,
   },
-  [Operator.KeywordExtract]: {
-    component: KeywordExtractForm,
+  [Operator.KeenableSearch]: {
+    component: KeenableForm,
   },
   [Operator.Wikipedia]: {
     component: WikipediaForm,
   },
   [Operator.PubMed]: {
     component: PubMedForm,
+  },
+  [Operator.BGPT]: {
+    component: BGPTForm,
   },
   [Operator.ArXiv]: {
     component: ArXivForm,
@@ -93,17 +98,8 @@ export const FormConfigMap = {
   [Operator.GoogleScholar]: {
     component: GoogleScholarForm,
   },
-  [Operator.DeepL]: {
-    component: DeepLForm,
-  },
   [Operator.GitHub]: {
     component: GithubForm,
-  },
-  [Operator.BaiduFanyi]: {
-    component: BaiduFanyiForm,
-  },
-  [Operator.QWeather]: {
-    component: QWeatherForm,
   },
   [Operator.ExeSQL]: {
     component: ExeSQLForm,
@@ -114,17 +110,8 @@ export const FormConfigMap = {
   [Operator.WenCai]: {
     component: WenCaiForm,
   },
-  [Operator.AkShare]: {
-    component: AkShareForm,
-  },
   [Operator.YahooFinance]: {
     component: YahooFinanceForm,
-  },
-  [Operator.Jin10]: {
-    component: Jin10Form,
-  },
-  [Operator.TuShare]: {
-    component: TuShareForm,
   },
   [Operator.Crawler]: {
     component: CrawlerForm,
@@ -132,8 +119,14 @@ export const FormConfigMap = {
   [Operator.Invoke]: {
     component: InvokeForm,
   },
-  [Operator.Concentrator]: {
-    component: () => <></>,
+  [Operator.SearXNG]: {
+    component: SearXNGForm,
+  },
+  [Operator.DocGenerator]: {
+    component: DocGeneratorForm,
+  },
+  [Operator.Browser]: {
+    component: BrowserForm,
   },
   [Operator.Note]: {
     component: () => <></>,
@@ -153,6 +146,9 @@ export const FormConfigMap = {
   [Operator.TavilySearch]: {
     component: TavilyForm,
   },
+  [Operator.QueritSearch]: {
+    component: QueritForm,
+  },
   [Operator.UserFillUp]: {
     component: UserFillUpForm,
   },
@@ -161,5 +157,54 @@ export const FormConfigMap = {
   },
   [Operator.TavilyExtract]: {
     component: TavilyExtractForm,
+  },
+  [Operator.Placeholder]: {
+    component: () => <></>,
+  },
+  // pipeline
+  [Operator.File]: {
+    component: () => <></>,
+  },
+  [Operator.Parser]: {
+    component: ParserForm,
+  },
+  [Operator.Tokenizer]: {
+    component: TokenizerForm,
+  },
+  [Operator.TokenChunker]: {
+    component: TokenChunkerForm,
+  },
+  [Operator.TitleChunker]: {
+    component: TitleChunkerForm,
+  },
+  [Operator.Extractor]: {
+    component: ExtractorForm,
+  },
+  [Operator.Compiler]: {
+    component: CompilationForm,
+  },
+  [Operator.DataOperations]: {
+    component: DataOperationsForm,
+  },
+  [Operator.ListOperations]: {
+    component: ListOperationsForm,
+  },
+  [Operator.VariableAssigner]: {
+    component: VariableAssignerForm,
+  },
+  [Operator.VariableAggregator]: {
+    component: VariableAggregatorForm,
+  },
+  [Operator.Loop]: {
+    component: LoopForm,
+  },
+  [Operator.ExitLoop]: {
+    component: () => <></>,
+  },
+  [Operator.LoopStart]: {
+    component: () => <></>,
+  },
+  [Operator.ExcelProcessor]: {
+    component: () => <></>,
   },
 };

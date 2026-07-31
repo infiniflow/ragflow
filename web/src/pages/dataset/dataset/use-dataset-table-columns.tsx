@@ -15,27 +15,33 @@ import { formatDate } from '@/utils/date';
 import { ColumnDef } from '@tanstack/table-core';
 import { ArrowUpDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
+import { MetadataType } from '../components/metedata/constant';
+import { ShowManageMetadataModalProps } from '../components/metedata/interface';
 import { DatasetActionCell } from './dataset-action-cell';
-import { ParsingStatusCell } from './parsing-status-cell';
+import { ParseDropdownButton, ParsingStatusCell } from './parsing-status-cell';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { UseRenameDocumentShowType } from './use-rename-document';
-import { UseSaveMetaShowType } from './use-save-meta';
 
 type UseDatasetTableColumnsType = UseChangeDocumentParserShowType &
-  UseRenameDocumentShowType &
-  UseSaveMetaShowType;
+  UseRenameDocumentShowType & {
+    showLog: (record: IDocumentInfo) => void;
+    showManageMetadataModal: (config: ShowManageMetadataModalProps) => void;
+  };
 
 export function useDatasetTableColumns({
   showChangeParserModal,
   showRenameModal,
-  showSetMetaModal,
+  showManageMetadataModal,
+  showLog,
 }: UseDatasetTableColumnsType) {
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
   });
-
+  // const { dataSourceInfo } = useDataSourceInfo();
   const { navigateToChunkParsedResult } = useNavigatePage();
   const { setDocumentStatus } = useSetDocumentStatus();
+  const { id: datasetId } = useParams();
 
   const columns: ColumnDef<IDocumentInfo>[] = [
     {
@@ -64,13 +70,19 @@ export function useDatasetTableColumns({
       accessorKey: 'name',
       header: ({ column }) => {
         return (
-          <Button
-            variant="ghost"
-            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          >
+          <div className="flex items-center gap-1">
             {t('name')}
-            <ArrowUpDown />
-          </Button>
+
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === 'asc')
+              }
+            >
+              <ArrowUpDown />
+            </Button>
+          </div>
         );
       },
       meta: { cellClassName: 'max-w-[20vw]' },
@@ -81,10 +93,10 @@ export function useDatasetTableColumns({
           <Tooltip>
             <TooltipTrigger asChild>
               <div
-                className="flex gap-2 cursor-pointer"
+                className="flex items-center gap-2 cursor-pointer"
                 onClick={navigateToChunkParsedResult(
                   row.original.id,
-                  row.original.kb_id,
+                  row.original.dataset_id,
                 )}
               >
                 <FileIcon name={name}></FileIcon>
@@ -102,21 +114,54 @@ export function useDatasetTableColumns({
       accessorKey: 'create_time',
       header: ({ column }) => {
         return (
-          <Button
-            variant="ghost"
-            onClick={() => column.toggleSorting(column.getIsSorted() === 'asc')}
-          >
+          <div className="flex items-center gap-1">
             {t('uploadDate')}
-            <ArrowUpDown />
-          </Button>
+
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              onClick={() =>
+                column.toggleSorting(column.getIsSorted() === 'asc')
+              }
+            >
+              <ArrowUpDown />
+            </Button>
+          </div>
         );
       },
       cell: ({ row }) => (
-        <div className="lowercase">
+        <time
+          className="lowercase"
+          dateTime={new Date(row.getValue('create_time')).toISOString()}
+        >
           {formatDate(row.getValue('create_time'))}
+        </time>
+      ),
+    },
+    /*
+    {
+      accessorKey: 'source_from',
+      header: t('source'),
+      cell: ({ row }) => (
+        <div className="text-text-primary">
+          {row.original.source_type === 'local' ||
+          row.original.source_type === '' ? (
+            <div className="bg-accent-primary-5 w-6 h-6 rounded-full flex items-center justify-center">
+              <MonitorUp className="text-accent-primary" size={16} />
+            </div>
+          ) : (
+            <div className="w-6 h-6 flex items-center justify-center">
+              {
+                dataSourceInfo[
+                  row.original.source_type as keyof typeof dataSourceInfo
+                ]?.icon
+              }
+            </div>
+          )}
         </div>
       ),
     },
+    */
     {
       accessorKey: 'status',
       header: t('enabled'),
@@ -126,18 +171,68 @@ export function useDatasetTableColumns({
           <Switch
             checked={row.getValue('status') === '1'}
             onCheckedChange={(e) => {
-              setDocumentStatus({ status: e, documentId: id });
+              setDocumentStatus({
+                status: e,
+                documentId: id,
+                datasetId: datasetId!,
+              });
             }}
           />
         );
       },
     },
     {
-      accessorKey: 'chunk_num',
+      accessorKey: 'chunk_count',
       header: t('chunkNumber'),
       cell: ({ row }) => (
-        <div className="capitalize">{row.getValue('chunk_num')}</div>
+        <div className="capitalize">{row.getValue('chunk_count')}</div>
       ),
+    },
+    {
+      accessorKey: 'meta_fields',
+      header: t('metadata.metadata'),
+      cell: ({ row }) => {
+        const length = Object.keys(row.getValue('meta_fields') || {}).length;
+        return (
+          <Button
+            variant="static"
+            size="auto"
+            onClick={() => {
+              showManageMetadataModal({
+                // metadata: util.JSONToMetaDataTableData(
+                //   row.original.meta_fields || {},
+                // ),
+                isEditField: false,
+                isCanAdd: true,
+                isAddValue: true,
+                type: MetadataType.UpdateSingle,
+                record: row.original,
+                title: (
+                  <div className="flex flex-col gap-2 w-full">
+                    <div className="text-base font-normal">
+                      {t('metadata.editMetadata')}
+                    </div>
+                    {/* <div className="text-sm text-text-secondary w-full truncate">
+                      {t('metadata.editMetadataForDataset')}
+                      {row.original.name}
+                    </div> */}
+                  </div>
+                ),
+                secondTitle: (
+                  <div className="w-full flex gap-1 text-sm text-text-secondary">
+                    <FileIcon name={row.original.name}></FileIcon>
+                    <div className="truncate">{row.original.name}</div>
+                  </div>
+                ),
+                isDeleteSingleValue: true,
+                documentIds: [row.original.id],
+              });
+            }}
+          >
+            {length + ' fields'}
+          </Button>
+        );
+      },
     },
     {
       accessorKey: 'run',
@@ -145,11 +240,23 @@ export function useDatasetTableColumns({
       // meta: { cellClassName: 'min-w-[20vw]' },
       cell: ({ row }) => {
         return (
+          <ParseDropdownButton
+            record={row.original}
+            showChangeParserModal={showChangeParserModal}
+          />
+        );
+      },
+    },
+    {
+      id: 'run-status',
+      header: '',
+      cell: ({ row }) => {
+        return (
           <ParsingStatusCell
             record={row.original}
             showChangeParserModal={showChangeParserModal}
-            showSetMetaModal={showSetMetaModal}
-          ></ParsingStatusCell>
+            showLog={showLog}
+          />
         );
       },
     },
@@ -164,7 +271,7 @@ export function useDatasetTableColumns({
           <DatasetActionCell
             record={record}
             showRenameModal={showRenameModal}
-          ></DatasetActionCell>
+          />
         );
       },
     },

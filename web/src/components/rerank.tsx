@@ -1,11 +1,8 @@
-import { LlmModelType } from '@/constants/knowledge';
+import { ModelTreeSelect } from '@/components/model-tree-select';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useSelectLlmOptionsByModelType } from '@/hooks/llm-hooks';
-import { Select as AntSelect, Form, message, Slider } from 'antd';
-import { useCallback } from 'react';
+import { prefixName } from '@/utils/form';
 import { useFormContext } from 'react-hook-form';
 import { z } from 'zod';
-import { SelectWithSearch } from './originui/select-with-search';
 import { SliderInputFormField } from './slider-input-form-field';
 import {
   FormControl,
@@ -15,47 +12,6 @@ import {
   FormMessage,
 } from './ui/form';
 
-type FieldType = {
-  rerank_id?: string;
-  top_k?: number;
-};
-
-export const RerankItem = () => {
-  const { t } = useTranslate('knowledgeDetails');
-  const allOptions = useSelectLlmOptionsByModelType();
-  const [messageApi, contextHolder] = message.useMessage();
-
-  const handleChange = useCallback(
-    (val: string) => {
-      if (val) {
-        messageApi.open({
-          type: 'warning',
-          content: t('reRankModelWaring'),
-        });
-      }
-    },
-    [messageApi, t],
-  );
-
-  return (
-    <>
-      {contextHolder}
-      <Form.Item
-        label={t('rerankModel')}
-        name={'rerank_id'}
-        tooltip={t('rerankTip')}
-      >
-        <AntSelect
-          options={allOptions[LlmModelType.Rerank]}
-          allowClear
-          placeholder={t('rerankPlaceholder')}
-          onChange={handleChange}
-        />
-      </Form.Item>
-    </>
-  );
-};
-
 export const topKSchema = {
   top_k: z.number().optional(),
 };
@@ -64,56 +20,36 @@ export const initialTopKValue = {
   top_k: 1024,
 };
 
-const Rerank = () => {
-  const { t } = useTranslate('knowledgeDetails');
+const DefaultRerankId = 'rerank_id';
+const DefaultTopK = 'top_k';
 
-  return (
-    <>
-      <RerankItem></RerankItem>
-      <Form.Item noStyle dependencies={['rerank_id']}>
-        {({ getFieldValue }) => {
-          const rerankId = getFieldValue('rerank_id');
-          return (
-            rerankId && (
-              <Form.Item<FieldType>
-                label={t('topK')}
-                name={'top_k'}
-                initialValue={1024}
-                tooltip={t('topKTip')}
-              >
-                <Slider max={2048} min={1} />
-              </Form.Item>
-            )
-          );
-        }}
-      </Form.Item>
-    </>
-  );
-};
+interface RerankFormFieldProps {
+  name?: string;
+  ownerTenantId?: string;
+}
 
-export default Rerank;
-
-const RerankId = 'rerank_id';
-
-function RerankFormField() {
+function RerankFormField({
+  name = DefaultRerankId,
+  ownerTenantId,
+}: RerankFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslate('knowledgeDetails');
-  const allOptions = useSelectLlmOptionsByModelType();
-  const options = allOptions[LlmModelType.Rerank];
 
   return (
     <FormField
       control={form.control}
-      name={RerankId}
+      name={name}
       render={({ field }) => (
         <FormItem>
           <FormLabel tooltip={t('rerankTip')}>{t('rerankModel')}</FormLabel>
           <FormControl>
-            <SelectWithSearch
+            <ModelTreeSelect
+              modelTypes={['rerank']}
               allowClear
+              placeholder={t('rerankPlaceholder')}
+              ownerTenantId={ownerTenantId}
               {...field}
-              options={options}
-            ></SelectWithSearch>
+            />
           </FormControl>
           <FormMessage />
         </FormItem>
@@ -123,21 +59,35 @@ function RerankFormField() {
 }
 
 export const rerankFormSchema = {
-  [RerankId]: z.string().optional(),
+  [DefaultRerankId]: z.string().optional(),
   top_k: z.coerce.number().optional(),
 };
 
-export function RerankFormFields() {
+interface RerankFormFieldsProps {
+  prefix?: string;
+  ownerTenantId?: string;
+}
+
+export function RerankFormFields({
+  prefix = '',
+  ownerTenantId,
+}: RerankFormFieldsProps) {
   const { watch } = useFormContext();
   const { t } = useTranslate('knowledgeDetails');
-  const rerankId = watch(RerankId);
+  const rerankIdName = prefixName(prefix, DefaultRerankId);
+  const topKName = prefixName(prefix, DefaultTopK);
+
+  const rerankId = watch(rerankIdName);
 
   return (
     <>
-      <RerankFormField></RerankFormField>
+      <RerankFormField
+        name={rerankIdName}
+        ownerTenantId={ownerTenantId}
+      ></RerankFormField>
       {rerankId && (
         <SliderInputFormField
-          name={'top_k'}
+          name={topKName}
           label={t('topK')}
           max={2048}
           min={1}

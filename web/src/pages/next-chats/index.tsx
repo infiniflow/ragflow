@@ -1,19 +1,37 @@
+import { CardContainer } from '@/components/card-container';
+import { EmptyCardType } from '@/components/empty/constant';
+import { EmptyAppCard } from '@/components/empty/empty';
 import ListFilterBar from '@/components/list-filter-bar';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
-import { useFetchDialogList } from '@/hooks/use-chat-request';
+import { Spin } from '@/components/ui/spin';
+import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
+import { useFetchChatList } from '@/hooks/use-chat-request';
+import { buildOwnersFilter } from '@/utils/list-filter-util';
 import { pick } from 'lodash';
 import { Plus } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router';
 import { ChatCard } from './chat-card';
+import { useCreateChatDialog } from './hooks/use-create-chat';
 import { useRenameChat } from './hooks/use-rename-chat';
 
 export default function ChatList() {
-  const { data, setPagination, pagination, handleInputChange, searchString } =
-    useFetchDialogList();
+  const {
+    data,
+    setPagination,
+    pagination,
+    handleInputChange,
+    searchString,
+    filterValue,
+    handleFilterSubmit,
+    loading,
+  } = useFetchChatList();
   const { t } = useTranslation();
+  const { t: tc } = useTranslation('common');
+  const owners = [buildOwnersFilter(data?.chats ?? [], undefined, tc('owner'))];
   const {
     initialChatName,
     chatRenameVisible,
@@ -22,6 +40,13 @@ export default function ChatList() {
     onChatRenameOk,
     chatRenameLoading,
   } = useRenameChat();
+  const {
+    createChatVisible,
+    showCreateChatModal,
+    hideCreateChatModal,
+    onCreateChatOk,
+    createChatLoading,
+  } = useCreateChatDialog();
 
   const handlePageChange = useCallback(
     (page: number, pageSize?: number) => {
@@ -29,54 +54,138 @@ export default function ChatList() {
     },
     [setPagination],
   );
+  useGoToPreviousPageOnEmpty(data?.chats?.length, loading);
 
   const handleShowCreateModal = useCallback(() => {
-    showChatRenameModal();
-  }, [showChatRenameModal]);
+    showCreateChatModal();
+  }, [showCreateChatModal]);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isCreate = searchParams.get('isCreate') === 'true';
+  useEffect(() => {
+    if (isCreate) {
+      handleShowCreateModal();
+      searchParams.delete('isCreate');
+      setSearchParams(searchParams);
+    }
+  }, [isCreate, handleShowCreateModal, searchParams, setSearchParams]);
+
+  const renameDialogProps = useMemo(() => {
+    if (chatRenameVisible) {
+      return {
+        hideModal: hideChatRenameModal,
+        onOk: onChatRenameOk,
+        initialName: initialChatName,
+        loading: chatRenameLoading,
+        title: initialChatName,
+      };
+    }
+    if (createChatVisible) {
+      return {
+        hideModal: hideCreateChatModal,
+        onOk: onCreateChatOk,
+        initialName: '',
+        loading: createChatLoading,
+        title: t('chat.createChat'),
+      };
+    }
+    return null;
+  }, [
+    chatRenameVisible,
+    createChatVisible,
+    hideChatRenameModal,
+    onChatRenameOk,
+    initialChatName,
+    chatRenameLoading,
+    hideCreateChatModal,
+    onCreateChatOk,
+    createChatLoading,
+    t,
+  ]);
 
   return (
-    <section className="flex flex-col w-full flex-1">
-      <div className="px-8 pt-8">
-        <ListFilterBar
-          title="Chat apps"
-          onSearchChange={handleInputChange}
-          searchString={searchString}
+    <>
+      {loading && !data.chats?.length ? (
+        <article
+          className="size-full flex items-center justify-center"
+          data-testid="chats-list"
         >
-          <Button onClick={handleShowCreateModal}>
-            <Plus className="size-2.5" />
-            {t('chat.createChat')}
-          </Button>
-        </ListFilterBar>
-      </div>
-      <div className="flex-1 overflow-auto">
-        <div className="grid gap-6 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 max-h-[84vh] overflow-auto px-8">
-          {data.dialogs.map((x) => {
-            return (
-              <ChatCard
-                key={x.id}
-                data={x}
-                showChatRenameModal={showChatRenameModal}
-              ></ChatCard>
-            );
-          })}
-        </div>
-      </div>
-      <div className="mt-8 px-8 pb-8">
-        <RAGFlowPagination
-          {...pick(pagination, 'current', 'pageSize')}
-          total={pagination.total}
-          onChange={handlePageChange}
-        ></RAGFlowPagination>
-      </div>
-      {chatRenameVisible && (
-        <RenameDialog
-          hideModal={hideChatRenameModal}
-          onOk={onChatRenameOk}
-          initialName={initialChatName}
-          loading={chatRenameLoading}
-          title={initialChatName || t('chat.createChat')}
-        ></RenameDialog>
+          <Spin size="large" />
+        </article>
+      ) : data.chats?.length || searchString ? (
+        <article
+          className="size-full min-w-0 flex flex-col"
+          data-testid="chats-list"
+        >
+          <header className="mb-4 min-w-0 px-5 pt-8">
+            <ListFilterBar
+              title={t('chat.chatApps')}
+              icon="chats"
+              onSearchChange={handleInputChange}
+              searchString={searchString}
+              filters={owners}
+              value={filterValue}
+              onChange={handleFilterSubmit}
+            >
+              <Button data-testid="create-chat" onClick={handleShowCreateModal}>
+                <Plus className="size-[1em]" />
+                {t('chat.createChat')}
+              </Button>
+            </ListFilterBar>
+          </header>
+
+          {data.chats?.length ? (
+            <>
+              <CardContainer className="flex-1 overflow-auto px-5">
+                {data.chats.map((x) => (
+                  <ChatCard
+                    key={x.id}
+                    data={x}
+                    showChatRenameModal={showChatRenameModal}
+                  />
+                ))}
+              </CardContainer>
+
+              <footer className="mt-4 px-5 pb-5">
+                <RAGFlowPagination
+                  {...pick(pagination, 'current', 'pageSize')}
+                  total={pagination.total}
+                  onChange={handlePageChange}
+                />
+              </footer>
+            </>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <EmptyAppCard
+                showIcon
+                size="large"
+                className="w-[480px] p-14"
+                isSearch
+                type={EmptyCardType.Chat}
+                testId="chats-empty-create"
+              />
+            </div>
+          )}
+        </article>
+      ) : (
+        <article
+          className="size-full flex items-center justify-center"
+          data-testid="chats-list"
+        >
+          <EmptyAppCard
+            showIcon
+            size="large"
+            className="w-[480px] p-14"
+            type={EmptyCardType.Chat}
+            onClick={() => handleShowCreateModal()}
+            testId="chats-empty-create"
+          />
+        </article>
       )}
-    </section>
+
+      {renameDialogProps && (
+        <RenameDialog {...renameDialogProps}></RenameDialog>
+      )}
+    </>
   );
 }

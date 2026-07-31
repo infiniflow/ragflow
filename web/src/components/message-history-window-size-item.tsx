@@ -1,6 +1,6 @@
-import { Form, InputNumber } from 'antd';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import NumberInput from './originui/number-input';
 import {
   FormControl,
   FormField,
@@ -8,30 +8,13 @@ import {
   FormLabel,
   FormMessage,
 } from './ui/form';
-import { NumberInput } from './ui/input';
 
-const MessageHistoryWindowSizeItem = ({
-  initialValue,
-}: {
-  initialValue: number;
-}) => {
-  const { t } = useTranslation();
-
-  return (
-    <Form.Item
-      name={'message_history_window_size'}
-      label={t('flow.messageHistoryWindowSize')}
-      initialValue={initialValue}
-      tooltip={t('flow.messageHistoryWindowSizeTip')}
-    >
-      <InputNumber style={{ width: '100%' }} />
-    </Form.Item>
-  );
+type MessageHistoryWindowSizeFormFieldProps = {
+  min?: number;
 };
-
-export default MessageHistoryWindowSizeItem;
-
-export function MessageHistoryWindowSizeFormField() {
+export function MessageHistoryWindowSizeFormField({
+  min,
+}: MessageHistoryWindowSizeFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
 
@@ -45,7 +28,7 @@ export function MessageHistoryWindowSizeFormField() {
             {t('flow.messageHistoryWindowSize')}
           </FormLabel>
           <FormControl>
-            <NumberInput {...field}></NumberInput>
+            <NumberInput {...field} min={min} className="w-full"></NumberInput>
           </FormControl>
           <FormMessage />
         </FormItem>

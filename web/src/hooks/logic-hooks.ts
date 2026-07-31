@@ -1,15 +1,20 @@
+import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
 import { MessageType } from '@/constants/chat';
-import { LanguageTranslationMap } from '@/constants/common';
+import { FormInstance } from '@/interfaces/antd-compat';
+import { Pagination } from '@/interfaces/common';
 import { ResponseType } from '@/interfaces/database/base';
-import { IAnswer, Message } from '@/interfaces/database/chat';
-import { IKnowledgeFile } from '@/interfaces/database/knowledge';
-import { IClientConversation, IMessage } from '@/pages/chat/interface';
+import {
+  IAnswer,
+  IClientConversation,
+  IMessage,
+  Message,
+} from '@/interfaces/database/chat';
+import { IKnowledgeFile } from '@/interfaces/database/dataset';
+import { changeLanguageAsync } from '@/locales/config';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { buildMessageUuid } from '@/utils/chat';
-import { PaginationProps, message } from 'antd';
-import { FormInstance } from 'antd/lib';
 import axios from 'axios';
 import { EventSourceParserStream } from 'eventsource-parser/stream';
 import { has, isEmpty, omit } from 'lodash';
@@ -21,11 +26,9 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useTranslation } from 'react-i18next';
-import { v4 as uuid } from 'uuid';
 import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
-import { useFetchTenantInfo, useSaveSetting } from './user-setting-hooks';
+import { useSaveSetting } from './use-user-setting-request';
 
 export function usePrevious<T>(value: T) {
   const ref = useRef<T>();
@@ -46,15 +49,15 @@ export const useSetSelectedRecord = <T = IKnowledgeFile>() => {
 };
 
 export const useChangeLanguage = () => {
-  const { i18n } = useTranslation();
   const { saveSetting } = useSaveSetting();
 
-  const changeLanguage = (lng: string) => {
-    i18n.changeLanguage(
-      LanguageTranslationMap[lng as keyof typeof LanguageTranslationMap],
-    );
-    saveSetting({ language: lng });
-  };
+  const changeLanguage = useCallback(
+    (lng: string) => {
+      changeLanguageAsync(lng);
+      saveSetting({ language: lng });
+    },
+    [saveSetting],
+  );
 
   return changeLanguage;
 };
@@ -67,11 +70,15 @@ export const useGetPaginationWithRouter = () => {
     size: pageSize,
   } = useSetPaginationParams();
 
-  const onPageChange: PaginationProps['onChange'] = useCallback(
-    (pageNumber: number, pageSize: number) => {
-      setPaginationParams(pageNumber, pageSize);
+  const onPageChange: Pagination['onChange'] = useCallback(
+    (pageNumber: number, size?: number) => {
+      if (size !== pageSize) {
+        setPaginationParams(1, size);
+      } else {
+        setPaginationParams(pageNumber, size);
+      }
     },
-    [setPaginationParams],
+    [setPaginationParams, pageSize],
   );
 
   const setCurrentPagination = useCallback(
@@ -84,7 +91,7 @@ export const useGetPaginationWithRouter = () => {
     [setPaginationParams, pageSize],
   );
 
-  const pagination: PaginationProps = useMemo(() => {
+  const pagination: Pagination = useMemo(() => {
     return {
       showQuickJumper: true,
       total: 0,
@@ -93,7 +100,7 @@ export const useGetPaginationWithRouter = () => {
       pageSize: pageSize,
       pageSizeOptions: [1, 2, 10, 20, 50, 100],
       onChange: onPageChange,
-      showTotal: (total) => `${t('total')} ${total}`,
+      showTotal: (total: number) => `${t('total')} ${total}`,
     };
   }, [t, onPageChange, page, pageSize]);
 
@@ -103,9 +110,27 @@ export const useGetPaginationWithRouter = () => {
   };
 };
 
+// When the current page becomes empty (e.g. after deleting the last card on
+// the last page), navigate back to the previous page automatically.
+export const useGoToPreviousPageOnEmpty = (
+  listLength: number | undefined,
+  loading: boolean = false,
+) => {
+  const { pagination, setPagination } = useGetPaginationWithRouter();
+
+  useEffect(() => {
+    if (!loading && listLength === 0 && pagination.current > 1) {
+      setPagination({
+        page: pagination.current - 1,
+        pageSize: pagination.pageSize,
+      });
+    }
+  }, [listLength, loading, pagination, setPagination]);
+};
+
 export const useHandleSearchChange = () => {
   const [searchString, setSearchString] = useState('');
-  const { setPagination } = useGetPaginationWithRouter();
+  const { pagination, setPagination } = useGetPaginationWithRouter();
   const handleInputChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const value = e.target.value;
@@ -115,21 +140,24 @@ export const useHandleSearchChange = () => {
     [setPagination],
   );
 
-  return { handleInputChange, searchString };
+  return { handleInputChange, searchString, pagination, setPagination };
 };
 
-export const useGetPagination = () => {
-  const [pagination, setPagination] = useState({ page: 1, pageSize: 10 });
+export const useGetPagination = (options?: { pageSize?: number }) => {
+  const [pagination, setPagination] = useState({
+    page: 1,
+    pageSize: options?.pageSize ?? 10,
+  });
   const { t } = useTranslate('common');
 
-  const onPageChange: PaginationProps['onChange'] = useCallback(
+  const onPageChange: Pagination['onChange'] = useCallback(
     (pageNumber: number, pageSize: number) => {
       setPagination({ page: pageNumber, pageSize });
     },
     [],
   );
 
-  const currentPagination: PaginationProps = useMemo(() => {
+  const currentPagination: Pagination = useMemo(() => {
     return {
       showQuickJumper: true,
       total: 0,
@@ -138,12 +166,13 @@ export const useGetPagination = () => {
       pageSize: pagination.pageSize,
       pageSizeOptions: [1, 2, 10, 20, 50, 100],
       onChange: onPageChange,
-      showTotal: (total) => `${t('total')} ${total}`,
+      showTotal: (total: number) => `${t('total')} ${total}`,
     };
   }, [t, onPageChange, pagination]);
 
   return {
     pagination: currentPagination,
+    setPagination,
   };
 };
 
@@ -196,9 +225,7 @@ function useSetDoneRecord() {
   };
 }
 
-export const useSendMessageWithSse = (
-  url: string = api.completeConversation,
-) => {
+export const useSendMessageWithSse = () => {
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
   const { doneRecord, clearDoneRecord, setDoneRecordById, allDone } =
@@ -233,6 +260,7 @@ export const useSendMessageWithSse = (
 
   const send = useCallback(
     async (
+      url: string,
       body: any,
       controller?: AbortController,
     ): Promise<{ response: Response; data: ResponseType } | undefined> => {
@@ -256,40 +284,69 @@ export const useSendMessageWithSse = (
           .pipeThrough(new EventSourceParserStream())
           .getReader();
 
+        // oxlint-disable-next-line no-constant-condition
         while (true) {
-          const x = await reader?.read();
-          if (x) {
-            const { done, value } = x;
-            if (done) {
-              resetAnswer();
-              break;
-            }
-            try {
-              const val = JSON.parse(value?.data || '');
-              const d = val?.data;
-              if (typeof d !== 'boolean') {
-                setAnswer({
-                  ...d,
-                  conversationId: body?.conversation_id,
-                  chatBoxId: body.chatBoxId,
-                });
+          try {
+            const x = await reader?.read();
+            if (x) {
+              const { done, value } = x;
+              if (done) {
+                resetAnswer();
+                break;
               }
-            } catch (e) {
-              // Swallow parse errors silently
+              try {
+                const val = JSON.parse(value?.data || '');
+                const d = val?.data;
+                if (typeof d !== 'boolean') {
+                  setAnswer((prev) => {
+                    const prevAnswer = prev.answer || '';
+                    const currentAnswer =
+                      d.final && prevAnswer ? '' : d.answer || '';
+
+                    let newAnswer: string;
+                    if (prevAnswer && currentAnswer.startsWith(prevAnswer)) {
+                      newAnswer = currentAnswer;
+                    } else {
+                      newAnswer = prevAnswer + currentAnswer;
+                    }
+
+                    if (d.start_to_think === true) {
+                      newAnswer = newAnswer + '<think>';
+                    }
+
+                    if (d.end_to_think === true) {
+                      newAnswer = newAnswer + '</think>';
+                    }
+
+                    return {
+                      ...d,
+                      answer: newAnswer,
+                      conversationId: body?.session_id ?? body?.conversation_id,
+                      chatBoxId: body.chatBoxId,
+                    };
+                  });
+                }
+              } catch {
+                // Swallow parse errors silently
+              }
+            }
+          } catch (error) {
+            if (error instanceof DOMException && error.name === 'AbortError') {
+              break;
             }
           }
         }
         setDoneValue(body, true);
         resetAnswer();
         return { data: await res, response };
-      } catch (e) {
+      } catch {
         setDoneValue(body, true);
 
         resetAnswer();
         // Swallow fetch errors silently
       }
     },
-    [initializeSseRef, setDoneValue, url, resetAnswer],
+    [initializeSseRef, setDoneValue, resetAnswer],
   );
 
   const stopOutputMessage = useCallback(() => {
@@ -309,7 +366,7 @@ export const useSendMessageWithSse = (
   };
 };
 
-export const useSpeechWithSse = (url: string = api.tts) => {
+export const useSpeechWithSse = (url: string = api.chatsTts) => {
   const read = useCallback(
     async (body: any) => {
       const response = await fetch(url, {
@@ -325,7 +382,7 @@ export const useSpeechWithSse = (url: string = api.tts) => {
         if (res?.code !== 0) {
           message.error(res?.message);
         }
-      } catch (error) {
+      } catch {
         // Swallow errors silently
       }
       return response;
@@ -375,7 +432,7 @@ export const useScrollToBottom = (
       const container = containerRef.current;
       container.scrollTo({
         top: container.scrollHeight - container.clientHeight,
-        behavior: 'smooth',
+        behavior: 'auto',
       });
     }
   }, [containerRef]);
@@ -422,7 +479,7 @@ export const useSelectDerivedMessages = () => {
   );
 
   const addNewestQuestion = useCallback(
-    (message: Message, answer: string = '') => {
+    (message: IMessage, answer: string = '') => {
       setDerivedMessages((pre) => {
         return [
           ...pre,
@@ -435,6 +492,7 @@ export const useSelectDerivedMessages = () => {
           {
             role: MessageType.Assistant,
             content: answer,
+            conversationId: message.conversationId,
             id: buildMessageUuid({ ...message, role: MessageType.Assistant }),
           },
         ];
@@ -505,6 +563,30 @@ export const useSelectDerivedMessages = () => {
           prompt: answer.prompt,
           audio_binary: answer.audio_binary,
           ...omit(answer, 'reference'),
+        },
+      ];
+    });
+  }, []);
+
+  const addPrologue = useCallback((prologue: string) => {
+    setDerivedMessages((pre) => {
+      if (pre.length > 0) {
+        return [
+          {
+            ...pre[0],
+            content: prologue,
+          },
+          ...pre.slice(1),
+        ];
+      }
+
+      return [
+        {
+          role: MessageType.Assistant,
+          content: prologue,
+          id: buildMessageUuid({
+            role: MessageType.Assistant,
+          }),
         },
       ];
     });
@@ -581,6 +663,7 @@ export const useSelectDerivedMessages = () => {
     removeAllMessages,
     scrollToBottom,
     removeAllMessagesExceptFirst,
+    addPrologue,
   };
 };
 
@@ -648,12 +731,14 @@ export const useRegenerateMessage = ({
       if (message.id) {
         removeMessagesAfterCurrentMessage(message.id);
         const index = messages.findIndex((x) => x.id === message.id);
-        let nextMessages;
-        if (index !== -1) {
-          nextMessages = messages.slice(0, index);
-        }
+        // Always pass the truncated history explicitly, even when it is
+        // empty (regenerating the first question), so the backend can
+        // overwrite the session with it via pass_all_history_messages.
+        const nextMessages = index !== -1 ? messages.slice(0, index) : [];
         sendMessage({
-          message: { ...message, id: uuid() },
+          // Keep the original id so the question/answer pair id stays
+          // consistent between local state and the persisted session.
+          message: { ...message },
           messages: nextMessages,
         });
       }
@@ -689,12 +774,6 @@ export const useSelectItem = (defaultId?: string) => {
   }, [defaultId]);
 
   return { selectedId, handleItemClick };
-};
-
-export const useFetchModelId = () => {
-  const { data: tenantInfo } = useFetchTenantInfo(true);
-
-  return tenantInfo?.llm_id ?? '';
 };
 
 const ChunkTokenNumMap = {

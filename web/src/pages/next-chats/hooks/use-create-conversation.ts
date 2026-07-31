@@ -1,25 +1,23 @@
-import { useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { useCallback } from 'react';
-import {
-  useSetChatRouteParams,
-  useSetConversation,
-} from './use-send-chat-message';
+import { useParams } from 'react-router';
+import { useChatUrlParams } from './use-chat-url';
+import { useSetConversation } from './use-set-conversation';
 
 export const useCreateConversationBeforeUploadDocument = () => {
   const { setConversation } = useSetConversation();
-  const { dialogId } = useGetChatSearchParams();
-  const { getConversationIsNew } = useSetChatRouteParams();
+  const { id: dialogId } = useParams();
+  const { getIsNew } = useChatUrlParams();
 
   const createConversationBeforeUploadDocument = useCallback(
     async (message: string) => {
-      const isNew = getConversationIsNew();
+      const isNew = getIsNew();
       if (isNew === 'true') {
-        const data = await setConversation(message, true);
+        const data = await setConversation(message);
 
         return data;
       }
     },
-    [setConversation, getConversationIsNew],
+    [setConversation, getIsNew],
   );
 
   return {

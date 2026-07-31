@@ -1,13 +1,17 @@
 ---
-sidebar_position: 2
+sidebar_position: 3
+title: Launch Service from Source
+sidebar_label: Launch Service from Source
 slug: /launch_ragflow_from_source
+sidebar_custom_props: {
+  categoryIcon: LucideMonitorPlay
+}
 ---
-
-# Launch service from source
+# Launch Service from Source
 
 A guide explaining how to set up a RAGFlow service from its source code. By following this guide, you'll be able to debug using the source code.
 
-## Target audience
+## Target Audience
 
 Developers who have added new features or modified existing code and wish to debug using the source code, *provided that* their machine has the target deployment environment set up.
 
@@ -22,18 +26,18 @@ Developers who have added new features or modified existing code and wish to deb
 If you have not installed Docker on your local machine (Windows, Mac, or Linux), see the [Install Docker Engine](https://docs.docker.com/engine/install/) guide.
 :::
 
-## Launch a service from source
+## Launch a Service from Source
 
 To launch a RAGFlow service from source code:
 
-### Clone the RAGFlow repository
+### Clone the RAGFlow Repository
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 ```
 
-### Install Python dependencies
+### Install Python Dependencies
 
 1. Install uv:
    
@@ -41,18 +45,20 @@ cd ragflow/
    pipx install uv
    ```
 
-2. Install Python dependencies:
-   - slim:
+2. Install RAGFlow service's Python dependencies:
+
    ```bash
-   uv sync --python 3.10 # install RAGFlow dependent python modules
-   ```
-   - full:
-   ```bash
-   uv sync --python 3.10 --all-extras # install RAGFlow dependent python modules
+   uv sync --python 3.13 --frozen
    ```
    *A virtual environment named `.venv` is created, and all Python dependencies are installed into the new environment.*
 
-### Launch third-party services
+   If you need to run tests against the RAGFlow service, install the test dependencies:
+
+   ```bash
+   uv sync --python 3.13 --group test --frozen && uv pip install sdk/python --group test
+   ```
+
+### Launch Third-Party Services
 
 The following command launches the 'base' services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
 
@@ -60,7 +66,7 @@ The following command launches the 'base' services (MinIO, Elasticsearch, Redis,
 docker compose -f docker/docker-compose-base.yml up -d
 ```
 
-### Update `host` and `port` Settings for Third-party Services
+### Update `host` and `port` Settings for Third-Party Services
 
 1. Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml.template** to `127.0.0.1`:
 
@@ -70,7 +76,7 @@ docker compose -f docker/docker-compose-base.yml up -d
 
 2. In **docker/service_conf.yaml.template**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
 
-### Launch the RAGFlow backend service
+### Launch the RAGFlow Backend Service
 
 1. Comment out the `nginx` line in **docker/entrypoint.sh**.
 
@@ -86,7 +92,7 @@ docker compose -f docker/docker-compose-base.yml up -d
    ```
 
 3. **Optional:** If you cannot access HuggingFace, set the HF_ENDPOINT environment variable to use a mirror site:
- 
+
    ```bash
    export HF_ENDPOINT=https://hf-mirror.com
    ```
@@ -97,13 +103,13 @@ docker compose -f docker/docker-compose-base.yml up -d
 
    ```shell
    JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so;
-   LD_PRELOAD=$JEMALLOC_PATH python rag/svr/task_executor.py 1;
+   LD_PRELOAD=$JEMALLOC_PATH python rag/svr/task_executor.py -i 1;
    ```
    ```shell
    python api/ragflow_server.py;
    ```
 
-### Launch the RAGFlow frontend service
+### Launch the RAGFlow Frontend Service
 
 1. Navigate to the `web` directory and install the frontend dependencies:
 
@@ -112,10 +118,10 @@ docker compose -f docker/docker-compose-base.yml up -d
    npm install
    ```
 
-2. Update `proxy.target` in **.umirc.ts** to `http://127.0.0.1:9380`:
+2. Update `server.proxy.target` in **vite.config.ts** to `http://127.0.0.1:9380`:
 
    ```bash
-   vim .umirc.ts
+   vim vite.config.ts
    ```
 
 3. Start up the RAGFlow frontend service:
@@ -128,11 +134,11 @@ docker compose -f docker/docker-compose-base.yml up -d
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
-### Access the RAGFlow service
+### Access the RAGFlow Service
 
 In your web browser, enter `http://127.0.0.1:<PORT>/`, ensuring the port number matches that shown in the screenshot above.
 
-### Stop the RAGFlow service when the development is done
+### Stop the RAGFlow Service When the Development Is Done
 
 1. Stop the RAGFlow frontend service:
    ```bash

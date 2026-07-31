@@ -13,8 +13,8 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { TagRenameId } from '@/constants/knowledge';
 import { IModalProps } from '@/interfaces/common';
-import { TagRenameId } from '@/pages/add-knowledge/constant';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -66,6 +66,7 @@ export function RenameForm({
               <FormLabel>{t('common.name')}</FormLabel>
               <FormControl>
                 <Input
+                  data-testid="rename-name-input"
                   placeholder={t('common.namePlaceholder')}
                   {...field}
                   autoComplete="off"

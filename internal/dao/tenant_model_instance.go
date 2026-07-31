@@ -1,0 +1,135 @@
+//
+//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+//
+
+package dao
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
+)
+
+// TenantModelInstanceDAO tenant model instance data access object
+type TenantModelInstanceDAO struct{}
+
+// NewTenantModelInstanceDAO create tenant model instance DAO
+func NewTenantModelInstanceDAO() *TenantModelInstanceDAO {
+	return &TenantModelInstanceDAO{}
+}
+
+func (dao *TenantModelInstanceDAO) Create(ctx context.Context, db *gorm.DB, instance *entity.TenantModelInstance) error {
+	// begin tx and check if the same provider instance exists
+	tx := db.WithContext(ctx).Begin()
+	defer tx.Rollback()
+	var existingInstance entity.TenantModelInstance
+	err := tx.WithContext(ctx).Where("provider_id = ? AND instance_name = ?", instance.ProviderID, instance.InstanceName).First(&existingInstance).Error
+	if err == nil {
+		return fmt.Errorf("instance %s already exists", instance.InstanceName)
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+	err = tx.WithContext(ctx).Create(instance).Error
+	if err != nil {
+		return err
+	}
+	tx.Commit()
+	return nil
+}
+
+func (dao *TenantModelInstanceDAO) GetAllInstancesByProviderID(ctx context.Context, db *gorm.DB, providerID string) ([]*entity.TenantModelInstance, error) {
+	var instances []*entity.TenantModelInstance
+	err := db.WithContext(ctx).Where("provider_id = ?", providerID).Find(&instances).Error
+	if err != nil {
+		return nil, err
+	}
+	return instances, nil
+}
+
+// GetByProviderIDs returns all TenantModelInstance rows whose provider_id
+// is in providerIDs. Mirrors Python's
+// TenantModelInstanceService.get_by_provider_ids used by
+// models_api_service.list_tenant_added_models. An empty input slice
+// returns an empty (non-nil) slice with no error.
+func (dao *TenantModelInstanceDAO) GetByProviderIDs(ctx context.Context, db *gorm.DB, providerIDs []string) ([]*entity.TenantModelInstance, error) {
+	instances := make([]*entity.TenantModelInstance, 0)
+	if len(providerIDs) == 0 {
+		return instances, nil
+	}
+	err := db.WithContext(ctx).Where("provider_id IN ?", providerIDs).Find(&instances).Error
+	if err != nil {
+		return nil, err
+	}
+	return instances, nil
+}
+
+func (dao *TenantModelInstanceDAO) GetInstanceByApiKey(ctx context.Context, db *gorm.DB, apiKey, providerID string) (*entity.TenantModelInstance, error) {
+	var instance entity.TenantModelInstance
+	err := db.WithContext(ctx).Where("api_key = ? AND provider_id = ?", apiKey, providerID).First(&instance).Error
+	if err != nil {
+		return nil, err
+	}
+	return &instance, nil
+}
+
+func (dao *TenantModelInstanceDAO) GetByProviderIDAndInstanceName(ctx context.Context, db *gorm.DB, providerID, instanceName string) (*entity.TenantModelInstance, error) {
+	var instance entity.TenantModelInstance
+	err := db.WithContext(ctx).Where("provider_id = ? AND instance_name = ?", providerID, instanceName).First(&instance).Error
+	if err != nil {
+		return nil, err
+	}
+	return &instance, nil
+}
+
+// GetByID get tenant model instance by primary key (id)
+func (dao *TenantModelInstanceDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.TenantModelInstance, error) {
+	var instance entity.TenantModelInstance
+	err := db.WithContext(ctx).Where("id = ?", id).First(&instance).Error
+	if err != nil {
+		return nil, err
+	}
+	return &instance, nil
+}
+
+func (dao *TenantModelInstanceDAO) DeleteByProviderIDAndInstanceName(ctx context.Context, db *gorm.DB, providerID, instanceName string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("provider_id = ? and instance_name = ?", providerID, instanceName).Delete(&entity.TenantModelInstance{})
+	return result.RowsAffected, result.Error
+}
+
+// UpdateByID updates a tenant model instance by primary key.
+// Mirrors Python's TenantModelInstanceService.update_by_id.
+func (dao *TenantModelInstanceDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
+	return db.WithContext(ctx).Model(&entity.TenantModelInstance{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// DeleteByIDs deletes all instances whose id is in the given list.
+// Mirrors Python's TenantModelInstanceService.delete_by_ids.
+func (dao *TenantModelInstanceDAO) DeleteByIDs(ctx context.Context, db *gorm.DB, ids []string) (int64, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := db.WithContext(ctx).Unscoped().Where("id IN ?", ids).Delete(&entity.TenantModelInstance{})
+	return result.RowsAffected, result.Error
+}
+
+// DeleteByProviderID deletes all instances for the given provider.
+func (dao *TenantModelInstanceDAO) DeleteByProviderID(ctx context.Context, db *gorm.DB, providerID string) (int64, error) {
+	result := db.WithContext(ctx).Unscoped().Where("provider_id = ?", providerID).Delete(&entity.TenantModelInstance{})
+	return result.RowsAffected, result.Error
+}

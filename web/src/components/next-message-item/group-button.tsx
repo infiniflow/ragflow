@@ -1,8 +1,15 @@
 import { PromptIcon } from '@/assets/icon/next-icon';
 import CopyToClipboard from '@/components/copy-to-clipboard';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { IRemoveMessageById } from '@/hooks/logic-hooks';
 import { AgentChatContext } from '@/pages/agent/context';
+import { downloadAgentFile } from '@/services/file-manager-service';
+import { downloadFileFromBlob } from '@/utils/file-util';
 import {
   DeleteOutlined,
   DislikeOutlined,
@@ -11,14 +18,13 @@ import {
   SoundOutlined,
   SyncOutlined,
 } from '@ant-design/icons';
-import { Radio, Tooltip } from 'antd';
-import { NotebookText } from 'lucide-react';
+import { Download, NotebookText } from 'lucide-react';
 import { useCallback, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
+import FeedbackDialog from '../feedback-dialog';
+import { PromptDialog } from '../prompt-dialog';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group';
-import FeedbackModal from './feedback-modal';
 import { useRemoveMessage, useSendFeedback, useSpeech } from './hooks';
-import PromptModal from './prompt-modal';
 
 interface IProps {
   messageId: string;
@@ -28,6 +34,12 @@ interface IProps {
   audioBinary?: string;
   showLoudspeaker?: boolean;
   showLog?: boolean;
+  attachment?: {
+    file_name: string;
+    doc_id: string;
+    format: string;
+  };
+  isShare?: boolean;
 }
 
 export const AssistantGroupButton = ({
@@ -38,6 +50,8 @@ export const AssistantGroupButton = ({
   showLikeButton,
   showLoudspeaker = true,
   showLog = true,
+  attachment,
+  isShare,
 }: IProps) => {
   const { visible, hideModal, showModal, onFeedbackOk, loading } =
     useSendFeedback(messageId);
@@ -68,12 +82,21 @@ export const AssistantGroupButton = ({
         className="space-x-1"
       >
         <ToggleGroupItem value="a">
-          <CopyToClipboard text={content}></CopyToClipboard>
+          <CopyToClipboard
+            text={content}
+            className="border-none hover:!bg-transparent"
+            avoidButtonWrapper
+          ></CopyToClipboard>
         </ToggleGroupItem>
         {showLoudspeaker && (
           <ToggleGroupItem value="b" onClick={handleRead}>
-            <Tooltip title={t('chat.read')}>
-              {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  {isPlaying ? <PauseCircleOutlined /> : <SoundOutlined />}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{t('chat.read')}</TooltipContent>
             </Tooltip>
             <audio src="" ref={ref}></audio>
           </ToggleGroupItem>
@@ -89,30 +112,58 @@ export const AssistantGroupButton = ({
           </>
         )}
         {prompt && (
-          <Radio.Button value="e" onClick={showPromptModal}>
+          <ToggleGroupItem value="e" onClick={showPromptModal}>
             <PromptIcon style={{ fontSize: '16px' }} />
-          </Radio.Button>
+          </ToggleGroupItem>
         )}
         {showLog && (
           <ToggleGroupItem value="f" onClick={handleShowLogSheet}>
-            <NotebookText className="size-4" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <NotebookText className="size-4" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>{t('flow.log')}</TooltipContent>
+            </Tooltip>
+          </ToggleGroupItem>
+        )}
+        {!!attachment?.doc_id && !isShare && (
+          <ToggleGroupItem
+            value="g"
+            onClick={async () => {
+              try {
+                const response = await downloadAgentFile({
+                  docId: attachment.doc_id,
+                  ext: attachment.format,
+                });
+                const blob = new Blob([response.data], {
+                  type: response.data.type,
+                });
+                downloadFileFromBlob(blob, attachment.file_name);
+              } catch (error) {
+                console.error('Download failed:', error);
+              }
+            }}
+          >
+            <Download size={16} />
           </ToggleGroupItem>
         )}
       </ToggleGroup>
       {visible && (
-        <FeedbackModal
+        <FeedbackDialog
           visible={visible}
           hideModal={hideModal}
           onOk={onFeedbackOk}
           loading={loading}
-        ></FeedbackModal>
+        ></FeedbackDialog>
       )}
       {promptVisible && (
-        <PromptModal
+        <PromptDialog
           visible={promptVisible}
           hideModal={hidePromptModal}
           prompt={prompt}
-        ></PromptModal>
+        ></PromptDialog>
       )}
     </>
   );
@@ -139,28 +190,39 @@ export const UserGroupButton = ({
   const { t } = useTranslation();
 
   return (
-    <Radio.Group size="small">
-      <Radio.Button value="a">
-        <CopyToClipboard text={content}></CopyToClipboard>
-      </Radio.Button>
+    <ToggleGroup
+      type="single"
+      size="sm"
+      variant="outline"
+      className="space-x-1"
+    >
+      <ToggleGroupItem value="a">
+        <CopyToClipboard text={content} avoidButtonWrapper></CopyToClipboard>
+      </ToggleGroupItem>
       {regenerateMessage && (
-        <Radio.Button
+        <ToggleGroupItem
           value="b"
           onClick={regenerateMessage}
           disabled={sendLoading}
         >
-          <Tooltip title={t('chat.regenerate')}>
-            <SyncOutlined spin={sendLoading} />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <SyncOutlined spin={sendLoading} />
+            </TooltipTrigger>
+            <TooltipContent>{t('chat.regenerate')}</TooltipContent>
           </Tooltip>
-        </Radio.Button>
+        </ToggleGroupItem>
       )}
       {removeMessageById && (
-        <Radio.Button value="c" onClick={onRemoveMessage} disabled={loading}>
-          <Tooltip title={t('common.delete')}>
-            <DeleteOutlined spin={loading} />
+        <ToggleGroupItem value="c" onClick={onRemoveMessage} disabled={loading}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DeleteOutlined spin={loading} />
+            </TooltipTrigger>
+            <TooltipContent>{t('common.delete')}</TooltipContent>
           </Tooltip>
-        </Radio.Button>
+        </ToggleGroupItem>
       )}
-    </Radio.Group>
+    </ToggleGroup>
   );
 };

@@ -5,8 +5,8 @@ import {
   useSelectDerivedMessages,
 } from '@/hooks/logic-hooks';
 import {
+  IAttachment,
   IEventList,
-  IInputEvent,
   IMessageEndData,
   IMessageEndEvent,
   IMessageEvent,
@@ -18,16 +18,29 @@ import i18n from '@/locales/config';
 import api from '@/utils/api';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
-import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'umi';
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { useParams, useSearchParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
 import { BeginId } from '../constant';
+import { MessageWaitSuffix } from '../constant/chat';
 import { AgentChatLogContext } from '../context';
 import { transferInputsArrayToObject } from '../form/begin-form/use-watch-change';
-import { useSelectBeginNodeDataInputs } from '../hooks/use-get-begin-query';
+import {
+  useIsTaskMode,
+  useSelectBeginNodeDataInputs,
+} from '../hooks/use-get-begin-query';
+import { useStopMessage } from '../hooks/use-stop-message';
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
+import { shouldSplitMessage } from '../utils/chat';
 
 export function findMessageFromList(eventList: IEventList) {
   const messageEventList = eventList.filter(
@@ -38,10 +51,13 @@ export function findMessageFromList(eventList: IEventList) {
 
   let startIndex = -1;
   let endIndex = -1;
-
+  let audioBinary = undefined;
   messageEventList.forEach((x, idx) => {
     const { data } = x;
-    const { content, start_to_think, end_to_think } = data;
+    const { content, start_to_think, end_to_think, audio_binary } = data;
+    if (audio_binary) {
+      audioBinary = audio_binary;
+    }
     if (start_to_think === true) {
       nextContent += '<think>' + content;
       startIndex = idx;
@@ -64,16 +80,31 @@ export function findMessageFromList(eventList: IEventList) {
     nextContent += '</think>';
   }
 
+  const workflowFinished = eventList.find(
+    (x) => x.event === MessageEventType.WorkflowFinished,
+  ) as IMessageEvent;
+  const messageEndEvent = [...eventList]
+    .reverse()
+    .find((x) => x.event === MessageEventType.MessageEnd) as IMessageEndEvent;
   return {
     id: eventList[0]?.message_id,
     content: nextContent,
+    audio_binary: audioBinary,
+    attachment:
+      workflowFinished?.data?.outputs?.attachment ||
+      messageEndEvent?.data?.attachment ||
+      {},
+    downloads:
+      workflowFinished?.data?.outputs?.downloads ||
+      messageEndEvent?.data?.downloads ||
+      [],
   };
 }
 
 export function findInputFromList(eventList: IEventList) {
   const inputEvent = eventList.find(
     (x) => x.event === MessageEventType.UserInputs,
-  ) as IInputEvent;
+  );
 
   if (!inputEvent) {
     return {};
@@ -86,18 +117,24 @@ export function findInputFromList(eventList: IEventList) {
 }
 
 export function getLatestError(eventList: IEventList) {
-  return get(eventList.at(-1), 'data.outputs._ERROR');
+  const latest = eventList.at(-1) as
+    | { code?: number; message?: string }
+    | undefined;
+  return (
+    get(latest, 'data.outputs._ERROR') ||
+    (latest?.code && latest.code !== 0 ? latest?.message : undefined)
+  );
 }
 
 export const useGetBeginNodePrologue = () => {
   const getNode = useGraphStore((state) => state.getNode);
+  const formData = get(getNode(BeginId), 'data.form', {});
 
   return useMemo(() => {
-    const formData = get(getNode(BeginId), 'data.form', {});
     if (formData?.enablePrologue) {
       return formData?.prologue;
     }
-  }, [getNode]);
+  }, [formData?.enablePrologue, formData?.prologue]);
 };
 
 export function useFindMessageReference(answerList: IEventList) {
@@ -164,35 +201,63 @@ export function useSetUploadResponseData() {
     setFileList([]);
   }, []);
 
+  const removeFile = useCallback((file: File) => {
+    setFileList((prev) => prev.filter((f) => f !== file));
+    setUploadResponseList((prev) =>
+      prev.filter((item) => item.name !== file.name),
+    );
+  }, []);
+
   return {
     uploadResponseList,
     fileList,
     setUploadResponseList,
     appendUploadResponseList: append,
     clearUploadResponseList: clear,
+    removeFile,
   };
 }
 
-export const useSendAgentMessage = (
-  url?: string,
-  addEventList?: (data: IEventList, messageId: string) => void,
-  beginParams?: any[],
-) => {
+export const buildRequestBody = (value: string = '') => {
+  const id = uuid();
+  const msgBody = {
+    id,
+    content: value.trim(),
+    role: MessageType.User,
+  };
+
+  return msgBody;
+};
+
+export const useSendAgentMessage = ({
+  url,
+  addEventList,
+  beginParams,
+  isShared,
+  refetch,
+  isTaskMode: isTask,
+  releaseMode,
+}: {
+  url?: string;
+  addEventList?: (data: IEventList, messageId: string) => void;
+  beginParams?: BeginQuery[];
+  isShared?: boolean;
+  refetch?: () => void;
+  isTaskMode?: boolean;
+  releaseMode?: string | null;
+}) => {
   const { id: agentId } = useParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const inputs = useSelectBeginNodeDataInputs();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const { send, answerList, done, stopOutputMessage, resetAnswerList } =
-    useSendMessageBySSE(url || api.runCanvas);
+    useSendMessageBySSE(url || api.agentChatCompletion);
+  const firstAnswer = answerList[0];
   const messageId = useMemo(() => {
-    return answerList[0]?.message_id;
-  }, [answerList]);
+    return firstAnswer?.message_id;
+  }, [firstAnswer]);
 
-  useEffect(() => {
-    if (answerList[0]?.session_id) {
-      setSessionId(answerList[0]?.session_id);
-    }
-  }, [answerList]);
+  const isTaskMode = useIsTaskMode(isTask);
 
   const { findReferenceByMessageId } = useFindMessageReference(answerList);
   const prologue = useGetBeginNodePrologue();
@@ -205,7 +270,10 @@ export const useSendAgentMessage = (
     addNewestOneQuestion,
     addNewestOneAnswer,
     removeAllMessages,
+    removeAllMessagesExceptFirst,
     scrollToBottom,
+    addPrologue,
+    setDerivedMessages,
   } = useSelectDerivedMessages();
   const { addEventList: addEventListFun } = useContext(AgentChatLogContext);
   const {
@@ -213,29 +281,65 @@ export const useSendAgentMessage = (
     clearUploadResponseList,
     uploadResponseList,
     fileList,
+    removeFile,
   } = useSetUploadResponseData();
 
+  const [searchParams] = useSearchParams();
+
+  const userId = searchParams.get('userId');
+
+  const { stopMessage } = useStopMessage();
+
+  const stopConversation = useCallback(() => {
+    const taskId = firstAnswer?.task_id;
+    stopOutputMessage();
+    if (!isShared) {
+      stopMessage(taskId);
+    }
+  }, [firstAnswer, isShared, stopMessage, stopOutputMessage]);
+
   const sendMessage = useCallback(
-    async ({ message }: { message: Message; messages?: Message[] }) => {
+    async ({
+      message,
+      beginInputs,
+      exploreSessionId,
+    }: {
+      message: Message;
+      messages?: Message[];
+      beginInputs?: BeginQuery[];
+      exploreSessionId?: string;
+    }) => {
       const params: Record<string, unknown> = {
-        id: agentId,
+        agent_id: agentId,
+        stream: true,
       };
 
       params.running_hint_text = i18n.t('flow.runningHintText', {
         defaultValue: 'is running...🕞',
       });
-      if (message.content) {
+      params['openai-compatible'] = false;
+      if (typeof message.content === 'string') {
         const query = inputs;
 
         params.query = message.content;
         // params.message_id = message.id;
         params.inputs = transferInputsArrayToObject(
-          beginParams ? beginParams : query,
+          beginInputs || beginParams || query,
         ); // begin operator inputs
 
         params.files = uploadResponseList;
 
-        params.session_id = sessionId;
+        // Prefer the session selected by the outer page state.
+        // The hook keeps its own session cache for streamed replies, but that cache
+        // can lag behind when the user switches sessions in Explore.
+        params.session_id = exploreSessionId || sessionId;
+        if (releaseMode) {
+          params.release = releaseMode;
+        }
+
+        if (userId) {
+          params.user_id = userId;
+        }
       }
 
       try {
@@ -250,7 +354,7 @@ export const useSendAgentMessage = (
           setValue(message.content);
           removeLatestMessage();
         } else {
-          // refetch(); // pull the message list after sending the message successfully
+          refetch?.(); // pull the message list after sending the message successfully
         }
       } catch (error) {
         console.log('🚀 ~ useSendAgentMessage ~ error:', error);
@@ -258,85 +362,162 @@ export const useSendAgentMessage = (
     },
     [
       agentId,
-      sessionId,
-      send,
-      clearUploadResponseList,
       inputs,
       beginParams,
       uploadResponseList,
+      sessionId,
+      releaseMode,
+      userId,
+      send,
+      clearUploadResponseList,
       setValue,
       removeLatestMessage,
+      refetch,
     ],
   );
 
   const sendFormMessage = useCallback(
-    (body: { id?: string; inputs: Record<string, BeginQuery> }) => {
-      send({ ...body, session_id: sessionId });
+    async (body: { inputs: Record<string, BeginQuery> }) => {
       addNewestOneQuestion({
         content: Object.entries(body.inputs)
-          .map(([key, val]) => `${key}: ${val.value}`)
+          .map(([, val]) => `${val.name}: ${val.value}`)
           .join('<br/>'),
         role: MessageType.User,
       });
+      await send({
+        ...body,
+        ...(isShared ? {} : { agent_id: agentId }),
+        stream: true,
+        session_id: sessionId,
+        ...(releaseMode ? { release: releaseMode } : {}),
+      });
+      refetch?.();
     },
-    [addNewestOneQuestion, send, sessionId],
+    [
+      addNewestOneQuestion,
+      agentId,
+      isShared,
+      refetch,
+      releaseMode,
+      send,
+      sessionId,
+    ],
   );
 
   // reset session
   const resetSession = useCallback(() => {
-    stopOutputMessage();
+    stopConversation();
     resetAnswerList();
     setSessionId(null);
-    removeAllMessages();
-  }, [resetAnswerList, removeAllMessages, stopOutputMessage]);
-
-  const handlePressEnter = useCallback(() => {
-    if (trim(value) === '') return;
-    const id = uuid();
-    const msgBody = {
-      id,
-      content: value.trim(),
-      role: MessageType.User,
-    };
-    if (done) {
-      setValue('');
-      sendMessage({
-        message: msgBody,
-      });
+    if (isTaskMode) {
+      removeAllMessages();
+    } else {
+      removeAllMessagesExceptFirst();
     }
-    addNewestOneQuestion({ ...msgBody, files: fileList });
-    setTimeout(() => {
-      scrollToBottom();
-    }, 100);
   }, [
-    value,
-    done,
-    addNewestOneQuestion,
-    fileList,
-    setValue,
-    sendMessage,
-    scrollToBottom,
+    stopConversation,
+    resetAnswerList,
+    isTaskMode,
+    removeAllMessages,
+    removeAllMessagesExceptFirst,
   ]);
 
+  const handlePressEnter = useCallback(
+    ({ exploreSessionId }: { exploreSessionId?: string } = {}) => {
+      if (trim(value) === '' || !done) return;
+      const msgBody = buildRequestBody(value);
+      if (done) {
+        setValue('');
+        sendMessage({
+          message: msgBody,
+          exploreSessionId,
+        });
+      }
+      addNewestOneQuestion({ ...msgBody, files: fileList });
+      setTimeout(() => {
+        scrollToBottom();
+      }, 100);
+    },
+    [
+      value,
+      done,
+      addNewestOneQuestion,
+      fileList,
+      setValue,
+      sendMessage,
+      scrollToBottom,
+    ],
+  );
+
+  const sendedTaskMessage = useRef(false);
+
+  const sendMessageInTaskMode = useCallback(() => {
+    if (isShared || !isTaskMode || sendedTaskMessage.current) {
+      return;
+    }
+    const msgBody = buildRequestBody('');
+
+    sendMessage({
+      message: msgBody,
+    });
+    sendedTaskMessage.current = true;
+  }, [isShared, isTaskMode, sendMessage]);
+
   useEffect(() => {
-    const { content, id } = findMessageFromList(answerList);
+    sendMessageInTaskMode();
+  }, [sendMessageInTaskMode]);
+
+  useEffect(() => {
+    const { content, id, attachment, audio_binary, downloads } =
+      findMessageFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
+    const answer = content || getLatestError(answerList);
+
     if (answerList.length > 0) {
-      addNewestOneAnswer({
-        answer: content || getLatestError(answerList),
-        id: id,
-        ...inputAnswer,
-      });
+      const shouldSplit = shouldSplitMessage(answerList, content);
+
+      if (shouldSplit) {
+        addNewestOneAnswer({
+          answer: answer ?? '',
+          audio_binary: audio_binary,
+          attachment: attachment as IAttachment,
+          downloads,
+          id,
+        });
+        addNewestOneAnswer({
+          answer: '',
+          ...inputAnswer,
+          id: `${id}${MessageWaitSuffix}`,
+        });
+      } else {
+        addNewestOneAnswer({
+          answer: answer ?? '',
+          audio_binary: audio_binary,
+          attachment: attachment as IAttachment,
+          downloads,
+          id,
+          ...inputAnswer,
+        });
+      }
     }
   }, [answerList, addNewestOneAnswer]);
 
   useEffect(() => {
-    if (prologue) {
-      addNewestOneAnswer({
-        answer: prologue,
-      });
+    if (isTaskMode) {
+      return;
     }
-  }, [addNewestOneAnswer, agentId, prologue, send, sendFormMessage]);
+    if (prologue) {
+      addPrologue(prologue);
+    }
+  }, [
+    addNewestOneAnswer,
+    addPrologue,
+    agentId,
+    isTaskMode,
+    prologue,
+    send,
+    sendFormMessage,
+  ]);
 
   useEffect(() => {
     if (typeof addEventList === 'function') {
@@ -345,6 +526,12 @@ export const useSendAgentMessage = (
       addEventListFun(answerList, messageId);
     }
   }, [addEventList, answerList, addEventListFun, messageId]);
+
+  useEffect(() => {
+    if (firstAnswer?.session_id) {
+      setSessionId(firstAnswer.session_id);
+    }
+  }, [firstAnswer]);
 
   return {
     value,
@@ -355,12 +542,16 @@ export const useSendAgentMessage = (
     handlePressEnter,
     handleInputChange,
     removeMessageById,
-    stopOutputMessage,
+    stopOutputMessage: stopConversation,
     send,
     sendFormMessage,
     resetSession,
     findReferenceByMessageId,
     appendUploadResponseList,
     addNewestOneAnswer,
+    sendMessage,
+    removeFile,
+    setDerivedMessages,
+    addPrologue,
   };
 };

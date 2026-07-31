@@ -1,16 +1,15 @@
 import { EmbedContainer } from '@/components/embed-container';
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/message-item';
-import PdfDrawer from '@/components/pdf-drawer';
+import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
-import { MessageType, SharedFrom } from '@/constants/chat';
-import { useFetchNextConversationSSE } from '@/hooks/chat-hooks';
-import { useFetchFlowSSE } from '@/hooks/flow-hooks';
+import { useSyncThemeFromParams } from '@/components/theme-provider';
+import { MessageType } from '@/constants/chat';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
-import i18n from '@/locales/config';
-import { useSendButtonDisabled } from '@/pages/chat/hooks';
+import i18n, { changeLanguageAsync } from '@/locales/config';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import React, { forwardRef, useMemo } from 'react';
+import React, { forwardRef } from 'react';
+import { useSendButtonDisabled } from '../hooks/use-button-disabled';
 import {
   useGetSharedChatSearchParams,
   useSendSharedMessage,
@@ -20,10 +19,11 @@ import { buildMessageItemReference } from '../utils';
 const ChatContainer = () => {
   const {
     sharedId: conversationId,
-    from,
     locale,
+    theme,
     visibleAvatar,
   } = useGetSharedChatSearchParams();
+  useSyncThemeFromParams(theme);
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
 
@@ -42,17 +42,13 @@ const ChatContainer = () => {
   const sendDisabled = useSendButtonDisabled(value);
   const { data: chatInfo } = useFetchExternalChatInfo();
 
-  const useFetchAvatar = useMemo(() => {
-    return from === SharedFrom.Agent
-      ? useFetchFlowSSE
-      : useFetchNextConversationSSE;
-  }, [from]);
   React.useEffect(() => {
     if (locale && i18n.language !== locale) {
-      i18n.changeLanguage(locale);
+      changeLanguageAsync(locale);
     }
   }, [locale, visibleAvatar]);
-  const { data: avatarData } = useFetchAvatar();
+
+  const avatarDialogSrc = chatInfo.avatar;
 
   if (!conversationId) {
     return <div>empty</div>;
@@ -65,10 +61,10 @@ const ChatContainer = () => {
         avatar={chatInfo.avatar}
         handleReset={removeAllMessagesExceptFirst}
       >
-        <div className="flex flex-1 flex-col p-2.5  h-[90vh] m-3">
+        <div className="flex flex-1 flex-col p-2.5 h-[90vh] m-3">
           <div
             className={
-              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto w-5/6'
+              'flex flex-1 flex-col overflow-auto scrollbar-auto m-auto w-full md:w-5/6'
             }
             ref={messageContainerRef}
           >
@@ -78,12 +74,12 @@ const ChatContainer = () => {
                   <MessageItem
                     visibleAvatar={visibleAvatar}
                     key={buildMessageUuidWithRole(message)}
-                    avatarDialog={avatarData?.avatar}
+                    avatarDialog={avatarDialogSrc}
                     item={message}
                     nickname="You"
                     reference={buildMessageItemReference(
                       {
-                        message: derivedMessages,
+                        messages: derivedMessages,
                         reference: [],
                       },
                       message,
@@ -103,13 +99,14 @@ const ChatContainer = () => {
             </div>
             <div ref={scrollRef} />
           </div>
-          <div className="flex w-full justify-center mb-8">
-            <div className="w-5/6">
+          <div className="flex w-full justify-center md:mb-8">
+            <div className="w-full md:w-5/6">
               <NextMessageInput
                 isShared
                 value={value}
                 disabled={hasError}
                 sendDisabled={sendDisabled}
+                resize="vertical"
                 conversationId={conversationId}
                 onInputChange={handleInputChange}
                 onPressEnter={handlePressEnter}
@@ -117,18 +114,20 @@ const ChatContainer = () => {
                 uploadMethod="external_upload_and_parse"
                 showUploadIcon={false}
                 stopOutputMessage={stopOutputMessage}
+                showReasoning
+                showInternet={chatInfo?.has_tavily_key}
               ></NextMessageInput>
             </div>
           </div>
         </div>
       </EmbedContainer>
       {visible && (
-        <PdfDrawer
+        <PdfSheet
           visible={visible}
           hideModal={hideModal}
           documentId={documentId}
           chunk={selectedChunk}
-        ></PdfDrawer>
+        ></PdfSheet>
       )}
     </>
   );

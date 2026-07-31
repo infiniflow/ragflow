@@ -1,0 +1,361 @@
+{
+  "name": "NVIDIA",
+  "url": {
+    "default": "https://integrate.api.nvidia.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings",
+    "rerank": "ranking"
+  },
+  "class": "nvidia",
+  "models": [
+    {
+      "name": "deepseek-ai/deepseek-v4-flash",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-ai/deepseek-v4-pro",
+      "max_tokens": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/diffusiongemma-26b-a4b-it",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "google/gemma-4-31b-it",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "meta/llama-3.1-70b-instruct",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meta/llama-3.1-8b-instruct",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meta/llama-3.2-11b-vision-instruct",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "meta/llama-3.2-1b-instruct",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meta/llama-3.2-3b-instruct",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meta/llama-3.2-90b-vision-instruct",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "meta/llama-3.3-70b-instruct",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "meta/llama-guard-4-12b",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "minimaxai/minimax-m3",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "mistralai/mistral-medium-3.5-128b",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "mistralai/mistral-nemotron",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k2.6",
+      "max_tokens": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "nvidia/ising-calibration-1.5-31b",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "nvidia/llama-3.1-nemotron-nano-8b-v1",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "nvidia/llama-3.1-nemotron-nano-vl-8b-v1",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "nvidia/llama-3.3-nemotron-super-49b-v1",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "nvidia/nemotron-3-embed-1b",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "nvidia/nemotron-3-nano-30b-a3b",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "nvidia/nemotron-3-super-120b-a12b",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "nvidia/nemotron-3-ultra-550b-a55b",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "nvidia/nemotron-3.5-content-safety",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "nvidia/nemotron-mini-4b-instruct",
+      "max_tokens": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "nvidia/nemotron-nano-12b-v2-vl",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "nvidia/nv-embed-v1",
+      "max_tokens": 32768,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "nvidia/nv-embedcode-7b-v1",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "nvidia/nvidia-nemotron-nano-9b-v2",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "nvidia/riva-translate-4b-instruct-v2",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "openai/gpt-oss-120b",
+      "max_tokens": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-20b",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "poolside/laguna-xs-2.1",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "stepfun-ai/step-3.7-flash",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "thinkingmachines/inkling",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "z-ai/glm-5.2",
+      "max_tokens": 8192,
+      "model_types": [
+        "chat"
+      ]
+    }
+  ]
+}

@@ -1,528 +1,337 @@
-import { ReactComponent as MoreModelIcon } from '@/assets/svg/more-model.svg';
-import { LlmIcon } from '@/components/svg-icon';
-import { useTheme } from '@/components/theme-provider';
-import { LLMFactory } from '@/constants/llm';
-import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+import Spotlight from '@/components/spotlight';
+import { useTranslate } from '@/hooks/common-hooks';
 import {
-  LlmItem,
-  useFetchMyLlmListDetailed,
-  useSelectLlmList,
-} from '@/hooks/llm-hooks';
-import { getRealModelName } from '@/utils/llm-util';
-import {
-  CloseCircleOutlined,
-  EditOutlined,
-  SettingOutlined,
-} from '@ant-design/icons';
-import {
-  Button,
-  Card,
-  Col,
-  Collapse,
-  CollapseProps,
-  Divider,
-  Flex,
-  List,
-  Row,
-  Space,
-  Spin,
-  Tag,
-  Tooltip,
-  Typography,
-} from 'antd';
-import { CircleHelp } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
-import SettingTitle from '../components/setting-title';
-import { isLocalLlmFactory } from '../utils';
-import ApiKeyModal from './api-key-modal';
-import AzureOpenAIModal from './azure-openai-modal';
-import BedrockModal from './bedrock-modal';
-import FishAudioModal from './fish-audio-modal';
-import GoogleModal from './google-modal';
-import {
-  useHandleDeleteFactory,
-  useHandleDeleteLlm,
-  useSubmitApiKey,
-  useSubmitAzure,
-  useSubmitBedrock,
-  useSubmitFishAudio,
-  useSubmitGoogle,
-  useSubmitHunyuan,
-  useSubmitOllama,
-  useSubmitSpark,
-  useSubmitSystemModelSetting,
-  useSubmitTencentCloud,
-  useSubmitVolcEngine,
-  useSubmityiyan,
-} from './hooks';
-import HunyuanModal from './hunyuan-modal';
-import styles from './index.less';
-import TencentCloudModal from './next-tencent-modal';
-import OllamaModal from './ollama-modal';
-import SparkModal from './spark-modal';
-import SystemModelSettingModal from './system-model-setting-modal';
-import VolcEngineModal from './volcengine-modal';
-import YiyanModal from './yiyan-modal';
+  LlmKeys,
+  useAddProviderInstance,
+  useFetchAddedProviders,
+  useFetchProviderInstances,
+  useUpdateProviderInstance,
+} from '@/hooks/use-llm-request';
+import { IProviderInstance } from '@/interfaces/database/llm';
+import { useQueryClient } from '@tanstack/react-query';
+import { Plus } from 'lucide-react';
+import { FC, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ProviderInstanceCardRef } from './instance-card/interface';
+import { ProviderInstanceCard } from './instance-card/provider-instance-card';
+import { ProviderHeaderBar } from './layout/provider-header-bar';
+import { Sidebar, SidebarSelection } from './layout/sidebar';
+import SystemSetting from './layout/system-setting';
 
-const { Text } = Typography;
-interface IModelCardProps {
-  item: LlmItem;
-  clickApiKey: (llmFactory: string) => void;
-  handleEditModel: (model: any, factory: LlmItem) => void;
-}
+/**
+ * Sidebar-driven model provider settings page.
+ *
+ * Layout:
+ *  - Left: `Sidebar` (Default-models entry, search, provider list).
+ *  - Right:
+ *      * 'default' selection -> `SystemSetting`.
+ *      * provider selection  -> a sticky `ProviderHeaderBar` at the top
+ *        (with a batch Save button), a vertical stack of
+ *        `ProviderInstanceCard` in the middle, and a sticky "+ Instance"
+ *        button at the bottom. Each click of that button adds a new
+ *        draft card; multiple drafts can coexist.
+ *
+ * Save flow: the top Save button validates every visible card through
+ * the imperative ref API; if all are valid it collects each card's
+ * payload (skipping non-dirty saved cards) and dispatches one API call
+ * per dirty card - `addProviderInstance` for drafts and Bedrock
+ * saved cards, `updateProviderInstance` for generic saved cards.
+ *
+ * Special-case providers (handled inside `ProviderInstanceCard`):
+ *  - `Bedrock`: rendered inline via `BedrockInstanceCard`.
+ *  - All other providers (including SoMark) use the generic
+ *    `GenericProviderInstanceCard` path.
+ */
+const SettingModelV2: FC = () => {
+  const { t: tSetting } = useTranslate('setting');
+  const [selection, setSelection] = useState<SidebarSelection>('default');
+  // Stack of draft-instance identifiers, rendered as `ProviderInstanceCard`
+  // entries below the persisted instances. Each draft can be cancelled
+  // independently; saving is driven by the top Save button.
+  const [draftIds, setDraftIds] = useState<string[]>([]);
 
-const ModelCard = ({ item, clickApiKey, handleEditModel }: IModelCardProps) => {
-  const { visible, switchVisible } = useSetModalState();
-  const { t } = useTranslate('setting');
-  const { theme } = useTheme();
-  const { handleDeleteLlm } = useHandleDeleteLlm(item.name);
-  const { handleDeleteFactory } = useHandleDeleteFactory(item.name);
+  const [saving, setSaving] = useState(false);
 
-  const handleApiKeyClick = () => {
-    clickApiKey(item.name);
-  };
+  // Tracks the instance name that was just persisted by the top Save
+  // button. The corresponding saved card mounts expanded so the user
+  // can immediately see (and edit) what was just saved. Reset on every
+  // selection change so it does not bleed across providers.
+  const [newlySavedInstanceName, setNewlySavedInstanceName] = useState<
+    string | null
+  >(null);
 
-  const handleShowMoreClick = () => {
-    switchVisible();
-  };
+  // Monotonic counter so each draft card has a stable, unique React key.
+  const draftIdCounterRef = useRef(0);
+  // Tracks whether the user explicitly cancelled the auto-shown draft
+  // for the current selection. Reset on every selection change.
+  const cancelledRef = useRef(false);
 
-  return (
-    <List.Item>
-      <Card
-        className={theme === 'dark' ? styles.addedCardDark : styles.addedCard}
-      >
-        <Row align={'middle'}>
-          <Col span={12}>
-            <Flex gap={'middle'} align="center">
-              <LlmIcon name={item.name} />
-              <Flex vertical gap={'small'}>
-                <b>{item.name}</b>
-                <Text>{item.tags}</Text>
-              </Flex>
-            </Flex>
-          </Col>
-          <Col span={12} className={styles.factoryOperationWrapper}>
-            <Space size={'middle'}>
-              <Button onClick={handleApiKeyClick}>
-                <Flex align="center" gap={4}>
-                  {isLocalLlmFactory(item.name) ||
-                  item.name === LLMFactory.VolcEngine ||
-                  item.name === LLMFactory.TencentHunYuan ||
-                  item.name === LLMFactory.XunFeiSpark ||
-                  item.name === LLMFactory.BaiduYiYan ||
-                  item.name === LLMFactory.FishAudio ||
-                  item.name === LLMFactory.TencentCloud ||
-                  item.name === LLMFactory.GoogleCloud ||
-                  item.name === LLMFactory.AzureOpenAI
-                    ? t('addTheModel')
-                    : 'API-Key'}
-                  <SettingOutlined />
-                </Flex>
-              </Button>
-              <Button onClick={handleShowMoreClick}>
-                <Flex align="center" gap={4}>
-                  {visible ? t('hideModels') : t('showMoreModels')}
-                  <MoreModelIcon />
-                </Flex>
-              </Button>
-              <Button type={'text'} onClick={handleDeleteFactory}>
-                <Flex align="center">
-                  <CloseCircleOutlined style={{ color: '#D92D20' }} />
-                </Flex>
-              </Button>
-            </Space>
-          </Col>
-        </Row>
-        {visible && (
-          <List
-            size="small"
-            dataSource={item.llm}
-            className={styles.llmList}
-            renderItem={(model) => (
-              <List.Item>
-                <Space>
-                  {getRealModelName(model.name)}
-                  <Tag color="#b8b8b8">{model.type}</Tag>
-                  {isLocalLlmFactory(item.name) && (
-                    <Tooltip title={t('edit', { keyPrefix: 'common' })}>
-                      <Button
-                        type={'text'}
-                        onClick={() => handleEditModel(model, item)}
-                      >
-                        <EditOutlined style={{ color: '#1890ff' }} />
-                      </Button>
-                    </Tooltip>
-                  )}
-                  <Tooltip title={t('delete', { keyPrefix: 'common' })}>
-                    <Button type={'text'} onClick={handleDeleteLlm(model.name)}>
-                      <CloseCircleOutlined style={{ color: '#D92D20' }} />
-                    </Button>
-                  </Tooltip>
-                </Space>
-              </List.Item>
-            )}
-          />
-        )}
-      </Card>
-    </List.Item>
+  // Imperative refs to every visible card, keyed by the card's React key
+  // (instance name for saved cards, draft id for drafts). Used by the
+  // top Save button to validate + collect payloads in a single batch.
+  const cardRefs = useRef<Map<string, ProviderInstanceCardRef | null>>(
+    new Map(),
   );
-};
-
-const UserSettingModel = () => {
-  const { factoryList, myLlmList: llmList, loading } = useSelectLlmList();
-  const { data: detailedLlmList } = useFetchMyLlmListDetailed();
-  const { theme } = useTheme();
-  const {
-    saveApiKeyLoading,
-    initialApiKey,
-    llmFactory,
-    editMode,
-    onApiKeySavingOk,
-    apiKeyVisible,
-    hideApiKeyModal,
-    showApiKeyModal,
-  } = useSubmitApiKey();
-  const {
-    saveSystemModelSettingLoading,
-    onSystemSettingSavingOk,
-    systemSettingVisible,
-    hideSystemSettingModal,
-    showSystemSettingModal,
-  } = useSubmitSystemModelSetting();
-  const { t } = useTranslate('setting');
-  const {
-    llmAddingVisible,
-    hideLlmAddingModal,
-    showLlmAddingModal,
-    onLlmAddingOk,
-    llmAddingLoading,
-    editMode: llmEditMode,
-    initialValues: llmInitialValues,
-    selectedLlmFactory,
-  } = useSubmitOllama();
-
-  const {
-    volcAddingVisible,
-    hideVolcAddingModal,
-    showVolcAddingModal,
-    onVolcAddingOk,
-    volcAddingLoading,
-  } = useSubmitVolcEngine();
-
-  const {
-    HunyuanAddingVisible,
-    hideHunyuanAddingModal,
-    showHunyuanAddingModal,
-    onHunyuanAddingOk,
-    HunyuanAddingLoading,
-  } = useSubmitHunyuan();
-
-  const {
-    GoogleAddingVisible,
-    hideGoogleAddingModal,
-    showGoogleAddingModal,
-    onGoogleAddingOk,
-    GoogleAddingLoading,
-  } = useSubmitGoogle();
-
-  const {
-    TencentCloudAddingVisible,
-    hideTencentCloudAddingModal,
-    showTencentCloudAddingModal,
-    onTencentCloudAddingOk,
-    TencentCloudAddingLoading,
-  } = useSubmitTencentCloud();
-
-  const {
-    SparkAddingVisible,
-    hideSparkAddingModal,
-    showSparkAddingModal,
-    onSparkAddingOk,
-    SparkAddingLoading,
-  } = useSubmitSpark();
-
-  const {
-    yiyanAddingVisible,
-    hideyiyanAddingModal,
-    showyiyanAddingModal,
-    onyiyanAddingOk,
-    yiyanAddingLoading,
-  } = useSubmityiyan();
-
-  const {
-    FishAudioAddingVisible,
-    hideFishAudioAddingModal,
-    showFishAudioAddingModal,
-    onFishAudioAddingOk,
-    FishAudioAddingLoading,
-  } = useSubmitFishAudio();
-
-  const {
-    bedrockAddingLoading,
-    onBedrockAddingOk,
-    bedrockAddingVisible,
-    hideBedrockAddingModal,
-    showBedrockAddingModal,
-  } = useSubmitBedrock();
-
-  const {
-    AzureAddingVisible,
-    hideAzureAddingModal,
-    showAzureAddingModal,
-    onAzureAddingOk,
-    AzureAddingLoading,
-  } = useSubmitAzure();
-
-  const ModalMap = useMemo(
-    () => ({
-      [LLMFactory.Bedrock]: showBedrockAddingModal,
-      [LLMFactory.VolcEngine]: showVolcAddingModal,
-      [LLMFactory.TencentHunYuan]: showHunyuanAddingModal,
-      [LLMFactory.XunFeiSpark]: showSparkAddingModal,
-      [LLMFactory.BaiduYiYan]: showyiyanAddingModal,
-      [LLMFactory.FishAudio]: showFishAudioAddingModal,
-      [LLMFactory.TencentCloud]: showTencentCloudAddingModal,
-      [LLMFactory.GoogleCloud]: showGoogleAddingModal,
-      [LLMFactory.AzureOpenAI]: showAzureAddingModal,
-    }),
-    [
-      showBedrockAddingModal,
-      showVolcAddingModal,
-      showHunyuanAddingModal,
-      showTencentCloudAddingModal,
-      showSparkAddingModal,
-      showyiyanAddingModal,
-      showFishAudioAddingModal,
-      showGoogleAddingModal,
-      showAzureAddingModal,
-    ],
-  );
-
-  const handleAddModel = useCallback(
-    (llmFactory: string) => {
-      if (isLocalLlmFactory(llmFactory)) {
-        showLlmAddingModal(llmFactory);
-      } else if (llmFactory in ModalMap) {
-        ModalMap[llmFactory as keyof typeof ModalMap]();
+  const setCardRef = useCallback(
+    (id: string) => (ref: ProviderInstanceCardRef | null) => {
+      if (ref) {
+        cardRefs.current.set(id, ref);
       } else {
-        showApiKeyModal({ llm_factory: llmFactory });
+        cardRefs.current.delete(id);
       }
     },
-    [showApiKeyModal, showLlmAddingModal, ModalMap],
+    [],
   );
 
-  const handleEditModel = useCallback(
-    (model: any, factory: LlmItem) => {
-      if (factory) {
-        const detailedFactory = detailedLlmList[factory.name];
-        const detailedModel = detailedFactory?.llm?.find(
-          (m: any) => m.name === model.name,
-        );
+  const { data: addedProviders } = useFetchAddedProviders();
+  const providerQueryName = useMemo(() => {
+    if (selection === 'default') return '';
+    return addedProviders.some((p) => p.name === selection && p.has_instance)
+      ? selection
+      : '';
+  }, [selection, addedProviders]);
+  const { data: instances, loading: instancesLoading } =
+    useFetchProviderInstances(providerQueryName);
+  const queryClient = useQueryClient();
 
-        const editData = {
-          llm_factory: factory.name,
-          llm_name: model.name,
-          model_type: model.type,
-        };
+  // Append a new draft id to the visible list.
+  const addDraft = useCallback(() => {
+    draftIdCounterRef.current += 1;
+    const id = `draft-${draftIdCounterRef.current}`;
+    setDraftIds((prev) => [...prev, id]);
+  }, []);
 
-        if (isLocalLlmFactory(factory.name)) {
-          showLlmAddingModal(factory.name, true, editData, detailedModel);
-        } else if (factory.name in ModalMap) {
-          ModalMap[factory.name as keyof typeof ModalMap]();
+  // Remove a draft id from the visible list (called on cancel).
+  const removeDraft = useCallback((id: string) => {
+    setDraftIds((prev) => prev.filter((d) => d !== id));
+  }, []);
+
+  // When the selection changes, clear the cancelled flag, drop any
+  // in-flight drafts, and reset the ref registry so stale refs from
+  // the previous provider don't leak into the next save batch.
+  useEffect(() => {
+    cancelledRef.current = false;
+    setDraftIds([]);
+    cardRefs.current.clear();
+    setNewlySavedInstanceName(null);
+  }, [selection]);
+
+  // If the user switches to a provider with no existing instances and
+  // no drafts already on screen, auto-show a "new instance" draft so
+  // they can fill it in immediately. If they have explicitly cancelled,
+  // do not re-show.
+  //
+  // Wait for the provider-instances query to settle before deciding:
+  // `initialData: []` on the hook means `instances` is an empty array
+  // from the first render, so a naive length check would auto-spawn a
+  // draft during the brief loading window even when the provider
+  // already has saved instances, only to remove it once the query
+  // resolves. Gating on `!instancesLoading` skips that flicker and
+  // keeps the UI clean for providers that do have instances.
+  useEffect(() => {
+    if (selection === 'default' || cancelledRef.current) return;
+    if (instancesLoading) return;
+    if (instances.length === 0 && draftIds.length === 0) {
+      addDraft();
+    }
+  }, [selection, instances, instancesLoading, draftIds, addDraft]);
+
+  const { addProviderInstance } = useAddProviderInstance();
+  const { updateProviderInstance } = useUpdateProviderInstance();
+
+  // Batch save handler, wired to the top Save button.
+  //
+  // Flow:
+  //   1. Collect every card ref.
+  //   2. Ask each for its save payload. Drafts always return one
+  //      (provided the name is non-empty); saved cards return `null`
+  //      when not dirty so we skip the redundant API call.
+  //   3. If any card is invalid (or a draft has no name), abort the
+  //      whole batch - errors are surfaced in the form UI by `trigger()`.
+  //   4. Dispatch one API call per dirty card, in order. Drafts and
+  //      Bedrock saved cards go through `addProviderInstance`
+  //      (Bedrock saved cards carry an `id` so the backend
+  //      updates instead of creating); generic and SoMark saved cards
+  //      go through `updateProviderInstance`.
+  //   5. On success: clear drafts (they're persisted now), mark each
+  //      saved card's baseline so the next save short-circuits, and
+  //      invalidate the instance query so the new/updated cards appear.
+  const handleSaveAll = useCallback(async () => {
+    const refs = Array.from(cardRefs.current.values()).filter(
+      (r): r is ProviderInstanceCardRef => r !== null,
+    );
+    if (refs.length === 0) return;
+
+    const dirty = refs
+      .map((r) => ({ ref: r, payload: r.getSavePayload() }))
+      .filter((e) => e.payload !== null);
+    if (dirty.length === 0) return;
+
+    const validations = await Promise.all(
+      dirty.map(async (e) => ({ ...e, valid: await e.ref.validate() })),
+    );
+    if (validations.some((v) => !v.valid)) {
+      return;
+    }
+
+    setSaving(true);
+    // Pin the auto-show guard so a draft isn't re-spawned while the
+    // providerInstances refetch is in flight (during that window both
+    // `instances` and `draftIds` are empty and would otherwise re-trigger
+    // `addDraft()`).
+    cancelledRef.current = true;
+    try {
+      // 3. Dispatch one API call per dirty card. Sequential so any
+      //    backend error stops the batch and the user can retry the
+      //    remaining cards after fixing the issue.
+      for (const { ref, payload } of validations) {
+        if (!payload) continue;
+        if (payload.apiKind === 'add') {
+          const ret = await addProviderInstance(payload.payload as any);
+          if (ret?.code !== 0) {
+            // Stop on the first failure so the user can see the error.
+            return;
+          }
+          // Remember the just-saved name so the persisted card mounts
+          // expanded once it surfaces via the invalidated instances
+          // query below.
+          if (payload.isDraft) {
+            setNewlySavedInstanceName(payload.instanceName);
+          }
         } else {
-          showApiKeyModal(editData, true);
+          const ret = await updateProviderInstance(payload.payload as any);
+          if (ret?.code !== 0) {
+            return;
+          }
+          // Saved card: update its dirty baseline so the next save
+          // short-circuits. Drafts are removed below so they don't
+          // need this.
+          ref.markSaved();
         }
       }
+      // 4. Clear drafts (all valid drafts were just persisted) and
+      //    invalidate the instance query so the newly-saved cards
+      //    appear in the persisted list.
+      setDraftIds([]);
+      queryClient.invalidateQueries({
+        queryKey: LlmKeys.providerInstances(providerQueryName),
+      });
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    addProviderInstance,
+    updateProviderInstance,
+    queryClient,
+    providerQueryName,
+  ]);
+
+  // Whether the Save button should be enabled. We avoid an O(n) ref
+  // scan on every render by treating "has any draft OR any saved
+  // instance" as a conservative proxy - if there is nothing on screen
+  // there is nothing to save, and if there is something the user can
+  // always attempt a save (dirty saved cards short-circuit inside
+  // `getSavePayload`). The button is disabled while a save is in flight.
+  const canSave = !saving && (draftIds.length > 0 || instances.length > 0);
+
+  // User clicked Cancel on a specific draft - remove it from the list
+  // and stop the auto-show effect from re-opening it for the current
+  // empty-instance selection.
+  const handleDraftCancel = useCallback(
+    (id: string) => {
+      cancelledRef.current = true;
+      removeDraft(id);
     },
-    [showApiKeyModal, showLlmAddingModal, ModalMap, detailedLlmList],
+    [removeDraft],
   );
 
-  const items: CollapseProps['items'] = [
-    {
-      key: '1',
-      label: t('addedModels'),
-      children: (
-        <List
-          grid={{ gutter: 16, column: 1 }}
-          dataSource={llmList}
-          renderItem={(item) => (
-            <ModelCard
-              item={item}
-              clickApiKey={handleAddModel}
-              handleEditModel={handleEditModel}
-            ></ModelCard>
-          )}
-        />
-      ),
-    },
-    {
-      key: '2',
-      label: (
-        <div className="flex items-center gap-2">
-          {t('modelsToBeAdded')}
-          <Tooltip title={t('modelsToBeAddedTooltip')}>
-            <CircleHelp className="size-4" />
-          </Tooltip>
-        </div>
-      ),
-      children: (
-        <List
-          grid={{
-            gutter: {
-              xs: 8,
-              sm: 10,
-              md: 12,
-              lg: 16,
-              xl: 20,
-              xxl: 24,
-            },
-            xs: 1,
-            sm: 1,
-            md: 2,
-            lg: 3,
-            xl: 4,
-            xxl: 8,
-          }}
-          dataSource={factoryList}
-          renderItem={(item) => (
-            <List.Item>
-              <Card
-                className={
-                  theme === 'dark'
-                    ? styles.toBeAddedCardDark
-                    : styles.toBeAddedCard
-                }
-              >
-                <Flex vertical gap={'middle'}>
-                  <LlmIcon name={item.name} imgClass="h-12 w-auto" />
-                  <Flex vertical gap={'middle'}>
-                    <b>
-                      <Text ellipsis={{ tooltip: item.name }}>{item.name}</Text>
-                    </b>
-                    <Text className={styles.modelTags}>{item.tags}</Text>
-                  </Flex>
-                </Flex>
-                <Divider className={styles.modelDivider}></Divider>
-                <Button
-                  type="link"
-                  onClick={() => handleAddModel(item.name)}
-                  className={styles.addButton}
-                >
-                  {t('addTheModel')}
-                </Button>
-              </Card>
-            </List.Item>
-          )}
-        />
-      ),
-    },
-  ];
+  const draftInstance: IProviderInstance = useMemo(
+    () => ({ instance_name: '' }) as IProviderInstance,
+    [],
+  );
 
   return (
-    <section id="xx" className="w-full space-y-6">
-      <Spin spinning={loading}>
-        <section className={styles.modelContainer}>
-          <SettingTitle
-            title={t('model')}
-            description={t('modelDescription')}
-            showRightButton
-            clickButton={showSystemSettingModal}
-          ></SettingTitle>
-          <Divider></Divider>
-          <Collapse defaultActiveKey={['1', '2']} ghost items={items} />
-        </section>
-      </Spin>
-      <ApiKeyModal
-        visible={apiKeyVisible}
-        hideModal={hideApiKeyModal}
-        loading={saveApiKeyLoading}
-        initialValue={initialApiKey}
-        editMode={editMode}
-        onOk={onApiKeySavingOk}
-        llmFactory={llmFactory}
-      ></ApiKeyModal>
-      {systemSettingVisible && (
-        <SystemModelSettingModal
-          visible={systemSettingVisible}
-          onOk={onSystemSettingSavingOk}
-          hideModal={hideSystemSettingModal}
-          loading={saveSystemModelSettingLoading}
-        ></SystemModelSettingModal>
-      )}
-      <OllamaModal
-        visible={llmAddingVisible}
-        hideModal={hideLlmAddingModal}
-        onOk={onLlmAddingOk}
-        loading={llmAddingLoading}
-        editMode={llmEditMode}
-        initialValues={llmInitialValues}
-        llmFactory={selectedLlmFactory}
-      ></OllamaModal>
-      <VolcEngineModal
-        visible={volcAddingVisible}
-        hideModal={hideVolcAddingModal}
-        onOk={onVolcAddingOk}
-        loading={volcAddingLoading}
-        llmFactory={LLMFactory.VolcEngine}
-      ></VolcEngineModal>
-      <HunyuanModal
-        visible={HunyuanAddingVisible}
-        hideModal={hideHunyuanAddingModal}
-        onOk={onHunyuanAddingOk}
-        loading={HunyuanAddingLoading}
-        llmFactory={LLMFactory.TencentHunYuan}
-      ></HunyuanModal>
-      <GoogleModal
-        visible={GoogleAddingVisible}
-        hideModal={hideGoogleAddingModal}
-        onOk={onGoogleAddingOk}
-        loading={GoogleAddingLoading}
-        llmFactory={LLMFactory.GoogleCloud}
-      ></GoogleModal>
-      <TencentCloudModal
-        visible={TencentCloudAddingVisible}
-        hideModal={hideTencentCloudAddingModal}
-        onOk={onTencentCloudAddingOk}
-        loading={TencentCloudAddingLoading}
-        llmFactory={LLMFactory.TencentCloud}
-      ></TencentCloudModal>
-      <SparkModal
-        visible={SparkAddingVisible}
-        hideModal={hideSparkAddingModal}
-        onOk={onSparkAddingOk}
-        loading={SparkAddingLoading}
-        llmFactory={LLMFactory.XunFeiSpark}
-      ></SparkModal>
-      <YiyanModal
-        visible={yiyanAddingVisible}
-        hideModal={hideyiyanAddingModal}
-        onOk={onyiyanAddingOk}
-        loading={yiyanAddingLoading}
-        llmFactory={LLMFactory.BaiduYiYan}
-      ></YiyanModal>
-      <FishAudioModal
-        visible={FishAudioAddingVisible}
-        hideModal={hideFishAudioAddingModal}
-        onOk={onFishAudioAddingOk}
-        loading={FishAudioAddingLoading}
-        llmFactory={LLMFactory.FishAudio}
-      ></FishAudioModal>
-      <BedrockModal
-        visible={bedrockAddingVisible}
-        hideModal={hideBedrockAddingModal}
-        onOk={onBedrockAddingOk}
-        loading={bedrockAddingLoading}
-        llmFactory={LLMFactory.Bedrock}
-      ></BedrockModal>
-      <AzureOpenAIModal
-        visible={AzureAddingVisible}
-        hideModal={hideAzureAddingModal}
-        onOk={onAzureAddingOk}
-        loading={AzureAddingLoading}
-        llmFactory={LLMFactory.AzureOpenAI}
-      ></AzureOpenAIModal>
-    </section>
+    <div className="flex w-full h-full border-[0.5px] border-border-button rounded-lg relative overflow-hidden">
+      <Spotlight />
+      <section className="flex flex-col gap-4 w-[320px] shrink-0 px-5 border-r-[0.5px] border-border-button overflow-auto scrollbar-auto">
+        <Sidebar selection={selection} onSelect={setSelection} />
+      </section>
+      <section className="flex-1 flex flex-col overflow-hidden">
+        {selection === 'default' ? (
+          <div className="flex-1 overflow-auto scrollbar-auto">
+            <SystemSetting />
+          </div>
+        ) : (
+          <>
+            {/* Sticky top: provider name + doc-link arrow + batch Save */}
+            <ProviderHeaderBar
+              providerName={selection as string}
+              onSave={handleSaveAll}
+              saving={saving}
+              canSave={canSave}
+            />
+
+            {/* Scrollable middle: instance cards + optional draft cards */}
+            <div className="flex-1 overflow-auto scrollbar-auto p-4 flex flex-col gap-4">
+              {instances.length === 0 && draftIds.length === 0 && (
+                <div className="text-text-secondary text-sm py-6 text-center">
+                  {tSetting('noInstancesConfigured')}
+                </div>
+              )}
+              {instances.map((instance, index) => (
+                <ProviderInstanceCard
+                  key={instance.instance_name}
+                  ref={setCardRef(instance.instance_name)}
+                  providerName={selection as string}
+                  instance={instance}
+                  defaultOpen={
+                    index === 0 ||
+                    instance.instance_name === newlySavedInstanceName
+                  }
+                />
+              ))}
+              {draftIds.map((id) => (
+                <ProviderInstanceCard
+                  key={id}
+                  ref={setCardRef(id)}
+                  providerName={selection as string}
+                  instance={draftInstance}
+                  isDraft
+                  onDelete={() => handleDraftCancel(id)}
+                />
+              ))}
+              <div className="z-10 border-border-button py-4">
+                <button
+                  type="button"
+                  className="w-full flex items-center justify-center gap-2 px-3 py-1 rounded-md border border-dashed border-border-button text-text-secondary hover:bg-bg-input hover:text-text-primary transition-colors"
+                  onClick={addDraft}
+                  data-testid="add-instance-bottom"
+                >
+                  <Plus className="size-4" />
+                  <span className="text-sm">{tSetting('addInstanceText')}</span>
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+      </section>
+    </div>
   );
 };
 
-export default UserSettingModel;
+export default SettingModelV2;

@@ -1,73 +1,42 @@
+import { ParseType } from '@/constants/knowledge';
+import { t } from 'i18next';
 import { z } from 'zod';
 
-export const formSchema = z.object({
-  name: z.string().min(1, {
-    message: 'Username must be at least 2 characters.',
-  }),
-  description: z.string().min(2, {
-    message: 'Username must be at least 2 characters.',
-  }),
-  // avatar: z.instanceof(File),
-  avatar: z.any().nullish(),
-  permission: z.string(),
-  parser_id: z.string(),
-  embd_id: z.string(),
-  parser_config: z
-    .object({
-      layout_recognize: z.string(),
-      chunk_token_num: z.number(),
-      delimiter: z.string(),
-      auto_keywords: z.number().optional(),
-      auto_questions: z.number().optional(),
-      html4excel: z.boolean(),
-      tag_kb_ids: z.array(z.string()).nullish(),
-      topn_tags: z.number().optional(),
-      raptor: z
-        .object({
-          use_raptor: z.boolean().optional(),
-          prompt: z.string().optional(),
-          max_token: z.number().optional(),
-          threshold: z.number().optional(),
-          max_cluster: z.number().optional(),
-          random_seed: z.number().optional(),
-        })
-        .refine(
-          (data) => {
-            if (data.use_raptor && !data.prompt) {
-              return false;
-            }
-            return true;
-          },
-          {
-            message: 'Prompt is required',
-            path: ['prompt'],
-          },
-        ),
-      graphrag: z
-        .object({
-          use_graphrag: z.boolean().optional(),
-          entity_types: z.array(z.string()).optional(),
-          method: z.string().optional(),
-          resolution: z.boolean().optional(),
-          community: z.boolean().optional(),
-        })
-        .refine(
-          (data) => {
-            if (
-              data.use_graphrag &&
-              (!data.entity_types || data.entity_types.length === 0)
-            ) {
-              return false;
-            }
-            return true;
-          },
-          {
-            message: 'Please enter Entity types',
-            path: ['entity_types'],
-          },
-        ),
-    })
-    .optional(),
-  pagerank: z.number(),
-  // icon: z.array(z.instanceof(File)),
-});
+export const formSchema = z
+  .object({
+    parse_type: z.nativeEnum(ParseType).optional(),
+    pipeline_id: z.string().optional(),
+    pipeline_name: z.string().optional(),
+    pipeline_avatar: z.string().optional(),
+    name: z.string().min(1, {
+      message: 'Username must be at least 2 characters.',
+    }),
+    description: z.string().optional(),
+    parser_id: z.string().optional(),
+    avatar: z.any().nullish(),
+    permission: z.string().optional(),
+    language: z.string().optional(),
+    embedding_model: z.string(),
+    pagerank: z.number(),
+    parser_config: z.record(z.string(), z.any()).optional(),
+    connectors: z
+      .array(
+        z.object({
+          id: z.string().optional(),
+          name: z.string().optional(),
+          source: z.string().optional(),
+          ststus: z.string().optional(),
+          auto_parse: z.string().optional(),
+        }),
+      )
+      .optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.parse_type === ParseType.Pipeline && !data.pipeline_id) {
+      ctx.addIssue({
+        path: ['pipeline_id'],
+        message: t('common.pleaseSelect'),
+        code: 'custom',
+      });
+    }
+  });

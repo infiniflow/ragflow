@@ -1,4 +1,4 @@
-import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import {
   Sheet,
   SheetContent,
@@ -7,20 +7,20 @@ import {
 } from '@/components/ui/sheet';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModalProps } from '@/interfaces/common';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
 import { lowerFirst } from 'lodash';
-import { Play, X } from 'lucide-react';
-import { useMemo } from 'react';
-import { BeginId, Operator } from '../constant';
+import { ArrowUpRight, CirclePlay, X } from 'lucide-react';
+import { Operator } from '../constant';
 import { AgentFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
-import { useHandleNodeNameChange } from '../hooks/use-change-node-name';
-import OperatorIcon from '../operator-icon';
+import { useIsMcp } from '../hooks/use-is-mcp';
+import OperatorIcon from '@/components/operator-icon';
 import useGraphStore from '../store';
 import { needsSingleStepDebugging } from '../utils';
 import { FormConfigMap } from './form-config-map';
 import SingleDebugSheet from './single-debug-sheet';
+import { TitleInput } from './title-input';
 
 interface IProps {
   node?: RAGFlowNodeType;
@@ -31,6 +31,8 @@ interface IProps {
 }
 
 const EmptyContent = () => <div></div>;
+const SandboxQuickstartUrl =
+  'https://github.com/infiniflow/ragflow/blob/main/docs/guides/agent/agent_quickstarts/sandbox_quickstart.md';
 
 const FormSheet = ({
   visible,
@@ -42,76 +44,87 @@ const FormSheet = ({
   showSingleDebugDrawer,
 }: IModalProps<any> & IProps) => {
   const operatorName: Operator = node?.data.label as Operator;
-  const clickedToolId = useGraphStore((state) => state.clickedToolId);
+  const { clickedToolId, getAgentToolById } = useGraphStore();
 
   const currentFormMap = FormConfigMap[operatorName];
-
   const OperatorForm = currentFormMap?.component ?? EmptyContent;
-
-  const { name, handleNameBlur, handleNameChange } = useHandleNodeNameChange({
-    id: node?.id,
-    data: node?.data,
-  });
-
-  const isMcp = useMemo(() => {
-    return (
-      operatorName === Operator.Tool &&
-      Object.values(Operator).every((x) => x !== clickedToolId)
-    );
-  }, [clickedToolId, operatorName]);
-
+  const isMcp = useIsMcp(operatorName);
   const { t } = useTranslate('flow');
+  const { component_name: toolComponentName } = (getAgentToolById(
+    clickedToolId,
+  ) ?? {}) as {
+    component_name: Operator;
+    name: string;
+    id: string;
+  };
 
   return (
     <Sheet open={visible} modal={false}>
       <SheetContent
-        className={cn('top-20 p-0 flex flex-col pb-20 ', {
-          'right-[620px]': chatVisible,
+        className={cn('top-20 p-0 flex flex-col pb-20 gap-0', {
+          'right-[clamp(0px,34%,620px)]': chatVisible,
         })}
         closeIcon={false}
       >
         <SheetHeader>
           <SheetTitle className="hidden"></SheetTitle>
-          <section className="flex-col border-b py-2 px-5">
+          <section className="flex-col border-b pt-2 pb-4 px-5">
             <div className="flex items-center gap-2 pb-3">
-              <OperatorIcon name={operatorName}></OperatorIcon>
-
-              {isMcp ? (
-                <div className="flex-1">MCP Config</div>
-              ) : (
-                <div className="flex items-center gap-1 flex-1">
-                  <label htmlFor="">{t('title')}</label>
-                  {node?.id === BeginId ? (
-                    <span>{t(BeginId)}</span>
-                  ) : (
-                    <Input
-                      value={name}
-                      onBlur={handleNameBlur}
-                      onChange={handleNameChange}
-                    ></Input>
-                  )}
-                </div>
-              )}
-
+              <OperatorIcon
+                name={toolComponentName || operatorName}
+              ></OperatorIcon>
+              <TitleInput node={node}></TitleInput>
               {needsSingleStepDebugging(operatorName) && (
                 <RunTooltip>
-                  <Play
-                    className="size-5 cursor-pointer"
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="size-6 !p-0 bg-transparent"
                     onClick={showSingleDebugDrawer}
-                  />
+                  >
+                    <CirclePlay className="size-3.5 cursor-pointer" />
+                  </Button>
                 </RunTooltip>
               )}
-              <X onClick={hideModal} />
+
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-6 !p-0 bg-transparent"
+                onClick={hideModal}
+              >
+                <X className="size-3.5 cursor-pointer" />
+              </Button>
             </div>
-            {isMcp || (
-              <span>
+
+            {!isMcp && (
+              <p className="text-text-secondary">
                 {t(
-                  `${lowerFirst(operatorName === Operator.Tool ? clickedToolId : operatorName)}Description`,
+                  `${lowerFirst(operatorName === Operator.Tool ? toolComponentName : operatorName)}Description`,
                 )}
-              </span>
+                {operatorName === Operator.Code && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="ml-1 inline-flex size-5 !p-0 align-middle bg-transparent"
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      window.open(
+                        SandboxQuickstartUrl,
+                        '_blank',
+                        'noopener,noreferrer',
+                      );
+                    }}
+                  >
+                    <ArrowUpRight className="size-4 cursor-pointer text-text-secondary" />
+                  </Button>
+                )}
+              </p>
             )}
           </section>
         </SheetHeader>
+
         <section className="pt-4 overflow-auto flex-1">
           {visible && (
             <AgentFormContext.Provider value={node}>

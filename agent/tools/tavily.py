@@ -19,7 +19,7 @@ import time
 from abc import ABC
 from tavily import TavilyClient
 from agent.tools.base import ToolParamBase, ToolBase, ToolMeta
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class TavilySearchParam(ToolParamBase):
@@ -28,10 +28,10 @@ class TavilySearchParam(ToolParamBase):
     """
 
     def __init__(self):
-        self.meta:ToolMeta = {
+        self.meta: ToolMeta = {
             "name": "tavily_search",
             "description": """
-Tavily is a search engine optimized for LLMs, aimed at efficient, quick and persistent search results. 
+Tavily is a search engine optimized for LLMs, aimed at efficient, quick and persistent search results.
 When searching:
    - Start with specific query which should focus on just a single aspect.
    - Number of keywords in query should be less than 5.
@@ -43,7 +43,7 @@ When searching:
                     "type": "string",
                     "description": "The search keywords to execute with Tavily. The keywords should be the most important words/terms(includes synonyms) from the original request.",
                     "default": "{sys.query}",
-                    "required": True
+                    "required": True,
                 },
                 "topic": {
                     "type": "string",
@@ -56,27 +56,21 @@ When searching:
                     "type": "array",
                     "description": "default:[]. A list of domains only from which the search results can be included.",
                     "default": [],
-                    "items": {
-                        "type": "string",
-                        "description": "Domain name that must be included, e.g. www.yahoo.com"
-                    },
-                    "required": False
+                    "items": {"type": "string", "description": "Domain name that must be included, e.g. www.yahoo.com"},
+                    "required": False,
                 },
                 "exclude_domains": {
                     "type": "array",
                     "description": "default:[]. A list of domains from which the search results can not be included",
                     "default": [],
-                    "items": {
-                        "type": "string",
-                        "description": "Domain name that must be excluded, e.g. www.yahoo.com"
-                    },
-                    "required": False
+                    "items": {"type": "string", "description": "Domain name that must be excluded, e.g. www.yahoo.com"},
+                    "required": False,
                 },
-            }
+            },
         }
         super().__init__()
         self.api_key = ""
-        self.search_depth = "basic" # basic/advanced
+        self.search_depth = "basic"  # basic/advanced
         self.max_results = 6
         self.days = 14
         self.include_answer = False
@@ -91,18 +85,17 @@ When searching:
         self.check_positive_integer(self.days, "Tavily days should be greater than 1")
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "query": {
-                "name": "Query",
-                "type": "line"
-            }
-        }
+        return {"query": {"name": "Query", "type": "line"}}
+
 
 class TavilySearch(ToolBase, ABC):
     component_name = "TavilySearch"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 12)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("TavilySearch processing"):
+            return
+
         if not kwargs.get("query"):
             self.set_output("formalized_content", "")
             return ""
@@ -112,19 +105,30 @@ class TavilySearch(ToolBase, ABC):
         for fld in ["search_depth", "topic", "max_results", "days", "include_answer", "include_raw_content", "include_images", "include_image_descriptions", "include_domains", "exclude_domains"]:
             if fld not in kwargs:
                 kwargs[fld] = getattr(self._param, fld)
-        for _ in range(self._param.max_retries+1):
+        for _ in range(self._param.max_retries + 1):
+            if self.check_if_canceled("TavilySearch processing"):
+                return
+
             try:
                 kwargs["include_images"] = False
                 kwargs["include_raw_content"] = False
                 res = self.tavily_client.search(**kwargs)
-                self._retrieve_chunks(res["results"],
-                                      get_title=lambda r: r["title"],
-                                      get_url=lambda r: r["url"],
-                                      get_content=lambda r: r["raw_content"] if r["raw_content"] else r["content"],
-                                      get_score=lambda r: r["score"])
+                if self.check_if_canceled("TavilySearch processing"):
+                    return
+
+                self._retrieve_chunks(
+                    res["results"],
+                    get_title=lambda r: r["title"],
+                    get_url=lambda r: r["url"],
+                    get_content=lambda r: r["raw_content"] if r["raw_content"] else r["content"],
+                    get_score=lambda r: r["score"],
+                )
                 self.set_output("json", res["results"])
                 return self.output("formalized_content")
             except Exception as e:
+                if self.check_if_canceled("TavilySearch processing"):
+                    return
+
                 last_e = e
                 logging.exception(f"Tavily error: {e}")
                 time.sleep(self._param.delay_after_error)
@@ -136,7 +140,7 @@ class TavilySearch(ToolBase, ABC):
 
     def thoughts(self) -> str:
         return """
-Keywords: {} 
+Keywords: {}
 Looking for the most relevant articles.
                 """.format(self.get_input().get("query", "-_-!"))
 
@@ -147,7 +151,7 @@ class TavilyExtractParam(ToolParamBase):
     """
 
     def __init__(self):
-        self.meta:ToolMeta = {
+        self.meta: ToolMeta = {
             "name": "tavily_extract",
             "description": "Extract web page content from one or more specified URLs using Tavily Extract.",
             "parameters": {
@@ -155,11 +159,8 @@ class TavilyExtractParam(ToolParamBase):
                     "type": "array",
                     "description": "The URLs to extract content from.",
                     "default": "",
-                    "items": {
-                        "type": "string",
-                        "description": "The URL to extract content from, e.g. www.yahoo.com"
-                    },
-                    "required": True
+                    "items": {"type": "string", "description": "The URL to extract content from, e.g. www.yahoo.com"},
+                    "required": True,
                 },
                 "extract_depth": {
                     "type": "string",
@@ -174,12 +175,12 @@ class TavilyExtractParam(ToolParamBase):
                     "enum": ["markdown", "text"],
                     "default": "markdown",
                     "required": False,
-                }
-            }
+                },
+            },
         }
         super().__init__()
         self.api_key = ""
-        self.extract_depth = "basic" # basic/advanced
+        self.extract_depth = "basic"  # basic/advanced
         self.urls = []
         self.format = "markdown"
         self.include_images = False
@@ -189,18 +190,17 @@ class TavilyExtractParam(ToolParamBase):
         self.check_valid_value(self.format, "Tavily extract format should be in 'markdown/text'", ["markdown", "text"])
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "urls": {
-                "name": "URLs",
-                "type": "line"
-            }
-        }
+        return {"urls": {"name": "URLs", "type": "line"}}
+
 
 class TavilyExtract(ToolBase, ABC):
     component_name = "TavilyExtract"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10*60))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 10 * 60)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("TavilyExtract processing"):
+            return
+
         self.tavily_client = TavilyClient(api_key=self._param.api_key)
         last_e = None
         for fld in ["urls", "extract_depth", "format"]:
@@ -208,13 +208,22 @@ class TavilyExtract(ToolBase, ABC):
                 kwargs[fld] = getattr(self._param, fld)
         if kwargs.get("urls") and isinstance(kwargs["urls"], str):
             kwargs["urls"] = kwargs["urls"].split(",")
-        for _ in range(self._param.max_retries+1):
+        for _ in range(self._param.max_retries + 1):
+            if self.check_if_canceled("TavilyExtract processing"):
+                return
+
             try:
                 kwargs["include_images"] = False
                 res = self.tavily_client.extract(**kwargs)
+                if self.check_if_canceled("TavilyExtract processing"):
+                    return
+
                 self.set_output("json", res["results"])
                 return self.output("json")
             except Exception as e:
+                if self.check_if_canceled("TavilyExtract processing"):
+                    return
+
                 last_e = e
                 logging.exception(f"Tavily error: {e}")
         if last_e:

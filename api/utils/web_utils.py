@@ -15,15 +15,18 @@
 #
 
 import base64
-import ipaddress
+from contextlib import contextmanager
 import json
+import logging
+import os
 import re
-import socket
-from urllib.parse import urlparse
-
-from api.apps import smtp_mail_server
-from flask_mail import Message
-from flask import render_template_string
+import threading
+import aiosmtplib
+from email.mime.text import MIMEText
+from email.header import Header
+from common import settings
+from quart import render_template_string
+from api.utils.email_templates import EMAIL_TEMPLATES
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.chrome.options import Options
@@ -34,50 +37,52 @@ from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
 
 
+OTP_LENGTH = 4
+OTP_TTL_SECONDS = 5 * 60  # valid for 5 minutes
+ATTEMPT_LIMIT = 5  # maximum attempts
+ATTEMPT_LOCK_SECONDS = 30 * 60  # lock for 30 minutes
+RESEND_COOLDOWN_SECONDS = 60  # cooldown for 1 minute
+BROWSER_FETCH_CONCURRENCY = max(1, int(os.getenv("RAGFLOW_BROWSER_FETCH_CONCURRENCY", "2")))
+BROWSER_FETCH_ACQUIRE_TIMEOUT = float(os.getenv("RAGFLOW_BROWSER_FETCH_ACQUIRE_TIMEOUT", "5"))
+BROWSER_FETCH_TIMEOUT = float(os.getenv("RAGFLOW_BROWSER_FETCH_TIMEOUT", "60"))
+_BROWSER_FETCH_SEMAPHORE = threading.BoundedSemaphore(BROWSER_FETCH_CONCURRENCY)
 
-CONTENT_TYPE_MAP = {
-    # Office
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "doc": "application/msword",
-    "pdf": "application/pdf",
-    "csv": "text/csv",
-    "xls": "application/vnd.ms-excel",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    # Text/code
-    "txt": "text/plain",
-    "py": "text/plain",
-    "js": "text/plain",
-    "java": "text/plain",
-    "c": "text/plain",
-    "cpp": "text/plain",
-    "h": "text/plain",
-    "php": "text/plain",
-    "go": "text/plain",
-    "ts": "text/plain",
-    "sh": "text/plain",
-    "cs": "text/plain",
-    "kt": "text/plain",
-    "sql": "text/plain",
-    # Web
-    "md": "text/markdown",
-    "markdown": "text/markdown",
-    "htm": "text/html",
-    "html": "text/html",
-    "json": "application/json",
-    # Image formats
-    "png": "image/png",
-    "jpg": "image/jpeg",
-    "jpeg": "image/jpeg",
-    "gif": "image/gif",
-    "bmp": "image/bmp",
-    "tiff": "image/tiff",
-    "tif": "image/tiff",
-    "webp": "image/webp",
-    "svg": "image/svg+xml",
-    "ico": "image/x-icon",
-    "avif": "image/avif",
-    "heic": "image/heic",
-}
+
+class BrowserFetchBusy(RuntimeError):
+    pass
+
+
+@contextmanager
+def browser_fetch_slot(timeout: float = BROWSER_FETCH_ACQUIRE_TIMEOUT):
+    if not _BROWSER_FETCH_SEMAPHORE.acquire(timeout=timeout):
+        raise BrowserFetchBusy("Too many concurrent browser fetch requests")
+    try:
+        yield
+    finally:
+        _BROWSER_FETCH_SEMAPHORE.release()
+
+
+from api.utils.file_response import (  # noqa: F401
+    CONTENT_TYPE_MAP,
+    FORCE_ATTACHMENT_CONTENT_TYPES,
+    FORCE_ATTACHMENT_EXTENSIONS,
+    agent_attachment_preview_path,
+    apply_download_file_response_headers,
+    apply_preview_file_response_headers,
+    resolve_attachment_content_type,
+    sanitize_content_disposition_filename,
+    should_force_attachment,
+)
+
+
+def apply_safe_file_response_headers(response, content_type: str | None, ext: str | None = None):
+    if content_type:
+        response.headers.set("Content-Type", content_type)
+    force_attachment = should_force_attachment(ext, content_type)
+    if force_attachment:
+        response.headers.set("X-Content-Type-Options", "nosniff")
+        response.headers.set("Content-Disposition", "attachment")
+    return response
 
 
 def html2pdf(
@@ -86,7 +91,8 @@ def html2pdf(
     install_driver: bool = True,
     print_options: dict = {},
 ):
-    result = __get_pdf_from_html(source, timeout, install_driver, print_options)
+    with browser_fetch_slot():
+        result = __get_pdf_from_html(source, timeout, install_driver, print_options)
     return result
 
 
@@ -113,17 +119,23 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
 
     webdriver_prefs["profile.default_content_settings"] = {"images": 2}
 
-    if install_driver:
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=webdriver_options)
-    else:
-        driver = webdriver.Chrome(options=webdriver_options)
-
-    driver.get(path)
-
+    driver = None
     try:
-        WebDriverWait(driver, timeout).until(staleness_of(driver.find_element(by=By.TAG_NAME, value="html")))
-    except TimeoutException:
+        if install_driver:
+            service = Service(ChromeDriverManager().install())
+            driver = webdriver.Chrome(service=service, options=webdriver_options)
+        else:
+            driver = webdriver.Chrome(options=webdriver_options)
+
+        driver.set_page_load_timeout(BROWSER_FETCH_TIMEOUT)
+        driver.set_script_timeout(BROWSER_FETCH_TIMEOUT)
+
+        try:
+            driver.get(path)
+            WebDriverWait(driver, timeout).until(staleness_of(driver.find_element(by=By.TAG_NAME, value="html")))
+        except TimeoutException:
+            logging.warning("Timed out loading %s; printing current page state", path)
+
         calculated_print_options = {
             "landscape": False,
             "displayHeaderFooter": False,
@@ -132,33 +144,22 @@ def __get_pdf_from_html(path: str, timeout: int, install_driver: bool, print_opt
         }
         calculated_print_options.update(print_options)
         result = __send_devtools(driver, "Page.printToPDF", calculated_print_options)
-        driver.quit()
         return base64.b64decode(result["data"])
-
-
-def is_private_ip(ip: str) -> bool:
-    try:
-        ip_obj = ipaddress.ip_address(ip)
-        return ip_obj.is_private
-    except ValueError:
-        return False
+    finally:
+        if driver is not None:
+            driver.quit()
 
 
 def is_valid_url(url: str) -> bool:
     if not re.match(r"(https?)://[-A-Za-z0-9+&@#/%?=~_|!:,.;]+[-A-Za-z0-9+&@#/%=~_|]", url):
         return False
-    parsed_url = urlparse(url)
-    hostname = parsed_url.hostname
+    from common.ssrf_guard import assert_url_is_safe
 
-    if not hostname:
-        return False
     try:
-        ip = socket.gethostbyname(hostname)
-        if is_private_ip(ip):
-            return False
-    except socket.gaierror:
+        assert_url_is_safe(url)
+        return True
+    except ValueError:
         return False
-    return True
 
 
 def safe_json_parse(data: str | dict) -> dict:
@@ -178,24 +179,56 @@ def get_float(req: dict, key: str, default: float | int = 10.0) -> float:
         return default
 
 
-INVITE_EMAIL_TMPL = """
-<p>Hi {{email}},</p>
-<p>{{inviter}} has invited you to join their team (ID: {{tenant_id}}).</p>
-<p>Click the link below to complete your registration:<br>
-<a href="{{invite_url}}">{{invite_url}}</a></p>
-<p>If you did not request this, please ignore this email.</p>
-"""
+async def send_email_html(to_email: str, subject: str, template_key: str, **context):
+    body = await render_template_string(EMAIL_TEMPLATES.get(template_key), **context)
+    msg = MIMEText(body, "plain", "utf-8")
+    msg["Subject"] = Header(subject, "utf-8")
+    msg["From"] = f"{settings.MAIL_DEFAULT_SENDER[0]} <{settings.MAIL_DEFAULT_SENDER[1]}>"
+    msg["To"] = to_email
 
-def send_invite_email(to_email, invite_url, tenant_id, inviter):
-    from api.apps import  app
-    with app.app_context():
-        msg = Message(subject="RAGFlow Invitation",
-                      recipients=[to_email])
-        msg.html = render_template_string(
-            INVITE_EMAIL_TMPL,
-            email=to_email,
-            invite_url=invite_url,
-            tenant_id=tenant_id,
-            inviter=inviter,
-        )
-        smtp_mail_server.send(msg)
+    smtp = aiosmtplib.SMTP(
+        hostname=settings.MAIL_SERVER,
+        port=settings.MAIL_PORT,
+        use_tls=settings.MAIL_USE_SSL,
+        start_tls=settings.MAIL_USE_TLS,
+        timeout=10,
+    )
+
+    await smtp.connect()
+    await smtp.login(settings.MAIL_USERNAME, settings.MAIL_PASSWORD)
+    await smtp.send_message(msg)
+    await smtp.quit()
+
+
+async def send_invite_email(to_email, invite_url, tenant_id, inviter):
+    # Reuse the generic HTML sender with 'invite' template
+    await send_email_html(
+        to_email=to_email,
+        subject="RAGFlow Invitation",
+        template_key="invite",
+        email=to_email,
+        invite_url=invite_url,
+        tenant_id=tenant_id,
+        inviter=inviter,
+    )
+
+
+def otp_keys(email: str):
+    email = (email or "").strip().lower()
+    return (
+        f"otp:{email}",
+        f"otp_attempts:{email}",
+        f"otp_last_sent:{email}",
+        f"otp_lock:{email}",
+    )
+
+
+def hash_code(code: str, salt: bytes) -> str:
+    import hashlib
+    import hmac
+
+    return hmac.new(salt, (code or "").encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def captcha_key(email: str) -> str:
+    return f"captcha:{email}"

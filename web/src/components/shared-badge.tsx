@@ -1,4 +1,4 @@
-import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { PropsWithChildren } from 'react';
 
 export function SharedBadge({ children }: PropsWithChildren) {
@@ -9,7 +9,10 @@ export function SharedBadge({ children }: PropsWithChildren) {
   }
 
   return (
-    <span className="bg-text-secondary rounded-sm px-1 text-bg-base text-xs">
+    <span
+      title={typeof children === 'string' ? children : undefined}
+      className="inline-block max-w-[120px] truncate align-middle bg-bg-card rounded-sm px-1 text-xs"
+    >
       {children}
     </span>
   );

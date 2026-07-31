@@ -17,10 +17,10 @@ from datetime import datetime
 
 from peewee import fn
 
-from api.db import StatusEnum
+from common.constants import StatusEnum
 from api.db.db_models import DB, Search, User
 from api.db.services.common_service import CommonService
-from api.utils import current_timestamp, datetime_format
+from common.time_utils import current_timestamp, datetime_format
 
 
 class SearchService(CommonService):
@@ -28,10 +28,13 @@ class SearchService(CommonService):
 
     @classmethod
     def save(cls, **kwargs):
-        kwargs["create_time"] = current_timestamp()
-        kwargs["create_date"] = datetime_format(datetime.now())
-        kwargs["update_time"] = current_timestamp()
-        kwargs["update_date"] = datetime_format(datetime.now())
+        current_ts = current_timestamp()
+        current_date = datetime_format(datetime.now())
+
+        kwargs["create_time"] = current_ts
+        kwargs["create_date"] = current_date
+        kwargs["update_time"] = current_ts
+        kwargs["update_date"] = current_date
         obj = cls.model.create(**kwargs)
         return obj
 
@@ -69,11 +72,10 @@ class SearchService(CommonService):
             .join(User, on=((User.id == cls.model.tenant_id) & (User.status == StatusEnum.VALID.value)))
             .where((cls.model.id == search_id) & (cls.model.status == StatusEnum.VALID.value))
             .first()
-            .to_dict()
         )
         if not search:
             return {}
-        return search
+        return search.to_dict()
 
     @classmethod
     @DB.connection_context()
@@ -110,3 +112,8 @@ class SearchService(CommonService):
             query = query.paginate(page_number, items_per_page)
 
         return list(query.dicts()), count
+
+    @classmethod
+    @DB.connection_context()
+    def delete_by_tenant_id(cls, tenant_id):
+        return cls.model.delete().where(cls.model.tenant_id == tenant_id).execute()

@@ -1,4 +1,4 @@
-import { useIsDarkTheme, useTheme } from '@/components/theme-provider';
+import { useTheme } from '@/components/theme-provider';
 import {
   Tooltip,
   TooltipContent,
@@ -7,20 +7,19 @@ import {
 import { useSetModalState } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import {
-  Connection,
   ConnectionMode,
   ControlButton,
   Controls,
   NodeTypes,
   Position,
   ReactFlow,
+  ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { NotebookPen } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChatSheet } from '../chat/chat-sheet';
-import { AgentBackground } from '../components/background';
 import {
   AgentChatContext,
   AgentChatLogContext,
@@ -29,65 +28,84 @@ import {
 } from '../context';
 
 import FormSheet from '../form-sheet/next';
-import {
-  useHandleDrop,
-  useSelectCanvasData,
-  useValidateConnection,
-} from '../hooks';
+import { useSelectCanvasData, useValidateConnection } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
+import { useConnectionDrag } from '../hooks/use-connection-drag';
+import { useDropdownPosition } from '../hooks/use-dropdown-position';
 import { useMoveNote } from '../hooks/use-move-note';
+import { usePlaceholderManager } from '../hooks/use-placeholder-manager';
 import { useDropdownManager } from './context';
 
+import { AgentBackground } from '@/components/canvas/background';
+import Spotlight from '@/components/spotlight';
+import { useNodeLoading } from '../hooks/use-node-loading';
 import {
   useHideFormSheetOnNodeDeletion,
   useShowDrawer,
-  useShowLogSheet,
 } from '../hooks/use-show-drawer';
+import { useStopMessageUnmount } from '../hooks/use-stop-message';
 import { LogSheet } from '../log-sheet';
 import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
-import styles from './index.less';
+import styles from './index.module.less';
 import { RagNode } from './node';
 import { AgentNode } from './node/agent-node';
 import { BeginNode } from './node/begin-node';
 import { CategorizeNode } from './node/categorize-node';
-import { InnerNextStepDropdown } from './node/dropdown/next-step-dropdown';
-import { GenerateNode } from './node/generate-node';
-import { InvokeNode } from './node/invoke-node';
+import { ChunkerNode } from './node/chunker-node';
+import { CompilationNode } from './node/compilation-node';
+import { DataOperationsNode } from './node/data-operations-node';
+import { NextStepDropdown } from './node/dropdown/next-step-dropdown';
+import { ExitLoopNode } from './node/exit-loop-node';
+import { ExtractorNode } from './node/extractor-node';
+import { FileNode } from './node/file-node';
 import { IterationNode, IterationStartNode } from './node/iteration-node';
 import { KeywordNode } from './node/keyword-node';
-import { LogicNode } from './node/logic-node';
+import { ListOperationsNode } from './node/list-operations-node';
+import { LoopNode, LoopStartNode } from './node/loop-node';
 import { MessageNode } from './node/message-node';
 import NoteNode from './node/note-node';
-import { RelevantNode } from './node/relevant-node';
+import ParserNode from './node/parser-node';
+import { PlaceholderNode } from './node/placeholder-node';
 import { RetrievalNode } from './node/retrieval-node';
 import { RewriteNode } from './node/rewrite-node';
 import { SwitchNode } from './node/switch-node';
-import { TemplateNode } from './node/template-node';
+import TokenizerNode from './node/tokenizer-node';
 import { ToolNode } from './node/tool-node';
+import { VariableAggregatorNode } from './node/variable-aggregator-node';
+import { VariableAssignerNode } from './node/variable-assigner-node';
 
 export const nodeTypes: NodeTypes = {
   ragNode: RagNode,
   categorizeNode: CategorizeNode,
   beginNode: BeginNode,
-  relevantNode: RelevantNode,
-  logicNode: LogicNode,
+  placeholderNode: PlaceholderNode,
   noteNode: NoteNode,
   switchNode: SwitchNode,
-  generateNode: GenerateNode,
   retrievalNode: RetrievalNode,
   messageNode: MessageNode,
   rewriteNode: RewriteNode,
   keywordNode: KeywordNode,
-  invokeNode: InvokeNode,
-  templateNode: TemplateNode,
   // emailNode: EmailNode,
-  group: IterationNode,
+  iterationNode: IterationNode,
   iterationStartNode: IterationStartNode,
   agentNode: AgentNode,
   toolNode: ToolNode,
+  fileNode: FileNode,
+  parserNode: ParserNode,
+  tokenizerNode: TokenizerNode,
+  chunkerNode: ChunkerNode,
+  compilationNode: CompilationNode,
+  contextNode: ExtractorNode,
+  dataOperationsNode: DataOperationsNode,
+  listOperationsNode: ListOperationsNode,
+  variableAssignerNode: VariableAssignerNode,
+  variableAggregatorNode: VariableAggregatorNode,
+  loopNode: LoopNode,
+  loopStartNode: LoopStartNode,
+  exitLoopNode: ExitLoopNode,
 };
 
 const edgeTypes = {
@@ -113,8 +131,17 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   } = useSelectCanvasData();
   const isValidConnection = useValidateConnection();
 
-  const { onDrop, onDragOver, setReactFlowInstance, reactFlowInstance } =
-    useHandleDrop();
+  const [reactFlowInstance, setReactFlowInstance] =
+    useState<ReactFlowInstance<any, any>>();
+
+  const {
+    addEventList,
+    setCurrentMessageId,
+    currentEventListWithoutMessageById,
+    clearEventList,
+    currentMessageId,
+    latestTaskId,
+  } = useCacheChatLog();
 
   const {
     onNodeClick,
@@ -129,23 +156,23 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideRunOrChatDrawer,
     showChatModal,
     showFormDrawer,
+    logSheetVisible,
+    showLogSheet,
+    hideLogSheet,
   } = useShowDrawer({
     drawerVisible,
     hideDrawer,
-  });
-
-  const {
-    addEventList,
-    setCurrentMessageId,
-    currentEventListWithoutMessageById,
-    clearEventList,
-    currentMessageId,
-  } = useCacheChatLog();
-
-  const { showLogSheet, logSheetVisible, hideLogSheet } = useShowLogSheet({
     setCurrentMessageId,
   });
+
   const [lastSendLoading, setLastSendLoading] = useState(false);
+
+  const [currentSendLoading, setCurrentSendLoading] = useState(false);
+
+  const { stopMessage } = useStopMessageUnmount(
+    chatVisible && currentSendLoading,
+    latestTaskId,
+  );
 
   const { handleBeforeDelete } = useBeforeDelete();
 
@@ -157,10 +184,21 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
 
   useEffect(() => {
     if (!chatVisible) {
+      if (currentSendLoading) {
+        stopMessage(latestTaskId);
+      }
       clearEventList();
     }
-  }, [chatVisible, clearEventList]);
+  }, [
+    chatVisible,
+    clearEventList,
+    currentSendLoading,
+    latestTaskId,
+    stopMessage,
+  ]);
+
   const setLastSendLoadingFunc = (loading: boolean, messageId: string) => {
+    setCurrentSendLoading(!!loading);
     if (messageId === currentMessageId) {
       setLastSendLoading(loading);
     } else {
@@ -168,26 +206,47 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     }
   };
 
-  const isDarkTheme = useIsDarkTheme();
-
   useHideFormSheetOnNodeDeletion({ hideFormDrawer });
 
   const { visible, hideModal, showModal } = useSetModalState();
   const [dropdownPosition, setDropdownPosition] = useState({ x: 0, y: 0 });
 
-  const isConnectedRef = useRef(false);
-  const connectionStartRef = useRef<{
-    nodeId: string;
-    handleId: string;
-  } | null>(null);
+  const { clearActiveDropdown } = useDropdownManager();
 
-  const preventCloseRef = useRef(false);
+  const {
+    removePlaceholderNode,
+    onNodeCreated,
+    setCreatedPlaceholderRef,
+    checkAndRemoveExistingPlaceholder,
+  } = usePlaceholderManager(reactFlowInstance);
 
-  const { setActiveDropdown, clearActiveDropdown } = useDropdownManager();
+  const { calculateDropdownPosition } = useDropdownPosition(reactFlowInstance);
+
+  const {
+    onConnectStart,
+    onConnectEnd,
+    handleConnect,
+    getConnectionStartContext,
+    shouldPreventClose,
+    onMove,
+    nodeId,
+  } = useConnectionDrag(
+    originalOnConnect,
+    showModal,
+    hideModal,
+    setDropdownPosition,
+    setCreatedPlaceholderRef,
+    calculateDropdownPosition,
+    removePlaceholderNode,
+    clearActiveDropdown,
+    checkAndRemoveExistingPlaceholder,
+    reactFlowInstance,
+  );
 
   const onPaneClick = useCallback(() => {
     hideFormDrawer();
-    if (visible && !preventCloseRef.current) {
+    if (visible && !shouldPreventClose()) {
+      removePlaceholderNode();
       hideModal();
       clearActiveDropdown();
     }
@@ -198,56 +257,41 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   }, [
     hideFormDrawer,
     visible,
+    shouldPreventClose,
     hideModal,
     imgVisible,
     addNoteNode,
     mouse,
     hideImage,
     clearActiveDropdown,
+    removePlaceholderNode,
   ]);
-
-  const onConnect = (connection: Connection) => {
-    originalOnConnect(connection);
-    isConnectedRef.current = true;
-  };
-
-  const OnConnectStart = (event: any, params: any) => {
-    isConnectedRef.current = false;
-
-    if (params && params.nodeId && params.handleId) {
-      connectionStartRef.current = {
-        nodeId: params.nodeId,
-        handleId: params.handleId,
-      };
-    } else {
-      connectionStartRef.current = null;
-    }
-  };
-
-  const OnConnectEnd = (event: MouseEvent | TouchEvent) => {
-    if ('clientX' in event && 'clientY' in event) {
-      const { clientX, clientY } = event;
-      setDropdownPosition({ x: clientX, y: clientY });
-      if (!isConnectedRef.current) {
-        setActiveDropdown('drag');
-        showModal();
-        preventCloseRef.current = true;
-        setTimeout(() => {
-          preventCloseRef.current = false;
-        }, 300);
-      }
-    }
-  };
-
+  const { lastNode, setDerivedMessages, startButNotFinishedNodeIds } =
+    useNodeLoading({
+      currentEventListWithoutMessageById,
+    });
   return (
-    <div className={styles.canvasWrapper}>
+    <div className={cn(styles.canvasWrapper, 'px-5 pb-5')}>
       <svg
         xmlns="http://www.w3.org/2000/svg"
         style={{ position: 'absolute', top: 10, left: 0 }}
       >
         <defs>
           <marker
-            fill="rgb(157 149 225)"
+            fill="rgb(var(--accent-primary))"
+            id="selected-marker"
+            viewBox="0 0 40 40"
+            refX="8"
+            refY="5"
+            markerUnits="strokeWidth"
+            markerWidth="20"
+            markerHeight="20"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" />
+          </marker>
+          <marker
+            fill="var(--text-disabled)"
             id="logo"
             viewBox="0 0 40 40"
             refX="8"
@@ -261,7 +305,15 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           </marker>
         </defs>
       </svg>
-      <AgentInstanceContext.Provider value={{ addCanvasNode, showFormDrawer }}>
+      <AgentInstanceContext.Provider
+        value={{
+          addCanvasNode,
+          showFormDrawer,
+          lastNode,
+          currentSendLoading,
+          startButNotFinishedNodeIds,
+        }}
+      >
         <ReactFlow
           connectionMode={ConnectionMode.Loose}
           nodes={nodes}
@@ -269,13 +321,12 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           edges={edges}
           onEdgesChange={onEdgesChange}
           fitView
-          onConnect={onConnect}
+          onConnect={handleConnect}
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
-          onDrop={onDrop}
-          onConnectStart={OnConnectStart}
-          onConnectEnd={OnConnectEnd}
-          onDragOver={onDragOver}
+          onConnectStart={onConnectStart}
+          onConnectEnd={onConnectEnd}
+          onMove={onMove}
           onNodeClick={onNodeClick}
           onPaneClick={onPaneClick}
           onInit={setReactFlowInstance}
@@ -289,19 +340,19 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           defaultEdgeOptions={{
             type: 'buttonEdge',
             markerEnd: 'logo',
-            style: {
-              strokeWidth: 1,
-              stroke: isDarkTheme
-                ? 'rgba(91, 93, 106, 1)'
-                : 'rgba(151, 154, 171, 1)',
-            },
             zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
           }}
           deleteKeyCode={['Delete', 'Backspace']}
           onBeforeDelete={handleBeforeDelete}
+          panActivationKeyCode={null}
         >
           <AgentBackground></AgentBackground>
-          <Controls position={'bottom-center'} orientation="horizontal">
+          <Spotlight className="z-0" opcity={0.7} coverage={70} />
+          <Controls
+            position={'bottom-center'}
+            orientation="horizontal"
+            className="bg-bg-base px-4 py-2 h-auto w-auto [&>button]:bg-transparent [&>button]:border-0 [&>button]:text-text-primary [&>button]:hover:bg-bg-base-hover [&>button]:hover:text-text-primary [&>button]:active:bg-bg-base-active [&>button]:p-0 [&>button]:size-4 gap-2.5 rounded-md"
+          >
             <ControlButton>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -314,23 +365,28 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
         </ReactFlow>
         {visible && (
           <HandleContext.Provider
-            value={{
-              nodeId: connectionStartRef.current?.nodeId || '',
-              id: connectionStartRef.current?.handleId || '',
-              type: 'source',
-              position: Position.Right,
-              isFromConnectionDrag: true,
-            }}
+            value={
+              getConnectionStartContext() || {
+                nodeId: '',
+                id: '',
+                type: 'source',
+                position: Position.Right,
+                isFromConnectionDrag: true,
+              }
+            }
           >
-            <InnerNextStepDropdown
+            <NextStepDropdown
               hideModal={() => {
+                removePlaceholderNode();
                 hideModal();
                 clearActiveDropdown();
               }}
               position={dropdownPosition}
+              onNodeCreated={onNodeCreated}
+              nodeId={nodeId}
             >
               <span></span>
-            </InnerNextStepDropdown>
+            </NextStepDropdown>
           </HandleContext.Provider>
         )}
       </AgentInstanceContext.Provider>
@@ -353,9 +409,10 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           ></FormSheet>
         </AgentInstanceContext.Provider>
       )}
+
       {chatVisible && (
         <AgentChatContext.Provider
-          value={{ showLogSheet, setLastSendLoadingFunc }}
+          value={{ showLogSheet, setLastSendLoadingFunc, setDerivedMessages }}
         >
           <AgentChatLogContext.Provider
             value={{ addEventList, setCurrentMessageId }}

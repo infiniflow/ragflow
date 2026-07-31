@@ -20,7 +20,15 @@ import os
 import time
 import re
 from nltk.corpus import wordnet
-from api.utils.file_utils import get_project_base_directory
+from common.file_utils import get_project_base_directory
+
+
+# Forces NLTK to load the corpus synchronously once, preventing concurrent tasks
+# from triggering the lazy-loading race condition.
+try:
+    wordnet.ensure_loaded()
+except Exception:
+    logging.warning("Fail to load wordnet.ensure_loaded()")
 
 
 class Dealer:
@@ -31,14 +39,16 @@ class Dealer:
         self.dictionary = None
         path = os.path.join(get_project_base_directory(), "rag/res", "synonym.json")
         try:
-            self.dictionary = json.load(open(path, 'r'))
+            with open(path, "r") as f:
+                self.dictionary = json.load(f)
+
+            self.dictionary = {(k.lower() if isinstance(k, str) else k): v for k, v in self.dictionary.items()}
         except Exception:
             logging.warning("Missing synonym.json")
             self.dictionary = {}
 
         if not redis:
-            logging.warning(
-                "Realtime synonym is disabled, since no redis connection.")
+            logging.warning("Realtime synonym is disabled, since no redis connection.")
         if not len(self.dictionary.keys()):
             logging.warning("Fail to load synonym")
 
@@ -67,18 +77,30 @@ class Dealer:
             logging.error("Fail to load synonym!" + str(e))
 
     def lookup(self, tk, topn=8):
-        if re.match(r"[a-z]+$", tk):
-            res = list(set([re.sub("_", " ", syn.name().split(".")[0]) for syn in wordnet.synsets(tk)]) - set([tk]))
-            return [t for t in res if t]
+        if not tk or not isinstance(tk, str):
+            return []
 
+        # 1) Check the custom dictionary first (both keys and tk are already lowercase)
         self.lookup_num += 1
         self.load()
-        res = self.dictionary.get(re.sub(r"[ \t]+", " ", tk.lower()), [])
+        key = re.sub(r"[ \t]+", " ", tk.strip())
+        res = self.dictionary.get(key, [])
         if isinstance(res, str):
             res = [res]
-        return res[:topn]
+        if res:  # Found in dictionary → return directly
+            return res[:topn]
+
+        # 2) If not found and tk is purely alphabetical → fallback to WordNet
+        if re.fullmatch(r"[a-z]+", tk):
+            wn_set = {re.sub("_", " ", syn.name().split(".")[0]) for syn in wordnet.synsets(tk)}
+            wn_set.discard(tk)  # Remove the original token itself
+            wn_res = [t for t in wn_set if t]
+            return wn_res[:topn]
+
+        # 3) Nothing found in either source
+        return []
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     dl = Dealer()
     print(dl.dictionary)

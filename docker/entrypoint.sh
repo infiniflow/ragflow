@@ -2,15 +2,22 @@
 
 set -e
 
+echo "Start RAGFlow cluster, version: "
+cat /ragflow/VERSION
+
 # -----------------------------------------------------------------------------
 # Usage and command-line argument parsing
 # -----------------------------------------------------------------------------
 function usage() {
-    echo "Usage: $0 [--disable-webserver] [--disable-taskexecutor] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--host-id=<string>]"
+    echo "Usage: $0 [--disable-webserver] [--disable-taskexecutor] [--disable-datasync] [--consumer-no-beg=<num>] [--consumer-no-end=<num>] [--workers=<num>] [--host-id=<string>]"
     echo
     echo "  --disable-webserver             Disables the web server (nginx + ragflow_server)."
     echo "  --disable-taskexecutor          Disables task executor workers."
+    echo "  --disable-datasync              Disables synchronization of datasource workers."
     echo "  --enable-mcpserver              Enables the MCP server."
+    echo "  --enable-adminserver            Enables the Admin server."
+    echo "  --init-model-provider-tables  Run model provider table migrations and exit."
+    echo "  --init-superuser                Initializes the superuser."
     echo "  --consumer-no-beg=<num>         Start range for consumers (if using range-based)."
     echo "  --consumer-no-end=<num>         End range for consumers (if using range-based)."
     echo "  --workers=<num>                 Number of task executors to run (if range is not used)."
@@ -21,12 +28,18 @@ function usage() {
     echo "  $0 --disable-webserver --consumer-no-beg=0 --consumer-no-end=5"
     echo "  $0 --disable-webserver --workers=2 --host-id=myhost123"
     echo "  $0 --enable-mcpserver"
+    echo "  $0 --enable-adminserver"
+    echo "  $0 --init-superuser"
     exit 1
 }
 
 ENABLE_WEBSERVER=1 # Default to enable web server
 ENABLE_TASKEXECUTOR=1  # Default to enable task executor
+ENABLE_DATASYNC=1
 ENABLE_MCP_SERVER=0
+ENABLE_ADMIN_SERVER=0 # Default close admin server
+INIT_SUPERUSER_ARGS="" # Default to not initialize superuser
+INIT_MODEL_PROVIDER_TABLES=0
 CONSUMER_NO_BEG=0
 CONSUMER_NO_END=0
 WORKERS=1
@@ -66,8 +79,24 @@ for arg in "$@"; do
       ENABLE_TASKEXECUTOR=0
       shift
       ;;
+    --disable-datasync)
+      ENABLE_DATASYNC=0
+      shift
+      ;;
     --enable-mcpserver)
       ENABLE_MCP_SERVER=1
+      shift
+      ;;
+    --enable-adminserver)
+      ENABLE_ADMIN_SERVER=1
+      shift
+      ;;
+    --init-model-provider-tables)
+      INIT_MODEL_PROVIDER_TABLES=1
+      shift
+      ;;
+    --init-superuser)
+      INIT_SUPERUSER_ARGS="--init-superuser"
       shift
       ;;
     --mcp-host=*)
@@ -136,12 +165,45 @@ TEMPLATE_FILE="${CONF_DIR}/service_conf.yaml.template"
 CONF_FILE="${CONF_DIR}/service_conf.yaml"
 
 rm -f "${CONF_FILE}"
+DEF_ENV_VALUE_PATTERN="\$\{([^:]+):-([^}]+)\}"
 while IFS= read -r line || [[ -n "$line" ]]; do
-    eval "echo \"$line\"" >> "${CONF_FILE}"
+    if [[ "$line" =~ DEF_ENV_VALUE_PATTERN ]]; then
+        varname="${BASH_REMATCH[1]}"
+        default="${BASH_REMATCH[2]}"
+
+        if [ -n "${!varname}" ]; then
+            eval "echo \"$line"\" >> "${CONF_FILE}"
+        else
+            echo "$line" | sed -E "s/\\\$\{[^:]+:-([^}]+)\}/\1/g" >> "${CONF_FILE}"
+        fi
+    else
+        eval "echo \"$line\"" >> "${CONF_FILE}"
+    fi
 done < "${TEMPLATE_FILE}"
 
 export LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu/"
 PY=python3
+
+# -----------------------------------------------------------------------------
+# Select Nginx Configuration based on API_PROXY_SCHEME
+# -----------------------------------------------------------------------------
+NGINX_CONF_DIR="/etc/nginx/conf.d"
+if [ -n "$API_PROXY_SCHEME" ]; then
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]]; then
+        cp -f "$NGINX_CONF_DIR/ragflow.conf.hybrid" "$NGINX_CONF_DIR/ragflow.conf"
+        echo "Applied nginx config: ragflow.conf.hybrid"
+    elif [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        cp -f "$NGINX_CONF_DIR/ragflow.conf.golang" "$NGINX_CONF_DIR/ragflow.conf"
+        echo "Applied nginx config: ragflow.conf.golang (default)"
+    else
+        cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
+        echo "Applied nginx config: ragflow.conf.python"
+    fi
+else
+    # Default to python backend
+    cp -f "$NGINX_CONF_DIR/ragflow.conf.python" "$NGINX_CONF_DIR/ragflow.conf"
+    echo "Default: applied nginx config: ragflow.conf.python"
+fi
 
 # -----------------------------------------------------------------------------
 # Function(s)
@@ -154,7 +216,9 @@ function task_exe() {
     JEMALLOC_PATH="$(pkg-config --variable=libdir jemalloc)/libjemalloc.so"
     while true; do
         LD_PRELOAD="$JEMALLOC_PATH" \
-        "$PY" rag/svr/task_executor.py "${host_id}_${consumer_id}"
+        "$PY" rag/svr/task_executor.py -i "${host_id}_${consumer_id}" -t "common" &
+        wait;
+        sleep 1;
     done
 }
 
@@ -171,38 +235,121 @@ function start_mcp_server() {
         "${MCP_JSON_RESPONSE_FLAG}" &
 }
 
+function ensure_docling() {
+    [[ "${USE_DOCLING}" == "true" ]] || { echo "[docling] disabled by USE_DOCLING"; return 0; }
+    DOCLING_PIN="${DOCLING_VERSION:-==2.71.0}"
+    "$PY" -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('docling') else 1)" \
+      || uv pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --extra-index-url https://pypi.org/simple --no-cache-dir "docling${DOCLING_PIN}"
+}
+
+function ensure_db_init() {
+    echo "Initializing database tables..."
+    "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
+    echo "Database tables initialized."
+}
+
 # -----------------------------------------------------------------------------
 # Start components based on flags
 # -----------------------------------------------------------------------------
+ensure_docling
+ensure_db_init
+
+if [[ "${INIT_MODEL_PROVIDER_TABLES}" -eq 1 ]]; then
+    tools/scripts/run_migrations.sh
+fi
+
+if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+        while true; do
+            echo "Attempt to start Admin python server..."
+            "$PY" admin/server/admin_server.py
+            echo "Admin python server started"
+            sleep 1;
+        done &
+    fi
+
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        while true; do
+            echo "Starting Admin go server..."
+            bin/ragflow_server --admin
+            echo "Admin go server started."
+            sleep 1;
+        done &
+    fi
+fi
 
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
     /usr/sbin/nginx
 
-    echo "Starting ragflow_server..."
-    while true; do
-        "$PY" api/ragflow_server.py
-    done &
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+        while true; do
+            echo "Attempt to start RAGFlow python server..."
+            "$PY" api/ragflow_server.py ${INIT_SUPERUSER_ARGS}
+            echo "RAGFlow python server started."
+            sleep 1;
+        done &
+    fi
+
+    if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+        while true; do
+            echo "Starting RAGFlow go server..."
+            bin/ragflow_server --api
+            echo "RAGFlow go server started."
+            sleep 1;
+        done &
+    fi
 fi
 
+if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
+    echo "Starting data sync..."
+    while true; do
+        "$PY" rag/svr/sync_data_source.py &
+        wait;
+        sleep 1;
+    done &
+fi
 
 if [[ "${ENABLE_MCP_SERVER}" -eq 1 ]]; then
     start_mcp_server
 fi
 
+
 if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
     if [[ "${CONSUMER_NO_END}" -gt "${CONSUMER_NO_BEG}" ]]; then
-        echo "Starting task executors on host '${HOST_ID}' for IDs in [${CONSUMER_NO_BEG}, ${CONSUMER_NO_END})..."
-        for (( i=CONSUMER_NO_BEG; i<CONSUMER_NO_END; i++ ))
-        do
-          task_exe "${i}" "${HOST_ID}" &
-        done
+        if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+            echo "Starting python task executors on host '${HOST_ID}' for IDs in [${CONSUMER_NO_BEG}, ${CONSUMER_NO_END})..."
+            for (( i=CONSUMER_NO_BEG; i<CONSUMER_NO_END; i++ ))
+            do
+              task_exe "${i}" "${HOST_ID}" &
+            done
+        fi
+
+        if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+            while true; do
+                echo "Starting go ingestor..."
+                bin/ragflow_server --ingestor
+                sleep 1;
+            done &
+        fi
     else
         # Otherwise, start a fixed number of workers
         echo "Starting ${WORKERS} task executor(s) on host '${HOST_ID}'..."
         for (( i=0; i<WORKERS; i++ ))
         do
-          task_exe "${i}" "${HOST_ID}" &
+          if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "python" ]]; then
+              echo "Starting python task executor..."
+              task_exe "${i}" "${HOST_ID}" &
+              sleep 1;
+          fi
+
+          if [[ "${API_PROXY_SCHEME}" == "hybrid" ]] || [[ "${API_PROXY_SCHEME}" == "go" ]]; then
+              while true; do
+                  echo "Starting go ingestor..."
+                  bin/ragflow_server --ingestor
+                  sleep 1;
+              done &
+          fi
         done
     fi
 fi

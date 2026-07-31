@@ -1,29 +1,30 @@
-import Image from '@/components/image';
+import Image, { AuthenticatedImg } from '@/components/image';
 import SvgIcon from '@/components/svg-icon';
+import { MarkdownRemarkPlugins } from '@/constants/markdown-remark-plugins';
 import { IReference, IReferenceChunk } from '@/interfaces/database/chat';
 import { getExtension } from '@/utils/document-util';
-import { InfoCircleOutlined } from '@ant-design/icons';
 import DOMPurify from 'dompurify';
 import { memo, useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
-import reactStringReplace from 'react-string-replace';
 import SyntaxHighlighter from 'react-syntax-highlighter';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
-import remarkGfm from 'remark-gfm';
-import remarkMath from 'remark-math';
 import { visitParents } from 'unist-util-visit-parents';
 
-import { useFetchDocumentThumbnailsByIds } from '@/hooks/document-hooks';
 import { useTranslation } from 'react-i18next';
 
 import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for you
 
 import {
+  currentReg,
+  parseCitationIndex,
   preprocessLaTeX,
+  replaceRetrievingToSection,
+  replaceTextByOldReg,
   replaceThinkToSection,
-  showImage,
 } from '@/utils/chat';
+import { citationMarkerReg } from '@/utils/citation-utils';
+import { getDirAttribute } from '@/utils/text-direction';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -31,12 +32,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { currentReg, replaceTextByOldReg } from '@/pages/next-chats/utils';
+import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import classNames from 'classnames';
 import { omit } from 'lodash';
-import { pipe } from 'lodash/fp';
-
-const getChunkIndex = (match: string) => Number(match);
+import pipe from 'lodash/fp/pipe';
+import reactStringReplace from 'react-string-replace';
 
 // Defining Tailwind CSS class name constants
 const styles = {
@@ -48,6 +48,8 @@ const styles = {
   referenceIcon: 'px-[6px]',
   fileThumbnail: 'inline-block max-w-[40px]',
 };
+
+const getChunkIndex = (match: string) => parseCitationIndex(match);
 
 // TODO: The display of the table is inconsistent with the display previously placed in the MessageItem.
 const MarkdownContent = ({
@@ -64,13 +66,20 @@ const MarkdownContent = ({
   const { setDocumentIds, data: fileThumbnails } =
     useFetchDocumentThumbnailsByIds();
   const contentWithCursor = useMemo(() => {
-    // let text = DOMPurify.sanitize(content);
-    let text = content;
+    let text = DOMPurify.sanitize(content, {
+      ADD_TAGS: ['think', 'section', 'details', 'summary', 'retrieving'],
+      ADD_ATTR: ['class'],
+    });
+    // let text = content;
     if (text === '') {
       text = t('chat.searching');
     }
     const nextText = replaceTextByOldReg(text);
-    return pipe(replaceThinkToSection, preprocessLaTeX)(nextText);
+    return pipe(
+      replaceThinkToSection,
+      replaceRetrievingToSection,
+      preprocessLaTeX,
+    )(nextText);
   }, [content, t]);
 
   useEffect(() => {
@@ -82,19 +91,15 @@ const MarkdownContent = ({
     (
       documentId: string,
       chunk: IReferenceChunk,
-      // isPdf: boolean,
-      // documentUrl?: string,
-    ) =>
-      () => {
-        // if (!isPdf) {
-        //   if (!documentUrl) {
-        //     return;
-        //   }
-        //   window.open(documentUrl, '_blank');
-        // } else {
+      isPdf: boolean = false,
+      documentUrl?: string,
+    ) => {
+      void isPdf;
+      void documentUrl;
+      return () => {
         clickDocumentButton?.(documentId, chunk);
-        // }
-      },
+      };
+    },
     [clickDocumentButton],
   );
 
@@ -180,7 +185,7 @@ const MarkdownContent = ({
             {documentId && (
               <div className="flex gap-2">
                 {fileThumbnail ? (
-                  <img
+                  <AuthenticatedImg
                     src={fileThumbnail}
                     alt=""
                     className={styles.fileThumbnail}
@@ -193,7 +198,10 @@ const MarkdownContent = ({
                 )}
                 <Button
                   variant="link"
-                  className={classNames(styles.documentLink, 'text-wrap')}
+                  className={classNames(
+                    styles.documentLink,
+                    'text-wrap flex-1 h-auto',
+                  )}
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
@@ -214,32 +222,15 @@ const MarkdownContent = ({
 
   const renderReference = useCallback(
     (text: string) => {
-      let replacedText = reactStringReplace(text, currentReg, (match, i) => {
+      const replacedText = reactStringReplace(text, currentReg, (match) => {
         const chunkIndex = getChunkIndex(match);
 
-        const { imageId, chunkItem, documentId } = getReferenceInfo(chunkIndex);
-
-        const docType = chunkItem?.doc_type;
-
-        return showImage(docType) ? (
-          <Image
-            id={imageId}
-            className={styles.referenceInnerChunkImage}
-            onClick={
-              documentId
-                ? handleDocumentButtonClick(
-                    documentId,
-                    chunkItem,
-                    // fileExtension === 'pdf',
-                    // documentUrl,
-                  )
-                : () => {}
-            }
-          ></Image>
-        ) : (
+        return (
           <Popover>
             <PopoverTrigger>
-              <InfoCircleOutlined className={styles.referenceIcon} />
+              <span className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap">
+                Fig. {chunkIndex + 1}
+              </span>
             </PopoverTrigger>
             <PopoverContent className="!w-fit">
               {getPopoverContent(chunkIndex)}
@@ -250,45 +241,52 @@ const MarkdownContent = ({
 
       return replacedText;
     },
-    [getPopoverContent, getReferenceInfo, handleDocumentButtonClick],
+    [getPopoverContent],
   );
 
+  const dir = getDirAttribute(content.replace(citationMarkerReg, ''));
+
   return (
-    <Markdown
-      rehypePlugins={[rehypeWrapReference, rehypeKatex, rehypeRaw]}
-      remarkPlugins={[remarkGfm, remarkMath]}
+    <div
+      dir={dir}
       className="[&>section.think]:pl-[10px] [&>section.think]:text-[#8b8b8b] [&>section.think]:border-l-2 [&>section.think]:border-l-[#d5d3d3] [&>section.think]:mb-[10px] [&>section.think]:text-xs [&>blockquote]:pl-[10px] [&>blockquote]:border-l-4 [&>blockquote]:border-l-[#ccc] text-sm"
-      components={
-        {
-          'custom-typography': ({ children }: { children: string }) =>
-            renderReference(children),
-          code(props: any) {
-            const { children, className, ...rest } = props;
-            const restProps = omit(rest, 'node');
-            const match = /language-(\w+)/.exec(className || '');
-            return match ? (
-              <SyntaxHighlighter
-                {...restProps}
-                PreTag="div"
-                language={match[1]}
-                wrapLongLines
-              >
-                {String(children).replace(/\n$/, '')}
-              </SyntaxHighlighter>
-            ) : (
-              <code
-                {...restProps}
-                className={classNames(className, 'text-wrap')}
-              >
-                {children}
-              </code>
-            );
-          },
-        } as any
-      }
     >
-      {contentWithCursor}
-    </Markdown>
+      <Markdown
+        rehypePlugins={[rehypeRaw, rehypeWrapReference, rehypeKatex]}
+        remarkPlugins={MarkdownRemarkPlugins}
+        components={
+          {
+            p: ({ children, ...props }: any) => <p {...props}>{children}</p>,
+            'custom-typography': ({ children }: { children: string }) =>
+              renderReference(children),
+            code(props: any) {
+              const { children, className, ...rest } = props;
+              const restProps = omit(rest, 'node');
+              const match = /language-(\w+)/.exec(className || '');
+              return match ? (
+                <SyntaxHighlighter
+                  {...restProps}
+                  PreTag="div"
+                  language={match[1]}
+                  wrapLongLines
+                >
+                  {String(children).replace(/\n$/, '')}
+                </SyntaxHighlighter>
+              ) : (
+                <code
+                  {...restProps}
+                  className={classNames(className, 'text-wrap')}
+                >
+                  {children}
+                </code>
+              );
+            },
+          } as any
+        }
+      >
+        {contentWithCursor}
+      </Markdown>
+    </div>
   );
 };
 

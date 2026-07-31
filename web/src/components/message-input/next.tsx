@@ -14,12 +14,23 @@ import {
 } from '@/components/file-upload';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/lib/utils';
-import { CircleStop, Paperclip, Send, Upload, X } from 'lucide-react';
+import { CircleStop, Globe, Paperclip, Send, Upload, X } from 'lucide-react';
 import * as React from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
+import storage from '@/utils/authorization-util';
+import { SelectWithSearch } from '../originui/select-with-search';
+import { AudioButton } from '../ui/audio-button';
 
-interface IProps {
+export type NextMessageInputOnPressEnterParameter = {
+  enableThinking?: string;
+  enableInternet?: boolean;
+  storeHistoryMessages?: boolean;
+  omitSessionId?: boolean;
+};
+
+interface NextMessageInputProps {
   disabled: boolean;
   value: string;
   sendDisabled: boolean;
@@ -29,11 +40,18 @@ interface IProps {
   isShared?: boolean;
   showUploadIcon?: boolean;
   isUploading?: boolean;
-  onPressEnter(...prams: any[]): void;
+  onPressEnter({
+    enableThinking,
+    enableInternet,
+  }: NextMessageInputOnPressEnterParameter): void;
   onInputChange: React.ChangeEventHandler<HTMLTextAreaElement>;
   createConversationBeforeUploadDocument?(message: string): Promise<any>;
   stopOutputMessage?(): void;
   onUpload?: NonNullable<FileUploadProps['onUpload']>;
+  removeFile?(file: File): void;
+  showReasoning?: boolean;
+  showInternet?: boolean;
+  resize?: 'none' | 'vertical' | 'horizontal' | 'both';
 }
 
 export function NextMessageInput({
@@ -43,12 +61,89 @@ export function NextMessageInput({
   sendLoading,
   disabled,
   showUploadIcon = true,
+  resize = 'none',
   onUpload,
   onInputChange,
   stopOutputMessage,
   onPressEnter,
-}: IProps) {
+  removeFile,
+  showReasoning = false,
+  showInternet = false,
+}: NextMessageInputProps) {
+  const { t } = useTranslation();
   const [files, setFiles] = React.useState<File[]>([]);
+  const [audioInputValue, setAudioInputValue] = React.useState<string | null>(
+    null,
+  );
+
+  const [enableThinking, setEnableThinking] = useState(() =>
+    storage.getThinkingLevel(),
+  );
+  const [enableInternet, setEnableInternet] = useState(false);
+
+  const thinkingOptions = useMemo(
+    () => [
+      {
+        label: t('chat.thinkingLevelUltra'),
+        value: '4',
+        description: t('chat.thinkingLevelUltraDescription'),
+      },
+      {
+        label: t('chat.thinkingLevelHigh'),
+        value: '3',
+        description: t('chat.thinkingLevelHighDescription'),
+      },
+      {
+        label: t('chat.thinkingLevelMedium'),
+        value: '2',
+        description: t('chat.thinkingLevelMediumDescription'),
+      },
+      {
+        label: t('chat.thinkingLevelLow'),
+        value: '1',
+        description: t('chat.thinkingLevelLowDescription'),
+      },
+      { label: t('chat.thinkingLevelNone'), value: '0' },
+    ],
+    [t],
+  );
+
+  const handleThinkingChange = useCallback((value: string) => {
+    setEnableThinking(value);
+    storage.setThinkingLevel(value);
+  }, []);
+
+  const handleInternetToggle = useCallback(() => {
+    setEnableInternet((prev) => !prev);
+  }, []);
+
+  const pressEnter = useCallback(() => {
+    onPressEnter({
+      enableThinking,
+      enableInternet: showInternet ? enableInternet : false,
+    });
+  }, [onPressEnter, enableThinking, enableInternet, showInternet]);
+
+  useEffect(() => {
+    if (audioInputValue !== null) {
+      onInputChange({
+        target: { value: audioInputValue },
+      } as React.ChangeEvent<HTMLTextAreaElement>);
+
+      setTimeout(() => {
+        pressEnter();
+        setAudioInputValue(null);
+      }, 0);
+    }
+  }, [
+    audioInputValue,
+    onInputChange,
+    onPressEnter,
+    enableThinking,
+    enableInternet,
+    showInternet,
+    pressEnter,
+  ]);
 
   const onFileReject = React.useCallback((file: File, message: string) => {
     toast(message, {
@@ -57,10 +152,10 @@ export function NextMessageInput({
   }, []);
 
   const submit = React.useCallback(() => {
-    if (isUploading) return;
-    onPressEnter();
+    if (isUploading || sendLoading) return;
+    pressEnter();
     setFiles([]);
-  }, [isUploading, onPressEnter]);
+  }, [isUploading, sendLoading, pressEnter]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -77,13 +172,20 @@ export function NextMessageInput({
     [submit],
   );
 
+  const handleRemoveFile = React.useCallback(
+    (file: File) => () => {
+      removeFile?.(file);
+    },
+    [removeFile],
+  );
+
   return (
     <FileUpload
       value={files}
       onValueChange={setFiles}
       onUpload={onUpload}
       onFileReject={onFileReject}
-      className="relative w-full items-center "
+      className="relative w-full items-center"
       disabled={isUploading || disabled}
     >
       <FileUploadDropzone
@@ -102,9 +204,14 @@ export function NextMessageInput({
           </p>
         </div>
       </FileUploadDropzone>
+
       <form
         onSubmit={onSubmit}
-        className="relative flex w-full flex-col gap-2.5 rounded-md border border-input px-3 py-2 outline-none focus-within:ring-1 focus-within:ring-ring/50"
+        className="
+          relative flex w-full flex-col gap-2.5 rounded-md
+          border-0.5 border-border-default bg-bg-card p-2 outline-none
+          has-[textarea:focus]:outline-accent-primary has-[textarea:focus]:outline-1 has-[textarea:focus]:outline-offset-2
+        "
       >
         <FileUploadList
           orientation="horizontal"
@@ -121,6 +228,7 @@ export function NextMessageInput({
                   variant="secondary"
                   size="icon"
                   className="-top-1 -right-1 absolute size-4 shrink-0 cursor-pointer rounded-full"
+                  onClick={handleRemoveFile(file)}
                 >
                   <X className="size-2.5" />
                 </Button>
@@ -128,47 +236,92 @@ export function NextMessageInput({
             </FileUploadItem>
           ))}
         </FileUploadList>
+
         <Textarea
+          data-testid="chat-textarea"
           value={value}
           onChange={onInputChange}
-          placeholder="Type your message here..."
-          className="field-sizing-content min-h-10 w-full resize-none border-0 bg-transparent p-0 shadow-none focus-visible:ring-0 dark:bg-transparent"
+          placeholder={t('chat.messagePlaceholder')}
+          className="
+            min-h-10 max-h-40 w-full p-0 overflow-auto
+            !outline-none !border-transparent !bg-transparent !shadow-none !ring-transparent !ring-offset-transparent
+          "
           disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}
+          resize={resize}
+          autoSize={{ minRows: 2, maxRows: 8 }}
         />
-        <div
-          className={cn('flex items-center justify-between gap-1.5', {
-            'justify-end': !showUploadIcon,
-          })}
-        >
-          {showUploadIcon && (
-            <FileUploadTrigger asChild>
+
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {showUploadIcon && (
+              <FileUploadTrigger asChild>
+                <Button
+                  type="button"
+                  size="icon-xs"
+                  variant="transparent"
+                  className="rounded-sm border-0"
+                  disabled={isUploading || sendLoading}
+                  data-testid="chat-detail-attach"
+                >
+                  <Paperclip className="size-3.5" />
+                  <span className="sr-only">Attach file</span>
+                </Button>
+              </FileUploadTrigger>
+            )}
+
+            {showReasoning && (
+              <SelectWithSearch
+                value={enableThinking}
+                options={thinkingOptions}
+                onChange={handleThinkingChange}
+                triggerClassName="h-7 border-0 !bg-bg-card text-sm"
+                testId="chat-detail-thinking-toggle"
+              />
+            )}
+
+            {showInternet && (
               <Button
                 type="button"
-                size="icon"
-                variant="ghost"
-                className="size-7 rounded-sm"
-                disabled={isUploading || sendLoading}
+                variant={enableInternet ? 'accent' : 'transparent'}
+                size="icon-xs"
+                className="border-0"
+                onClick={handleInternetToggle}
+                data-testid="chat-detail-internet-toggle"
               >
-                <Paperclip className="size-3.5" />
-                <span className="sr-only">Attach file</span>
+                <Globe />
               </Button>
-            </FileUploadTrigger>
-          )}
+            )}
+          </div>
+
           {sendLoading ? (
-            <Button onClick={stopOutputMessage} className="size-5 rounded-sm">
+            <Button
+              data-testid="chat-stream-status"
+              onClick={stopOutputMessage}
+              size="icon-xs"
+            >
               <CircleStop />
             </Button>
           ) : (
-            <Button
-              className="size-5 rounded-sm"
-              disabled={
-                sendDisabled || isUploading || sendLoading || !value.trim()
-              }
-            >
-              <Send />
-              <span className="sr-only">Send message</span>
-            </Button>
+            <div className="flex items-center gap-3">
+              <AudioButton
+                onOk={(value) => {
+                  setAudioInputValue(value);
+                }}
+                testId="chat-detail-audio-toggle"
+              />
+
+              <Button
+                size="icon-xs"
+                disabled={
+                  sendDisabled || isUploading || sendLoading || !value.trim()
+                }
+                data-testid="chat-detail-send"
+              >
+                <Send />
+                <span className="sr-only">Send message</span>
+              </Button>
+            </div>
           )}
         </div>
       </form>

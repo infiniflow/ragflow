@@ -1,0 +1,159 @@
+import {
+  AgentStructuredOutputField,
+  JsonSchemaDataType,
+  Operator,
+} from '@/constants/agent';
+import { BaseNode } from '@/interfaces/database/agent';
+import OperatorIcon from '@/components/operator-icon';
+
+import { Edge } from '@xyflow/react';
+import { get, isEmpty } from 'lodash';
+import { ReactNode } from 'react';
+
+export function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
+  // Iterative BFS with a visited set so cycles in the upstream graph
+  // (e.g. answer:0 ↔ exesql:0 in the v1 exesql.json fixture) cannot
+  // recurse forever. The previous recursive implementation had no cycle
+  // detection and would blow the stack on any cyclic dsl.
+  const visited = new Set<string>(nodeIds);
+  const result: string[] = [];
+  let frontier = [...nodeIds];
+  while (frontier.length) {
+    const next: string[] = [];
+    for (const nodeId of frontier) {
+      const upstreamIds = edges
+        .filter((x) => x.target === nodeId)
+        .map((x) => x.source);
+      for (const id of upstreamIds) {
+        if (!visited.has(id)) {
+          visited.add(id);
+          result.push(id);
+          next.push(id);
+        }
+      }
+    }
+    frontier = next;
+  }
+  return result;
+}
+
+export function filterChildNodeIds(nodes: BaseNode[], nodeId?: string) {
+  return nodes.filter((x) => x.parentId === nodeId).map((x) => x.id);
+}
+
+export function isAgentStructured(id?: string, label?: string) {
+  return (
+    label === AgentStructuredOutputField && id?.startsWith(`${Operator.Agent}:`)
+  );
+}
+
+export function buildVariableValue(value: string, nodeId?: string) {
+  return `${nodeId}@${value}`;
+}
+
+export function buildSecondaryOutputOptions(
+  outputs: Record<string, any> = {},
+  nodeId?: string,
+  parentLabel?: string | ReactNode,
+  icon?: ReactNode,
+) {
+  return Object.keys(outputs).map((x) => ({
+    label: x,
+    value: buildVariableValue(x, nodeId),
+    parentLabel,
+    icon,
+    type: isAgentStructured(nodeId, x)
+      ? JsonSchemaDataType.Object
+      : outputs[x]?.type,
+  }));
+}
+
+function getNodeOutputs(x: BaseNode) {
+  const outputs = x.data.form?.outputs ?? {};
+  if (x.data.label !== Operator.Code) {
+    return outputs;
+  }
+
+  return {
+    ...outputs,
+    content: outputs.content ?? {
+      type: JsonSchemaDataType.String,
+      value: '',
+    },
+    attachments: outputs.attachments ?? {
+      type: 'Array<String>',
+      value: [],
+    },
+  };
+}
+
+export function buildOutputOptions(x: BaseNode) {
+  return {
+    label: x.data.name,
+    value: x.id,
+    title: x.data.name,
+    options: buildSecondaryOutputOptions(
+      getNodeOutputs(x),
+      x.id,
+      x.data.name,
+      <OperatorIcon name={x.data.label as Operator} />,
+    ),
+  };
+}
+
+export function buildNodeOutputOptions({
+  nodes, // all nodes
+  nodeIds, // Need to obtain the output node IDs
+}: {
+  nodes: BaseNode[];
+  nodeIds: string[];
+}) {
+  const nodeWithOutputList = nodes.filter(
+    (x) => nodeIds.some((y) => y === x.id) && !isEmpty(getNodeOutputs(x)),
+  );
+
+  return nodeWithOutputList.map((x) => buildOutputOptions(x));
+}
+
+export function buildUpstreamNodeOutputOptions({
+  nodes,
+  edges,
+  nodeId,
+}: {
+  nodes: BaseNode[];
+  edges: Edge[];
+  nodeId?: string;
+}) {
+  if (!nodeId) {
+    return [];
+  }
+  const upstreamIds = filterAllUpstreamNodeIds(edges, [nodeId]);
+
+  return buildNodeOutputOptions({ nodes, nodeIds: upstreamIds });
+}
+
+export function buildChildOutputOptions({
+  nodes,
+  nodeId,
+}: {
+  nodes: BaseNode[];
+  nodeId?: string;
+}) {
+  const nodeWithOutputList = nodes.filter(
+    (x) => x.parentId === nodeId && !isEmpty(getNodeOutputs(x)),
+  );
+
+  return nodeWithOutputList.map((x) => buildOutputOptions(x));
+}
+
+export function getStructuredDatatype(value: Record<string, any> | unknown) {
+  const dataType = get(value, 'type');
+  const arrayItemsType = get(value, 'items.type', JsonSchemaDataType.String);
+
+  const compositeDataType =
+    dataType === JsonSchemaDataType.Array
+      ? `${dataType}<${arrayItemsType}>`
+      : dataType;
+
+  return { dataType, compositeDataType };
+}

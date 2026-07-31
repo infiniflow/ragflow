@@ -1,9 +1,7 @@
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useSetDialog } from '@/hooks/use-chat-request';
+import { usePatchChat } from '@/hooks/use-chat-request';
 import { IDialog } from '@/interfaces/database/chat';
-import { isEmpty, omit } from 'lodash';
-import { useCallback, useMemo, useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { useCallback, useState } from 'react';
 
 export const useRenameChat = () => {
   const [chat, setChat] = useState<IDialog>({} as IDialog);
@@ -12,57 +10,25 @@ export const useRenameChat = () => {
     hideModal: hideChatRenameModal,
     showModal: showChatRenameModal,
   } = useSetModalState();
-  const { setDialog, loading } = useSetDialog();
-  const { t } = useTranslation();
-
-  const InitialData = useMemo(
-    () => ({
-      name: '',
-      icon: '',
-      language: 'English',
-      prompt_config: {
-        empty_response: '',
-        prologue: t('chat.setAnOpenerInitial'),
-        quote: true,
-        keyword: false,
-        tts: false,
-        system: t('chat.systemInitialValue'),
-        refine_multiturn: false,
-        use_kg: false,
-        reasoning: false,
-        parameters: [{ key: 'knowledge', optional: false }],
-      },
-      llm_id: '',
-      llm_setting: {},
-      similarity_threshold: 0.2,
-      vector_similarity_weight: 0.30000000000000004,
-      top_n: 8,
-    }),
-    [t],
-  );
+  const { patchChat, loading: patchLoading } = usePatchChat();
 
   const onChatRenameOk = useCallback(
     async (name: string) => {
-      const nextChat = {
-        ...(isEmpty(chat)
-          ? InitialData
-          : { ...omit(chat, 'nickname', 'tenant_avatar'), dialog_id: chat.id }),
-        name,
-      };
-      const ret = await setDialog(nextChat);
+      const ret = await patchChat({
+        chatId: chat.id,
+        params: { name },
+      });
 
       if (ret === 0) {
         hideChatRenameModal();
       }
     },
-    [chat, InitialData, setDialog, hideChatRenameModal],
+    [chat.id, patchChat, hideChatRenameModal],
   );
 
   const handleShowChatRenameModal = useCallback(
-    (record?: IDialog) => {
-      if (record) {
-        setChat(record);
-      }
+    (record: IDialog) => {
+      setChat(record);
       showChatRenameModal();
     },
     [showChatRenameModal],
@@ -74,7 +40,7 @@ export const useRenameChat = () => {
   }, [hideChatRenameModal]);
 
   return {
-    chatRenameLoading: loading,
+    chatRenameLoading: patchLoading,
     initialChatName: chat?.name,
     onChatRenameOk,
     chatRenameVisible,

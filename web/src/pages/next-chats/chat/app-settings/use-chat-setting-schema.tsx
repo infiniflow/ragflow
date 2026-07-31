@@ -4,7 +4,10 @@ import {
 } from '@/components/llm-setting-items/next';
 import { MetadataFilterSchema } from '@/components/metadata-filter';
 import { rerankFormSchema } from '@/components/rerank';
-import { vectorSimilarityWeightSchema } from '@/components/similarity-slider';
+import {
+  similarityThresholdSchema,
+  vectorSimilarityWeightSchema,
+} from '@/components/similarity-slider';
 import { topnSchema } from '@/components/top-n-item';
 import { useTranslate } from '@/hooks/common-hooks';
 import { z } from 'zod';
@@ -20,25 +23,31 @@ export function useChatSettingSchema() {
     prologue: z.string().optional(),
     system: z.string().min(1, { message: t('systemMessage') }),
     refine_multiturn: z.boolean(),
-    use_kg: z.boolean(),
-    parameters: z.array(
-      z.object({
-        key: z.string(),
-        optional: z.boolean(),
-      }),
-    ),
+    parameters: z
+      .array(
+        z.object({
+          key: z.string(),
+          optional: z.boolean(),
+        }),
+      )
+      .optional(),
     tavily_api_key: z.string().optional(),
+    reasoning: z.boolean().optional(),
+    cross_languages: z.array(z.string()).optional(),
+    reference_metadata: z
+      .object({
+        include: z.boolean().optional(),
+        fields: z.array(z.string()).optional(),
+      })
+      .optional(),
   });
 
   const formSchema = z.object({
     name: z.string().min(1, { message: t('assistantNameMessage') }),
-    icon: z.array(z.instanceof(File)),
-    language: z.string().min(1, {
-      message: 'Username must be at least 2 characters.',
-    }),
-    description: z.string(),
-    kb_ids: z.array(z.string()).min(0, {
-      message: 'Username must be at least 1 characters.',
+    icon: z.string(),
+    description: z.string().optional(),
+    dataset_ids: z.array(z.string()).min(0, {
+      message: t('knowledgeBasesMessage'),
     }),
     prompt_config: promptConfigSchema,
     ...rerankFormSchema,
@@ -46,6 +55,7 @@ export function useChatSettingSchema() {
     ...LlmSettingEnabledSchema,
     llm_id: z.string().optional(),
     ...vectorSimilarityWeightSchema,
+    ...similarityThresholdSchema,
     ...topnSchema,
     ...MetadataFilterSchema,
   });

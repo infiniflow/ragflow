@@ -6,7 +6,7 @@ export function ResizeIcon() {
       height="14"
       viewBox="0 0 24 24"
       strokeWidth="2"
-      stroke="rgba(76, 164, 231, 1)"
+      stroke="var(--text-disabled)"
       fill="none"
       strokeLinecap="round"
       strokeLinejoin="round"

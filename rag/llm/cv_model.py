@@ -13,20 +13,47 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 import base64
 import json
+import logging
 import os
+import re
+import tempfile
 from abc import ABC
 from copy import deepcopy
 from io import BytesIO
-from urllib.parse import urljoin
+from pathlib import Path
+from json.decoder import JSONDecodeError
+
 import requests
-from openai import OpenAI
-from openai.lib.azure import AzureOpenAI
-from zhipuai import ZhipuAI
+from openai import OpenAI, AsyncOpenAI
+from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
+
+from common.aimlapi_utils import attribution_headers
+from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.nlp import is_english
-from rag.prompts import vision_llm_describe_prompt
-from rag.utils import num_tokens_from_string
+from rag.prompts.generator import vision_llm_describe_prompt
+from rag.utils.url_utils import ensure_v1
+
+
+from common.misc_utils import thread_pool_exec
+
+
+def _qwen3_no_think_extra_body(model_name: str) -> dict[str, bool] | None:
+    """Build DashScope-compatible options that disable Qwen3.x thinking."""
+    if "qwen3." in model_name.lower():
+        return {"enable_thinking": False}
+    return None
+
+
+def _remove_sampling_params(model_name: str, gen_conf: dict | None) -> dict:
+    """Remove sampling options from Qwen3.x CV requests for now."""
+    sanitized_gen_conf = dict(gen_conf or {})
+    if "qwen3." in model_name.lower():
+        for key in ("temperature", "top_p"):
+            sanitized_gen_conf.pop(key, None)
+    return sanitized_gen_conf
 
 
 class Base(ABC):
@@ -38,6 +65,7 @@ class Base(ABC):
         self.is_tools = False
         self.tools = []
         self.toolcall_sessions = {}
+        self.extra_body = None
 
     def describe(self, image):
         raise NotImplementedError("Please implement encode method!")
@@ -45,7 +73,7 @@ class Base(ABC):
     def describe_with_prompt(self, image, prompt=None):
         raise NotImplementedError("Please implement encode method!")
 
-    def _form_history(self, system, history, images=[]):
+    def _form_history(self, system, history, images=None):
         hist = []
         if system:
             hist.append({"role": "system", "content": system})
@@ -56,6 +84,61 @@ class Base(ABC):
             hist.append(h)
         return hist
 
+    @staticmethod
+    def _blob_to_data_url(blob, mime_type="image/png"):
+        if isinstance(blob, str):
+            blob = blob.strip()
+            if blob.startswith("data:") or blob.startswith("http://") or blob.startswith("https://") or blob.startswith("file://"):
+                return blob
+            return f"data:{mime_type};base64,{blob}"
+        if isinstance(blob, BytesIO):
+            blob = blob.getvalue()
+        if isinstance(blob, memoryview):
+            blob = blob.tobytes()
+        if isinstance(blob, bytearray):
+            blob = bytes(blob)
+        if isinstance(blob, bytes):
+            b64 = base64.b64encode(blob).decode("utf-8")
+            return f"data:{mime_type};base64,{b64}"
+        return None
+
+    def _normalize_image(self, image):
+        if isinstance(image, dict):
+            inline_data = image.get("inline_data")
+            if isinstance(inline_data, dict):
+                mime = inline_data.get("mime_type") or "image/png"
+                data_url = self._blob_to_data_url(inline_data.get("data"), mime)
+                if data_url:
+                    return data_url
+
+            image_url = image.get("image_url")
+            if isinstance(image_url, dict):
+                data_url = self._blob_to_data_url(image_url.get("url"), image.get("mime_type") or "image/png")
+                if data_url:
+                    return data_url
+            if isinstance(image_url, str):
+                data_url = self._blob_to_data_url(image_url, image.get("mime_type") or "image/png")
+                if data_url:
+                    return data_url
+
+            if "url" in image:
+                data_url = self._blob_to_data_url(image.get("url"), image.get("mime_type") or "image/png")
+                if data_url:
+                    return data_url
+
+            mime = image.get("mime_type") or image.get("media_type") or "image/png"
+            for key in ("blob", "data"):
+                if key in image:
+                    data_url = self._blob_to_data_url(image.get(key), mime)
+                    if data_url:
+                        return data_url
+
+        if isinstance(image, (bytes, bytearray, memoryview, BytesIO)):
+            return self.image2base64(image)
+        if isinstance(image, str):
+            return self._blob_to_data_url(image, "image/png")
+        return self.image2base64(image)
+
     def _image_prompt(self, text, images):
         if not images:
             return text
@@ -65,34 +148,102 @@ class Base(ABC):
 
         pmpt = [{"type": "text", "text": text}]
         for img in images:
-            pmpt.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": img if isinstance(img, str) and img.startswith("data:") else f"data:image/png;base64,{img}"
-                }
-            })
+            try:
+                pmpt.append({"type": "image_url", "image_url": {"url": self._normalize_image(img)}})
+            except Exception:
+                logging.warning("[%s] Skip invalid image input in request payload.", self.__class__.__name__)
+                continue
         return pmpt
 
-    def chat(self, system, history, gen_conf, images=[], **kwargs):
+    @staticmethod
+    def _extract_text_from_content(content):
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            texts = []
+            for blk in content:
+                if not isinstance(blk, dict):
+                    continue
+                if blk.get("type") in {"text", "input_text"} and blk.get("text"):
+                    texts.append(str(blk["text"]))
+                elif "text" in blk and isinstance(blk.get("text"), (str, int, float)):
+                    texts.append(str(blk["text"]))
+            return "\n".join(texts).strip()
+        return ""
+
+    def _resolve_video_prompt(self, system, history, **kwargs):
+        prompt = kwargs.get("video_prompt") or kwargs.get("prompt")
+        if isinstance(prompt, str) and prompt.strip():
+            return prompt.strip()
+
+        for h in reversed(history or []):
+            if h.get("role") != "user":
+                continue
+            txt = self._extract_text_from_content(h.get("content"))
+            if txt:
+                return txt
+
+        if isinstance(system, str) and system.strip():
+            return system.strip()
+
+        return "Please summarize this video in proper sentences."
+
+    def _video_frame_to_image_bytes(self, video_bytes, filename="", frame_ratio=0.5):
+        import cv2
+
+        suffix = Path(filename).suffix or ".mp4"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=True) as tmp:
+            tmp.write(video_bytes)
+            tmp.flush()
+            cap = cv2.VideoCapture(tmp.name)
+            try:
+                frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+                if frame_count > 1:
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, min(frame_count - 1, max(0, int(frame_count * frame_ratio))))
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    raise RuntimeError("Failed to extract a frame from video.")
+                ok, encoded = cv2.imencode(".jpg", frame)
+                if not ok:
+                    raise RuntimeError("Failed to encode video frame.")
+                return encoded.tobytes()
+            finally:
+                cap.release()
+
+    def _describe_video_frame(self, video_bytes, filename, prompt):
+        frames = [self._video_frame_to_image_bytes(video_bytes, filename, r) for r in (0.1, 0.5, 0.9)]
+        prompt = f"The attached images are representative frames sampled from a video in chronological order. Summarize the visible video content based on these frames.\n\n{prompt}"
+        res = self.client.chat.completions.create(model=self.model_name, messages=self.vision_llm_prompt(frames, prompt), extra_body=self.extra_body)
+        if not res.choices:
+            raise ValueError("LLM returned empty response")
+        return res.choices[0].message.content.strip(), total_token_count_from_response(res)
+
+    async def async_chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
         try:
-            response = self.client.chat.completions.create(
+            if video_bytes:
+                prompt = self._resolve_video_prompt(system, history, **kwargs)
+                return self._describe_video_frame(video_bytes, filename, prompt)
+
+            response = await self.async_client.chat.completions.create(
                 model=self.model_name,
-                messages=self._form_history(system, history, images)
+                messages=self._form_history(system, history, images),
+                extra_body=self.extra_body,
             )
             return response.choices[0].message.content.strip(), response.usage.total_tokens
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=[], **kwargs):
+    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         tk_count = 0
         try:
-            response = self.client.chat.completions.create(
+            response = await self.async_client.chat.completions.create(
                 model=self.model_name,
                 messages=self._form_history(system, history, images),
-                stream=True
+                stream=True,
+                extra_body=self.extra_body,
             )
-            for resp in response:
+            async for resp in response:
                 if not resp.choices[0].delta.content:
                     continue
                 delta = resp.choices[0].delta.content
@@ -106,6 +257,28 @@ class Base(ABC):
             yield ans + "\n**ERROR**: " + str(e)
 
         yield tk_count
+
+    @staticmethod
+    def image2base64_rawvalue(self, image):
+        # Return a base64 string without data URL header
+        if isinstance(image, bytes):
+            b64 = base64.b64encode(image).decode("utf-8")
+            return b64
+        if isinstance(image, BytesIO):
+            data = image.getvalue()
+            b64 = base64.b64encode(data).decode("utf-8")
+            return b64
+        with BytesIO() as buffered:
+            try:
+                image.save(buffered, format="JPEG")
+            except Exception:
+                # reset buffer before saving PNG
+                buffered.seek(0)
+                buffered.truncate()
+                image.save(buffered, format="PNG")
+            data = buffered.getvalue()
+            b64 = base64.b64encode(data).decode("utf-8")
+        return b64
 
     @staticmethod
     def image2base64(image):
@@ -124,17 +297,19 @@ class Base(ABC):
                 mime = "image/jpeg"
             b64 = base64.b64encode(data).decode("utf-8")
             return f"data:{mime};base64,{b64}"
-        buffered = BytesIO()
-        fmt = "JPEG"
-        try:
-            image.save(buffered, format="JPEG")
-        except Exception:
-            buffered = BytesIO()  # reset buffer before saving PNG
-            image.save(buffered, format="PNG")
-            fmt = "PNG"
-        data = buffered.getvalue()
-        b64 = base64.b64encode(data).decode("utf-8")
-        mime = f"image/{fmt.lower()}"
+        with BytesIO() as buffered:
+            fmt = "jpeg"
+            try:
+                image.save(buffered, format="JPEG")
+            except Exception:
+                # reset buffer before saving PNG
+                buffered.seek(0)
+                buffered.truncate()
+                image.save(buffered, format="PNG")
+                fmt = "png"
+            data = buffered.getvalue()
+            b64 = base64.b64encode(data).decode("utf-8")
+            mime = f"image/{fmt}"
         return f"data:{mime};base64,{b64}"
 
     def prompt(self, b64):
@@ -145,18 +320,13 @@ class Base(ABC):
                     "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。"
                     if self.lang.lower() == "chinese"
                     else "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out.",
-                    b64
-                )
+                    b64,
+                ),
             }
         ]
 
     def vision_llm_prompt(self, b64, prompt=None):
-        return [
-            {
-                "role": "user",
-                "content": self._image_prompt(prompt if prompt else vision_llm_describe_prompt(), b64)
-            }
-        ]
+        return [{"role": "user", "content": self._image_prompt(prompt if prompt else vision_llm_describe_prompt(), b64)}]
 
 
 class GptV4(Base):
@@ -165,35 +335,52 @@ class GptV4(Base):
     def __init__(self, key, model_name="gpt-4-vision-preview", lang="Chinese", base_url="https://api.openai.com/v1", **kwargs):
         if not base_url:
             base_url = "https://api.openai.com/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.api_key = key
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
         self.lang = lang
         super().__init__(**kwargs)
 
     def describe(self, image):
         b64 = self.image2base64(image)
-        res = self.client.chat.completions.create(
-            model=self.model_name,
-            messages=self.prompt(b64),
-        )
-        return res.choices[0].message.content.strip(), res.usage.total_tokens
+        res = self.client.chat.completions.create(model=self.model_name, messages=self.prompt(b64), extra_body=self.extra_body)
+        if not res.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
+        return res.choices[0].message.content.strip(), total_token_count_from_response(res)
 
     def describe_with_prompt(self, image, prompt=None):
         b64 = self.image2base64(image)
         res = self.client.chat.completions.create(
             model=self.model_name,
             messages=self.vision_llm_prompt(b64, prompt),
+            extra_body=self.extra_body,
         )
-        return res.choices[0].message.content.strip(), res.usage.total_tokens
+        if not res.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
+        return res.choices[0].message.content.strip(), total_token_count_from_response(res)
+
+
+def _resolve_azure_credentials(key):
+    try:
+        key_obj = json.loads(key)
+        if isinstance(key_obj, dict):
+            return key_obj.get("api_key", ""), key_obj.get("api_version", "2024-02-01")
+        logging.warning("Azure credential payload parsed as JSON but is not an object; using raw api_key string")
+    except (json.JSONDecodeError, TypeError):
+        logging.warning("Azure credential payload is not valid JSON; using raw api_key string")
+    return key, "2024-02-01"
 
 
 class AzureGptV4(GptV4):
     _FACTORY_NAME = "Azure-OpenAI"
 
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
-        api_key = json.loads(key).get("api_key", "")
-        api_version = json.loads(key).get("api_version", "2024-02-01")
-        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=kwargs["base_url"], api_version=api_version)
+        api_key, api_version = _resolve_azure_credentials(key)
+        self.base_url = ensure_v1(kwargs["base_url"])
+        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=self.base_url, api_version=api_version)
+        self.async_client = AsyncAzureOpenAI(api_key=api_key, azure_endpoint=self.base_url, api_version=api_version)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -208,6 +395,15 @@ class xAICV(GptV4):
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
 
 
+class MistralCV(GptV4):
+    _FACTORY_NAME = "Mistral"
+
+    def __init__(self, key, model_name="pixtral-12b-2409", lang="Chinese", base_url=None, **kwargs):
+        if not base_url:
+            base_url = "https://api.mistral.ai/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+
+
 class QWenCV(GptV4):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
@@ -215,6 +411,74 @@ class QWenCV(GptV4):
         if not base_url:
             base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
         super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        # Qwen3.x models can be registered as VISION and routed through this CV wrapper.
+        # Disable thinking here so parser-side extraction tasks do not emit reasoning text.
+        self.extra_body = _qwen3_no_think_extra_body(self.model_name) or self.extra_body
+
+    async def async_chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
+        gen_conf = _remove_sampling_params(self.model_name, gen_conf)
+        if video_bytes:
+            try:
+                summary, summary_num_tokens = self._process_video(video_bytes, filename, self._resolve_video_prompt(system, history, **kwargs))
+                return summary, summary_num_tokens
+            except Exception as e:
+                return "**ERROR**: " + str(e), 0
+
+        return await super().async_chat(system, history, gen_conf, images=images, **kwargs)
+
+    def _process_video(self, video_bytes, filename, prompt):
+        from dashscope import MultiModalConversation
+
+        video_suffix = Path(filename).suffix or ".mp4"
+        tmp_path = None
+        with tempfile.NamedTemporaryFile(delete=False, suffix=video_suffix) as tmp:
+            tmp.write(video_bytes)
+            tmp_path = tmp.name
+
+        video_path = f"file://{tmp_path}"
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "video": video_path,
+                        "fps": 2,
+                    },
+                    {
+                        "text": prompt,
+                    },
+                ],
+            }
+        ]
+
+        def call_api():
+            response = MultiModalConversation.call(
+                api_key=self.api_key,
+                model=self.model_name,
+                messages=messages,
+            )
+            if response.get("message"):
+                raise Exception(response["message"])
+            summary = response["output"]["choices"][0]["message"].content[0]["text"]
+            return summary, num_tokens_from_string(summary)
+
+        try:
+            try:
+                return call_api()
+            except Exception as e1:
+                import dashscope
+
+                dashscope.base_http_api_url = "https://dashscope-intl.aliyuncs.com/api/v1"
+                try:
+                    return call_api()
+                except Exception as e2:
+                    raise RuntimeError(f"Both default and intl endpoint failed.\nFirst error: {e1}\nSecond error: {e2}")
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    logging.warning("[QWenCV] Failed to cleanup temp video file: %s", tmp_path)
 
 
 class HunyuanCV(GptV4):
@@ -230,10 +494,107 @@ class Zhipu4V(GptV4):
     _FACTORY_NAME = "ZHIPU-AI"
 
     def __init__(self, key, model_name="glm-4v", lang="Chinese", **kwargs):
-        self.client = ZhipuAI(api_key=key)
+        self.client = OpenAI(api_key=key, base_url="https://open.bigmodel.cn/api/paas/v4/")
+        self.async_client = AsyncOpenAI(api_key=key, base_url="https://open.bigmodel.cn/api/paas/v4/")
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
+
+    def _clean_conf(self, gen_conf):
+        if "max_tokens" in gen_conf:
+            del gen_conf["max_tokens"]
+        gen_conf = self._clean_conf_plealty(gen_conf)
+        return gen_conf
+
+    def _clean_conf_plealty(self, gen_conf):
+        if "presence_penalty" in gen_conf:
+            del gen_conf["presence_penalty"]
+        if "frequency_penalty" in gen_conf:
+            del gen_conf["frequency_penalty"]
+        return gen_conf
+
+    def _request(self, msg, stream, gen_conf=None):
+        gen_conf = dict(gen_conf or {})
+        response = requests.post(
+            self.base_url,
+            json={"model": self.model_name, "messages": msg, "stream": stream, **gen_conf},
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=60,
+        )
+        return response.json()
+
+    async def async_chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
+        if video_bytes:
+            prompt = self._resolve_video_prompt(system, history, **kwargs)
+            content, tk_count = self._describe_video_frame(video_bytes, filename, prompt)
+            cleaned = re.sub(r"<\|(begin_of_box|end_of_box)\|>", "", content).strip()
+            return cleaned, tk_count
+
+        if system and history and history[0].get("role") != "system":
+            history.insert(0, {"role": "system", "content": system})
+
+        gen_conf = self._clean_conf(gen_conf)
+
+        logging.info(json.dumps(history, ensure_ascii=False, indent=2))
+        response = await self.async_client.chat.completions.create(model=self.model_name, messages=self._form_history(system, history, images), stream=False, **gen_conf)
+        content = response.choices[0].message.content.strip()
+
+        cleaned = re.sub(r"<\|(begin_of_box|end_of_box)\|>", "", content).strip()
+        return cleaned, total_token_count_from_response(response)
+
+    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
+        from rag.llm.chat_model import LENGTH_NOTIFICATION_CN, LENGTH_NOTIFICATION_EN
+        from rag.nlp import is_chinese
+
+        if system and history and history[0].get("role") != "system":
+            history.insert(0, {"role": "system", "content": system})
+        gen_conf = self._clean_conf(gen_conf)
+        ans = ""
+        tk_count = 0
+        try:
+            logging.info(json.dumps(history, ensure_ascii=False, indent=2))
+            response = await self.async_client.chat.completions.create(model=self.model_name, messages=self._form_history(system, history, images), stream=True, **gen_conf)
+            async for resp in response:
+                if not resp.choices[0].delta.content:
+                    continue
+                delta = resp.choices[0].delta.content
+                ans = delta
+                if resp.choices[0].finish_reason == "length":
+                    if is_chinese(ans):
+                        ans += LENGTH_NOTIFICATION_CN
+                    else:
+                        ans += LENGTH_NOTIFICATION_EN
+                    tk_count = total_token_count_from_response(resp)
+                if resp.choices[0].finish_reason == "stop":
+                    tk_count = total_token_count_from_response(resp)
+                yield ans
+        except Exception as e:
+            yield ans + "\n**ERROR**: " + str(e)
+
+        yield tk_count
+
+    def describe(self, image):
+        return self.describe_with_prompt(image)
+
+    def describe_with_prompt(self, image, prompt=None):
+        b64 = self.image2base64(image)
+        if prompt is None:
+            prompt = "Describe this image."
+
+        # Chat messages
+        messages = [{"role": "user", "content": [{"type": "image_url", "image_url": {"url": b64}}, {"type": "text", "text": prompt}]}]
+
+        resp = self.client.chat.completions.create(model=self.model_name, messages=messages, stream=False)
+
+        if not resp.choices:
+            raise ValueError("LLM returned empty response")  # pact: guard empty choices list
+        content = resp.choices[0].message.content.strip()
+        cleaned = re.sub(r"<\|(begin_of_box|end_of_box)\|>", "", content).strip()
+
+        return cleaned, num_tokens_from_string(cleaned)
 
 
 class StepFunCV(GptV4):
@@ -242,8 +603,32 @@ class StepFunCV(GptV4):
     def __init__(self, key, model_name="step-1v-8k", lang="Chinese", base_url="https://api.stepfun.com/v1", **kwargs):
         if not base_url:
             base_url = "https://api.stepfun.com/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
+        self.lang = lang
+        Base.__init__(self, **kwargs)
+
+
+class VolcEngineCV(GptV4):
+    _FACTORY_NAME = "VolcEngine"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://ark.cn-beijing.volces.com/api/v3", **kwargs):
+        if not base_url:
+            base_url = "https://ark.cn-beijing.volces.com/api/v3"
+
+        try:
+            api_key = json.loads(key).get("ark_api_key", "")
+            llm_name = json.loads(key).get("ep_id", "") + json.loads(key).get("endpoint_id", "")
+
+        except JSONDecodeError:
+            api_key = key
+            llm_name = model_name
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=api_key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=api_key, base_url=self.base_url)
+        self.model_name = llm_name
         self.lang = lang
         Base.__init__(self, **kwargs)
 
@@ -254,8 +639,9 @@ class LmStudioCV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
-        self.client = OpenAI(api_key="lm-studio", base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key="lm-studio", base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key="lm-studio", base_url=self.base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -267,8 +653,9 @@ class OpenAI_APICV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
         if not base_url:
             raise ValueError("url cannot be None")
-        base_url = urljoin(base_url, "v1")
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name.split("___")[0]
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -286,13 +673,7 @@ class TogetherAICV(GptV4):
 class YiCV(GptV4):
     _FACTORY_NAME = "01.AI"
 
-    def __init__(
-            self,
-            key,
-            model_name,
-            lang="Chinese",
-            base_url="https://api.lingyiwanwu.com/v1", **kwargs
-    ):
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://api.lingyiwanwu.com/v1", **kwargs):
         if not base_url:
             base_url = "https://api.lingyiwanwu.com/v1"
         super().__init__(key, model_name, lang, base_url, **kwargs)
@@ -301,13 +682,7 @@ class YiCV(GptV4):
 class SILICONFLOWCV(GptV4):
     _FACTORY_NAME = "SILICONFLOW"
 
-    def __init__(
-            self,
-            key,
-            model_name,
-            lang="Chinese",
-            base_url="https://api.siliconflow.cn/v1", **kwargs
-    ):
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://api.siliconflow.cn/v1", **kwargs):
         if not base_url:
             base_url = "https://api.siliconflow.cn/v1"
         super().__init__(key, model_name, lang, base_url, **kwargs)
@@ -316,19 +691,38 @@ class SILICONFLOWCV(GptV4):
 class OpenRouterCV(GptV4):
     _FACTORY_NAME = "OpenRouter"
 
-    def __init__(
-            self,
-            key,
-            model_name,
-            lang="Chinese",
-            base_url="https://openrouter.ai/api/v1", **kwargs
-    ):
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://openrouter.ai/api/v1", **kwargs):
         if not base_url:
             base_url = "https://openrouter.ai/api/v1"
-        self.client = OpenAI(api_key=key, base_url=base_url)
+        try:
+            api_key = json.loads(key).get("api_key", "")
+            provider_order = json.loads(key).get("provider_order", "")
+        except JSONDecodeError:
+            api_key = key
+            provider_order = ""
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=api_key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=api_key, base_url=self.base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
+        self.extra_body = {}
+        if provider_order:
+
+            def _to_order_list(x):
+                if x is None:
+                    return []
+                if isinstance(x, str):
+                    return [s.strip() for s in x.split(",") if s.strip()]
+                if isinstance(x, (list, tuple)):
+                    return [str(s).strip() for s in x if str(s).strip()]
+                return []
+
+            provider_cfg = {}
+            provider_order = _to_order_list(provider_order)
+            provider_cfg["order"] = provider_order
+            provider_cfg["allow_fallbacks"] = False
+            self.extra_body["provider"] = provider_cfg
 
 
 class LocalAICV(GptV4):
@@ -337,8 +731,9 @@ class LocalAICV(GptV4):
     def __init__(self, key, model_name, base_url, lang="Chinese", **kwargs):
         if not base_url:
             raise ValueError("Local cv model url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key="empty", base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key="empty", base_url=base_url)
         self.model_name = model_name.split("___")[0]
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -348,8 +743,9 @@ class XinferenceCV(GptV4):
     _FACTORY_NAME = "Xinference"
 
     def __init__(self, key, model_name="", lang="Chinese", base_url="", **kwargs):
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
@@ -361,15 +757,16 @@ class GPUStackCV(GptV4):
     def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
         if not base_url:
             raise ValueError("Local llm url cannot be None")
-        base_url = urljoin(base_url, "v1")
+        base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name
         self.lang = lang
         Base.__init__(self, **kwargs)
 
 
 class LocalCV(Base):
-    _FACTORY_NAME = "Moonshot"
+    _FACTORY_NAME = "Local"
 
     def __init__(self, key, model_name="glm-4v", lang="Chinese", **kwargs):
         pass
@@ -383,18 +780,19 @@ class OllamaCV(Base):
 
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
         from ollama import Client
-        self.client = Client(host=kwargs["base_url"])
+
+        self.base_url = ensure_v1(kwargs["base_url"])
+        self.client = Client(host=self.base_url)
         self.model_name = model_name
         self.lang = lang
         self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
         Base.__init__(self, **kwargs)
 
-
     def _clean_img(self, img):
         if not isinstance(img, str):
             return img
 
-        #remove the header like "data/*;base64,"
+        # remove the header like "data/*;base64,"
         if img.startswith("data:") and ";base64," in img:
             img = img.split(";base64,")[1]
         return img
@@ -411,7 +809,7 @@ class OllamaCV(Base):
             options["frequency_penalty"] = gen_conf["frequency_penalty"]
         return options
 
-    def _form_history(self, system, history, images=[]):
+    def _form_history(self, system, history, images=None):
         hist = deepcopy(history)
         if system and hist[0]["role"] == "user":
             hist.insert(0, {"role": "system", "content": system})
@@ -431,7 +829,7 @@ class OllamaCV(Base):
         try:
             response = self.client.generate(
                 model=self.model_name,
-                prompt=prompt[0]["content"][0]["text"],
+                prompt=prompt[0]["content"],
                 images=[image],
             )
             ans = response["response"].strip()
@@ -444,7 +842,7 @@ class OllamaCV(Base):
         try:
             response = self.client.generate(
                 model=self.model_name,
-                prompt=vision_prompt[0]["content"][0]["text"],
+                prompt=vision_prompt[0]["content"],
                 images=[image],
             )
             ans = response["response"].strip()
@@ -452,13 +850,10 @@ class OllamaCV(Base):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat(self, system, history, gen_conf, images=[]):
+    async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         try:
-            response = self.client.chat(
-                model=self.model_name,
-                messages=self._form_history(system, history, images),
-                options=self._clean_conf(gen_conf),
-                keep_alive=self.keep_alive
+            response = await thread_pool_exec(
+                self.client.chat, model=self.model_name, messages=self._form_history(system, history, images), options=self._clean_conf(gen_conf), keep_alive=self.keep_alive
             )
 
             ans = response["message"]["content"].strip()
@@ -466,15 +861,11 @@ class OllamaCV(Base):
         except Exception as e:
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=[]):
+    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         try:
-            response = self.client.chat(
-                model=self.model_name,
-                messages=self._form_history(system, history, images),
-                stream=True,
-                options=self._clean_conf(gen_conf),
-                keep_alive=self.keep_alive
+            response = await thread_pool_exec(
+                self.client.chat, model=self.model_name, messages=self._form_history(system, history, images), stream=True, options=self._clean_conf(gen_conf), keep_alive=self.keep_alive
             )
             for resp in response:
                 if resp["done"]:
@@ -490,182 +881,232 @@ class GeminiCV(Base):
     _FACTORY_NAME = "Gemini"
 
     def __init__(self, key, model_name="gemini-1.0-pro-vision-latest", lang="Chinese", **kwargs):
-        from google.generativeai import GenerativeModel, client
+        from google import genai
 
-        client.configure(api_key=key)
-        _client = client.get_default_generative_client()
+        self.api_key = key
         self.model_name = model_name
-        self.model = GenerativeModel(model_name=self.model_name)
-        self.model._client = _client
+        self.client = genai.Client(api_key=key)
         self.lang = lang
         Base.__init__(self, **kwargs)
+        logging.info(f"[GeminiCV] Initialized with model={self.model_name} lang={self.lang}")
 
-    def _form_history(self, system, history, images=[]):
-        hist = []
-        if system:
-            hist.append({"role": "user", "parts": [system, history[0]["content"]]})
+    def _image_to_part(self, image):
+        from google.genai import types
+
+        if isinstance(image, str) and image.startswith("data:") and ";base64," in image:
+            header, b64data = image.split(",", 1)
+            mime = header.split(":", 1)[1].split(";", 1)[0]
+            data = base64.b64decode(b64data)
+        else:
+            data_url = self.image2base64(image)
+            header, b64data = data_url.split(",", 1)
+            mime = header.split(":", 1)[1].split(";", 1)[0]
+            data = base64.b64decode(b64data)
+
+        return types.Part(
+            inline_data=types.Blob(
+                mime_type=mime,
+                data=data,
+            )
+        )
+
+    def _form_history(self, system, history, images=None):
+        from google.genai import types
+
+        contents = []
+        images = images or []
+        system_len = len(system) if isinstance(system, str) else 0
+        history_len = len(history) if history else 0
+        images_len = len(images)
+        logging.info(f"[GeminiCV] _form_history called: system_len={system_len} history_len={history_len} images_len={images_len}")
+
+        image_parts = []
         for img in images:
-            hist[0]["parts"].append(("data:image/jpeg;base64," + img) if img[:4]!="data" else img)
-        for h in history[1:]:
-            hist.append({"role": "user" if h["role"]=="user" else "model", "parts": [h["content"]]})
-        return hist
+            try:
+                image_parts.append(self._image_to_part(img))
+            except Exception:
+                continue
+
+        remaining_history = history or []
+        if system or remaining_history:
+            parts = []
+            if system:
+                parts.append(types.Part(text=system))
+            if remaining_history:
+                first = remaining_history[0]
+                parts.append(types.Part(text=first.get("content", "")))
+                remaining_history = remaining_history[1:]
+            parts.extend(image_parts)
+            contents.append(types.Content(role="user", parts=parts))
+        elif image_parts:
+            contents.append(types.Content(role="user", parts=image_parts))
+
+        role_map = {"user": "user", "assistant": "model", "system": "user"}
+        for h in remaining_history:
+            role = role_map.get(h.get("role"), "user")
+            contents.append(
+                types.Content(
+                    role=role,
+                    parts=[types.Part(text=h.get("content", ""))],
+                )
+            )
+
+        return contents
 
     def describe(self, image):
-        from PIL.Image import open
+        from google.genai import types
 
         prompt = (
             "请用中文详细描述一下图中的内容，比如时间，地点，人物，事情，人物心情等，如果有数据请提取出数据。"
             if self.lang.lower() == "chinese"
             else "Please describe the content of this picture, like where, when, who, what happen. If it has number data, please extract them out."
         )
-        b64 = self.image2base64(image)
-        img = open(BytesIO(base64.b64decode(b64)))
-        input = [prompt, img]
-        res = self.model.generate_content(input)
-        img.close()
-        return res.text, res.usage_metadata.total_token_count
+
+        contents = [
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part(text=prompt),
+                    self._image_to_part(image),
+                ],
+            )
+        ]
+
+        res = self.client.models.generate_content(
+            model=self.model_name,
+            contents=contents,
+        )
+        return res.text, total_token_count_from_response(res)
 
     def describe_with_prompt(self, image, prompt=None):
-        from PIL.Image import open
+        from google.genai import types
 
-        b64 = self.image2base64(image)
         vision_prompt = prompt if prompt else vision_llm_describe_prompt()
-        img = open(BytesIO(base64.b64decode(b64)))
-        input = [vision_prompt, img]
-        res = self.model.generate_content(
-            input,
-        )
-        img.close()
-        return res.text, res.usage_metadata.total_token_count
 
-    def chat(self, system, history, gen_conf, images=[]):
-        generation_config = dict(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7))
+        contents = [
+            types.Content(
+                role="user",
+                parts=[
+                    types.Part(text=vision_prompt),
+                    self._image_to_part(image),
+                ],
+            )
+        ]
+
+        res = self.client.models.generate_content(
+            model=self.model_name,
+            contents=contents,
+        )
+        return res.text, total_token_count_from_response(res)
+
+    async def async_chat(self, system, history, gen_conf, images=None, video_bytes=None, filename="", **kwargs):
+        if video_bytes:
+            try:
+                size = len(video_bytes) if video_bytes else 0
+                logging.info(f"[GeminiCV] async_chat called with video: filename={filename} size={size}")
+                summary, summary_num_tokens = await thread_pool_exec(self._process_video, video_bytes, filename)
+                return summary, summary_num_tokens
+            except Exception as e:
+                logging.info(f"[GeminiCV] async_chat video error: {e}")
+                return "**ERROR**: " + str(e), 0
+
+        from google.genai import types
+
+        history_len = len(history) if history else 0
+        images_len = len(images) if images else 0
+        logging.info(f"[GeminiCV] async_chat called: history_len={history_len} images_len={images_len} gen_conf={gen_conf}")
+
+        generation_config = types.GenerateContentConfig(
+            temperature=gen_conf.get("temperature", 0.3),
+            top_p=gen_conf.get("top_p", 0.7),
+        )
         try:
-            response = self.model.generate_content(
-                self._form_history(system, history, images),
-                generation_config=generation_config)
+            response = await self.client.aio.models.generate_content(
+                model=self.model_name,
+                contents=self._form_history(system, history, images),
+                config=generation_config,
+            )
             ans = response.text
-            return ans, response.usage_metadata.total_token_count
+            logging.info("[GeminiCV] async_chat completed")
+            return ans, total_token_count_from_response(response)
         except Exception as e:
+            logging.warning(f"[GeminiCV] async_chat error: {e}")
             return "**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=[]):
+    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         ans = ""
         response = None
         try:
-            generation_config = dict(temperature=gen_conf.get("temperature", 0.3), top_p=gen_conf.get("top_p", 0.7))
-            response = self.model.generate_content(
-                self._form_history(system, history, images),
-                generation_config=generation_config,
-                stream=True,
+            from google.genai import types
+
+            generation_config = types.GenerateContentConfig(
+                temperature=gen_conf.get("temperature", 0.3),
+                top_p=gen_conf.get("top_p", 0.7),
+            )
+            history_len = len(history) if history else 0
+            images_len = len(images) if images else 0
+            logging.info(f"[GeminiCV] async_chat_streamly called: history_len={history_len} images_len={images_len} gen_conf={gen_conf}")
+
+            response_stream = await self.client.aio.models.generate_content_stream(
+                model=self.model_name,
+                contents=self._form_history(system, history, images),
+                config=generation_config,
             )
 
-            for resp in response:
-                if not resp.text:
-                    continue
-                ans = resp.text
-                yield ans
+            async for chunk in response_stream:
+                if chunk.text:
+                    ans += chunk.text
+                    yield chunk.text
+            logging.info("[GeminiCV] chat_streamly completed")
         except Exception as e:
+            logging.warning(f"[GeminiCV] chat_streamly error: {e}")
             yield ans + "\n**ERROR**: " + str(e)
 
-        if response and hasattr(response, "usage_metadata") and hasattr(response.usage_metadata, "total_token_count"):
-            yield response.usage_metadata.total_token_count
-        else:
-            yield 0
+        yield total_token_count_from_response(response)
+
+    def _process_video(self, video_bytes, filename):
+        from google import genai
+        from google.genai import types
+
+        video_size_mb = len(video_bytes) / (1024 * 1024)
+        client = self.client if hasattr(self, "client") else genai.Client(api_key=self.api_key)
+        logging.info(f"[GeminiCV] _process_video called: filename={filename} size_mb={video_size_mb:.2f}")
+
+        tmp_path = None
+        try:
+            if video_size_mb <= 20:
+                response = client.models.generate_content(
+                    model="models/gemini-2.5-flash",
+                    contents=types.Content(parts=[types.Part(inline_data=types.Blob(data=video_bytes, mime_type="video/mp4")), types.Part(text="Please summarize the video in proper sentences.")]),
+                )
+            else:
+                logging.info(f"Video size {video_size_mb:.2f}MB exceeds 20MB. Using Files API...")
+                video_suffix = Path(filename).suffix or ".mp4"
+                with tempfile.NamedTemporaryFile(delete=False, suffix=video_suffix) as tmp:
+                    tmp.write(video_bytes)
+                    tmp_path = Path(tmp.name)
+                uploaded_file = client.files.upload(file=tmp_path)
+
+                response = client.models.generate_content(model="gemini-2.5-flash", contents=[uploaded_file, "Please summarize this video in proper sentences."])
+
+            summary = response.text or ""
+            logging.info(f"[GeminiCV] Video summarized: {summary[:32]}...")
+            return summary, num_tokens_from_string(summary)
+        except Exception as e:
+            logging.warning(f"[GeminiCV] Video processing failed: {e}")
+            raise
+        finally:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink()
 
 
-class NvidiaCV(Base):
+class NvidiaCV(GptV4):
     _FACTORY_NAME = "NVIDIA"
 
-    def __init__(
-        self,
-        key,
-        model_name,
-        lang="Chinese",
-        base_url="https://ai.api.nvidia.com/v1/vlm", **kwargs
-    ):
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://integrate.api.nvidia.com/v1", **kwargs):
         if not base_url:
-            base_url = ("https://ai.api.nvidia.com/v1/vlm",)
-        self.lang = lang
-        factory, llm_name = model_name.split("/")
-        if factory != "liuhaotian":
-            self.base_url = urljoin(base_url, f"{factory}/{llm_name}")
-        else:
-            self.base_url = urljoin(f"{base_url}/community", llm_name.replace("-v1.6", "16"))
-        self.key = key
-        Base.__init__(self, **kwargs)
-
-    def _image_prompt(self, text, images):
-        if not images:
-            return text
-        htmls = ""
-        for img in images:
-            htmls += ' <img src="{}"/>'.format(f"data:image/jpeg;base64,{img}" if img[:4] != "data" else img)
-        return text + htmls
-
-    def describe(self, image):
-        b64 = self.image2base64(image)
-        response = requests.post(
-            url=self.base_url,
-            headers={
-                "accept": "application/json",
-                "content-type": "application/json",
-                "Authorization": f"Bearer {self.key}",
-            },
-            json={"messages": self.prompt(b64)},
-        )
-        response = response.json()
-        return (
-            response["choices"][0]["message"]["content"].strip(),
-            response["usage"]["total_tokens"],
-        )
-
-    def _request(self, msg, gen_conf={}):
-        response = requests.post(
-            url=self.base_url,
-            headers={
-                "accept": "application/json",
-                "content-type": "application/json",
-                "Authorization": f"Bearer {self.key}",
-            },
-            json={
-                "messages": msg, **gen_conf
-            },
-        )
-        return response.json()
-
-    def describe_with_prompt(self, image, prompt=None):
-        b64 = self.image2base64(image)
-        vision_prompt = self.vision_llm_prompt(b64, prompt) if prompt else self.vision_llm_prompt(b64)
-        response = self._request(vision_prompt)
-        return (
-            response["choices"][0]["message"]["content"].strip(),
-            response["usage"]["total_tokens"],
-        )
-
-    def chat(self, system, history, gen_conf, images=[], **kwargs):
-        try:
-            response = self._request(self._form_history(system, history, images), gen_conf)
-            return (
-                response["choices"][0]["message"]["content"].strip(),
-                response["usage"]["total_tokens"],
-            )
-        except Exception as e:
-            return "**ERROR**: " + str(e), 0
-
-    def chat_streamly(self, system, history, gen_conf, images=[], **kwargs):
-        total_tokens = 0
-        try:
-            response = self._request(self._form_history(system, history, images), gen_conf)
-            cnt = response["choices"][0]["message"]["content"]
-            if "usage" in response and "total_tokens" in response["usage"]:
-                total_tokens += response["usage"]["total_tokens"]
-            for resp in cnt:
-                yield resp
-        except Exception as e:
-            yield "\n**ERROR**: " + str(e)
-
-        yield total_tokens
+            base_url = "https://integrate.api.nvidia.com/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
 
 
 class AnthropicCV(Base):
@@ -675,6 +1116,7 @@ class AnthropicCV(Base):
         import anthropic
 
         self.client = anthropic.Anthropic(api_key=key)
+        self.async_client = anthropic.AsyncAnthropic(api_key=key)
         self.model_name = model_name
         self.system = ""
         self.max_tokens = 8192
@@ -687,14 +1129,15 @@ class AnthropicCV(Base):
             return text
         pmpt = [{"type": "text", "text": text}]
         for img in images:
-            pmpt.append({
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": (img.split(":")[1].split(";")[0] if isinstance(img, str) and img[:4] == "data" else "image/png"),
-                            "data": (img.split(",")[1] if isinstance(img, str) and img[:4] == "data" else img)
-                        },
-                    }
+            pmpt.append(
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": (img.split(":")[1].split(";")[0] if isinstance(img, str) and img[:4] == "data" else "image/png"),
+                        "data": (img.split(",")[1] if isinstance(img, str) and img[:4] == "data" else img),
+                    },
+                }
             )
         return pmpt
 
@@ -708,7 +1151,7 @@ class AnthropicCV(Base):
         prompt = self.prompt(b64, prompt if prompt else vision_llm_describe_prompt())
 
         response = self.client.messages.create(model=self.model_name, max_tokens=self.max_tokens, messages=prompt)
-        return response["content"][0]["text"].strip(), response["usage"]["input_tokens"] + response["usage"]["output_tokens"]
+        return response["content"][0]["text"].strip(), total_token_count_from_response(response)
 
     def _clean_conf(self, gen_conf):
         if "presence_penalty" in gen_conf:
@@ -719,32 +1162,33 @@ class AnthropicCV(Base):
             gen_conf["max_tokens"] = self.max_tokens
         return gen_conf
 
-    def chat(self, system, history, gen_conf, images=[]):
+    async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         gen_conf = self._clean_conf(gen_conf)
         ans = ""
         try:
-            response = self.client.messages.create(
+            response = await self.async_client.messages.create(
                 model=self.model_name,
                 messages=self._form_history(system, history, images),
                 system=system,
                 stream=False,
                 **gen_conf,
-            ).to_dict()
+            )
+            response = response.to_dict()
             ans = response["content"][0]["text"]
             if response["stop_reason"] == "max_tokens":
                 ans += "...\nFor the content length reason, it stopped, continue?" if is_english([ans]) else "······\n由于长度的原因，回答被截断了，要继续吗？"
             return (
                 ans,
-                response["usage"]["input_tokens"] + response["usage"]["output_tokens"],
+                total_token_count_from_response(response),
             )
         except Exception as e:
             return ans + "\n**ERROR**: " + str(e), 0
 
-    def chat_streamly(self, system, history, gen_conf, images=[]):
+    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         gen_conf = self._clean_conf(gen_conf)
         total_tokens = 0
         try:
-            response = self.client.messages.create(
+            response = self.async_client.messages.create(
                 model=self.model_name,
                 messages=self._form_history(system, history, images),
                 system=system,
@@ -752,7 +1196,7 @@ class AnthropicCV(Base):
                 **gen_conf,
             )
             think = False
-            for res in response:
+            async for res in response:
                 if res.type == "content_block_delta":
                     if res.delta.type == "thinking_delta" and res.delta.thinking:
                         if not think:
@@ -773,6 +1217,22 @@ class AnthropicCV(Base):
 
 class GoogleCV(AnthropicCV, GeminiCV):
     _FACTORY_NAME = "Google Cloud"
+
+    @staticmethod
+    def _vertex_http_options(region: str):
+        region_norm = (region or "").strip().lower()
+        multipoint_hosts = {
+            "eu": "https://aiplatform.eu.rep.googleapis.com/",
+            "us": "https://aiplatform.us.rep.googleapis.com/",
+        }
+        base_url = multipoint_hosts.get(region_norm)
+        if base_url:
+            from google.genai.types import HttpOptions
+
+            # Gemini 3.x multi-region endpoints require *.rep hostnames
+            # instead of region-aiplatform host synthesis.
+            return HttpOptions(base_url=base_url, api_version="v1")
+        return None
 
     def __init__(self, key, model_name, lang="Chinese", base_url=None, **kwargs):
         import base64
@@ -801,15 +1261,22 @@ class GoogleCV(AnthropicCV, GeminiCV):
             else:
                 self.client = AnthropicVertex(region=region, project_id=project_id)
         else:
-            import vertexai.generative_models as glm
-            from google.cloud import aiplatform
+            from google import genai
 
+            client_kwargs = {
+                "vertexai": True,
+                "project": project_id,
+                "location": region,
+            }
+            http_options = self._vertex_http_options(region)
+            if http_options is not None:
+                client_kwargs["http_options"] = http_options
             if access_token:
-                credits = service_account.Credentials.from_service_account_info(access_token)
-                aiplatform.init(credentials=credits, project=project_id, location=region)
+                credits = service_account.Credentials.from_service_account_info(access_token, scopes=scopes)
+                client_kwargs["credentials"] = credits
+                self.client = genai.Client(**client_kwargs)
             else:
-                aiplatform.init(project=project_id, location=region)
-            self.client = glm.GenerativeModel(model_name=self.model_name)
+                self.client = genai.Client(**client_kwargs)
         Base.__init__(self, **kwargs)
 
     def describe(self, image):
@@ -824,16 +1291,140 @@ class GoogleCV(AnthropicCV, GeminiCV):
         else:
             return GeminiCV.describe_with_prompt(self, image, prompt)
 
-    def chat(self, system, history, gen_conf, images=[]):
+    async def async_chat(self, system, history, gen_conf, images=None, **kwargs):
         if "claude" in self.model_name:
-            return AnthropicCV.chat(self, system, history, gen_conf, images)
+            return await AnthropicCV.async_chat(self, system, history, gen_conf, images)
         else:
-            return GeminiCV.chat(self, system, history, gen_conf, images)
+            return await GeminiCV.async_chat(self, system, history, gen_conf, images)
 
-    def chat_streamly(self, system, history, gen_conf, images=[]):
+    async def async_chat_streamly(self, system, history, gen_conf, images=None, **kwargs):
         if "claude" in self.model_name:
-            for ans in AnthropicCV.chat_streamly(self, system, history, gen_conf, images):
+            async for ans in AnthropicCV.async_chat_streamly(self, system, history, gen_conf, images):
                 yield ans
         else:
-            for ans in GeminiCV.chat_streamly(self, system, history, gen_conf, images):
+            async for ans in GeminiCV.async_chat_streamly(self, system, history, gen_conf, images):
                 yield ans
+
+
+class MoonshotCV(GptV4):
+    _FACTORY_NAME = "Moonshot"
+
+    def __init__(self, key, model_name="moonshot-v1-8k-vision-preview", lang="Chinese", base_url="https://api.moonshot.cn/v1", **kwargs):
+        if not base_url:
+            base_url = "https://api.moonshot.cn/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+
+
+class FuturMixCV(GptV4):
+    _FACTORY_NAME = "FuturMix"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="https://futurmix.ai/v1", **kwargs):
+        if not base_url:
+            base_url = "https://futurmix.ai/v1"
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        logging.info("[FuturMix] CV initialized with model %s", model_name)
+
+
+class AIMLAPICV(GptV4):
+    _FACTORY_NAME = "aimlapi.com"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+        base_url = base_url or os.environ.get("AIMLAPI_API_URL", "https://api.aimlapi.com/v1")
+        super().__init__(key, model_name, lang=lang, base_url=base_url, **kwargs)
+        headers = attribution_headers()
+        self.client = self.client.with_options(default_headers=headers)
+        self.async_client = self.async_client.with_options(default_headers=headers)
+        logging.info("[aimlapi.com] CV initialized with model %s", model_name)
+
+
+class RAGconCV(GptV4):
+    """
+    RAGcon CV Provider - routes through LiteLLM proxy
+
+    Supports vision models through LiteLLM.
+    Default Base URL: https://connect.ragcon.ai/v1
+    """
+
+    _FACTORY_NAME = "RAGcon"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+
+        if not base_url:
+            base_url = "https://connect.ragcon.com/v1"
+
+        # Initialize client
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url)
+        self.model_name = model_name
+        self.lang = lang
+
+        Base.__init__(self, **kwargs)
+
+
+class BedrockCV(Base):
+    _FACTORY_NAME = "Bedrock"
+
+    def __init__(self, key, model_name, lang="Chinese", **kwargs):
+        self.model_name = f"bedrock/{model_name}"
+        self.lang = lang
+        self._parse_credentials(key)
+        Base.__init__(self, **kwargs)
+
+    def _parse_credentials(self, key):
+        bedrock_key = json.loads(key)
+        self.auth_mode = bedrock_key.get("auth_mode", "")
+        self.aws_region = bedrock_key.get("bedrock_region", "us-east-1")
+        self.aws_ak = bedrock_key.get("bedrock_ak", "")
+        self.aws_sk = bedrock_key.get("bedrock_sk", "")
+        self.aws_role_arn = bedrock_key.get("aws_role_arn", "")
+
+    def _get_aws_creds(self):
+        if self.auth_mode == "access_key_secret":
+            return {
+                "aws_region_name": self.aws_region,
+                "aws_access_key_id": self.aws_ak,
+                "aws_secret_access_key": self.aws_sk,
+            }
+        elif self.auth_mode == "iam_role":
+            import boto3
+
+            sts_client = boto3.client("sts", region_name=self.aws_region)
+            resp = sts_client.assume_role(RoleArn=self.aws_role_arn, RoleSessionName="BedrockCVSession")
+            creds = resp["Credentials"]
+            return {
+                "aws_region_name": self.aws_region,
+                "aws_access_key_id": creds["AccessKeyId"],
+                "aws_secret_access_key": creds["SecretAccessKey"],
+                "aws_session_token": creds["SessionToken"],
+            }
+        else:
+            return {"aws_region_name": self.aws_region}
+
+    def describe_with_prompt(self, image, prompt=None):
+        import litellm
+
+        b64 = self.image2base64(image)
+        messages = self.vision_llm_prompt(b64, prompt)
+        res = litellm.completion(
+            model=self.model_name,
+            messages=messages,
+            **self._get_aws_creds(),
+        )
+        return res.choices[0].message.content.strip(), total_token_count_from_response(res)
+
+    def describe(self, image):
+        return self.describe_with_prompt(image)
+
+
+class NewAPICv(GptV4):
+    _FACTORY_NAME = "New API"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name.split("___")[0]
+        self.lang = lang
+        Base.__init__(self, **kwargs)

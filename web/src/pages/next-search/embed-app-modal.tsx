@@ -1,4 +1,6 @@
-import HightLightMarkdown from '@/components/highlight-markdown';
+import HighLightMarkdown from '@/components/highlight-markdown';
+import { Button } from '@/components/ui/button';
+import message from '@/components/ui/message';
 import { Modal } from '@/components/ui/modal/modal';
 import { RAGFlowSelect } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
@@ -7,7 +9,8 @@ import {
   LanguageAbbreviationMap,
 } from '@/constants/common';
 import { useTranslate } from '@/hooks/common-hooks';
-import { message } from 'antd';
+import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
+import { ExternalLink } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 
 type IEmbedAppModalProps = {
@@ -16,13 +19,14 @@ type IEmbedAppModalProps = {
   token: string;
   from: string;
   setOpen: (e: any) => void;
-  tenantId: string;
   beta?: string;
 };
 
 const EmbedAppModal = (props: IEmbedAppModalProps) => {
   const { t } = useTranslate('search');
-  const { open, setOpen, token = '', from, url, tenantId, beta = '' } = props;
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const tenantId = tenantInfo.tenant_id;
+  const { open, setOpen, token = '', from, url, beta = '' } = props;
 
   const [hideAvatar, setHideAvatar] = useState(false);
   const [locale, setLocale] = useState('');
@@ -45,6 +49,10 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
     }
     return src;
   }, [beta, from, token, hideAvatar, locale, url, tenantId]);
+
+  const handleOpenInNewTab = useCallback(() => {
+    window.open(generateIframeSrc(), '_blank');
+  }, [generateIframeSrc]);
 
   // ... existing code ...
   const text = useMemo(() => {
@@ -89,7 +97,7 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
             {t('locale')}
           </label>
           <RAGFlowSelect
-            placeholder="Select a locale"
+            placeholder={t('selectLocalePlaceholder')}
             value={locale}
             onChange={(value) => setLocale(value)}
             options={languageOptions}
@@ -102,8 +110,20 @@ const EmbedAppModal = (props: IEmbedAppModalProps) => {
           </label>
           {/* <div className=" border rounded-lg"> */}
           {/* <pre className="text-sm whitespace-pre-wrap">{text}</pre> */}
-          <HightLightMarkdown>{text}</HightLightMarkdown>
+          <HighLightMarkdown>{text}</HighLightMarkdown>
           {/* </div> */}
+        </div>
+
+        {/* Open In New Tab */}
+        <div className="mb-6">
+          <Button
+            onClick={handleOpenInNewTab}
+            className="w-full"
+            variant="secondary"
+          >
+            <ExternalLink className="mr-2 h-4 w-4" />
+            {t('openInNewTab', { keyPrefix: 'common' })}
+          </Button>
         </div>
 
         {/* ID Field */}

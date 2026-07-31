@@ -1,7 +1,7 @@
 import { IParserConfig } from '@/interfaces/database/document';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { DocumentType } from '../layout-recognize-form-field';
+import { ParseDocumentType } from '../layout-recognize-form-field';
 
 export function useDefaultParserValues() {
   const { t } = useTranslation();
@@ -9,12 +9,20 @@ export function useDefaultParserValues() {
   const defaultParserValues = useMemo(() => {
     const defaultParserValues = {
       task_page_size: 12,
-      layout_recognize: DocumentType.DeepDOC,
+      layout_recognize: ParseDocumentType.DeepDOC,
       chunk_token_num: 512,
       delimiter: '\n',
+      enable_children: false,
+      children_delimiter: '\n',
       auto_keywords: 0,
       auto_questions: 0,
       html4excel: false,
+      toc_extraction: false,
+      image_table_context_window: 0,
+      mineru_parse_method: 'auto',
+      mineru_formula_enable: true,
+      mineru_table_enable: true,
+      mineru_lang: 'English',
       raptor: {
         use_raptor: false,
         prompt: t('knowledgeConfiguration.promptText'),
@@ -22,15 +30,21 @@ export function useDefaultParserValues() {
         threshold: 0.1,
         max_cluster: 64,
         random_seed: 0,
+        scope: 'file',
+        clustering_method: 'gmm',
+        tree_builder: 'raptor',
       },
-      graphrag: {
-        use_graphrag: false,
-      },
+      // graphrag: {
+      //   use_graphrag: false,
+      // },
       entity_types: [],
       pages: [],
+      metadata: [],
+      built_in_metadata: [],
+      enable_metadata: false,
     };
 
-    return defaultParserValues;
+    return defaultParserValues as IParserConfig;
   }, [t]);
 
   return defaultParserValues;

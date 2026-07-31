@@ -23,17 +23,108 @@ from api.db.db_utils import bulk_insert_into_db
 from deepdoc.parser import PdfParser
 from peewee import JOIN
 from api.db.db_models import DB, File2Document, File
-from api.db import StatusEnum, FileType, TaskStatus
+from api.db import FileType
 from api.db.db_models import Task, Document, Knowledgebase, Tenant
 from api.db.services.common_service import CommonService
 from api.db.services.document_service import DocumentService
-from api.utils import current_timestamp, get_uuid
+from common.misc_utils import get_uuid
+from common.time_utils import current_timestamp, get_format_time
+from common.constants import StatusEnum, TaskStatus, MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
-from rag.settings import get_svr_queue_name
-from rag.utils.storage_factory import STORAGE_IMPL
 from rag.utils.redis_conn import REDIS_CONN
-from api import settings
+from common import settings
 from rag.nlp import search
+
+CANVAS_DEBUG_DOC_ID = "dataflow_x"
+GRAPH_RAPTOR_FAKE_DOC_ID = "graph_raptor_x"
+TASK_MAX_LOG_LENGTH = int(os.environ.get("TASK_MAX_LOG_LENGTH", 3000))  # TEXT MAX is 64 KiB bytes!
+DOC_CHUNKING_COUNTER_TTL_SECONDS = 7 * 24 * 3600
+
+
+def _doc_chunking_pending_key(doc_id: str) -> str:
+    return f"doc:chunking_pending:{doc_id}"
+
+
+def _doc_chunking_aborted_key(doc_id: str) -> str:
+    return f"doc:chunking_aborted:{doc_id}"
+
+
+def _doc_chunking_done_key(task_id: str) -> str:
+    return f"doc:chunking_done:{task_id}"
+
+
+def seed_doc_chunking_counter(doc_id: str, pending_count: int) -> bool:
+    if not doc_id or pending_count <= 0:
+        return False
+    try:
+        REDIS_CONN.delete(_doc_chunking_aborted_key(doc_id))
+        return REDIS_CONN.set(
+            _doc_chunking_pending_key(doc_id),
+            str(pending_count),
+            exp=DOC_CHUNKING_COUNTER_TTL_SECONDS,
+        )
+    except Exception:
+        logging.exception("Failed to seed chunking counter for doc %s", doc_id)
+        return False
+
+
+def clear_doc_chunking_counter(doc_id: str) -> None:
+    if not doc_id:
+        return
+    try:
+        REDIS_CONN.delete(_doc_chunking_pending_key(doc_id))
+    except Exception:
+        logging.exception("Failed to clear chunking counter for doc %s", doc_id)
+
+
+def abort_doc_chunking_counter(doc_id: str) -> None:
+    if not doc_id:
+        return
+    try:
+        REDIS_CONN.delete(_doc_chunking_pending_key(doc_id))
+        REDIS_CONN.set(
+            _doc_chunking_aborted_key(doc_id),
+            "1",
+            exp=DOC_CHUNKING_COUNTER_TTL_SECONDS,
+        )
+    except Exception:
+        logging.exception("Failed to abort chunking counter for doc %s", doc_id)
+
+
+def is_doc_chunking_aborted(doc_id: str) -> bool:
+    if not doc_id:
+        return False
+    try:
+        return bool(REDIS_CONN.get(_doc_chunking_aborted_key(doc_id)))
+    except Exception:
+        logging.exception("Failed to read chunking abort marker for doc %s", doc_id)
+        return False
+
+
+def credit_doc_chunking_task(doc_id: str, task_id: str) -> int | None:
+    """Credit one completed standard chunking task.
+
+    Returns the post-decrement pending count when this task was credited for
+    the first time. Returns a positive value when this task was already
+    credited, so callers treat retries as not-last.
+    """
+    if not doc_id or not task_id:
+        return None
+    try:
+        first_credit = REDIS_CONN.set_if_absent(
+            _doc_chunking_done_key(task_id),
+            "1",
+            exp=DOC_CHUNKING_COUNTER_TTL_SECONDS,
+        )
+        if not first_credit:
+            return 1
+        pending_key = _doc_chunking_pending_key(doc_id)
+        if REDIS_CONN.get(pending_key) is None:
+            return -1
+        return REDIS_CONN.decrby(pending_key, 1)
+    except Exception:
+        logging.exception("Failed to credit chunking task %s for doc %s", task_id, doc_id)
+        return None
 
 
 def trim_header_by_lines(text: str, max_length) -> str:
@@ -47,48 +138,54 @@ def trim_header_by_lines(text: str, max_length) -> str:
     if len_text <= max_length:
         return text
     for i in range(len_text):
-        if text[i] == '\n' and len_text - i <= max_length:
-            return text[i + 1:]
+        if text[i] == "\n" and len_text - i <= max_length:
+            return text[i + 1 :]
     return text
 
 
 class TaskService(CommonService):
     """Service class for managing document processing tasks.
-    
+
     This class extends CommonService to provide specialized functionality for document
     processing task management, including task creation, progress tracking, and chunk
     management. It handles various document types (PDF, Excel, etc.) and manages their
     processing lifecycle.
-    
+
     The class implements a robust task queue system with retry mechanisms and progress
     tracking, supporting both synchronous and asynchronous task execution.
-    
+
     Attributes:
         model: The Task model class for database operations.
     """
+
     model = Task
 
     @classmethod
     @DB.connection_context()
-    def get_task(cls, task_id):
+    def get_task(cls, task_id, doc_ids=[]):
         """Retrieve detailed task information by task ID.
-    
+
         This method fetches comprehensive task details including associated document,
-        knowledge base, and tenant information. It also handles task retry logic and
+        dataset, and tenant information. It also handles task retry logic and
         progress updates.
-    
+
         Args:
             task_id (str): The unique identifier of the task to retrieve.
-    
+
         Returns:
             dict: Task details dictionary containing all task information and related metadata.
                  Returns None if task is not found or has exceeded retry limit.
         """
+        doc_id = cls.model.doc_id
+        if doc_id == CANVAS_DEBUG_DOC_ID and doc_ids:
+            doc_id = doc_ids[0]
+
         fields = [
             cls.model.id,
             cls.model.doc_id,
             cls.model.from_page,
             cls.model.to_page,
+            cls.model.task_type,
             cls.model.retry_count,
             Document.kb_id,
             Document.parser_id,
@@ -100,52 +197,57 @@ class TaskService(CommonService):
             Knowledgebase.tenant_id,
             Knowledgebase.language,
             Knowledgebase.embd_id,
+            Knowledgebase.tenant_embd_id,
             Knowledgebase.pagerank,
             Knowledgebase.parser_config.alias("kb_parser_config"),
             Tenant.img2txt_id,
             Tenant.asr_id,
             Tenant.llm_id,
+            Tenant.tenant_llm_id,
             cls.model.update_time,
         ]
         docs = (
             cls.model.select(*fields)
-                .join(Document, on=(cls.model.doc_id == Document.id))
-                .join(Knowledgebase, on=(Document.kb_id == Knowledgebase.id))
-                .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))
-                .where(cls.model.id == task_id)
+            .join(Document, on=(doc_id == Document.id))
+            .join(Knowledgebase, on=(Document.kb_id == Knowledgebase.id))
+            .join(Tenant, on=(Knowledgebase.tenant_id == Tenant.id))
+            .where(cls.model.id == task_id)
         )
         docs = list(docs.dicts())
         if not docs:
             return None
+        doc = docs[0]
 
         msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task has been received."
         prog = random.random() / 10.0
-        if docs[0]["retry_count"] >= 3:
+        if doc["retry_count"] >= 3:
             msg = "\nERROR: Task is abandoned after 3 times attempts."
             prog = -1
 
         cls.model.update(
             progress_msg=cls.model.progress_msg + msg,
             progress=prog,
-            retry_count=docs[0]["retry_count"] + 1,
-        ).where(cls.model.id == docs[0]["id"]).execute()
+            retry_count=doc["retry_count"] + 1,
+        ).where(cls.model.id == doc["id"]).execute()
 
         if docs[0]["retry_count"] >= 3:
+            abort_doc_chunking_counter(docs[0]["doc_id"])
+            DocumentService.update_by_id(docs[0]["doc_id"], {"progress": -1, "run": TaskStatus.FAIL.value, "update_time": current_timestamp(), "update_date": get_format_time()})
             return None
 
-        return docs[0]
+        return doc
 
     @classmethod
     @DB.connection_context()
     def get_tasks(cls, doc_id: str):
         """Retrieve all tasks associated with a document.
-    
+
         This method fetches all processing tasks for a given document, ordered by page
         number and creation time. It includes task progress and chunk information.
-    
+
         Args:
             doc_id (str): The unique identifier of the document.
-    
+
         Returns:
             list[dict]: List of task dictionaries containing task details.
                        Returns None if no tasks are found.
@@ -157,10 +259,29 @@ class TaskService(CommonService):
             cls.model.digest,
             cls.model.chunk_ids,
         ]
-        tasks = (
-            cls.model.select(*fields).order_by(cls.model.from_page.asc(), cls.model.create_time.desc())
-                .where(cls.model.doc_id == doc_id)
-        )
+        tasks = cls.model.select(*fields).order_by(cls.model.from_page.asc(), cls.model.create_time.desc()).where(cls.model.doc_id == doc_id)
+        tasks = list(tasks.dicts())
+        if not tasks:
+            return None
+        return tasks
+
+    @classmethod
+    @DB.connection_context()
+    def get_tasks_progress_by_doc_ids(cls, doc_ids: list[str]):
+        """Retrieve all tasks associated with specific documents.
+
+        This method fetches all processing tasks for given document ids, ordered by
+        creation time. It includes task progress and chunk information.
+
+        Args:
+            doc_ids (str): The unique identifier of the document.
+
+        Returns:
+            list[dict]: List of task dictionaries containing task details.
+                       Returns None if no tasks are found.
+        """
+        fields = [cls.model.id, cls.model.doc_id, cls.model.from_page, cls.model.progress, cls.model.progress_msg, cls.model.digest, cls.model.chunk_ids, cls.model.create_time]
+        tasks = cls.model.select(*fields).order_by(cls.model.create_time.desc()).where(cls.model.doc_id.in_(doc_ids))
         tasks = list(tasks.dicts())
         if not tasks:
             return None
@@ -170,10 +291,10 @@ class TaskService(CommonService):
     @DB.connection_context()
     def update_chunk_ids(cls, id: str, chunk_ids: str):
         """Update the chunk IDs associated with a task.
-    
+
         This method updates the chunk_ids field of a task, which stores the IDs of
         processed document chunks in a space-separated string format.
-    
+
         Args:
             id (str): The unique identifier of the task.
             chunk_ids (str): Space-separated string of chunk identifiers.
@@ -184,11 +305,11 @@ class TaskService(CommonService):
     @DB.connection_context()
     def get_ongoing_doc_name(cls):
         """Get names of documents that are currently being processed.
-    
+
         This method retrieves information about documents that are in the processing state,
         including their locations and associated IDs. It uses database locking to ensure
         thread safety when accessing the task information.
-    
+
         Returns:
             list[tuple]: A list of tuples, each containing (parent_id/kb_id, location)
                         for documents currently being processed. Returns empty list if
@@ -196,21 +317,19 @@ class TaskService(CommonService):
         """
         with DB.lock("get_task", -1):
             docs = (
-                cls.model.select(
-                    *[Document.id, Document.kb_id, Document.location, File.parent_id]
-                )
-                    .join(Document, on=(cls.model.doc_id == Document.id))
-                    .join(
+                cls.model.select(*[Document.id, Document.kb_id, Document.location, File.parent_id])
+                .join(Document, on=(cls.model.doc_id == Document.id))
+                .join(
                     File2Document,
                     on=(File2Document.document_id == Document.id),
                     join_type=JOIN.LEFT_OUTER,
                 )
-                    .join(
+                .join(
                     File,
                     on=(File2Document.file_id == File.id),
                     join_type=JOIN.LEFT_OUTER,
                 )
-                    .where(
+                .where(
                     Document.status == StatusEnum.VALID.value,
                     Document.run == TaskStatus.RUNNING.value,
                     ~(Document.type == FileType.VIRTUAL.value),
@@ -238,14 +357,14 @@ class TaskService(CommonService):
     @DB.connection_context()
     def do_cancel(cls, id):
         """Check if a task should be cancelled based on its document status.
-    
+
         This method determines whether a task should be cancelled by checking the
         associated document's run status and progress. A task should be cancelled
         if its document is marked for cancellation or has negative progress.
-    
+
         Args:
             id (str): The unique identifier of the task to check.
-    
+
         Returns:
             bool: True if the task should be cancelled, False otherwise.
         """
@@ -264,9 +383,8 @@ class TaskService(CommonService):
 
         Update Rules:
             - progress_msg: Always appends the new message to the existing one, and trims the result to max 3000 lines.
-            - progress: Only updates if the current progress is not -1 AND
-                        (the new progress is -1 OR greater than the existing progress),
-                        to avoid overwriting valid progress with invalid or regressive values.
+            - progress: Updates when (a) new progress >= 1 (allows recovery from -1), or
+                        (b) current progress != -1 AND (new progress is -1 OR greater than existing).
 
         Args:
             id (str): The unique identifier of the task to update.
@@ -281,71 +399,83 @@ class TaskService(CommonService):
 
         if os.environ.get("MACOS"):
             if info["progress_msg"]:
-                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 3000)
+                progress_msg = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
                 cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
             if "progress" in info:
                 prog = info["progress"]
-                cls.model.update(progress=prog).where(
-                    (cls.model.id == id) &
-                    (
-                        (cls.model.progress != -1) &
-                        ((prog == -1) | (prog > cls.model.progress))
-                    )
-                ).execute()
-            return
+                cls.model.update(progress=prog).where((cls.model.id == id) & ((prog >= 1) | ((cls.model.progress != -1) & ((prog == -1) | (prog > cls.model.progress))))).execute()
+        else:
+            with DB.lock("update_progress", -1):
+                if info["progress_msg"]:
+                    progress_msg = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
+                    cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
+                if "progress" in info:
+                    prog = info["progress"]
+                    cls.model.update(progress=prog).where((cls.model.id == id) & ((prog >= 1) | ((cls.model.progress != -1) & ((prog == -1) | (prog > cls.model.progress))))).execute()
 
-        with DB.lock("update_progress", -1):
-            if info["progress_msg"]:
-                progress_msg = trim_header_by_lines(task.progress_msg + "\n" + info["progress_msg"], 3000)
-                cls.model.update(progress_msg=progress_msg).where(cls.model.id == id).execute()
-            if "progress" in info:
-                prog = info["progress"]
-                cls.model.update(progress=prog).where(
-                    (cls.model.id == id) &
-                    (
-                        (cls.model.progress != -1) &
-                        ((prog == -1) | (prog > cls.model.progress))
-                    )
-                ).execute()
+        begin_at = task.begin_at
+        if begin_at is not None:
+            process_duration = (datetime.now() - begin_at).total_seconds()
+            cls.model.update(process_duration=process_duration).where(cls.model.id == id).execute()
+        if info.get("progress") == -1:
+            doc_info = {"progress": -1, "run": TaskStatus.FAIL.value, "update_time": current_timestamp(), "update_date": get_format_time()}
+            if info.get("progress_msg"):
+                doc_info["progress_msg"] = trim_header_by_lines((task.progress_msg or "") + "\n" + info["progress_msg"], TASK_MAX_LOG_LENGTH)
+            DocumentService.model.update(doc_info).where(
+                (DocumentService.model.id == task.doc_id) & ((DocumentService.model.run.is_null(True)) | (DocumentService.model.run != TaskStatus.CANCEL.value))
+            ).execute()
+
+    @classmethod
+    @DB.connection_context()
+    def delete_by_doc_ids(cls, doc_ids):
+        """Delete task associated with a document."""
+        return cls.model.delete().where(cls.model.doc_id.in_(doc_ids)).execute()
 
 
 def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     """Create and queue document processing tasks.
-    
+
     This function creates processing tasks for a document based on its type and configuration.
     It handles different document types (PDF, Excel, etc.) differently and manages task
     chunking and configuration. It also implements task reuse optimization by checking
     for previously completed tasks.
-    
+
     Args:
         doc (dict): Document dictionary containing metadata and configuration.
         bucket (str): Storage bucket name where the document is stored.
         name (str): File name of the document.
         priority (int, optional): Priority level for task queueing (default is 0).
-    
+
     Note:
         - For PDF documents, tasks are created per page range based on configuration
         - For Excel documents, tasks are created per row range
         - Task digests are calculated for optimization and reuse
         - Previous task chunks may be reused if available
     """
+
     def new_task():
-        return {"id": get_uuid(), "doc_id": doc["id"], "progress": 0.0, "from_page": 0, "to_page": 100000000}
+        return {
+            "id": get_uuid(),
+            "doc_id": doc["id"],
+            "progress": 0.0,
+            "from_page": 0,
+            "to_page": MAXIMUM_TASK_PAGE_NUMBER,
+            "begin_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
 
     parse_task_array = []
 
     if doc["type"] == FileType.PDF.value:
-        file_bin = STORAGE_IMPL.get(bucket, name)
-        do_layout = doc["parser_config"].get("layout_recognize", "DeepDOC")
+        file_bin = settings.STORAGE_IMPL.get(bucket, name)
         pages = PdfParser.total_page_number(doc["name"], file_bin)
         if pages is None:
             pages = 0
         page_size = doc["parser_config"].get("task_page_size") or 12
         if doc["parser_id"] == "paper":
             page_size = doc["parser_config"].get("task_page_size") or 22
-        if doc["parser_id"] in ["one", "knowledge_graph"] or do_layout != "DeepDOC":
-            page_size = 10 ** 9
-        page_ranges = doc["parser_config"].get("pages") or [(1, 10 ** 5)]
+        if doc["parser_id"] in ["one", "knowledge_graph"] or doc["parser_config"].get("toc_extraction", False):
+            page_size = MAXIMUM_TASK_PAGE_NUMBER
+        page_ranges = doc["parser_config"].get("pages") or [(1, MAXIMUM_PAGE_NUMBER)]
         for s, e in page_ranges:
             s -= 1
             s = max(0, s)
@@ -357,7 +487,7 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
                 parse_task_array.append(task)
 
     elif doc["parser_id"] == "table":
-        file_bin = STORAGE_IMPL.get(bucket, name)
+        file_bin = settings.STORAGE_IMPL.get(bucket, name)
         rn = RAGFlowExcelParser.row_number(doc["name"], file_bin)
         for i in range(0, rn, 3000):
             task = new_task()
@@ -366,6 +496,9 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
             parse_task_array.append(task)
     else:
         parse_task_array.append(new_task())
+
+    # Determine suffix based on parser_id (consistent with SAAS version line 444)
+    suffix = "common" if doc["parser_id"] != "resume" else "resume"
 
     chunking_config = DocumentService.get_chunking_config(doc["id"])
     for task in parse_task_array:
@@ -394,35 +527,39 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
             if pre_task["chunk_ids"]:
                 pre_chunk_ids.extend(pre_task["chunk_ids"].split())
         if pre_chunk_ids:
-            settings.docStoreConn.delete({"id": pre_chunk_ids}, search.index_name(chunking_config["tenant_id"]),
-                                         chunking_config["kb_id"])
+            settings.docStoreConn.delete({"id": pre_chunk_ids}, search.index_name(chunking_config["tenant_id"]), chunking_config["kb_id"])
     DocumentService.update_by_id(doc["id"], {"chunk_num": ck_num})
 
     bulk_insert_into_db(Task, parse_task_array, True)
     DocumentService.begin2parse(doc["id"])
 
     unfinished_task_array = [task for task in parse_task_array if task["progress"] < 1.0]
-    for unfinished_task in unfinished_task_array:
-        assert REDIS_CONN.queue_product(
-            get_svr_queue_name(priority), message=unfinished_task
-        ), "Can't access Redis. Please check the Redis' status."
+    chunking_n = sum(1 for task in unfinished_task_array if not task.get("task_type"))
+    if chunking_n > 0:
+        assert seed_doc_chunking_counter(doc["id"], chunking_n), "Can't access Redis. Please check the Redis' status."
+    try:
+        for unfinished_task in unfinished_task_array:
+            assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority, suffix), message=unfinished_task), "Can't access Redis. Please check the Redis' status."
+    except Exception:
+        abort_doc_chunking_counter(doc["id"])
+        raise
 
 
 def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: dict):
     """Attempt to reuse chunks from previous tasks for optimization.
-    
+
     This function checks if chunks from previously completed tasks can be reused for
     the current task, which can significantly improve processing efficiency. It matches
     tasks based on page ranges and configuration digests.
-    
+
     Args:
         task (dict): Current task dictionary to potentially reuse chunks for.
         prev_tasks (list[dict]): List of previous task dictionaries to check for reuse.
         chunking_config (dict): Configuration dictionary for chunk processing.
-    
+
     Returns:
         int: Number of chunks successfully reused. Returns 0 if no chunks could be reused.
-    
+
     Note:
         Chunks can only be reused if:
         - A previous task exists with matching page range and configuration digest
@@ -432,8 +569,7 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
     idx = 0
     while idx < len(prev_tasks):
         prev_task = prev_tasks[idx]
-        if prev_task.get("from_page", 0) == task.get("from_page", 0) \
-                and prev_task.get("digest", 0) == task.get("digest", ""):
+        if prev_task.get("from_page", 0) == task.get("from_page", 0) and prev_task.get("digest", 0) == task.get("digest", ""):
             break
         idx += 1
 
@@ -444,18 +580,22 @@ def reuse_prev_task_chunks(task: dict, prev_tasks: list[dict], chunking_config: 
         return 0
     task["chunk_ids"] = prev_task["chunk_ids"]
     task["progress"] = 1.0
-    if "from_page" in task and "to_page" in task and int(task['to_page']) - int(task['from_page']) >= 10 ** 6:
+    if (
+        "from_page" in task
+        and "to_page" in task
+        and (int(task["to_page"]) - int(task["from_page"]) >= 10**6 or (int(task["from_page"]) == MAXIMUM_TASK_PAGE_NUMBER and int(task["to_page"]) == MAXIMUM_TASK_PAGE_NUMBER))
+    ):
         task["progress_msg"] = f"Page({task['from_page']}~{task['to_page']}): "
     else:
         task["progress_msg"] = ""
-    task["progress_msg"] = " ".join(
-        [datetime.now().strftime("%H:%M:%S"), task["progress_msg"], "Reused previous task's chunks."])
+    task["progress_msg"] = " ".join([datetime.now().strftime("%H:%M:%S"), task["progress_msg"], "Reused previous task's chunks."])
     prev_task["chunk_ids"] = ""
 
     return len(task["chunk_ids"].split())
 
 
 def cancel_all_task_of(doc_id):
+    abort_doc_chunking_counter(doc_id)
     for t in TaskService.query(doc_id=doc_id):
         try:
             REDIS_CONN.set(f"{t.id}-cancel", "x")
@@ -466,7 +606,35 @@ def cancel_all_task_of(doc_id):
 def has_canceled(task_id):
     try:
         if REDIS_CONN.get(f"{task_id}-cancel"):
+            logging.info(f"Task: {task_id} has been canceled")
             return True
     except Exception as e:
         logging.exception(e)
     return False
+
+
+def queue_dataflow(tenant_id: str, flow_id: str, task_id: str, doc_id: str = CANVAS_DEBUG_DOC_ID, file: dict = None, priority: int = 0, rerun: bool = False) -> tuple[bool, str]:
+
+    task = dict(
+        id=task_id,
+        doc_id=doc_id,
+        from_page=0,
+        to_page=MAXIMUM_TASK_PAGE_NUMBER,
+        task_type="dataflow" if not rerun else "dataflow_rerun",
+        priority=priority,
+        begin_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    )
+    if doc_id not in [CANVAS_DEBUG_DOC_ID, GRAPH_RAPTOR_FAKE_DOC_ID]:
+        TaskService.model.delete().where(TaskService.model.doc_id == doc_id).execute()
+        DocumentService.begin2parse(doc_id)
+    bulk_insert_into_db(model=Task, data_source=[task], replace_on_conflict=True)
+
+    task["kb_id"] = DocumentService.get_knowledgebase_id(doc_id)
+    task["tenant_id"] = tenant_id
+    task["dataflow_id"] = flow_id
+    task["file"] = file
+
+    if not REDIS_CONN.queue_product(settings.get_svr_queue_name(priority, "common"), message=task):
+        return False, "Can't access Redis. Please check the Redis' status."
+
+    return True, ""

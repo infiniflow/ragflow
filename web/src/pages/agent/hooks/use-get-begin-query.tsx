@@ -1,16 +1,37 @@
-import { AgentGlobals } from '@/constants/agent';
+import { AgentGlobals, AgentStructuredOutputField } from '@/constants/agent';
 import { useFetchAgent } from '@/hooks/use-agent-request';
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
-import { Edge } from '@xyflow/react';
-import { DefaultOptionType } from 'antd/es/select';
-import { isEmpty } from 'lodash';
+import { DefaultOptionType } from '@/interfaces/antd-compat';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import {
+  buildNodeOutputOptions,
+  buildOutputOptions,
+  buildUpstreamNodeOutputOptions,
+  isAgentStructured,
+} from '@/utils/canvas-util';
+import { t } from 'i18next';
+import { flatten, isEmpty, toLower } from 'lodash';
 import get from 'lodash/get';
+import { MessageSquareCode } from 'lucide-react';
 import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { BeginId, BeginQueryType, Operator, VariableType } from '../constant';
+import {
+  AgentDialogueMode,
+  AgentVariableType,
+  BeginId,
+  BeginQueryType,
+  BeginQueryTypeMap,
+  JsonSchemaDataType,
+  Operator,
+  VariableType,
+} from '../constant';
 import { AgentFormContext } from '../context';
 import { buildBeginInputListFromObject } from '../form/begin-form/utils';
 import { BeginQuery } from '../interface';
+import OperatorIcon from '@/components/operator-icon';
 import useGraphStore from '../store';
+import {
+  useFindAgentStructuredOutputLabelByValue,
+  useFindAgentStructuredOutputTypeByValue,
+} from './use-build-structured-output';
 
 export function useSelectBeginNodeDataInputs() {
   const getNode = useGraphStore((state) => state.getNode);
@@ -18,6 +39,18 @@ export function useSelectBeginNodeDataInputs() {
   return buildBeginInputListFromObject(
     getNode(BeginId)?.data?.form?.inputs ?? {},
   );
+}
+
+export function useIsTaskMode(isTask?: boolean) {
+  const getNode = useGraphStore((state) => state.getNode);
+
+  return useMemo(() => {
+    if (typeof isTask === 'boolean') {
+      return isTask;
+    }
+    const node = getNode(BeginId);
+    return node?.data?.form?.mode === AgentDialogueMode.Task;
+  }, [getNode, isTask]);
 }
 
 export const useGetBeginNodeDataQuery = () => {
@@ -59,72 +92,41 @@ export const useGetBeginNodeDataQueryIsSafe = () => {
   return isBeginNodeDataQuerySafe;
 };
 
-function filterAllUpstreamNodeIds(edges: Edge[], nodeIds: string[]) {
-  return nodeIds.reduce<string[]>((pre, nodeId) => {
-    const currentEdges = edges.filter((x) => x.target === nodeId);
-
-    const upstreamNodeIds: string[] = currentEdges.map((x) => x.source);
-
-    const ids = upstreamNodeIds.concat(
-      filterAllUpstreamNodeIds(edges, upstreamNodeIds),
-    );
-
-    ids.forEach((x) => {
-      if (pre.every((y) => y !== x)) {
-        pre.push(x);
-      }
-    });
-
-    return pre;
-  }, []);
-}
-
-export function buildOutputOptions(
-  outputs: Record<string, any> = {},
-  nodeId?: string,
-) {
-  return Object.keys(outputs).map((x) => ({
-    label: x,
-    value: `${nodeId}@${x}`,
-    type: outputs[x]?.type,
-  }));
-}
-
-export function useBuildNodeOutputOptions(nodeId?: string) {
+export function useBuildUpstreamNodeOutputOptions(nodeId?: string) {
   const nodes = useGraphStore((state) => state.nodes);
   const edges = useGraphStore((state) => state.edges);
 
-  const nodeOutputOptions = useMemo(() => {
-    if (!nodeId) {
-      return [];
-    }
-    const upstreamIds = filterAllUpstreamNodeIds(edges, [nodeId]);
-
-    const nodeWithOutputList = nodes.filter(
-      (x) =>
-        upstreamIds.some((y) => y === x.id) && !isEmpty(x.data?.form?.outputs),
-    );
-
-    return nodeWithOutputList
-      .filter((x) => x.id !== nodeId)
-      .map((x) => ({
-        label: x.data.name,
-        value: x.id,
-        title: x.data.name,
-        options: buildOutputOptions(x.data.form.outputs, x.id),
-      }));
+  return useMemo(() => {
+    return buildUpstreamNodeOutputOptions({
+      nodes,
+      edges,
+      nodeId,
+    });
   }, [edges, nodeId, nodes]);
+}
 
-  return nodeOutputOptions;
+export function useBuildParentOutputOptions(parentId?: string) {
+  const { getNode, getOperatorTypeFromId } = useGraphStore((state) => state);
+  const parentNode = getNode(parentId);
+
+  const parentType = getOperatorTypeFromId(parentId);
+
+  if (
+    parentType &&
+    [Operator.Loop].includes(parentType as Operator) &&
+    parentNode
+  ) {
+    const options = buildOutputOptions(parentNode);
+    if (options) {
+      return [options];
+    }
+  }
+
+  return [];
 }
 
 // exclude nodes with branches
-const ExcludedNodes = [
-  Operator.Categorize,
-  Operator.Relevant,
-  Operator.Begin,
-  Operator.Note,
-];
+const ExcludedNodes = [Operator.Categorize, Operator.Begin, Operator.Note];
 
 const StringList = [
   BeginQueryType.Line,
@@ -139,16 +141,26 @@ function transferToVariableType(type: string) {
   return type;
 }
 
-export function useBuildBeginVariableOptions() {
+export function useBuildBeginDynamicVariableOptions() {
   const inputs = useSelectBeginNodeDataInputs();
 
   const options = useMemo(() => {
     return [
       {
-        label: <span>Begin Input</span>,
-        title: 'Begin Input',
+        label: <span>{t('flow.beginInput')}</span>,
+        title: t('flow.beginInput'),
         options: inputs.map((x) => ({
           label: x.name,
+          parentLabel: <span>{t('flow.beginInput')}</span>,
+          icon: (
+            <OperatorIcon
+              name={Operator.Begin}
+              className="
+                p-0 mr-1 relative
+                before:-z-10 before:content-[''] before:absolute before:inset-0
+                before:-m-[.25em] before:bg-accent-primary before:rounded-sm"
+            />
+          ),
           value: `begin@${x.key}`,
           type: transferToVariableType(x.type),
         })),
@@ -159,39 +171,226 @@ export function useBuildBeginVariableOptions() {
   return options;
 }
 
-export const useBuildVariableOptions = (nodeId?: string, parentId?: string) => {
-  const nodeOutputOptions = useBuildNodeOutputOptions(nodeId);
-  const parentNodeOutputOptions = useBuildNodeOutputOptions(parentId);
-  const beginOptions = useBuildBeginVariableOptions();
+const Env = 'env.';
 
-  const options = useMemo(() => {
-    return [...beginOptions, ...nodeOutputOptions, ...parentNodeOutputOptions];
-  }, [beginOptions, nodeOutputOptions, parentNodeOutputOptions]);
+function splitOperatorOutputValue(value?: string) {
+  if (!value) {
+    return {};
+  }
 
-  return options;
-};
+  const [nodeId, output] = value.split('@');
+  return { nodeId, output };
+}
 
-export function useBuildQueryVariableOptions(n?: RAGFlowNodeType) {
+function filterDocGeneratorDownloadOutputOptions(
+  groups: Array<{
+    options: Array<{ value?: string } & Record<string, any>>;
+  }>,
+  allowDocGeneratorDownloadOutput: boolean,
+  getOperatorTypeFromId: (nodeId?: string) => string | undefined,
+) {
+  return groups.map((group) => ({
+    ...group,
+    options: group.options.filter((option) => {
+      const { nodeId, output } = splitOperatorOutputValue(option.value);
+      if (
+        output === 'download' &&
+        getOperatorTypeFromId(nodeId) === Operator.DocGenerator
+      ) {
+        return allowDocGeneratorDownloadOutput;
+      }
+
+      return true;
+    }),
+  }));
+}
+
+export function useBuildGlobalWithBeginVariableOptions() {
   const { data } = useFetchAgent();
-  const node = useContext(AgentFormContext) || n;
-  const options = useBuildVariableOptions(node?.id, node?.parentId);
-
-  const nextOptions = useMemo(() => {
-    const globals = data?.dsl?.globals ?? {};
-    const globalOptions = Object.entries(globals).map(([key, value]) => ({
+  const dynamicBeginOptions = useBuildBeginDynamicVariableOptions();
+  const globals = data?.dsl?.globals ?? {};
+  const globalOptions = Object.entries(globals)
+    .filter(([key]) => !key.startsWith(Env))
+    .map(([key, value]) => ({
       label: key,
       value: key,
+      icon: (
+        <OperatorIcon
+          name={Operator.Begin}
+          className="
+            p-0 mr-1 relative
+            before:-z-10 before:content-[''] before:absolute before:inset-0
+            before:-m-[.25em] before:bg-accent-primary before:rounded-sm"
+        />
+      ),
+      parentLabel: <span>{t('flow.beginInput')}</span>,
       type: Array.isArray(value)
         ? `${VariableType.Array}${key === AgentGlobals.SysFiles ? '<file>' : ''}`
         : typeof value,
     }));
-    return [
-      { ...options[0], options: [...options[0]?.options, ...globalOptions] },
-      ...options.slice(1),
-    ];
-  }, [data.dsl?.globals, options]);
 
+  return [
+    {
+      ...dynamicBeginOptions[0],
+      options: [...(dynamicBeginOptions[0]?.options ?? []), ...globalOptions],
+    },
+  ];
+}
+
+export function useBuildConversationVariableOptions() {
+  const { data } = useFetchAgent();
+
+  const conversationVariables = useMemo(
+    () => data?.dsl?.variables ?? {},
+    [data?.dsl?.variables],
+  );
+
+  const options = useMemo(() => {
+    return [
+      {
+        label: <span>{t('flow.conversationVariable')}</span>,
+        title: t('flow.conversationVariable'),
+        options: Object.entries(conversationVariables).map(([key, value]) => {
+          const keyWithPrefix = `${Env}${key}`;
+          return {
+            label: keyWithPrefix,
+            parentLabel: <span>{t('flow.conversationVariable')}</span>,
+            icon: <MessageSquareCode className="size-3" />,
+            value: keyWithPrefix,
+            type: value.type,
+          };
+        }),
+      },
+    ];
+  }, [conversationVariables]);
+
+  return options;
+}
+
+export const useBuildVariableOptions = (nodeId?: string, parentId?: string) => {
+  const upstreamNodeOutputOptions = useBuildUpstreamNodeOutputOptions(nodeId);
+  const parentNodeOutputOptions = useBuildParentOutputOptions(parentId);
+  const parentUpstreamNodeOutputOptions =
+    useBuildUpstreamNodeOutputOptions(parentId);
+
+  const options = useMemo(() => {
+    return [
+      ...upstreamNodeOutputOptions,
+      ...parentNodeOutputOptions,
+      ...parentUpstreamNodeOutputOptions,
+    ];
+  }, [
+    upstreamNodeOutputOptions,
+    parentNodeOutputOptions,
+    parentUpstreamNodeOutputOptions,
+  ]);
+
+  return options;
+};
+
+export type BuildQueryVariableOptions = {
+  nodeIds?: string[];
+  variablesExceptOperatorOutputs?: AgentVariableType[];
+};
+
+export function useBuildQueryVariableOptions({
+  n,
+  nodeIds = [],
+  variablesExceptOperatorOutputs, // Variables other than operator output variables
+}: {
+  n?: RAGFlowNodeType;
+} & BuildQueryVariableOptions = {}) {
+  const node = useContext(AgentFormContext) || n;
+  const nodes = useGraphStore((state) => state.nodes);
+  const getOperatorTypeFromId = useGraphStore(
+    (state) => state.getOperatorTypeFromId,
+  );
+
+  const options = useBuildVariableOptions(node?.id, node?.parentId);
+
+  const conversationOptions = useBuildConversationVariableOptions();
+
+  const globalWithBeginVariableOptions =
+    useBuildGlobalWithBeginVariableOptions();
+
+  const AgentVariableOptionsMap = {
+    [AgentVariableType.Begin]: globalWithBeginVariableOptions,
+    [AgentVariableType.Conversation]: conversationOptions,
+  };
+  const allowDocGeneratorDownloadOutput =
+    node?.data?.label === Operator.Message;
+
+  const nextOptions = useMemo(() => {
+    return filterDocGeneratorDownloadOutputOptions(
+      [...globalWithBeginVariableOptions, ...conversationOptions, ...options],
+      allowDocGeneratorDownloadOutput,
+      getOperatorTypeFromId,
+    );
+  }, [
+    allowDocGeneratorDownloadOutput,
+    conversationOptions,
+    getOperatorTypeFromId,
+    globalWithBeginVariableOptions,
+    options,
+  ]);
+
+  // Which options are entirely under external control?
+  if (!isEmpty(nodeIds) || !isEmpty(variablesExceptOperatorOutputs)) {
+    const nodeOutputOptions = buildNodeOutputOptions({ nodes, nodeIds });
+
+    const variablesExceptOperatorOutputsOptions =
+      variablesExceptOperatorOutputs?.map((x) => AgentVariableOptionsMap[x]) ??
+      [];
+
+    return filterDocGeneratorDownloadOutputOptions(
+      [...flatten(variablesExceptOperatorOutputsOptions), ...nodeOutputOptions],
+      allowDocGeneratorDownloadOutput,
+      getOperatorTypeFromId,
+    );
+  }
   return nextOptions;
+}
+
+export function useFilterQueryVariableOptionsByTypes({
+  types,
+  nodeIds = [],
+  variablesExceptOperatorOutputs,
+}: {
+  types?: (JsonSchemaDataType | VariableType)[];
+} & BuildQueryVariableOptions) {
+  const nextOptions = useBuildQueryVariableOptions({
+    nodeIds,
+    variablesExceptOperatorOutputs,
+  });
+
+  const filteredOptions = useMemo(() => {
+    return !isEmpty(types)
+      ? nextOptions.map((x) => {
+          return {
+            ...x,
+            options: x.options.filter(
+              (y) =>
+                types?.some((x) => {
+                  const lowerX = toLower(x);
+                  const lowerYType = toLower(y.type);
+                  return lowerX.startsWith('array')
+                    ? lowerYType.includes(lowerX)
+                    : lowerYType === lowerX ||
+                        (lowerX === toLower(VariableType.File) &&
+                          lowerYType === `array<${lowerX}>`);
+                }) ||
+                // agent structured output
+                isAgentStructured(
+                  y.value,
+                  y.value?.slice(-AgentStructuredOutputField.length),
+                ),
+            ),
+          };
+        })
+      : nextOptions;
+  }, [nextOptions, types]);
+
+  return filteredOptions;
 }
 
 export function useBuildComponentIdOptions(nodeId?: string, parentId?: string) {
@@ -238,7 +437,7 @@ export function useBuildComponentIdAndBeginOptions(
   parentId?: string,
 ) {
   const componentIdOptions = useBuildComponentIdOptions(nodeId, parentId);
-  const beginOptions = useBuildBeginVariableOptions();
+  const beginOptions = useBuildBeginDynamicVariableOptions();
 
   return [...beginOptions, ...componentIdOptions];
 }
@@ -261,21 +460,85 @@ export const useGetComponentLabelByValue = (nodeId: string) => {
   return getLabel;
 };
 
-export function useGetVariableLabelByValue(nodeId: string) {
+export function flatOptions(options: DefaultOptionType[]) {
+  return options.reduce<DefaultOptionType[]>((pre, cur) => {
+    return [...pre, ...cur.options];
+  }, []);
+}
+
+export function useFlattenQueryVariableOptions({
+  nodeId,
+  nodeIds = [],
+  variablesExceptOperatorOutputs,
+}: {
+  nodeId?: string;
+} & BuildQueryVariableOptions = {}) {
   const { getNode } = useGraphStore((state) => state);
-  const nextOptions = useBuildQueryVariableOptions(getNode(nodeId));
+  const nextOptions = useBuildQueryVariableOptions({
+    n: getNode(nodeId),
+    nodeIds,
+    variablesExceptOperatorOutputs,
+  });
 
   const flattenOptions = useMemo(() => {
-    return nextOptions.reduce<DefaultOptionType[]>((pre, cur) => {
-      return [...pre, ...cur.options];
-    }, []);
+    return flatOptions(nextOptions);
   }, [nextOptions]);
 
-  const getLabel = useCallback(
+  return flattenOptions;
+}
+
+export function useGetVariableLabelOrTypeByValue({
+  nodeId,
+  nodeIds = [],
+  variablesExceptOperatorOutputs,
+}: {
+  nodeId?: string;
+} & BuildQueryVariableOptions = {}) {
+  const flattenOptions = useFlattenQueryVariableOptions({
+    nodeId,
+    nodeIds,
+    variablesExceptOperatorOutputs,
+  });
+  const findAgentStructuredOutputTypeByValue =
+    useFindAgentStructuredOutputTypeByValue();
+  const findAgentStructuredOutputLabel =
+    useFindAgentStructuredOutputLabelByValue();
+
+  const getItem = useCallback(
     (val?: string) => {
-      return flattenOptions.find((x) => x.value === val)?.label;
+      return flattenOptions.find((x) => x.value === val);
     },
     [flattenOptions],
   );
-  return getLabel;
+
+  const getLabel = useCallback(
+    (val?: string) => {
+      const item = getItem(val);
+      if (item) {
+        return (
+          <div>
+            {item.parentLabel} / {item.label}
+          </div>
+        );
+      }
+      return getItem(val)?.label || findAgentStructuredOutputLabel(val);
+    },
+    [findAgentStructuredOutputLabel, getItem],
+  );
+
+  const getType = useCallback(
+    (val?: string) => {
+      const currentType =
+        getItem(val)?.type || findAgentStructuredOutputTypeByValue(val);
+
+      if (currentType && currentType in BeginQueryTypeMap) {
+        return BeginQueryTypeMap[currentType as BeginQueryType];
+      }
+
+      return currentType;
+    },
+    [findAgentStructuredOutputTypeByValue, getItem],
+  );
+
+  return { getLabel, getType };
 }

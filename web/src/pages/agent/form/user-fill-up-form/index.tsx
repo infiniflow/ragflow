@@ -1,4 +1,5 @@
 import { Collapse } from '@/components/collapse';
+import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -9,30 +10,34 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
 import { FormTooltip } from '@/components/ui/tooltip';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Plus } from 'lucide-react';
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import { BeginQueryType } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { BeginQuery, INextOperatorForm } from '../../interface';
 import { ParameterDialog } from '../begin-form/parameter-dialog';
 import { QueryTable } from '../begin-form/query-table';
 import { useEditQueryRecord } from '../begin-form/use-edit-query';
 import { Output } from '../components/output';
+import { PromptEditor } from '../components/prompt-editor';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
 
 function UserFillUpForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
+  const ownerTenantId = useOwnerTenantId();
 
   const values = useValues(node);
 
   const FormSchema = z.object({
     enable_tips: z.boolean().optional(),
     tips: z.string().trim().optional(),
+    layout_recognize: z.string().optional(),
     inputs: z
       .array(
         z.object({
@@ -58,6 +63,11 @@ function UserFillUpForm({ node }: INextOperatorForm) {
     control: form.control,
     name: 'inputs',
   });
+
+  const hasFileInput = useMemo(
+    () => inputs?.some((x) => x.type === BeginQueryType.File),
+    [inputs],
+  );
 
   const outputList = inputs?.map((item) => ({
     title: item.name,
@@ -86,7 +96,7 @@ function UserFillUpForm({ node }: INextOperatorForm) {
           render={({ field }) => (
             <FormItem>
               <FormLabel tooltip={t('flow.openingSwitchTip')}>
-                Guiding Question
+                {t('flow.guidingQuestion')}
               </FormLabel>
               <FormControl>
                 <Switch
@@ -104,13 +114,11 @@ function UserFillUpForm({ node }: INextOperatorForm) {
           name={'tips'}
           render={({ field }) => (
             <FormItem>
-              <FormLabel tooltip={t('chat.setAnOpenerTip')}>Message</FormLabel>
+              <FormLabel tooltip={t('chat.setAnOpenerTip')}>
+                {t('flow.msg')}
+              </FormLabel>
               <FormControl>
-                <Textarea
-                  rows={5}
-                  {...field}
-                  placeholder={t('common.pleaseInput')}
-                ></Textarea>
+                <PromptEditor value={field.value} onChange={field.onChange} />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -156,6 +164,15 @@ function UserFillUpForm({ node }: INextOperatorForm) {
             otherThanCurrentQuery={otherThanCurrentQuery}
             submit={ok}
           ></ParameterDialog>
+        )}
+        {hasFileInput && (
+          <LayoutRecognizeFormField
+            name="layout_recognize"
+            horizontal={false}
+            showMineruOptions={false}
+            showPaddleocrOptions={false}
+            ownerTenantId={ownerTenantId}
+          ></LayoutRecognizeFormField>
         )}
       </Form>
       <Output list={outputList}></Output>

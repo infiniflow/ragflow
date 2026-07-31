@@ -1,0 +1,461 @@
+{
+  "globals": {
+    "sys.conversation_turns": 0,
+    "sys.date": "",
+    "sys.files": [],
+    "sys.history": [],
+    "sys.query": "",
+    "sys.user_id": ""
+  },
+  "graph": {
+    "edges": [
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Filestart-Parser:HipSignsRhymeend",
+        "source": "File",
+        "sourceHandle": "start",
+        "target": "Parser:HipSignsRhyme",
+        "targetHandle": "end"
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Parser:HipSignsRhymestart-TitleChunker:FlatMiceFixend",
+        "source": "Parser:HipSignsRhyme",
+        "sourceHandle": "start",
+        "target": "TitleChunker:FlatMiceFix",
+        "targetHandle": "end"
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__TitleChunker:FlatMiceFixstart-Extractor:ThreeDrinksActend",
+        "markerEnd": "logo",
+        "source": "TitleChunker:FlatMiceFix",
+        "sourceHandle": "start",
+        "target": "Extractor:ThreeDrinksAct",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Extractor:ThreeDrinksActstart-Extractor:ItchyFoxesStriveend",
+        "source": "Extractor:ThreeDrinksAct",
+        "sourceHandle": "start",
+        "target": "Extractor:ItchyFoxesStrive",
+        "targetHandle": "end"
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Extractor:ItchyFoxesStrivestart-Extractor:BusyClocksRushend",
+        "source": "Extractor:ItchyFoxesStrive",
+        "sourceHandle": "start",
+        "target": "Extractor:BusyClocksRush",
+        "targetHandle": "end"
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Extractor:BusyClocksRushstart-Extractor:CuteSignsCutend",
+        "source": "Extractor:BusyClocksRush",
+        "sourceHandle": "start",
+        "target": "Extractor:CuteSignsCut",
+        "targetHandle": "end"
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Extractor:CuteSignsCutstart-Tokenizer:KindHandsWinend",
+        "markerEnd": "logo",
+        "source": "Extractor:CuteSignsCut",
+        "sourceHandle": "start",
+        "target": "Tokenizer:KindHandsWin",
+        "targetHandle": "end",
+        "type": "buttonEdge",
+        "zIndex": 1001
+      }
+    ],
+    "nodes": [
+      {
+        "data": {
+          "label": "File",
+          "name": "File"
+        },
+        "dragging": false,
+        "id": "File",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 239.52494800353588,
+          "y": 92.44515504032671
+        },
+        "selected": false,
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "type": "beginNode"
+      },
+      {
+        "data": {
+          "form": {
+            "outputs": {
+              "html": {
+                "type": "string",
+                "value": ""
+              },
+              "json": {
+                "type": "Array<object>",
+                "value": []
+              },
+              "markdown": {
+                "type": "string",
+                "value": ""
+              },
+              "text": {
+                "type": "string",
+                "value": ""
+              }
+            },
+            "setups": [
+              {
+                "fileFormat": "pdf",
+                "flatten_media_to_text": true,
+                "output_format": "json",
+                "parse_method": "DeepDOC"
+              },
+              {
+                "fileFormat": "spreadsheet",
+                "flatten_media_to_text": true,
+                "output_format": "html",
+                "parse_method": "DeepDOC"
+              },
+              {
+                "fileFormat": "image",
+                "output_format": "text",
+                "parse_method": "ocr"
+              },
+              {
+                "fields": [
+                  "from",
+                  "to",
+                  "cc",
+                  "bcc",
+                  "date",
+                  "subject",
+                  "body",
+                  "attachments"
+                ],
+                "fileFormat": "email",
+                "output_format": "text"
+              },
+              {
+                "fileFormat": "markdown",
+                "flatten_media_to_text": true,
+                "output_format": "json"
+              },
+              {
+                "fileFormat": "text&code",
+                "output_format": "json"
+              },
+              {
+                "fileFormat": "html",
+                "output_format": "json"
+              },
+              {
+                "fileFormat": "doc",
+                "output_format": "json",
+                "vlm": {}
+              },
+              {
+                "fileFormat": "docx",
+                "flatten_media_to_text": true,
+                "output_format": "json"
+              },
+              {
+                "fileFormat": "slides",
+                "output_format": "json",
+                "parse_method": "DeepDOC"
+              }
+            ]
+          },
+          "label": "Parser",
+          "name": "Parser_0"
+        },
+        "dragging": false,
+        "id": "Parser:HipSignsRhyme",
+        "measured": {
+          "height": 197,
+          "width": 200
+        },
+        "position": {
+          "x": 252.18327231534056,
+          "y": 157.25954787377458
+        },
+        "selected": true,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "parserNode"
+      },
+      {
+        "data": {
+          "form": {
+            "fields": "text",
+            "filename_embd_weight": 0.1,
+            "outputs": {},
+            "search_method": [
+              "embedding",
+              "full_text"
+            ]
+          },
+          "label": "Tokenizer",
+          "name": "Indexer_0"
+        },
+        "dragging": false,
+        "id": "Tokenizer:KindHandsWin",
+        "measured": {
+          "height": 113,
+          "width": 200
+        },
+        "position": {
+          "x": 663.5327731044026,
+          "y": 544.5236681687471
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "tokenizerNode"
+      },
+      {
+        "data": {
+          "form": {
+            "hierarchy": "1",
+            "include_heading_content": false,
+            "method": "hierarchy",
+            "outputs": {
+              "chunks": {
+                "type": "Array<Object>",
+                "value": []
+              }
+            },
+            "promote_first_heading_to_root": false,
+            "root_chunk_as_heading": true,
+            "rules": [
+              {
+                "levels": [
+                  {
+                    "expression": "^\\s*(?i:(?:\\d+[\\.\\)]\\s*)?(?:EDUCATION|ACADEMIC\\s*BACKGROUND|ACADEMIC\\s*HISTORY|EDUCATIONAL\\s*BACKGROUND|RELEVANT\\s*COURSEWORK|COURSEWORK|EXPERIENCE|WORK\\s*EXPERIENCE|PROFESSIONAL\\s*EXPERIENCE|RELEVANT\\s*EXPERIENCE|EMPLOYMENT\\s*HISTORY|CAREER\\s*HISTORY|INTERNSHIP\\s*EXPERIENCE|PROJECTS|PROJECT\\s*EXPERIENCE|ACADEMIC\\s*PROJECTS|PROFESSIONAL\\s*PROJECTS|SKILLS|TECHNICAL\\s*SKILLS|CORE\\s*COMPETENCIES|COMPETENCIES|QUALIFICATIONS|SUMMARY\\s*OF\\s*QUALIFICATIONS|CERTIFICATIONS|LICENSES|CERTIFICATES|AWARDS|HONORS|HONOURS|ACHIEVEMENTS|PUBLICATIONS|RESEARCH|RESEARCH\\s*EXPERIENCE|LEADERSHIP|LEADERSHIP\\s*EXPERIENCE|ACTIVITIES|EXTRACURRICULAR\\s*ACTIVITIES|ACTIVITIES\\s*(?:&|AND)\\s*SKILLS|INVOLVEMENT|CAMPUS\\s*INVOLVEMENT|VOLUNTEER\\s*EXPERIENCE|VOLUNTEERING|COMMUNITY\\s*SERVICE|LANGUAGES|INTERESTS|HOBBIES|PROFILE|PROFESSIONAL\\s*PROFILE|SUMMARY|PROFESSIONAL\\s*SUMMARY|CAREER\\s*SUMMARY|OBJECTIVE|CAREER\\s*OBJECTIVE|PERSONAL\\s*INFORMATION|CONTACT\\s*INFORMATION|ADDITIONAL\\s*INFORMATION|TRAINING))\\s*[:：]?\\s*$"
+                  }
+                ]
+              },
+              {
+                "levels": [
+                  {
+                    "expression": "^\\s*(?:\\d+[\\.、\\)]\\s*)?(?:教育背景|教育经历|学历背景|学术背景|技术背景|工作经历|工作经验|实习经历|项目经历|项目经验|科研经历|研究经历|校园经历|实践经历|专业经历|职业经历|技能|专业技能|技能特长|核心技能|技术栈|个人技能|工作技能|职业技能|技能与评价|技能与自我评价|工作技能与自我评价|职业技能与自我评价|证书|资格证书|职业资格|资质证书|获奖情况|获奖经历|荣誉|荣誉奖项|奖项|科研成果|论文发表|发表论文|领导经历|学生工作|校园活动|社团经历|活动经历|志愿经历|志愿服务|社会实践|语言能力|语言|自我评价|个人评价|自我总结|个人总结|个人优势|个人简介|个人信息|基本信息|联系方式|求职意向|应聘意向|职业目标|求职目标|兴趣爱好|兴趣特长|培训经历|其他信息|附加信息)\\s*[:：]?\\s*$"
+                  }
+                ]
+              }
+            ]
+          },
+          "label": "TitleChunker",
+          "name": "Title Chunker_0"
+        },
+        "dragging": false,
+        "id": "TitleChunker:FlatMiceFix",
+        "measured": {
+          "height": 73,
+          "width": 200
+        },
+        "position": {
+          "x": 524.2908769627791,
+          "y": 53.05515313482098
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "chunkerNode"
+      },
+      {
+        "data": {
+          "form": {
+            "field_name": "metadata",
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "llm_id": "MiniMax-M2.7@MiniMax",
+            "maxTokensEnabled": false,
+            "max_tokens": 256,
+            "outputs": {
+              "chunks": {
+                "type": "Array<Object>",
+                "value": []
+              }
+            },
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompts": "Content: {TitleChunker:FlatMiceFix@chunks}",
+            "sys_prompt": "Act as a precise resume metadata extractor. Extract stable, chunk-supported metadata from the provided resume content.\n\nRules:\n1. Use only information explicitly stated in the content. Do not infer, guess, normalize, or add missing facts.\n2. The input may be only one chunk of a resume. Extract only what this content directly supports.\n3. Use only these field names:\ncandidate_name, gender, phone, email, city, location, nationality, linkedin, github, website, highest_degree, degree_levels, school_names, majors, graduation_years, work_experience_years, current_job_title, job_titles, company_names, job_experience, industries, target_job_titles, target_locations, employment_types, skills, certificates, awards, summary_tags\n4. Ignore detailed responsibilities, project descriptions, achievement narratives, self-evaluation, and other low-value local details.\n5. Keep values in the same language as the source text whenever possible.\n6. Remove duplicates and keep only concise, high-value metadata.\n7. Return only fields that are explicitly supported by the content. Do not return empty or unsupported fields.\n\nField guidance:\n- highest_degree: highest explicit degree level mentioned\n- degree_levels: all explicit degree levels mentioned\n- school_names: explicit school, college, or university names\n- majors: explicit fields of study\n- graduation_years: explicit graduation years only\n- work_experience_years: only if explicitly stated\n- current_job_title: only if explicitly current or most recent\n- job_titles: explicit role titles\n- company_names: explicit employer names\n- job_experience: concise structured work entries explicitly supported by the content, preferably including title, company, and time information when available\n- industries: explicit industry names only\n- target_job_titles: explicit desired roles only\n- target_locations: explicit desired work locations only\n- skills: concise, core, search-useful skills explicitly mentioned\n- certificates: explicit certificate names only\n- awards: explicit award names only\n- summary_tags: short, high-value tags strictly supported by the content\n\nReturn only the extracted metadata. Do not output explanatory text.",
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "tenant_llm_id": 29,
+            "topPEnabled": true,
+            "top_p": 0.3
+          },
+          "label": "Extractor",
+          "name": "Auto Metadata"
+        },
+        "dragging": false,
+        "id": "Extractor:ThreeDrinksAct",
+        "measured": {
+          "height": 89,
+          "width": 200
+        },
+        "position": {
+          "x": 550.8123774842874,
+          "y": 161.4998493859579
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "contextNode"
+      },
+      {
+        "data": {
+          "form": {
+            "field_name": "keywords",
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "llm_id": "MiniMax-M2.7@MiniMax",
+            "maxTokensEnabled": false,
+            "max_tokens": 256,
+            "outputs": {
+              "chunks": {
+                "type": "Array<Object>",
+                "value": []
+              }
+            },
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompts": "文本内容\n[在此处插入文本]",
+            "sys_prompt": "角色\n你是一名文本分析员。\n\n任务\n从给定的文本内容中提取最重要的关键词/短语。\n\n要求\n- 总结文本内容，并给出最重要的5个关键词/短语。\n- 关键词必须与给定的文本内容使用相同的语言。\n- 关键词之间用英文逗号分隔。\n- 仅输出关键词。",
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "topPEnabled": true,
+            "top_p": 0.3
+          },
+          "label": "Extractor",
+          "name": "提取器_0"
+        },
+        "dragging": false,
+        "id": "Extractor:ItchyFoxesStrive",
+        "measured": {
+          "height": 89,
+          "width": 200
+        },
+        "position": {
+          "x": 558.7638130889704,
+          "y": 260.698149098317
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "contextNode"
+      },
+      {
+        "data": {
+          "form": {
+            "field_name": "questions",
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "llm_id": "MiniMax-M2.7@MiniMax",
+            "maxTokensEnabled": false,
+            "max_tokens": 256,
+            "outputs": {
+              "chunks": {
+                "type": "Array<Object>",
+                "value": []
+              }
+            },
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompts": "文本内容\n[在此处插入文本]",
+            "sys_prompt": "角色\n你是一名文本分析员。\n\n任务\n针对给定的文本内容提出3个问题。\n\n要求\n- 理解并总结文本内容，并提出最重要的3个问题。\n- 问题的含义不应重叠。\n- 问题应尽可能涵盖文本的主要内容。\n- 问题必须与给定的文本内容使用相同的语言。\n- 每行一个问题。\n- 仅输出问题。",
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "topPEnabled": true,
+            "top_p": 0.3
+          },
+          "label": "Extractor",
+          "name": "提取器_1"
+        },
+        "dragging": false,
+        "id": "Extractor:BusyClocksRush",
+        "measured": {
+          "height": 89,
+          "width": 200
+        },
+        "position": {
+          "x": 592.4119346324834,
+          "y": 353.6113302354397
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "contextNode"
+      },
+      {
+        "data": {
+          "form": {
+            "field_name": "summary",
+            "frequencyPenaltyEnabled": true,
+            "frequency_penalty": 0.7,
+            "llm_id": "MiniMax-M2.7@MiniMax",
+            "maxTokensEnabled": false,
+            "max_tokens": 256,
+            "outputs": {
+              "chunks": {
+                "type": "Array<Object>",
+                "value": []
+              }
+            },
+            "presencePenaltyEnabled": true,
+            "presence_penalty": 0.4,
+            "prompts": "要总结的文本：\n[在此处插入文本]",
+            "sys_prompt": "扮演一个精准的摘要者。你的任务是为提供的内容创建一个简洁且忠实于原文的摘要。\n\n关键说明：\n1. 准确性：摘要必须严格基于所提供的信息。请勿引入任何未明确说明的新事实、结论或解释。\n2. 语言：摘要必须使用与原文相同的语言。\n3. 客观性：不带偏见地呈现要点，保留内容的原始意图和语气。请勿进行编辑。\n4. 简洁性：专注于最重要的思想，省略细节和多余的内容。",
+            "temperature": 0.1,
+            "temperatureEnabled": true,
+            "topPEnabled": true,
+            "top_p": 0.3
+          },
+          "label": "Extractor",
+          "name": "提取器_2"
+        },
+        "dragging": false,
+        "id": "Extractor:CuteSignsCut",
+        "measured": {
+          "height": 89,
+          "width": 200
+        },
+        "position": {
+          "x": 616.822830981782,
+          "y": 449.2756537664745
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "contextNode"
+      }
+    ]
+  },
+  "variables": []
+}

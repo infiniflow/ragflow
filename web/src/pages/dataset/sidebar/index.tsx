@@ -1,101 +1,145 @@
+import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import {
+  LucideBookText,
+  LucideCog,
+  LucideFolderOpen,
+  LucideLogs,
+  LucideSettings,
+  LucideTextSearch,
+} from 'lucide-react';
+
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
-import {
-  useFetchKnowledgeBaseConfiguration,
-  useFetchKnowledgeGraph,
-} from '@/hooks/use-knowledge-request';
 import { cn, formatBytes } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { formatPureDate } from '@/utils/date';
-import { isEmpty } from 'lodash';
-import { Banknote, Database, FileSearch2, GitGraph } from 'lucide-react';
-import { useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useHandleMenuClick } from './hooks';
+
+import { IDataset } from '@/interfaces/database/dataset';
+import { useParams } from 'react-router';
+import { getBackendLanguage } from '@/utils/backend-runtime';
 
 type PropType = {
   refreshCount?: number;
+  dataset: IDataset;
 };
 
-export function SideBar({ refreshCount }: PropType) {
+export function SideBar({ dataset: data }: PropType) {
   const pathName = useSecondPathName();
-  const { handleMenuClick } = useHandleMenuClick();
-  // refreshCount: be for avatar img sync update on top left
-  const { data } = useFetchKnowledgeBaseConfiguration(refreshCount);
-  const { data: routerData } = useFetchKnowledgeGraph();
+  const { id } = useParams();
   const { t } = useTranslation();
 
   const items = useMemo(() => {
     const list = [
       {
-        icon: Database,
-        label: t(`knowledgeDetails.dataset`),
-        key: Routes.DatasetBase,
+        icon: <LucideFolderOpen className="size-[1em]" />,
+        label: t(`knowledgeDetails.subbarFiles`),
+        key: Routes.Files,
       },
       {
-        icon: FileSearch2,
+        icon: <LucideTextSearch className="size-[1em]" />,
         label: t(`knowledgeDetails.testing`),
         key: Routes.DatasetTesting,
       },
       {
-        icon: Banknote,
-        label: t(`knowledgeDetails.configuration`),
-        key: Routes.DatasetSetting,
+        icon: <LucideLogs className="size-[1em]" />,
+        label: t(`knowledgeDetails.overview`),
+        key: Routes.DataSetOverview,
+      },
+      ...(getBackendLanguage() === 'python'
+        ? [
+            {
+              icon: <LucideSettings className="size-[1em]" />,
+              label: t(`knowledgeDetails.configuration`),
+              key: Routes.DataSetSetting,
+            },
+          ]
+        : []),
+      ...(getBackendLanguage() === 'go'
+        ? [
+            {
+              icon: <LucideCog className="size-[1em]" />,
+              label: t(`knowledgeDetails.configuration`),
+              key: Routes.DataSetSettingNext,
+            },
+          ]
+        : []),
+      {
+        icon: <LucideBookText className="size-[1em]" />,
+        label: 'Artifacts',
+        key: Routes.Compilation,
       },
     ];
-    if (!isEmpty(routerData?.graph)) {
-      list.push({
-        icon: GitGraph,
-        label: t(`knowledgeDetails.knowledgeGraph`),
-        key: Routes.KnowledgeGraph,
-      });
-    }
+
     return list;
-  }, [t, routerData]);
+  }, [t]);
 
   return (
-    <aside className="relative p-5 space-y-8">
-      <div className="flex gap-2.5 max-w-[200px] items-center">
+    <aside className="flex flex-col w-64 relative">
+      <header
+        className="px-5 pb-4 grid grid-cols-[auto_1fr] grid-rows-[auto_auto] gap-x-3"
+        style={{
+          gridTemplateAreas: '"avatar title" "avatar stats"',
+        }}
+      >
         <RAGFlowAvatar
           avatar={data.avatar}
           name={data.name}
           className="size-16"
-        ></RAGFlowAvatar>
-        <div className=" text-text-secondary text-xs space-y-1 overflow-hidden">
-          <h3 className="text-lg font-semibold line-clamp-1 text-text-primary text-ellipsis overflow-hidden">
-            {data.name}
-          </h3>
-          <div className="flex justify-between">
-            <span>{data.doc_num} files</span>
-            <span>{formatBytes(data.size)}</span>
-          </div>
-          <div>Created {formatPureDate(data.create_time)}</div>
-        </div>
-      </div>
+          style={{ gridArea: 'avatar' }}
+        />
 
-      <div className="w-[200px] flex flex-col gap-5">
-        {items.map((item, itemIdx) => {
-          const active = '/' + pathName === item.key;
-          return (
-            <Button
-              key={itemIdx}
-              variant={active ? 'secondary' : 'ghost'}
-              className={cn(
-                'w-full justify-start gap-2.5 px-3 relative h-10 text-text-sub-title-invert',
-                {
-                  'bg-bg-card': active,
-                  'text-text-primary': active,
-                },
-              )}
-              onClick={handleMenuClick(item.key)}
-            >
-              <item.icon className="size-4" />
-              <span>{item.label}</span>
-            </Button>
-          );
-        })}
-      </div>
+        <h3
+          className="text-lg font-semibold line-clamp-1 text-text-primary text-ellipsis overflow-hidden"
+          style={{ gridArea: 'title' }}
+        >
+          {data.name}
+        </h3>
+
+        <div
+          className="self-end text-text-secondary text-xs overflow-hidden"
+          style={{ gridArea: 'stats' }}
+        >
+          <div className="flex justify-between">
+            <span>
+              {data.document_count} {t('knowledgeDetails.files')}
+            </span>
+            <span>{data.size ? formatBytes(data.size) : ''}</span>
+          </div>
+
+          <div className="mt-0.5">
+            {t('knowledgeDetails.created')} {formatPureDate(data.create_time)}
+          </div>
+        </div>
+      </header>
+
+      <nav className="px-5 pt-1 pb-5 overflow-y-auto">
+        <ul className="space-y-5">
+          {items.map((item) => {
+            const active = '/' + pathName === item.key;
+
+            return (
+              <li key={item.key}>
+                <Button
+                  asLink
+                  block
+                  variant="ghost"
+                  className={cn(
+                    'justify-start gap-2.5 px-3 relative h-10 text-base',
+                    active && 'bg-bg-card text-text-primary',
+                  )}
+                  to={`${Routes.DatasetBase}${item.key}/${id}`}
+                >
+                  {item.icon}
+                  <span>{item.label}</span>
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
     </aside>
   );
 }

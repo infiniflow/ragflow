@@ -1,3 +1,4 @@
+import { t } from 'i18next';
 import { Loader2 } from 'lucide-react';
 import { PropsWithChildren } from 'react';
 import { TableCell, TableRow } from './ui/table';
@@ -28,5 +29,5 @@ export function TableSkeleton({
 }
 
 export function TableEmpty({ columnsLength }: { columnsLength: number }) {
-  return <Row columnsLength={columnsLength}>No results.</Row>;
+  return <Row columnsLength={columnsLength}>{t('common.noResults')}</Row>;
 }

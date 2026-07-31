@@ -12,6 +12,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { LlmModelType } from '@/constants/knowledge';
+import { t } from 'i18next';
 import { Funnel } from 'lucide-react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -21,15 +22,15 @@ import { Button } from './ui/button';
 
 const ModelTypes = [
   {
-    title: 'All Models',
+    title: t('flow.allModels'),
     value: 'all',
   },
   {
-    title: 'Text-only Models',
+    title: t('flow.textOnlyModels'),
     value: LlmModelType.Chat,
   },
   {
-    title: 'Multimodal Models',
+    title: t('flow.multimodalModels'),
     value: LlmModelType.Image2text,
   },
 ];
@@ -38,12 +39,9 @@ export const LargeModelFilterFormSchema = {
   llm_filter: z.string().optional(),
 };
 
-type LargeModelFormFieldProps = Pick<
-  NextInnerLLMSelectProps,
-  'showSpeech2TextModel'
->;
+type LargeModelFormFieldProps = Pick<NextInnerLLMSelectProps, 'ownerTenantId'>;
 export function LargeModelFormField({
-  showSpeech2TextModel: showTTSModel,
+  ownerTenantId,
 }: LargeModelFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
@@ -67,9 +65,9 @@ export function LargeModelFormField({
                   <FormItem>
                     <FormControl>
                       <DropdownMenu>
-                        <DropdownMenuTrigger>
+                        <DropdownMenuTrigger asChild>
                           <Button variant={'ghost'}>
-                            <Funnel />
+                            <Funnel className="text-text-disabled" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent>
@@ -94,7 +92,7 @@ export function LargeModelFormField({
                 <NextLLMSelect
                   {...field}
                   filter={filter}
-                  showSpeech2TextModel={showTTSModel}
+                  ownerTenantId={ownerTenantId}
                 />
               </FormControl>
             </section>
@@ -107,7 +105,16 @@ export function LargeModelFormField({
   );
 }
 
-export function LargeModelFormFieldWithoutFilter() {
+type LargeModelFormFieldWithoutFilterProps = Pick<
+  NextInnerLLMSelectProps,
+  'triggerTestId' | 'optionTestIdPrefix' | 'ownerTenantId'
+>;
+
+export function LargeModelFormFieldWithoutFilter({
+  triggerTestId,
+  optionTestIdPrefix,
+  ownerTenantId,
+}: LargeModelFormFieldWithoutFilterProps = {}) {
   const form = useFormContext();
 
   return (
@@ -117,7 +124,12 @@ export function LargeModelFormFieldWithoutFilter() {
       render={({ field }) => (
         <FormItem>
           <FormControl>
-            <NextLLMSelect {...field} />
+            <NextLLMSelect
+              {...field}
+              triggerTestId={triggerTestId}
+              optionTestIdPrefix={optionTestIdPrefix}
+              ownerTenantId={ownerTenantId}
+            />
           </FormControl>
           <FormMessage />
         </FormItem>

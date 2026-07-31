@@ -2,17 +2,21 @@ import { useEffect } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 import useGraphStore from '../store';
 
-export function useWatchFormChange(id?: string, form?: UseFormReturn<any>) {
+export function useWatchFormChange(
+  id?: string,
+  form?: UseFormReturn<any>,
+  enableReplacement = false,
+) {
   let values = useWatch({ control: form?.control });
-  const updateNodeForm = useGraphStore((state) => state.updateNodeForm);
+  const { updateNodeForm, replaceNodeForm } = useGraphStore((state) => state);
 
   useEffect(() => {
     // Manually triggered form updates are synchronized to the canvas
     if (id) {
       values = form?.getValues() || {};
-      let nextValues: any = values;
+      const nextValues: any = values;
 
-      updateNodeForm(id, nextValues);
+      (enableReplacement ? replaceNodeForm : updateNodeForm)(id, nextValues);
     }
   }, [form?.formState.isDirty, id, updateNodeForm, values]);
 }

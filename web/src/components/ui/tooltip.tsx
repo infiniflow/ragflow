@@ -4,7 +4,7 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
-import { Info } from 'lucide-react';
+import { CircleQuestionMark } from 'lucide-react';
 
 const TooltipProvider = TooltipPrimitive.Provider;
 
@@ -16,15 +16,17 @@ const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
 >(({ className, sideOffset = 4, ...props }, ref) => (
-  <TooltipPrimitive.Content
-    ref={ref}
-    sideOffset={sideOffset}
-    className={cn(
-      'z-50 overflow-hidden rounded-md border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 max-w-[20vw]',
-      className,
-    )}
-    {...props}
-  />
+  <TooltipPrimitive.Portal>
+    <TooltipPrimitive.Content
+      ref={ref}
+      sideOffset={sideOffset}
+      className={cn(
+        'z-50 overflow-auto scrollbar-auto rounded-md whitespace-pre-wrap border bg-bg-base px-3 py-1.5 text-sm text-text-primary shadow-md animate-in fade-in-0 zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 max-w-[30vw]',
+        className,
+      )}
+      {...props}
+    />
+  </TooltipPrimitive.Portal>
 ));
 TooltipContent.displayName = TooltipPrimitive.Content.displayName;
 
@@ -33,15 +35,33 @@ export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };
 export const FormTooltip = ({ tooltip }: { tooltip: React.ReactNode }) => {
   return (
     <Tooltip>
-      <TooltipTrigger>
-        <Info className="size-3 ml-2" />
+      <TooltipTrigger asChild>
+        <span
+          tabIndex={-1}
+          className="inline-flex align-middle -translate-y-[.02em]"
+          onClick={(e) => {
+            e.preventDefault(); // Prevent clicking the tooltip from triggering form save
+          }}
+        >
+          <CircleQuestionMark className="size-[.85em] ml-[.25em]" />
+        </span>
       </TooltipTrigger>
-      <TooltipContent>
-        <p>{tooltip}</p>
-      </TooltipContent>
+      <TooltipContent>{tooltip}</TooltipContent>
     </Tooltip>
   );
 };
+
+export function RAGFlowTooltip({
+  children,
+  tooltip,
+}: React.PropsWithChildren & { tooltip: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger>{children}</TooltipTrigger>
+      <TooltipContent>{tooltip}</TooltipContent>
+    </Tooltip>
+  );
+}
 
 export interface AntToolTipProps {
   title: React.ReactNode;
@@ -107,7 +127,7 @@ export const AntToolTip: React.FC<AntToolTipProps> = ({
       {visible && title && (
         <div
           className={cn(
-            'absolute z-50 px-2.5 py-1.5 text-xs text-white bg-gray-800 rounded-sm shadow-sm whitespace-nowrap',
+            'absolute z-50 px-2.5 py-2 text-xs text-text-primary bg-muted rounded-sm shadow-sm whitespace-wrap w-max',
             getPlacementClasses(),
             className,
           )}
@@ -115,7 +135,7 @@ export const AntToolTip: React.FC<AntToolTipProps> = ({
           {title}
           <div
             className={cn(
-              'absolute w-2 h-2 bg-gray-800',
+              'absolute w-2 h-2  bg-muted ',
               placement === 'top' &&
                 'bottom-[-4px] left-1/2 transform -translate-x-1/2 rotate-45',
               placement === 'bottom' &&

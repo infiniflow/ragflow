@@ -51,16 +51,18 @@ const RunSheet = ({
   );
 
   return (
-    <Sheet onOpenChange={hideModal} open>
-      <SheetContent className={cn('top-20 p-2')}>
+    <Sheet onOpenChange={hideModal} open modal={false}>
+      <SheetContent className={cn('top-20 px-0 flex flex-col')}>
         <SheetHeader>
           <SheetTitle>{t('flow.testRun')}</SheetTitle>
-          <DebugContent
-            ok={onOk}
-            parameters={inputs}
-            loading={loading}
-          ></DebugContent>
         </SheetHeader>
+        <DebugContent
+          ok={onOk}
+          parameters={inputs}
+          loading={loading}
+          className="flex-1 overflow-auto min-h-0 pb-5"
+          maxHeight="max-h-[83vh]"
+        ></DebugContent>
       </SheetContent>
     </Sheet>
   );

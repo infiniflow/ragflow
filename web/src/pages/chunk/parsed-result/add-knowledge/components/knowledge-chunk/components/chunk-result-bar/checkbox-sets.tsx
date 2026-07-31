@@ -1,17 +1,32 @@
+import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
-import { Ban, CircleCheck, Trash2 } from 'lucide-react';
-import { useCallback } from 'react';
+import { cn } from '@/lib/utils';
+import {
+  LucideToggleLeft,
+  LucideToggleRight,
+  LucideTrash2,
+} from 'lucide-react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 type ICheckboxSetProps = {
+  className?: string;
   selectAllChunk: (e: any) => void;
   removeChunk: (e?: any) => void;
   switchChunk: (available: number) => void;
   checked: boolean;
+  selectedChunkIds: string[];
 };
-export default (props: ICheckboxSetProps) => {
-  const { selectAllChunk, removeChunk, switchChunk, checked } = props;
+export default function CheckboxSets(props: ICheckboxSetProps) {
+  const {
+    className,
+    selectAllChunk,
+    removeChunk,
+    switchChunk,
+    checked,
+    selectedChunkIds,
+  } = props;
   const { t } = useTranslation();
   const handleSelectAllCheck = useCallback(
     (e: any) => {
@@ -33,38 +48,35 @@ export default (props: ICheckboxSetProps) => {
     switchChunk(0);
   }, [switchChunk]);
 
+  const isSelected = useMemo(() => {
+    return selectedChunkIds?.length > 0;
+  }, [selectedChunkIds]);
+
   return (
-    <div className="flex gap-[40px] p-4">
-      <div className="flex items-center gap-3 cursor-pointer text-muted-foreground hover:text-white">
-        <Checkbox
-          id="all_chunks_checkbox"
-          onCheckedChange={handleSelectAllCheck}
-          checked={checked}
-          className=" data-[state=checked]:bg-white data-[state=checked]:border-white data-[state=checked]:text-black  border-muted-foreground text-muted-foreground hover:text-black hover:border-white "
-        />
-        <Label htmlFor="all_chunks_checkbox">{t('chunk.selectAll')}</Label>
-      </div>
-      <div
-        className="flex items-center cursor-pointer text-muted-foreground hover:text-white"
-        onClick={handleEnabledClick}
-      >
-        <CircleCheck size={16} />
-        <span className="block ml-1">{t('chunk.enable')}</span>
-      </div>
-      <div
-        className="flex items-center cursor-pointer text-muted-foreground hover:text-white"
-        onClick={handleDisabledClick}
-      >
-        <Ban size={16} />
-        <span className="block ml-1">{t('chunk.disable')}</span>
-      </div>
-      <div
-        className="flex items-center cursor-pointer text-red-400 hover:text-red-500"
-        onClick={handleDeleteClick}
-      >
-        <Trash2 size={16} />
-        <span className="block ml-1">{t('chunk.delete')}</span>
-      </div>
+    <div className={cn('flex gap-4 text-sm text-text-secondary', className)}>
+      <Label className="flex items-center gap-2">
+        <Checkbox onCheckedChange={handleSelectAllCheck} checked={checked} />
+        <span>{t('chunk.selectAll')}</span>
+      </Label>
+
+      {isSelected && (
+        <>
+          <Button variant="outline" onClick={handleEnabledClick}>
+            <LucideToggleRight size={16} />
+            {t('chunk.enable')}
+          </Button>
+
+          <Button variant="outline" onClick={handleDisabledClick}>
+            <LucideToggleLeft size={16} />
+            <span className="block ml-1">{t('chunk.disable')}</span>
+          </Button>
+
+          <Button variant="danger" onClick={handleDeleteClick}>
+            <LucideTrash2 className="size-[1em]" />
+            {t('chunk.delete')}
+          </Button>
+        </>
+      )}
     </div>
   );
-};
+}

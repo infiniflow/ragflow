@@ -1,55 +1,55 @@
 ---
 sidebar_position: 4
+title: Set Variables
+sidebar_label: Set Variables
 slug: /set_chat_variables
+sidebar_custom_props: {
+  categoryIcon: LucideVariable
+}
 ---
-
-# Set variables
+# Set Variables
 
 Set variables to be used together with the system prompt for your LLM.
 
 ---
 
-When configuring the system prompt for a chat model, variables play an important role in enhancing flexibility and reusability. With variables, you can dynamically adjust the system prompt to be sent to your model. In the context of RAGFlow, if you have defined variables in the **Chat Configuration** dialogue, except for the system's reserved variable `{knowledge}`, you are required to pass in values for them from RAGFlow's [HTTP API](../../references/http_api_reference.md#converse-with-chat-assistant) or through its [Python SDK](../../references/python_api_reference.md#converse-with-chat-assistant).
+When configuring the system prompt for a chat model, variables play an important role in enhancing flexibility and reusability. With variables, you can dynamically adjust the system prompt to be sent to your model. In the context of RAGFlow, if you have defined variables in **Chat setting**, except for the system's reserved variable `{knowledge}`, you are required to pass in values for them from RAGFlow's [HTTP API](../../references/http_api_reference.md#converse-with-chat-assistant) or through its [Python SDK](../../references/python_api_reference.md#converse-with-chat-assistant).
 
 :::danger IMPORTANT
 In RAGFlow, variables are closely linked with the system prompt. When you add a variable in the **Variable** section, include it in the system prompt. Conversely, when deleting a variable, ensure it is removed from the system prompt; otherwise, an error would occur.
 :::
 
-## Where to set variables
+## Where to Set Variables
 
-Hover your mouse over your chat assistant, click **Edit** to open its **Chat Configuration** dialogue, then click the **Prompt engine** tab. Here, you can work on your variables in the **System prompt** field and the **Variable** section:
+![Chat variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_variables.jpg)
 
-![set_variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/prompt_engine.jpg)
-
-## 1. Manage variables
+## 1. Manage Variables
 
 In the **Variable** section, you add, remove, or update variables.
 
-### `{knowledge}` - a reserved variable
+### `{knowledge}` - A Reserved Variable
 
-`{knowledge}` is the system's reserved variable, representing the chunks retrieved from the knowledge base(s) specified by **Knowledge bases** under the **Assistant settings** tab. If your chat assistant is associated with certain knowledge bases, you can keep it as is.
+`{knowledge}` is the system's reserved variable, representing the chunks retrieved from the dataset(s) specified by **Knowledge bases** under the **Assistant settings** tab. If your chat assistant is associated with certain datasets, you can keep it as is.
 
 :::info NOTE
 It currently makes no difference whether  `{knowledge}` is set as optional or mandatory, but please note this design will be updated in due course.
 :::
 
-From v0.17.0 onward, you can start an AI chat without specifying knowledge bases. In this case, we recommend removing the `{knowledge}` variable to prevent unnecessary reference and keeping the **Empty response** field empty to avoid errors.
+From v0.17.0 onward, you can start an AI chat without specifying datasets. In this case, we recommend removing the `{knowledge}` variable to prevent unnecessary reference and keeping the **Empty response** field empty to avoid errors.
 
-### Custom variables
+### Custom Variables
 
 Besides `{knowledge}`, you can also define your own variables to pair with the system prompt. To use these custom variables, you must pass in their values through RAGFlow's official APIs. The **Optional** toggle determines whether these variables are required in the corresponding APIs:
 
 - **Disabled** (Default): The variable is mandatory and must be provided.
 - **Enabled**: The variable is optional and can be omitted if not needed.
 
-
-
-## 2. Update system prompt
+## 2. Update System Prompt
 
 After you add or remove variables in the **Variable** section, ensure your changes are reflected in the system prompt to avoid inconsistencies or errors. Here's an example:
 
 ```
-You are an intelligent assistant. Please answer the question by summarizing chunks from the specified knowledge base(s)...
+You are an intelligent assistant. Please answer the question by summarizing chunks from the specified dataset(s)...
 
 Your answers should follow a professional and {style} style.
 
@@ -74,13 +74,19 @@ See [Converse with chat assistant](../../references/http_api_reference.md#conver
 
 ```json {9}
 curl --request POST \
-     --url http://{address}/api/v1/chats/{chat_id}/completions \
+     --url http://{address}/api/v1/chat/completions \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data-binary '
      {
-          "question": "xxxxxxxxx",
+          "chat_id": "{chat_id}",
           "stream": true,
+          "messages": [
+              {
+                  "role": "user",
+                  "content": "xxxxxxxxx"
+              }
+          ],
           "style":"hilarious"
      }'
 ```
@@ -111,4 +117,3 @@ while True:
         print(ans.content[len(cont):], end='', flush=True)
         cont = ans.content
 ```
-

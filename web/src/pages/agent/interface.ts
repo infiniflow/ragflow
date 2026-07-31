@@ -1,5 +1,5 @@
-import { RAGFlowNodeType } from '@/interfaces/database/flow';
-import { FormInstance } from 'antd';
+import { FormInstance } from '@/interfaces/antd-compat';
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 
 export interface IOperatorForm {
   onValuesChange?(changedValues: any, values: any): void;
@@ -11,6 +11,8 @@ export interface IOperatorForm {
 export interface INextOperatorForm {
   node?: RAGFlowNodeType;
   nodeId?: string;
+  onValuesChange?(values: any): void;
+  hideOutputs?: boolean;
 }
 
 export interface IGenerateParameter {
@@ -39,4 +41,13 @@ export type IInputs = {
   title: string;
   inputs: Record<string, BeginQuery>;
   prologue: string;
+  mode: string;
 };
+
+export type IOutputs = Record<
+  string,
+  {
+    type?: string;
+    value?: string;
+  }
+>;

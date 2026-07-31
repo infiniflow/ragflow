@@ -13,26 +13,23 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-from enum import Enum
+
 from enum import IntEnum
-from strenum import StrEnum
+from enum import StrEnum
 
-
-class StatusEnum(Enum):
-    VALID = "1"
-    INVALID = "0"
+from common.constants import PipelineTaskType
 
 
 class UserTenantRole(StrEnum):
-    OWNER = 'owner'
-    ADMIN = 'admin'
-    NORMAL = 'normal'
-    INVITE = 'invite'
+    OWNER = "owner"
+    ADMIN = "admin"
+    NORMAL = "normal"
+    INVITE = "invite"
 
 
 class TenantPermission(StrEnum):
-    ME = 'me'
-    TEAM = 'team'
+    ME = "me"
+    TEAM = "team"
 
 
 class SerializedType(IntEnum):
@@ -41,74 +38,65 @@ class SerializedType(IntEnum):
 
 
 class FileType(StrEnum):
-    PDF = 'pdf'
-    DOC = 'doc'
-    VISUAL = 'visual'
-    AURAL = 'aural'
-    VIRTUAL = 'virtual'
-    FOLDER = 'folder'
+    PDF = "pdf"
+    DOC = "doc"
+    VISUAL = "visual"
+    AURAL = "aural"
+    VIRTUAL = "virtual"
+    FOLDER = "folder"
     OTHER = "other"
+
 
 VALID_FILE_TYPES = {FileType.PDF, FileType.DOC, FileType.VISUAL, FileType.AURAL, FileType.VIRTUAL, FileType.FOLDER, FileType.OTHER}
 
-class LLMType(StrEnum):
-    CHAT = 'chat'
-    EMBEDDING = 'embedding'
-    SPEECH2TEXT = 'speech2text'
-    IMAGE2TEXT = 'image2text'
-    RERANK = 'rerank'
-    TTS    = 'tts'
+
+class InputType(StrEnum):
+    LOAD_STATE = "load_state"  # e.g. loading a current full state or a save state, such as from a file
+    POLL = "poll"  # e.g. calling an API to get all documents in the last hour
+    EVENT = "event"  # e.g. registered an endpoint as a listener, and processing connector events
+    SLIM_RETRIEVAL = "slim_retrieval"
 
 
-class ChatStyle(StrEnum):
-    CREATIVE = 'Creative'
-    PRECISE = 'Precise'
-    EVENLY = 'Evenly'
-    CUSTOM = 'Custom'
+class CanvasCategory(StrEnum):
+    Agent = "agent_canvas"
+    DataFlow = "dataflow_canvas"
 
 
-class TaskStatus(StrEnum):
-    UNSTART = "0"
-    RUNNING = "1"
-    CANCEL = "2"
-    DONE = "3"
-    FAIL = "4"
-
-VALID_TASK_STATUS     = {TaskStatus.UNSTART, TaskStatus.RUNNING, TaskStatus.CANCEL, TaskStatus.DONE, TaskStatus.FAIL}
-
-class ParserType(StrEnum):
-    PRESENTATION = "presentation"
-    LAWS = "laws"
-    MANUAL = "manual"
-    PAPER = "paper"
-    RESUME = "resume"
-    BOOK = "book"
-    QA = "qa"
-    TABLE = "table"
-    NAIVE = "naive"
-    PICTURE = "picture"
-    ONE = "one"
-    AUDIO = "audio"
-    EMAIL = "email"
-    KG = "knowledge_graph"
-    TAG = "tag"
+VALID_PIPELINE_TASK_TYPES = {
+    PipelineTaskType.PARSE,
+    PipelineTaskType.DOWNLOAD,
+    PipelineTaskType.RAPTOR,
+    PipelineTaskType.GRAPH_RAG,
+    PipelineTaskType.MINDMAP,
+    PipelineTaskType.ARTIFACT,
+    PipelineTaskType.SKILL,
+}
 
 
-class FileSource(StrEnum):
-    LOCAL = ""
-    KNOWLEDGEBASE = "knowledgebase"
-    S3 = "s3"
+# KB-level fan-out task types: their Task row uses GRAPH_RAPTOR_FAKE_DOC_ID as a
+# sentinel doc_id, and ``task_executor.collect_task`` substitutes the first real
+# doc_id from ``msg["doc_ids"]`` before re-running ``TaskService.get_task`` so
+# the join through Document → Knowledgebase → Tenant resolves and tenant_id /
+# kb_id / language are hydrated onto the task dict. Add new fan-out task types
+# here or TaskContext will raise "Task must contain 'tenant_id'".
+PIPELINE_SPECIAL_PROGRESS_FREEZE_TASK_TYPES = {
+    PipelineTaskType.RAPTOR.lower(),
+    PipelineTaskType.GRAPH_RAG.lower(),
+    PipelineTaskType.MINDMAP.lower(),
+    PipelineTaskType.ARTIFACT.lower(),
+    PipelineTaskType.SKILL.lower(),
+    # Structure-graph merge fan-out task types. These are the raw task_type
+    # strings (== the index type), which — unlike the types above — do not equal
+    # their PipelineTaskType value lowercased (e.g. "structure_graph" vs
+    # "structuregraph"), so they are listed literally.
+    "structure_graph",
+    "structure_mindmap",
+    "timeline",
+    "session_graph",
+    "session_essence",
+    "structure",
+}
 
 
-class CanvasType(StrEnum):
-    ChatBot = "chatbot"
-    DocBot = "docbot"
-
-
-class MCPServerType(StrEnum):
-    SSE = "sse"
-    STREAMABLE_HTTP = "streamable-http"
-
-VALID_MCP_SERVER_TYPES = {MCPServerType.SSE, MCPServerType.STREAMABLE_HTTP}
-
-KNOWLEDGEBASE_FOLDER_NAME=".knowledgebase"
+KNOWLEDGEBASE_FOLDER_NAME = ".knowledgebase"
+SKILLS_FOLDER_NAME = "skills"

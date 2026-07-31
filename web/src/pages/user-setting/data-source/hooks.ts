@@ -1,0 +1,285 @@
+import message from '@/components/ui/message';
+import { RunningStatus } from '@/constants/knowledge';
+import { useSetModalState } from '@/hooks/common-hooks';
+import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
+import dataSourceService, {
+  dataSourceRebuild,
+  dataSourceUpdate,
+  deleteDataSource,
+  featchDataSourceDetail,
+  getDataSourceLogs,
+  testDataSource,
+} from '@/services/data-source-service';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { t } from 'i18next';
+import { useCallback, useMemo, useState } from 'react';
+import { useParams, useSearchParams } from 'react-router';
+import { DataSourceKey, useDataSourceInfo } from './constant';
+import {
+  IDataSorceInfo,
+  IDataSource,
+  IDataSourceBase,
+  IDataSourceLog,
+} from './interface';
+
+export const useListDataSource = () => {
+  const { dataSourceInfo } = useDataSourceInfo();
+  const { data: list, isFetching } = useQuery<IDataSource[]>({
+    queryKey: ['data-source'],
+    queryFn: async () => {
+      const { data } = await dataSourceService.dataSourceList();
+      return data.data;
+    },
+  });
+
+  const categorizeDataBySource = (data: IDataSourceBase[]) => {
+    const categorizedData: Partial<Record<DataSourceKey, IDataSourceBase[]>> =
+      {};
+
+    data.forEach((item) => {
+      const source = item.source;
+      if (!categorizedData[source]) {
+        categorizedData[source] = [];
+      }
+      categorizedData[source].push({
+        ...item,
+      });
+    });
+
+    return categorizedData;
+  };
+
+  const updatedDataSourceTemplates = useMemo(() => {
+    const categorizedData = categorizeDataBySource(list || []);
+    const sourceList: Array<IDataSorceInfo & { list: Array<IDataSourceBase> }> =
+      [];
+    Object.keys(categorizedData).forEach((key: string) => {
+      const k = key as DataSourceKey;
+      if (dataSourceInfo[k]) {
+        sourceList.push({
+          id: k,
+          name: dataSourceInfo[k].name,
+          description: dataSourceInfo[k].description,
+          icon: dataSourceInfo[k].icon,
+          list: categorizedData[k] || [],
+        });
+      }
+    });
+
+    console.log('🚀 ~ useListDataSource ~ sourceList:', sourceList);
+    return sourceList;
+  }, [list]);
+
+  return { list, categorizedList: updatedDataSourceTemplates, isFetching };
+};
+
+export const useAddDataSource = ({ isEdit = false }: { isEdit?: boolean }) => {
+  const [addSource, setAddSource] = useState<IDataSorceInfo | undefined>(
+    undefined,
+  );
+  const [addLoading, setAddLoading] = useState<boolean>(false);
+  const {
+    visible: addingModalVisible,
+    hideModal: hideAddingModal,
+    showModal,
+  } = useSetModalState();
+  const showAddingModal = useCallback(
+    (data: IDataSorceInfo) => {
+      setAddSource(data);
+      showModal();
+    },
+    [showModal],
+  );
+  const queryClient = useQueryClient();
+
+  const handleAddOk = useCallback(
+    async (data: any) => {
+      setAddLoading(true);
+      const { data: res } = isEdit
+        ? await dataSourceUpdate(data.id, {
+            ...data,
+            reschedule: true,
+          })
+        : await dataSourceService.dataSourceSet(data);
+      console.log('🚀 ~ handleAddOk ~ code:', res.code);
+      if (res.code === 0) {
+        if (isEdit && res.data?.id) {
+          queryClient.setQueryData(
+            ['data-source-detail', res.data.id],
+            res.data,
+          );
+          queryClient.invalidateQueries({
+            queryKey: ['data-source-detail', res.data.id],
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: ['data-source'] });
+        message.success(t(`message.operated`));
+        hideAddingModal();
+      }
+      setAddLoading(false);
+    },
+    [hideAddingModal, isEdit, queryClient],
+  );
+
+  return {
+    addSource,
+    addLoading,
+    setAddSource,
+    addingModalVisible,
+    hideAddingModal,
+    showAddingModal,
+    handleAddOk,
+  };
+};
+
+export const useLogListDataSource = (autoRefresh: boolean) => {
+  const { pagination, setPagination } = useGetPaginationWithRouter();
+  const [currentQueryParameters] = useSearchParams();
+  const id = currentQueryParameters.get('id');
+
+  const { data, isFetching } = useQuery<{
+    logs: IDataSourceLog[];
+    total: number;
+  }>({
+    queryKey: ['data-source-logs', id, pagination, autoRefresh],
+    refetchInterval: autoRefresh ? 15 * 1000 : false,
+    queryFn: async () => {
+      const { data } = await getDataSourceLogs(id as string, {
+        page_size: pagination.pageSize,
+        page: pagination.current,
+      });
+      return data.data;
+    },
+  });
+  return {
+    data: data?.logs,
+    isFetching,
+    pagination: { ...pagination, total: data?.total },
+    setPagination,
+  };
+};
+
+export const useDeleteDataSource = () => {
+  const [deleteLoading, setDeleteLoading] = useState<boolean>(false);
+  const { hideModal, showModal } = useSetModalState();
+  const queryClient = useQueryClient();
+  const handleDelete = useCallback(
+    async ({ id }: { id: string }) => {
+      setDeleteLoading(true);
+      const { data } = await deleteDataSource(id);
+      if (data.code === 0) {
+        message.success(t(`message.deleted`));
+        queryClient.invalidateQueries({ queryKey: ['data-source'] });
+      }
+      setDeleteLoading(false);
+    },
+    [setDeleteLoading, queryClient],
+  );
+  return { deleteLoading, hideModal, showModal, handleDelete };
+};
+
+export const useFetchDataSourceDetail = () => {
+  const [currentQueryParameters] = useSearchParams();
+  const id = currentQueryParameters.get('id');
+  const { data } = useQuery<IDataSource>({
+    queryKey: ['data-source-detail', id],
+    enabled: !!id,
+    queryFn: async () => {
+      const { data } = await featchDataSourceDetail(id as string);
+      // if (data.code === 0) {
+
+      // }
+      return data.data;
+    },
+  });
+  return { data };
+};
+
+export const useUpdateDataSourceStatus = () => {
+  const [currentQueryParameters] = useSearchParams();
+  const id = currentQueryParameters.get('id');
+  const queryClient = useQueryClient();
+  const [loading, setLoading] = useState(false);
+  const updateStatus = useCallback(
+    async (status: RunningStatus.SCHEDULE | RunningStatus.CANCEL) => {
+      if (!id) return;
+
+      setLoading(true);
+      try {
+        const { data } = await dataSourceUpdate(id, {
+          status,
+        });
+        if (data.code === 0) {
+          queryClient.setQueryData(
+            ['data-source-detail', id],
+            (previous?: IDataSource) => ({
+              ...(previous || {}),
+              ...(data.data || {}),
+              status: data.data?.status ?? status,
+            }),
+          );
+
+          await Promise.all([
+            queryClient.invalidateQueries({
+              queryKey: ['data-source-detail', id],
+            }),
+            queryClient.invalidateQueries({ queryKey: ['data-source'] }),
+            queryClient.invalidateQueries({
+              queryKey: ['data-source-logs', id],
+            }),
+          ]);
+
+          message.success(t(`message.operated`));
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [id, queryClient],
+  );
+  return { updateStatus, loading };
+};
+
+export const useDataSourceRebuild = () => {
+  const { id } = useParams();
+  // const [currentQueryParameters] = useSearchParams();
+  // const id = currentQueryParameters.get('id');
+  const handleRebuild = useCallback(
+    async (param: { source_id: string }) => {
+      const { data } = await dataSourceRebuild(param.source_id as string, {
+        kb_id: id as string,
+      });
+      if (data.code === 0) {
+        // queryClient.invalidateQueries({ queryKey: ['data-source-detail', id] });
+        message.success(t(`message.operated`));
+      }
+    },
+    [id],
+  );
+  return { handleRebuild };
+};
+
+export const useTestDataSource = () => {
+  const [currentQueryParameters] = useSearchParams();
+  const id = currentQueryParameters.get('id');
+  const [loading, setLoading] = useState(false);
+
+  const handleTest = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    try {
+      const { data } = await testDataSource(id);
+      if (data.code === 0) {
+        message.success(t('setting.restApiTestSuccess'));
+      } else {
+        message.error(data.message || t('setting.restApiTestFailed'));
+      }
+    } catch {
+      message.error(t('setting.restApiTestFailed'));
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  return { loading, handleTest };
+};

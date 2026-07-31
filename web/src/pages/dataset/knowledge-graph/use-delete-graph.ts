@@ -1,21 +1,19 @@
-import {
-  useKnowledgeBaseId,
-  useRemoveKnowledgeGraph,
-} from '@/hooks/knowledge-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useRemoveKnowledgeGraph } from '@/hooks/use-knowledge-request';
 import { useCallback } from 'react';
-import { useNavigate } from 'umi';
+import { useParams } from 'react-router';
 
 export function useDeleteKnowledgeGraph() {
   const { removeKnowledgeGraph, loading } = useRemoveKnowledgeGraph();
-  const navigate = useNavigate();
-  const knowledgeBaseId = useKnowledgeBaseId();
+  const { navigateToDataset } = useNavigatePage();
+  const { id } = useParams();
 
   const handleDeleteKnowledgeGraph = useCallback(async () => {
     const ret = await removeKnowledgeGraph();
-    if (ret === 0) {
-      navigate(`/knowledge/dataset?id=${knowledgeBaseId}`);
+    if (ret === 0 && id) {
+      navigateToDataset(id)();
     }
-  }, [knowledgeBaseId, navigate, removeKnowledgeGraph]);
+  }, [id, navigateToDataset, removeKnowledgeGraph]);
 
   return { handleDeleteKnowledgeGraph, loading };
 }

@@ -1,35 +1,104 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
+import message from '@/components/ui/message';
+import { GenerateType, ParseType } from '@/constants/knowledge';
+import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
 import {
-  IKnowledge,
+  IArtifact,
+  IArtifactAlteration,
+  IArtifactGraph,
+  IArtifactPage,
+  IArtifactTopic,
+  IDataset,
+  IDatasetFilter,
+  IDatasetListResult,
   IKnowledgeGraph,
-  IKnowledgeResult,
   INextTestingResult,
-} from '@/interfaces/database/knowledge';
-import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
+  IRenameTag,
+  ITestingResult,
+  IWikiCommit,
+  IWikiCommitDetail,
+  IWikiCommitListResponse,
+} from '@/interfaces/database/dataset';
+import { type IStructureGraphResponse } from '@/interfaces/database/document-structure';
+import {
+  IFetchArtifactGraphRequestParams,
+  ITestRetrievalRequestBody,
+  IUpdateArtifactPageRequestParams,
+} from '@/interfaces/request/knowledge';
 import i18n from '@/locales/config';
 import kbService, {
+  clearWiki,
+  deleteArtifactsStructure,
+  deleteKnowledgeGraph,
+  getArtifactsAlteration,
+  getArtifactGraph,
+  getArtifactPage,
+  getArtifactsStructure,
+  getKbDetail,
   getKnowledgeGraph,
+  getWikiCommit,
+  listArtifactTopics,
+  listArtifacts,
+  datasetFilter,
   listDataset,
+  listDatasetByIds,
+  listTag,
+  listWikiCommits,
+  removeTag,
+  renameTag,
+  runIndex,
+  updateArtifactPage,
+  updateKb,
 } from '@/services/knowledge-service';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useIsMutating,
+  useMutation,
+  useMutationState,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { message } from 'antd';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useSearchParams } from 'umi';
+import { omit } from 'lodash';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useParams, useSearchParams } from 'react-router';
 import {
   useGetPaginationWithRouter,
   useHandleSearchChange,
 } from './logic-hooks';
+import {
+  extractParserConfigExt,
+  isPipelineParserConfig,
+} from './parser-config-utils';
+import { useSetPaginationParams } from './route-hook';
+import { DatasetGenerateKeys } from './use-dataset-generate';
 
 export const enum KnowledgeApiAction {
-  TestRetrieval = 'testRetrieval',
   FetchKnowledgeListByPage = 'fetchKnowledgeListByPage',
+  FetchDatasetFilter = 'fetchDatasetFilter',
   CreateKnowledge = 'createKnowledge',
   DeleteKnowledge = 'deleteKnowledge',
   SaveKnowledge = 'saveKnowledge',
   FetchKnowledgeDetail = 'fetchKnowledgeDetail',
+  FetchDatasetPipelineConfiguration = 'fetchDatasetPipelineConfiguration',
   FetchKnowledgeGraph = 'fetchKnowledgeGraph',
+  FetchArtifactList = 'fetchArtifactList',
+  FetchArtifactTopicList = 'fetchArtifactTopicList',
+  FetchArtifactPage = 'fetchArtifactPage',
+  FetchArtifactGraph = 'fetchArtifactGraph',
+  UpdateArtifactPage = 'updateArtifactPage',
+  FetchWikiCommits = 'fetchWikiCommits',
+  FetchWikiCommit = 'fetchWikiCommit',
   FetchMetadata = 'fetchMetadata',
+  FetchMetadataKeys = 'fetchMetadataKeys',
+  FetchKnowledgeList = 'fetchKnowledgeList',
+  RemoveKnowledgeGraph = 'removeKnowledgeGraph',
+  ClearWiki = 'clearWiki',
+  FetchDatasetStructure = 'fetchDatasetStructure',
+  DeleteDatasetStructure = 'deleteDatasetStructure',
+  FetchArtifactAlteration = 'fetchArtifactAlteration',
+  RunArtifactIndex = 'runArtifactIndex',
 }
 
 export const useKnowledgeBaseId = (): string => {
@@ -41,61 +110,64 @@ export const useKnowledgeBaseId = (): string => {
 export const useTestRetrieval = () => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const [values, setValues] = useState<ITestRetrievalRequestBody>();
-  const mountedRef = useRef(false);
-  const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
-
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-
-  const onPaginationChange = useCallback((page: number, pageSize: number) => {
-    setPage(page);
-    setPageSize(pageSize);
-  }, []);
+  const { filterValue, setFilterValue } = useHandleFilterSubmit();
 
   const queryParams = useMemo(() => {
     return {
       ...values,
       kb_id: values?.kb_id || knowledgeBaseId,
-      page,
-      size: pageSize,
+      page: 1,
       doc_ids: filterValue.doc_ids,
+      highlight: true,
     };
-  }, [filterValue, knowledgeBaseId, page, pageSize, values]);
+  }, [filterValue, knowledgeBaseId, values]);
 
-  const {
-    data,
-    isFetching: loading,
-    refetch,
-  } = useQuery<INextTestingResult>({
-    queryKey: [KnowledgeApiAction.TestRetrieval, queryParams, page, pageSize],
-    initialData: {
-      chunks: [],
-      doc_aggs: [],
-      total: 0,
-    },
-    enabled: false,
-    gcTime: 0,
-    queryFn: async () => {
-      const { data } = await kbService.retrieval_test(queryParams);
-      return data?.data ?? {};
+  const mutation = useMutation<INextTestingResult, Error, typeof queryParams>({
+    mutationFn: async (params) => {
+      const { data } = await kbService.retrievalTest(params);
+      const result = data?.data ?? {};
+      return { ...result, isRuned: true };
     },
   });
 
-  useEffect(() => {
-    if (mountedRef.current) {
-      refetch();
+  const refetch = useCallback(() => {
+    if (queryParams.question) {
+      const newParams = { ...queryParams, page: 1 };
+      mutation.mutate(newParams);
     }
-    mountedRef.current = true;
-  }, [page, pageSize, refetch, filterValue]);
+  }, [mutation, queryParams]);
+
+  const handleFilterSubmit = useCallback(
+    (value: { doc_ids?: string[] }) => {
+      setFilterValue(value);
+      if (mutation.data && queryParams.question) {
+        const newParams = {
+          ...queryParams,
+          doc_ids: value.doc_ids ?? [],
+          page: 1,
+        };
+        mutation.mutate(newParams);
+      }
+    },
+    [mutation, queryParams, setFilterValue],
+  );
+
+  const data = useMemo(
+    () =>
+      mutation.data ?? {
+        chunks: [],
+        doc_aggs: [],
+        total: 0,
+        isRuned: false,
+      },
+    [mutation.data],
+  );
 
   return {
     data,
-    loading,
+    loading: mutation.isPending,
     setValues,
     refetch,
-    onPaginationChange,
-    page,
-    pageSize,
     handleFilterSubmit,
     filterValue,
   };
@@ -107,7 +179,7 @@ export const useFetchNextKnowledgeListByPage = () => {
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
 
-  const { data, isFetching: loading } = useQuery<IKnowledgeResult>({
+  const { data, isFetching: loading } = useQuery<IDatasetListResult>({
     queryKey: [
       KnowledgeApiAction.FetchKnowledgeListByPage,
       {
@@ -116,30 +188,26 @@ export const useFetchNextKnowledgeListByPage = () => {
         filterValue,
       },
     ],
-    initialData: {
-      kbs: [],
-      total: 0,
-    },
+    placeholderData: (previousData) =>
+      previousData ?? { kbs: [], total_datasets: 0 },
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await listDataset(
-        {
+      const { data } = await listDataset({
+        page_size: pagination.pageSize,
+        page: pagination.current,
+        ext: {
           keywords: debouncedSearchString,
-          page_size: pagination.pageSize,
-          page: pagination.current,
+          owner_ids: filterValue.owner as string[],
         },
-        {
-          owner_ids: filterValue.owner,
-        },
-      );
+      });
 
-      return data?.data;
+      return { kbs: data?.data, total_datasets: data?.total_datasets };
     },
   });
 
   const onInputChange: React.ChangeEventHandler<HTMLInputElement> = useCallback(
     (e) => {
-      // setPagination({ page: 1 }); // TODO: 这里导致重复请求
+      // setPagination({ page: 1 }); // TODO: This results in repeated requests
       handleInputChange(e);
     },
     [handleInputChange],
@@ -149,11 +217,29 @@ export const useFetchNextKnowledgeListByPage = () => {
     ...data,
     searchString,
     handleInputChange: onInputChange,
-    pagination: { ...pagination, total: data?.total },
+    pagination: { ...pagination, total: data?.total_datasets },
     setPagination,
     loading,
     filterValue,
     handleFilterSubmit,
+  };
+};
+
+export const useGetDatasetFilter = (): { filter: IDatasetFilter } => {
+  const { data } = useQuery({
+    queryKey: [KnowledgeApiAction.FetchDatasetFilter],
+    queryFn: async () => {
+      const { data } = await datasetFilter();
+      if (data.code === 0) {
+        return data.data;
+      }
+    },
+  });
+
+  return {
+    filter: data?.filter || {
+      owner: [],
+    },
   };
 };
 
@@ -165,13 +251,26 @@ export const useCreateKnowledge = () => {
     mutateAsync,
   } = useMutation({
     mutationKey: [KnowledgeApiAction.CreateKnowledge],
-    mutationFn: async (params: { id?: string; name: string }) => {
+    mutationFn: async (params: {
+      id?: string;
+      name: string;
+      embedding_model?: string;
+      chunk_method?: string;
+      parseType?: ParseType;
+      pipeline_id?: string | null;
+      ext?: {
+        language?: string;
+        [key: string]: any;
+      };
+    }) => {
       const { data = {} } = await kbService.createKb(params);
       if (data.code === 0) {
         message.success(
           i18n.t(`message.${params?.id ? 'modified' : 'created'}`),
         );
-        queryClient.invalidateQueries({ queryKey: ['fetchKnowledgeList'] });
+        queryClient.invalidateQueries({
+          queryKey: [KnowledgeApiAction.FetchKnowledgeList],
+        });
       }
       return data;
     },
@@ -189,7 +288,7 @@ export const useDeleteKnowledge = () => {
   } = useMutation({
     mutationKey: [KnowledgeApiAction.DeleteKnowledge],
     mutationFn: async (id: string) => {
-      const { data } = await kbService.rmKb({ kb_id: id });
+      const { data } = await kbService.rmKb({ ids: [id] });
       if (data.code === 0) {
         message.success(i18n.t(`message.deleted`));
         queryClient.invalidateQueries({
@@ -206,17 +305,54 @@ export const useDeleteKnowledge = () => {
 export const useUpdateKnowledge = (shouldFetchList = false) => {
   const knowledgeBaseId = useKnowledgeBaseId();
   const queryClient = useQueryClient();
+
   const {
     data,
     isPending: loading,
     mutateAsync,
   } = useMutation({
     mutationKey: [KnowledgeApiAction.SaveKnowledge],
-    mutationFn: async (params: Record<string, any>) => {
-      const { data = {} } = await kbService.updateKb({
-        kb_id: params?.kb_id ? params?.kb_id : knowledgeBaseId,
-        ...params,
-      });
+    mutationFn: async (params: {
+      kb_id?: string;
+      name?: string;
+      embedding_model?: string;
+      chunk_method?: string;
+      pipeline_id?: string | null;
+      avatar?: string | null;
+      description?: string;
+      permission?: string;
+      pagerank?: number;
+      parser_config?: Record<string, any>;
+      [key: string]: any;
+    }) => {
+      const kbId = params?.kb_id || knowledgeBaseId;
+      const {
+        embedding_model,
+        chunk_method,
+        pipeline_id,
+        avatar,
+        description,
+        permission,
+        pagerank,
+        parser_config,
+        ...ext
+      } = params;
+      const requestBody: Record<string, any> = {
+        name,
+        embedding_model,
+        chunk_method,
+        pipeline_id,
+        avatar,
+        description,
+        permission,
+        pagerank,
+        parser_config: isPipelineParserConfig(parser_config)
+          ? parser_config
+          : extractParserConfigExt(parser_config),
+        ...omit(ext, ['kb_id']),
+      };
+
+      const { data = {} } = await updateKb(kbId, requestBody);
       if (data.code === 0) {
         message.success(i18n.t(`message.updated`));
         if (shouldFetchList) {
@@ -234,31 +370,375 @@ export const useUpdateKnowledge = (shouldFetchList = false) => {
   return { data, loading, saveKnowledgeConfiguration: mutateAsync };
 };
 
-export const useFetchKnowledgeBaseConfiguration = (refreshCount?: number) => {
+export const useFetchKnowledgeBaseConfiguration = (props?: {
+  isEdit?: boolean;
+}) => {
+  const { isEdit = true } = props || { isEdit: true };
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const knowledgeBaseId = searchParams.get('id') || id;
 
-  let queryKey: (KnowledgeApiAction | number)[] = [
-    KnowledgeApiAction.FetchKnowledgeDetail,
-  ];
-  if (typeof refreshCount === 'number') {
-    queryKey = [KnowledgeApiAction.FetchKnowledgeDetail, refreshCount];
-  }
-
-  const { data, isFetching: loading } = useQuery<IKnowledge>({
-    queryKey,
-    initialData: {} as IKnowledge,
+  const { data, isFetching: loading } = useQuery<IDataset>({
+    queryKey: [KnowledgeApiAction.FetchKnowledgeDetail, knowledgeBaseId],
+    initialData: {} as IDataset,
     gcTime: 0,
+    enabled: !!knowledgeBaseId && isEdit,
     queryFn: async () => {
-      const { data } = await kbService.get_kb_detail({
-        kb_id: knowledgeBaseId,
-      });
+      const { data } = await getKbDetail(knowledgeBaseId || '');
       return data?.data ?? {};
     },
   });
 
   return { data, loading };
+};
+
+export const DatasetPipelineConfigurationKeys = {
+  detail: (knowledgeBaseId: string | null | undefined) =>
+    [
+      KnowledgeApiAction.FetchDatasetPipelineConfiguration,
+      knowledgeBaseId,
+    ] as const,
+};
+
+export const useFetchDatasetPipelineConfiguration = (props?: {
+  isEdit?: boolean;
+}) => {
+  const { isEdit = true } = props || { isEdit: true };
+  const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const knowledgeBaseId = searchParams.get('id') || id;
+
+  const { data, isFetching: loading } = useQuery<IDataset>({
+    queryKey: DatasetPipelineConfigurationKeys.detail(knowledgeBaseId),
+    initialData: {} as IDataset,
+    gcTime: 0,
+    enabled: !!knowledgeBaseId && isEdit,
+    queryFn: async () => {
+      const { data } = await getKbDetail(knowledgeBaseId || '');
+      return data?.data ?? {};
+    },
+  });
+
+  return { data, loading };
+};
+
+export const ArtifactKeys = {
+  list: (
+    datasetId: string,
+    keywords: string,
+    topic?: string,
+    pageType?: string,
+  ) =>
+    [
+      KnowledgeApiAction.FetchArtifactList,
+      datasetId,
+      keywords,
+      topic,
+      pageType,
+    ] as const,
+  listByDataset: (datasetId: string) =>
+    [KnowledgeApiAction.FetchArtifactList, datasetId] as const,
+  detail: (datasetId: string, pageType: string, slug: string) =>
+    [KnowledgeApiAction.FetchArtifactPage, datasetId, pageType, slug] as const,
+};
+
+export const ArtifactTopicKeys = {
+  list: (datasetId: string, keywords: string) =>
+    [KnowledgeApiAction.FetchArtifactTopicList, datasetId, keywords] as const,
+  listByDataset: (datasetId: string) =>
+    [KnowledgeApiAction.FetchArtifactTopicList, datasetId] as const,
+};
+
+export const ArtifactAlterationKeys = {
+  detail: (datasetId: string, kind: string) =>
+    [KnowledgeApiAction.FetchArtifactAlteration, datasetId, kind] as const,
+};
+
+export function useFetchArtifactAlteration(kind: string) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<IArtifactAlteration | null>({
+    queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
+    initialData: null,
+    enabled: !!knowledgeBaseId && !!kind,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getArtifactsAlteration(knowledgeBaseId, kind);
+      return data?.data ?? null;
+    },
+  });
+
+  return { data, loading };
+}
+
+const wikiCommitKeys = {
+  list: (datasetId: string, pageType: string, slug: string) =>
+    [KnowledgeApiAction.FetchWikiCommits, datasetId, pageType, slug] as const,
+  detail: (datasetId: string, commitId: string) =>
+    [KnowledgeApiAction.FetchWikiCommit, datasetId, commitId] as const,
+};
+
+export const useFetchWikiCommits = (
+  artifact: IArtifact | null,
+  enabled = true,
+) => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const pageType = artifact?.page_type ?? '';
+  const slug = artifact?.slug ?? '';
+
+  const { data, isFetching: loading } =
+    useQuery<IWikiCommitListResponse | null>({
+      queryKey: wikiCommitKeys.list(knowledgeBaseId, pageType, slug),
+      enabled:
+        !!knowledgeBaseId && !!artifact && !!pageType && !!slug && enabled,
+      gcTime: 0,
+      queryFn: async () => {
+        const { data } = await listWikiCommits(knowledgeBaseId, pageType, slug);
+        // The merged file-commit endpoint returns {total, page, page_size, commits},
+        // while the existing components expect {total, items}. Normalize here.
+        const raw = (data?.data ?? {}) as {
+          total?: number;
+          items?: IWikiCommit[];
+          commits?: IWikiCommit[];
+        };
+        return {
+          total: raw.total ?? 0,
+          items: raw.items ?? raw.commits ?? [],
+        };
+      },
+    });
+
+  return {
+    commits: data?.items ?? [],
+    total: data?.total ?? 0,
+    loading,
+  };
+};
+
+export function useFetchWikiCommit(commitId: string | null) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<IWikiCommitDetail | null>({
+    queryKey: wikiCommitKeys.detail(knowledgeBaseId, commitId ?? ''),
+    enabled: !!knowledgeBaseId && !!commitId,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getWikiCommit(knowledgeBaseId, commitId!);
+      return data?.data ?? null;
+    },
+  });
+
+  return { data, loading };
+}
+
+type UseFetchArtifactListOptions = {
+  keywords?: string;
+  topic?: string;
+  pageType?: string;
+  enabled?: boolean;
+};
+
+export const useFetchArtifactList = (
+  options: UseFetchArtifactListOptions = {},
+) => {
+  const { keywords = '', topic, pageType, enabled = true } = options;
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage } =
+    useInfiniteQuery<{
+      artifacts: IArtifact[];
+      total: number;
+    }>({
+      queryKey: ArtifactKeys.list(knowledgeBaseId, keywords, topic, pageType),
+      enabled: !!knowledgeBaseId && enabled && !!topic,
+      gcTime: 0,
+      initialPageParam: 1,
+      queryFn: async ({ pageParam }) => {
+        const page = pageParam as number;
+        const { data } = await listArtifacts(knowledgeBaseId, {
+          page,
+          page_size: 30,
+          keywords,
+          topic,
+          page_type: pageType,
+        });
+
+        const responseData = data?.data;
+
+        return {
+          artifacts: responseData?.items ?? [],
+          total: responseData?.total ?? 0,
+        };
+      },
+      getNextPageParam: (lastPage, allPages) => {
+        const loadedCount = allPages.reduce(
+          (sum, page) => sum + page.artifacts.length,
+          0,
+        );
+        return loadedCount < lastPage.total ? allPages.length + 1 : undefined;
+      },
+    });
+
+  const artifacts = useMemo(
+    () => data?.pages.flatMap((page) => page.artifacts) ?? [],
+    [data],
+  );
+
+  const loading = isFetching || isFetchingNextPage;
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+      const threshold = 50;
+      if (
+        scrollHeight - scrollTop - clientHeight <= threshold &&
+        hasNextPage &&
+        !isFetchingNextPage
+      ) {
+        fetchNextPage();
+      }
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage],
+  );
+
+  return {
+    artifacts,
+    loading,
+    handleScroll,
+    hasMore: !!hasNextPage,
+  };
+};
+
+type UseFetchArtifactTopicListOptions = {
+  keywords?: string;
+  enabled?: boolean;
+};
+
+export const useFetchArtifactTopicList = (
+  options: UseFetchArtifactTopicListOptions = {},
+) => {
+  const { keywords = '', enabled = true } = options;
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage } =
+    useInfiniteQuery<{
+      topics: IArtifactTopic[];
+      total: number;
+    }>({
+      queryKey: ArtifactTopicKeys.list(knowledgeBaseId, keywords),
+      enabled: !!knowledgeBaseId && enabled,
+      gcTime: 0,
+      initialPageParam: 1,
+      queryFn: async ({ pageParam }) => {
+        const page = pageParam as number;
+        const { data } = await listArtifactTopics(knowledgeBaseId, {
+          page,
+          page_size: 30,
+          keywords,
+        });
+
+        const responseData = data?.data;
+
+        return {
+          topics: responseData?.items ?? [],
+          total: responseData?.total ?? 0,
+        };
+      },
+      getNextPageParam: (lastPage, allPages) => {
+        const loadedCount = allPages.reduce(
+          (sum, page) => sum + page.topics.length,
+          0,
+        );
+        return loadedCount < lastPage.total ? allPages.length + 1 : undefined;
+      },
+    });
+
+  const topics = useMemo(
+    () => data?.pages.flatMap((page) => page.topics) ?? [],
+    [data],
+  );
+
+  const loading = isFetching || isFetchingNextPage;
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+      const threshold = 50;
+      if (
+        scrollHeight - scrollTop - clientHeight <= threshold &&
+        hasNextPage &&
+        !isFetchingNextPage
+      ) {
+        fetchNextPage();
+      }
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage],
+  );
+
+  return {
+    topics,
+    loading,
+    handleScroll,
+    hasMore: !!hasNextPage,
+  };
+};
+
+export function useFetchArtifactPage(
+  artifact: IArtifact | null,
+  enabled = true,
+) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const pageType = artifact?.page_type ?? '';
+  const slug = artifact?.slug ?? '';
+
+  const { data, isFetching: loading } = useQuery<IArtifactPage | null>({
+    queryKey: ArtifactKeys.detail(knowledgeBaseId, pageType, slug),
+    enabled: !!knowledgeBaseId && !!artifact && !!pageType && !!slug && enabled,
+    queryFn: async () => {
+      const { data } = await getArtifactPage(knowledgeBaseId, pageType, slug);
+      return data?.data ?? null;
+    },
+  });
+
+  return { data, loading };
+}
+
+export const useUpdateArtifactPage = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation<
+    ResponseType<IArtifactPage>,
+    Error,
+    IUpdateArtifactPageRequestParams
+  >({
+    mutationKey: [KnowledgeApiAction.UpdateArtifactPage],
+    mutationFn: async (params) => {
+      const { data = {} } = await updateArtifactPage(
+        knowledgeBaseId,
+        params.pageType,
+        params.slug,
+        params.body,
+      );
+      if (data.code === 0) {
+        message.success(i18n.t(`message.updated`));
+        queryClient.invalidateQueries({
+          queryKey: ArtifactKeys.detail(
+            knowledgeBaseId,
+            params.pageType,
+            params.slug,
+          ),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, updateArtifactPage: mutateAsync };
 };
 
 export function useFetchKnowledgeGraph() {
@@ -278,6 +758,108 @@ export function useFetchKnowledgeGraph() {
   return { data, loading };
 }
 
+export const artifactGraphKeys = {
+  graph: (datasetId: string, params?: IFetchArtifactGraphRequestParams) =>
+    [
+      KnowledgeApiAction.FetchArtifactGraph,
+      datasetId,
+      params?.node,
+      params?.keywords,
+      params?.top_n,
+    ] as const,
+};
+
+export function useFetchArtifactGraph(
+  params?: IFetchArtifactGraphRequestParams,
+  options?: { enabled?: boolean },
+) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<IArtifactGraph>({
+    queryKey: artifactGraphKeys.graph(knowledgeBaseId, params),
+    initialData: { entities: [], relations: [] } as IArtifactGraph,
+    placeholderData: keepPreviousData,
+    enabled: !!knowledgeBaseId && (options?.enabled ?? true),
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await getArtifactGraph(knowledgeBaseId, params);
+      return data?.data ?? { entities: [], relations: [] };
+    },
+  });
+
+  return { data, loading };
+}
+
+export const DatasetStructureKeys = {
+  all: (datasetId: string) =>
+    [KnowledgeApiAction.FetchDatasetStructure, datasetId] as const,
+  kind: (datasetId: string, kind: string) =>
+    [KnowledgeApiAction.FetchDatasetStructure, datasetId, kind] as const,
+  kindWithKeywords: (datasetId: string, kind: string, keywords: string) =>
+    [
+      KnowledgeApiAction.FetchDatasetStructure,
+      datasetId,
+      kind,
+      keywords,
+    ] as const,
+};
+
+export function useFetchDatasetStructureGraph(kind: string, keywords?: string) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const enabled = !!knowledgeBaseId && !!kind;
+  const trimmedKeywords = keywords?.trim();
+
+  const { data, isFetching: loading } =
+    useQuery<IStructureGraphResponse | null>({
+      queryKey: trimmedKeywords
+        ? DatasetStructureKeys.kindWithKeywords(
+            knowledgeBaseId,
+            kind,
+            trimmedKeywords,
+          )
+        : DatasetStructureKeys.kind(knowledgeBaseId, kind),
+      initialData: null,
+      enabled,
+      gcTime: 0,
+      placeholderData: keepPreviousData,
+      queryFn: async () => {
+        const { data } = await getArtifactsStructure(
+          knowledgeBaseId,
+          kind,
+          trimmedKeywords,
+        );
+        return (data?.data as IStructureGraphResponse | null) ?? null;
+      },
+    });
+
+  return { data, loading };
+}
+
+export const useDeleteDatasetStructure = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [KnowledgeApiAction.DeleteDatasetStructure],
+    mutationFn: async (kind: string) => {
+      const { data } = await deleteArtifactsStructure(knowledgeBaseId, kind);
+      if (data?.code === 0) {
+        message.success(i18n.t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: DatasetStructureKeys.all(knowledgeBaseId),
+        });
+      }
+      return data?.code;
+    },
+  });
+
+  return { data, loading, deleteDatasetStructure: mutateAsync };
+};
+
 export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
   const { data, isFetching: loading } = useQuery<
     Record<string, Record<string, string[]>>
@@ -287,10 +869,515 @@ export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
     enabled: kbIds.length > 0,
     gcTime: 0,
     queryFn: async () => {
-      const { data } = await kbService.getMeta({ kb_ids: kbIds.join(',') });
+      const { data } = await kbService.getMeta({
+        dataset_ids: kbIds.join(','),
+      });
       return data?.data ?? {};
     },
   });
 
   return { data, loading };
 }
+
+export function useFetchKnowledgeMetadataKeys(kbIds: string[] = []) {
+  const sortedKbIds = useMemo(() => [...kbIds].sort(), [kbIds]);
+  const { data, isFetching: loading } = useQuery<string[]>({
+    queryKey: [KnowledgeApiAction.FetchMetadataKeys, sortedKbIds],
+    initialData: [],
+    enabled: sortedKbIds.length > 0,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await kbService.getMetaKeys({
+        kb_ids: sortedKbIds.join(','),
+      });
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading };
+}
+
+export const useRemoveKnowledgeGraph = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [KnowledgeApiAction.RemoveKnowledgeGraph],
+    mutationFn: async () => {
+      const { data } = await deleteKnowledgeGraph(knowledgeBaseId);
+      if (data.code === 0) {
+        message.success(i18n.t(`message.deleted`));
+        queryClient.invalidateQueries({
+          queryKey: [KnowledgeApiAction.FetchKnowledgeGraph],
+        });
+      }
+      return data?.code;
+    },
+  });
+
+  return { data, loading, removeKnowledgeGraph: mutateAsync };
+};
+
+export const useClearWiki = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [KnowledgeApiAction.ClearWiki],
+    mutationFn: async () => {
+      const { data } = await clearWiki(knowledgeBaseId);
+      if (data?.code === 0) {
+        message.success(i18n.t('message.deleted'));
+        queryClient.invalidateQueries({
+          queryKey: ArtifactKeys.listByDataset(knowledgeBaseId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: ArtifactTopicKeys.listByDataset(knowledgeBaseId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: artifactGraphKeys.graph(knowledgeBaseId),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, clearWiki: mutateAsync };
+};
+
+export const useRunArtifactIndex = (kind: string) => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const queryClient = useQueryClient();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: [KnowledgeApiAction.RunArtifactIndex],
+    mutationFn: async () => {
+      const { data } = await runIndex(knowledgeBaseId, 'artifact');
+      if (data?.code === 0) {
+        message.success(i18n.t('message.operated'));
+        queryClient.invalidateQueries({
+          queryKey: ArtifactAlterationKeys.detail(knowledgeBaseId, kind),
+        });
+        queryClient.invalidateQueries({
+          queryKey: ArtifactKeys.listByDataset(knowledgeBaseId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: ArtifactTopicKeys.listByDataset(knowledgeBaseId),
+        });
+        queryClient.invalidateQueries({
+          queryKey: DatasetGenerateKeys.traceById(
+            GenerateType.Artifact,
+            knowledgeBaseId,
+          ),
+        });
+      }
+      return data;
+    },
+  });
+
+  return { data, loading, runArtifactIndex: mutateAsync };
+};
+
+const KNOWLEDGE_LIST_PAGE_SIZE = 10;
+
+export const KnowledgeListKeys = {
+  list: (
+    shouldFilterListWithoutDocument: boolean,
+    keywords: string,
+    pageSize: number,
+  ) =>
+    [
+      KnowledgeApiAction.FetchKnowledgeList,
+      shouldFilterListWithoutDocument,
+      keywords,
+      pageSize,
+    ] as const,
+  byIds: (ids: string[]) =>
+    [KnowledgeApiAction.FetchKnowledgeList, 'byIds', ids] as const,
+};
+
+export const useFetchKnowledgeList = (
+  shouldFilterListWithoutDocument: boolean = false,
+  keywords = '',
+  pageSize: number = KNOWLEDGE_LIST_PAGE_SIZE,
+): {
+  list: IDataset[];
+  loading: boolean;
+  fetchNextPage: () => void;
+  hasNextPage: boolean;
+  isFetchingNextPage: boolean;
+  handleScroll: (e: React.UIEvent<HTMLDivElement>) => void;
+} => {
+  const { data, fetchNextPage, hasNextPage, isFetching, isFetchingNextPage } =
+    useInfiniteQuery<{ items: IDataset[]; total: number }>({
+      queryKey: KnowledgeListKeys.list(
+        shouldFilterListWithoutDocument,
+        keywords,
+        pageSize,
+      ),
+      gcTime: 0,
+      initialPageParam: 1,
+      queryFn: async ({ pageParam }) => {
+        const page = pageParam as number;
+        const { data } = await listDataset({
+          page,
+          page_size: pageSize,
+          ...(keywords ? { ext: { keywords } } : {}),
+        });
+        return {
+          items: (data?.data ?? []) as IDataset[],
+          total: data?.total_datasets ?? 0,
+        };
+      },
+      getNextPageParam: (lastPage, allPages) => {
+        const loaded = allPages.reduce(
+          (total, page) => total + page.items.length,
+          0,
+        );
+        return loaded < lastPage.total ? allPages.length + 1 : undefined;
+      },
+    });
+
+  const list = useMemo(() => {
+    const all = data?.pages.flatMap((page) => page.items) ?? [];
+    return shouldFilterListWithoutDocument
+      ? all.filter((x) => x.chunk_count > 0)
+      : all;
+  }, [data, shouldFilterListWithoutDocument]);
+
+  const handleScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+      const threshold = 50;
+      if (
+        scrollHeight - scrollTop - clientHeight <= threshold &&
+        hasNextPage &&
+        !isFetchingNextPage
+      ) {
+        fetchNextPage();
+      }
+    },
+    [fetchNextPage, hasNextPage, isFetchingNextPage],
+  );
+
+  return {
+    list,
+    loading: isFetching,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    handleScroll,
+  };
+};
+
+/**
+ * For consumers that need the COMPLETE list (no scroll UI).
+ * Uses a large page size to minimize round-trips, and auto-loads
+ * until exhausted.
+ */
+export const useFetchAllKnowledgeList = (
+  shouldFilterListWithoutDocument: boolean = false,
+  keywords = '',
+): { list: IDataset[]; loading: boolean } => {
+  const { list, loading, hasNextPage, fetchNextPage } = useFetchKnowledgeList(
+    shouldFilterListWithoutDocument,
+    keywords,
+    100,
+  );
+
+  useEffect(() => {
+    if (hasNextPage && !loading) {
+      fetchNextPage();
+    }
+  }, [hasNextPage, loading, fetchNextPage]);
+
+  return { list, loading };
+};
+
+export const useSelectKnowledgeOptions = () => {
+  const { list } = useFetchAllKnowledgeList();
+
+  const options = list?.map((item) => ({
+    label: item.name,
+    value: item.id,
+  }));
+
+  return options;
+};
+
+/**
+ * Fetch datasets by a set of IDs. Used to resolve the names of
+ * already-selected datasets that are not present in the first page of
+ * the paginated list so they can be echoed back in the form field.
+ */
+export const useFetchDatasetsByIds = (ids: string[]) => {
+  const sortedIds = useMemo(() => [...ids].sort(), [ids]);
+  const { data, isFetching: loading } = useQuery<IDataset[]>({
+    queryKey: KnowledgeListKeys.byIds(sortedIds),
+    enabled: sortedIds.length > 0,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await listDatasetByIds(sortedIds);
+      return (data?.data ?? []) as IDataset[];
+    },
+  });
+
+  return { data, loading };
+};
+
+//#region tags
+export const useRenameTag = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['renameTag'],
+    mutationFn: async (params: IRenameTag) => {
+      const { data } = await renameTag(knowledgeBaseId, params);
+      if (data.code === 0) {
+        message.success(i18n.t(`message.modified`));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchTagList'],
+        });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, renameTag: mutateAsync };
+};
+
+export const useTagIsRenaming = () => {
+  return useIsMutating({ mutationKey: ['renameTag'] }) > 0;
+};
+
+export const useFetchTagListByKnowledgeIds = () => {
+  const [knowledgeIds, setKnowledgeIds] = useState<string[]>([]);
+
+  const { data, isFetching: loading } = useQuery<Array<[string, number]>>({
+    queryKey: ['fetchTagListByKnowledgeIds', knowledgeIds],
+    enabled: knowledgeIds.length > 0,
+    initialData: [],
+    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
+    queryFn: async () => {
+      const { data } = await kbService.listTagByKnowledgeIds({
+        dataset_ids: knowledgeIds.join(','),
+      });
+      const list = (data?.data || []) as Array<
+        [string, number] | { value?: string; count?: number }
+      >;
+      return list.flatMap((tag): Array<[string, number]> => {
+        if (Array.isArray(tag)) {
+          return [tag];
+        }
+        return tag.value ? [[tag.value, tag.count ?? 0]] : [];
+      });
+    },
+  });
+
+  return { list: data, loading, setKnowledgeIds };
+};
+
+export const useFetchTagList = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const { data, isFetching: loading } = useQuery<Array<[string, number]>>({
+    queryKey: ['fetchTagList'],
+    initialData: [],
+    gcTime: 0, // https://tanstack.com/query/latest/docs/framework/react/guides/caching?from=reactQueryV3
+    queryFn: async () => {
+      const { data } = await listTag(knowledgeBaseId);
+      const list = data?.data || [];
+      return list;
+    },
+  });
+
+  return { list: data, loading };
+};
+
+export const useDeleteTag = () => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
+  const queryClient = useQueryClient();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['deleteTag'],
+    mutationFn: async (tags: string[]) => {
+      const { data } = await removeTag(knowledgeBaseId, tags);
+      if (data.code === 0) {
+        message.success(i18n.t(`message.deleted`));
+        queryClient.invalidateQueries({
+          queryKey: ['fetchTagList'],
+        });
+      }
+      return data?.data ?? [];
+    },
+  });
+
+  return { data, loading, deleteTag: mutateAsync };
+};
+
+// #endregion
+
+//#region Retrieval testing
+
+export const useTestChunkRetrieval = (): ResponsePostType<ITestingResult> & {
+  testChunk: (...params: any[]) => void;
+} => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const { page, size: pageSize } = useSetPaginationParams();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['testChunk'], // This method is invalid
+    gcTime: 0,
+    mutationFn: async (values: any) => {
+      const { data } = await kbService.retrievalTest({
+        ...values,
+        kb_id: values.kb_id ?? knowledgeBaseId,
+        page,
+        size: pageSize,
+      });
+      if (data.code === 0) {
+        const res = data.data;
+        return {
+          ...res,
+          documents: res.doc_aggs,
+        };
+      }
+      return (
+        data?.data ?? {
+          chunks: [],
+          documents: [],
+          total: 0,
+        }
+      );
+    },
+  });
+
+  return {
+    data: data ?? { chunks: [], documents: [], total: 0 },
+    loading,
+    testChunk: mutateAsync,
+  };
+};
+
+export const useTestChunkAllRetrieval = (): ResponsePostType<ITestingResult> & {
+  testChunkAll: (...params: any[]) => void;
+} => {
+  const knowledgeBaseId = useKnowledgeBaseId();
+  const { page, size: pageSize } = useSetPaginationParams();
+
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: ['testChunkAll'], // This method is invalid
+    gcTime: 0,
+    mutationFn: async (values: any) => {
+      const { data } = await kbService.retrievalTest({
+        ...values,
+        kb_id: values.kb_id ?? knowledgeBaseId,
+        doc_ids: [],
+        page,
+        size: pageSize,
+      });
+      if (data.code === 0) {
+        const res = data.data;
+        return {
+          ...res,
+          documents: res.doc_aggs,
+        };
+      }
+      return (
+        data?.data ?? {
+          chunks: [],
+          documents: [],
+          total: 0,
+        }
+      );
+    },
+  });
+
+  return {
+    data: data ?? { chunks: [], documents: [], total: 0 },
+    loading,
+    testChunkAll: mutateAsync,
+  };
+};
+
+export const useChunkIsTesting = () => {
+  return useIsMutating({ mutationKey: ['testChunk'] }) > 0;
+};
+
+export const useSelectTestingResult = (): ITestingResult => {
+  const data = useMutationState({
+    filters: { mutationKey: ['testChunk'] },
+    select: (mutation) => {
+      return mutation.state.data;
+    },
+  });
+  return (data.filter((x) => x !== undefined).at(-1) ?? {
+    chunks: [],
+    documents: [],
+    total: 0,
+  }) as ITestingResult;
+};
+
+export const useSelectIsTestingSuccess = () => {
+  const status = useMutationState({
+    filters: { mutationKey: ['testChunk'] },
+    select: (mutation) => {
+      return mutation.state.status;
+    },
+  });
+  return status.at(-1) === 'success';
+};
+
+export const useAllTestingSuccess = () => {
+  const status = useMutationState({
+    filters: { mutationKey: ['testChunkAll'] },
+    select: (mutation) => {
+      return mutation.state.status;
+    },
+  });
+  return status.at(-1) === 'success';
+};
+
+export const useAllTestingResult = (): ITestingResult => {
+  const data = useMutationState({
+    filters: { mutationKey: ['testChunkAll'] },
+    select: (mutation) => {
+      return mutation.state.data;
+    },
+  });
+  return (data.filter((x) => x !== undefined).at(-1) ?? {
+    chunks: [],
+    documents: [],
+    total: 0,
+  }) as ITestingResult;
+};
+//#endregion

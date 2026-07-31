@@ -134,7 +134,7 @@ export function VariableDialog({
         ></VariableForm>
         <DialogFooter>
           <Button type="submit" form={FormId}>
-            Confirm
+            {t('modal.okText')}
           </Button>
         </DialogFooter>
       </DialogContent>

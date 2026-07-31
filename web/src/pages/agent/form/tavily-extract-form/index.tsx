@@ -10,6 +10,7 @@ import {
 import { RAGFlowSelect } from '@/components/ui/select';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { t } from 'i18next';
 import { memo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
@@ -79,12 +80,12 @@ function TavilyExtractForm({ node }: INextOperatorForm) {
             name="extract_depth"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Extract Depth</FormLabel>
+                <FormLabel>{t('flow.extractDepth')}</FormLabel>
                 <FormControl>
                   <RAGFlowSelect
                     placeholder="shadcn"
                     {...field}
-                    options={buildOptions(TavilyExtractDepth)}
+                    options={buildOptions(TavilyExtractDepth, t, 'flow')}
                   />
                 </FormControl>
                 <FormMessage />
@@ -96,7 +97,7 @@ function TavilyExtractForm({ node }: INextOperatorForm) {
             name="format"
             render={({ field }) => (
               <FormItem>
-                <FormLabel>Format</FormLabel>
+                <FormLabel>{t('flow.format')}</FormLabel>
                 <FormControl>
                   <RAGFlowSelect
                     placeholder="shadcn"

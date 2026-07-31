@@ -1,46 +1,21 @@
-import { ChatSearchParams, MessageType } from '@/constants/chat';
+import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
+import { MessageType } from '@/constants/chat';
 import {
   useHandleMessageInputChange,
   useRegenerateMessage,
   useSelectDerivedMessages,
   useSendMessageWithSse,
 } from '@/hooks/logic-hooks';
-import {
-  useFetchConversation,
-  useGetChatSearchParams,
-  useUpdateConversation,
-} from '@/hooks/use-chat-request';
-import { Message } from '@/interfaces/database/chat';
+import { useGetChatSearchParams } from '@/hooks/use-chat-request';
+import { IMessage } from '@/interfaces/database/chat';
 import api from '@/utils/api';
 import { trim } from 'lodash';
-import { useCallback, useEffect, useMemo } from 'react';
-import { useParams, useSearchParams } from 'umi';
+import { useCallback, useEffect } from 'react';
+import { useParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
-import { IMessage } from '../chat/interface';
+import { useCreateConversationBeforeSendMessage } from './use-chat-url';
 import { useFindPrologueFromDialogList } from './use-select-conversation-list';
 import { useUploadFile } from './use-upload-file';
-
-export const useSetChatRouteParams = () => {
-  const [currentQueryParameters, setSearchParams] = useSearchParams();
-  const newQueryParameters: URLSearchParams = useMemo(
-    () => new URLSearchParams(currentQueryParameters.toString()),
-    [currentQueryParameters],
-  );
-
-  const setConversationIsNew = useCallback(
-    (value: string) => {
-      newQueryParameters.set(ChatSearchParams.isNew, value);
-      setSearchParams(newQueryParameters);
-    },
-    [newQueryParameters, setSearchParams],
-  );
-
-  const getConversationIsNew = useCallback(() => {
-    return newQueryParameters.get(ChatSearchParams.isNew);
-  }, [newQueryParameters]);
-
-  return { setConversationIsNew, getConversationIsNew };
-};
 
 export const useSelectNextMessages = () => {
   const {
@@ -54,8 +29,7 @@ export const useSelectNextMessages = () => {
     removeMessageById,
     removeMessagesAfterCurrentMessage,
   } = useSelectDerivedMessages();
-  const { data: conversation, loading } = useFetchConversation();
-  const { conversationId, isNew } = useGetChatSearchParams();
+  const { isNew, conversationId } = useGetChatSearchParams();
   const { id: dialogId } = useParams();
   const prologue = useFindPrologueFromDialogList();
 
@@ -65,117 +39,78 @@ export const useSelectNextMessages = () => {
         role: MessageType.Assistant,
         content: prologue,
         id: uuid(),
+        conversationId: conversationId,
       } as IMessage;
 
       setDerivedMessages([nextMessage]);
     }
-  }, [dialogId, isNew, prologue, setDerivedMessages]);
+  }, [conversationId, dialogId, isNew, prologue, setDerivedMessages]);
 
   useEffect(() => {
     addPrologue();
   }, [addPrologue]);
 
-  useEffect(() => {
-    if (
-      conversationId &&
-      isNew !== 'true' &&
-      conversation.message?.length > 0
-    ) {
-      setDerivedMessages(conversation.message);
-    }
-
-    if (!conversationId) {
-      setDerivedMessages([]);
-    }
-  }, [conversation.message, conversationId, setDerivedMessages, isNew]);
-
   return {
     scrollRef,
     messageContainerRef,
     derivedMessages,
-    loading,
     addNewestAnswer,
     addNewestQuestion,
     removeLatestMessage,
     removeMessageById,
     removeMessagesAfterCurrentMessage,
+    setDerivedMessages,
   };
 };
 
-export const useSetConversation = () => {
-  const { id: dialogId } = useParams();
-  const { updateConversation } = useUpdateConversation();
-
-  const setConversation = useCallback(
-    async (
-      message: string,
-      isNew: boolean = false,
-      conversationId?: string,
-    ) => {
-      const data = await updateConversation({
-        dialog_id: dialogId,
-        name: message,
-        is_new: isNew,
-        conversation_id: conversationId,
-        message: [
-          {
-            role: MessageType.Assistant,
-            content: message,
-          },
-        ],
-      });
-
-      return data;
-    },
-    [updateConversation, dialogId],
-  );
-
-  return { setConversation };
-};
-
 export const useSendMessage = (controller: AbortController) => {
-  const { setConversation } = useSetConversation();
   const { conversationId, isNew } = useGetChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
 
-  const { handleUploadFile, fileIds, clearFileIds, isUploading } =
+  const { handleUploadFile, isUploading, removeFile, files, clearFiles } =
     useUploadFile();
 
-  const { send, answer, done } = useSendMessageWithSse(
-    api.completeConversation,
-  );
+  const { id: chatId } = useParams();
+  const { send, answer, done } = useSendMessageWithSse();
   const {
     scrollRef,
     messageContainerRef,
     derivedMessages,
-    loading,
     addNewestAnswer,
     addNewestQuestion,
     removeLatestMessage,
     removeMessageById,
     removeMessagesAfterCurrentMessage,
+    setDerivedMessages,
   } = useSelectNextMessages();
-  const { setConversationIsNew, getConversationIsNew } =
-    useSetChatRouteParams();
-
-  const stopOutputMessage = useCallback(() => {
-    controller.abort();
-  }, [controller]);
 
   const sendMessage = useCallback(
     async ({
       message,
       currentConversationId,
       messages,
+      enableInternet,
+      enableThinking,
     }: {
-      message: Message;
+      message: IMessage;
       currentConversationId?: string;
-      messages?: Message[];
-    }) => {
+      messages?: IMessage[];
+    } & NextMessageInputOnPressEnterParameter) => {
+      const sessionId = currentConversationId ?? conversationId;
       const res = await send(
+        api.completionUrl,
         {
-          conversation_id: currentConversationId ?? conversationId,
-          messages: [...(messages ?? derivedMessages ?? []), message],
+          chat_id: chatId,
+          session_id: sessionId,
+          // An explicitly provided list is authoritative, even when empty
+          // (e.g. regenerating the first question must truncate history).
+          messages: [
+            ...(Array.isArray(messages) ? messages : (derivedMessages ?? [])),
+            message,
+          ],
+          pass_all_history_messages: true,
+          reasoning: Number(enableThinking),
+          internet: enableInternet,
         },
         controller,
       );
@@ -190,42 +125,11 @@ export const useSendMessage = (controller: AbortController) => {
     [
       derivedMessages,
       conversationId,
+      chatId,
       removeLatestMessage,
       setValue,
       send,
       controller,
-    ],
-  );
-
-  const handleSendMessage = useCallback(
-    async (message: Message) => {
-      const isNew = getConversationIsNew();
-      if (isNew !== 'true') {
-        sendMessage({ message });
-      } else {
-        const data = await setConversation(
-          message.content,
-          true,
-          conversationId,
-        );
-        if (data.code === 0) {
-          setConversationIsNew('');
-          const id = data.data.id;
-          // currentConversationIdRef.current = id;
-          sendMessage({
-            message,
-            currentConversationId: id,
-            messages: data.data.message,
-          });
-        }
-      }
-    },
-    [
-      setConversation,
-      sendMessage,
-      setConversationIsNew,
-      getConversationIsNew,
-      conversationId,
     ],
   );
 
@@ -235,42 +139,85 @@ export const useSendMessage = (controller: AbortController) => {
     messages: derivedMessages,
   });
 
+  const { createConversationBeforeSendMessage } =
+    useCreateConversationBeforeSendMessage();
+
+  const handlePressEnter = useCallback(
+    async ({
+      enableThinking,
+      enableInternet,
+    }: NextMessageInputOnPressEnterParameter) => {
+      if (trim(value) === '' || !done) return;
+
+      const data = await createConversationBeforeSendMessage(value);
+
+      if (data === undefined) {
+        return;
+      }
+
+      const { targetConversationId, currentMessages } = data;
+
+      const id = uuid();
+
+      addNewestQuestion({
+        content: value,
+        files: files,
+        id,
+        role: MessageType.User,
+        conversationId: targetConversationId,
+      });
+
+      if (done) {
+        setValue('');
+        sendMessage({
+          currentConversationId: targetConversationId,
+          // For an existing conversation currentMessages is empty; fall back
+          // to derivedMessages instead of sending an empty history.
+          messages: currentMessages.length > 0 ? currentMessages : undefined,
+          message: {
+            id,
+            content: value.trim(),
+            role: MessageType.User,
+            files,
+            conversationId: targetConversationId,
+          },
+          enableInternet,
+          enableThinking,
+        });
+      }
+
+      clearFiles();
+
+      // Auto scroll to bottom when sending new message
+      if (messageContainerRef.current) {
+        const el = messageContainerRef.current;
+
+        requestAnimationFrame(() => {
+          el.scrollTo({
+            top: el.scrollHeight,
+          });
+        });
+      }
+    },
+    [
+      value,
+      done,
+      createConversationBeforeSendMessage,
+      addNewestQuestion,
+      files,
+      clearFiles,
+      setValue,
+      sendMessage,
+      messageContainerRef,
+    ],
+  );
+
   useEffect(() => {
     //  #1289
     if (answer.answer && conversationId && isNew !== 'true') {
       addNewestAnswer(answer);
     }
   }, [answer, addNewestAnswer, conversationId, isNew]);
-
-  const handlePressEnter = useCallback(() => {
-    if (trim(value) === '') return;
-    const id = uuid();
-
-    addNewestQuestion({
-      content: value,
-      doc_ids: fileIds,
-      id,
-      role: MessageType.User,
-    });
-    if (done) {
-      setValue('');
-      handleSendMessage({
-        id,
-        content: value.trim(),
-        role: MessageType.User,
-        doc_ids: fileIds,
-      });
-    }
-    clearFileIds();
-  }, [
-    value,
-    addNewestQuestion,
-    fileIds,
-    done,
-    clearFileIds,
-    setValue,
-    handleSendMessage,
-  ]);
 
   return {
     handlePressEnter,
@@ -279,13 +226,13 @@ export const useSendMessage = (controller: AbortController) => {
     setValue,
     regenerateMessage,
     sendLoading: !done,
-    loading,
     scrollRef,
     messageContainerRef,
     derivedMessages,
     removeMessageById,
-    stopOutputMessage,
     handleUploadFile,
     isUploading,
+    removeFile,
+    setDerivedMessages,
   };
 };

@@ -17,7 +17,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from operator import attrgetter
 
 import pytest
-from configs import DATASET_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN
+from configs import DATASET_NAME_LIMIT, DEFAULT_PARSER_CONFIG, HOST_ADDRESS, INVALID_API_TOKEN, IS_GO_PROXY, SDK_UNAUTHORIZED_ERROR_MESSAGE
 from hypothesis import example, given, settings
 from ragflow_sdk import DataSet, RAGFlow
 from utils import encode_avatar
@@ -27,20 +27,20 @@ from utils.hypothesis_utils import valid_names
 
 @pytest.mark.usefixtures("clear_datasets")
 class TestAuthorization:
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "invalid_auth, expected_message",
         [
-            (None, "Authentication error: API key is invalid!"),
-            (INVALID_API_TOKEN, "Authentication error: API key is invalid!"),
+            (None, SDK_UNAUTHORIZED_ERROR_MESSAGE),
+            (INVALID_API_TOKEN, SDK_UNAUTHORIZED_ERROR_MESSAGE),
         ],
         ids=["empty_auth", "invalid_api_token"],
     )
     def test_auth_invalid(self, invalid_auth, expected_message):
         client = RAGFlow(invalid_auth, HOST_ADDRESS)
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.create_dataset(**{"name": "auth_test"})
-        assert str(excinfo.value) == expected_message
+        assert str(exception_info.value) == expected_message
 
 
 @pytest.mark.usefixtures("clear_datasets")
@@ -51,7 +51,10 @@ class TestCapability:
         for i in range(count):
             payload = {"name": f"dataset_{i}"}
             client.create_dataset(**payload)
-        assert len(client.list_datasets(page_size=2000)) == count
+        datasets = []
+        for page in range(1, (count // 100) + 1):
+            datasets.extend(client.list_datasets(page=page, page_size=100))
+        assert len(datasets) == count
 
     @pytest.mark.p3
     def test_create_dataset_concurrent(self, client):
@@ -85,9 +88,16 @@ class TestDatasetCreate:
         ids=["empty_name", "space_name", "too_long_name", "invalid_name", "None_name"],
     )
     def test_name_invalid(self, client, name, expected_message):
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.create_dataset(**{"name": name})
-        assert expected_message in str(excinfo.value), str(excinfo.value)
+        if IS_GO_PROXY:
+            if name == "":
+                expected_message = "failed on the 'required' tag"
+            elif isinstance(name, str) and not name.strip():
+                expected_message = "dataset name can't be empty"
+            elif isinstance(name, str):
+                expected_message = f"Dataset name length is {len(name)} which is large than {DATASET_NAME_LIMIT}"
+        assert expected_message in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_name_duplicated(self, client):
@@ -95,9 +105,8 @@ class TestDatasetCreate:
         payload = {"name": name}
         client.create_dataset(**payload)
 
-        with pytest.raises(Exception) as excinfo:
-            client.create_dataset(**payload)
-        assert str(excinfo.value) == f"Dataset name '{name}' already exists", str(excinfo.value)
+        dataset = client.create_dataset(**payload)
+        assert dataset.name == name + "(1)", str(dataset)
 
     @pytest.mark.p3
     def test_name_case_insensitive(self, client):
@@ -106,9 +115,8 @@ class TestDatasetCreate:
         client.create_dataset(**payload)
 
         payload = {"name": name.lower()}
-        with pytest.raises(Exception) as excinfo:
-            client.create_dataset(**payload)
-        assert str(excinfo.value) == f"Dataset name '{name.lower()}' already exists", str(excinfo.value)
+        dataset = client.create_dataset(**payload)
+        assert dataset.name == name.lower() + "(1)", str(dataset)
 
     @pytest.mark.p2
     def test_avatar(self, client, tmp_path):
@@ -119,20 +127,20 @@ class TestDatasetCreate:
         }
         client.create_dataset(**payload)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_avatar_exceeds_limit_length(self, client):
         payload = {"name": "avatar_exceeds_limit_length", "avatar": "a" * 65536}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "String should have at most 65535 characters" in str(excinfo.value), str(excinfo.value)
+        assert "String should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     @pytest.mark.parametrize(
         "name, prefix, expected_message",
         [
-            ("empty_prefix", "", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("missing_comma", "data:image/png;base64", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
-            ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "Invalid MIME prefix format. Must start with 'data:'"),
+            ("empty_prefix", "", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("missing_comma", "data:image/png;base64", "missing MIME prefix. Expected format: data:<mime>;base64,<data>"),
+            ("unsupported_mine_type", "invalid_mine_prefix:image/png;base64,", "invalid MIME prefix format. Must start with 'data:'"),
             ("invalid_mine_type", "data:unsupported_mine_type;base64,", "Unsupported MIME type. Allowed: ['image/jpeg', 'image/png']"),
         ],
         ids=["empty_prefix", "missing_comma", "unsupported_mine_type", "invalid_mine_type"],
@@ -143,9 +151,9 @@ class TestDatasetCreate:
             "name": name,
             "avatar": f"{prefix}{encode_avatar(fn)}",
         }
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert expected_message in str(excinfo.value), str(excinfo.value)
+        assert expected_message in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_avatar_unset(self, client):
@@ -159,12 +167,12 @@ class TestDatasetCreate:
         dataset = client.create_dataset(**payload)
         assert dataset.description == "description", str(dataset)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_description_exceeds_limit_length(self, client):
         payload = {"name": "description_exceeds_limit_length", "description": "a" * 65536}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "String should have at most 65535 characters" in str(excinfo.value), str(excinfo.value)
+        assert "String should have at most 65535 characters" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p3
     def test_description_unset(self, client):
@@ -182,11 +190,10 @@ class TestDatasetCreate:
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
-            ("BAAI/bge-large-zh-v1.5@BAAI", "BAAI/bge-large-zh-v1.5@BAAI"),
-            ("maidalun1020/bce-embedding-base_v1@Youdao", "maidalun1020/bce-embedding-base_v1@Youdao"),
-            ("embedding-3@ZHIPU-AI", "embedding-3@ZHIPU-AI"),
+            ("BAAI/bge-small-en-v1.5@Builtin", "BAAI/bge-small-en-v1.5@Builtin"),
+            ("embedding-3@ZHIPU-AI", "embedding-3@CI@ZHIPU-AI"),
         ],
-        ids=["builtin_baai", "builtin_youdao", "tenant_zhipu"],
+        ids=["builtin_baai", "tenant_zhipu"],
     )
     def test_embedding_model(self, client, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
@@ -197,7 +204,7 @@ class TestDatasetCreate:
     @pytest.mark.parametrize(
         "name, embedding_model",
         [
-            ("unknown_llm_name", "unknown@ZHIPU-AI"),
+            ("unknown_llm_name", "unknown@CI@ZHIPU-AI"),
             ("unknown_llm_factory", "embedding-3@unknown"),
             ("tenant_no_auth_default_tenant_llm", "text-embedding-v3@Tongyi-Qianwen"),
             ("tenant_no_auth", "text-embedding-3-small@OpenAI"),
@@ -206,12 +213,9 @@ class TestDatasetCreate:
     )
     def test_embedding_model_invalid(self, client, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        if "tenant_no_auth" in name:
-            assert str(excinfo.value) == f"Unauthorized model: <{embedding_model}>", str(excinfo.value)
-        else:
-            assert str(excinfo.value) == f"Unsupported model: <{embedding_model}>", str(excinfo.value)
+        assert "not found" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     @pytest.mark.parametrize(
@@ -219,36 +223,36 @@ class TestDatasetCreate:
         [
             ("empty", ""),
             ("space", " "),
-            ("missing_at", "BAAI/bge-large-zh-v1.5BAAI"),
-            ("missing_model_name", "@BAAI"),
-            ("missing_provider", "BAAI/bge-large-zh-v1.5@"),
-            ("whitespace_only_model_name", " @BAAI"),
-            ("whitespace_only_provider", "BAAI/bge-large-zh-v1.5@ "),
+            ("missing_at", "BAAI/bge-small-en-v1.5Builtin"),
+            ("missing_model_name", "@Builtin"),
+            ("missing_provider", "BAAI/bge-small-en-v1.5@"),
+            ("whitespace_only_model_name", " @Builtin"),
+            ("whitespace_only_provider", "BAAI/bge-small-en-v1.5@ "),
         ],
         ids=["empty", "space", "missing_at", "empty_model_name", "empty_provider", "whitespace_only_model_name", "whitespace_only_provider"],
     )
     def test_embedding_model_format(self, client, name, embedding_model):
         payload = {"name": name, "embedding_model": embedding_model}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
         if name in ["empty", "space", "missing_at"]:
-            assert "Embedding model identifier must follow <model_name>@<provider> format" in str(excinfo.value), str(excinfo.value)
+            assert "embedding model identifier must follow <model_name>@<provider> format" in str(exception_info.value), str(exception_info.value)
         else:
-            assert "Both model_name and provider must be non-empty strings" in str(excinfo.value), str(excinfo.value)
+            assert "both model_name and provider must be non-empty strings" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_embedding_model_unset(self, client):
         payload = {"name": "embedding_model_unset"}
         dataset = client.create_dataset(**payload)
-        assert dataset.embedding_model == "BAAI/bge-large-zh-v1.5@BAAI", str(dataset)
+        assert dataset.embedding_model.startswith("BAAI/bge-small-en-v1.5@Local@Builtin") if IS_GO_PROXY else dataset.embedding_model == "BAAI/bge-small-en-v1.5@Local@Builtin", str(dataset)
 
     @pytest.mark.p2
     def test_embedding_model_none(self, client):
         payload = {"name": "embedding_model_none", "embedding_model": None}
         dataset = client.create_dataset(**payload)
-        assert dataset.embedding_model == "BAAI/bge-large-zh-v1.5@BAAI", str(dataset)
+        assert dataset.embedding_model.startswith("BAAI/bge-small-en-v1.5@Local@Builtin") if IS_GO_PROXY else dataset.embedding_model == "BAAI/bge-small-en-v1.5@Local@Builtin", str(dataset)
 
-    @pytest.mark.p1
+    @pytest.mark.p2
     @pytest.mark.parametrize(
         "name, permission",
         [
@@ -276,9 +280,9 @@ class TestDatasetCreate:
     )
     def test_permission_invalid(self, client, name, permission):
         payload = {"name": name, "permission": permission}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "Input should be 'me' or 'team'" in str(excinfo.value)
+        assert "Input should be 'me' or 'team'" in str(exception_info.value)
 
     @pytest.mark.p2
     def test_permission_unset(self, client):
@@ -289,9 +293,9 @@ class TestDatasetCreate:
     @pytest.mark.p3
     def test_permission_none(self, client):
         payload = {"name": "permission_none", "permission": None}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "not instance of" in str(excinfo.value), str(excinfo.value)
+        assert "not instance of" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -309,8 +313,9 @@ class TestDatasetCreate:
             ("qa", "qa"),
             ("table", "table"),
             ("tag", "tag"),
+            ("resume", "resume"),
         ],
-        ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag"],
+        ids=["naive", "book", "email", "laws", "manual", "one", "paper", "picture", "presentation", "qa", "table", "tag", "resume"],
     )
     def test_chunk_method(self, client, name, chunk_method):
         payload = {"name": name, "chunk_method": chunk_method}
@@ -328,9 +333,13 @@ class TestDatasetCreate:
     )
     def test_chunk_method_invalid(self, client, name, chunk_method):
         payload = {"name": name, "chunk_method": chunk_method}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table' or 'tag'" in str(excinfo.value), str(excinfo.value)
+        error_message = str(exception_info.value)
+        if IS_GO_PROXY:
+            assert error_message.startswith("Input should be 'naive', 'book'") and error_message.endswith("or 'tag'"), error_message
+        else:
+            assert "Input should be 'naive', 'book', 'email', 'laws', 'manual', 'one', 'paper', 'picture', 'presentation', 'qa', 'table', 'tag' or 'resume'" in error_message, error_message
 
     @pytest.mark.p2
     def test_chunk_method_unset(self, client):
@@ -341,9 +350,9 @@ class TestDatasetCreate:
     @pytest.mark.p3
     def test_chunk_method_none(self, client):
         payload = {"name": "chunk_method_none", "chunk_method": None}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "not instance of" in str(excinfo.value), str(excinfo.value)
+        assert "not instance of" in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
@@ -496,8 +505,8 @@ class TestDatasetCreate:
             ("graphrag_type_invalid", {"graphrag": {"use_graphrag": "string"}}, "Input should be a valid boolean"),
             ("graphrag_entity_types_not_list", {"graphrag": {"entity_types": "1,2"}}, "Input should be a valid list"),
             ("graphrag_entity_types_not_str_in_list", {"graphrag": {"entity_types": [1, 2]}}, "nput should be a valid string"),
-            ("graphrag_method_unknown", {"graphrag": {"method": "unknown"}}, "Input should be 'light' or 'general'"),
-            ("graphrag_method_none", {"graphrag": {"method": None}}, "Input should be 'light' or 'general'"),
+            ("graphrag_method_unknown", {"graphrag": {"method": "unknown"}}, "Input should be 'light', 'general' or 'ner'"),
+            ("graphrag_method_none", {"graphrag": {"method": None}}, "Input should be 'light', 'general' or 'ner'"),
             ("graphrag_community_type_invalid", {"graphrag": {"community": "string"}}, "Input should be a valid boolean"),
             ("graphrag_resolution_type_invalid", {"graphrag": {"resolution": "string"}}, "Input should be a valid boolean"),
             ("raptor_type_invalid", {"raptor": {"use_raptor": "string"}}, "Input should be a valid boolean"),
@@ -579,22 +588,15 @@ class TestDatasetCreate:
     def test_parser_config_invalid(self, client, name, parser_config, expected_message):
         parser_config_o = DataSet.ParserConfig(client, parser_config)
         payload = {"name": name, "parser_config": parser_config_o}
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert expected_message in str(excinfo.value), str(excinfo.value)
+        assert expected_message in str(exception_info.value), str(exception_info.value)
 
     @pytest.mark.p2
     def test_parser_config_empty(self, client):
         excepted_value = DataSet.ParserConfig(
             client,
-            {
-                "chunk_token_num": 512,
-                "delimiter": r"\n",
-                "html4excel": False,
-                "layout_recognize": "DeepDOC",
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
-            },
+            DEFAULT_PARSER_CONFIG,
         )
         parser_config_o = DataSet.ParserConfig(client, {})
         payload = {"name": "parser_config_empty", "parser_config": parser_config_o}
@@ -605,14 +607,7 @@ class TestDatasetCreate:
     def test_parser_config_unset(self, client):
         excepted_value = DataSet.ParserConfig(
             client,
-            {
-                "chunk_token_num": 512,
-                "delimiter": r"\n",
-                "html4excel": False,
-                "layout_recognize": "DeepDOC",
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
-            },
+            DEFAULT_PARSER_CONFIG,
         )
         payload = {"name": "parser_config_unset"}
         dataset = client.create_dataset(**payload)
@@ -622,14 +617,7 @@ class TestDatasetCreate:
     def test_parser_config_none(self, client):
         excepted_value = DataSet.ParserConfig(
             client,
-            {
-                "chunk_token_num": 512,
-                "delimiter": r"\n",
-                "html4excel": False,
-                "layout_recognize": "DeepDOC",
-                "raptor": {"use_raptor": False},
-                "graphrag": {"use_graphrag": False},
-            },
+            DEFAULT_PARSER_CONFIG,
         )
         payload = {"name": "parser_config_empty", "parser_config": None}
         dataset = client.create_dataset(**payload)
@@ -655,9 +643,9 @@ class TestDatasetCreate:
         ],
     )
     def test_unsupported_field(self, client, payload):
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(Exception) as exception_info:
             client.create_dataset(**payload)
-        assert "got an unexpected keyword argument" in str(excinfo.value), str(excinfo.value)
+        assert "got an unexpected keyword argument" in str(exception_info.value), str(exception_info.value)
 
 
 @pytest.mark.usefixtures("clear_datasets")

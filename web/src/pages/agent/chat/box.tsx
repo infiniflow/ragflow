@@ -1,25 +1,28 @@
 import { MessageType } from '@/constants/chat';
-import { useGetFileIcon } from '@/pages/chat/hooks';
 
 import { useSendAgentMessage } from './use-send-agent-message';
 
 import { FileUploadProps } from '@/components/file-upload';
 import { NextMessageInput } from '@/components/message-input/next';
+import MarkdownContent from '@/components/next-markdown-content';
 import MessageItem from '@/components/next-message-item';
-import PdfDrawer from '@/components/pdf-drawer';
+import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import {
   useFetchAgent,
-  useUploadCanvasFileWithProgress,
+  useUploadAgentFileWithProgress,
 } from '@/hooks/use-agent-request';
-import { useFetchUserInfo } from '@/hooks/user-setting-hooks';
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { buildMessageUuidWithRole } from '@/utils/chat';
-import { memo, useCallback } from 'react';
-import { useParams } from 'umi';
+import { memo, useCallback, useContext, useEffect } from 'react';
+import { AgentChatContext } from '../context';
 import DebugContent from '../debug-content';
-import { useAwaitCompentData } from '../hooks/use-chat-logic';
+import { useAwaitComponentData } from '../hooks/use-chat-logic';
+import { useIsTaskMode } from '../hooks/use-get-begin-query';
+import { useGetFileIcon } from './use-get-file-icon';
 
 function AgentChatBox() {
+  const { data: canvasInfo, refetch } = useFetchAgent();
   const {
     value,
     scrollRef,
@@ -32,36 +35,50 @@ function AgentChatBox() {
     sendFormMessage,
     findReferenceByMessageId,
     appendUploadResponseList,
-  } = useSendAgentMessage();
+    removeFile,
+  } = useSendAgentMessage({ refetch });
 
   const { visible, hideModal, documentId, selectedChunk, clickDocumentButton } =
     useClickDrawer();
   useGetFileIcon();
   const { data: userInfo } = useFetchUserInfo();
-  const { data: canvasInfo } = useFetchAgent();
-  const { id: canvasId } = useParams();
-  const { uploadCanvasFile, loading } = useUploadCanvasFileWithProgress();
+  const { uploadAgentFile, loading } = useUploadAgentFileWithProgress();
 
-  const { buildInputList, handleOk, isWaitting } = useAwaitCompentData({
+  const { buildInputList, handleOk, isWaiting } = useAwaitComponentData({
     derivedMessages,
     sendFormMessage,
-    canvasId: canvasId as string,
   });
+
+  const { setDerivedMessages } = useContext(AgentChatContext);
+  // Sync the derived messages to the AgentChatContext — must run as an
+  // effect, not in the render body. Calling setDerivedMessages(...)
+  // synchronously during render (the previous shape) targets
+  // AgentCanvas's state while AgentChatBox is still rendering, which
+  // triggers React's "Cannot update a component (AgentCanvas) while
+  // rendering a different component (AgentChatBox)" warning. The
+  // effect runs after commit so the setState targets a stable
+  // component subtree.
+  useEffect(() => {
+    setDerivedMessages?.(derivedMessages);
+  }, [derivedMessages, setDerivedMessages]);
+
+  const isTaskMode = useIsTaskMode();
 
   const handleUploadFile: NonNullable<FileUploadProps['onUpload']> =
     useCallback(
       async (files, options) => {
-        const ret = await uploadCanvasFile({ files, options });
+        const ret = await uploadAgentFile({ files, options });
         appendUploadResponseList(ret.data, files);
       },
-      [appendUploadResponseList, uploadCanvasFile],
+      [appendUploadResponseList, uploadAgentFile],
     );
 
   return (
     <>
-      <section className="flex flex-1 flex-col px-5 h-[90vh]">
+      <section className="flex flex-1 flex-col px-5 min-h-0 pb-4">
         <div className="flex-1 overflow-auto" ref={messageContainerRef}>
           <div>
+            {!sendLoading && <div data-testid="agent-run-idle" />}
             {/* <Spin spinning={sendLoading}> */}
             {derivedMessages?.map((message, i) => {
               return (
@@ -95,8 +112,10 @@ function AgentChatBox() {
                   {message.role === MessageType.Assistant &&
                     derivedMessages.length - 1 !== i && (
                       <div>
-                        <div>{message?.data?.tips}</div>
-
+                        <MarkdownContent
+                          content={message?.data?.tips}
+                          loading={false}
+                        ></MarkdownContent>
                         <div>
                           {buildInputList(message)?.map((item) => item.value)}
                         </div>
@@ -109,25 +128,31 @@ function AgentChatBox() {
           </div>
           <div ref={scrollRef} />
         </div>
-        <NextMessageInput
-          value={value}
-          sendLoading={sendLoading}
-          disabled={isWaitting}
-          sendDisabled={sendLoading || isWaitting}
-          isUploading={loading || isWaitting}
-          onPressEnter={handlePressEnter}
-          onInputChange={handleInputChange}
-          stopOutputMessage={stopOutputMessage}
-          onUpload={handleUploadFile}
-          conversationId=""
-        />
+        {isTaskMode || (
+          <NextMessageInput
+            value={value}
+            sendLoading={sendLoading}
+            disabled={isWaiting}
+            sendDisabled={sendLoading || isWaiting}
+            isUploading={loading || isWaiting}
+            resize="vertical"
+            onPressEnter={handlePressEnter}
+            onInputChange={handleInputChange}
+            stopOutputMessage={stopOutputMessage}
+            onUpload={handleUploadFile}
+            removeFile={removeFile}
+            conversationId=""
+          />
+        )}
       </section>
-      <PdfDrawer
-        visible={visible}
-        hideModal={hideModal}
-        documentId={documentId}
-        chunk={selectedChunk}
-      ></PdfDrawer>
+      {visible && (
+        <PdfSheet
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={selectedChunk}
+        ></PdfSheet>
+      )}
     </>
   );
 }

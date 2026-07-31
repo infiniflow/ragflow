@@ -1,3 +1,4 @@
+import { KeyInput } from '@/components/key-input';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -95,7 +96,7 @@ function ParameterForm({
       },
       [],
     );
-  }, []);
+  }, [t]);
 
   const type = useWatch({
     control: form.control,
@@ -113,7 +114,6 @@ function ParameterForm({
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
     const values = { ...data, options: data.options?.map((x) => x.value) };
-    console.log('🚀 ~ onSubmit ~ values:', values);
 
     submit(values);
   }
@@ -138,7 +138,7 @@ function ParameterForm({
           control={form.control}
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Type</FormLabel>
+              <FormLabel>{t('type')}</FormLabel>
               <FormControl>
                 <RAGFlowSelect {...field} options={options} />
               </FormControl>
@@ -151,9 +151,13 @@ function ParameterForm({
           control={form.control}
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Key</FormLabel>
+              <FormLabel>{t('key')}</FormLabel>
               <FormControl>
-                <Input {...field} autoComplete="off" onBlur={handleKeyChange} />
+                <KeyInput
+                  {...field}
+                  autoComplete="off"
+                  onBlur={handleKeyChange}
+                />
               </FormControl>
               <FormMessage />
             </FormItem>
@@ -164,7 +168,7 @@ function ParameterForm({
           control={form.control}
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Name</FormLabel>
+              <FormLabel>{t('name')}</FormLabel>
               <FormControl>
                 <Input {...field} />
               </FormControl>
@@ -177,7 +181,7 @@ function ParameterForm({
           control={form.control}
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Optional</FormLabel>
+              <FormLabel>{t('optional')}</FormLabel>
               <FormControl>
                 <Switch
                   checked={field.value}
@@ -206,7 +210,7 @@ export function ParameterDialog({
 
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent>
+      <DialogContent className="max-h-[80vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{t('flow.variableSettings')}</DialogTitle>
         </DialogHeader>
@@ -217,7 +221,7 @@ export function ParameterDialog({
         ></ParameterForm>
         <DialogFooter>
           <Button type="submit" form={FormId}>
-            Confirm
+            {t('modal.okText')}
           </Button>
         </DialogFooter>
       </DialogContent>

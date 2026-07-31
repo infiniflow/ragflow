@@ -17,17 +17,17 @@ from agent.component.fillup import UserFillUpParam, UserFillUp
 
 
 class BeginParam(UserFillUpParam):
-
     """
     Define the Begin component parameters.
     """
+
     def __init__(self):
         super().__init__()
         self.mode = "conversational"
         self.prologue = "Hi! I'm your smart assistant. What can I do for you?"
 
     def check(self):
-        self.check_valid_value(self.mode, "The 'mode' should be either `conversational` or `task`", ["conversational", "task"])
+        self.check_valid_value(self.mode, "The 'mode' should be either `conversational` or `task`", ["conversational", "task", "Webhook"])
 
     def get_input_form(self) -> dict[str, dict]:
         return getattr(self, "inputs")
@@ -36,15 +36,33 @@ class BeginParam(UserFillUpParam):
 class Begin(UserFillUp):
     component_name = "Begin"
 
+    def _merge_runtime_inputs(self, runtime_inputs):
+        if runtime_inputs:
+            return runtime_inputs
+
+        fields = self.get_input_elements()
+        query = self._canvas.globals.get("sys.query")
+        if not fields or query is None or query == "":
+            return {}
+
+        if isinstance(query, dict):
+            return {key: value if isinstance(value, dict) else {"value": value} for key, value in query.items() if key in fields}
+
+        if len(fields) == 1:
+            return {next(iter(fields)): {"value": query}}
+
+        return {}
+
     def _invoke(self, **kwargs):
-        for k, v in kwargs.get("inputs", {}).items():
-            if isinstance(v, dict) and v.get("type", "").lower().find("file") >=0:
-                if v.get("optional") and v.get("value", None) is None:
-                    v = None
-                else:
-                    v = self._canvas.get_files([v["value"]])
-            else:
-                v = v.get("value")
+        if self.check_if_canceled("Begin processing"):
+            return
+
+        layout_recognize = self._param.layout_recognize or None
+        merged_inputs = self._merge_runtime_inputs(kwargs.get("inputs", {}))
+        for k, v in merged_inputs.items():
+            if self.check_if_canceled("Begin processing"):
+                return
+            v = self._resolve_input_value(v, layout_recognize)
             self.set_output(k, v)
             self.set_input_value(k, v)
 

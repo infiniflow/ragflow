@@ -1,0 +1,85 @@
+{
+  "name": "Tongyi-Qianwen",
+  "rank": 983,
+  "url": {
+    "default": "https://dashscope.aliyuncs.com",
+    "singapore": "https://dashscope-intl.aliyuncs.com",
+    "us": "https://dashscope-us.aliyuncs.com"
+  },
+  "url_suffix": {
+    "chat": "compatible-mode/v1/chat/completions",
+    "embedding": "compatible-mode/v1/embeddings",
+    "rerank": "compatible-api/v1/reranks",
+    "models": "api/v1/deployments/models"
+  },
+  "models": [
+    {
+      "name": "qwen-flash",
+      "max_tokens": 995904,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "text-embedding-v4",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "qwen3-vl-plus",
+      "max_tokens": 256000,
+      "model_types": [
+        "vision",
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen-tts-flash",
+      "model_types": [
+        "tts"
+      ]
+    },
+    {
+      "name": "qwen-asr-flash",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "fun-asr",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "text-embedding-v3",
+      "max_tokens": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "qwen3-rerank",
+      "max_tokens": 8192,
+      "model_types": [
+        "rerank"
+      ]
+    }
+  ],
+  "features": {
+    "thinking": {
+      "default_value": true,
+      "supported_models": [
+        "qwen-flash"
+      ]
+    }
+  }
+}

@@ -1,11 +1,14 @@
 services:
   es01:
-    container_name: ragflow-es-01
     profiles:
       - elasticsearch
     image: elasticsearch:${STACK_VERSION}
     volumes:
       - esdata01:/usr/share/elasticsearch/data
+    # Official ES image ACL on /tmp denies writes for user elasticsearch (r-x only).
+    # entrypoint.sh needs a writable temp dir for bash here-documents.
+    tmpfs:
+      - /tmp:mode=1777,size=512m
     ports:
       - ${ES_PORT}:9200
     env_file: .env
@@ -20,7 +23,6 @@ services:
       - cluster.routing.allocation.disk.watermark.low=5gb
       - cluster.routing.allocation.disk.watermark.high=3gb
       - cluster.routing.allocation.disk.watermark.flood_stage=2gb
-      - TZ=${TIMEZONE}
     mem_limit: ${MEM_LIMIT}
     ulimits:
       memlock:
@@ -33,13 +35,12 @@ services:
       retries: 120
     networks:
       - ragflow
-    restart: on-failure
+    restart: unless-stopped
 
   opensearch01:
-    container_name: ragflow-opensearch-01
     profiles:
       - opensearch
-    image: hub.icert.top/opensearchproject/opensearch:2.19.1
+    image: opensearchproject/opensearch:2.19.1
     volumes:
       - osdata01:/usr/share/opensearch/data
     ports:
@@ -57,7 +58,6 @@ services:
       - cluster.routing.allocation.disk.watermark.low=5gb
       - cluster.routing.allocation.disk.watermark.high=3gb
       - cluster.routing.allocation.disk.watermark.flood_stage=2gb
-      - TZ=${TIMEZONE}
       - http.port=9201
     mem_limit: ${MEM_LIMIT}
     ulimits:
@@ -71,13 +71,12 @@ services:
       retries: 120
     networks:
       - ragflow
-    restart: on-failure
+    restart: unless-stopped
 
   infinity:
-    container_name: ragflow-infinity
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.6.0-dev5
+    image: infiniflow/infinity:v0.7.2-x64-v3
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -87,8 +86,6 @@ services:
       - ${INFINITY_HTTP_PORT}:23820
       - ${INFINITY_PSQL_PORT}:5432
     env_file: .env
-    environment:
-      - TZ=${TIMEZONE}
     mem_limit: ${MEM_LIMIT}
     ulimits:
       nofile:
@@ -101,10 +98,64 @@ services:
       interval: 10s
       timeout: 10s
       retries: 120
-    restart: on-failure
+    restart: unless-stopped
+
+  oceanbase:
+    profiles:
+      - oceanbase
+    image: oceanbase/oceanbase-ce:4.4.1.0-100000032025101610
+    entrypoint: ["bash", "/root/boot/ragflow-oceanbase-entrypoint.sh"]
+    ulimits:
+      nofile:
+        soft: 655350
+        hard: 655350
+    volumes:
+      - ./oceanbase/data:/root/ob
+      - ./oceanbase/conf:/root/.obd/cluster
+      - ./oceanbase/init.d:/root/boot/init.d
+      - ./oceanbase-entrypoint.sh:/root/boot/ragflow-oceanbase-entrypoint.sh:ro
+    ports:
+      - ${OCEANBASE_PORT:-2881}:2881
+    env_file: .env
+    environment:
+      - MODE=normal
+      - OB_SERVER_IP=127.0.0.1
+    mem_limit: ${MEM_LIMIT}
+    healthcheck:
+      test: [ 'CMD-SHELL', 'obclient -h127.0.0.1 -P2881 -uroot@${OB_TENANT_NAME:-ragflow} -p${OB_TENANT_PASSWORD:-infini_rag_flow} -e "CREATE DATABASE IF NOT EXISTS ${OCEANBASE_DOC_DBNAME:-ragflow_doc};"' ]
+      interval: 10s
+      retries: 30
+      start_period: 30s
+      timeout: 10s
+    networks:
+      - ragflow
+    restart: unless-stopped
+
+  seekdb:
+    profiles:
+      - seekdb
+    image: oceanbase/seekdb:latest
+    container_name: seekdb
+    volumes:
+      - ./seekdb:/var/lib/oceanbase
+    ports:
+      - ${SEEKDB_PORT:-2881}:2881
+    env_file: .env
+    environment:
+      - ROOT_PASSWORD=${SEEKDB_PASSWORD:-infini_rag_flow}
+      - MEMORY_LIMIT=${SEEKDB_MEMORY_LIMIT:-2G}
+      - REPORTER=ragflow-seekdb
+    mem_limit: ${MEM_LIMIT}
+    healthcheck:
+      test: ['CMD-SHELL', 'mysql -h127.0.0.1 -P2881 -uroot -p${SEEKDB_PASSWORD:-infini_rag_flow} -e "CREATE DATABASE IF NOT EXISTS ${SEEKDB_DOC_DBNAME:-ragflow_doc};"']
+      interval: 5s
+      retries: 60
+      timeout: 5s
+    networks:
+      - ragflow
+    restart: unless-stopped
 
   sandbox-executor-manager:
-    container_name: ragflow-sandbox-executor-manager
     profiles:
       - sandbox
     image: ${SANDBOX_EXECUTOR_MANAGER_IMAGE-infiniflow/sandbox-executor-manager:latest}
@@ -119,7 +170,6 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
-      - TZ=${TIMEZONE}
       - SANDBOX_EXECUTOR_MANAGER_POOL_SIZE=${SANDBOX_EXECUTOR_MANAGER_POOL_SIZE:-3}
       - SANDBOX_BASE_PYTHON_IMAGE=${SANDBOX_BASE_PYTHON_IMAGE:-infiniflow/sandbox-base-python:latest}
       - SANDBOX_BASE_NODEJS_IMAGE=${SANDBOX_BASE_NODEJS_IMAGE:-infiniflow/sandbox-base-nodejs:latest}
@@ -129,18 +179,16 @@ services:
     healthcheck:
       test: ["CMD", "curl", "http://localhost:9385/healthz"]
       interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: on-failure
+      timeout: 10s
+      retries: 120
+    restart: unless-stopped
 
   mysql:
     # mysql:5.7 linux/arm64 image is unavailable.
-    image: mysql:8.0.39
-    container_name: ragflow-mysql
+    image: mysql:8.0.40
     env_file: .env
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_PASSWORD}
-      - TZ=${TIMEZONE}
     command:
       --max_connections=1000
       --character-set-server=utf8mb4
@@ -150,7 +198,7 @@ services:
       --init-file /data/application/init.sql
       --binlog_expire_logs_seconds=604800
     ports:
-      - ${MYSQL_PORT}:3306
+      - ${EXPOSE_MYSQL_PORT}:3306
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/data/application/init.sql
@@ -160,13 +208,12 @@ services:
       test: ["CMD", "mysqladmin" ,"ping", "-uroot", "-p${MYSQL_PASSWORD}"]
       interval: 10s
       timeout: 10s
-      retries: 3
-    restart: on-failure
+      retries: 120
+    restart: unless-stopped
 
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-06-13T11-33-47Z
-    container_name: ragflow-minio
-    command: server --console-address ":9001" /data
+    image: pgsty/minio:RELEASE.2026-03-25T00-00-00Z
+    command: ["server", "--console-address", ":9001", "/data"]
     ports:
       - ${MINIO_PORT}:9000
       - ${MINIO_CONSOLE_PORT}:9001
@@ -174,23 +221,21 @@ services:
     environment:
       - MINIO_ROOT_USER=${MINIO_USER}
       - MINIO_ROOT_PASSWORD=${MINIO_PASSWORD}
-      - TZ=${TIMEZONE}
     volumes:
       - minio_data:/data
     networks:
       - ragflow
-    restart: on-failure
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+      interval: 10s
+      timeout: 10s
+      retries: 120
 
   redis:
     # swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/valkey/valkey:8
     image: valkey/valkey:8
-    container_name: ragflow-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 128mb --maxmemory-policy allkeys-lru
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
     env_file: .env
     ports:
       - ${REDIS_PORT}:6379
@@ -198,14 +243,134 @@ services:
       - redis_data:/data
     networks:
       - ragflow
-    restart: on-failure
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 3
-      start_period: 10s    
+      interval: 10s
+      timeout: 10s
+      retries: 120
 
+  jaeger:
+    profiles:
+      - jaeger
+    image: jaegertracing/jaeger:${JAEGER_VERSION:-2.19.0}
+    ports:
+      - ${JAEGER_OTLP_GRPC_PORT:-4317}:4317
+      - ${JAEGER_OTLP_HTTP_PORT:-4318}:4318
+      - ${JAEGER_UI_PORT:-16686}:16686
+    env_file: .env
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - ragflow
+    restart: unless-stopped
+
+  nats:
+    profiles:
+      - ragflow-go
+    image: nats:2.14.2
+    ports:
+      - ${NATS_PORT:-4222}:4222
+      - "8222:8222"
+    volumes:
+      - nats_data:/data
+    command: -js -sd /data
+    env_file: .env
+    networks:
+      - ragflow
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "nats-server", "--health-check"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+
+  tei-cpu:
+    profiles:
+      - tei-cpu
+    image: ${TEI_IMAGE_CPU}
+    hostname: tei
+    ports:
+      - ${TEI_PORT-6380}:80
+    env_file: .env
+    networks:
+      - ragflow
+    command: ["--model-id", "/data/${TEI_MODEL}", "--auto-truncate"]
+    restart: unless-stopped
+
+
+  tei-gpu:
+    profiles:
+      - tei-gpu
+    image: ${TEI_IMAGE_GPU}
+    hostname: tei
+    ports:
+      - ${TEI_PORT-6380}:80
+    env_file: .env
+    networks:
+      - ragflow
+    command: ["--model-id", "/data/${TEI_MODEL}", "--auto-truncate"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+
+  kibana:
+    profiles:
+      - kibana
+    image: kibana:${STACK_VERSION}
+    ports:
+      - ${KIBANA_PORT-5601}:5601
+    env_file: .env
+    volumes:
+      - kibana_data:/usr/share/kibana/data
+    depends_on:
+      es01:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5601/api/status"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    networks:
+      - ragflow
+    restart: unless-stopped
+
+
+  clickhouse:
+    profiles:
+      - clickhouse
+    image: clickhouse/clickhouse-server:26.5.5.8
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./init-clickhouse.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - ${CLICKHOUSE_TCP_PORT:-9900}:9000
+      - ${CLICKHOUSE_HTTP_PORT:-8123}:8123
+    env_file: .env
+    environment:
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER:-ragflow}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:-infini_rag_flow}
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+    mem_limit: ${MEM_LIMIT}
+    ulimits:
+      nofile:
+        soft: 655350
+        hard: 655350
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--user", "${CLICKHOUSE_USER:-ragflow}", "--password", "${CLICKHOUSE_PASSWORD:-infini_rag_flow}", "-q", "SELECT 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    networks:
+      - ragflow
+    restart: unless-stopped
 
 
 volumes:
@@ -215,11 +380,23 @@ volumes:
     driver: local
   infinity_data:
     driver: local
+  ob_data:
+    driver: local
+  seekdb_data:
+    driver: local
   mysql_data:
     driver: local
   minio_data:
     driver: local
   redis_data:
+    driver: local
+  tei_data:
+    driver: local
+  kibana_data:
+    driver: local
+  nats_data:
+    driver: local
+  clickhouse_data:
     driver: local
 
 networks:

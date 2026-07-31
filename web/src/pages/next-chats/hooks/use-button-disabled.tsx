@@ -1,12 +1,10 @@
-import { useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { trim } from 'lodash';
-import { useParams } from 'umi';
+import { useParams } from 'react-router';
 
 export const useGetSendButtonDisabled = () => {
-  const { conversationId } = useGetChatSearchParams();
   const { id: dialogId } = useParams();
 
-  return dialogId === '' || conversationId === '';
+  return dialogId === '';
 };
 
 export const useSendButtonDisabled = (value: string) => {

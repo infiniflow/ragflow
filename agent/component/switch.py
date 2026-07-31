@@ -19,7 +19,7 @@ from abc import ABC
 from typing import Any
 
 from agent.component.base import ComponentBase, ComponentParamBase
-from api.utils.api_utils import timeout
+from common.connection_utils import timeout
 
 
 class SwitchParam(ComponentParamBase):
@@ -40,8 +40,7 @@ class SwitchParam(ComponentParamBase):
         """
         self.conditions = []
         self.end_cpn_ids = []
-        self.operators = ['contains', 'not contains', 'start with', 'end with', 'empty', 'not empty', '=', '≠', '>',
-                          '<', '≥', '≤']
+        self.operators = ["contains", "not contains", "start with", "end with", "empty", "not empty", "=", "≠", ">", "<", "≥", "≤"]
 
     def check(self):
         self.check_empty(self.conditions, "[Switch] conditions")
@@ -51,21 +50,26 @@ class SwitchParam(ComponentParamBase):
         self.check_empty(self.end_cpn_ids, "[Switch] the ELSE/Other destination can not be empty.")
 
     def get_input_form(self) -> dict[str, dict]:
-        return {
-            "urls": {
-                "name": "URLs",
-                "type": "line"
-            }
-        }
+        return {"urls": {"name": "URLs", "type": "line"}}
+
 
 class Switch(ComponentBase, ABC):
     component_name = "Switch"
 
-    @timeout(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3))
+    @timeout(int(os.environ.get("COMPONENT_EXEC_TIMEOUT", 3)))
     def _invoke(self, **kwargs):
+        if self.check_if_canceled("Switch processing"):
+            return
+
         for cond in self._param.conditions:
+            if self.check_if_canceled("Switch processing"):
+                return
+
             res = []
             for item in cond["items"]:
+                if self.check_if_canceled("Switch processing"):
+                    return
+
                 if not item["cpn_id"]:
                     continue
                 cpn_v = self._canvas.get_variable_value(item["cpn_id"])
@@ -79,7 +83,7 @@ class Switch(ComponentBase, ABC):
                     self.set_output("_next", cond["to"])
                     return
 
-            if all(res):
+            if res and all(res):
                 self.set_output("next", [self._canvas.get_component_name(cpn_id) for cpn_id in cond["to"]])
                 self.set_output("_next", cond["to"])
                 return
@@ -88,6 +92,9 @@ class Switch(ComponentBase, ABC):
         self.set_output("_next", self._param.end_cpn_ids)
 
     def process_operator(self, input: Any, operator: str, value: Any) -> bool:
+        if operator in ("contains", "not contains", "start with", "end with"):
+            input = "" if input is None else str(input)
+            value = "" if value is None else str(value)
         if operator == "contains":
             return True if value.lower() in input.lower() else False
         elif operator == "not contains":
@@ -125,7 +132,7 @@ class Switch(ComponentBase, ABC):
             except Exception:
                 return True if input <= value else False
 
-        raise ValueError('Not supported operator' + operator)
+        raise ValueError(f"Not supported operator: {operator}")
 
     def thoughts(self) -> str:
         return "I’m weighing a few options and will pick the next step shortly."

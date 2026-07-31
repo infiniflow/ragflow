@@ -6,9 +6,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useSetAgentSetting } from '@/hooks/use-agent-request';
+import { useSetAgent } from '@/hooks/use-agent-request';
 import { IModalProps } from '@/interfaces/common';
-import { transformFile2Base64 } from '@/utils/file-util';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -19,27 +18,23 @@ import {
 
 export function SettingDialog({ hideModal }: IModalProps<any>) {
   const { t } = useTranslation();
-  const { setAgentSetting } = useSetAgentSetting();
+  const { setAgent } = useSetAgent();
 
   const submit = useCallback(
     async (values: SettingFormSchemaType) => {
-      const avatar = values.avatar;
-      const code = await setAgentSetting({
-        ...values,
-        avatar: avatar.length > 0 ? await transformFile2Base64(avatar[0]) : '',
-      });
-      if (code === 0) {
+      const ret = await setAgent(values);
+      if (ret?.code === 0) {
         hideModal?.();
       }
     },
-    [hideModal, setAgentSetting],
+    [hideModal, setAgent],
   );
 
   return (
     <Dialog open onOpenChange={hideModal}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Are you absolutely sure?</DialogTitle>
+          <DialogTitle>{t('common.edit')}</DialogTitle>
         </DialogHeader>
         <SettingForm submit={submit}></SettingForm>
         <DialogFooter>

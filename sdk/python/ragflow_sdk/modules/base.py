@@ -54,5 +54,9 @@ class Base:
         res = self.rag.put(path, json)
         return res
 
+    def patch(self, path, json):
+        res = self.rag.patch(path, json)
+        return res
+
     def __str__(self):
         return str(self.to_json())

@@ -1,4 +1,7 @@
-import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
+import {
+  ConfirmDeleteDialog,
+  ConfirmDeleteDialogNode,
+} from '@/components/confirm-delete-dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useDeleteKnowledge } from '@/hooks/use-knowledge-request';
-import { IKnowledge } from '@/interfaces/database/knowledge';
+import { IDataset } from '@/interfaces/database/dataset';
 import { PenLine, Trash2 } from 'lucide-react';
 import { MouseEventHandler, PropsWithChildren, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -19,7 +22,7 @@ export function DatasetDropdown({
   dataset,
 }: PropsWithChildren &
   Pick<ReturnType<typeof useRenameDataset>, 'showDatasetRenameModal'> & {
-    dataset: IKnowledge;
+    dataset: IDataset;
   }) {
   const { t } = useTranslation();
   const { deleteKnowledge } = useDeleteKnowledge();
@@ -45,7 +48,18 @@ export function DatasetDropdown({
           {t('common.rename')} <PenLine />
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <ConfirmDeleteDialog onOk={handleDelete}>
+        <ConfirmDeleteDialog
+          onOk={handleDelete}
+          title={t('deleteModal.delDataset')}
+          content={{
+            node: (
+              <ConfirmDeleteDialogNode
+                avatar={{ avatar: dataset.avatar, name: dataset.name }}
+                name={dataset.name}
+              />
+            ),
+          }}
+        >
           <DropdownMenuItem
             className="text-state-error"
             onSelect={(e) => {

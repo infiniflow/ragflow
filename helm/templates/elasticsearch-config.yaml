@@ -13,5 +13,5 @@ data:
   cluster.routing.allocation.disk.watermark.low: 5gb
   cluster.routing.allocation.disk.watermark.high: 3gb
   cluster.routing.allocation.disk.watermark.flood_stage: 2gb
-  TZ: {{ .Values.env.TIMEZONE }}
+  TZ: {{ .Values.env.TZ }}
 {{- end -}}

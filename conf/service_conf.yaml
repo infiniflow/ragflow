@@ -1,12 +1,17 @@
+general:
+  heartbeat_interval: 3
 ragflow:
   host: 0.0.0.0
   http_port: 9380
+admin:
+  host: 0.0.0.0
+  http_port: 9381
 mysql:
   name: 'rag_flow'
   user: 'root'
   password: 'infini_rag_flow'
   host: 'localhost'
-  port: 5455
+  port: 3306
   max_connections: 900
   stale_timeout: 300
   max_allowed_packet: 1073741824
@@ -14,6 +19,8 @@ minio:
   user: 'rag_flow'
   password: 'infini_rag_flow'
   host: 'localhost:9000'
+  bucket: ''
+  prefix_path: ''
 es:
   hosts: 'http://localhost:1200'
   username: 'elastic'
@@ -22,13 +29,60 @@ os:
   hosts: 'http://localhost:1201'
   username: 'admin'
   password: 'infini_rag_flow_OS_01'
+  # Optional hybrid (BM25 + KNN) search tuning. The connector self-provisions the
+  # normalization search pipeline on start-up (requires OpenSearch >= 2.10).
+  # hybrid_search_pipeline: 'ragflow_hybrid_pipeline'
+  # hybrid_search_weights: [0.5, 0.5]   # [text/BM25 leg, vector/KNN leg]
 infinity:
   uri: 'localhost:23817'
+  postgres_port: 5432
   db_name: 'default_db'
+oceanbase:
+  scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
+  config:
+    db_name: 'test'
+    user: 'root@ragflow'
+    password: 'infini_rag_flow'
+    host: 'localhost'
+    port: 2881
 redis:
   db: 1
+  username: ''
   password: 'infini_rag_flow'
   host: 'localhost:6379'
+nats:
+  host: "localhost"
+  port: 4222
+clickhouse:
+  host: 'localhost'
+  port: 9900
+  user: ragflow
+  password: infini_rag_flow
+  database: ragflow
+otel:
+  host: "localhost"
+  port: 4318
+  secure: false
+  sample_ratio: 1.0
+  stdout: false
+  enable: false
+ingestor:
+  mq_type: 'nats'
+  max_concurrent_workers: 1
+file_syncer:
+  max_concurrent_syncs: 1
+  sync_interval: 3
+user_default_llm:
+  default_models:
+    embedding_model:
+      name: 'bge-m3'
+      factory: 'xxxx'
+      api_key: 'xxx'
+      base_url: 'http://localhost:6380'
+gcs:
+  bucket: '${GCS_BUCKET:-ragflow}'
+  prefix_path: '${GCS_PREFIX_PATH:-}'
+  endpoint_url: '${GCS_ENDPOINT:-}'
 # postgres:
 #   name: 'rag_flow'
 #   user: 'rag_flow'
@@ -41,12 +95,16 @@ redis:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
 #   region: 'region'
+#gcs:
+#  bucket: 'bridgtl-edm-d-bucket-ragflow'
 # oss:
 #   access_key: 'access_key'
 #   secret_key: 'secret_key'
-#   endpoint_url: 'http://oss-cn-hangzhou.aliyuncs.com'
+#   endpoint_url: 'https://s3.oss-cn-hangzhou.aliyuncs.com'
 #   region: 'cn-hangzhou'
 #   bucket: 'bucket_name'
+#   signature_version: 's3'
+#   addressing_style: 'virtual'
 # azure:
 #   auth_type: 'sas'
 #   container_url: 'container_url'
@@ -74,7 +132,8 @@ redis:
 #       api_key: 'xxxx'
 #       base_url: 'https://api.xx.com'
 #     embedding_model:
-#       name: 'bge-m3'
+#       api_key: 'xxx'
+#       base_url: 'http://localhost:6380'
 #     rerank_model: 'bge-reranker-v2'
 #     asr_model:
 #       model: 'whisper-large-v3' # alias of name
@@ -124,3 +183,7 @@ redis:
 #     - "RAGFlow" # display name
 #     - "" # sender email address
 #   mail_frontend_url: "https://your-frontend.example.com"
+# tcadp_config:
+#  secret_id: 'tencent_secret_id'
+#  secret_key: 'tencent_secret_key'
+#  region: 'tencent_region'

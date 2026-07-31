@@ -1,15 +1,15 @@
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import i18n from '@/locales/config';
+import i18n, { changeLanguageAsync } from '@/locales/config';
 import { useEffect, useState } from 'react';
 import {
   ISearchAppDetailProps,
   useFetchSearchDetail,
 } from '../../next-searches/hooks';
-import { useGetSharedSearchParams, useSearching } from '../hooks';
+import { useCheckSettings, useGetSharedSearchParams } from '../hooks';
 import '../index.less';
 import SearchHome from '../search-home';
 import SearchingPage from '../searching';
-export default function ShareSeachPage() {
+export default function ShareSearchPage() {
   const { tenantId, locale, visibleAvatar } = useGetSharedSearchParams();
   const {
     data: searchData = {
@@ -18,13 +18,13 @@ export default function ShareSeachPage() {
   } = useFetchSearchDetail(tenantId as string);
   const [isSearching, setIsSearching] = useState(false);
   const [searchText, setSearchText] = useState('');
-  const searchingParam = useSearching({
-    data: searchData,
-  });
+  const { openSetting: canSearch } = useCheckSettings(
+    searchData as ISearchAppDetailProps,
+  );
 
   useEffect(() => {
     if (locale && i18n.language !== locale) {
-      i18n.changeLanguage(locale);
+      changeLanguageAsync(locale);
     }
   }, [locale]);
   return (
@@ -47,6 +47,8 @@ export default function ShareSeachPage() {
             isSearching={isSearching}
             searchText={searchText}
             setSearchText={setSearchText}
+            canSearch={!canSearch}
+            showEmbedLogo={false}
           />
         </div>
       )}
@@ -57,6 +59,7 @@ export default function ShareSeachPage() {
             searchText={searchText}
             setSearchText={setSearchText}
             data={searchData as ISearchAppDetailProps}
+            showEmbedLogo={false}
           />
         </div>
       )}

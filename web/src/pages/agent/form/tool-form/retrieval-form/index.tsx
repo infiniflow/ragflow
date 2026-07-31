@@ -1,20 +1,25 @@
 import { Collapse } from '@/components/collapse';
 import { CrossLanguageFormField } from '@/components/cross-language-form-field';
 import { FormContainer } from '@/components/form-container';
-import { KnowledgeBaseFormField } from '@/components/knowledge-base-item';
+import { MetadataFilter } from '@/components/metadata-filter';
 import { RerankFormFields } from '@/components/rerank';
 import { SimilaritySliderFormField } from '@/components/similarity-slider';
+
 import { TopNFormField } from '@/components/top-n-item';
 import { Form } from '@/components/ui/form';
-import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
+
 import { zodResolver } from '@hookform/resolvers/zod';
+import { t } from 'i18next';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
+import { useOwnerTenantId } from '../../../context';
 import { DescriptionField } from '../../components/description-field';
 import { FormWrapper } from '../../components/form-wrapper';
 import {
   EmptyResponseField,
+  MemoryDatasetForm,
   RetrievalPartialSchema,
+  useHideKnowledgeGraphField,
 } from '../../retrieval-form/next';
 import { useValues } from '../use-values';
 import { useWatchFormChange } from '../use-watch-change';
@@ -32,26 +37,40 @@ const RetrievalForm = () => {
     resolver: zodResolver(FormSchema),
   });
 
+  const hideKnowledgeGraphField = useHideKnowledgeGraphField(form);
+
   useWatchFormChange(form);
+
+  const ownerTenantId = useOwnerTenantId();
 
   return (
     <Form {...form}>
       <FormWrapper>
-        <FormContainer>
-          <DescriptionField></DescriptionField>
-          <KnowledgeBaseFormField showVariable></KnowledgeBaseFormField>
-        </FormContainer>
-        <Collapse title={<div>Advanced Settings</div>}>
+        <DescriptionField></DescriptionField>
+        <MemoryDatasetForm></MemoryDatasetForm>
+        <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
           <FormContainer>
             <SimilaritySliderFormField
-              vectorSimilarityWeightName="keywords_similarity_weight"
+              similarityWeightName="keywords_similarity_weight"
+              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
             <TopNFormField></TopNFormField>
-            <RerankFormFields></RerankFormFields>
+            {hideKnowledgeGraphField || (
+              <>
+                <RerankFormFields
+                  ownerTenantId={ownerTenantId}
+                ></RerankFormFields>
+                <MetadataFilter canReference></MetadataFilter>
+              </>
+            )}
+
             <EmptyResponseField></EmptyResponseField>
-            <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
-            <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
+            {hideKnowledgeGraphField || (
+              <>
+                <CrossLanguageFormField name="cross_languages"></CrossLanguageFormField>
+              </>
+            )}
           </FormContainer>
         </Collapse>
       </FormWrapper>

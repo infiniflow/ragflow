@@ -1,30 +1,68 @@
-import i18n from '@/locales/config';
-import { BeginId } from '@/pages/flow/constant';
-import { DecoratorNode, LexicalNode, NodeKey } from 'lexical';
+import {
+  DecoratorNode,
+  LexicalNode,
+  NodeKey,
+  SerializedLexicalNode,
+  Spread,
+} from 'lexical';
 import { ReactNode } from 'react';
-const prefix = BeginId + '@';
+
+export type SerializedVariableNode = Spread<
+  {
+    type: 'variable';
+    version: 1;
+    value: string;
+    label: string;
+  },
+  SerializedLexicalNode
+>;
 
 export class VariableNode extends DecoratorNode<ReactNode> {
   __value: string;
   __label: string;
+  key?: NodeKey;
+  __parentLabel?: string | ReactNode;
+  __icon?: ReactNode;
 
   static getType(): string {
     return 'variable';
   }
 
   static clone(node: VariableNode): VariableNode {
-    return new VariableNode(node.__value, node.__label, node.__key);
+    return new VariableNode(
+      node.__value,
+      node.__label,
+      node.__key,
+      node.__parentLabel,
+      node.__icon,
+    );
   }
 
-  constructor(value: string, label: string, key?: NodeKey) {
+  static importJSON(serializedNode: SerializedVariableNode): VariableNode {
+    return new VariableNode(
+      serializedNode.value,
+      serializedNode.label,
+      undefined,
+    );
+  }
+
+  constructor(
+    value: string,
+    label: string,
+    key?: NodeKey,
+    parent?: string | ReactNode,
+    icon?: ReactNode,
+  ) {
     super(key);
     this.__value = value;
     this.__label = label;
+    this.__parentLabel = parent;
+    this.__icon = icon;
   }
 
   createDOM(): HTMLElement {
     const dom = document.createElement('span');
-    dom.className = 'mr-1';
+    dom.className = 'variable-node [&+.variable-node]:ml-[.25em]';
 
     return dom;
   }
@@ -35,17 +73,22 @@ export class VariableNode extends DecoratorNode<ReactNode> {
 
   decorate(): ReactNode {
     let content: ReactNode = (
-      <span className="text-blue-600">{this.__label}</span>
+      <div className="text-accent-primary">{this.__label}</div>
     );
-    if (this.__value?.startsWith(prefix)) {
+    if (this.__parentLabel) {
       content = (
-        <div>
-          <span>{i18n.t(`flow.begin`)}</span> / {content}
+        <div className="flex items-center gap-1 text-text-primary">
+          <div className="contents after:content-['/'] after:text-text-disabled">
+            {this.__icon}
+            {this.__parentLabel}
+          </div>
+
+          {content}
         </div>
       );
     }
     return (
-      <div className="bg-gray-200 dark:bg-gray-400 text-primary inline-flex items-center rounded-md px-2 py-0">
+      <div className="bg-accent-primary-5 text-sm inline-flex items-center rounded-md px-2 py-1 align-middle">
         {content}
       </div>
     );
@@ -54,13 +97,25 @@ export class VariableNode extends DecoratorNode<ReactNode> {
   getTextContent(): string {
     return `{${this.__value}}`;
   }
+
+  exportJSON(): SerializedVariableNode {
+    return {
+      ...super.exportJSON(),
+      type: 'variable',
+      version: 1,
+      value: this.__value,
+      label: this.__label,
+    };
+  }
 }
 
 export function $createVariableNode(
   value: string,
   label: string,
+  parentLabel?: string | ReactNode,
+  icon?: ReactNode,
 ): VariableNode {
-  return new VariableNode(value, label);
+  return new VariableNode(value, label, undefined, parentLabel, icon);
 }
 
 export function $isVariableNode(
