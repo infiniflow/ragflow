@@ -17,14 +17,9 @@
 Unit tests for rag/utils/raptor_utils.py module.
 """
 
-import pytest
 from rag.utils.raptor_utils import (
     RAPTOR_TREE_BUILDER,
     PSI_TREE_BUILDER,
-    GMM_CLUSTERING_METHOD,
-    AHC_CLUSTERING_METHOD,
-    get_raptor_tree_builder,
-    get_raptor_clustering_method,
     _as_extra_dict,
     _has_raptor_marker,
     _raptor_methods_from_fields,
@@ -36,65 +31,6 @@ from rag.utils.raptor_utils import (
     should_skip_raptor,
     get_skip_reason,
 )
-
-
-class TestGetRaptorTreeBuilder:
-    """Tests for get_raptor_tree_builder function."""
-
-    def test_returns_default_raptor_tree_builder(self):
-        """Test that default tree builder is 'raptor'."""
-        result = get_raptor_tree_builder(None)
-        assert result == RAPTOR_TREE_BUILDER
-
-    def test_returns_default_with_empty_config(self):
-        """Test that empty config returns default."""
-        result = get_raptor_tree_builder({})
-        assert result == RAPTOR_TREE_BUILDER
-
-    def test_returns_configured_tree_builder(self):
-        """Test that configured tree builder is returned."""
-        config = {"tree_builder": PSI_TREE_BUILDER}
-        result = get_raptor_tree_builder(config)
-        assert result == PSI_TREE_BUILDER
-
-    def test_returns_ext_tree_builder(self):
-        """Test that ext.tree_builder takes precedence."""
-        config = {"tree_builder": "old", "ext": {"tree_builder": PSI_TREE_BUILDER}}
-        result = get_raptor_tree_builder(config)
-        assert result == PSI_TREE_BUILDER
-
-    def test_raises_error_for_unsupported_tree_builder(self):
-        """Test that unsupported tree builder raises ValueError."""
-        config = {"tree_builder": "unknown"}
-        with pytest.raises(ValueError, match="Unsupported RAPTOR tree builder"):
-            get_raptor_tree_builder(config)
-
-
-class TestGetRaptorClusteringMethod:
-    """Tests for get_raptor_clustering_method function."""
-
-    def test_returns_default_gmm(self):
-        """Test that default clustering method is 'gmm'."""
-        result = get_raptor_clustering_method(None)
-        assert result == GMM_CLUSTERING_METHOD
-
-    def test_returns_configured_clustering_method(self):
-        """Test that configured clustering method is returned."""
-        config = {"clustering_method": AHC_CLUSTERING_METHOD}
-        result = get_raptor_clustering_method(config)
-        assert result == AHC_CLUSTERING_METHOD
-
-    def test_returns_ext_clustering_method(self):
-        """Test that ext.clustering_method takes precedence."""
-        config = {"clustering_method": "old", "ext": {"clustering_method": AHC_CLUSTERING_METHOD}}
-        result = get_raptor_clustering_method(config)
-        assert result == AHC_CLUSTERING_METHOD
-
-    def test_raises_error_for_unsupported_clustering_method(self):
-        """Test that unsupported clustering method raises ValueError."""
-        config = {"clustering_method": "unknown"}
-        with pytest.raises(ValueError, match="Unsupported RAPTOR clustering method"):
-            get_raptor_clustering_method(config)
 
 
 class TestAsExtraDict:
@@ -129,14 +65,14 @@ class TestAsExtraDict:
         assert result == {}
 
     def test_parses_python_dict_literal(self):
-        """Test that Python dict literal is parsed."""
+        """Test that Python dict literal string is parsed correctly."""
         input_str = "{'key': 'value'}"
         result = _as_extra_dict(input_str)
         assert result == {"key": "value"}
 
     def test_returns_empty_dict_for_malformed_string(self):
         """Test that malformed string returns empty dict."""
-        input_str = "{invalid json}"
+        input_str = "not a dict at all"
         result = _as_extra_dict(input_str)
         assert result == {}
 
