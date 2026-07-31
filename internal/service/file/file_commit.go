@@ -235,9 +235,9 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 }
 
 // PageEditCommitInput carries the data needed to record a single wiki/skill
-// page edit as an audit commit, mirroring Python's
-// FileCommitService.record_page_edit.
+// page edit as an audit commit.
 type PageEditCommitInput struct {
+	DatasetID  string // knowledgebase scope, stored on the commit for isolation
 	DocID      string // ES doc id of the page content
 	Slug       string
 	PageType   string
@@ -247,16 +247,26 @@ type PageEditCommitInput struct {
 	NewContent string
 }
 
+// wikiFileID derives the stable file key used to scope page-edit commits to a
+// specific knowledgebase and page, so identical slugs in different
+// knowledgebases never share a commit parent or history.
+func wikiFileID(datasetID, pageType, slug string) string {
+	return datasetID + "/" + pageType + "/" + slug
+}
+
 // RecordPageEdit records a wiki/skill page edit as an audit commit with a
 // git-style parent chain (each edit points at the previous commit for the same
 // page). The new content_after is referenced in ES by doc_id; a unified diff of
-// old vs new content is stored on the commit item.
+// old vs new content is stored on the commit item. The commit is scoped to the
+// dataset via FolderID and a derived page file key so page histories never cross
+// knowledgebase boundaries.
 //
 // This path is independent of the workspace File tree (it does not require a
-// File record or a tree_state snapshot), matching Python's record_page_edit.
+// File record or a tree_state snapshot).
 func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommitInput) (*entity.FileCommit, error) {
-	// Parent chain: previous commit that touched the same page.
-	parentID, err := s.commitItemDAO.GetLatestCommitIDBySlug(ctx, dao.DB, in.Slug, in.PageType)
+	// Parent chain: previous commit that touched the same page file key.
+	fileID := wikiFileID(in.DatasetID, in.PageType, in.Slug)
+	parentID, err := s.commitItemDAO.GetLatestCommitIDByFileID(ctx, dao.DB, fileID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve page commit parent: %w", err)
 	}
@@ -265,6 +275,7 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 
 	commit := &entity.FileCommit{
 		ID:        commitID,
+		FolderID:  in.DatasetID,
 		Message:   in.Title,
 		AuthorID:  in.AuthorID,
 		Title:     &in.Title,
@@ -283,7 +294,7 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 	item := &entity.FileCommitItem{
 		ID:                   utility.GenerateUUID(),
 		CommitID:             commitID,
-		FileID:               in.DocID,
+		FileID:               fileID,
 		Operation:            "modify",
 		Diff:                 &diffText,
 		ContentAfterStorage:  &contentAfterStorage,
@@ -308,8 +319,8 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 }
 
 // ListPageCommits lists audit commits for a specific wiki/skill page.
-func (s *FileCommitService) ListPageCommits(ctx context.Context, slug, pageType string, page, pageSize int) ([]*entity.FileCommit, int64, error) {
-	items, err := s.commitItemDAO.ListBySlug(ctx, dao.DB, slug, pageType)
+func (s *FileCommitService) ListPageCommits(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.FileCommit, int64, error) {
+	items, err := s.commitItemDAO.ListByFileID(ctx, dao.DB, wikiFileID(datasetID, pageType, slug))
 	if err != nil {
 		return nil, 0, err
 	}

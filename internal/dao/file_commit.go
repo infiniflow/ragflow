@@ -20,9 +20,21 @@ import (
 	"context"
 	"errors"
 	"ragflow/internal/entity"
+	"strconv"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
+
+// toInterfaceSlice converts a string slice into an []interface{} for use as
+// parameterized query variables.
+func toInterfaceSlice(ss []string) []interface{} {
+	out := make([]interface{}, len(ss))
+	for i := range ss {
+		out[i] = ss[i]
+	}
+	return out
+}
 
 // FileCommitDAO file commit data access object
 type FileCommitDAO struct{}
@@ -124,13 +136,17 @@ func (dao *FileCommitDAO) ListByIDs(ctx context.Context, db *gorm.DB, commitIDs 
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	// Preserve the incoming (most-recent-first) order via FIND_IN_SET-equivalent.
-	orderClause := "FIELD(id"
-	for _, id := range commitIDs {
-		orderClause += ",'" + id + "'"
+	// Preserve the incoming (most-recent-first) order with a parameterized
+	// CASE expression rather than a MySQL-specific FIELD() interpolation.
+	orderExpr := "CASE id"
+	for i := range commitIDs {
+		orderExpr += " WHEN ? THEN " + strconv.Itoa(i)
 	}
-	orderClause += ")"
-	if err := query.Order(orderClause).Find(&commits).Error; err != nil {
+	orderExpr += " END"
+	if err := query.Clauses(clause.OrderBy{Expression: clause.Expr{
+		SQL:  orderExpr,
+		Vars: toInterfaceSlice(commitIDs),
+	}}).Find(&commits).Error; err != nil {
 		return nil, 0, err
 	}
 	if page > 0 && pageSize > 0 {
@@ -184,13 +200,13 @@ func (dao *FileCommitItemDAO) GetByCommitIDAndFileID(ctx context.Context, db *go
 	return &item, nil
 }
 
-// GetLatestCommitIDBySlug returns the most recent commit_id that modified the
-// given wiki page (identified by slug + page_type), or "" if none. Used to
-// build the parent chain for page-edit commits.
-func (dao *FileCommitItemDAO) GetLatestCommitIDBySlug(ctx context.Context, db *gorm.DB, slug, pageType string) (string, error) {
+// GetLatestCommitIDByFileID returns the most recent commit_id that modified the
+// given wiki page file key, or "" if none. Used to build the parent chain for
+// page-edit commits.
+func (dao *FileCommitItemDAO) GetLatestCommitIDByFileID(ctx context.Context, db *gorm.DB, fileID string) (string, error) {
 	var item entity.FileCommitItem
 	err := db.WithContext(ctx).
-		Where("slug_kwd = ? AND page_type_kwd = ?", slug, pageType).
+		Where("file_id = ?", fileID).
 		Order("create_time DESC").
 		First(&item).Error
 	if err != nil {
@@ -200,15 +216,4 @@ func (dao *FileCommitItemDAO) GetLatestCommitIDBySlug(ctx context.Context, db *g
 		return "", err
 	}
 	return item.CommitID, nil
-}
-
-// ListBySlug lists all commit items for a specific wiki page (slug + page_type),
-// most recent first. Used to reconstruct a page's commit history.
-func (dao *FileCommitItemDAO) ListBySlug(ctx context.Context, db *gorm.DB, slug, pageType string) ([]*entity.FileCommitItem, error) {
-	var items []*entity.FileCommitItem
-	err := db.WithContext(ctx).
-		Where("slug_kwd = ? AND page_type_kwd = ?", slug, pageType).
-		Order("create_time DESC").
-		Find(&items).Error
-	return items, err
 }

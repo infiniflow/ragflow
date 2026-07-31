@@ -41,7 +41,7 @@ type mockFileCommitSvc struct {
 	getCommitTreeFn         func(ctx context.Context, commitID string) (map[string]interface{}, error)
 	getCommitFileContentFn  func(ctx context.Context, folderID, commitID, fileID string) ([]byte, error)
 	getFileVersionHistoryFn func(ctx context.Context, fileID string) ([]entity.VersionEntry, error)
-	listPageCommitsFn       func(ctx context.Context, slug, pageType string, page, pageSize int) ([]*entity.FileCommit, int64, error)
+	listPageCommitsFn       func(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.FileCommit, int64, error)
 }
 
 func (m *mockFileCommitSvc) CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
@@ -129,9 +129,9 @@ func (m *mockFileCommitSvc) GetFileVersionHistory(ctx context.Context, fileID st
 	}, nil
 }
 
-func (m *mockFileCommitSvc) ListPageCommits(ctx context.Context, slug, pageType string, page, pageSize int) ([]*entity.FileCommit, int64, error) {
+func (m *mockFileCommitSvc) ListPageCommits(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.FileCommit, int64, error) {
 	if m.listPageCommitsFn != nil {
-		return m.listPageCommitsFn(ctx, slug, pageType, page, pageSize)
+		return m.listPageCommitsFn(ctx, datasetID, pageType, slug, page, pageSize)
 	}
 	return []*entity.FileCommit{}, 0, nil
 }

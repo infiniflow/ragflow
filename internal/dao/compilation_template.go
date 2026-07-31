@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 // CompilationTemplateDAO is the data-access object for compilation templates and
@@ -127,9 +129,9 @@ func (dao *CompilationTemplateDAO) GetTemplate(ctx context.Context, tenantID, te
 // ListByGroup returns the valid compilation templates belonging to a group,
 // ordered by create_time asc, mirroring Python
 // CompilationTemplateGroupService child loading.
-func (dao *CompilationTemplateDAO) ListByGroup(ctx context.Context, groupID string) ([]*entity.CompilationTemplate, error) {
+func (dao *CompilationTemplateDAO) ListByGroup(ctx context.Context, db *gorm.DB, groupID string) ([]*entity.CompilationTemplate, error) {
 	var templates []*entity.CompilationTemplate
-	if err := DB.WithContext(ctx).
+	if err := db.WithContext(ctx).
 		Where("group_id = ? AND status = ?", groupID, string(entity.StatusValid)).
 		Order("create_time asc").
 		Find(&templates).Error; err != nil {
@@ -179,39 +181,41 @@ func (dao *CompilationTemplateDAO) GetByID(ctx context.Context, id string) (*ent
 }
 
 // Save inserts a new template row.
-func (dao *CompilationTemplateDAO) Save(ctx context.Context, t *entity.CompilationTemplate) error {
-	return DB.WithContext(ctx).Create(t).Error
+func (dao *CompilationTemplateDAO) Save(ctx context.Context, db *gorm.DB, t *entity.CompilationTemplate) error {
+	return db.WithContext(ctx).Create(t).Error
 }
 
 // UpdateFields persists the supplied columns for the template with the given id.
-func (dao *CompilationTemplateDAO) UpdateFields(ctx context.Context, id string, m map[string]interface{}) error {
-	return DB.WithContext(ctx).Model(&entity.CompilationTemplate{}).
+func (dao *CompilationTemplateDAO) UpdateFields(ctx context.Context, db *gorm.DB, id string, m map[string]interface{}) error {
+	return db.WithContext(ctx).Model(&entity.CompilationTemplate{}).
 		Where("id = ?", id).Updates(m).Error
 }
 
 // UpdateStatusByGroup flips the status of every valid template in a group,
 // mirroring Python group delete's child cascade.
-func (dao *CompilationTemplateDAO) UpdateStatusByGroup(ctx context.Context, groupID, status string) error {
-	return DB.WithContext(ctx).Model(&entity.CompilationTemplate{}).
+func (dao *CompilationTemplateDAO) UpdateStatusByGroup(ctx context.Context, db *gorm.DB, groupID, status string) error {
+	return db.WithContext(ctx).Model(&entity.CompilationTemplate{}).
 		Where("group_id = ? AND status = ?", groupID, string(entity.StatusValid)).
 		Update("status", status).Error
 }
 
 // UpdateStatusByID flips a single template's status.
-func (dao *CompilationTemplateDAO) UpdateStatusByID(ctx context.Context, id, status string) error {
-	return DB.WithContext(ctx).Model(&entity.CompilationTemplate{}).
+func (dao *CompilationTemplateDAO) UpdateStatusByID(ctx context.Context, db *gorm.DB, id, status string) error {
+	return db.WithContext(ctx).Model(&entity.CompilationTemplate{}).
 		Where("id = ?", id).
 		Update("status", status).Error
 }
 
 // HardDeleteOrphansByName physically removes stale, invalid, non-built-in
-// templates of the given name in the tenant, mirroring Python
+// templates of the given name within the group, mirroring Python
 // _purge_stale_invalid_children (which DELETEs orphaned duplicate names after a
-// group child is soft-deleted). These rows were soft-deleted in a prior
-// operation but must be permanently purged to keep the table clean.
-func (dao *CompilationTemplateDAO) HardDeleteOrphansByName(ctx context.Context, tenantID, name string) error {
-	return DB.WithContext(ctx).Where(
-		"tenant_id = ? AND name = ? AND is_builtin = ? AND status = ?",
-		tenantID, name, false, string(entity.StatusInvalid),
+// group child is soft-deleted). The deletion is scoped to the group so a
+// same-named template in another group is never affected. These rows were
+// soft-deleted in a prior operation but must be permanently purged to keep the
+// table clean.
+func (dao *CompilationTemplateDAO) HardDeleteOrphansByName(ctx context.Context, db *gorm.DB, tenantID, groupID, name string) error {
+	return db.WithContext(ctx).Where(
+		"tenant_id = ? AND group_id = ? AND name = ? AND is_builtin = ? AND status = ?",
+		tenantID, groupID, name, false, string(entity.StatusInvalid),
 	).Delete(&entity.CompilationTemplate{}).Error
 }

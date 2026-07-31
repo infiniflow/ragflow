@@ -38,7 +38,7 @@ type fileCommitService interface {
 	GetCommitTree(ctx context.Context, commitID string) (map[string]interface{}, error)
 	GetCommitFileContent(ctx context.Context, folderID, commitID, fileID string) ([]byte, error)
 	GetFileVersionHistory(ctx context.Context, fileID string) ([]entity.VersionEntry, error)
-	ListPageCommits(ctx context.Context, slug, pageType string, page, pageSize int) ([]*entity.FileCommit, int64, error)
+	ListPageCommits(ctx context.Context, datasetID, pageType, slug string, page, pageSize int) ([]*entity.FileCommit, int64, error)
 }
 
 // FileCommitHandler file commit handler
@@ -221,11 +221,17 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 
 	// Python's list_commits supports ?slug=<page_slug> to filter audit commits
 	// for a specific wiki/skill page (written by record_page_edit). These page
-	// commits are not bound to a workspace folder, so route them through the
-	// page-commit path instead of the folder-based ListCommits.
+	// commits are scoped to the dataset and page file key, so route them through
+	// the page-commit path instead of the folder-based ListCommits. This only
+	// applies to the /datasets/{dataset_id}/commits route.
 	if slug := c.Query("slug"); slug != "" {
+		datasetID := c.Param("dataset_id")
+		if datasetID == "" {
+			common.ErrorWithCode(c, common.CodeArgumentError, "slug requires a dataset scope")
+			return
+		}
 		pageType := c.Query("page_type")
-		commits, total, err := h.commitService.ListPageCommits(ctx, slug, pageType, page, pageSize)
+		commits, total, err := h.commitService.ListPageCommits(ctx, datasetID, pageType, slug, page, pageSize)
 		if err != nil {
 			jsonInternalError(c, err)
 			return

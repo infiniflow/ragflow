@@ -25,6 +25,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 // timeStr formats a Unix-millisecond timestamp for the read-side JSON payloads.
@@ -109,6 +111,8 @@ func (s *CompilationTemplateGroupService) GetSaved(ctx context.Context, tenantID
 
 // CreateGroup creates a group plus its child templates. Mirrors Python
 // create_group(). It returns a GroupValidationError for payload/scope problems.
+// The group and all child writes are committed atomically so a mid-way failure
+// cannot leave a partially-populated group behind.
 func (s *CompilationTemplateGroupService) CreateGroup(ctx context.Context, tenantID string, req *GroupRequest) (*GroupListItem, error) {
 	if err := validateGroupPayload(req, true); err != nil {
 		return nil, err
@@ -118,25 +122,29 @@ func (s *CompilationTemplateGroupService) CreateGroup(ctx context.Context, tenan
 		return nil, err
 	}
 
-	group := &entity.CompilationTemplateGroup{
-		ID:          utility.GenerateUUID(),
-		TenantID:    tenantID,
-		Name:        strings.TrimSpace(req.Name),
-		Description: strptr(req.Description),
-		Scope:       scope,
-		Status:      strptr(string(entity.StatusValid)),
-	}
-	if err := s.groupDAO.Create(ctx, group); err != nil {
+	groupID := utility.GenerateUUID()
+	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		group := &entity.CompilationTemplateGroup{
+			ID:          groupID,
+			TenantID:    tenantID,
+			Name:        strings.TrimSpace(req.Name),
+			Description: strptr(req.Description),
+			Scope:       scope,
+			Status:      strptr(string(entity.StatusValid)),
+		}
+		if cerr := s.groupDAO.Create(ctx, tx, group); cerr != nil {
+			return cerr
+		}
+		return s.insertChildren(ctx, tx, tenantID, groupID, req.Templates, nil)
+	}); err != nil {
 		return nil, err
 	}
-	if err := s.insertChildren(ctx, tenantID, group.ID, req.Templates, nil); err != nil {
-		return nil, err
-	}
-	return s.GetSaved(ctx, tenantID, group.ID)
+	return s.GetSaved(ctx, tenantID, groupID)
 }
 
 // UpdateGroup applies a partial update to a group and reconciles its child
-// templates. Mirrors Python update_group().
+// templates. Mirrors Python update_group(). The field update and child
+// reconciliation are committed atomically.
 func (s *CompilationTemplateGroupService) UpdateGroup(ctx context.Context, tenantID, groupID string, req *GroupRequest) (*GroupListItem, error) {
 	existing, err := s.groupDAO.GetSaved(ctx, tenantID, groupID)
 	if err != nil {
@@ -150,30 +158,32 @@ func (s *CompilationTemplateGroupService) UpdateGroup(ctx context.Context, tenan
 		return nil, err
 	}
 
-	updates := map[string]interface{}{}
-	if strings.TrimSpace(req.Name) != "" {
-		updates["name"] = strings.TrimSpace(req.Name)
-	}
-	if req.Description != "" {
-		updates["description"] = req.Description
-	}
-	if req.Templates != nil {
-		scope, serr := s.deriveScope(req.Templates)
-		if serr != nil {
-			return nil, serr
+	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		updates := map[string]interface{}{}
+		if strings.TrimSpace(req.Name) != "" {
+			updates["name"] = strings.TrimSpace(req.Name)
 		}
-		updates["scope"] = scope
-	}
-	if len(updates) > 0 {
-		if err := s.groupDAO.UpdateFields(ctx, groupID, updates); err != nil {
-			return nil, err
+		if req.Description != "" {
+			updates["description"] = req.Description
 		}
-	}
-
-	if req.Templates != nil {
-		if err := s.reconcileChildren(ctx, tenantID, groupID, req.Templates); err != nil {
-			return nil, err
+		if req.Templates != nil {
+			scope, serr := s.deriveScope(req.Templates)
+			if serr != nil {
+				return serr
+			}
+			updates["scope"] = scope
 		}
+		if len(updates) > 0 {
+			if uerr := s.groupDAO.UpdateFields(ctx, tx, groupID, updates); uerr != nil {
+				return uerr
+			}
+		}
+		if req.Templates != nil {
+			return s.reconcileChildren(ctx, tx, tenantID, groupID, req.Templates)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return s.GetSaved(ctx, tenantID, groupID)
 }
@@ -188,10 +198,10 @@ func (s *CompilationTemplateGroupService) DeleteGroup(ctx context.Context, tenan
 	if existing == nil {
 		return false, nil
 	}
-	if err := s.templateDAO.UpdateStatusByGroup(ctx, groupID, string(entity.StatusInvalid)); err != nil {
+	if err := s.templateDAO.UpdateStatusByGroup(ctx, dao.DB, groupID, string(entity.StatusInvalid)); err != nil {
 		return false, err
 	}
-	if err := s.groupDAO.Delete(ctx, tenantID, groupID); err != nil {
+	if err := s.groupDAO.Delete(ctx, dao.DB, tenantID, groupID); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -239,7 +249,7 @@ func (s *CompilationTemplateGroupService) buildGroupItems(ctx context.Context, t
 }
 
 func (s *CompilationTemplateGroupService) buildGroupItem(ctx context.Context, tenantID string, group *entity.CompilationTemplateGroup) (*GroupListItem, error) {
-	children, err := s.templateDAO.ListByGroup(ctx, group.ID)
+	children, err := s.templateDAO.ListByGroup(ctx, dao.DB, group.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -355,7 +365,7 @@ func validateGroupPayload(req *GroupRequest, requireAll bool) error {
 
 // insertChildren inserts new child templates. usedForReconcile controls whether
 // the duplicate-name guard applies (create always; reconcile passes seen set).
-func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, tenantID, groupID string, templates []*GroupTemplate, seen map[string]struct{}) error {
+func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db *gorm.DB, tenantID, groupID string, templates []*GroupTemplate, seen map[string]struct{}) error {
 	for _, child := range templates {
 		name := strings.TrimSpace(child.Name)
 		if exists, err := s.templateDAO.NameExistsInGroup(ctx, tenantID, groupID, name, ""); err != nil {
@@ -381,7 +391,7 @@ func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, te
 		if desc != "" {
 			tmpl.Description = &desc
 		}
-		if err := s.templateDAO.Save(ctx, tmpl); err != nil {
+		if err := s.templateDAO.Save(ctx, db, tmpl); err != nil {
 			return err
 		}
 	}
@@ -391,8 +401,8 @@ func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, te
 // reconcileChildren mirrors the Python update_group child reconciliation:
 // existing children (matched by id, or by submitted order for legacy clients)
 // are updated in place, new ones inserted, and removed ones soft-deleted.
-func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context, tenantID, groupID string, templates []*GroupTemplate) error {
-	current, err := s.templateDAO.ListByGroup(ctx, groupID)
+func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context, db *gorm.DB, tenantID, groupID string, templates []*GroupTemplate) error {
+	current, err := s.templateDAO.ListByGroup(ctx, db, groupID)
 	if err != nil {
 		return err
 	}
@@ -417,7 +427,12 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 				return groupValidationErrorf("template %s does not belong to this group.", child.ID)
 			}
 		} else if index < len(current) {
-			target = current[index]
+			// Positional fallback for legacy clients that omit IDs. Skip rows
+			// already retained by an explicit ID above so a mixed payload cannot
+			// bind two submitted entries to one existing row.
+			if _, taken := retained[current[index].ID]; !taken {
+				target = current[index]
+			}
 		}
 
 		config := fillConfigDefaultLLM(ctx, s.tenantDAO, child.Config, &tenantID)
@@ -432,7 +447,7 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 			if desc != "" {
 				updates["description"] = desc
 			}
-			if err := s.templateDAO.UpdateFields(ctx, target.ID, updates); err != nil {
+			if err := s.templateDAO.UpdateFields(ctx, db, target.ID, updates); err != nil {
 				return err
 			}
 			retained[target.ID] = struct{}{}
@@ -452,7 +467,7 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 		if desc != "" {
 			tmpl.Description = &desc
 		}
-		if err := s.templateDAO.Save(ctx, tmpl); err != nil {
+		if err := s.templateDAO.Save(ctx, db, tmpl); err != nil {
 			return err
 		}
 		retained[newID] = struct{}{}
@@ -460,13 +475,14 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 
 	for _, c := range current {
 		if _, keep := retained[c.ID]; !keep {
-			if err := s.templateDAO.UpdateStatusByID(ctx, c.ID, string(entity.StatusInvalid)); err != nil {
+			if err := s.templateDAO.UpdateStatusByID(ctx, db, c.ID, string(entity.StatusInvalid)); err != nil {
 				return err
 			}
 			// Mirror Python _purge_stale_invalid_children: permanently drop
-			// any stale invalid non-builtin template of the same name.
+			// any stale invalid non-builtin template of the same name, scoped to
+			// this group so a same-named template in another group is untouched.
 			if c.Name != "" && !c.IsBuiltin {
-				if err := s.templateDAO.HardDeleteOrphansByName(ctx, tenantID, c.Name); err != nil {
+				if err := s.templateDAO.HardDeleteOrphansByName(ctx, db, tenantID, groupID, c.Name); err != nil {
 					return err
 				}
 			}

@@ -6,7 +6,7 @@
 //
 //  Unless required by applicable law or agreed to in writing, software
 //  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either implied or implied.
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 //
@@ -26,6 +26,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
+
+// maxArtifactPageSize caps the page_size query parameter for artifact list
+// endpoints so a client cannot force an unbounded document-engine search.
+const maxArtifactPageSize = 100
 
 // DatasetArtifactHandler exposes the knowledge-compilation artifact REST APIs
 // backed by DatasetArtifactService.
@@ -98,6 +102,9 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 	if pageSize < 1 {
 		pageSize = 30
 	}
+	if pageSize > maxArtifactPageSize {
+		pageSize = maxArtifactPageSize
+	}
 	items, total, err := h.svc.ListWikiPages(c.Request.Context(), tenantID, datasetID, pageType, topic, page, pageSize)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
@@ -125,13 +132,19 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 		return
 	}
 
-	// Read the current page before mutating, so we can record an audit commit
-	// with the old content when the body actually changes it. Mirrors Python's
-	// FileCommitService.record_page_edit.
+	// Read the current page before mutating so an audit commit can record an
+	// accurate old-to-new diff. Only record when the prior state was read
+	// successfully; a failed read must not produce a diff against an unknown
+	// old value.
 	var oldContent string
+	canRecordAudit := false
 	if req.ContentMd != "" {
-		if before, gerr := h.svc.GetWikiPage(c.Request.Context(), tenantID, datasetID, pageType, slug); gerr == nil && before != nil {
+		before, gerr := h.svc.GetWikiPage(c.Request.Context(), tenantID, datasetID, pageType, slug)
+		if gerr != nil {
+			common.Warn("failed to read wiki page before recording edit commit", zap.Error(gerr))
+		} else if before != nil {
 			oldContent = before.ContentMd
+			canRecordAudit = true
 		}
 	}
 
@@ -148,14 +161,14 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 	// Record a wiki-page edit audit commit (git-style parent chain) when the
 	// content actually changed. Best-effort: a commit write failure must not
 	// roll back the page edit already persisted above.
-	if req.ContentMd != "" && req.ContentMd != oldContent && h.fileCommitSvc != nil {
-		docID := pageType + "/" + slug
+	if canRecordAudit && req.ContentMd != oldContent && h.fileCommitSvc != nil {
 		title := req.Title
 		if title == "" {
 			title = detail.Title
 		}
 		if _, cerr := h.fileCommitSvc.RecordPageEdit(c.Request.Context(), file.PageEditCommitInput{
-			DocID:      docID,
+			DatasetID:  datasetID,
+			DocID:      pageType + "/" + slug,
 			Slug:       slug,
 			PageType:   pageType,
 			Title:      title,

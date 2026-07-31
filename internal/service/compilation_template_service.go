@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/utility"
 
 	"gopkg.in/yaml.v3"
+	"gorm.io/gorm"
 )
 
 // fillConfigDefaultLLM mirrors Python CompilationTemplateService.
@@ -222,7 +223,7 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 			seen := map[string]struct{}{}
 			for _, f := range fields {
 				fm, _ := f.(map[string]interface{})
-				fieldType := strings.TrimSpace(fmt.Sprint(fm["type"]))
+				fieldType := strings.TrimSpace(yamlStr(fm["type"]))
 				if fieldType == "" {
 					return fmt.Errorf("%s type is required.", capitalizeTitle(section))
 				}
@@ -230,13 +231,13 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 					return fmt.Errorf("%s type can not be duplicated.", capitalizeTitle(section))
 				}
 				seen[fieldType] = struct{}{}
-				if strings.TrimSpace(fmt.Sprint(fm["description"])) == "" {
+				if strings.TrimSpace(yamlStr(fm["description"])) == "" {
 					return fmt.Errorf("%s field description is required.", capitalizeTitle(section))
 				}
-				if len(fmt.Sprint(fm["description"])) > 1024 {
+				if len(yamlStr(fm["description"])) > 1024 {
 					return fmt.Errorf("%s field description is too long.", capitalizeTitle(section))
 				}
-				if len(fmt.Sprint(fm["rule"])) > 1024 {
+				if len(yamlStr(fm["rule"])) > 1024 {
 					return fmt.Errorf("%s field rule is too long.", capitalizeTitle(section))
 				}
 			}
@@ -249,29 +250,29 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 					fm, _ := f.(map[string]interface{})
 					switch group {
 					case "claim":
-						if strings.TrimSpace(fmt.Sprint(fm["statement"])) == "" {
+						if strings.TrimSpace(yamlStr(fm["statement"])) == "" {
 							return errors.New("claim statement is required.")
 						}
-						if strings.TrimSpace(fmt.Sprint(fm["subject"])) == "" {
+						if strings.TrimSpace(yamlStr(fm["subject"])) == "" {
 							return errors.New("claim subject is required.")
 						}
-						if len(fmt.Sprint(fm["statement"])) > 1024 {
+						if len(yamlStr(fm["statement"])) > 1024 {
 							return errors.New("claim statement is too long.")
 						}
-						if len(fmt.Sprint(fm["subject"])) > 1024 {
+						if len(yamlStr(fm["subject"])) > 1024 {
 							return errors.New("claim subject is too long.")
 						}
 					case "concept":
-						if strings.TrimSpace(fmt.Sprint(fm["term"])) == "" {
+						if strings.TrimSpace(yamlStr(fm["term"])) == "" {
 							return errors.New("concept term is required.")
 						}
-						if strings.TrimSpace(fmt.Sprint(fm["definition_excerpt"])) == "" {
+						if strings.TrimSpace(yamlStr(fm["definition_excerpt"])) == "" {
 							return errors.New("concept definition excerpt is required.")
 						}
-						if len(fmt.Sprint(fm["term"])) > 1024 {
+						if len(yamlStr(fm["term"])) > 1024 {
 							return errors.New("concept term is too long.")
 						}
-						if len(fmt.Sprint(fm["definition_excerpt"])) > 1024 {
+						if len(yamlStr(fm["definition_excerpt"])) > 1024 {
 							return errors.New("concept definition excerpt is too long.")
 						}
 					}
@@ -347,15 +348,18 @@ func (s *CompilationTemplateService) seedBuiltins(ctx context.Context) error {
 
 func (s *CompilationTemplateService) upsertBuiltin(ctx context.Context, t *entity.CompilationTemplate) error {
 	existing, err := s.templateDAO.GetByID(ctx, t.ID)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return s.templateDAO.Save(ctx, dao.DB, t)
+	}
 	if err != nil {
-		return s.templateDAO.Save(ctx, t)
+		return err
 	}
 	m := map[string]interface{}{
 		"name": t.Name, "kind": t.Kind, "config": t.Config,
 		"description": t.Description, "is_builtin": true,
 		"status": t.Status,
 	}
-	return s.templateDAO.UpdateFields(ctx, existing.ID, m)
+	return s.templateDAO.UpdateFields(ctx, dao.DB, existing.ID, m)
 }
 
 func derefString(p *string) string {

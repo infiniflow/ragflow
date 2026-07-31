@@ -2,11 +2,11 @@
 //  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in this License.
+//  you may not use this file except in compliance with the License.
 //
 //  Unless required by applicable law or agreed to in writing, software
 //  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either implied or implied.
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 //
@@ -15,15 +15,16 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
 
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 )
 
 // Compile keyword constants used by the knowledge-compilation artifacts stored
-// in the document engine. These mirror the values emitted by the Python
-// advanced_rag.knowlege_compile pipeline.
+// in the document engine.
 const (
 	CompileKwdWikiPage     = "wiki_page"
 	CompileKwdWikiEntity   = "wiki_entity"
@@ -49,8 +50,7 @@ const (
 )
 
 // DatasetArtifactService reads knowledge-compilation artifacts (wiki pages,
-// graphs, structures, navigation, skills) from the document engine. It mirrors
-// the read paths of the Python dataset_api_service compilation endpoints.
+// graphs, structures, navigation, skills) from the document engine.
 type DatasetArtifactService struct{}
 
 // NewDatasetArtifactService creates a DatasetArtifactService.
@@ -70,10 +70,13 @@ func (s *DatasetArtifactService) searchCompiled(ctx context.Context, tenantID, d
 	if docEngine == nil {
 		return nil, 0, fmt.Errorf("document engine is not initialized")
 	}
-	merged := map[string]interface{}{"kb_id": []string{datasetID}}
+	// Copy caller filters first, then pin the dataset scope so kb_id always wins
+	// even if a caller passes its own kb_id.
+	merged := make(map[string]interface{}, len(filter)+1)
 	for k, v := range filter {
 		merged[k] = v
 	}
+	merged["kb_id"] = []string{datasetID}
 	res, err := docEngine.Search(ctx, &types.SearchRequest{
 		IndexNames:   []string{wikiIndexName(tenantID)},
 		KbIDs:        []string{datasetID},
@@ -90,6 +93,45 @@ func (s *DatasetArtifactService) searchCompiled(ctx context.Context, tenantID, d
 		return nil, 0, nil
 	}
 	return res.Chunks, res.Total, nil
+}
+
+// intValue coerces an engine field value into an int, tolerating the numeric
+// types a document engine may decode a number as (float64, int, int64,
+// json.Number) as well as a string form and a list-valued form (first element
+// wins). It returns 0 for anything else.
+func intValue(v interface{}) int {
+	if v == nil {
+		return 0
+	}
+	switch n := v.(type) {
+	case int:
+		return n
+	case int64:
+		return int(n)
+	case int32:
+		return int(n)
+	case float64:
+		return int(n)
+	case float32:
+		return int(n)
+	case json.Number:
+		if iv, err := n.Int64(); err == nil {
+			return int(iv)
+		}
+		if fv, err := n.Float64(); err == nil {
+			return int(fv)
+		}
+	case string:
+		var iv int
+		if _, err := fmt.Sscanf(n, "%d", &iv); err == nil {
+			return iv
+		}
+	case []interface{}:
+		if len(n) > 0 {
+			return intValue(n[0])
+		}
+	}
+	return 0
 }
 
 // HasWiki reports whether the dataset has any compiled wiki artifact.
@@ -202,10 +244,9 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 	return detail, nil
 }
 
-// UpdateWikiPage edits a wiki page's content/summary/outlinks. The Python
-// implementation records a wiki_commit and re-reads the row; the Go port
-// performs the partial field update through the document engine and returns
-// the refreshed page.
+// UpdateWikiPage performs a partial field update of a wiki page's content,
+// title and outlinks through the document engine, then returns the refreshed
+// page.
 func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, datasetID, pageType, slug, contentMd, title string, outlinks []string) (*WikiPageDetail, error) {
 	docEngine := engine.Get()
 	if docEngine == nil {
@@ -224,7 +265,10 @@ func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, d
 	if len(chunks) == 0 {
 		return nil, nil
 	}
-	id, _ := chunks[0]["id"].(string)
+	id, ok := chunks[0]["id"].(string)
+	if !ok || id == "" {
+		return nil, fmt.Errorf("wiki page chunk has no id")
+	}
 	update := map[string]interface{}{}
 	if contentMd != "" {
 		update["content_with_weight"] = contentMd
@@ -258,7 +302,7 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 		"compile_kwd":   []string{CompileKwdWikiPage},
 		"page_type_kwd": []string{"concept", "entity"},
 	}
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
+	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
 		[]string{"topic_kwd", "title_kwd", "slug_kwd"}, 0, 1000, nil)
 	if err != nil {
 		return nil, 0, err
@@ -284,7 +328,8 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 		it.PageCount = counts[t]
 		items = append(items, it)
 	}
-	return items, total, nil
+	sort.Slice(items, func(i, j int) bool { return items[i].Topic < items[j].Topic })
+	return items, int64(len(items)), nil
 }
 
 // WikiGraph is the entity/relation graph for a dataset's wiki artifacts.
@@ -325,10 +370,7 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 	}
 	graph := &WikiGraph{Entities: []WikiGraphEntity{}, Relations: []WikiGraphRelation{}}
 	for _, c := range entityChunks {
-		w := 0
-		if v, ok := c["weight_int"].(float64); ok {
-			w = int(v)
-		}
+		w := intValue(c["weight_int"])
 		graph.Entities = append(graph.Entities, WikiGraphEntity{
 			Slug:           firstStringValue(c["slug_kwd"]),
 			Name:           firstStringValue(c["title_kwd"]),
@@ -384,11 +426,14 @@ func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID
 	for d := range involved {
 		ids = append(ids, d)
 	}
+	sort.Strings(ids)
 	return &WikiAlteration{
-		Removed:        0,
-		NewlyUploaded:  0,
-		InvolvedDocIDs: ids,
-		EligibleDocIDs: ids,
+		Removed:             0,
+		NewlyUploaded:       0,
+		RemovedDocIDs:       []string{},
+		NewlyUploadedDocIDs: []string{},
+		InvolvedDocIDs:      ids,
+		EligibleDocIDs:      ids,
 	}, nil
 }
 
@@ -504,8 +549,7 @@ type DocGraphItem struct {
 // GetDocumentGraph returns the structure graph of a single document.
 func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, tenantID, datasetID, documentID, graphType string) ([]DocGraphItem, int64, error) {
 	filter := map[string]interface{}{
-		"doc_id":             documentID,
-		"kb_id":              datasetID,
+		"doc_id":             []string{documentID},
 		"compiled_graph_kwd": []string{"graph"},
 	}
 	if graphType != "" {
@@ -534,8 +578,7 @@ func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenant
 		return 0, fmt.Errorf("document engine is not initialized")
 	}
 	filter := map[string]interface{}{
-		"doc_id":             documentID,
-		"kb_id":              datasetID,
+		"doc_id":             []string{documentID},
 		"compiled_graph_kwd": []string{"graph"},
 	}
 	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter, []string{"id"}, 0, 10000, nil)
@@ -575,10 +618,7 @@ func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, 
 	}
 	items := make([]NavigationItem, 0, len(chunks))
 	for _, c := range chunks {
-		count := 0
-		if v, ok := c["count_int"].(float64); ok {
-			count = int(v)
-		}
+		count := intValue(c["count_int"])
 		items = append(items, NavigationItem{
 			Name:  firstStringValue(c["nav_cluster_kwd"]),
 			Title: firstStringValue(c["title_kwd"]),
@@ -660,10 +700,7 @@ func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, 
 	}
 	items := make([]NavChildItem, 0, len(chunks))
 	for _, c := range chunks {
-		count := 0
-		if v, ok := c["count_int"].(float64); ok {
-			count = int(v)
-		}
+		count := intValue(c["count_int"])
 		items = append(items, NavChildItem{
 			Name:  firstStringValue(c["nav_child_kwd"]),
 			Title: firstStringValue(c["title_kwd"]),
@@ -695,13 +732,7 @@ func (s *DatasetArtifactService) GetSkillTree(ctx context.Context, tenantID, dat
 	}
 	items := make([]SkillTreeItem, 0, len(chunks))
 	for _, c := range chunks {
-		outlinks, inlinks := 0, 0
-		if v, ok := c["outlinks_int"].(float64); ok {
-			outlinks = int(v)
-		}
-		if v, ok := c["inlinks_int"].(float64); ok {
-			inlinks = int(v)
-		}
+		outlinks, inlinks := intValue(c["outlinks_int"]), intValue(c["inlinks_int"])
 		items = append(items, SkillTreeItem{
 			Kwd:      firstStringValue(c["kwd"]),
 			Title:    firstStringValue(c["title_kwd"]),

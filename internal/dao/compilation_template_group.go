@@ -91,19 +91,19 @@ func (dao *CompilationTemplateGroupDAO) NameExists(ctx context.Context, tenantID
 }
 
 // Create inserts a new group row.
-func (dao *CompilationTemplateGroupDAO) Create(ctx context.Context, g *entity.CompilationTemplateGroup) error {
-	return DB.WithContext(ctx).Create(g).Error
+func (dao *CompilationTemplateGroupDAO) Create(ctx context.Context, db *gorm.DB, g *entity.CompilationTemplateGroup) error {
+	return db.WithContext(ctx).Create(g).Error
 }
 
 // UpdateFields persists the supplied columns for the group with the given id.
-func (dao *CompilationTemplateGroupDAO) UpdateFields(ctx context.Context, id string, m map[string]interface{}) error {
-	return DB.WithContext(ctx).Model(&entity.CompilationTemplateGroup{}).
+func (dao *CompilationTemplateGroupDAO) UpdateFields(ctx context.Context, db *gorm.DB, id string, m map[string]interface{}) error {
+	return db.WithContext(ctx).Model(&entity.CompilationTemplateGroup{}).
 		Where("id = ?", id).Updates(m).Error
 }
 
 // Delete soft-deletes a valid group, mirroring Python delete_group().
-func (dao *CompilationTemplateGroupDAO) Delete(ctx context.Context, tenantID, groupID string) error {
-	return DB.WithContext(ctx).Model(&entity.CompilationTemplateGroup{}).
+func (dao *CompilationTemplateGroupDAO) Delete(ctx context.Context, db *gorm.DB, tenantID, groupID string) error {
+	return db.WithContext(ctx).Model(&entity.CompilationTemplateGroup{}).
 		Where("id = ? AND tenant_id = ? AND status = ?", groupID, tenantID, string(entity.StatusValid)).
 		Update("status", string(entity.StatusInvalid)).Error
 }
