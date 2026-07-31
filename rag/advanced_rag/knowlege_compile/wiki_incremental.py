@@ -1587,7 +1587,7 @@ async def wiki_compile_incremental(
         _progress("No MAP results found. Skipping wiki compilation.")
         return summary
 
-    # ----- Phase 2: Entity Matching (跨实体去重) -----
+    # ----- Phase 2: Entity Matching -----
     _progress("Entity Matching: deduplicating entities and concepts ...")
 
     raw_entities = _extract_raw_entities(map_results)

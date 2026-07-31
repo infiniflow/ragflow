@@ -308,6 +308,38 @@ async def _wiki_existing_map_doc_ids(tenant_id: str, kb_id: str) -> set[str]:
     return doc_ids
 
 
+async def _wiki_has_compiled_pages(tenant_id: str, kb_id: str) -> bool:
+    """True when at least one compiled wiki page already exists for the KB.
+
+    Used to tell "nothing changed and pages already exist" (a genuine no-op)
+    apart from "MAP rows exist but no pages were ever produced" (a prior run
+    persisted MAP then never finished REDUCE) — only the latter should trigger a
+    full rebuild from the stored extracts.
+    """
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = search.index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return False
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["id"],
+            [],
+            {"compile_kwd": [WIKI_PAGE_COMPILE_KWD]},
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index,
+            [kb_id],
+        )
+        return bool(settings.docStoreConn.get_total(res))
+    except Exception:
+        logging.exception("wiki: page existence probe failed for kb=%s", kb_id)
+        return False
+
+
 async def _wiki_delete_deleted_doc_state(
     tenant_id: str,
     kb_id: str,
@@ -1499,7 +1531,12 @@ async def run_wiki_incremental(
                     window_fraction=0.5,
                     max_workers=6,
                 )
-                if result:
+                # Only forward extracts that actually produced content. An
+                # all-unchanged doc (MAP fully resumed from prior rows) returns an
+                # empty extract; appending it would make ``all_map_results``
+                # non-empty and suppress wiki_compile_incremental's "load stored
+                # extracts from ES" fallback, so nothing would ever be compiled.
+                if result and any(result.get(k) for k in ("entities", "concepts", "claims", "relations", "topics")):
                     result["doc_id"] = doc_id
                     all_map_results.append(result)
             except Exception:
@@ -1518,9 +1555,17 @@ async def run_wiki_incremental(
                 task.cancel()
         await asyncio.gather(*producers, *workers, return_exceptions=True)
 
-    if not all_map_results and not is_incremental:
-        progress(1.0, "No MAP results. Skipping wiki compilation.")
-        return
+    if not all_map_results and not deleted_doc_ids:
+        # Nothing fresh, changed, or deleted this run. Skip only when there is
+        # genuinely nothing to build: no MAP rows at all, or a compiled baseline
+        # already exists. When MAP rows exist but no pages were ever produced
+        # (e.g. a prior run persisted MAP then failed before REDUCE, so every
+        # chunk now looks "unchanged"), fall through — ``map_results=None`` below
+        # makes wiki_compile_incremental rebuild pages from the stored extracts.
+        if not existing_map_doc_ids or await _wiki_has_compiled_pages(ctx.tenant_id, ctx.kb_id):
+            progress(1.0, "Wiki is up to date; nothing to compile.")
+            return
+        logging.info("wiki: MAP rows exist but no pages found for kb=%s; rebuilding from stored extracts.", ctx.kb_id)
 
     # 5. Run incremental wiki compilation (Mode A or Mode B)
     kb_chat_mdl = _bundle_for(kb_chat_llm_id) if kb_chat_llm_id else _bundle_for(None)
