@@ -49,20 +49,37 @@ func (dao *CompilationTemplateDAO) ResolveGroupTemplateIDs(ctx context.Context, 
 
 	db := DB.WithContext(ctx)
 
-	// Verify the requested groups exist, are valid, and belong to the tenant.
+	// Verify the requested groups exist and are valid. The built-in group
+	// (compiler.json's default) is a global, tenant-agnostic catalogue, so it
+	// resolves for every tenant; other groups are scoped to the caller's
+	// tenant.
+	isBuiltin := make(map[string]bool, len(groupIDs))
+	for _, gid := range groupIDs {
+		if gid == BuiltinCompilationTemplateGroupID {
+			isBuiltin[gid] = true
+		}
+	}
 	var validGroups []entity.CompilationTemplateGroup
 	if err := db.
-		Where("id IN ? AND tenant_id = ? AND status = ?", groupIDs, tenantID, string(entity.StatusValid)).
+		Where("id IN ? AND status = ?", groupIDs, string(entity.StatusValid)).
 		Find(&validGroups).Error; err != nil {
 		return nil, fmt.Errorf("resolve compilation template groups: %w", err)
 	}
 	valid := make(map[string]struct{}, len(validGroups))
+	byID := make(map[string]entity.CompilationTemplateGroup, len(validGroups))
 	for _, g := range validGroups {
 		valid[g.ID] = struct{}{}
+		byID[g.ID] = g
 	}
 	for _, gid := range groupIDs {
 		if _, ok := valid[gid]; !ok {
 			return nil, fmt.Errorf("compilation_template_group %q not found for tenant %q", gid, tenantID)
+		}
+		// Non-built-in groups must belong to the requesting tenant.
+		if !isBuiltin[gid] {
+			if byID[gid].TenantID != tenantID {
+				return nil, fmt.Errorf("compilation_template_group %q not found for tenant %q", gid, tenantID)
+			}
 		}
 	}
 

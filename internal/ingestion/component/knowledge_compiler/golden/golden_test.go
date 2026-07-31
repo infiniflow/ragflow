@@ -125,6 +125,33 @@ func TestCoverageFraction_PartialCoverage(t *testing.T) {
 	}
 }
 
+// TestAnalyzeTreeProducts_IgnoresUnknownSourceIDs verifies that an unknown
+// (leaked/garbage) ID inside source_chunk_ids does not inflate CoveredSources
+// past the corpus size, so CoverageFraction stays <= 1.0. A level-0 leaf that
+// references 2 valid + 1 unknown ID over an nChunks=2 corpus must still report
+// coverage 1.0, not 1.5.
+func TestAnalyzeTreeProducts_IgnoresUnknownSourceIDs(t *testing.T) {
+	vector := json.RawMessage(`[0.1,0.2,0.3]`)
+	chunks := []schema.ChunkDoc{
+		{Text: "root", Extra: mustExtras(t, map[string]any{
+			"id": "r1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
+			"kc_kind": "root", "kc_level": float64(-1), "q_3_vec": vector,
+		})},
+		{Text: "leaf", Extra: mustExtras(t, map[string]any{
+			"id": "a1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
+			"kc_kind": "summary", "kc_level": float64(0), "parent_kwd": "r1", "q_3_vec": vector,
+			"source_chunk_ids": []string{"chunk-01", "chunk-02", "leaked-unknown-id"},
+		})},
+	}
+	m := AnalyzeTreeProducts(chunks, "chunk-01", "chunk-02")
+	if m.CoveredSources != 2 {
+		t.Errorf("CoveredSources = %d, want 2 (unknown id excluded)", m.CoveredSources)
+	}
+	if cov := m.CoverageFraction(2); cov != 1.0 {
+		t.Errorf("CoverageFraction = %v, want 1.0 (must not exceed 1.0)", cov)
+	}
+}
+
 func TestExtraFloat_Roundtrip(t *testing.T) {
 	doc := schema.ChunkDoc{Extra: mustExtras(t, map[string]any{"kc_level": float64(3)})}
 	if v, ok := extraFloat(doc, "kc_level"); !ok || v != 3 {

@@ -74,7 +74,8 @@ func runVariantChunks(t *testing.T, variant string, extra map[string]any) []sche
 // inputs (e.g. parser_config for the structure variant's template shape).
 func runVariantChunksWithInputs(t *testing.T, variant string, extra, inputsExtra map[string]any) []schema.ChunkDoc {
 	t.Helper()
-	params := map[string]any{"compilation_template_id": variant, "llm_id": "llm1", "embedding_model": "emb1"}
+	installVariantTemplateResolver(t, variant)
+	params := map[string]any{"compilation_template_id": "tpl-" + variant, "llm_id": "llm1", "embedding_model": "emb1"}
 	for k, v := range extra {
 		params[k] = v
 	}
@@ -254,7 +255,7 @@ func TestGolden_Tree_Structure(t *testing.T) {
 				"extra": map[string]any{"tree_order": tc.order},
 			})
 		}
-		m := golden.AnalyzeTreeProducts(prods)
+		m := golden.AnalyzeTreeProducts(prods, goldenCorpusIDs()...)
 		t.Logf("tree(%s): products=%d root=%d leafClusters=%d maxDepth=%d coverage=%.2f",
 			tc.name, m.ProductCount, m.RootCount, m.LeafClusters, m.MaxDepth, m.CoverageFraction(nChunks))
 
@@ -290,4 +291,16 @@ func numFloat(m map[string]any, key string) float64 {
 		return float64(v)
 	}
 	return 0
+}
+
+// goldenCorpusIDs returns the IDs of every chunk in the fixed golden corpus.
+// Passed to AnalyzeTreeProducts so coverage only counts source chunk IDs that
+// belong to the input corpus (a leaked/unknown ID must not inflate coverage).
+func goldenCorpusIDs() []string {
+	corpus := golden.FixedCorpus()
+	ids := make([]string, 0, len(corpus))
+	for _, c := range corpus {
+		ids = append(ids, c.ID)
+	}
+	return ids
 }

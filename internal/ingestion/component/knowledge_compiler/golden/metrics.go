@@ -28,13 +28,25 @@ type TreeMetrics struct {
 // AnalyzeTreeProducts validates tree integrity and computes structural
 // metrics from a flat chunk list (the compiled tree output, expressed as
 // schema.ChunkDoc values). Used by the 缺口 C golden gate.
-func AnalyzeTreeProducts(chunks []schema.ChunkDoc) TreeMetrics {
+//
+// validSourceIDs, when provided, limits coverage counting to source chunk IDs
+// that actually belong to the input corpus. This prevents an untrusted
+// source_chunk_ids (e.g. a leaked/garbage ID) from inflating CoveredSources
+// past nChunks and pushing CoverageFraction above 1.0. When empty, all
+// source_chunk_ids are counted (backward compatible for unit tests that build
+// synthetic trees).
+func AnalyzeTreeProducts(chunks []schema.ChunkDoc, validSourceIDs ...string) TreeMetrics {
 	ids := make(map[string]bool, len(chunks))
 	for _, c := range chunks {
 		if id, ok := c.GetExtraString("id"); ok {
 			ids[id] = true
 		}
 	}
+	validSet := make(map[string]bool, len(validSourceIDs))
+	for _, id := range validSourceIDs {
+		validSet[id] = true
+	}
+	checkValid := len(validSet) > 0
 	m := TreeMetrics{ProductCount: len(chunks), AllParented: true, VectorOK: true, SchemaOK: true, covered: make(map[string]bool)}
 	maxLevel := -1
 	for _, c := range chunks {
@@ -52,9 +64,13 @@ func AnalyzeTreeProducts(chunks []schema.ChunkDoc) TreeMetrics {
 				// Accumulate the distinct source chunk IDs this leaf cluster
 				// was built from. Every input chunk is assigned to exactly one
 				// level-0 cluster in buildTree, so the union of these sets is
-				// the set of covered source chunks.
-				if ids, ok := c.GetExtraStringSlice("source_chunk_ids"); ok {
-					for _, id := range ids {
+				// the set of covered source chunks. Only IDs that belong to the
+				// input corpus count, so an unknown ID cannot inflate coverage.
+				if src, ok := c.GetExtraStringSlice("source_chunk_ids"); ok {
+					for _, id := range src {
+						if checkValid && !validSet[id] {
+							continue
+						}
 						if !m.covered[id] {
 							m.covered[id] = true
 							m.CoveredSources++
@@ -100,7 +116,13 @@ func (m TreeMetrics) CoverageFraction(nChunks int) float64 {
 	if m.CoveredSources <= 0 {
 		return 0
 	}
-	return float64(m.CoveredSources) / float64(nChunks)
+	// Coverage can never exceed 1.0: a source chunk is covered at most once,
+	// and only corpus IDs are counted, so CoveredSources <= nChunks.
+	frac := float64(m.CoveredSources) / float64(nChunks)
+	if frac > 1.0 {
+		return 1.0
+	}
+	return frac
 }
 
 // extraFloat reads a numeric Extra value by key.

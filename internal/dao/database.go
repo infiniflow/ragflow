@@ -185,6 +185,11 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	if err = SeedCanvasTemplates(ctx, DB); err != nil {
 		common.Warn("Failed to seed canvas templates", zap.Error(err))
 	}
+	// Seed the built-in compilation template group (c3aa748c...) for every
+	// tenant so compiler.json's default group resolves out of the box.
+	if err = SeedBuiltinCompilationTemplates(ctx, DB); err != nil {
+		common.Warn("Failed to seed built-in compilation templates", zap.Error(err))
+	}
 
 	common.Info("Database connected and migrated successfully")
 
