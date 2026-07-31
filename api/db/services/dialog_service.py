@@ -317,6 +317,16 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
         model_config = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
 
     chat_mdl = LLMBundle(dialog.tenant_id, model_config, langfuse_session_id=session_id)
+    logging.info(
+        "[rag_agent] solo model selected: dialog_id=%s tenant_id=%s dialog_llm_id=%s tenant_llm_id=%s model=%s factory=%s model_type=%s",
+        getattr(dialog, "id", None),
+        dialog.tenant_id,
+        dialog.llm_id,
+        dialog.tenant_llm_id,
+        model_config.get("llm_name") if model_config else None,
+        model_config.get("llm_factory") if model_config else None,
+        model_config.get("model_type") if model_config else None,
+    )
     factory = model_config.get("llm_factory", "") if model_config else ""
     if "files" in messages[-1]:
         if model_config["model_type"] == "chat":
@@ -1844,14 +1854,43 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
 
 
 async def rag_agent(dialog, messages, stream=True, **kwargs):
-    logging.debug("Begin rag_agent")
+    prompt_config = dialog.prompt_config or {}
+    requested_reasoning = kwargs.get("reasoning")
+    configured_reasoning = prompt_config.get("reasoning")
+    history_reasoning = [
+        {
+            "index": index,
+            "role": message.get("role"),
+            "has_reasoning_content": bool(message.get("reasoning_content")),
+            "has_think_tag": "<think>" in str(message.get("content", "")),
+        }
+        for index, message in enumerate(messages)
+        if message.get("role") == "assistant"
+    ]
+    logging.info(
+        "[rag_agent] start: dialog_id=%s tenant_id=%s dialog_llm_id=%s tenant_llm_id=%s requested_reasoning=%r configured_reasoning=%r stream=%s llm_setting=%r history_reasoning=%s",
+        getattr(dialog, "id", None),
+        dialog.tenant_id,
+        dialog.llm_id,
+        dialog.tenant_llm_id,
+        requested_reasoning,
+        configured_reasoning,
+        stream,
+        dialog.llm_setting or {},
+        history_reasoning,
+    )
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
-    prompt_config = dialog.prompt_config
     if not prompt_config.get("reasoning", 0) and not kwargs.get("reasoning"):
+        logging.info(
+            "[rag_agent] route=solo: requested_reasoning=%r configured_reasoning=%r",
+            requested_reasoning,
+            configured_reasoning,
+        )
         async for ans in async_chat(dialog, messages, stream, **kwargs):
             yield ans
         return
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
+    model_config = getattr(chat_mdl, "model_config", {}) or {}
     use_web_search = _should_use_web_search(prompt_config, kwargs.get("internet"))
     logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
@@ -1865,6 +1904,19 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         thinking_mode = _mode_labels[_n - 1] if 1 <= _n <= len(_mode_labels) else "medium"
     except (TypeError, ValueError):
         thinking_mode = "medium"
+
+    gen_conf = dialog.llm_setting or {}
+    logging.info(
+        "[rag_agent] route=agentic: dialog_id=%s model=%s factory=%s model_type=%s requested_reasoning=%r configured_reasoning=%r thinking_mode=%s gen_conf=%r",
+        getattr(dialog, "id", None),
+        model_config.get("llm_name"),
+        model_config.get("llm_factory"),
+        model_config.get("model_type"),
+        requested_reasoning,
+        configured_reasoning,
+        thinking_mode,
+        gen_conf,
+    )
 
     rag_tools = RAGTools(
         tenant_ids,
@@ -1934,7 +1986,6 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     # small models mangle or drop, so the client receives nothing.
     if getattr(chat_mdl, "mdl", None) is not None:
         chat_mdl.mdl.terminal_tools = {"rag"}
-    gen_conf = dialog.llm_setting
     if stream:
         # Surface the agentic pipeline's bracket-tagged progress logs to the
         # client as <think> content, interleaved with the real token stream.
