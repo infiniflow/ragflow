@@ -7,7 +7,7 @@ import random
 import time
 import threading
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Set
 
 import aiohttp
 
@@ -69,6 +69,7 @@ class QQBotChannel(Channel):
         self._session_id: Optional[str] = None
         self._seq: Optional[int] = None
         self._heartbeat_task: Optional[asyncio.Task] = None
+        self._dispatch_tasks: Set[asyncio.Task] = set()
         self._ws_thread: Optional[threading.Thread] = None
         self._ws_loop: Optional[asyncio.AbstractEventLoop] = None
         self._ws_session: Optional[aiohttp.ClientSession] = None
@@ -99,6 +100,10 @@ class QQBotChannel(Channel):
             self._ws_loop.call_soon_threadsafe(lambda: asyncio.create_task(self._ws_session.close()))
         if self._ws_thread and self._ws_thread.is_alive():
             await asyncio.to_thread(self._ws_thread.join, 5)
+        for task in tuple(self._dispatch_tasks):
+            if not task.done():
+                task.cancel()
+        self._dispatch_tasks.clear()
         self._heartbeat_task = None
         self._task = None
         self._ws_thread = None
@@ -254,7 +259,12 @@ class QQBotChannel(Channel):
         incoming = self._normalize_incoming_event(event_type, data)
         if incoming is None:
             return
-        asyncio.create_task(self._dispatch(incoming))
+        # The event loop only keeps weak references to tasks, so a dispatch whose
+        # only reference was the create_task() call can be collected before the
+        # handler runs. Hold it until it completes.
+        task = asyncio.create_task(self._dispatch(incoming))
+        self._dispatch_tasks.add(task)
+        task.add_done_callback(self._dispatch_tasks.discard)
 
     async def _heartbeat_loop(self, ws: aiohttp.ClientWebSocketResponse, interval_ms: int) -> None:
         delay = max(interval_ms / 1000.0, 1.0)
