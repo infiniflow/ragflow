@@ -1557,13 +1557,19 @@ async def wiki_compile_incremental(
         _progress("Loading MAP results from doc store ...")
         map_results = []
         index = search.index_name(tenant_id)
+        # Each wiki_map_extract row stores its per-chunk extract as a JSON blob in
+        # ``content_with_weight`` (see _wiki_build_resume_doc) — the entity /
+        # concept / claim / relation / topic lists are NOT separate columns, so
+        # they must be parsed out of that blob to rebuild the map_result shape
+        # that _extract_raw_entities and REDUCE expect.
+        select_fields = ["content_with_weight", "doc_id"]
         offset = 0
         page_size = 1000
         while True:
             try:
                 res = await thread_pool_exec(
                     settings.docStoreConn.search,
-                    ["entities", "concepts", "claims", "relations", "topics", "doc_id"],
+                    select_fields,
                     [],
                     {"compile_kwd": ["wiki_map_extract"]},
                     [],
@@ -1573,12 +1579,25 @@ async def wiki_compile_incremental(
                     index,
                     [kb_id],
                 )
-                field_map = settings.docStoreConn.get_fields(res, ["entities", "concepts", "claims", "relations", "topics", "doc_id"]) or {}
+                field_map = settings.docStoreConn.get_fields(res, select_fields) or {}
             except Exception:
                 logging.exception("wiki: failed to load MAP results for kb=%s", kb_id)
                 break
             for row in field_map.values():
-                map_results.append(row)
+                raw = row.get("content_with_weight")
+                if isinstance(raw, str) and raw:
+                    try:
+                        extract = json.loads(raw)
+                    except Exception:
+                        extract = None
+                elif isinstance(raw, dict):
+                    extract = raw
+                else:
+                    extract = None
+                if not isinstance(extract, dict):
+                    continue
+                extract["doc_id"] = row.get("doc_id", "")
+                map_results.append(extract)
             if len(field_map) < page_size:
                 break
             offset += page_size
