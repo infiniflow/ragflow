@@ -19,6 +19,11 @@ Cargo.lock
 *.pdb
 *.trie
 
+# Local tooling directories
+.codegraph/
+.nezha/
+.reasonix/
+
 .idea/
 .vscode/
 .cursor/settings.json
