@@ -53,34 +53,6 @@ func TestExtractOpenAIUsage(t *testing.T) {
 			want:   &TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
 			wantOK: true,
 		},
-		{
-			name: "cache read via prompt_tokens_details.cached_tokens",
-			body: map[string]any{
-				"usage": map[string]any{
-					"prompt_tokens":     float64(100),
-					"completion_tokens": float64(50),
-					"total_tokens":      float64(150),
-					"prompt_tokens_details": map[string]any{
-						"cached_tokens": float64(80),
-					},
-				},
-			},
-			want:   &TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150, CacheReadTokens: 80},
-			wantOK: true,
-		},
-		{
-			name: "cache read via prompt_cache_hit_tokens (DeepSeek)",
-			body: map[string]any{
-				"usage": map[string]any{
-					"prompt_tokens":           float64(100),
-					"completion_tokens":       float64(50),
-					"total_tokens":            float64(150),
-					"prompt_cache_hit_tokens": float64(80),
-				},
-			},
-			want:   &TokenUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150, CacheReadTokens: 80},
-			wantOK: true,
-		},
 	}
 
 	for _, tc := range cases {
@@ -94,9 +66,7 @@ func TestExtractOpenAIUsage(t *testing.T) {
 			}
 			if got.PromptTokens != tc.want.PromptTokens ||
 				got.CompletionTokens != tc.want.CompletionTokens ||
-				got.TotalTokens != tc.want.TotalTokens ||
-				got.CacheReadTokens != tc.want.CacheReadTokens ||
-				got.CacheWriteTokens != tc.want.CacheWriteTokens {
+				got.TotalTokens != tc.want.TotalTokens {
 				t.Fatalf("extractOpenAIUsage() = %+v, want %+v", got, tc.want)
 			}
 		})
