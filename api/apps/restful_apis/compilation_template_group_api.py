@@ -66,7 +66,7 @@ def _validate_group_payload(req: dict, require_all: bool = True) -> str:
     return ""
 
 
-@manager.route("/compilation_template_groups", methods=["GET"])  # noqa: F821
+@manager.route("/compilation-template-groups", methods=["GET"])  # noqa: F821
 @login_required
 def list_groups() -> Response:
     keywords = request.args.get("keywords", "")
@@ -86,7 +86,7 @@ def list_groups() -> Response:
         return server_error_response(exc)
 
 
-@manager.route("/compilation_template_groups/<group_id>", methods=["GET"])  # noqa: F821
+@manager.route("/compilation-template-groups/<group_id>", methods=["GET"])  # noqa: F821
 @login_required
 def detail(group_id: str) -> Response:
     try:
@@ -98,7 +98,7 @@ def detail(group_id: str) -> Response:
         return server_error_response(exc)
 
 
-@manager.route("/compilation_template_groups", methods=["POST"])  # noqa: F821
+@manager.route("/compilation-template-groups", methods=["POST"])  # noqa: F821
 @login_required
 @validate_request("name", "templates")
 async def create() -> Response:
@@ -125,7 +125,7 @@ async def create() -> Response:
         return server_error_response(exc)
 
 
-@manager.route("/compilation_template_groups/<group_id>", methods=["PUT"])  # noqa: F821
+@manager.route("/compilation-template-groups/<group_id>", methods=["PUT"])  # noqa: F821
 @login_required
 async def update(group_id: str) -> Response:
     req = await get_request_json()
@@ -160,7 +160,7 @@ async def update(group_id: str) -> Response:
         return server_error_response(exc)
 
 
-@manager.route("/compilation_template_groups/<group_id>", methods=["DELETE"])  # noqa: F821
+@manager.route("/compilation-template-groups/<group_id>", methods=["DELETE"])  # noqa: F821
 @login_required
 def delete(group_id: str) -> Response:
     try:

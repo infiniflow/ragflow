@@ -386,9 +386,9 @@ export default {
   compilationTemplates: `${restAPIv1}/compilation_templates`,
   compilationTemplate: (id: string) =>
     `${restAPIv1}/compilation_templates/${id}`,
-  compilationTemplateGroups: `${restAPIv1}/compilation_template_groups`,
+  compilationTemplateGroups: `${restAPIv1}/compilation-template-groups`,
   compilationTemplateGroup: (id: string) =>
-    `${restAPIv1}/compilation_template_groups/${id}`,
+    `${restAPIv1}/compilation-template-groups/${id}`,
   wikiPresets: `${restAPIv1}/compilation_templates/wiki_presets`,
 
   // mcp server
