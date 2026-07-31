@@ -26,6 +26,8 @@ from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr
 from common.misc_utils import thread_pool_exec
 from rag.nlp import search
 
+from ._common import stable_row_id as _stable_row_id
+
 
 # ----- REFINE concurrency control -----
 
@@ -205,6 +207,7 @@ async def _save_canonical_entity(
     index = search.index_name(tenant_id)
     dim = len(embedding) if embedding else 768
     doc = {
+        "id": _stable_row_id(WIKI_CANONICAL_ENTITY_COMPILE_KWD, kb_id, entity_name),
         "entity_kwd": entity_name,
         "entity_type_kwd": entity_type,
         "aliases": json.dumps(list(set(aliases)), ensure_ascii=False),
