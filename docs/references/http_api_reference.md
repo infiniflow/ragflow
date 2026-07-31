@@ -1760,7 +1760,7 @@ Success:
                 "important_keywords": [
                     ""
                 ],
-                "kb_id": "c7ee74067a2c11efb21c0242ac120006",
+                "dataset_id": "c7ee74067a2c11efb21c0242ac120006",
                 "positions": [
                     ""
                 ],
