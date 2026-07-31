@@ -199,7 +199,7 @@ export function TemplateConfiguration({
               name={`templates.${selectedTemplateIndex}.config.plan`}
               label={t('setting.plan')}
             >
-              {({ field }: { field: any }) => (
+              {(field) => (
                 <Checkbox
                   checked={!!field.value}
                   onCheckedChange={(v: boolean) => field.onChange(v)}
