@@ -46,24 +46,33 @@ from common import settings
 # below can reference the values as module-level constants, matching
 # `api/db/init_data.py:init_superuser`. See infiniflow/ragflow#16876.
 #
-# Reject blank/whitespace values explicitly: ``os.getenv(name, fallback)``
+# Reject empty env values explicitly: ``os.getenv(name, fallback)``
 # only uses the fallback when the variable is *unset*, so a misconfigured
 # operator setting ``DEFAULT_SUPERUSER_PASSWORD=`` would otherwise
 # persist an empty password — every first login would silently fail with
-# "credentials don't match" instead of a clear startup error.
+# "credentials don't match" instead of a clear startup error. We
+# deliberately preserve the raw value (no whitespace stripping) so a
+# password like ``"  s3cret  "`` keeps its leading/trailing whitespace
+# and isn't silently mutated before being hashed/stored. Email/nickname
+# callers strip separately because whitespace there would be invalid.
 def _required_env(name, default):
     value = os.getenv(name, default)
-    if not value or not value.strip():
-        raise RuntimeError(
-            f"admin server: {name} is set but empty/whitespace; "
-            f"either unset it (the default '{default}' will be used) "
-            f"or provide a real value"
+    if not value:
+        logging.error(
+            "admin server: %s is set but empty; either unset it (the "
+            "default %r will be used) or provide a real value",
+            name,
+            default,
         )
-    return value.strip()
+        raise RuntimeError(
+            f"admin server: {name} is set but empty; either unset it "
+            f"(the default {default!r} will be used) or provide a real value"
+        )
+    return value
 
 
-DEFAULT_SUPERUSER_NICKNAME = _required_env("DEFAULT_SUPERUSER_NICKNAME", "admin")
-DEFAULT_SUPERUSER_EMAIL = _required_env("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
+DEFAULT_SUPERUSER_NICKNAME = _required_env("DEFAULT_SUPERUSER_NICKNAME", "admin").strip()
+DEFAULT_SUPERUSER_EMAIL = _required_env("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io").strip()
 DEFAULT_SUPERUSER_PASSWORD = _required_env("DEFAULT_SUPERUSER_PASSWORD", "admin")
 
 
@@ -136,9 +145,18 @@ def init_default_admin():
         raise AdminException("No active admin. Please update 'is_active' in db manually.", 500)
     else:
         # Filter existing superuser rows by the configured
-        # ``DEFAULT_SUPERUSER_EMAIL`` so a custom env value steers the
-        # tenant-backfill branch to the right row.
-        default_admin_rows = [u for u in users if u.email == DEFAULT_SUPERUSER_EMAIL]
+        # ``DEFAULT_SUPERUSER_EMAIL`` *and* by active status. An
+        # inactive row matching the configured email must NOT count as
+        # the bootstrap admin — otherwise the tenant-backfill branch
+        # would skip a real active admin with a different email, and
+        # the "no matching active admin" error below would never
+        # surface.
+        default_admin_rows = [
+            u
+            for u in users
+            if u.email == DEFAULT_SUPERUSER_EMAIL
+            and u.is_active == ActiveEnum.ACTIVE.value
+        ]
         if default_admin_rows:
             default_admin = default_admin_rows[0].to_dict()
             exist, default_admin_tenant = TenantService.get_by_id(default_admin["id"])
@@ -153,6 +171,15 @@ def init_default_admin():
             # from the env), and don't auto-create a new admin (the
             # user may have intentionally kept the old admin). Surface
             # the mismatch with explicit migration guidance.
+            existing_emails = sorted({u.email for u in users})
+            logging.error(
+                "admin server: configured DEFAULT_SUPERUSER_EMAIL (%r) "
+                "does not match any active superuser row; existing admin "
+                "emails: %r. Refusing to bootstrap to avoid diverging the "
+                "credential from the env value.",
+                DEFAULT_SUPERUSER_EMAIL,
+                existing_emails,
+            )
             raise AdminException(
                 f"Active superuser(s) exist but none match DEFAULT_SUPERUSER_EMAIL "
                 f"({DEFAULT_SUPERUSER_EMAIL!r}). Either unset the env var to "
