@@ -127,6 +127,8 @@ type ChatCompletionsRequest struct {
 	LLMID                  string                   `json:"llm_id,omitempty"`
 	PassAllHistoryMessages *bool                    `json:"pass_all_history_messages,omitempty"`
 	PassAllHistory         *bool                    `json:"pass_all_history,omitempty"`
+	StoreHistoryMessages   *bool                    `json:"store_history_messages,omitempty"`
+	StoreHistory           *bool                    `json:"store_history,omitempty"`
 	Legacy                 bool                     `json:"legacy,omitempty"`
 	Stream                 *bool                    `json:"stream"`
 	Temperature            *float64                 `json:"temperature,omitempty"`
@@ -205,12 +207,26 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 		passAllHistory = *req.PassAllHistoryMessages
 	}
 
+	// Resolve store_history from either alias (default true, mirrors Python)
+	storeHistory := true
+	if req.StoreHistory != nil {
+		storeHistory = *req.StoreHistory
+	}
+	if req.StoreHistoryMessages != nil {
+		storeHistory = *req.StoreHistoryMessages
+	}
+	if !storeHistory && !passAllHistory {
+		common.ErrorWithCode(c, common.CodeDataError, "`pass_all_history_messages` must be true when `store_history_messages` is false.")
+		return
+	}
+
 	// Remove known keys from rawBody; what remains is passthrough kwargs
 	knownKeys := []string{
 		"chat_id", "session_id", "conversation_id",
 		"messages", "question", "files",
 		"llm_id",
 		"pass_all_history_messages", "pass_all_history",
+		"store_history_messages", "store_history",
 		"legacy", "stream",
 		"temperature", "top_p", "frequency_penalty", "presence_penalty", "max_tokens",
 	}
@@ -241,7 +257,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 				req.ChatID, sessionID,
 				req.Messages, req.Question, req.Files,
 				req.LLMID, genConfig, kwargs,
-				passAllHistory, req.Legacy,
+				passAllHistory, storeHistory, req.Legacy,
 				true, streamChan,
 			)
 		}()
@@ -261,7 +277,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 			req.ChatID, sessionID,
 			req.Messages, req.Question, req.Files,
 			req.LLMID, genConfig, kwargs,
-			passAllHistory, req.Legacy,
+			passAllHistory, storeHistory, req.Legacy,
 			false, nil,
 		)
 		if err != nil {
