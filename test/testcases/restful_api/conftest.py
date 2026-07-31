@@ -106,7 +106,6 @@ GO_ONLY_SKIPS = {
         "test_chunk_list_keyword_and_invalid_param_contract",
         "test_chunk_list_page_and_page_size_contract",
         "test_chunk_list_concurrent_contract",
-        "test_chunk_update_requires_auth",
         "test_chunk_update_content_and_available_contract",
         "test_chunk_update_keywords_questions_and_tag_contract",
         "test_chunk_update_invalid_target_and_param_contract",
