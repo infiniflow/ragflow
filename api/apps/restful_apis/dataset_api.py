@@ -960,13 +960,13 @@ async def get_skill_page(tenant_id, dataset_id, skill_kwd):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/nav", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/navigation", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def list_dataset_nav(tenant_id, dataset_id):
     """First level of the dataset navigation tree — the top-level clusters.
 
-    GET /api/v1/datasets/<dataset_id>/nav
+    GET /api/v1/datasets/<dataset_id>/navigation
     Success: {"code": 0, "data": {"total": <n>, "items": [{name, description, doc_count, type, has_children}, ...]}}
     """
     try:
@@ -982,13 +982,13 @@ async def list_dataset_nav(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/nav/<path:name>/children", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/navigation/<path:name>/children", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def list_dataset_nav_children(tenant_id, dataset_id, name):
     """Direct children of a navigation node (hierarchical, one level per call).
 
-    GET /api/v1/datasets/<dataset_id>/nav/<name>/children
+    GET /api/v1/datasets/<dataset_id>/navigation/<name>/children
     Success: {"code": 0, "data": {"total": <n>, "items": [{name, description, doc_count, type, doc_id, has_children}, ...]}}
     """
     try:
@@ -1005,13 +1005,13 @@ async def list_dataset_nav_children(tenant_id, dataset_id, name):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/nav", methods=["DELETE"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/navigation", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def delete_dataset_nav(tenant_id, dataset_id):
     """Delete the entire dataset navigation tree.
 
-    DELETE /api/v1/datasets/<dataset_id>/nav
+    DELETE /api/v1/datasets/<dataset_id>/navigation
     Success: {"code": 0, "data": {"deleted": <n>}}
     """
     try:
@@ -1027,13 +1027,13 @@ async def delete_dataset_nav(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/nav/<path:name>", methods=["DELETE"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/navigation/<path:name>", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def delete_dataset_nav_node(tenant_id, dataset_id, name):
     """Delete one navigation node and its whole subtree.
 
-    DELETE /api/v1/datasets/<dataset_id>/nav/<name>
+    DELETE /api/v1/datasets/<dataset_id>/navigation/<name>
     Success: {"code": 0, "data": {"deleted": <n>}}
     """
     try:

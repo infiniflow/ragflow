@@ -190,16 +190,16 @@ export default {
       .map((s) => encodeURIComponent(s))
       .join('/')}`,
   getDatasetNav: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/nav`,
+    `${restAPIv1}/datasets/${datasetId}/navigation`,
   getDatasetNavChildren: (datasetId: string, name: string) =>
-    `${restAPIv1}/datasets/${datasetId}/nav/${name
+    `${restAPIv1}/datasets/${datasetId}/navigation/${name
       .split('/')
       .map((s) => encodeURIComponent(s))
       .join('/')}/children`,
   deleteDatasetNav: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/nav`,
+    `${restAPIv1}/datasets/${datasetId}/navigation`,
   deleteDatasetNavNode: (datasetId: string, name: string) =>
-    `${restAPIv1}/datasets/${datasetId}/nav/${name
+    `${restAPIv1}/datasets/${datasetId}/navigation/${name
       .split('/')
       .map((s) => encodeURIComponent(s))
       .join('/')}`,
