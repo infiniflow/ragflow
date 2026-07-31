@@ -123,3 +123,95 @@ func (dao *CompilationTemplateDAO) GetTemplate(ctx context.Context, tenantID, te
 	}
 	return &t, nil
 }
+
+// ListByGroup returns the valid compilation templates belonging to a group,
+// ordered by create_time asc, mirroring Python
+// CompilationTemplateGroupService child loading.
+func (dao *CompilationTemplateDAO) ListByGroup(ctx context.Context, groupID string) ([]*entity.CompilationTemplate, error) {
+	var templates []*entity.CompilationTemplate
+	if err := DB.WithContext(ctx).
+		Where("group_id = ? AND status = ?", groupID, string(entity.StatusValid)).
+		Order("create_time asc").
+		Find(&templates).Error; err != nil {
+		return nil, err
+	}
+	return templates, nil
+}
+
+// ListBuiltins returns the valid, built-in (is_builtin) compilation templates,
+// ordered by create_time then name. Mirrors Python list_builtins().
+func (dao *CompilationTemplateDAO) ListBuiltins(ctx context.Context) ([]*entity.CompilationTemplate, error) {
+	var templates []*entity.CompilationTemplate
+	if err := DB.WithContext(ctx).
+		Where("is_builtin = ? AND status = ?", true, string(entity.StatusValid)).
+		Order("create_time asc, name asc").
+		Find(&templates).Error; err != nil {
+		return nil, err
+	}
+	return templates, nil
+}
+
+// NameExistsInGroup reports whether a valid, non-built-in template with the
+// given name already exists inside the group, excluding excludeID. Mirrors the
+// Python duplicate-child guard.
+func (dao *CompilationTemplateDAO) NameExistsInGroup(ctx context.Context, tenantID, groupID, name, excludeID string) (bool, error) {
+	q := DB.WithContext(ctx).Model(&entity.CompilationTemplate{}).
+		Where("tenant_id = ? AND group_id = ? AND name = ? AND is_builtin = ? AND status = ?",
+			tenantID, groupID, name, false, string(entity.StatusValid))
+	if excludeID != "" {
+		q = q.Where("id <> ?", excludeID)
+	}
+	var count int64
+	if err := q.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// GetByID returns a single template row by id regardless of tenant scope
+// (used for reconciling group children).
+func (dao *CompilationTemplateDAO) GetByID(ctx context.Context, id string) (*entity.CompilationTemplate, error) {
+	var t entity.CompilationTemplate
+	if err := DB.WithContext(ctx).Where("id = ?", id).First(&t).Error; err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+// Save inserts a new template row.
+func (dao *CompilationTemplateDAO) Save(ctx context.Context, t *entity.CompilationTemplate) error {
+	return DB.WithContext(ctx).Create(t).Error
+}
+
+// UpdateFields persists the supplied columns for the template with the given id.
+func (dao *CompilationTemplateDAO) UpdateFields(ctx context.Context, id string, m map[string]interface{}) error {
+	return DB.WithContext(ctx).Model(&entity.CompilationTemplate{}).
+		Where("id = ?", id).Updates(m).Error
+}
+
+// UpdateStatusByGroup flips the status of every valid template in a group,
+// mirroring Python group delete's child cascade.
+func (dao *CompilationTemplateDAO) UpdateStatusByGroup(ctx context.Context, groupID, status string) error {
+	return DB.WithContext(ctx).Model(&entity.CompilationTemplate{}).
+		Where("group_id = ? AND status = ?", groupID, string(entity.StatusValid)).
+		Update("status", status).Error
+}
+
+// UpdateStatusByID flips a single template's status.
+func (dao *CompilationTemplateDAO) UpdateStatusByID(ctx context.Context, id, status string) error {
+	return DB.WithContext(ctx).Model(&entity.CompilationTemplate{}).
+		Where("id = ?", id).
+		Update("status", status).Error
+}
+
+// HardDeleteOrphansByName physically removes stale, invalid, non-built-in
+// templates of the given name in the tenant, mirroring Python
+// _purge_stale_invalid_children (which DELETEs orphaned duplicate names after a
+// group child is soft-deleted). These rows were soft-deleted in a prior
+// operation but must be permanently purged to keep the table clean.
+func (dao *CompilationTemplateDAO) HardDeleteOrphansByName(ctx context.Context, tenantID, name string) error {
+	return DB.WithContext(ctx).Where(
+		"tenant_id = ? AND name = ? AND is_builtin = ? AND status = ?",
+		tenantID, name, false, string(entity.StatusInvalid),
+	).Delete(&entity.CompilationTemplate{}).Error
+}

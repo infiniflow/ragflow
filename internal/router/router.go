@@ -55,6 +55,9 @@ type Router struct {
 	botHandler           *handler.BotHandler
 	componentsHandler    *handler.ComponentsHandler
 	pipelineHandler      *handler.PipelineHandler
+
+	compilationTemplateHandler      *handler.CompilationTemplateHandler
+	compilationTemplateGroupHandler *handler.CompilationTemplateGroupHandler
 }
 
 // NewRouter create router
@@ -90,6 +93,8 @@ func NewRouter(
 	botHandler *handler.BotHandler,
 	componentsHandler *handler.ComponentsHandler,
 	pipelineHandler *handler.PipelineHandler,
+	compilationTemplateHandler *handler.CompilationTemplateHandler,
+	compilationTemplateGroupHandler *handler.CompilationTemplateGroupHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -123,6 +128,9 @@ func NewRouter(
 		botHandler:           botHandler,
 		componentsHandler:    componentsHandler,
 		pipelineHandler:      pipelineHandler,
+
+		compilationTemplateHandler:      compilationTemplateHandler,
+		compilationTemplateGroupHandler: compilationTemplateGroupHandler,
 	}
 }
 
@@ -586,6 +594,17 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// all categories. The data source is
 			// runtime.DefaultRegistry.
 			v1.GET("/components", r.componentsHandler.Get)
+
+			// Compilation template routes
+			v1.GET("/compilation-templates/builtins", r.compilationTemplateHandler.ListBuiltins)
+			v1.GET("/compilation-templates/wiki-presets", r.compilationTemplateHandler.ListWikiPresets)
+
+			// Compilation template group routes
+			v1.GET("/compilation-template-groups", r.compilationTemplateGroupHandler.List)
+			v1.POST("/compilation-template-groups", r.compilationTemplateGroupHandler.Save)
+			v1.GET("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Get)
+			v1.PUT("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Update)
+			v1.DELETE("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Delete)
 
 			connectors := v1.Group("/connectors")
 			{
