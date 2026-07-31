@@ -213,7 +213,11 @@ func TestPollCancel_ExitsWhenDoneClosed(t *testing.T) {
 // against an embedded NATS server and asserts Start() returns within a deadline
 // and that workers are actually up.
 func TestStart_FullPathReturnsAndStartsWorkers(t *testing.T) {
+	// SetMessageQueueEngine mutates process-global state; restore the previous
+	// engine so later tests don't inherit a closed embedded NATS server.
+	previousEngine := engine.GetMessageQueueEngine()
 	engine.SetMessageQueueEngine(testutil.SetupNatsEngine(t))
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previousEngine) })
 
 	const concurrency int32 = 2
 	ing := NewIngestor("test-start-fullpath", concurrency, nil)
@@ -233,6 +237,12 @@ func TestStart_FullPathReturnsAndStartsWorkers(t *testing.T) {
 		t.Fatal("Start() did not return within 10s; sync.Once re-entrancy deadlock likely")
 	}
 
+	// Start() launches workers asynchronously and returns immediately; poll
+	// briefly so we don't observe zero before a worker enters workerLoop.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && ing.activeWorkers.Load() <= 0 {
+		time.Sleep(time.Millisecond)
+	}
 	if got := ing.activeWorkers.Load(); got <= 0 {
 		t.Fatalf("expected activeWorkers > 0 after Start(), got %d", got)
 	}
