@@ -3,6 +3,7 @@ package canvas
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -243,5 +244,50 @@ func TestBuildWorkflow_ErrorsOnSelfEdge(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "self-edge") {
 		t.Fatalf("expected 'self-edge' in error, got: %v", err)
+	}
+}
+
+func TestNodeLifecycleEventsSafeMarshalNonSerializableInputs(t *testing.T) {
+	events := make(chan RunEvent, 2)
+	ctx := WithRunMeta(context.Background(), &RunMeta{
+		Events:    events,
+		MessageID: "msg-1",
+		SessionID: "session-1",
+	})
+	state := NewCanvasState("run-1", "session-1")
+	inputs := map[string]any{
+		"query":    "hi",
+		"callback": func() {},
+	}
+
+	nodeStartedAt(ctx, state, "agent_0", "Agent", "Agent", inputs)
+	nodeFinishedNow(ctx, state, "agent_0", "Agent", "Agent", nil)
+
+	for i, wantType := range []string{"node_started", "node_finished"} {
+		select {
+		case ev := <-events:
+			if ev.Type != wantType {
+				t.Fatalf("event[%d].Type = %q, want %q", i, ev.Type, wantType)
+			}
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(ev.Data), &payload); err != nil {
+				t.Fatalf("%s Data should be valid JSON, got %q: %v", wantType, ev.Data, err)
+			}
+			if payload["component_type"] != "Agent" {
+				t.Fatalf("%s component_type = %v, want Agent; payload=%v", wantType, payload["component_type"], payload)
+			}
+			in, ok := payload["inputs"].(map[string]any)
+			if !ok {
+				t.Fatalf("%s inputs = %T %v, want object", wantType, payload["inputs"], payload["inputs"])
+			}
+			if _, ok := in["callback"]; !ok {
+				t.Fatalf("%s inputs missing sanitized callback key: %v", wantType, in)
+			}
+			if in["callback"] != nil {
+				t.Fatalf("%s callback = %T %v, want nil after safe JSON cleanup", wantType, in["callback"], in["callback"])
+			}
+		default:
+			t.Fatalf("missing %s event", wantType)
+		}
 	}
 }
