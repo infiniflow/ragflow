@@ -495,14 +495,24 @@ class Compiler(ProcessBase, LLM):
         # kwargs. Do not call LLM.get_input_elements() here: it resolves the
         # inherited prompt variables through Canvas.globals, while Pipeline
         # is a Graph and has no globals.
-        chunks = self._normalize_upstream_chunks(kwargs)
+        output_format = kwargs.get("output_format")
+        if output_format == "chunks":
+            raw_chunks = kwargs.get("chunks") or []
+            if not isinstance(raw_chunks, list) or not raw_chunks:
+                self.set_output("chunks", [])
+                return
+            # Normalize chunks only after the active templates are known, so
+            # rechunk mode does not normalize the same input twice.
+            chunks = None
+        else:
+            chunks = self._normalize_upstream_chunks(kwargs)
 
         tenant_id = self._canvas.get_tenant_id()
         doc_id = self._canvas._doc_id
         kb_id = getattr(self._canvas, "_kb_id", None) or DocumentService.get_knowledgebase_id(doc_id)
         language = self._compile_language(kwargs)
 
-        if not chunks:
+        if chunks is not None and not chunks:
             self.set_output("chunks", chunks)
             return
 
@@ -512,6 +522,8 @@ class Compiler(ProcessBase, LLM):
         active_templates = load_active_templates(template_ids, tenant_id)
         if not active_templates:
             self.callback(0, "No active compilation templates resolved from the configured groups.")
+            if chunks is None:
+                chunks = self._normalize_upstream_chunks(kwargs)
             self.set_output("chunks", chunks)
             return
 
@@ -556,6 +568,8 @@ class Compiler(ProcessBase, LLM):
             filtered_templates.append((template_id, parser_cfg))
 
         if not filtered_templates:
+            if chunks is None:
+                chunks = self._normalize_upstream_chunks(kwargs)
             self.set_output("chunks", chunks)
             return
         active_templates = filtered_templates
@@ -571,13 +585,19 @@ class Compiler(ProcessBase, LLM):
 
         should_rechunk = any(_template_requests_rechunk(cfg) for _, cfg in active_templates)
         target_token_size = self._PARSER_CANDIDATE_TOKEN_SIZE if should_rechunk else self._PARSER_TEXT_CHUNK_TOKEN_SIZE
-        if kwargs.get("output_format") in {"markdown", "text", "html"}:
+        if output_format == "chunks":
             chunks = self._normalize_upstream_chunks(
                 kwargs,
                 split_json_text=should_rechunk,
                 target_token_size=target_token_size,
             )
-        elif kwargs.get("output_format") == "json":
+        elif output_format in {"markdown", "text", "html"}:
+            chunks = self._normalize_upstream_chunks(
+                kwargs,
+                split_json_text=should_rechunk,
+                target_token_size=target_token_size,
+            )
+        elif output_format == "json":
             chunks = self._normalize_upstream_chunks(
                 kwargs,
                 split_json_text=should_rechunk,
@@ -586,15 +606,9 @@ class Compiler(ProcessBase, LLM):
             if not chunks:
                 self.set_output("chunks", chunks)
                 return
-        elif should_rechunk and kwargs.get("output_format") == "chunks":
-            chunks = self._normalize_upstream_chunks(
-                kwargs,
-                split_json_text=True,
-                target_token_size=target_token_size,
-            )
-            if not chunks:
-                self.set_output("chunks", chunks)
-                return
+        if not chunks:
+            self.set_output("chunks", chunks)
+            return
 
         for ck in chunks:
             ck["doc_id"] = doc_id
