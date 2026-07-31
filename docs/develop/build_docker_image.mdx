@@ -1,11 +1,13 @@
 ---
 sidebar_position: 4
+title: Build RAGFlow Docker Image
+sidebar_label: Build RAGFlow Docker Image
 slug: /build_docker_image
 sidebar_custom_props: {
   categoryIcon: LucidePackage
 }
 ---
-# Build RAGFlow Docker image
+# Build RAGFlow Docker Image
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -24,7 +26,7 @@ A guide explaining how to build a RAGFlow Docker image from its source code. By 
 - Disk &ge; 50 GB
 - Docker &ge; 24.0.0 & Docker Compose &ge; v2.26.1
 
-## Build a Docker image
+## Build a Docker Image
 
 This image is approximately 2 GB in size and relies on external LLM and embedding services.
 
@@ -42,11 +44,11 @@ cd ..
 docker build -f Dockerfile -t infiniflow/ragflow:nightly .
 ```
 
-## Launch a RAGFlow Service from Docker for MacOS
+## Launch a RAGFlow Service from Docker for macOS
 
 After building the infiniflow/ragflow:nightly image, you are ready to launch a fully-functional RAGFlow service with all the required components, such as Elasticsearch, MySQL, MinIO, Redis, and more.
 
-## Example: Apple M2 Pro (Sequoia)
+## Example: Apple M2 Pro (sequoia)
 
 1. Edit Docker Compose Configuration
 

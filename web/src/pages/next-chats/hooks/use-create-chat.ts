@@ -32,7 +32,10 @@ export const useCreateChatDialog = () => {
         refine_multiturn: false,
         use_kg: false,
         reasoning: false,
-        parameters: [{ key: 'knowledge', optional: false }],
+        parameters: [
+          { key: 'knowledge', optional: false },
+          { key: 'date', optional: true },
+        ],
         toc_enhance: false,
       },
       llm_id: defaultModelDictionary?.llm_id,

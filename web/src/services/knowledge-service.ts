@@ -1,12 +1,13 @@
+import { ProcessingType } from '@/constants/knowledge';
 import { IRenameTag } from '@/interfaces/database/dataset';
 import {
+  IFetchArtifactGraphRequestParams,
   IFetchArtifactListRequestParams,
   IFetchArtifactTopicListRequestParams,
   IFetchDocumentListRequestBody,
   IFetchKnowledgeListRequestParams,
   IUpdateArtifactPageRequestBody,
 } from '@/interfaces/request/knowledge';
-import { ProcessingType } from '@/pages/dataset/dataset-overview/dataset-common';
 import api from '@/utils/api';
 import nextRequest from '@/utils/next-request';
 import registerServer from '@/utils/register-server';
@@ -267,6 +268,16 @@ export function deleteKnowledgeGraph(knowledgeId: string) {
 export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
   request.get(api.kbList, { params });
 
+// Fetch datasets by a set of IDs via the `ids` query param (comma-joined).
+// Used to echo back already-selected datasets whose names are not present
+// in the first page of the paginated list.
+export const listDatasetByIds = (ids: string[]) =>
+  request.get(api.kbList, {
+    params: { ids: ids.join(','), page_size: ids.length },
+  });
+
+export const datasetFilter = () => request.get(api.datasetFilter);
+
 export const updateKb = (datasetId: string, data: Record<string, any>) =>
   request.put(api.updateKb(datasetId), { data });
 
@@ -413,8 +424,23 @@ export const getArtifactPage = (
 
 export const getArtifactGraph = (
   datasetId: string,
-  params?: { node?: string },
+  params?: IFetchArtifactGraphRequestParams,
 ) => request.get(api.getArtifactGraph(datasetId), { params });
+
+export const getArtifactsAlteration = (datasetId: string, kind: string) =>
+  request.get(api.artifactsAlteration(datasetId), { params: { kind } });
+
+export const getArtifactsStructure = (
+  datasetId: string,
+  kind: string,
+  keywords?: string,
+) =>
+  request.get(api.artifactsStructure(datasetId), {
+    params: keywords ? { kind, keywords } : { kind },
+  });
+
+export const deleteArtifactsStructure = (datasetId: string, kind: string) =>
+  request.delete(api.artifactsStructure(datasetId), { params: { kind } });
 
 export const updateArtifactPage = (
   datasetId: string,

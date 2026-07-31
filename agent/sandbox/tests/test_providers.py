@@ -117,7 +117,7 @@ class TestSelfManagedProvider:
         """Test provider initialization."""
         provider = SelfManagedProvider()
 
-        assert provider.endpoint == "http://localhost:9385"
+        assert provider.endpoint == "http://sandbox-executor-manager:9385"
         assert provider.timeout == 30
         assert provider.max_retries == 3
         assert provider.pool_size == 10
@@ -163,7 +163,7 @@ class TestSelfManagedProvider:
             result = provider.initialize({})
 
             assert result is True
-            assert provider.endpoint == "http://localhost:9385"
+            assert provider.endpoint == "http://sandbox-executor-manager:9385"
             assert provider.timeout == 30
 
     def test_create_instance_python(self):
@@ -176,7 +176,7 @@ class TestSelfManagedProvider:
         assert instance.provider == "self_managed"
         assert instance.status == "running"
         assert instance.metadata["language"] == "python"
-        assert instance.metadata["endpoint"] == "http://localhost:9385"
+        assert instance.metadata["endpoint"] == "http://sandbox-executor-manager:9385"
         assert len(instance.instance_id) > 0  # Verify instance_id exists
 
     def test_create_instance_nodejs(self):
@@ -299,7 +299,7 @@ class TestSelfManagedProvider:
         result = provider.health_check()
 
         assert result is True
-        mock_get.assert_called_once_with("http://localhost:9385/healthz", timeout=5)
+        mock_get.assert_called_once_with("http://sandbox-executor-manager:9385/healthz", timeout=5)
 
     @patch("requests.get")
     def test_health_check_failure(self, mock_get):
@@ -329,7 +329,7 @@ class TestSelfManagedProvider:
         assert "endpoint" in schema
         assert schema["endpoint"]["type"] == "string"
         assert schema["endpoint"]["required"] is True
-        assert schema["endpoint"]["default"] == "http://localhost:9385"
+        assert schema["endpoint"]["default"] == "http://sandbox-executor-manager:9385"
 
         assert "timeout" in schema
         assert schema["timeout"]["type"] == "integer"

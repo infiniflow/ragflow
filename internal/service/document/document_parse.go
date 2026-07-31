@@ -34,13 +34,20 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 	}
 
 	if opts.RerunWithDelete {
-		if err := s.clearDocumentParseResults(doc, kb.TenantID); err != nil {
+		if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID); err != nil {
 			return err
 		}
 	}
 
-	if _, err := s.IngestDocuments(ctx, doc.KbID, userID, []string{doc.ID}); err != nil {
+	responses, err := s.IngestDocuments(ctx, doc.KbID, userID, []string{doc.ID})
+	if err != nil {
 		return err
+	}
+	if len(responses) == 0 {
+		return fmt.Errorf("failed to enqueue document %s: empty ingestion response", doc.ID)
+	}
+	if !strings.HasPrefix(responses[0].Result, "task_id:") {
+		return fmt.Errorf("failed to enqueue document %s: %s", doc.ID, responses[0].Result)
 	}
 	return nil
 }
@@ -49,9 +56,9 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 // in-flight (RUNNING/STOPPING) ingestion task. Used as a batch pre-check
 // before re-parsing so a single non-terminal doc rejects the whole request
 // up front instead of partially cleaning some docs then failing.
-func (s *DocumentService) AssertIngestionTasksTerminal(docIDs []string) error {
+func (s *DocumentService) AssertIngestionTasksTerminal(ctx context.Context, docIDs []string) error {
 	for _, docID := range docIDs {
-		task, err := s.ingestionTaskDAO.GetByDocumentID(docID)
+		task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
 		if err != nil {
 			return fmt.Errorf("check ingestion task for %s: %w", docID, err)
 		}
@@ -65,7 +72,7 @@ func (s *DocumentService) AssertIngestionTasksTerminal(docIDs []string) error {
 	return nil
 }
 
-func (s *DocumentService) clearDocumentParseResults(doc *entity.Document, tenantID string) error {
+func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *entity.Document, tenantID string) error {
 	if doc == nil {
 		return fmt.Errorf("document is nil")
 	}
@@ -74,7 +81,7 @@ func (s *DocumentService) clearDocumentParseResults(doc *entity.Document, tenant
 	// (RUNNING) or one mid-stop (STOPPING) would keep writing chunks and
 	// corrupt the new run's results. The caller must stop the task first
 	// and wait for a terminal state (COMPLETED/STOPPED/FAILED) or CREATED.
-	if task, _ := s.ingestionTaskDAO.GetByDocumentID(doc.ID); task != nil {
+	if task, _ := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID); task != nil {
 		if task.Status == common.RUNNING || task.Status == common.STOPPING {
 			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", doc.ID, task.Status)
 		}
@@ -84,7 +91,7 @@ func (s *DocumentService) clearDocumentParseResults(doc *entity.Document, tenant
 	// RUNNING/STOPPING tasks untouched so the check-then-delete window
 	// between GetByDocumentID and the delete above cannot delete a task
 	// that just transitioned to RUNNING.
-	if _, err := s.ingestionTaskDAO.DeleteIfTerminal(doc.ID); err != nil {
+	if _, err := s.ingestionTaskDAO.DeleteIfTerminal(ctx, dao.DB, doc.ID); err != nil {
 		return err
 	}
 
@@ -250,6 +257,15 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 
 	docs, err := s.validateDocsInDataset(ctx, deduped, datasetID)
 	if err != nil {
+		// Mirror the Python parse/stop endpoint's "Documents not found" message.
+		var notInDataset *documentsNotInDatasetError
+		if errors.As(err, &notInDataset) {
+			quoted := make([]string, len(notInDataset.ids))
+			for i, id := range notInDataset.ids {
+				quoted[i] = "'" + id + "'"
+			}
+			return nil, fmt.Errorf("Documents not found: [%s]", strings.Join(quoted, ", "))
+		}
 		return nil, err
 	}
 
@@ -270,6 +286,18 @@ func (s *DocumentService) StopParseDocuments(ctx context.Context, datasetID stri
 	return result, nil
 }
 
+// documentsNotInDatasetError carries the ids that are missing from (or do not
+// belong to) a dataset so each endpoint can format its own contract message.
+type documentsNotInDatasetError struct {
+	datasetID string
+	ids       []string
+}
+
+// Error mirrors the Python delete endpoint's message.
+func (e *documentsNotInDatasetError) Error() string {
+	return fmt.Sprintf("These documents do not belong to dataset %s or Document not found: %s", e.datasetID, strings.Join(e.ids, ", "))
+}
+
 // validateDocsInDataset deduplicates IDs, fetches the documents, and ensures
 // every document exists and belongs to the given dataset. Returns the resolved
 // documents.
@@ -278,17 +306,26 @@ func (s *DocumentService) validateDocsInDataset(ctx context.Context, docIDs []st
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch documents: %w", err)
 	}
+	invalid := make([]string, 0)
 	if len(docs) != len(docIDs) {
-		return nil, fmt.Errorf("some document IDs not found in dataset %s", datasetID)
-	}
-	var invalid []string
-	for _, d := range docs {
-		if d.KbID != datasetID {
-			invalid = append(invalid, d.ID)
+		found := make(map[string]struct{}, len(docs))
+		for _, d := range docs {
+			found[d.ID] = struct{}{}
+		}
+		for _, id := range docIDs {
+			if _, ok := found[id]; !ok {
+				invalid = append(invalid, id)
+			}
+		}
+	} else {
+		for _, d := range docs {
+			if d.KbID != datasetID {
+				invalid = append(invalid, d.ID)
+			}
 		}
 	}
 	if len(invalid) > 0 {
-		return nil, fmt.Errorf("These documents do not belong to dataset %s: %v", datasetID, invalid)
+		return nil, &documentsNotInDatasetError{datasetID: datasetID, ids: invalid}
 	}
 	return docs, nil
 }
@@ -296,7 +333,7 @@ func (s *DocumentService) validateDocsInDataset(ctx context.Context, docIDs []st
 // CancelDocParse stops the ingestion task for the document by calling
 // RequestStop (STOPPING), then marks the document run status as CANCEL.
 func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Document) error {
-	task, err := s.ingestionTaskDAO.GetByDocumentID(doc.ID)
+	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get ingestion task for %s: %v", doc.ID, err)
 	}
@@ -304,7 +341,7 @@ func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Docume
 		return fmt.Errorf("no ingestion task found for document %s", doc.ID)
 	}
 
-	if _, err = s.ingestionTaskSvc.RequestStop(task.ID); err != nil {
+	if _, err = s.ingestionTaskSvc.RequestStop(ctx, task.ID); err != nil {
 		return fmt.Errorf("failed to stop ingestion task %s: %v", task.ID, err)
 	}
 

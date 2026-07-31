@@ -171,6 +171,20 @@ func (dao *API4ConversationDAO) GetBySessionID(ctx context.Context, db *gorm.DB,
 	return &result, nil
 }
 
+// GetByID returns a conversation without requiring the caller to know its
+// agent. It is used when the session itself is the authorization resource.
+func (dao *API4ConversationDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.API4Conversation, error) {
+	var result entity.API4Conversation
+	tx := db.WithContext(ctx).Where("id = ?", id).Find(&result)
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	if tx.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &result, nil
+}
+
 // ListIDsByAgentID lists conversation IDs for one agent.
 func (dao *API4ConversationDAO) ListIDsByAgentID(ctx context.Context, db *gorm.DB, agentID string) ([]string, error) {
 	var ids []string

@@ -16,20 +16,20 @@ import (
 	"gorm.io/gorm"
 )
 
-func (d *DatasetService) CreateDataset(req *service.CreateDatasetRequest, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateDatasetRequest, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
 	if !common.IsValidString(req.Name) {
 		return nil, common.CodeDataError, errors.New("dataset name must be string")
 	}
 
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
-		return nil, common.CodeDataError, errors.New("Dataset name can't be empty.")
+		return nil, common.CodeDataError, errors.New("dataset name can't be empty")
 	}
 	if len(name) > entity.DatasetNameLimit {
 		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", len(name), entity.DatasetNameLimit)
 	}
 
-	tenant, err := d.tenantDAO.GetByID(tenantID)
+	tenant, err := d.tenantDAO.GetByID(ctx, dao.DB, tenantID)
 	if err != nil || tenant == nil {
 		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
@@ -74,20 +74,20 @@ func (d *DatasetService) CreateDataset(req *service.CreateDatasetRequest, tenant
 	}
 	if req.EmbeddingModel != nil {
 		embeddingModel = strings.TrimSpace(*req.EmbeddingModel)
-		if err := validateDatasetEmbeddingModel(embeddingModel); err != nil {
+		if err = validateDatasetEmbeddingModel(embeddingModel); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
 
 	if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
-		if ok, err := canvasAccessibleForUser(tenantID, strings.TrimSpace(*pipelineID)); err != nil {
+		if ok, err := canvasAccessibleForUser(ctx, tenantID, strings.TrimSpace(*pipelineID)); err != nil {
 			return nil, common.CodeServerError, err
 		} else if !ok {
 			return nil, common.CodeDataError, errors.New("canvas is not accessible")
 		}
 	}
 
-	parserConfig, cpErr := service.ResolveComponentParamsDefaults(parserID, pipelineID)
+	parserConfig, cpErr := service.ResolveComponentParamsDefaults(ctx, parserID, pipelineID)
 	if cpErr != nil {
 		common.Warn("failed to resolve component params defaults for dataset",
 			zap.String("parserID", parserID), zap.Error(cpErr))
@@ -99,7 +99,7 @@ func (d *DatasetService) CreateDataset(req *service.CreateDatasetRequest, tenant
 	embdID := tenant.EmbdID
 	tenantEmbdID := ptrStringValue(tenant.TenantEmbdID)
 	if embeddingModel != "" {
-		ok, message := d.verifyEmbeddingAvailability(embeddingModel, tenantID)
+		ok, message := d.verifyEmbeddingAvailability(ctx, embeddingModel, tenantID)
 		if !ok {
 			return nil, common.CodeDataError, errors.New(message)
 		}
@@ -107,7 +107,7 @@ func (d *DatasetService) CreateDataset(req *service.CreateDatasetRequest, tenant
 		tenantEmbdID = ""
 	}
 	if embdID != "" && tenantEmbdID == "" {
-		resolvedID, err := service.NewModelProviderService().ResolveModelID(tenantID, entity.ModelTypeEmbedding, embdID)
+		resolvedID, err := service.NewModelProviderService().ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 		if err == nil {
 			tenantEmbdID = resolvedID
 		} else {
@@ -117,14 +117,9 @@ func (d *DatasetService) CreateDataset(req *service.CreateDatasetRequest, tenant
 
 	kbID := utility.GenerateToken()
 	status := string(entity.StatusValid)
-	// Reject duplicate name within tenant to match the established API contract.
-	existing, err := d.kbDAO.GetByName(name, tenantID)
-	if err != nil && !dao.IsNotFoundErr(err) {
-		return nil, common.CodeServerError, errors.New("database operation failed")
-	}
-	if existing != nil {
-		return nil, common.CodeDataError, fmt.Errorf("dataset name '%s' already exists", name)
-	}
+	// Mirror Python's duplicate_name: append (1), (2), ... until the name is
+	// unique within the tenant.
+	name = d.dedupeDatasetName(ctx, name, tenantID)
 
 	kb := &entity.Knowledgebase{
 		ID:           kbID,
@@ -140,19 +135,37 @@ func (d *DatasetService) CreateDataset(req *service.CreateDatasetRequest, tenant
 		Status:       &status,
 	}
 
-	if err = d.kbDAO.Create(kb); err != nil {
+	if err = d.kbDAO.Create(ctx, dao.DB, kb); err != nil {
 		if dao.IsDuplicateKeyErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("dataset name '%s' already exists", name)
 		}
-		return nil, common.CodeServerError, errors.New("failed to save dataset")
+		// Surface the real underlying DB error instead of masking it. The
+		// generic "failed to save dataset" message made schema/constraint
+		// mismatches in the go scheme impossible to diagnose in CI.
+		common.Error("failed to save dataset", err, zap.String("name", name), zap.String("tenant_id", tenantID))
+		return nil, common.CodeServerError, fmt.Errorf("failed to save dataset: %w", err)
 	}
 
-	createdKB, err := d.kbDAO.GetByID(kbID)
+	createdKB, err := d.kbDAO.GetByID(ctx, dao.DB, kbID)
 	if err != nil || createdKB == nil {
 		return nil, common.CodeServerError, errors.New("dataset created failed")
 	}
 
 	return datasetToMap(createdKB), common.CodeSuccess, nil
+}
+
+// dedupeDatasetName mirrors Python's duplicate_name: if the name already
+// exists within the tenant, append (1), (2), ... until it is unique.
+func (d *DatasetService) dedupeDatasetName(ctx context.Context, name, tenantID string) string {
+	candidate := name
+	for i := 1; i < 1000; i++ {
+		existing, err := d.kbDAO.GetByName(ctx, dao.DB, candidate, tenantID)
+		if err != nil || existing == nil {
+			return candidate
+		}
+		candidate = fmt.Sprintf("%s(%d)", name, i)
+	}
+	return candidate
 }
 
 func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
@@ -161,17 +174,19 @@ func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID strin
 		return nil, common.CodeDataError, errors.New("lack of \"Dataset ID\"")
 	}
 
+	// Mirror Python's get_dataset: no UUID validation up front — any unknown
+	// or malformed id simply fails the permission check.
 	normalizedID, err := normalizeDatasetID(datasetID)
 	if err != nil {
-		return nil, common.CodeDataError, err
+		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, datasetID)
 	}
 	datasetID = normalizedID
 
-	if !d.kbDAO.Accessible(datasetID, userID) {
+	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
 		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, datasetID)
 	}
 
-	kb, err := d.kbDAO.GetByID(datasetID)
+	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil || kb == nil {
 		return nil, common.CodeDataError, errors.New("invalid Dataset ID")
 	}
@@ -193,13 +208,13 @@ func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID strin
 	return data, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) DeleteDatasets(ids []string, deleteAll bool, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, deleteAll bool, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
 	normalizedIDs := make([]string, 0, len(ids))
 	seenIDs := make(map[string]struct{}, len(ids))
 	for _, id := range ids {
 		normalizedID, err := normalizeDatasetID(id)
 		if err != nil {
-			return nil, common.CodeDataError, err
+			return nil, common.CodeArgumentError, err
 		}
 		if _, seen := seenIDs[normalizedID]; seen {
 			continue
@@ -213,7 +228,7 @@ func (d *DatasetService) DeleteDatasets(ids []string, deleteAll bool, tenantID s
 		if !deleteAll {
 			return map[string]interface{}{"deleted": []string{}}, common.CodeSuccess, nil
 		}
-		kbs, err := d.kbDAO.Query(map[string]interface{}{"tenant_id": tenantID})
+		kbs, err := d.kbDAO.Query(ctx, dao.DB, map[string]interface{}{"tenant_id": tenantID})
 		if err != nil {
 			return nil, common.CodeServerError, errors.New("database operation failed")
 		}
@@ -226,7 +241,7 @@ func (d *DatasetService) DeleteDatasets(ids []string, deleteAll bool, tenantID s
 	kbs := make([]*entity.Knowledgebase, 0, len(normalizedIDs))
 	unauthorizedIDs := make([]string, 0)
 	for _, id := range normalizedIDs {
-		kb, err := d.kbDAO.GetByIDAndTenantID(id, tenantID)
+		kb, err := d.kbDAO.GetByIDAndTenantID(ctx, dao.DB, id, tenantID)
 		if err != nil || kb == nil {
 			unauthorizedIDs = append(unauthorizedIDs, id)
 			continue
@@ -313,16 +328,16 @@ func (d *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase
 	})
 }
 
-func (d *DatasetService) ListDatasets(id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
+func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	id = strings.TrimSpace(id)
 	if id != "" {
 		normalizedID, err := normalizeDatasetID(id)
 		if err != nil {
-			return nil, 0, common.CodeDataError, err
+			return nil, 0, common.CodeArgumentError, err
 		}
 		id = normalizedID
 
-		kbs, err := d.kbDAO.GetKBByIDAndUserID(id, userID)
+		kbs, err := d.kbDAO.GetKBByIDAndUserID(ctx, dao.DB, id, userID)
 		if err != nil {
 			return nil, 0, common.CodeServerError, errors.New("database operation failed")
 		}
@@ -333,7 +348,7 @@ func (d *DatasetService) ListDatasets(id, name string, page, pageSize int, order
 
 	name = strings.TrimSpace(name)
 	if name != "" {
-		kbs, err := d.kbDAO.GetKBByNameAndUserID(name, userID)
+		kbs, err := d.kbDAO.GetKBByNameAndUserID(ctx, dao.DB, name, userID)
 		if err != nil {
 			return nil, 0, common.CodeServerError, errors.New("database operation failed")
 		}
@@ -364,8 +379,33 @@ func (d *DatasetService) ListDatasets(id, name string, page, pageSize int, order
 			tenantIDs = append(tenantIDs, ownerID)
 		}
 	}
-	if len(tenantIDs) == 0 {
-		joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(userID)
+	queryUserID := userID
+	if len(tenantIDs) > 0 {
+		joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
+		if err != nil {
+			return nil, 0, common.CodeServerError, errors.New("database operation failed")
+		}
+		allowedTenantIDs := map[string]struct{}{userID: {}}
+		for _, joinedTenant := range joinedTenants {
+			if joinedTenant == nil || joinedTenant.TenantID == "" {
+				continue
+			}
+			allowedTenantIDs[joinedTenant.TenantID] = struct{}{}
+		}
+		filteredTenantIDs := tenantIDs[:0]
+		queryUserID = ""
+		for _, tenantID := range tenantIDs {
+			if _, ok := allowedTenantIDs[tenantID]; !ok {
+				continue
+			}
+			filteredTenantIDs = append(filteredTenantIDs, tenantID)
+			if tenantID == userID {
+				queryUserID = userID
+			}
+		}
+		tenantIDs = filteredTenantIDs
+	} else {
+		joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
 		if err != nil {
 			return nil, 0, common.CodeServerError, errors.New("database operation failed")
 		}
@@ -377,20 +417,63 @@ func (d *DatasetService) ListDatasets(id, name string, page, pageSize int, order
 		}
 	}
 
-	kbs, total, err := d.kbDAO.GetByTenantIDs(tenantIDs, userID, page, pageSize, orderby, desc, keywords, parserID, id, name)
+	kbs, total, err := d.kbDAO.GetByTenantIDs(ctx, dao.DB, tenantIDs, queryUserID, page, pageSize, orderby, desc, keywords, parserID, id, name)
 	if err != nil {
 		return nil, 0, common.CodeServerError, errors.New("database operation failed")
 	}
 
 	data := make([]map[string]interface{}, 0, len(kbs))
+	modelNameCache := make(map[string]string)
 	for _, kb := range kbs {
 		if kb == nil {
 			continue
 		}
-		data = append(data, datasetListItemToMap(kb))
+		item := datasetListItemToMap(kb)
+		// Mirror the memory list: surface the concrete model display name
+		// (modelName@instance@provider) instead of a raw tenant_model ID.
+		tenantEmbdID := ptrStringValue(kb.TenantEmbdID)
+		if tenantEmbdID == "" && isHexID(kb.EmbdID) {
+			tenantEmbdID = kb.EmbdID
+		}
+		item["embedding_model"] = service.ResolveTenantModelDisplayName(ctx, dao.DB, tenantEmbdID, kb.EmbdID, modelNameCache)
+		data = append(data, item)
 	}
 
 	return data, total, common.CodeSuccess, nil
+}
+
+func (d *DatasetService) ListDatasetFilters(ctx context.Context, userID string) (map[string]interface{}, common.ErrorCode, error) {
+	joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
+	}
+
+	tenantIDs := make([]string, 0, len(joinedTenants))
+	for _, joinedTenant := range joinedTenants {
+		if joinedTenant == nil || joinedTenant.TenantID == "" {
+			continue
+		}
+		tenantIDs = append(tenantIDs, joinedTenant.TenantID)
+	}
+
+	owners, err := d.kbDAO.GetOwnerFilter(tenantIDs, userID)
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
+	}
+
+	var total int64
+	for _, owner := range owners {
+		if owner != nil {
+			total += owner.Count
+		}
+	}
+
+	return map[string]interface{}{
+		"filter": map[string]interface{}{
+			"owner": owners,
+		},
+		"total": total,
+	}, common.CodeSuccess, nil
 }
 
 // ptrStringValue safely dereferences a *string.

@@ -29,7 +29,7 @@ func TestLLM_Stream_HappyPath(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	ch, err := c.Stream(context.Background(), map[string]any{"user_prompt": "hi"})
+	ch, err := c.Stream(context.Background(), nil, map[string]any{"user_prompt": "hi"})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestLLM_Stream_Error(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	ch, err := c.Stream(context.Background(), map[string]any{"user_prompt": "hi"})
+	ch, err := c.Stream(context.Background(), nil, map[string]any{"user_prompt": "hi"})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestLLM_Stream_RespectsCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // pre-cancel
 
-	ch, err := c.Stream(ctx, map[string]any{"user_prompt": "hi"})
+	ch, err := c.Stream(ctx, nil, map[string]any{"user_prompt": "hi"})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestLLM_Stream_BufferDoesNotBlock(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	ch, err := c.Stream(context.Background(), map[string]any{"user_prompt": "hi"})
+	ch, err := c.Stream(context.Background(), nil, map[string]any{"user_prompt": "hi"})
 	if err != nil {
 		t.Fatalf("Stream: %v", err)
 	}

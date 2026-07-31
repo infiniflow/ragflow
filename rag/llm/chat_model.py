@@ -31,6 +31,7 @@ import openai
 from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
+from common.aimlapi_utils import attribution_headers
 from common.misc_utils import thread_pool_exec
 from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
@@ -150,7 +151,12 @@ def _apply_model_family_policies(
     # Qwen3 keeps RAGFlow's system default of disabling thinking unless explicitly overridden.
     if "qwen3" in model_name_lower:
         _pop_thinking_controls()
-        enable_thinking = thinking_type == "enabled" if thinking_type else False
+        # -preview variants (e.g. qwen3.8-max-preview) only accept
+        # enable_thinking=True; the API rejects any other value.
+        if "-preview" in model_name_lower:
+            enable_thinking = True
+        else:
+            enable_thinking = thinking_type == "enabled" if thinking_type else False
         if backend == "litellm" and provider in {
             SupportedLiteLLMProvider.Tongyi_Qianwen,
             SupportedLiteLLMProvider.Dashscope,
@@ -1560,7 +1566,19 @@ class AIMLAPIChat(Base):
     def __init__(self, key, model_name, base_url="", **kwargs):
         base_url = base_url or os.environ.get("AIMLAPI_API_URL", "https://api.aimlapi.com/v1")
         super().__init__(key, model_name, base_url, **kwargs)
+        headers = attribution_headers()
+        self.client = self.client.with_options(default_headers=headers)
+        self.async_client = self.async_client.with_options(default_headers=headers)
         logging.info("[aimlapi.com] Chat initialized with model %s", model_name)
+
+
+class GreenPTChat(Base):
+    """GreenPT OpenAI-compatible chat adapter."""
+
+    _FACTORY_NAME = "GreenPT"
+
+    def __init__(self, key, model_name, base_url="https://api.greenpt.ai/v1", **kwargs):
+        super().__init__(key, model_name, base_url or "https://api.greenpt.ai/v1", **kwargs)
 
 
 class LiteLLMBase(ABC):
@@ -1673,8 +1691,30 @@ class LiteLLMBase(ABC):
             gen_conf=gen_conf,
         )
 
-        gen_conf.pop("max_tokens", None)
+        deepseek_max_tokens = None
+        if self.provider == SupportedLiteLLMProvider.DeepSeek:
+            # DeepSeek's API uses the legacy OpenAI-compatible max_tokens field.
+            # LiteLLM accepts max_completion_tokens generically, but does not
+            # translate it for DeepSeek and the provider then falls back to 8192.
+            # Knowledge compilation supplies max_completion_tokens explicitly
+            # through its model-specific generation configuration. Otherwise,
+            # preserve the legacy max_tokens value used by existing callers.
+            raw_max_completion_tokens = gen_conf.pop("max_completion_tokens", None)
+            raw_max_tokens = gen_conf.pop("max_tokens", None)
+            raw_limit = raw_max_completion_tokens if raw_max_completion_tokens is not None else raw_max_tokens
+            if raw_limit is not None and not isinstance(raw_limit, bool):
+                try:
+                    candidate = int(raw_limit)
+                except (TypeError, ValueError):
+                    candidate = 0
+                if candidate > 0:
+                    deepseek_max_tokens = candidate
+        else:
+            gen_conf.pop("max_tokens", None)
+
         gen_conf = {k: v for k, v in gen_conf.items() if k in LITELLM_ALLOWED_GEN_CONF_KEYS}
+        if deepseek_max_tokens is not None:
+            gen_conf["max_tokens"] = deepseek_max_tokens
         return gen_conf
 
     def _need_reasoning_content_back(self) -> bool:
@@ -1822,7 +1862,11 @@ class LiteLLMBase(ABC):
             logging.warning(f"Error: {error_code}. Retrying in {delay:.2f} seconds... (Attempt {attempt + 1}/{self.max_retries})")
             await asyncio.sleep(delay)
             return None
-        msg = f"{ERROR_PREFIX}: {error_code} - {str(e)}"
+        error_detail = str(e)
+        if self.provider == SupportedLiteLLMProvider.Nvidia and "function" in error_detail.lower() and "not found for account" in error_detail.lower():
+            model_name = self.model_name.removeprefix(self.prefix)
+            error_detail = f"NVIDIA hosted endpoint '{model_name}' is unavailable or deprecated; refresh the provider model list and select an active Free Endpoint. Original error: {error_detail}"
+        msg = f"{ERROR_PREFIX}: {error_code} - {error_detail}"
         logging.error(f"async_chat_streamly giving up: {msg}")
         return msg
 
@@ -2214,9 +2258,12 @@ class LiteLLMBase(ABC):
             "model": self.model_name,
             "messages": history,
             "api_key": self.api_key,
-            "num_retries": self.max_retries,
             **kwargs,
         }
+        if self.provider == SupportedLiteLLMProvider.Nvidia:
+            completion_args["num_retries"] = 0
+        else:
+            completion_args.setdefault("num_retries", self.max_retries)
         # Forward the originating session/user as the OpenAI-standard `user` field so
         # providers (OpenAI, OpenRouter, ...) receive it in the request body and
         # upstream activity can be correlated back to the session. An explicit

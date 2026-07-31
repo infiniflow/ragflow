@@ -34,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"strconv"
 	"strings"
 	"time"
@@ -255,7 +256,7 @@ func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Com
 		invokeErr := runtime.TrackProgress(cpnID, runtime.ProgressCallbackFromContext(ctx), func() error {
 			var e error
 			out, e = runtime.TrackElapsed(componentClass, func() (map[string]any, error) {
-				return comp.Invoke(runtime.WithComponentExecutionOptions(cctx, opts), in)
+				return comp.Invoke(runtime.WithComponentExecutionOptions(cctx, opts), dao.DB, in)
 			})
 			return e
 		})

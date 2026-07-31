@@ -59,8 +59,8 @@ type CompileOptions struct {
 	// Workflow.Invoke), this is a compile-time descriptor: Compile cannot
 	// call compose.WithCheckPointID (the option type is wrong for a
 	// GraphCompileOption), so it only records the id on the returned
-	// CompiledCanvas — the caller threads it to Invoke. Use a stable,
-	// per-task value (e.g. taskID) so re-running the same task hits the
+	// CompiledCanvas — the caller threads it to Invoke. Use a stable value (for
+	// example a session-derived run id) so resuming hits the
 	// same Redis checkpoint (agent:cp:{id}). When empty,
 	// CompiledCanvas.CheckPointID stays empty and the caller must supply
 	// its own id (or omit it for a fresh per-run checkpoint).
@@ -111,8 +111,8 @@ func WithInterruptAfter(nodes []string) CompileOption {
 // WithCheckPointID sets the stable checkpoint id recorded on the returned
 // CompiledCanvas. Unlike eino's compose.WithCheckPointID (a run-time
 // Option), this is a compile-time descriptor: Compile stores the id so the
-// caller can pass it to Workflow.Invoke. Pass a stable, per-task value
-// (e.g. taskID) so re-running the same task loads the same Redis
+// caller can pass it to Workflow.Invoke. Pass a stable, session-derived id
+// so resuming loads the same Redis
 // checkpoint (agent:cp:{id}).
 func WithCheckPointID(id string) CompileOption {
 	return func(o *CompileOptions) { o.CheckPointID = id }

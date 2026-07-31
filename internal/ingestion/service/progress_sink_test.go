@@ -170,7 +170,7 @@ func TestProgressSinkPersistsViaService(t *testing.T) {
 	sink.docSvc = stub
 
 	sink.OnComponentTotal(ctx, taskID, 2)
-	task, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestProgressSinkPersistsViaService(t *testing.T) {
 		Message:    "Parser Done",
 	})
 
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(taskID)
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestProgressSinkEmptyDocumentIDSkipsMirror(t *testing.T) {
 		Message:   "Chunker Done",
 	})
 
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(taskID)
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(ctx, db, taskID)
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}

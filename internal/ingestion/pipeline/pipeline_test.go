@@ -29,6 +29,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 type mockCanvasStage struct {
@@ -37,7 +38,7 @@ type mockCanvasStage struct {
 	calls  int
 }
 
-func (m *mockCanvasStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+func (m *mockCanvasStage) Invoke(_ context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	m.called = true
 	m.calls++
 	out := cloneMapOrEmpty(inputs)
@@ -58,12 +59,12 @@ type oneShotErrStage struct {
 	n int
 }
 
-func (s *oneShotErrStage) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (s *oneShotErrStage) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	s.n++
 	if s.n == 1 {
 		return nil, errors.New("simulated crash")
 	}
-	return s.mockCanvasStage.Invoke(ctx, inputs)
+	return s.mockCanvasStage.Invoke(ctx, db, inputs)
 }
 func (s *oneShotErrStage) Inputs() map[string]string  { return s.mockCanvasStage.Inputs() }
 func (s *oneShotErrStage) Outputs() map[string]string { return s.mockCanvasStage.Outputs() }
@@ -171,7 +172,7 @@ func TestNewPipelineFromDSLUnwrapsTemplateDSL(t *testing.T) {
 
 type errCanvasStage struct{}
 
-func (e *errCanvasStage) Invoke(_ context.Context, _ map[string]any) (map[string]any, error) {
+func (e *errCanvasStage) Invoke(_ context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	return nil, &stageError{Stage: "p.RunErrStage", Reason: "intentional"}
 }
 func (e *errCanvasStage) Inputs() map[string]string  { return nil }
@@ -181,7 +182,7 @@ type factorySentinelStage struct {
 	marker string
 }
 
-func (s *factorySentinelStage) Invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+func (s *factorySentinelStage) Invoke(_ context.Context, _ *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	out := cloneMapOrEmpty(inputs)
 	out["marker"] = s.marker
 	return out, nil

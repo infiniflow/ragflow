@@ -20,7 +20,7 @@ import (
 
 // GetMetadataSummary get metadata summary for documents
 func (s *DocumentService) GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error) {
-	tenantID, err := s.metadataSvc.GetTenantIDByKBID(kbID)
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, kbID)
 	if err != nil {
 		return nil, err
 	}
@@ -43,9 +43,15 @@ func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string,
 	}
 
 	// Get tenant ID
-	tenantID, err := s.metadataSvc.GetTenantIDByKBID(doc.KbID)
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, doc.KbID)
 	if err != nil {
 		return fmt.Errorf("failed to get tenant ID: %w", err)
+	}
+
+	// Ensure the metadata store exists before writing (service-layer
+	// create-on-first-write logic; the engine layer assumes it exists).
+	if err := s.metadataSvc.EnsureMetadataStore(ctx, tenantID); err != nil {
+		return fmt.Errorf("failed to ensure metadata store: %w", err)
 	}
 
 	if err = s.docEngine.UpdateMetadata(ctx, docID, doc.KbID, meta, tenantID); err != nil {
@@ -64,7 +70,7 @@ func (s *DocumentService) DeleteDocumentMetadata(ctx context.Context, docID stri
 	}
 
 	// Get tenant ID
-	tenantID, err := s.metadataSvc.GetTenantIDByKBID(doc.KbID)
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, doc.KbID)
 	if err != nil {
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
@@ -87,7 +93,7 @@ func (s *DocumentService) DeleteDocumentAllMetadata(ctx context.Context, docID s
 	}
 
 	// Get tenant ID
-	tenantID, err := s.metadataSvc.GetTenantIDByKBID(doc.KbID)
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, doc.KbID)
 	if err != nil {
 		return fmt.Errorf("failed to get tenant ID: %w", err)
 	}
@@ -115,7 +121,7 @@ func (s *DocumentService) GetDocumentMetadataByID(ctx context.Context, docID str
 		return nil, fmt.Errorf("document not found: %w", err)
 	}
 
-	tenantID, err := s.metadataSvc.GetTenantIDByKBID(doc.KbID)
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, doc.KbID)
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +146,7 @@ func (s *DocumentService) GetMetadataByKBs(ctx context.Context, kbIDs []string) 
 		return make(map[string]interface{}), nil
 	}
 
-	searchResult, err := s.metadataSvc.SearchMetadataByKBs(kbIDs, 10000)
+	searchResult, err := s.metadataSvc.SearchMetadataByKBs(ctx, kbIDs, 10000)
 	if err != nil {
 		return nil, err
 	}
@@ -527,16 +533,27 @@ func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID strin
 		}
 	}
 
-	updateFields := make(map[string]interface{})
+	// Check if anything actually changed.
+	changed := false
 	for key, value := range after {
 		if !reflect.DeepEqual(before[key], value) {
-			updateFields[key] = value
+			changed = true
+			break
 		}
 	}
-	if len(updateFields) == 0 {
+	if !changed && len(deleteKeys) == 0 {
 		return nil
 	}
-	return s.SetDocumentMetadata(ctx, docID, updateFields)
+
+	// If 'after' is empty, all keys were deleted — the record has already
+	// been cleaned up by DeleteDocumentMetadata above; skip the write.
+	if len(after) == 0 {
+		return nil
+	}
+
+	// Send the complete 'after' map — UpdateMetadata does a full replace,
+	// not a merge, so a partial delta would wipe unchanged keys.
+	return s.SetDocumentMetadata(ctx, docID, after)
 }
 
 // BatchUpdateDocumentMetadatas implements the shared logic for
@@ -576,7 +593,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 			}
 		}
 		if len(invalidIDs) > 0 {
-			return nil, common.CodeDataError, fmt.Errorf("these documents do not belong to dataset %s: %s",
+			return nil, common.CodeDataError, fmt.Errorf("These documents do not belong to dataset %s: %s",
 				datasetID, strings.Join(invalidIDs, ", "))
 		}
 		for _, id := range selector.DocumentIDs {
@@ -586,7 +603,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 
 	// Apply metadata_condition filter.
 	if len(selector.MetadataCondition) > 0 {
-		flattedMeta, err := s.metadataSvc.GetFlattedMetaByKBs([]string{datasetID})
+		flattedMeta, err := s.metadataSvc.GetFlattedMetaByKBs(ctx, []string{datasetID})
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to get flattened metadata: %w", err)
 		}

@@ -116,6 +116,18 @@ class JinaRerank(Base):
         return rank, total_token_count_from_response(res)
 
 
+class GreenPTRerank(JinaRerank):
+    """GreenPT native reranking adapter."""
+
+    _FACTORY_NAME = "GreenPT"
+
+    def __init__(self, key, model_name="green-rerank", base_url="https://api.greenpt.ai/v1/rerank"):
+        endpoint = (base_url or "https://api.greenpt.ai/v1/rerank").rstrip("/")
+        if not endpoint.endswith("/rerank"):
+            endpoint += "/rerank"
+        super().__init__(key, model_name=model_name, base_url=endpoint)
+
+
 class XInferenceRerank(Base):
     _FACTORY_NAME = "Xinference"
 
@@ -506,11 +518,10 @@ class VoyageRerank(Base):
 class QWenRerank(Base):
     _FACTORY_NAME = "Tongyi-Qianwen"
 
-    def __init__(self, key, model_name="gte-rerank", **kwargs):
-        import dashscope
+    def __init__(self, key, model_name="gte-rerank-v2", **kwargs):
 
         self.api_key = key
-        self.model_name = dashscope.TextReRank.Models.gte_rerank if model_name is None else model_name
+        self.model_name = model_name if model_name else "gte-rerank-v2"
         # Remove invalid global timeout, use official SDK per-request timeout parameter
         self.request_timeout = 30.0
 

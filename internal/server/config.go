@@ -17,6 +17,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"net/mail"
@@ -36,7 +37,7 @@ const DefaultConnectTimeout = 5 * time.Second
 
 // Config application configuration
 type Config struct {
-	Server           ServerConfig           `mapstructure:"server"`
+	General          GeneralConfig          `mapstructure:"general"`
 	Authentication   AuthenticationConfig   `mapstructure:"authentication"`
 	Database         DatabaseConfig         `mapstructure:"database"`
 	Redis            RedisConfig            `mapstructure:"redis"`
@@ -48,6 +49,7 @@ type Config struct {
 	OAuth            map[string]OAuthConfig `mapstructure:"oauth"`
 	SMTP             common.SMTPConfig      `mapstructure:"smtp"`
 	Admin            AdminConfig            `mapstructure:"admin"`
+	APIServer        APIServerConfig        `mapstructure:"ragflow"`
 	UserDefaultLLM   UserDefaultLLMConfig   `mapstructure:"user_default_llm"`
 	DefaultSuperUser DefaultSuperUser       `mapstructure:"default_super_user"`
 	Language         string                 `mapstructure:"language"`
@@ -57,8 +59,25 @@ type Config struct {
 	Clickhouse       ClickhouseConfig       `mapstructure:"clickhouse"`
 }
 
+// GeneralConfig general configuration
+type GeneralConfig struct {
+	HeartbeatInterval time.Duration `mapstructure:"heartbeat_interval"`
+	Mode              string        `mapstructure:"mode"` // debug, release
+	SecretKey         *string       `mapstructure:"secret_key"`
+	DocEngine         string        `mapstructure:"doc_engine"`      // Infinity, Elasticsearch
+	StorageEngine     string        `mapstructure:"storage_engine"`  // Minio, S3
+	CacheEngine       string        `mapstructure:"cache_engine"`    // Redis
+	QueueEngine       string        `mapstructure:"queue_engine"`    // NATS
+	AnalyticEngine    string        `mapstructure:"analytic_engine"` // Clickhouse
+}
+
 // AdminConfig admin server configuration
 type AdminConfig struct {
+	Host string `mapstructure:"host"`
+	Port int    `mapstructure:"http_port"`
+}
+
+type APIServerConfig struct {
 	Host string `mapstructure:"host"`
 	Port int    `mapstructure:"http_port"`
 }
@@ -129,7 +148,7 @@ type ModelConfig struct {
 
 // OAuthConfig OAuth configuration for a channel.
 // Mirrors api/apps/auth/__init__.py's OAUTH_CONFIG entries: a Type that
-// selects the auth client flavor (oauth2 / oidc / github), plus the
+// selects the auth client flavor (oauth2 / oidc / GitHub), plus the
 // transport URLs and client credentials. For OIDC the URLs are derived
 // from Issuer via the .well-known/openid-configuration document, so they
 // may be left blank.
@@ -145,13 +164,6 @@ type OAuthConfig struct {
 	RedirectURI      string `mapstructure:"redirect_uri"`
 	Scope            string `mapstructure:"scope"`
 	Issuer           string `mapstructure:"issuer"`
-}
-
-// ServerConfig server configuration
-type ServerConfig struct {
-	Mode      string  `mapstructure:"mode"` // debug, release
-	Port      int     `mapstructure:"port"`
-	SecretKey *string `mapstructure:"secret_key"`
 }
 
 // DatabaseConfig database configuration
@@ -479,7 +491,7 @@ func Init(configPath string) error {
 func FromEnvironments() error {
 	// Secret key
 	if envVal := common.GetEnv(common.EnvRAGFlowSecretKey); envVal != "" {
-		globalConfig.Server.SecretKey = &envVal
+		globalConfig.General.SecretKey = &envVal
 	}
 
 	// Load REGISTER_ENABLED from environment variable (default: true)
@@ -587,7 +599,7 @@ func FromEnvironments() error {
 	minioRegion := strings.ToLower(common.GetEnv(common.EnvMinioRegion))
 	if minioRegion != "" {
 		if globalConfig.StorageEngine.Minio == nil {
-			return fmt.Errorf("Minio config not found")
+			return fmt.Errorf("minio config not found")
 		}
 		globalConfig.StorageEngine.Minio.Region = minioRegion
 	}
@@ -635,7 +647,8 @@ func FromConfigFile(configPath string) error {
 
 	// Read configuration file
 	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if !errors.As(err, &configFileNotFoundError) {
 			return fmt.Errorf("read config file error: %w", err)
 		}
 		zapLogger.Info("Config file not found, using environment variables only")
@@ -696,23 +709,29 @@ func FromConfigFile(configPath string) error {
 	}
 
 	// Map ragflow section to ServerConfig
-	if globalConfig != nil && globalConfig.Server.Port == 0 {
+	if globalConfig != nil && globalConfig.APIServer.Port == 0 {
 		// Try to map from ragflow section
 		if v.IsSet("ragflow") {
 			ragflowConfig := v.Sub("ragflow")
 			if ragflowConfig != nil {
-				globalConfig.Server.Port = ragflowConfig.GetInt("http_port") + 4 // 9384, by default
+				globalConfig.APIServer.Port = ragflowConfig.GetInt("http_port") + 4 // 9384, by default
 				//globalConfig.Server.Port = ragflowConfig.GetInt("http_port") // Correct
 				// If mode is not set, default to debug
-				if globalConfig.Server.Mode == "" {
-					globalConfig.Server.Mode = "release"
+				if globalConfig.General.Mode == "" {
+					globalConfig.General.Mode = "release"
 				}
 				secretKey := ragflowConfig.GetString("secret_key")
 				if secretKey != "" {
-					globalConfig.Server.SecretKey = &secretKey
+					globalConfig.General.SecretKey = &secretKey
 				}
 			}
 		}
+	}
+
+	if globalConfig.APIServer.Port == 0 {
+		globalConfig.APIServer.Port = 9384
+	} else {
+		globalConfig.APIServer.Port += 4
 	}
 
 	// Map redis section to RedisConfig
@@ -723,7 +742,7 @@ func FromConfigFile(configPath string) error {
 				hostStr := redisConfig.GetString("host")
 				// Handle host:port format (e.g., "localhost:6379")
 				if hostStr == "" {
-					return fmt.Errorf("Empty host of redis configuration")
+					return fmt.Errorf("empty host of Redis configuration")
 				}
 
 				if idx := strings.LastIndex(hostStr, ":"); idx != -1 {
@@ -734,7 +753,7 @@ func FromConfigFile(configPath string) error {
 						}
 					}
 				} else {
-					return fmt.Errorf("Error address format of redis: %s", hostStr)
+					return fmt.Errorf("error address format of Redis: %s", hostStr)
 				}
 
 				globalConfig.Redis.Password = redisConfig.GetString("password")
@@ -919,7 +938,7 @@ func FromConfigFile(configPath string) error {
 	return nil
 }
 
-// Get get global configuration
+// GetConfig gets the global configuration
 func GetConfig() *Config {
 	return globalConfig
 }
@@ -935,10 +954,6 @@ func GetAdminConfig() *AdminConfig {
 // SetLogger sets the logger instance
 func SetLogger(l *zap.Logger) {
 	zapLogger = l
-}
-
-func GetGlobalViperConfig() *viper.Viper {
-	return globalViper
 }
 
 func GetAllConfigs() []map[string]interface{} {

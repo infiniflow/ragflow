@@ -1,11 +1,13 @@
 ---
 sidebar_position: -4
+title: Configure Child Chunking Strategy
+sidebar_label: Configure Child Chunking Strategy
 slug: /configure_child_chunking_strategy
 sidebar_custom_props: {
   categoryIcon: LucideGroup
 }
 ---
-# Configure child chunking strategy
+# Configure Child Chunking Strategy
 
 Set parent-child chunking strategy to improve retrieval.
 
@@ -26,11 +28,12 @@ Through this dual-layer structure of "precise localization + contextual suppleme
 
 1. On your dataset's **Configuration** page, find the **Child chunk are used for retrieval** toggle:
 
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/child_chunking.png)
+![Child chunking](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/child_chunking.png)
 
 
 2. Set the delimiter for child chunks.
 
 3. This configuration applies to the **Chunker** component when it comes to ingestion pipeline settings:
 
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/child_chunking_parser.png)
+![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/child_chunking_chunker.png)
+

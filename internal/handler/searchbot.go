@@ -89,8 +89,10 @@ func (r *SearchBotRetrievalTestRequest) UnmarshalJSON(data []byte) error {
 }
 
 // SearchBotRequest is the request body for POST /api/v1/searchbots/related_questions.
+// Question is validated manually below so the error message follows the
+// established API contract instead of the Gin validator format.
 type SearchBotRequest struct {
-	Question string `json:"question" binding:"required"`
+	Question string `json:"question"`
 	SearchID string `json:"search_id,omitempty"`
 }
 
@@ -250,7 +252,8 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	// Resolve chat model ID.
 	modelID := ""
 	if req.SearchID != "" && h.searchSvc != nil {
-		if detail, err := h.searchSvc.GetDetail(req.SearchID); err == nil {
+		ctx := c.Request.Context()
+		if detail, err := h.searchSvc.GetDetail(ctx, req.SearchID); err == nil {
 			if sc, ok := detail["search_config"].(map[string]interface{}); ok {
 				if cid, ok := sc["chat_id"].(string); ok && cid != "" {
 					modelID = cid
@@ -259,7 +262,8 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		}
 	}
 	if modelID == "" && h.tenantSvc != nil {
-		defaultModel, err := h.tenantSvc.GetDefaultModelName(user.ID, entity.ModelTypeChat)
+		ctx := c.Request.Context()
+		defaultModel, err := h.tenantSvc.GetDefaultModelName(ctx, user.ID, entity.ModelTypeChat)
 		if err == nil && defaultModel != "" {
 			modelID = defaultModel
 		}
@@ -350,7 +354,8 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 			jsonInternalError(c, fmt.Errorf("search service not configured"))
 			return
 		}
-		detail, err := h.searchSvc.GetDetail(req.SearchID)
+		ctx := c.Request.Context()
+		detail, err := h.searchSvc.GetDetail(ctx, req.SearchID)
 		if err != nil {
 			jsonInternalError(c, err)
 			return
@@ -395,8 +400,7 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 		common.ResponseWithCodeData(c, code, nil, "Authentication error: API key is invalid!")
 		return
 	}
-
-	detail, err := h.searchSvc.GetSearchShareDetail(user.ID, searchID)
+	detail, err := h.searchSvc.GetSearchShareDetail(ctx, user.ID, searchID)
 	if err != nil {
 		switch err.Error() {
 		case "has no permission for this operation":

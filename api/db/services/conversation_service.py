@@ -230,7 +230,7 @@ def structure_answer(conv, ans, message_id, session_id):
 
 
 async def async_completion(tenant_id, chat_id, question, name="New session", session_id=None, stream=True, **kwargs):
-    assert name, "`name` can not be empty."
+    assert name, "`name` can not be empty"
     dia = DialogService.query(id=chat_id, tenant_id=tenant_id, status=StatusEnum.VALID.value)
     assert dia, "You do not own the chat."
 

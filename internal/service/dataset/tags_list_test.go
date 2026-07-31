@@ -137,8 +137,9 @@ func TestDatasetServiceListTagsSuccess(t *testing.T) {
 			},
 		},
 	}
+	ctx := t.Context()
 
-	result, code, err := testDatasetServiceForListTags(t, docEngine).ListTags(kbInput, "user-1")
+	result, code, err := testDatasetServiceForListTags(t, docEngine).ListTags(ctx, kbInput, "user-1")
 	if err != nil {
 		t.Fatalf("ListTags failed: %v", err)
 	}
@@ -176,7 +177,9 @@ func TestDatasetServiceListTagsReturnsEmptyWhenChunkStoreMissing(t *testing.T) {
 
 	docEngine := &listTagsMockEngine{chunkStoreExists: false}
 
-	result, code, err := testDatasetServiceForListTags(t, docEngine).ListTags(kbInput, "user-1")
+	ctx := t.Context()
+
+	result, code, err := testDatasetServiceForListTags(t, docEngine).ListTags(ctx, kbInput, "user-1")
 	if err != nil {
 		t.Fatalf("ListTags failed: %v", err)
 	}
@@ -201,15 +204,17 @@ func TestDatasetServiceListTagsRejectsUnauthorizedDataset(t *testing.T) {
 
 	docEngine := &listTagsMockEngine{chunkStoreExists: true}
 
-	_, code, err := testDatasetServiceForListTags(t, docEngine).ListTags(kbInput, "user-1")
+	ctx := t.Context()
+
+	_, code, err := testDatasetServiceForListTags(t, docEngine).ListTags(ctx, kbInput, "user-1")
 	if err == nil {
 		t.Fatal("expected unauthorized error")
 	}
 	if code != common.CodeDataError {
 		t.Fatalf("code=%d want=%d", code, common.CodeDataError)
 	}
-	if err.Error() != "No authorization." {
-		t.Fatalf("error=%q want=%q", err.Error(), "No authorization.")
+	if err.Error() != "no authorization" {
+		t.Fatalf("error=%q want=%q", err.Error(), "no authorization")
 	}
 }
 
@@ -225,7 +230,9 @@ func TestDatasetServiceListTagsReturnsChunkStoreError(t *testing.T) {
 		chunkStoreErr: errors.New("boom"),
 	}
 
-	_, code, err := testDatasetServiceForListTags(t, docEngine).ListTags(kbInput, "user-1")
+	ctx := t.Context()
+
+	_, code, err := testDatasetServiceForListTags(t, docEngine).ListTags(ctx, kbInput, "user-1")
 	if err == nil {
 		t.Fatal("expected chunk store error")
 	}

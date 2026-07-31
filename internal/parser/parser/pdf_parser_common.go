@@ -599,13 +599,18 @@ func normalizePDFPositions(raw any) [][]any {
 	return normalized
 }
 
+// normalizePDFPageNumber converts a DeepDoc 0-indexed page number to the
+// 1-indexed form stored in _pdf_positions / positions. It is the SINGLE
+// 0→1 conversion point: DeepDoc (pdf_oxide/pdfium) emits 0-indexed pages,
+// and every downstream consumer (AddPositions for ES storage,
+// PositionsFromMatrix for the PDFium render path) expects 1-indexed input.
+// Adding +1 unconditionally — instead of only for v<=0 — keeps all pages
+// consistent; the old heuristic left page>=1 unconverted, which AddPositions
+// then double-incremented and PositionsFromMatrix mis-decremented.
 func normalizePDFPageNumber(raw any) (int, bool) {
 	switch v := raw.(type) {
 	case int:
-		if v <= 0 {
-			return v + 1, true
-		}
-		return v, true
+		return v + 1, true
 	case int64:
 		return normalizePDFPageNumber(int(v))
 	case float64:

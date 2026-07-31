@@ -48,7 +48,7 @@ from api.utils.api_utils import (
     get_result,
     server_error_response,
 )
-from api.utils.pagination_utils import validate_rest_api_page_size
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.image_utils import store_chunk_image
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
@@ -209,7 +209,7 @@ async def parse(tenant_id, dataset_id):
             not_found.append(id)
             continue
         if not doc:
-            return get_error_data_result(message=f"You don't own the document {id}.")
+            return get_error_data_result(message=f"you don't own the document {id}")
         info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
         if (
             DocumentService.filter_update(
@@ -274,7 +274,7 @@ async def stop_parsing(tenant_id, dataset_id):
     for id in doc_list:
         doc = DocumentService.query(id=id, kb_id=dataset_id)
         if not doc:
-            return get_error_data_result(message=f"You don't own the document {id}.")
+            return get_error_data_result(message=f"you don't own the document {id}")
         if doc[0].run != TaskStatus.RUNNING.value:
             return construct_json_result(
                 code=RetCode.DATA_ERROR,
@@ -325,8 +325,8 @@ async def retrieval_test(tenant_id):
         return get_result(message="Datasets use different embedding models.", code=RetCode.DATA_ERROR)
     if "question" not in req:
         return get_error_data_result("`question` is required.")
-    page = int(req.get("page", 1))
-    size = validate_rest_api_page_size(int(req.get("page_size", 30)))
+    page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
+    size = validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE))
     question = req["question"].strip() if isinstance(req["question"], str) else req["question"]
     if not question:
         return get_result(data={"total": 0, "chunks": [], "doc_aggs": {}})
@@ -449,11 +449,11 @@ async def list_chunks(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_error_data_result(message=f"you don't own the document {document_id}")
     doc = doc[0]
     req = request.args
-    page = int(req.get("page", 1))
-    size = validate_rest_api_page_size(int(req.get("page_size", 30)))
+    page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
+    size = validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE))
     question = req.get("keywords", "")
     chunk_ids = _get_query_id_list(req, "chunk_ids")
     query = {
@@ -537,7 +537,7 @@ async def get_chunk(tenant_id, dataset_id, document_id, chunk_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_error_data_result(message=f"you don't own the document {document_id}")
     try:
         chunk = settings.docStoreConn.get(chunk_id, search.index_name(dataset_tenant_id), [dataset_id])
         if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):
@@ -588,7 +588,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     docs = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not docs:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_error_data_result(message=f"you don't own the document {document_id}")
 
     # Resolve the doc's configured template group → child template ids
     # so we can render tabs in the order the user picked them.
@@ -637,7 +637,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             config = template.get("config") if isinstance(template.get("config"), dict) else {}
             raw_kind = (config.get("kind") if isinstance(config, dict) else "") or template.get("kind") or ""
             kind_norm = _compilation_template_kind(raw_kind)
-            if kind_norm == "artifacts":
+            if kind_norm == "wiki":
                 continue
             seen_configured_ids.add(template_id)
             configured_ids.append(template_id)
@@ -902,7 +902,7 @@ async def delete_document_structure_graph(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     docs = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not docs:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_error_data_result(message=f"you don't own the document {document_id}")
 
     req = await get_request_json()
     template_id = str(req.get("template_id") or "").strip()
@@ -948,15 +948,21 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_error_data_result(message=f"you don't own the document {document_id}")
     doc = doc[0]
     req = await get_request_json()
     if is_content_empty(req.get("content")):
         return get_error_data_result(message="`content` is required")
-    if "important_keywords" in req and not isinstance(req["important_keywords"], list):
-        return get_error_data_result("`important_keywords` is required to be a list")
-    if "questions" in req and not isinstance(req["questions"], list):
-        return get_error_data_result("`questions` is required to be a list")
+    if "important_keywords" in req:
+        if not isinstance(req["important_keywords"], list):
+            return get_error_data_result("`important_keywords` is required to be a list")
+        if not all(isinstance(k, str) for k in req["important_keywords"]):
+            return get_error_data_result("`important_keywords` must be a list of strings")
+    if "questions" in req:
+        if not isinstance(req["questions"], list):
+            return get_error_data_result("`questions` is required to be a list")
+        if not all(isinstance(q, str) for q in req["questions"]):
+            return get_error_data_result("`questions` must be a list of strings")
 
     chunk_id = xxhash.xxh64((req["content"] + document_id).encode("utf-8")).hexdigest()
     d = {
@@ -1037,7 +1043,7 @@ async def rm_chunk(tenant_id, dataset_id, document_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     docs = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not docs:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_error_data_result(message=f"you don't own the document {document_id}")
     req = await get_request_json()
     if not req:
         return get_result()
@@ -1091,7 +1097,7 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         return get_error_data_result(message=f"You don't own the dataset {dataset_id}.")
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        return get_error_data_result(message=f"You don't own the document {document_id}.")
+        return get_error_data_result(message=f"you don't own the document {document_id}")
     doc = doc[0]
     chunk = settings.docStoreConn.get(chunk_id, search.index_name(dataset_tenant_id), [dataset_id])
     if chunk is None or str(chunk.get("doc_id", chunk.get("document_id"))) != str(document_id):

@@ -19,6 +19,7 @@ const selectedTreeVariants = cva(
 export interface TreeDataItem {
   id: string;
   name: string;
+  entityType?: string;
   icon?: any;
   selectedIcon?: any;
   openIcon?: any;
@@ -35,6 +36,36 @@ type TreeProps = React.HTMLAttributes<HTMLDivElement> & {
   expandAll?: boolean;
   defaultNodeIcon?: any;
   defaultLeafIcon?: any;
+};
+
+const TreeItemLabel = ({ item }: { item: TreeDataItem }) => {
+  if (!item.entityType) {
+    return <span className="flex-grow truncate text-sm">{item.name}</span>;
+  }
+
+  const isTitle = item.entityType === 'title';
+  return (
+    <span className="flex min-w-0 flex-grow items-center gap-2">
+      <span
+        className={cn(
+          'truncate text-sm',
+          isTitle && 'font-medium text-text-primary',
+        )}
+      >
+        {item.name}
+      </span>
+      <span
+        className={cn(
+          'shrink-0 rounded px-1.5 py-0.5 text-[10px] leading-none',
+          isTitle
+            ? 'bg-accent/15 text-accent-foreground'
+            : 'bg-bg-card text-text-secondary',
+        )}
+      >
+        {item.entityType}
+      </span>
+    </span>
+  );
 };
 
 const TreeView = React.forwardRef<HTMLDivElement, TreeProps>(
@@ -211,7 +242,7 @@ const TreeNode = ({
             isOpen={value.includes(item.id)}
             default={defaultNodeIcon}
           />
-          <span className="text-sm truncate">{item.name}</span>
+          <TreeItemLabel item={item} />
           <TreeActions isSelected={selectedItemId === item.id}>
             {item.actions}
           </TreeActions>
@@ -271,7 +302,7 @@ const TreeLeaf = React.forwardRef<
           isSelected={selectedItemId === item.id}
           default={defaultLeafIcon}
         />
-        <span className="flex-grow text-sm truncate">{item.name}</span>
+        <TreeItemLabel item={item} />
         <TreeActions isSelected={selectedItemId === item.id}>
           {item.actions}
         </TreeActions>

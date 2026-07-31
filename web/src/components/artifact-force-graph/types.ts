@@ -14,7 +14,7 @@ export type ArtifactGraphNode = NodeObject<IArtifactGraphEntity> & {
 
 export type ArtifactGraphLink = LinkObject<
   ArtifactGraphNode,
-  { source: string; target: string }
+  { source: string; target: string; type?: string }
 >;
 
 export interface ArtifactForceGraphProps<TNodeValue = IArtifactGraphEntity> {

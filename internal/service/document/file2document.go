@@ -40,8 +40,8 @@ var (
 	ErrLinkFileNotFound = errors.New("File not found!")
 	// ErrLinkDatasetNotFound mirrors Python "Can't find this dataset!".
 	ErrLinkDatasetNotFound = errors.New("Can't find this dataset!")
-	// ErrLinkNoAuthorization mirrors Python "No authorization.".
-	ErrLinkNoAuthorization = errors.New("No authorization.")
+	// ErrLinkNoAuthorization mirrors Python "no authorization".
+	ErrLinkNoAuthorization = errors.New("no authorization")
 	// ErrLinkInternal is a generic, safe-to-expose internal failure.
 	ErrLinkInternal = errors.New("Internal server error.")
 )
@@ -102,7 +102,7 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	// ── 2. Validate KBs exist ────────────────────────────────────────────────
 	kbMap := make(map[string]*entity.Knowledgebase, len(req.KbIDs))
 	for _, kbID := range req.KbIDs {
-		kb, err := s.kbDAO.GetByID(kbID)
+		kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
 		if err != nil || kb == nil {
 			return ErrLinkDatasetNotFound
 		}
@@ -142,7 +142,7 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 
 	// ── 5. Validate KB permissions ────────────────────────────────────────────
 	for _, kb := range kbMap {
-		if !service.HasKBTeamPermission(kb, userID, dao.NewTenantDAO()) {
+		if !service.HasKBTeamPermission(ctx, kb, userID, dao.NewTenantDAO()) {
 			return ErrLinkNoAuthorization
 		}
 	}
@@ -222,7 +222,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 			if _, exists := existingKBIDs[kbID]; exists {
 				continue
 			}
-			kb, err := s.kbDAO.GetByID(kbID)
+			kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
 			if err != nil || kb == nil {
 				continue
 			}

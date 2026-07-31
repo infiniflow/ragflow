@@ -193,7 +193,7 @@ export const useSendMessageBySSE = (url: string) => {
         let lastEventData: ResponseType | undefined;
 
         try {
-          // eslint-disable-next-line no-constant-condition
+          // oxlint-disable-next-line no-constant-condition
           while (true) {
             const x = await reader?.read();
             if (!x) {

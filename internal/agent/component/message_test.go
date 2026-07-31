@@ -34,7 +34,7 @@ func TestMessage_ResolveTemplate(t *testing.T) {
 	state.Sys["query"] = "world"
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"text":   "hello {{sys.query}}",
 		"stream": false,
 	})
@@ -59,7 +59,7 @@ func TestMessage_ResolveListReferenceAsJSON(t *testing.T) {
 	state.SetVar("list_0", "result", []any{"user: 1"})
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"text":   "{{list_0@result}}",
 		"stream": false,
 	})
@@ -80,7 +80,7 @@ func TestMessage_Stream(t *testing.T) {
 	state.Sys["query"] = "alice"
 	ctx := withStateForTest(context.Background(), state)
 
-	ch, err := c.Stream(ctx, map[string]any{
+	ch, err := c.Stream(ctx, nil, map[string]any{
 		"text":   "hi",
 		"stream": true,
 	})
@@ -109,7 +109,7 @@ func TestMessage_NoTemplate(t *testing.T) {
 	state := canvas.NewCanvasState("run-3", "task-3")
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{"text": "no refs here", "stream": false})
+	out, err := c.Invoke(ctx, nil, map[string]any{"text": "no refs here", "stream": false})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestMessage_RuntimeContentInput(t *testing.T) {
 	state := canvas.NewCanvasState("run-4", "task-4")
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{"content": "from upstream", "stream": false})
+	out, err := c.Invoke(ctx, nil, map[string]any{"content": "from upstream", "stream": false})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestMessage_EmitsAgentMessage(t *testing.T) {
 		}
 	})
 
-	out, err := c.Invoke(ctx, map[string]any{"content": "visible message"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"content": "visible message"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -176,7 +176,7 @@ func TestMessage_EmitsDirectCanvasMessage(t *testing.T) {
 		direct = append(direct, content)
 	})
 
-	out, err := c.Invoke(ctx, map[string]any{"content": "direct message"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"content": "direct message"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestMessage_NormalTemplateEmitsOnlyRenderedMessage(t *testing.T) {
 		direct = append(direct, content)
 	})
 
-	out, err := c.Invoke(ctx, map[string]any{"text": "hello {{sys.query}}"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"text": "hello {{sys.query}}"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestMessage_SkipsEmissionWhenAgentAlreadyStreamed(t *testing.T) {
 	runtime.EmitAgentMessage(ctx, "streamed this", "")
 	emitted = nil // clear setup emission so we only capture Message's output
 
-	out, err := c.Invoke(ctx, map[string]any{"content": "agent streamed this"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"content": "agent streamed this"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -276,7 +276,7 @@ func TestMessage_EmitsContentDifferentFromAgentStream(t *testing.T) {
 	runtime.EmitAgentMessage(ctx, "draft answer", "")
 	emitted = nil
 
-	out, err := c.Invoke(ctx, map[string]any{"content": "final answer"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"content": "final answer"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -309,7 +309,7 @@ func TestMessage_ConsumesDeferredAgentStream(t *testing.T) {
 		}
 	})
 
-	out, err := c.Invoke(ctx, map[string]any{"text": "answer: {{agent_0@content}}"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"text": "answer: {{agent_0@content}}"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestMessage_DeferredStreamThinkingEvents(t *testing.T) {
 		}
 	})
 
-	if _, err := c.Invoke(ctx, map[string]any{"text": "{{agent_0@content}}"}); err != nil {
+	if _, err := c.Invoke(ctx, nil, map[string]any{"text": "{{agent_0@content}}"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got, want := strings.Join(events, "|"), "start|plan|end|answer"; got != want {
@@ -367,7 +367,7 @@ func TestMessage_DeferredStreamUsesCompletedContent(t *testing.T) {
 		streamed = append(streamed, content)
 	})
 
-	out, err := c.Invoke(ctx, map[string]any{"text": "{{agent_0@content}}"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"text": "{{agent_0@content}}"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -387,7 +387,7 @@ func TestMessage_FormalizedContentFallback(t *testing.T) {
 	state := canvas.NewCanvasState("run-5", "task-5")
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"formalized_content": "retrieved answer",
 		"_created_time":      "2026-07-15T00:00:00Z",
 		"_elapsed_time":      0.01,
@@ -405,7 +405,7 @@ func TestMessage_SingleStringFallback(t *testing.T) {
 	state := canvas.NewCanvasState("run-6", "task-6")
 	ctx := withStateForTest(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"value":         "single upstream text",
 		"_elapsed_time": 0.01,
 	})

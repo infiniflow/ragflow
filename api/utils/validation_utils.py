@@ -19,7 +19,8 @@ import pathlib
 import re
 from collections import Counter
 import string
-from typing import Annotated, Any, Literal
+from types import UnionType
+from typing import Annotated, Any, Literal, Union, get_args, get_origin
 from uuid import UUID
 
 from quart import Request
@@ -31,6 +32,15 @@ from api.constants import DATASET_NAME_LIMIT, FILE_NAME_LEN_LIMIT
 from api.db import FileType
 from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import RetCode
+
+
+def _is_list_annotation(annotation: Any) -> bool:
+    origin = get_origin(annotation)
+    if origin is list:
+        return True
+    if origin in (Union, UnionType):
+        return any(_is_list_annotation(arg) for arg in get_args(annotation))
+    return False
 
 
 async def validate_and_parse_json_request(
@@ -161,6 +171,10 @@ def validate_and_parse_request_args(request: Request, validator: type[BaseModel]
         - Preserves type conversion from Pydantic validation
     """
     args = request.args.to_dict(flat=True)
+    for field_name, field_info in validator.model_fields.items():
+        query_name = field_info.alias or field_name
+        if query_name in request.args and _is_list_annotation(field_info.annotation):
+            args[query_name] = [value for item in request.args.getlist(query_name) for value in item.split(",") if value]
 
     # Handle ext parameter: parse JSON string to dict if it's a string
     if "ext" in args and isinstance(args["ext"], str):
@@ -572,7 +586,7 @@ class CreateDatasetReq(Base):
         Raises:
             PydanticCustomError: For structural errors in these cases:
                 - Missing MIME prefix header
-                - Invalid MIME prefix format
+                - invalid MIME prefix format
                 - Unsupported image MIME type
 
         Example:
@@ -591,7 +605,7 @@ class CreateDatasetReq(Base):
         if "," in v:
             prefix, _ = v.split(",", 1)
             if not prefix.startswith("data:"):
-                raise PydanticCustomError("format_invalid", "Invalid MIME prefix format. Must start with 'data:'")
+                raise PydanticCustomError("format_invalid", "invalid MIME prefix format. Must start with 'data:'")
 
             mime_type = prefix[5:].split(";")[0]
             supported_mime_types = ["image/jpeg", "image/png"]
@@ -600,7 +614,7 @@ class CreateDatasetReq(Base):
 
             return v
         else:
-            raise PydanticCustomError("format_invalid", "Missing MIME prefix. Expected format: data:<mime>;base64,<data>")
+            raise PydanticCustomError("format_invalid", "missing MIME prefix. Expected format: data:<mime>;base64,<data>")
 
     @field_validator("embedding_model", mode="before")
     @classmethod
@@ -646,11 +660,11 @@ class CreateDatasetReq(Base):
                 return v
 
             if "@" not in v:
-                raise PydanticCustomError("format_invalid", "Embedding model identifier must follow <model_name>@<provider> format")
+                raise PydanticCustomError("format_invalid", "embedding model identifier must follow <model_name>@<provider> format")
 
             components = v.split("@", 1)
             if len(components) != 2 or not all(components):
-                raise PydanticCustomError("format_invalid", "Both model_name and provider must be non-empty strings")
+                raise PydanticCustomError("format_invalid", "both model_name and provider must be non-empty strings")
 
             model_name, provider = components
             if not model_name.strip() or not provider.strip():
@@ -1002,8 +1016,25 @@ class BaseListReq(BaseModel):
 class ListDatasetReq(BaseListReq):
     """Request model for listing datasets."""
 
+    ids: Annotated[list[str] | None, Field(default=None)]
     include_parsing_status: Annotated[bool, Field(default=False)]
     ext: Annotated[dict, Field(default={})]
+
+    @field_validator("ids", mode="after")
+    @classmethod
+    def validate_ids(cls, v_list: list[str] | None) -> list[str] | None:
+        if v_list is None:
+            return None
+
+        ids_list = []
+        for v in v_list:
+            ids_list.append(validate_uuid1_hex(v))
+
+        duplicates = [item for item, count in Counter(ids_list).items() if count > 1]
+        if duplicates:
+            raise PydanticCustomError("duplicate_uuids", "Duplicate ids: '{duplicate_ids}'", {"duplicate_ids": ", ".join(duplicates)})
+
+        return ids_list
 
 
 # ---- File Management Request Models ----

@@ -17,12 +17,15 @@ package component
 
 import (
 	"context"
+	"ragflow/internal/dao"
 	"sync"
 	"testing"
 
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/utility"
+
+	"gorm.io/gorm"
 )
 
 // docxVisionFakeDriver satisfies modelModule.ModelDriver but never reaches the
@@ -66,7 +69,7 @@ func (c *docxVisionCaptureInvoker) invoke(
 // TestMaybeDispatchDOCXVision_EnhancesJSONImages verifies Diff 2.4: DOCX vision
 // enhancement must trigger on the JSON output path (like Python's
 // enhance_media_sections_with_vision in parser.py:_doc) and must NOT trigger on
-// the markdown path. Image items with a non-empty `image` field get their VLM
+// the Markdown path. Image items with a non-empty `image` field get their VLM
 // description appended to `text`; table items (no image) and text items are
 // left untouched.
 func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
@@ -79,7 +82,7 @@ func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
 		docxVisionPromptBuilder = origPrompt
 	}()
 
-	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		return &docxVisionFakeDriver{}, "docx-vision-model", &modelModule.APIConfig{}, 0, nil
 	}
 	invoker := &docxVisionCaptureInvoker{}
@@ -95,9 +98,11 @@ func TestMaybeDispatchDOCXVision_EnhancesJSONImages(t *testing.T) {
 			{"text": "<table></table>", "image": nil, "doc_type_kwd": "table"},
 		},
 	}
+	ctx := t.Context()
 
 	res, handled, err := maybeDispatchDOCXVision(
-		context.Background(),
+		ctx,
+		dao.DB,
 		utility.FileTypeDOCX,
 		dispatched,
 		map[string]any{"tenant_id": "t1"},
@@ -142,7 +147,7 @@ func TestMaybeDispatchDOCXVision_JSONOnly(t *testing.T) {
 	}()
 
 	called := false
-	resolveTenantModelByType = func(tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	resolveTenantModelByType = func(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 		called = true
 		return &docxVisionFakeDriver{}, "m", &modelModule.APIConfig{}, 0, nil
 	}
@@ -158,9 +163,11 @@ func TestMaybeDispatchDOCXVision_JSONOnly(t *testing.T) {
 		Markdown:     "![Image](data:image/png;base64,abc)",
 		File:         map[string]any{"figures": []map[string]any{{"image": "abc", "marker": "x"}}},
 	}
+	ctx := t.Context()
 
 	res, handled, err := maybeDispatchDOCXVision(
-		context.Background(),
+		ctx,
+		dao.DB,
 		utility.FileTypeDOCX,
 		dispatched,
 		map[string]any{"tenant_id": "t1"},

@@ -9,6 +9,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/service"
@@ -29,9 +30,11 @@ type datasetPagerankUpdate struct {
 func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	tenantID = strings.TrimSpace(tenantID)
-	if _, err := d.kbDAO.GetByID(datasetID); err != nil {
+	if _, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("dataset not found")
+			// Match Python: nonexistent and not-owned datasets share the
+			// "lacks permission" error so existence is not revealed (IDOR).
+			return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
 		}
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
@@ -61,7 +64,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return nil, common.CodeDataError, errors.New("`name` is required")
+			return nil, common.CodeDataError, errors.New("String should have at least 1 character")
 		}
 		if len(name) > 128 {
 			return nil, common.CodeDataError, errors.New("String should have at most 128 characters")
@@ -194,7 +197,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			}
 			if lookupErr == nil {
 				txCode = common.CodeDataError
-				return fmt.Errorf("dataset name '%s' already exists", nameValue)
+				return fmt.Errorf("Dataset name '%s' already exists", nameValue)
 			}
 		}
 
@@ -212,13 +215,13 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			} else {
 				tenantEmbdID = ""
 			}
-			ok, message := d.verifyEmbeddingAvailability(effectiveEmbdID, tenantID)
+			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, tenantID)
 			if !ok {
 				txCode = common.CodeDataError
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				resolvedID, err := service.NewModelProviderService().ResolveModelID(tenantID, entity.ModelTypeEmbedding, effectiveEmbdID)
+				resolvedID, err := service.NewModelProviderService().ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
 					tenantEmbdID = resolvedID
 				}
@@ -235,7 +238,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			isPipeline, effParserID, effPipelineID := service.ResolveParseMode(
 				req.ParseType, req.ParserID, req.PipelineID,
 				service.ParseModeState{ParserID: lockedKB.ParserID, PipelineID: lockedKB.PipelineID})
-			dslJSON, dslErr := service.LoadPipelineDSL(isPipeline, effParserID, effPipelineID)
+			dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
 			if dslErr != nil {
 				common.Warn("failed to load pipeline DSL for building parser_config",
 					zap.String("parserID", effParserID), zap.Error(dslErr))
@@ -257,7 +260,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		}
 		if parserIDProvided && parserID != lockedKB.ParserID {
 			if _, ok := updates["parser_config"]; !ok {
-				if resolved, cpErr := service.ResolveComponentParamsDefaults(parserID, nil); cpErr != nil {
+				if resolved, cpErr := service.ResolveComponentParamsDefaults(ctx, parserID, nil); cpErr != nil {
 					common.Warn("failed to resolve component params defaults on parser_id switch",
 						zap.String("parserID", parserID), zap.Error(cpErr))
 				} else if resolved != nil {
@@ -277,7 +280,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			if parserIDProvided {
 				cfgParserID = parserID
 			}
-			if cpDefaults, cpErr := service.ResolveComponentParamsDefaults(cfgParserID, pipelineID); cpErr != nil {
+			if cpDefaults, cpErr := service.ResolveComponentParamsDefaults(ctx, cfgParserID, pipelineID); cpErr != nil {
 				common.Warn("failed to resolve component params defaults on pipeline change",
 					zap.String("parserID", cfgParserID), zap.Error(cpErr))
 			} else if cpDefaults != nil {
@@ -289,7 +292,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				if dao.IsDuplicateKeyErr(err) {
 					if nameValue, ok := updates["name"].(string); ok {
 						txCode = common.CodeDataError
-						return fmt.Errorf("dataset name '%s' already exists", nameValue)
+						return fmt.Errorf("Dataset name '%s' already exists", nameValue)
 					}
 					txCode = common.CodeDataError
 					return errors.New("dataset name already exists")
@@ -345,10 +348,18 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 func (d *DatasetService) updateDatasetPagerankChunks(update datasetPagerankUpdate) error {
 	ctx, cancel := context.WithTimeout(context.Background(), datasetPagerankUpdateTimeout)
 	defer cancel()
+	var err error
 	if update.value > 0 {
-		return d.docEngine.UpdateChunks(ctx, map[string]interface{}{"kb_id": update.datasetID}, map[string]interface{}{common.PAGERANK_FLD: update.value}, update.index, update.datasetID)
+		err = d.docEngine.UpdateChunks(ctx, map[string]interface{}{"kb_id": update.datasetID}, map[string]interface{}{common.PAGERANK_FLD: update.value}, update.index, update.datasetID)
+	} else {
+		err = d.docEngine.UpdateChunks(ctx, map[string]interface{}{"exists": common.PAGERANK_FLD}, map[string]interface{}{"remove": common.PAGERANK_FLD}, update.index, update.datasetID)
 	}
-	return d.docEngine.UpdateChunks(ctx, map[string]interface{}{"exists": common.PAGERANK_FLD}, map[string]interface{}{"remove": common.PAGERANK_FLD}, update.index, update.datasetID)
+	if errors.Is(err, types.ErrIndexNotFound) {
+		// Python's docStoreConn.update logs and returns False on a missing
+		// index; the dataset-level pagerank update tolerates it.
+		return nil
+	}
+	return err
 }
 
 func (d *DatasetService) lockAccessibleDatasetForUpdate(tx *gorm.DB, datasetID, userID string) (*entity.Knowledgebase, common.ErrorCode, error) {

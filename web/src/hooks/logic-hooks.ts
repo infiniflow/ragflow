@@ -110,6 +110,24 @@ export const useGetPaginationWithRouter = () => {
   };
 };
 
+// When the current page becomes empty (e.g. after deleting the last card on
+// the last page), navigate back to the previous page automatically.
+export const useGoToPreviousPageOnEmpty = (
+  listLength: number | undefined,
+  loading: boolean = false,
+) => {
+  const { pagination, setPagination } = useGetPaginationWithRouter();
+
+  useEffect(() => {
+    if (!loading && listLength === 0 && pagination.current > 1) {
+      setPagination({
+        page: pagination.current - 1,
+        pageSize: pagination.pageSize,
+      });
+    }
+  }, [listLength, loading, pagination, setPagination]);
+};
+
 export const useHandleSearchChange = () => {
   const [searchString, setSearchString] = useState('');
   const { pagination, setPagination } = useGetPaginationWithRouter();
@@ -266,7 +284,7 @@ export const useSendMessageWithSse = () => {
           .pipeThrough(new EventSourceParserStream())
           .getReader();
 
-        // eslint-disable-next-line no-constant-condition
+        // oxlint-disable-next-line no-constant-condition
         while (true) {
           try {
             const x = await reader?.read();

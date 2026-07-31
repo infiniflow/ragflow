@@ -118,12 +118,25 @@ func (f *fakeSessionStore) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 	return nil
 }
 
-func (f *fakeSessionStore) ListByChatID(ctx context.Context, db *gorm.DB, chatID string) ([]*entity.ChatSession, error) {
+func (f *fakeSessionStore) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int) ([]*entity.ChatSession, error) {
 	var result []*entity.ChatSession
 	for _, s := range f.sessions {
-		if s.DialogID == chatID {
-			result = append(result, s)
+		if s.DialogID != chatID {
+			continue
 		}
+		if sessionID != "" && s.ID != sessionID {
+			continue
+		}
+		if name != "" {
+			var sessionName string
+			if s.Name != nil {
+				sessionName = *s.Name
+			}
+			if sessionName != name {
+				continue
+			}
+		}
+		result = append(result, s)
 	}
 	return result, nil
 }
@@ -151,7 +164,7 @@ type fakeTenantStore struct {
 	err       error
 }
 
-func (f *fakeTenantStore) GetTenantIDsByUserID(userID string) ([]string, error) {
+func (f *fakeTenantStore) GetTenantIDsByUserID(ctx context.Context, db *gorm.DB, userID string) ([]string, error) {
 	return f.tenantIDs, f.err
 }
 
@@ -183,7 +196,7 @@ type fakeChatModelConfigResolver struct {
 	err      error
 }
 
-func (f *fakeChatModelConfigResolver) GetChatModelConfig(tenantID, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+func (f *fakeChatModelConfigResolver) GetChatModelConfig(ctx context.Context, tenantID, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
 	f.tenantID = tenantID
 	f.llmID = llmID
 	if f.err != nil {
@@ -291,7 +304,7 @@ func TestListChatSessions_Success(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1")
+	resp, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "create_time", true, 1, 30)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -310,9 +323,9 @@ func TestListChatSessions_NotOwner(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	_, err := svc.ListChatSessions(ctx, "user-1", "chat-1")
-	if err == nil || !strings.Contains(err.Error(), "only owner") {
-		t.Fatalf("expected 'only owner' error, got %v", err)
+	_, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "create_time", true, 1, 30)
+	if err == nil || !strings.Contains(err.Error(), "No authorization") {
+		t.Fatalf("got %v", err)
 	}
 }
 
@@ -409,7 +422,7 @@ func TestGetSession_WrongChat(t *testing.T) {
 
 	ctx := t.Context()
 	_, code, err := svc.GetSession(ctx, "user-1", "chat-1", "session-1")
-	if err == nil || err.Error() != "Session does not belong to this chat!" {
+	if err == nil || err.Error() != "session does not belong to this chat" {
 		t.Fatalf("err=%v", err)
 	}
 	if code != common.CodeDataError {
@@ -480,11 +493,11 @@ func TestUpdateSession_ValidationErrors(t *testing.T) {
 		message string
 		code    common.ErrorCode
 	}{
-		{name: "empty body", req: map[string]interface{}{}, message: "Request body cannot be empty", code: common.CodeArgumentError},
-		{name: "message", req: map[string]interface{}{"message": []interface{}{}}, message: "`messages` cannot be changed.", code: common.CodeDataError},
-		{name: "messages", req: map[string]interface{}{"messages": []interface{}{}}, message: "`messages` cannot be changed.", code: common.CodeDataError},
-		{name: "reference", req: map[string]interface{}{"reference": []interface{}{}}, message: "`reference` cannot be changed.", code: common.CodeDataError},
-		{name: "empty name", req: map[string]interface{}{"name": "   "}, message: "`name` can not be empty.", code: common.CodeDataError},
+		// Empty body is now a valid no-op per the contract.
+		{name: "message", req: map[string]interface{}{"message": []interface{}{}}, message: "`messages` cannot be changed", code: common.CodeDataError},
+		{name: "messages", req: map[string]interface{}{"messages": []interface{}{}}, message: "`messages` cannot be changed", code: common.CodeDataError},
+		{name: "reference", req: map[string]interface{}{"reference": []interface{}{}}, message: "`reference` cannot be changed", code: common.CodeDataError},
+		{name: "empty name", req: map[string]interface{}{"name": "   "}, message: "`name` can not be empty", code: common.CodeDataError},
 	}
 
 	for _, tc := range cases {
@@ -513,7 +526,7 @@ func TestUpdateSession_NotFound(t *testing.T) {
 
 	ctx := t.Context()
 	_, code, err := svc.UpdateSession(ctx, "user-1", "chat-1", "missing", map[string]interface{}{"name": "renamed"})
-	if err == nil || err.Error() != "Session not found!" {
+	if err == nil || err.Error() != "session not found" {
 		t.Fatalf("err=%v", err)
 	}
 	if code != common.CodeDataError {
@@ -1151,8 +1164,8 @@ func TestCompletion_ConversationNotFound(t *testing.T) {
 	_, err := svc.Completion(ctx, "user-1", "missing", []map[string]interface{}{
 		{"role": "user", "content": "hi"},
 	}, "", nil, "msg-1")
-	if err == nil || err.Error() != "Conversation not found" {
-		t.Fatalf("expected 'Conversation not found', got %v", err)
+	if err == nil || err.Error() != "conversation not found" {
+		t.Fatalf("expected 'conversation not found', got %v", err)
 	}
 }
 
@@ -1174,8 +1187,8 @@ func TestCompletion_DialogNotFound(t *testing.T) {
 	_, err := svc.Completion(ctx, "user-1", "session-1", []map[string]interface{}{
 		{"role": "user", "content": "hi"},
 	}, "", nil, "msg-1")
-	if err == nil || err.Error() != "Dialog not found" {
-		t.Fatalf("expected 'Dialog not found', got %v", err)
+	if err == nil || err.Error() != "dialog not found" {
+		t.Fatalf("expected 'dialog not found', got %v", err)
 	}
 }
 
@@ -1568,5 +1581,69 @@ func TestChunksFormat_UnsupportedTypeReturnsEmpty(t *testing.T) {
 	result := svc.chunksFormat(ref)
 	if len(result) != 0 {
 		t.Fatalf("expected empty for string type, got %d", len(result))
+	}
+}
+
+func drainResults(events []AsyncChatResult) <-chan AsyncChatResult {
+	ch := make(chan AsyncChatResult, len(events))
+	for _, e := range events {
+		ch <- e
+	}
+	close(ch)
+	return ch
+}
+
+func TestAccumulateNonStreamAnswer_MetadataFromFinalEventOnly(t *testing.T) {
+	// Intermediate events carry conflicting metadata; the response must
+	// reflect only the final event's values.
+	ans := accumulateNonStreamAnswer(drainResults([]AsyncChatResult{
+		{Answer: "partial ", AudioBinary: "intermediate-audio", Prompt: "intermediate-prompt", CreatedAt: 111},
+		{Answer: "answer", Final: true, AudioBinary: "final-audio", Prompt: "final-prompt", CreatedAt: 222},
+	}))
+	if ans["audio_binary"] != "final-audio" {
+		t.Fatalf("audio_binary=%v, want final-audio", ans["audio_binary"])
+	}
+	if ans["prompt"] != "final-prompt" {
+		t.Fatalf("prompt=%v, want final-prompt", ans["prompt"])
+	}
+	if ans["created_at"] != float64(222) {
+		t.Fatalf("created_at=%v, want 222", ans["created_at"])
+	}
+	if ans["answer"] != "answer" {
+		t.Fatalf("answer=%v, want final decorated answer", ans["answer"])
+	}
+}
+
+func TestAccumulateNonStreamAnswer_FinalEventOmitsMetadata(t *testing.T) {
+	// The final event omits metadata; it must be assigned as-is (nil/zero)
+	// rather than leaking values from intermediate events.
+	ans := accumulateNonStreamAnswer(drainResults([]AsyncChatResult{
+		{Answer: "partial ", AudioBinary: "intermediate-audio", Prompt: "intermediate-prompt", CreatedAt: 111},
+		{Answer: "full answer", Final: true},
+	}))
+	if ans["audio_binary"] != nil {
+		t.Fatalf("audio_binary=%v, want nil", ans["audio_binary"])
+	}
+	if ans["prompt"] != "" {
+		t.Fatalf("prompt=%v, want empty", ans["prompt"])
+	}
+	if _, ok := ans["created_at"]; ok {
+		t.Fatalf("created_at should be omitted, got %v", ans["created_at"])
+	}
+}
+
+func TestAccumulateNonStreamAnswer_AccumulatesDeltasUntilFinal(t *testing.T) {
+	ans := accumulateNonStreamAnswer(drainResults([]AsyncChatResult{
+		{Answer: "Hello, "},
+		{Answer: "world"},
+	}))
+	if ans["answer"] != "Hello, world" {
+		t.Fatalf("answer=%v, want accumulated deltas", ans["answer"])
+	}
+	if ans["final"] != true {
+		t.Fatalf("final=%v, want true", ans["final"])
+	}
+	if ref, _ := ans["reference"].(map[string]interface{}); ref != nil {
+		t.Fatalf("reference=%v, want nil", ref)
 	}
 }

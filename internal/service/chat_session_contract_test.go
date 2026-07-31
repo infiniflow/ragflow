@@ -74,7 +74,7 @@ func TestCreateSession_RejectsEmptyOrNonStringName(t *testing.T) {
 	ctx := t.Context()
 	for _, name := range []interface{}{"", "   ", 1} {
 		_, code, err := svc.CreateSession(ctx, "user-1", "chat-1", map[string]interface{}{"name": name})
-		if err == nil || err.Error() != "`name` can not be empty." {
+		if err == nil || err.Error() != "`name` can not be empty" {
 			t.Fatalf("name=%#v err=%v", name, err)
 		}
 		if code != common.CodeDataError {

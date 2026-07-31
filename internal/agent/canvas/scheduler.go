@@ -34,7 +34,7 @@ import (
 )
 
 // ctxKey is the unexported context-key type for per-run metadata
-// (events channel, message/task/session ids) so the statePre/statePost
+// (events channel, message/session ids) so the statePre/statePost
 // wrappers can emit node_started/node_finished without depending on
 // the service package.
 type ctxKey string
@@ -46,7 +46,6 @@ const terminalMergeNodeID = "__canvas_terminal_merge__"
 type RunMeta struct {
 	Events    chan RunEvent
 	MessageID string
-	TaskID    string
 	SessionID string
 }
 
@@ -274,7 +273,7 @@ func sanitizeNodeInputs(inputs map[string]any) map[string]any {
 
 // nodeStartedAt records the per-node start time in state.Sys and emits a
 // node_started RunEvent. Called from the per-node statePre wrapper.
-// Metadata (message/task/session ids) is read from ctx via RunMeta.
+// Metadata (message/session ids) is read from ctx via RunMeta.
 func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName, componentType string, inputs map[string]any) {
 	common.Debug("node_started", zap.String("cpnID", cpnID), zap.String("componentName", componentName))
 	if state == nil {
@@ -295,14 +294,14 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 		Thoughts:      "",
 	})
 	meta := GetRunMeta(ctx)
-	msgID, taskID, sessionID := "", "", ""
+	msgID, sessionID := "", ""
 	if meta != nil {
-		msgID, taskID, sessionID = meta.MessageID, meta.TaskID, meta.SessionID
+		msgID, sessionID = meta.MessageID, meta.SessionID
 	}
 	emitEventFromCtx(ctx, RunEvent{
 		Type: "node_started", Data: string(nsData),
 		MessageID: msgID, CreatedAt: time.Now().Unix(),
-		TaskID: taskID, SessionID: sessionID,
+		SessionID: sessionID,
 	})
 }
 
@@ -358,14 +357,14 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 		CreatedAt:     now,
 	})
 	meta := GetRunMeta(ctx)
-	msgID, taskID, sessionID := "", "", ""
+	msgID, sessionID := "", ""
 	if meta != nil {
-		msgID, taskID, sessionID = meta.MessageID, meta.TaskID, meta.SessionID
+		msgID, sessionID = meta.MessageID, meta.SessionID
 	}
 	emitEventFromCtx(ctx, RunEvent{
 		Type: "node_finished", Data: string(nfData),
 		MessageID: msgID, CreatedAt: time.Now().Unix(),
-		TaskID: taskID, SessionID: sessionID,
+		SessionID: sessionID,
 	})
 }
 
@@ -412,7 +411,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	globals := c.Globals
 	genState := func(runCtx context.Context) *CanvasState {
 		if ctxState, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](runCtx); ctxState != nil {
-			st := NewCanvasState(ctxState.RunID, ctxState.TaskID)
+			st := NewCanvasState(ctxState.RunID, ctxState.SessionID)
 			for cpnID, bucket := range ctxState.Snapshot() {
 				for key, value := range bucket {
 					st.SetVar(cpnID, key, value)

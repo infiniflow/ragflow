@@ -60,7 +60,7 @@ from api.utils.api_utils import (
     get_error_argument_result,
     check_duplicate_ids,
 )
-from api.utils.pagination_utils import validate_rest_api_page_size
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.validation_utils import (
     UpdateDocumentReq,
     format_validation_error_message,
@@ -213,9 +213,13 @@ async def update_document(tenant_id, dataset_id, document_id):
     """
     req = await get_request_json()
 
+    # An explicit null name is a type error, not an unset field.
+    if "name" in req and req["name"] is None:
+        return get_error_data_result(message="Field: <name> - Message: <Input should be a valid string> - Value: <None>")
+
     # Verify ownership and existence of dataset and document
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+        return get_error_data_result(message="you don't own the dataset")
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:
         return get_error_data_result(message="Can't find this dataset!")
@@ -223,7 +227,7 @@ async def update_document(tenant_id, dataset_id, document_id):
     # Prepare data for validation
     docs = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not docs:
-        return get_error_data_result(message="The dataset doesn't own the document.")
+        return get_error_data_result(message="the dataset doesn't own the document")
 
     # Validate document update request parameters
     try:
@@ -484,8 +488,8 @@ async def upload_document(dataset_id, tenant_id):
         return get_error_data_result(message=f"Can't find the dataset with ID {dataset_id}!", code=RetCode.DATA_ERROR)
 
     if not check_kb_team_permission(kb, tenant_id):
-        logging.error("No authorization.")
-        return get_error_data_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+        logging.error("no authorization")
+        return get_error_data_result(message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
     if upload_type == "web":
         return await _upload_web_document(dataset_id, kb, tenant_id)
@@ -519,7 +523,11 @@ async def _upload_web_document(dataset_id, kb, tenant_id):
     if not is_valid_url(url):
         return get_error_data_result(message="The URL format is invalid", code=RetCode.ARGUMENT_ERROR)
 
-    blob = html2pdf(url)
+    try:
+        blob = await thread_pool_exec(html2pdf, url)
+    except Exception as e:
+        logging.warning("html2pdf failed for %s, %s", dataset_id, str(e))
+        return get_error_data_result(message=str(e), code=RetCode.SERVER_ERROR)
     if not blob:
         return server_error_response(ValueError("Download failure."))
 
@@ -852,10 +860,14 @@ def _get_docs_with_request(req, dataset_id: str):
     """
     q = req.args
 
-    page = int(q.get("page", 1))
-    page_size = validate_rest_api_page_size(int(q.get("page_size", 30)))
+    # Invalid or negative pagination values fall back to defaults
+    # instead of leaking internal conversion/SQL errors.
+    page = validate_rest_api_page(q.get("page", DEFAULT_PAGE))
+    page_size = validate_rest_api_page_size(q.get("page_size", DEFAULT_PAGE_SIZE))
 
     orderby = q.get("orderby", "create_time")
+    if orderby not in ("create_time", "update_time", "name"):
+        return RetCode.ARGUMENT_ERROR, f"invalid orderby field: {orderby}", [], 0
     desc = str(q.get("desc", "true")).strip().lower() != "false"
     keywords = q.get("keywords", "")
 
@@ -882,10 +894,10 @@ def _get_docs_with_request(req, dataset_id: str):
     doc_id = q.get("id")
     if doc_id:
         if not DocumentService.query(id=doc_id, kb_id=dataset_id):
-            return RetCode.DATA_ERROR, f"You don't own the document {doc_id}.", [], 0
+            return RetCode.DATA_ERROR, f"you don't own the document {doc_id}", [], 0
         doc_ids_filter = [doc_id]  # id provided, ignore other filters
     if doc_name and not DocumentService.query(name=doc_name, kb_id=dataset_id):
-        return RetCode.DATA_ERROR, f"You don't own the document {doc_name}.", [], 0
+        return RetCode.DATA_ERROR, f"you don't own the document {doc_name}", [], 0
 
     doc_ids = q.getlist("ids")
     if doc_id and len(doc_ids) > 0:
@@ -1216,12 +1228,12 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     """
     # Verify ownership and existence of dataset
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+        return get_error_data_result(message="you don't own the dataset")
 
     # Verify document exists in the dataset
     doc = DocumentService.query(id=document_id, kb_id=dataset_id)
     if not doc:
-        msg = f"Document {document_id} not found in dataset {dataset_id}"
+        msg = f"document {document_id} not found in dataset {dataset_id}"
         return get_error_data_result(message=msg)
     doc = doc[0]
 
@@ -1434,7 +1446,7 @@ async def ingest(tenant_id):
 def _run_sync(user_id: str, req):
     for doc_id in req["doc_ids"]:
         if not DocumentService.accessible(doc_id, user_id):
-            return RetCode.AUTHENTICATION_ERROR, "No authorization."
+            return RetCode.AUTHENTICATION_ERROR, "no authorization"
 
     kb_table_num_map = {}
     for doc_id in req["doc_ids"]:
@@ -1969,7 +1981,7 @@ async def batch_update_document_status(tenant_id, dataset_id):
 
     # Verify dataset ownership
     if not KnowledgebaseService.query(id=dataset_id, tenant_id=tenant_id):
-        return get_error_data_result(message="You don't own the dataset.")
+        return get_error_data_result(message="you don't own the dataset")
 
     e, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not e:

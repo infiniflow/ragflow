@@ -306,8 +306,8 @@ class KnowledgebaseService(CommonService):
             cls.model.raptor_task_finish_at,
             cls.model.mindmap_task_id,
             cls.model.mindmap_task_finish_at,
-            cls.model.artifact_task_id,
-            cls.model.artifact_task_finish_at,
+            cls.model.wiki_task_id,
+            cls.model.wiki_task_finish_at,
             cls.model.skill_task_id,
             cls.model.skill_task_finish_at,
             cls.model.structure_graph_task_id,
@@ -427,7 +427,7 @@ class KnowledgebaseService(CommonService):
             return False, get_data_error_result(message="Dataset name must be string.")
         dataset_name = name.strip()
         if dataset_name == "":
-            return False, get_data_error_result(message="Dataset name can't be empty.")
+            return False, get_data_error_result(message="dataset name can't be empty")
         if len(dataset_name.encode("utf-8")) > DATASET_NAME_LIMIT:
             return False, get_data_error_result(message=f"Dataset name length is {len(dataset_name)} which is large than {DATASET_NAME_LIMIT}")
 
@@ -463,7 +463,7 @@ class KnowledgebaseService(CommonService):
 
     @classmethod
     @DB.connection_context()
-    def get_list(cls, joined_tenant_ids, user_id, page_number, items_per_page, orderby, desc, id, name, keywords, parser_id=None):
+    def get_list(cls, joined_tenant_ids, user_id, page_number, items_per_page, orderby, desc, id, name, keywords, parser_id=None, ids=None):
         # Get list of knowledge bases with filtering and pagination
         # Args:
         #     joined_tenant_ids: List of tenant IDs
@@ -482,6 +482,8 @@ class KnowledgebaseService(CommonService):
         kbs = cls.model.select()
         if id:
             kbs = kbs.where(cls.model.id == id)
+        if ids:
+            kbs = kbs.where(cls.model.id.in_(ids))
         if name:
             kbs = kbs.where(cls.model.name == name)
         if keywords:
@@ -500,6 +502,27 @@ class KnowledgebaseService(CommonService):
         kbs = kbs.paginate(page_number, items_per_page)
 
         return list(kbs.dicts()), total
+
+    @classmethod
+    @DB.connection_context()
+    def get_accessible_ids(cls, joined_tenant_ids, user_id, ids):
+        kbs = cls.model.select(cls.model.id).where(cls.model.id.in_(ids), cls._visibility_and_status_filter(joined_tenant_ids, user_id))
+        return {kb.id for kb in kbs}
+
+    @classmethod
+    @DB.connection_context()
+    def get_owner_filter(cls, joined_tenant_ids, user_id):
+        owners = (
+            cls.model.select(
+                cls.model.tenant_id.alias("id"),
+                User.nickname.alias("label"),
+                fn.COUNT(cls.model.id).alias("count"),
+            )
+            .join(User, on=(cls.model.tenant_id == User.id))
+            .where(cls._visibility_and_status_filter(joined_tenant_ids, user_id))
+            .group_by(cls.model.tenant_id, User.nickname)
+        )
+        return list(owners.dicts())
 
     @classmethod
     @DB.connection_context()
