@@ -41,6 +41,7 @@ _MOCK_MODULES = [
     "deepdoc.parser.utils",
 ]
 _orig_modules = {m: sys.modules.get(m) for m in _MOCK_MODULES}
+_orig_get_text = getattr(sys.modules.get("deepdoc.parser.utils"), "get_text", None)
 
 try:
     for _m in _MOCK_MODULES:
@@ -76,6 +77,11 @@ finally:
             sys.modules.pop(_m, None)
         else:
             sys.modules[_m] = _orig
+    if _orig_modules.get("deepdoc.parser.utils") is not None and _orig_get_text is not None:
+        _orig_modules["deepdoc.parser.utils"].get_text = _orig_get_text
+    if _orig_modules.get("deepdoc.parser") is not None and _orig_modules.get("deepdoc.parser.utils") is not None:
+        _orig_modules["deepdoc.parser"].utils = _orig_modules["deepdoc.parser.utils"]
+
 
 
 # A deterministic, tokenizer-free stand-in for ``num_tokens_from_string`` so
