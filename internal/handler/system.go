@@ -178,7 +178,7 @@ func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 	}
 
 	if config := server.GetConfig(); config != nil {
-		config.Log.Level = common.GetLogLevel()
+		config.SetLogLevel(req.Level)
 	}
 
 	common.SuccessWithData(c, gin.H{"level": req.Level}, "SUCCESS")

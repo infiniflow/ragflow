@@ -24,8 +24,7 @@ import (
 
 // DatabaseConfig database configuration
 type DatabaseConfig struct {
-	DatabaseType string      `mapstructure:"type"`
-	MySQL        MySQLConfig `mapstructure:"mysql"`
+	MySQL MySQLConfig `mapstructure:"mysql"`
 }
 
 type MySQLConfig struct {
@@ -37,30 +36,32 @@ type MySQLConfig struct {
 	MaxConnections   int    `mapstructure:"max_connections"`
 	StaleTimeout     int    `mapstructure:"stale_timeout"`
 	MaxAllowedPacket int    `mapstructure:"max_allowed_packet"`
+	Charset          string `mapstructure:"charset"`
 }
 
-func ParseDatabaseConfig(databaseType string, config *Config, v *viper.Viper) error {
+func (c *Config) ParseDatabaseConfig(v *viper.Viper) error {
+	databaseType := c.general.Database
 	switch databaseType {
 	case "mysql":
-		parseMySQLConfig(config, v)
+		c.parseMySQLConfig(v)
 	default:
 		return fmt.Errorf("database type %s is not supported", databaseType)
 	}
-	config.Database.DatabaseType = databaseType
 	return nil
 }
 
-func parseMySQLConfig(config *Config, v *viper.Viper) {
+func (c *Config) parseMySQLConfig(v *viper.Viper) {
 
 	// Default MySQL config
-	config.Database.MySQL.DatabaseName = "rag_flow"
-	config.Database.MySQL.User = "root"
-	config.Database.MySQL.Password = "infini_rag_flow"
-	config.Database.MySQL.Host = "localhost"
-	config.Database.MySQL.Port = 3306
-	config.Database.MySQL.MaxConnections = 900
-	config.Database.MySQL.StaleTimeout = 300
-	config.Database.MySQL.MaxAllowedPacket = 1073741824
+	c.database.MySQL.DatabaseName = "rag_flow"
+	c.database.MySQL.User = "root"
+	c.database.MySQL.Password = "infini_rag_flow"
+	c.database.MySQL.Host = "localhost"
+	c.database.MySQL.Port = 3306
+	c.database.MySQL.MaxConnections = 900
+	c.database.MySQL.StaleTimeout = 300
+	c.database.MySQL.MaxAllowedPacket = 1073741824
+	c.database.MySQL.Charset = "utf8mb4"
 
 	if !v.IsSet("mysql") {
 		return
@@ -71,34 +72,42 @@ func parseMySQLConfig(config *Config, v *viper.Viper) {
 	}
 
 	if sub.IsSet("name") {
-		config.Database.MySQL.DatabaseName = sub.GetString("name")
+		c.database.MySQL.DatabaseName = sub.GetString("name")
 	}
 
 	if sub.IsSet("user") {
-		config.Database.MySQL.User = sub.GetString("user")
+		c.database.MySQL.User = sub.GetString("user")
 	}
 
 	if sub.IsSet("password") {
-		config.Database.MySQL.Password = sub.GetString("password")
+		c.database.MySQL.Password = sub.GetString("password")
 	}
 
 	if sub.IsSet("host") {
-		config.Database.MySQL.Host = sub.GetString("host")
+		c.database.MySQL.Host = sub.GetString("host")
 	}
 
 	if sub.IsSet("port") {
-		config.Database.MySQL.Port = sub.GetInt("port")
+		c.database.MySQL.Port = sub.GetInt("port")
 	}
 
 	if sub.IsSet("max_connections") {
-		config.Database.MySQL.MaxConnections = sub.GetInt("max_connections")
+		c.database.MySQL.MaxConnections = sub.GetInt("max_connections")
 	}
 
 	if sub.IsSet("stale_timeout") {
-		config.Database.MySQL.StaleTimeout = sub.GetInt("stale_timeout")
+		c.database.MySQL.StaleTimeout = sub.GetInt("stale_timeout")
 	}
 
 	if sub.IsSet("max_allowed_packet") {
-		config.Database.MySQL.MaxAllowedPacket = sub.GetInt("max_allowed_packet")
+		c.database.MySQL.MaxAllowedPacket = sub.GetInt("max_allowed_packet")
 	}
+
+	if sub.IsSet("charset") {
+		c.database.MySQL.Charset = sub.GetString("charset")
+	}
+}
+
+func (c *Config) GetMySQLConfig() MySQLConfig {
+	return c.database.MySQL
 }

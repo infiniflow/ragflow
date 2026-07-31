@@ -24,27 +24,26 @@ import (
 
 // StorageConfig holds all storage-related configurations
 type StorageConfig struct {
-	StorageType string      `mapstructure:"type"`
-	Minio       MinioConfig `mapstructure:"minio"`
-	S3          S3Config    `mapstructure:"s3"`
-	OSS         OSSConfig   `mapstructure:"oss"`
-	GCS         GCSConfig   `mapstructure:"gcs"`
+	Minio MinioConfig `mapstructure:"minio"`
+	S3    S3Config    `mapstructure:"s3"`
+	OSS   OSSConfig   `mapstructure:"oss"`
+	GCS   GCSConfig   `mapstructure:"gcs"`
 }
 
-func ParseStorageEngineConfig(storageType string, config *Config, v *viper.Viper) error {
-	switch storageType {
+func (c *Config) ParseStorageEngineConfig(v *viper.Viper) error {
+	switch c.general.StorageEngine {
 	case "minio":
-		parseMinioConfig(config, v)
+		c.parseMinioConfig(v)
 	case "s3":
-		parseS3Config(config, v)
+		c.parseS3Config(v)
 	case "oss":
-		parseOSSConfig(config, v)
+		c.parseOSSConfig(v)
 	case "gcs":
-		parseGCSConfig(config, v)
+		c.parseGCSConfig(v)
 	default:
-		return fmt.Errorf("invalid storage type: %s", storageType)
+		return fmt.Errorf("invalid storage type: %s", c.general.StorageEngine)
 	}
-	config.StorageEngine.StorageType = storageType
+
 	return nil
 }
 
@@ -60,16 +59,16 @@ type MinioConfig struct {
 	Region     string `mapstructure:"region"`      // optional
 }
 
-func parseMinioConfig(config *Config, v *viper.Viper) {
+func (c *Config) parseMinioConfig(v *viper.Viper) {
 	// Default MinIO config
-	config.StorageEngine.Minio.Host = "localhost:23817"
-	config.StorageEngine.Minio.User = "rag_flow"
-	config.StorageEngine.Minio.Password = "infini_rag_flow"
-	config.StorageEngine.Minio.Bucket = ""
-	config.StorageEngine.Minio.PrefixPath = ""
-	config.StorageEngine.Minio.Secure = false
-	config.StorageEngine.Minio.Verify = false
-	config.StorageEngine.Minio.Region = ""
+	c.storageEngine.Minio.Host = "localhost:23817"
+	c.storageEngine.Minio.User = "rag_flow"
+	c.storageEngine.Minio.Password = "infini_rag_flow"
+	c.storageEngine.Minio.Bucket = ""
+	c.storageEngine.Minio.PrefixPath = ""
+	c.storageEngine.Minio.Secure = false
+	c.storageEngine.Minio.Verify = false
+	c.storageEngine.Minio.Region = ""
 
 	if !v.IsSet("minio") {
 		return
@@ -80,35 +79,35 @@ func parseMinioConfig(config *Config, v *viper.Viper) {
 	}
 
 	if sub.IsSet("host") {
-		config.StorageEngine.Minio.Host = sub.GetString("host")
+		c.storageEngine.Minio.Host = sub.GetString("host")
 	}
 
 	if sub.IsSet("user") {
-		config.StorageEngine.Minio.User = sub.GetString("user")
+		c.storageEngine.Minio.User = sub.GetString("user")
 	}
 
 	if sub.IsSet("password") {
-		config.StorageEngine.Minio.Password = sub.GetString("password")
+		c.storageEngine.Minio.Password = sub.GetString("password")
 	}
 
 	if sub.IsSet("bucket") {
-		config.StorageEngine.Minio.Bucket = sub.GetString("bucket")
+		c.storageEngine.Minio.Bucket = sub.GetString("bucket")
 	}
 
 	if sub.IsSet("prefix_path") {
-		config.StorageEngine.Minio.PrefixPath = sub.GetString("prefix_path")
+		c.storageEngine.Minio.PrefixPath = sub.GetString("prefix_path")
 	}
 
 	if sub.IsSet("secure") {
-		config.StorageEngine.Minio.Secure = sub.GetBool("secure")
+		c.storageEngine.Minio.Secure = sub.GetBool("secure")
 	}
 
 	if sub.IsSet("verify") {
-		config.StorageEngine.Minio.Verify = sub.GetBool("verify")
+		c.storageEngine.Minio.Verify = sub.GetBool("verify")
 	}
 
 	if sub.IsSet("region") {
-		config.StorageEngine.Minio.Region = sub.GetString("region")
+		c.storageEngine.Minio.Region = sub.GetString("region")
 	}
 }
 
@@ -125,17 +124,17 @@ type S3Config struct {
 	PrefixPath       string `mapstructure:"prefix_path"`       // Path prefix (optional)
 }
 
-func parseS3Config(config *Config, v *viper.Viper) {
+func (c *Config) parseS3Config(v *viper.Viper) {
 	// Default S3 config
-	config.StorageEngine.S3.AccessKey = ""
-	config.StorageEngine.S3.SecretKey = ""
-	config.StorageEngine.S3.Region = ""
-	config.StorageEngine.S3.SessionToken = ""
-	config.StorageEngine.S3.EndpointURL = ""
-	config.StorageEngine.S3.SignatureVersion = "v4"
-	config.StorageEngine.S3.AddressingStyle = "path"
-	config.StorageEngine.S3.Bucket = ""
-	config.StorageEngine.S3.PrefixPath = ""
+	c.storageEngine.S3.AccessKey = ""
+	c.storageEngine.S3.SecretKey = ""
+	c.storageEngine.S3.Region = ""
+	c.storageEngine.S3.SessionToken = ""
+	c.storageEngine.S3.EndpointURL = ""
+	c.storageEngine.S3.SignatureVersion = "v4"
+	c.storageEngine.S3.AddressingStyle = "path"
+	c.storageEngine.S3.Bucket = ""
+	c.storageEngine.S3.PrefixPath = ""
 
 	if !v.IsSet("s3") {
 		return
@@ -146,39 +145,39 @@ func parseS3Config(config *Config, v *viper.Viper) {
 	}
 
 	if sub.IsSet("access_key") {
-		config.StorageEngine.S3.AccessKey = sub.GetString("access_key")
+		c.storageEngine.S3.AccessKey = sub.GetString("access_key")
 	}
 
 	if sub.IsSet("secret_key") {
-		config.StorageEngine.S3.SecretKey = sub.GetString("secret_key")
+		c.storageEngine.S3.SecretKey = sub.GetString("secret_key")
 	}
 
 	if sub.IsSet("region") {
-		config.StorageEngine.S3.Region = sub.GetString("region")
+		c.storageEngine.S3.Region = sub.GetString("region")
 	}
 
 	if sub.IsSet("session_token") {
-		config.StorageEngine.S3.SessionToken = sub.GetString("session_token")
+		c.storageEngine.S3.SessionToken = sub.GetString("session_token")
 	}
 
 	if sub.IsSet("endpoint_url") {
-		config.StorageEngine.S3.EndpointURL = sub.GetString("endpoint_url")
+		c.storageEngine.S3.EndpointURL = sub.GetString("endpoint_url")
 	}
 
 	if sub.IsSet("signature_version") {
-		config.StorageEngine.S3.SignatureVersion = sub.GetString("signature_version")
+		c.storageEngine.S3.SignatureVersion = sub.GetString("signature_version")
 	}
 
 	if sub.IsSet("addressing_style") {
-		config.StorageEngine.S3.AddressingStyle = sub.GetString("addressing_style")
+		c.storageEngine.S3.AddressingStyle = sub.GetString("addressing_style")
 	}
 
 	if sub.IsSet("bucket") {
-		config.StorageEngine.S3.Bucket = sub.GetString("bucket")
+		c.storageEngine.S3.Bucket = sub.GetString("bucket")
 	}
 
 	if sub.IsSet("prefix_path") {
-		config.StorageEngine.S3.PrefixPath = sub.GetString("prefix_path")
+		c.storageEngine.S3.PrefixPath = sub.GetString("prefix_path")
 	}
 }
 
@@ -195,16 +194,16 @@ type OSSConfig struct {
 	AddressingStyle  string `mapstructure:"addressing_style"`  // Addressing style
 }
 
-func parseOSSConfig(config *Config, v *viper.Viper) {
+func (c *Config) parseOSSConfig(v *viper.Viper) {
 	// Default OSS config
-	config.StorageEngine.OSS.AccessKey = ""
-	config.StorageEngine.OSS.SecretKey = ""
-	config.StorageEngine.OSS.EndpointURL = ""
-	config.StorageEngine.OSS.Region = ""
-	config.StorageEngine.OSS.Bucket = ""
-	config.StorageEngine.OSS.PrefixPath = ""
-	config.StorageEngine.OSS.SignatureVersion = "v4"
-	config.StorageEngine.OSS.AddressingStyle = "path"
+	c.storageEngine.OSS.AccessKey = ""
+	c.storageEngine.OSS.SecretKey = ""
+	c.storageEngine.OSS.EndpointURL = ""
+	c.storageEngine.OSS.Region = ""
+	c.storageEngine.OSS.Bucket = ""
+	c.storageEngine.OSS.PrefixPath = ""
+	c.storageEngine.OSS.SignatureVersion = "v4"
+	c.storageEngine.OSS.AddressingStyle = "path"
 
 	if !v.IsSet("oss") {
 		return
@@ -215,35 +214,35 @@ func parseOSSConfig(config *Config, v *viper.Viper) {
 	}
 
 	if sub.IsSet("access_key") {
-		config.StorageEngine.OSS.AccessKey = sub.GetString("access_key")
+		c.storageEngine.OSS.AccessKey = sub.GetString("access_key")
 	}
 
 	if sub.IsSet("secret_key") {
-		config.StorageEngine.OSS.SecretKey = sub.GetString("secret_key")
+		c.storageEngine.OSS.SecretKey = sub.GetString("secret_key")
 	}
 
 	if sub.IsSet("endpoint_url") {
-		config.StorageEngine.OSS.EndpointURL = sub.GetString("endpoint_url")
+		c.storageEngine.OSS.EndpointURL = sub.GetString("endpoint_url")
 	}
 
 	if sub.IsSet("region") {
-		config.StorageEngine.OSS.Region = sub.GetString("region")
+		c.storageEngine.OSS.Region = sub.GetString("region")
 	}
 
 	if sub.IsSet("bucket") {
-		config.StorageEngine.OSS.Bucket = sub.GetString("bucket")
+		c.storageEngine.OSS.Bucket = sub.GetString("bucket")
 	}
 
 	if sub.IsSet("prefix_path") {
-		config.StorageEngine.OSS.PrefixPath = sub.GetString("prefix_path")
+		c.storageEngine.OSS.PrefixPath = sub.GetString("prefix_path")
 	}
 
 	if sub.IsSet("signature_version") {
-		config.StorageEngine.OSS.SignatureVersion = sub.GetString("signature_version")
+		c.storageEngine.OSS.SignatureVersion = sub.GetString("signature_version")
 	}
 
 	if sub.IsSet("addressing_style") {
-		config.StorageEngine.OSS.AddressingStyle = sub.GetString("addressing_style")
+		c.storageEngine.OSS.AddressingStyle = sub.GetString("addressing_style")
 	}
 
 }
@@ -254,11 +253,11 @@ type GCSConfig struct {
 	EndpointURL string `mapstructure:"endpoint_url"` // Custom endpoint (optional)
 }
 
-func parseGCSConfig(config *Config, v *viper.Viper) {
+func (c *Config) parseGCSConfig(v *viper.Viper) {
 	// Default GCS config
-	config.StorageEngine.GCS.Bucket = ""
-	config.StorageEngine.GCS.PrefixPath = ""
-	config.StorageEngine.GCS.EndpointURL = ""
+	c.storageEngine.GCS.Bucket = ""
+	c.storageEngine.GCS.PrefixPath = ""
+	c.storageEngine.GCS.EndpointURL = ""
 
 	if !v.IsSet("gcs") {
 		return
@@ -269,14 +268,30 @@ func parseGCSConfig(config *Config, v *viper.Viper) {
 	}
 
 	if sub.IsSet("bucket") {
-		config.StorageEngine.GCS.Bucket = sub.GetString("bucket")
+		c.storageEngine.GCS.Bucket = sub.GetString("bucket")
 	}
 
 	if sub.IsSet("prefix_path") {
-		config.StorageEngine.GCS.PrefixPath = sub.GetString("prefix_path")
+		c.storageEngine.GCS.PrefixPath = sub.GetString("prefix_path")
 	}
 
 	if sub.IsSet("endpoint_url") {
-		config.StorageEngine.GCS.EndpointURL = sub.GetString("endpoint_url")
+		c.storageEngine.GCS.EndpointURL = sub.GetString("endpoint_url")
 	}
+}
+
+func (c *Config) GetMinioConfig() MinioConfig {
+	return c.storageEngine.Minio
+}
+
+func (c *Config) GetS3Config() S3Config {
+	return c.storageEngine.S3
+}
+
+func (c *Config) GetOSSConfig() OSSConfig {
+	return c.storageEngine.OSS
+}
+
+func (c *Config) GetGCSConfig() GCSConfig {
+	return c.storageEngine.GCS
 }

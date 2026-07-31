@@ -27,14 +27,14 @@ type OpenTelemetryConfig struct {
 	Enable      bool    `mapstructure:"enable"`
 }
 
-func ParseOpenTelemetryConfig(config *Config, v *viper.Viper) error {
+func (c *Config) ParseOpenTelemetryConfig(v *viper.Viper) error {
 	// Default OpenTelemetry config
-	config.OTel.Host = "localhost"
-	config.OTel.Port = 4318
-	config.OTel.Secure = false
-	config.OTel.SampleRatio = 1.0
-	config.OTel.Stdout = false
-	config.OTel.Enable = false
+	c.oTel.Host = "localhost"
+	c.oTel.Port = 4318
+	c.oTel.Secure = false
+	c.oTel.SampleRatio = 1.0
+	c.oTel.Stdout = false
+	c.oTel.Enable = false
 
 	if !v.IsSet("otel") {
 		return nil
@@ -45,27 +45,27 @@ func ParseOpenTelemetryConfig(config *Config, v *viper.Viper) error {
 	}
 
 	if sub.IsSet("host") {
-		config.OTel.Host = sub.GetString("host")
+		c.oTel.Host = sub.GetString("host")
 	}
 
 	if sub.IsSet("port") {
-		config.OTel.Port = sub.GetInt("port")
+		c.oTel.Port = sub.GetInt("port")
 	}
 
 	if sub.IsSet("secure") {
-		config.OTel.Secure = sub.GetBool("secure")
+		c.oTel.Secure = sub.GetBool("secure")
 	}
 
 	if sub.IsSet("sample_ratio") {
-		config.OTel.SampleRatio = sub.GetFloat64("sample_ratio")
+		c.oTel.SampleRatio = sub.GetFloat64("sample_ratio")
 	}
 
 	if sub.IsSet("stdout") {
-		config.OTel.Stdout = sub.GetBool("stdout")
+		c.oTel.Stdout = sub.GetBool("stdout")
 	}
 
 	if sub.IsSet("enable") {
-		config.OTel.Enable = sub.GetBool("enable")
+		c.oTel.Enable = sub.GetBool("enable")
 	}
 
 	return nil

@@ -16,31 +16,23 @@
 
 package config
 
-import "github.com/spf13/viper"
+import (
+	"ragflow/internal/common"
 
-//type SMTPConfig struct {
-//	MailServer      string `mapstructure:"mail_server"`
-//	MailPort        int    `mapstructure:"mail_port"`
-//	MailUseSSL      bool   `mapstructure:"mail_use_ssl"`
-//	MailUseTLS      bool   `mapstructure:"mail_use_tls"`
-//	MailUsername    string `mapstructure:"mail_username"`
-//	MailPassword    string `mapstructure:"mail_password"`
-//	MailFromName    string `mapstructure:"mail_from_name"`
-//	MailFromAddress string `mapstructure:"mail_from_address"`
-//	MailFrontendURL string `mapstructure:"mail_frontend_url"`
-//}
+	"github.com/spf13/viper"
+)
 
-func ParseSMTPConfig(config *Config, v *viper.Viper) error {
+func (c *Config) ParseSMTPConfig(v *viper.Viper) error {
 	// Default SMTP config
-	config.SMTP.MailServer = ""
-	config.SMTP.MailPort = 465
-	config.SMTP.MailUseSSL = true
-	config.SMTP.MailUseTLS = false
-	config.SMTP.MailUsername = ""
-	config.SMTP.MailPassword = ""
-	config.SMTP.MailFromName = "RAGFlow"
-	config.SMTP.MailFromAddress = ""
-	config.SMTP.MailFrontendURL = "https://your-frontend.example.com"
+	c.smtp.MailServer = ""
+	c.smtp.MailPort = 465
+	c.smtp.MailUseSSL = true
+	c.smtp.MailUseTLS = false
+	c.smtp.MailUsername = ""
+	c.smtp.MailPassword = ""
+	c.smtp.MailFromName = "RAGFlow"
+	c.smtp.MailFromAddress = ""
+	c.smtp.MailFrontendURL = "https://your-frontend.example.com"
 
 	if !v.IsSet("smtp") {
 		return nil
@@ -51,40 +43,44 @@ func ParseSMTPConfig(config *Config, v *viper.Viper) error {
 	}
 
 	if sub.IsSet("mail_server") {
-		config.SMTP.MailServer = sub.GetString("mail_server")
+		c.smtp.MailServer = sub.GetString("mail_server")
 	}
 
 	if sub.IsSet("mail_port") {
-		config.SMTP.MailPort = sub.GetInt("mail_port")
+		c.smtp.MailPort = sub.GetInt("mail_port")
 	}
 
 	if sub.IsSet("mail_use_ssl") {
-		config.SMTP.MailUseSSL = sub.GetBool("mail_use_ssl")
+		c.smtp.MailUseSSL = sub.GetBool("mail_use_ssl")
 	}
 
 	if sub.IsSet("mail_use_tls") {
-		config.SMTP.MailUseTLS = sub.GetBool("mail_use_tls")
+		c.smtp.MailUseTLS = sub.GetBool("mail_use_tls")
 	}
 
 	if sub.IsSet("mail_username") {
-		config.SMTP.MailUsername = sub.GetString("mail_username")
+		c.smtp.MailUsername = sub.GetString("mail_username")
 	}
 
 	if sub.IsSet("mail_password") {
-		config.SMTP.MailPassword = sub.GetString("mail_password")
+		c.smtp.MailPassword = sub.GetString("mail_password")
 	}
 
 	if sub.IsSet("mail_from_name") {
-		config.SMTP.MailFromName = sub.GetString("mail_from_name")
+		c.smtp.MailFromName = sub.GetString("mail_from_name")
 	}
 
 	if sub.IsSet("mail_from_address") {
-		config.SMTP.MailFromAddress = sub.GetString("mail_from_address")
+		c.smtp.MailFromAddress = sub.GetString("mail_from_address")
 	}
 
 	if sub.IsSet("mail_frontend_url") {
-		config.SMTP.MailFrontendURL = sub.GetString("mail_frontend_url")
+		c.smtp.MailFrontendURL = sub.GetString("mail_frontend_url")
 	}
 
 	return nil
+}
+
+func (c *Config) GetSMTPConfig() common.SMTPConfig {
+	return c.smtp
 }

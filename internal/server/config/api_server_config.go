@@ -30,10 +30,10 @@ type APIServerConfig struct {
 	Authentication AuthenticationConfig `mapstructure:"authentication"`
 }
 
-func ParseAPIServerConfig(config *Config, v *viper.Viper) error {
+func (c *Config) ParseAPIServerConfig(v *viper.Viper) error {
 	// Default Admin config
-	config.APIServer.Host = "localhost"
-	config.APIServer.HTTPPort = 9384
+	c.apiServer.Host = "localhost"
+	c.apiServer.HTTPPort = 9384
 
 	if !v.IsSet("ragflow") {
 		return nil
@@ -44,23 +44,24 @@ func ParseAPIServerConfig(config *Config, v *viper.Viper) error {
 	}
 
 	if sub.IsSet("host") {
-		config.APIServer.Host = sub.GetString("host")
+		c.apiServer.Host = sub.GetString("host")
 	}
 
 	if sub.IsSet("http_port") {
-		config.APIServer.HTTPPort = sub.GetInt("http_port")
+		c.apiServer.HTTPPort = sub.GetInt("http_port")
 	}
 
-	if config.APIServer.HTTPPort == 9380 {
-		config.APIServer.HTTPPort = 9384
+	if c.apiServer.HTTPPort == 9380 {
+		c.apiServer.HTTPPort = 9384
 	}
 
-	ParseAuthenticationConfig(&config.APIServer, v)
+	c.parseAuthenticationConfig(v)
 
 	return nil
 }
 
-func ParseAuthenticationConfig(apiServerConfig *APIServerConfig, v *viper.Viper) {
+func (c *Config) parseAuthenticationConfig(v *viper.Viper) {
+	apiServerConfig := &c.apiServer
 	apiServerConfig.Authentication.DisablePasswordLogin = false
 	apiServerConfig.Authentication.RegisterEnabled = true
 
@@ -79,4 +80,16 @@ func ParseAuthenticationConfig(apiServerConfig *APIServerConfig, v *viper.Viper)
 	if sub.IsSet("enable_register") {
 		apiServerConfig.Authentication.RegisterEnabled = sub.GetBool("enable_register")
 	}
+}
+
+func (c *Config) DisablePasswordLogin() bool {
+	return c.apiServer.Authentication.DisablePasswordLogin
+}
+
+func (c *Config) RegisterEnabled() bool {
+	return c.apiServer.Authentication.RegisterEnabled
+}
+
+func (c *Config) GetAPIServerConfig() APIServerConfig {
+	return c.apiServer
 }

@@ -23,8 +23,7 @@ import (
 )
 
 type QueueEngineConfig struct {
-	EngineType string     `mapstructure:"type"`
-	NATS       NATSConfig `mapstructure:"nats"`
+	NATS NATSConfig `mapstructure:"nats"`
 }
 
 // NATSConfig NATS queue configuration
@@ -33,25 +32,23 @@ type NATSConfig struct {
 	Port int    `mapstructure:"port"`
 }
 
-func ParseQueueEngineConfig(queueEngineType string, config *Config, v *viper.Viper) error {
+func (c *Config) ParseQueueEngineConfig(v *viper.Viper) error {
+	queueEngineType := c.general.QueueEngine
 	var err error
 	switch queueEngineType {
 	case "nats":
-		err = parseNATSConfig(config, v)
+		err = c.parseNATSConfig(v)
 	default:
 		return fmt.Errorf("queue engine type %s is not supported", queueEngineType)
-	}
-	if err == nil {
-		config.QueueEngine.EngineType = queueEngineType
 	}
 
 	return err
 }
 
-func parseNATSConfig(config *Config, v *viper.Viper) error {
+func (c *Config) parseNATSConfig(v *viper.Viper) error {
 	// Default NATS config
-	config.QueueEngine.NATS.Host = "localhost"
-	config.QueueEngine.NATS.Port = 4222
+	c.queueEngine.NATS.Host = "localhost"
+	c.queueEngine.NATS.Port = 4222
 
 	if !v.IsSet("nats") {
 		return nil
@@ -62,12 +59,16 @@ func parseNATSConfig(config *Config, v *viper.Viper) error {
 	}
 
 	if sub.IsSet("host") {
-		config.QueueEngine.NATS.Host = sub.GetString("host")
+		c.queueEngine.NATS.Host = sub.GetString("host")
 	}
 
 	if sub.IsSet("port") {
-		config.QueueEngine.NATS.Port = sub.GetInt("port")
+		c.queueEngine.NATS.Port = sub.GetInt("port")
 	}
 
 	return nil
+}
+
+func (c *Config) GetNATSConfig() NATSConfig {
+	return c.queueEngine.NATS
 }

@@ -25,8 +25,7 @@ import (
 )
 
 type CacheEngineConfig struct {
-	EngineType string      `mapstructure:"type"`
-	Redis      RedisConfig `mapstructure:"redis"`
+	Redis RedisConfig `mapstructure:"redis"`
 }
 
 // RedisConfig Redis configuration
@@ -38,28 +37,26 @@ type RedisConfig struct {
 	DB       int    `mapstructure:"db"`
 }
 
-func ParseCacheEngineConfig(cacheEngineType string, config *Config, v *viper.Viper) error {
+func (c *Config) ParseCacheEngineConfig(v *viper.Viper) error {
+	cacheEngineType := c.general.CacheEngine
 	var err error
 	switch cacheEngineType {
 	case "redis":
-		err = parseRedisConfig(config, v)
+		err = c.parseRedisConfig(v)
 	default:
 		return fmt.Errorf("cache engine type %s is not supported", cacheEngineType)
-	}
-	if err == nil {
-		config.CacheEngine.EngineType = cacheEngineType
 	}
 
 	return err
 }
 
-func parseRedisConfig(config *Config, v *viper.Viper) error {
+func (c *Config) parseRedisConfig(v *viper.Viper) error {
 	// Default Redis config
-	config.CacheEngine.Redis.Host = "localhost"
-	config.CacheEngine.Redis.Port = 6379
-	config.CacheEngine.Redis.DB = 1
-	config.CacheEngine.Redis.Username = ""
-	config.CacheEngine.Redis.Password = "infini_rag_flow"
+	c.cacheEngine.Redis.Host = "localhost"
+	c.cacheEngine.Redis.Port = 6379
+	c.cacheEngine.Redis.DB = 1
+	c.cacheEngine.Redis.Username = ""
+	c.cacheEngine.Redis.Password = "infini_rag_flow"
 
 	if !v.IsSet("redis") {
 		return nil
@@ -77,10 +74,10 @@ func parseRedisConfig(config *Config, v *viper.Viper) error {
 		}
 
 		if idx := strings.LastIndex(hostStr, ":"); idx != -1 {
-			config.CacheEngine.Redis.Host = hostStr[:idx]
+			c.cacheEngine.Redis.Host = hostStr[:idx]
 			if portStr := hostStr[idx+1:]; portStr != "" {
 				if port, err := strconv.Atoi(portStr); err == nil {
-					config.CacheEngine.Redis.Port = port
+					c.cacheEngine.Redis.Port = port
 				}
 			}
 		} else {
@@ -89,16 +86,20 @@ func parseRedisConfig(config *Config, v *viper.Viper) error {
 	}
 
 	if sub.IsSet("db") {
-		config.CacheEngine.Redis.DB = sub.GetInt("db")
+		c.cacheEngine.Redis.DB = sub.GetInt("db")
 	}
 
 	if sub.IsSet("username") {
-		config.CacheEngine.Redis.Username = sub.GetString("username")
+		c.cacheEngine.Redis.Username = sub.GetString("username")
 	}
 
 	if sub.IsSet("password") {
-		config.CacheEngine.Redis.Password = sub.GetString("password")
+		c.cacheEngine.Redis.Password = sub.GetString("password")
 	}
 
 	return nil
+}
+
+func (c *Config) GetRedisConfig() RedisConfig {
+	return c.cacheEngine.Redis
 }

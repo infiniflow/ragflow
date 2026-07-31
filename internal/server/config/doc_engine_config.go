@@ -23,9 +23,8 @@ import (
 )
 
 type DocEngineConfig struct {
-	EngineType string              `mapstructure:"type"`
-	ES         ElasticsearchConfig `mapstructure:"es"`
-	Infinity   InfinityConfig      `mapstructure:"infinity"`
+	ES       ElasticsearchConfig `mapstructure:"es"`
+	Infinity InfinityConfig      `mapstructure:"infinity"`
 }
 
 // ElasticsearchConfig Elasticsearch configuration
@@ -44,26 +43,27 @@ type InfinityConfig struct {
 	DocMetaMappingFileName string `mapstructure:"doc_meta_mapping_file_name"`
 }
 
-func ParseDocEngineConfig(docEngineType string, config *Config, v *viper.Viper) error {
+func (c *Config) ParseDocEngineConfig(v *viper.Viper) error {
+	docEngineType := c.general.DocEngine
 	switch docEngineType {
 	case "infinity":
-		parseInfinityConfig(config, v)
+		c.parseInfinityConfig(v)
 	case "es", "elasticsearch":
-		parseElasticsearchConfig(config, v)
+		c.parseElasticsearchConfig(v)
 	default:
 		return fmt.Errorf("doc engine type %s is not supported", docEngineType)
 	}
-	config.DocEngine.EngineType = docEngineType
+
 	return nil
 }
 
-func parseInfinityConfig(config *Config, v *viper.Viper) {
+func (c *Config) parseInfinityConfig(v *viper.Viper) {
 	// Default Infinity config
-	config.DocEngine.Infinity.URI = "localhost:23817"
-	config.DocEngine.Infinity.PostgresPort = 5432
-	config.DocEngine.Infinity.DBName = "default_db"
-	config.DocEngine.Infinity.MappingFileName = "infinity_mapping.json"
-	config.DocEngine.Infinity.DocMetaMappingFileName = "doc_meta_infinity_mapping.json"
+	c.docEngine.Infinity.URI = "localhost:23817"
+	c.docEngine.Infinity.PostgresPort = 5432
+	c.docEngine.Infinity.DBName = "default_db"
+	c.docEngine.Infinity.MappingFileName = "infinity_mapping.json"
+	c.docEngine.Infinity.DocMetaMappingFileName = "doc_meta_infinity_mapping.json"
 
 	if !v.IsSet("infinity") {
 		return
@@ -74,31 +74,31 @@ func parseInfinityConfig(config *Config, v *viper.Viper) {
 	}
 
 	if sub.IsSet("uri") {
-		config.DocEngine.Infinity.URI = sub.GetString("uri")
+		c.docEngine.Infinity.URI = sub.GetString("uri")
 	}
 
 	if sub.IsSet("postgres_port") {
-		config.DocEngine.Infinity.PostgresPort = sub.GetInt("postgres_port")
+		c.docEngine.Infinity.PostgresPort = sub.GetInt("postgres_port")
 	}
 
 	if sub.IsSet("db_name") {
-		config.DocEngine.Infinity.DBName = sub.GetString("db_name")
+		c.docEngine.Infinity.DBName = sub.GetString("db_name")
 	}
 
 	if sub.IsSet("mapping_file_name") {
-		config.DocEngine.Infinity.MappingFileName = sub.GetString("mapping_file_name")
+		c.docEngine.Infinity.MappingFileName = sub.GetString("mapping_file_name")
 	}
 
 	if sub.IsSet("doc_meta_mapping_file_name") {
-		config.DocEngine.Infinity.DocMetaMappingFileName = sub.GetString("doc_meta_mapping_file_name")
+		c.docEngine.Infinity.DocMetaMappingFileName = sub.GetString("doc_meta_mapping_file_name")
 	}
 }
 
-func parseElasticsearchConfig(config *Config, v *viper.Viper) {
+func (c *Config) parseElasticsearchConfig(v *viper.Viper) {
 	// Default Elasticsearch config
-	config.DocEngine.ES.Hosts = "http://localhost:1200"
-	config.DocEngine.ES.Username = "elastic"
-	config.DocEngine.ES.Password = "infini_rag_flow"
+	c.docEngine.ES.Hosts = "http://localhost:1200"
+	c.docEngine.ES.Username = "elastic"
+	c.docEngine.ES.Password = "infini_rag_flow"
 
 	if !v.IsSet("es") {
 		return
@@ -109,14 +109,26 @@ func parseElasticsearchConfig(config *Config, v *viper.Viper) {
 	}
 
 	if sub.IsSet("hosts") {
-		config.DocEngine.ES.Hosts = sub.GetString("hosts")
+		c.docEngine.ES.Hosts = sub.GetString("hosts")
 	}
 
 	if sub.IsSet("username") {
-		config.DocEngine.ES.Username = sub.GetString("username")
+		c.docEngine.ES.Username = sub.GetString("username")
 	}
 
 	if sub.IsSet("password") {
-		config.DocEngine.ES.Password = sub.GetString("password")
+		c.docEngine.ES.Password = sub.GetString("password")
 	}
+}
+
+func (c *Config) GetElasticsearchConfig() ElasticsearchConfig {
+	return c.docEngine.ES
+}
+
+func (c *Config) IsElasticConfigured() bool {
+	return c.docEngine.ES.Hosts != ""
+}
+
+func (c *Config) GetInfinityConfig() InfinityConfig {
+	return c.docEngine.Infinity
 }

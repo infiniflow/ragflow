@@ -45,15 +45,15 @@ type LogConfig struct {
 	Compress   bool   `mapstructure:"compress"`    // gzip rotated files; default false
 }
 
-func ParseLogConfig(config *Config, v *viper.Viper) error {
+func (c *Config) ParseLogConfig(v *viper.Viper) error {
 	// Default Log config
-	config.Log.Level = "info"
-	config.Log.Format = "json"
-	config.Log.Path = "logs"
-	config.Log.MaxSize = 100 * 1024 * 1024 // 1024MB
-	config.Log.MaxBackups = 10
-	config.Log.MaxAge = 30
-	config.Log.Compress = false
+	c.log.Level = "info"
+	c.log.Format = "json"
+	c.log.Path = "logs"
+	c.log.MaxSize = 100 * 1024 * 1024 // 1024MB
+	c.log.MaxBackups = 10
+	c.log.MaxAge = 30
+	c.log.Compress = false
 
 	if !v.IsSet("log") {
 		return nil
@@ -64,32 +64,40 @@ func ParseLogConfig(config *Config, v *viper.Viper) error {
 	}
 
 	if sub.IsSet("level") {
-		config.Log.Level = sub.GetString("level")
+		c.log.Level = sub.GetString("level")
 	}
 
 	if sub.IsSet("format") {
-		config.Log.Format = sub.GetString("format")
+		c.log.Format = sub.GetString("format")
 	}
 
 	if sub.IsSet("path") {
-		config.Log.Path = sub.GetString("path")
+		c.log.Path = sub.GetString("path")
 	}
 
 	if sub.IsSet("max_size") {
-		config.Log.MaxSize = sub.GetInt("max_size")
+		c.log.MaxSize = sub.GetInt("max_size")
 	}
 
 	if sub.IsSet("max_backups") {
-		config.Log.MaxBackups = sub.GetInt("max_backups")
+		c.log.MaxBackups = sub.GetInt("max_backups")
 	}
 
 	if sub.IsSet("max_age") {
-		config.Log.MaxAge = sub.GetInt("max_age")
+		c.log.MaxAge = sub.GetInt("max_age")
 	}
 
 	if sub.IsSet("compress") {
-		config.Log.Compress = sub.GetBool("compress")
+		c.log.Compress = sub.GetBool("compress")
 	}
 
 	return nil
+}
+
+func (c *Config) GetLogConfig() LogConfig {
+	return c.log
+}
+
+func (c *Config) SetLogLevel(level string) {
+	c.log.Level = level
 }

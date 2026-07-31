@@ -26,7 +26,6 @@ import (
 type GeneralConfig struct {
 	HeartbeatInterval time.Duration `mapstructure:"heartbeat_interval"`
 	Mode              string        `mapstructure:"mode"` // debug, release
-	SecretKey         string        `mapstructure:"secret_key"`
 	Database          string        `mapstructure:"database"`
 	DocEngine         string        `mapstructure:"doc_engine"`      // Infinity, Elasticsearch
 	StorageEngine     string        `mapstructure:"storage_engine"`  // Minio, S3
@@ -36,19 +35,18 @@ type GeneralConfig struct {
 	Language          string        `mapstructure:"language"`
 }
 
-func ParseGeneralConfig(config *Config, v *viper.Viper) error {
+func (c *Config) ParseGeneralConfig(v *viper.Viper) error {
 
 	// Default General config
-	config.General.HeartbeatInterval = 3
-	config.General.Mode = "release"
-	config.General.SecretKey = ""
-	config.General.Database = "mysql"
-	config.General.DocEngine = "elasticsearch"
-	config.General.StorageEngine = "minio"
-	config.General.CacheEngine = "redis"
-	config.General.QueueEngine = "nats"
-	config.General.AnalyticEngine = "clickhouse"
-	config.General.Language = "english"
+	c.general.HeartbeatInterval = 3
+	c.general.Mode = "release"
+	c.general.Database = "mysql"
+	c.general.DocEngine = "elasticsearch"
+	c.general.StorageEngine = "minio"
+	c.general.CacheEngine = "redis"
+	c.general.QueueEngine = "nats"
+	c.general.AnalyticEngine = "clickhouse"
+	c.general.Language = "english"
 
 	if !v.IsSet("general") {
 		return nil
@@ -59,34 +57,66 @@ func ParseGeneralConfig(config *Config, v *viper.Viper) error {
 	}
 
 	if sub.IsSet("heartbeat_interval") {
-		config.General.HeartbeatInterval = sub.GetDuration("heartbeat_interval")
+		c.general.HeartbeatInterval = sub.GetDuration("heartbeat_interval")
 	}
 	if sub.IsSet("mode") {
-		config.General.Mode = sub.GetString("mode")
-	}
-	if sub.IsSet("secret_key") {
-		config.General.SecretKey = sub.GetString("secret_key")
+		c.general.Mode = sub.GetString("mode")
 	}
 	if sub.IsSet("database") {
-		config.General.Database = sub.GetString("database")
+		c.general.Database = sub.GetString("database")
 	}
 	if sub.IsSet("doc_engine") {
-		config.General.DocEngine = sub.GetString("doc_engine")
+		c.general.DocEngine = sub.GetString("doc_engine")
 	}
 	if sub.IsSet("storage_engine") {
-		config.General.StorageEngine = sub.GetString("storage_engine")
+		c.general.StorageEngine = sub.GetString("storage_engine")
 	}
 	if sub.IsSet("cache_engine") {
-		config.General.CacheEngine = sub.GetString("cache_engine")
+		c.general.CacheEngine = sub.GetString("cache_engine")
 	}
 	if sub.IsSet("queue_engine") {
-		config.General.QueueEngine = sub.GetString("queue_engine")
+		c.general.QueueEngine = sub.GetString("queue_engine")
 	}
 	if sub.IsSet("analytic_engine") {
-		config.General.AnalyticEngine = sub.GetString("analytic_engine")
+		c.general.AnalyticEngine = sub.GetString("analytic_engine")
 	}
 	if sub.IsSet("language") {
-		config.General.Language = sub.GetString("language")
+		c.general.Language = sub.GetString("language")
 	}
 	return nil
+}
+
+func (c *Config) GetHeartbeatInterval() time.Duration {
+	return c.general.HeartbeatInterval
+}
+
+func (c *Config) GetMode() string {
+	return c.general.Mode
+}
+
+func (c *Config) DatabaseType() string {
+	return c.general.Database
+}
+
+func (c *Config) DocEngineType() string {
+	if c.environments.DocumentEngineType != "" {
+		return c.environments.DocumentEngineType
+	}
+	return c.general.DocEngine
+}
+
+func (c *Config) StorageEngineType() string {
+	return c.general.StorageEngine
+}
+
+func (c *Config) CacheEngineType() string {
+	return c.general.CacheEngine
+}
+
+func (c *Config) QueueEngineType() string {
+	return c.general.QueueEngine
+}
+
+func (c *Config) AnalyticEngineType() string {
+	return c.general.AnalyticEngine
 }

@@ -23,7 +23,6 @@ import (
 )
 
 type AnalyticEngineConfig struct {
-	EngineType string           `mapstructure:"type"`
 	Clickhouse ClickhouseConfig `mapstructure:"clickhouse"`
 }
 
@@ -35,28 +34,26 @@ type ClickhouseConfig struct {
 	Database string `mapstructure:"database"`
 }
 
-func ParseAnalyticEngineConfig(analyticEngineType string, config *Config, v *viper.Viper) error {
+func (c *Config) ParseAnalyticEngineConfig(v *viper.Viper) error {
+	analyticEngineType := c.general.AnalyticEngine
 	var err error
 	switch analyticEngineType {
 	case "clickhouse":
-		err = parseClickhouseConfig(config, v)
+		err = c.parseClickhouseConfig(v)
 	default:
 		return fmt.Errorf("analytic engine type %s is not supported", analyticEngineType)
-	}
-	if err == nil {
-		config.AnalyticEngine.EngineType = analyticEngineType
 	}
 
 	return err
 }
 
-func parseClickhouseConfig(config *Config, v *viper.Viper) error {
+func (c *Config) parseClickhouseConfig(v *viper.Viper) error {
 	// Default Clickhouse config
-	config.AnalyticEngine.Clickhouse.Host = "localhost"
-	config.AnalyticEngine.Clickhouse.Port = 9900
-	config.AnalyticEngine.Clickhouse.User = "ragflow"
-	config.AnalyticEngine.Clickhouse.Password = "infini_rag_flow"
-	config.AnalyticEngine.Clickhouse.Database = "ragflow"
+	c.analyticEngine.Clickhouse.Host = "localhost"
+	c.analyticEngine.Clickhouse.Port = 9900
+	c.analyticEngine.Clickhouse.User = "ragflow"
+	c.analyticEngine.Clickhouse.Password = "infini_rag_flow"
+	c.analyticEngine.Clickhouse.Database = "ragflow"
 
 	if !v.IsSet("clickhouse") {
 		return nil
@@ -67,21 +64,21 @@ func parseClickhouseConfig(config *Config, v *viper.Viper) error {
 	}
 
 	if sub.IsSet("host") {
-		config.AnalyticEngine.Clickhouse.Host = sub.GetString("host")
+		c.analyticEngine.Clickhouse.Host = sub.GetString("host")
 	}
 
 	if sub.IsSet("port") {
-		config.AnalyticEngine.Clickhouse.Port = sub.GetInt("port")
+		c.analyticEngine.Clickhouse.Port = sub.GetInt("port")
 	}
 
 	if sub.IsSet("user") {
-		config.AnalyticEngine.Clickhouse.User = sub.GetString("user")
+		c.analyticEngine.Clickhouse.User = sub.GetString("user")
 	}
 	if sub.IsSet("password") {
-		config.AnalyticEngine.Clickhouse.Password = sub.GetString("password")
+		c.analyticEngine.Clickhouse.Password = sub.GetString("password")
 	}
 	if sub.IsSet("database") {
-		config.AnalyticEngine.Clickhouse.Database = sub.GetString("database")
+		c.analyticEngine.Clickhouse.Database = sub.GetString("database")
 	}
 	return nil
 }

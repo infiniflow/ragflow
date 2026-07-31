@@ -21,6 +21,6 @@ import "github.com/spf13/viper"
 type BillingConfig struct {
 }
 
-func ParseBillingConfig(config *Config, v *viper.Viper) error {
+func (c *Config) ParseBillingConfig(v *viper.Viper) error {
 	return nil
 }

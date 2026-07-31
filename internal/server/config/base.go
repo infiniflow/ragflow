@@ -19,28 +19,28 @@ package config
 import "ragflow/internal/common"
 
 type Config struct {
-	General        GeneralConfig
-	Database       DatabaseConfig
-	DocEngine      DocEngineConfig
-	StorageEngine  StorageConfig
-	CacheEngine    CacheEngineConfig
-	QueueEngine    QueueEngineConfig
-	AnalyticEngine AnalyticEngineConfig
-	OTel           OpenTelemetryConfig
+	general        GeneralConfig
+	database       DatabaseConfig
+	docEngine      DocEngineConfig
+	storageEngine  StorageConfig
+	cacheEngine    CacheEngineConfig
+	queueEngine    QueueEngineConfig
+	analyticEngine AnalyticEngineConfig
+	oTel           OpenTelemetryConfig
 
-	Admin     AdminConfig
-	APIServer APIServerConfig
-	Ingestor  IngestorConfig
-	Syncer    SyncerConfig
+	admin     AdminConfig
+	apiServer APIServerConfig
+	ingestor  IngestorConfig
+	syncer    SyncerConfig
 
-	Log  LogConfig
-	SMTP common.SMTPConfig
+	log  LogConfig
+	smtp common.SMTPConfig
 
 	// From environments
-	Environments Environments
+	environments Environments
 
 	// For EE
-	DefaultModels DefaultModelsConfig
-	Billing       BillingConfig
-	OAuth         OAuthConfig
+	defaultModels DefaultModelsConfig
+	billing       BillingConfig
+	oAuth         OAuthConfig
 }

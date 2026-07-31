@@ -23,10 +23,10 @@ type SyncerConfig struct {
 	SyncInterval       int `mapstructure:"sync_interval"`
 }
 
-func ParseSyncerConfig(config *Config, v *viper.Viper) error {
+func (c *Config) ParseSyncerConfig(v *viper.Viper) error {
 	// Default Syncer config
-	config.Syncer.MaxConcurrentSyncs = 1
-	config.Syncer.SyncInterval = 3
+	c.syncer.MaxConcurrentSyncs = 1
+	c.syncer.SyncInterval = 3
 
 	if !v.IsSet("file_syncer") {
 		return nil
@@ -37,12 +37,16 @@ func ParseSyncerConfig(config *Config, v *viper.Viper) error {
 	}
 
 	if sub.IsSet("max_concurrent_syncs") {
-		config.Syncer.MaxConcurrentSyncs = sub.GetInt("max_concurrent_syncs")
+		c.syncer.MaxConcurrentSyncs = sub.GetInt("max_concurrent_syncs")
 	}
 
 	if sub.IsSet("sync_interval") {
-		config.Syncer.SyncInterval = sub.GetInt("sync_interval")
+		c.syncer.SyncInterval = sub.GetInt("sync_interval")
 	}
 
 	return nil
+}
+
+func (c *Config) GetSyncerConfig() *SyncerConfig {
+	return &c.syncer
 }

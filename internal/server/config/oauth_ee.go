@@ -21,6 +21,6 @@ import "github.com/spf13/viper"
 type OAuthConfig struct {
 }
 
-func ParseOAuthConfig(config *Config, v *viper.Viper) error {
+func (c *Config) ParseOAuthConfig(v *viper.Viper) error {
 	return nil
 }

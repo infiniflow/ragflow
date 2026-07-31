@@ -22,9 +22,9 @@ type IngestorConfig struct {
 	MaxConcurrentWorkers int `mapstructure:"max_concurrent_workers"`
 }
 
-func ParseIngestorConfig(config *Config, v *viper.Viper) error {
+func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 	// Default Ingestor config
-	config.Ingestor.MaxConcurrentWorkers = 1
+	c.ingestor.MaxConcurrentWorkers = 1
 
 	if !v.IsSet("ingestor") {
 		return nil
@@ -35,7 +35,7 @@ func ParseIngestorConfig(config *Config, v *viper.Viper) error {
 	}
 
 	if sub.IsSet("max_concurrent_workers") {
-		config.Ingestor.MaxConcurrentWorkers = sub.GetInt("max_concurrent_workers")
+		c.ingestor.MaxConcurrentWorkers = sub.GetInt("max_concurrent_workers")
 	}
 
 	return nil

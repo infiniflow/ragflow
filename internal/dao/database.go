@@ -67,21 +67,21 @@ type LLMFactoriesFile struct {
 
 // InitDB initialize database connection
 func InitDB(ctx context.Context, migrateDB bool) error {
-	cfg := server.GetConfig()
-	dbCfg := cfg.Database
+	globalConfig := server.GetConfig()
+	databaseConfig := globalConfig.GetMySQLConfig()
 
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
-		dbCfg.Username,
-		dbCfg.Password,
-		dbCfg.Host,
-		dbCfg.Port,
-		dbCfg.Database,
-		dbCfg.Charset,
+		databaseConfig.User,
+		databaseConfig.Password,
+		databaseConfig.Host,
+		databaseConfig.Port,
+		databaseConfig.DatabaseName,
+		databaseConfig.Charset,
 	)
 
 	// Set log level
 	var gormLogLevel gormLogger.LogLevel
-	if cfg.General.Mode == "debug" {
+	if globalConfig.GetMode() == "debug" {
 		gormLogLevel = gormLogger.Info
 	} else {
 		gormLogLevel = gormLogger.Silent

@@ -37,6 +37,34 @@ type ModelConfig struct {
 	Factory string `mapstructure:"factory"`
 }
 
-func ParseDefaultModelsConfig(config *Config, v *viper.Viper) error {
+func (c *Config) ParseDefaultModelsConfig(v *viper.Viper) error {
 	return nil
+}
+
+func (c *Config) GetDefaultChatModel() ModelConfig {
+	return c.defaultModels.ChatModel
+}
+
+func (c *Config) GetDefaultEmbeddingModel() ModelConfig {
+	return c.defaultModels.EmbeddingModel
+}
+
+func (c *Config) GetDefaultRerankModel() ModelConfig {
+	return c.defaultModels.RerankModel
+}
+
+func (c *Config) GetDefaultASRModel() ModelConfig {
+	return c.defaultModels.ASRModel
+}
+
+func (c *Config) GetDefaultVisionModel() ModelConfig {
+	return c.defaultModels.VisionModel
+}
+
+func (c *Config) GetDefaultOCRModel() ModelConfig {
+	return c.defaultModels.OCRModel
+}
+
+func (c *Config) GetDefaultTTSModel() ModelConfig {
+	return c.defaultModels.TTSModel
 }
