@@ -57,7 +57,7 @@ def _load_pdf_context_function(monkeypatch) -> Callable[..., list[object]]:
 
     deepdoc_module = ModuleType("deepdoc")
     parser_module = ModuleType("deepdoc.parser")
-    parser_module.PdfParser = type("PdfParser", (), {"extract_positions": staticmethod(lambda _text: [])})
+    setattr(parser_module, "PdfParser", type("PdfParser", (), {"extract_positions": staticmethod(lambda _text: [])}))
     monkeypatch.setitem(sys.modules, "deepdoc", deepdoc_module)
     monkeypatch.setitem(sys.modules, "deepdoc.parser", parser_module)
     namespace: dict[str, object] = {
@@ -69,7 +69,7 @@ def _load_pdf_context_function(monkeypatch) -> Callable[..., list[object]]:
     return cast(Callable[..., list[object]], namespace["append_context2table_image4pdf"])
 
 
-def test_media_vision_enriches_images_without_reprocessing_tables() -> None:
+def test_media_vision_enriches_images_and_tables_once() -> None:
     _FakeVisionFigureParser.calls = []
     enhance_media_sections_with_vision = _load_media_vision_function(
         {
@@ -96,10 +96,11 @@ def test_media_vision_enriches_images_without_reprocessing_tables() -> None:
 
     assert result is sections
     assert sections[0]["text"] == "figure caption\nvision description"
-    assert sections[1]["text"] == "<table><tr><td>1</td></tr></table>"
+    assert sections[1]["text"] == "<table><tr><td>1</td></tr></table>\nvision description"
     assert sections[2]["text"] == "body"
-    assert len(_FakeVisionFigureParser.calls) == 1
+    assert len(_FakeVisionFigureParser.calls) == 2
     assert _FakeVisionFigureParser.calls[0]["figures_data"] == [((image, [""]), [(0, 0, 0, 0, 0)])]
+    assert _FakeVisionFigureParser.calls[1]["figures_data"] == [((table_image, [""]), [(0, 0, 0, 0, 0)])]
 
 
 def test_vision_figure_parser_preserves_empty_and_mixed_positions() -> None:
