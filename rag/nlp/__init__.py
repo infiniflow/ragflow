@@ -1175,8 +1175,19 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
             pos = ""
         if tnum < 8:
             pos = ""
-        # Ensure that the length of the merged chunk does not exceed chunk_token_num
-        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent) / 100.0:
+        # Enforce chunk_token_num as a HARD cap (see issue #17202). The previous
+        # check ``tk_nums[-1] > threshold`` fired *after* the previous segment
+        # was already appended, so every chunk could overshoot by the size of
+        # one segment; long-delimiter-free inputs (one paragraph with no
+        # internal split point) produced chunks 100x larger than the budget.
+        # The check is now *predictive*: if the current non-empty chunk plus
+        # the incoming segment would exceed the overlap threshold, start a
+        # new chunk. An empty current chunk is just the first-write slot and
+        # is always filled before opening a new one. When a single segment
+        # is itself larger than the budget, it is emitted as one oversized
+        # chunk and a warning is logged.
+        overlap_threshold = chunk_token_num * (100 - overlapped_percent) / 100.0
+        if cks[-1] != "" and tk_nums[-1] + tnum > overlap_threshold:
             if cks:
                 overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
                 t = overlapped[int(len(overlapped) * (100 - overlapped_percent) / 100.0) :] + t
@@ -1191,6 +1202,12 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
                 t += pos
             cks[-1] += t
             tk_nums[-1] += tnum
+        if tnum > chunk_token_num:
+            logging.warning(
+                "naive_merge: emitted a single chunk of %d tokens exceeding chunk_token_num=%d; the segment had no internal delimiter.",
+                tnum,
+                chunk_token_num,
+            )
 
     custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
     has_custom = bool(custom_delimiters)
@@ -1244,8 +1261,15 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
             pos = ""
         if tnum < 8:
             pos = ""
-        # Ensure that the length of the merged chunk does not exceed chunk_token_num
-        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent) / 100.0:
+        # Enforce chunk_token_num as a HARD cap (see issue #17202). See the
+        # matching comment in naive_merge.add_chunk for the rationale: the
+        # check is now *predictive* (start a new chunk when the current
+        # non-empty chunk plus the incoming segment would exceed the
+        # overlap threshold) rather than reactive, so chunks never
+        # overshoot the budget except for a single segment that is itself
+        # larger than chunk_token_num.
+        overlap_threshold = chunk_token_num * (100 - overlapped_percent) / 100.0
+        if cks[-1] != "" and tk_nums[-1] + tnum > overlap_threshold:
             if cks:
                 overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
                 t = overlapped[int(len(overlapped) * (100 - overlapped_percent) / 100.0) :] + t
@@ -1265,6 +1289,12 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
             else:
                 result_images[-1] = concat_img(result_images[-1], image)
             tk_nums[-1] += tnum
+        if tnum > chunk_token_num:
+            logging.warning(
+                "naive_merge_with_images: emitted a single chunk of %d tokens exceeding chunk_token_num=%d; the segment had no internal delimiter.",
+                tnum,
+                chunk_token_num,
+            )
 
     custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
     has_custom = bool(custom_delimiters)
