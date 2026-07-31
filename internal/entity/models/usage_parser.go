@@ -27,16 +27,7 @@ func extractOpenAIUsage(body map[string]any) (*TokenUsage, bool) {
 		return nil, false
 	}
 
-	usage := &TokenUsage{}
-	usage.PromptTokens = extractToken(rawUsage, "prompt_tokens", "input_tokens")
-	usage.CompletionTokens = extractToken(rawUsage, "completion_tokens", "output_tokens")
-	usage.TotalTokens = extractToken(rawUsage, "total_tokens")
-
-	if usage.TotalTokens == 0 {
-		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
-	}
-
-	return usage, true
+	return tokenUsageFromRaw(rawUsage), true
 }
 
 // extractOpenAIStreamUsage extracts token usage from one OpenAI-compatible
@@ -47,6 +38,10 @@ func extractOpenAIStreamUsage(event map[string]any) (*TokenUsage, bool) {
 		return nil, false
 	}
 
+	return tokenUsageFromRaw(rawUsage), true
+}
+
+func tokenUsageFromRaw(rawUsage map[string]any) *TokenUsage {
 	usage := &TokenUsage{}
 	usage.PromptTokens = extractToken(rawUsage, "prompt_tokens", "input_tokens")
 	usage.CompletionTokens = extractToken(rawUsage, "completion_tokens", "output_tokens")
@@ -56,7 +51,7 @@ func extractOpenAIStreamUsage(event map[string]any) (*TokenUsage, bool) {
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
 
-	return usage, true
+	return usage
 }
 
 // extractToken reads a numeric field from a map, trying each key in order.
