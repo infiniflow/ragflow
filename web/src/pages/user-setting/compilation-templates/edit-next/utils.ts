@@ -57,6 +57,7 @@ export const DefaultTemplateValues: TemplateSchemaType = {
     instruction: '',
     page_example: '',
     use_blueprint: false,
+    plan: true,
   },
 };
 
@@ -77,6 +78,7 @@ export const isConfigMetaKey = (key: string) =>
     'page_example',
     'synthesis',
     'use_blueprint',
+    'plan',
   ].includes(key);
 
 export const createEmptyField = (keys: string[]) =>
@@ -128,6 +130,10 @@ export const buildConfigFromBuiltin = (
       : {}),
     use_blueprint:
       kind === CompilationTemplateKind.Artifacts && example.length > 0,
+    plan:
+      typeof builtinTemplate.config?.plan === 'boolean'
+        ? builtinTemplate.config.plan
+        : true,
   };
 
   if (kind === CompilationTemplateKind.Artifacts && example.length > 0) {
@@ -179,6 +185,7 @@ export const transformDetailToForm = (
       : {}),
     use_blueprint:
       detail.kind === CompilationTemplateKind.Artifacts && example.length > 0,
+    plan: typeof config.plan === 'boolean' ? config.plan : true,
   };
 
   if (detail.kind === CompilationTemplateKind.Artifacts && example.length > 0) {
@@ -250,6 +257,10 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
     if (key === 'kind' || key === 'llm_id') return;
     if (key === 'instruction' || key === 'page_example') return;
     if (key === 'synthesis') {
+      config[key] = value as ICompilationTemplateConfigRequest[string];
+      return;
+    }
+    if (key === 'plan') {
       config[key] = value as ICompilationTemplateConfigRequest[string];
       return;
     }

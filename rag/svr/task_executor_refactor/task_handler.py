@@ -257,13 +257,34 @@ class TaskHandler:
                 ctx.progress_cb(1, "place holder")
             elif task_type == "wiki":
                 from rag.svr.task_executor_refactor.dataset_wiki_generator import (
-                    run_wiki,
+                    run_wiki_incremental,
                 )
 
-                await run_wiki(
+                # Parse plan: yes/no from the template config (default no-plan)
+                plan_enabled = False
+                try:
+                    from api.db.services.compilation_template_service import (
+                        CompilationTemplateService,
+                    )
+                    from rag.svr.task_executor_refactor.dataset_wiki_generator import (
+                        _parser_config_compilation_template_ids,
+                    )
+
+                    pc = self._task_context.parser_config or {}
+                    for tid in _parser_config_compilation_template_ids(pc, self._task_context.tenant_id):
+                        tpl = CompilationTemplateService.get_saved(tid, self._task_context.tenant_id)
+                        cfg = (tpl.get("config") or {}) if tpl else {}
+                        if isinstance(cfg, dict) and cfg.get("plan") in (True, "yes", "true"):
+                            plan_enabled = True
+                            break
+                except Exception:
+                    pass  # default to no-plan
+
+                await run_wiki_incremental(
                     self._task_context,
                     embedding_model,
                     self._load_chunks_for_doc,
+                    plan=plan_enabled,
                 )
             elif task_type == "skill":
                 from rag.svr.task_executor_refactor.dataset_skill_generator import (

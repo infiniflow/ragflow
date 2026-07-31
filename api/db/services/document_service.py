@@ -678,6 +678,32 @@ class DocumentService(CommonService):
                 doc.kb_id,
             )
 
+        # 3. Clean up doc_page_source tracking rows (new incremental design).
+        try:
+            doc_page_kwd = "wiki_doc_page_source"
+            res = settings.docStoreConn.search(
+                ["id"],
+                [],
+                {"compile_kwd": [doc_page_kwd], "doc_id": [doc.id]},
+                [],
+                OrderByExpr(),
+                0,
+                10,
+                index,
+                doc.kb_id,
+            )
+            if settings.docStoreConn.get_fields(res, ["id"]):
+                settings.docStoreConn.delete(
+                    {"compile_kwd": [doc_page_kwd], "doc_id": [doc.id]},
+                    index,
+                    doc.kb_id,
+                )
+        except Exception:
+            logging.exception(
+                "DocumentService.remove_wiki_products: doc_page_source cleanup failed for doc %s",
+                doc.id,
+            )
+
     @classmethod
     @DB.connection_context()
     def get_newly_uploaded(cls):
