@@ -351,7 +351,7 @@ func (c *qqBotChannel) handleDispatch(ctx context.Context, eventType string, dat
 	}
 	if eventType == "READY" {
 		c.mu.Lock()
-		c.sessionID = stringValue(raw["session_id"])
+		c.sessionID = anyToString(raw["session_id"])
 		c.mu.Unlock()
 		return nil
 	}
@@ -385,40 +385,40 @@ func (c *qqBotChannel) normalizeIncomingEvent(eventType string, data map[string]
 	message := &core.IncomingMessage{
 		Channel:   c.ChannelID(),
 		AccountID: c.AccountID(),
-		MessageID: stringValue(data["id"]),
-		Text:      stringValue(data["content"]),
+		MessageID: anyToString(data["id"]),
+		Text:      anyToString(data["content"]),
 		Raw:       data,
 	}
 	switch eventType {
 	case "C2C_MESSAGE_CREATE":
-		message.SenderID = stringValue(author["user_openid"])
+		message.SenderID = anyToString(author["user_openid"])
 		if message.SenderID == "" {
 			return nil
 		}
 		message.ChatID = incomingQQBotChatID("c2c", message.SenderID)
 		message.ChatType = "p2p"
 	case "GROUP_AT_MESSAGE_CREATE", "GROUP_MESSAGE_CREATE":
-		groupID := stringValue(data["group_openid"])
-		message.SenderID = stringValue(author["member_openid"])
+		groupID := anyToString(data["group_openid"])
+		message.SenderID = anyToString(author["member_openid"])
 		if groupID == "" || message.SenderID == "" {
 			return nil
 		}
 		message.ChatID = incomingQQBotChatID("group", groupID)
 		message.ChatType = "group"
 	case "DIRECT_MESSAGE_CREATE":
-		message.SenderID = stringValue(author["id"])
+		message.SenderID = anyToString(author["id"])
 		if message.SenderID == "" {
 			return nil
 		}
-		chatID := stringValue(data["guild_id"])
+		chatID := anyToString(data["guild_id"])
 		if chatID == "" {
 			chatID = message.SenderID
 		}
 		message.ChatID = incomingQQBotChatID("dm", chatID)
 		message.ChatType = "dm"
 	case "AT_MESSAGE_CREATE":
-		message.SenderID = stringValue(author["id"])
-		channelID := stringValue(data["channel_id"])
+		message.SenderID = anyToString(author["id"])
+		channelID := anyToString(data["channel_id"])
 		if message.SenderID == "" || channelID == "" {
 			return nil
 		}
@@ -439,9 +439,9 @@ func (c *qqBotChannel) getAccessToken(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	token := stringValue(response["access_token"])
+	token := anyToString(response["access_token"])
 	if token == "" {
-		token = stringValue(response["accessToken"])
+		token = anyToString(response["accessToken"])
 	}
 	if token == "" {
 		return "", fmt.Errorf("qqbot token response missing access_token: %v", response)
@@ -454,7 +454,7 @@ func (c *qqBotChannel) getGatewayURL(ctx context.Context, token string) (string,
 	if err := c.requestJSON(ctx, token, http.MethodGet, "/gateway", nil, true, false, &response); err != nil {
 		return "", err
 	}
-	gatewayURL := stringValue(response["url"])
+	gatewayURL := anyToString(response["url"])
 	if gatewayURL == "" {
 		return "", fmt.Errorf("qqbot gateway response missing url: %v", response)
 	}
@@ -571,7 +571,7 @@ func qqBotMessageSequence() int {
 	return int(value)
 }
 
-func stringValue(value any) string {
+func anyToString(value any) string {
 	if value == nil {
 		return ""
 	}

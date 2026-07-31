@@ -38,6 +38,9 @@
 //	export OPENAI_MODEL=...
 //	rtk go test ./internal/agent/component/ -count=1 \
 //	  -run TestStagehandRuntime_Extract -v -timeout 3m
+
+//go:build integration
+
 package component
 
 import (

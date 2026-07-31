@@ -535,6 +535,12 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		}
 	}
 
+	// 3b. (pages-based page selection is handled upstream via the
+	//     component setup: ParserConfig[cpnID][filetype]["pages"] is a
+	//     list of page ranges delivered through override_params and
+	//     consumed by the deepdoc/pdf parser. No inputs-level handling
+	//     here.)
+
 	// 4. Build the page slice sequentially. Per-page parallelism now
 	//    lives in the parser backends (e.g. internal/deepdoc/parser/pdf
 	//    fans out one worker per page and assembles in page order), so
