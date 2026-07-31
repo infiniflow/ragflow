@@ -43,20 +43,29 @@ class CompilerParam(ProcessParamBase, LLMParam):
     """Parameters for the knowledge-Compiler flow component.
 
     Same LLM-backed shape as the Extractor, but instead of a single inline
-    ``knowledge_compilation`` config it drives compilation from one or more
-    saved **compilation-template groups** (``compilation_template_group_ids``).
-    Each group resolves to a set of templates, each of which carries its own
-    structure-compilation config (kind, fields, synthesis, ...).
+    ``knowledge_compilation`` config it drives compilation from a saved
+    **compilation-template group** (``compilation_template_group_id``). The group
+    resolves to a set of templates, each of which carries its own
+    structure-compilation config (kind, fields, synthesis, ...). The legacy
+    plural ``compilation_template_group_ids`` key is still accepted as a
+    fallback so existing pipelines keep working.
     """
 
     def __init__(self):
         super().__init__()
+        self.compilation_template_group_id = ""
         self.compilation_template_group_ids = []
 
     def check(self):
-        self.check_empty(self.compilation_template_group_ids, "Compilation Template Groups")
-        if isinstance(self.compilation_template_group_ids, str):
-            self.compilation_template_group_ids = [self.compilation_template_group_ids]
+        # Prefer the singular group id emitted by the frontend; fall back to the
+        # legacy plural key for backward compatibility. check() normalises the
+        # chosen value into self.compilation_template_group_ids (a list) so the
+        # rest of the Compiler only ever reads that.
+        group = self.compilation_template_group_id or self.compilation_template_group_ids
+        self.check_empty(group, "Compilation Template Group")
+        if isinstance(group, str):
+            group = [group]
+        self.compilation_template_group_ids = group
 
 
 class Compiler(ProcessBase, LLM):

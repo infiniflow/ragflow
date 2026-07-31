@@ -44,27 +44,27 @@ func TestChunksToAny(t *testing.T) {
 	}
 }
 
-func TestAnalyzeRaptorProducts_TreeShape(t *testing.T) {
+func TestAnalyzeTreeProducts_TreeShape(t *testing.T) {
 	vector := json.RawMessage(`[0.1,0.2,0.3]`)
 	chunks := []schema.ChunkDoc{
 		{Text: "root summary", Extra: mustExtras(t, map[string]any{
-			"id": "r1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "raptor",
+			"id": "r1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
 			"kc_kind": "root", "kc_level": float64(-1), "q_3_vec": vector,
 		})},
 		{Text: "leaf A", Extra: mustExtras(t, map[string]any{
-			"id": "a1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "raptor",
+			"id": "a1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
 			"kc_kind": "summary", "kc_level": float64(0), "parent_kwd": "r1", "q_3_vec": vector,
 		})},
 		{Text: "leaf B", Extra: mustExtras(t, map[string]any{
-			"id": "b1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "raptor",
+			"id": "b1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
 			"kc_kind": "summary", "kc_level": float64(0), "parent_kwd": "r1", "q_3_vec": vector,
 		})},
 		{Text: "mid A", Extra: mustExtras(t, map[string]any{
-			"id": "m1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "raptor",
+			"id": "m1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
 			"kc_kind": "summary", "kc_level": float64(1), "parent_kwd": "r1", "q_3_vec": vector,
 		})},
 	}
-	m := AnalyzeRaptorProducts(chunks)
+	m := AnalyzeTreeProducts(chunks)
 	if m.RootCount != 1 {
 		t.Errorf("RootCount = %d, want 1", m.RootCount)
 	}
@@ -82,34 +82,73 @@ func TestAnalyzeRaptorProducts_TreeShape(t *testing.T) {
 	}
 }
 
-func TestAnalyzeRaptorProducts_DetectsDanglingParent(t *testing.T) {
+func TestAnalyzeTreeProducts_DetectsDanglingParent(t *testing.T) {
 	chunks := []schema.ChunkDoc{
 		{Text: "root", Extra: mustExtras(t, map[string]any{
-			"id": "r1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "raptor",
+			"id": "r1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
 			"kc_kind": "root",
 		})},
 		{Text: "orphan", Extra: mustExtras(t, map[string]any{
-			"id": "o1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "raptor",
+			"id": "o1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
 			"kc_kind": "summary", "kc_level": float64(0), "parent_kwd": "missing-parent",
 		})},
 	}
-	m := AnalyzeRaptorProducts(chunks)
+	m := AnalyzeTreeProducts(chunks)
 	if m.AllParented {
 		t.Error("AllParented = true, want false (o1's parent is missing)")
 	}
 }
 
-func TestCoverageFraction_AllParentedOneRoot(t *testing.T) {
-	m := TreeMetrics{RootCount: 1, LeafClusters: 3, AllParented: true}
+func TestCoverageFraction_AllSourcesCovered(t *testing.T) {
+	// Coverage is now measured from source_chunk_ids of level-0 leaf clusters,
+	// not structural well-formedness. When every input chunk is referenced, the
+	// fraction is 1.0 regardless of root/parent structure.
+	m := TreeMetrics{RootCount: 1, LeafClusters: 3, AllParented: true, CoveredSources: 12}
 	if cov := m.CoverageFraction(12); cov != 1.0 {
 		t.Errorf("CoverageFraction = %v, want 1.0", cov)
 	}
 }
 
-func TestCoverageFraction_NoRootIsZero(t *testing.T) {
-	m := TreeMetrics{LeafClusters: 3, AllParented: true}
+func TestCoverageFraction_NoCoveredSourcesIsZero(t *testing.T) {
+	// A structurally well-formed tree that references no source chunks covers 0.
+	m := TreeMetrics{RootCount: 1, LeafClusters: 3, AllParented: true, CoveredSources: 0}
 	if cov := m.CoverageFraction(12); cov != 0.0 {
-		t.Errorf("CoverageFraction = %v, want 0.0 (no root)", cov)
+		t.Errorf("CoverageFraction = %v, want 0.0 (no covered sources)", cov)
+	}
+}
+
+func TestCoverageFraction_PartialCoverage(t *testing.T) {
+	// A tree that drops some source chunks scores below 1.0.
+	m := TreeMetrics{RootCount: 1, LeafClusters: 3, AllParented: true, CoveredSources: 9}
+	if cov := m.CoverageFraction(12); cov != 0.75 {
+		t.Errorf("CoverageFraction = %v, want 0.75", cov)
+	}
+}
+
+// TestAnalyzeTreeProducts_IgnoresUnknownSourceIDs verifies that an unknown
+// (leaked/garbage) ID inside source_chunk_ids does not inflate CoveredSources
+// past the corpus size, so CoverageFraction stays <= 1.0. A level-0 leaf that
+// references 2 valid + 1 unknown ID over an nChunks=2 corpus must still report
+// coverage 1.0, not 1.5.
+func TestAnalyzeTreeProducts_IgnoresUnknownSourceIDs(t *testing.T) {
+	vector := json.RawMessage(`[0.1,0.2,0.3]`)
+	chunks := []schema.ChunkDoc{
+		{Text: "root", Extra: mustExtras(t, map[string]any{
+			"id": "r1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
+			"kc_kind": "root", "kc_level": float64(-1), "q_3_vec": vector,
+		})},
+		{Text: "leaf", Extra: mustExtras(t, map[string]any{
+			"id": "a1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
+			"kc_kind": "summary", "kc_level": float64(0), "parent_kwd": "r1", "q_3_vec": vector,
+			"source_chunk_ids": []string{"chunk-01", "chunk-02", "leaked-unknown-id"},
+		})},
+	}
+	m := AnalyzeTreeProducts(chunks, "chunk-01", "chunk-02")
+	if m.CoveredSources != 2 {
+		t.Errorf("CoveredSources = %d, want 2 (unknown id excluded)", m.CoveredSources)
+	}
+	if cov := m.CoverageFraction(2); cov != 1.0 {
+		t.Errorf("CoverageFraction = %v, want 1.0 (must not exceed 1.0)", cov)
 	}
 }
 

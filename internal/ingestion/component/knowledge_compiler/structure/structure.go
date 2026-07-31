@@ -46,7 +46,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		Variant:      common.VariantStructure,
 		Lang:         param.Language,
 		ParserConfig: parserConfig,
-		TemplateID:   common.FirstNonEmpty(param.TemplateIDs...),
+		TemplateID:   param.TemplateID,
 	}
 
 	nodePrompt, edgePromptTmpl := HypergraphPrompts(parserConfig, param.Language)
