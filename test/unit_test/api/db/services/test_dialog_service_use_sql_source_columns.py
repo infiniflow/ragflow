@@ -280,18 +280,27 @@ def test_use_sql_quotes_unsafe_es_identifiers_in_initial_and_retry_prompts(monke
             RuntimeError("Unknown column [test]"),
             {
                 "columns": [
+                    {"name": "test items_tks"},
+                    {"name": "123_priority_kwd"},
+                ],
+                "rows": [["wstc hw 758", "high"]],
+            },
+            {
+                "columns": [
                     {"name": "doc_id"},
                     {"name": "docnm_kwd"},
                     {"name": "test items_tks"},
+                    {"name": "123_priority_kwd"},
                 ],
-                "rows": [["doc-1", "tests.xlsx", "wstc hw 758"]],
+                "rows": [["doc-1", "tests.xlsx", "wstc hw 758", "high"]],
             },
         ]
     )
     chat_model = _StubChatModel(
         [
             "SELECT doc_id, docnm_kwd, test items_tks FROM ragflow_tenant",
-            'SELECT doc_id, docnm_kwd, "test items_tks" FROM ragflow_tenant',
+            'SELECT "test items_tks", "123_priority_kwd" FROM ragflow_tenant',
+            'SELECT doc_id, docnm_kwd, "test items_tks", "123_priority_kwd" FROM ragflow_tenant',
         ]
     )
     monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
@@ -318,9 +327,14 @@ def test_use_sql_quotes_unsafe_es_identifiers_in_initial_and_retry_prompts(monke
     assert "status_tks" in chat_model.calls[0]["message"]
     assert '"test items_tks"' in chat_model.calls[1]["message"]
     assert '"123_priority_kwd"' in chat_model.calls[1]["message"]
+    assert "missing required source columns for citations" in chat_model.calls[2]["message"]
+    assert "Copy field identifiers exactly as shown above" in chat_model.calls[2]["message"]
+    assert '"test items_tks"' in chat_model.calls[2]["message"]
+    assert '"123_priority_kwd"' in chat_model.calls[2]["message"]
     assert retriever.sql_calls == [
         "SELECT doc_id, docnm_kwd, test items_tks FROM ragflow_tenant",
-        'SELECT doc_id, docnm_kwd, "test items_tks" FROM ragflow_tenant',
+        'SELECT "test items_tks", "123_priority_kwd" FROM ragflow_tenant',
+        'SELECT doc_id, docnm_kwd, "test items_tks", "123_priority_kwd" FROM ragflow_tenant',
     ]
 
 
