@@ -133,6 +133,39 @@ def test_max_tokens_is_dropped_on_both_backends():
     assert "max_tokens" not in _make_base()._clean_conf({"max_tokens": 100, "temperature": 0.3})
 
 
+def test_litellm_renames_max_tokens_to_max_completion_tokens():
+    """Regression guard: the Agent/LLM component (agent/component/llm.py
+    LLMParam.gen_conf()) only ever populates `max_tokens`, never
+    `max_completion_tokens`. LiteLLMBase._clean_conf() used to just drop
+    `max_tokens` outright (see test_max_tokens_is_dropped_on_both_backends
+    above), which silently discarded the Agent node's "Max tokens" setting
+    for every LiteLLM-routed provider (Ollama, Anthropic, Gemini, ...),
+    leaving generation without the Agent-configured per-request output
+    cap. It must be renamed, not just discarded."""
+    cleaned = _make_litellm()._clean_conf({"max_tokens": 4096, "temperature": 0.3})
+    assert cleaned["max_completion_tokens"] == 4096
+    assert cleaned["temperature"] == 0.3
+
+
+def test_litellm_max_completion_tokens_wins_if_caller_sets_both():
+    """Defensive edge case: if a caller ever sets both keys at once, the
+    already-OpenAI-style `max_completion_tokens` should not be silently
+    overwritten by the renamed legacy `max_tokens`."""
+    cleaned = _make_litellm()._clean_conf({"max_tokens": 100, "max_completion_tokens": 4096})
+    assert cleaned["max_completion_tokens"] == 4096
+
+
+def test_base_still_drops_max_tokens_outright():
+    """The rename only applies to the LiteLLM backend, which is the one
+    whose allowlist (LITELLM_ALLOWED_GEN_CONF_KEYS) expects
+    `max_completion_tokens`. `Base` (plain OpenAI-compatible providers)
+    handles max_tokens through its own client call path and is
+    intentionally unaffected by this fix."""
+    cleaned = _make_base()._clean_conf({"max_tokens": 100, "temperature": 0.3})
+    assert "max_tokens" not in cleaned
+    assert "max_completion_tokens" not in cleaned
+
+
 # --------------------------------------------------------------------------- #
 # Whitelist invariants.
 # --------------------------------------------------------------------------- #
