@@ -46,6 +46,26 @@ def test_qwen3_can_enable_thinking_explicitly():
     assert kwargs["extra_body"] == {"seed": 1, "chat_template_kwargs": {"enable_thinking": True}}
 
 
+def test_qwen3_preserves_existing_chat_template_kwargs():
+    gen_conf, kwargs = _apply_model_family_policies(
+        "qwen3-plus",
+        backend="base",
+        gen_conf={"thinking": "disabled"},
+        request_kwargs={
+            "extra_body": {
+                "seed": 1,
+                "chat_template_kwargs": {"enable_thinking": True, "custom_template_flag": "keep"},
+            }
+        },
+    )
+
+    assert gen_conf == {}
+    assert kwargs["extra_body"] == {
+        "seed": 1,
+        "chat_template_kwargs": {"enable_thinking": False, "custom_template_flag": "keep"},
+    }
+
+
 def test_qwen3_preview_variant_forces_thinking_true():
     """qwen3.x-preview models (e.g. qwen3.8-max-preview) only accept enable_thinking=True."""
     gen_conf, kwargs = _apply_model_family_policies(
@@ -56,7 +76,7 @@ def test_qwen3_preview_variant_forces_thinking_true():
     )
 
     assert gen_conf == {}
-    assert kwargs["extra_body"]["enable_thinking"] is True
+    assert kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
 
 
 def test_qwen3_preview_ignores_disabled_thinking():
@@ -70,7 +90,7 @@ def test_qwen3_preview_ignores_disabled_thinking():
 
     assert "thinking" not in gen_conf
     assert gen_conf == {"temperature": 0.2}
-    assert kwargs["extra_body"]["enable_thinking"] is True
+    assert kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
 
 
 def test_qwen3_24t_a95b_forces_thinking_true():
@@ -83,7 +103,7 @@ def test_qwen3_24t_a95b_forces_thinking_true():
     )
 
     assert gen_conf == {}
-    assert kwargs["extra_body"]["enable_thinking"] is True
+    assert kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
 
 
 def test_qwen3_24t_a95b_ignores_disabled_thinking():
@@ -97,7 +117,7 @@ def test_qwen3_24t_a95b_ignores_disabled_thinking():
 
     assert "thinking" not in gen_conf
     assert gen_conf == {"temperature": 0.2}
-    assert kwargs["extra_body"]["enable_thinking"] is True
+    assert kwargs["extra_body"]["chat_template_kwargs"]["enable_thinking"] is True
 
 
 @pytest.mark.parametrize(
