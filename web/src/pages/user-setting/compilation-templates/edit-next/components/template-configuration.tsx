@@ -15,7 +15,7 @@ import { CompilationTemplateKind } from '@/constants/compilation';
 import { TreeTemplateFields } from './tree-template-fields';
 import { useTemplateKindChange } from '../hooks/use-template-kind-change';
 import { FormSchemaType } from '../schema';
-import { SectionTitleKeyMap } from '../utils';
+import { SectionTitleKeyMap } from '../constant';
 
 import { useActiveSectionTab } from '../hooks/use-active-section-tab';
 import { useAvailableKindOptions } from '../hooks/use-available-kind-options';

@@ -4,6 +4,7 @@ import { Plus } from 'lucide-react';
 import { useFieldArray, useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
+import { SectionCardFieldMap } from '../constant';
 import { FieldCard } from './field-card';
 
 type SectionFieldGridProps = {
@@ -26,7 +27,7 @@ export function SectionFieldGrid({
     name: fieldsPath,
   });
 
-  const isTypedSection = sectionName === 'entity' || sectionName === 'relation';
+  const cardFields = SectionCardFieldMap[sectionName];
 
   const currentFields = useWatch({
     control: form.control,
@@ -40,10 +41,13 @@ export function SectionFieldGrid({
         return (
           <FieldCard
             key={field.id}
-            title={isTypedSection ? fieldValue.type : undefined}
-            field={fieldValue}
-            onEdit={() => onEditField(index)}
-            onDelete={() => remove(index)}
+            index={index}
+            title={cardFields ? fieldValue[cardFields.title] : undefined}
+            description={
+              cardFields ? fieldValue[cardFields.description] : undefined
+            }
+            onEdit={onEditField}
+            onDelete={remove}
           />
         );
       })}
