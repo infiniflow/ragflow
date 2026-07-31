@@ -937,7 +937,9 @@ class MinerUParser(RAGFlowPdfParser):
                 case MinerUContentType.TEXT:
                     section = output.get("text", "")
                 case MinerUContentType.TABLE:
-                    section = self._build_table_text(output)
+                    # Enabled tables are routed to media blocks above; sanitize
+                    # only the table-as-text fallback used when tables are disabled.
+                    section = self._sanitize_section_text(self._build_table_text(output))
                 case MinerUContentType.IMAGE:
                     section = "\n".join(self._build_image_texts(output))
                 case MinerUContentType.EQUATION:
@@ -949,9 +951,9 @@ class MinerUParser(RAGFlowPdfParser):
                     list_items = output.get("list_items")
                     section = "\n".join(self._normalize_text_lines(list_items if isinstance(list_items, list) else None))
 
-            section = self._sanitize_section_text(str(section or ""))
+            section = str(section or "")
             if not section:
-                self.logger.debug("[MinerU] Skip section after sanitization: type=%s", output.get("type"))
+                self.logger.debug("[MinerU] Skip empty section after normalization: type=%s", output.get("type"))
                 continue
 
             position_tag = self._line_tag(output) if "page_idx" in output and "bbox" in output else ""

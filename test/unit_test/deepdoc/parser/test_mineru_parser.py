@@ -52,13 +52,15 @@ def test_sanitize_section_text_removes_escaped_html_tags(monkeypatch):
     assert "</td>" not in sanitized
 
 
-def test_transfer_to_sections_logs_sections_dropped_after_sanitization(monkeypatch, caplog):
+def test_transfer_to_sections_logs_tables_dropped_after_sanitization(monkeypatch, caplog):
     module = _load_mineru_parser(monkeypatch)
     parser = module.MinerUParser()
     outputs = [
         {
-            "type": module.MinerUContentType.TEXT,
-            "text": "&lt;td&gt;&lt;/td&gt;",
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "&lt;td&gt;&lt;/td&gt;",
+            "table_caption": [],
+            "table_footnote": [],
             "page_idx": 0,
             "bbox": (0, 0, 1, 1),
         }
@@ -68,8 +70,42 @@ def test_transfer_to_sections_logs_sections_dropped_after_sanitization(monkeypat
         sections = parser._transfer_to_sections(outputs, parse_method="pipeline")
 
     assert sections == []
-    assert "Skip section after sanitization" in caplog.text
-    assert f"type={module.MinerUContentType.TEXT}" in caplog.text
+    assert "Skip empty section after normalization" in caplog.text
+    assert f"type={module.MinerUContentType.TABLE}" in caplog.text
+
+
+def test_transfer_to_sections_preserves_non_table_angle_brackets_and_entities(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.TEXT,
+            "text": "Use List<String> and a<b. 5 &lt; 6",
+        },
+        {
+            "type": module.MinerUContentType.CODE,
+            "code_body": "template<typename T> void f();",
+            "code_caption": [],
+        },
+        {
+            "type": module.MinerUContentType.EQUATION,
+            "text": "x<T and 5 &lt; 6",
+        },
+        {
+            "type": module.MinerUContentType.LIST,
+            "list_items": ["List<String>", "5 &lt; 6"],
+        },
+    ]
+    expected_texts = [
+        "Use List<String> and a<b. 5 &lt; 6",
+        "template<typename T> void f();",
+        "x<T and 5 &lt; 6",
+        "List<String>\n5 &lt; 6",
+    ]
+
+    for table_enable in (False, True):
+        sections = parser._transfer_to_sections(outputs, parse_method="raw", table_enable=table_enable)
+        assert [section[0] for section in sections] == expected_texts
 
 
 def test_transfer_to_sections_skips_page_chrome_without_duplicating_text(monkeypatch):
