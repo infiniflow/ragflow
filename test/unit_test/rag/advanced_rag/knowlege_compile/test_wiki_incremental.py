@@ -608,6 +608,79 @@ async def test_mode_a_incremental_creates_low_claim_concept():
 
 
 @pytest.mark.asyncio
+async def test_mode_a_compiles_entity_and_concept_pages():
+    """Mode A compiles BOTH entity and concept pages (no PLAN grouping)."""
+    from unittest.mock import AsyncMock, patch
+
+    # One concept delta (3+ claims to pass first-build depth check) + one entity delta
+    deltas = [
+        {
+            "entity_name": "smartphone industry",
+            "entity_type": "concept",
+            "action": "create",
+            "additions": [
+                {"statement": "Concept claim 1", "source_doc_id": "d1"},
+                {"statement": "Concept claim 2", "source_doc_id": "d1"},
+                {"statement": "Concept claim 3", "source_doc_id": "d2"},
+            ],
+            "claims": [
+                {"statement": "Concept claim 1", "source_doc_id": "d1"},
+                {"statement": "Concept claim 2", "source_doc_id": "d1"},
+                {"statement": "Concept claim 3", "source_doc_id": "d2"},
+            ],
+            "retractions": [],
+            "has_delta": True,
+        },
+        {
+            "entity_name": "Apple Inc.",
+            "entity_type": "org",
+            "action": "create",
+            "additions": [{"statement": "Entity claim", "source_doc_id": "d1"}],
+            "claims": [{"statement": "Entity claim", "source_doc_id": "d1"}],
+            "retractions": [],
+            "has_delta": True,
+        },
+    ]
+
+    with (
+        patch(
+            "rag.advanced_rag.knowlege_compile.wiki_incremental._wiki_mode_a_refine",
+            new_callable=AsyncMock,
+            return_value={"page_id": "x"},
+        ) as mock_refine,
+        patch(
+            "rag.advanced_rag.knowlege_compile.wiki_incremental._wiki_update_doc_page_source",
+            new_callable=AsyncMock,
+        ),
+    ):
+        await _wiki._wiki_mode_a_run(
+            deltas=deltas,
+            existing_pages={},
+            chat_mdl=MockChatModel(),
+            embd_mdl=MockEmbeddingModel(),
+            tenant_id="t1",
+            kb_id="kb1",
+            incremental=False,  # first build — concept depth check applies, entity always created
+            canonical_claims={
+                "smartphone industry": [{"statement": "Concept claim 1", "source_doc_id": "d1"}],
+                "Apple Inc.": [{"statement": "Entity claim", "source_doc_id": "d1"}],
+            },
+        )
+
+    # Both pages should be refined (1 concept + 1 entity)
+    assert mock_refine.call_count == 2, f"Expected 2 REFINE calls, got {mock_refine.call_count}"
+
+    # Verify page_id prefixes: one concept/ and one entity/
+    prefixes = set()
+    for args in mock_refine.call_args_list:
+        kwargs = args[1]
+        prefixes.add(kwargs["page_id"].split("/")[0])
+        assert kwargs["page_type_kwd"] in ("concept", "entity")
+    assert "concept" in prefixes
+    assert "entity" in prefixes
+
+
+@pytest.mark.asyncio
 async def test_has_any_pages_detects_existing_pages():
     """_wiki_has_any_pages returns True when wiki_page rows exist."""
     doc_store = make_doc_store(

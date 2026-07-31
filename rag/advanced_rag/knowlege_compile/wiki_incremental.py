@@ -1860,10 +1860,10 @@ async def wiki_compile_incremental(
             doc_to_entities=doc_to_entities,
         )
     else:
-        # Mode A: only concepts become pages, filter deltas
-        concept_deltas = [d for d in deltas if d.get("entity_type") == "concept"]
+        # Mode A: every entity AND concept becomes a page (no PLAN grouping).
+        # Each canonical entity/concept compiles to its own wiki page.
         summary = await _wiki_mode_a_run(
-            deltas=concept_deltas,
+            deltas=deltas,
             existing_pages=existing_pages,
             chat_mdl=chat_mdl,
             embd_mdl=embd_mdl,
@@ -1904,13 +1904,13 @@ async def _wiki_mode_a_run(
     canonical_claims: dict[str, list[dict]] | None = None,
     doc_to_entities: dict[str, list[str]] | None = None,
 ) -> dict:
-    """Mode A: concept→page. Only entity_type=concept deltas produce pages.
+    """Mode A: every entity AND concept compiles to its own wiki page.
 
+    No PLAN grouping — each canonical entity/concept is a single page.
     Args:
-        deltas: Already filtered to entity_type="concept" (done in caller)
-        canonical_claims: Canonical entity name → claims, for enriching concept
-            page evidence via shared source_chunk_id.
-        doc_to_entities: doc_id → [canonical entity names] for doc_page_source.
+        deltas: All entity/concept deltas (entity_type retained in each).
+        canonical_claims: Canonical name → claims, for enriching page evidence.
+        doc_to_entities: doc_id → [canonical names] for doc_page_source.
     """
     summary = {"pages_created": 0, "pages_modified": 0, "pages_deleted": 0, "errors": []}
 
@@ -1921,28 +1921,28 @@ async def _wiki_mode_a_run(
             except Exception:
                 pass
 
-    # Map concept names to existing page IDs
-    concept_to_page: dict[str, str] = {}
+    # Map names to existing page IDs
+    name_to_page: dict[str, str] = {}
     for pid, page in existing_pages.items():
         names = page.get("entity_names_kwd", [])
         if isinstance(names, str):
             names = json.loads(names) if names else []
         for n in names:
-            concept_to_page[n] = pid
+            name_to_page[n] = pid
 
-    # Build concept-level deltas. Each concept becomes one page.
-    # Non-concept entities are NOT in deltas (filtered by caller), but
-    # if canonical_map is provided, their claims enrich concept pages via
-    # shared source_chunk_id.
-    concept_deltas: dict[str, dict] = {}
+    # Build page-level deltas. Each entity/concept becomes one page.
+    page_deltas: dict[str, dict] = {}
     for d in deltas:
         name = d.get("entity_name", "")
         if not name:
             continue
-        page_id = concept_to_page.get(name) or _wiki_derive_page_id(name)
+        entity_type = d.get("entity_type", "entity")
+        # Derive page_id with type-appropriate prefix (concept/ vs entity/)
+        prefix = "concept" if entity_type == "concept" else "entity"
+        page_id = name_to_page.get(name) or _wiki_derive_page_id(name, prefix=prefix)
 
-        if page_id not in concept_deltas:
-            concept_deltas[page_id] = {
+        if page_id not in page_deltas:
+            page_deltas[page_id] = {
                 "page_id": page_id,
                 "page_title": name,
                 "existing_page": existing_pages.get(page_id),
@@ -1951,7 +1951,7 @@ async def _wiki_mode_a_run(
                 "claims": [],
                 "source_chunks": [],
             }
-        entry = concept_deltas[page_id]
+        entry = page_deltas[page_id]
         entry["additions"].extend(d.get("additions", []))
         entry["retractions"].extend(d.get("retractions", []))
         entry["claims"].extend(d.get("claims", []))
@@ -1972,9 +1972,9 @@ async def _wiki_mode_a_run(
         elif entry.get("action") != "delete":
             entry["action"] = d.get("action")
 
-    # Enrich concept pages with entity claims that share source_chunk_ids.
+    # Enrich pages with related claims that share source_chunk_ids.
     # Build a chunk_id → first-claim-text index from canonical_claims
-    # (non-concept claims loaded on-demand after matching).
+    # (claims loaded on-demand after matching).
     if canonical_claims:
         chunk_claims: dict[str, list[str]] = {}
         for _cname, claims in canonical_claims.items():
@@ -1983,32 +1983,36 @@ async def _wiki_mode_a_run(
                 if cid:
                     chunk_claims.setdefault(cid, []).append(claim.get("statement", claim.get("text", "")))
 
-        for _pid, entry in concept_deltas.items():
-            concept_chunk_ids = {c.get("id") for c in entry.get("source_chunks", []) if c.get("id")}
-            if not concept_chunk_ids:
+        for _pid, entry in page_deltas.items():
+            page_chunk_ids = {c.get("id") for c in entry.get("source_chunks", []) if c.get("id")}
+            if not page_chunk_ids:
                 continue
-            for cid in concept_chunk_ids:
+            for cid in page_chunk_ids:
                 texts = chunk_claims.get(cid)
                 if texts:
                     # Append one source-chunk entry per chunk id
                     entry["source_chunks"].append({"id": cid, "text": texts[0]})
 
-    # Concept depth check: thin concepts don't create pages.
+    # Concept depth check: thin CONCEPTS don't create pages (avoids dictionary
+    # entries). Entities always create pages regardless of depth.
     # ONLY on the very first full build (non-incremental), when concept claims
     # are complete.  During incremental builds the deltas carry only the
     # changed claims, so a threshold check would wrongly reject every new
     # concept — new concepts in incremental mode are created regardless.
     if not incremental and not existing_pages:
-        deep_concepts = _wiki_decide_concept_pages(
-            [
-                {"term": entry["page_title"], "claims": entry["claims"], "source_doc_ids": list({c.get("source_doc_id") for c in entry["claims"] if c.get("source_doc_id")})}
-                for entry in concept_deltas.values()
-            ]
-        )
-        deep_ids = {p["page_id"] for p in deep_concepts}
-        concept_deltas = {pid: entry for pid, entry in concept_deltas.items() if pid in deep_ids}
-        if not concept_deltas:
-            _progress("No concepts pass depth threshold. Skipping.")
+        concept_pages = [entry for entry in page_deltas.values() if entry.get("page_id", "").startswith("concept/")]
+        if concept_pages:
+            deep_concepts = _wiki_decide_concept_pages(
+                [
+                    {"term": entry["page_title"], "claims": entry["claims"], "source_doc_ids": list({c.get("source_doc_id") for c in entry["claims"] if c.get("source_doc_id")})}
+                    for entry in concept_pages
+                ]
+            )
+            deep_ids = {p["page_id"] for p in deep_concepts}
+            # Keep all entity pages + only deep concepts
+            page_deltas = {pid: entry for pid, entry in page_deltas.items() if not pid.startswith("concept/") or pid in deep_ids}
+        if not page_deltas:
+            _progress("No pages to compile. Skipping.")
             return summary
 
     all_page_ids = list(existing_pages.keys())
@@ -2019,13 +2023,14 @@ async def _wiki_mode_a_run(
         async with sem:
             try:
                 existing = entry["existing_page"]
+                page_type = "concept" if pid.startswith("concept/") else "entity"
                 if entry.get("action") == "delete":
                     await _wiki_mode_a_refine(
                         mode="delete",
                         page_id=pid,
                         page_title=entry["page_title"],
                         existing_page=existing,
-                        page_type_kwd="concept",
+                        page_type_kwd=page_type,
                         additions=None,
                         retractions=None,
                         source_chunks=[],
@@ -2055,7 +2060,7 @@ async def _wiki_mode_a_run(
                     page_id=pid,
                     page_title=entry["page_title"],
                     existing_page=existing,
-                    page_type_kwd="concept",
+                    page_type_kwd=page_type,
                     additions=entry["additions"],
                     retractions=entry["retractions"],
                     source_chunks=entry["source_chunks"],
@@ -2083,7 +2088,7 @@ async def _wiki_mode_a_run(
                 logging.exception("wiki A: REFINE failed for %s", pid)
                 summary["errors"].append(f"REFINE_FAILED:{pid}")
 
-    tasks = [_refine_one(pid, entry) for pid, entry in concept_deltas.items()]
+    tasks = [_refine_one(pid, entry) for pid, entry in page_deltas.items()]
     if tasks:
         _progress(f"REFINE A: {len(tasks)} pages (max {WIKI_REFINE_MAX_CONCURRENT} concurrent) ...")
         await asyncio.gather(*tasks)
