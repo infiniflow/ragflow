@@ -24,9 +24,10 @@ import numpy as np
 from common import settings
 from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr
 from common.misc_utils import thread_pool_exec
+from rag.prompts.generator import message_fit_in
 from rag.nlp import search
 
-from ._common import stable_row_id as _stable_row_id
+from ._common import knowledge_compile_gen_conf as _knowledge_compile_gen_conf, stable_row_id as _stable_row_id
 
 
 # ----- REFINE concurrency control -----
@@ -49,6 +50,13 @@ ENTITY_PAIRWISE_BLOCK_SIZE = 1024  # blockwise embedding matrix block size
 
 # Number of concurrent KNN queries for entity matching
 ENTITY_MATCH_KNN_CONCURRENT = 20
+
+# Thematic topic grouping. No-plan pages have no PLAN step, so pages are grouped
+# post-hoc by matching them to the thematic topic labels the MAP phase extracted.
+WIKI_TOPIC_MATCH_THRESHOLD = 0.50  # min cosine for a page to attach to a topic
+WIKI_TOPIC_MAX_LABELS = 200  # cap on candidate topic labels
+WIKI_TOPIC_FALLBACK = "General"  # bucket for pages that match no topic
+WIKI_TOPIC_UPDATE_CONCURRENT = 16  # concurrent page topic_kwd updates
 
 # Page Router thresholds (kept as code constants — not exposed in YAML)
 PAGE_ROUTER_UPDATE_THRESHOLD = 0.80
@@ -89,6 +97,34 @@ def _entity_to_query_text(entity: dict) -> str:
             entity.get("definition_excerpt") or entity.get("description") or entity.get("statement", ""),
         ][:2]
     )
+
+
+def _strip_think(text: str) -> str:
+    if not isinstance(text, str):
+        return ""
+    text = text.strip()
+    if text.startswith("</think>"):
+        return text.split("</think>", 1)[-1].strip()
+    return text
+
+
+async def _chat_mdl_ask(chat_mdl, system_prompt: str, user_prompt: str, temperature: float = 0.0) -> str:
+    msg = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
+    ]
+    try:
+        _, msg = message_fit_in(msg, chat_mdl.max_length)
+    except Exception:
+        logging.exception("wiki incremental: message_fit_in failed; sending untrimmed")
+    raw = await chat_mdl.async_chat(
+        msg[0]["content"],
+        msg[1:],
+        _knowledge_compile_gen_conf(chat_mdl, {"temperature": temperature}),
+    )
+    if isinstance(raw, tuple):
+        raw = raw[0]
+    return _strip_think(raw or "")
 
 
 def _wiki_should_re_synthesize(
@@ -658,9 +694,7 @@ async def _wiki_confirm_batch(
             "where true = SAME entity, false = DIFFERENT.\n\n" + "\n".join(prompt_lines)
         )
         try:
-            from rag.advanced_rag.knowlege_compile.structure import chat_mdl_ask
-
-            resp = await chat_mdl_ask(chat_mdl, "You are a KB dedup assistant.", prompt)
+            resp = await _chat_mdl_ask(chat_mdl, "You are a KB dedup assistant.", prompt)
             if resp:
                 resp = resp.strip()
                 # Extract JSON array
@@ -911,6 +945,7 @@ async def _wiki_update_doc_page_source(
             break
 
     doc = {
+        "id": _stable_row_id(WIKI_DOC_PAGE_SOURCE_COMPILE_KWD, kb_id, doc_id),
         "doc_id": doc_id,
         "kb_id": kb_id,
         "page_ids": json.dumps(page_ids, ensure_ascii=False),
@@ -1066,9 +1101,7 @@ async def _wiki_mode_a_refine(
         )
 
     # Call LLM
-    from rag.advanced_rag.knowlege_compile.structure import chat_mdl_ask
-
-    response = await chat_mdl_ask(
+    response = await _chat_mdl_ask(
         chat_mdl,
         system_prompt,
         user_prompt,
@@ -1107,6 +1140,7 @@ async def _wiki_mode_a_refine(
     vec_dim = int(emb_arr.shape[0]) if emb_arr.ndim >= 1 and emb_arr.shape[0] else 768
 
     page = {
+        "id": _stable_row_id(WIKI_PAGE_COMPILE_KWD, kb_id, page_id),
         "slug_kwd": page_id,
         "title_kwd": page_title,
         "md_with_weight": content,
@@ -1588,6 +1622,223 @@ async def _wiki_finalize(
             )
 
 
+def _wiki_normalize_rows(matrix):
+    """L2-normalize the rows of a 2-D float matrix (safe on zero rows)."""
+    if matrix.ndim != 2:
+        return matrix
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    return np.divide(matrix, norms, out=np.zeros_like(matrix), where=norms > 0)
+
+
+async def _wiki_load_map_topics(index, kb_id) -> list[str]:
+    """Collect distinct thematic topic labels from persisted wiki_map_extract rows.
+
+    Lets topic grouping run even when the current invocation carried no fresh MAP
+    output (e.g. a no-op re-run over already-built pages). Bounded scan.
+    """
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    labels: list[str] = []
+    seen: set[str] = set()
+    offset, page_size, scanned = 0, 500, 0
+    while scanned < 5000 and len(labels) < WIKI_TOPIC_MAX_LABELS:
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["content_with_weight"],
+                [],
+                {"compile_kwd": ["wiki_map_extract"]},
+                [],
+                OrderByExpr(),
+                offset,
+                page_size,
+                index,
+                [kb_id],
+            )
+            rows = settings.docStoreConn.get_fields(res, ["content_with_weight"]) or {}
+        except Exception:
+            logging.exception("wiki topics: map-topic load failed for kb=%s", kb_id)
+            break
+        if not rows:
+            break
+        for row in rows.values():
+            raw = row.get("content_with_weight")
+            if not isinstance(raw, str) or not raw:
+                continue
+            try:
+                extract = json.loads(raw)
+            except Exception:
+                continue
+            for t in (extract.get("topics") or []) if isinstance(extract, dict) else []:
+                if isinstance(t, str):
+                    t = t.strip()
+                    key = t.lower()
+                    if t and key != WIKI_TOPIC_FALLBACK.lower() and key not in seen:
+                        seen.add(key)
+                        labels.append(t)
+                        if len(labels) >= WIKI_TOPIC_MAX_LABELS:
+                            break
+        scanned += len(rows)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return labels
+
+
+async def _wiki_assign_topics(
+    embd_mdl,
+    tenant_id: str,
+    kb_id: str,
+    map_topics: list[str] | None = None,
+    callback: Callable | None = None,
+) -> None:
+    """Group concept/entity wiki pages under thematic topics (best-effort).
+
+    No-plan pages have no PLAN grouping step, so pages are grouped post-hoc: each
+    page is matched (embedding cosine) to the thematic topic labels the MAP phase
+    extracted (accumulated with topics already on record so labels persist across
+    runs). The best match above ``WIKI_TOPIC_MATCH_THRESHOLD`` wins, else the page
+    lands in the ``WIKI_TOPIC_FALLBACK`` bucket. Every page's ``topic_kwd`` is
+    stamped, so ``/artifacts_topics`` (which aggregates concept/entity pages by
+    ``topic_kwd``) and the topic-filtered page list resolve. No landing rows are
+    written — the topics API falls back to the raw topic name for title/slug.
+    Any failure leaves the pages intact (just untopiced) and never raises.
+    """
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    def _progress(msg: str) -> None:
+        if callback:
+            try:
+                callback(0.97, f"Topics: {msg}")
+            except Exception:
+                pass
+
+    try:
+        index = search.index_name(tenant_id)
+        if not settings.docStoreConn.index_exist(index, kb_id):
+            return
+
+        # 1. Load all concept/entity pages.
+        page_fields = ["slug_kwd", "title_kwd", "summary_with_weight", "source_doc_ids", "topic_kwd"]
+        pages: list[dict] = []
+        offset, page_size = 0, 1000
+        while True:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                page_fields,
+                [],
+                {"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "page_type_kwd": ["concept", "entity"]},
+                [],
+                OrderByExpr(),
+                offset,
+                page_size,
+                index,
+                [kb_id],
+            )
+            rows = settings.docStoreConn.get_fields(res, page_fields) or {}
+            for row in rows.values():
+                if row.get("slug_kwd"):
+                    pages.append(row)
+            if len(rows) < page_size:
+                break
+            offset += page_size
+        if not pages:
+            return
+
+        # 2. Candidate labels: this run's MAP topics + topics already stamped on
+        #    the pages from earlier runs (so labels accumulate across runs).
+        existing_labels: list[str] = []
+        for p in pages:
+            t = p.get("topic_kwd")
+            if isinstance(t, str) and t.strip() and t.strip().lower() != WIKI_TOPIC_FALLBACK.lower():
+                existing_labels.append(t.strip())
+
+        labels: list[str] = []
+        seen: set[str] = set()
+        for t in list(map_topics or []) + existing_labels:
+            if not isinstance(t, str):
+                continue
+            t = t.strip()
+            key = t.lower()
+            if t and key != WIKI_TOPIC_FALLBACK.lower() and key not in seen:
+                seen.add(key)
+                labels.append(t)
+            if len(labels) >= WIKI_TOPIC_MAX_LABELS:
+                break
+
+        # Backfill labels from the persisted MAP extracts when this run carried
+        # none (e.g. a no-op re-run over pages built before topic grouping).
+        if not labels:
+            labels = await _wiki_load_map_topics(index, kb_id)
+
+        # 3. Assign each page to its nearest topic (or the fallback bucket).
+        assignments: dict[str, str] = {}
+        topic_docs: dict[str, set] = {}
+
+        def _record(slug: str, topic: str, doc_ids) -> None:
+            assignments[slug] = topic
+            bucket = topic_docs.setdefault(topic, set())
+            raw = doc_ids
+            if isinstance(raw, str):
+                try:
+                    raw = json.loads(raw)
+                except Exception:
+                    raw = [raw]
+            for d in raw or []:
+                if isinstance(d, str) and d:
+                    bucket.add(d)
+
+        topic_matrix = None
+        if labels:
+            tvecs, _ = await thread_pool_exec(embd_mdl.encode, labels)
+            topic_matrix = _wiki_normalize_rows(np.asarray(tvecs, dtype=np.float32))
+        if topic_matrix is not None and topic_matrix.ndim == 2 and topic_matrix.shape[0] == len(labels):
+            page_texts = [f"{p.get('title_kwd') or ''} {p.get('summary_with_weight') or ''}".strip() or (p.get("slug_kwd") or "") for p in pages]
+            pvecs, _ = await thread_pool_exec(embd_mdl.encode, page_texts)
+            page_matrix = _wiki_normalize_rows(np.asarray(pvecs, dtype=np.float32))
+            if page_matrix.ndim == 2 and page_matrix.shape[0] == len(pages):
+                sims = page_matrix @ topic_matrix.T
+                best = np.argmax(sims, axis=1)
+                for i, p in enumerate(pages):
+                    score = float(sims[i, best[i]])
+                    topic = labels[int(best[i])] if score >= WIKI_TOPIC_MATCH_THRESHOLD else WIKI_TOPIC_FALLBACK
+                    _record(p["slug_kwd"], topic, p.get("source_doc_ids"))
+        if not assignments:
+            # No usable embeddings/labels → single fallback topic keeps nav working.
+            for p in pages:
+                _record(p["slug_kwd"], WIKI_TOPIC_FALLBACK, p.get("source_doc_ids"))
+
+        by_topic: dict[str, list[str]] = {}
+        for slug, topic in assignments.items():
+            by_topic.setdefault(topic, []).append(slug)
+
+        # 4. Stamp topic_kwd on each page (bounded concurrency).
+        sem = asyncio.Semaphore(WIKI_TOPIC_UPDATE_CONCURRENT)
+
+        async def _stamp(slug: str, topic: str) -> None:
+            async with sem:
+                try:
+                    await thread_pool_exec(
+                        settings.docStoreConn.update,
+                        {"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "slug_kwd": [slug]},
+                        {"topic_kwd": topic},
+                        index,
+                        kb_id,
+                    )
+                except Exception:
+                    logging.exception("wiki topics: topic_kwd update failed for slug=%s", slug)
+
+        await asyncio.gather(*[_stamp(slug, topic) for slug, topic in assignments.items()])
+
+        # No landing rows are written: list_wiki_topics derives topics from the
+        # pages' topic_kwd aggregation and falls back to the raw topic name for
+        # title/slug, so page_type="topic" rows would only pollute the page list.
+        _ = topic_docs  # provenance retained for a future topic-page feature
+        _progress(f"grouped {len(pages)} page(s) into {len(by_topic)} topic(s).")
+    except Exception:
+        logging.exception("wiki topics: assignment failed for kb=%s", kb_id)
+
+
 # ----- Main entry point -----------------------------------------------------
 
 
@@ -1706,6 +1957,19 @@ async def wiki_compile_incremental(
     # (mirrors old-mode dedup); full claim text is loaded per-affected-name
     # after matching, so peak memory stays bounded.
     raw_entities, claim_index = _extract_raw_entities(map_results)
+
+    # Collect the thematic topic labels the MAP phase extracted, for the Phase 6
+    # topic grouping — done here while map_results is still alive.
+    map_topics: list[str] = []
+    _seen_topics: set[str] = set()
+    for _mr in map_results:
+        for _t in _mr.get("topics") or []:
+            if isinstance(_t, str):
+                _t = _t.strip()
+                _k = _t.lower()
+                if _t and _k not in _seen_topics:
+                    _seen_topics.add(_k)
+                    map_topics.append(_t)
 
     # Release the heavy raw MAP payload as early as possible.  All metadata is
     # now in raw_entities and full claim text in claim_index; keeping
@@ -1839,6 +2103,10 @@ async def wiki_compile_incremental(
 
     if not deltas:
         _progress("REDUCE: no changes detected.")
+        # Still (re)group existing pages under topics — covers pages that were
+        # built before topic grouping existed, or a run where topics changed but
+        # no page's claims did.
+        await _wiki_assign_topics(embd_mdl, tenant_id, kb_id, map_topics, callback)
         return summary
 
     # ----- Phase 4: Mode-specific dispatch -----
@@ -1890,6 +2158,10 @@ async def wiki_compile_incremental(
     except Exception:
         logging.exception("wiki: FINALIZE failed for kb=%s", kb_id)
         summary["errors"].append("FAILED_FINALIZE")
+
+    # ----- Phase 6: Thematic topic grouping -----
+    _progress("Grouping pages under topics ...")
+    await _wiki_assign_topics(embd_mdl, tenant_id, kb_id, map_topics, callback)
 
     return summary
 
@@ -2338,6 +2610,7 @@ async def _wiki_update_plan_group(
     }
 
     doc = {
+        "id": _stable_row_id(WIKI_PLAN_GROUP_COMPILE_KWD, kb_id, page_id),
         "kb_id": kb_id,
         "page_id": page_id,
         "entity_names": json.dumps(entity_names, ensure_ascii=False),
