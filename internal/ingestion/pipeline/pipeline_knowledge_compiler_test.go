@@ -24,6 +24,10 @@ import (
 	// init hook fires and the component name referenced by the template is
 	// resolvable in the default runtime factory.
 	"ragflow/internal/agent/runtime"
+	// Blank-import the parent component package so its init registers the
+	// File/Parser/TokenChunker components this test's template references.
+	_ "ragflow/internal/ingestion/component"
+	_ "ragflow/internal/ingestion/component/chunker"
 	_ "ragflow/internal/ingestion/component/knowledge_compiler"
 )
 

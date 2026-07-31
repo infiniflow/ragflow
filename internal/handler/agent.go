@@ -29,12 +29,15 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/ingestion/task"
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
 	"ragflow/internal/utility"
@@ -91,6 +94,28 @@ type AgentHandler struct {
 	// tenant-only authorization (i.e. cannot verify the doc, so the
 	// check is skipped — same shape as the pre-port behaviour).
 	documentService documentAccessChecker
+	// redisGet fetches a raw string from Redis. Defaults to the global
+	// client (redis.Get) so production behaviour is unchanged; tests inject
+	// a miniredis-backed getter to exercise GetAgentLogs without a live
+	// Redis (mirrors the newExecutor injection pattern).
+	redisGet func(key string) (string, error)
+	// redisStore writes the debug-run log array. Defaults to the global
+	// client (redis.Get, which satisfies task.DebugLogStore); tests inject a
+	// miniredis-backed writer so runCanvasPipelineDebug can be exercised without a
+	// live Redis.
+	redisStore task.DebugLogStore
+	// newExecutor builds the pipeline executor for a debug run. Defaults to
+	// task.NewPipelineExecutor; tests inject a fake so the debug path can be
+	// driven without a real canvas/DSL.
+	newExecutor func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error)
+}
+
+// debugExecutor is the minimal executor surface runCanvasPipelineDebug needs. It is an
+// interface (not *task.PipelineExecutor) so tests can substitute a fake that
+// emits progress through the attached sink. *task.PipelineExecutor satisfies it.
+type debugExecutor interface {
+	WithProgressSink(sink pipelinepkg.ProgressSink) *task.PipelineExecutor
+	Execute(ctx context.Context) (*task.PipelineResult, error)
 }
 
 // WithDocumentService injects the document service used by
@@ -110,7 +135,35 @@ func NewAgentHandler(agentService *service.AgentService, fileService *file.FileS
 		chatRunner:   agentService,
 		fileService:  fileService,
 		loader:       agentService,
+		redisGet:     func(key string) (string, error) { return redis.Get().Get(key) },
+		redisStore:   redis.Get(),
+		newExecutor: func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {
+			return task.NewPipelineExecutor(taskCtx, canvasID, docBulkSize)
+		},
 	}
+}
+
+// WithRedisGetter overrides the Redis string getter used by GetAgentLogs.
+// Tests pass a miniredis-backed getter so the debug-log polling endpoint can
+// be exercised end-to-end without a live Redis.
+func (h *AgentHandler) WithRedisGetter(f func(key string) (string, error)) *AgentHandler {
+	h.redisGet = f
+	return h
+}
+
+// WithRedisStore overrides the Redis writer used by runCanvasPipelineDebug to persist
+// the debug-run log. Tests pass a miniredis-backed writer.
+func (h *AgentHandler) WithRedisStore(s task.DebugLogStore) *AgentHandler {
+	h.redisStore = s
+	return h
+}
+
+// WithNewExecutor overrides the pipeline executor factory used by
+// runCanvasPipelineDebug. Tests inject a fake that emits progress through the
+// attached sink without a real canvas/DSL.
+func (h *AgentHandler) WithNewExecutor(f func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error)) *AgentHandler {
+	h.newExecutor = f
+	return h
 }
 
 // ListAgents lists agent canvases for the current user.
@@ -484,6 +537,127 @@ func readUserInput(c *gin.Context) string {
 		}
 	}
 	return c.Query("user_input")
+}
+
+// runCanvasPipelineDebug runs a canvas in pipeline dry-run (debug) mode: it builds
+// an in-memory debug TaskContext and executes the pipeline synchronously,
+// returning the produced chunks. The run is fully synchronous: the complete
+// debug log (including the terminal END marker) is flushed to Redis BEFORE
+// this method returns, so the message_id it yields is for *replay* —
+// re-fetching the log after a page refresh or from a shared link — not for
+// incremental streaming; the front-end's poll therefore receives a finished
+// log on the first request.
+//
+// It performs no persistence (no MinIO upload, index insert, or pipeline_log)
+// because the debug context carries no KB (KB.ID == ""), which is the single
+// debug signal used across the ingestion pipeline: the tokenizer skips
+// embedding and the executor skips the persist stage. kb_id == "" occurs ONLY
+// in debug mode; production ingestion always supplies a KB, so this path is
+// never taken in normal operation. Debug takes no kb_id at all: it never
+// resolves an embedder or writes to a KB, and parse/chunk work without it.
+// Callers extract the (fileName, fileData) pair from their own request shape
+// and pass them in.
+func (h *AgentHandler) runCanvasPipelineDebug(ctx context.Context, user *entity.User,
+	canvasID, fileName string, fileData []byte) (*task.PipelineResult, error) {
+	// messageID is the polling key the front-end reads from the run response
+	// (see web/src/pages/agent/hooks/use-run-dataflow.ts:40) to fetch the debug
+	// log. It is generated up-front so the response always carries a stable key.
+	messageID := uuid.New().String()
+
+	// Force an empty KB: a debug context has no knowledgebase, so kb_id == ""
+	// holds and the debug signal is unambiguous.
+	taskCtx := task.NewDebugTaskContext(user.ID, canvasID, fileName, fileData)
+
+	exec, err := h.newExecutor(taskCtx, canvasID, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	// Attach a sink that records component progress into the
+	// [{component_id, trace}] array the front-end polls for.
+	sink := task.NewDebugLogSink(canvasID, messageID, h.redisStore)
+	exec.WithProgressSink(sink)
+
+	result, runErr := exec.Execute(ctx)
+	// Flush even on error so the front-end can poll the failure log; the END
+	// marker carries the error and keeps the run detectable as finished.
+	sink.Flush(ctx, runErr)
+	if result == nil {
+		// The executor may return (nil, err) on failure; synthesize a result so
+		// the polling key survives to the response and the front-end can still
+		// reach the failure log written just above.
+		result = &task.PipelineResult{}
+	}
+	result.MessageID = messageID
+	return result, runErr
+}
+
+// respondWithDebugResult writes the outcome of a dataflow debug run. On a run
+// failure it keeps a non-success code (errors must not be masked as success)
+// but still carries message_id in the error envelope's data, because
+// runCanvasPipelineDebug already flushed the failure log to Redis — the front-end
+// needs that key to poll the failure timeline. On success it returns the
+// message_id (the polling key) together with the produced chunks. Empty chunk
+// slices become `[]` rather than `null` so the response shape stays stable.
+// This is the single wire-shape helper for the chat/completions DataFlow debug
+// entry point, and it matches the contract the front-end expects:
+// `data.data.message_id` drives the log-poll loop and `data.data.chunks`
+// renders the debug output.
+func respondWithDebugResult(c *gin.Context, result *task.PipelineResult, err error) {
+	if err != nil {
+		messageID := ""
+		if result != nil {
+			messageID = result.MessageID
+		}
+		common.ResponseWithCodeData(c, common.CodeServerError, gin.H{"message_id": messageID}, err.Error())
+		return
+	}
+	messageID := ""
+	var chunks []map[string]any
+	if result != nil {
+		messageID = result.MessageID
+		chunks = result.Chunks
+	}
+	if len(chunks) == 0 {
+		chunks = []map[string]any{}
+	}
+	common.SuccessWithData(c, gin.H{"message_id": messageID, "chunks": chunks}, "success")
+}
+
+// extractChatDebugFile pulls the first uploaded file from a chat/completions
+// request into (fileName, bytes) for a dataflow debug run. Unlike a debug
+// multipart upload, chat/completions `files` are storage references
+// (id/name/created_by); the raw bytes are fetched from the per-user downloads
+// bucket via the file service. When no usable file is present it returns a
+// default name and a nil slice so the pipeline can still run file-less.
+func (h *AgentHandler) extractChatDebugFile(ctx context.Context, files [][]map[string]interface{}, user *entity.User) (string, []byte) {
+	if len(files) == 0 {
+		return "debug", nil
+	}
+	fileList := files[0]
+	if len(fileList) == 0 {
+		return "debug", nil
+	}
+	fd := fileList[0]
+	name, _ := fd["name"].(string)
+	id, _ := fd["id"].(string)
+	if id == "" {
+		if name == "" {
+			return "debug", nil
+		}
+		return name, nil
+	}
+	data, err := h.fileService.DownloadAgentFile(ctx, user.ID, id)
+	if err != nil || len(data) == 0 {
+		if name == "" {
+			return "debug", nil
+		}
+		return name, nil
+	}
+	if name == "" {
+		name = "debug"
+	}
+	return name, data
 }
 
 // sanitiseRunEventError passes through the error event payload
@@ -889,7 +1063,16 @@ type agentChatCompletionsRequest struct {
 	Model        string                   `json:"model"`
 	Messages     []map[string]interface{} `json:"messages"`
 	ReturnTrace  bool                     `json:"return_trace"`
-	Files        []map[string]interface{} `json:"files"`
+	// Files carries the uploaded file references for a run. The RAGFlow web
+	// front-end wraps the file list one extra level (a list of per-turn file
+	// lists), so the wire shape is `[[{id, name, ...}]]`. This mirrors the
+	// Python agent_api.py:1611 contract `queue_dataflow(..., files[0], 0)`,
+	// where `files[0]` (the first inner list) is the set of files for this
+	// run. The dataflow debug extractor and the agent run path both unwrap
+	// the outer layer: `Files[0]` reaches the file dicts. The web contract
+	// is 2D, so a plain 1D `[]map[string]interface{}` would fail to decode
+	// and 400 the whole request.
+	Files [][]map[string]interface{} `json:"files"`
 }
 
 // extractLastUserContent returns the content of the last message in
@@ -1028,6 +1211,29 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		return
 	}
 
+	// DataFlow canvas: run a synchronous, side-effect-free debug (dry-run)
+	// and return the parsed chunks inline — reusing this existing
+	// chat/completions endpoint instead of a dedicated dataflow/debug route.
+	// This mirrors the Python agent_api.py:1569 DataFlow branch, which is
+	// reached only on the non-openai, non-session path (openai-compatible
+	// requests return their choices shape above and never enter debug). The
+	// The canvas is loaded only to read its category, and the debug path is
+	// skipped when the loader is absent or the canvas is not a DataFlow. No
+	// kb_id is involved: the debug context always runs KB-less (see
+	// runCanvasPipelineDebug).
+	if h.loader != nil {
+		if cv, lerr := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, req.AgentID); lerr == nil && cv.CanvasCategory == "dataflow_canvas" {
+			fileName, fileData := h.extractChatDebugFile(c.Request.Context(), req.Files, user)
+			if len(fileData) == 0 {
+				common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataflow debug requires an uploaded file")
+				return
+			}
+			result, derr := h.runCanvasPipelineDebug(c.Request.Context(), user, req.AgentID, fileName, fileData)
+			respondWithDebugResult(c, result, derr)
+			return
+		}
+	}
+
 	// Real canvas run — derive userInput from `query` first, then fall
 	// back to the last user message (covers the front-end that posts
 	// running_hint_text without a top-level `query`).
@@ -1052,7 +1258,16 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		req.SessionID = utility.GenerateToken()
 	}
 
-	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput, req.Files)
+	// The web contract wraps `files` one level ([[{...}]]); unwrap the
+	// outer layer so RunAgent receives the inner 1D file list, matching the
+	// Python canvas file component's `kwargs.get("file")[0]` unwrap. When no
+	// files are present (the common agent-chat case) pass nil so RunAgent's
+	// `len(files) > 0` guard sees an empty run.
+	var chatFiles []map[string]interface{}
+	if len(req.Files) > 0 {
+		chatFiles = req.Files[0]
+	}
+	events, err := h.chatRunner.RunAgent(c.Request.Context(), user.ID, req.AgentID, req.SessionID, "", userInput, chatFiles)
 	if err != nil {
 		common.Warn("agent chat completions: RunAgent failed",
 			append([]zap.Field{
@@ -1314,12 +1529,35 @@ func (h *AgentHandler) TestDBConnection(c *gin.Context) {
 	common.SuccessWithData(c, true, "success")
 }
 
+// parseAgentLogs decodes the debug-log payload stored in Redis by the pipeline
+// run. The Python pipeline (rag/flow/pipeline.py callback) writes a JSON
+// *array* ([{component_id, trace:[...]}]) that the front-end's
+// useFetchMessageTrace (web/src/hooks/use-agent-request.ts) requires as
+// response.data. A missing, empty, or corrupt payload collapses to an empty
+// object so the contract from get_agent_logs (api/apps/restful_apis/agent_api.py:1087)
+// — `code == 0` and `data` is a (possibly empty) dict/array — stays satisfied
+// instead of 500ing on bad bytes.
+func parseAgentLogs(payload string) interface{} {
+	if strings.TrimSpace(payload) == "" {
+		return map[string]interface{}{}
+	}
+	var data interface{}
+	if err := json.Unmarshal([]byte(payload), &data); err != nil {
+		return map[string]interface{}{}
+	}
+	return data
+}
+
 // GetAgentLogs GET /api/v1/agents/:canvas_id/logs/:message_id
 //
 // Reads "{agent_id}-{message_id}-logs" from Redis (same key format
-// used by the Python agent API in api/apps/restful_apis/agent_api.py
-// line 920). Missing key returns an empty dict so the test contract
-// `data is dict` and `code == 0` are both satisfied.
+// used by the Python agent API in api/apps/restful_apis/agent_api.py) and
+// returns it as-is. Because runCanvasPipelineDebug flushes the ENTIRE log (including
+// the END marker) before returning the run response, this endpoint returns a
+// completed snapshot on the first poll — it is a replay/fetch of an already
+// finished debug log, not a streaming subscription. Missing key returns an
+// empty dict so the test contract `data is dict` and `code == 0` are both
+// satisfied when nothing has been written yet.
 func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
@@ -1335,10 +1573,10 @@ func (h *AgentHandler) GetAgentLogs(c *gin.Context) {
 	}
 
 	key := fmt.Sprintf("%s-%s-logs", canvasID, messageID)
-	payload, rerr := redis.Get().Get(key)
-	data := map[string]interface{}{}
-	if rerr == nil && payload != "" {
-		_ = json.Unmarshal([]byte(payload), &data)
+	payload, rerr := h.redisGet(key)
+	var data interface{} = map[string]interface{}{}
+	if rerr == nil {
+		data = parseAgentLogs(payload)
 	}
 	common.SuccessWithData(c, data, "success")
 }
