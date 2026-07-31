@@ -111,6 +111,35 @@ def _wiki_should_re_synthesize(
 # ----- Canonical Entity Index CRUD -----------------------------------------
 
 
+async def _wiki_has_any_pages(tenant_id: str, kb_id: str) -> bool:
+    """Return True if the KB has at least one compiled wiki_page row.
+
+    Used to detect whether a build has ever succeeded — if no page exists but
+    MAP rows do, the previous build was interrupted and should be restarted
+    as a full build rather than treated as incremental.
+    """
+    index = search.index_name(tenant_id)
+    try:
+        if not settings.docStoreConn.index_exist(index, kb_id):
+            return False
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["slug_kwd"],
+            [],
+            {"compile_kwd": [WIKI_PAGE_COMPILE_KWD]},
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index,
+            [kb_id],
+        )
+        return bool(settings.docStoreConn.get_fields(res, ["slug_kwd"]))
+    except Exception:
+        logging.exception("wiki: _wiki_has_any_pages failed for kb=%s", kb_id)
+        return False
+
+
 async def _load_canonical_entities(
     tenant_id: str,
     kb_id: str,
@@ -552,7 +581,9 @@ async def _wiki_match_entities(
                     master = unmatched[indices[0]]
                     for idx in indices[1:]:
                         slave = unmatched[idx]
-                        master["claims"].extend(slave["claims"])
+                        # Lightweight entries have no 'claims' field; only
+                        # metadata is aggregated (claim text lives in claim_index
+                        # and is aggregated later via name_resolution).
                         master["claim_count"] += slave["claim_count"]
                         master["source_doc_ids"] = list(set(master["source_doc_ids"]) | set(slave["source_doc_ids"]))
                         master["aliases"] = list(set(master["aliases"] + slave["aliases"] + [slave["name"]]))
@@ -1647,6 +1678,23 @@ async def wiki_compile_incremental(
         _progress("No MAP results found. Skipping wiki compilation.")
         return summary
 
+    # ----- Correct incremental flag for interrupted first builds -----
+    # If the caller believes this is incremental but the KB has NO wiki_page
+    # rows, it means a previous full build was cancelled mid-way, leaving only
+    # half-written wiki_map_extract rows.  Incremental logic relies on existing
+    # pages + doc_page_source to route changes; without any compiled page it
+    # would try to diff against nothing and produce empty output.  In that case
+    # fall back to a full build.
+    if incremental:
+        try:
+            has_pages = await _wiki_has_any_pages(tenant_id, kb_id)
+        except Exception:
+            logging.exception("wiki: failed to check existing pages; assuming first build")
+            has_pages = False
+        if not has_pages:
+            _progress("No compiled wiki pages found; treating as first build (previous build was interrupted).")
+            incremental = False
+
     # ----- Phase 2: Entity Matching -----
     _progress("Entity Matching: deduplicating entities and concepts ...")
 
@@ -1762,11 +1810,19 @@ async def wiki_compile_incremental(
     )
 
     # Build canonical claims ON-DEMAND only for affected names, then release
-    # the full claim_index.  This keeps peak memory bounded by the affected
-    # entity batch rather than the entire KB.
+    # the full claim_index.  claim_index is keyed by RAW entity name (from MAP),
+    # so claims must be aggregated through name_resolution onto the canonical
+    # name.  Otherwise a canonical name that differs from every raw name
+    # (e.g. "Apple Computer" → "Apple Inc.") would resolve to no claims and
+    # every affected entity would be a no-op → empty output.
     canonical_claims: dict[str, list[dict]] = {}
+    for raw_name, claims in claim_index.items():
+        cname = name_resolution.get(raw_name, raw_name)
+        if cname in affected_names:
+            canonical_claims.setdefault(cname, []).extend(claims)
+    # Ensure every affected name has an entry (possibly empty)
     for name in affected_names:
-        canonical_claims[name] = claim_index.get(name, [])
+        canonical_claims.setdefault(name, [])
     del claim_index
 
     deltas = await _wiki_reduce_batch(
@@ -1937,9 +1993,12 @@ async def _wiki_mode_a_run(
                     # Append one source-chunk entry per chunk id
                     entry["source_chunks"].append({"id": cid, "text": texts[0]})
 
-    # Concept depth check: thin concepts don't create pages
-    if not existing_pages:
-        # First build: only concepts passing depth threshold
+    # Concept depth check: thin concepts don't create pages.
+    # ONLY on the very first full build (non-incremental), when concept claims
+    # are complete.  During incremental builds the deltas carry only the
+    # changed claims, so a threshold check would wrongly reject every new
+    # concept — new concepts in incremental mode are created regardless.
+    if not incremental and not existing_pages:
         deep_concepts = _wiki_decide_concept_pages(
             [
                 {"term": entry["page_title"], "claims": entry["claims"], "source_doc_ids": list({c.get("source_doc_id") for c in entry["claims"] if c.get("source_doc_id")})}

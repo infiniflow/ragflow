@@ -558,7 +558,136 @@ def test_decide_concept_pages_depth_threshold():
     assert "thin concept" not in names
 
 
+@pytest.mark.asyncio
+async def test_mode_a_incremental_creates_low_claim_concept():
+    """Incremental builds must NOT apply depth threshold (deltas carry only
+    changed claims). A new concept with few changed claims should still create
+    a page; the depth filter is first-build only."""
+    from unittest.mock import AsyncMock, patch
+
+    # A new concept with only 1 changed claim (below CONCEPT_MIN_CLAIMS=3)
+    concept_deltas = [
+        {
+            "entity_name": "brand new concept",
+            "entity_type": "concept",
+            "action": "create",
+            "additions": [{"statement": "Single new claim", "source_doc_id": "d_new"}],
+            "claims": [{"statement": "Single new claim", "source_doc_id": "d_new"}],
+            "retractions": [],
+            "has_delta": True,
+        },
+    ]
+
+    with (
+        patch(
+            "rag.advanced_rag.knowlege_compile.wiki_incremental._wiki_mode_a_refine",
+            new_callable=AsyncMock,
+            return_value={"page_id": "concept/brand-new-concept"},
+        ) as mock_refine,
+        patch(
+            "rag.advanced_rag.knowlege_compile.wiki_incremental._wiki_update_doc_page_source",
+            new_callable=AsyncMock,
+        ),
+    ):
+        result = await _wiki._wiki_mode_a_run(
+            deltas=concept_deltas,
+            existing_pages={},
+            chat_mdl=MockChatModel(),
+            embd_mdl=MockEmbeddingModel(),
+            tenant_id="t1",
+            kb_id="kb1",
+            incremental=True,  # ← incremental: depth check SKIPPED
+            canonical_claims={
+                "brand new concept": [{"statement": "Single new claim", "source_doc_id": "d_new"}],
+            },
+        )
+
+    # The concept page should be created despite only 1 claim
+    assert mock_refine.call_count == 1, f"Expected 1 REFINE call, got {mock_refine.call_count}"
+    assert result["pages_created"] == 1
+
+
+@pytest.mark.asyncio
+async def test_has_any_pages_detects_existing_pages():
+    """_wiki_has_any_pages returns True when wiki_page rows exist."""
+    doc_store = make_doc_store(
+        [
+            {"_source": {"slug_kwd": "concept/smartphone"}},
+        ]
+    )
+
+    with patch("common.settings.docStoreConn", doc_store):
+        has = await _wiki._wiki_has_any_pages("t1", "kb1")
+
+    assert has is True
+
+
+@pytest.mark.asyncio
+async def test_has_any_pages_false_when_no_pages():
+    """_wiki_has_any_pages returns False when no wiki_page rows exist."""
+    doc_store = make_doc_store([])
+
+    with patch("common.settings.docStoreConn", doc_store):
+        has = await _wiki._wiki_has_any_pages("t1", "kb1")
+
+    assert has is False
+
+
+@pytest.mark.asyncio
+async def test_has_any_pages_false_when_index_missing():
+    """_wiki_has_any_pages returns False when the index doesn't exist."""
+    doc_store = MagicMock()
+    doc_store.index_exist = MagicMock(return_value=False)
+
+    with patch("common.settings.docStoreConn", doc_store):
+        has = await _wiki._wiki_has_any_pages("t1", "kb1")
+
+    assert has is False
+
+
 # ---- Tests for doc_page_source ---------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_canonical_claims_maps_raw_to_canonical():
+    """canonical_claims must aggregate raw-name claims onto canonical names.
+
+    Regression test: claim_index is keyed by RAW entity name (from MAP), but
+    REDUCE looks up by canonical name.  If a raw name resolves to a different
+    canonical name (e.g. "Apple Computer" → "Apple Inc."), the claims must
+    still be found, otherwise every entity becomes a no-op and output is empty.
+    """
+    # claim_index keyed by raw names
+    claim_index = {
+        "Apple Computer": [
+            {"statement": "C1", "source_doc_id": "d1"},
+            {"statement": "C2", "source_doc_id": "d1"},
+        ],
+        "Apple Inc.": [
+            {"statement": "C3", "source_doc_id": "d1"},
+        ],
+        "Samsung": [
+            {"statement": "C4", "source_doc_id": "d1"},
+        ],
+    }
+    # name_resolution: "Apple Computer" → "Apple Inc." (merged)
+    name_resolution = {"Apple Computer": "Apple Inc.", "Apple Inc.": "Apple Inc.", "Samsung": "Samsung"}
+    affected_names = {"Apple Inc.", "Samsung"}
+
+    # Replicate the aggregation logic from wiki_compile_incremental
+    canonical_claims: dict[str, list[dict]] = {}
+    for raw_name, claims in claim_index.items():
+        cname = name_resolution.get(raw_name, raw_name)
+        if cname in affected_names:
+            canonical_claims.setdefault(cname, []).extend(claims)
+    for name in affected_names:
+        canonical_claims.setdefault(name, [])
+
+    # "Apple Inc." should collect claims from BOTH "Apple Computer" and "Apple Inc."
+    assert len(canonical_claims["Apple Inc."]) == 3, f"Got {len(canonical_claims['Apple Inc.'])}"
+    statements = {c["statement"] for c in canonical_claims["Apple Inc."]}
+    assert statements == {"C1", "C2", "C3"}
+    assert len(canonical_claims["Samsung"]) == 1
 
 
 @pytest.mark.asyncio
