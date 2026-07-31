@@ -95,7 +95,7 @@ func HandleStreamingResponse(
 			streamModel = m
 		}
 
-		if apiErr, ok := event["error"]; ok {
+		if apiErr, ok := event["error"]; ok && apiErr != nil {
 			return fmt.Errorf("upstream stream error: %v", apiErr)
 		}
 
