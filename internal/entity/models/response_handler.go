@@ -47,6 +47,10 @@ func HandleNonStreamingResponse(
 	// Extract content / reasoning_content / tool_calls.
 	content, reasonContent, toolCalls := extractContentAndChoices(result)
 
+	if content == nil && len(toolCalls) == 0 {
+		return nil, fmt.Errorf("no choices in response")
+	}
+
 	if usage != nil {
 		recordResponseUsage(modelUsage, extractRequestID(result), usage, "chat")
 		if chatConfig != nil {
@@ -80,14 +84,19 @@ func HandleStreamingResponse(
 
 	var streamUsage *TokenUsage
 	accumulatedToolCalls := make(map[int]map[string]any)
+	sawTerminal := false
 
 	var streamModel string
-	_, err := ParseSSEStream[map[string]any](body, func(event map[string]any) error {
+	done, err := ParseSSEStream[map[string]any](body, func(event map[string]any) error {
 		if u, ok := cfg.StreamParser(event); ok {
 			streamUsage = u
 		}
 		if m, ok := event["model"].(string); ok {
 			streamModel = m
+		}
+
+		if apiErr, ok := event["error"]; ok {
+			return fmt.Errorf("upstream stream error: %v", apiErr)
 		}
 
 		choices, ok := event["choices"].([]any)
@@ -119,10 +128,22 @@ func HandleStreamingResponse(
 			}
 		}
 
+		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
+
 		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+
+	if chatConfig != nil {
+		setSortedToolCallsResult(chatConfig, accumulatedToolCalls)
+	}
+
+	if !done && !sawTerminal {
+		return fmt.Errorf("stream ended before [DONE] or finish_reason")
 	}
 
 	if streamUsage != nil {
@@ -159,6 +180,26 @@ func extractContentAndChoices(result map[string]any) (*string, *string, []map[st
 	if c, ok := messageMap["content"].(string); ok {
 		cc := c
 		content = &cc
+	} else if _, ok := messageMap["tool_calls"].([]any); ok {
+		// content may be nil when the response only carries tool calls.
+		// Return an empty-string pointer so callers can rely on a non-nil Answer.
+		empty := ""
+		content = &empty
+	} else if rc, ok := messageMap["reasoning_content"].(string); ok && rc != "" {
+		// content may be nil when the response only carries reasoning_content.
+		empty := ""
+		content = &empty
+	}
+
+	// Some providers (e.g. SiliconFlow) embed thinking inline via <think> tags.
+	// Extract reasoning into ReasonContent and strip it from Answer.
+	if content != nil {
+		if reasoning, answer := extractThinkContent(content); reasoning != nil {
+			rc := *reasoning
+			reasonContent = &rc
+			a := *answer
+			content = &a
+		}
 	}
 
 	var reasonContent *string
@@ -168,6 +209,10 @@ func extractContentAndChoices(result map[string]any) (*string, *string, []map[st
 			reason = reason[1:]
 		}
 		reasonContent = &reason
+	} else {
+		// Always return a non-nil pointer so callers can rely on it.
+		empty := ""
+		reasonContent = &empty
 	}
 
 	var toolCalls []map[string]any
