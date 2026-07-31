@@ -240,7 +240,7 @@ def _load_doc_module(monkeypatch, module_basename="chunk_api"):
     db_models_mod.APIToken = SimpleNamespace(query=lambda **_kwargs: [])
     db_models_mod.Document = _StubDocumentModel
     db_models_mod.Task = _StubTaskModel
-    db_models_mod.DB = SimpleNamespace(atomic=lambda: contextlib.nullcontext(), connection_context=lambda: (lambda fn: fn))
+    db_models_mod.DB = SimpleNamespace(atomic=lambda: contextlib.nullcontext(), connection_context=lambda: lambda fn: fn)
     # Transitively-loaded real services import assorted model classes (File,
     # Knowledgebase, UserTenant, ...); hand them a permissive stub on demand.
     db_models_mod.__getattr__ = lambda _name: _StubModel
@@ -310,6 +310,7 @@ def _load_doc_module(monkeypatch, module_basename="chunk_api"):
     monkeypatch.setitem(sys.modules, "api.common.check_team_permission", check_team_permission_mod)
 
     api_utils_mod = ModuleType("api.utils.api_utils")
+
     def _add_tenant_id_to_kwargs(func):
         # Mirror the real decorator's functools.wraps so tests can reach the raw
         # handler through ``route.__wrapped__`` and pass ``tenant_id`` explicitly.
