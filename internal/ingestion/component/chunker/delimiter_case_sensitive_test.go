@@ -114,6 +114,34 @@ func TestCompileDelimPattern_BareCharIsNotActivePattern(t *testing.T) {
 	}
 }
 
+func TestCompileDelimPattern_ExtractsPerEntryIndependently(t *testing.T) {
+	// Adjacent entries must not form a cross-boundary backtick pair.
+	// Concatenating "`aa" + "`bb`" would invent an "aa`bb" token; per-entry
+	// extraction only sees the complete "`bb`" pair in the second entry.
+	p := compileDelimPattern([]string{"`aa", "`bb`"})
+	if p == nil {
+		t.Fatal("expected pattern from second entry `bb`")
+	}
+	if got := p.String(); got != "bb" {
+		t.Fatalf("pattern = %q, want %q (no cross-entry token)", got, "bb")
+	}
+	if p.MatchString("aa") {
+		t.Fatalf("must not match incomplete first-entry token; pattern=%q", p.String())
+	}
+	if !p.MatchString("bb") {
+		t.Fatalf("must match token from second entry; pattern=%q", p.String())
+	}
+
+	// Multiple well-formed entries still combine.
+	p2 := compileDelimPattern([]string{"`end`", "`foo`"})
+	if p2 == nil {
+		t.Fatal("expected combined pattern")
+	}
+	if !p2.MatchString("end") || !p2.MatchString("foo") {
+		t.Fatalf("combined pattern %q must match both tokens", p2.String())
+	}
+}
+
 func TestTokenChunker_BacktickEndSplitsOnlyAtLowercase(t *testing.T) {
 	// End-to-end: delimiter-mode with "`end`" must split only at lowercase
 	// "end", leaving "End" / "END" intact inside the following segment.
@@ -124,7 +152,7 @@ func TestTokenChunker_BacktickEndSplitsOnlyAtLowercase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          "the end and End and END come",
@@ -162,7 +190,7 @@ func TestTokenChunker_BacktickASplitsOnlyAtLowercase(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.txt",
 		"output_format": "text",
 		"text":          "BaAb",

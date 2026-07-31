@@ -70,9 +70,8 @@ def stub_pdf_parser(monkeypatch):
     monkeypatch.setitem(sys.modules, "deepdoc.parser.pdf_parser", pdf_parser)
 
 
-import rag.nlp as nlp
-from rag.nlp import naive_merge, get_delimiters
-
+from rag import nlp
+from rag.nlp import get_delimiters, naive_merge
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -172,23 +171,13 @@ def _iter_re_finditer_calls(func_node: ast.AST):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
-        if (
-            isinstance(func, ast.Attribute)
-            and func.attr == "finditer"
-            and isinstance(func.value, ast.Name)
-            and func.value.id == "re"
-        ):
+        if isinstance(func, ast.Attribute) and func.attr == "finditer" and isinstance(func.value, ast.Name) and func.value.id == "re":
             yield node
 
 
 def _is_case_insensitive_flag(arg: ast.AST) -> bool:
     """True if ``arg`` is the expression ``re.I`` or ``re.IGNORECASE``."""
-    return (
-        isinstance(arg, ast.Attribute)
-        and isinstance(arg.value, ast.Name)
-        and arg.value.id == "re"
-        and arg.attr in _CASE_INSENSITIVE_RE_ATTRS
-    )
+    return isinstance(arg, ast.Attribute) and isinstance(arg.value, ast.Name) and arg.value.id == "re" and arg.attr in _CASE_INSENSITIVE_RE_ATTRS
 
 
 def _find_function_def(tree: ast.Module, fn_name: str) -> ast.FunctionDef | None:
@@ -233,16 +222,9 @@ def test_no_re_I_on_re_finditer(rel_path, fn_name):
     assert func_def is not None, f"function {fn_name!r} not found in {rel_path}"
 
     calls = list(_iter_re_finditer_calls(func_def))
-    assert calls, (
-        f"expected at least one `re.finditer(...)` call inside "
-        f"{fn_name!r} in {rel_path}"
-    )
+    assert calls, f"expected at least one `re.finditer(...)` call inside {fn_name!r} in {rel_path}"
 
     for call in calls:
         all_args = [*call.args, *(kw.value for kw in call.keywords)]
         for arg in all_args:
-            assert not _is_case_insensitive_flag(arg), (
-                f"`re.I` / `re.IGNORECASE` must not be passed to "
-                f"`re.finditer` inside {fn_name!r} ({rel_path}). "
-                f"See issue #17384."
-            )
+            assert not _is_case_insensitive_flag(arg), f"`re.I` / `re.IGNORECASE` must not be passed to `re.finditer` inside {fn_name!r} ({rel_path}). See issue #17384."
