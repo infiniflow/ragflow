@@ -469,6 +469,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       updateTooltip:
         '{{newlyUploaded}} new, {{removed}} removed documents found. Click to compile and merge into current Wiki.',
       updateSheetTitle: 'Update Wiki',
+      updateStructureSheetTitle: 'Update {{name}}',
+      updateStructureTooltip:
+        '{{newlyUploaded}} new, {{removed}} removed documents found. Click to update the {{name}}.',
       viewUpdateLogs: 'View update logs',
       log: 'Log',
       noSkills: 'No skills yet',

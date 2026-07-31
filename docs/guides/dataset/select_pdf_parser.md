@@ -1,11 +1,13 @@
 ---
 sidebar_position: -3
+title: Select PDF Parser
+sidebar_label: Select PDF Parser
 slug: /select_pdf_parser
 sidebar_custom_props: {
   categoryIcon: LucideFileText
 }
 ---
-# Select PDF parser
+# Select PDF Parser
 
 Select a visual model for parsing your PDFs.
 
@@ -82,12 +84,12 @@ All MinerU environment variables are optional. When set, these values are used t
 Third-party visual models are marked **Experimental**, because we have not fully tested these models for the aforementioned data extraction tasks.
 :::
 
-## Frequently asked questions
+## Frequently Asked Questions
 
-### When should I select DeepDoc or a third-party visual model as the PDF parser?
+### When Should I Select DeepDoc or a Third-Party Visual Model as the PDF Parser?
 
 Use a visual model to extract data if your PDFs contain formatted or image-based text rather than plain text. DeepDoc is the default visual model but can be time-consuming. You can also choose a lightweight or high-performance VLM depending on your needs and hardware capabilities.
 
-### Can I select a visual model to parse my DOCX files?
+### Can I Select a Visual Model to Parse My DOCX Files?
 
 No, you cannot. This dropdown menu is for PDFs only. To use this feature, convert your DOCX files to PDF first.

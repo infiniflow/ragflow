@@ -24,9 +24,10 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
   const liveDoc = liveDocs?.[0];
 
   const logInfo = useMemo(() => {
-    const source = liveDoc ?? documents.find(
-      (item: IDocumentInfo) => item.id === record?.id,
-    ) ?? record;
+    const source =
+      liveDoc ??
+      documents.find((item: IDocumentInfo) => item.id === record?.id) ??
+      record;
     let log: ILogInfo = {
       taskId: source?.id,
       fileName: source?.name || '-',
@@ -41,9 +42,7 @@ export const useShowLog = (documents: IDocumentInfo[]) => {
         fileSize: formatBytes(source.size || 0),
         processBeginAt: formatDate(source.process_begin_at),
         chunkNumber: source.chunk_count,
-        duration: formatSecondsToHumanReadable(
-          source.process_duration || 0,
-        ),
+        duration: formatSecondsToHumanReadable(source.process_duration || 0),
         status: source.run as RunningStatus,
         details: source.progress_msg,
       };

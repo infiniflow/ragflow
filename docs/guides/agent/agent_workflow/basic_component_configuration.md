@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Basic Component Configuration
+sidebar_label: Basic Component Configuration
 slug: /basic_component_configuration
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

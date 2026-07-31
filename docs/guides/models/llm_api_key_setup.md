@@ -1,31 +1,33 @@
 ---
 sidebar_position: 1
+title: Configure Model API Key
+sidebar_label: Configure Model API Key
 slug: /llm_api_key_setup
 sidebar_custom_props: {
   categoryIcon: LucideKey
 }
 ---
-# Configure model API key
+# Configure Model API Key
 
 RAGFlow model provider management allows you to connect online models, local models, and OpenAI-compatible models to RAGFlow for use in knowledge bases, chats, search, and agents.
 
-## Get model API key
+## Get Model API Key
 
-RAGFlow supports most mainstream LLMs. Please refer to [Supported Models](../../guides/models/supported_models.mdx) for a complete list of supported models. You will need to apply for your model API key online. 
+RAGFlow supports most mainstream LLMs. Please refer to [Supported Models](../../guides/models/supported_models.mdx) for a complete list of supported models. You will need to apply for your model API key online.
 
 :::note
 If you find your online LLM is not on the list, don't feel disheartened. The list is expanding, and you can [file a feature request](https://github.com/infiniflow/ragflow/issues/new?assignees=&labels=feature+request&projects=&template=feature_request.yml&title=%5BFeature+Request%5D%3A+) with us! Alternatively, if you have customized or locally-deployed models, you can [bind them to RAGFlow using Ollama, Xinference, or LocalAI](./deploy_local_llm.mdx).
 :::
 
-## Add a model provider instance
+## Add a Model Provider Instance
 
-### Select a model provider
+### Select a Model Provider
 
 Go to **User settings** **>** **Model providers**. In **Available models**, select a provider and complete its configuration. After the configuration succeeds, the provider is marked as **Configured**.
 
 ![Select model provider](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_model_provider.png)
 
-### Create a model provider instance and configure connection information
+### Create a Model Provider Instance and Configure Connection Information
 
 An instance stores a set of connection settings under a provider. You can create separate instances for test environments, production environments, local models, or proxy gateways to avoid mixing configurations for different purposes.
 When you configure a provider for the first time, the right pane prompts you to create an instance first. After the instance is saved, you can continue to fill in **API Key** and **Base URL** and add models.
@@ -47,25 +49,25 @@ To configure a model provider:
 Do not expose your API Key. An incorrect Base URL causes connection verification or model calls to fail. When using a compatible API, confirm whether the path must include `/v1`.
 :::
 
-### Verify the connection
+### Verify the Connection
 
 After filling in **API Key** and **Base URL**, verify the connection first. If verification fails, check the API Key, Base URL, network connection, account quota, and model availability.
 
 ![Verify connection](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/verify_connection.png)
 
-## Add models to an instance
+## Add Models to an Instance
 
 After you add a model provider instance and the connection verification succeeds, you can add and configure models for this instance. Add the model types required by your business, such as large language models (LLMs), embedding models, vision-language models (VLMs), automatic speech recognition models (ASR), rerank models, and text-to-speech models (TTS).
 
 After adding models, you can set them as the default models for the corresponding model types.
 
-### Add models from the list
+### Add Models from the List
 
 After the model instance connection succeeds, RAGFlow automatically displays some models supported by the model provider. You can search for the models you need and add them one by one, or add the models in the current list in batch.
 
 ![Add models from list](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_models_from_list.png)
 
-### Add a custom model
+### Add a Custom Model
 
 If the required model is not shown in the list but is actually supported by the model provider, you can add it manually as a custom model. When adding a custom model, fill in the model name and select the model type.
 
@@ -84,7 +86,7 @@ To add a custom model:
 ![Add custom model1](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_custom_model_1.png)
 
 ![Add custom model2](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_custom_model_2.png)
-## Set default models
+## Set Default Models
 
 Default models are used when RAGFlow needs to select a model automatically and no model has been specified separately. Set default models after adding and verifying models to avoid selecting unavailable models on business pages.
 
@@ -97,7 +99,7 @@ If you have configured a rerank model, it is also recommended to set a default r
 
 ![Set default models](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_default_models.png)
 
-## Model types and usage
+## Model Types and Usage
 
 | Model type | Full name | Main function | Input | Output | Typical scenarios |
 | --- | --- | --- | --- | --- | --- |
@@ -117,6 +119,6 @@ The following model types usually work together for retrieval and generation:
 
 3. **Moderation**: The moderation model is used to identify non-compliant, harmful, or sensitive content in text or images. It can review user input and model output to reduce the risk of generating or spreading non-compliant content.
 
-## Supported model list
+## Supported Model List
 
 See [Supported Models](./supported_models.mdx).

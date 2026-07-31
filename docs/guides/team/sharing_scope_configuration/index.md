@@ -5,8 +5,9 @@ sidebar_custom_props: {
   categoryIcon: LucideShare2
 }
 sidebar_label: Overview
+title: Overview
 ---
-# Sharing scope configuration
+# Sharing Scope Configuration
 
 Configure the visible scope of resources in RAGFlow.
 

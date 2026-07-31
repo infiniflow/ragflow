@@ -1,5 +1,7 @@
 ---
 sidebar_position: 5
+title: Add Notion
+sidebar_label: Add Notion
 slug: /add_notion
 sidebar_custom_props: {
   categoryIcon: SiGoogledrive
@@ -18,7 +20,7 @@ Before you begin, ensure you have:
 
 ---
 
-## Create an internal integration
+## Create an Internal Integration
 
 To allow RAGFlow to access your Notion data, you must first create an internal integration in the Notion developer portal to generate a secret token.
 
@@ -32,7 +34,7 @@ To allow RAGFlow to access your Notion data, you must first create an internal i
 
 ---
 
-## Grant access to your pages
+## Grant Access to Your Pages
 
 By default, an integration has no access to any pages in your workspace. You must explicitly share the pages you want RAGFlow to index.
 
@@ -48,7 +50,7 @@ If you share a parent page, all its nested child pages and databases will automa
 
 ---
 
-## Identify the root page id
+## Identify the Root Page ID
 
 The **Root Page Id** tells RAGFlow where to start indexing. You can find this in the URL of your Notion page.
 
@@ -59,7 +61,7 @@ The **Root Page Id** tells RAGFlow where to start indexing. You can find this in
 
 ---
 
-## Configure the notion connector in RAGFlow
+## Configure the Notion Connector in RAGFlow
 
 Once you have your token and ID, add the connector within the RAGFlow interface.
 
@@ -73,7 +75,7 @@ Once configuration is complete, click **Confirm** to save your changes.
 
 *RAGFlow validates the connection immediately.*
 
-### Link to a dataset
+### Link to a Dataset
 
 Credentials alone do not trigger indexing. You must link the data source to a specific dataset:
 
