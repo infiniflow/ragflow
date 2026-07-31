@@ -21,7 +21,8 @@ export function TreeTemplateFields({ index }: TreeTemplateFieldsProps) {
         >
           <Textarea
             placeholder={t('setting.descriptionPlaceholder')}
-            rows={6}
+            rows={8}
+            resize="vertical"
           />
         </RAGFlowFormItem>
 
@@ -29,19 +30,21 @@ export function TreeTemplateFields({ index }: TreeTemplateFieldsProps) {
           name={`templates.${index}.config.raptor.max_token`}
           label={t('setting.maxToken')}
           max={2048}
-          min={0}
+          min={512}
           step={1}
         />
         <SliderInputFormField
           name={`templates.${index}.config.raptor.clustering_threshold`}
-          label={'Clustering Threshold'}
+          label={t('setting.clusteringThreshold')}
+          tooltip={t('setting.clusteringThresholdTip')}
           step={0.01}
           max={1}
           min={0}
         />
         <SliderInputFormField
           name={`templates.${index}.config.raptor.clustering_ratio`}
-          label={'Clustering Ratio'}
+          label={t('setting.clusteringRatio')}
+          tooltip={t('setting.clusteringRatioTip')}
           step={0.01}
           max={1}
           min={0}

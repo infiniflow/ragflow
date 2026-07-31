@@ -125,11 +125,12 @@ class Compiler(ProcessBase, LLM):
         for idx, (template_id, parser_cfg) in enumerate(templates):
             raptor_cfg = (parser_cfg or {}).get("raptor") or {}
             raptor_config = {
-                "prompt": raptor_cfg.get("prompt") or "Please write a concise summary of the following texts:\n{cluster_content}",
+                "prompt": raptor_cfg.get("prompt")
+                or "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
                 "max_token": int(raptor_cfg.get("max_token") or 512),
                 "random_seed": int(raptor_cfg.get("random_seed") or 0),
-                "clustering_threshold": float(raptor_cfg.get("clustering_threshold") or 0.3),
-                "clustering_ratio": float(raptor_cfg.get("clustering_ratio") or 0.5),
+                "clustering_threshold": float(0.3 if raptor_cfg.get("clustering_threshold") is None else raptor_cfg["clustering_threshold"]),
+                "clustering_ratio": float(0.5 if raptor_cfg.get("clustering_ratio") is None else raptor_cfg["clustering_ratio"]),
             }
             self._compile_progress(msg=f"tree-template ({idx + 1}/{len(templates)}): building tree for doc={doc_id}")
             try:

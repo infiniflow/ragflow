@@ -841,9 +841,14 @@ export default {
         'RAPTOR 常应用于复杂的多跳问答任务。如需打开，请跳转至知识库的文件页面，点击生成 > RAPTOR 开启。详见: https://ragflow.io/docs/dev/enable_raptor。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
-      promptText: `请总结以下段落。 小心数字，不要编造。 段落如下：
-      {cluster_content}
-以上就是你需要总结的内容。`,
+      promptText: `请在不编造事实、不改变数字的前提下总结以下段落。
+请用与原文相同的语言严格输出两部分：
+1. 第一行：仅输出简洁标题。
+2. 后续行：输出内容的简洁摘要。
+不要输出标签、Markdown 标题、项目符号或其他说明。
+
+段落：
+{cluster_content}`,
       maxToken: '最大token数',
       maxTokenMessage: '最大token数是必填项',
       threshold: '阈值',
@@ -1586,6 +1591,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       maxToken: '最大 token 数',
       maxTokenRequired: '请输入最大 token 数',
       threshold: '阈值',
+      clusteringThreshold: '聚类阈值',
+      clusteringThresholdTip:
+        '按相邻数据块相似度分布的百分位决定聚类边界。数值越高，产生的聚类边界越多。',
+      clusteringRatio: '聚类比例',
+      clusteringRatioTip:
+        '设置聚类数量相对于输入数据块数量的最大比例。数值越低，聚类数量越少。',
       rechunkByTreeLeaves: '按树叶重新分块',
       rechunkByTreeLeavesTip:
         '将每个叶簇的源数据块合并为单个替换数据块。原始数据块保留但标记为不可检索。每个分组最多只能有一个树模板启用此功能。',

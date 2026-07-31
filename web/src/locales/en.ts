@@ -932,9 +932,14 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       promptTip:
         'Use the system prompt to describe the task for the LLM, specify how it should respond, and outline other miscellaneous requirements. The system prompt is often used in conjunction with keys (variables), which serve as various data inputs for the LLM. Use a forward slash `/` or the (x) button to show the keys to use.',
       promptMessage: 'Prompt is required',
-      promptText: `Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:
-      {cluster_content}
-The above is the content you need to summarize.`,
+      promptText: `Summarize the paragraphs below without inventing facts or changing numbers.
+Output exactly two parts in the same language as the source:
+1. First line: a concise title only.
+2. Following lines: a concise summary of the content.
+Do not output labels, Markdown headings, bullet points, or any other commentary.
+
+Paragraphs:
+{cluster_content}`,
       maxToken: 'Max token',
       maxTokenTip: 'The maximum number of tokens per generated summary chunk.',
       maxTokenMessage: 'Max token is required',
@@ -1897,6 +1902,12 @@ Example: Virtual Hosted Style`,
       maxToken: 'Max token',
       maxTokenRequired: 'Please input max token',
       threshold: 'Threshold',
+      clusteringThreshold: 'Clustering threshold',
+      clusteringThresholdTip:
+        'Sets the percentile used to split clusters by adjacent chunk similarity. Higher values create more cluster boundaries.',
+      clusteringRatio: 'Clustering ratio',
+      clusteringRatioTip:
+        'Sets the maximum number of clusters as a fraction of the input chunks. Lower values produce fewer clusters.',
       rechunkByTreeLeaves: 'Re-chunk by tree leaves',
       rechunkByTreeLeavesTip:
         "Merge each leaf cluster's source chunks into a single replacement chunk. Originals are kept but marked unavailable for retrieval. Only one tree template per group may enable this.",

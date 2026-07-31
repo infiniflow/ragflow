@@ -67,7 +67,7 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         self._llm_model = llm_model
         self._embd_model = embd_model
         self._prompt = prompt
-        self._max_token = max_token
+        self._max_token = min(max(int(max_token or 512), 512), 2048)
         self._max_errors = max(1, max_errors)
         self._error_count = 0
 
@@ -466,30 +466,17 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
         def _build_node(idx: int) -> dict:
             children_idx = parent_child_map.get(idx, [])
-            # If every immediate child is a layer-0 original, create
-            # actual child dicts so the graph projector can walk them.
+            # If every immediate child is a layer-0 original, collapse the
+            # cluster into one leaf node and retain all source chunk IDs.
             if children_idx and all(c < n_originals for c in children_idx):
-                leaf_ids: list[str] = []
+                source_chunk_ids: list[str] = []
                 seen: set[str] = set()
-                children: list[dict] = []
                 for c in children_idx:
                     for s in chunks[c][2]:
                         if s and s not in seen:
                             seen.add(s)
-                            leaf_ids.append(s)
-                    chunk_text = chunks[c][0] if chunks[c] else ""
-                    children.append(
-                        {
-                            "title": chunk_text[:80],
-                            "description": chunk_text,
-                            "source_chunk_ids": [s for s in chunks[c][2] if s],
-                        }
-                    )
-                return {
-                    "title": _title_at(idx),
-                    "children": children,
-                    "description": _desc_at(idx),
-                }
+                            source_chunk_ids.append(s)
+                return {"title": _title_at(idx), "source_chunk_ids": source_chunk_ids, "description": _desc_at(idx)}
             return {"children": [_build_node(c) for c in children_idx], "title": _title_at(idx), "description": _desc_at(idx)}
 
         top_nodes = [_build_node(i) for i in range(top_start, top_end)]
