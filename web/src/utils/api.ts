@@ -162,7 +162,7 @@ export default {
   artifactsAlteration: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/alteration`,
   artifactsTopicList: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/artifacts_topics`,
+    `${restAPIv1}/datasets/${datasetId}/artifacts/topics`,
   getArtifactPage: (datasetId: string, pageType: string, slug: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/${pageType}/${slug}`,
   listWikiCommits: (datasetId: string) =>
@@ -172,7 +172,7 @@ export default {
   getArtifactGraph: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/graph`,
   artifactsStructure: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/artifacts_structure`,
+    `${restAPIv1}/datasets/${datasetId}/artifacts/structure`,
   clearWiki: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts`,
   getDatasetSkillTree: (datasetId: string) =>
@@ -190,16 +190,16 @@ export default {
       .map((s) => encodeURIComponent(s))
       .join('/')}`,
   getDatasetNav: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/nav`,
+    `${restAPIv1}/datasets/${datasetId}/navigation`,
   getDatasetNavChildren: (datasetId: string, name: string) =>
-    `${restAPIv1}/datasets/${datasetId}/nav/${name
+    `${restAPIv1}/datasets/${datasetId}/navigation/${name
       .split('/')
       .map((s) => encodeURIComponent(s))
       .join('/')}/children`,
   deleteDatasetNav: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/nav`,
+    `${restAPIv1}/datasets/${datasetId}/navigation`,
   deleteDatasetNavNode: (datasetId: string, name: string) =>
-    `${restAPIv1}/datasets/${datasetId}/nav/${name
+    `${restAPIv1}/datasets/${datasetId}/navigation/${name
       .split('/')
       .map((s) => encodeURIComponent(s))
       .join('/')}`,
@@ -383,13 +383,13 @@ export default {
   // explore
 
   // compilation templates
-  compilationTemplates: `${restAPIv1}/compilation_templates`,
+  compilationTemplates: `${restAPIv1}/compilation-templates`,
   compilationTemplate: (id: string) =>
-    `${restAPIv1}/compilation_templates/${id}`,
-  compilationTemplateGroups: `${restAPIv1}/compilation_template_groups`,
+    `${restAPIv1}/compilation-templates/${id}`,
+  compilationTemplateGroups: `${restAPIv1}/compilation-template-groups`,
   compilationTemplateGroup: (id: string) =>
-    `${restAPIv1}/compilation_template_groups/${id}`,
-  wikiPresets: `${restAPIv1}/compilation_templates/wiki_presets`,
+    `${restAPIv1}/compilation-template-groups/${id}`,
+  wikiPresets: `${restAPIv1}/compilation-templates/wiki-presets`,
 
   // mcp server
   listMcpServer: `${restAPIv1}/mcp/servers`,

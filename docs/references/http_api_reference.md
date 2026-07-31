@@ -6955,7 +6955,7 @@ curl --request POST \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --form 'file=@./test1.txt' \
      --form 'file=@./test2.pdf' \
-     --form 'parent_id={folder_id}'
+     --form 'parent_id={workspace_id}'
 ```
 
 ##### Request parameters
@@ -7168,7 +7168,7 @@ curl --request POST \
      --data '{
           "name": "New Folder",
           "type": "folder",
-          "parent_id": "{folder_id}"
+          "parent_id": "{workspace_id}"
      }'
 ```
 
@@ -7709,17 +7709,16 @@ or
 
 ### Create commit
 
-**POST** `/api/v1/folders/{folder_id}/commits`
+**POST** `/api/v1/workspaces/{workspace_id}/commits`
 
-Creates a new snapshot commit for the specified folder.
+Creates a new snapshot commit for the specified workspace.
 This endpoint also supports:
-- `/api/v1/workspace/{workspace_id}/commits` (alias, workspace_id == folder_id)
-- `/api/v1/datasets/{dataset_id}/commits` (resolves dataset to its folder)
+- `/api/v1/datasets/{dataset_id}/commits` (resolves dataset to its workspace)
 
 #### Request
 
 - Method: POST
-- URL: `/api/v1/folders/{folder_id}/commits`
+- URL: `/api/v1/workspaces/{workspace_id}/commits`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
@@ -7732,7 +7731,7 @@ This endpoint also supports:
 
 ```bash
 curl --request POST \
-     --url http://{address}/api/v1/folders/{folder_id}/commits \
+     --url http://{address}/api/v1/workspaces/{workspace_id}/commits \
      --header 'Content-Type: application/json' \
      --header 'Authorization: Bearer <YOUR_API_KEY>' \
      --data '{
@@ -7797,17 +7796,16 @@ Failure:
 
 ### List commits
 
-**GET** `/api/v1/folders/{folder_id}/commits`
+**GET** `/api/v1/workspaces/{workspace_id}/commits`
 
 Lists all commits for the specified folder with pagination.
 Also available at:
-- `/api/v1/workspace/{workspace_id}/commits`
 - `/api/v1/datasets/{dataset_id}/commits`
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/folders/{folder_id}/commits`
+- URL: `/api/v1/workspaces/{workspace_id}/commits`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Query:
@@ -7820,7 +7818,7 @@ Also available at:
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/api/v1/folders/{folder_id}/commits?page=1&page_size=15' \
+     --url 'http://{address}/api/v1/workspaces/{workspace_id}/commits?page=1&page_size=15' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -7865,17 +7863,16 @@ Success:
 
 ### Get commit
 
-**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}`
+**GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}`
 
 Retrieves the details of a specific commit, including its file changes.
 Also available at:
-- `/api/v1/workspace/{workspace_id}/commits/{commit_id}`
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}`
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}`
+- URL: `/api/v1/workspaces/{workspace_id}/commits/{commit_id}`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -7883,7 +7880,7 @@ Also available at:
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id} \
+     --url http://{address}/api/v1/workspaces/{workspace_id}/commits/{commit_id} \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -7936,17 +7933,16 @@ Failure:
 
 ### List commit files
 
-**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/files`
+**GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files`
 
 Lists the file changes associated with a specific commit.
 Also available at:
-- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files`
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files`
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}/files`
+- URL: `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -7954,7 +7950,7 @@ Also available at:
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id}/files \
+     --url http://{address}/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -7985,17 +7981,16 @@ Success:
 
 ### Diff commits
 
-**GET** `/api/v1/folders/{folder_id}/commits/diff?from={commit_id}&to={commit_id}`
+**GET** `/api/v1/workspaces/{workspace_id}/commits/diff?from={commit_id}&to={commit_id}`
 
 Compares two commits and returns the differences.
 Also available at:
-- `/api/v1/workspace/{workspace_id}/commits/diff?from=...&to=...`
 - `/api/v1/datasets/{dataset_id}/commits/diff?from=...&to=...`
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/folders/{folder_id}/commits/diff`
+- URL: `/api/v1/workspaces/{workspace_id}/commits/diff`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Query:
@@ -8008,7 +8003,7 @@ Also available at:
 
 ```bash
 curl --request GET \
-     --url 'http://{address}/api/v1/folders/{folder_id}/commits/diff?from=from_commit_id&to=to_commit_id' \
+     --url 'http://{address}/api/v1/workspaces/{workspace_id}/commits/diff?from=from_commit_id&to=to_commit_id' \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -8053,17 +8048,16 @@ Failure:
 
 ### Get uncommitted changes
 
-**GET** `/api/v1/folders/{folder_id}/changes`
+**GET** `/api/v1/workspaces/{workspace_id}/changes`
 
 Returns the uncommitted changes for the specified folder (similar to `git status`).
 Also available at:
-- `/api/v1/workspace/{workspace_id}/changes`
 - `/api/v1/datasets/{dataset_id}/changes`
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/folders/{folder_id}/changes`
+- URL: `/api/v1/workspaces/{workspace_id}/changes`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -8071,7 +8065,7 @@ Also available at:
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/folders/{folder_id}/changes \
+     --url http://{address}/api/v1/workspaces/{workspace_id}/changes \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -8106,17 +8100,16 @@ Success:
 
 ### Get commit tree
 
-**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/tree`
+**GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/tree`
 
 Retrieves the full folder tree snapshot as it existed at a specific commit.
 Also available at:
-- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/tree`
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/tree`
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}/tree`
+- URL: `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/tree`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -8124,7 +8117,7 @@ Also available at:
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id}/tree \
+     --url http://{address}/api/v1/workspaces/{workspace_id}/commits/{commit_id}/tree \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -8174,17 +8167,16 @@ Success:
 
 ### Get commit file content
 
-**GET** `/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content`
+**GET** `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
 
 Retrieves the file content as it existed at a specific commit.
 Also available at:
-- `/api/v1/workspace/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
 - `/api/v1/datasets/{dataset_id}/commits/{commit_id}/files/{file_id}/content`
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content`
+- URL: `/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files/{file_id}/content`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -8192,7 +8184,7 @@ Also available at:
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/folders/{folder_id}/commits/{commit_id}/files/{file_id}/content \
+     --url http://{address}/api/v1/workspaces/{workspace_id}/commits/{commit_id}/files/{file_id}/content \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
@@ -8220,16 +8212,16 @@ Failure:
 
 ---
 
-### Get file version history
+### Get a workspace file version history
 
-**GET** `/api/v1/files/{file_id}/versions`
+**GET** `/api/v1/workspace-files/{file_id}/versions`
 
 Returns the version history for a specific file across all commits.
 
 #### Request
 
 - Method: GET
-- URL: `/api/v1/files/{file_id}/versions`
+- URL: `/api/v1/workspace-files/{file_id}/versions`
 - Headers:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
@@ -8237,7 +8229,7 @@ Returns the version history for a specific file across all commits.
 
 ```bash
 curl --request GET \
-     --url http://{address}/api/v1/files/{file_id}/versions \
+     --url http://{address}/api/v1/workspace-files/{file_id}/versions \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
