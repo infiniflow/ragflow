@@ -181,21 +181,12 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		stats.DuplicatesDropped += dropped
 	}
 
-	sink := common.NewProductSink(ctx, param.Guardrails, inputs.Sink)
-	for _, p := range prod {
-		if err := sink.Add(p); err != nil {
-			return common.Outputs{}, err
-		}
-	}
+	// Buffer every product in one slice; the component merges them into the
+	// upstream chunk stream (matching Python, which appends compiled units onto
+	// the chunk list).
 	out := common.Outputs{
-		Products:          sink.Products(),
-		VectorBytes:       sink.Bytes(),
-		Items:             sink.TotalItems(),
-		Flushed:           sink.Flushed(),
+		Products:          prod,
 		DuplicatesDropped: stats.DuplicatesDropped,
-	}
-	if err := out.EnforceGuardrails(param.Guardrails, inputs.Sink, ctx); err != nil {
-		return common.Outputs{}, err
 	}
 	return out, nil
 }

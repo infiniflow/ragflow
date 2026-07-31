@@ -419,6 +419,9 @@ export default {
       updateTooltip:
         '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档。点击编译并合并到当前 Wiki。',
       updateSheetTitle: '更新 Wiki',
+      updateStructureSheetTitle: '更新{{name}}',
+      updateStructureTooltip:
+        '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档。点击更新{{name}}。',
       viewUpdateLogs: '查看更新日志',
       log: '日志',
       noSkills: '暂无技能',

@@ -1028,7 +1028,7 @@ async def run_wiki(
             template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
             config = template.get("config") if template else {}
             kind = _compilation_template_kind(config.get("kind") if isinstance(config, dict) else "")
-            if kind == "artifacts":
+            if kind == "wiki":
                 eligible.append((d, template_id))
                 break
     if not eligible:

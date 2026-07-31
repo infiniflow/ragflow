@@ -24,6 +24,7 @@ from copy import deepcopy
 from types import SimpleNamespace
 
 from quart import Response, request
+from werkzeug.exceptions import BadRequest
 
 from api.apps import current_user, login_required
 from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
@@ -181,7 +182,7 @@ def _build_default_completion_dialog():
     )
 
 
-async def _create_session_for_completion(chat_id, dialog, user_id):
+async def _create_session_for_completion(chat_id, dialog, user_id, save_session=True):
     conv = {
         "id": get_uuid(),
         "dialog_id": chat_id,
@@ -190,6 +191,9 @@ async def _create_session_for_completion(chat_id, dialog, user_id):
         "user_id": user_id,
         "reference": [],
     }
+    if not save_session:
+        conv["id"] = None
+        return SimpleNamespace(**conv)
     await thread_pool_exec(ConversationService.save, **conv)
     ok, conv_obj = await thread_pool_exec(ConversationService.get_by_id, conv["id"])
     if not ok:
@@ -454,9 +458,21 @@ async def list_chats():
     if chat_id or name:
         keywords = ""
 
+    if orderby not in ("create_time", "update_time", "name"):
+        return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"invalid orderby field: {orderby}")
+
     try:
-        page_number = int(request.args.get("page", 0))
-        items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
+        # Invalid or negative pagination values fall back to defaults
+        # instead of leaking internal conversion/SQL errors.
+        try:
+            page_number = max(int(request.args.get("page", 0)), 0)
+        except (TypeError, ValueError):
+            page_number = 0
+        try:
+            parsed_page_size = int(request.args.get("page_size", 0))
+        except (TypeError, ValueError):
+            parsed_page_size = 0
+        items_per_page = validate_rest_api_page_size(parsed_page_size)
 
         if owner_ids:
             chats, total = await thread_pool_exec(
@@ -794,9 +810,22 @@ async def list_sessions(chat_id):
                 message="no authorization",
                 code=RetCode.AUTHENTICATION_ERROR,
             )
-        page_number = int(request.args.get("page", 1))
-        items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 30)))
+        # Invalid or negative pagination values fall back to defaults
+        # instead of leaking internal conversion/SQL errors.
+        try:
+            page_number = int(request.args.get("page", 1))
+        except (TypeError, ValueError):
+            page_number = 1
+        if page_number < 1:
+            page_number = 1
+        try:
+            parsed_page_size = int(request.args.get("page_size", 30))
+        except (TypeError, ValueError):
+            parsed_page_size = 30
+        items_per_page = validate_rest_api_page_size(parsed_page_size)
         orderby = request.args.get("orderby", "create_time")
+        if orderby not in ("create_time", "update_time", "name"):
+            return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"invalid orderby field: {orderby}")
         desc = request.args.get("desc", "true").lower() != "false"
         session_id = request.args.get("id")
         name = request.args.get("name")
@@ -868,7 +897,10 @@ async def delete_sessions(chat_id):
     if not await _ensure_owned_chat(chat_id):
         return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
     try:
-        req = await get_request_json()
+        try:
+            req = await get_request_json()
+        except BadRequest:
+            return get_json_result(code=RetCode.ARGUMENT_ERROR, message="Malformed JSON syntax: Missing commas/brackets or invalid encoding")
         if not req:
             return get_json_result(data={})
 
@@ -1161,6 +1193,9 @@ async def session_completion(chat_id_in_arg=""):
         return error
     request_messages, request_msg = normalized
     pass_all_history_messages = _get_bool_request_flag(req, "pass_all_history_messages", "pass_all_history", default=False)
+    store_history_messages = _get_bool_request_flag(req, "store_history_messages", "store_history", default=True)
+    if not store_history_messages and not pass_all_history_messages:
+        return get_data_error_result(message="`pass_all_history_messages` must be true when `store_history_messages` is false.")
     msg = request_msg
     message_id = request_msg[-1].get("id")
     chat_id = req.pop("chat_id", "") or ""
@@ -1192,7 +1227,7 @@ async def session_completion(chat_id_in_arg=""):
                 if conv.dialog_id != chat_id:
                     return get_data_error_result(message="Session does not belong to this chat!")
             else:
-                conv = await _create_session_for_completion(chat_id, dia, current_user.id)
+                conv = await _create_session_for_completion(chat_id, dia, current_user.id, save_session=store_history_messages)
                 session_id = conv.id
 
             if pass_all_history_messages:
@@ -1299,7 +1334,7 @@ async def session_completion(chat_id_in_arg=""):
                         ans = _format_answer(ans)
                         payload = _sanitize_json_floats({"code": 0, "message": "", "data": ans})
                         yield "data:" + json.dumps(payload, ensure_ascii=False) + "\n\n"
-                if conv is not None:
+                if conv is not None and store_history_messages:
                     await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             except Exception as ex:
                 logging.exception(ex)
@@ -1317,7 +1352,7 @@ async def session_completion(chat_id_in_arg=""):
         answer = None
         async for ans in rag_agent(dia, msg, False, session_id=session_id, **req):
             answer = _format_answer(ans)
-            if conv is not None:
+            if conv is not None and store_history_messages:
                 await thread_pool_exec(ConversationService.update_by_id, conv.id, conv.to_dict())
             break
         return get_json_result(data=_sanitize_json_floats(answer))

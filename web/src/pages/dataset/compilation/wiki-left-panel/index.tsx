@@ -1,28 +1,23 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { GenerateStatus, GenerateType } from '@/constants/knowledge';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+  ITraceInfo,
+  useGenerateStatus,
+} from '@/hooks/use-dataset-generate';
 import { IArtifact } from '@/interfaces/database/dataset';
-import { GenerateStatus } from '@/pages/dataset/dataset/generate-button/constants';
-import { ITraceInfo } from '@/pages/dataset/dataset/generate-button/hook';
-import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
-import { Trash2, WandSparkles } from 'lucide-react';
+import { Trash2 } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { LeftPanelTab } from '../constants';
+import { CompilationUpdateButton } from '../update-button';
+import { UpdateLogSheet } from '../update-log-sheet';
 import { useWikiClear } from './hooks/use-wiki-clear';
 import { useWikiUpdate } from './hooks/use-wiki-update';
 import { WikiGraphPanel } from './wiki-graph-panel';
 import { WikiNavBar } from './wiki-nav-bar';
-import { WikiUpdateProgress } from './wiki-update-progress';
-import { WikiUpdateSheet } from './wiki-update-sheet';
 
 type WikiLeftPanelProps = {
   tab: LeftPanelTab;
@@ -62,12 +57,10 @@ export function WikiLeftPanel({
   } = useWikiUpdate();
 
   const { status } = useGenerateStatus(traceData);
-  const isGenerating =
-    status === GenerateStatus.running || status === GenerateStatus.failed;
 
   const handleUpdateClick = useCallback(async () => {
     onUpdateSheetOpenChange(true);
-    if (status === GenerateStatus.running) {
+    if (status === GenerateStatus.Running) {
       return;
     }
     await handleUpdate();
@@ -76,50 +69,21 @@ export function WikiLeftPanel({
   return (
     <aside className="size-full flex flex-col p-5">
       <div className="flex items-center justify-between pb-5">
-        {(hasChanges || isGenerating) && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={'outline'}
-                  onClick={handleUpdateClick}
-                  disabled={updateLoading}
-                >
-                  {isGenerating ? (
-                    <WikiUpdateProgress data={traceData} />
-                  ) : (
-                    <>
-                      {t('knowledgeDetails.update', { defaultValue: 'Update' })}
-                      {newlyUploaded > 0 && (
-                        <Badge variant="success" className="ml-1">
-                          {newlyUploaded}
-                        </Badge>
-                      )}
-                      {removed > 0 && (
-                        <Badge variant="destructive" className="ml-1">
-                          {removed}
-                        </Badge>
-                      )}
-                      <WandSparkles />
-                    </>
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {isGenerating
-                  ? t('knowledgeDetails.viewUpdateLogs', {
-                      defaultValue: 'View update logs',
-                    })
-                  : t('knowledgeDetails.updateTooltip', {
-                      newlyUploaded,
-                      removed,
-                      defaultValue:
-                        '{{newlyUploaded}} new, {{removed}} removed documents found. Click to compile and merge into current Wiki.',
-                    })}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
+        <CompilationUpdateButton
+          traceData={traceData}
+          generateType={GenerateType.Artifact}
+          hasChanges={hasChanges}
+          newlyUploaded={newlyUploaded}
+          removed={removed}
+          loading={updateLoading}
+          tooltip={t('knowledgeDetails.updateTooltip', {
+            newlyUploaded,
+            removed,
+            defaultValue:
+              '{{newlyUploaded}} new, {{removed}} removed documents found. Click to compile and merge into current Wiki.',
+          })}
+          onClick={handleUpdateClick}
+        />
         <ConfirmDeleteDialog
           open={open}
           onOpenChange={setOpen}
@@ -130,6 +94,7 @@ export function WikiLeftPanel({
           <Button
             variant="ghost"
             size="icon-sm"
+            className="ml-auto"
             disabled={loading}
             data-testid="wiki-clear-trigger"
           >
@@ -164,10 +129,13 @@ export function WikiLeftPanel({
         )}
       </div>
 
-      <WikiUpdateSheet
+      <UpdateLogSheet
         open={updateSheetOpen}
         onOpenChange={onUpdateSheetOpenChange}
         data={traceData}
+        title={t('knowledgeDetails.updateSheetTitle', {
+          defaultValue: 'Update Wiki',
+        })}
       />
     </aside>
   );

@@ -291,7 +291,22 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 	if row != nil {
 		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
 	}
-	common.SuccessWithData(c, row, "success")
+	// Attach last_publish_time so the front-end can render when the agent
+	// was last published (Python get_agent parity).
+	lastPublishTime, err := h.agentService.GetLastPublishTime(c.Request.Context(), canvasID)
+	if err != nil {
+		ec, em := mapAgentError(err)
+		common.ResponseWithCodeData(c, ec, nil, em)
+		return
+	}
+	common.SuccessWithData(c, &agentDetailResponse{UserCanvas: row, LastPublishTime: lastPublishTime}, "success")
+}
+
+// agentDetailResponse wraps the canvas row with derived fields that Python's
+// get_agent handler adds to the response.
+type agentDetailResponse struct {
+	*entity.UserCanvas
+	LastPublishTime *int64 `json:"last_publish_time,omitempty"`
 }
 
 // updateAgentRequest is the wire shape for PUT /api/v1/agents/:canvas_id.
@@ -326,7 +341,14 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
-	common.SuccessWithData(c, true, "success")
+	canvas, err := h.agentService.GetAgent(c.Request.Context(), user.ID, canvasID)
+	if err != nil || canvas == nil {
+		common.SuccessWithData(c, map[string]interface{}{}, "success")
+		return
+	}
+	common.SuccessWithData(c, map[string]interface{}{
+		"update_time": canvas.UpdateTime,
+	}, "success")
 }
 
 // DeleteAgent removes the canvas and cascades to its versions.

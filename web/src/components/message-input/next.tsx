@@ -26,6 +26,8 @@ import { AudioButton } from '../ui/audio-button';
 export type NextMessageInputOnPressEnterParameter = {
   enableThinking?: string;
   enableInternet?: boolean;
+  storeHistoryMessages?: boolean;
+  omitSessionId?: boolean;
 };
 
 interface NextMessageInputProps {
@@ -74,8 +76,8 @@ export function NextMessageInput({
     null,
   );
 
-  const [enableThinking, setEnableThinking] = useState(
-    () => storage.getThinkingLevel(),
+  const [enableThinking, setEnableThinking] = useState(() =>
+    storage.getThinkingLevel(),
   );
   const [enableInternet, setEnableInternet] = useState(false);
 

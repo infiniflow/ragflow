@@ -1,6 +1,7 @@
 ---
 sidebar_position: 1
-sidebar_label: "Before You Begin"
+sidebar_label: Before You Begin
+title: Before You Begin
 ---
 
 # Before You Begin
@@ -11,7 +12,7 @@ System administrators can access the RAGFlow Admin UI in a browser. The current 
 
 After entering the Admin UI, administrators can perform service health checks, maintain user accounts, configure sandboxes, control registration, manage roles and permissions, configure system settings, and configure identity providers. The Admin UI should be exposed only to trusted administrators.
 
-![Enter The Admin Console](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/enter_the_admin_console.jpg)
+![Enter The Admin Console](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/enter_the_admin_console.jpg)
 
 Regular users do not need to enter the Admin UI when they use business features such as knowledge bases, chat, Agent, files, and model providers.
 

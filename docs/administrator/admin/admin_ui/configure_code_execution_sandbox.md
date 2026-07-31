@@ -1,6 +1,7 @@
 ---
 sidebar_position: 4
-sidebar_label: "Configure Code Execution Sandbox"
+sidebar_label: Configure Code Execution Sandbox
+title: Configure Code Execution Sandbox
 ---
 
 # Configure Code Execution Sandbox
@@ -21,7 +22,7 @@ The current page supports the following `Provider` options:
 
 After selecting a `Provider`, the page displays the corresponding configuration area.
 
-![Select Sandbox Provider](https://raw.githubusercontent.com/Yannnnnnny/ragflow-docs/main/images/select_sandbox_provider.jpg)
+![Select Sandbox Provider](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_sandbox_provider.jpg)
 
 **Caution:** Sandbox configuration affects not only connection availability, but also code isolation, network access, file access, and runtime resource limits. In production environments, prefer `Self-Managed`, cloud, or independent remote execution solutions with isolation capabilities. Direct use of `Local` is not recommended.
 
