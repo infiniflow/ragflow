@@ -835,6 +835,7 @@ func startServer(ctx context.Context) {
 	pipelineHandler := handler.NewPipelineHandler()
 	compilationTemplateHandler := handler.NewCompilationTemplateHandler(service.NewCompilationTemplateService())
 	compilationTemplateGroupHandler := handler.NewCompilationTemplateGroupHandler(service.NewCompilationTemplateGroupService())
+	datasetArtifactHandler := handler.NewDatasetArtifactHandler(service.NewDatasetArtifactService(), datasetsService)
 
 	// Initialize router
 	r := router.NewRouter(authHandler,
@@ -869,7 +870,8 @@ func startServer(ctx context.Context) {
 		componentsHandler,
 		pipelineHandler,
 		compilationTemplateHandler,
-		compilationTemplateGroupHandler)
+		compilationTemplateGroupHandler,
+		datasetArtifactHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
