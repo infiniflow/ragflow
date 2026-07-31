@@ -2,16 +2,9 @@ package graph
 
 import "testing"
 
-// TestAnalyzeNHopPathsPageRankMaxWins verifies that when the same edge (f, t)
-// appears from multiple N-hop paths with different weights, the maximum weight
-// is kept (not the last-write-wins value).
-//
-// Regression test for #15695 — PageRank must use max-wins to match the
-// Python equivalent in rag/graphrag/search.py:186.
-//
-// Fixture: both paths share the (mid, dst) edge so the second NhopEntity
-// produces a competing weight for it. Max-wins should keep 0.7 (from path 1)
-// over 0.5 (from path 2). Under the old last-wins code the value would be 0.5.
+// TestAnalyzeNHopPathsPageRankMaxWins asserts that when the same edge
+// appears from multiple N-hop paths with different weights, the larger
+// weight wins.
 func TestAnalyzeNHopPathsPageRankMaxWins(t *testing.T) {
 	ents := map[string]*KGEntity{
 		"src": {
@@ -33,7 +26,7 @@ func TestAnalyzeNHopPathsPageRankMaxWins(t *testing.T) {
 	got := AnalyzeNHopPaths(ents)
 
 	// Repeated edge mid->dst: weights 0.7 (path 1) and 0.5 (path 2).
-	// Max-wins should keep 0.7, not the last-wins 0.5.
+	// Max-wins should keep 0.7.
 	if v, ok := got[Edge{"mid", "dst"}]; !ok {
 		t.Fatalf("missing edge mid->dst; got keys: %v", mapKeys(got))
 	} else if v.PageRank != 0.7 {
@@ -53,10 +46,8 @@ func TestAnalyzeNHopPathsPageRankMaxWins(t *testing.T) {
 	}
 }
 
-// TestAnalyzeNHopPathsPageRankGoOrderingIndependent reuses the same shared
-// (mid, dst) edge with the NhopEnts order reversed — under the old
-// last-wins code the mid->dst PageRank would flip to 0.5 (last write).
-// Max-wins must yield 0.7 regardless of path iteration order.
+// TestAnalyzeNHopPathsPageRankGoOrderingIndependent reverses the
+// NhopEnts order and asserts the same result.
 func TestAnalyzeNHopPathsPageRankGoOrderingIndependent(t *testing.T) {
 	ents := map[string]*KGEntity{
 		"src": {
@@ -69,7 +60,7 @@ func TestAnalyzeNHopPathsPageRankGoOrderingIndependent(t *testing.T) {
 				},
 				{
 					Path:    []string{"src", "mid", "dst"},
-					Weights: []float64{0.3, 0.7}, // processed second; old code would overwrite to 0.5
+					Weights: []float64{0.3, 0.7}, // processed second
 				},
 			},
 		},
