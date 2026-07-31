@@ -141,8 +141,16 @@ def _load_dify_retrieval(monkeypatch, *, kb, accessible, request_body, tenant_id
     _stub(
         monkeypatch,
         "common.metadata_utils",
-        meta_filter=lambda *_a, **_k: [],
         convert_conditions=lambda c: c,
+    )
+
+    async def _resolve_temporal_retrieval_context(**kwargs):
+        return SimpleNamespace(doc_ids=kwargs.get("base_doc_ids"), temporal_rank_policy=None)
+
+    _stub(
+        monkeypatch,
+        "common.temporal_retrieval",
+        resolve_temporal_retrieval_context=_resolve_temporal_retrieval_context,
     )
 
     _stub(monkeypatch, "rag.app.tag", label_question=lambda *_a, **_k: {})

@@ -98,9 +98,20 @@ def _load_dify_retrieval_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "common.settings", common_settings_mod)
 
     common_metadata_utils_mod = ModuleType("common.metadata_utils")
-    common_metadata_utils_mod.meta_filter = lambda *_args, **_kwargs: []
     common_metadata_utils_mod.convert_conditions = lambda *_args, **_kwargs: {}
     monkeypatch.setitem(sys.modules, "common.metadata_utils", common_metadata_utils_mod)
+
+    common_temporal_retrieval_mod = ModuleType("common.temporal_retrieval")
+
+    async def _resolve_temporal_retrieval_context(**kwargs):
+        return SimpleNamespace(doc_ids=kwargs.get("base_doc_ids"), temporal_rank_policy=None)
+
+    common_temporal_retrieval_mod.resolve_temporal_retrieval_context = _resolve_temporal_retrieval_context
+    monkeypatch.setitem(sys.modules, "common.temporal_retrieval", common_temporal_retrieval_mod)
+
+    common_temporal_validation_mod = ModuleType("common.temporal_validation")
+    common_temporal_validation_mod.validate_temporal_retrieval_config = lambda _config: None
+    monkeypatch.setitem(sys.modules, "common.temporal_validation", common_temporal_validation_mod)
 
     # 2. quart + werkzeug (avoid heavy web framework imports)
     qt_mod = ModuleType("quart")
@@ -317,7 +328,12 @@ def test_retrieval_success_with_metadata_and_kg(monkeypatch):
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _kb_id: (True, _DummyKB()))
     monkeypatch.setattr(module.KnowledgebaseService, "accessible", lambda _kb_id, _tenant_id: True)
     monkeypatch.setattr(module, "convert_conditions", lambda cond: cond.get("conditions", []))
-    monkeypatch.setattr(module, "meta_filter", lambda *_args, **_kwargs: [])
+
+    async def _resolve_temporal_context(**kwargs):
+        assert kwargs["base_doc_ids"] is None
+        return SimpleNamespace(doc_ids=["doc-1"], temporal_rank_policy=None)
+
+    monkeypatch.setattr(module, "resolve_temporal_retrieval_context", _resolve_temporal_context)
 
     retriever = _DummyRetriever()
     monkeypatch.setattr(module.settings, "retriever", retriever)

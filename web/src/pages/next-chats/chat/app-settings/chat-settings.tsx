@@ -70,6 +70,12 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         method: DatasetMetadata.Disabled,
         manual: [],
       },
+      temporal_retrieval: {
+        enabled: false,
+        mode: 'auto',
+        temporal_field: '',
+        half_life_days: 14,
+      },
     },
   });
 
@@ -134,6 +140,13 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       prompt_config: {
         ...data.prompt_config,
         reference_metadata: normalizedReferenceMetadata,
+      },
+      temporal_retrieval: {
+        enabled: false,
+        mode: 'auto',
+        temporal_field: '',
+        half_life_days: 14,
+        ...(data.temporal_retrieval || {}),
       },
       ...llmSettingEnabledValues,
     };

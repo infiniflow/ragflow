@@ -248,6 +248,14 @@ async def openai_chat_completions(chat_id):
     reference_metadata = extra_body.get("reference_metadata") or {}
     if reference_metadata and not isinstance(reference_metadata, dict):
         return get_error_data_result("reference_metadata must be an object.")
+    temporal_retrieval = extra_body.get("temporal_retrieval")
+    if temporal_retrieval is not None and not isinstance(temporal_retrieval, dict):
+        return get_error_data_result("temporal_retrieval must be an object.")
+    from common.temporal_validation import validate_temporal_retrieval_config
+
+    temporal_err = validate_temporal_retrieval_config(temporal_retrieval)
+    if temporal_err:
+        return get_error_data_result(temporal_err)
     include_reference_metadata = bool(reference_metadata.get("include", False))
     metadata_fields = reference_metadata.get("fields")
     if metadata_fields is not None and not isinstance(metadata_fields, list):
@@ -283,6 +291,8 @@ async def openai_chat_completions(chat_id):
         if not get_api_key(tenant_id=dia.tenant_id, model_name=requested_model):
             return get_error_data_result(message=f"Cannot use specified model {requested_model}.")
     merge_generation_config(dia, extract_generation_config(req))
+    if temporal_retrieval is not None:
+        dia.temporal_retrieval = temporal_retrieval
 
     metadata_condition = extra_body.get("metadata_condition") or {}
     if metadata_condition and not isinstance(metadata_condition, dict):

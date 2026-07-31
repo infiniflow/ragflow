@@ -15,9 +15,9 @@
 #
 
 import asyncio
-from copy import deepcopy
 import importlib.util
 import sys
+from copy import deepcopy
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
@@ -171,6 +171,10 @@ def _load_search_api(monkeypatch):
     services_pkg.duplicate_name = lambda _checker, **kwargs: kwargs.get("name", "")
     monkeypatch.setitem(sys.modules, "api.db.services", services_pkg)
 
+    knowledgebase_service_mod = ModuleType("api.db.services.knowledgebase_service")
+    knowledgebase_service_mod.KnowledgebaseService = SimpleNamespace()
+    monkeypatch.setitem(sys.modules, "api.db.services.knowledgebase_service", knowledgebase_service_mod)
+
     search_service_mod = ModuleType("api.db.services.search_service")
 
     class _SearchService:
@@ -265,6 +269,10 @@ def _load_search_api(monkeypatch):
     api_utils_mod.validate_request = _validate_request
     monkeypatch.setitem(sys.modules, "api.utils.api_utils", api_utils_mod)
     utils_pkg.api_utils = api_utils_mod
+
+    pagination_utils_mod = ModuleType("api.utils.pagination_utils")
+    pagination_utils_mod.validate_rest_api_page_size = lambda size: size
+    monkeypatch.setitem(sys.modules, "api.utils.pagination_utils", pagination_utils_mod)
 
     module_name = "test_search_api_unit_module"
     module_path = repo_root / "api" / "apps" / "restful_apis" / "search_api.py"
@@ -463,6 +471,74 @@ def test_update_and_detail_route_matrix_unit(monkeypatch):
     res = module.detail(search_id="s1")
     assert res["code"] == module.RetCode.EXCEPTION_ERROR
     assert "detail boom" in res["message"]
+
+
+@pytest.mark.p2
+def test_update_validates_and_merges_temporal_retrieval(monkeypatch):
+    module = _load_search_api(monkeypatch)
+    existing = _SearchRecord(
+        search_id="s1",
+        name="search",
+        search_config={
+            "temporal_retrieval": {
+                "enabled": True,
+                "mode": "auto",
+                "temporal_field": "published_at",
+                "half_life_days": 14,
+            }
+        },
+    )
+    monkeypatch.setattr(module.SearchService, "query", lambda **_kwargs: [existing])
+
+    _set_request_json(
+        monkeypatch,
+        module,
+        {
+            "name": "search",
+            "search_config": {
+                "temporal_retrieval": {
+                    "enabled": True,
+                    "temporal_field": "",
+                }
+            },
+        },
+    )
+    res = _run(module.update(search_id="s1"))
+    assert res["code"] == module.RetCode.DATA_ERROR
+    assert "temporal_field" in res["message"]
+
+    captured = {}
+
+    def _update(search_id, req):
+        captured["search_id"] = search_id
+        captured["req"] = deepcopy(req)
+        return True
+
+    monkeypatch.setattr(module.SearchService, "update_by_id", _update)
+    monkeypatch.setattr(
+        module.SearchService,
+        "get_by_id",
+        lambda search_id: (True, _SearchRecord(search_id=search_id, name="search")),
+    )
+    _set_request_json(
+        monkeypatch,
+        module,
+        {
+            "name": "search",
+            "search_config": {"temporal_retrieval": {"half_life_days": 7}},
+        },
+    )
+
+    res = _run(module.update(search_id="s1"))
+
+    assert res["code"] == module.RetCode.SUCCESS
+    assert captured["search_id"] == "s1"
+    assert captured["req"]["search_config"]["temporal_retrieval"] == {
+        "enabled": True,
+        "mode": "auto",
+        "temporal_field": "published_at",
+        "half_life_days": 7,
+    }
 
 
 @pytest.mark.p2

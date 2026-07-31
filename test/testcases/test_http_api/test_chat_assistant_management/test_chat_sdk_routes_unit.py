@@ -189,6 +189,10 @@ def _load_chat_module(monkeypatch):
     common_pkg.__path__ = [str(repo_root / "common")]
     monkeypatch.setitem(sys.modules, "common", common_pkg)
 
+    settings_mod = ModuleType("common.settings")
+    monkeypatch.setitem(sys.modules, "common.settings", settings_mod)
+    common_pkg.settings = settings_mod
+
     common_constants_mod = ModuleType("common.constants")
 
     class _StubLLMType(str, Enum):
@@ -247,6 +251,7 @@ def _load_chat_module(monkeypatch):
                     "top_k": None,
                     "rerank_id": None,
                     "meta_data_filter": None,
+                    "temporal_retrieval": None,
                     "created_by": None,
                     "create_time": None,
                     "create_date": None,
@@ -281,6 +286,7 @@ def _load_chat_module(monkeypatch):
     dialog_service_mod.async_ask = lambda *_args, **_kwargs: None
     dialog_service_mod.async_chat = lambda *_args, **_kwargs: None
     dialog_service_mod.gen_mindmap = lambda *_args, **_kwargs: None
+    dialog_service_mod.rag_agent = lambda *_args, **_kwargs: None
     monkeypatch.setitem(sys.modules, "api.db.services.dialog_service", dialog_service_mod)
 
     conversation_service_mod = ModuleType("api.db.services.conversation_service")
@@ -367,6 +373,7 @@ def _load_chat_module(monkeypatch):
     monkeypatch.setitem(sys.modules, "api.db.services.search_service", search_service_mod)
 
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
+    tenant_model_service_mod.get_api_key = lambda *_args, **_kwargs: SimpleNamespace(id=1)
     tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.resolve_model_config = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
@@ -781,6 +788,40 @@ def test_update_chat_allows_knowledge_placeholder_without_sources(monkeypatch):
 
     assert res["code"] == 0
     assert updated["prompt_config"]["system"] == "Answer with {knowledge}"
+
+
+@pytest.mark.p1
+def test_update_chat_merges_temporal_retrieval(monkeypatch):
+    module = _load_chat_module(monkeypatch)
+    existing = _DummyDialogRecord().to_dict()
+    existing["temporal_retrieval"] = {
+        "enabled": True,
+        "mode": "auto",
+        "temporal_field": "published_at",
+        "half_life_days": 14,
+    }
+    updated = {}
+
+    _set_request_json(monkeypatch, module, {"temporal_retrieval": {"half_life_days": 7}})
+    monkeypatch.setattr(module.DialogService, "query", lambda **_kwargs: [SimpleNamespace(id="chat-1")])
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _id: (True, _DummyDialogRecord(existing)))
+    monkeypatch.setattr(module.TenantService, "get_by_id", lambda _tid: (True, SimpleNamespace(llm_id="glm-4")))
+
+    def _update(_chat_id, payload):
+        updated.update(payload)
+        return True
+
+    monkeypatch.setattr(module.DialogService, "update_by_id", _update)
+
+    res = _run(module.update_chat.__wrapped__("chat-1"))
+
+    assert res["code"] == 0
+    assert updated["temporal_retrieval"] == {
+        "enabled": True,
+        "mode": "auto",
+        "temporal_field": "published_at",
+        "half_life_days": 7,
+    }
 
 
 @pytest.mark.p2

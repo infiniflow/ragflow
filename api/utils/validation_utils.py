@@ -31,6 +31,7 @@ from api.constants import DATASET_NAME_LIMIT, FILE_NAME_LEN_LIMIT
 from api.db import FileType
 from api.utils.pagination_utils import validate_rest_api_page_size
 from common.constants import RetCode
+from common.temporal_validation import TemporalRetrievalConfig, validate_temporal_retrieval_config
 
 
 async def validate_and_parse_json_request(
@@ -951,6 +952,17 @@ class SearchDatasetReq(BaseModel):
     rerank_id: Annotated[str | None, Field(default=None)]
     tenant_rerank_id: Annotated[str | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
+    temporal_retrieval: Annotated[TemporalRetrievalConfig | None, Field(default=None)]
+
+    @field_validator("temporal_retrieval", mode="before")
+    @classmethod
+    def validate_temporal_retrieval(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        err = validate_temporal_retrieval_config(value)
+        if err:
+            raise PydanticCustomError("format_invalid", err)
+        return value
 
 
 class SearchDatasetsReq(BaseModel):
@@ -973,6 +985,17 @@ class SearchDatasetsReq(BaseModel):
     rerank_id: Annotated[str | None, Field(default=None)]
     tenant_rerank_id: Annotated[str | None, Field(default=None)]
     meta_data_filter: Annotated[dict | None, Field(default=None)]
+    temporal_retrieval: Annotated[TemporalRetrievalConfig | None, Field(default=None)]
+
+    @field_validator("temporal_retrieval", mode="before")
+    @classmethod
+    def validate_temporal_retrieval(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        err = validate_temporal_retrieval_config(value)
+        if err:
+            raise PydanticCustomError("format_invalid", err)
+        return value
 
 
 class BaseListReq(BaseModel):

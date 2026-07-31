@@ -14,6 +14,7 @@ import {
   IKnowledgeGraph,
   INextTestingResult,
   IRenameTag,
+  ITemporalFieldProfile,
   ITestingResult,
   IWikiCommit,
   IWikiCommitDetail,
@@ -22,6 +23,7 @@ import {
 import { type IStructureGraphResponse } from '@/interfaces/database/document-structure';
 import {
   IFetchArtifactGraphRequestParams,
+  IGetTemporalMetadataProfileRequest,
   ITestRetrievalRequestBody,
   IUpdateArtifactPageRequestParams,
 } from '@/interfaces/request/knowledge';
@@ -91,6 +93,7 @@ export const enum KnowledgeApiAction {
   FetchWikiCommit = 'fetchWikiCommit',
   FetchMetadata = 'fetchMetadata',
   FetchMetadataKeys = 'fetchMetadataKeys',
+  FetchTemporalMetadataProfile = 'fetchTemporalMetadataProfile',
   FetchKnowledgeList = 'fetchKnowledgeList',
   RemoveKnowledgeGraph = 'removeKnowledgeGraph',
   ClearWiki = 'clearWiki',
@@ -99,6 +102,19 @@ export const enum KnowledgeApiAction {
   FetchArtifactAlteration = 'fetchArtifactAlteration',
   RunArtifactIndex = 'runArtifactIndex',
 }
+
+export const KnowledgeKeys = {
+  metadata: (kbIds: string[]) =>
+    [KnowledgeApiAction.FetchMetadata, [...kbIds].sort()] as const,
+  metadataKeys: (kbIds: string[]) =>
+    [KnowledgeApiAction.FetchMetadataKeys, [...kbIds].sort()] as const,
+  temporalMetadataProfile: (kbIds: string[], temporalField: string) =>
+    [
+      KnowledgeApiAction.FetchTemporalMetadataProfile,
+      [...kbIds].sort(),
+      temporalField,
+    ] as const,
+};
 
 export const useKnowledgeBaseId = (): string => {
   const { id } = useParams();
@@ -860,16 +876,17 @@ export const useDeleteDatasetStructure = () => {
 };
 
 export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
+  const sortedKbIds = useMemo(() => [...kbIds].sort(), [kbIds]);
   const { data, isFetching: loading } = useQuery<
     Record<string, Record<string, string[]>>
   >({
-    queryKey: [KnowledgeApiAction.FetchMetadata, kbIds],
+    queryKey: KnowledgeKeys.metadata(sortedKbIds),
     initialData: {},
-    enabled: kbIds.length > 0,
+    enabled: sortedKbIds.length > 0,
     gcTime: 0,
     queryFn: async () => {
       const { data } = await kbService.getMeta({
-        dataset_ids: kbIds.join(','),
+        dataset_ids: sortedKbIds.join(','),
       });
       return data?.data ?? {};
     },
@@ -881,7 +898,7 @@ export function useFetchKnowledgeMetadata(kbIds: string[] = []) {
 export function useFetchKnowledgeMetadataKeys(kbIds: string[] = []) {
   const sortedKbIds = useMemo(() => [...kbIds].sort(), [kbIds]);
   const { data, isFetching: loading } = useQuery<string[]>({
-    queryKey: [KnowledgeApiAction.FetchMetadataKeys, sortedKbIds],
+    queryKey: KnowledgeKeys.metadataKeys(sortedKbIds),
     initialData: [],
     enabled: sortedKbIds.length > 0,
     gcTime: 0,
@@ -894,6 +911,34 @@ export function useFetchKnowledgeMetadataKeys(kbIds: string[] = []) {
   });
 
   return { data, loading };
+}
+
+export function useFetchTemporalMetadataProfile(
+  kbIds: string[] = [],
+  temporalField = '',
+) {
+  const sortedKbIds = useMemo(() => [...kbIds].sort(), [kbIds]);
+  const normalizedField = temporalField.trim();
+  const { data, isFetching: loading, isError, error } = useQuery<
+    ITemporalFieldProfile | undefined
+  >({
+    queryKey: KnowledgeKeys.temporalMetadataProfile(
+      sortedKbIds,
+      normalizedField,
+    ),
+    enabled: sortedKbIds.length > 0 && normalizedField.length > 0,
+    gcTime: 0,
+    queryFn: async () => {
+      const params: IGetTemporalMetadataProfileRequest = {
+        kb_ids: sortedKbIds.join(','),
+        temporal_field: normalizedField,
+      };
+      const { data } = await kbService.getTemporalMetadataProfile(params);
+      return data?.data;
+    },
+  });
+
+  return { data, loading, error: isError ? error : undefined };
 }
 
 export const useRemoveKnowledgeGraph = () => {

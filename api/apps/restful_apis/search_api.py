@@ -19,19 +19,20 @@ import logging
 from numbers import Real
 
 from quart import Response, request
-from api.db.services.dialog_service import async_ask
-from api.apps import current_user, login_required
 
+from api.apps import current_user, login_required
 from api.constants import DATASET_NAME_LIMIT
 from api.db.db_models import DB
 from api.db.services import duplicate_name
+from api.db.services.dialog_service import async_ask
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import TenantService, UserTenantService
-from common.misc_utils import get_uuid
-from common.constants import RetCode, StatusEnum
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, server_error_response, validate_request
 from api.utils.pagination_utils import validate_rest_api_page_size
+from common.constants import RetCode, StatusEnum
+from common.misc_utils import get_uuid
+from common.temporal_validation import merge_temporal_retrieval_config, validate_temporal_retrieval_config
 
 
 def _full_text_weight(vector_similarity_weight):
@@ -150,6 +151,18 @@ async def update(search_id):
         new_config = req["search_config"]
         if not isinstance(new_config, dict):
             return get_data_error_result(message="search_config must be a JSON object")
+        if "temporal_retrieval" in new_config:
+            incoming_temporal = new_config.get("temporal_retrieval")
+            if incoming_temporal is not None and not isinstance(incoming_temporal, dict):
+                return get_data_error_result(message="`temporal_retrieval` should be an object.")
+            merged_temporal = merge_temporal_retrieval_config(
+                current_config.get("temporal_retrieval"),
+                incoming_temporal,
+            )
+            temporal_err = validate_temporal_retrieval_config(merged_temporal)
+            if temporal_err:
+                return get_data_error_result(message=temporal_err)
+            new_config = {**new_config, "temporal_retrieval": merged_temporal}
         req["search_config"] = {**current_config, **new_config}
         logging.debug(
             "Search update weight: search_id=%s user_id=%s incoming_vector_similarity_weight=%s stored_vector_similarity_weight=%s stored_full_text_weight=%s",
