@@ -44,27 +44,27 @@ func TestChunksToAny(t *testing.T) {
 	}
 }
 
-func TestAnalyzeRaptorProducts_TreeShape(t *testing.T) {
+func TestAnalyzeTreeProducts_TreeShape(t *testing.T) {
 	vector := json.RawMessage(`[0.1,0.2,0.3]`)
 	chunks := []schema.ChunkDoc{
 		{Text: "root summary", Extra: mustExtras(t, map[string]any{
-			"id": "r1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "raptor",
+			"id": "r1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
 			"kc_kind": "root", "kc_level": float64(-1), "q_3_vec": vector,
 		})},
 		{Text: "leaf A", Extra: mustExtras(t, map[string]any{
-			"id": "a1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "raptor",
+			"id": "a1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
 			"kc_kind": "summary", "kc_level": float64(0), "parent_kwd": "r1", "q_3_vec": vector,
 		})},
 		{Text: "leaf B", Extra: mustExtras(t, map[string]any{
-			"id": "b1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "raptor",
+			"id": "b1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
 			"kc_kind": "summary", "kc_level": float64(0), "parent_kwd": "r1", "q_3_vec": vector,
 		})},
 		{Text: "mid A", Extra: mustExtras(t, map[string]any{
-			"id": "m1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "raptor",
+			"id": "m1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
 			"kc_kind": "summary", "kc_level": float64(1), "parent_kwd": "r1", "q_3_vec": vector,
 		})},
 	}
-	m := AnalyzeRaptorProducts(chunks)
+	m := AnalyzeTreeProducts(chunks)
 	if m.RootCount != 1 {
 		t.Errorf("RootCount = %d, want 1", m.RootCount)
 	}
@@ -82,18 +82,18 @@ func TestAnalyzeRaptorProducts_TreeShape(t *testing.T) {
 	}
 }
 
-func TestAnalyzeRaptorProducts_DetectsDanglingParent(t *testing.T) {
+func TestAnalyzeTreeProducts_DetectsDanglingParent(t *testing.T) {
 	chunks := []schema.ChunkDoc{
 		{Text: "root", Extra: mustExtras(t, map[string]any{
-			"id": "r1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "raptor",
+			"id": "r1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
 			"kc_kind": "root",
 		})},
 		{Text: "orphan", Extra: mustExtras(t, map[string]any{
-			"id": "o1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "raptor",
+			"id": "o1", "doc_id": "d1", "tenant_id": "t1", "compile_kwd": "tree",
 			"kc_kind": "summary", "kc_level": float64(0), "parent_kwd": "missing-parent",
 		})},
 	}
-	m := AnalyzeRaptorProducts(chunks)
+	m := AnalyzeTreeProducts(chunks)
 	if m.AllParented {
 		t.Error("AllParented = true, want false (o1's parent is missing)")
 	}

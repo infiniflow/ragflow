@@ -109,7 +109,7 @@ func (mockChat) Chat(_ context.Context, req common.ChatRequest) (*common.ChatRes
 }
 
 // proseChat returns generic, non-empty prose for the non-structure variants
-// (wiki/raptor/mindmap/datasetnav), which all just need a summary/outline text.
+// (wiki/tree/mindmap/datasetnav), which all just need a summary/outline text.
 type proseChat struct{}
 
 func (proseChat) Chat(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
@@ -334,10 +334,10 @@ func TestKnowledgeCompiler_Wiki_EndToEnd(t *testing.T) {
 	}
 }
 
-func TestKnowledgeCompiler_Raptor_EndToEnd(t *testing.T) {
+func TestKnowledgeCompiler_Tree_EndToEnd(t *testing.T) {
 	installProseDeps(t)
 	// watershed (default tree_order): zero external clustering dependency.
-	chunks := runVariant(t, "raptor", nil)
+	chunks := runVariant(t, "tree", nil)
 	foundRoot := false
 	for _, c := range chunks {
 		if kind, _ := c["kc_kind"].(string); kind == "root" {
@@ -345,14 +345,14 @@ func TestKnowledgeCompiler_Raptor_EndToEnd(t *testing.T) {
 		}
 	}
 	if !foundRoot {
-		t.Fatalf("raptor(default): no 'root' chunk; got %d chunks", len(chunks))
+		t.Fatalf("tree(default): no 'root' chunk; got %d chunks", len(chunks))
 	}
 
 	// A smaller tree_order (more, smaller clusters) must also run and still
 	// produce a well-formed tree (root present, chunks non-empty).
-	chunksCoarse := runVariant(t, "raptor", map[string]any{"extra": map[string]any{"tree_order": 2}})
+	chunksCoarse := runVariant(t, "tree", map[string]any{"extra": map[string]any{"tree_order": 2}})
 	if len(chunksCoarse) == 0 {
-		t.Fatalf("raptor(tree_order=2): produced no chunks")
+		t.Fatalf("tree(tree_order=2): produced no chunks")
 	}
 	foundRootCoarse := false
 	for _, c := range chunksCoarse {
@@ -361,7 +361,7 @@ func TestKnowledgeCompiler_Raptor_EndToEnd(t *testing.T) {
 		}
 	}
 	if !foundRootCoarse {
-		t.Fatalf("raptor(tree_order=2): no 'root' chunk; got %d chunks", len(chunksCoarse))
+		t.Fatalf("tree(tree_order=2): no 'root' chunk; got %d chunks", len(chunksCoarse))
 	}
 }
 
@@ -534,8 +534,8 @@ func (m constEmbedder) Encode(_ context.Context, texts []string) ([][]float32, e
 	return out, nil
 }
 
-// TestKnowledgeCompiler_Raptor_DegenerateNoInfiniteLoop is a regression for the
-// High-1 bug: RAPTOR could recurse forever when a re-cluster returned a single
+// TestKnowledgeCompiler_Tree_DegenerateNoInfiniteLoop is a regression for the
+// High-1 bug: the tree builder could recurse forever when a re-cluster returned a single
 // label covering all points. The default mockEmbedder emits non-negative
 // vectors, so under the watershed default (tree_order=4, ratio 25) every adjacent pair
 // has cosine >= 0 and a pathological input can collapse into one cluster; with
@@ -543,10 +543,10 @@ func (m constEmbedder) Encode(_ context.Context, texts []string) ([][]float32, e
 // work item at level+1 and hung. This test uses 6 chunks and asserts the run
 // terminates with a well-formed root. (If the guard regresses, go test's timeout
 // turns the hang into a failure.)
-func TestKnowledgeCompiler_Raptor_DegenerateNoInfiniteLoop(t *testing.T) {
+func TestKnowledgeCompiler_Tree_DegenerateNoInfiniteLoop(t *testing.T) {
 	installProseDeps(t)
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant": "raptor", "llm_id": "llm1", "embedding_model": "emb1",
+		"variant": "tree", "llm_id": "llm1", "embedding_model": "emb1",
 		"extra": map[string]any{"tree_order": 4},
 	})
 	if err != nil {
@@ -565,7 +565,7 @@ func TestKnowledgeCompiler_Raptor_DegenerateNoInfiniteLoop(t *testing.T) {
 		"tenant_id": "t1",
 	})
 	if err != nil {
-		t.Fatalf("Invoke hung or errored (RAPTOR infinite recursion?): %v", err)
+		t.Fatalf("Invoke hung or errored (tree infinite recursion?): %v", err)
 	}
 	raw, ok := out["chunks"].([]any)
 	if !ok {
@@ -580,7 +580,7 @@ func TestKnowledgeCompiler_Raptor_DegenerateNoInfiniteLoop(t *testing.T) {
 		}
 	}
 	if !foundRoot {
-		t.Fatalf("raptor(degenerate): no root chunk; got %d chunks", len(raw))
+		t.Fatalf("tree(degenerate): no root chunk; got %d chunks", len(raw))
 	}
 }
 

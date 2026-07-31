@@ -21,7 +21,7 @@ type Variant string
 const (
 	VariantStructure  Variant = "structure"
 	VariantWiki       Variant = "wiki"
-	VariantRaptor     Variant = "raptor"
+	VariantTree       Variant = "tree"
 	VariantMindmap    Variant = "mindmap"
 	VariantDatasetnav Variant = "datasetnav"
 )
@@ -158,8 +158,8 @@ func normalizeVariant(s string) Variant {
 		return VariantStructure
 	case "wiki":
 		return VariantWiki
-	case "raptor":
-		return VariantRaptor
+	case "tree":
+		return VariantTree
 	case "mindmap", "mind_map":
 		if strings.Contains(s, "_") {
 			LogDeprecated("mind_map", "mindmap")

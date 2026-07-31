@@ -1,6 +1,6 @@
 // Package knowledge_compiler implements the KnowledgeCompiler ingestion
 // component: a single runtime.Component that dispatches to one of the
-// knowledge-compile variants (structure / wiki / raptor / mindmap / datasetnav)
+// knowledge-compile variants (structure / wiki / tree / mindmap / datasetnav)
 // based on the `variant` param. See PORT_PLAN.md for the full design.
 package knowledge_compiler
 
@@ -13,8 +13,8 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/datasetnav"
 	"ragflow/internal/ingestion/component/knowledge_compiler/mindmap"
-	"ragflow/internal/ingestion/component/knowledge_compiler/raptor"
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
+	"ragflow/internal/ingestion/component/knowledge_compiler/tree"
 	"ragflow/internal/ingestion/component/knowledge_compiler/wiki"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -95,7 +95,7 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	// Validate the variant before resolving deps so a bad variant fails fast
 	// with ErrUnknownVariant rather than a deps-resolution error.
 	switch param.Variant {
-	case common.VariantStructure, common.VariantWiki, common.VariantRaptor,
+	case common.VariantStructure, common.VariantWiki, common.VariantTree,
 		common.VariantMindmap, common.VariantDatasetnav:
 		// recognised; dispatch below
 	default:
@@ -133,8 +133,8 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		out, err = structure.Run(ctx, deps, param, in)
 	case common.VariantWiki:
 		out, err = wiki.Run(ctx, deps, param, in)
-	case common.VariantRaptor:
-		out, err = raptor.Run(ctx, deps, param, in)
+	case common.VariantTree:
+		out, err = tree.Run(ctx, deps, param, in)
 	case common.VariantMindmap:
 		out, err = mindmap.Run(ctx, deps, param, in)
 	case common.VariantDatasetnav:
@@ -179,7 +179,7 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 var variantCompileKWD = map[common.Variant]string{
 	common.VariantStructure:  "structure",
 	common.VariantWiki:       "artifact_page",
-	common.VariantRaptor:     "raptor",
+	common.VariantTree:       "tree",
 	common.VariantMindmap:    "mindmap",
 	common.VariantDatasetnav: "dataset_nav",
 }
@@ -398,7 +398,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 			}
 		}
 
-	case common.VariantRaptor:
+	case common.VariantTree:
 		// raptor_kwd tags summary/root nodes; raptor_layer_int records tree depth.
 		if kind != "" {
 			if err := doc.SetExtraValue("raptor_kwd", kind); err != nil {

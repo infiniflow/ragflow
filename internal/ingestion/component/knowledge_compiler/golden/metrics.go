@@ -7,7 +7,7 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 )
 
-// TreeMetrics summarizes the structural shape of a raptor product tree.
+// TreeMetrics summarizes the structural shape of a tree product tree.
 type TreeMetrics struct {
 	ProductCount int
 	RootCount    int
@@ -18,10 +18,10 @@ type TreeMetrics struct {
 	SchemaOK     bool // every product carries the schema fields
 }
 
-// AnalyzeRaptorProducts validates tree integrity and computes structural
-// metrics from a flat chunk list (the compiled raptor output, expressed as
+// AnalyzeTreeProducts validates tree integrity and computes structural
+// metrics from a flat chunk list (the compiled tree output, expressed as
 // schema.ChunkDoc values). Used by the 缺口 C golden gate.
-func AnalyzeRaptorProducts(chunks []schema.ChunkDoc) TreeMetrics {
+func AnalyzeTreeProducts(chunks []schema.ChunkDoc) TreeMetrics {
 	ids := make(map[string]bool, len(chunks))
 	for _, c := range chunks {
 		if id, ok := c.GetExtraString("id"); ok {
@@ -70,7 +70,7 @@ func AnalyzeRaptorProducts(chunks []schema.ChunkDoc) TreeMetrics {
 }
 
 // CoverageFraction reports how completely the input chunks are represented by
-// the raptor tree. Every source chunk is assigned to exactly one level-0
+// the tree. Every source chunk is assigned to exactly one level-0
 // cluster in buildTree, and each such cluster becomes a leaf summary node, so a
 // well-formed tree covers 100% of chunks. nChunks is the input chunk count.
 func (m TreeMetrics) CoverageFraction(nChunks int) float64 {
