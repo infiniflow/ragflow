@@ -79,6 +79,7 @@ func newFeishuChannel(account feishuAccount) *feishuChannel {
 	}
 	ch := &feishuChannel{
 		account: account,
+		ctx:     context.Background(),
 		seen:    map[string]time.Time{},
 		workers: map[string]*feishuWorker{},
 	}
