@@ -151,7 +151,12 @@ def _apply_model_family_policies(
     # Qwen3 keeps RAGFlow's system default of disabling thinking unless explicitly overridden.
     if "qwen3" in model_name_lower:
         _pop_thinking_controls()
-        enable_thinking = thinking_type == "enabled" if thinking_type else False
+        # -preview variants (e.g. qwen3.8-max-preview) only accept
+        # enable_thinking=True; the API rejects any other value.
+        if "-preview" in model_name_lower:
+            enable_thinking = True
+        else:
+            enable_thinking = thinking_type == "enabled" if thinking_type else False
         if backend == "litellm" and provider in {
             SupportedLiteLLMProvider.Tongyi_Qianwen,
             SupportedLiteLLMProvider.Dashscope,
