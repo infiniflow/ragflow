@@ -43,7 +43,7 @@ WIKI_CANONICAL_ENTITY_COMPILE_KWD = "wiki_canonical_entity"
 # Entity matching thresholds (not exposed in YAML)
 ENTITY_MERGE_THRESHOLD = 0.90  # auto-merge
 ENTITY_AMBIGUOUS_LOW = 0.75  # LLM confirm boundary
-ENTITY_PAIRWISE_BATCH_SIZE = 100  # embedding pairwise batch
+ENTITY_PAIRWISE_BLOCK_SIZE = 1024  # blockwise embedding matrix block size
 
 # Number of concurrent KNN queries for entity matching
 ENTITY_MATCH_KNN_CONCURRENT = 20
@@ -362,6 +362,7 @@ async def _wiki_match_entities(
         canonical_map: {canonical_name: merged_entry}
         name_resolution: {raw_name: canonical_name}entries still need semantic matching
     """
+
     def _progress(msg: str) -> None:
         logging.info("wiki entity matching: %s", msg)
         if progress:
@@ -456,82 +457,110 @@ async def _wiki_match_entities(
         unmatched = still_unmatched
 
     # Step 3: Intra-build pairwise (only on first build, i.e., non-incremental)
+    # Blockwise matrix multiplication — mirrors old _embedding_dedup in
+    # _common.py.  Avoids O(N²) Python loops and materializing an N×N matrix
+    # (OOM risk); peak memory is O(block²).
     if not incremental and len(unmatched) > 1 and embd_mdl:
         query_texts = [_entity_to_query_text(e) for e in unmatched]
         embeddings, _ = await thread_pool_exec(embd_mdl.encode, query_texts)
+        try:
+            matrix = np.asarray([list(v) for v in embeddings], dtype=np.float32)
+            if matrix.ndim != 2 or matrix.shape[0] != len(unmatched):
+                raise ValueError("invalid embedding matrix shape")
+            norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+            matrix = np.divide(matrix, norms, out=np.zeros_like(matrix), where=norms > 0)
+        except Exception:
+            logging.exception("wiki: pairwise embedding failed; skipping semantic merge")
+            matrix = None
 
-        # Pairwise embedding — adapted from old _embedding_dedup
-        merged_into: dict[int, int] = {}  # index → parent index
-        maybe_pairs: list[tuple[int, int]] = []
+        if matrix is not None:
+            merged_into: dict[int, int] = {}
+            maybe_pairs: list[tuple[int, int]] = []
 
-        def _find_parent(x: int) -> int:
-            while x in merged_into:
-                x = merged_into[x]
-            return x
+            def _root(i: int) -> int:
+                while i in merged_into:
+                    i = merged_into[i]
+                return i
 
-        n = len(unmatched)
-        for i in range(n):
-            if unmatched[i]["type"] == "concept":
-                continue  # concepts don't do LLM pairwise
-            for j in range(i + 1, n):
-                if unmatched[j]["type"] == "concept":
+            n = len(unmatched)
+            block_size = ENTITY_PAIRWISE_BLOCK_SIZE
+            # Group by type: only entities of the SAME type are pairwise candidates
+            # (entity-vs-entity, concept-vs-concept).  This mirrors old behavior
+            # of passing type_key so cross-type pairs are never merged.
+            groups: dict[str, list[int]] = {}
+            for idx, entry in enumerate(unmatched):
+                groups.setdefault(entry.get("type", "entity"), []).append(idx)
+
+            auto_pairs: list[tuple[int, int]] = []
+            ambiguous_pairs: list[tuple[int, int]] = []
+            for group_indices in groups.values():
+                for left_start in range(0, len(group_indices), block_size):
+                    left_indices = group_indices[left_start : left_start + block_size]
+                    left_vectors = matrix[left_indices]
+                    for right_start in range(left_start, len(group_indices), block_size):
+                        right_indices = group_indices[right_start : right_start + block_size]
+                        sims = left_vectors @ matrix[right_indices].T  # [B, B] BLAS
+                        if right_start == left_start:
+                            candidate_mask = np.triu(sims >= ENTITY_AMBIGUOUS_LOW, k=1)
+                        else:
+                            candidate_mask = sims >= ENTITY_AMBIGUOUS_LOW
+                        rows, cols = np.nonzero(candidate_mask)
+                        for row, col in zip(rows.tolist(), cols.tolist(), strict=True):
+                            score = float(sims[row, col])
+                            if score >= ENTITY_MERGE_THRESHOLD:
+                                auto_pairs.append((left_indices[row], right_indices[col]))
+                            else:
+                                ambiguous_pairs.append((left_indices[row], right_indices[col]))
+
+            # Apply auto-merges with union-find (higher evidence wins)
+            for i, j in auto_pairs:
+                ri, rj = _root(i), _root(j)
+                if ri == rj:
                     continue
-                ei = embeddings[i]
-                ej = embeddings[j]
-                if hasattr(ei, "tolist"):
-                    ei = ei.tolist()
-                if hasattr(ej, "tolist"):
-                    ej = ej.tolist()
-                sim = float(np.dot(ei, ej) / (np.linalg.norm(ei) * np.linalg.norm(ej) + 1e-10))
-                if sim >= ENTITY_MERGE_THRESHOLD:
-                    pi, pj = _find_parent(i), _find_parent(j)
-                    if pi != pj:
-                        merged_into[pj] = pi
-                elif sim >= ENTITY_AMBIGUOUS_LOW:
-                    maybe_pairs.append((i, j))
+                if unmatched[ri].get("claim_count", 0) >= unmatched[rj].get("claim_count", 0):
+                    merged_into[rj] = ri
+                else:
+                    merged_into[ri] = rj
 
-        # LLM confirm for maybe pairs (first build only)
-        if maybe_pairs and chat_mdl:
-            llm_candidates = []
-            for i, j in maybe_pairs:
-                pi, pj = _find_parent(i), _find_parent(j)
-                if pi != pj:
-                    llm_candidates.append((unmatched[i]["name"], unmatched[j]["name"]))
-            if llm_candidates:
+            # Keep only ambiguous pairs still in separate groups
+            still_ambiguous = [(i, j) for i, j in ambiguous_pairs if _root(i) != _root(j)]
+
+            # LLM confirm for ambiguous pairs (first build only)
+            if still_ambiguous and chat_mdl:
+                llm_candidates = [(unmatched[i]["name"], unmatched[j]["name"]) for i, j in still_ambiguous]
                 confirmed = await _wiki_confirm_batch(llm_candidates, chat_mdl)
-                confirmed_set = set()
-                for raw_a, raw_b in confirmed:
-                    idx_a = next(k for k, e in enumerate(unmatched) if e["name"] == raw_a)
-                    idx_b = next(k for k, e in enumerate(unmatched) if e["name"] == raw_b)
-                    pa, pb = _find_parent(idx_a), _find_parent(idx_b)
-                    if pa != pb:
-                        merged_into[pb] = pa
-                        confirmed_set.add(raw_a)
-                        confirmed_set.add(raw_b)
+                confirmed_map = {frozenset((a, b)) for a, b in confirmed}
+                for i, j in still_ambiguous:
+                    pair = frozenset((unmatched[i]["name"], unmatched[j]["name"]))
+                    if pair in confirmed_map:
+                        ri, rj = _root(i), _root(j)
+                        if ri != rj:
+                            if unmatched[ri].get("claim_count", 0) >= unmatched[rj].get("claim_count", 0):
+                                merged_into[rj] = ri
+                            else:
+                                merged_into[ri] = rj
 
-        # Apply merges
-        merged_indices: dict[int, list[int]] = {}
-        for i in range(n):
-            pi = _find_parent(i)
-            merged_indices.setdefault(pi, []).append(i)
+            # Apply merges
+            merged_indices: dict[int, list[int]] = {}
+            for i in range(n):
+                pi = _root(i)
+                merged_indices.setdefault(pi, []).append(i)
 
-        new_unmatched = []
-        for pi, indices in merged_indices.items():
-            if len(indices) > 1:
-                # Merge into the first entry (most representative)
-                master = unmatched[indices[0]]
-                for idx in indices[1:]:
-                    slave = unmatched[idx]
-                    master["claims"].extend(slave["claims"])
-                    master["claim_count"] += slave["claim_count"]
-                    master["source_doc_ids"] = list(set(master["source_doc_ids"]) | set(slave["source_doc_ids"]))
-                    master["aliases"] = list(set(master["aliases"] + slave["aliases"] + [slave["name"]]))
-                    # Canonical name: keep the most common one
-                    name_resolution[slave["name"]] = master["name"]
-                new_unmatched.append(master)
-            else:
-                new_unmatched.append(unmatched[indices[0]])
-        unmatched = new_unmatched
+            new_unmatched = []
+            for pi, indices in merged_indices.items():
+                if len(indices) > 1:
+                    master = unmatched[indices[0]]
+                    for idx in indices[1:]:
+                        slave = unmatched[idx]
+                        master["claims"].extend(slave["claims"])
+                        master["claim_count"] += slave["claim_count"]
+                        master["source_doc_ids"] = list(set(master["source_doc_ids"]) | set(slave["source_doc_ids"]))
+                        master["aliases"] = list(set(master["aliases"] + slave["aliases"] + [slave["name"]]))
+                        name_resolution[slave["name"]] = master["name"]
+                    new_unmatched.append(master)
+                else:
+                    new_unmatched.append(unmatched[indices[0]])
+            unmatched = new_unmatched
 
     # Step 4: Build canonical map
     canonical_map: dict[str, dict] = {}
@@ -1645,7 +1674,7 @@ async def wiki_compile_incremental(
         _progress("Entity Matching: no canonical entities found. Skipping.")
         return summary
 
-    _progress("Entity Matching: %d"%len(name_resolution.keys()))
+    _progress("Entity Matching: %d" % len(name_resolution.keys()))
     # Persist new/changed canonical entities
     for cname, centry in canonical_map.items():
         existing = canonical_entities.get(cname)
