@@ -800,7 +800,11 @@ class Parser(ProcessBase):
                 if b.get("layout_type", "") == "title":
                     mkdn += "\n## "
                 if b.get("layout_type", "") == "figure":
-                    mkdn += "\n![Image]({})".format(VLM.image2base64(b["image"]))
+                    image = b.get("image")
+                    if image is None:
+                        logging.warning(f"Skipping figure in markdown output for {name}: image resource is unavailable (parse_method={parse_method}).")
+                        continue
+                    mkdn += "\n![Image]({})".format(VLM.image2base64(image))
                     continue
                 mkdn += b.get("text", "") + "\n"
             self.set_output("markdown", mkdn)
