@@ -36,7 +36,7 @@ func NewTokenHubModel(baseURL map[string]string, urlSuffix URLSuffix) *TokenHubM
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

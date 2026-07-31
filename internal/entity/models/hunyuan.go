@@ -38,7 +38,7 @@ func NewHunyuanModel(baseURL map[string]string, urlSuffix URLSuffix) *HunyuanMod
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

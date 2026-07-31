@@ -65,6 +65,7 @@ func newJieKouAIForTest(baseURL string) *JieKouAIModel {
 }
 
 func TestJieKouAIChatForcesNonStreaming(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newJieKouAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -109,6 +110,7 @@ func TestJieKouAIChatForcesNonStreaming(t *testing.T) {
 }
 
 func TestJieKouAIChatSendsExplicitThinkingFalse(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newJieKouAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["enable_thinking"] != false {
 			t.Errorf("enable_thinking=%v, want false", body["enable_thinking"])
@@ -138,6 +140,7 @@ func TestJieKouAIChatSendsExplicitThinkingFalse(t *testing.T) {
 }
 
 func TestJieKouAIStreamForcesStreaming(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newJieKouAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/openai/v1/chat/completions" {
 			t.Errorf("path=%s, want /openai/v1/chat/completions", r.URL.Path)
@@ -190,6 +193,7 @@ func TestJieKouAIStreamForcesStreaming(t *testing.T) {
 }
 
 func TestJieKouAIListModelsHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newJieKouAIServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
@@ -218,6 +222,7 @@ func TestJieKouAIListModelsHappyPath(t *testing.T) {
 }
 
 func TestJieKouAIListModelsRejectsMalformedResponse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	for name, response := range map[string]interface{}{
@@ -238,6 +243,7 @@ func TestJieKouAIListModelsRejectsMalformedResponse(t *testing.T) {
 }
 
 func TestJieKouAIEmbedSendsValidatedRequest(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newJieKouAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/openai/v1/embeddings" {
@@ -271,6 +277,7 @@ func TestJieKouAIEmbedSendsValidatedRequest(t *testing.T) {
 }
 
 func TestJieKouAIRerankHandlesNilConfig(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newJieKouAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/openai/v1/rerank" {
@@ -306,6 +313,7 @@ func TestJieKouAIRerankHandlesNilConfig(t *testing.T) {
 }
 
 func TestJieKouAIValidatesInputs(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	emptyKey := "  "

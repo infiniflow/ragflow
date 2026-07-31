@@ -51,6 +51,7 @@ func newGiteeForChatTest(baseURL string) *GiteeModel {
 }
 
 func TestGiteeStreamAcceptsTerminalWithoutDelta(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -110,6 +111,7 @@ func deepSeekAliasModelsForTest(t *testing.T) map[string]Model {
 }
 
 func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	initProviderManagerWithGiteeForTest(t)
 	aliasModels := deepSeekAliasModelsForTest(t)
@@ -187,6 +189,7 @@ func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
 }
 
 func TestGiteeListModelsKeepsOwnedBySuffixAfterAliasMetadataLookup(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	initProviderManagerWithGiteeForTest(t)
 
@@ -218,6 +221,7 @@ func TestGiteeListModelsKeepsOwnedBySuffixAfterAliasMetadataLookup(t *testing.T)
 }
 
 func TestGiteeListModelsIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	if common.GetEnv(common.EnvGiteeListModelsIntegration) != "1" {
 		t.Skip("set GITEE_LIST_MODELS_INTEGRATION=1 to call the real Gitee models endpoint")

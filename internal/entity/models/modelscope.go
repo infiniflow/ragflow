@@ -61,7 +61,7 @@ func NewModelScopeModel(baseURL map[string]string, urlSuffix URLSuffix) *ModelSc
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(),
+			httpClient:       NewDriverHTTPClient(true),
 		},
 	}
 }

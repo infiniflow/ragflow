@@ -113,6 +113,7 @@ func TestNewGroqModelHandlesCustomDefaultTransport(t *testing.T) {
 }
 
 func TestGroqChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGroqServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s", r.Method)
@@ -181,6 +182,7 @@ func TestGroqChatHappyPath(t *testing.T) {
 }
 
 func TestGroqChatRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newGroqForTest("http://unused").ChatWithMessages(ctx, "", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -190,6 +192,7 @@ func TestGroqChatRequiresModelName(t *testing.T) {
 }
 
 func TestGroqChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newGroqForTest("http://unused").ChatWithMessages(ctx, "llama-3.3-70b-versatile", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -199,6 +202,7 @@ func TestGroqChatRequiresMessages(t *testing.T) {
 }
 
 func TestGroqChatRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGroqServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":{"message":"unauthorized"}}`))
@@ -221,6 +225,7 @@ func TestGroqChatRejectsHTTPError(t *testing.T) {
 }
 
 func TestGroqStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGroqServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -280,6 +285,7 @@ func TestGroqStreamHappyPath(t *testing.T) {
 }
 
 func TestGroqStreamRejectsExplicitFalse(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
 	stream := false
 	ctx := t.Context()
@@ -298,6 +304,7 @@ func TestGroqStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestGroqStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
 	ctx := t.Context()
 	err := newGroqForTest("http://unused").ChatStreamlyWithSender(
@@ -315,6 +322,7 @@ func TestGroqStreamRequiresSender(t *testing.T) {
 }
 
 func TestGroqStreamRejectsUnterminatedStream(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newGroqServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"content":"partial"}}]}`+"\n")
@@ -338,6 +346,7 @@ func TestGroqStreamRejectsUnterminatedStream(t *testing.T) {
 }
 
 func TestGroqListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newGroqServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
@@ -370,6 +379,7 @@ func TestGroqListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestGroqBaseURLTrimsTrailingSlash(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newGroqServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
@@ -397,6 +407,7 @@ func TestGroqBaseURLTrimsTrailingSlash(t *testing.T) {
 }
 
 func TestGroqUsesEmptyRegionCustomBaseURL(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newGroqServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
@@ -429,6 +440,7 @@ func TestGroqUsesEmptyRegionCustomBaseURL(t *testing.T) {
 }
 
 func TestGroqUnsupportedMethods(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newGroqForTest("http://unused")
 	if _, err := m.Embed(ctx, nil, nil, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {

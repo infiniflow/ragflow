@@ -114,6 +114,7 @@ func TestStepFunNewInstancePreservesConfig(t *testing.T) {
 }
 
 func TestStepFunChatParsesUsage(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -161,6 +162,7 @@ func TestStepFunChatParsesUsage(t *testing.T) {
 }
 
 func TestStepFunChatParsesExtendedUsage(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -214,6 +216,7 @@ func TestStepFunChatParsesExtendedUsage(t *testing.T) {
 }
 
 func TestStepFunChatFallsBackTotalTokens(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -254,6 +257,7 @@ func TestStepFunChatFallsBackTotalTokens(t *testing.T) {
 }
 
 func TestStepFunChatNilUsageWhenAllZero(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -292,6 +296,7 @@ func TestStepFunChatNilUsageWhenAllZero(t *testing.T) {
 }
 
 func TestStepFunChatExtractsReasoning(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -334,6 +339,7 @@ func TestStepFunChatExtractsReasoning(t *testing.T) {
 }
 
 func TestStepFunChatFallsBackToReasoningContent(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -376,6 +382,7 @@ func TestStepFunChatFallsBackToReasoningContent(t *testing.T) {
 }
 
 func TestStepFunChatAcceptsReasoningOnlyResponse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -421,6 +428,7 @@ func TestStepFunChatAcceptsReasoningOnlyResponse(t *testing.T) {
 }
 
 func TestStepFunStreamParsesUsage(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"content":"hi"}}]}`+"\n"+
@@ -448,6 +456,7 @@ func TestStepFunStreamParsesUsage(t *testing.T) {
 }
 
 func TestStepFunStreamNullUsage(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	// StepFun may send usage: null on intermediate chunks.
 	srv := newStepFunSSEServer(t, "/v1/chat/completions",
@@ -476,6 +485,7 @@ func TestStepFunStreamNullUsage(t *testing.T) {
 }
 
 func TestStepFunStreamExtractsReasoning(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
@@ -516,6 +526,7 @@ func TestStepFunStreamExtractsReasoning(t *testing.T) {
 }
 
 func TestStepFunStreamFallsBackToReasoningContent(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"reasoning_content":"ds-style reasoning"}}]}`+"\n"+
@@ -546,6 +557,7 @@ func TestStepFunStreamFallsBackToReasoningContent(t *testing.T) {
 }
 
 func TestStepFunStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
@@ -585,6 +597,7 @@ func TestStepFunStreamHappyPath(t *testing.T) {
 }
 
 func TestStepFunStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newStepFunForTest("http://unused")
 	apiKey := "test-key"
@@ -597,6 +610,7 @@ func TestStepFunStreamRequiresSender(t *testing.T) {
 }
 
 func TestStepFunStreamFailsWithoutTerminal(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"delta":{"content":"half"}}]}`+"\n",
@@ -615,6 +629,7 @@ func TestStepFunStreamFailsWithoutTerminal(t *testing.T) {
 }
 
 func TestStepFunChatRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newStepFunForTest("http://unused")
 	_, err := m.ChatWithMessages(ctx, "step-3.7-flash",
@@ -626,6 +641,7 @@ func TestStepFunChatRequiresAPIKey(t *testing.T) {
 }
 
 func TestStepFunChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newStepFunForTest("http://unused")
 	apiKey := "test-key"
@@ -636,6 +652,7 @@ func TestStepFunChatRequiresMessages(t *testing.T) {
 }
 
 func TestStepFunChatRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -654,6 +671,7 @@ func TestStepFunChatRejectsHTTPError(t *testing.T) {
 }
 
 func TestStepFunChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "step-3.7-flash" {
@@ -704,6 +722,7 @@ func TestStepFunChatHappyPath(t *testing.T) {
 }
 
 func TestStepFunChatSupportsToolCalls(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	var requestBody map[string]interface{}
 	srv := newStepFunServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
@@ -783,6 +802,7 @@ func TestStepFunChatSupportsToolCalls(t *testing.T) {
 }
 
 func TestStepFunStreamDoesNotSendDoneAfterScannerError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunSSEServer(t, "/v1/chat/completions",
 		`data: `+strings.Repeat("x", 1024*1024+1)+"\n",
@@ -810,6 +830,7 @@ func TestStepFunStreamDoesNotSendDoneAfterScannerError(t *testing.T) {
 }
 
 func TestStepFunChatRejectsMalformedResponse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunServer(t, "/v1/chat/completions", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -833,6 +854,7 @@ func TestStepFunChatRejectsMalformedResponse(t *testing.T) {
 }
 
 func TestStepFunStreamRejectsMalformedFrame(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunSSEServer(t, "/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"content":"ok"}}]}`+"\n"+
@@ -852,6 +874,7 @@ func TestStepFunStreamRejectsMalformedFrame(t *testing.T) {
 }
 
 func TestStepFunListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunServer(t, "/v1/models", func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
@@ -887,6 +910,7 @@ func TestStepFunListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestStepFunListModelsRejectsInvalidResponses(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newStepFunServer(t, "/v1/models", func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -905,6 +929,7 @@ func TestStepFunListModelsRejectsInvalidResponses(t *testing.T) {
 }
 
 func TestStepFunListModelsRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newStepFunForTest("http://unused")
 	_, err := m.ListModels(ctx, &APIConfig{})
@@ -914,6 +939,7 @@ func TestStepFunListModelsRequiresAPIKey(t *testing.T) {
 }
 
 func TestStepFunEmbedReturnsNotImplemented(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newStepFunForTest("http://unused")
 	model := "x"
@@ -924,6 +950,7 @@ func TestStepFunEmbedReturnsNotImplemented(t *testing.T) {
 }
 
 func TestStepFunRerankReturnsNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newStepFunForTest("http://unused")
 	model := "x"
@@ -934,6 +961,7 @@ func TestStepFunRerankReturnsNoSuchMethod(t *testing.T) {
 }
 
 func TestStepFunBalanceReturnsNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newStepFunForTest("http://unused")
 	_, err := m.Balance(ctx, &APIConfig{})
@@ -943,6 +971,7 @@ func TestStepFunBalanceReturnsNoSuchMethod(t *testing.T) {
 }
 
 func TestStepFunAudioOCRReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newStepFunForTest("http://unused")
 	model := "x"

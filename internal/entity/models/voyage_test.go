@@ -66,6 +66,7 @@ func TestVoyageNewModelWithCustomDefaultTransport(t *testing.T) {
 }
 
 func TestVoyageEmbedHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "voyage-3.5" {
@@ -103,6 +104,7 @@ func TestVoyageEmbedHappyPath(t *testing.T) {
 // "dimensions" returns "Argument 'dimensions' is not supported by our
 // API"), so this name matters and must not regress.
 func TestVoyageEmbedPropagatesOutputDimension(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if got, ok := body["output_dimension"].(float64); !ok || got != 256 {
@@ -133,6 +135,7 @@ func TestVoyageEmbedPropagatesOutputDimension(t *testing.T) {
 // would default the vector length, but only if we don't send the key
 // at all (sending output_dimension: 0 is a 400).
 func TestVoyageEmbedOmitsOutputDimensionWhenUnset(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if _, present := body["output_dimension"]; present {
@@ -154,6 +157,7 @@ func TestVoyageEmbedOmitsOutputDimensionWhenUnset(t *testing.T) {
 }
 
 func TestVoyageEmbedReordersByIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -181,6 +185,7 @@ func TestVoyageEmbedReordersByIndex(t *testing.T) {
 }
 
 func TestVoyageEmbedEmptyInputShortCircuits(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("Embed([]) made an unexpected HTTP call")
@@ -197,6 +202,7 @@ func TestVoyageEmbedEmptyInputShortCircuits(t *testing.T) {
 }
 
 func TestVoyageEmbedRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	v := newVoyageForTest("http://unused")
 	model := "voyage-3.5"
@@ -207,6 +213,7 @@ func TestVoyageEmbedRequiresAPIKey(t *testing.T) {
 }
 
 func TestVoyageEmbedRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	v := newVoyageForTest("http://unused")
 	apiKey := "test-key"
@@ -217,6 +224,7 @@ func TestVoyageEmbedRequiresModelName(t *testing.T) {
 }
 
 func TestVoyageEmbedRejectsDuplicateIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -238,6 +246,7 @@ func TestVoyageEmbedRejectsDuplicateIndex(t *testing.T) {
 }
 
 func TestVoyageEmbedRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -258,6 +267,7 @@ func TestVoyageEmbedRejectsOutOfRangeIndex(t *testing.T) {
 }
 
 func TestVoyageEmbedRejectsMissingSlot(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -278,6 +288,7 @@ func TestVoyageEmbedRejectsMissingSlot(t *testing.T) {
 }
 
 func TestVoyageRerankHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		// Voyage's request key is top_k (not top_n).
@@ -319,6 +330,7 @@ func TestVoyageRerankHappyPath(t *testing.T) {
 }
 
 func TestVoyageRerankTopKDefaultsToLenDocuments(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["top_k"] != float64(4) {
@@ -339,6 +351,7 @@ func TestVoyageRerankTopKDefaultsToLenDocuments(t *testing.T) {
 }
 
 func TestVoyageRerankEmptyDocuments(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	v := newVoyageForTest("http://unused")
 	apiKey := "test-key"
@@ -354,6 +367,7 @@ func TestVoyageRerankEmptyDocuments(t *testing.T) {
 }
 
 func TestVoyageRerankRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVoyageServer(t, "/v1/rerank", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -375,6 +389,7 @@ func TestVoyageRerankRejectsOutOfRangeIndex(t *testing.T) {
 }
 
 func TestVoyageRerankRejectsDuplicateIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	// A duplicate index would silently overwrite an earlier slot, which
 	// is the same failure mode Embed already guards against. Make sure
@@ -404,6 +419,7 @@ func TestVoyageRerankRejectsDuplicateIndex(t *testing.T) {
 // (e.g. `.../v1//embeddings`). Rerank already trims, so Embed must
 // trim too; CodeRabbit flagged the inconsistency.
 func TestVoyageEmbedTrimsTrailingSlashInBaseURL(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	var sawPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

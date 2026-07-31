@@ -255,6 +255,7 @@ func TestNovitaName(t *testing.T) {
 }
 
 func TestNovitaChatPureText(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNovitaServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -280,6 +281,7 @@ func TestNovitaChatPureText(t *testing.T) {
 }
 
 func TestNovitaChatExtractsThinkTags(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	// qwen3-style response: <think>...</think> embedded in content.
 	// Driver must split it into Answer + ReasonContent.
@@ -318,6 +320,7 @@ func TestNovitaChatExtractsThinkTags(t *testing.T) {
 // to ChatResponse.ReasonContent. Live-confirmed against
 // api.novita.ai/openai/v1/chat/completions with deepseek/deepseek-v3.1.
 func TestNovitaChatExtractsReasoningContentField(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNovitaServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -356,6 +359,7 @@ func TestNovitaChatExtractsReasoningContentField(t *testing.T) {
 // (not delta.content with <think> tags). The driver must forward
 // those chunks via the sender's second arg.
 func TestNovitaStreamExtractsDeltaReasoningContent(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNovitaSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant","reasoning_content":"step 1. "}}]}`+"\n"+
@@ -401,6 +405,7 @@ func TestNovitaStreamExtractsDeltaReasoningContent(t *testing.T) {
 // so a tenant can switch a deepseek-v3.1 / glm-4.5 / qwen3 deployment
 // out of its default thinking mode without prompt-level hacks.
 func TestNovitaChatPropagatesEnableThinking(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	cases := []struct {
 		name  string
@@ -446,6 +451,7 @@ func TestNovitaChatPropagatesEnableThinking(t *testing.T) {
 // silently flip behavior for downstream proxies that distinguish
 // "field absent" from "field present with default". Leave it out.
 func TestNovitaChatOmitsEnableThinkingWhenUnset(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNovitaServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if _, present := body["enable_thinking"]; present {
@@ -473,6 +479,7 @@ func TestNovitaChatOmitsEnableThinkingWhenUnset(t *testing.T) {
 // case for ChatStreamlyWithSender so callers get the same toggle
 // regardless of streaming mode.
 func TestNovitaStreamPropagatesEnableThinking(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	var seen map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -505,6 +512,7 @@ func TestNovitaStreamPropagatesEnableThinking(t *testing.T) {
 }
 
 func TestNovitaChatRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	_, err := newNovitaForTest("http://unused").ChatWithMessages(ctx, "m",
 		[]Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
@@ -514,6 +522,7 @@ func TestNovitaChatRequiresAPIKey(t *testing.T) {
 }
 
 func TestNovitaChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newNovitaForTest("http://unused").ChatWithMessages(ctx, "m", nil,
@@ -524,6 +533,7 @@ func TestNovitaChatRequiresMessages(t *testing.T) {
 }
 
 func TestNovitaChatRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNovitaServer(t, "/openai/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -544,6 +554,7 @@ func TestNovitaChatRejectsHTTPError(t *testing.T) {
 // delta.content must surface reasoning chunks through the sender's
 // second arg, and visible content through the first.
 func TestNovitaStreamSplitsThinkTags(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	// Simulate the realistic case where tags span deltas — split
 	// "<think>" across two chunks, and split "</think>" too.
@@ -595,6 +606,7 @@ func TestNovitaStreamSplitsThinkTags(t *testing.T) {
 // Streaming for a non-reasoning model that emits only content chunks
 // must continue to work unchanged.
 func TestNovitaStreamPureContent(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNovitaSSEServer(t, "/openai/v1/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
@@ -633,6 +645,7 @@ func TestNovitaStreamPureContent(t *testing.T) {
 }
 
 func TestNovitaStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	err := newNovitaForTest("http://unused").ChatStreamlyWithSender(ctx, "m",
@@ -644,6 +657,7 @@ func TestNovitaStreamRequiresSender(t *testing.T) {
 }
 
 func TestNovitaStreamRejectsExplicitFalse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	stream := false
@@ -659,6 +673,7 @@ func TestNovitaStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestNovitaListModelsHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNovitaServer(t, "/openai/v1/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -682,6 +697,7 @@ func TestNovitaListModelsHappyPath(t *testing.T) {
 }
 
 func TestNovitaCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNovitaServer(t, "/openai/v1/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{{"id": "x"}}})
@@ -695,6 +711,7 @@ func TestNovitaCheckConnection(t *testing.T) {
 }
 
 func TestNovitaRerankHappyPathReordersByIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNovitaServer(t, "/openai/v1/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "baai/bge-reranker-v2-m3" {
@@ -732,6 +749,7 @@ func TestNovitaRerankHappyPathReordersByIndex(t *testing.T) {
 }
 
 func TestNovitaRerankRespectsTopNConfig(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNovitaServer(t, "/openai/v1/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["top_n"] != float64(2) {
@@ -749,6 +767,7 @@ func TestNovitaRerankRespectsTopNConfig(t *testing.T) {
 }
 
 func TestNovitaRerankEmptyDocumentsShortCircuits(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	model := "x"
@@ -762,6 +781,7 @@ func TestNovitaRerankEmptyDocumentsShortCircuits(t *testing.T) {
 }
 
 func TestNovitaRerankRequiresApiKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := "x"
 	_, err := newNovitaForTest("http://unused").Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{}, nil, nil)
@@ -771,6 +791,7 @@ func TestNovitaRerankRequiresApiKey(t *testing.T) {
 }
 
 func TestNovitaRerankRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newNovitaForTest("http://unused").Rerank(ctx, nil, "q", []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -780,6 +801,7 @@ func TestNovitaRerankRequiresModelName(t *testing.T) {
 }
 
 func TestNovitaRerankRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNovitaServer(t, "/openai/v1/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_, _ = io.WriteString(w, `{"results":[{"index":5,"relevance_score":0.5}]}`)
@@ -795,6 +817,7 @@ func TestNovitaRerankRejectsOutOfRangeIndex(t *testing.T) {
 }
 
 func TestNovitaRerankRejectsDuplicateIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newNovitaServer(t, "/openai/v1/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_, _ = io.WriteString(w, `{"results":[{"index":0,"relevance_score":0.9},{"index":0,"relevance_score":0.5}]}`)
@@ -810,6 +833,7 @@ func TestNovitaRerankRejectsDuplicateIndex(t *testing.T) {
 }
 
 func TestNovitaRerankSurfacesHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -826,6 +850,7 @@ func TestNovitaRerankSurfacesHTTPError(t *testing.T) {
 }
 
 func TestNovitaRerankRejectsMissingRerankSuffix(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	model := "x"
@@ -840,6 +865,7 @@ func TestNovitaRerankRejectsMissingRerankSuffix(t *testing.T) {
 }
 
 func TestNovitaBalanceReturnsNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	// Balance IS implemented (makes HTTP call), not a "no such method" stub.
 	// With dummy key it should reach the HTTP call stage, not fail at APIConfigCheck.
@@ -851,6 +877,7 @@ func TestNovitaBalanceReturnsNoSuchMethod(t *testing.T) {
 }
 
 func TestNovitaAudioOCRReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := "x"
 	apiKey := "test-key"
@@ -873,6 +900,7 @@ func TestNovitaAudioOCRReturnNoSuchMethod(t *testing.T) {
 // slash. baseURLForRegion now trims the trailing "/" so all three
 // endpoint builders (Chat, Stream, ListModels) emit clean paths.
 func TestNovitaBaseURLTrimsTrailingSlash(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	cases := []struct {
 		name        string

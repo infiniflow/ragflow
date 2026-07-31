@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/clickhouse"
+	"ragflow/internal/utility"
 	"sort"
 	"strings"
 	"time"
@@ -362,7 +363,17 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 }
 
 // NewDriverHTTPClient returns an *http.Client with the standard connection-pool
-func NewDriverHTTPClient() *http.Client {
+// settings and an SSRF guard wired into its Transport.
+//
+// allowPrivate selects the guard strictness:
+//   - false (cloud-hosted drivers): every request is validated with
+//     utility.AssertURLSafe — scheme + host must be present and every resolved
+//     IP must be globally routable (private/loopback/link-local/metadata are
+//     rejected). This is the default and closes the go/request-forgery sink.
+//   - true (local-inference drivers): requests are validated with
+//     utility.AssertURLSchemeSafe — only the scheme and a non-empty host are
+//     enforced, so self-hosted backends on private networks or loopback work.
+func NewDriverHTTPClient(allowPrivate bool) *http.Client {
 	var t *http.Transport
 	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
 		t = dt.Clone()
@@ -375,7 +386,41 @@ func NewDriverHTTPClient() *http.Client {
 	t.DisableCompression = false
 	t.ResponseHeaderTimeout = 2 * 60 * time.Second
 	t.TLSHandshakeTimeout = 30 * time.Second
-	return &http.Client{Transport: t}
+
+	var rt http.RoundTripper = t
+	if allowPrivate {
+		rt = &schemeSafeTransport{base: rt}
+	} else {
+		rt = &strictSSRFTransport{base: rt}
+	}
+	return &http.Client{Transport: rt}
+}
+
+// schemeSafeTransport wraps an http.RoundTripper so every outgoing request is
+// validated by the lenient SSRF guard (http/https scheme + non-empty host).
+// Private and loopback hosts are permitted. Used only by local-inference
+// drivers that may target a user's own network.
+type schemeSafeTransport struct{ base http.RoundTripper }
+
+func (t *schemeSafeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := utility.AssertURLSchemeSafe(req.URL.String()); err != nil {
+		return nil, err
+	}
+	return t.base.RoundTrip(req)
+}
+
+// strictSSRFTransport wraps an http.RoundTripper so every outgoing request is
+// validated by the strict SSRF guard (scheme + host + globally routable IP).
+// This is the default for cloud-hosted model drivers and closes the
+// go/request-forgery data flow: the user-controllable BaseURL cannot be made to
+// point at private hosts, loopback, link-local, or cloud metadata endpoints.
+type strictSSRFTransport struct{ base http.RoundTripper }
+
+func (t *strictSSRFTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if _, _, err := utility.AssertURLSafe(req.URL.String()); err != nil {
+		return nil, err
+	}
+	return t.base.RoundTrip(req)
 }
 
 // PostJSONRequest marshals body to JSON, creates a POST request to url

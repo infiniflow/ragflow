@@ -24,6 +24,7 @@ import (
 )
 
 func TestProviderLocalChatResponsesExposeUsage(t *testing.T) {
+	withSSRFBypass(t)
 	type providerCase struct {
 		name string
 		path string
