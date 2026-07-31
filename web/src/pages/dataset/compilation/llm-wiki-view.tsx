@@ -4,18 +4,17 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
+import { GenerateStatus, GenerateType } from '@/constants/knowledge';
+import {
+  useGenerateStatus,
+  useTraceRunData,
+} from '@/hooks/use-dataset-generate';
 import {
   ArtifactKeys,
   ArtifactTopicKeys,
   useFetchArtifactTopicList,
   useFetchKnowledgeBaseConfiguration,
 } from '@/hooks/use-knowledge-request';
-import {
-  GenerateStatus,
-  GenerateType,
-} from '@/pages/dataset/dataset/generate-button/constants';
-import { useTraceRunData } from '@/pages/dataset/dataset/generate-button/hook';
-import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router';
@@ -46,7 +45,7 @@ export function LlmWikiView() {
   const [updateSheetOpen, setUpdateSheetOpen] = useState(false);
 
   useEffect(() => {
-    if (artifactStatus === GenerateStatus.completed) {
+    if (artifactStatus === GenerateStatus.Completed) {
       setUpdateSheetOpen(false);
       queryClient.invalidateQueries({
         queryKey: ArtifactKeys.listByDataset(id!),

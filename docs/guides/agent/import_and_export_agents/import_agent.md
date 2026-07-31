@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Import Agent
+sidebar_label: Import Agent
 slug: /import_agent
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

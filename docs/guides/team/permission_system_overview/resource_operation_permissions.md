@@ -1,9 +1,10 @@
 ---
 sidebar_position: 4
-sidebar_label: "Resource operation permissions"
+sidebar_label: Resource Operation Permissions
+title: Resource Operation Permissions
 ---
 
-## Resource operation permissions
+# Resource Operation Permissions
 
 Resource operation permissions define what a user can do after the resource becomes visible to the user.
 

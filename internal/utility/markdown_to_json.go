@@ -1,4 +1,75 @@
-package mindmap
+// Package utility provides a Go port of the Python `markdown_to_json`
+// library's markdown-outline → nested-dict pipeline, plus the
+// list-to-key/value, merge, and tree-shaping steps that RAGFlow's
+// MindMapExtractor layers on top.
+//
+// # Provenance
+//
+// This file reproduces two Python sources, kept byte-for-behavior where the
+// port is faithful:
+//
+//  1. The `markdown_to_json` package (vendored in this repo at
+//     .venv/lib/python3.13/site-packages/markdown_to_json/markdown_to_json.py):
+//     - dictify            -> Dictify
+//     - CMarkASTNester.nest / _dictify_blocks / _ensure_list_singleton
+//     + dictify_list_by  -> dictifyBlocks
+//     - Renderer.stringify_dict / _valuify / _render_block /
+//     _render_generic_block / _render_List / _render_FencedCode
+//     -> valuify / renderBlockText / renderBlockAny / renderList / toBlock
+//
+//  2. RAGFlow's MindMapExtractor
+//     (rag/advanced_rag/knowlege_compile/mind_map_extractor.py):
+//     - _todict (+ _list_to_kv)   -> Todict
+//     - _merge                    -> MergeDicts
+//     - _be_children              -> BeChildren
+//     - _key                      -> StripStars
+//     - __call__'s final shaping  -> ShapeTree
+//     - re.sub(r"```[^\n]*", "")  -> StripFences
+//
+// The public entry points used by the knowledge-compiler mindmap component are
+// Dictify, Todict, MergeDicts, ShapeTree, StripFences, and the Node / OMap
+// types. The remaining helpers are unexported.
+//
+// # Deviations from the Python sources
+//
+// The port is behaviorally faithful for the common mindmap output shape, but
+// the following intentional or incidental differences exist (all documented so
+// the divergences are auditable against the Python golden behavior):
+//
+//  1. (Fixed here) Closed ATX headings: Python's CommonMark strips BOTH the
+//     leading and the trailing '#' run ("## Title ##" -> "Title"). This port
+//     now strips the trailing '#' too, in headingRawText.
+//
+//  2. Heading text is taken from the raw source line (goldmark's
+//     Heading.Lines) instead of goldmark's inline-parsed text, so inline
+//     emphasis markers (asterisks) survive exactly as Python's block.strings
+//     would keep them.
+//
+//  3. A list that is NOT the first child of a heading is rendered as readable
+//     flattened item text joined by "\n"; Python's _valuify falls back to
+//     str() of the nested list (a Python list literal). This is a deliberate
+//     divergence for the rare "list mid-children" case.
+//
+//  4. Fenced code blocks: goldmark keeps each source line's trailing newline,
+//     so the rendered block carries one extra trailing "\n" compared with
+//     Python's string_content. Minor.
+//
+//  5. Todict term keying types the preceding item as a string; if it is not a
+//     string the key becomes "" and is later dropped by BeChildren. Python
+//     would raise TypeError (unhashable) on a list term. The port is more
+//     robust.
+//
+//  6. BeChildren skips non-string list items instead of raising on unhashable
+//     list members (same defensive rationale as #5).
+//
+//  7. The fence-strip-before-parse behavior is inherited from Python
+//     (re.sub(r"```[^\n]*","") runs before parsing), so any fenced code in an
+//     LLM reply is stripped before it is parsed. Faithful to the original.
+//
+//  8. An empty merged dict degrades to a bare root node (ShapeTree returns
+//     &Node{ID:"root"}); Python's __call__ would raise IndexError on
+//     keys()[0]. The port keeps the pipeline alive.
+package utility
 
 import (
 	"regexp"
@@ -9,19 +80,13 @@ import (
 	"github.com/yuin/goldmark/text"
 )
 
-// Markdown-outline → mind-map-tree conversion, mirroring the Python pipeline:
-// markdown_to_json.dictify (CommonMark nest + Renderer) → _todict/_list_to_kv
-// → _merge (multi-batch) → final shaping + _be_children. Node ids keep the
-// raw markdown text (asterisks included) until _key strips them, exactly like
-// Python.
-
-// kv is one ordered key/value pair; omap mirrors Python's OrderedDict (key
+// kv is one ordered key/value pair; OMap mirrors Python's OrderedDict (key
 // order is load-bearing for tree shape and merge order).
 type kv struct {
 	k string
 	v any
 }
-type omap []kv
+type OMap []kv
 
 // Node is one shaped mind-map node (Python's {"id", "children"} shape).
 type Node struct {
@@ -57,11 +122,11 @@ func StripFences(s string) string {
 	return fenceStripRE.ReplaceAllString(s, "")
 }
 
-// dictify mirrors markdown_to_json.dictify: nest top-level blocks by the
+// Dictify mirrors markdown_to_json.dictify: nest top-level blocks by the
 // MINIMUM top heading level; content before the first heading at each level
 // is dropped; when a level has no headings the blocks become a list (the top
 // level then renders as {"root": [...]}).
-func dictify(md string) omap {
+func Dictify(md string) OMap {
 	src := []byte(md)
 	doc := goldmark.DefaultParser().Parse(text.NewReader(src))
 	var blocks []mdBlock
@@ -69,7 +134,7 @@ func dictify(md string) omap {
 		blocks = append(blocks, toBlock(n, src))
 	}
 	if len(blocks) == 0 {
-		return omap{}
+		return OMap{}
 	}
 	min := 100000
 	for _, b := range blocks {
@@ -82,8 +147,8 @@ func dictify(md string) omap {
 		}
 	}
 	switch t := dictifyBlocks(blocks, min).(type) {
-	case omap:
-		out := omap{}
+	case OMap:
+		out := OMap{}
 		for _, e := range t {
 			out = append(out, kv{e.k, valuify(e.v)})
 		}
@@ -95,13 +160,13 @@ func dictify(md string) omap {
 		for _, b := range t {
 			rendered = append(rendered, renderBlockAny(b))
 		}
-		return omap{{"root", rendered}}
+		return OMap{{"root", rendered}}
 	}
-	return omap{}
+	return OMap{}
 }
 
 // dictifyBlocks mirrors CMarkASTNester._dictify_blocks: split blocks by
-// headings at exactly `level`, recursing at level+1. Returns omap or the raw
+// headings at exactly `level`, recursing at level+1. Returns OMap or the raw
 // []mdBlock (no headings at this level).
 func dictifyBlocks(blocks []mdBlock, level int) any {
 	has := false
@@ -114,7 +179,7 @@ func dictifyBlocks(blocks []mdBlock, level int) any {
 	if !has {
 		return blocks
 	}
-	out := omap{}
+	out := OMap{}
 	var cur string
 	var children []mdBlock
 	started := false
@@ -145,8 +210,8 @@ func dictifyBlocks(blocks []mdBlock, level int) any {
 // a list → its items; otherwise the blocks joined with "\n\n".
 func valuify(v any) any {
 	switch t := v.(type) {
-	case omap:
-		out := omap{}
+	case OMap:
+		out := OMap{}
 		for _, e := range t {
 			out = append(out, kv{e.k, valuify(e.v)})
 		}
@@ -169,7 +234,8 @@ func valuify(v any) any {
 
 // renderBlockText renders one block to a string (Renderer._render_*).
 // A list appearing mid-children is rendered as its flattened item texts
-// (Python str()'s the nested list — a pathological case we render readably).
+// (Python str()'s the nested list — a pathological case we render readably;
+// see deviation #3).
 func renderBlockText(b mdBlock) string {
 	switch b.typ {
 	case fencedBlock:
@@ -194,17 +260,17 @@ func renderBlockAny(b mdBlock) any {
 	return renderBlockText(b)
 }
 
-// todict mirrors _todict + _list_to_kv: lists under dict keys convert to
+// Todict mirrors _todict + _list_to_kv: lists under dict keys convert to
 // key→definition pairs ([prev scalar] → sublist[0]); a list with no
 // definition sub-lists collapses to an empty dict (the bullets are dropped —
 // faithful to Python). Recurses into nested dicts.
-func todict(m omap) omap {
+func Todict(m OMap) OMap {
 	for i := range m {
 		switch val := m[i].v.(type) {
-		case omap:
-			m[i].v = todict(val)
+		case OMap:
+			m[i].v = Todict(val)
 		case []any:
-			nv := omap{}
+			nv := OMap{}
 			for j, item := range val {
 				lst, isList := item.([]any)
 				if !isList || j == 0 {
@@ -223,10 +289,10 @@ func todict(m omap) omap {
 	return m
 }
 
-// mergeDicts mirrors _merge: d1 merges INTO d2 (ordered). Both dicts recurse;
+// MergeDicts mirrors _merge: d1 merges INTO d2 (ordered). Both dicts recurse;
 // both lists concatenate d2's then d1's items; otherwise d1 wins. Keys absent
 // from d2 append in d1's order.
-func mergeDicts(d1, d2 omap) omap {
+func MergeDicts(d1, d2 OMap) OMap {
 	for _, e := range d1 {
 		idx := indexOMap(d2, e.k)
 		if idx < 0 {
@@ -234,13 +300,13 @@ func mergeDicts(d1, d2 omap) omap {
 			continue
 		}
 		dv := d2[idx].v
-		d1Dict, d1IsDict := e.v.(omap)
-		d2Dict, d2IsDict := dv.(omap)
+		d1Dict, d1IsDict := e.v.(OMap)
+		d2Dict, d2IsDict := dv.(OMap)
 		d1List, d1IsList := e.v.([]any)
 		d2List, d2IsList := dv.([]any)
 		switch {
 		case d1IsDict && d2IsDict:
-			d2[idx].v = mergeDicts(d1Dict, d2Dict)
+			d2[idx].v = MergeDicts(d1Dict, d2Dict)
 		case d1IsList && d2IsList:
 			d2[idx].v = append(d2List, d1List...)
 		default:
@@ -250,50 +316,51 @@ func mergeDicts(d1, d2 omap) omap {
 	return d2
 }
 
-// shapeTree mirrors __call__'s final shaping: >1 top-level keys → synthetic
+// ShapeTree mirrors __call__'s final shaping: >1 top-level keys → synthetic
 // "root" node whose children are the dict-valued keys (with a keyset seeded
 // by those keys); exactly 1 → that key becomes the root id. An empty merged
 // dict degrades to a bare root (Python would raise IndexError on
-// keys()[0]; the Go port keeps the pipeline alive).
-func shapeTree(merged omap) *Node {
+// keys()[0]; the Go port keeps the pipeline alive — deviation #8).
+func ShapeTree(merged OMap) *Node {
 	if len(merged) > 1 {
 		keyset := map[string]bool{}
 		for _, e := range merged {
-			if _, ok := e.v.(omap); !ok {
+			if _, ok := e.v.(OMap); !ok {
 				continue
 			}
-			if k := stripStars(e.k); k != "" {
+			if k := StripStars(e.k); k != "" {
 				keyset[k] = true
 			}
 		}
 		var children []*Node
 		for _, e := range merged {
-			if _, ok := e.v.(omap); !ok {
+			if _, ok := e.v.(OMap); !ok {
 				continue
 			}
-			k := stripStars(e.k)
+			k := StripStars(e.k)
 			if k == "" {
 				continue
 			}
-			children = append(children, &Node{ID: k, Children: beChildren(e.v, keyset)})
+			children = append(children, &Node{ID: k, Children: BeChildren(e.v, keyset)})
 		}
 		return &Node{ID: "root", Children: children}
 	}
 	if len(merged) == 1 {
-		k := stripStars(merged[0].k)
-		return &Node{ID: k, Children: beChildren(merged[0].v, map[string]bool{k: true})}
+		k := StripStars(merged[0].k)
+		return &Node{ID: k, Children: BeChildren(merged[0].v, map[string]bool{k: true})}
 	}
 	return &Node{ID: "root"}
 }
 
-// beChildren mirrors _be_children: strings/lists become leaf nodes; dict keys
+// BeChildren mirrors _be_children: strings/lists become leaf nodes; dict keys
 // become nested nodes. keyset is SHARED across the whole subtree walk — a key
 // already seen anywhere below is skipped (silent dedup, as in Python).
-func beChildren(v any, keyset map[string]bool) []*Node {
+// Non-string list items are skipped (deviation #6) rather than raising.
+func BeChildren(v any, keyset map[string]bool) []*Node {
 	switch t := v.(type) {
 	case string:
 		keyset[t] = true
-		if id := stripStars(t); id != "" {
+		if id := StripStars(t); id != "" {
 			return []*Node{{ID: id}}
 		}
 		return nil
@@ -309,20 +376,20 @@ func beChildren(v any, keyset map[string]bool) []*Node {
 			if !ok {
 				continue
 			}
-			if id := stripStars(s); id != "" {
+			if id := StripStars(s); id != "" {
 				out = append(out, &Node{ID: id})
 			}
 		}
 		return out
-	case omap:
+	case OMap:
 		var out []*Node
 		for _, e := range t {
-			k := stripStars(e.k)
+			k := StripStars(e.k)
 			if k == "" || keyset[k] {
 				continue
 			}
 			keyset[k] = true
-			out = append(out, &Node{ID: k, Children: beChildren(e.v, keyset)})
+			out = append(out, &Node{ID: k, Children: BeChildren(e.v, keyset)})
 		}
 		return out
 	}
@@ -332,8 +399,8 @@ func beChildren(v any, keyset map[string]bool) []*Node {
 // starsRE mirrors re.compile(r"\*+") used by _key.
 var starsRE = regexp.MustCompile(`\*+`)
 
-// stripStars mirrors _key (re.sub(r"\*+", "", k)).
-func stripStars(s string) string {
+// StripStars mirrors _key (re.sub(r"\*+", "", k)).
+func StripStars(s string) string {
 	return starsRE.ReplaceAllString(s, "")
 }
 
@@ -356,10 +423,13 @@ func toBlock(n ast.Node, src []byte) mdBlock {
 
 // headingRawText renders the heading's raw source line without the ATX
 // markers, keeping inline markdown (e.g. asterisks) intact like CommonMark's
-// block.strings (goldmark's inline text would strip emphasis).
+// block.strings (goldmark's inline text would strip emphasis). Both leading
+// and trailing '#' runs are removed (deviation #1 fixed: Python's CommonMark
+// strips the closing '#' sequence too).
 func headingRawText(n *ast.Heading, src []byte) string {
 	raw := strings.TrimSpace(rawLines(n, src, "\n"))
 	raw = strings.TrimLeft(raw, "#")
+	raw = strings.TrimRight(raw, "#")
 	return strings.TrimSpace(raw)
 }
 
@@ -399,7 +469,7 @@ func renderList(list *ast.List, src []byte) []any {
 
 // setOMap sets key k, replacing the value in place when the key repeats
 // (OrderedDict semantics: position kept), else appending.
-func setOMap(m omap, k string, v any) omap {
+func setOMap(m OMap, k string, v any) OMap {
 	if idx := indexOMap(m, k); idx >= 0 {
 		m[idx].v = v
 		return m
@@ -407,7 +477,7 @@ func setOMap(m omap, k string, v any) omap {
 	return append(m, kv{k, v})
 }
 
-func indexOMap(m omap, k string) int {
+func indexOMap(m OMap, k string) int {
 	for i, e := range m {
 		if e.k == k {
 			return i

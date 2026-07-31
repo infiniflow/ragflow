@@ -9,8 +9,8 @@ type UseWikiUpdateOptions = {
 };
 
 export function useWikiUpdate({ onUpdate }: UseWikiUpdateOptions = {}) {
-  const { data, loading: queryLoading } = useFetchArtifactAlteration();
-  const { runArtifactIndex, loading: mutationLoading } = useRunArtifactIndex();
+  const { data, loading: queryLoading } = useFetchArtifactAlteration('wiki');
+  const { runArtifactIndex, loading: mutationLoading } = useRunArtifactIndex('wiki');
 
   const newlyUploaded = data?.newly_uploaded ?? 0;
   const removed = data?.removed ?? 0;

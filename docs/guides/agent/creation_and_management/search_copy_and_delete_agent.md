@@ -1,5 +1,7 @@
 ---
 sidebar_position: 4
+title: "Search, Copy and Delete Agent"
+sidebar_label: "Search, Copy and Delete Agent"
 slug: /search_copy_and_delete_agent
 sidebar_custom_props: {
   categoryIcon: RagAiAgent
