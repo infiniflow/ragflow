@@ -121,8 +121,8 @@ func TestCompileDelimiterPattern(t *testing.T) {
 	}
 }
 
-func TestGetDelimitersShippedDefault(t *testing.T) {
-	pat := GetDelimiters("\n!?;。；！？")
+func TestCompileDelimiterPatternShippedDefault(t *testing.T) {
+	pat := CompileDelimiterPattern(ParseDelimiterField("\n!?;。；！？"))
 	if pat == nil {
 		t.Fatal("expected pattern")
 	}
@@ -136,8 +136,8 @@ func TestGetDelimitersShippedDefault(t *testing.T) {
 	}
 }
 
-func TestGetDelimitersCaseSensitive(t *testing.T) {
-	pat := GetDelimiters("a")
+func TestCompileDelimiterPatternCaseSensitive(t *testing.T) {
+	pat := CompileDelimiterPattern(ParseDelimiterField("a"))
 	parts := regexp.MustCompile("(" + pat.String() + ")").Split("AaBb", -1)
 	// Split removes matches; "A" + "Bb" with "a" consumed.
 	if len(parts) < 2 {
@@ -166,6 +166,12 @@ func TestCompileDelimiterListPattern(t *testing.T) {
 	}
 	if got := pat.FindString("###"); got != "##" {
 		t.Errorf("got %q want ##", got)
+	}
+
+	// Verify unescaped rune length sorting order: "a.b" (3 runes) vs "ab" (2 runes with meta chars)
+	patMeta := CompileDelimiterListPattern([]string{"`a`", "`a.b`"})
+	if patMeta.String() != `a\.b|a` {
+		t.Errorf("got pattern %q, want %q", patMeta.String(), `a\.b|a`)
 	}
 }
 

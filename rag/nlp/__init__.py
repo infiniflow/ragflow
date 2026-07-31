@@ -1457,8 +1457,12 @@ def _build_cks(sections, delimiter):
         if split_pattern:
             split_sec = re.split(pattern, text)
             for sub_sec in split_sec:
-                # ① empty or whitespace-only segment → flush current buffer
-                if not sub_sec or not sub_sec.strip():
+                if not sub_sec:
+                    continue
+
+                # ① matched delimiter (exact capture; do not strip — wrapped
+                # whitespace delimiters such as `` ` ` `` or `\n` must match here)
+                if re.fullmatch(split_pattern, sub_sec):
                     if seg and seg.strip():
                         s = seg.strip()
                         cks.append(
@@ -1472,9 +1476,8 @@ def _build_cks(sections, delimiter):
                     seg = ""
                     continue
 
-                # ② matched delimiter (exact capture; do not strip — wrapped
-                # whitespace delimiters such as `` ` , ` `` must still match)
-                if re.fullmatch(split_pattern, sub_sec):
+                # ② empty or whitespace-only ordinary segment → flush current buffer
+                if not sub_sec.strip():
                     if seg and seg.strip():
                         s = seg.strip()
                         cks.append(
@@ -1648,10 +1651,6 @@ def extract_between(text: str, start_tag: str, end_tag: str) -> list[str]:
     pattern = re.escape(start_tag) + r"(.*?)" + re.escape(end_tag)
     return re.findall(pattern, text, flags=re.DOTALL)
 
-
-def get_delimiters(delimiters: str):
-    """Backwards-compatible wrapper around the canonical delimiter parser."""
-    return compile_delimiter_pattern(parse_delimiter_field(delimiters))
 
 
 class Node:

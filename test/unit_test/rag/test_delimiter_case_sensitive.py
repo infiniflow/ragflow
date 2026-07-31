@@ -51,23 +51,28 @@ import pytest
 pytestmark = pytest.mark.usefixtures("pdf_parser_stub")
 
 from rag import nlp
-from rag.nlp import get_delimiters, naive_merge
+from rag.nlp import naive_merge
+from rag.nlp.delim import compile_delimiter_pattern, parse_delimiter_field
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
+def _get_delim_pattern(field: str) -> str:
+    return compile_delimiter_pattern(parse_delimiter_field(field))
+
+
 # --------------------------------------------------------------------------- #
-# get_delimiters — direct pattern checks
+# delim helper — direct pattern checks
 # --------------------------------------------------------------------------- #
 
 
 def test_get_delimiters_bare_char_a_returns_literal_pattern():
     """Bare-char delimiter ``a`` must produce the pattern ``a``, not ``a|A``."""
-    assert get_delimiters("a") == "a"
+    assert _get_delim_pattern("a") == "a"
 
 
 def test_get_delimiters_bare_char_A_returns_literal_pattern():
-    assert get_delimiters("A") == "A"
+    assert _get_delim_pattern("A") == "A"
 
 
 def test_get_delimiters_backtick_end_returns_exact_token():
@@ -76,13 +81,13 @@ def test_get_delimiters_backtick_end_returns_exact_token():
     A regression that introduced case-insensitive alternation would produce
     ``end|End|END|eNd|...`` instead of the literal ``end``.
     """
-    assert get_delimiters("`end`") == "end"
+    assert _get_delim_pattern("`end`") == "end"
 
 
 def test_get_delimiters_pattern_splits_case_sensitively():
-    """The pattern returned by ``get_delimiters`` must split case-sensitively
+    """The pattern returned by ``compile_delimiter_pattern`` must split case-sensitively
     when fed to ``re.split`` without any flags."""
-    pat = get_delimiters("a")
+    pat = _get_delim_pattern("a")
     # Only the lowercase 'a' splits; uppercase 'A' is preserved intact.
     assert re.split(f"({pat})", "AaBb") == ["A", "a", "Bb"]
 

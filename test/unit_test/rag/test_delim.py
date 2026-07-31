@@ -51,7 +51,6 @@ import pytest
 
 pytestmark = pytest.mark.usefixtures("pdf_parser_stub")
 
-from rag.nlp import get_delimiters
 from rag.nlp.delim import (
     compile_delimiter_pattern,
     parse_delimiter_field,
@@ -332,23 +331,12 @@ def test_whitespace_delimiters_escaped_in_alternation():
     assert compiled.search("\t") is not None
 
 
-# --------------------------------------------------------------------------- #
-# End-to-end — get_delimiters (backwards-compat shim)
-# --------------------------------------------------------------------------- #
-
-
-def test_get_delimiters_is_a_thin_shim_over_the_helpers():
-    # The shim must produce the same output as the two helpers composed.
-    for field in ["", "!", "!?", "\n!?;。；！？", "`##`", "\n`##`;", "`###``##``#`"]:
-        assert get_delimiters(field) == compile_delimiter_pattern(parse_delimiter_field(field))
-
-
-def test_get_delimiters_default_field_produces_expected_pattern():
+def test_compile_delimiter_pattern_default_field_produces_expected_pattern():
     # The shipped default for `.txt`/`.pdf`/`.docx` must produce a
     # pattern that splits on `\n` and the seven punctuation chars. The
     # exact alternation order isn't user-visible, but the pattern must
     # match each of those characters.
-    pat = get_delimiters("\n!?;。；！？")
+    pat = compile_delimiter_pattern(parse_delimiter_field("\n!?;。；！？"))
     compiled = re.compile(pat)
     for ch in "\n!?;。；！？":
         assert compiled.search(ch), f"default delimiter pattern must match {ch!r}"
@@ -479,7 +467,6 @@ _DELEGATING_SITES = [
     ("rag/nlp/__init__.py", "naive_merge"),
     ("rag/nlp/__init__.py", "naive_merge_with_images"),
     ("rag/nlp/__init__.py", "_build_cks"),
-    ("rag/nlp/__init__.py", "get_delimiters"),
     ("deepdoc/parser/txt_parser.py", "parser_txt"),
     (
         "deepdoc/parser/markdown_parser.py",

@@ -135,12 +135,6 @@ func CompileDelimiterPattern(delimiters []string) *regexp.Regexp {
 	return regexp.MustCompile(strings.Join(escaped, "|"))
 }
 
-// GetDelimiters is a thin shim over ParseDelimiterField + CompileDelimiterPattern,
-// matching Python rag.nlp.get_delimiters.
-func GetDelimiters(field string) *regexp.Regexp {
-	return CompileDelimiterPattern(ParseDelimiterField(field))
-}
-
 // CompileDelimiterListPattern compiles a TokenChunker-style []string delimiter
 // list. Entries wrapped in backticks contribute their inner content as a
 // split pattern (Python token_chunker / historical Go compileDelimPattern).
@@ -160,16 +154,20 @@ func CompileDelimiterListPattern(delims []string) *regexp.Regexp {
 			if inner == "" {
 				continue
 			}
-			custom = append(custom, regexp.QuoteMeta(inner))
+			custom = append(custom, inner)
 		}
 	}
 	if len(custom) == 0 {
 		return nil
 	}
 	sort.SliceStable(custom, func(i, j int) bool {
-		return len(custom[i]) > len(custom[j])
+		return utf8.RuneCountInString(custom[i]) > utf8.RuneCountInString(custom[j])
 	})
-	return regexp.MustCompile(strings.Join(custom, "|"))
+	escaped := make([]string, 0, len(custom))
+	for _, d := range custom {
+		escaped = append(escaped, regexp.QuoteMeta(d))
+	}
+	return regexp.MustCompile(strings.Join(escaped, "|"))
 }
 
 // HasCustomDelimiterList reports whether any entry in a TokenChunker-style
