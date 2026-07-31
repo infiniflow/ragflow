@@ -48,7 +48,7 @@ class TestEscape:
 
     def test_list_and_dict_serialize_to_json(self):
         assert _escape(["x", "y"]) == '\'["x", "y"]\''
-        assert _escape({"a": 1}) == '\'{"a": 1}\''
+        assert _escape({"a": 1}) == "'{\"a\": 1}'"
 
 
 class TestStripESQuery:
