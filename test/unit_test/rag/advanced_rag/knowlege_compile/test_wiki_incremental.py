@@ -5,6 +5,7 @@ All imports of the target module use importlib to avoid namespace conflicts.
 """
 
 import importlib.util
+import json
 import os
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -97,6 +98,8 @@ def make_doc_store(search_results: list[dict] | None = None):
             row["_score"] = source.get("_score", 0.0)
             row["entity_kwd"] = source.get("entity_kwd", "")
             key = source.get("slug_kwd") or source.get("entity_kwd") or source.get("doc_id", "")
+            if isinstance(key, (list, tuple)):
+                key = key[0] if key else ""
             result[key] = row
         return result
 
@@ -297,7 +300,7 @@ async def test_reduce_entity_noop():
 
 @pytest.mark.asyncio
 async def test_match_entities_exact_match():
-    """Exact match via aliases_flat_kwd resolves raw entities to canonical names."""
+    """Exact match via canonical aliases resolves raw entities to canonical names."""
     embd = _wiki.MockEmbeddingModel() if hasattr(_wiki, "MockEmbeddingModel") else MockEmbeddingModel()
     embd = MockEmbeddingModel()
     chat = MockChatModel(canned="[true]")
@@ -307,7 +310,6 @@ async def test_match_entities_exact_match():
             "entity_name": "Apple Inc.",
             "entity_type_kwd": "org",
             "aliases": ["Apple"],
-            "aliases_flat_kwd": "Apple||Apple Inc.",
             "source_doc_ids": ["doc_1"],
             "mention_count_int": 2,
         }
@@ -386,15 +388,16 @@ def test_match_entities_incremental_new_entity():
             "entity_name": "Apple Inc.",
             "entity_type_kwd": "org",
             "aliases": [],
-            "aliases_flat_kwd": "Apple Inc.",
             "source_doc_ids": ["doc_1"],
             "mention_count_int": 1,
         }
     }
     exact_flat = {}
     for cname, centry in existing_canonical.items():
-        flat = centry.get("aliases_flat_kwd", "")
-        for alias in flat.split("||"):
+        aliases = centry.get("aliases")
+        if not isinstance(aliases, list):
+            continue
+        for alias in [cname] + [a for a in aliases if isinstance(a, str)]:
             exact_flat[_wiki._normalize_key(alias)] = cname
 
     # "Apple Computer" should NOT exact-match "Apple Inc." (different alias)
@@ -508,7 +511,6 @@ async def test_finalize_entity_reference():
                     "entity_kwd": "Apple Inc.",
                     "entity_type_kwd": "org",
                     "aliases": [],
-                    "aliases_flat_kwd": "Apple Inc.",
                     "source_doc_ids": ["doc_1"],
                     "mention_count_int": 3,
                 }
@@ -906,3 +908,327 @@ def test_entity_matching_concept_entity_types():
     types = {e["name"]: e.get("type") for e in raw}
     assert types.get("Apple Inc.") == "org"
     assert types.get("supply chain") == "concept"
+
+
+# ---- _wiki_load_pages_for_graph (canvas graph) -----------------------------
+
+
+@pytest.mark.asyncio
+async def test_load_pages_for_graph_shape():
+    """_wiki_load_pages_for_graph projects wiki_page rows onto the graph shape."""
+    doc_store = make_doc_store(
+        [
+            {
+                "_source": {
+                    "slug_kwd": "concept/smartphone",
+                    "title_kwd": "Smartphone",
+                    "page_type_kwd": "concept",
+                    "summary_with_weight": "A mobile device.",
+                    "entity_names_kwd": '["smartphone"]',
+                    "outlinks_kwd": '["entity/apple"]',
+                    "source_chunk_ids": '["C1", "C2"]',
+                    "source_doc_ids": '["d1"]',
+                }
+            }
+        ]
+    )
+
+    with patch("common.settings.docStoreConn", doc_store):
+        pages = await _wiki._wiki_load_pages_for_graph("t1", "kb1")
+
+    assert len(pages) == 1
+    p = pages[0]
+    assert p["slug"] == "concept/smartphone"
+    assert p["title"] == "Smartphone"
+    assert p["page_type"] == "concept"
+    assert p["outlinks"] == ["entity/apple"]
+    assert p["source_chunk_ids"] == ["C1", "C2"]
+    assert p["source_doc_ids"] == ["d1"]
+
+
+@pytest.mark.asyncio
+async def test_finalize_writes_outlinks():
+    """_wiki_finalize stamps outlinks_kwd / outlinks_int for valid wikilinks."""
+    search_results = [
+        {"_source": {"slug_kwd": "concept/A", "md_with_weight": "[[concept/B]] related", "page_type_kwd": "concept"}},
+        {"_source": {"slug_kwd": "concept/B", "md_with_weight": "content", "page_type_kwd": "concept"}},
+    ]
+    doc_store = make_doc_store(search_results)
+
+    with (
+        patch("common.settings.docStoreConn", doc_store),
+        patch(f"{_wiki.__name__}._load_canonical_entities", new_callable=AsyncMock, return_value={}),
+    ):
+        await _wiki._wiki_finalize(tenant_id="t1", kb_id="kb1", embd_mdl=None)
+
+    update_calls = doc_store.update.call_args_list
+    for args in update_calls:
+        cond = args[0][0]
+        upd = args[0][1]
+        if cond.get("slug_kwd") == "concept/A":
+            assert upd["outlinks_kwd"] == '["concept/B"]', f"Got {upd['outlinks_kwd']}"
+            assert upd["outlinks_int"] == 1
+            break
+    else:
+        pytest.fail("No update for concept/A found")
+
+
+async def test_finalize_auto_links_mentions():
+    """_wiki_finalize auto-links standalone mentions of other pages' names."""
+    search_results = [
+        {
+            "_source": {
+                "slug_kwd": "entity/Apple",
+                "title_kwd": "Apple",
+                "md_with_weight": "Apple makes phones. Apple is based in California.",
+                "page_type_kwd": "entity",
+            }
+        },
+        {
+            "_source": {
+                "slug_kwd": "entity/Google",
+                "title_kwd": "Google",
+                "md_with_weight": "Google competes with Apple in search and mobile.",
+                "page_type_kwd": "entity",
+            }
+        },
+    ]
+    doc_store = make_doc_store(search_results)
+
+    with (
+        patch("common.settings.docStoreConn", doc_store),
+        patch(f"{_wiki.__name__}._load_canonical_entities", new_callable=AsyncMock, return_value={}),
+    ):
+        await _wiki._wiki_finalize(tenant_id="t1", kb_id="kb1", embd_mdl=None)
+
+    update_calls = doc_store.update.call_args_list
+    google_upd = None
+    for args in update_calls:
+        cond = args[0][0]
+        if cond.get("slug_kwd") == "entity/Google":
+            google_upd = args[0][1]
+            break
+    assert google_upd is not None, "entity/Google not updated"
+    # "Apple" mentioned in Google page → auto-linked exactly once + outlink
+    # recorded, and rendered into the navigable artifact-link form.
+    assert "[Apple](artifact/kb1/entity/Apple)" in google_upd["md_with_weight"], google_upd["md_with_weight"]
+    assert "entity/Apple" in (google_upd["outlinks_kwd"] or "")
+    assert google_upd["outlinks_int"] == 1
+
+
+def test_inside_wikilink():
+    content = "before [[entity/X]] after"
+    assert _wiki._inside_wikilink(content, content.index("entity"))
+    assert not _wiki._inside_wikilink(content, content.index("before"))
+    assert not _wiki._inside_wikilink(content, content.index("after"))
+
+
+def test_extract_outlinks_from_content():
+    """_wiki_extract_outlinks_from_content derives unique ordered outlinks."""
+    content = "See [[concept/B]] and [[entity/apple]] and [[concept/B]] again"
+    assert _wiki._wiki_extract_outlinks_from_content(content) == [
+        "concept/B",
+        "entity/apple",
+    ]
+    assert _wiki._wiki_extract_outlinks_from_content("") == []
+    assert _wiki._wiki_extract_outlinks_from_content("no links here") == []
+
+
+@pytest.mark.asyncio
+async def test_load_pages_for_graph_outlink_fallback():
+    """Pages without outlinks_kwd get edges derived from content wikilinks."""
+    doc_store = make_doc_store(
+        [
+            {
+                "_source": {
+                    "slug_kwd": "concept/A",
+                    "title_kwd": "A",
+                    "page_type_kwd": "concept",
+                    "summary_with_weight": "",
+                    "md_with_weight": "See [[concept/B]]",
+                    "entity_names_kwd": "[]",
+                    "source_chunk_ids": "[]",
+                    "source_doc_ids": "[]",
+                }
+            }
+        ]
+    )
+
+    with patch("common.settings.docStoreConn", doc_store):
+        pages = await _wiki._wiki_load_pages_for_graph("t1", "kb1")
+
+    assert pages[0]["outlinks"] == ["concept/B"]
+
+
+# ---- _load_canonical_entities: *_kwd scalar normalization ------------------
+
+
+@pytest.mark.asyncio
+async def test_load_canonical_entities_normalizes_entity_type():
+    """entity_type_kwd comes back as a list (['concept']) from Infinity; the
+    loader must normalize it to a scalar so `== "concept"` checks work."""
+    doc_store = make_doc_store(
+        [
+            {
+                "_source": {
+                    "entity_kwd": "询问笔录",
+                    "entity_type_kwd": ["concept"],  # simulated Infinity list
+                    "aliases": '["询问笔录"]',
+                    "source_doc_ids": '["doc_1"]',
+                    "mention_count_int": 2,
+                }
+            }
+        ]
+    )
+
+    with patch("common.settings.docStoreConn", doc_store):
+        canon = await _wiki._load_canonical_entities("t1", "kb1")
+
+    assert "询问笔录" in canon
+    assert canon["询问笔录"]["entity_type_kwd"] == "concept", canon["询问笔录"]
+
+
+@pytest.mark.asyncio
+async def test_search_existing_pages_normalizes_slug():
+    """slug_kwd comes back as a list; _search_existing_pages must key by scalar."""
+    doc_store = make_doc_store(
+        [
+            {
+                "_source": {
+                    "slug_kwd": ["concept/询问笔录"],  # simulated Infinity list
+                    "title_kwd": ["询问笔录"],
+                    "md_with_weight": "content",
+                }
+            }
+        ]
+    )
+
+    with patch("common.settings.docStoreConn", doc_store):
+        pages = await _wiki._search_existing_pages("t1", "kb1", ["slug_kwd", "title_kwd", "md_with_weight"])
+
+    assert "concept/询问笔录" in pages
+    assert pages["concept/询问笔录"]["title_kwd"] == ["询问笔录"]  # raw preserved
+
+
+# ---- relation-based linking in FINALIZE -------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_finalize_links_via_map_relations():
+    """_wiki_finalize connects pages when MAP extracted a (from, to) relation
+    between them, even when prose contains no [[wikilink]]."""
+    # Two wiki pages + one map_extract row whose relation links them.
+    doc_store = make_doc_store(
+        [
+            {
+                "_source": {
+                    "slug_kwd": "entity/肖亮",
+                    "title_kwd": "肖亮",
+                    "md_with_weight": "肖亮 is a person.",
+                    "page_type_kwd": "entity",
+                }
+            },
+            {
+                "_source": {
+                    "slug_kwd": "entity/肖立",
+                    "title_kwd": "肖立",
+                    "md_with_weight": "肖立 is a person.",
+                    "page_type_kwd": "entity",
+                }
+            },
+            {
+                "_source": {
+                    "doc_id": "map1",
+                    "compile_kwd": "wiki_map_extract",
+                    "content_with_weight": json.dumps(
+                        {
+                            "entities": [{"name": "肖亮", "type": "person"}, {"name": "肖立", "type": "person"}],
+                            "relations": [{"from": "肖亮", "to": "肖立", "type": "other"}],
+                        },
+                        ensure_ascii=False,
+                    ),
+                }
+            },
+        ]
+    )
+
+    with (
+        patch("common.settings.docStoreConn", doc_store),
+        patch(f"{_wiki.__name__}._load_canonical_entities", new_callable=AsyncMock, return_value={}),
+    ):
+        await _wiki._wiki_finalize(tenant_id="t1", kb_id="kb1", embd_mdl=None)
+
+    update_calls = doc_store.update.call_args_list
+    xiaoliang_upd = None
+    for args in update_calls:
+        if args[0][0].get("slug_kwd") == "entity/肖亮":
+            xiaoliang_upd = args[0][1]
+            break
+    assert xiaoliang_upd is not None, "entity/肖亮 not updated"
+    assert "entity/肖立" in (xiaoliang_upd["outlinks_kwd"] or ""), xiaoliang_upd["outlinks_kwd"]
+    assert xiaoliang_upd["outlinks_int"] == 1
+    # The relation edge must be injected into the page body. It is stored either
+    # as a raw [[entity/肖立]] or (after the link transformer runs) as the
+    # navigable Markdown form [肖立](artifact/kb1/entity/肖立). Both contain the
+    # target slug so the graph can reconstruct edges from md_with_weight.
+    body = xiaoliang_upd["md_with_weight"] or ""
+    assert "entity/肖立" in body, body
+
+
+@pytest.mark.asyncio
+async def test_wiki_finalize_renders_navigable_links():
+    """FINALIZE renders [[slug]] to [text](artifact/{kb_id}/{slug}) so the
+    frontend wiki viewer can deep-link, not plain [[...]] text."""
+    # Two pages; page B's body links to page A via [[entity/肖立]]. FINALIZE
+    # must render that to the navigable [肖立](artifact/kb1/entity/肖立) form.
+    search_results = [
+        {
+            "_source": {
+                "slug_kwd": "entity/肖立",
+                "title_kwd": "肖立",
+                "md_with_weight": "肖立 is a person.",
+                "page_type_kwd": "entity",
+            }
+        },
+        {
+            "_source": {
+                "slug_kwd": "entity/肖亮",
+                "title_kwd": "肖亮",
+                "md_with_weight": "肖亮 references [[entity/肖立]] here.",
+                "page_type_kwd": "entity",
+            }
+        },
+    ]
+    doc_store = make_doc_store(search_results)
+    with (
+        patch("common.settings.docStoreConn", doc_store),
+        patch(f"{_wiki.__name__}._load_canonical_entities", new_callable=AsyncMock, return_value={}),
+    ):
+        await _wiki._wiki_finalize(tenant_id="t1", kb_id="kb1", embd_mdl=None)
+    update_calls = doc_store.update.call_args_list
+    upd = None
+    for args in update_calls:
+        if args[0][0].get("slug_kwd") == "entity/肖亮":
+            upd = args[0][1]
+            break
+    assert upd is not None
+    body = upd["md_with_weight"] or ""
+    assert "[肖立](artifact/kb1/entity/肖立)" in body, body
+
+
+@pytest.mark.asyncio
+async def test_reduce_entity_claimless_concept_has_delta():
+    """A claim-less concept must still be created (has_delta=True) under Mode A,
+    otherwise it is treated as a no-op and never gets a wiki page."""
+    from rag.advanced_rag.knowlege_compile import wiki_incremental as _wiki
+
+    result = await _wiki._wiki_reduce_entity(
+        entity_name="继承纠纷",
+        entity_type="concept",
+        existing_page=None,
+        new_claims=[],  # concepts have no dedicated claim rows
+        deleted_doc_ids=set(),
+    )
+    assert result["action"] == "create"
+    assert result["has_delta"] is True, "claim-less concept must be created"
+    assert result["entity_type"] == "concept"

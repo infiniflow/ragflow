@@ -36,7 +36,7 @@ Design notes:
   ``parser_config.compilation_template_group_id`` to a template list
   via the shared parser-config helper and
   ``CompilationTemplateGroupService.resolve_template_ids``.
-* The persistence helpers (``persist_wiki_pages_to_es`` etc.) are
+* The persistence helpers (``persist_wiki_pages`` etc.) are
   exposed at module level for testing but are only called from
   :func:`run_wiki` in production.
 """
@@ -570,12 +570,12 @@ async def _ensure_wiki_topic_rows(
 # ----- persistence ---------------------------------------------------
 
 
-async def persist_wiki_pages_to_es(
+async def persist_wiki_pages(
     ctx: TaskContext,
     pages: List[Dict],
     embd_mdl,
 ) -> None:
-    """Insert one ES row per generated artifact page using the
+    """Insert one doc-store row per generated artifact page using the
     knowledge-compilation schema:
 
       id                  xxh64(kb_id + ":" + slug)
@@ -933,11 +933,11 @@ def build_wiki_page_graph(
     return entity_rows, relation_rows
 
 
-async def persist_wiki_page_graph_to_es(
+async def persist_wiki_page_graph(
     ctx: TaskContext,
     pages: List[Dict],
 ) -> None:
-    """Materialize and store the per-entity / per-relation ES rows
+    """Materialize and store the per-entity / per-relation doc-store rows
     derived from artifact pages.
 
     Writes two row types — both delete-then-insert for idempotent
@@ -1341,13 +1341,13 @@ async def run_wiki(
 
     # 6. Persist searchable wiki_page rows.
     try:
-        await persist_wiki_pages_to_es(ctx=ctx, pages=pages or [], embd_mdl=embedding_model)
+        await persist_wiki_pages(ctx=ctx, pages=pages or [], embd_mdl=embedding_model)
     except Exception:
-        logging.exception("wiki: ES persist failed for kb %s", ctx.kb_id)
+        logging.exception("wiki: persist failed for kb %s", ctx.kb_id)
 
     # 7. Materialize the canvas graph from the refined pages.
     try:
-        await persist_wiki_page_graph_to_es(ctx=ctx, pages=pages or [])
+        await persist_wiki_page_graph(ctx=ctx, pages=pages or [])
     except Exception:
         logging.exception("wiki: page-graph persist failed for kb %s", ctx.kb_id)
 
@@ -1438,6 +1438,23 @@ async def run_wiki_incremental(
     if not eligible and not is_incremental:
         progress(1.0, "No documents configured for wiki compilation.")
         return
+
+    # Re-resolve plan (Mode B) from the ELIGIBLE docs' templates. Each eligible
+    # doc resolves to a wiki template either via its own parser_config or via
+    # its ingestion pipeline (doc.pipeline_id → pipeline dsl → compiler →
+    # template). The task handler's `plan` param only looks at the KB-level
+    # parser_config and therefore misses the pipeline path; re-derive it here so
+    # a pipeline-bound template with plan=yes actually enables Mode B.
+    if not plan:
+        try:
+            for _doc, tid in eligible:
+                tpl = CompilationTemplateService.get_saved(tid, ctx.tenant_id)
+                cfg = (tpl.get("config") or {}) if tpl else {}
+                if isinstance(cfg, dict) and cfg.get("plan") in (True, "yes", "true"):
+                    plan = True
+                    break
+        except Exception:
+            pass  # keep the handler-provided plan as fallback
 
     # 3. Resolve chat model
     llm_bundle_cache: dict[str, LLMBundle] = {}
@@ -1566,10 +1583,32 @@ async def run_wiki_incremental(
             # No compile needed, but still (re)group existing pages under topics —
             # cheap (embed + stamp) and it backfills pages built before topic
             # grouping existed. Topic labels are loaded from the persisted MAP rows.
-            from rag.advanced_rag.knowlege_compile.wiki_incremental import _wiki_assign_topics
+            from rag.advanced_rag.knowlege_compile.wiki_incremental import (
+                _wiki_assign_topics,
+                _wiki_finalize,
+                _wiki_load_pages_for_graph,
+            )
 
-            progress(0.9, "Wiki is up to date; regrouping topics ...")
+            progress(0.9, "Wiki is up to date; recomputing cross-references + topics ...")
+            # FINALIZE recomputes outlinks / auto-links / dead-link cleanup from
+            # the persisted pages (zero LLM cost) so a re-run backfills graph
+            # edges for pages written before auto-linking existed.
+            try:
+                await _wiki_finalize(ctx.tenant_id, ctx.kb_id, embedding_model)
+            except Exception:
+                logging.exception("wiki: up-to-date FINALIZE failed for kb=%s", ctx.kb_id)
             await _wiki_assign_topics(embedding_model, ctx.tenant_id, ctx.kb_id, callback=lambda p, msg: progress(p, msg))
+
+            # (Re)materialize the canvas graph so pages built before graph
+            # persistence existed (or a graph lost to an interrupted run) still
+            # render. Reload pages → project → persist wiki_entity/relation.
+            try:
+                graph_pages = await _wiki_load_pages_for_graph(ctx.tenant_id, ctx.kb_id)
+                if graph_pages:
+                    await persist_wiki_page_graph(ctx=ctx, pages=graph_pages)
+            except Exception:
+                logging.exception("wiki: up-to-date page-graph persist failed for kb=%s", ctx.kb_id)
+
             progress(1.0, "Wiki is up to date.")
             return
         logging.info("wiki: MAP rows exist but no pages found for kb=%s; rebuilding from stored extracts.", ctx.kb_id)
@@ -1594,6 +1633,21 @@ async def run_wiki_incremental(
         deleted_doc_ids=deleted_doc_ids or None,
         callback=lambda p, msg: progress(p, msg),
     )
+
+    # 6. Materialize the canvas graph from the compiled pages. The incremental
+    # entry point persists wiki_page rows internally (without returning the page
+    # list), so reload them and project onto the graph shape that
+    # build_wiki_page_graph expects.
+    try:
+        from rag.advanced_rag.knowlege_compile.wiki_incremental import (
+            _wiki_load_pages_for_graph,
+        )
+
+        graph_pages = await _wiki_load_pages_for_graph(ctx.tenant_id, ctx.kb_id)
+        if graph_pages:
+            await persist_wiki_page_graph(ctx=ctx, pages=graph_pages)
+    except Exception:
+        logging.exception("wiki: page-graph persist failed for kb=%s", ctx.kb_id)
 
     progress(1.0, f"Wiki done: +{summary.get('pages_created', 0)} ~{summary.get('pages_modified', 0)} -{summary.get('pages_deleted', 0)}")
     if summary.get("errors"):

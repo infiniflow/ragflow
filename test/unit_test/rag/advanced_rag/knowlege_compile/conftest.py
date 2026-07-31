@@ -8,6 +8,7 @@ other test suites are not affected.
 
 import asyncio
 import importlib
+import os
 import sys
 import types
 from unittest.mock import MagicMock
@@ -45,10 +46,20 @@ _stub_only = [
     "rag.llm.chat_model",
     "rag.utils.redis_conn",
     "api.db.services.llm_service",
+    "rag.prompts",
+    "rag.prompts.generator",
 ]
 for name in _stub_only:
     if name not in sys.modules:
         sys.modules[name] = types.ModuleType(name)
+
+# message_fit_in is imported by wiki_incremental at module level
+if not hasattr(sys.modules["rag.prompts.generator"], "message_fit_in"):
+
+    def _message_fit_in(*args, **kwargs):
+        return True
+
+    sys.modules["rag.prompts.generator"].message_fit_in = _message_fit_in
 
 # ---- Modules that wiki_incremental.py imports at module level — use
 #      real import when possible to avoid polluting other test suites.
@@ -90,9 +101,33 @@ sys.modules["common.connection_utils"].timeout = lambda *a, **kw: lambda fn: fn
 sys.modules["api.db.services.task_service"].has_canceled = lambda *a, **kw: False
 
 # ---- Stubs that MUST exist for wiki_incremental.py import ----
-for mod_name in ["rag", "rag.nlp", "rag.utils", "api", "api.db", "api.db.services", "rag.advanced_rag", "rag.advanced_rag.knowlege_compile", "rag.advanced_rag.knowlege_compile.structure"]:
+for mod_name in [
+    "rag",
+    "rag.nlp",
+    "rag.utils",
+    "api",
+    "api.db",
+    "api.db.services",
+    "rag.advanced_rag",
+    "rag.advanced_rag.knowlege_compile",
+    "rag.advanced_rag.knowlege_compile.structure",
+    "rag.advanced_rag.knowlege_compile._common",
+]:
     if mod_name not in sys.modules:
         sys.modules[mod_name] = types.ModuleType(mod_name)
+
+# wiki_incremental.py uses relative imports (from ._common import ...), so
+# rag.advanced_rag.knowlege_compile MUST be a proper package with __path__
+# pointing at the real source directory, otherwise those imports fail.
+_KC_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../../../rag/advanced_rag/knowlege_compile"))
+sys.modules["rag.advanced_rag.knowlege_compile"].__path__ = [_KC_DIR]
+if hasattr(sys.modules["rag.advanced_rag.knowlege_compile"], "__package__"):
+    sys.modules["rag.advanced_rag.knowlege_compile"].__package__ = "rag.advanced_rag.knowlege_compile"
+
+# _common.py symbols used by wiki_incremental at import time
+_common_mod = sys.modules["rag.advanced_rag.knowlege_compile._common"]
+_common_mod.knowledge_compile_gen_conf = lambda *a, **k: {}
+_common_mod.stable_row_id = lambda *a, **k: ""
 
 # ---- Test helper constants (same values as structure.py) ----
 sys.modules["rag.advanced_rag.knowlege_compile.structure"].CONCEPT_MIN_CLAIMS = 3

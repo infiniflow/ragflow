@@ -1535,7 +1535,7 @@ async def search_datasets(tenant_id: str, req: dict):
 #
 # These three helpers power the dataset-level "Artifact" tab. They query rows
 # with ``compile_kwd="wiki_page"`` written by TaskHandler's
-# ``_persist_wiki_pages_to_es``. The schema fields they rely on are:
+# ``persist_wiki_pages``. The schema fields they rely on are:
 #   slug_kwd, title_kwd, page_type_kwd, content_with_weight,
 #   topic_kwd, entity_names_kwd, outlinks_kwd, related_kb_pages_kwd,
 #   source_chunk_ids, source_doc_ids
@@ -1568,6 +1568,19 @@ def _compilation_template_kind(kind) -> str:
     if normalized in {"pageindex", "page_index", "knowledge_graph"}:
         return "timeline"
     return normalized
+
+
+def _scalar(raw, default=""):
+    """Infinity ``get_fields`` returns every ``*_kwd`` field as a list (split
+    on ``###``), even single scalar values like ``slug_kwd=["entity/foo"]``.
+    Normalize a field value that is expected to be a scalar identifier back to
+    the first non-empty element."""
+    if isinstance(raw, (list, tuple)):
+        for item in raw:
+            if item not in (None, ""):
+                return item
+        return default
+    return raw if raw not in (None, "") else default
 
 
 def _normalize_compilation_template_group_ids(raw) -> list[str]:
@@ -2328,15 +2341,15 @@ async def list_wiki_pages(
     total = settings.docStoreConn.get_total(res)
     items = []
     for row in (field_map or {}).values():
-        slug = row.get("slug_kwd")
-        if not isinstance(slug, str) or not slug:
+        slug = _scalar(row.get("slug_kwd"))
+        if not slug:
             continue
         items.append(
             {
                 "slug": slug,
-                "title": row.get("title_kwd") or slug,
-                "page_type": row.get("page_type_kwd") or "concept",
-                "topic": row.get("topic_kwd") or "",
+                "title": _scalar(row.get("title_kwd")) or slug,
+                "page_type": _scalar(row.get("page_type_kwd")) or "concept",
+                "topic": _scalar(row.get("topic_kwd")) or "",
                 "summary": row.get("summary_with_weight") or "",
             }
         )
@@ -2411,9 +2424,12 @@ async def list_wiki_topics(
             if not rows:
                 break
             for row in rows.values():
-                t = row.get("topic_kwd")
-                if isinstance(t, str) and t:
-                    meta[t] = {"title": row.get("title_kwd") or t, "slug": row.get("slug_kwd") or t}
+                t = _scalar(row.get("topic_kwd"))
+                if t:
+                    meta[t] = {
+                        "title": _scalar(row.get("title_kwd")) or t,
+                        "slug": _scalar(row.get("slug_kwd")) or t,
+                    }
             _offset += _BATCH
     except Exception:
         logging.exception("list_wiki_topics: topic metadata lookup failed for kb=%s", dataset_id)
@@ -2470,6 +2486,7 @@ async def get_wiki_page(
         "title_kwd",
         "page_type_kwd",
         "topic_kwd",
+        "md_with_weight",
         "content_with_weight",
         "summary_with_weight",
         "entity_names_kwd",
@@ -2507,13 +2524,15 @@ async def get_wiki_page(
         return True, None
 
     _, row = next(iter(field_map.items()))
-    content_md = row.get("content_with_weight") or ""
+    # The incremental writer stores page body in md_with_weight; fall back to
+    # content_with_weight for any rows written by the legacy path.
+    content_md = row.get("md_with_weight") or row.get("content_with_weight") or ""
     summary = row.get("summary_with_weight") or ""
     return True, {
-        "slug": row.get("slug_kwd") or full_slug,
-        "title": row.get("title_kwd") or full_slug,
-        "page_type": row.get("page_type_kwd") or page_type,
-        "topic": row.get("topic_kwd") or "",
+        "slug": _scalar(row.get("slug_kwd")) or full_slug,
+        "title": _scalar(row.get("title_kwd")) or full_slug,
+        "page_type": _scalar(row.get("page_type_kwd")) or page_type,
+        "topic": _scalar(row.get("topic_kwd")) or "",
         "content_md_rendered": content_md,
         "summary": summary,
         "entity_names": row.get("entity_names_kwd") or [],
@@ -3187,7 +3206,7 @@ def _wiki_entity_payload(row: dict) -> dict | None:
                 payload = parsed
         except Exception:
             pass
-    slug = payload.get("slug") or row.get("slug_kwd")
+    slug = payload.get("slug") or _scalar(row.get("slug_kwd"))
     if not isinstance(slug, str) or not slug:
         return None
     out = {
@@ -3283,7 +3302,13 @@ async def _wiki_search_entities_by_slugs(
     dataset_id: str,
     slugs: list[str],
 ):
-    """Fetch entity rows whose ``slug_kwd`` is in ``slugs``. Unordered."""
+    """Fetch entity rows whose ``slug_kwd`` is in ``slugs``. Unordered.
+
+    Like :func:`_wiki_search_relations_from`, we avoid pushing ``slug_kwd`` (a
+    *_kwd analysed field) into the search filter — a `slug_kwd: [..]` with ~20
+    entries triggers TOO_MANY_CONNECTIONS. Pull all entity rows once and filter
+    in memory.
+    """
     if not slugs:
         return {}
 
@@ -3296,22 +3321,35 @@ async def _wiki_search_entities_by_slugs(
         "source_chunk_ids",
         "content_with_weight",
     ]
-    res = await thread_pool_exec(
-        settings.docStoreConn.search,
-        select_fields,
-        [],
-        {
-            "compile_kwd": [_WIKI_GRAPH_ENTITY_KWD],
-            "slug_kwd": list(slugs),
-        },
-        [],
-        OrderByExpr(),
-        0,
-        max(len(slugs), 1),
-        index_nm,
-        [dataset_id],
-    )
-    return settings.docStoreConn.get_fields(res, select_fields)
+    wanted = set(slugs)
+    results = {}
+    offset, page_size = 0, 1000
+    while True:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            select_fields,
+            [],
+            {"compile_kwd": [_WIKI_GRAPH_ENTITY_KWD]},
+            [],
+            OrderByExpr(),
+            offset,
+            page_size,
+            index_nm,
+            [dataset_id],
+        )
+        rows = settings.docStoreConn.get_fields(res, select_fields)
+        if not rows:
+            break
+        for row in rows.values():
+            slug = row.get("slug_kwd")
+            if isinstance(slug, list):
+                slug = slug[0] if slug else ""
+            if slug in wanted:
+                results[row.get("id", len(results))] = row
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return results
 
 
 async def _wiki_search_relations_from(
@@ -3319,31 +3357,54 @@ async def _wiki_search_relations_from(
     dataset_id: str,
     from_slugs: list[str],
 ):
-    """Fetch all relation rows with ``from_kwd`` in ``from_slugs``."""
+    """Fetch relation rows whose ``from_kwd`` is in ``from_slugs``.
+
+    IMPORTANT: we do NOT push ``from_slugs`` into the search filter. ``from_kwd``
+    is a *_kwd (whitespace-# analysed) field, and the generic search path turns
+    `from_kwd: [v1, v2, ...]` into one ``filter_fulltext`` clause per value. A
+    batch of only ~20 slugs already blows past Infinity's per-query connection
+    budget and surfaces as TOO_MANY_CONNECTIONS (the incremental writer emits
+    many relations, so sub_slugs easily exceeds 20). Instead we pull ALL relation
+    rows for the dataset in ONE cheap query (relations are short and few) and
+    filter in memory.
+    """
     if not from_slugs:
         return {}
 
     from common.doc_store.doc_store_base import OrderByExpr
 
     select_fields = ["id", "from_kwd", "to_kwd", "content_with_weight"]
-    # Generous upper bound: relations are short; bulk-pull all matching at
-    # once rather than paging.
-    res = await thread_pool_exec(
-        settings.docStoreConn.search,
-        select_fields,
-        [],
-        {
-            "compile_kwd": [_WIKI_GRAPH_RELATION_KWD],
-            "from_kwd": list(from_slugs),
-        },
-        [],
-        OrderByExpr(),
-        0,
-        10000,
-        index_nm,
-        [dataset_id],
-    )
-    return settings.docStoreConn.get_fields(res, select_fields)
+    wanted = set(from_slugs)
+    # Single query without the huge from_kwd IN-filter. Page over results in
+    # case a dataset has more than 10000 relations.
+    results = {}
+    offset, page_size = 0, 1000
+    while True:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            select_fields,
+            [],
+            {"compile_kwd": [_WIKI_GRAPH_RELATION_KWD]},
+            [],
+            OrderByExpr(),
+            offset,
+            page_size,
+            index_nm,
+            [dataset_id],
+        )
+        rows = settings.docStoreConn.get_fields(res, select_fields)
+        if not rows:
+            break
+        for row in rows.values():
+            frm = row.get("from_kwd")
+            if isinstance(frm, list):
+                frm = frm[0] if frm else ""
+            if frm in wanted:
+                results[row.get("id", len(results))] = row
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    return results
 
 
 async def get_wiki_graph(

@@ -72,6 +72,8 @@
 	"synthesis_version_int": {"type": "integer", "default": 0},
 	"claims": {"type": "json", "default": "[]", "enabled": false},
 	"page_ids": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
+	"page_id": {"type": "varchar", "default": ""},
+	"deleted_doc_id": {"type": "varchar", "default": ""},
 	"source_chunk_hashes": {"type": "json", "default": "{}", "enabled": false},
 	"map_checksum": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 
