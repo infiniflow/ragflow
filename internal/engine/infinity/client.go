@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"ragflow/internal/common"
+	"ragflow/internal/server/config"
 	"reflect"
 	"strconv"
 	"strings"
@@ -115,7 +116,7 @@ func ensureDeadline(ctx context.Context, timeout time.Duration) (context.Context
 	return context.WithTimeout(ctx, timeout)
 }
 
-func NewInfinityClient(cfg *server.InfinityConfig) (*infinityClient, error) {
+func NewInfinityClient(cfg config.InfinityConfig) (*infinityClient, error) {
 	// Parse URI like "localhost:23817" to get IP and port
 	host := "127.0.0.1"
 	port := 23817
@@ -331,54 +332,44 @@ func (c *infinityClient) checkoutDatabase(ctx context.Context, caller string) (*
 }
 
 // Engine Infinity engine implementation using Go SDK
-type infinityEngine struct {
-	config                 *server.InfinityConfig
+type Engine struct {
+	config                 config.InfinityConfig
 	client                 *infinityClient
 	mappingFileName        string
 	docMetaMappingFileName string
 }
 
 // NewEngine creates an Infinity engine
-func NewEngine(cfg interface{}) (*infinityEngine, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("infinity config is nil, please check your configuration file for 'doc_engine.infinity' settings")
-	}
-	infConfig, ok := cfg.(*server.InfinityConfig)
-	if !ok {
-		return nil, fmt.Errorf("invalid infinity config type, expected *config.InfinityConfig")
-	}
-	if infConfig == nil {
-		return nil, fmt.Errorf("infinity config is nil, please check your configuration file for 'doc_engine.infinity' settings")
-	}
+func NewEngine(infinityConfig config.InfinityConfig) (*Engine, error) {
 
-	client, err := NewInfinityClient(infConfig)
+	client, err := NewInfinityClient(infinityConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	mappingFileName := infConfig.MappingFileName
+	mappingFileName := infinityConfig.MappingFileName
 	if mappingFileName == "" {
 		mappingFileName = "infinity_mapping.json"
 	}
-	docMetaMappingFileName := infConfig.DocMetaMappingFileName
+	docMetaMappingFileName := infinityConfig.DocMetaMappingFileName
 	if docMetaMappingFileName == "" {
 		docMetaMappingFileName = "doc_meta_infinity_mapping.json"
 	}
 
-	engine := &infinityEngine{
-		config:                 infConfig,
+	engine := &Engine{
+		config:                 infinityConfig,
 		client:                 client,
 		mappingFileName:        mappingFileName,
 		docMetaMappingFileName: docMetaMappingFileName,
 	}
 
 	// Wait for Infinity to be healthy
-	if err := client.WaitForHealthy(context.Background(), 120*time.Second); err != nil {
+	if err = client.WaitForHealthy(context.Background(), 120*time.Second); err != nil {
 		return nil, fmt.Errorf("Infinity not healthy: %w", err)
 	}
 
 	// MigrateDB creates the database if it doesn't exist
-	if err := engine.MigrateDB(context.Background()); err != nil {
+	if err = engine.MigrateDB(context.Background()); err != nil {
 		return nil, fmt.Errorf("failed to migrate database: %w", err)
 	}
 
@@ -386,17 +377,17 @@ func NewEngine(cfg interface{}) (*infinityEngine, error) {
 }
 
 // GetType returns the engine type
-func (e *infinityEngine) GetType() string {
+func (e *Engine) GetType() string {
 	return "infinity"
 }
 
 // SupportsPageRank returns false because Infinity does not support pagerank.
-func (e *infinityEngine) SupportsPageRank() bool {
+func (e *Engine) SupportsPageRank() bool {
 	return false
 }
 
 // Ping checks if Infinity is accessible
-func (e *infinityEngine) Ping(ctx context.Context) error {
+func (e *Engine) Ping(ctx context.Context) error {
 	if e.client == nil || e.client.pool == nil {
 		return fmt.Errorf("Infinity client not initialized")
 	}
@@ -412,7 +403,7 @@ func (e *infinityEngine) Ping(ctx context.Context) error {
 }
 
 // Close closes the Infinity connection
-func (e *infinityEngine) Close() error {
+func (e *Engine) Close() error {
 	if e.client != nil && e.client.pool != nil {
 		return e.client.pool.Close()
 	}
@@ -420,7 +411,7 @@ func (e *infinityEngine) Close() error {
 }
 
 // MigrateDB creates the database if it doesn't exist
-func (e *infinityEngine) MigrateDB(ctx context.Context) error {
+func (e *Engine) MigrateDB(ctx context.Context) error {
 	conn, release, err := e.client.checkoutConn(ctx, "MigrateDB")
 	if err != nil {
 		return fmt.Errorf("failed to get connection: %w", err)

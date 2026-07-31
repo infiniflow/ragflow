@@ -34,6 +34,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/utility"
 	"regexp"
@@ -241,14 +242,20 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	asrModel := ""
 	vlmModel := ""
 	rerankModel := ""
+	var ttsModel *string = nil
+	var ocrModel *string = nil
 	parserIDs := "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email"
 
 	if cfg != nil {
-		chatModel = cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
-		embeddingModel = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name
-		asrModel = cfg.UserDefaultLLM.DefaultModels.ASRModel.Name
-		vlmModel = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name
-		rerankModel = cfg.UserDefaultLLM.DefaultModels.RerankModel.Name
+		chatModel = cfg.GetDefaultChatModel().Name
+		embeddingModel = cfg.GetDefaultEmbeddingModel().Name
+		asrModel = cfg.GetDefaultASRModel().Name
+		vlmModel = cfg.GetDefaultVisionModel().Name
+		rerankModel = cfg.GetDefaultRerankModel().Name
+		ttsModelStr := cfg.GetDefaultTTSModel().Name
+		ttsModel = &ttsModelStr
+		ocrModelStr := cfg.GetDefaultOCRModel().Name
+		ocrModel = &ocrModelStr
 	}
 
 	tenantStatus := "1"
@@ -260,6 +267,8 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		ASRID:     asrModel,
 		Img2TxtID: vlmModel,
 		RerankID:  rerankModel,
+		TTSID:     ttsModel,
+		OCRID:     ocrModel,
 		ParserIDs: parserIDs,
 		Credit:    512,
 		Status:    &tenantStatus,
@@ -342,17 +351,19 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 	var tenantLLMs []*entity.TenantLLM
 
 	// Get model configs from configuration
-	modelConfigs := []server.ModelConfig{
-		cfg.UserDefaultLLM.DefaultModels.ChatModel,
-		cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
-		cfg.UserDefaultLLM.DefaultModels.RerankModel,
-		cfg.UserDefaultLLM.DefaultModels.ASRModel,
-		cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
+	modelConfigs := []config.ModelConfig{
+		cfg.GetDefaultChatModel(),
+		cfg.GetDefaultEmbeddingModel(),
+		cfg.GetDefaultRerankModel(),
+		cfg.GetDefaultASRModel(),
+		cfg.GetDefaultVisionModel(),
+		cfg.GetDefaultTTSModel(),
+		cfg.GetDefaultOCRModel(),
 	}
 
 	// Track seen factories to avoid duplicates
 	seenFactories := make(map[string]bool)
-	var uniqueFactories []server.ModelConfig
+	var uniqueFactories []config.ModelConfig
 
 	for _, mc := range modelConfigs {
 		if mc.Factory == "" {
@@ -380,8 +391,8 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 				apiKey = factoryConfig.APIKey
 				apiBase = factoryConfig.BaseURL
 			case entity.ModelTypeEmbedding.String():
-				apiKey = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.APIKey
-				apiBase = cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.BaseURL
+				apiKey = cfg.GetDefaultEmbeddingModel().APIKey
+				apiBase = cfg.GetDefaultEmbeddingModel().BaseURL
 				if apiKey == "" {
 					apiKey = factoryConfig.APIKey
 				}
@@ -389,8 +400,8 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 					apiBase = factoryConfig.BaseURL
 				}
 			case entity.ModelTypeRerank.String():
-				apiKey = cfg.UserDefaultLLM.DefaultModels.RerankModel.APIKey
-				apiBase = cfg.UserDefaultLLM.DefaultModels.RerankModel.BaseURL
+				apiKey = cfg.GetDefaultRerankModel().APIKey
+				apiBase = cfg.GetDefaultRerankModel().BaseURL
 				if apiKey == "" {
 					apiKey = factoryConfig.APIKey
 				}
@@ -398,8 +409,8 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 					apiBase = factoryConfig.BaseURL
 				}
 			case entity.ModelTypeSpeech2Text.String():
-				apiKey = cfg.UserDefaultLLM.DefaultModels.ASRModel.APIKey
-				apiBase = cfg.UserDefaultLLM.DefaultModels.ASRModel.BaseURL
+				apiKey = cfg.GetDefaultASRModel().APIKey
+				apiBase = cfg.GetDefaultASRModel().BaseURL
 				if apiKey == "" {
 					apiKey = factoryConfig.APIKey
 				}
@@ -407,8 +418,8 @@ func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entit
 					apiBase = factoryConfig.BaseURL
 				}
 			case entity.ModelTypeImage2Text.String():
-				apiKey = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.APIKey
-				apiBase = cfg.UserDefaultLLM.DefaultModels.Image2TextModel.BaseURL
+				apiKey = cfg.GetDefaultVisionModel().APIKey
+				apiBase = cfg.GetDefaultVisionModel().BaseURL
 				if apiKey == "" {
 					apiKey = factoryConfig.APIKey
 				}
@@ -1135,7 +1146,7 @@ func (s *Service) getESClusterStats(name string) (map[string]interface{}, error)
 
 	// Get ES config from server config
 	cfg := server.GetConfig()
-	if cfg == nil || cfg.DocEngine.ES == nil {
+	if cfg == nil || !cfg.IsElasticConfigured() {
 		return map[string]interface{}{
 			"service_name": name,
 			"status":       "timeout",
@@ -1144,7 +1155,7 @@ func (s *Service) getESClusterStats(name string) (map[string]interface{}, error)
 	}
 
 	// Create ES engine and get cluster stats
-	esEngine, err := elasticsearch.NewEngine(cfg.DocEngine.ES)
+	esEngine, err := elasticsearch.NewEngine(cfg.GetElasticsearchConfig())
 	if err != nil {
 		return map[string]interface{}{
 			"service_name": name,

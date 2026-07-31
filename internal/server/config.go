@@ -20,8 +20,8 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/mail"
 	"net/url"
+	"ragflow/internal/server/config"
 	"strconv"
 	"strings"
 	"time"
@@ -311,7 +311,7 @@ type NatsConfig struct {
 }
 
 var (
-	globalConfig *Config
+	globalConfig *config.Config
 	globalViper  *viper.Viper
 	zapLogger    *zap.Logger
 	allConfigs   []map[string]interface{}
@@ -330,285 +330,165 @@ func Init(configPath string) error {
 		return err
 	}
 
-	id := 0
-	for k, v := range globalViper.AllSettings() {
-		configDict, ok := v.(map[string]interface{})
-		if !ok {
-			continue
-		}
-
-		switch k {
-		case "ragflow":
-			configDict["id"] = id
-			configDict["name"] = fmt.Sprintf("ragflow_%d", id)
-			configDict["service_type"] = "ragflow_server"
-			configDict["extra"] = map[string]interface{}{}
-			configDict["port"] = configDict["http_port"]
-			delete(configDict, "http_port")
-		case "es":
-			// Skip if retrieval_type doesn't match doc_engine
-			if globalConfig.DocEngine.Type != "elasticsearch" {
-				continue
-			}
-			hosts := getString(configDict, "hosts")
-			host, port := parseHostPort(hosts)
-			username := getString(configDict, "username")
-			password := getString(configDict, "password")
-			configDict["id"] = id
-			configDict["name"] = "elasticsearch"
-			configDict["host"] = host
-			configDict["port"] = port
-			configDict["service_type"] = "retrieval"
-			configDict["extra"] = map[string]interface{}{
-				"retrieval_type": "elasticsearch",
-				"username":       username,
-				"password":       password,
-			}
-			delete(configDict, "hosts")
-			delete(configDict, "username")
-			delete(configDict, "password")
-		case "infinity":
-			// Skip if retrieval_type doesn't match doc_engine
-			if globalConfig.DocEngine.Type != "infinity" {
-				continue
-			}
-			uri := getString(configDict, "uri")
-			host, port := parseHostPort(uri)
-			dbName := getString(configDict, "db_name")
-			if dbName == "" {
-				dbName = "default_db"
-			}
-			configDict["id"] = id
-			configDict["name"] = "infinity"
-			configDict["host"] = host
-			configDict["port"] = port
-			configDict["service_type"] = "retrieval"
-			configDict["extra"] = map[string]interface{}{
-				"retrieval_type": "infinity",
-				"db_name":        dbName,
-			}
-		case "minio":
-			hostPort := getString(configDict, "host")
-			host, port := parseHostPort(hostPort)
-			user := getString(configDict, "user")
-			password := getString(configDict, "password")
-			configDict["id"] = id
-			configDict["name"] = "minio"
-			configDict["host"] = host
-			configDict["port"] = port
-			configDict["service_type"] = "file_store"
-			configDict["extra"] = map[string]interface{}{
-				"store_type": "minio",
-				"user":       user,
-				"password":   password,
-			}
-			delete(configDict, "bucket")
-			delete(configDict, "user")
-			delete(configDict, "password")
-		case "redis":
-			hostPort := getString(configDict, "host")
-			host, port := parseHostPort(hostPort)
-			password := getString(configDict, "password")
-			db := getInt(configDict, "db")
-			configDict["id"] = id
-			configDict["name"] = "redis"
-			configDict["host"] = host
-			configDict["port"] = port
-			configDict["service_type"] = "cache"
-			configDict["extra"] = map[string]interface{}{
-				"mq_type":  "redis",
-				"database": db,
-				"password": password,
-			}
-			delete(configDict, "password")
-			delete(configDict, "db")
-		case "mysql":
-			host := getString(configDict, "host")
-			port := getInt(configDict, "port")
-			user := getString(configDict, "user")
-			password := getString(configDict, "password")
-			configDict["id"] = id
-			configDict["name"] = "mysql"
-			configDict["host"] = host
-			configDict["port"] = port
-			configDict["service_type"] = "meta_data"
-			configDict["extra"] = map[string]interface{}{
-				"meta_type": "mysql",
-				"username":  user,
-				"password":  password,
-			}
-			delete(configDict, "stale_timeout")
-			delete(configDict, "max_connections")
-			delete(configDict, "max_allowed_packet")
-			delete(configDict, "user")
-			delete(configDict, "password")
-		case "ingestor":
-			mqType := getString(configDict, "mq_type")
-			configDict["id"] = id
-			configDict["name"] = "ingestor"
-			configDict["service_type"] = "ingestor"
-			configDict["extra"] = map[string]interface{}{
-				"message_queue_type": mqType,
-			}
-			delete(configDict, "message_queue_type")
-		case "nats":
-			configDict["id"] = id
-			configDict["name"] = "nats"
-			configDict["service_type"] = "message_queue"
-		case "otel":
-			configDict["id"] = id
-			configDict["name"] = "jaeger"
-			configDict["service_type"] = "tracing"
-		case "clickhouse":
-			configDict["id"] = id
-			configDict["name"] = "clickhouse"
-			configDict["service_type"] = "olap"
-		case "admin":
-			// Skip admin section
-			continue
-		default:
-			// Skip unknown sections
-			continue
-		}
-
-		// Set default values for empty host/port
-		if configDict["host"] == "" {
-			configDict["host"] = "-"
-		}
-		if configDict["port"] == 0 {
-			configDict["port"] = "-"
-		}
-
-		delete(configDict, "prefix_path")
-		delete(configDict, "username")
-		allConfigs = append(allConfigs, configDict)
-		id++
-	}
+	//id := 0
+	//for k, v := range globalViper.AllSettings() {
+	//	configDict, ok := v.(map[string]interface{})
+	//	if !ok {
+	//		continue
+	//	}
+	//
+	//	switch k {
+	//	case "ragflow":
+	//		configDict["id"] = id
+	//		configDict["name"] = fmt.Sprintf("ragflow_%d", id)
+	//		configDict["service_type"] = "ragflow_server"
+	//		configDict["extra"] = map[string]interface{}{}
+	//		configDict["port"] = configDict["http_port"]
+	//		delete(configDict, "http_port")
+	//	case "es":
+	//		// Skip if retrieval_type doesn't match doc_engine
+	//		if globalConfig.DocEngine.Type != "elasticsearch" {
+	//			continue
+	//		}
+	//		hosts := getString(configDict, "hosts")
+	//		host, port := parseHostPort(hosts)
+	//		username := getString(configDict, "username")
+	//		password := getString(configDict, "password")
+	//		configDict["id"] = id
+	//		configDict["name"] = "elasticsearch"
+	//		configDict["host"] = host
+	//		configDict["port"] = port
+	//		configDict["service_type"] = "retrieval"
+	//		configDict["extra"] = map[string]interface{}{
+	//			"retrieval_type": "elasticsearch",
+	//			"username":       username,
+	//			"password":       password,
+	//		}
+	//		delete(configDict, "hosts")
+	//		delete(configDict, "username")
+	//		delete(configDict, "password")
+	//	case "infinity":
+	//		// Skip if retrieval_type doesn't match doc_engine
+	//		if globalConfig.DocEngine.Type != "infinity" {
+	//			continue
+	//		}
+	//		uri := getString(configDict, "uri")
+	//		host, port := parseHostPort(uri)
+	//		dbName := getString(configDict, "db_name")
+	//		if dbName == "" {
+	//			dbName = "default_db"
+	//		}
+	//		configDict["id"] = id
+	//		configDict["name"] = "infinity"
+	//		configDict["host"] = host
+	//		configDict["port"] = port
+	//		configDict["service_type"] = "retrieval"
+	//		configDict["extra"] = map[string]interface{}{
+	//			"retrieval_type": "infinity",
+	//			"db_name":        dbName,
+	//		}
+	//	case "minio":
+	//		hostPort := getString(configDict, "host")
+	//		host, port := parseHostPort(hostPort)
+	//		user := getString(configDict, "user")
+	//		password := getString(configDict, "password")
+	//		configDict["id"] = id
+	//		configDict["name"] = "minio"
+	//		configDict["host"] = host
+	//		configDict["port"] = port
+	//		configDict["service_type"] = "file_store"
+	//		configDict["extra"] = map[string]interface{}{
+	//			"store_type": "minio",
+	//			"user":       user,
+	//			"password":   password,
+	//		}
+	//		delete(configDict, "bucket")
+	//		delete(configDict, "user")
+	//		delete(configDict, "password")
+	//	case "redis":
+	//		hostPort := getString(configDict, "host")
+	//		host, port := parseHostPort(hostPort)
+	//		password := getString(configDict, "password")
+	//		db := getInt(configDict, "db")
+	//		configDict["id"] = id
+	//		configDict["name"] = "redis"
+	//		configDict["host"] = host
+	//		configDict["port"] = port
+	//		configDict["service_type"] = "cache"
+	//		configDict["extra"] = map[string]interface{}{
+	//			"mq_type":  "redis",
+	//			"database": db,
+	//			"password": password,
+	//		}
+	//		delete(configDict, "password")
+	//		delete(configDict, "db")
+	//	case "mysql":
+	//		host := getString(configDict, "host")
+	//		port := getInt(configDict, "port")
+	//		user := getString(configDict, "user")
+	//		password := getString(configDict, "password")
+	//		configDict["id"] = id
+	//		configDict["name"] = "mysql"
+	//		configDict["host"] = host
+	//		configDict["port"] = port
+	//		configDict["service_type"] = "meta_data"
+	//		configDict["extra"] = map[string]interface{}{
+	//			"meta_type": "mysql",
+	//			"username":  user,
+	//			"password":  password,
+	//		}
+	//		delete(configDict, "stale_timeout")
+	//		delete(configDict, "max_connections")
+	//		delete(configDict, "max_allowed_packet")
+	//		delete(configDict, "user")
+	//		delete(configDict, "password")
+	//	case "ingestor":
+	//		mqType := getString(configDict, "mq_type")
+	//		configDict["id"] = id
+	//		configDict["name"] = "ingestor"
+	//		configDict["service_type"] = "ingestor"
+	//		configDict["extra"] = map[string]interface{}{
+	//			"message_queue_type": mqType,
+	//		}
+	//		delete(configDict, "message_queue_type")
+	//	case "nats":
+	//		configDict["id"] = id
+	//		configDict["name"] = "nats"
+	//		configDict["service_type"] = "message_queue"
+	//	case "otel":
+	//		configDict["id"] = id
+	//		configDict["name"] = "jaeger"
+	//		configDict["service_type"] = "tracing"
+	//	case "clickhouse":
+	//		configDict["id"] = id
+	//		configDict["name"] = "clickhouse"
+	//		configDict["service_type"] = "olap"
+	//	case "admin":
+	//		// Skip admin section
+	//		continue
+	//	default:
+	//		// Skip unknown sections
+	//		continue
+	//	}
+	//
+	//	// Set default values for empty host/port
+	//	if configDict["host"] == "" {
+	//		configDict["host"] = "-"
+	//	}
+	//	if configDict["port"] == 0 {
+	//		configDict["port"] = "-"
+	//	}
+	//
+	//	delete(configDict, "prefix_path")
+	//	delete(configDict, "username")
+	//	allConfigs = append(allConfigs, configDict)
+	//	id++
+	//}
 
 	return nil
 }
 
 func FromEnvironments() error {
-	// Secret key
-	if envVal := common.GetEnv(common.EnvRAGFlowSecretKey); envVal != "" {
-		globalConfig.General.SecretKey = &envVal
-	}
-
-	// Load REGISTER_ENABLED from environment variable (default: true)
-	if envVal := common.GetEnv(common.EnvRegisterEnabled); envVal != "" {
-		str := strings.ToLower(envVal)
-		if str == "true" || str == "1" || str == "yes" {
-			globalConfig.Authentication.RegisterEnabled = true
-		} else {
-			globalConfig.Authentication.RegisterEnabled = false
-		}
-	}
-
-	// Load DISABLE_PASSWORD_LOGIN from environment variable (default: false)
-	if envVal := common.GetEnv(common.EnvDisablePasswordLogin); envVal != "" {
-		str := strings.ToLower(envVal)
-		if str == "true" || str == "1" || str == "yes" {
-			globalConfig.Authentication.DisablePasswordLogin = true
-		} else {
-			globalConfig.Authentication.DisablePasswordLogin = false
-		}
-	}
-
-	// Doc engine
-	docEngine := common.GetEnvSmall(common.EnvDocEngine)
-	switch docEngine {
-	case "infinity":
-		globalConfig.DocEngine.Type = EngineInfinity
-	case "":
-		// Default
-		if globalConfig.DocEngine.Type == "" {
-			globalConfig.DocEngine.Type = EngineElasticsearch
-		}
-	case "elasticsearch":
-		globalConfig.DocEngine.Type = EngineElasticsearch
-	case "opensearch":
-	case "oceanbase":
-		return fmt.Errorf("not implemented: %s", docEngine)
-	default:
-		return fmt.Errorf("invalid doc engine: %s", docEngine)
-	}
-
-	// Default super user email
-	globalConfig.DefaultSuperUser.Email = "admin@ragflow.io"
-	superUserEmail := common.GetEnv(common.EnvDefaultSuperuserEmail)
-	if superUserEmail != "" {
-		_, err := mail.ParseAddress(superUserEmail)
-		if err != nil {
-			return fmt.Errorf("invalid super user email: %s", superUserEmail)
-		}
-		globalConfig.DefaultSuperUser.Email = superUserEmail
-	}
-
-	globalConfig.DefaultSuperUser.Password = "admin"
-	superUserPassword := common.GetEnv(common.EnvDefaultSuperuserPassword)
-	if superUserPassword != "" {
-		globalConfig.DefaultSuperUser.Password = superUserPassword
-	}
-
-	globalConfig.DefaultSuperUser.Nickname = "admin"
-	superUserNickname := common.GetEnv(common.EnvDefaultSuperuserNickname)
-	if superUserNickname != "" {
-		globalConfig.DefaultSuperUser.Nickname = superUserNickname
-	}
-
-	// Meta database
-	databaseType := common.GetEnvSmall(common.EnvDBType)
-	switch databaseType {
-	case "mysql":
-		globalConfig.Database.Driver = "mysql"
-	case "":
-		// Default
-		if globalConfig.Database.Driver == "" {
-			globalConfig.Database.Driver = "mysql"
-		}
-	default:
-		return fmt.Errorf("invalid database type: %s", databaseType)
-	}
-
-	// Storage
-	storageType := common.GetEnvSmall(common.EnvStorageImpl)
-	switch storageType {
-	case "minio":
-		globalConfig.StorageEngine.Type = StorageMinio
-	case "s3":
-		globalConfig.StorageEngine.Type = StorageS3
-	case "oss":
-		globalConfig.StorageEngine.Type = StorageOSS
-	case "gcs":
-		globalConfig.StorageEngine.Type = StorageGCS
-	case "":
-		// Default
-		if globalConfig.StorageEngine.Type == "" {
-			globalConfig.StorageEngine.Type = StorageMinio
-		}
-	default:
-		return fmt.Errorf("invalid storage type: %s", storageType)
-	}
-
-	// Minio
-	minioHost := strings.ToLower(common.GetEnv(common.EnvMinioHost))
-	if minioHost != "" {
-		globalConfig.StorageEngine.Minio.Host = minioEndpoint(minioHost, globalConfig.StorageEngine.Minio.Host)
-	}
-
-	minioRegion := strings.ToLower(common.GetEnv(common.EnvMinioRegion))
-	if minioRegion != "" {
-		if globalConfig.StorageEngine.Minio == nil {
-			return fmt.Errorf("minio config not found")
-		}
-		globalConfig.StorageEngine.Minio.Region = minioRegion
-	}
-
-	// Language
-	if globalConfig.Language == "" {
-		globalConfig.Language = GetLanguage()
-	}
-
 	return nil
 }
 
@@ -657,299 +537,384 @@ func FromConfigFile(configPath string) error {
 	// Save viper instance
 	globalViper = v
 
-	// Unmarshal configuration to globalConfig
-	// Note: This will only unmarshal fields that match the Config struct
-	if err := v.Unmarshal(&globalConfig); err != nil {
-		return fmt.Errorf("unmarshal config error: %w", err)
+	globalConfig = &config.Config{}
+	err := globalConfig.ParseGeneralConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse general config error: %w", err)
 	}
 
-	// Set default values for admin configuration if not configured
-	if globalConfig.Admin.Host == "" {
-		globalConfig.Admin.Host = "127.0.0.1"
-	}
-	if globalConfig.Admin.Port == 0 {
-		globalConfig.Admin.Port = 9383
-	} else {
-		globalConfig.Admin.Port += 2
+	err = globalConfig.ParseDatabaseConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse database config error: %w", err)
 	}
 
-	// authentication section
-	if globalConfig != nil {
-		// Try to map from mysql section
-		globalConfig.Authentication.DisablePasswordLogin = false
-		globalConfig.Authentication.RegisterEnabled = true
-		if v.IsSet("authentication") {
-			authenticationConfig := v.Sub("authentication")
-			if authenticationConfig != nil {
-				if authenticationConfig.IsSet("disable_password_login") {
-					globalConfig.Authentication.DisablePasswordLogin = authenticationConfig.GetBool("disable_password_login")
-				}
-				if authenticationConfig.IsSet("enable_register") {
-					globalConfig.Authentication.RegisterEnabled = authenticationConfig.GetBool("enable_register")
-				}
-			}
-		}
+	err = globalConfig.ParseDocEngineConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse doc engine config error: %w", err)
 	}
 
-	// If we loaded service_conf.yaml, map mysql fields to DatabaseConfig
-	if globalConfig != nil && globalConfig.Database.Host == "" {
-		// Try to map from mysql section
-		if v.IsSet("mysql") {
-			mysqlConfig := v.Sub("mysql")
-			if mysqlConfig != nil {
-				globalConfig.Database.Driver = "mysql"
-				globalConfig.Database.Host = mysqlConfig.GetString("host")
-				globalConfig.Database.Port = mysqlConfig.GetInt("port")
-				globalConfig.Database.Database = mysqlConfig.GetString("name")
-				globalConfig.Database.Username = mysqlConfig.GetString("user")
-				globalConfig.Database.Password = mysqlConfig.GetString("password")
-				globalConfig.Database.Charset = "utf8mb4"
-			}
-		}
+	err = globalConfig.ParseStorageEngineConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse storage engine config error: %w", err)
 	}
 
-	// Map ragflow section to ServerConfig
-	if globalConfig != nil && globalConfig.APIServer.Port == 0 {
-		// Try to map from ragflow section
-		if v.IsSet("ragflow") {
-			ragflowConfig := v.Sub("ragflow")
-			if ragflowConfig != nil {
-				globalConfig.APIServer.Port = ragflowConfig.GetInt("http_port") + 4 // 9384, by default
-				//globalConfig.Server.Port = ragflowConfig.GetInt("http_port") // Correct
-				// If mode is not set, default to debug
-				if globalConfig.General.Mode == "" {
-					globalConfig.General.Mode = "release"
-				}
-				secretKey := ragflowConfig.GetString("secret_key")
-				if secretKey != "" {
-					globalConfig.General.SecretKey = &secretKey
-				}
-			}
-		}
+	err = globalConfig.ParseCacheEngineConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse cache engine config error: %w", err)
 	}
 
-	if globalConfig.APIServer.Port == 0 {
-		globalConfig.APIServer.Port = 9384
-	} else {
-		globalConfig.APIServer.Port += 4
+	err = globalConfig.ParseQueueEngineConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse queue engine config error: %w", err)
 	}
 
-	// Map redis section to RedisConfig
-	if globalConfig != nil && globalConfig.Redis.Host != "" {
-		if v.IsSet("redis") {
-			redisConfig := v.Sub("redis")
-			if redisConfig != nil {
-				hostStr := redisConfig.GetString("host")
-				// Handle host:port format (e.g., "localhost:6379")
-				if hostStr == "" {
-					return fmt.Errorf("empty host of Redis configuration")
-				}
-
-				if idx := strings.LastIndex(hostStr, ":"); idx != -1 {
-					globalConfig.Redis.Host = hostStr[:idx]
-					if portStr := hostStr[idx+1:]; portStr != "" {
-						if port, err := strconv.Atoi(portStr); err == nil {
-							globalConfig.Redis.Port = port
-						}
-					}
-				} else {
-					return fmt.Errorf("error address format of Redis: %s", hostStr)
-				}
-
-				globalConfig.Redis.Password = redisConfig.GetString("password")
-				globalConfig.Redis.DB = redisConfig.GetInt("db")
-			}
-		}
+	err = globalConfig.ParseAnalyticEngineConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse analytic engine config error: %w", err)
 	}
 
-	// Map doc_engine section to DocEngineConfig
-	if globalConfig != nil {
-		// First, ensure engine type is set
-		if globalConfig.DocEngine.Type == "" {
-			if v.IsSet("doc_engine") {
-				docEngineConfig := v.Sub("doc_engine")
-				if docEngineConfig != nil {
-					globalConfig.DocEngine.Type = EngineType(docEngineConfig.GetString("type"))
-				}
-			}
-		}
-
-		// Map es section from top-level (service_conf.yaml format)
-		if v.IsSet("es") {
-			esConfig := v.Sub("es")
-			if esConfig != nil {
-				// Set default engine type if not set
-				if globalConfig.DocEngine.Type == "" {
-					globalConfig.DocEngine.Type = EngineElasticsearch
-				}
-				// Always populate ES config if es section exists
-				if globalConfig.DocEngine.ES == nil {
-					globalConfig.DocEngine.ES = &ElasticsearchConfig{
-						Hosts:    esConfig.GetString("hosts"),
-						Username: esConfig.GetString("username"),
-						Password: esConfig.GetString("password"),
-					}
-				}
-			}
-		}
-
-		// Map infinity section from top-level (service_conf.yaml format)
-		if v.IsSet("infinity") {
-			infConfig := v.Sub("infinity")
-			if infConfig != nil {
-				// Set default engine type if not set
-				if globalConfig.DocEngine.Type == "" {
-					globalConfig.DocEngine.Type = EngineInfinity
-				}
-				// Always populate Infinity config if infinity section exists
-				if globalConfig.DocEngine.Infinity == nil {
-					globalConfig.DocEngine.Infinity = &InfinityConfig{
-						URI:                    infConfig.GetString("uri"),
-						PostgresPort:           infConfig.GetInt("postgres_port"),
-						DBName:                 infConfig.GetString("db_name"),
-						MappingFileName:        infConfig.GetString("mapping_file_name"),
-						DocMetaMappingFileName: infConfig.GetString("doc_meta_mapping_file_name"),
-					}
-				}
-			}
-		}
+	err = globalConfig.ParseOpenTelemetryConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse open telemetry config error: %w", err)
 	}
 
-	if globalConfig != nil && globalConfig.StorageEngine.Type == "" {
-		// Also check legacy es section for backward compatibility
-		if v.IsSet("minio") {
-			minioConfig := v.Sub("minio")
-			if minioConfig != nil {
-				if globalConfig.StorageEngine.Minio == nil {
-					globalConfig.StorageEngine.Minio = &MinioConfig{
-						Host:       minioConfig.GetString("host"),
-						User:       minioConfig.GetString("user"),
-						Password:   minioConfig.GetString("password"),
-						Secure:     minioConfig.GetBool("secure"),
-						PrefixPath: minioConfig.GetString("prefix_path"),
-						Verify:     minioConfig.GetBool("verify"),
-						Region:     minioConfig.GetString("region"),
-						Bucket:     minioConfig.GetString("bucket"),
-					}
-				}
-			}
-		}
-
-		if v.IsSet("gcs") {
-			gcsConfig := v.Sub("gcs")
-			if gcsConfig != nil {
-				if globalConfig.StorageEngine.GCS == nil {
-					globalConfig.StorageEngine.GCS = &GCSConfig{
-						Bucket:      gcsConfig.GetString("bucket"),
-						PrefixPath:  gcsConfig.GetString("prefix_path"),
-						EndpointURL: gcsConfig.GetString("endpoint_url"),
-					}
-				}
-			}
-		}
-
-		if v.IsSet("minio_0") {
-			minioConfig := v.Sub("minio_0")
-			if minioConfig != nil {
-				if globalConfig.StorageEngine.Minio == nil {
-					globalConfig.StorageEngine.Minio = &MinioConfig{
-						Host:       minioConfig.GetString("host"),
-						User:       minioConfig.GetString("user"),
-						Password:   minioConfig.GetString("password"),
-						Secure:     minioConfig.GetBool("secure"),
-						PrefixPath: minioConfig.GetString("prefix_path"),
-						Verify:     minioConfig.GetBool("verify"),
-						Bucket:     minioConfig.GetString("bucket"),
-					}
-				}
-			}
-		}
-
-		if v.IsSet("s3") {
-			s3Config := v.Sub("s3")
-			if s3Config != nil {
-				if globalConfig.StorageEngine.S3 == nil {
-					globalConfig.StorageEngine.S3 = &S3Config{
-						AccessKey: s3Config.GetString("access_key"),
-						SecretKey: s3Config.GetString("secret_key"),
-						Region:    s3Config.GetString("region"),
-					}
-				}
-			}
-		}
-
-		if v.IsSet("oss") {
-			ossConfig := v.Sub("oss")
-			if ossConfig != nil {
-				if globalConfig.StorageEngine.OSS == nil {
-					globalConfig.StorageEngine.OSS = &OSSConfig{
-						AccessKey:        ossConfig.GetString("access_key"),
-						SecretKey:        ossConfig.GetString("secret_key"),
-						EndpointURL:      ossConfig.GetString("endpoint_url"),
-						Region:           ossConfig.GetString("region"),
-						Bucket:           ossConfig.GetString("bucket"),
-						SignatureVersion: ossConfig.GetString("signature_version"),
-						AddressingStyle:  ossConfig.GetString("addressing_style"),
-					}
-				}
-			}
-		}
+	err = globalConfig.ParseAdminConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse admin config error: %w", err)
 	}
 
-	// Map user_default_llm section to UserDefaultLLMConfig
-	if v.IsSet("user_default_llm") {
-		userDefaultLLMConfig := v.Sub("user_default_llm")
-		if userDefaultLLMConfig != nil {
-			if defaultModels := userDefaultLLMConfig.Sub("default_models"); defaultModels != nil {
-				globalConfig.UserDefaultLLM.DefaultModels.ChatModel = ModelConfig{
-					Name:    defaultModels.GetString("chat_model.name"),
-					APIKey:  defaultModels.GetString("chat_model.api_key"),
-					BaseURL: defaultModels.GetString("chat_model.base_url"),
-					Factory: defaultModels.GetString("chat_model.factory"),
-				}
-				globalConfig.UserDefaultLLM.DefaultModels.EmbeddingModel = ModelConfig{
-					Name:    defaultModels.GetString("embedding_model.name"),
-					APIKey:  defaultModels.GetString("embedding_model.api_key"),
-					BaseURL: defaultModels.GetString("embedding_model.base_url"),
-					Factory: defaultModels.GetString("embedding_model.factory"),
-				}
-				globalConfig.UserDefaultLLM.DefaultModels.RerankModel = ModelConfig{
-					Name:    defaultModels.GetString("rerank_model.name"),
-					APIKey:  defaultModels.GetString("rerank_model.api_key"),
-					BaseURL: defaultModels.GetString("rerank_model.base_url"),
-					Factory: defaultModels.GetString("rerank_model.factory"),
-				}
-				globalConfig.UserDefaultLLM.DefaultModels.ASRModel = ModelConfig{
-					Name:    defaultModels.GetString("asr_model.name"),
-					APIKey:  defaultModels.GetString("asr_model.api_key"),
-					BaseURL: defaultModels.GetString("asr_model.base_url"),
-					Factory: defaultModels.GetString("asr_model.factory"),
-				}
-				globalConfig.UserDefaultLLM.DefaultModels.Image2TextModel = ModelConfig{
-					Name:    defaultModels.GetString("image2text_model.name"),
-					APIKey:  defaultModels.GetString("image2text_model.api_key"),
-					BaseURL: defaultModels.GetString("image2text_model.base_url"),
-					Factory: defaultModels.GetString("image2text_model.factory"),
-				}
-			}
-		}
+	err = globalConfig.ParseAPIServerConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse API server config error: %w", err)
 	}
+
+	err = globalConfig.ParseIngestorConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse ingestor config error: %w", err)
+	}
+
+	err = globalConfig.ParseSyncerConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse syncer config error: %w", err)
+	}
+
+	err = globalConfig.ParseLogConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse log config error: %w", err)
+	}
+
+	err = globalConfig.ParseSMTPConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse SMTP config error: %w", err)
+	}
+
+	err = globalConfig.GetEnvironments()
+	if err != nil {
+		return fmt.Errorf("get environments error: %w", err)
+	}
+
+	err = globalConfig.ParseBillingConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse billing config error: %w", err)
+	}
+
+	err = globalConfig.ParseDefaultModelsConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse default models config error: %w", err)
+	}
+
+	err = globalConfig.ParseOAuthConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse OAuth config error: %w", err)
+	}
+
+	//// Set default values for admin configuration if not configured
+	//if globalConfig.Admin.Host == "" {
+	//	globalConfig.Admin.Host = "127.0.0.1"
+	//}
+	//if globalConfig.Admin.Port == 0 {
+	//	globalConfig.Admin.Port = 9383
+	//} else {
+	//	globalConfig.Admin.Port += 2
+	//}
+
+	//// authentication section
+	//if globalConfig != nil {
+	//	// Try to map from mysql section
+	//	globalConfig.Authentication.DisablePasswordLogin = false
+	//	globalConfig.Authentication.RegisterEnabled = true
+	//	if v.IsSet("authentication") {
+	//		authenticationConfig := v.Sub("authentication")
+	//		if authenticationConfig != nil {
+	//			if authenticationConfig.IsSet("disable_password_login") {
+	//				globalConfig.Authentication.DisablePasswordLogin = authenticationConfig.GetBool("disable_password_login")
+	//			}
+	//			if authenticationConfig.IsSet("enable_register") {
+	//				globalConfig.Authentication.RegisterEnabled = authenticationConfig.GetBool("enable_register")
+	//			}
+	//		}
+	//	}
+	//}
+	//
+	//// If we loaded service_conf.yaml, map mysql fields to DatabaseConfig
+	//if globalConfig != nil && globalConfig.Database.Host == "" {
+	//	// Try to map from mysql section
+	//	if v.IsSet("mysql") {
+	//		mysqlConfig := v.Sub("mysql")
+	//		if mysqlConfig != nil {
+	//			globalConfig.Database.Driver = "mysql"
+	//			globalConfig.Database.Host = mysqlConfig.GetString("host")
+	//			globalConfig.Database.Port = mysqlConfig.GetInt("port")
+	//			globalConfig.Database.Database = mysqlConfig.GetString("name")
+	//			globalConfig.Database.Username = mysqlConfig.GetString("user")
+	//			globalConfig.Database.Password = mysqlConfig.GetString("password")
+	//			globalConfig.Database.Charset = "utf8mb4"
+	//		}
+	//	}
+	//}
+	//
+	//// Map ragflow section to ServerConfig
+	//if globalConfig != nil && globalConfig.APIServer.Port == 0 {
+	//	// Try to map from ragflow section
+	//	if v.IsSet("ragflow") {
+	//		ragflowConfig := v.Sub("ragflow")
+	//		if ragflowConfig != nil {
+	//			globalConfig.APIServer.Port = ragflowConfig.GetInt("http_port") + 4 // 9384, by default
+	//			//globalConfig.Server.Port = ragflowConfig.GetInt("http_port") // Correct
+	//			// If mode is not set, default to debug
+	//			if globalConfig.General.Mode == "" {
+	//				globalConfig.General.Mode = "release"
+	//			}
+	//			secretKey := ragflowConfig.GetString("secret_key")
+	//			if secretKey != "" {
+	//				globalConfig.General.SecretKey = &secretKey
+	//			}
+	//		}
+	//	}
+	//}
+	//
+	//if globalConfig.APIServer.Port == 0 {
+	//	globalConfig.APIServer.Port = 9384
+	//} else {
+	//	globalConfig.APIServer.Port += 4
+	//}
+	//
+	//// Map redis section to RedisConfig
+	//if globalConfig != nil && globalConfig.Redis.Host != "" {
+	//	if v.IsSet("redis") {
+	//		redisConfig := v.Sub("redis")
+	//		if redisConfig != nil {
+	//			hostStr := redisConfig.GetString("host")
+	//			// Handle host:port format (e.g., "localhost:6379")
+	//			if hostStr == "" {
+	//				return fmt.Errorf("empty host of Redis configuration")
+	//			}
+	//
+	//			if idx := strings.LastIndex(hostStr, ":"); idx != -1 {
+	//				globalConfig.Redis.Host = hostStr[:idx]
+	//				if portStr := hostStr[idx+1:]; portStr != "" {
+	//					if port, err := strconv.Atoi(portStr); err == nil {
+	//						globalConfig.Redis.Port = port
+	//					}
+	//				}
+	//			} else {
+	//				return fmt.Errorf("error address format of Redis: %s", hostStr)
+	//			}
+	//
+	//			globalConfig.Redis.Password = redisConfig.GetString("password")
+	//			globalConfig.Redis.DB = redisConfig.GetInt("db")
+	//		}
+	//	}
+	//}
+	//
+	//// Map doc_engine section to DocEngineConfig
+	//if globalConfig != nil {
+	//	// First, ensure engine type is set
+	//	if globalConfig.DocEngine.Type == "" {
+	//		if v.IsSet("doc_engine") {
+	//			docEngineConfig := v.Sub("doc_engine")
+	//			if docEngineConfig != nil {
+	//				globalConfig.DocEngine.Type = EngineType(docEngineConfig.GetString("type"))
+	//			}
+	//		}
+	//	}
+	//
+	//	// Map es section from top-level (service_conf.yaml format)
+	//	if v.IsSet("es") {
+	//		esConfig := v.Sub("es")
+	//		if esConfig != nil {
+	//			// Set default engine type if not set
+	//			if globalConfig.DocEngine.Type == "" {
+	//				globalConfig.DocEngine.Type = EngineElasticsearch
+	//			}
+	//			// Always populate ES config if es section exists
+	//			if globalConfig.DocEngine.ES == nil {
+	//				globalConfig.DocEngine.ES = &ElasticsearchConfig{
+	//					Hosts:    esConfig.GetString("hosts"),
+	//					Username: esConfig.GetString("username"),
+	//					Password: esConfig.GetString("password"),
+	//				}
+	//			}
+	//		}
+	//	}
+	//
+	//	// Map infinity section from top-level (service_conf.yaml format)
+	//	if v.IsSet("infinity") {
+	//		infConfig := v.Sub("infinity")
+	//		if infConfig != nil {
+	//			// Set default engine type if not set
+	//			if globalConfig.DocEngine.Type == "" {
+	//				globalConfig.DocEngine.Type = EngineInfinity
+	//			}
+	//			// Always populate Infinity config if infinity section exists
+	//			if globalConfig.DocEngine.Infinity == nil {
+	//				globalConfig.DocEngine.Infinity = &InfinityConfig{
+	//					URI:                    infConfig.GetString("uri"),
+	//					PostgresPort:           infConfig.GetInt("postgres_port"),
+	//					DBName:                 infConfig.GetString("db_name"),
+	//					MappingFileName:        infConfig.GetString("mapping_file_name"),
+	//					DocMetaMappingFileName: infConfig.GetString("doc_meta_mapping_file_name"),
+	//				}
+	//			}
+	//		}
+	//	}
+	//}
+	//
+	//if globalConfig != nil && globalConfig.StorageEngine.Type == "" {
+	//	// Also check legacy es section for backward compatibility
+	//	if v.IsSet("minio") {
+	//		minioConfig := v.Sub("minio")
+	//		if minioConfig != nil {
+	//			if globalConfig.StorageEngine.Minio == nil {
+	//				globalConfig.StorageEngine.Minio = &MinioConfig{
+	//					Host:       minioConfig.GetString("host"),
+	//					User:       minioConfig.GetString("user"),
+	//					Password:   minioConfig.GetString("password"),
+	//					Secure:     minioConfig.GetBool("secure"),
+	//					PrefixPath: minioConfig.GetString("prefix_path"),
+	//					Verify:     minioConfig.GetBool("verify"),
+	//					Region:     minioConfig.GetString("region"),
+	//					Bucket:     minioConfig.GetString("bucket"),
+	//				}
+	//			}
+	//		}
+	//	}
+	//
+	//	if v.IsSet("gcs") {
+	//		gcsConfig := v.Sub("gcs")
+	//		if gcsConfig != nil {
+	//			if globalConfig.StorageEngine.GCS == nil {
+	//				globalConfig.StorageEngine.GCS = &GCSConfig{
+	//					Bucket:      gcsConfig.GetString("bucket"),
+	//					PrefixPath:  gcsConfig.GetString("prefix_path"),
+	//					EndpointURL: gcsConfig.GetString("endpoint_url"),
+	//				}
+	//			}
+	//		}
+	//	}
+	//
+	//	if v.IsSet("minio_0") {
+	//		minioConfig := v.Sub("minio_0")
+	//		if minioConfig != nil {
+	//			if globalConfig.StorageEngine.Minio == nil {
+	//				globalConfig.StorageEngine.Minio = &MinioConfig{
+	//					Host:       minioConfig.GetString("host"),
+	//					User:       minioConfig.GetString("user"),
+	//					Password:   minioConfig.GetString("password"),
+	//					Secure:     minioConfig.GetBool("secure"),
+	//					PrefixPath: minioConfig.GetString("prefix_path"),
+	//					Verify:     minioConfig.GetBool("verify"),
+	//					Bucket:     minioConfig.GetString("bucket"),
+	//				}
+	//			}
+	//		}
+	//	}
+	//
+	//	if v.IsSet("s3") {
+	//		s3Config := v.Sub("s3")
+	//		if s3Config != nil {
+	//			if globalConfig.StorageEngine.S3 == nil {
+	//				globalConfig.StorageEngine.S3 = &S3Config{
+	//					AccessKey: s3Config.GetString("access_key"),
+	//					SecretKey: s3Config.GetString("secret_key"),
+	//					Region:    s3Config.GetString("region"),
+	//				}
+	//			}
+	//		}
+	//	}
+	//
+	//	if v.IsSet("oss") {
+	//		ossConfig := v.Sub("oss")
+	//		if ossConfig != nil {
+	//			if globalConfig.StorageEngine.OSS == nil {
+	//				globalConfig.StorageEngine.OSS = &OSSConfig{
+	//					AccessKey:        ossConfig.GetString("access_key"),
+	//					SecretKey:        ossConfig.GetString("secret_key"),
+	//					EndpointURL:      ossConfig.GetString("endpoint_url"),
+	//					Region:           ossConfig.GetString("region"),
+	//					Bucket:           ossConfig.GetString("bucket"),
+	//					SignatureVersion: ossConfig.GetString("signature_version"),
+	//					AddressingStyle:  ossConfig.GetString("addressing_style"),
+	//				}
+	//			}
+	//		}
+	//	}
+	//}
+	//
+	//// Map user_default_llm section to UserDefaultLLMConfig
+	//if v.IsSet("user_default_llm") {
+	//	userDefaultLLMConfig := v.Sub("user_default_llm")
+	//	if userDefaultLLMConfig != nil {
+	//		if defaultModels := userDefaultLLMConfig.Sub("default_models"); defaultModels != nil {
+	//			globalConfig.UserDefaultLLM.DefaultModels.ChatModel = ModelConfig{
+	//				Name:    defaultModels.GetString("chat_model.name"),
+	//				APIKey:  defaultModels.GetString("chat_model.api_key"),
+	//				BaseURL: defaultModels.GetString("chat_model.base_url"),
+	//				Factory: defaultModels.GetString("chat_model.factory"),
+	//			}
+	//			globalConfig.UserDefaultLLM.DefaultModels.EmbeddingModel = ModelConfig{
+	//				Name:    defaultModels.GetString("embedding_model.name"),
+	//				APIKey:  defaultModels.GetString("embedding_model.api_key"),
+	//				BaseURL: defaultModels.GetString("embedding_model.base_url"),
+	//				Factory: defaultModels.GetString("embedding_model.factory"),
+	//			}
+	//			globalConfig.UserDefaultLLM.DefaultModels.RerankModel = ModelConfig{
+	//				Name:    defaultModels.GetString("rerank_model.name"),
+	//				APIKey:  defaultModels.GetString("rerank_model.api_key"),
+	//				BaseURL: defaultModels.GetString("rerank_model.base_url"),
+	//				Factory: defaultModels.GetString("rerank_model.factory"),
+	//			}
+	//			globalConfig.UserDefaultLLM.DefaultModels.ASRModel = ModelConfig{
+	//				Name:    defaultModels.GetString("asr_model.name"),
+	//				APIKey:  defaultModels.GetString("asr_model.api_key"),
+	//				BaseURL: defaultModels.GetString("asr_model.base_url"),
+	//				Factory: defaultModels.GetString("asr_model.factory"),
+	//			}
+	//			globalConfig.UserDefaultLLM.DefaultModels.Image2TextModel = ModelConfig{
+	//				Name:    defaultModels.GetString("image2text_model.name"),
+	//				APIKey:  defaultModels.GetString("image2text_model.api_key"),
+	//				BaseURL: defaultModels.GetString("image2text_model.base_url"),
+	//				Factory: defaultModels.GetString("image2text_model.factory"),
+	//			}
+	//		}
+	//	}
+	//}
 
 	return nil
 }
 
 // GetConfig gets the global configuration
-func GetConfig() *Config {
+func GetConfig() *config.Config {
 	return globalConfig
 }
 
-// GetAdminConfig gets the admin server configuration
-func GetAdminConfig() *AdminConfig {
-	if globalConfig == nil {
-		return nil
-	}
-	return &globalConfig.Admin
-}
+// GetAdminServerConfig gets the admin server configuration
+//func GetAdminServerConfig() *config.AdminConfig {
+//	if globalConfig == nil {
+//		return nil
+//	}
+//	return &globalConfig.Admin
+//}
 
 // SetLogger sets the logger instance
 func SetLogger(l *zap.Logger) {
@@ -1016,21 +981,4 @@ func getInt(m map[string]interface{}, key string) int {
 		return int(v)
 	}
 	return 0
-}
-
-func GetLanguage() string {
-	lang := common.GetEnv(common.EnvLang)
-	if lang == "" {
-		lang = common.GetEnv(common.EnvLanguage)
-	}
-
-	lang = strings.ToLower(lang)
-
-	if strings.Contains(lang, "zh_") ||
-		strings.Contains(lang, "zh-") ||
-		strings.HasPrefix(lang, "zh") {
-		return "Chinese"
-	}
-
-	return "English"
 }
