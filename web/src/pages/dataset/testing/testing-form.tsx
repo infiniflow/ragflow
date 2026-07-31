@@ -32,7 +32,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Textarea } from '@/components/ui/textarea';
-import { UseKnowledgeGraphFormField } from '@/components/use-knowledge-graph-item';
+
 import { useTestRetrieval } from '@/hooks/use-knowledge-request';
 import { ITestRetrievalRequestBody } from '@/interfaces/request/knowledge';
 import { trim } from 'lodash';
@@ -63,7 +63,6 @@ export default function TestingForm({
     ...similarityThresholdSchema,
     ...vectorSimilarityWeightSchema,
     ...topKSchema,
-    use_kg: z.boolean().optional(),
     dataset_ids: z.array(z.string()).optional(),
     ...MetadataFilterSchema,
     size: z.number().optional(),
@@ -75,7 +74,6 @@ export default function TestingForm({
       ...initialSimilarityThresholdValue,
       ...initialVectorSimilarityWeightValue,
       ...initialTopKValue,
-      use_kg: false,
       dataset_ids: [knowledgeBaseId],
       size: 10,
     },
@@ -107,7 +105,6 @@ export default function TestingForm({
             <RerankFormFields
               ownerTenantId={useKnowledgeBaseContext().knowledgeBase?.tenant_id}
             ></RerankFormFields>
-            <UseKnowledgeGraphFormField name="use_kg"></UseKnowledgeGraphFormField>
             <CrossLanguageFormField
               name={'cross_languages'}
             ></CrossLanguageFormField>

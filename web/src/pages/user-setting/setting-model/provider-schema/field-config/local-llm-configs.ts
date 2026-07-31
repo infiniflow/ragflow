@@ -76,7 +76,8 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
         label: 'addLlmBaseUrl',
         type: 'inputSelect',
         required: true,
-        defaultValue: 'http://localhost:8000/v1',
+        defaultValue: '',
+        autoComplete: 'new-password',
         placeholder: 'baseUrlNameMessage',
         shouldRender: 'hideWhenInstanceExists',
       },
@@ -252,6 +253,7 @@ function buildLocalConfig(
       type: 'inputSelect',
       required: true,
       placeholder: 'baseUrlNameMessage',
+      autoComplete: 'new-password',
       shouldRender: 'hideWhenInstanceExists',
     },
     {
@@ -260,6 +262,7 @@ function buildLocalConfig(
       type: FormFieldType.Password,
       required: false,
       placeholder: 'apiKeyMessage',
+      autoComplete: 'new-password',
       shouldRender: 'hideWhenInstanceExists',
     },
     // {

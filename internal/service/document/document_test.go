@@ -2029,7 +2029,11 @@ func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 
 	ctx := t.Context()
-	if err := svc.SetDocumentMetadata(ctx, "doc-1", map[string]interface{}{"category": "tech", "year": 2026}); err != nil {
+	if err := svc.SetDocumentMetadata(ctx, "doc-1", map[string]interface{}{
+		"category":  "tech",
+		"year":      2026,
+		"character": []interface{}{"关羽、孙权", "张辽|赵云"},
+	}); err != nil {
 		t.Fatalf("SetDocumentMetadata failed: %v", err)
 	}
 	if got := engine.records["doc-1"]["author"]; got != "alice" {
@@ -2040,6 +2044,19 @@ func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
 	}
 	if got := engine.records["doc-1"]["year"]; got != 2026 {
 		t.Fatalf("year = %#v, want 2026", got)
+	}
+	characters, ok := engine.records["doc-1"]["character"].([]interface{})
+	if !ok {
+		t.Fatalf("character has unexpected type: %T", engine.records["doc-1"]["character"])
+	}
+	wantCharacters := []interface{}{"关羽", "孙权", "张辽", "赵云"}
+	if len(characters) != len(wantCharacters) {
+		t.Fatalf("character length = %d, want %d: %#v", len(characters), len(wantCharacters), characters)
+	}
+	for i := range wantCharacters {
+		if characters[i] != wantCharacters[i] {
+			t.Fatalf("character[%d] = %#v, want %#v", i, characters[i], wantCharacters[i])
+		}
 	}
 	if got := engine.docKBs["doc-1"]; got != "kb-1" {
 		t.Fatalf("kb_id = %q, want kb-1", got)

@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/engine/redis"
-	"strings"
 	"time"
 
 	"ragflow/internal/common"
@@ -230,11 +229,11 @@ func (s *UserService) registerOAuthUser(ctx context.Context, channel string, inf
 	tenant := &entity.Tenant{
 		ID:        userID,
 		Name:      &tenantName,
-		LLMID:     cfg.UserDefaultLLM.DefaultModels.ChatModel.Name,
-		EmbdID:    cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name,
-		ASRID:     cfg.UserDefaultLLM.DefaultModels.ASRModel.Name,
-		Img2TxtID: cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name,
-		RerankID:  cfg.UserDefaultLLM.DefaultModels.RerankModel.Name,
+		LLMID:     cfg.GetDefaultChatModel().Name,
+		EmbdID:    cfg.GetDefaultEmbeddingModel().Name,
+		ASRID:     cfg.GetDefaultASRModel().Name,
+		Img2TxtID: cfg.GetDefaultVisionModel().Name,
+		RerankID:  cfg.GetDefaultRerankModel().Name,
 		ParserIDs: "naive:General,qa:Q&A,resume:Resume,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
@@ -288,19 +287,19 @@ func (s *UserService) registerOAuthUser(ctx context.Context, channel string, inf
 // is case-insensitive against the keys server.GetConfig() materialises from
 // the yaml config file.
 func lookupOAuthConfig(channel string) (server.OAuthConfig, bool) {
-	cfg := server.GetConfig()
-	if cfg == nil {
-		return server.OAuthConfig{}, false
-	}
-	if found, ok := cfg.OAuth[channel]; ok {
-		return found, true
-	}
-	want := strings.ToLower(channel)
-	for k, v := range cfg.OAuth {
-		if strings.ToLower(k) == want {
-			return v, true
-		}
-	}
+	//cfg := server.GetConfig()
+	//if cfg == nil {
+	//	return server.OAuthConfig{}, false
+	//}
+	//if found, ok := cfg.OAuth[channel]; ok {
+	//	return found, true
+	//}
+	//want := strings.ToLower(channel)
+	//for k, v := range cfg.OAuth {
+	//	if strings.ToLower(k) == want {
+	//		return v, true
+	//	}
+	//}
 	return server.OAuthConfig{}, false
 }
 

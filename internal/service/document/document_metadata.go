@@ -54,6 +54,7 @@ func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string,
 		return fmt.Errorf("failed to ensure metadata store: %w", err)
 	}
 
+	meta = splitCombinedDocumentMetadataValues(meta)
 	if err = s.docEngine.UpdateMetadata(ctx, docID, doc.KbID, meta, tenantID); err != nil {
 		return fmt.Errorf("failed to update metadata: %w", err)
 	}
@@ -709,6 +710,55 @@ func cloneDocumentMetadata(meta map[string]interface{}) map[string]interface{} {
 		cloned[k] = cloneDocumentMetadataValue(v)
 	}
 	return cloned
+}
+
+func splitCombinedDocumentMetadataValues(meta map[string]any) map[string]any {
+	if len(meta) == 0 {
+		return meta
+	}
+	out := make(map[string]any, len(meta))
+	for key, value := range meta {
+		switch typed := value.(type) {
+		case []interface{}:
+			out[key] = splitCombinedDocumentMetadataList(typed)
+		case []string:
+			items := make([]any, 0, len(typed))
+			for _, item := range typed {
+				items = append(items, item)
+			}
+			out[key] = splitCombinedDocumentMetadataList(items)
+		default:
+			out[key] = value
+		}
+	}
+	return out
+}
+
+var combinedDocumentMetadataValueSplitter = regexp.MustCompile(`[、,，;；|]+`)
+
+func splitCombinedDocumentMetadataList(items []any) []any {
+	out := make([]interface{}, 0, len(items))
+	for _, item := range items {
+		text, ok := item.(string)
+		if !ok {
+			out = append(out, item)
+			continue
+		}
+		parts := combinedDocumentMetadataValueSplitter.Split(strings.TrimSpace(text), -1)
+		added := false
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			out = append(out, part)
+			added = true
+		}
+		if !added {
+			out = append(out, item)
+		}
+	}
+	return dedupeDocumentMetadataList(out)
 }
 
 func cloneDocumentMetadataValue(v interface{}) interface{} {

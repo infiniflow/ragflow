@@ -21,11 +21,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
+	s3Config "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
@@ -38,11 +38,11 @@ type OSSStorage struct {
 	client     *s3.Client
 	bucket     string
 	prefixPath string
-	config     *server.OSSConfig
+	config     config.OSSConfig
 }
 
 // NewOSSStorage creates a new OSS storage instance
-func NewOSSStorage(config *server.OSSConfig) (*OSSStorage, error) {
+func NewOSSStorage(config config.OSSConfig) (*OSSStorage, error) {
 	storage := &OSSStorage{
 		bucket:     config.Bucket,
 		prefixPath: config.PrefixPath,
@@ -67,9 +67,9 @@ func (o *OSSStorage) connect() error {
 	)
 
 	// Load configuration
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(o.config.Region),
-		config.WithCredentialsProvider(creds),
+	cfg, err := s3Config.LoadDefaultConfig(ctx,
+		s3Config.WithRegion(o.config.Region),
+		s3Config.WithCredentialsProvider(creds),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to load OSS config: %w", err)

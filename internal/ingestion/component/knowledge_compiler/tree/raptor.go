@@ -1,4 +1,4 @@
-// Package raptor implements the "raptor" variant of KnowledgeCompiler: a
+// Package tree implements the "tree" variant of KnowledgeCompiler: a
 // recursive abstractive summarization tree (RAPTOR). It builds a clustering of
 // chunk embeddings and summarizes each cluster with the LLM, recursing upward
 // until a single root summary remains.
@@ -11,7 +11,7 @@
 // defaults to DefaultTreeOrder.
 //
 // See PORT_PLAN.md §3.3.
-package raptor
+package tree
 
 import (
 	"context"
@@ -25,13 +25,13 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-// Run executes the raptor variant.
+// Run executes the tree variant.
 func Run(ctx context.Context, deps common.Deps, param common.Param, inputs common.Inputs) (common.Outputs, error) {
 	if deps.Embed == nil {
-		return common.Outputs{}, fmt.Errorf("raptor: embedder required")
+		return common.Outputs{}, fmt.Errorf("tree: embedder required")
 	}
 	if deps.Chat == nil {
-		return common.Outputs{}, fmt.Errorf("raptor: chat model required")
+		return common.Outputs{}, fmt.Errorf("tree: chat model required")
 	}
 	docID := firstNonEmpty(inputs.DocID, deps.DatasetID)
 	if docID == "" {
@@ -132,7 +132,7 @@ func resolveMaxErrors(param common.Param) int {
 
 // buildTree summarizes each cluster (level 0) and recurses upward: each parent
 // node is the LLM summary of its child cluster's texts. The root is a single
-// "raptor" product with a stable id. Every node is appended to products (a
+// "tree" product with a stable id. Every node is appended to products (a
 // caller-owned slice), and only the deepest-level summaries are retained for the
 // root synthesis. buildTree reads the source texts, ids, and embeddings directly
 // from the passed chunks; when the embeddings are missing or incomplete, it
@@ -171,7 +171,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		groups[labels[i]] = append(groups[labels[i]], i)
 	}
 
-	rootID := common.StableRowID(tenantID, docID, string(common.VariantRaptor), "root")
+	rootID := common.StableRowID(tenantID, docID, string(common.VariantTree), "root")
 	var (
 		maxLevel      = -1
 		topLevelTexts []string
@@ -201,12 +201,12 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		if err != nil {
 			errorCount++
 			if errorCount >= maxErrors {
-				return fmt.Errorf("raptor: aborted after %d summarization errors: %w", errorCount, err)
+				return fmt.Errorf("tree: aborted after %d summarization errors: %w", errorCount, err)
 			}
-			log.Printf("raptor: skipping cluster due to summarization error (continuing): %v", err)
+			log.Printf("tree: skipping cluster due to summarization error (continuing): %v", err)
 			continue
 		}
-		nodeID := common.StableRowID(tenantID, docID, string(common.VariantRaptor),
+		nodeID := common.StableRowID(tenantID, docID, string(common.VariantTree),
 			fmt.Sprintf("L%d", task.level), summary)
 		embedding, err := deps.Embed.Encode(ctx, []string{summary})
 		if err != nil {
@@ -220,7 +220,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 			ID:       nodeID,
 			DocID:    docID,
 			TenantID: tenantID,
-			Variant:  common.VariantRaptor,
+			Variant:  common.VariantTree,
 			Content:  summary,
 			Vector:   vec,
 			ParentID: task.parentID,
@@ -289,7 +289,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		// No summaries survived (e.g. every deepest cluster failed while the
 		// error budget was not yet exhausted). Return the partial tree without a
 		// root node — Python drops the root in this case rather than crashing.
-		log.Printf("raptor: no top-level summaries produced, skipping root node")
+		log.Printf("tree: no top-level summaries produced, skipping root node")
 		return nil
 	}
 	rootContent := buildClusterContent(topLevelTexts, allIndices(len(topLevelTexts)), deps.LLMMaxLength, maxToken)
@@ -299,23 +299,23 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 	if err != nil {
 		// A failed root must not abort the whole tree: Python drops the root
 		// node and returns the rest of the tree.
-		log.Printf("raptor: root synthesis failed, skipping root node: %v", err)
+		log.Printf("tree: root synthesis failed, skipping root node: %v", err)
 		return nil
 	}
 	embedding, err := deps.Embed.Encode(ctx, []string{rootSummary})
 	if err != nil {
-		log.Printf("raptor: root embedding failed, skipping root node: %v", err)
+		log.Printf("tree: root embedding failed, skipping root node: %v", err)
 		return nil
 	}
 	if len(embedding) == 0 {
-		log.Printf("raptor: root embedding returned no vectors, skipping root node")
+		log.Printf("tree: root embedding returned no vectors, skipping root node")
 		return nil
 	}
 	*products = append(*products, common.Product{
 		ID:       rootID,
 		DocID:    docID,
 		TenantID: tenantID,
-		Variant:  common.VariantRaptor,
+		Variant:  common.VariantTree,
 		Content:  rootSummary,
 		Vector:   embedding[0],
 		ParentID: "",
@@ -540,12 +540,14 @@ func toFloat64Matrix(vecs [][]float32) [][]float64 {
 	return out
 }
 
-// defaultRaptorPrompt is the summary task template. It mirrors Python
-// rag/advanced_rag/knowlege_compile/raptor.py, whose _summarize_texts uses
-// "Please write a concise summary of the following texts:\n{cluster_content}".
-// The {cluster_content} placeholder is filled with the joined cluster text. A
-// caller may override it via extra["prompt"] (Python: raptor_cfg["prompt"]).
-const defaultRaptorPrompt = "Please write a concise summary of the following texts:\n{cluster_content}"
+// defaultRaptorPrompt is the summary task template. It mirrors the production
+// prompt from api/db/init_data/compilation_templates/tree.yaml (the tree
+// compilation template), NOT the Python fallback in compiler.py:128. The
+// {cluster_content} placeholder is filled with the joined cluster text. The
+// YAML literal block carries a base indent of 6 spaces before {cluster_content};
+// those 6 spaces are part of the prompt and MUST be preserved. A caller may
+// override it via extra["prompt"] (Python: raptor_cfg["prompt"]).
+const defaultRaptorPrompt = "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize."
 
 // raptorSystemHelper mirrors the leading "You're a helpful assistant.\n\nHelp me
 // with the following task.\n\n" wrapper Python prepends to the task prompt.

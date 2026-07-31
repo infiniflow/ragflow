@@ -148,6 +148,86 @@ func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
 	return nil
 }
 
+func newJSONPostRequest(ctx context.Context, url string, apiConfig *APIConfig, reqBody map[string]any) (*http.Request, error) {
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+
+	return req, nil
+}
+
+// doRequest sends a JSON POST request and returns the response body.
+func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APIConfig, reqBody map[string]any, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := newJSONPostRequest(ctx, url, apiConfig, reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return body, nil
+}
+
+// mustMarshal marshals v to JSON, panicking on error.
+func mustMarshal(v any) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(fmt.Sprintf("failed to marshal: %v", err))
+	}
+	return b
+}
+
+// doStreamRequest sends a JSON POST request and calls handler with the response body.
+func (b *BaseModel) doStreamRequest(ctx context.Context, url string, apiConfig *APIConfig, reqBody map[string]any, timeout time.Duration, handler func(io.ReadCloser) error) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := newJSONPostRequest(ctx, url, apiConfig, reqBody)
+	if err != nil {
+		return err
+	}
+
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return handler(resp.Body)
+}
+
 // BearerAuth returns the Bearer token for Authorization header,
 // or empty string if apiConfig or its ApiKey is nil/empty.
 func BearerAuth(apiConfig *APIConfig) string {

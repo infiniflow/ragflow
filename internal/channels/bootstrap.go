@@ -277,8 +277,22 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 // buildChannel constructs the platform-specific channel implementation for one chat_channel row.
 func buildChannel(accountID string, wanted desiredChannel) (core.Channel, error) {
 	switch wanted.channel {
+	case "feishu":
+		return newFeishuChannelFromConfig(accountID, wanted.credential)
+	case "discord":
+		return newDiscordChannelFromConfig(accountID, wanted.credential)
+	case "qqbot":
+		return newQQBotChannelFromConfig(accountID, wanted.credential)
 	case "whatsapp":
 		return newWhatsAppChannelFromConfig(accountID, wanted.credential)
+	case "line":
+		return newLineChannelFromConfig(accountID, wanted.credential)
+	case "telegram":
+		return newTelegramChannelFromConfig(accountID, wanted.credential)
+	case "wecom":
+		return newWeComChannelFromConfig(accountID, wanted.credential)
+	case "dingtalk":
+		return newDingTalkChannelFromConfig(accountID, wanted.credential)
 	default:
 		return nil, fmt.Errorf("unknown channel: %s", wanted.channel)
 	}

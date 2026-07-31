@@ -9,7 +9,7 @@ import { startCase } from 'lodash';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldLabelKeyMap } from '../utils';
+import { FieldLabelKeyMap } from '../constant';
 
 import { useAddFieldForm } from '../hooks/use-add-field-form';
 

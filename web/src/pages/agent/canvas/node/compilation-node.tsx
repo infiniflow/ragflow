@@ -10,7 +10,7 @@ export function CompilationNode({ ...props }: NodeProps<IRagNode>) {
   const { data } = props;
   const { t } = useTranslation();
   const options = useCompilationTemplateGroupOptions();
-  const groupId = get(data, 'form.compilation_template_group_ids');
+  const groupId = get(data, 'form.compilation_template_group_id');
   const groupName =
     options.find((option) => option.value === groupId)?.label ?? groupId;
 

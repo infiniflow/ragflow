@@ -133,8 +133,11 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 		return
 	}
 
-	// 2. Reject DataFlow.
-	if cv.CanvasCategory == "DataFlow" {
+	// 2. Reject DataFlow. DataFlow canvases are ingestion pipelines, not
+	// interactive agents, and must not be triggered by an external webhook.
+	// Mirrors Python agent_api.py:1786, which returns
+	// "Dataflow can not be triggered by webhook." for the same case.
+	if cv.CanvasCategory == "dataflow_canvas" {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Dataflow can not be triggered by webhook.")
 		return
 	}

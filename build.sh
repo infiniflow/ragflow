@@ -432,6 +432,24 @@ run_go_tests() {
         go test -count=1 "$@"
 }
 
+# Run Go tests gated behind a build tag (or space-separated tag list), e.g.
+# `./build.sh --test-integration -run TestFoo ./internal/engine/...`.
+# See "Go Test Tiers" in AGENTS.md for the tier definitions.
+run_go_tests_tagged() {
+    local tags="$1"; shift
+    print_section "Running Go tests (tags: ${tags})"
+
+    cd "$PROJECT_ROOT"
+    setup_cgo_env
+
+    if [ "$#" -eq 0 ]; then
+        set -- ./...
+    fi
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+        go test -tags "${tags}" -count=1 "$@"
+}
+
 # Clean build artifacts
 clean() {
     print_section "Cleaning build artifacts"
@@ -487,9 +505,18 @@ OPTIONS:
     --cpp, -c       Build only C++ static library
     --cpp-test      Build C++ test executable (requires --cpp first)
     --go, -g        Build only Go server (requires C++ library to be built)
-    --test, -t      Run Go unit tests (sets up CGO env for office_oxide).
-                    Any extra args are forwarded to `go test`, e.g.
+    --test, -t      Run Go unit tests (no build tag). Sets up the CGO env and
+                    native static libs (office_oxide/pdfium/pdf_oxide) needed to
+                    build (same contract as the Go tier table in AGENTS.md).
+                    Extra args are forwarded to `go test`, e.g.
                     `$0 --test -run TestFoo ./internal/admin/...`
+    --test-integration   Run Go tests tagged 'integration' (need real services,
+                    e.g. MySQL/MinIO/ES/Infinity/LLM). e.g.
+                    `$0 --test-integration ./internal/engine/...`
+    --test-e2e           Run Go tests tagged 'e2e' (full-pipeline, heavy).
+    --test-manual        Run Go tests tagged 'manual' (very slow; local opt-in
+                    ONLY, never run in CI).
+    --test-all           Run 'integration' + 'e2e' tests (excludes 'manual').
     --clean, -C     Clean all build artifacts
     --run, -r       Build and run the server
     --strip, -s     Strip debug symbols from Go binaries (-ldflags="-s -w")
@@ -501,8 +528,12 @@ EXAMPLES:
     $0 --cpp        # Build only C++ library
     $0 --go         # Build only Go server
     $0 --cpp-test   # Build C++ test executable
-    $0 --test       # Run all Go tests
+    $0 --test       # Run all Go tests (unit tier, no build tag)
     $0 --test -run TestFoo ./internal/admin/...      # Targeted Go tests
+    $0 --test-integration ./internal/engine/...      # integration tier
+    $0 --test-e2e                                 # e2e tier
+    $0 --test-manual                             # manual tier (very slow)
+    $0 --test-all                                # integration + e2e (no manual)
     $0 --run        # Build and run
     $0 --clean      # Clean build artifacts
 
@@ -549,6 +580,38 @@ main() {
                 run_go_tests "${args[@]:2}"
             else
                 run_go_tests "${args[@]:1}"
+            fi
+            ;;
+        --test-integration)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged integration "${args[@]:2}"
+            else
+                run_go_tests_tagged integration "${args[@]:1}"
+            fi
+            ;;
+        --test-e2e)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged e2e "${args[@]:2}"
+            else
+                run_go_tests_tagged e2e "${args[@]:1}"
+            fi
+            ;;
+        --test-manual)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged manual "${args[@]:2}"
+            else
+                run_go_tests_tagged manual "${args[@]:1}"
+            fi
+            ;;
+        --test-all)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged "integration e2e" "${args[@]:2}"
+            else
+                run_go_tests_tagged "integration e2e" "${args[@]:1}"
             fi
             ;;
         --clean|-C)

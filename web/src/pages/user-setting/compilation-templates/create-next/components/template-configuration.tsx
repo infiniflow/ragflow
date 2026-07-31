@@ -1,6 +1,7 @@
 import { ModelTreeSelectFormField } from '@/components/model-tree-select';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { SwitchFormField } from '@/components/switch-fom-field';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -16,7 +17,7 @@ import { CompilationTemplateKind } from '@/constants/compilation';
 import { TreeTemplateFields } from '@/pages/user-setting/compilation-templates/create-next/components/tree-template-fields';
 import { useTemplateKindChange } from '@/pages/user-setting/compilation-templates/create-next/hooks/use-template-kind-change';
 import { FormSchemaType } from '@/pages/user-setting/compilation-templates/create-next/schema';
-import { SectionTitleKeyMap } from '@/pages/user-setting/compilation-templates/create-next/utils';
+import { SectionTitleKeyMap } from '@/pages/user-setting/compilation-templates/create-next/constant';
 
 import { useActiveSectionTab } from '../hooks/use-active-section-tab';
 import { useAvailableKindOptions } from '../hooks/use-available-kind-options';
@@ -65,6 +66,10 @@ export function TemplateConfiguration({
   const kind = useWatch({
     control: form.control,
     name: `templates.${selectedTemplateIndex}.kind`,
+  });
+  const rechunk = useWatch({
+    control: form.control,
+    name: `templates.${selectedTemplateIndex}.config.rechunk`,
   });
 
   const availableKindOptions = useAvailableKindOptions(
@@ -213,39 +218,62 @@ export function TemplateConfiguration({
           {kind === CompilationTemplateKind.Tree ? (
             <TreeTemplateFields index={selectedTemplateIndex} />
           ) : (
-            sectionNames.length > 0 &&
-            activeSectionTab && (
-              <Tabs
-                value={activeSectionTab}
-                onValueChange={setActiveSectionTab}
-                className="w-full"
-              >
-                <TabsList className="w-full justify-start">
+            <>
+              {kind !== CompilationTemplateKind.Artifacts && (
+                <>
+                  <SwitchFormField
+                    name={`templates.${selectedTemplateIndex}.config.rechunk`}
+                    label={t('setting.rechunkInput')}
+                    tooltip={t('setting.rechunkInputTip')}
+                    vertical={false}
+                  />
+                  {rechunk && (
+                    <RAGFlowFormItem
+                      name={`templates.${selectedTemplateIndex}.config.rechunk_rules`}
+                      label={t('setting.rechunkRules')}
+                    >
+                      <Textarea
+                        placeholder={t('setting.rechunkRulesPlaceholder')}
+                        rows={6}
+                        resize="vertical"
+                      />
+                    </RAGFlowFormItem>
+                  )}
+                </>
+              )}
+              {sectionNames.length > 0 && activeSectionTab && (
+                <Tabs
+                  value={activeSectionTab}
+                  onValueChange={setActiveSectionTab}
+                  className="w-full"
+                >
+                  <TabsList className="w-full justify-start">
+                    {sectionNames.map((sectionName) => (
+                      <TabsTrigger
+                        key={sectionName}
+                        value={sectionName}
+                        className="flex-1"
+                      >
+                        {t(
+                          SectionTitleKeyMap[sectionName] ??
+                            startCase(sectionName),
+                        )}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+
                   {sectionNames.map((sectionName) => (
-                    <TabsTrigger
+                    <TabsContent
                       key={sectionName}
                       value={sectionName}
-                      className="flex-1"
+                      className="mt-4"
                     >
-                      {t(
-                        SectionTitleKeyMap[sectionName] ??
-                          startCase(sectionName),
-                      )}
-                    </TabsTrigger>
+                      {renderSectionTabs(sectionName)}
+                    </TabsContent>
                   ))}
-                </TabsList>
-
-                {sectionNames.map((sectionName) => (
-                  <TabsContent
-                    key={sectionName}
-                    value={sectionName}
-                    className="mt-4"
-                  >
-                    {renderSectionTabs(sectionName)}
-                  </TabsContent>
-                ))}
-              </Tabs>
-            )
+                </Tabs>
+              )}
+            </>
           )}
         </div>
       </div>

@@ -1,5 +1,5 @@
 export const enum CompilationTemplateKind {
-  Artifacts = 'artifacts',
+  Artifacts = 'wiki',
   KnowledgeGraph = 'knowledge_graph',
   Timeline = 'timeline',
   PageIndex = 'page_index',

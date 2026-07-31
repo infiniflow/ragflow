@@ -82,8 +82,19 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 		ck["id"] = common.ChunkID(docID, text)
 	}
 
-	if err := uploadChunkImages(ctx, chunks, ChunkImageUploader, kbID); err != nil {
-		return nil, err
+	// kb_id is empty only in canvas debug (dry-run) mode; production ingestion
+	// always supplies a KB, so kb_id == "" never occurs in normal operation.
+	// Image bytes are uploaded to MinIO only when a KB is present (i.e. a
+	// persist run); in debug we drop the raw bytes so they are not held in
+	// memory until a persist stage that will never run.
+	if kbID != "" {
+		if err := uploadChunkImages(ctx, chunks, ChunkImageUploader, kbID); err != nil {
+			return nil, err
+		}
+	} else {
+		for _, ck := range chunks {
+			delete(ck, "image")
+		}
 	}
 	return out, nil
 }

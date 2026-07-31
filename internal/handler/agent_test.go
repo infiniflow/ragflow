@@ -1228,9 +1228,11 @@ func (s *stubDocService) Accessible(_, _ string) bool {
 }
 
 // TestAgentChatCompletions_FilesDeserialized verifies that when the
-// JSON request body contains a `files` field, the
-// agentChatCompletionsRequest struct deserializes it correctly.
-// Mirrors Python's req.get("files", []) at agent_api.py:1313.
+// JSON request body contains the web-contract 2D `files` field
+// (`[[{...}]]`), the agentChatCompletionsRequest struct deserializes it
+// and the inner file list reaches RunAgent. Mirrors Python's
+// agent_api.py:1611 `queue_dataflow(..., files[0], 0)`, where the first
+// inner list is the set of files for the run.
 func TestAgentChatCompletions_FilesDeserialized(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1238,9 +1240,9 @@ func TestAgentChatCompletions_FilesDeserialized(t *testing.T) {
 	body := `{
 		"agent_id": "a1",
 		"query": "hi",
-		"files": [
+		"files": [[
 			{"id": "file-1", "name": "resume.txt", "mime_type": "text/plain", "created_by": "u1"}
-		]
+		]]
 	}`
 	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
 		strings.NewReader(body))

@@ -293,7 +293,12 @@ func clampOverlappedPercent(value float64) float64 {
 	if value > 90 {
 		value = 90
 	}
-	value = float64(int(value))
+	// Round rather than truncate so fraction inputs like 0.29 normalize
+	// to 29 (user expectation) rather than 28. Mirrors Python's
+	// common/float_utils.py:50-58 fix for #17418. We still clamp
+	// before rounding so out-of-int-range values (e.g. 1e300) land on
+	// 90, not an implementation-defined int.
+	value = math.Round(value)
 	return value
 }
 
@@ -308,7 +313,10 @@ func (p *TokenChunkerParam) Validate() error {
 	// rather than silently clamped — eliminating the latent footgun where a
 	// fraction passed to a struct bypassed normalization.
 	if v := p.OverlappedPercent; 0 < v && v < 1 {
-		p.OverlappedPercent = float64(int(v * 100))
+		// Round rather than truncate so fraction inputs like 0.29 normalize
+		// to 29 (user expectation) rather than 28. Mirrors Python's
+		// common/float_utils.py:50-58 fix for #17418.
+		p.OverlappedPercent = math.Round(v * 100)
 	}
 	switch p.DelimiterMode {
 	case "token_size", "delimiter":

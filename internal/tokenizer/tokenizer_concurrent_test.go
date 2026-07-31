@@ -175,7 +175,7 @@ func TestConcurrentTokenize(t *testing.T) {
 func TestConcurrentTokenizeLanguageIsolation(t *testing.T) {
 	restore := saveEngineType()
 	defer restore()
-	RegisterEngineType(func() string { return "" })
+	SetEngineType("")
 
 	cfg := &PoolConfig{
 		DictPath:       "",

@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"io"
 	"ragflow/internal/common"
-	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"time"
 
 	"cloud.google.com/go/storage"
@@ -33,11 +33,11 @@ import (
 // GCSStorage implements Storage interface for GCS
 type GCSStorage struct {
 	client *storage.Client
-	config *server.GCSConfig
+	config config.GCSConfig
 }
 
 // NewGCSStorage creates a new GCS storage instance
-func NewGCSStorage(config *server.GCSConfig) (*GCSStorage, error) {
+func NewGCSStorage(config config.GCSConfig) (*GCSStorage, error) {
 	gcsStorage := &GCSStorage{
 		config: config,
 	}
