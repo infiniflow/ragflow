@@ -919,7 +919,7 @@ class MinerUParser(RAGFlowPdfParser):
             self.logger.warning(f"[MinerU] Failed to crop media fallback image: {exc}")
             return None
 
-    def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None, table_enable: bool = True):
+    def _transfer_to_sections(self, outputs: list[dict[str, Any]], parse_method: str = None, table_enable: bool = False):
         sections = []
         parse_method = (parse_method or "raw").lower()
         for output in outputs:

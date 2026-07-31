@@ -23,16 +23,18 @@ def _load_mineru_parser(monkeypatch):
     class _RAGFlowPdfParser:
         pass
 
-    pdf_parser_mod.RAGFlowPdfParser = _RAGFlowPdfParser
+    setattr(pdf_parser_mod, "RAGFlowPdfParser", _RAGFlowPdfParser)
     monkeypatch.setitem(sys.modules, "deepdoc.parser.pdf_parser", pdf_parser_mod)
 
     utils_mod = ModuleType("deepdoc.parser.utils")
-    utils_mod.extract_pdf_outlines = lambda *_args, **_kwargs: []
+    setattr(utils_mod, "extract_pdf_outlines", lambda *_args, **_kwargs: [])
     monkeypatch.setitem(sys.modules, "deepdoc.parser.utils", utils_mod)
 
     module_name = "test_mineru_parser_unit_module"
     module_path = repo_root / "deepdoc" / "parser" / "mineru_parser.py"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load MinerU parser from {module_path}")
     module = importlib.util.module_from_spec(spec)
     monkeypatch.setitem(sys.modules, module_name, module)
     spec.loader.exec_module(module)
@@ -118,6 +120,21 @@ def test_paper_routes_tables_and_images_only_to_media_blocks(monkeypatch):
         ((media_image, table_html), []),
         ((media_image, ["Figure caption"]), []),
     ]
+
+
+def test_transfer_to_sections_keeps_tables_when_media_is_disabled_by_default(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    outputs = [
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "<table><tr><td>Table cell</td></tr></table>",
+            "table_caption": [],
+            "table_footnote": [],
+        }
+    ]
+
+    assert parser._transfer_to_sections(outputs, parse_method="raw") == [("Table cell", "")]
 
 
 def test_transfer_to_sections_skips_unknown_types_without_duplicating_text(monkeypatch, caplog):
