@@ -247,6 +247,16 @@ func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "message_id is required")
 		return
 	}
+	// A beta token with DialogID is restricted to that agent. Tokens without
+	// DialogID remain tenant-scoped and are checked by AgentbotLogs through
+	// the existing Canvas access guard.
+	if boundAgentID, ok := c.Get("agent_id"); ok {
+		boundAgentIDStr, ok := boundAgentID.(string)
+		if ok && boundAgentIDStr != "" && boundAgentIDStr != agentIDStr {
+			common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, "API token is not authorized for this agent.")
+			return
+		}
+	}
 	data, ec, err := h.botService.AgentbotLogs(c.Request.Context(), user.ID, agentIDStr, messageID)
 	if err != nil {
 		common.ResponseWithCodeData(c, ec, nil, err.Error())
