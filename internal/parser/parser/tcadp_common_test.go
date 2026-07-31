@@ -76,6 +76,48 @@ func TestAuthHeaderForDownload(t *testing.T) {
 			key:        "",
 			wantHeader: "",
 		},
+		{
+			name:       "scheme mismatch (https base, http download) — no auth",
+			apiBase:    "https://api.tcadp.example.com",
+			download:   "http://api.tcadp.example.com/results/abc.zip",
+			key:        "tcadp-secret",
+			wantHeader: "",
+		},
+		{
+			name:       "schemeless base — no auth",
+			apiBase:    "api.tcadp.example.com/v1",
+			download:   "https://api.tcadp.example.com/results/abc.zip",
+			key:        "tcadp-secret",
+			wantHeader: "",
+		},
+		{
+			name:       "schemeless download URL — no auth",
+			apiBase:    "https://api.tcadp.example.com",
+			download:   "api.tcadp.example.com/results/abc.zip",
+			key:        "tcadp-secret",
+			wantHeader: "",
+		},
+		{
+			name:       "host differs only by letter case — match (case-insensitive)",
+			apiBase:    "https://API.tcadp.example.com",
+			download:   "https://api.TCADP.example.com/results/abc.zip",
+			key:        "tcadp-secret",
+			wantHeader: "Bearer tcadp-secret",
+		},
+		{
+			name:       "empty download host — no auth",
+			apiBase:    "https://api.tcadp.example.com",
+			download:   "https:///results/abc.zip",
+			key:        "tcadp-secret",
+			wantHeader: "",
+		},
+		{
+			name:       "empty API host — no auth",
+			apiBase:    "https://",
+			download:   "https://api.tcadp.example.com/results/abc.zip",
+			key:        "tcadp-secret",
+			wantHeader: "",
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
