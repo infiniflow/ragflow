@@ -821,7 +821,7 @@ async def _struct_process_batch(
     src_field, target_field = _struct_relation_member_fields(parser_config)
     rechunk = bool(parser_config.get("rechunk"))
 
-    async def _run() -> list[dict]:
+    async def _run() -> _RechunkedDocs:
         # For hypergraph, entity extraction MUST complete before edge extraction
         # within the same batch, because the edge prompt's {known_nodes}
         # placeholder is filled from this batch's extracted nodes — see
@@ -837,7 +837,7 @@ async def _struct_process_batch(
             )
         except Exception as e:
             logging.exception(f"compile_structure_from_text: extraction failed for batch {batch_idx}: {e}")
-            return []
+            return _RechunkedDocs()
 
         payloads = items + relations
         kinds = ["entity"] * len(items) + ["relation"] * len(relations)
@@ -852,11 +852,11 @@ async def _struct_process_batch(
             embeddings = await _struct_embed(embd_mdl, embed_inputs)
         except Exception as e:
             logging.exception(f"compile_structure_from_text: embedding failed for batch {batch_idx}: {e}")
-            return []
+            return _RechunkedDocs(rechunked_chunks=formal_chunks)
 
         if len(embeddings) != len(payloads):
             logging.error(f"compile_structure_from_text: embedding count mismatch ({len(embeddings)} vs {len(payloads)}) for batch {batch_idx}")
-            return []
+            return _RechunkedDocs(rechunked_chunks=formal_chunks)
 
         docs = [
             _struct_to_doc_storage_doc(
@@ -982,9 +982,10 @@ async def compile_structure_from_text(
         out: list[dict] = []
         formal_chunks: list[dict] = []
         for br in per_batch or []:
-            if br:
-                out.extend(br)
-                formal_chunks.extend(getattr(br, "rechunked_chunks", []))
+            if br is None:
+                continue
+            out.extend(br)
+            formal_chunks.extend(getattr(br, "rechunked_chunks", []))
         return _RechunkedDocs(out, formal_chunks)
 
     return await _run_chunked_pipeline(

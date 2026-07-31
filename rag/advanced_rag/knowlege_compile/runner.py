@@ -631,10 +631,18 @@ async def run_structure_compile_over_batches(
             raise TaskCanceledException("Task was cancelled during document knowledge compilation")
         agg = agg_infos[template_id]
         if record:
-            record(f"document_structure_compile:{template_id}", agg)
+            recorded_agg = {key: value for key, value in agg.items() if key != "rechunked_chunks"}
+            recorded_agg["rechunked_chunk_count"] = len(agg.get("rechunked_chunks") or [])
+            record(f"document_structure_compile:{template_id}", recorded_agg)
         rechunked_chunks = agg.get("rechunked_chunks") or []
         if rechunked_chunks:
-            progress_cb(msg=f"Rechunk: {len(chunks_by_id)} -> {len(rechunked_chunks)} chunks")
+            progress_cb(
+                msg=(
+                    f"Rechunk: {len(chunks_by_id)} -> {len(rechunked_chunks)} chunks; "
+                    f"inserted={agg.get('inserted', 0)}, updated={agg.get('updated', 0)}, "
+                    f"duplicates_dropped={agg.get('duplicates_dropped', 0)}"
+                )
+            )
         else:
             progress_cb(
                 msg=(

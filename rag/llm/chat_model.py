@@ -1691,9 +1691,19 @@ class LiteLLMBase(ABC):
             # DeepSeek's API uses the legacy OpenAI-compatible max_tokens field.
             # LiteLLM accepts max_completion_tokens generically, but does not
             # translate it for DeepSeek and the provider then falls back to 8192.
-            deepseek_max_tokens = gen_conf.get("max_completion_tokens", gen_conf.get("max_tokens"))
-            gen_conf.pop("max_completion_tokens", None)
+            # Knowledge compilation supplies max_completion_tokens explicitly
+            # through its model-specific generation configuration. Do not
+            # resurrect an unrelated caller-level max_tokens setting (for
+            # example, the Agent UI's response limit) for every DeepSeek call.
+            raw_max_completion_tokens = gen_conf.pop("max_completion_tokens", None)
             gen_conf.pop("max_tokens", None)
+            if raw_max_completion_tokens is not None and not isinstance(raw_max_completion_tokens, bool):
+                try:
+                    candidate = int(raw_max_completion_tokens)
+                except (TypeError, ValueError):
+                    candidate = 0
+                if candidate > 0:
+                    deepseek_max_tokens = candidate
         else:
             gen_conf.pop("max_tokens", None)
 

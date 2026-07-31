@@ -128,11 +128,22 @@ class Compiler(ProcessBase, LLM):
         text = record.get("text") or record.get("content_with_weight")
         has_markdown_table = False
         has_html_table = False
+        has_fenced_code = False
         if isinstance(text, str):
             lines = text.splitlines()
-            has_markdown_table = any(index + 1 < len(lines) and "|" in lines[index] and Compiler._is_markdown_table_separator(lines[index + 1]) for index in range(len(lines)))
+            has_markdown_table = any(index + 1 < len(lines) and re.match(r"^\s*\|", lines[index]) and Compiler._is_markdown_table_separator(lines[index + 1]) for index in range(len(lines)))
             has_html_table = bool(re.search(r"<table(?:\s|>)", text, flags=re.IGNORECASE))
-        return bool(doc_type in {"table", "image"} or record.get("img_id") or record.get("image") or layout_type in {"figure", "table"} or record.get("bbox") or has_markdown_table or has_html_table)
+            has_fenced_code = bool(re.search(r"^\s*(`{3,}|~{3,})", text, flags=re.MULTILINE))
+        return bool(
+            doc_type in {"table", "image"}
+            or record.get("img_id")
+            or record.get("image")
+            or layout_type in {"figure", "table"}
+            or record.get("bbox")
+            or has_markdown_table
+            or has_html_table
+            or has_fenced_code
+        )
 
     @staticmethod
     def _formalize_rechunked_chunks(chunks: list[dict], rechunked_chunks: list[dict], doc_id: str) -> list[dict]:
@@ -141,7 +152,13 @@ class Compiler(ProcessBase, LLM):
         result = []
         for grouped in rechunked_chunks:
             source_ids = [str(value) for value in grouped.get("source_chunk_ids") or []]
-            source = next((originals[source_id] for source_id in source_ids if source_id in originals), {})
+            source = next((originals[source_id] for source_id in source_ids if source_id in originals), None)
+            if source is None:
+                logging.warning(
+                    "Compiler: skip rechunked group %s because none of its source chunks exist",
+                    grouped.get("id"),
+                )
+                continue
             item = deepcopy(source)
             item["id"] = str(grouped.get("id"))
             item["doc_id"] = doc_id
@@ -160,10 +177,10 @@ class Compiler(ProcessBase, LLM):
         return len(cells) >= 1 and all(re.fullmatch(r"\s*:?-{3,}:?\s*", cell) for cell in cells)
 
     @classmethod
-    def _split_markdown_blocks(cls, text: str) -> list[tuple[str, bool]]:
-        """Separate Markdown tables so rechunking cannot split their rows."""
+    def _split_markdown_blocks(cls, text: str) -> list[tuple[str, str | None]]:
+        """Separate Markdown tables and fenced code blocks as atomic blocks."""
         lines = text.splitlines(keepends=True)
-        blocks: list[tuple[str, bool]] = []
+        blocks: list[tuple[str, str | None]] = []
         ordinary: list[str] = []
         index = 0
 
@@ -173,14 +190,34 @@ class Compiler(ProcessBase, LLM):
                 ordinary.clear()
 
         while index < len(lines):
-            if index + 1 < len(lines) and "|" in lines[index] and cls._is_markdown_table_separator(lines[index + 1]):
+            fence_match = re.match(r"^\s*(`{3,}|~{3,})", lines[index])
+            if fence_match:
+                flush_ordinary()
+                fence = fence_match.group(1)
+                fence_char = fence[0]
+                fence_length = len(fence)
+                code = [lines[index]]
+                index += 1
+                while index < len(lines):
+                    code.append(lines[index])
+                    closing = re.match(
+                        rf"^\s*{re.escape(fence_char)}{{{fence_length},}}\s*$",
+                        lines[index].rstrip("\r\n"),
+                    )
+                    index += 1
+                    if closing:
+                        break
+                blocks.append(("".join(code), "fenced_code"))
+                continue
+
+            if index + 1 < len(lines) and re.match(r"^\s*\|", lines[index]) and cls._is_markdown_table_separator(lines[index + 1]):
                 flush_ordinary()
                 table = [lines[index], lines[index + 1]]
                 index += 2
-                while index < len(lines) and "|" in lines[index]:
+                while index < len(lines) and re.match(r"^\s*\|", lines[index]):
                     table.append(lines[index])
                     index += 1
-                blocks.append(("".join(table), True))
+                blocks.append(("".join(table), "table"))
                 continue
             ordinary.append(lines[index])
             index += 1
@@ -240,7 +277,15 @@ class Compiler(ProcessBase, LLM):
             if not isinstance(chunks, list):
                 return []
             if not split_json_text:
-                return deepcopy(chunks)
+                normalized = deepcopy(chunks)
+                for chunk in normalized:
+                    if not isinstance(chunk, dict):
+                        continue
+                    text = chunk.get("text")
+                    if not isinstance(text, str):
+                        text = chunk.get("content_with_weight")
+                    chunk["text"] = text if isinstance(text, str) else ""
+                return normalized
             records = chunks
         elif output_format == "json":
             records = upstream.get("json") or upstream.get("json_result") or []
@@ -270,6 +315,7 @@ class Compiler(ProcessBase, LLM):
                 else:
                     # Keep metadata-only records (for example, an image
                     # placeholder) instead of silently dropping them.
+                    chunk["text"] = text if isinstance(text, str) else ""
                     chunks.append(chunk)
             if split_json_text:
                 return cls._merge_small_text_chunks(chunks, target_token_size or cls._PARSER_TEXT_CHUNK_TOKEN_SIZE)
@@ -285,9 +331,11 @@ class Compiler(ProcessBase, LLM):
                 return [{"text": text}]
             if output_format == "markdown":
                 chunks = []
-                for block, is_table in cls._split_markdown_blocks(text):
-                    if is_table:
+                for block, block_type in cls._split_markdown_blocks(text):
+                    if block_type == "table":
                         chunks.append({"text": block, "doc_type_kwd": "table"})
+                    elif block_type == "fenced_code":
+                        chunks.append({"text": block})
                     else:
                         chunks.extend({"text": part} for part in cls._slumber_candidates(block, target_token_size=target_token_size) if part.strip())
             else:
@@ -515,10 +563,11 @@ class Compiler(ProcessBase, LLM):
         def _template_requests_rechunk(cfg: dict) -> bool:
             if not isinstance(cfg, dict):
                 return False
-            if bool(cfg.get("rechunk")):
-                return True
-            raptor_cfg = cfg.get("raptor")
-            return isinstance(raptor_cfg, dict) and bool(raptor_cfg.get("rechunk"))
+            # ``raptor.rechunk`` belongs to the Tree path, which is explicitly
+            # excluded from the semantic rechunk staging below. It must not
+            # shrink non-Tree parser chunks unless a structure template has
+            # requested the actual regrouping pass.
+            return bool(cfg.get("rechunk"))
 
         should_rechunk = any(_template_requests_rechunk(cfg) for _, cfg in active_templates)
         target_token_size = self._PARSER_CANDIDATE_TOKEN_SIZE if should_rechunk else self._PARSER_TEXT_CHUNK_TOKEN_SIZE
@@ -584,7 +633,7 @@ class Compiler(ProcessBase, LLM):
 
         if non_tree_templates:
             first_rechunk_index = next(
-                (index for index, (_, cfg) in enumerate(non_tree_templates) if isinstance(cfg, dict) and bool(cfg.get("rechunk"))),
+                (index for index, (_, cfg) in enumerate(non_tree_templates) if _template_requests_rechunk(cfg)),
                 None,
             )
             if first_rechunk_index is not None:
@@ -627,7 +676,14 @@ class Compiler(ProcessBase, LLM):
                 first_template_id = first_template[0][0]
                 formal_chunks = (compile_info.get(first_template_id) or {}).get("rechunked_chunks")
                 if formal_chunks:
-                    chunks = self._formalize_rechunked_chunks(chunks, formal_chunks, doc_id)
+                    formalized_chunks = self._formalize_rechunked_chunks(chunks, formal_chunks, doc_id)
+                    if formalized_chunks:
+                        chunks = formalized_chunks
+                    else:
+                        logging.warning(
+                            "Compiler: rechunking returned no valid formal chunks for doc %s; keeping original chunks",
+                            doc_id,
+                        )
 
                 # The first rechunk template defines the semantic boundaries
                 # for all later templates. They consume those formal chunks
