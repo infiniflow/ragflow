@@ -28,6 +28,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -366,6 +367,11 @@ func (c *qqBotChannel) handleDispatch(ctx context.Context, eventType string, dat
 	c.mu.Unlock()
 	if handler != nil {
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("[qqbot:%s] handler panic: %v\n%s", c.account.AccountID, r, debug.Stack())
+				}
+			}()
 			if err := handler(ctx, *incoming); err != nil {
 				log.Printf("[qqbot:%s] handler error: %v", c.account.AccountID, err)
 			}
