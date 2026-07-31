@@ -286,7 +286,7 @@ func resolvePsqlHostPort(hostURI string, postgresPort int) (host, port string) {
 
 // RunSQL implements the SQL retrieval path: preprocess, rewrite aliases,
 // run psql subprocess, parse output.
-func (e *infinityEngine) RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, _ string) ([]map[string]interface{}, error) {
+func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, _ string) ([]map[string]interface{}, error) {
 	if e == nil || e.client == nil {
 		return nil, fmt.Errorf("infinity RunSQL: client not initialized")
 	}

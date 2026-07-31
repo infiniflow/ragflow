@@ -36,7 +36,7 @@ import (
 
 // CreateMetadataStore creates a metadata table in Infinity
 // tenantID is the tenant identifier used to build the table name
-func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID string) error {
+func (e *Engine) CreateMetadataStore(ctx context.Context, tenantID string) error {
 	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
@@ -46,7 +46,7 @@ func (e *infinityEngine) CreateMetadataStore(ctx context.Context, tenantID strin
 	return e.createMetadataStoreWithDB(db, tenantID)
 }
 
-func (e *infinityEngine) createMetadataStoreWithDB(db *infinity.Database, tenantID string) error {
+func (e *Engine) createMetadataStoreWithDB(db *infinity.Database, tenantID string) error {
 	tableName := buildMetadataTableName(tenantID)
 
 	// Check if table already exists
@@ -138,7 +138,7 @@ func (e *infinityEngine) createMetadataStoreWithDB(db *infinity.Database, tenant
 // The metadata table must already exist; the service layer is responsible
 // for creating it before writing.
 // Replace existing metadata with same id and kb_id
-func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
+func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error) {
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.InsertMetadata called", zap.String("tableName", tableName), zap.Int("metaCount", len(metadata)))
 
@@ -222,7 +222,7 @@ func (e *infinityEngine) InsertMetadata(ctx context.Context, metadata []map[stri
 // produced by the LLM extraction pipeline. See the CLI parser in
 // internal/cli/user_parser.go (parseDevSetMeta) for the user-facing
 // surface that drives this engine method.
-func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
+func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error {
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.UpdateMetadata called", zap.String("tableName", tableName), zap.String("docID", docID), zap.String("datasetID", datasetID))
 
@@ -329,7 +329,7 @@ func (e *infinityEngine) UpdateMetadata(ctx context.Context, docID string, datas
 
 // DeleteMetadata deletes metadata from tenant's metadata table by condition
 // Returns the number of deleted documents.
-func (e *infinityEngine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
+func (e *Engine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
 	tableName := buildMetadataTableName(tenantID)
 
 	db, release, err := e.client.checkoutDatabase(ctx, "metadata.go")
@@ -347,7 +347,7 @@ func (e *infinityEngine) DeleteMetadata(ctx context.Context, condition map[strin
 	return e.deleteMetadataWithTable(table, condition)
 }
 
-func (e *infinityEngine) deleteMetadataWithTable(table *infinity.Table, condition map[string]interface{}) (int64, error) {
+func (e *Engine) deleteMetadataWithTable(table *infinity.Table, condition map[string]interface{}) (int64, error) {
 	if table == nil {
 		return 0, fmt.Errorf("metadata table is nil")
 	}
@@ -396,7 +396,7 @@ func (e *infinityEngine) deleteMetadataWithTable(table *infinity.Table, conditio
 
 // DeleteMetadataKeys deletes specific metadata keys from a document's meta_fields.
 // If deleting those keys leaves no metadata entries, the metadata row is removed.
-func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID string, keys []string, tenantID string) error {
+func (e *Engine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID string, keys []string, tenantID string) error {
 	tableName := buildMetadataTableName(tenantID)
 	common.Info("InfinityConnection.DeleteMetadataKeys called", zap.String("tableName", tableName), zap.String("docID", docID), zap.Any("keys", keys))
 
@@ -539,20 +539,20 @@ func (e *infinityEngine) DeleteMetadataKeys(ctx context.Context, docID string, d
 }
 
 // DropMetadataStore drops a metadata table from Infinity
-func (e *infinityEngine) DropMetadataStore(ctx context.Context, tenantID string) error {
+func (e *Engine) DropMetadataStore(ctx context.Context, tenantID string) error {
 	tableName := buildMetadataTableName(tenantID)
 	return e.dropTable(ctx, tableName)
 }
 
 // MetadataStoreExists checks if a metadata table exists in Infinity
-func (e *infinityEngine) MetadataStoreExists(ctx context.Context, tenantID string) (bool, error) {
+func (e *Engine) MetadataStoreExists(ctx context.Context, tenantID string) (bool, error) {
 	tableName := buildMetadataTableName(tenantID)
 	return e.tableExists(ctx, tableName)
 }
 
 // SearchMetadata executes search specifically for metadata tables
 // This is separate from Search() which handles only chunk tables
-func (e *infinityEngine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
+func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
 	tenantID := req.TenantID
 	common.Debug("SearchMetadata in Infinity started", zap.String("tenantID", tenantID))
 
@@ -788,7 +788,7 @@ const metaPushdownMaxSize = 10000
 //	nil        -> push-down was not viable / errored / result overflowed the
 //	              push-down cap (caller should fall back to in-memory)
 //	[]string{} -> push-down succeeded but found 0 matching docs (empty result is definitive)
-func (e *infinityEngine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB, kbIDs []string, conditions []map[string]interface{}, logic string) []string {
+func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB, kbIDs []string, conditions []map[string]interface{}, logic string) []string {
 	if len(conditions) == 0 || len(kbIDs) == 0 {
 		return nil
 	}
