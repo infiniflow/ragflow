@@ -1351,3 +1351,7 @@ func (s *Service) ListLogs(ctx context.Context, userName string, days int) ([]ma
 	}
 	return result, nil
 }
+
+func (s *Service) GetEEServicesStatus() []ServiceStatus {
+	return []ServiceStatus{}
+}

@@ -586,9 +586,12 @@ func (c *CLI) AdminStartServiceCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	serviceIndex := cmd.Params["service_index"].(int)
+	serviceName, ok := cmd.Params["service_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("service_name not provided")
+	}
 
-	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
 
 	resp, err := c.AdminServerClient.Request("POST", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -604,9 +607,12 @@ func (c *CLI) AdminRestartServiceCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	serviceIndex := cmd.Params["service_index"].(int)
+	serviceName, ok := cmd.Params["service_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("service_name not provided")
+	}
 
-	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
 
 	resp, err := c.AdminServerClient.Request("PUT", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -622,9 +628,12 @@ func (c *CLI) AdminShutdownServiceCommand(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	serviceIndex := cmd.Params["service_index"].(int)
+	serviceName, ok := cmd.Params["service_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("service_name not provided")
+	}
 
-	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
 
 	resp, err := c.AdminServerClient.Request("DELETE", endPoint, "admin", nil, nil)
 	if err != nil {
@@ -640,9 +649,12 @@ func (c *CLI) AdminShowService(cmd *Command) (ResponseIf, error) {
 		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
 	}
 
-	serviceIndex := cmd.Params["service_index"].(int)
+	serviceName, ok := cmd.Params["service_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("service_name not provided")
+	}
 
-	endPoint := fmt.Sprintf("/admin/services/%d", serviceIndex)
+	endPoint := fmt.Sprintf("/admin/services/%s", serviceName)
 
 	resp, err := c.AdminServerClient.Request("GET", endPoint, "admin", nil, nil)
 	if err != nil {
