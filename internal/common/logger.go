@@ -234,13 +234,6 @@ func SetLogLevel(level string) error {
 	return nil
 }
 
-func ResolveCompress(c *bool) bool {
-	if c == nil {
-		return true
-	}
-	return *c
-}
-
 // GinLogger returns a gin middleware that emits one log line per request
 // through Logger. Level is chosen by status:
 //

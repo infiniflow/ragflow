@@ -57,7 +57,7 @@ var (
 )
 
 // CreateChunkStore creates an index
-func (e *elasticsearchEngine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
+func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
 	if baseName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
@@ -159,7 +159,7 @@ func (e *elasticsearchEngine) CreateChunkStore(ctx context.Context, baseName, da
 
 // InsertChunks inserts chunks into a chunk index
 // If a chunk with the same id + doc_id + kb_id already exists, it will be updated with the new value
-func (e *elasticsearchEngine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
+func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
 	common.Info("ElasticsearchConnection.InsertChunks called", zap.String("index_name", baseName), zap.Int("chunkCount", len(chunks)))
 
 	if len(chunks) == 0 {
@@ -279,7 +279,7 @@ func (e *elasticsearchEngine) InsertChunks(ctx context.Context, chunks []map[str
 }
 
 // UpdateChunks updates chunks by condition
-func (e *elasticsearchEngine) UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, baseName string, datasetID string) error {
+func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, baseName string, datasetID string) error {
 	fullIndexName := baseName
 	common.Info("ElasticsearchConnection.UpdateChunks called", zap.String("index_name", fullIndexName), zap.Any("condition", condition), zap.Any("new_value", newValue))
 
@@ -319,7 +319,7 @@ func (e *elasticsearchEngine) UpdateChunks(ctx context.Context, condition map[st
 
 // AdjustChunkPagerank atomically adjusts pagerank_fea and clamps it to
 // [minWeight, maxWeight].
-func (e *elasticsearchEngine) AdjustChunkPagerank(ctx context.Context, indexName, chunkID, kbID string, delta, minWeight, maxWeight float64) error {
+func (e *Engine) AdjustChunkPagerank(ctx context.Context, indexName, chunkID, kbID string, delta, minWeight, maxWeight float64) error {
 	if indexName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
@@ -404,7 +404,7 @@ func (e *elasticsearchEngine) AdjustChunkPagerank(ctx context.Context, indexName
 	return nil
 }
 
-func (e *elasticsearchEngine) updateSingleMemoryMessage(ctx context.Context, indexName, messageDocID string, newValue map[string]interface{}) error {
+func (e *Engine) updateSingleMemoryMessage(ctx context.Context, indexName, messageDocID string, newValue map[string]interface{}) error {
 	doc := mapMemoryMessageESUpdateFields(newValue)
 	delete(doc, "id")
 	if len(doc) == 0 {
@@ -464,7 +464,7 @@ func mapMemoryMessageESConditionFields(condition map[string]interface{}) map[str
 }
 
 // updateSingleChunk handles single document update
-func (e *elasticsearchEngine) updateSingleChunk(ctx context.Context, indexName, chunkID string, newValue map[string]interface{}) error {
+func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID string, newValue map[string]interface{}) error {
 	common.Debug("ElasticsearchConnection.updateSingleChunk called", zap.String("indexName", indexName), zap.String("chunkID", chunkID))
 
 	// First find the document by id field to get the actual _id
@@ -633,7 +633,7 @@ func (e *elasticsearchEngine) updateSingleChunk(ctx context.Context, indexName, 
 }
 
 // updateChunksByQuery handles multi-document update
-func (e *elasticsearchEngine) updateChunksByQuery(ctx context.Context, indexName string, condition map[string]interface{}, newValue map[string]interface{}) error {
+func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, condition map[string]interface{}, newValue map[string]interface{}) error {
 	common.Debug("ElasticsearchConnection.updateChunksByQuery called", zap.String("indexName", indexName))
 
 	// Build bool query from condition
@@ -783,7 +783,7 @@ func copyFields(m map[string]interface{}) map[string]interface{} {
 }
 
 // DeleteChunks deletes chunks from a dataset index by condition
-func (e *elasticsearchEngine) DeleteChunks(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
+func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
 	// For ES, index name is just indexName (e.g., "ragflow_{tenantID}"), not indexName_datasetID
 	fullIndexName := indexName
 	common.Info("Deleting chunks from Elasticsearch index", zap.String("index_name", fullIndexName), zap.Any("condition", condition))
@@ -964,7 +964,7 @@ type SearchResponse struct {
 }
 
 // Search executes search with unified types.SearchRequest
-func (e *elasticsearchEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	types.LogSearchRequest("Elasticsearch", req)
 
 	// Validate inputs and set defaults
@@ -1314,7 +1314,7 @@ type searchAfterFetcher func(
 // gets an accurate total; subsequent requests skip it for efficiency.
 // Returns the (possibly empty) collected hits and the total hit count
 // from the first response.
-func (e *elasticsearchEngine) searchAfterCursor(
+func (e *Engine) searchAfterCursor(
 	ctx context.Context,
 	req *types.SearchRequest,
 	baseQuery map[string]interface{},
@@ -1331,7 +1331,7 @@ func (e *elasticsearchEngine) searchAfterCursor(
 
 // buildSearchAfterFetcher returns a fetcher that delegates each
 // iteration to executeSearchRequest, which talks to the real ES client.
-func (e *elasticsearchEngine) buildSearchAfterFetcher(req *types.SearchRequest) searchAfterFetcher {
+func (e *Engine) buildSearchAfterFetcher(req *types.SearchRequest) searchAfterFetcher {
 	return func(
 		ctx context.Context,
 		baseQuery map[string]interface{},
@@ -1463,7 +1463,7 @@ func searchAfterPaginate(
 // batch size and search_after cursor. If trackTotalHits is true the
 // request asks ES to compute an exact total (cheap to omit on
 // pagination iterations after the first).
-func (e *elasticsearchEngine) executeSearchRequest(
+func (e *Engine) executeSearchRequest(
 	ctx context.Context,
 	req *types.SearchRequest,
 	baseQuery map[string]interface{},
@@ -1923,7 +1923,7 @@ func buildRankFeatureQuery(rankFeature map[string]float64) []map[string]interfac
 }
 
 // GetChunk gets a chunk by ID using ES search API
-func (e *elasticsearchEngine) GetChunk(ctx context.Context, baseName, chunkID string, datasetIDs []string) (interface{}, error) {
+func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, datasetIDs []string) (interface{}, error) {
 	if strings.HasPrefix(baseName, "memory_") {
 		return e.getMemoryMessage(ctx, baseName, chunkID)
 	}
@@ -1996,7 +1996,7 @@ func (e *elasticsearchEngine) GetChunk(ctx context.Context, baseName, chunkID st
 	return nil, nil
 }
 
-func (e *elasticsearchEngine) getMemoryMessage(ctx context.Context, indexName, docID string) (interface{}, error) {
+func (e *Engine) getMemoryMessage(ctx context.Context, indexName, docID string) (interface{}, error) {
 	req := esapi.GetRequest{
 		Index:      indexName,
 		DocumentID: docID,
@@ -2037,7 +2037,7 @@ func (e *elasticsearchEngine) getMemoryMessage(ctx context.Context, indexName, d
 // The original requested field names ARE the database column names:
 //   - "content_with_weight" is stored and returned as "content_with_weight"
 //   - No field name mapping is needed in GetFields
-func (e *elasticsearchEngine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
+func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
 	common.Info("GetFields called", zap.Int("chunkCount", len(chunks)), zap.Strings("fields", fields))
 	result := make(map[string]map[string]interface{})
 
@@ -2116,7 +2116,7 @@ func (e *elasticsearchEngine) GetFields(chunks []map[string]interface{}, fields 
 // GetAggregation aggregates chunk values by field name
 // Input: [{"docnm_kwd": "docA"}, {"docnm_kwd": "docA"}, {"docnm_kwd": "docB"}]
 // Returns: [{"key": "docA", "count": 2}, {"key": "docB", "count": 1}]
-func (e *elasticsearchEngine) GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{} {
+func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{} {
 	if len(chunks) == 0 || fieldName == "" {
 		return []map[string]interface{}{}
 	}
@@ -2176,7 +2176,7 @@ func (e *elasticsearchEngine) GetAggregation(chunks []map[string]interface{}, fi
 
 // GetChunkIDs extracts chunk IDs from ES search response chunks.
 // Uses _id field (composite: {doc_id}_{kb_id}_{chunk_id}).
-func (e *elasticsearchEngine) GetChunkIDs(chunks []map[string]interface{}) []string {
+func (e *Engine) GetChunkIDs(chunks []map[string]interface{}) []string {
 	ids := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
 		if id, ok := elasticsearchChunkID(chunk); ok {
@@ -2187,7 +2187,7 @@ func (e *elasticsearchEngine) GetChunkIDs(chunks []map[string]interface{}) []str
 }
 
 // GetHighlight returns highlighted text for matching keywords
-func (e *elasticsearchEngine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
+func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
 	result := make(map[string]string)
 	if len(chunks) == 0 || len(keywords) == 0 {
 		return result
@@ -2323,18 +2323,18 @@ func normalizeElasticsearchHighlightKeywords(keywords []string) []string {
 }
 
 // DropChunkStore deletes a chunk index
-func (e *elasticsearchEngine) DropChunkStore(ctx context.Context, baseName, datasetID string) error {
+func (e *Engine) DropChunkStore(ctx context.Context, baseName, datasetID string) error {
 	return e.dropIndex(ctx, baseName)
 }
 
 // ChunkStoreExists checks if a chunk index exists
-func (e *elasticsearchEngine) ChunkStoreExists(ctx context.Context, baseName, datasetID string) (bool, error) {
+func (e *Engine) ChunkStoreExists(ctx context.Context, baseName, datasetID string) (bool, error) {
 	return e.indexExists(ctx, baseName)
 }
 
 // KNNScores performs a second-pass KNN search to get clean cosine similarities for ES.
 // This keeps chunk vectors in the index and asks ES to compute the cosine similarity.
-func (e *elasticsearchEngine) KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error) {
+func (e *Engine) KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error) {
 	if len(chunks) == 0 || len(queryVector) == 0 {
 		return nil, nil
 	}
@@ -2424,7 +2424,7 @@ func (e *elasticsearchEngine) KNNScores(ctx context.Context, chunks []map[string
 }
 
 // GetScores extracts similarity scores from KNN search result
-func (e *elasticsearchEngine) GetScores(knnResult map[string]interface{}) map[string]float64 {
+func (e *Engine) GetScores(knnResult map[string]interface{}) map[string]float64 {
 	scores := make(map[string]float64)
 	hits, ok := knnResult["hits"].(map[string]interface{})
 	if !ok {
@@ -2543,7 +2543,7 @@ func parseMemoryMessageVectorSize(field string) (int, bool) {
 	return vectorSize, true
 }
 
-func (e *elasticsearchEngine) memoryMessageVectorMappingExists(ctx context.Context, indexName, fieldName string) (bool, error) {
+func (e *Engine) memoryMessageVectorMappingExists(ctx context.Context, indexName, fieldName string) (bool, error) {
 	req := esapi.IndicesGetMappingRequest{
 		Index: []string{indexName},
 	}
@@ -2586,7 +2586,7 @@ func (e *elasticsearchEngine) memoryMessageVectorMappingExists(ctx context.Conte
 	return ok, nil
 }
 
-func (e *elasticsearchEngine) ensureMemoryMessageVectorMapping(ctx context.Context, indexName string, vectorSize int) error {
+func (e *Engine) ensureMemoryMessageVectorMapping(ctx context.Context, indexName string, vectorSize int) error {
 	if vectorSize <= 0 {
 		return fmt.Errorf("memory vector size must be positive, got %d", vectorSize)
 	}
@@ -2632,7 +2632,7 @@ func (e *elasticsearchEngine) ensureMemoryMessageVectorMapping(ctx context.Conte
 	return nil
 }
 
-func (e *elasticsearchEngine) ensureMemoryMessageVectorMappingsForDocs(ctx context.Context, indexName string, chunks []map[string]interface{}) error {
+func (e *Engine) ensureMemoryMessageVectorMappingsForDocs(ctx context.Context, indexName string, chunks []map[string]interface{}) error {
 	seen := map[int]struct{}{}
 	for _, chunk := range chunks {
 		for field := range chunk {
@@ -2652,7 +2652,7 @@ func (e *elasticsearchEngine) ensureMemoryMessageVectorMappingsForDocs(ctx conte
 	return nil
 }
 
-func (e *elasticsearchEngine) ensureMemoryMessageSearchVectorMappings(ctx context.Context, indexNames []string, vectorFieldName string, fallbackVectorSize int) error {
+func (e *Engine) ensureMemoryMessageSearchVectorMappings(ctx context.Context, indexNames []string, vectorFieldName string, fallbackVectorSize int) error {
 	vectorSize, ok := parseMemoryMessageVectorSize(vectorFieldName)
 	if !ok {
 		vectorSize = fallbackVectorSize
@@ -2672,7 +2672,7 @@ func (e *elasticsearchEngine) ensureMemoryMessageSearchVectorMappings(ctx contex
 		if !exists {
 			continue
 		}
-		if err := e.ensureMemoryMessageVectorMapping(ctx, indexName, vectorSize); err != nil {
+		if err = e.ensureMemoryMessageVectorMapping(ctx, indexName, vectorSize); err != nil {
 			return err
 		}
 	}

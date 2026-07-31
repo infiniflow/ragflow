@@ -30,10 +30,8 @@ var (
 
 // StorageFactory creates storage instances based on configuration
 type StorageFactory struct {
-	storageType StorageType
-	storage     Storage
-	config      *server.StorageConfig
-	mu          sync.RWMutex
+	storage Storage
+	mu      sync.RWMutex
 }
 
 // GetStorageFactory returns the singleton storage factory instance
@@ -49,13 +47,12 @@ func InitStorageFactory() error {
 	factory := GetStorageFactory()
 
 	globalConfig := server.GetConfig()
-	factory.config = &globalConfig.StorageEngine
 	// Initialize storage based on type
 	if err := factory.initStorage(); err != nil {
 		return err
 	}
 
-	common.Info(fmt.Sprintf("Storage initialized: %s", factory.config.Type))
+	common.Info(fmt.Sprintf("Storage initialized: %s", globalConfig.StorageEngineType()))
 
 	return nil
 }
@@ -69,78 +66,73 @@ func CloseStorage() error {
 }
 
 func (f *StorageFactory) initStorage() error {
-	switch f.config.Type {
+	globalConfig := server.GetConfig()
+	switch globalConfig.StorageEngineType() {
 	case "minio":
-		return f.initMinio(f.config.Minio)
+		return f.initMinio()
 	case "s3":
-		return f.initS3(f.config.S3)
+		return f.initS3()
 	case "oss":
-		return f.initOSS(f.config.OSS)
+		return f.initOSS()
 	case "gcs":
-		return f.initGCS(f.config.GCS)
+		return f.initGCS()
 	default:
-		return fmt.Errorf("unsupported storage type: %s", f.config.Type)
+		return fmt.Errorf("unsupported storage type: %s", globalConfig.StorageEngineType())
 	}
 }
 
-func (f *StorageFactory) initMinio(minioConfig *server.MinioConfig) error {
-	storage, err := NewMinioStorage(minioConfig)
+func (f *StorageFactory) initMinio() error {
+	globalConfig := server.GetConfig()
+	storage, err := NewMinioStorage(globalConfig.GetMinioConfig())
 	if err != nil {
 		return fmt.Errorf("failed to create MinIO storage: %w", err)
 	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.storageType = StorageMinio
 	f.storage = storage
-	f.config.Minio = minioConfig
 
 	return nil
 }
 
-func (f *StorageFactory) initS3(s3Config *server.S3Config) error {
-	storage, err := NewS3Storage(s3Config)
+func (f *StorageFactory) initS3() error {
+	globalConfig := server.GetConfig()
+	storage, err := NewS3Storage(globalConfig.GetS3Config())
 	if err != nil {
 		return fmt.Errorf("failed to create S3 storage: %w", err)
 	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.storageType = StorageAWSS3
 	f.storage = storage
-	f.config.S3 = s3Config
 
 	return nil
 }
 
-func (f *StorageFactory) initOSS(ossConfig *server.OSSConfig) error {
-
-	storage, err := NewOSSStorage(ossConfig)
+func (f *StorageFactory) initOSS() error {
+	globalConfig := server.GetConfig()
+	storage, err := NewOSSStorage(globalConfig.GetOSSConfig())
 	if err != nil {
 		return fmt.Errorf("failed to create OSS storage: %w", err)
 	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.storageType = StorageOSS
 	f.storage = storage
-	f.config.OSS = ossConfig
 
 	return nil
 }
 
-func (f *StorageFactory) initGCS(gcsConfig *server.GCSConfig) error {
-
-	storage, err := NewGCSStorage(gcsConfig)
+func (f *StorageFactory) initGCS() error {
+	globalConfig := server.GetConfig()
+	storage, err := NewGCSStorage(globalConfig.GetGCSConfig())
 	if err != nil {
 		return fmt.Errorf("failed to create GCS storage: %w", err)
 	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.storageType = StorageGCS
 	f.storage = storage
-	f.config.GCS = gcsConfig
 
 	return nil
 }
@@ -152,74 +144,38 @@ func (f *StorageFactory) GetStorage() Storage {
 	return f.storage
 }
 
-// GetStorageType returns the current storage type
-func (f *StorageFactory) GetStorageType() StorageType {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
-	return f.storageType
-}
-
 // Create creates a new storage instance based on the storage type
 // This is the factory method equivalent to Python's StorageFactory.create()
-func (f *StorageFactory) Create(storageType StorageType) (Storage, error) {
-	var storage Storage
-	var err error
-
-	switch storageType {
-	case StorageMinio:
-		if f.config.Minio != nil {
-			storage, err = NewMinioStorage(f.config.Minio)
-		} else {
-			return nil, fmt.Errorf("MinIO config not available")
-		}
-	case StorageAWSS3:
-		if f.config.S3 != nil {
-			storage, err = NewS3Storage(f.config.S3)
-		} else {
-			return nil, fmt.Errorf("S3 config not available")
-		}
-	case StorageOSS:
-		if f.config.OSS != nil {
-			storage, err = NewOSSStorage(f.config.OSS)
-		} else {
-			return nil, fmt.Errorf("OSS config not available")
-		}
-	default:
-		return nil, fmt.Errorf("unsupported storage type: %v", storageType)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return storage, nil
-}
+//func (f *StorageFactory) Create(storageType StorageType) (Storage, error) {
+//	var storage Storage
+//	var err error
+//
+//	switch storageType {
+//	case StorageMinio:
+//		storage, err = NewMinioStorage(f.config.Minio)
+//		if err != nil {
+//			return nil, fmt.Errorf("MinIO config not available: %w, %v", err, f.config.Minio)
+//		}
+//	case StorageAWSS3:
+//		storage, err = NewS3Storage(f.config.S3)
+//		if err != nil {
+//			return nil, fmt.Errorf("S3 config not available: %w, %v", err, f.config.S3)
+//		}
+//	case StorageOSS:
+//		storage, err = NewOSSStorage(f.config.OSS)
+//		if err != nil {
+//			return nil, fmt.Errorf("OSS config not available: %w, %v", err, f.config.OSS)
+//		}
+//	default:
+//		return nil, fmt.Errorf("unsupported storage type: %v", storageType)
+//	}
+//
+//	return storage, nil
+//}
 
 // SetStorage sets the storage instance (useful for testing)
 func (f *StorageFactory) SetStorage(storage Storage) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.storage = storage
-}
-
-// StorageTypeMapping returns the storage type mapping (equivalent to Python's storage_mapping)
-var StorageTypeMapping = map[StorageType]func(*server.StorageConfig) (Storage, error){
-	StorageMinio: func(config *server.StorageConfig) (Storage, error) {
-		if config.Minio == nil {
-			return nil, fmt.Errorf("MinIO config not available")
-		}
-		return NewMinioStorage(config.Minio)
-	},
-	StorageAWSS3: func(config *server.StorageConfig) (Storage, error) {
-		if config.S3 == nil {
-			return nil, fmt.Errorf("S3 config not available")
-		}
-		return NewS3Storage(config.S3)
-	},
-	StorageOSS: func(config *server.StorageConfig) (Storage, error) {
-		if config.OSS == nil {
-			return nil, fmt.Errorf("OSS config not available")
-		}
-		return NewOSSStorage(config.OSS)
-	},
 }

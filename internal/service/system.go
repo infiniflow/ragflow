@@ -23,7 +23,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
-	"strings"
 	"time"
 
 	"ragflow/internal/dao"
@@ -54,12 +53,12 @@ type ConfigResponse struct {
 func (s *SystemService) GetConfig() (*ConfigResponse, error) {
 	cfg := server.GetConfig()
 	registerEnabled := 1
-	if !cfg.Authentication.RegisterEnabled {
+	if !cfg.RegisterEnabled() {
 		registerEnabled = 0
 	}
 	return &ConfigResponse{
 		RegisterEnabled:      registerEnabled,
-		DisablePasswordLogin: cfg.Authentication.DisablePasswordLogin,
+		DisablePasswordLogin: cfg.DisablePasswordLogin(),
 	}, nil
 }
 
@@ -121,7 +120,7 @@ func (s *SystemService) getDocEngineStatus() ComponentStatus {
 	cfg := server.GetConfig()
 	docEngineType := ""
 	if cfg != nil {
-		docEngineType = strings.ToLower(string(cfg.DocEngine.Type))
+		docEngineType = cfg.DocEngineType()
 	}
 
 	startedAt := time.Now()
@@ -157,7 +156,7 @@ func (s *SystemService) getStorageStatus() ComponentStatus {
 	cfg := server.GetConfig()
 	storageType := ""
 	if cfg != nil {
-		storageType = strings.ToLower(string(cfg.StorageEngine.Type))
+		storageType = cfg.StorageEngineType()
 	}
 
 	startedAt := time.Now()
@@ -194,7 +193,7 @@ func (s *SystemService) getDatabaseStatus() ComponentStatus {
 	cfg := server.GetConfig()
 	databaseType := ""
 	if cfg != nil {
-		databaseType = cfg.Database.Driver
+		databaseType = cfg.DatabaseType()
 	}
 
 	startedAt := time.Now()

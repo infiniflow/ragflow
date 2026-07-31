@@ -30,7 +30,7 @@ import (
 )
 
 // dropTable drops a table from Infinity
-func (e *infinityEngine) dropTable(ctx context.Context, tableName string) error {
+func (e *Engine) dropTable(ctx context.Context, tableName string) error {
 	if tableName == "" {
 		return fmt.Errorf("table name cannot be empty")
 	}
@@ -60,7 +60,7 @@ func (e *infinityEngine) dropTable(ctx context.Context, tableName string) error 
 }
 
 // tableExists checks if a table exists in Infinity
-func (e *infinityEngine) tableExists(ctx context.Context, tableName string) (bool, error) {
+func (e *Engine) tableExists(ctx context.Context, tableName string) (bool, error) {
 	if tableName == "" {
 		return false, fmt.Errorf("table name cannot be empty")
 	}
@@ -74,7 +74,7 @@ func (e *infinityEngine) tableExists(ctx context.Context, tableName string) (boo
 	return e.tableExistsWithDB(db, tableName)
 }
 
-func (e *infinityEngine) tableExistsWithDB(db *infinity.Database, tableName string) (bool, error) {
+func (e *Engine) tableExistsWithDB(db *infinity.Database, tableName string) (bool, error) {
 	if db == nil {
 		return false, fmt.Errorf("database is nil")
 	}
@@ -291,7 +291,7 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 }
 
 // columnExists checks if a column exists in the table
-func (e *infinityEngine) columnExists(table *infinity.Table, columnName string) (bool, error) {
+func (e *Engine) columnExists(table *infinity.Table, columnName string) (bool, error) {
 	colsResp, err := table.ShowColumns()
 	if err != nil {
 		return false, err
