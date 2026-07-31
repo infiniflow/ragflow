@@ -17,7 +17,7 @@
 """Shared structure-graph subgraph sampling.
 
 Both the per-document (``/datasets/<id>/documents/<doc>/structure/graph``) and
-the dataset-wide (``/datasets/<id>/artifacts_structure``) endpoints render
+the dataset-wide (``/datasets/<id>/artifacts/structure``) endpoints render
 per-template structure graphs. For large graphs we don't return every
 entity/relation — we fetch a representative subgraph from the raw
 ``knowledge_graph_kwd`` rows (which carry ``mention_count_int`` / ``name_kwd`` /
