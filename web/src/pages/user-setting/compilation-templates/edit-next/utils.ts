@@ -57,6 +57,8 @@ export const DefaultTemplateValues: TemplateSchemaType = {
     instruction: '',
     page_example: '',
     use_blueprint: false,
+    rechunk: false,
+    rechunk_rules: '',
   },
 };
 
@@ -77,6 +79,8 @@ export const isConfigMetaKey = (key: string) =>
     'page_example',
     'synthesis',
     'use_blueprint',
+    'rechunk',
+    'rechunk_rules',
   ].includes(key);
 
 export const createEmptyField = (keys: string[]) =>
@@ -128,6 +132,15 @@ export const buildConfigFromBuiltin = (
       : {}),
     use_blueprint:
       kind === CompilationTemplateKind.Artifacts && example.length > 0,
+    ...(kind !== CompilationTemplateKind.Tree
+      ? {
+          rechunk: builtinTemplate.config?.rechunk === true,
+          rechunk_rules:
+            typeof builtinTemplate.config?.rechunk_rules === 'string'
+              ? builtinTemplate.config.rechunk_rules
+              : '',
+        }
+      : {}),
   };
 
   if (kind === CompilationTemplateKind.Artifacts && example.length > 0) {
@@ -179,6 +192,15 @@ export const transformDetailToForm = (
       : {}),
     use_blueprint:
       detail.kind === CompilationTemplateKind.Artifacts && example.length > 0,
+    ...(detail.kind !== CompilationTemplateKind.Tree
+      ? {
+          rechunk: config.rechunk === true,
+          rechunk_rules:
+            typeof config.rechunk_rules === 'string'
+              ? config.rechunk_rules
+              : '',
+        }
+      : {}),
   };
 
   if (detail.kind === CompilationTemplateKind.Artifacts && example.length > 0) {
@@ -254,7 +276,8 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
       return;
     }
     if (isConfigMetaKey(key)) {
-      if (typeof value === 'string') config[key] = value;
+      if (typeof value === 'string' || typeof value === 'boolean')
+        config[key] = value;
     } else {
       config[key] = value as ICompilationTemplateConfigRequest[string];
     }

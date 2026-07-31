@@ -378,8 +378,6 @@ from rag.advanced_rag.knowlege_compile.runner import (  # noqa: E402
     load_active_templates,
     run_structure_compile_over_batches,
 )
-
-
 # ----- parser_config helpers -----------------------------------------
 
 
