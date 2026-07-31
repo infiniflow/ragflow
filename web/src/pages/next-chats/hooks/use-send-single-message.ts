@@ -60,7 +60,8 @@ export function useSendSingleMessage({
       messages,
       enableInternet,
       enableThinking,
-      omit_session_id,
+      storeHistoryMessages,
+      omitSessionId,
       ...params
     }: {
       message: IMessage;
@@ -72,7 +73,7 @@ export function useSendSingleMessage({
         api.completionUrl,
         {
           chat_id: chatId,
-          ...(omit_session_id ? {} : { session_id: sessionId }),
+          ...(omitSessionId ? {} : { session_id: sessionId }),
           messages: [
             ...(Array.isArray(messages) && messages?.length > 0
               ? messages
@@ -82,6 +83,9 @@ export function useSendSingleMessage({
           reasoning: Number(enableThinking),
           internet: enableInternet,
           ...params,
+          ...(storeHistoryMessages === undefined
+            ? {}
+            : { store_history_messages: storeHistoryMessages }),
           pass_all_history_messages: true,
         },
         controller,

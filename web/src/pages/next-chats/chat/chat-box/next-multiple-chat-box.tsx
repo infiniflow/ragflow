@@ -138,7 +138,7 @@ const ChatCard = forwardRef(function ChatCard(
   // resend with the card's model settings (llm_id, temperature, ...).
   const sendCardMessage = useCallback(
     ({ message, messages }: { message: IMessage; messages?: IMessage[] }) =>
-      sendMessage({ message, messages, ...form.getValues(), store_history_messages: false, omit_session_id: true }),
+      sendMessage({ message, messages, ...form.getValues(), storeHistoryMessages: false, omitSessionId: true }),
     [sendMessage, form],
   );
 
@@ -181,7 +181,7 @@ const ChatCard = forwardRef(function ChatCard(
   useImperativeHandle(
     ref,
     (): HandlePressEnterType => (params) =>
-      handlePressEnter({ ...params, ...form.getValues(), store_history_messages: false, omit_session_id: true }),
+      handlePressEnter({ ...params, ...form.getValues(), storeHistoryMessages: false, omitSessionId: true }),
   );
 
   useEffect(() => {
