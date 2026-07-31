@@ -277,6 +277,8 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 // buildChannel constructs the platform-specific channel implementation for one chat_channel row.
 func buildChannel(accountID string, wanted desiredChannel) (core.Channel, error) {
 	switch wanted.channel {
+	case "discord":
+		return newDiscordChannelFromConfig(accountID, wanted.credential)
 	case "whatsapp":
 		return newWhatsAppChannelFromConfig(accountID, wanted.credential)
 	case "dingtalk":
