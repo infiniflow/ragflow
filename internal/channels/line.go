@@ -484,7 +484,13 @@ func (s *lineWebhookServer) start() error {
 		return err
 	}
 	s.listener = listener
-	s.server = &http.Server{Handler: mux}
+	s.server = &http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 	go func() {
 		if err := s.server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("[line] webhook server exited: %v", err)
