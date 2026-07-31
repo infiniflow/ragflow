@@ -459,7 +459,10 @@ def list_datasets(tenant_id: str, args: dict):
         user_dict = user_map.get(kb["tenant_id"], {})
         kb.update({"nickname": user_dict.get("nickname", ""), "tenant_avatar": user_dict.get("avatar", "")})
         if status_by_kb:
-            kb["parsing_status"] = status_by_kb.get(kb["id"], {})
+            # The documented contract (HTTP API + Python SDK references) places the
+            # counts at the top level of each dataset record, not under a nested
+            # "parsing_status" object.
+            kb.update(status_by_kb.get(kb["id"], {}))
         response_data_list.append(remap_dictionary_keys(kb))
     return True, {"data": response_data_list, "total": total}
 
