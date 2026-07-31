@@ -1214,7 +1214,9 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
         for sec, pos in sections:
             split_sec = re.split(r"(%s)" % custom_pattern, sec, flags=re.DOTALL) if custom_pattern else [sec]
             for sub_sec in split_sec:
-                if custom_pattern and re.fullmatch(custom_pattern, sub_sec or ""):
+                if not sub_sec:
+                    continue
+                if custom_pattern and re.fullmatch(custom_pattern, sub_sec):
                     continue
                 text = "\n" + sub_sec
                 local_pos = pos
@@ -1296,7 +1298,9 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
             text_pos = text[1] if isinstance(text, tuple) and len(text) > 1 else ""
             split_sec = re.split(r"(%s)" % custom_pattern, text_str) if custom_pattern else [text_str]
             for sub_sec in split_sec:
-                if custom_pattern and re.fullmatch(custom_pattern, sub_sec or ""):
+                if not sub_sec:
+                    continue
+                if custom_pattern and re.fullmatch(custom_pattern, sub_sec):
                     continue
                 text_seg = "\n" + sub_sec
                 local_pos = text_pos
@@ -1468,8 +1472,9 @@ def _build_cks(sections, delimiter):
                     seg = ""
                     continue
 
-                # ② matched delimiter (allow surrounding whitespace)
-                if re.fullmatch(split_pattern, sub_sec.strip()):
+                # ② matched delimiter (exact capture; do not strip — wrapped
+                # whitespace delimiters such as `` ` , ` `` must still match)
+                if re.fullmatch(split_pattern, sub_sec):
                     if seg and seg.strip():
                         s = seg.strip()
                         cks.append(

@@ -48,7 +48,8 @@ from pathlib import Path
 
 import pytest
 
-# pdf_parser stub is installed by test/unit_test/rag/conftest.py
+pytestmark = pytest.mark.usefixtures("pdf_parser_stub")
+
 from rag import nlp
 from rag.nlp import get_delimiters, naive_merge
 

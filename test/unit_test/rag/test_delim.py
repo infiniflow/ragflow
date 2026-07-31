@@ -49,7 +49,8 @@ from pathlib import Path
 
 import pytest
 
-# pdf_parser stub is installed by test/unit_test/rag/conftest.py
+pytestmark = pytest.mark.usefixtures("pdf_parser_stub")
+
 from rag.nlp import get_delimiters
 from rag.nlp.delim import (
     compile_delimiter_pattern,
@@ -428,6 +429,20 @@ def test_naive_merge_wrapped_single_char_bypasses_chunk_token_num():
     )
     stripped = [c.strip() for c in chunks if c.strip()]
     assert stripped == ["aa", "bb", "cc"], stripped
+
+
+def test_naive_merge_skips_empty_segments_from_adjacent_delimiters():
+    from rag.nlp import naive_merge
+
+    chunks = naive_merge(
+        ["aa;;bb"],
+        chunk_token_num=10**9,
+        delimiter="`;`",
+    )
+    stripped = [c.strip() for c in chunks if c.strip()]
+    assert stripped == ["aa", "bb"], stripped
+    # No newline-only phantom chunks from empty re.split pieces.
+    assert all(c.strip() for c in chunks if c), chunks
 
 
 # --------------------------------------------------------------------------- #

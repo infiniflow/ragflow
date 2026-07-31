@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import logging
 import re
 
 from deepdoc.parser.utils import get_text
@@ -51,7 +52,13 @@ class RAGFlowTxtParser:
                 tk_nums[-1] += tnum
 
         txt = normalize_text_newlines(txt)
-        dels = compile_delimiter_pattern(parse_delimiter_field(delimiter))
+        parsed_dels = parse_delimiter_field(delimiter)
+        dels = compile_delimiter_pattern(parsed_dels)
+        logging.debug(
+            "RAGFlowTxtParser.parser_txt: delimiter_count=%d, splitting=%s",
+            len(parsed_dels),
+            bool(dels),
+        )
         secs = re.split(r"(%s)" % dels, txt) if dels else [txt]
         for sec in secs:
             if dels and re.match(f"^{dels}$", sec):
