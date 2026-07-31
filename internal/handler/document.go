@@ -1347,7 +1347,7 @@ func (h *DocumentHandler) Ingest(c *gin.Context) {
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No Authentication")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authentication")
 		return
 	}
 
