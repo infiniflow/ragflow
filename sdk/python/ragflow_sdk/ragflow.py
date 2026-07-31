@@ -95,7 +95,9 @@ class RAGFlow:
             return _list[0]
         raise Exception("Dataset %s not found" % name)
 
-    def list_datasets(self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True, id: str | None = None, name: str | None = None) -> list[DataSet]:
+    def list_datasets(
+        self, page: int = 1, page_size: int = 30, orderby: str = "create_time", desc: bool = True, id: str | None = None, ids: list[str] | None = None, name: str | None = None
+    ) -> list[DataSet]:
         res = self.get(
             "/datasets",
             {
@@ -104,6 +106,7 @@ class RAGFlow:
                 "orderby": orderby,
                 "desc": desc,
                 "id": id,
+                "ids": ids,
                 "name": name,
             },
         )

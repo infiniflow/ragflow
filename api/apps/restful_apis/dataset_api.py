@@ -322,6 +322,14 @@ def list_datasets(tenant_id):
         required: false
         description: Dataset ID to filter.
       - in: query
+        name: ids
+        type: array
+        required: false
+        items:
+          type: string
+        collectionFormat: multi
+        description: Dataset IDs to filter.
+      - in: query
         name: name
         type: string
         required: false
