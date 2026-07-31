@@ -3135,6 +3135,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       bulgarian: '保加利亚语',
       arabic: '阿拉伯语',
       turkish: '土耳其语',
+      dutch: '荷兰语',
     },
     pagination: {
       total: '总共 {{total}} 条',
