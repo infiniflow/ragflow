@@ -219,6 +219,54 @@ def _pipeline_compilation_template_ids(pipeline_id: str, tenant_id: str) -> list
     return template_ids
 
 
+def _wiki_eligible_docs(all_docs, tenant_id: str, skip_doc_ids=None) -> list[tuple[dict, str]]:
+    """Docs eligible for wiki compilation, each paired with its wiki template id.
+
+    A doc is eligible when its ``parser_config`` OR its ingestion pipeline
+    resolves to at least one artifacts-kind ("wiki") compilation template — the
+    pipeline path is essential for docs uploaded/parsed through a pipeline, which
+    carry their compilation templates on the pipeline's compiler rather than in
+    ``parser_config``. Returns ``(doc, template_id)`` for the first wiki template
+    matched per doc. Shared by :func:`run_wiki` and :func:`run_wiki_incremental`
+    so their eligibility can't drift.
+    """
+    from api.db.services.compilation_template_service import CompilationTemplateService
+    from api.apps.restful_apis.chunk_api import _compilation_template_kind
+
+    skip_doc_ids = skip_doc_ids or set()
+    eligible: list[tuple[dict, str]] = []
+    pipeline_template_ids_cache: dict[str, list[str]] = {}
+    for d in all_docs or []:
+        if str(d.get("id")) in skip_doc_ids:
+            continue
+        pc = d.get("parser_config") or {}
+        template_ids: list[str] = []
+        seen_template_ids: set[str] = set()
+        for template_id in _parser_config_compilation_template_ids(pc, tenant_id):
+            if template_id in seen_template_ids:
+                continue
+            seen_template_ids.add(template_id)
+            template_ids.append(template_id)
+        pipeline_id = (d.get("pipeline_id") or "").strip()
+        if pipeline_id:
+            if pipeline_id not in pipeline_template_ids_cache:
+                pipeline_template_ids_cache[pipeline_id] = _pipeline_compilation_template_ids(pipeline_id, tenant_id)
+            for template_id in pipeline_template_ids_cache[pipeline_id]:
+                if template_id in seen_template_ids:
+                    continue
+                seen_template_ids.add(template_id)
+                template_ids.append(template_id)
+
+        for template_id in template_ids:
+            template = CompilationTemplateService.get_saved(template_id, tenant_id)
+            config = template.get("config") if template else {}
+            kind = _compilation_template_kind(config.get("kind") if isinstance(config, dict) else "")
+            if kind == "wiki":
+                eligible.append((d, template_id))
+                break
+    return eligible
+
+
 async def _wiki_existing_map_doc_ids(tenant_id: str, kb_id: str) -> set[str]:
     from common.doc_store.doc_store_base import OrderByExpr
 
@@ -960,7 +1008,6 @@ async def run_wiki(
         get_tenant_default_model_by_type,
         resolve_model_config,
     )
-    from api.apps.restful_apis.chunk_api import _compilation_template_kind
 
     progress = ctx.progress_cb
     progress(0.0, "Loading documents for wiki compilation...")
@@ -1003,34 +1050,7 @@ async def run_wiki(
             deleted_doc_ids,
         )
 
-    eligible = []
-    pipeline_template_ids_cache: dict[str, list[str]] = {}
-    for d in all_docs or []:
-        pc = d.get("parser_config") or {}
-        template_ids: list[str] = []
-        seen_template_ids: set[str] = set()
-        for template_id in _parser_config_compilation_template_ids(pc, ctx.tenant_id):
-            if template_id in seen_template_ids:
-                continue
-            seen_template_ids.add(template_id)
-            template_ids.append(template_id)
-        pipeline_id = (d.get("pipeline_id") or "").strip()
-        if pipeline_id:
-            if pipeline_id not in pipeline_template_ids_cache:
-                pipeline_template_ids_cache[pipeline_id] = _pipeline_compilation_template_ids(pipeline_id, ctx.tenant_id)
-            for template_id in pipeline_template_ids_cache[pipeline_id]:
-                if template_id in seen_template_ids:
-                    continue
-                seen_template_ids.add(template_id)
-                template_ids.append(template_id)
-
-        for template_id in template_ids:
-            template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
-            config = template.get("config") if template else {}
-            kind = _compilation_template_kind(config.get("kind") if isinstance(config, dict) else "")
-            if kind == "wiki":
-                eligible.append((d, template_id))
-                break
+    eligible = _wiki_eligible_docs(all_docs, ctx.tenant_id)
     if not eligible:
         progress(1.0, "No documents are configured for wiki compilation.")
         return
@@ -1335,7 +1355,6 @@ async def run_wiki_incremental(
         get_tenant_default_model_by_type,
         resolve_model_config,
     )
-    from api.apps.restful_apis.chunk_api import _compilation_template_kind
     from rag.advanced_rag.knowlege_compile.wiki_incremental import (
         wiki_compile_incremental,
     )
@@ -1382,18 +1401,7 @@ async def run_wiki_incremental(
         types=[],
         suffix=[],
     )
-    eligible = []
-    for d in all_docs or []:
-        if str(d.get("id")) in deleted_doc_ids:
-            continue
-        pc = d.get("parser_config") or {}
-        for template_id in _parser_config_compilation_template_ids(pc, ctx.tenant_id):
-            template = CompilationTemplateService.get_saved(template_id, ctx.tenant_id)
-            config = template.get("config") if template else {}
-            kind = _compilation_template_kind(config.get("kind") if isinstance(config, dict) else "")
-            if kind == "wiki":
-                eligible.append((d, template_id))
-                break
+    eligible = _wiki_eligible_docs(all_docs, ctx.tenant_id, skip_doc_ids=deleted_doc_ids)
 
     if not eligible and not is_incremental:
         progress(1.0, "No documents configured for wiki compilation.")

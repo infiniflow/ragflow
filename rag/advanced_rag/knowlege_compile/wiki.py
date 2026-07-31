@@ -3395,7 +3395,7 @@ async def _wiki_persist_draft(
         "input_hash_kwd": plan_input_hash,
         "content_with_weight": content_with_weight,
         "available_int": 0,  # non-searchable
-    }  ##
+    }
     try:
         try:
             await thread_pool_exec(
