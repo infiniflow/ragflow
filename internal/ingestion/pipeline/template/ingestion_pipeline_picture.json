@@ -50,7 +50,7 @@
                             }
                         },
                         "image": {
-                            "output_format": "text",
+                            "output_format": "json",
                             "parse_method": "ocr",
                             "preprocess": [
                                 "main_content"
@@ -149,7 +149,9 @@
                         "auto_keywords": 0,
                         "auto_questions": 0,
                         "llm_id": "",
-                        "auto_tags": 0
+                        "auto_tags": 0,
+                        "enable_metadata": 0,
+                        "metadata": []
                     }
                 }
             }
@@ -231,7 +233,7 @@
                             "setups": [
                                 {
                                     "fileFormat": "image",
-                                    "output_format": "text",
+                                    "output_format": "json",
                                     "parse_method": "ocr",
                                     "preprocess": [
                                         "main_content"

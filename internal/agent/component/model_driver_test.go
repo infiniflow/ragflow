@@ -12,6 +12,7 @@ import (
 )
 
 func TestNewChatModelDriverPreservesProviderChatSuffix(t *testing.T) {
+	setupAllowAnyHost(t, true)
 	if err := models.InitProviderManager("../../../conf/models"); err != nil {
 		t.Fatalf("InitProviderManager: %v", err)
 	}

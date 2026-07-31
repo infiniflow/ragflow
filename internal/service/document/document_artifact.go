@@ -1,6 +1,7 @@
 package document
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -13,10 +14,10 @@ import (
 )
 
 // GetDocumentImage retrieves an image object from storage.
-func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
+func (s *DocumentService) GetDocumentImage(ctx context.Context, imageID string) ([]byte, error) {
 	parts := strings.SplitN(imageID, "-", 2)
 	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return nil, fmt.Errorf("Image not found.")
+		return nil, fmt.Errorf("image not found")
 	}
 
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -36,7 +37,7 @@ func (s *DocumentService) GetDocumentImage(imageID string) ([]byte, error) {
 // gate runs BEFORE the storage read so a probe of an unknown
 // filename cannot distinguish "you cannot see it" from "it
 // exists" — both return ErrArtifactNotFound. Mirrors PR #16169.
-func (s *DocumentService) GetDocumentArtifact(filename, userID string) (*ArtifactResponse, error) {
+func (s *DocumentService) GetDocumentArtifact(ctx context.Context, filename, userID string) (*ArtifactResponse, error) {
 	basename := filepath.Base(filename)
 	if basename != filename || strings.Contains(filename, "/") || strings.Contains(filename, "\\") {
 		return nil, ErrArtifactInvalidFilename
@@ -48,7 +49,7 @@ func (s *DocumentService) GetDocumentArtifact(filename, userID string) (*Artifac
 		return nil, ErrArtifactInvalidFileType
 	}
 
-	if !s.sandboxArtifactAccessible(basename, userID) {
+	if !s.sandboxArtifactAccessible(ctx, basename, userID) {
 		// Same error as "object does not exist" to avoid leaking
 		// whether the artifact exists for a different user/agent.
 		return nil, ErrArtifactNotFound
@@ -91,7 +92,7 @@ func (s *DocumentService) GetDocumentArtifact(filename, userID string) (*Artifac
 // `LIKE '%...%'` which is fine here because the storage path is
 // short and indexed lookup on (user_id, exp_user_id) keeps the
 // scan narrow.
-func (s *DocumentService) sandboxArtifactDialogIDsForUser(filename, userID string) []string {
+func (s *DocumentService) sandboxArtifactDialogIDsForUser(ctx context.Context, filename, userID string) []string {
 	if filename == "" || userID == "" {
 		return nil
 	}
@@ -113,7 +114,7 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(filename, userID strin
 	filenamePattern := "%" + filenameSafe + "%"
 	artifactRefPattern := "%" + artifactRefSafe + "%"
 	dialogIDs := make(map[string]struct{})
-	rows, err := dao.DB.Model(&entity.API4Conversation{}).
+	rows, err := dao.DB.WithContext(ctx).Model(&entity.API4Conversation{}).
 		Select("dialog_id").
 		Where("user_id = ? OR exp_user_id = ?", userID, userID).
 		Where(`message LIKE ? ESCAPE '!' OR message LIKE ? ESCAPE '!'`,
@@ -126,7 +127,7 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(filename, userID strin
 	defer rows.Close()
 	for rows.Next() {
 		var d string
-		if err := rows.Scan(&d); err == nil && d != "" {
+		if err = rows.Scan(&d); err == nil && d != "" {
 			dialogIDs[d] = struct{}{}
 		}
 	}
@@ -144,7 +145,7 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(filename, userID strin
 // UserCanvasDAO.Accessible (owner or team permission, with the
 // latter scoped to the caller's tenant membership — PR review
 // round 5).
-func (s *DocumentService) sandboxArtifactAccessible(filename, userID string) bool {
+func (s *DocumentService) sandboxArtifactAccessible(ctx context.Context, filename, userID string) bool {
 	if userID == "" {
 		return false
 	}
@@ -154,12 +155,12 @@ func (s *DocumentService) sandboxArtifactAccessible(filename, userID string) boo
 	// (callers without tenant data) is safe — it effectively disables
 	// the team branch, so the only matches are canvases the caller
 	// directly owns.
-	tenantIDs, terr := dao.NewUserTenantDAO().GetTenantIDsByUserID(userID)
+	tenantIDs, terr := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
 	if terr != nil {
 		tenantIDs = nil
 	}
-	for _, dialogID := range s.sandboxArtifactDialogIDsForUser(filename, userID) {
-		if s.canvasDAO.Accessible(dialogID, userID, tenantIDs) {
+	for _, dialogID := range s.sandboxArtifactDialogIDsForUser(ctx, filename, userID) {
+		if s.canvasDAO.Accessible(ctx, dao.DB, dialogID, userID, tenantIDs) {
 			return true
 		}
 	}
@@ -192,13 +193,13 @@ func shouldForceArtifactAttachment(ext, contentType string) bool {
 	return ok
 }
 
-func (s *DocumentService) GetDocumentPreview(docID string) (*DocumentPreview, error) {
-	doc, err := s.documentDAO.GetByID(docID)
+func (s *DocumentService) GetDocumentPreview(ctx context.Context, docID string) (*DocumentPreview, error) {
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
 		return nil, err
 	}
 
-	bucket, name, err := s.GetDocumentStorageAddress(doc)
+	bucket, name, err := s.GetDocumentStorageAddress(ctx, doc)
 	if err != nil {
 		return nil, err
 	}

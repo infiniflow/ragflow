@@ -27,7 +27,7 @@ SYSTEM_DEPS="/opt/ragflow-native-libs"
 
 # office_oxide native library settings — static linking
 OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide"
-OFFICE_OXIDE_VERSION="0.1.2"
+OFFICE_OXIDE_VERSION="0.1.8"
 
 # pdfium native library settings — static linking (kognitos/pdfium-static)
 PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static"
@@ -152,16 +152,31 @@ check_office_oxide_deps() {
     local lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
     local header_path="${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h"
 
-    if [ -f "$lib_path" ] && [ -f "$header_path" ]; then
-        echo "✓ office_oxide native library found at ${OFFICE_OXIDE_PREFIX}"
-        return 0
+    if [ ! -f "$lib_path" ] || [ ! -f "$header_path" ]; then
+        echo -e "${RED}Error: office_oxide native library not found${NC}"
+        echo "  Expected: ${lib_path}"
+        echo "  Run: uv run python3 ragflow_deps/download_go_deps.py"
+        echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
+        exit 1
     fi
 
-    echo -e "${RED}Error: office_oxide native library not found${NC}"
-    echo "  Expected: ${lib_path}"
-    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
-    echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
-    exit 1
+    # Verify the on-disk lib matches the pinned version. A stale older lib
+    # (e.g. v0.1.7) silently reintroduces the PPT97 content-loss bug
+    # (github.com/yfedoseev/office_oxide#85, fixed in v0.1.8): PlainText()
+    # on a legacy .ppt returns stale metadata instead of slide text.
+    if ! strings "$lib_path" 2>/dev/null | grep -Fxq "$OFFICE_OXIDE_VERSION"; then
+        local found_version
+        found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
+        echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
+        echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
+        echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
+        echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/office_oxide-linux-x86_64.tar.gz"
+        echo "    uv run python3 ragflow_deps/download_go_deps.py"
+        exit 1
+    fi
+
+    echo "✓ office_oxide v${OFFICE_OXIDE_VERSION} native library found at ${OFFICE_OXIDE_PREFIX}"
+    return 0
 }
 
 # Check pdfium static library.
@@ -176,7 +191,7 @@ check_pdfium_deps() {
 
     echo "  pdfium (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
+    echo "  Run: uv run python3 ragflow_deps/download_go_deps.py"
     echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/pdfium-linux-x64-static.tgz | tar xz -C ${PDFIUM_STATIC_PREFIX}"
     return 1
 }
@@ -213,7 +228,7 @@ check_pdf_oxide_deps() {
 
     echo "  pdf_oxide (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
+    echo "  Run: uv run python3 ragflow_deps/download_go_deps.py"
     echo "  Or: curl -fsSL https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz | tar xz -C ${PDF_OXIDE_PREFIX}"
     return 1
 }
@@ -324,8 +339,23 @@ build_go() {
 setup_cgo_env() {
     # ── office_oxide ──────────────────────────────────────────────────
     check_office_oxide_deps
+
+    # Go's build cache keys CGO_LDFLAGS as a string — it does NOT hash the
+    # file content of referenced .a archives. So swapping the .a in-place
+    # (same path) does NOT invalidate the cache, and `go build` silently
+    # reuses a stale binary linked against the old .a.
+    #
+    # Create a version-stamped symlink directory so the flag string
+    # includes the actual linked version. When the .a is upgraded, the
+    # path changes → Go cache key changes → automatic relink.
+    local office_oxide_lib_dir="${OFFICE_OXIDE_PREFIX}/lib"
+    local versioned_lib_dir="${office_oxide_lib_dir}/v${OFFICE_OXIDE_VERSION}"
+    mkdir -p "$versioned_lib_dir"
+    ln -sf "${office_oxide_lib_dir}/liboffice_oxide.a" \
+        "${versioned_lib_dir}/liboffice_oxide.a"
+
     export CGO_CFLAGS="-I${OFFICE_OXIDE_PREFIX}/include/office_oxide_c${CGO_CFLAGS:+ $CGO_CFLAGS}"
-    export CGO_LDFLAGS="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+    export CGO_LDFLAGS="${versioned_lib_dir}/liboffice_oxide.a"
 
     # ── pdfium ────────────────────────────────────────────────────────
     check_pdfium_deps || return 1
@@ -402,6 +432,24 @@ run_go_tests() {
         go test -count=1 "$@"
 }
 
+# Run Go tests gated behind a build tag (or space-separated tag list), e.g.
+# `./build.sh --test-integration -run TestFoo ./internal/engine/...`.
+# See "Go Test Tiers" in AGENTS.md for the tier definitions.
+run_go_tests_tagged() {
+    local tags="$1"; shift
+    print_section "Running Go tests (tags: ${tags})"
+
+    cd "$PROJECT_ROOT"
+    setup_cgo_env
+
+    if [ "$#" -eq 0 ]; then
+        set -- ./...
+    fi
+    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} CGO_ENABLED=1 \
+        CGO_CFLAGS="$CGO_CFLAGS" CGO_LDFLAGS="$CGO_LDFLAGS" \
+        go test -tags "${tags}" -count=1 "$@"
+}
+
 # Clean build artifacts
 clean() {
     print_section "Cleaning build artifacts"
@@ -457,9 +505,18 @@ OPTIONS:
     --cpp, -c       Build only C++ static library
     --cpp-test      Build C++ test executable (requires --cpp first)
     --go, -g        Build only Go server (requires C++ library to be built)
-    --test, -t      Run Go unit tests (sets up CGO env for office_oxide).
-                    Any extra args are forwarded to `go test`, e.g.
+    --test, -t      Run Go unit tests (no build tag). Sets up the CGO env and
+                    native static libs (office_oxide/pdfium/pdf_oxide) needed to
+                    build (same contract as the Go tier table in AGENTS.md).
+                    Extra args are forwarded to `go test`, e.g.
                     `$0 --test -run TestFoo ./internal/admin/...`
+    --test-integration   Run Go tests tagged 'integration' (need real services,
+                    e.g. MySQL/MinIO/ES/Infinity/LLM). e.g.
+                    `$0 --test-integration ./internal/engine/...`
+    --test-e2e           Run Go tests tagged 'e2e' (full-pipeline, heavy).
+    --test-manual        Run Go tests tagged 'manual' (very slow; local opt-in
+                    ONLY, never run in CI).
+    --test-all           Run 'integration' + 'e2e' tests (excludes 'manual').
     --clean, -C     Clean all build artifacts
     --run, -r       Build and run the server
     --strip, -s     Strip debug symbols from Go binaries (-ldflags="-s -w")
@@ -471,8 +528,12 @@ EXAMPLES:
     $0 --cpp        # Build only C++ library
     $0 --go         # Build only Go server
     $0 --cpp-test   # Build C++ test executable
-    $0 --test       # Run all Go tests
+    $0 --test       # Run all Go tests (unit tier, no build tag)
     $0 --test -run TestFoo ./internal/admin/...      # Targeted Go tests
+    $0 --test-integration ./internal/engine/...      # integration tier
+    $0 --test-e2e                                 # e2e tier
+    $0 --test-manual                             # manual tier (very slow)
+    $0 --test-all                                # integration + e2e (no manual)
     $0 --run        # Build and run
     $0 --clean      # Clean build artifacts
 
@@ -480,7 +541,7 @@ DEPENDENCIES:
     - cmake >= 4.0
     - go >= 1.24
     - g++ with C++17/23 support
-    - office_oxide native library (download with: uv run python3 ragflow_deps/download_deps.py)
+    - office_oxide native library (download with: uv run python3 ragflow_deps/download_go_deps.py)
     - lld (Linux only): sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
     - pcre2 development files
         - Debian/Ubuntu: libpcre2-dev
@@ -519,6 +580,38 @@ main() {
                 run_go_tests "${args[@]:2}"
             else
                 run_go_tests "${args[@]:1}"
+            fi
+            ;;
+        --test-integration)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged integration "${args[@]:2}"
+            else
+                run_go_tests_tagged integration "${args[@]:1}"
+            fi
+            ;;
+        --test-e2e)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged e2e "${args[@]:2}"
+            else
+                run_go_tests_tagged e2e "${args[@]:1}"
+            fi
+            ;;
+        --test-manual)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged manual "${args[@]:2}"
+            else
+                run_go_tests_tagged manual "${args[@]:1}"
+            fi
+            ;;
+        --test-all)
+            check_go_deps
+            if [ "${args[1]:-}" = "--" ]; then
+                run_go_tests_tagged "integration e2e" "${args[@]:2}"
+            else
+                run_go_tests_tagged "integration e2e" "${args[@]:1}"
             fi
             ;;
         --clean|-C)

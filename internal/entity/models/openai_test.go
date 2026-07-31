@@ -68,6 +68,8 @@ func TestOpenAIConfigAdvertisedAudioModelsHaveSuffixes(t *testing.T) {
 }
 
 func TestOpenAITranscribeAudioPostsMultipartToAudioEndpoint(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -126,6 +128,7 @@ func TestOpenAITranscribeAudioPostsMultipartToAudioEndpoint(t *testing.T) {
 	apiKey := "test-key"
 	model := "whisper-1"
 	resp, err := newOpenAIForTest(srv.URL).TranscribeAudio(
+		ctx,
 		&model,
 		&audioPath,
 		&APIConfig{ApiKey: &apiKey},
@@ -144,6 +147,8 @@ func TestOpenAITranscribeAudioPostsMultipartToAudioEndpoint(t *testing.T) {
 }
 
 func TestOpenAITranscribeAudioWithSenderStreamsDeltas(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -189,6 +194,7 @@ func TestOpenAITranscribeAudioWithSenderStreamsDeltas(t *testing.T) {
 	model := "gpt-4o-mini-transcribe"
 	var chunks []string
 	err := newOpenAIForTest(srv.URL).TranscribeAudioWithSender(
+		ctx,
 		&model,
 		&audioPath,
 		&APIConfig{ApiKey: &apiKey},
@@ -210,6 +216,8 @@ func TestOpenAITranscribeAudioWithSenderStreamsDeltas(t *testing.T) {
 }
 
 func TestOpenAIAudioSpeechPostsJSONToAudioEndpoint(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -254,6 +262,7 @@ func TestOpenAIAudioSpeechPostsJSONToAudioEndpoint(t *testing.T) {
 	model := "tts-1"
 	input := "hello"
 	resp, err := newOpenAIForTest(srv.URL).AudioSpeech(
+		ctx,
 		&model,
 		&input,
 		&APIConfig{ApiKey: &apiKey},
@@ -275,11 +284,14 @@ func TestOpenAIAudioSpeechPostsJSONToAudioEndpoint(t *testing.T) {
 }
 
 func TestOpenAIAudioSpeechRequiresVoice(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
 	model := "tts-1"
 	input := "hello"
+	ctx := t.Context()
 
 	_, err := newOpenAIForTest("http://unused").AudioSpeech(
+		ctx,
 		&model,
 		&input,
 		&APIConfig{ApiKey: &apiKey},
@@ -292,11 +304,14 @@ func TestOpenAIAudioSpeechRequiresVoice(t *testing.T) {
 }
 
 func TestOpenAIAudioSpeechRejectsNonStringVoice(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	apiKey := "test-key"
 	model := "tts-1"
 	input := "hello"
 
 	_, err := newOpenAIForTest("http://unused").AudioSpeech(
+		ctx,
 		&model,
 		&input,
 		&APIConfig{ApiKey: &apiKey},
@@ -309,6 +324,7 @@ func TestOpenAIAudioSpeechRejectsNonStringVoice(t *testing.T) {
 }
 
 func TestOpenAIAudioSpeechWithSenderStreamsRawAudio(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -347,9 +363,11 @@ func TestOpenAIAudioSpeechWithSenderStreamsRawAudio(t *testing.T) {
 	apiKey := "test-key"
 	model := "tts-1"
 	input := "hello"
+	ctx := t.Context()
 
 	var chunks []string
 	err := newOpenAIForTest(srv.URL).AudioSpeechWithSender(
+		ctx,
 		&model,
 		&input,
 		&APIConfig{ApiKey: &apiKey},
@@ -371,6 +389,8 @@ func TestOpenAIAudioSpeechWithSenderStreamsRawAudio(t *testing.T) {
 }
 
 func TestOpenAIAudioSpeechWithSenderStreamsSSEAudioDeltas(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Accept"); got != "text/event-stream" {
 			t.Errorf("Accept=%q, want text/event-stream", got)
@@ -397,6 +417,7 @@ func TestOpenAIAudioSpeechWithSenderStreamsSSEAudioDeltas(t *testing.T) {
 	input := "hello"
 	var chunks []string
 	err := newOpenAIForTest(srv.URL).AudioSpeechWithSender(
+		ctx,
 		&model,
 		&input,
 		&APIConfig{ApiKey: &apiKey},

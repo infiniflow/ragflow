@@ -1,5 +1,8 @@
 import { DocumentParserType } from '@/constants/knowledge';
-import { useFetchKnowledgeList } from '@/hooks/use-knowledge-request';
+import {
+  useFetchDatasetsByIds,
+  useFetchKnowledgeList,
+} from '@/hooks/use-knowledge-request';
 import { IDataset } from '@/interfaces/database/dataset';
 import { useBuildQueryVariableOptions } from '@/pages/agent/hooks/use-get-begin-query';
 import { useDebounce } from 'ahooks';
@@ -28,18 +31,39 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
   const datasetId = useWatch({ name, control: form.control });
   const [searchString, setSearchString] = useState('');
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { list: datasetListOrigin, loading } = useFetchKnowledgeList(
-    true,
-    debouncedSearchString,
-  );
+  const {
+    list: datasetListOrigin,
+    loading,
+    handleScroll,
+    hasNextPage,
+  } = useFetchKnowledgeList(false, debouncedSearchString);
   const datasetCacheRef = useRef(new Map<string, IDataset>());
+
+  const selectedDatasetIds = useMemo(
+    () => (Array.isArray(datasetId) ? datasetId : []),
+    [datasetId],
+  );
+
+  // Selected dataset IDs that are neither in the currently loaded page nor
+  // already cached. These need to be fetched by ID so their names can be
+  // echoed back in the form field (the paginated list may not contain them).
+  const missingIds = useMemo(() => {
+    const loadedIds = new Set(datasetListOrigin.map((d) => d.id));
+    return selectedDatasetIds.filter(
+      (id) => !loadedIds.has(id) && !datasetCacheRef.current.has(id),
+    );
+  }, [datasetListOrigin, selectedDatasetIds]);
+
+  const { data: missingDatasets } = useFetchDatasetsByIds(missingIds);
 
   const datasetList = useMemo(() => {
     datasetListOrigin.forEach((dataset) => {
       datasetCacheRef.current.set(dataset.id, dataset);
     });
+    missingDatasets?.forEach((dataset) => {
+      datasetCacheRef.current.set(dataset.id, dataset);
+    });
 
-    const selectedDatasetIds = Array.isArray(datasetId) ? datasetId : [];
     const selectedDatasets = selectedDatasetIds
       .map((id) => datasetCacheRef.current.get(id))
       .filter(Boolean) as IDataset[];
@@ -52,7 +76,7 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
         ]),
       ).values(),
     );
-  }, [datasetId, datasetListOrigin]);
+  }, [datasetListOrigin, selectedDatasetIds, missingDatasets]);
 
   const selectedEmbedId = useMemo(() => {
     const data = datasetList?.find((item) => item.id === datasetId?.[0]);
@@ -60,29 +84,29 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
   }, [datasetId, datasetList]);
 
   const nextOptions = useMemo(() => {
-    const datasetListMap = datasetList
-      .filter((x) => x.chunk_method !== DocumentParserType.Tag)
-      .map((item: IDataset) => {
-        return {
-          label: item.name,
-          icon: () => (
-            <RAGFlowAvatar
-              className="size-4"
-              avatar={item.avatar}
-              name={item.name}
-            />
-          ),
-          suffix: (
-            <section className="flex gap-2">
-              <DatasetLabel text={item.nickname} />
-              <DatasetLabel text={item.embedding_model} />
-            </section>
-          ),
-          value: item.id,
-          disabled:
-            item.embedding_model !== selectedEmbedId && selectedEmbedId !== '',
-        };
-      });
+    const datasetListMap = datasetList.map((item: IDataset) => {
+      return {
+        label: item.name,
+        icon: () => (
+          <RAGFlowAvatar
+            className="size-4"
+            avatar={item.avatar}
+            name={item.name}
+          />
+        ),
+        suffix: (
+          <section className="flex gap-2">
+            <DatasetLabel text={item.nickname} />
+            <DatasetLabel text={item.embedding_model} />
+          </section>
+        ),
+        value: item.id,
+        disabled:
+          item.chunk_count <= 0 ||
+          item.chunk_method === DocumentParserType.Tag ||
+          (item.embedding_model !== selectedEmbedId && selectedEmbedId !== ''),
+      };
+    });
 
     return datasetListMap;
   }, [datasetList, selectedEmbedId]);
@@ -96,6 +120,8 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
     handleSearchChange,
     loading,
     searchString,
+    handleScroll,
+    hasNextPage,
   };
 }
 
@@ -110,8 +136,14 @@ export function KnowledgeBaseFormField({
 }) {
   const { t } = useTranslation();
 
-  const { datasetOptions, handleSearchChange, loading, searchString } =
-    useDisableDifferenceEmbeddingDataset(name);
+  const {
+    datasetOptions,
+    handleSearchChange,
+    loading,
+    searchString,
+    handleScroll,
+    hasNextPage,
+  } = useDisableDifferenceEmbeddingDataset(name);
 
   const nextOptions = buildQueryVariableOptionsByShowVariable(showVariable)();
 
@@ -178,6 +210,7 @@ export function KnowledgeBaseFormField({
           onSearchChange={handleSearchChange}
           isSearching={loading}
           shouldFilter={false}
+          onListScroll={hasNextPage ? handleScroll : undefined}
           {...field}
         />
       )}

@@ -23,17 +23,19 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"hash"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"golang.org/x/crypto/pbkdf2"
 	"golang.org/x/crypto/scrypt"
@@ -102,20 +104,20 @@ type UserResponse struct {
 }
 
 // Register user registration
-func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.ErrorCode, error) {
+func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*entity.User, common.ErrorCode, error) {
 	cfg := server.GetConfig()
-	if !cfg.Authentication.RegisterEnabled {
-		return nil, common.CodeOperatingError, fmt.Errorf("User registration is disabled!")
+	if !cfg.RegisterEnabled() {
+		return nil, common.CodeOperatingError, fmt.Errorf("user registration is disabled")
 	}
 
 	emailRegex := regexp.MustCompile(`^[\w\._-]+@([\w_-]+\.)+[\w-]{2,}$`)
 	if !emailRegex.MatchString(req.Email) {
-		return nil, common.CodeOperatingError, fmt.Errorf("Invalid email address: %s!", req.Email)
+		return nil, common.CodeOperatingError, fmt.Errorf("invalid email address: %s", req.Email)
 	}
 
-	existUser, err := s.userDAO.GetByEmail(req.Email)
+	existUser, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Email)
 	if existUser != nil {
-		return nil, common.CodeOperatingError, fmt.Errorf("Email: %s has already registered!", req.Email)
+		return nil, common.CodeOperatingError, fmt.Errorf("email: %s has already registered", req.Email)
 	}
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, common.CodeServerError, fmt.Errorf("failed to check existing user: %w", err)
@@ -162,31 +164,31 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 
 	tenantName := req.Nickname + "'s Kingdom"
 
-	llmID := cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
+	llmID := cfg.GetDefaultChatModel().Name
 	if llmID == "" {
 		llmID = ""
 	}
-	embdID := cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name
+	embdID := cfg.GetDefaultEmbeddingModel().Name
 	if embdID == "" {
 		embdID = ""
 	}
-	asrID := cfg.UserDefaultLLM.DefaultModels.ASRModel.Name
+	asrID := cfg.GetDefaultASRModel().Name
 	if asrID == "" {
 		asrID = ""
 	}
-	img2txtID := cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name
+	img2txtID := cfg.GetDefaultVisionModel().Name
 	if img2txtID == "" {
 		img2txtID = ""
 	}
-	rerankID := cfg.UserDefaultLLM.DefaultModels.RerankModel.Name
+	rerankID := cfg.GetDefaultRerankModel().Name
 	if rerankID == "" {
 		rerankID = ""
 	}
-	ttsID := cfg.UserDefaultLLM.DefaultModels.TTSModel.Name
+	ttsID := cfg.GetDefaultTTSModel().Name
 	if ttsID == "" {
 		ttsID = ""
 	}
-	ocrID := cfg.UserDefaultLLM.DefaultModels.OCRModel.Name
+	ocrID := cfg.GetDefaultOCRModel().Name
 	if ocrID == "" {
 		ocrID = ""
 	}
@@ -226,32 +228,32 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 		Size:      0,
 	}
 
-	tenantLLMs, err := s.getInitTenantLLM(userID)
+	tenantLLMs, err := s.getInitTenantLLM(ctx, userID)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to initialize tenant llm: %w", err)
 	}
 
 	db := dao.GetDB()
-	if err := db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(user).Error; err != nil {
+	if err = db.Transaction(func(tx *gorm.DB) error {
+		if err = tx.Create(user).Error; err != nil {
 			return fmt.Errorf("failed to create user: %w", err)
 		}
 
-		if err := tx.Create(tenant).Error; err != nil {
+		if err = tx.Create(tenant).Error; err != nil {
 			return fmt.Errorf("failed to create tenant: %w", err)
 		}
 
-		if err := tx.Create(userTenant).Error; err != nil {
+		if err = tx.Create(userTenant).Error; err != nil {
 			return fmt.Errorf("failed to create user tenant relation: %w", err)
 		}
 
 		if len(tenantLLMs) > 0 {
-			if err := tx.Create(&tenantLLMs).Error; err != nil {
+			if err = tx.Create(&tenantLLMs).Error; err != nil {
 				return fmt.Errorf("failed to create tenant llm: %w", err)
 			}
 		}
 
-		if err := tx.Create(rootFile).Error; err != nil {
+		if err = tx.Create(rootFile).Error; err != nil {
 			return fmt.Errorf("failed to create root folder: %w", err)
 		}
 		return nil
@@ -262,28 +264,32 @@ func (s *UserService) Register(req *RegisterRequest) (*entity.User, common.Error
 }
 
 // getInitTenantLLM builds the tenant_llm rows created for a new user's default tenant.
-func (s *UserService) getInitTenantLLM(userID string) ([]*entity.TenantLLM, error) {
+func (s *UserService) getInitTenantLLM(ctx context.Context, userID string) ([]*entity.TenantLLM, error) {
 	cfg := server.GetConfig()
 	if cfg == nil {
 		return nil, fmt.Errorf("config not initialized")
 	}
 
-	modelConfigs := map[string]server.ModelConfig{
-		entity.ModelTypeChat.String():        cfg.UserDefaultLLM.DefaultModels.ChatModel,
-		entity.ModelTypeEmbedding.String():   cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
-		entity.ModelTypeSpeech2Text.String(): cfg.UserDefaultLLM.DefaultModels.ASRModel,
-		entity.ModelTypeImage2Text.String():  cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
-		entity.ModelTypeRerank.String():      cfg.UserDefaultLLM.DefaultModels.RerankModel,
+	modelConfigs := map[string]config.ModelConfig{
+		entity.ModelTypeChat.String():        cfg.GetDefaultChatModel(),
+		entity.ModelTypeEmbedding.String():   cfg.GetDefaultEmbeddingModel(),
+		entity.ModelTypeSpeech2Text.String(): cfg.GetDefaultASRModel(),
+		entity.ModelTypeImage2Text.String():  cfg.GetDefaultVisionModel(),
+		entity.ModelTypeRerank.String():      cfg.GetDefaultRerankModel(),
+		entity.ModelTypeTTS.String():         cfg.GetDefaultTTSModel(),
+		entity.ModelTypeOCR.String():         cfg.GetDefaultOCRModel(),
 	}
 
 	seenFactories := make(map[string]bool)
-	factoryConfigs := make([]server.ModelConfig, 0, len(modelConfigs))
-	for _, modelConfig := range []server.ModelConfig{
-		cfg.UserDefaultLLM.DefaultModels.ChatModel,
-		cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
-		cfg.UserDefaultLLM.DefaultModels.ASRModel,
-		cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
-		cfg.UserDefaultLLM.DefaultModels.RerankModel,
+	factoryConfigs := make([]config.ModelConfig, 0, len(modelConfigs))
+	for _, modelConfig := range []config.ModelConfig{
+		cfg.GetDefaultChatModel(),
+		cfg.GetDefaultEmbeddingModel(),
+		cfg.GetDefaultASRModel(),
+		cfg.GetDefaultVisionModel(),
+		cfg.GetDefaultRerankModel(),
+		cfg.GetDefaultTTSModel(),
+		cfg.GetDefaultOCRModel(),
 	} {
 		if modelConfig.Factory == "" || seenFactories[modelConfig.Factory] {
 			continue
@@ -295,7 +301,7 @@ func (s *UserService) getInitTenantLLM(userID string) ([]*entity.TenantLLM, erro
 	llmDAO := dao.NewLLMDAO()
 	tenantLLMs := make([]*entity.TenantLLM, 0)
 	for _, factoryConfig := range factoryConfigs {
-		llms, err := llmDAO.GetByFactory(factoryConfig.Factory)
+		llms, err := llmDAO.GetByFactory(ctx, dao.DB, factoryConfig.Factory)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get LLMs for factory %s: %w", factoryConfig.Factory, err)
 		}
@@ -350,9 +356,9 @@ func (s *UserService) getInitTenantLLM(userID string) ([]*entity.TenantLLM, erro
 }
 
 // Login user login
-func (s *UserService) Login(req *LoginRequest) (*entity.User, common.ErrorCode, error) {
+func (s *UserService) Login(ctx context.Context, req *LoginRequest) (*entity.User, common.ErrorCode, error) {
 	// Get user by email (using username field as email)
-	user, err := s.userDAO.GetByEmail(req.Username)
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Username)
 	if err != nil {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("invalid email or password")
 	}
@@ -377,7 +383,7 @@ func (s *UserService) Login(req *LoginRequest) (*entity.User, common.ErrorCode, 
 	user.AccessToken = &token
 	now := time.Now().Truncate(time.Second)
 	user.LastLoginTime = &now
-	if err := s.userDAO.Update(user); err != nil {
+	if err := s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}
 
@@ -389,10 +395,11 @@ func (s *UserService) Login(req *LoginRequest) (*entity.User, common.ErrorCode, 
 // - CodeAuthenticationError (109): Email not registered or password mismatch
 // - CodeServerError (500): Password decryption failure
 // - CodeForbidden (403): Account disabled
-func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*entity.User, common.ErrorCode, error) {
-	user, err := s.userDAO.GetByEmail(req.Email)
+func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) (*entity.User, common.ErrorCode, error) {
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Email)
 	if err != nil {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("email: %s is not registered!", req.Email)
+		common.Error("user not found by email", err)
+		return nil, common.CodeAuthenticationError, fmt.Errorf("email: %s is not registered", req.Email)
 	}
 
 	decryptedPassword, err := common.DecryptPassword(req.Password)
@@ -401,11 +408,11 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*entity.User, common
 	}
 
 	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("email and password do not match!")
+		return nil, common.CodeAuthenticationError, fmt.Errorf("email and password do not match")
 	}
 
 	if user.IsActive == "0" {
-		return nil, common.CodeForbidden, fmt.Errorf("This account has been disabled, please contact the administrator!")
+		return nil, common.CodeForbidden, fmt.Errorf("this account has been disabled, please contact the administrator")
 	}
 
 	// Generate new access token
@@ -414,7 +421,7 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*entity.User, common
 	now := time.Now().Truncate(time.Second)
 	user.LastLoginTime = &now
 
-	if err := s.userDAO.Update(user); err != nil {
+	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to update user: %w", err)
 	}
 
@@ -422,8 +429,8 @@ func (s *UserService) LoginByEmail(req *EmailLoginRequest) (*entity.User, common
 }
 
 // GetUserByID get user by ID
-func (s *UserService) GetUserByID(id uint) (*UserResponse, common.ErrorCode, error) {
-	user, err := s.userDAO.GetByID(id)
+func (s *UserService) GetUserByID(ctx context.Context, id uint) (*UserResponse, common.ErrorCode, error) {
+	user, err := s.userDAO.GetByID(ctx, dao.DB, id)
 	if err != nil {
 		return nil, common.CodeNotFound, err
 	}
@@ -586,7 +593,7 @@ func defaultUserLanguage() string {
 // GetUserByToken gets user by authorization header
 // The token parameter is the authorization header value, which needs to be decrypted
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
-func (s *UserService) GetUserByToken(authorization string) (*entity.User, common.ErrorCode, error) {
+func (s *UserService) GetUserByToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error) {
 	// Get secret key from config
 	secretKey, err := server.GetSecretKey(redis.Get())
 	if err != nil {
@@ -606,7 +613,7 @@ func (s *UserService) GetUserByToken(authorization string) (*entity.User, common
 	}
 
 	// Get user by access token
-	user, err := s.userDAO.GetByAccessToken(accessToken)
+	user, err := s.userDAO.GetByAccessToken(ctx, dao.DB, accessToken)
 	if err != nil {
 		return nil, common.CodeUnauthorized, err
 	}
@@ -615,16 +622,16 @@ func (s *UserService) GetUserByToken(authorization string) (*entity.User, common
 }
 
 // UpdateUserAccessToken updates user's access token
-func (s *UserService) UpdateUserAccessToken(user *entity.User, token string) error {
-	return s.userDAO.UpdateAccessToken(user, token)
+func (s *UserService) UpdateUserAccessToken(ctx context.Context, user *entity.User, token string) error {
+	return s.userDAO.UpdateAccessToken(ctx, dao.DB, user, token)
 }
 
 // Logout invalidates user's access token
-func (s *UserService) Logout(user *entity.User) (common.ErrorCode, error) {
+func (s *UserService) Logout(ctx context.Context, user *entity.User) (common.ErrorCode, error) {
 	// Invalidate token by setting it to an invalid value
 	// Similar to Python implementation: "INVALID_" + secrets.token_hex(16)
 	invalidToken := "INVALID_" + utility.GenerateToken()
-	err := s.UpdateUserAccessToken(user, invalidToken)
+	err := s.UpdateUserAccessToken(ctx, user, invalidToken)
 	if err != nil {
 		return common.CodeServerError, err
 	}
@@ -632,7 +639,7 @@ func (s *UserService) Logout(user *entity.User) (common.ErrorCode, error) {
 }
 
 // GetUserProfile returns user profile information
-func (s *UserService) GetUserProfile(user *entity.User) map[string]interface{} {
+func (s *UserService) GetUserProfile(ctx context.Context, user *entity.User) map[string]interface{} {
 	// Format create time and date (from database fields)
 	createTime := user.CreateTime
 	createDate := ""
@@ -737,7 +744,7 @@ func (s *UserService) GetUserProfile(user *entity.User) map[string]interface{} {
 }
 
 // UpdateUserSettings updates user settings
-func (s *UserService) UpdateUserSettings(user *entity.User, req *UpdateSettingsRequest) (common.ErrorCode, error) {
+func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User, req *UpdateSettingsRequest) (common.ErrorCode, error) {
 	// Update fields if provided
 	if req.Password != nil {
 		ciphertext, err := base64.StdEncoding.DecodeString(*req.Password)
@@ -754,20 +761,22 @@ func (s *UserService) UpdateUserSettings(user *entity.User, req *UpdateSettingsR
 			oldPassword = string(oldPasswordBytes)
 		}
 		if user.Password == nil || !s.VerifyPassword(*user.Password, oldPassword) {
-			return common.CodeAuthenticationError, fmt.Errorf("Password error!")
+			return common.CodeAuthenticationError, fmt.Errorf("password error")
 		}
 
 		if req.NewPassword != nil {
-			ciphertext, err := base64.StdEncoding.DecodeString(*req.NewPassword)
+			ciphertext, err = base64.StdEncoding.DecodeString(*req.NewPassword)
 			if err != nil {
 				return common.CodeExceptionError, fmt.Errorf("Error('Incorrect padding')")
 			}
-			newPasswordBytes, err := rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)
+			var newPasswordBytes []byte
+			newPasswordBytes, err = rsa.DecryptPKCS1v15(nil, privateKey, ciphertext)
 			if err != nil {
 				return common.CodeExceptionError, err
 			}
 
-			hashedPassword, err := common.GenerateWerkzeugPasswordHash(string(newPasswordBytes))
+			var hashedPassword string
+			hashedPassword, err = common.GenerateWerkzeugPasswordHash(string(newPasswordBytes))
 			if err != nil {
 				return common.CodeExceptionError, err
 			}
@@ -796,14 +805,14 @@ func (s *UserService) UpdateUserSettings(user *entity.User, req *UpdateSettingsR
 	}
 
 	// Save updated user
-	if err := s.userDAO.Update(user); err != nil {
+	if err := s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil
 }
 
 // ChangePassword changes user password
-func (s *UserService) ChangePassword(user *entity.User, req *ChangePasswordRequest) (common.ErrorCode, error) {
+func (s *UserService) ChangePassword(ctx context.Context, user *entity.User, req *ChangePasswordRequest) (common.ErrorCode, error) {
 	// If password is provided, verify current password
 	if req.Password != nil {
 		if user.Password == nil || !s.VerifyPassword(*user.Password, *req.Password) {
@@ -821,7 +830,7 @@ func (s *UserService) ChangePassword(user *entity.User, req *ChangePasswordReque
 	}
 
 	// Save updated user
-	if err := s.userDAO.Update(user); err != nil {
+	if err := s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil
@@ -836,26 +845,26 @@ type LoginChannel struct {
 
 // GetLoginChannels gets all supported authentication channels
 func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, error) {
-	cfg := server.GetConfig()
+	//cfg := server.GetConfig()
 	channels := make([]*LoginChannel, 0)
 
-	for channel, oauthCfg := range cfg.OAuth {
-		displayName := oauthCfg.DisplayName
-		if displayName == "" {
-			displayName = strings.Title(channel)
-		}
-
-		icon := oauthCfg.Icon
-		if icon == "" {
-			icon = "sso"
-		}
-
-		channels = append(channels, &LoginChannel{
-			Channel:     channel,
-			DisplayName: displayName,
-			Icon:        icon,
-		})
-	}
+	//for channel, oauthCfg := range cfg.OAuth {
+	//	displayName := oauthCfg.DisplayName
+	//	if displayName == "" {
+	//		displayName = strings.Title(channel)
+	//	}
+	//
+	//	icon := oauthCfg.Icon
+	//	if icon == "" {
+	//		icon = "sso"
+	//	}
+	//
+	//	channels = append(channels, &LoginChannel{
+	//		Channel:     channel,
+	//		DisplayName: displayName,
+	//		Icon:        icon,
+	//	})
+	//}
 
 	return channels, common.CodeSuccess, nil
 }
@@ -873,7 +882,7 @@ type SetTenantInfoRequest struct {
 }
 
 // SetTenantInfo updates tenant model configuration
-func (s *UserService) SetTenantInfo(userID string, req *SetTenantInfoRequest) (common.ErrorCode, error) {
+func (s *UserService) SetTenantInfo(ctx context.Context, userID string, req *SetTenantInfoRequest) (common.ErrorCode, error) {
 	_ = userID
 	tenantDAO := dao.NewTenantDAO()
 	updates := make(map[string]interface{})
@@ -891,10 +900,10 @@ func (s *UserService) SetTenantInfo(userID string, req *SetTenantInfoRequest) (c
 	}
 
 	tenantLLMService := NewTenantLLMService()
-	updates = tenantLLMService.EnsureTenantModelIDForParams(tenantID, updates)
+	updates = tenantLLMService.EnsureTenantModelIDForParams(ctx, tenantID, updates)
 
 	if len(updates) > 0 {
-		if err := tenantDAO.Update(tenantID, updates); err != nil {
+		if err := tenantDAO.Update(ctx, dao.DB, tenantID, updates); err != nil {
 			return common.CodeExceptionError, err
 		}
 	}
@@ -912,11 +921,6 @@ type UserTenantService struct {
 /**
  * Returns:
  *   - *UserTenantService: a new UserTenantService instance
- *
- * Example:
- *
- *	service := NewUserTenantService()
- *	relations, err := service.GetUserTenantRelationByUserID("user123")
  */
 func NewUserTenantService() *UserTenantService {
 	return &UserTenantService{
@@ -933,40 +937,9 @@ type UserTenantRelation struct {
 	Role     string `json:"role"`
 }
 
-// GetUserTenantRelationByUserID retrieves all user-tenant relationships for a given user ID
-/**
- * This method returns a list of user-tenant relationships with selected fields:
- * - id: the relationship ID
- * - user_id: the user ID
- * - tenant_id: the tenant ID
- * - role: the user's role in the tenant
- *
- * Parameters:
- *   - userID: the unique identifier of the user
- *
- * Returns:
- *   - []*UserTenantRelation: list of user-tenant relationships
- *   - error: error if the operation fails, nil otherwise
- *
- * Example:
- *
- *	service := NewUserTenantService()
- *	relations, err := service.GetUserTenantRelationByUserID("user123")
- *	if err != nil {
- *	    log.Printf("Failed to get user tenant relations: %v", err)
- *	    return
- *	}
- *	for _, rel := range relations {
- *	    fmt.Printf("User %s has role %s in tenant %s\n", rel.UserID, rel.Role, rel.TenantID)
- *	}
- */
-func (s *UserTenantService) GetUserTenantRelationByUserID(userID string) ([]*UserTenantRelation, error) {
-	return s.GetUserTenantRelationByUserIDWithContext(context.Background(), userID)
-}
-
 // GetUserTenantRelationByUserIDWithContext retrieves all user-tenant relationships for a given user ID with context.
 func (s *UserTenantService) GetUserTenantRelationByUserIDWithContext(ctx context.Context, userID string) ([]*UserTenantRelation, error) {
-	relations, err := s.userTenantDAO.GetByUserIDWithContext(ctx, userID)
+	relations, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -999,7 +972,7 @@ func convertToUserTenantRelation(userTenant *entity.UserTenant) *UserTenantRelat
 // GetUserByAPIToken gets user by access key from Authorization header
 // This is used for API token authentication
 // The authorization parameter should be in format: "Bearer <token>" or just "<token>"
-func (s *UserService) GetUserByAPIToken(authorization string) (*entity.User, common.ErrorCode, error) {
+func (s *UserService) GetUserByAPIToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error) {
 	if authorization == "" {
 		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
 	}
@@ -1018,13 +991,13 @@ func (s *UserService) GetUserByAPIToken(authorization string) (*entity.User, com
 
 	// Query API token from database
 	apiTokenDAO := dao.NewAPITokenDAO()
-	userToken, err := apiTokenDAO.GetUserByAPIToken(token)
+	userToken, err := apiTokenDAO.GetUserByAPIToken(ctx, dao.DB, token)
 	if err != nil {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token")
 	}
 
 	// Get user by tenant_id from API token
-	user, err := s.userDAO.GetByTenantID(userToken.TenantID)
+	user, err := s.userDAO.GetByTenantID(ctx, dao.DB, userToken.TenantID)
 	if err != nil {
 		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for this access token")
 	}
@@ -1043,7 +1016,7 @@ func (s *UserService) GetUserByAPIToken(authorization string) (*entity.User, com
 // to expose DialogID (the real agent_id) to downstream handlers
 // without re-parsing the Authorization header. Mirrors
 // `APIToken.query(beta=token)` from python bot_api.py:agent_bot_logs.
-func (s *UserService) GetAPITokenByBeta(authorization string) (*entity.APIToken, error) {
+func (s *UserService) GetAPITokenByBeta(ctx context.Context, authorization string) (*entity.APIToken, error) {
 	authorization = strings.TrimSpace(authorization)
 	if authorization == "" {
 		return nil, fmt.Errorf("authorization header is empty")
@@ -1064,7 +1037,7 @@ func (s *UserService) GetAPITokenByBeta(authorization string) (*entity.APIToken,
 		return nil, fmt.Errorf("invalid authorization format")
 	}
 	apiTokenDAO := dao.NewAPITokenDAO()
-	tokens, err := apiTokenDAO.GetByBeta(token)
+	tokens, err := apiTokenDAO.GetByBeta(ctx, dao.DB, token)
 	if err != nil {
 		return nil, err
 	}
@@ -1076,7 +1049,7 @@ func (s *UserService) GetAPITokenByBeta(authorization string) (*entity.APIToken,
 
 // GetUserByBetaAPIToken gets user by beta access key from Authorization
 // header. This mirrors Python's AUTH_BETA flow used by public bot endpoints.
-func (s *UserService) GetUserByBetaAPIToken(authorization string) (*entity.User, common.ErrorCode, error) {
+func (s *UserService) GetUserByBetaAPIToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error) {
 	authorization = strings.TrimSpace(authorization)
 	if authorization == "" {
 		return nil, common.CodeUnauthorized, fmt.Errorf("authorization header is empty")
@@ -1099,13 +1072,13 @@ func (s *UserService) GetUserByBetaAPIToken(authorization string) (*entity.User,
 	}
 
 	apiTokenDAO := dao.NewAPITokenDAO()
-	userTokens, err := apiTokenDAO.GetByBeta(token)
+	userTokens, err := apiTokenDAO.GetByBeta(ctx, dao.DB, token)
 	if err != nil || len(userTokens) == 0 {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid beta access token")
 	}
 	userToken := userTokens[0]
 
-	user, err := s.userDAO.GetByTenantID(userToken.TenantID)
+	user, err := s.userDAO.GetByTenantID(ctx, dao.DB, userToken.TenantID)
 	if err != nil {
 		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for this beta access token")
 	}
@@ -1128,11 +1101,11 @@ func (s *UserService) GetUserByBetaAPIToken(authorization string) (*entity.User,
 // code itself is never sent to the client outside the rendered image.
 //
 // Refuses unknown emails to avoid leaking the user list — matches Python.
-func (s *UserService) ForgotIssueCaptcha(email string) (captchaID, imageDataURL string, code common.ErrorCode, err error) {
+func (s *UserService) ForgotIssueCaptcha(ctx context.Context, email string) (captchaID, imageDataURL string, code common.ErrorCode, err error) {
 	if email == "" {
 		return "", "", common.CodeArgumentError, fmt.Errorf("email is required")
 	}
-	if _, err := s.userDAO.GetByEmail(email); err != nil {
+	if _, err = s.userDAO.GetByEmail(ctx, dao.DB, email); err != nil {
 		return "", "", common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
@@ -1153,11 +1126,11 @@ func (s *UserService) ForgotIssueCaptcha(email string) (captchaID, imageDataURL 
 // stored in Redis under the keys returned by utility.OTPRedisKeys.
 // Resend cooldown and per-email lockout behaviour otherwise match the
 // Python implementation byte-for-byte.
-func (s *UserService) ForgotSendOTP(email, captchaID, captcha string) (common.ErrorCode, error) {
+func (s *UserService) ForgotSendOTP(ctx context.Context, email, captchaID, captcha string) (common.ErrorCode, error) {
 	if email == "" || captchaID == "" || captcha == "" {
 		return common.CodeArgumentError, fmt.Errorf("email, captcha_id and captcha required")
 	}
-	if _, err := s.userDAO.GetByEmail(email); err != nil {
+	if _, err := s.userDAO.GetByEmail(ctx, dao.DB, email); err != nil {
 		return common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
@@ -1225,7 +1198,7 @@ func (s *UserService) ForgotSendOTP(email, captchaID, captcha string) (common.Er
 
 	ttlMin := int(utility.OTPTTL.Minutes())
 	cfg := server.GetConfig()
-	if err := utility.SendResetCodeEmail(cfg.SMTP, email, otp, ttlMin); err != nil {
+	if err = utility.SendResetCodeEmail(cfg.GetSMTPConfig(), email, otp, ttlMin); err != nil {
 		// Roll back: restore prior code/attempts/last-sent or remove the
 		// keys we just wrote so the next attempt isn't blocked by the
 		// resend cooldown a failed send just installed.
@@ -1249,14 +1222,14 @@ func (s *UserService) ForgotSendOTP(email, captchaID, captcha string) (common.Er
 	return common.CodeSuccess, nil
 }
 
-// ForgotVerifyOTP checks an OTP submitted by the user. On success it
+// ForgotVerifyOTP checks an OTP submitted by the user. On success, it
 // consumes the OTP/attempt counters and writes a short-lived "verified"
 // flag the reset endpoint will gate on.
-func (s *UserService) ForgotVerifyOTP(email, otp string) (common.ErrorCode, error) {
+func (s *UserService) ForgotVerifyOTP(ctx context.Context, email, otp string) (common.ErrorCode, error) {
 	if email == "" || otp == "" {
 		return common.CodeArgumentError, fmt.Errorf("email and otp are required")
 	}
-	if _, err := s.userDAO.GetByEmail(email); err != nil {
+	if _, err := s.userDAO.GetByEmail(ctx, dao.DB, email); err != nil {
 		return common.CodeDataError, fmt.Errorf("invalid email")
 	}
 
@@ -1325,7 +1298,7 @@ type ForgotResetPasswordRequest struct {
 // updates the password hash, and clears the verified flag. Returns the
 // user so the handler can auto-login (matching Python's
 // `construct_response(auth=user.get_id())`).
-func (s *UserService) ForgotResetPassword(req *ForgotResetPasswordRequest) (*entity.User, common.ErrorCode, error) {
+func (s *UserService) ForgotResetPassword(ctx context.Context, req *ForgotResetPasswordRequest) (*entity.User, common.ErrorCode, error) {
 	if req.Email == "" || req.NewPassword == "" || req.ConfirmNewPassword == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("email and passwords are required")
 	}
@@ -1348,7 +1321,7 @@ func (s *UserService) ForgotResetPassword(req *ForgotResetPasswordRequest) (*ent
 		return nil, common.CodeArgumentError, fmt.Errorf("passwords do not match")
 	}
 
-	user, err := s.userDAO.GetByEmail(req.Email)
+	user, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Email)
 	if err != nil {
 		return nil, common.CodeDataError, fmt.Errorf("invalid email")
 	}
@@ -1366,7 +1339,7 @@ func (s *UserService) ForgotResetPassword(req *ForgotResetPasswordRequest) (*ent
 	now := time.Now().Truncate(time.Second)
 	user.LastLoginTime = &now
 
-	if err := s.userDAO.Update(user); err != nil {
+	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to reset password: %w", err)
 	}
 

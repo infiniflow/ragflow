@@ -24,9 +24,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"ragflow/internal/common"
+	"ragflow/internal/engine/clickhouse"
+	"ragflow/internal/utility"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/mitchellh/mapstructure"
 )
 
 type BaseModel struct {
@@ -34,6 +39,102 @@ type BaseModel struct {
 	URLSuffix        URLSuffix
 	httpClient       *http.Client
 	AllowEmptyAPIKey bool
+}
+
+// chatResponseParts is the provider-normalized result of a non-streaming chat
+// completion. Provider response structs remain provider-specific; only the
+// common ChatResponse and model-usage handling is shared.
+type chatResponseParts struct {
+	RequestID     string
+	Content       *string
+	ReasonContent *string
+	ToolCalls     []map[string]any
+	Usage         *TokenUsage
+}
+
+// chatResponseExtractor parses one provider-specific response and maps it
+// into the common result used by RAGFlow's chat model abstraction.
+type chatResponseExtractor func([]byte, *ChatConfig) (chatResponseParts, error)
+
+// parseChatCompletionResponse applies the shared ChatResponse and
+// usage-accounting flow after the provider-specific response is parsed.
+func parseChatCompletionResponse(body []byte, chatConfig *ChatConfig, modelUsage *common.ModelUsage, extract chatResponseExtractor) (*ChatResponse, error) {
+	parts, err := extract(body, chatConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	recordResponseUsage(modelUsage, parts.RequestID, parts.Usage, "chat")
+
+	return &ChatResponse{
+		Answer:        parts.Content,
+		ReasonContent: parts.ReasonContent,
+		ToolCalls:     parts.ToolCalls,
+		Usage:         parts.Usage,
+	}, nil
+}
+
+// recordResponseUsage records the request ID and token usage returned by a
+// completed model response.
+func recordResponseUsage(modelUsage *common.ModelUsage, requestID string, usage *TokenUsage, modelType string) {
+	if modelUsage == nil {
+		return
+	}
+	if modelUsage.Type == "" {
+		modelUsage.Type = modelType
+	}
+	modelUsage.RequestID = requestID
+	if err := collectModelUsage(modelUsage, usage); err != nil {
+		common.Error("Failed to collect model usage", err)
+	}
+}
+
+// collectModelUsage records token usage and response time for one model call.
+// The caller owns setting RequestID because streaming providers can receive it
+// in a different event from usage.
+func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
+	if modelUsage == nil {
+		return nil
+	}
+	if usage != nil {
+		modelUsage.InputTokens = usage.PromptTokens
+		modelUsage.OutputTokens = usage.CompletionTokens
+		modelUsage.TotalTokens = usage.TotalTokens
+	}
+	modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
+	return clickhouse.GetDriver().CollectModelUsage(modelUsage)
+}
+
+// decodeOpenAICompatibleStreamUsage extracts aggregate token usage from one
+// OpenAI-compatible streaming event. A missing usage field is not an error.
+func decodeOpenAICompatibleStreamUsage(event map[string]any) (*TokenUsage, bool, error) {
+	rawUsage, ok := event["usage"].(map[string]any)
+	if !ok {
+		return nil, false, nil
+	}
+	usage := &TokenUsage{}
+	if err := mapstructure.Decode(rawUsage, usage); err != nil {
+		return nil, false, err
+	}
+	return usage, true, nil
+}
+
+// applyStreamUsage exposes streamed token usage to the caller and records it
+// for model-usage analytics when a usage event is received. Analytics failures
+// are logged but do not interrupt the stream.
+func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usage *TokenUsage) {
+	if usage == nil {
+		return
+	}
+	if chatConfig != nil {
+		chatConfig.UsageResult = usage
+	}
+	if modelUsage == nil {
+		return
+	}
+	if err := collectModelUsage(modelUsage, usage); err != nil {
+		common.Error("Failed to collect model usage", err)
+	}
 }
 
 func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
@@ -46,6 +147,86 @@ func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
 	}
 
 	return nil
+}
+
+func newJSONPostRequest(ctx context.Context, url string, apiConfig *APIConfig, reqBody map[string]any) (*http.Request, error) {
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+
+	return req, nil
+}
+
+// doRequest sends a JSON POST request and returns the response body.
+func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APIConfig, reqBody map[string]any, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := newJSONPostRequest(ctx, url, apiConfig, reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return body, nil
+}
+
+// mustMarshal marshals v to JSON, panicking on error.
+func mustMarshal(v any) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(fmt.Sprintf("failed to marshal: %v", err))
+	}
+	return b
+}
+
+// doStreamRequest sends a JSON POST request and calls handler with the response body.
+func (b *BaseModel) doStreamRequest(ctx context.Context, url string, apiConfig *APIConfig, reqBody map[string]any, timeout time.Duration, handler func(io.ReadCloser) error) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := newJSONPostRequest(ctx, url, apiConfig, reqBody)
+	if err != nil {
+		return err
+	}
+
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return handler(resp.Body)
 }
 
 // BearerAuth returns the Bearer token for Authorization header,
@@ -182,7 +363,17 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 }
 
 // NewDriverHTTPClient returns an *http.Client with the standard connection-pool
-func NewDriverHTTPClient() *http.Client {
+// settings and an SSRF guard wired into its Transport.
+//
+// allowPrivate selects the guard strictness:
+//   - false (cloud-hosted drivers): every request is validated with
+//     utility.AssertURLSafe — scheme + host must be present and every resolved
+//     IP must be globally routable (private/loopback/link-local/metadata are
+//     rejected). This is the default and closes the go/request-forgery sink.
+//   - true (local-inference drivers): requests are validated with
+//     utility.AssertURLSchemeSafe — only the scheme and a non-empty host are
+//     enforced, so self-hosted backends on private networks or loopback work.
+func NewDriverHTTPClient(allowPrivate bool) *http.Client {
 	var t *http.Transport
 	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
 		t = dt.Clone()
@@ -193,9 +384,43 @@ func NewDriverHTTPClient() *http.Client {
 	t.MaxIdleConnsPerHost = 10
 	t.IdleConnTimeout = 90 * time.Second
 	t.DisableCompression = false
-	t.ResponseHeaderTimeout = 60 * time.Second
+	t.ResponseHeaderTimeout = 2 * 60 * time.Second
 	t.TLSHandshakeTimeout = 30 * time.Second
-	return &http.Client{Transport: t}
+
+	var rt http.RoundTripper = t
+	if allowPrivate {
+		rt = &schemeSafeTransport{base: rt}
+	} else {
+		rt = &strictSSRFTransport{base: rt}
+	}
+	return &http.Client{Transport: rt}
+}
+
+// schemeSafeTransport wraps an http.RoundTripper so every outgoing request is
+// validated by the lenient SSRF guard (http/https scheme + non-empty host).
+// Private and loopback hosts are permitted. Used only by local-inference
+// drivers that may target a user's own network.
+type schemeSafeTransport struct{ base http.RoundTripper }
+
+func (t *schemeSafeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := utility.AssertURLSchemeSafe(req.URL.String()); err != nil {
+		return nil, err
+	}
+	return t.base.RoundTrip(req)
+}
+
+// strictSSRFTransport wraps an http.RoundTripper so every outgoing request is
+// validated by the strict SSRF guard (scheme + host + globally routable IP).
+// This is the default for cloud-hosted model drivers and closes the
+// go/request-forgery data flow: the user-controllable BaseURL cannot be made to
+// point at private hosts, loopback, link-local, or cloud metadata endpoints.
+type strictSSRFTransport struct{ base http.RoundTripper }
+
+func (t *strictSSRFTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if _, _, err := utility.AssertURLSafe(req.URL.String()); err != nil {
+		return nil, err
+	}
+	return t.base.RoundTrip(req)
 }
 
 // PostJSONRequest marshals body to JSON, creates a POST request to url
@@ -221,6 +446,54 @@ func ReadErrorBody(r io.Reader) string {
 	return string(b)
 }
 
+func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
+	reqBody := map[string]any{
+		"model":    modelName,
+		"messages": buildChatMessages(messages),
+		"stream":   stream,
+	}
+
+	if cfg != nil {
+		if cfg.MaxTokens != nil {
+			reqBody["max_tokens"] = *cfg.MaxTokens
+		}
+
+		if cfg.Temperature != nil {
+			reqBody["temperature"] = *cfg.Temperature
+		}
+
+		if cfg.DoSample != nil {
+			reqBody["do_sample"] = *cfg.DoSample
+		}
+
+		if cfg.TopP != nil {
+			reqBody["top_p"] = *cfg.TopP
+		}
+
+		if cfg.Stop != nil {
+			reqBody["stop"] = *cfg.Stop
+		}
+
+		if cfg.Tools != nil {
+			reqBody["tools"] = cfg.Tools
+			toolChoice := "auto"
+			if cfg.ToolChoice != nil {
+				toolChoice = *cfg.ToolChoice
+			}
+			reqBody["tool_choice"] = toolChoice
+		}
+	}
+
+	return reqBody
+}
+
+func validateStreamConfig(cfg *ChatConfig) error {
+	if cfg != nil && cfg.Stream != nil && !*cfg.Stream {
+		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
+	}
+	return nil
+}
+
 // buildChatMessages converts internal messages to chat API payload items.
 func buildChatMessages(messages []Message) []map[string]any {
 	apiMessages := make([]map[string]interface{}, len(messages))
@@ -238,6 +511,32 @@ func buildChatMessages(messages []Message) []map[string]any {
 		apiMessages[i] = apiMsg
 	}
 	return apiMessages
+}
+
+// applyChatToolConfig adds OpenAI-compatible tool configuration to a request.
+func applyChatToolConfig(reqBody map[string]interface{}, chatConfig *ChatConfig) {
+	if chatConfig == nil || chatConfig.Tools == nil {
+		return
+	}
+	reqBody["tools"] = chatConfig.Tools
+	if chatConfig.ToolChoice != nil {
+		reqBody["tool_choice"] = *chatConfig.ToolChoice
+	}
+}
+
+// extractToolCalls converts an OpenAI-compatible message's tool calls.
+func extractToolCalls(message map[string]interface{}) []map[string]interface{} {
+	rawToolCalls, ok := message["tool_calls"].([]interface{})
+	if !ok {
+		return nil
+	}
+	toolCalls := make([]map[string]interface{}, 0, len(rawToolCalls))
+	for _, rawToolCall := range rawToolCalls {
+		if toolCall, ok := rawToolCall.(map[string]interface{}); ok {
+			toolCalls = append(toolCalls, toolCall)
+		}
+	}
+	return toolCalls
 }
 
 // setSortedToolCallsResult stores accumulated tool calls in index order.

@@ -29,10 +29,11 @@ from openai import OpenAI
 from zai import ZhipuAiClient
 
 from common import settings
+from common.aimlapi_utils import attribution_headers
 from common.exceptions import ModelException
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
 from rag.llm.key_utils import _normalize_replicate_key
-from rag.utils.url_utils import ensure_v1
+from rag.utils.url_utils import append_api_path, ensure_v1
 import logging
 import base64
 
@@ -354,6 +355,16 @@ class FuturMixEmbed(OpenAIEmbed):
             base_url = "https://futurmix.ai/v1"
         super().__init__(key, model_name, base_url)
         logging.info("[FuturMix] Embedding initialized with model %s", model_name)
+
+
+class AIMLAPIEmbed(OpenAIEmbed):
+    _FACTORY_NAME = "aimlapi.com"
+
+    def __init__(self, key, model_name="text-embedding-3-small", base_url=""):
+        base_url = base_url or os.environ.get("AIMLAPI_API_URL", "https://api.aimlapi.com/v1")
+        super().__init__(key, model_name, base_url)
+        self.client = self.client.with_options(default_headers=attribution_headers())
+        logging.info("[aimlapi.com] Embedding initialized with model %s", model_name)
 
 
 class BaiChuanEmbed(OpenAIEmbed):
@@ -810,11 +821,11 @@ class GeminiEmbed(Base):
 class NvidiaEmbed(Base):
     _FACTORY_NAME = "NVIDIA"
 
-    def __init__(self, key, model_name, base_url="https://integrate.api.nvidia.com/v1/embeddings"):
+    def __init__(self, key, model_name, base_url="https://integrate.api.nvidia.com/v1"):
         if not base_url:
-            base_url = "https://integrate.api.nvidia.com/v1/embeddings"
+            base_url = "https://integrate.api.nvidia.com/v1"
         self.api_key = key
-        self.base_url = ensure_v1(base_url)
+        self.base_url = append_api_path(ensure_v1(base_url), "embeddings")
         self.headers = {
             "accept": "application/json",
             "Content-Type": "application/json",
@@ -867,6 +878,15 @@ class OpenAI_APIEmbed(OpenAIEmbed):
         base_url = ensure_v1(base_url)
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name.split("___")[0]
+
+
+class GreenPTEmbed(OpenAIEmbed):
+    """GreenPT OpenAI-compatible embedding adapter."""
+
+    _FACTORY_NAME = "GreenPT"
+
+    def __init__(self, key, model_name="green-embedding", base_url="https://api.greenpt.ai/v1"):
+        super().__init__(key, model_name=model_name, base_url=base_url or "https://api.greenpt.ai/v1")
 
 
 class CoHereEmbed(Base):
@@ -1323,3 +1343,42 @@ class NewAPIEmbed(OpenAIEmbed):
             raise ValueError("url cannot be None")
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.model_name = model_name.split("___")[0]
+
+
+class OpenRouterEmbed(Base):
+    _FACTORY_NAME = "OpenRouter"
+
+    def __init__(self, key, model_name, base_url="https://openrouter.ai/api/v1", **kwargs):
+        if not base_url:
+            base_url = "https://openrouter.ai/api/v1"
+        self.base_url = ensure_v1(base_url)
+        try:
+            payload = json.loads(key)
+        except (JSONDecodeError, TypeError):
+            api_key = key
+            provider_order = ""
+        else:
+            if isinstance(payload, dict):
+                api_key = payload.get("api_key", "")
+                provider_order = payload.get("provider_order", "")
+            else:
+                api_key = key
+                provider_order = ""
+        self.client = OpenAI(api_key=api_key, base_url=self.base_url)
+        self.model_name = model_name
+        self.provider_order = provider_order
+
+    def _call(self, batch):
+        extra_body = {"drop_params": True}
+        if self.provider_order:
+            order = [s.strip() for s in self.provider_order.split(",") if s.strip()]
+            extra_body["provider"] = {"order": order, "allow_fallbacks": False}
+        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", extra_body=extra_body)
+        return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
+
+    def encode(self, texts: list):
+        return self._batched_encode(texts, self._call, batch_size=16, truncate_to=8191)
+
+    def encode_queries(self, text):
+        vectors, token_count = self._batched_encode([text], self._call, batch_size=16, truncate_to=8191)
+        return vectors[0], token_count

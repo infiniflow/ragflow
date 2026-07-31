@@ -33,41 +33,40 @@ import (
 
 var (
 	globalEngine       DocEngine
-	engineType         EngineType
+	engineType         string
 	messageQueueEngine MessageQueue
 	once               sync.Once
 )
 
 // Init initializes document engine
-func Init(cfg *server.DocEngineConfig) error {
+func Init() error {
+
 	var initErr error
 	once.Do(func() {
-		tokenizer.RegisterEngineType(func() string {
-			return string(GetEngineType())
-		})
-
-		engineType = EngineType(cfg.Type)
+		globalConfig := server.GetConfig()
+		engineType = globalConfig.DocEngineType()
+		tokenizer.SetEngineType(engineType)
 		var err error
 		switch engineType {
-		case EngineElasticsearch:
-			globalEngine, err = elasticsearch.NewEngine(cfg.ES)
-		case EngineInfinity:
-			globalEngine, err = infinity.NewEngine(cfg.Infinity)
+		case "elasticsearch":
+			globalEngine, err = elasticsearch.NewEngine(globalConfig.GetElasticsearchConfig())
+		case "infinity":
+			globalEngine, err = infinity.NewEngine(globalConfig.GetInfinityConfig())
 		default:
-			err = fmt.Errorf("unsupported doc engine type: %s", cfg.Type)
+			err = fmt.Errorf("unsupported doc engine type: %s", engineType)
 		}
 
 		if err != nil {
 			initErr = fmt.Errorf("failed to create doc engine: %w", err)
 			return
 		}
-		common.Info("Doc engine initialized", zap.String("type", string(cfg.Type)))
+		common.Info("Doc engine initialized", zap.String("type", engineType))
 	})
 	return initErr
 }
 
 // GetEngineType returns the document engine type
-func GetEngineType() EngineType {
+func GetEngineType() string {
 	return engineType
 }
 
@@ -88,11 +87,20 @@ func GetMessageQueueEngine() MessageQueue {
 	return messageQueueEngine
 }
 
-func InitMessageQueueEngine(messageQueueType string) error {
-	config := server.GetConfig()
+// SetMessageQueueEngine installs the global message-queue engine. It exists
+// primarily as a test seam so callers can drive Start() without a real server
+// config; production code uses InitMessageQueueEngine.
+func SetMessageQueueEngine(mq MessageQueue) {
+	messageQueueEngine = mq
+}
+
+func InitMessageQueueEngine() error {
+	globalConfig := server.GetConfig()
+	messageQueueType := globalConfig.QueueEngineType()
 	switch messageQueueType {
 	case "nats":
-		messageQueueEngine = nats.NewNatsEngine(config.Nats.Host, config.Nats.Port)
+		natsConfig := globalConfig.GetNATSConfig()
+		messageQueueEngine = nats.NewNatsEngine(natsConfig.Host, natsConfig.Port)
 		err := messageQueueEngine.Init()
 		if err != nil {
 			return err

@@ -49,18 +49,25 @@ var registry = map[string]Factory{
 	"keenable":              buildKeenableTool,
 	"pubmed":                buildPubMedTool,
 	"qweather":              noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
+	"querit":                buildQueritTool,
+	"querit_search":         buildQueritTool,
+	"queritsearch":          buildQueritTool,
 	"retrieval":             buildRetrievalTool,
 	"search_my_dataset":     buildRetrievalTool,
 	"search_my_dateset":     buildRetrievalTool,
 	"searxng":               buildSearXNGTool,
 	"tavily":                buildTavilyTool,
-	"tavily_extract":        buildTavilyExtractTool,
-	"tushare":               noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
-	"wencai":                buildWencaiTool,
-	"web_crawler":           noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
-	"wikipedia":             buildWikipediaTool,
-	"wikipedia_search":      buildWikipediaTool,
-	"yahoo_finance":         buildYahooFinanceTool,
+	// Agent DSL tool lists carry the Python Canvas component_name verbatim.
+	// BuildByName lower-cases names, so register those component names too.
+	"tavilysearch":     buildTavilyTool,
+	"tavily_extract":   buildTavilyExtractTool,
+	"tavilyextract":    buildTavilyExtractTool,
+	"tushare":          noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
+	"wencai":           buildWencaiTool,
+	"web_crawler":      noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
+	"wikipedia":        buildWikipediaTool,
+	"wikipedia_search": buildWikipediaTool,
+	"yahoo_finance":    buildYahooFinanceTool,
 }
 
 func noConfig(name string, fn func() einotool.BaseTool) Factory {
@@ -399,6 +406,13 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		}
 		defaults.KeywordsSimilarityWeight = &v
 	}
+	if value, ok := params["empty_response"]; ok {
+		emptyResponse, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires string node-level param empty_response")
+		}
+		defaults.EmptyResponse = emptyResponse
+	}
 	return NewRetrievalToolWithDefaults(defaults), nil
 }
 
@@ -520,6 +534,61 @@ func buildTavilyTool(params map[string]any) (einotool.BaseTool, error) {
 		}
 	}
 	return newTavilyTool(nil, nil, defaults), nil
+}
+
+func buildQueritTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := queritParams{}
+	stringFields := map[string]*string{
+		"api_key":    &defaults.APIKey,
+		"query":      &defaults.Query,
+		"time_range": &defaults.TimeRange,
+	}
+	for key, destination := range stringFields {
+		value, exists := params[key]
+		if !exists {
+			continue
+		}
+		text, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param %s", "querit_search", key)
+		}
+		*destination = text
+	}
+	if value, exists := params["count"]; exists {
+		count, valid := strictInt(value)
+		if !valid || count < 1 {
+			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param count of at least 1", "querit_search")
+		}
+		defaults.Count = count
+	}
+	if value, exists := params["chunks_per_doc"]; exists {
+		chunksPerDoc, valid := strictInt(value)
+		if !valid || chunksPerDoc < 1 || chunksPerDoc > 3 {
+			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param chunks_per_doc within [1, 3]", "querit_search")
+		}
+		defaults.ChunksPerDoc = queritInt(chunksPerDoc)
+	}
+	listFields := map[string]*[]string{
+		"site_include":     &defaults.SiteInclude,
+		"site_exclude":     &defaults.SiteExclude,
+		"country_include":  &defaults.CountryInclude,
+		"language_include": &defaults.LanguageInclude,
+	}
+	for key, destination := range listFields {
+		value, exists := params[key]
+		if !exists {
+			continue
+		}
+		items, valid := queritStringSlice(value)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string array node-level param %s", "querit_search", key)
+		}
+		*destination = items
+	}
+	if !isValidQueritTimeRange(strings.TrimSpace(defaults.TimeRange)) {
+		return nil, fmt.Errorf("agent tool: tool %q has invalid node-level param time_range", "querit_search")
+	}
+	return newQueritTool(nil, nil, defaults, nil), nil
 }
 
 func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {

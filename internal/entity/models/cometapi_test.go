@@ -77,6 +77,8 @@ func TestCometAPIFactoryRoute(t *testing.T) {
 }
 
 func TestCometAPIChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newCometAPIServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "gpt-5" {
 			t.Errorf("expected model=gpt-5, got %v", body["model"])
@@ -99,7 +101,7 @@ func TestCometAPIChatHappyPath(t *testing.T) {
 
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := m.ChatWithMessages("gpt-5", []Message{
+	resp, err := m.ChatWithMessages(ctx, "gpt-5", []Message{
 		{Role: "user", Content: "ping"},
 	}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
@@ -114,6 +116,8 @@ func TestCometAPIChatHappyPath(t *testing.T) {
 }
 
 func TestCometAPIChatPropagatesConfig(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newCometAPIServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["max_tokens"] != float64(64) {
 			t.Errorf("max_tokens=%v want 64", body["max_tokens"])
@@ -140,7 +144,7 @@ func TestCometAPIChatPropagatesConfig(t *testing.T) {
 	temp := 0.3
 	topP := 0.9
 	stop := []string{"END"}
-	_, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "ping"}},
+	_, err := m.ChatWithMessages(ctx, "gpt-5", []Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
 		nil)
@@ -150,6 +154,8 @@ func TestCometAPIChatPropagatesConfig(t *testing.T) {
 }
 
 func TestCometAPIChatReturnsReasoningContent(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newCometAPIServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{
@@ -161,7 +167,7 @@ func TestCometAPIChatReturnsReasoningContent(t *testing.T) {
 
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	resp, err := m.ChatWithMessages(ctx, "gpt-5", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -171,41 +177,49 @@ func TestCometAPIChatReturnsReasoningContent(t *testing.T) {
 }
 
 func TestCometAPIChatRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newCometAPIForTest("http://unused")
-	_, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
+	_, err := m.ChatWithMessages(ctx, "gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
 	emptyKey := ""
-	_, err = m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
+	_, err = m.ChatWithMessages(ctx, "gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &emptyKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("empty key: expected api-key error, got %v", err)
 	}
 }
 
 func TestCometAPIChatRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newCometAPIForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.ChatWithMessages("", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.ChatWithMessages(ctx, "", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
-	err = m.ChatStreamlyWithSender(" ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, func(*string, *string) error { return nil })
+	err = m.ChatStreamlyWithSender(ctx, " ", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil, func(*string, *string) error { return nil })
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("stream: expected model-name error, got %v", err)
 	}
 }
 
 func TestCometAPIChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newCometAPIForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.ChatWithMessages("gpt-5", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.ChatWithMessages(ctx, "gpt-5", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "messages is empty") {
 		t.Errorf("expected messages-empty error, got %v", err)
 	}
 }
 
 func TestCometAPIChatRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newCometAPIServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
@@ -214,13 +228,15 @@ func TestCometAPIChatRejectsHTTPError(t *testing.T) {
 
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
-	_, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.ChatWithMessages(ctx, "gpt-5", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
 }
 
 func TestCometAPIChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// Empty *Region pointer must fall back to the "default" entry, not
 	// be treated as an explicit "" region (which would miss the lookup).
 	srv := newCometAPIServer(t, "/v1/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
@@ -233,7 +249,7 @@ func TestCometAPIChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	emptyRegion := ""
-	_, err := m.ChatWithMessages("gpt-5",
+	_, err := m.ChatWithMessages(ctx, "gpt-5",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}, nil, nil)
 	if err != nil {
@@ -242,6 +258,8 @@ func TestCometAPIChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
 }
 
 func TestCometAPIListModelsFallsBackToDefaultOnEmptyRegion(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newCometAPIServer(t, "/api/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{{"id": "x"}}})
 	})
@@ -250,15 +268,17 @@ func TestCometAPIListModelsFallsBackToDefaultOnEmptyRegion(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	emptyRegion := ""
-	if _, err := m.ListModels(&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}); err != nil {
+	if _, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey, Region: &emptyRegion}); err != nil {
 		t.Errorf("empty Region: expected fallback to default, got %v", err)
 	}
 }
 
 func TestCometAPIStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newCometAPIForTest("http://unused")
 	apiKey := "test-key"
-	err := m.ChatStreamlyWithSender("gpt-5",
+	err := m.ChatStreamlyWithSender(ctx, "gpt-5",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
@@ -267,10 +287,12 @@ func TestCometAPIStreamRequiresSender(t *testing.T) {
 }
 
 func TestCometAPIChatRejectsUnknownRegion(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newCometAPIForTest("http://unused")
 	apiKey := "test-key"
 	region := "eu"
-	_, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}},
+	_, err := m.ChatWithMessages(ctx, "gpt-5", []Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey, Region: &region}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no base URL configured for region") {
 		t.Errorf("expected region error, got %v", err)
@@ -278,6 +300,8 @@ func TestCometAPIChatRejectsUnknownRegion(t *testing.T) {
 }
 
 func TestCometAPIBaseURLNormalizesSlashes(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	tests := []struct {
 		name string
 		path string
@@ -287,7 +311,7 @@ func TestCometAPIBaseURLNormalizesSlashes(t *testing.T) {
 			name: "Chat",
 			path: "/v1/chat/completions",
 			run: func(m *CometAPIModel, apiConfig *APIConfig) error {
-				_, err := m.ChatWithMessages("gpt-5", []Message{{Role: "user", Content: "x"}}, apiConfig, nil, nil)
+				_, err := m.ChatWithMessages(ctx, "gpt-5", []Message{{Role: "user", Content: "x"}}, apiConfig, nil, nil)
 				return err
 			},
 		},
@@ -295,7 +319,7 @@ func TestCometAPIBaseURLNormalizesSlashes(t *testing.T) {
 			name: "Stream",
 			path: "/v1/chat/completions",
 			run: func(m *CometAPIModel, apiConfig *APIConfig) error {
-				return m.ChatStreamlyWithSender("gpt-5", []Message{{Role: "user", Content: "x"}}, apiConfig, nil, nil, func(*string, *string) error { return nil })
+				return m.ChatStreamlyWithSender(ctx, "gpt-5", []Message{{Role: "user", Content: "x"}}, apiConfig, nil, nil, func(*string, *string) error { return nil })
 			},
 		},
 		{
@@ -303,7 +327,7 @@ func TestCometAPIBaseURLNormalizesSlashes(t *testing.T) {
 			path: "/v1/embeddings",
 			run: func(m *CometAPIModel, apiConfig *APIConfig) error {
 				model := "text-embedding-3-small"
-				_, err := m.Embed(&model, []string{"x"}, apiConfig, nil, nil)
+				_, err := m.Embed(ctx, &model, []string{"x"}, apiConfig, nil, nil)
 				return err
 			},
 		},
@@ -311,7 +335,7 @@ func TestCometAPIBaseURLNormalizesSlashes(t *testing.T) {
 			name: "ListModels",
 			path: "/api/models",
 			run: func(m *CometAPIModel, apiConfig *APIConfig) error {
-				_, err := m.ListModels(apiConfig)
+				_, err := m.ListModels(ctx, apiConfig)
 				return err
 			},
 		},
@@ -347,6 +371,8 @@ func TestCometAPIBaseURLNormalizesSlashes(t *testing.T) {
 }
 
 func TestCometAPIStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newCometAPIServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["stream"] != true {
 			t.Errorf("expected stream=true, got %v", body["stream"])
@@ -367,7 +393,7 @@ func TestCometAPIStreamHappyPath(t *testing.T) {
 	apiKey := "test-key"
 	var chunks []string
 	var sawDone int32
-	err := m.ChatStreamlyWithSender("gpt-5",
+	err := m.ChatStreamlyWithSender(ctx, "gpt-5",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(content *string, _ *string) error {
@@ -394,10 +420,12 @@ func TestCometAPIStreamHappyPath(t *testing.T) {
 }
 
 func TestCometAPIStreamRejectsExplicitFalse(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newCometAPIForTest("http://unused")
 	apiKey := "test-key"
 	stream := false
-	err := m.ChatStreamlyWithSender("gpt-5",
+	err := m.ChatStreamlyWithSender(ctx, "gpt-5",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{Stream: &stream},
@@ -410,6 +438,8 @@ func TestCometAPIStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestCometAPIStreamFailsWithoutTerminal(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// Body closes before [DONE] or a finish_reason -> driver must complain
 	// instead of pretending the stream finished cleanly.
 	srv := newCometAPIServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
@@ -420,7 +450,7 @@ func TestCometAPIStreamFailsWithoutTerminal(t *testing.T) {
 
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
-	err := m.ChatStreamlyWithSender("gpt-5",
+	err := m.ChatStreamlyWithSender(ctx, "gpt-5",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey}, nil, nil,
 		func(*string, *string) error { return nil },
@@ -431,6 +461,8 @@ func TestCometAPIStreamFailsWithoutTerminal(t *testing.T) {
 }
 
 func TestCometAPIListModelsHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newCometAPIServer(t, "/api/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -444,7 +476,7 @@ func TestCometAPIListModelsHappyPath(t *testing.T) {
 
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
-	ids, err := m.ListModels(&APIConfig{ApiKey: &apiKey})
+	ids, err := m.ListModels(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -454,13 +486,15 @@ func TestCometAPIListModelsHappyPath(t *testing.T) {
 }
 
 func TestCometAPIListModelsAllowsNilAPIConfig(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newCometAPIServer(t, "/api/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{{"id": "gpt-5"}}})
 	})
 	defer srv.Close()
 
 	m := newCometAPIForTest(srv.URL)
-	ids, err := m.ListModels(nil)
+	ids, err := m.ListModels(ctx, nil)
 	if err != nil {
 		t.Fatalf("ListModels(nil): %v", err)
 	}
@@ -470,6 +504,8 @@ func TestCometAPIListModelsAllowsNilAPIConfig(t *testing.T) {
 }
 
 func TestCometAPICheckConnectionDelegatesToBalance(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// 200 -> CheckConnection succeeds; 401 -> CheckConnection propagates.
 	okSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/user/quota" {
@@ -489,17 +525,19 @@ func TestCometAPICheckConnectionDelegatesToBalance(t *testing.T) {
 	apiKey := "test-key"
 	mOK := newCometAPIForTest(okSrv.URL)
 	mOK.baseModel.URLSuffix.Balance = okSrv.URL + "/user/quota"
-	if err := mOK.CheckConnection(&APIConfig{ApiKey: &apiKey}); err != nil {
+	if err := mOK.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err != nil {
 		t.Errorf("CheckConnection(ok): %v", err)
 	}
 	mFail := newCometAPIForTest(failSrv.URL)
 	mFail.baseModel.URLSuffix.Balance = failSrv.URL + "/user/quota"
-	if err := mFail.CheckConnection(&APIConfig{ApiKey: &apiKey}); err == nil {
+	if err := mFail.CheckConnection(ctx, &APIConfig{ApiKey: &apiKey}); err == nil {
 		t.Error("CheckConnection(fail): expected error, got nil")
 	}
 }
 
 func TestCometAPIBalanceHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/user/quota" {
 			t.Errorf("path=%s want /user/quota", r.URL.Path)
@@ -522,7 +560,7 @@ func TestCometAPIBalanceHappyPath(t *testing.T) {
 	m := newCometAPIForTest("http://unused")
 	m.baseModel.URLSuffix.Balance = srv.URL + "/user/quota"
 	apiKey := "test-key"
-	balance, err := m.Balance(&APIConfig{ApiKey: &apiKey})
+	balance, err := m.Balance(ctx, &APIConfig{ApiKey: &apiKey})
 	if err != nil {
 		t.Fatalf("Balance: %v", err)
 	}
@@ -532,33 +570,41 @@ func TestCometAPIBalanceHappyPath(t *testing.T) {
 }
 
 func TestCometAPIBalanceRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newCometAPIForTest("http://unused")
-	_, err := m.Balance(&APIConfig{})
+	_, err := m.Balance(ctx, &APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("Balance: expected api-key error, got %v", err)
 	}
 }
 
 func TestCometAPIBalanceRequiresConfiguredURL(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newCometAPIForTest("http://unused")
 	m.baseModel.URLSuffix.Balance = ""
 	apiKey := "test-key"
-	_, err := m.Balance(&APIConfig{ApiKey: &apiKey})
+	_, err := m.Balance(ctx, &APIConfig{ApiKey: &apiKey})
 	if err == nil || !strings.Contains(err.Error(), "balance URL is required") {
 		t.Errorf("Balance: expected balance URL error, got %v", err)
 	}
 }
 
 func TestCometAPIRerankReturnsNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newCometAPIForTest("http://unused")
 	q := "gpt-5"
-	_, err := m.Rerank(&q, "what is rag?", []string{"a", "b"}, &APIConfig{}, &RerankConfig{TopN: 2}, nil)
+	_, err := m.Rerank(ctx, &q, "what is rag?", []string{"a", "b"}, &APIConfig{}, &RerankConfig{TopN: 2}, nil)
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected 'no such method', got %v", err)
 	}
 }
 
 func TestCometAPIEmbedHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newCometAPIServer(t, "/v1/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "text-embedding-3-small" {
 			t.Errorf("model=%v want text-embedding-3-small", body["model"])
@@ -583,7 +629,7 @@ func TestCometAPIEmbedHappyPath(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	vecs, err := m.Embed(&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 256}, nil)
+	vecs, err := m.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 256}, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -596,6 +642,8 @@ func TestCometAPIEmbedHappyPath(t *testing.T) {
 }
 
 func TestCometAPIEmbedReordersByIndex(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// Upstream returns the three vectors in shuffled order. The driver
 	// must reorder them so the slot at position i corresponds to input i.
 	srv := newCometAPIServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
@@ -612,7 +660,7 @@ func TestCometAPIEmbedReordersByIndex(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	vecs, err := m.Embed(&model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := m.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -624,6 +672,8 @@ func TestCometAPIEmbedReordersByIndex(t *testing.T) {
 }
 
 func TestCometAPIEmbedEmptyInputShortCircuits(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// Empty input must NOT make an HTTP call; the test fails the request
 	// rather than the assertion if it does.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -635,7 +685,7 @@ func TestCometAPIEmbedEmptyInputShortCircuits(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	vecs, err := m.Embed(&model, []string{}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	vecs, err := m.Embed(ctx, &model, []string{}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed([]): %v", err)
 	}
@@ -645,29 +695,35 @@ func TestCometAPIEmbedEmptyInputShortCircuits(t *testing.T) {
 }
 
 func TestCometAPIEmbedRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newCometAPIForTest("http://unused")
 	model := "text-embedding-3-small"
-	_, err := m.Embed(&model, []string{"a"}, &APIConfig{}, nil, nil)
+	_, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
 		t.Errorf("expected api-key error, got %v", err)
 	}
 }
 
 func TestCometAPIEmbedRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	m := newCometAPIForTest("http://unused")
 	apiKey := "test-key"
-	_, err := m.Embed(nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, nil, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("expected model-name error, got %v", err)
 	}
 	empty := ""
-	_, err = m.Embed(&empty, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err = m.Embed(ctx, &empty, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "model name is required") {
 		t.Errorf("empty model: expected model-name error, got %v", err)
 	}
 }
 
 func TestCometAPIEmbedRejectsDuplicateIndex(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// A malformed upstream that repeats data[*].index would silently
 	// overwrite the earlier vector; the driver must fail loudly instead.
 	srv := newCometAPIServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
@@ -683,13 +739,15 @@ func TestCometAPIEmbedRejectsDuplicateIndex(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	_, err := m.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index 0") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
 }
 
 func TestCometAPIEmbedRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newCometAPIServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": []map[string]interface{}{
@@ -702,13 +760,15 @@ func TestCometAPIEmbedRejectsOutOfRangeIndex(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	_, err := m.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
 }
 
 func TestCometAPIEmbedRejectsMissingSlot(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// Upstream returns only one of the two requested embeddings.
 	srv := newCometAPIServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -722,13 +782,15 @@ func TestCometAPIEmbedRejectsMissingSlot(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	_, err := m.Embed(&model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding for input index 1") {
 		t.Errorf("expected missing-embedding error for slot 1, got %v", err)
 	}
 }
 
 func TestCometAPIEmbedRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newCometAPIServer(t, "/v1/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
@@ -738,7 +800,7 @@ func TestCometAPIEmbedRejectsHTTPError(t *testing.T) {
 	m := newCometAPIForTest(srv.URL)
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
-	_, err := m.Embed(&model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "CometAPI embeddings API error") {
 		t.Errorf("expected CometAPI embeddings API error, got %v", err)
 	}

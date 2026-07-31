@@ -1,11 +1,13 @@
 ---
 sidebar_position: 4
+title: Set Variables
+sidebar_label: Set Variables
 slug: /set_chat_variables
 sidebar_custom_props: {
   categoryIcon: LucideVariable
 }
 ---
-# Set variables
+# Set Variables
 
 Set variables to be used together with the system prompt for your LLM.
 
@@ -17,15 +19,15 @@ When configuring the system prompt for a chat model, variables play an important
 In RAGFlow, variables are closely linked with the system prompt. When you add a variable in the **Variable** section, include it in the system prompt. Conversely, when deleting a variable, ensure it is removed from the system prompt; otherwise, an error would occur.
 :::
 
-## Where to set variables
+## Where to Set Variables
 
-![](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_variables.jpg)
+![Chat variables](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_variables.jpg)
 
-## 1. Manage variables
+## 1. Manage Variables
 
 In the **Variable** section, you add, remove, or update variables.
 
-### `{knowledge}` - a reserved variable
+### `{knowledge}` - A Reserved Variable
 
 `{knowledge}` is the system's reserved variable, representing the chunks retrieved from the dataset(s) specified by **Knowledge bases** under the **Assistant settings** tab. If your chat assistant is associated with certain datasets, you can keep it as is.
 
@@ -35,14 +37,14 @@ It currently makes no difference whether  `{knowledge}` is set as optional or ma
 
 From v0.17.0 onward, you can start an AI chat without specifying datasets. In this case, we recommend removing the `{knowledge}` variable to prevent unnecessary reference and keeping the **Empty response** field empty to avoid errors.
 
-### Custom variables
+### Custom Variables
 
 Besides `{knowledge}`, you can also define your own variables to pair with the system prompt. To use these custom variables, you must pass in their values through RAGFlow's official APIs. The **Optional** toggle determines whether these variables are required in the corresponding APIs:
 
 - **Disabled** (Default): The variable is mandatory and must be provided.
 - **Enabled**: The variable is optional and can be omitted if not needed.
 
-## 2. Update system prompt
+## 2. Update System Prompt
 
 After you add or remove variables in the **Variable** section, ensure your changes are reflected in the system prompt to avoid inconsistencies or errors. Here's an example:
 

@@ -19,8 +19,10 @@ import os
 from typing import Any, Optional
 
 from deepdoc.parser.mineru_parser import MinerUParser
+from deepdoc.parser.mistral_parser import MistralParser
 from deepdoc.parser.opendataloader_parser import OpenDataLoaderParser
 from deepdoc.parser.paddleocr_parser import PaddleOCRParser
+from deepdoc.parser.pdf_parser import MAXIMUM_PAGE_NUMBER
 from deepdoc.parser.somark_parser import SoMarkParser
 
 
@@ -325,3 +327,71 @@ class SoMarkOcrModel(Base, SoMarkParser):
             **kwargs,
         )
         return sections, tables
+
+
+class MistralOcrModel(Base, MistralParser):
+    _FACTORY_NAME = "Mistral OCR"
+
+    def __init__(self, key: str | dict, model_name: str, **kwargs):
+        Base.__init__(self, key, model_name, **kwargs)
+        raw_config: dict = {}
+        if isinstance(key, dict):
+            raw_config = key
+        elif key:
+            try:
+                raw_config = json.loads(key)
+            except Exception:
+                raw_config = {}
+
+        # Only unwrap a nested {"api_key": {...}} config object; a flat config
+        # whose "api_key" is a string must be preserved so the key is not lost.
+        nested_config = raw_config.get("api_key") if isinstance(raw_config, dict) else None
+        config = nested_config if isinstance(nested_config, dict) else raw_config
+        if not isinstance(config, dict):
+            config = {}
+
+        key_as_secret = key if isinstance(key, str) and key and not key.lstrip().startswith("{") else ""
+
+        def _resolve(ui_key: str, env_key: str, default=""):
+            return config.get(ui_key, config.get(env_key, kwargs.get(ui_key, kwargs.get(env_key, os.environ.get(env_key, default)))))
+
+        base_url = _resolve("mistral_ocr_base_url", "MISTRAL_OCR_BASE_URL", kwargs.get("base_url") or "https://api.mistral.ai/v1")
+        api_key = _resolve("api_key", "MISTRAL_OCR_API_KEY", key_as_secret)
+        table_format = _resolve("mistral_ocr_table_format", "MISTRAL_OCR_TABLE_FORMAT", "html")
+        keep_hf = _resolve("mistral_ocr_keep_header_footer", "MISTRAL_OCR_KEEP_HEADER_FOOTER", 0)
+
+        # Redact sensitive config keys before logging
+        redacted_config = {}
+        for k, v in config.items():
+            if any(s in k.lower() for s in ("key", "password", "token", "secret")):
+                redacted_config[k] = "[REDACTED]"
+            else:
+                redacted_config[k] = v
+        logging.info(f"Parsed Mistral OCR config (sensitive fields redacted): {redacted_config}")
+
+        MistralParser.__init__(
+            self,
+            base_url=base_url,
+            api_key=api_key,
+            model=model_name,
+            table_format=table_format,
+            keep_header_footer=str(keep_hf).strip().lower() in {"1", "true", "yes", "on"},
+        )
+
+    def check_available(self) -> tuple[bool, str]:
+        return self.check_installation()
+
+    def parse_pdf(self, filepath, binary=None, callback=None, parse_method: str = "raw", from_page: int = 0, to_page: int = MAXIMUM_PAGE_NUMBER, **kwargs):
+        ok, reason = self.check_available()
+        if not ok:
+            raise RuntimeError(f"Mistral OCR not accessible: {reason}")
+        return MistralParser.parse_pdf(
+            self,
+            filepath=filepath,
+            binary=binary,
+            callback=callback,
+            parse_method=parse_method,
+            from_page=from_page,
+            to_page=to_page,
+            **kwargs,
+        )

@@ -49,26 +49,26 @@ type capturedRequest struct {
 // incoming request and replies with the given body / status.
 func newCapturingServer(t *testing.T, replyStatus int, replyBody string) (*httptest.Server, *capturedRequest) {
 	t.Helper()
-	cap := &capturedRequest{}
+	capRequest := &capturedRequest{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
-		cap.mu.Lock()
-		cap.method = r.Method
-		cap.path = r.URL.Path
-		cap.body = string(body)
-		cap.mu.Unlock()
+		capRequest.mu.Lock()
+		capRequest.method = r.Method
+		capRequest.path = r.URL.Path
+		capRequest.body = string(body)
+		capRequest.mu.Unlock()
 		w.Header().Set("X-Elastic-Product", "Elasticsearch")
 		w.WriteHeader(replyStatus)
 		_, _ = w.Write([]byte(replyBody))
 	}))
 	t.Cleanup(srv.Close)
-	return srv, cap
+	return srv, capRequest
 }
 
-// newTestEngine constructs an elasticsearchEngine pointing at the given
+// newTestEngine constructs an Engine pointing at the given
 // test server. Bypasses NewEngine (which calls ES Info to verify
 // connectivity) — the test server is a stub, not a real ES cluster.
-func newTestEngine(t *testing.T, srvURL string) *elasticsearchEngine {
+func newTestEngine(t *testing.T, srvURL string) *Engine {
 	t.Helper()
 	client, err := elasticsearch.NewClient(elasticsearch.Config{
 		Addresses: []string{srvURL},
@@ -76,7 +76,7 @@ func newTestEngine(t *testing.T, srvURL string) *elasticsearchEngine {
 	if err != nil {
 		t.Fatalf("elasticsearch.NewClient: %v", err)
 	}
-	return &elasticsearchEngine{client: client}
+	return &Engine{client: client}
 }
 
 const sampleESResponse = `{
@@ -374,7 +374,7 @@ func TestRunSQL_PostsToSQLPath(t *testing.T) {
 // as-is. This lets the rewrite tests assert on the SHAPE of the MATCH()
 // substitution without depending on a real tokenizer pool.
 func TestMain(m *testing.M) {
-	tokenizer.RegisterEngineType(func() string { return "infinity" })
+	tokenizer.SetEngineType("infinity")
 	m.Run()
 }
 

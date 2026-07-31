@@ -19,6 +19,8 @@
 // Tokenizer and title weighting runs - the q_<n>_vec first element is
 // 0.1*len(name) + 0.9*len(content), and embedding_token_consumption includes
 // the one title encode (len(name)) plus the per-chunk content encodes.
+//go:build integration
+
 package pipeline
 
 import (
@@ -37,6 +39,7 @@ import (
 	"ragflow/internal/common"
 	componentpkg "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
+	"ragflow/internal/ingestion/testutil"
 	"ragflow/internal/storage"
 
 	"github.com/signintech/gopdf"
@@ -44,9 +47,9 @@ import (
 
 type fixedEmbedder struct{}
 
-func (fixedEmbedder) MaxTokens() int { return 0 }
+func (fixedEmbedder) MaxTokens() int { return 2048 }
 
-func (fixedEmbedder) Encode(texts []string) ([]componentpkg.EmbeddingResult, error) {
+func (fixedEmbedder) Encode(ctx context.Context, texts []string) ([]componentpkg.EmbeddingResult, error) {
 	out := make([]componentpkg.EmbeddingResult, 0, len(texts))
 	for _, text := range texts {
 		out = append(out, componentpkg.EmbeddingResult{
@@ -87,6 +90,7 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
+		"kb_id":  "test-kb",
 	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -178,6 +182,7 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
+		"kb_id":  "test-kb",
 	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -266,6 +271,7 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T)
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
+		"kb_id":  "test-kb",
 	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -364,6 +370,7 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
+		"kb_id":  "test-kb",
 	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -461,6 +468,7 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
+		"kb_id":  "test-kb",
 	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -543,6 +551,7 @@ func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
+		"kb_id":  "test-kb",
 	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -623,6 +632,7 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 	attachFixedEmbedderFactory(t, pipe)
 	out, err := pipe.Run(context.Background(), map[string]any{
 		"doc_id": docID,
+		"kb_id":  "test-kb",
 	}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -811,6 +821,9 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			if templateUsesComponent(t, templateBytes, "TagChunker") {
 				t.Skip("template uses TagChunker which requires tag-structured content and parser setups not available for generic .md input; covered separately")
 			}
+			if templateUsesComponent(t, templateBytes, "KnowledgeCompiler") {
+				t.Skip("template uses KnowledgeCompiler which requires LLM/embedder/ES wiring not available in the headless smoke run; covered by the knowledge_compiler component E2E tests")
+			}
 			terminalIDs := terminalComponentIDsFromTemplate(t, templateBytes)
 			if len(terminalIDs) != 1 {
 				t.Fatalf("terminal ids = %v, want exactly 1 terminal", terminalIDs)
@@ -842,7 +855,7 @@ func attachFixedEmbedderFactory(t *testing.T, pipe *Pipeline) {
 	t.Helper()
 	pipe.WithComponentFactory(func(name string, params map[string]any) (runtime.Component, error) {
 		if name == componentpkg.ComponentNameTokenizer {
-			return componentpkg.NewTokenizerComponentWithResolver(params, func(_, _, _ string) (componentpkg.Embedder, error) {
+			return componentpkg.NewTokenizerComponentWithResolver(params, func(ctx context.Context, _, _, _ string) (componentpkg.Embedder, error) {
 				return fixedEmbedder{}, nil
 			})
 		}
@@ -861,6 +874,15 @@ func withRealTemplateDeps(t *testing.T) storage.Storage {
 	mem := storage.NewMemoryStorage()
 	storage.GetStorageFactory().SetStorage(mem)
 	t.Cleanup(func() { storage.GetStorageFactory().SetStorage(origStorage) })
+
+	// The runtime invokes every component with the package-level dao.DB
+	// (see node_body.go). These "real components" tests exercise the
+	// Parser/Extractor model-resolution paths, so wire an in-memory sqlite DB
+	// via the shared testutil helper. It has no tenant/model rows, so
+	// resolution gracefully skips — but the nil-db panic from a headless run
+	// (db never initialized) is avoided without touching production code.
+	db := testutil.SetupTestDB(t)
+	t.Cleanup(testutil.ReplaceDBForTest(t, db))
 
 	refs := map[string]componentpkg.DocumentStorageRef{}
 	componentpkg.ResolveDocumentStorageOverride = func(docID string) (*componentpkg.DocumentStorageRef, error) {

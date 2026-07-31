@@ -691,9 +691,9 @@ class RAGFlowClient:
             if res_json["code"] == 0:
                 print(res_json["data"])
             else:
-                print(f"Fail to show license, code: {res_json['code']}, message: {res_json['message']}")
+                print(f"Invalid, code: {res_json['code']}, message: {res_json['data']}")
         else:
-            print(f"Fail to show license, code: {response.status_code}, body: {response.text}")
+            print(f"Fail to check license, code: {response.status_code}, body: {response.text}")
 
     def list_server_configs(self, command):
         """List server configs by calling /system/configs API and flattening the JSON response."""

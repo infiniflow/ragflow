@@ -172,6 +172,31 @@ func allZero(b []byte) bool {
 	return true
 }
 
+// AssertURLSchemeSafe is a lenient SSRF guard for drivers that may legitimately
+// target private networks or loopback addresses (e.g. self-hosted Ollama, vLLM,
+// Xinference). It only rejects dangerous schemes and empty hosts; it does not
+// resolve DNS and does not require public routability. Use this ONLY for
+// local-inference model drivers — cloud-hosted drivers must use AssertURLSafe.
+var AssertURLSchemeSafe = func(rawURL string) error {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return fmt.Errorf("invalid url")
+	}
+
+	scheme := strings.ToLower(parsed.Scheme)
+	if !slices.Contains(AllowedURLSchemes, scheme) {
+		sorted := append([]string(nil), AllowedURLSchemes...)
+		sort.Strings(sorted)
+		return fmt.Errorf("disallowed URL scheme: '%s'. Only %v are allowed", scheme, sorted)
+	}
+
+	if parsed.Hostname() == "" {
+		return fmt.Errorf("URL is missing a host")
+	}
+
+	return nil
+}
+
 // PinnedHTTPClient returns an HTTP client whose Transport rewrites every
 // outbound dial for hostname:port to resolvedIP:port, closing the TOCTOU
 // window between AssertURLSafe and the actual TCP connection. Pins are

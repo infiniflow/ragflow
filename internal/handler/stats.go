@@ -57,8 +57,10 @@ func (h *StatsHandler) GetStats(c *gin.Context) {
 		agentSource := "agent"
 		source = &agentSource
 	}
+	ctx := c.Request.Context()
 
-	stats, err := h.statsService.GetStats(user.ID, fromDate, toDate, source)
+	// Get stats
+	stats, err := h.statsService.GetStats(ctx, user.ID, fromDate, toDate, source)
 	if err != nil {
 		code := common.CodeExceptionError
 		if errors.Is(err, service.ErrTenantNotFound) {

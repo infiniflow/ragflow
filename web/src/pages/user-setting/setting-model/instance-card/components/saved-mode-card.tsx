@@ -65,6 +65,7 @@ export function SavedModeCard({
   draftName,
   open,
   setOpen,
+  verifyTransform,
 }: SavedModeCardProps) {
   const { t } = useTranslation();
   const { t: tSetting } = useTranslate('setting');
@@ -164,7 +165,7 @@ export function SavedModeCard({
                 className="text-sm font-medium truncate overflow-hidden flex-1 cursor-text"
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  startRename();
+                  // startRename();
                 }}
                 title={tSetting('editInstanceName')}
                 data-testid="instance-name-static"
@@ -215,6 +216,7 @@ export function SavedModeCard({
                 hideIfEmpty={false}
                 instanceDetailsLoaded={instanceDetailsLoaded}
                 getFormValues={() => formRef.current?.getValues?.() ?? {}}
+                verifyTransform={verifyTransform}
                 onInstanceModelsChange={(info) => {
                   modelInfoRef.current = info;
                 }}

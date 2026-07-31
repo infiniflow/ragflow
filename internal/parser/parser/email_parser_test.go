@@ -23,6 +23,7 @@ import (
 )
 
 func TestEmailParser_EmlJSON(t *testing.T) {
+	ctx := t.Context()
 	raw := strings.Join([]string{
 		"From: sender@example.com",
 		"To: recipient@example.com",
@@ -41,7 +42,7 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 		"fields":        []string{"from", "to", "cc", "date", "subject", "body", "metadata"},
 	})
 
-	result := p.ParseWithResult("test.eml", []byte(raw))
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
@@ -78,6 +79,7 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 }
 
 func TestEmailParser_EmlText(t *testing.T) {
+	ctx := t.Context()
 	raw := strings.Join([]string{
 		"From: sender@test.com",
 		"To: recipient@test.com",
@@ -93,7 +95,7 @@ func TestEmailParser_EmlText(t *testing.T) {
 		"fields":        []string{"from", "to", "subject", "body"},
 	})
 
-	result := p.ParseWithResult("test.eml", []byte(raw))
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
@@ -109,8 +111,9 @@ func TestEmailParser_EmlText(t *testing.T) {
 }
 
 func TestEmailParser_MsgNotSupported(t *testing.T) {
+	ctx := t.Context()
 	p := NewEmailParser()
-	result := p.ParseWithResult("test.msg", []byte{})
+	result := p.ParseWithResult(ctx, "test.msg", []byte{})
 	if result.Err == nil {
 		t.Fatal("expected error for .msg file")
 	}
@@ -120,6 +123,7 @@ func TestEmailParser_MsgNotSupported(t *testing.T) {
 }
 
 func TestEmailParser_Base64Attachment(t *testing.T) {
+	ctx := t.Context()
 	attachmentContent := "Hello! This is the decoded content of the attachment."
 	encoded := base64.StdEncoding.EncodeToString([]byte(attachmentContent))
 	// Simulate MIME line-wrapping (typically 76 chars per line).
@@ -153,7 +157,7 @@ func TestEmailParser_Base64Attachment(t *testing.T) {
 		"fields":        []string{"from", "body", "attachments"},
 	})
 
-	result := p.ParseWithResult("test.eml", []byte(raw))
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
@@ -179,6 +183,7 @@ func TestEmailParser_Base64Attachment(t *testing.T) {
 }
 
 func TestEmailParser_Base64AttachmentInMixedMultipart(t *testing.T) {
+	ctx := t.Context()
 	// Simulates the original test email structure:
 	// multipart/mixed → multipart/alternative (text/plain + text/html) + base64 attachment
 	innerBoundary := "inneralt"
@@ -223,7 +228,7 @@ func TestEmailParser_Base64AttachmentInMixedMultipart(t *testing.T) {
 		"fields":        []string{"from", "body", "attachments"},
 	})
 
-	result := p.ParseWithResult("test.eml", []byte(raw))
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
@@ -249,6 +254,7 @@ func TestEmailParser_Base64AttachmentInMixedMultipart(t *testing.T) {
 }
 
 func TestEmailParser_Multipart(t *testing.T) {
+	ctx := t.Context()
 	boundary := "boundary123"
 	raw := strings.Join([]string{
 		"From: multipart@test.com",
@@ -273,7 +279,7 @@ func TestEmailParser_Multipart(t *testing.T) {
 		"fields":        []string{"from", "body"},
 	})
 
-	result := p.ParseWithResult("test.eml", []byte(raw))
+	result := p.ParseWithResult(ctx, "test.eml", []byte(raw))
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}

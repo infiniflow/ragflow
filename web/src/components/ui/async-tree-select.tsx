@@ -25,6 +25,7 @@ type AsyncTreeSelectProps = {
   value?: TreeId;
   onChange?(value: TreeId): void;
   loadData?(node: TreeNodeType): Promise<any>;
+  canSelect?(node: TreeNodeType): boolean;
 };
 
 function getNodeText(node: ReactNode): string {
@@ -39,6 +40,7 @@ export function AsyncTreeSelect({
   value,
   loadData,
   onChange,
+  canSelect,
 }: AsyncTreeSelectProps) {
   const [open, setOpen] = useState(false);
   const [searchText, setSearchText] = useState('');
@@ -106,19 +108,8 @@ export function AsyncTreeSelect({
     [expandedKeys, searchText, treeData, visibleNodeIds],
   );
 
-  const handleNodeClick = useCallback(
-    (id: TreeId) => (e: React.MouseEvent<HTMLLIElement>) => {
-      e.stopPropagation();
-      onChange?.(id);
-      setOpen(false);
-      setSearchText('');
-    },
-    [onChange],
-  );
-
-  const handleArrowClick = useCallback(
-    (node: TreeNodeType) => async (e: React.MouseEvent<HTMLButtonElement>) => {
-      e.stopPropagation();
+  const toggleNode = useCallback(
+    async (node: TreeNodeType) => {
       const { id } = node;
       if (isExpanded(id)) {
         setExpandedKeys((keys) => {
@@ -138,6 +129,28 @@ export function AsyncTreeSelect({
       }
     },
     [isExpanded, loadData, treeData],
+  );
+
+  const handleNodeClick = useCallback(
+    (node: TreeNodeType) => async (e: React.MouseEvent<HTMLLIElement>) => {
+      e.stopPropagation();
+      if (canSelect && !canSelect(node)) {
+        await toggleNode(node);
+        return;
+      }
+      onChange?.(node.id);
+      setOpen(false);
+      setSearchText('');
+    },
+    [canSelect, onChange, toggleNode],
+  );
+
+  const handleArrowClick = useCallback(
+    (node: TreeNodeType) => async (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.stopPropagation();
+      await toggleNode(node);
+    },
+    [toggleNode],
   );
 
   const handleOpenChange = useCallback((open: boolean) => {
@@ -166,7 +179,7 @@ export function AsyncTreeSelect({
           {currentLevelList.map((x) => (
             <li
               key={x.id}
-              onClick={handleNodeClick(x.id)}
+              onClick={handleNodeClick(x)}
               className="cursor-pointer"
             >
               <div

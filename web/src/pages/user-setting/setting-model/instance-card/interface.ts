@@ -20,6 +20,19 @@ import { IModelInfo } from '@/interfaces/request/llm';
 import { RefObject } from 'react';
 
 /**
+ * Provider-specific transform that maps form values onto the verify
+ * payload's `api_key` / `base_url` / `region`. Shared by the saved and
+ * draft mode cards so per-model verify can forward structured
+ * credentials (e.g. PaddleOCR's nested config) the backend expects.
+ */
+export type VerifyTransform = (values: Record<string, any>) => {
+  apiKey: string | object | Record<string, any>;
+  baseUrl?: string;
+  region?: string;
+  modelInfo?: IModelInfo[];
+};
+
+/**
  * Imperative save API exposed by each instance card (generic, Bedrock,
  * SoMark) so the parent page can drive a single batch save from the
  * top-of-page Save button.
@@ -64,7 +77,7 @@ export interface InstanceSavePayload {
   /**
    * Which save endpoint the parent should dispatch to:
    *  - `'add'`: call `addProviderInstance` (drafts of any provider, plus
-   *    Bedrock / SoMark saved cards which carry an `id` inside the
+   *    Bedrock saved cards which carry an `id` inside the
    *    `addProviderInstance` body).
    *  - `'update'`: call `updateProviderInstance` (generic saved cards,
    *    whose payload matches `IUpdateProviderInstanceRequestBody`).
@@ -152,6 +165,8 @@ export interface SavedModeCardProps {
   draftName: string;
   open: boolean;
   setOpen: (open: boolean) => void;
+  /** Provider-specific transform forwarded to ModelsSection for per-model verify. */
+  verifyTransform?: VerifyTransform;
 }
 
 /** Props for the draft-mode card (instance name + form fields). */
@@ -168,4 +183,6 @@ export interface DraftModeCardProps {
   modelInfoRef: React.MutableRefObject<IModelInfo[]>;
   draftName: string;
   setDraftName: (name: string) => void;
+  /** Provider-specific transform forwarded to ModelsSection for per-model verify. */
+  verifyTransform?: VerifyTransform;
 }

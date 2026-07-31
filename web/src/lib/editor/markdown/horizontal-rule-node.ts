@@ -32,13 +32,13 @@ export class HorizontalRuleNode extends ElementNode {
     return new HorizontalRuleNode(node.__key);
   }
 
-  /* eslint-disable @typescript-eslint/no-unused-vars */
+  /* oxlint-disable typescript/no-unused-vars */
   static importJSON(
     _serializedNode: SerializedHorizontalRuleNode,
   ): HorizontalRuleNode {
     return $createHorizontalRuleNode();
   }
-  /* eslint-enable @typescript-eslint/no-unused-vars */
+  /* eslint-enable typescript/no-unused-vars */
 
   exportJSON(): SerializedHorizontalRuleNode {
     return {
@@ -51,7 +51,7 @@ export class HorizontalRuleNode extends ElementNode {
     };
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // oxlint-disable-next-line typescript/no-unused-vars
   createDOM(_config: EditorConfig, _editor: any): HTMLElement {
     const element = document.createElement('hr');
     return element;

@@ -30,7 +30,6 @@ model (no tool schema is bound onto it) and its ``async_chat*`` calls take
 the fast non-tool-calling path.
 """
 
-from copy import deepcopy
 import logging
 import re
 from typing import Any, List
@@ -83,7 +82,7 @@ class RAGTools:
         thinking_mode: str = "medium",
     ):
         self.tenant_ids = tenant_ids
-        self.chat_mdl = deepcopy(chat_mdl)
+        self.chat_mdl = chat_mdl.clone()
         self.embed_mdl = embed_mdl
         self.thinking_mode = thinking_mode
         self.field_map = {}

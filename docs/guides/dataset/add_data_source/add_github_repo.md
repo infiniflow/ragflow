@@ -1,12 +1,14 @@
 ---
 sidebar_position: 15
+title: Add GitHub Repo
+sidebar_label: Add GitHub Repo
 slug: /add_github_repo
 sidebar_custom_props: {
   categoryIcon: SiGoogledrive
 }
 ---
 
-# Add GitHub repo
+# Add GitHub Repo
 
 Link your GitHub repo for pull request or issue synchronization.
 
@@ -14,11 +16,11 @@ Link your GitHub repo for pull request or issue synchronization.
 
 This document explains how to link your GitHub repository to RAGFlow to synchronize pull requests and issues.
 
-## 1. GitHub configuration
+## 1. GitHub Configuration
 
 Before configuring RAGFlow, you must prepare your GitHub account and generate the necessary credentials.
 
-### Step a: Public email configuration
+### Step A: Public Email Configuration
 
 To ensure smooth identity matching and permission synchronization between your organization and the RAG engine, it is a best practice to make your email visible.
 
@@ -26,7 +28,7 @@ To ensure smooth identity matching and permission synchronization between your o
 2. Uncheck "Keep my email addresses private".
 3. Go to **Public profile** and ensure your primary email is selected in the **Public email** dropdown.
 
-### Step b: Generate a personal access token (PAT)
+### Step B: Generate a Personal Access Token (PAT)
 
 1. Navigate to **Settings** > **Developer settings** > **Personal access tokens** > **Tokens (classic)**.
 2. Click **Generate new token (classic)**.
@@ -35,7 +37,7 @@ To ensure smooth identity matching and permission synchronization between your o
     - **`workflow` (Optional):** Recommended if you intend to index GitHub Action logs or CI/CD metadata.
 4. **Copy the token:** Save this immediately; it will not be displayed again.
 
-## 2. RAGFlow connector setup
+## 2. RAGFlow Connector Setup
 
 Once your GitHub token is ready, register the external data source within your RAGFlow instance.
 
@@ -48,14 +50,16 @@ Once your GitHub token is ready, register the external data source within your R
     - **Access token:** Paste the PAT generated in section 1.
     - **Include Pull Request** Whether to include pull requests in the selected repo.
     - **Include Issues** Whether to include issues in the selected repo.
-4. Click **Save** to confirm your changes.  
+4. Click **Save** to confirm your changes.
    *RAGFlow validates the connection immediately.*
+
+![GitHub](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/github.jpg)
 
 :::tip NOTE
 Currently deleted or modified files are not synchronized automatically. This feature is coming soon. Thanks to Gisselle-Gonzalez for requesting [this feature](https://github.com/infiniflow/ragflow/issues/13708).
 :::
 
-## 3. Dataset binding & ingestion
+## 3. Dataset Binding & Ingestion
 
 Finally, link the connector to a specific knowledge base to begin the RAG process.
 

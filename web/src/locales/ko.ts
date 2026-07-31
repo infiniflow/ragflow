@@ -60,7 +60,7 @@ export default {
       submit: '적용',
       clear: '초기화',
       embedIntoSite: '웹페이지에 임베드',
-      openInNewTab: '새 탭에서 채팅',
+      openInNewTab: '새 탭에서 열기',
       previousPage: '이전',
       nextPage: '다음',
       previous: '이전',

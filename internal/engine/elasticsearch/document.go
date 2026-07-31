@@ -27,7 +27,7 @@ import (
 )
 
 // IndexDocument indexes a single document
-func (e *elasticsearchEngine) IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error {
+func (e *Engine) IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error {
 	if indexName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
@@ -71,7 +71,7 @@ func (e *elasticsearchEngine) IndexDocument(ctx context.Context, indexName, docI
 }
 
 // BulkIndex indexes documents in bulk
-func (e *elasticsearchEngine) BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error) {
+func (e *Engine) BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error) {
 	if indexName == "" {
 		return nil, fmt.Errorf("index name cannot be empty")
 	}
@@ -174,7 +174,7 @@ type BulkResponse struct {
 }
 
 // GetDocument gets a document
-func (e *elasticsearchEngine) GetDocument(ctx context.Context, indexName, docID string) (interface{}, error) {
+func (e *Engine) GetDocument(ctx context.Context, indexName, docID string) (interface{}, error) {
 	if indexName == "" {
 		return nil, fmt.Errorf("index name cannot be empty")
 	}
@@ -221,7 +221,7 @@ func (e *elasticsearchEngine) GetDocument(ctx context.Context, indexName, docID 
 }
 
 // DeleteDocument deletes a document
-func (e *elasticsearchEngine) DeleteDocument(ctx context.Context, indexName, docID string) error {
+func (e *Engine) DeleteDocument(ctx context.Context, indexName, docID string) error {
 	if indexName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}

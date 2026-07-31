@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -23,7 +24,7 @@ type fakeSearchDatasetService struct {
 	err       error
 }
 
-func (f *fakeSearchDatasetService) SearchDataset(datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error) {
+func (f *fakeSearchDatasetService) SearchDataset(ctx context.Context, datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error) {
 	f.datasetID = datasetID
 	f.userID = userID
 	f.req = req
@@ -37,7 +38,7 @@ type fakeSearchDatasetsService struct {
 	err    error
 }
 
-func (f *fakeSearchDatasetsService) SearchDatasets(req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error) {
+func (f *fakeSearchDatasetsService) SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error) {
 	f.userID = userID
 	f.req = req
 	return f.resp, f.err

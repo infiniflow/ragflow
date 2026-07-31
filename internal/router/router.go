@@ -173,20 +173,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 		apiNoAuth.GET("/pipelines/:id", r.pipelineHandler.GetPipeline)
 
 		// searchbots
-		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchbotDetail)
-
-		// User login channels endpoint
-		apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)
+		apiNoAuth.GET("/searchbots/detail", r.searchBotHandler.SearchBotDetail)
 
 		// User login by email endpoint
 		apiNoAuth.POST("/auth/login", r.userHandler.LoginByEmail)
-
-		// OAuth / OIDC login routes. The static "channels" segment is
-		// registered before the wildcard, so gin's tree resolves
-		// /auth/login/channels to GetLoginChannels and other values to
-		// OAuthLogin without conflict.
-		apiNoAuth.GET("/auth/login/:channel", r.userHandler.OAuthLogin)
-		apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthChannelCallback)
 
 		// Register
 		apiNoAuth.POST("/users", r.userHandler.Register)
@@ -580,6 +570,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Agent routes
 			agents := v1.Group("/agents")
 			RegisterAgentRoutes(agents, r.agentHandler)
+			// Keep the established /tasks URI while using session_id as the
+			// ordinary Agent run and cancellation identity.
+			RegisterAgentCancelRoutes(v1.Group("/tasks"), r.agentHandler)
 
 			// Plugin routes
 			plugin := v1.Group("/plugin")
@@ -688,13 +681,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 
 			// Chat Channel
-			chanChannel := v1.Group("/chat-channels")
+			chatChannel := v1.Group("/chat-channels")
 			{
-				chanChannel.POST("", r.chatChannelHandler.CreateChatChannel)
-				chanChannel.GET("", r.chatChannelHandler.ListChatChannel)
-				chanChannel.GET("/:channel_id", r.chatChannelHandler.GetChatChannel)
-				chanChannel.PATCH("/:channel_id", r.chatChannelHandler.UpdateChatChannel)
-				chanChannel.DELETE("/:channel_id", r.chatChannelHandler.DeleteChatChannel)
+				chatChannel.POST("", r.chatChannelHandler.CreateChatChannel)
+				chatChannel.GET("", r.chatChannelHandler.ListChatChannel)
+				chatChannel.GET("/:channel_id", r.chatChannelHandler.GetChatChannel)
+				chatChannel.PATCH("/:channel_id", r.chatChannelHandler.UpdateChatChannel)
+				chatChannel.DELETE("/:channel_id", r.chatChannelHandler.DeleteChatChannel)
+				chatChannel.GET("/:channel_id/runtime", r.chatChannelHandler.GetChatChannelRuntime)
 			}
 
 			// Langfuse tracing keys

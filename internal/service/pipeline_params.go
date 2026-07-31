@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,11 +16,11 @@ import (
 // canvas's dsl column holds the same component-graph structure that built-in
 // templates use, so it can be validated by the same schema extractor. It is a
 // package-level function so both document and knowledge-base updates reuse it.
-func loadCanvasDSLJSON(canvasID string) ([]byte, error) {
+func loadCanvasDSLJSON(ctx context.Context, canvasID string) ([]byte, error) {
 	if strings.TrimSpace(canvasID) == "" {
 		return nil, fmt.Errorf("empty canvas id")
 	}
-	canvas, err := dao.NewUserCanvasDAO().GetByID(canvasID)
+	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			return nil, fmt.Errorf("canvas %s not found", canvasID)
@@ -37,11 +38,11 @@ func loadCanvasDSLJSON(canvasID string) ([]byte, error) {
 }
 
 // LoadPipelineDSL loads the DSL JSON for a pipeline identified by parserID
-// (built-in) or pipelineID (custom canvas). When both are provided, isCanvas
+// (built-in) or pipelineID (custom canvas). When both are provided, isPipeline
 // selects which one to use.
-func LoadPipelineDSL(isCanvas bool, parserID string, pipelineID *string) ([]byte, error) {
-	if isCanvas {
-		return loadCanvasDSLJSON(strings.TrimSpace(*pipelineID))
+func LoadPipelineDSL(ctx context.Context, isPipeline bool, parserID string, pipelineID *string) ([]byte, error) {
+	if isPipeline {
+		return loadCanvasDSLJSON(ctx, strings.TrimSpace(*pipelineID))
 	}
 	registry, err := pipelinepkg.DefaultRegistry()
 	if err != nil {
@@ -61,12 +62,12 @@ func LoadPipelineDSL(isCanvas bool, parserID string, pipelineID *string) ([]byte
 // returns the component params defaults as an entity.JSONMap {cpnID: {param: value}}.
 // For builtin templates the DSL is loaded from the embedded registry; for custom
 // canvas pipelines it is loaded from the canvas row in the database.
-func ResolveComponentParamsDefaults(parserID string, pipelineID *string) (entity.JSONMap, error) {
-	isCanvas := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
+func ResolveComponentParamsDefaults(ctx context.Context, parserID string, pipelineID *string) (entity.JSONMap, error) {
+	isPipeline := pipelineID != nil && strings.TrimSpace(*pipelineID) != ""
 	var cp map[string]map[string]any
 	var err error
-	if isCanvas {
-		dslJSON, lerr := loadCanvasDSLJSON(strings.TrimSpace(*pipelineID))
+	if isPipeline {
+		dslJSON, lerr := loadCanvasDSLJSON(ctx, strings.TrimSpace(*pipelineID))
 		if lerr != nil {
 			return nil, fmt.Errorf("load canvas DSL: %w", lerr)
 		}
@@ -133,19 +134,4 @@ func getEmbdIDs(kbs []*entity.Knowledgebase) []string {
 		ids[i] = kb.EmbdID
 	}
 	return ids
-}
-
-// Backward-compat lowercase aliases for callers within the service package.
-// These will be removed when callers are updated to use the exported names.
-
-func loadPipelineDSL(isCanvas bool, parserID string, pipelineID *string) ([]byte, error) {
-	return LoadPipelineDSL(isCanvas, parserID, pipelineID)
-}
-
-func resolveComponentParamsDefaults(parserID string, pipelineID *string) (entity.JSONMap, error) {
-	return ResolveComponentParamsDefaults(parserID, pipelineID)
-}
-
-func validateDatasetEmbeddingModels(kbs []*entity.Knowledgebase) error {
-	return ValidateDatasetEmbeddingModels(kbs)
 }

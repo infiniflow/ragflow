@@ -25,14 +25,24 @@ import numpy as np
 from PIL import Image
 
 from api.db.services.llm_service import LLMBundle
-from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, get_first_provider_model_name, resolve_model_config, ensure_paddleocr_from_env
+from api.db.joint_services.tenant_model_service import get_composite_model_name_by_id, get_tenant_default_model_by_type, get_first_provider_model_name, resolve_model_config, ensure_paddleocr_from_env
 from common.constants import LLMType
 from common.parser_config_utils import normalize_layout_recognizer
 from common.string_utils import clean_markdown_block
 from deepdoc.vision import OCR
 from rag.nlp import attach_media_context, rag_tokenizer, tokenize
 
-ocr = OCR()
+_ocr = None
+
+
+def _get_ocr():
+    """Lazy-init OCR to avoid downloading models at import time (breaks CI
+    collection when the network is unavailable)."""
+    global _ocr
+    if _ocr is None:
+        _ocr = OCR()
+    return _ocr
+
 
 # Gemini supported MIME types
 VIDEO_EXTS = [".mp4", ".mov", ".avi", ".flv", ".mpeg", ".mpg", ".webm", ".wmv", ".3gp", ".3gpp", ".mkv"]
@@ -78,7 +88,7 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
 
         if not txt:
             # Fallback to local deepdoc OCR
-            bxs = ocr(np.array(img))
+            bxs = _get_ocr()(np.array(img))
             txt = "\n".join([t[0] for _, t in bxs if t[0]])
 
         callback(0.4, "Finish OCR: (%s ...)" % txt[:12])
@@ -111,6 +121,11 @@ def _try_paddleocr_image(filename, binary, tenant_id, parser_config, callback):
     if not layout_recognize:
         return ""
 
+    if tenant_id and isinstance(layout_recognize, str):
+        try:
+            layout_recognize = get_composite_model_name_by_id(layout_recognize)
+        except LookupError:
+            pass
     layout_recognizer, parser_model_name = normalize_layout_recognizer(layout_recognize)
     if layout_recognizer != "PaddleOCR":
         return ""

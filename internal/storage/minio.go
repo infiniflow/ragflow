@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
-	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"time"
 
 	"github.com/minio/minio-go/v7"
@@ -36,11 +36,11 @@ type MinioStorage struct {
 	client     *minio.Client
 	bucket     string // default bucket
 	prefixPath string // default prefix path
-	config     *server.MinioConfig
+	config     config.MinioConfig
 }
 
 // NewMinioStorage creates a new MinIO storage instance
-func NewMinioStorage(config *server.MinioConfig) (*MinioStorage, error) {
+func NewMinioStorage(config config.MinioConfig) (*MinioStorage, error) {
 	storage := &MinioStorage{
 		bucket:     config.Bucket,
 		prefixPath: config.PrefixPath,

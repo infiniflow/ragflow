@@ -22,7 +22,7 @@ from copy import deepcopy
 from rag.advanced_rag.agentic_rag import RAGTools
 
 logger = logging.getLogger(__name__)
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import partial
 from timeit import default_timer as timer
 from langfuse import Langfuse, propagate_attributes
@@ -335,11 +335,13 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
         msg[-1]["content"] += attachments
     if model_config["model_type"] == "chat" and image_attachments:
         convert_last_user_msg_to_multimodal(msg, image_attachments, factory)
+    sys_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    system_prompt = prompt_config.get("system", "").replace("{date}", sys_date)
     if stream:
         if model_config["model_type"] == "chat":
-            stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting)
+            stream_iter = chat_mdl.async_chat_streamly_delta(system_prompt, msg, dialog.llm_setting)
         else:
-            stream_iter = chat_mdl.async_chat_streamly_delta(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
+            stream_iter = chat_mdl.async_chat_streamly_delta(system_prompt, msg, dialog.llm_setting, images=image_files)
         async for kind, value, state in _stream_with_think_delta(stream_iter):
             if kind == "marker":
                 flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
@@ -348,9 +350,9 @@ async def async_chat_solo(dialog, messages, stream=True, session_id=None):
             yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "prompt": "", "created_at": time.time(), "final": False}
     else:
         if model_config["model_type"] == "chat":
-            answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting)
+            answer = await chat_mdl.async_chat(system_prompt, msg, dialog.llm_setting)
         else:
-            answer = await chat_mdl.async_chat(prompt_config.get("system", ""), msg, dialog.llm_setting, images=image_files)
+            answer = await chat_mdl.async_chat(system_prompt, msg, dialog.llm_setting, images=image_files)
         user_content = msg[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         yield {"answer": answer, "reference": {}, "audio_binary": tts(tts_mdl, answer), "prompt": "", "created_at": time.time()}
@@ -677,6 +679,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         param_keys.append("knowledge")
     logging.debug(f"attachments={attachments}, param_keys={param_keys}, embd_mdl={embd_mdl}")
 
+    sys_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    kwargs["date"] = sys_date
     for p in prompt_config.get("parameters", []):
         if p["key"] == "knowledge":
             continue

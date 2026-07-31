@@ -60,7 +60,7 @@ export default {
       submit: 'Soumettre',
       clear: 'Effacer',
       embedIntoSite: 'Intégrer dans la page web',
-      openInNewTab: 'Chat dans un nouvel onglet',
+      openInNewTab: 'Ouvrir dans un nouvel onglet',
       previousPage: 'Précédent',
       nextPage: 'Suivant',
       previous: 'Précédent',

@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"context"
 	"encoding/json"
 	"math"
 	"regexp"
@@ -14,26 +15,24 @@ import (
 )
 
 func datasetListItemToMap(kb *entity.KnowledgebaseListItem) map[string]interface{} {
+	// avatar/language/description keys are always present (null when unset),
+	// matching Python's full-row dict response.
 	item := map[string]interface{}{
 		"id":              kb.ID,
 		"name":            kb.Name,
+		"avatar":          stringPointerValue(kb.Avatar),
+		"language":        stringPointerValue(kb.Language),
+		"description":     stringPointerValue(kb.Description),
 		"tenant_id":       kb.TenantID,
 		"permission":      kb.Permission,
 		"document_count":  kb.DocNum,
 		"token_num":       kb.TokenNum,
 		"chunk_count":     kb.ChunkNum,
 		"parser_id":       kb.ParserID,
+		"parser_config":   jsonMapValue(kb.ParserConfig),
+		"pagerank":        kb.Pagerank,
 		"embedding_model": kb.EmbdID,
 		"nickname":        kb.Nickname,
-	}
-	if kb.Avatar != nil {
-		item["avatar"] = *kb.Avatar
-	}
-	if kb.Language != nil {
-		item["language"] = *kb.Language
-	}
-	if kb.Description != nil {
-		item["description"] = *kb.Description
 	}
 	if kb.TenantAvatar != nil {
 		item["tenant_avatar"] = *kb.TenantAvatar
@@ -228,7 +227,7 @@ func datasetCleanEmbeddingText(s string) string {
 	return re.ReplaceAllString(s, "")
 }
 
-func datasetEncodeEmbedding(embeddingModel *modelModule.EmbeddingModel, texts []string) ([][]float64, error) {
+func datasetEncodeEmbedding(ctx context.Context, embeddingModel *modelModule.EmbeddingModel, texts []string) ([][]float64, error) {
 	if len(texts) == 0 {
 		return nil, nil
 	}
@@ -237,7 +236,7 @@ func datasetEncodeEmbedding(embeddingModel *modelModule.EmbeddingModel, texts []
 		cleaned[i] = datasetCleanEmbeddingText(t)
 	}
 	embeddingConfig := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embeddingModel.ModelDriver.Embed(embeddingModel.ModelName, cleaned, embeddingModel.APIConfig, embeddingConfig, nil)
+	embeddings, err := embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, cleaned, embeddingModel.APIConfig, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}

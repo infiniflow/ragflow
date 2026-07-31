@@ -51,6 +51,8 @@ func newJinaForTest(baseURL string) *JinaModel {
 }
 
 func TestJinaChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "jina-vlm" {
 			t.Errorf("expected model=jina-vlm, got %v", body["model"])
@@ -77,7 +79,7 @@ func TestJinaChatHappyPath(t *testing.T) {
 
 	j := newJinaForTest(srv.URL)
 	apiKey := "test-key"
-	resp, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	resp, err := j.ChatWithMessages(ctx, "jina-vlm", []Message{{Role: "user", Content: "ping"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
@@ -89,7 +91,48 @@ func TestJinaChatHappyPath(t *testing.T) {
 	}
 }
 
+func TestJinaChatPreservesReasoningContent(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id": "jina-chat",
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{
+					"content":           "answer",
+					"reasoning_content": "\nthought",
+				},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	thinking := true
+	response, err := newJinaForTest(srv.URL).ChatWithMessages(
+		t.Context(),
+		"jina-vlm",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{Thinking: &thinking},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if response.ReasonContent == nil || *response.ReasonContent != "thought" {
+		t.Fatalf("ReasonContent=%v, want thought", response.ReasonContent)
+	}
+}
+
+func TestJinaChatSupportsToolCalls(t *testing.T) {
+	testNonStreamingToolCall(t, "jina-vlm", "/chat/completions", func(baseURL string) ModelDriver {
+		return newJinaForTest(baseURL)
+	})
+}
+
 func TestJinaChatPropagatesConfig(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["max_tokens"] != float64(128) {
 			t.Errorf("max_tokens=%v want 128", body["max_tokens"])
@@ -116,7 +159,7 @@ func TestJinaChatPropagatesConfig(t *testing.T) {
 	temperature := 0.2
 	topP := 0.8
 	stop := []string{"END"}
-	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "ping"}},
+	_, err := j.ChatWithMessages(ctx, "jina-vlm", []Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
 		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temperature, TopP: &topP, Stop: &stop},
 		nil,
@@ -127,6 +170,7 @@ func TestJinaChatPropagatesConfig(t *testing.T) {
 }
 
 func TestJinaChatValidation(t *testing.T) {
+	withSSRFBypass(t)
 	j := newJinaForTest("http://unused")
 	apiKey := "test-key"
 	emptyKey := ""
@@ -174,7 +218,8 @@ func TestJinaChatValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := j.ChatWithMessages(tt.modelName, tt.messages, tt.apiConfig, nil, nil)
+			ctx := t.Context()
+			_, err := j.ChatWithMessages(ctx, tt.modelName, tt.messages, tt.apiConfig, nil, nil)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("expected %q error, got %v", tt.want, err)
 			}
@@ -182,7 +227,56 @@ func TestJinaChatValidation(t *testing.T) {
 	}
 }
 
+func TestJinaChatStreamIsNotSupported(t *testing.T) {
+	withSSRFBypass(t)
+	apiKey := "test-key"
+	err := newJinaForTest("http://unused").ChatStreamlyWithSender(
+		t.Context(),
+		"jina-vlm",
+		[]Message{{Role: "user", Content: "x"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+		func(*string, *string) error { return nil },
+	)
+	if err == nil || !strings.Contains(err.Error(), "ChatStreamlyWithSender") {
+		t.Fatalf("expected unsupported streaming error, got %v", err)
+	}
+}
+
+func TestJinaEmbedMeanPoolsMultivectorResponse(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newJinaServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{{
+				"embeddings": [][]float64{{1, 3}, {3, 5}},
+				"index":      0,
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	modelName := "jina-embeddings-v4"
+	embeddings, err := newJinaForTest(srv.URL).Embed(
+		t.Context(),
+		&modelName,
+		[]string{"text"},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if len(embeddings) != 1 || len(embeddings[0].Embedding) != 2 || embeddings[0].Embedding[0] != 2 || embeddings[0].Embedding[1] != 4 {
+		t.Fatalf("embeddings=%v, want [[2 4]]", embeddings)
+	}
+}
+
 func TestJinaChatRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"detail":"invalid api key"}`))
@@ -191,13 +285,15 @@ func TestJinaChatRejectsHTTPError(t *testing.T) {
 
 	j := newJinaForTest(srv.URL)
 	apiKey := "test-key"
-	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := j.ChatWithMessages(ctx, "jina-vlm", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "status 401") {
 		t.Errorf("expected 401 propagated, got %v", err)
 	}
 }
 
 func TestJinaChatRejectsMalformedResponse(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"choices": []map[string]interface{}{}})
 	})
@@ -205,17 +301,19 @@ func TestJinaChatRejectsMalformedResponse(t *testing.T) {
 
 	j := newJinaForTest(srv.URL)
 	apiKey := "test-key"
-	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := j.ChatWithMessages(ctx, "jina-vlm", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "no choices in response") {
 		t.Errorf("expected malformed-response error, got %v", err)
 	}
 }
 
 func TestJinaChatRejectsUnknownRegion(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	j := newJinaForTest("http://unused")
 	apiKey := "test-key"
 	region := "eu"
-	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "x"}},
+	_, err := j.ChatWithMessages(ctx, "jina-vlm", []Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey, Region: &region}, nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "no base URL configured for region") {
@@ -224,6 +322,8 @@ func TestJinaChatRejectsUnknownRegion(t *testing.T) {
 }
 
 func TestJinaChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{"message": map[string]interface{}{"content": "ok"}}},
@@ -234,10 +334,36 @@ func TestJinaChatFallsBackToDefaultOnEmptyRegion(t *testing.T) {
 	j := newJinaForTest(srv.URL)
 	apiKey := "test-key"
 	emptyRegion := ""
-	_, err := j.ChatWithMessages("jina-vlm", []Message{{Role: "user", Content: "x"}},
+	_, err := j.ChatWithMessages(ctx, "jina-vlm", []Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey, Region: &emptyRegion}, nil, nil,
 	)
 	if err != nil {
 		t.Errorf("empty Region: expected fallback to default, got %v", err)
+	}
+}
+
+func TestJinaRerankDefaultsTopNToDocumentCount(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newJinaServer(t, "/rerank", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["top_n"] != float64(2) {
+			t.Errorf("top_n=%v, want 2", body["top_n"])
+		}
+		_, _ = w.Write([]byte(`{"results":[]}`))
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	modelName := "jina-reranker-v3"
+	_, err := newJinaForTest(srv.URL).Rerank(
+		t.Context(),
+		&modelName,
+		"weather",
+		[]string{"sunny", "rainy"},
+		&APIConfig{ApiKey: &apiKey},
+		&RerankConfig{},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("Rerank: %v", err)
 	}
 }

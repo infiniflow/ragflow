@@ -1,9 +1,10 @@
-import { Input } from '@/components/originui/input';
 import Spotlight from '@/components/spotlight';
 import message from '@/components/ui/message';
+import { useAutoResizeTextarea } from '@/hooks/use-auto-resize-textarea';
 import { IUserInfo } from '@/interfaces/database/user-setting';
+import { cn } from '@/lib/utils';
 import { Search } from 'lucide-react';
-import { Dispatch, SetStateAction } from 'react';
+import { Dispatch, SetStateAction, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import './index.less';
 import { RAGFlowLogo } from './ragflow-logo';
@@ -27,11 +28,15 @@ export default function SearchHome({
 }) {
   // const { data: userInfo } = useFetchUserInfo();
   const { t } = useTranslation();
+  const searchInputRef = useRef<HTMLTextAreaElement>(null);
+
+  const isMultiLine = useAutoResizeTextarea(searchInputRef, searchText);
+
   return (
     <section className="relative w-full flex transition-all justify-center items-center mt-[15vh]">
       <div className="relative z-10 px-8 pt-8 flex  text-transparent flex-col justify-center items-center w-[780px]">
         <RAGFlowLogo showEmbedIcon={showEmbedLogo}></RAGFlowLogo>
-        <div className="rounded-lg  text-primary text-xl sticky flex justify-center w-full transform scale-100 mt-8 p-6 h-[240px] border">
+        <div className="rounded-lg  text-primary text-xl sticky flex justify-center w-full transform scale-100 mt-8 p-6 min-h-[240px] border">
           {!isSearching && <Spotlight className="z-0" />}
           <div className="flex flex-col justify-center items-center  w-2/3">
             {!isSearching && (
@@ -48,12 +53,22 @@ export default function SearchHome({
             )}
 
             <div className="relative w-full ">
-              <Input
+              <textarea
+                ref={searchInputRef}
+                rows={1}
                 placeholder={t('search.searchGreeting')}
-                className="w-full rounded-full py-7 px-4 pr-10 text-text-primary text-lg bg-bg-base delay-700"
+                className={cn(
+                  'w-full py-4 px-4 pr-14 text-text-primary text-lg bg-bg-base border border-border-button resize-none scrollbar-thin outline-none focus-visible:ring-1 focus-visible:ring-text-primary/50',
+                  isMultiLine ? 'rounded-3xl' : 'rounded-full',
+                )}
                 value={searchText}
-                onKeyUp={(e) => {
-                  if (e.key === 'Enter') {
+                onKeyDown={(e) => {
+                  if (
+                    e.key === 'Enter' &&
+                    !e.shiftKey &&
+                    !e.nativeEvent.isComposing
+                  ) {
+                    e.preventDefault();
                     if (canSearch === false) {
                       message.warning(t('search.chooseDataset'));
                       return;
@@ -71,7 +86,10 @@ export default function SearchHome({
               />
               <button
                 type="button"
-                className="absolute right-2 top-1/2 -translate-y-1/2 transform rounded-full bg-text-primary p-2 text-bg-base shadow w-12"
+                className={cn(
+                  'absolute right-3 flex size-9 items-center justify-center rounded-full bg-text-primary text-bg-base shadow transition-opacity hover:opacity-90',
+                  isMultiLine ? 'bottom-3' : 'top-1/2 -translate-y-1/2',
+                )}
                 onClick={() => {
                   if (canSearch === false) {
                     message.warning(t('search.chooseDataset'));
@@ -80,7 +98,7 @@ export default function SearchHome({
                   setIsSearching(!isSearching);
                 }}
               >
-                <Search size={22} className="m-auto" />
+                <Search size={18} />
               </button>
             </div>
           </div>

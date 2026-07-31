@@ -41,7 +41,7 @@ func NewOpenRouterModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenRou
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -54,7 +54,38 @@ func (o *OpenRouterModel) Name() string {
 	return "openrouter"
 }
 
-func (o *OpenRouterModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+// OpenRouterChatResponse mirrors OpenRouter's chat-completions response.
+type OpenRouterChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Logprobs     any    `json:"logprobs"`
+		Message      struct {
+			Content   string           `json:"content"`
+			Reasoning string           `json:"reasoning"`
+			Role      string           `json:"role"`
+			ToolCalls []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+	SystemFingerprint string `json:"system_fingerprint"`
+	Usage             struct {
+		CompletionTokens        int `json:"completion_tokens"`
+		PromptTokens            int `json:"prompt_tokens"`
+		TotalTokens             int `json:"total_tokens"`
+		CompletionTokensDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
+		PromptTokensDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	} `json:"usage"`
+}
+
+func (o *OpenRouterModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -67,45 +98,9 @@ func (o *OpenRouterModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, err
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
-
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	// Build request body
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      false,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Stream != nil {
-			reqBody["stream"] = *chatModelConfig.Stream
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.DoSample != nil {
-			reqBody["do_sample"] = *chatModelConfig.DoSample
-		}
-
 		if chatModelConfig.Effort != nil {
 			reqBody["reasoning"] = map[string]interface{}{
 				"effort": chatModelConfig.Effort,
@@ -118,7 +113,7 @@ func (o *OpenRouterModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -144,58 +139,49 @@ func (o *OpenRouterModel) ChatWithMessages(modelName string, messages []Message,
 		return nil, fmt.Errorf("failed to send request: %d %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("no message in response")
-	}
-
-	content, ok := messageMap["content"].(string)
-	if !ok {
-		return nil, fmt.Errorf("no message in response")
-	}
-
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, ok = messageMap["reasoning"].(string)
-		if !ok {
-			return nil, fmt.Errorf("invalid content format")
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result OpenRouterChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to unmarshal response: %w", err)
 		}
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
 		}
-	}
 
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}
+		choice := result.Choices[0]
+		if choice.Message.Content == "" && len(choice.Message.ToolCalls) == 0 {
+			return chatResponseParts{}, fmt.Errorf("response contains neither content nor tool calls")
+		}
+		reasonContent := ""
+		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
+			reasonContent = strings.TrimPrefix(choice.Message.Reasoning, "\n")
+		}
 
-	return chatResponse, nil
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &choice.Message.Content,
+			ReasonContent: &reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
-func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (o *OpenRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
 
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
+	}
+	if modelConfig != nil {
+		modelConfig.ToolCallsResult = nil
+		modelConfig.UsageResult = nil
 	}
 
 	resolvedBaseURL, err := o.baseModel.GetBaseURL(apiConfig)
@@ -208,52 +194,10 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 	// breaking streaming for every qwen/glm model.
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, o.baseModel.URLSuffix.Chat)
 
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-	}
-
-	reqBody := map[string]interface{}{
-		"model":       modelName,
-		"messages":    apiMessages,
-		"stream":      true,
-		"temperature": 1,
-	}
+	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
 	if modelConfig != nil {
-		if modelConfig.Stream != nil {
-			reqBody["stream"] = *modelConfig.Stream
-		}
-
-		if modelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *modelConfig.MaxTokens
-		}
-
-		if modelConfig.Temperature != nil {
-			reqBody["temperature"] = *modelConfig.Temperature
-		}
-
-		if modelConfig.DoSample != nil {
-			reqBody["do_sample"] = *modelConfig.DoSample
-		}
-
-		if modelConfig.TopP != nil {
-			reqBody["top_p"] = *modelConfig.TopP
-		}
-
-		if modelConfig.Stop != nil {
-			reqBody["stop"] = *modelConfig.Stop
-		}
-
-		// OpenRouter controls reasoning via the standard `reasoning` request object
-		// (the non-stream path and the streamed `delta.reasoning` response use it too).
-		// The previous `thinking` key is non-standard and silently ignored by the API,
-		// so streaming reasoning was never actually enabled. `effort` takes precedence,
-		// matching the non-stream path.
 		if modelConfig.Thinking != nil {
 			reqBody["reasoning"] = map[string]interface{}{"enabled": *modelConfig.Thinking}
 		}
@@ -267,7 +211,7 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -289,23 +233,36 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 		return fmt.Errorf("invalid status code: %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	if _, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+	sawTerminal := false
+	accumulatedToolCalls := make(map[int]map[string]any)
+	done, err := ParseSSEStream[map[string]any](resp.Body, func(event map[string]any) error {
 		common.Info(fmt.Sprintf("%v", event))
 
-		choices, ok := event["choices"].([]interface{})
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(modelConfig, modelUsage, tokenUsage)
+		}
+		choices, ok := event["choices"].([]any)
 		if !ok || len(choices) == 0 {
 			return nil
 		}
 
-		firstChoice, ok := choices[0].(map[string]interface{})
+		choice, ok := choices[0].(map[string]any)
+		if !ok {
+			return nil
+		}
+		if finishReason, ok := choice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
+		delta, ok := choice["delta"].(map[string]any)
 		if !ok {
 			return nil
 		}
 
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
+		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
 		reasoningContent, ok := delta["reasoning"].(string)
 		if ok && reasoningContent != "" {
@@ -322,9 +279,14 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 		}
 
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		return fmt.Errorf("failed to scan response body: %w", err)
 	}
+	if !done && !sawTerminal {
+		return fmt.Errorf("openrouter: stream ended before [DONE] or finish_reason")
+	}
+	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
 
 	// Send [DONE] marker for OpenAI compatibility
 	endOfStream := "[DONE]"
@@ -335,25 +297,24 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(modelName string, messages []Me
 	return nil
 }
 
-type openrouterEmbeddingResponse struct {
-	Data   []openrouterEmbeddingData `json:"data"`
-	Model  string                    `json:"model"`
-	Object string                    `json:"object"`
-	Usage  openrouterUsage           `json:"usage"`
+// OpenRouterEmbeddingResponse mirrors OpenRouter's embeddings response.
+type OpenRouterEmbeddingResponse struct {
+	ID     string `json:"id"`
+	Object string `json:"object"`
+	Model  string `json:"model"`
+	Data   []struct {
+		Object    string    `json:"object"`
+		Embedding []float64 `json:"embedding"`
+		Index     int       `json:"index"`
+	} `json:"data"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
-type openrouterEmbeddingData struct {
-	Embedding []float64 `json:"embedding"`
-	Object    string    `json:"object"`
-	Index     int       `json:"index"`
-}
-
-type openrouterUsage struct {
-	PromptTokens int `json:"prompt_tokens"`
-	TotalTokens  int `json:"total_tokens"`
-}
-
-func (o *OpenRouterModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (o *OpenRouterModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -385,7 +346,7 @@ func (o *OpenRouterModel) Embed(modelName *string, texts []string, apiConfig *AP
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -411,10 +372,15 @@ func (o *OpenRouterModel) Embed(modelName *string, texts []string, apiConfig *AP
 		return nil, fmt.Errorf("OpenRouter embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
-	var parsed openrouterEmbeddingResponse
+	var parsed OpenRouterEmbeddingResponse
 	if err = json.Unmarshal(body, &parsed); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens:     parsed.Usage.PromptTokens,
+		CompletionTokens: parsed.Usage.CompletionTokens,
+		TotalTokens:      parsed.Usage.TotalTokens,
+	}, "embedding")
 
 	var embeddings []EmbeddingData
 	for _, dataElem := range parsed.Data {
@@ -446,9 +412,14 @@ type OpenRouterRerankResponse struct {
 			Text string `json:"text"`
 		} `json:"document,omitempty"`
 	} `json:"results"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
-func (o *OpenRouterModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (o *OpenRouterModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -456,10 +427,13 @@ func (o *OpenRouterModel) Rerank(modelName *string, query string, documents []st
 	if len(documents) == 0 {
 		return &RerankResponse{}, nil
 	}
+	if modelName == nil || strings.TrimSpace(*modelName) == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
 
-	var topN = rerankConfig.TopN
-	if rerankConfig.TopN == 0 {
-		topN = len(documents)
+	topN := len(documents)
+	if rerankConfig != nil && rerankConfig.TopN > 0 {
+		topN = rerankConfig.TopN
 	}
 
 	reqBody := OpenRouterRerankRequest{
@@ -480,7 +454,7 @@ func (o *OpenRouterModel) Rerank(modelName *string, query string, documents []st
 	}
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), o.baseModel.URLSuffix.Rerank)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -510,6 +484,11 @@ func (o *OpenRouterModel) Rerank(modelName *string, query string, documents []st
 	if err = json.Unmarshal(body, &rerankResp); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
+	recordResponseUsage(modelUsage, rerankResp.ID, &TokenUsage{
+		PromptTokens:     rerankResp.Usage.PromptTokens,
+		CompletionTokens: rerankResp.Usage.CompletionTokens,
+		TotalTokens:      rerankResp.Usage.TotalTokens,
+	}, "rerank")
 
 	var rerankResponse RerankResponse
 	for _, result := range rerankResp.Results {
@@ -543,7 +522,7 @@ func openRouterAudioFormat(file string, asrConfig *ASRConfig) string {
 }
 
 // TranscribeAudio transcribe audio
-func (o *OpenRouterModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+func (o *OpenRouterModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -591,7 +570,7 @@ func (o *OpenRouterModel) TranscribeAudio(modelName *string, file *string, apiCo
 		return nil, err
 	}
 	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), o.baseModel.URLSuffix.ASR)
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -625,12 +604,12 @@ func (o *OpenRouterModel) TranscribeAudio(modelName *string, file *string, apiCo
 	return &ASRResponse{Text: result.Text}, nil
 }
 
-func (o *OpenRouterModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (o *OpenRouterModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", o.Name())
 }
 
 // AudioSpeech convert text to audio
-func (o *OpenRouterModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+func (o *OpenRouterModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -664,7 +643,7 @@ func (o *OpenRouterModel) AudioSpeech(modelName *string, audioContent *string, a
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), longOpCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -693,21 +672,21 @@ func (o *OpenRouterModel) AudioSpeech(modelName *string, audioContent *string, a
 	return &TTSResponse{Audio: body}, nil
 }
 
-func (o *OpenRouterModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (o *OpenRouterModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", o.Name())
 }
 
 // OCRFile OCR file
-func (o *OpenRouterModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (o *OpenRouterModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
 // ParseFile parse file
-func (o *OpenRouterModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (o *OpenRouterModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
-func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (o *OpenRouterModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -726,7 +705,7 @@ func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse,
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
@@ -765,7 +744,7 @@ func (o *OpenRouterModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse,
 	return ParseListModel(modelList), nil
 }
 
-func (o *OpenRouterModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (o *OpenRouterModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	if err := o.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -776,7 +755,7 @@ func (o *OpenRouterModel) Balance(apiConfig *APIConfig) (map[string]interface{},
 	}
 	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Balance)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -823,15 +802,15 @@ func (o *OpenRouterModel) Balance(apiConfig *APIConfig) (map[string]interface{},
 	}, nil
 }
 
-func (o *OpenRouterModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := o.Balance(apiConfig)
+func (o *OpenRouterModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := o.Balance(ctx, apiConfig)
 	return err
 }
 
-func (o *OpenRouterModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (o *OpenRouterModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
 
-func (o *OpenRouterModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (o *OpenRouterModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }

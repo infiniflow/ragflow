@@ -79,6 +79,8 @@ func TestAvianFactory(t *testing.T) {
 }
 
 func TestAvianChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newAvianServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/v1/chat/completions" {
 			t.Errorf("path=%s, want /v1/chat/completions", r.URL.Path)
@@ -118,6 +120,7 @@ func TestAvianChatHappyPath(t *testing.T) {
 	topP := 0.9
 	stop := []string{"END"}
 	resp, err := newAvianForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"deepseek/deepseek-v3.2",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -136,6 +139,8 @@ func TestAvianChatHappyPath(t *testing.T) {
 }
 
 func TestAvianChatFallsBackToReasoningField(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newAvianServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
@@ -150,6 +155,7 @@ func TestAvianChatFallsBackToReasoningField(t *testing.T) {
 
 	apiKey := "test-key"
 	resp, err := newAvianForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"moonshotai/kimi-k2.5",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -165,7 +171,10 @@ func TestAvianChatFallsBackToReasoningField(t *testing.T) {
 }
 
 func TestAvianChatRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	_, err := newAvianForTest("http://unused").ChatWithMessages(
+		ctx,
 		"deepseek/deepseek-v3.2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{},
@@ -178,8 +187,11 @@ func TestAvianChatRequiresAPIKey(t *testing.T) {
 }
 
 func TestAvianChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newAvianForTest("http://unused").ChatWithMessages(
+		ctx,
 		"deepseek/deepseek-v3.2",
 		[]Message{},
 		&APIConfig{ApiKey: &apiKey},
@@ -192,6 +204,8 @@ func TestAvianChatRequiresMessages(t *testing.T) {
 }
 
 func TestAvianChatPropagatesUpstreamErrorStatus(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newAvianServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = io.WriteString(w, `{"error":"invalid key"}`)
@@ -200,6 +214,7 @@ func TestAvianChatPropagatesUpstreamErrorStatus(t *testing.T) {
 
 	apiKey := "test-key"
 	_, err := newAvianForTest(srv.URL).ChatWithMessages(
+		ctx,
 		"deepseek/deepseek-v3.2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -212,6 +227,8 @@ func TestAvianChatPropagatesUpstreamErrorStatus(t *testing.T) {
 }
 
 func TestAvianStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newAvianServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/v1/chat/completions" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -233,6 +250,7 @@ func TestAvianStreamHappyPath(t *testing.T) {
 	var content, reasoning []string
 	var sawDone bool
 	err := newAvianForTest(srv.URL).ChatStreamlyWithSender(
+		ctx,
 		"deepseek/deepseek-v3.2",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -265,9 +283,12 @@ func TestAvianStreamHappyPath(t *testing.T) {
 }
 
 func TestAvianStreamRejectsFalseStreamConfig(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	apiKey := "test-key"
 	stream := false
 	err := newAvianForTest("http://unused").ChatStreamlyWithSender(
+		ctx,
 		"deepseek/deepseek-v3.2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -281,8 +302,11 @@ func TestAvianStreamRejectsFalseStreamConfig(t *testing.T) {
 }
 
 func TestAvianStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	apiKey := "test-key"
 	err := newAvianForTest("http://unused").ChatStreamlyWithSender(
+		ctx,
 		"deepseek/deepseek-v3.2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -296,6 +320,8 @@ func TestAvianStreamRequiresSender(t *testing.T) {
 }
 
 func TestAvianListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := newAvianServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/v1/models" {
 			t.Errorf("path=%s, want /v1/models", r.URL.Path)
@@ -306,22 +332,25 @@ func TestAvianListModelsAndCheckConnection(t *testing.T) {
 
 	apiKey := "test-key"
 	cfg := &APIConfig{ApiKey: &apiKey}
-	models, err := newAvianForTest(srv.URL).ListModels(cfg)
+	models, err := newAvianForTest(srv.URL).ListModels(ctx, cfg)
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
 	if joinModelNames(models, ",") != "deepseek/deepseek-v3.2,moonshotai/kimi-k2.5" {
 		t.Errorf("models=%v", models)
 	}
-	if err := newAvianForTest(srv.URL).CheckConnection(cfg); err != nil {
+	if err = newAvianForTest(srv.URL).CheckConnection(ctx, cfg); err != nil {
 		t.Fatalf("CheckConnection: %v", err)
 	}
 }
 
 func TestAvianMissingBaseURLFailsClearly(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	a := NewAvianModel(map[string]string{}, URLSuffix{Chat: "v1/chat/completions"})
 	apiKey := "test-key"
 	_, err := a.ChatWithMessages(
+		ctx,
 		"deepseek/deepseek-v3.2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
@@ -334,25 +363,27 @@ func TestAvianMissingBaseURLFailsClearly(t *testing.T) {
 }
 
 func TestAvianUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	a := newAvianForTest("http://unused")
 	model := "deepseek/deepseek-v3.2"
 
-	if _, err := a.Embed(&model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.Embed(ctx, &model, []string{"x"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Embed: expected no such method, got %v", err)
 	}
-	if _, err := a.Rerank(&model, "q", []string{"d"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.Rerank(ctx, &model, "q", []string{"d"}, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Rerank: expected no such method, got %v", err)
 	}
-	if _, err := a.Balance(&APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.Balance(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: expected no such method, got %v", err)
 	}
-	if _, err := a.TranscribeAudio(&model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.TranscribeAudio(ctx, &model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("TranscribeAudio: expected no such method, got %v", err)
 	}
-	if _, err := a.AudioSpeech(&model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.AudioSpeech(ctx, &model, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("AudioSpeech: expected no such method, got %v", err)
 	}
-	if _, err := a.OCRFile(&model, nil, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
+	if _, err := a.OCRFile(ctx, &model, nil, nil, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: expected no such method, got %v", err)
 	}
 }

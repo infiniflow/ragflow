@@ -87,6 +87,8 @@ export enum LLMFactory {
   TokenHub = 'TokenHub',
   NewAPI = 'New API',
   FunASR = 'FunASR',
+  AIMLAPI = 'aimlapi.com',
+  GreenPT = 'GreenPT',
 }
 
 // Please lowercase the file name
@@ -173,6 +175,8 @@ export const IconMap = {
   [LLMFactory.SoMark]: 'somark',
   [LLMFactory.NewAPI]: 'new-api',
   [LLMFactory.FunASR]: 'funasr',
+  [LLMFactory.AIMLAPI]: 'aimlapi',
+  [LLMFactory.GreenPT]: 'greenpt',
 };
 
 export const ModelTypeToField: Record<string, string> = {
@@ -195,6 +199,8 @@ export const FieldToModelType: Record<string, string> = {
 
 export const APIMapUrl = {
   [LLMFactory.OpenAI]: 'https://platform.openai.com/api-keys',
+  [LLMFactory.AIMLAPI]: 'https://aimlapi.com/app/keys',
+  [LLMFactory.GreenPT]: 'https://greenpt.ai',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
   [LLMFactory.Gemini]: 'https://aistudio.google.com/app/apikey',
   [LLMFactory.DeepSeek]: 'https://platform.deepseek.com/api_keys',

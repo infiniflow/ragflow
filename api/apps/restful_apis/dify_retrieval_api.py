@@ -260,7 +260,7 @@ async def retrieval(tenant_id):
                 tenant_id,
                 kb_id,
             )
-            return build_error_result(message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+            return build_error_result(message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
         model_config = resolve_model_config(kb.tenant_id, LLMType.EMBEDDING, kb.embd_id)
         embd_mdl = LLMBundle(kb.tenant_id, model_config)
         if metadata_condition:

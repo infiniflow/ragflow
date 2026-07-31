@@ -67,7 +67,8 @@ func TestImportServersValidationErrors(t *testing.T) {
 		"missing-fields": {"foo": "bar"},
 		"bad-type":       {"url": "http://example.com", "type": "stdio"},
 	}
-	results, err := s.ImportServers("tenant-1", configs, 1)
+	ctx := t.Context()
+	results, err := s.ImportServers(ctx, "tenant-1", configs, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

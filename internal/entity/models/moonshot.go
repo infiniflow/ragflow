@@ -38,7 +38,7 @@ func NewMoonshotModel(baseURL map[string]string, urlSuffix URLSuffix) *MoonshotM
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -51,6 +51,29 @@ func (m *MoonshotModel) Name() string {
 	return "moonshot"
 }
 
+type MoonshotChatResponse struct {
+	ID      string `json:"id"`
+	Object  string `json:"object"`
+	Created int64  `json:"created"`
+	Model   string `json:"model"`
+	Choices []struct {
+		Index   int `json:"index"`
+		Message struct {
+			Role             string           `json:"role"`
+			Content          *string          `json:"content"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+			ReasoningContent *string          `json:"reasoning_content"`
+		} `json:"message"`
+		FinishReason string `json:"finish_reason"`
+	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+		TotalTokens      int `json:"total_tokens"`
+		CachedTokens     int `json:"cached_tokens"`
+	} `json:"usage"`
+}
+
 func validateMoonshotModelName(modelName string) (string, error) {
 	if strings.TrimSpace(modelName) == "" {
 		return "", fmt.Errorf("model name is required")
@@ -58,7 +81,7 @@ func validateMoonshotModelName(modelName string) (string, error) {
 	return strings.TrimSpace(modelName), nil
 }
 
-func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+func (m *MoonshotModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -76,46 +99,9 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, err
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
-
-	// Convert messages to the format expected by API
-	apiMessages := make([]map[string]any, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]any{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-		if msg.ToolCallID != "" {
-			apiMessages[i]["tool_call_id"] = msg.ToolCallID
-		}
-		if len(msg.ToolCalls) > 0 {
-			apiMessages[i]["tool_calls"] = msg.ToolCalls
-		}
-	}
-
-	// Build request body
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   false,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
 				reqBody["thinking"] = map[string]interface{}{
@@ -128,14 +114,6 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 			}
 		}
 
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-			toolChoice := "auto"
-			if chatModelConfig.ToolChoice != nil {
-				toolChoice = *chatModelConfig.ToolChoice
-			}
-			reqBody["tool_choice"] = toolChoice
-		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -143,7 +121,7 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -169,66 +147,57 @@ func (m *MoonshotModel) ChatWithMessages(modelName string, messages []Message, a
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result map[string]interface{}
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-
-	choices, ok := result["choices"].([]interface{})
-	if !ok || len(choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
-
-	firstChoice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid choice format")
-	}
-
-	messageMap, ok := firstChoice["message"].(map[string]interface{})
-	if !ok {
-		return nil, fmt.Errorf("invalid message format")
-	}
-
-	var content string
-	if c, ok := messageMap["content"].(string); ok {
-		content = c
-	}
-
-	var reasonContent string
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
-		reasonContent, _ = messageMap["reasoning_content"].(string)
-		// if first char of reasonContent is \n remove the \n
-		if reasonContent != "" && reasonContent[0] == '\n' {
-			reasonContent = reasonContent[1:]
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result MoonshotChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
 		}
-	}
 
-	var toolCalls []map[string]any
-	if tcs, ok := messageMap["tool_calls"].([]interface{}); ok {
-		for _, tc := range tcs {
-			if tcMap, ok := tc.(map[string]any); ok {
-				toolCalls = append(toolCalls, tcMap)
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
+
+		choice := &result.Choices[0]
+		content := ""
+		if choice.Message.Content != nil {
+			content = *choice.Message.Content
+		}
+
+		reasonContent := ""
+		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
+			if choice.Message.ReasoningContent != nil {
+				reasonContent = *choice.Message.ReasoningContent
+			}
+			if reasonContent != "" && reasonContent[0] == '\n' {
+				reasonContent = reasonContent[1:]
 			}
 		}
-	}
 
-	chatResponse := &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-		ToolCalls:     toolCalls,
-	}
-	if pt, ct, tt := extractUsageFromMap(result); tt > 0 {
-		chatResponse.Usage = &TokenUsage{
-			PromptTokens: pt, CompletionTokens: ct, TotalTokens: tt,
+		totalTokens := result.Usage.TotalTokens
+		if totalTokens == 0 {
+			totalTokens = result.Usage.PromptTokens + result.Usage.CompletionTokens
 		}
-	}
+		var usage *TokenUsage
+		if totalTokens > 0 {
+			usage = &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      totalTokens,
+			}
+		}
 
-	return chatResponse, nil
+		return chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &content,
+			ReasonContent: &reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage:         usage,
+		}, nil
+	})
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
-func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (m *MoonshotModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -249,50 +218,9 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return err
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
-
-	// Convert messages to API format
-	apiMessages := make([]map[string]interface{}, len(messages))
-	for i, msg := range messages {
-		apiMessages[i] = map[string]interface{}{
-			"role":    msg.Role,
-			"content": msg.Content,
-		}
-		if msg.ToolCallID != "" {
-			apiMessages[i]["tool_call_id"] = msg.ToolCallID
-		}
-		if len(msg.ToolCalls) > 0 {
-			apiMessages[i]["tool_calls"] = msg.ToolCalls
-		}
-	}
-
-	// Build request body with streaming enabled
-	reqBody := map[string]interface{}{
-		"model":    modelName,
-		"messages": apiMessages,
-		"stream":   true,
-	}
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-		}
-
-		if chatModelConfig.Temperature != nil {
-			reqBody["temperature"] = *chatModelConfig.Temperature
-		}
-
-		if chatModelConfig.DoSample != nil {
-			reqBody["do_sample"] = *chatModelConfig.DoSample
-		}
-
-		if chatModelConfig.TopP != nil {
-			reqBody["top_p"] = *chatModelConfig.TopP
-		}
-
-		if chatModelConfig.Stop != nil {
-			reqBody["stop"] = *chatModelConfig.Stop
-		}
-
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
 				reqBody["thinking"] = map[string]interface{}{
@@ -304,15 +232,6 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 				}
 			}
 		}
-
-		if chatModelConfig.Tools != nil {
-			reqBody["tools"] = chatModelConfig.Tools
-			toolChoice := "auto"
-			if chatModelConfig.ToolChoice != nil {
-				toolChoice = *chatModelConfig.ToolChoice
-			}
-			reqBody["tool_choice"] = toolChoice
-		}
 	}
 
 	jsonData, err := json.Marshal(reqBody)
@@ -320,7 +239,7 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), streamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
@@ -350,6 +269,14 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 	}
 	accumulatedToolCalls := make(map[int]map[string]any)
 	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
+		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
+		if usageErr != nil {
+			return usageErr
+		}
+		if found {
+			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
+		}
+
 		choices, ok := event["choices"].([]interface{})
 		if !ok || len(choices) == 0 {
 			return nil
@@ -407,11 +334,11 @@ func (m *MoonshotModel) ChatStreamlyWithSender(modelName string, messages []Mess
 }
 
 // Embed embeds a list of texts into embeddings
-func (m *MoonshotModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+func (m *MoonshotModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (m *MoonshotModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -423,7 +350,7 @@ func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, e
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Models)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -464,7 +391,7 @@ func (m *MoonshotModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, e
 	return models, nil
 }
 
-func (m *MoonshotModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (m *MoonshotModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -476,7 +403,7 @@ func (m *MoonshotModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 	}
 	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Balance)
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -522,8 +449,8 @@ func (m *MoonshotModel) Balance(apiConfig *APIConfig) (map[string]interface{}, e
 	return response, nil
 }
 
-func (m *MoonshotModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := m.ListModels(apiConfig)
+func (m *MoonshotModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := m.ListModels(ctx, apiConfig)
 	if err != nil {
 		return err
 	}
@@ -531,42 +458,42 @@ func (m *MoonshotModel) CheckConnection(apiConfig *APIConfig) error {
 }
 
 // Rerank calculates similarity scores between query and documents
-func (m *MoonshotModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
+func (m *MoonshotModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, Rerank not implemented", m.Name())
 }
 
 // TranscribeAudio transcribe audio
-func (m *MoonshotModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
+func (m *MoonshotModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
-func (m *MoonshotModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (m *MoonshotModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", m.Name())
 }
 
 // AudioSpeech convert text to audio
-func (m *MoonshotModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
+func (m *MoonshotModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
-func (m *MoonshotModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+func (m *MoonshotModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", m.Name())
 }
 
 // OCRFile OCR file
-func (m *MoonshotModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
+func (m *MoonshotModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
 // ParseFile parse file
-func (m *MoonshotModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
+func (m *MoonshotModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
-func (m *MoonshotModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (m *MoonshotModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }
 
-func (m *MoonshotModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (m *MoonshotModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", m.Name())
 }

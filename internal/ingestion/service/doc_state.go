@@ -17,11 +17,13 @@
 package service
 
 import (
+	"context"
 	"fmt"
 
 	"ragflow/internal/common"
 	taskpkg "ragflow/internal/ingestion/task"
 	documentpkg "ragflow/internal/service/document"
+	"ragflow/internal/utility"
 )
 
 // docStateSvc is the subset of *service.DocumentService needed to finalize a
@@ -29,9 +31,9 @@ import (
 // can inject a stub without constructing a real DocumentService (which depends
 // on initialized server config).
 type docStateSvc interface {
-	GetDocumentMetadataByID(docID string) (map[string]any, error)
-	SetDocumentMetadata(docID string, meta map[string]any) error
-	IncrementChunkNum(docID, kbID string, chunkNum, tokenNum int, duration float64) error
+	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]any, error)
+	SetDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error
+	IncrementChunkNum(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error
 }
 
 // docStateUpdater applies a pipeline run's results to document state: it
@@ -50,36 +52,37 @@ func newDocStateUpdater() *docStateUpdater {
 	}
 }
 
-func (u *docStateUpdater) apply(r *taskpkg.PipelineResult) {
+func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) {
 	if r == nil {
 		return
 	}
 	if len(r.Metadata) > 0 {
-		if err := mergeDocMetadata(u.docSvc, r.DocID, r.Metadata); err != nil {
+		if err := mergeDocMetadata(ctx, u.docSvc, r.DocID, r.Metadata); err != nil {
 			common.Warn(fmt.Sprintf("failed to update document metadata: %v", err))
 		}
 	}
-	if err := u.docSvc.IncrementChunkNum(r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, r.Duration); err != nil {
+	if err := u.docSvc.IncrementChunkNum(ctx, r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, r.Duration); err != nil {
 		common.Warn(fmt.Sprintf("failed to increment chunk num: %v", err))
 	}
 }
 
-// mergeDocMetadata reads existing metadata, fills in keys not already present
-// (existing keys are preserved, not overwritten), and writes the merged map back.
-// A read failure aborts the merge: SetDocumentMetadata is a full overwrite, so
-// writing with an empty baseline would destroy existing keys.
-func mergeDocMetadata(svc docStateSvc, docID string, metadata map[string]any) error {
-	existing, err := svc.GetDocumentMetadataByID(docID)
+// mergeDocMetadata reads existing metadata, unions it with the freshly
+// aggregated doc metadata (list values merged + de-duplicated, scalars from the
+// stored map winning — matching Python task_executor.py:572
+// update_metadata_to(metadata, existing_meta)), then splits combined values
+// before writing the merged map back (Python doc_metadata_service.py:468
+// _split_combined_values). A read failure aborts the merge: SetDocumentMetadata
+// is a full overwrite, so writing with an empty baseline would destroy existing
+// keys.
+func mergeDocMetadata(ctx context.Context, svc docStateSvc, docID string, metadata map[string]any) error {
+	existing, err := svc.GetDocumentMetadataByID(ctx, docID)
 	if err != nil {
 		return err
 	}
 	if existing == nil {
 		existing = map[string]any{}
 	}
-	for k, v := range metadata {
-		if _, exists := existing[k]; !exists {
-			existing[k] = v
-		}
-	}
-	return svc.SetDocumentMetadata(docID, existing)
+	merged := utility.UpdateMetadataTo(metadata, existing)
+	merged = common.SplitCombinedMetadataValues(merged)
+	return svc.SetDocumentMetadata(ctx, docID, merged)
 }

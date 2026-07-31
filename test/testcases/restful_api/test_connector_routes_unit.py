@@ -451,7 +451,7 @@ def test_connector_by_id_routes_reject_cross_tenant_access(monkeypatch):
     ]
 
     assert all(res["code"] == module.RetCode.AUTHENTICATION_ERROR for res in responses)
-    assert all(res["message"] == "No authorization." for res in responses)
+    assert all(res["message"] == "no authorization" for res in responses)
     assert all(res["data"] is False for res in responses)
     assert touched == []
 

@@ -11,11 +11,9 @@ import { useTranslation } from 'react-i18next';
 
 import { formatKindLabel } from '@/utils/compilation-template-util';
 
+import { DefaultTemplateValues } from '@/pages/user-setting/compilation-templates/create-next/constant';
 import { FormSchemaType } from '@/pages/user-setting/compilation-templates/create-next/schema';
-import {
-  DefaultTemplateValues,
-  generateTemplateName,
-} from '@/pages/user-setting/compilation-templates/create-next/utils';
+import { generateTemplateName } from '@/pages/user-setting/compilation-templates/create-next/utils';
 
 import { useTemplateAddButton } from '../hooks/use-template-add-button';
 
@@ -91,7 +89,7 @@ function TemplateSidebarItem({
         </span>
         {template?.kind && (
           <span className="ml-2 shrink-0 text-text-secondary">
-            {formatKindLabel(template.kind)}
+            {formatKindLabel(t, template.kind)}
           </span>
         )}
       </div>

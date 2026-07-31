@@ -54,7 +54,7 @@ export interface IDeleteProviderInstanceRequestBody {
 
 export interface IShowProviderInstanceRequestParams {
   provider_name: string;
-  instance_name: string;
+  id: string;
 }
 
 export interface IAddInstanceModelRequestBody {
@@ -104,7 +104,7 @@ export interface IDeleteInstanceModelsRequestBody {
 export interface IUpdateProviderInstanceRequestBody {
   provider_name: string;
   instance_name: string;
-  id?: string;
+  id: string;
   /**
    * Either a plain API-key string, or — for providers that need an
    * extra credential such as MiniMax's `group_id` — an object bundling
@@ -138,6 +138,13 @@ export interface IProviderModelItem {
   max_tokens: number;
   model_types: string[];
   features: string[] | null;
+  /**
+   * Per-model extra config forwarded through `model_info[].extra`
+   * (e.g. SoMark's element-format / feature-config fields).
+   * Catalog models typically omit this; it is populated by the
+   * edit dialog and the `useModelsDerived` echo path.
+   */
+  extra?: Record<string, any>;
 }
 
 /**

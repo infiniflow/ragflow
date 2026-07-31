@@ -91,8 +91,8 @@ func InitVariables(store VariableStore) error {
 
 // GetSecretKey returns the current secret key
 func GetSecretKey(store VariableStore) (string, error) {
-	if globalConfig.Server.SecretKey != nil {
-		return *globalConfig.Server.SecretKey, nil
+	if globalConfig.GetSecretKey() != "" {
+		return globalConfig.GetSecretKey(), nil
 	}
 
 	generatedKey, err := utility.GenerateSecretKey()

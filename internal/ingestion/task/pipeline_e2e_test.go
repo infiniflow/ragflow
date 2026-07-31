@@ -14,6 +14,8 @@
 // limitations under the License.
 //
 
+//go:build e2e
+
 package task
 
 import (
@@ -176,6 +178,7 @@ func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 		},
 	}
 
+	ctx := t.Context()
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Logf("Running Pipeline E2E test with engine: %s", tc.name)
@@ -201,11 +204,11 @@ func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 			defer cleanupEngine()
 
 			// Load task context
-			ingestionTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+			ingestionTask, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 			if err != nil {
 				t.Fatalf("GetByID failed: %v", err)
 			}
-			taskCtx, err := LoadFromIngestionTask(ingestionTask)
+			taskCtx, err := LoadFromIngestionTask(ctx, ingestionTask)
 			if err != nil {
 				t.Fatalf("LoadFromIngestionTask failed: %v", err)
 			}
@@ -314,11 +317,11 @@ func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 
 			// Verify final task status can be marked completed
 			ingestSvc := service.NewIngestionTaskService()
-			if err := ingestSvc.MarkCompleted(taskID); err != nil {
+			if err = ingestSvc.MarkCompleted(ctx, taskID); err != nil {
 				t.Fatalf("MarkCompleted failed: %v", err)
 			}
 
-			finalTask, err := dao.NewIngestionTaskDAO().GetByID(taskID)
+			finalTask, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
 			if err != nil {
 				t.Fatalf("GetByID failed: %v", err)
 			}

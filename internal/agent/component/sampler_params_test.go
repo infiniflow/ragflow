@@ -35,7 +35,7 @@ func TestLLM_ForwardsTopP(t *testing.T) {
 		ModelID: "echo",
 		TopP:    &topP,
 	})
-	if _, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "hi"}); err != nil {
+	if _, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "hi"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if stub.calls != 1 {
@@ -59,7 +59,7 @@ func TestLLM_TopPFromInputs(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	if _, err := c.Invoke(context.Background(), map[string]any{
+	if _, err := c.Invoke(context.Background(), nil, map[string]any{
 		"user_prompt": "hi",
 		"top_p":       0.7,
 	}); err != nil {
@@ -80,7 +80,7 @@ func TestLLM_NoTopPByDefault(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	if _, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "hi"}); err != nil {
+	if _, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "hi"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if stub.captured == nil {
@@ -135,7 +135,7 @@ func TestAgentParam_ForwardsTopP(t *testing.T) {
 		TopP:      &topP,
 		MaxRounds: 1,
 	})
-	if _, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "hi"}); err != nil {
+	if _, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "hi"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 }
@@ -150,7 +150,7 @@ func TestAgent_TopPFromInputs(t *testing.T) {
 	})
 
 	c := NewAgentComponent(AgentParam{ModelID: "echo", MaxRounds: 1})
-	if _, err := c.Invoke(context.Background(), map[string]any{
+	if _, err := c.Invoke(context.Background(), nil, map[string]any{
 		"user_prompt": "hi",
 		"top_p":       0.42,
 	}); err != nil {

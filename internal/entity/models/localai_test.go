@@ -43,6 +43,8 @@ func TestLocalAIName(t *testing.T) {
 }
 
 func TestLocalAIStreamCancelsOnIdle(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// The server emits one valid chunk and then stalls. Without the
 	// watchdog, scanner.Scan() would hang forever. With the watchdog
 	// at 200ms, it must return a clear "stream idle" error in well
@@ -78,7 +80,7 @@ func TestLocalAIStreamCancelsOnIdle(t *testing.T) {
 	l := newLocalAIForTest(srv.URL)
 	var got []string
 	var mu sync.Mutex
-	err := l.ChatStreamlyWithSender("gpt-4",
+	err := l.ChatStreamlyWithSender(ctx, "gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil, nil,
 		func(content *string, _ *string) error {
@@ -106,6 +108,8 @@ func TestLocalAIStreamCancelsOnIdle(t *testing.T) {
 }
 
 func TestLocalAIStreamCompletesWithoutTriggeringWatchdog(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// Sanity check: a fast, complete stream should not trip the
 	// watchdog even with a moderately tight idle window.
 	withLocalAIIdleTimeout(t, 500*time.Millisecond)
@@ -128,7 +132,7 @@ func TestLocalAIStreamCompletesWithoutTriggeringWatchdog(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	var chunks []string
-	err := l.ChatStreamlyWithSender("gpt-4",
+	err := l.ChatStreamlyWithSender(ctx, "gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil, nil,
 		func(content *string, _ *string) error {
@@ -147,8 +151,10 @@ func TestLocalAIStreamCompletesWithoutTriggeringWatchdog(t *testing.T) {
 }
 
 func TestLocalAIStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	l := newLocalAIForTest("http://unused")
-	err := l.ChatStreamlyWithSender("gpt-4",
+	err := l.ChatStreamlyWithSender(ctx, "gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "sender is required") {
@@ -157,11 +163,13 @@ func TestLocalAIStreamRequiresSender(t *testing.T) {
 }
 
 func TestLocalAIChatMissingBaseURLFailsClearly(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// LocalAI has no public default; resolveBaseURL must fail with a
 	// helpful message when neither the requested region nor "default"
 	// is configured.
 	l := NewLocalAIModel(map[string]string{}, URLSuffix{Chat: "chat/completions"})
-	_, err := l.ChatWithMessages("gpt-4",
+	_, err := l.ChatWithMessages(ctx, "gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil, nil,
 	)
@@ -171,6 +179,8 @@ func TestLocalAIChatMissingBaseURLFailsClearly(t *testing.T) {
 }
 
 func TestLocalAIChatOmitsAuthHeaderWhenKeyEmpty(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// Optional-auth contract: LocalAI accepts an empty key, so the
 	// driver must NOT send a "Bearer " header in that case.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -182,7 +192,7 @@ func TestLocalAIChatOmitsAuthHeaderWhenKeyEmpty(t *testing.T) {
 	defer srv.Close()
 
 	l := newLocalAIForTest(srv.URL)
-	resp, err := l.ChatWithMessages("gpt-4",
+	resp, err := l.ChatWithMessages(ctx, "gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil, nil,
 	)
@@ -195,6 +205,8 @@ func TestLocalAIChatOmitsAuthHeaderWhenKeyEmpty(t *testing.T) {
 }
 
 func TestLocalAIChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// And conversely: when a tenant has put LocalAI behind an auth
 	// proxy with a token, the driver does send the Bearer header.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +219,7 @@ func TestLocalAIChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	key := "secret"
-	_, err := l.ChatWithMessages("gpt-4",
+	_, err := l.ChatWithMessages(ctx, "gpt-4",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &key}, nil, nil,
 	)
@@ -217,14 +229,18 @@ func TestLocalAIChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
 }
 
 func TestLocalAIBalanceReturnsNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	l := newLocalAIForTest("http://unused")
-	_, err := l.Balance(&APIConfig{})
+	_, err := l.Balance(ctx, &APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: expected 'no such method', got %v", err)
 	}
 }
 
 func TestLocalAIEmbedHappyPath(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/embeddings" {
 			t.Errorf("path=%s", r.URL.Path)
@@ -238,7 +254,7 @@ func TestLocalAIEmbedHappyPath(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	vecs, err := l.Embed(&model, []string{"a", "b", "c"}, &APIConfig{}, nil, nil)
+	vecs, err := l.Embed(ctx, &model, []string{"a", "b", "c"}, &APIConfig{}, nil, nil)
 	if err != nil {
 		t.Fatalf("Embed: %v", err)
 	}
@@ -251,6 +267,8 @@ func TestLocalAIEmbedHappyPath(t *testing.T) {
 }
 
 func TestLocalAIEmbedRejectsDuplicateIndex(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	// CodeRabbit caught that a response repeating data[*].index would
 	// silently overwrite the earlier vector. Verify the driver fails
 	// loudly instead.
@@ -263,13 +281,15 @@ func TestLocalAIEmbedRejectsDuplicateIndex(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	_, err := l.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := l.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "duplicate embedding index 0") {
 		t.Errorf("expected duplicate-index error, got %v", err)
 	}
 }
 
 func TestLocalAIEmbedRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"data":[{"embedding":[1],"index":7}]}`)
 	}))
@@ -277,13 +297,15 @@ func TestLocalAIEmbedRejectsOutOfRangeIndex(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	_, err := l.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := l.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Errorf("expected out-of-range error, got %v", err)
 	}
 }
 
 func TestLocalAIEmbedRejectsMissingSlot(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"data":[{"embedding":[1],"index":0}]}`)
 	}))
@@ -291,13 +313,15 @@ func TestLocalAIEmbedRejectsMissingSlot(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	_, err := l.Embed(&model, []string{"a", "b"}, &APIConfig{}, nil, nil)
+	_, err := l.Embed(ctx, &model, []string{"a", "b"}, &APIConfig{}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "missing embedding for input index 1") {
 		t.Errorf("expected missing-slot error, got %v", err)
 	}
 }
 
 func TestLocalAIEmbedEmptyInputShortCircuits(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("Embed([]) made an unexpected HTTP call")
 	}))
@@ -305,7 +329,7 @@ func TestLocalAIEmbedEmptyInputShortCircuits(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	model := "text-embedding-ada-002"
-	vecs, err := l.Embed(&model, []string{}, &APIConfig{}, nil, nil)
+	vecs, err := l.Embed(ctx, &model, []string{}, &APIConfig{}, nil, nil)
 	if err != nil || len(vecs) != 0 {
 		t.Errorf("Embed([])=(%v,%v) want ([],nil)", vecs, err)
 	}
@@ -360,6 +384,8 @@ func TestExtractLocalAIReasoning(t *testing.T) {
 // when proxied through OpenAI-shim). The driver must surface it on
 // ChatResponse.ReasonContent.
 func TestLocalAIChatExtractsReasoningContent(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"choices":[{"message":{
 			"role":"assistant",
@@ -370,7 +396,7 @@ func TestLocalAIChatExtractsReasoningContent(t *testing.T) {
 	defer srv.Close()
 
 	l := newLocalAIForTest(srv.URL)
-	resp, err := l.ChatWithMessages("kimi-k2.6",
+	resp, err := l.ChatWithMessages(ctx, "kimi-k2.6",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
 		&APIConfig{}, nil, nil,
 	)
@@ -388,6 +414,8 @@ func TestLocalAIChatExtractsReasoningContent(t *testing.T) {
 // Non-streaming chat that uses message.thinking (Qwen3 via Ollama-shim
 // inside LocalAI). The driver must surface it on ReasonContent too.
 func TestLocalAIChatExtractsThinking(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"choices":[{"message":{
 			"role":"assistant",
@@ -398,7 +426,7 @@ func TestLocalAIChatExtractsThinking(t *testing.T) {
 	defer srv.Close()
 
 	l := newLocalAIForTest(srv.URL)
-	resp, err := l.ChatWithMessages("qwen3-32b",
+	resp, err := l.ChatWithMessages(ctx, "qwen3-32b",
 		[]Message{{Role: "user", Content: "15% of 80?"}},
 		&APIConfig{}, nil, nil,
 	)
@@ -414,6 +442,8 @@ func TestLocalAIChatExtractsThinking(t *testing.T) {
 // non-reasoning model) must produce empty ReasonContent without
 // crashing or erroring.
 func TestLocalAIChatHandlesAbsentReasoning(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"choices":[{"message":{
 			"role":"assistant","content":"hello"
@@ -422,7 +452,7 @@ func TestLocalAIChatHandlesAbsentReasoning(t *testing.T) {
 	defer srv.Close()
 
 	l := newLocalAIForTest(srv.URL)
-	resp, err := l.ChatWithMessages("llama-3-8b-instruct",
+	resp, err := l.ChatWithMessages(ctx, "llama-3-8b-instruct",
 		[]Message{{Role: "user", Content: "hi"}},
 		&APIConfig{}, nil, nil,
 	)
@@ -441,6 +471,8 @@ func TestLocalAIChatHandlesAbsentReasoning(t *testing.T) {
 // chunks and delta.content chunks (kimi-k2.6, o-series shape).
 // Reasoning must reach the sender's 2nd arg, content the 1st.
 func TestLocalAIStreamExtractsReasoningContentDelta(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -456,7 +488,7 @@ func TestLocalAIStreamExtractsReasoningContentDelta(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	var content, reasoning []string
-	err := l.ChatStreamlyWithSender("kimi-k2.6",
+	err := l.ChatStreamlyWithSender(ctx, "kimi-k2.6",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil, nil,
 		func(c *string, r *string) error {
@@ -486,6 +518,8 @@ func TestLocalAIStreamExtractsReasoningContentDelta(t *testing.T) {
 // Streaming chat where the upstream uses delta.thinking (Qwen3 shape).
 // The same handler must work.
 func TestLocalAIStreamExtractsThinkingDelta(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(http.StatusOK)
@@ -499,7 +533,7 @@ func TestLocalAIStreamExtractsThinkingDelta(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	var got []string
-	err := l.ChatStreamlyWithSender("qwen3-32b",
+	err := l.ChatStreamlyWithSender(ctx, "qwen3-32b",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, nil, nil,
 		func(c *string, r *string) error {
@@ -524,6 +558,8 @@ func TestLocalAIStreamExtractsThinkingDelta(t *testing.T) {
 // Request-side: ChatConfig.Effort must flow into request body as
 // reasoning_effort.
 func TestLocalAIChatPropagatesReasoningEffort(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	var seen map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
@@ -541,7 +577,7 @@ func TestLocalAIChatPropagatesReasoningEffort(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	effort := "high"
-	_, err := l.ChatWithMessages("kimi-k2.6",
+	_, err := l.ChatWithMessages(ctx, "kimi-k2.6",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, &ChatConfig{Effort: &effort}, nil)
 	if err != nil {
@@ -558,6 +594,8 @@ func TestLocalAIChatPropagatesReasoningEffort(t *testing.T) {
 // Request-side: ChatConfig.Thinking must flow into request body as
 // enable_thinking (Qwen3-style).
 func TestLocalAIChatPropagatesEnableThinking(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	var seen map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
@@ -575,7 +613,7 @@ func TestLocalAIChatPropagatesEnableThinking(t *testing.T) {
 
 	l := newLocalAIForTest(srv.URL)
 	think := true
-	_, err := l.ChatWithMessages("qwen3-32b",
+	_, err := l.ChatWithMessages(ctx, "qwen3-32b",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, &ChatConfig{Thinking: &think}, nil)
 	if err != nil {
@@ -588,6 +626,8 @@ func TestLocalAIChatPropagatesEnableThinking(t *testing.T) {
 
 // Stream request also propagates the reasoning params.
 func TestLocalAIStreamPropagatesReasoningParams(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	var seen map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		raw, err := io.ReadAll(r.Body)
@@ -610,7 +650,7 @@ func TestLocalAIStreamPropagatesReasoningParams(t *testing.T) {
 	l := newLocalAIForTest(srv.URL)
 	effort := "medium"
 	think := true
-	err := l.ChatStreamlyWithSender("kimi-k2.6",
+	err := l.ChatStreamlyWithSender(ctx, "kimi-k2.6",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{}, &ChatConfig{Effort: &effort, Thinking: &think}, nil,
 		func(*string, *string) error { return nil },

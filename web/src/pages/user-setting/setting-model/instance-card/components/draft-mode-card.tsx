@@ -15,7 +15,9 @@
  */
 
 import { DynamicForm, DynamicFormRef } from '@/components/dynamic-form';
-import { RefObject } from 'react';
+import { LLMFactory } from '@/constants/llm';
+import { useCallback, type RefObject } from 'react';
+import { AimlapiGetKeyButton } from '../aimlapi-get-key-button';
 import { DRAFT_INSTANCE_SENTINEL, DraftModeCardProps } from '../interface';
 import { ModelsSection } from '../models-section';
 import VerifyButton from '../verify-button';
@@ -44,7 +46,18 @@ export function DraftModeCard({
   modelInfoRef,
   draftName,
   setDraftName,
+  verifyTransform,
 }: DraftModeCardProps) {
+  // On success, fold the OAuth-issued key into the current form values so it
+  // lands in the (editable) api_key field without clobbering other inputs.
+  const handleAimlapiKey = useCallback(
+    (key: string) => {
+      const current = formRef.current?.getValues() ?? {};
+      formRef.current?.reset({ ...current, api_key: key });
+    },
+    [formRef],
+  );
+
   return (
     <div className="px-2 py-3 flex flex-col gap-4">
       <InstanceNameSection
@@ -62,6 +75,10 @@ export function DraftModeCard({
         labelClassName="font-normal"
       />
 
+      {providerName === LLMFactory.AIMLAPI && (
+        <AimlapiGetKeyButton onKey={handleAimlapiKey} />
+      )}
+
       <div className="pt-3">
         <VerifyButton
           onVerify={handleVerify}
@@ -78,6 +95,7 @@ export function DraftModeCard({
           hideActions={false}
           hideIfEmpty={false}
           getFormValues={() => formRef.current?.getValues?.() ?? {}}
+          verifyTransform={verifyTransform}
           onInstanceModelsChange={(info) => {
             modelInfoRef.current = info;
           }}

@@ -26,14 +26,14 @@ import (
 	"ragflow/internal/handler"
 )
 
-// TestAgentRoutes_AllElevenRegistered exercises the 11 Phase 5 agent
+// TestAgentRoutesRegistered exercises the ordinary Agent route set
 // endpoints via the public RegisterAgentRoutes helper, proving that the
 // route table defined in agent_routes.go is actually wired when called
 // from a real router. This guards against the regression captured in
 // the post-Phase-7 code review: the helper was defined but never
 // invoked from Router.Setup, so 10 of the 11 endpoints returned 404 in
 // production even though the helper "looked correct".
-func TestAgentRoutes_AllElevenRegistered(t *testing.T) {
+func TestAgentRoutesRegistered(t *testing.T) {
 	eng := gin.New()
 	g := eng.Group("/api/v1/agents")
 	RegisterAgentRoutes(g, &handler.AgentHandler{})
@@ -48,15 +48,14 @@ func TestAgentRoutes_AllElevenRegistered(t *testing.T) {
 		{http.MethodPut, "/api/v1/agents/abc"},
 		{http.MethodDelete, "/api/v1/agents/abc"},
 		{http.MethodPost, "/api/v1/agents/abc/run"},
-		{http.MethodDelete, "/api/v1/agents/abc/run"},
 		{http.MethodPost, "/api/v1/agents/abc/publish"},
 		{http.MethodGet, "/api/v1/agents/abc/versions"},
 		{http.MethodGet, "/api/v1/agents/abc/versions/v1"},
 		{http.MethodDelete, "/api/v1/agents/abc/versions/v1"},
 		{http.MethodPost, "/api/v1/agents/abc/reset"},
 	}
-	if len(cases) != 12 {
-		t.Fatalf("expected 12 routes, listed %d", len(cases))
+	if len(cases) != 11 {
+		t.Fatalf("expected 11 routes, listed %d", len(cases))
 	}
 	for _, c := range cases {
 		w := httptest.NewRecorder()
@@ -78,4 +77,15 @@ func TestAgentRoutes_NilSafety(t *testing.T) {
 	eng := gin.New()
 	RegisterAgentRoutes(eng.Group("/agents"), nil)
 	// Reaching here without panicking is the assertion.
+}
+
+func TestAgentSessionCancelRouteRegistered(t *testing.T) {
+	eng := gin.New()
+	RegisterAgentCancelRoutes(eng.Group("/api/v1/tasks"), &handler.AgentHandler{})
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks/session-1/cancel", nil)
+	eng.ServeHTTP(w, req)
+	if w.Code == http.StatusNotFound {
+		t.Fatal("POST /api/v1/tasks/:session_id/cancel was not registered")
+	}
 }

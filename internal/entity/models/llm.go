@@ -147,7 +147,7 @@ func (m *EinoChatModel) Generate(ctx context.Context, msgs []*schema.Message, op
 	if err != nil {
 		return nil, err
 	}
-	resp, err := m.inner.ModelDriver.ChatWithMessages(*m.inner.ModelName, internal, m.inner.APIConfig, chatCfg, nil)
+	resp, err := m.inner.ModelDriver.ChatWithMessages(ctx, *m.inner.ModelName, internal, m.inner.APIConfig, chatCfg, nil)
 	if err != nil {
 		return nil, fmt.Errorf("models: EinoChatModel.Generate(%s): %w", *m.inner.ModelName, err)
 	}
@@ -303,9 +303,6 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 		if reasoning != nil {
 			msg.ReasoningContent = *reasoning
 		}
-		if m.chatCfg != nil && m.chatCfg.StreamCallback != nil {
-			m.chatCfg.StreamCallback(msg.Content, msg.ReasoningContent)
-		}
 		if closed := sw.Send(msg, nil); closed {
 			return fmt.Errorf("models: stream closed before send completed")
 		}
@@ -313,7 +310,7 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	}
 	go func() {
 		defer sw.Close()
-		if err := m.inner.ModelDriver.ChatStreamlyWithSender(*m.inner.ModelName, internalMessage, m.inner.APIConfig, chatCfg, nil, sender); err != nil {
+		if err := m.inner.ModelDriver.ChatStreamlyWithSender(ctx, *m.inner.ModelName, internalMessage, m.inner.APIConfig, chatCfg, nil, sender); err != nil {
 			_ = sw.Send(nil, err)
 			return
 		}

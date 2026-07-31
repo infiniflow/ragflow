@@ -23,7 +23,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
-	"strings"
 	"time"
 
 	"ragflow/internal/dao"
@@ -54,12 +53,12 @@ type ConfigResponse struct {
 func (s *SystemService) GetConfig() (*ConfigResponse, error) {
 	cfg := server.GetConfig()
 	registerEnabled := 1
-	if !cfg.Authentication.RegisterEnabled {
+	if !cfg.RegisterEnabled() {
 		registerEnabled = 0
 	}
 	return &ConfigResponse{
 		RegisterEnabled:      registerEnabled,
-		DisablePasswordLogin: cfg.Authentication.DisablePasswordLogin,
+		DisablePasswordLogin: cfg.DisablePasswordLogin(),
 	}, nil
 }
 
@@ -121,7 +120,7 @@ func (s *SystemService) getDocEngineStatus() ComponentStatus {
 	cfg := server.GetConfig()
 	docEngineType := ""
 	if cfg != nil {
-		docEngineType = strings.ToLower(string(cfg.DocEngine.Type))
+		docEngineType = cfg.DocEngineType()
 	}
 
 	startedAt := time.Now()
@@ -157,7 +156,7 @@ func (s *SystemService) getStorageStatus() ComponentStatus {
 	cfg := server.GetConfig()
 	storageType := ""
 	if cfg != nil {
-		storageType = strings.ToLower(string(cfg.StorageEngine.Type))
+		storageType = cfg.StorageEngineType()
 	}
 
 	startedAt := time.Now()
@@ -194,7 +193,7 @@ func (s *SystemService) getDatabaseStatus() ComponentStatus {
 	cfg := server.GetConfig()
 	databaseType := ""
 	if cfg != nil {
-		databaseType = cfg.Database.Driver
+		databaseType = cfg.DatabaseType()
 	}
 
 	startedAt := time.Now()
@@ -405,8 +404,8 @@ func (s *SystemService) Healthz(ctx context.Context) (*HealthzResponse, bool) {
 
 // ListAllVariables list all variables
 // Returns all system settings from database
-func (s *SystemService) ListAllVariables() ([]map[string]interface{}, error) {
-	settings, err := s.systemSettingsDAO.GetAll()
+func (s *SystemService) ListAllVariables(ctx context.Context) ([]map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetAll(ctx, dao.DB)
 	if err != nil {
 		return nil, err
 	}
@@ -414,14 +413,14 @@ func (s *SystemService) ListAllVariables() ([]map[string]interface{}, error) {
 	return common.FormatSystemSettings(settings), nil
 }
 
-func (s *SystemService) ShowVariable(varName string) ([]map[string]interface{}, error) {
-	settings, err := s.systemSettingsDAO.GetByName(varName)
+func (s *SystemService) ShowVariable(ctx context.Context, varName string) ([]map[string]interface{}, error) {
+	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(settings) == 0 {
-		settings, err = s.systemSettingsDAO.GetByNamePrefix(varName)
+		settings, err = s.systemSettingsDAO.GetByNamePrefix(ctx, dao.DB, varName)
 		if err != nil {
 			return nil, err
 		}
@@ -435,8 +434,8 @@ func (s *SystemService) ShowVariable(varName string) ([]map[string]interface{}, 
 // SetVariable set variable
 // Creates or updates a system setting
 // If the setting exists, updates it; otherwise creates a new one
-func (s *SystemService) SetVariable(varName, varValue string) error {
-	settings, err := s.systemSettingsDAO.GetByName(varName)
+func (s *SystemService) SetVariable(ctx context.Context, varName, varValue string) error {
+	settings, err := s.systemSettingsDAO.GetByName(ctx, dao.DB, varName)
 	if err != nil {
 		return err
 	}
@@ -447,7 +446,7 @@ func (s *SystemService) SetVariable(varName, varValue string) error {
 			return err
 		}
 		setting.Value = varValue
-		return s.systemSettingsDAO.UpdateByName(varName, setting)
+		return s.systemSettingsDAO.UpdateByName(ctx, dao.DB, varName, setting)
 	} else if len(settings) > 1 {
 		return fmt.Errorf("can't update more than 1 setting: %s", varName)
 	}
@@ -462,7 +461,7 @@ func (s *SystemService) SetVariable(varName, varValue string) error {
 	if err = common.ValidateSystemSettingValue(*newSetting, varValue); err != nil {
 		return err
 	}
-	return s.systemSettingsDAO.Create(newSetting)
+	return s.systemSettingsDAO.Create(ctx, dao.DB, newSetting)
 }
 
 // Config methods

@@ -2,6 +2,12 @@ kind: timeline
 display_name: List (Timeline) — Chronological events / Graph
 config:
   kind: timeline
+  rechunk_rules: |
+    - Group only adjacent source chunks that belong to the same event or continuous time period.
+    - Preserve source order: use every source chunk exactly once; do not omit, overlap, duplicate, or reorder chunks.
+    - Split when the event, time period, or semantic focus changes.
+    - Keep self-contained tables, lists, figures, and code blocks intact; do not split their internal structure.
+    - Do not invent, rewrite, or return source text; return only chunk grouping metadata.
   entity:
     description: >-
       You are a robust events-timeline extractor.

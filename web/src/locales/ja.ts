@@ -62,7 +62,7 @@ export default {
       viewLess: '表示を減らす',
       clear: 'クリア',
       embedIntoSite: 'Webページに埋め込む',
-      openInNewTab: '新しいタブでチャット',
+      openInNewTab: '新しいタブで開く',
       previousPage: '前へ',
       nextPage: '次へ',
       previous: '前へ',
@@ -1659,6 +1659,7 @@ export default {
       templateWizardConfigurationDescription: 'テンプレートを設定します',
       blueprints: 'ブループリント',
       blueprintsDescription: '必要なブループリントを選択してください',
+      custom: 'カスタム',
       templates: 'テンプレート',
       addFieldModalTitle: 'フィールドを追加',
       editFieldModalTitle: 'フィールドを編集',
@@ -2863,6 +2864,11 @@ export default {
       copyOfAgentName: '{{name}} (コピー)',
       ceateAgent: 'ワークフロー',
       createPipeline: '取り込みパイプライン',
+      tabList: {
+        ingestionPipeline: '取り込みパイプライン',
+        compilationOperator: 'コンパイルオペレーター',
+        workflow: 'ワークフロー',
+      },
       chooseAgentType: 'エージェントタイプを選択',
       parser: 'パーサー',
       parserDescription:

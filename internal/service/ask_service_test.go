@@ -32,7 +32,7 @@ type fakeRetriever struct {
 	err    error
 }
 
-func (r *fakeRetriever) RetrievalTest(req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error) {
+func (r *fakeRetriever) RetrievalTest(ctx context.Context, req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error) {
 	if r.err != nil {
 		return nil, r.err
 	}
