@@ -1,5 +1,7 @@
 ---
 sidebar_position: 4
+title: Tool Components
+sidebar_label: Tool Components
 slug: /tool_components
 sidebar_custom_props: {
   categoryIcon: RagAiAgent
@@ -535,7 +537,7 @@ The component returns generated file information and downloadable output variabl
 ![Document Generator](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/document_generator.jpg)
 
 
-### Browser (Browser)
+### Browser
 
 Browser performs browser-based automation tasks. It is suitable for opening pages, collecting page information and executing browser workflows that require visual interaction.
 

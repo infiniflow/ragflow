@@ -1,5 +1,7 @@
 ---
 sidebar_position: 3
+title: Configure the Parser Component
+sidebar_label: Configure the Parser Component
 slug: /configure_parser_component
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

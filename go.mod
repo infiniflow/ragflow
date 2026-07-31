@@ -42,6 +42,7 @@ require (
 	github.com/nats-io/nats-server/v2 v2.14.3
 	github.com/nats-io/nats.go v1.52.0
 	github.com/nikolalohinski/gonja v1.5.3
+	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.0.5
 	github.com/peterh/liner v1.2.2
 	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/redis/go-redis/v9 v9.18.0

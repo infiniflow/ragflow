@@ -365,15 +365,15 @@ def test_chat_list_page_and_page_size_contract(rest_client, clear_chats):
         ("page two", {"page": 2, "page_size": 2}, 0, lambda total: min(max(total - 2, 0), 2), ""),
         ("page three", {"page": 3, "page_size": 2}, 0, lambda total: min(max(total - 4, 0), 2), ""),
         ("page string", {"page": "3", "page_size": 2}, 0, lambda total: min(max(total - 4, 0), 2), ""),
-        ("page negative", {"page": -1, "page_size": 2}, 100, None, "ProgrammingError(1064"),
-        ("page alpha", {"page": "a", "page_size": 2}, 100, None, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page negative", {"page": -1, "page_size": 2}, 0, lambda total: total, ""),
+        ("page alpha", {"page": "a", "page_size": 2}, 0, lambda total: total, ""),
         ("page_size none", {"page_size": None}, 0, lambda total: total, ""),
         ("page_size zero", {"page_size": 0}, 0, lambda total: total, ""),
         ("page_size one", {"page_size": 1}, 0, lambda total: total, ""),
         ("page_size six", {"page_size": 6}, 0, lambda total: total, ""),
         ("page_size string", {"page_size": "1"}, 0, lambda total: total, ""),
         ("page_size negative", {"page_size": -1}, 0, lambda total: total, ""),
-        ("page_size alpha", {"page_size": "a"}, 100, None, "ValueError(\"invalid literal for int() with base 10: 'a'\")"),
+        ("page_size alpha", {"page_size": "a"}, 0, lambda total: total, ""),
     ]
 
     for scenario_name, params, expected_code, expected_count_fn, expected_message in cases:
@@ -403,7 +403,7 @@ def test_chat_list_sorting_contract(rest_client, clear_chats):
         ("orderby create", {"orderby": "create_time"}, 0, descending_names, ""),
         ("orderby update", {"orderby": "update_time"}, 0, descending_names, ""),
         ("orderby name ascending", {"orderby": "name", "desc": "False"}, 0, ascending_names, ""),
-        ("orderby unknown", {"orderby": "unknown"}, 100, None, "AttributeError(\"type object 'Dialog' has no attribute 'unknown'\")"),
+        ("orderby unknown", {"orderby": "unknown"}, 101, None, "invalid orderby field"),
         ("desc none", {"desc": None}, 0, descending_names, ""),
         ("desc true", {"desc": "true"}, 0, descending_names, ""),
         ("desc True", {"desc": "True"}, 0, descending_names, ""),

@@ -953,10 +953,16 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     req = await get_request_json()
     if is_content_empty(req.get("content")):
         return get_error_data_result(message="`content` is required")
-    if "important_keywords" in req and not isinstance(req["important_keywords"], list):
-        return get_error_data_result("`important_keywords` is required to be a list")
-    if "questions" in req and not isinstance(req["questions"], list):
-        return get_error_data_result("`questions` is required to be a list")
+    if "important_keywords" in req:
+        if not isinstance(req["important_keywords"], list):
+            return get_error_data_result("`important_keywords` is required to be a list")
+        if not all(isinstance(k, str) for k in req["important_keywords"]):
+            return get_error_data_result("`important_keywords` must be a list of strings")
+    if "questions" in req:
+        if not isinstance(req["questions"], list):
+            return get_error_data_result("`questions` is required to be a list")
+        if not all(isinstance(q, str) for q in req["questions"]):
+            return get_error_data_result("`questions` must be a list of strings")
 
     chunk_id = xxhash.xxh64((req["content"] + document_id).encode("utf-8")).hexdigest()
     d = {

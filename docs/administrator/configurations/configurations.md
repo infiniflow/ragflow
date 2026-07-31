@@ -40,7 +40,7 @@ docker compose -f docker/docker-compose.yml up -d
 We do not actively maintain **docker-compose-CN-oc9.yml**, **docker-compose-macos.yml**, so use them at your own risk. However, you are welcome to file a pull request to improve them.
 :::
 
-## Docker environment variables
+## Docker Environment Variables
 
 The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file contains important environment variables for Docker.
 
@@ -62,7 +62,7 @@ The [.env](https://github.com/infiniflow/ragflow/blob/main/docker/.env) file con
 - `KIBANA_PASSWORD`
   The password for Kibana. Defaults to `infini_rag_flow`.
 
-### Resource management
+### Resource Management
 
 - `MEM_LIMIT`
   The maximum amount of the memory, in bytes, that *a specific* Docker container can use while running. Defaults to `8073741824`.
@@ -113,7 +113,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
   :::
 
-### Embedding service
+### Embedding Service
 
 - `TEI_MODEL`
   The embedding model which text-embeddings-inference serves. Allowed values are one of `Qwen/Qwen3-Embedding-0.6B`(default), `BAAI/bge-m3`, and `BAAI/bge-small-en-v1.5`.
@@ -126,23 +126,23 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `TZ`
   The local time zone. Defaults to `Asia/Shanghai`.
 
-### Hugging Face mirror site
+### Hugging Face Mirror Site
 
 - `HF_ENDPOINT`
   The mirror site for huggingface.co. It is disabled by default. You can uncomment this line if you have limited access to the primary Hugging Face domain.
 
-### MacOS
+### macOS
 
 - `MACOS`
   Optimizations for macOS. It is disabled by default. You can uncomment this line if your OS is macOS.
 
-### User registration
+### User Registration
 
 - `REGISTER_ENABLED`
   - `1`: (Default) Enable user registration.
   - `0`: Disable user registration.
 
-## Service configuration
+## Service Configuration
 
 [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template) specifies the system-level configuration for RAGFlow and is used by its API server and task executor.
 
@@ -166,7 +166,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `password`: The password for MinIO.
 - `host`: The MinIO serving IP *and* port inside the Docker container. Defaults to `minio:9000`.
 
-### `s3` (Tigris)
+### `S3` (Tigris)
 
 To use [Tigris](https://www.tigrisdata.com) as an S3-compatible storage backend, set `STORAGE_IMPL=AWS_S3` in `.env` and configure the `s3:` section:
 
