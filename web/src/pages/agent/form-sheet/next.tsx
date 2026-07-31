@@ -15,7 +15,7 @@ import { Operator } from '../constant';
 import { AgentFormContext } from '../context';
 import { RunTooltip } from '../flow-tooltip';
 import { useIsMcp } from '../hooks/use-is-mcp';
-import OperatorIcon from '../operator-icon';
+import OperatorIcon from '@/components/operator-icon';
 import useGraphStore from '../store';
 import { needsSingleStepDebugging } from '../utils';
 import { FormConfigMap } from './form-config-map';

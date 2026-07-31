@@ -649,8 +649,11 @@ func TestDownloadAttachment_OK(t *testing.T) {
 		t.Errorf("Content-Type = %q, want application/pdf", ct)
 	}
 	cd := w.Header().Get("Content-Disposition")
-	if !strings.Contains(cd, "00000000-0000-0000-0000-000000000001") {
-		t.Errorf("Content-Disposition = %q, want contains '00000000-0000-0000-0000-000000000001'", cd)
+	// Mirrors Python apply_download_file_response_headers: with no
+	// explicit ?filename= the disposition is a plain attachment (Go
+	// backfills the empty name with "file" via SanitizeContentDispositionFilename).
+	if !strings.Contains(cd, "attachment") || !strings.Contains(cd, `filename="file"`) {
+		t.Errorf("Content-Disposition = %q, want attachment; filename=\"file\"", cd)
 	}
 }
 
@@ -669,8 +672,12 @@ func TestDownloadAttachment_DefaultExt(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", w.Code)
 	}
-	if ct := w.Header().Get("Content-Type"); ct != "text/markdown" {
-		t.Errorf("Content-Type = %q, want text/markdown (default ext)", ct)
+	// No ext/mime_type means the content type cannot be resolved, so
+	// the handler falls back to application/octet-stream (this matches
+	// Python resolve_attachment_content_type returning None for an
+	// empty ext).
+	if ct := w.Header().Get("Content-Type"); ct != "application/octet-stream" {
+		t.Errorf("Content-Type = %q, want application/octet-stream (default when no ext)", ct)
 	}
 }
 

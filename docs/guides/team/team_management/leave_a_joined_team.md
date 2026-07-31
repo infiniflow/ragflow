@@ -1,9 +1,10 @@
 ---
 sidebar_position: 7
-sidebar_label: "Leave a joined team"
+sidebar_label: Leave a Joined Team
+title: Leave a Joined Team
 ---
 
-## Leave a joined team
+# Leave a Joined Team
 
 A user with the `normal` role can leave a joined team if the team is not the user's own workspace.
 

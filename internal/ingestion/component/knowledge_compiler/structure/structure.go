@@ -141,29 +141,15 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		return common.Outputs{}, err
 	}
 
-	// Stream the merged products (plus the graph) through a ProductSink so the
-	// flush policy caps peak memory instead of holding the full result set.
-	sink := common.NewProductSink(ctx, param.Guardrails, inputs.Sink)
-	for _, p := range prods {
-		if err := sink.Add(p); err != nil {
-			return common.Outputs{}, err
-		}
-	}
-	if err := sink.Add(graphProduct); err != nil {
-		return common.Outputs{}, err
-	}
+	// Buffer every product (plus the graph) in one slice; the component merges
+	// them into the upstream chunk stream (matching Python, which appends
+	// compiled units onto the chunk list).
+	products := append([]common.Product{}, prods...)
+	products = append(products, graphProduct)
 
 	out := common.Outputs{
-		Products:          sink.Products(),
-		VectorBytes:       sink.Bytes(),
-		Items:             sink.TotalItems(),
-		Flushed:           sink.Flushed(),
+		Products:          products,
 		DuplicatesDropped: stats.DuplicatesDropped,
-	}
-	// Capacity guardrails (centralised in common.EnforceGuardrails so every
-	// variant honours the same policy — error/flush/none — without drift).
-	if err := out.EnforceGuardrails(param.Guardrails, inputs.Sink, ctx); err != nil {
-		return common.Outputs{}, err
 	}
 	return out, nil
 }

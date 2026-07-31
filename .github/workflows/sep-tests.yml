@@ -322,14 +322,9 @@ jobs:
         #
         # Excludes packages whose tests fail for environmental reasons
         # unrelated to the diff:
-        #   - internal/storage:   TestMinioStorage_* needs a MinIO server
-        #     at localhost:9000; not started by this job.
         #   - internal/tokenizer: tests need /usr/share/infinity/resource
         #     dict files, only mounted inside the docker builder, not
         #     in the Go test environment.
-        #   - internal/handler:   TestListAgentVersionsHandler_Success and
-        #     sqlite setup (e.g. "no such table: user_tenant") are
-        #     pre-existing flakes unrelated to the diff.
         run: |
           set -euo pipefail
           PKGS=$(go list ./... 2>/dev/null \
@@ -902,14 +897,9 @@ jobs:
         #
         # Excludes packages whose tests fail for environmental reasons
         # unrelated to the diff:
-        #   - internal/storage:   TestMinioStorage_* needs a MinIO server
-        #     at localhost:9000; not started by this job.
         #   - internal/tokenizer: tests need /usr/share/infinity/resource
         #     dict files, only mounted inside the docker builder, not
         #     in the Go test environment.
-        #   - internal/handler:   TestListAgentVersionsHandler_Success and
-        #     sqlite setup (e.g. "no such table: user_tenant") are
-        #     pre-existing flakes unrelated to the diff.
         run: |
           set -euo pipefail
           PKGS=$(go list ./... 2>/dev/null \

@@ -1,5 +1,7 @@
 ---
 sidebar_position: 0
+title: Admin Service
+sidebar_label: Admin Service
 slug: /admin_service
 sidebar_custom_props: {
   categoryIcon: LucideActivity
@@ -15,7 +17,7 @@ With its unified interface design, the Admin Service combines the convenience of
 
 ## Starting the Admin Service
 
-### Launching from source code
+### Launching from Source Code
 
 1. Before start Admin Service, please make sure RAGFlow system is already started.
 
@@ -27,7 +29,7 @@ With its unified interface design, the Admin Service combines the convenience of
 
    The service will start and listen for incoming connections from the CLI on the configured port. 
 
-### Using docker image
+### Using Docker Image
 
 1. Before startup, please configure the `docker_compose.yml`  file to enable admin server:
 

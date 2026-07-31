@@ -5,14 +5,13 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/resizable';
+import { GenerateStatus, GenerateType } from '@/constants/knowledge';
+import {
+  useGenerateStatus,
+  useTraceRunData,
+} from '@/hooks/use-dataset-generate';
 import { DatasetSkillKeys } from '@/hooks/use-dataset-skill-request';
 import { useFetchKnowledgeBaseConfiguration } from '@/hooks/use-knowledge-request';
-import {
-  GenerateStatus,
-  GenerateType,
-} from '@/pages/dataset/dataset/generate-button/constants';
-import { useTraceRunData } from '@/pages/dataset/dataset/generate-button/hook';
-import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { useParams } from 'react-router';
@@ -39,7 +38,7 @@ export function SkillsView() {
   const { status: skillStatus } = useGenerateStatus(skillRunData);
 
   useEffect(() => {
-    if (skillStatus === GenerateStatus.completed) {
+    if (skillStatus === GenerateStatus.Completed) {
       queryClient.invalidateQueries({
         queryKey: DatasetSkillKeys.tree(id!),
       });

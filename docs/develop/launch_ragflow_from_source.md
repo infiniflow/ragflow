@@ -1,15 +1,17 @@
 ---
 sidebar_position: 3
+title: Launch Service from Source
+sidebar_label: Launch Service from Source
 slug: /launch_ragflow_from_source
 sidebar_custom_props: {
   categoryIcon: LucideMonitorPlay
 }
 ---
-# Launch service from source
+# Launch Service from Source
 
 A guide explaining how to set up a RAGFlow service from its source code. By following this guide, you'll be able to debug using the source code.
 
-## Target audience
+## Target Audience
 
 Developers who have added new features or modified existing code and wish to debug using the source code, *provided that* their machine has the target deployment environment set up.
 
@@ -24,18 +26,18 @@ Developers who have added new features or modified existing code and wish to deb
 If you have not installed Docker on your local machine (Windows, Mac, or Linux), see the [Install Docker Engine](https://docs.docker.com/engine/install/) guide.
 :::
 
-## Launch a service from source
+## Launch a Service from Source
 
 To launch a RAGFlow service from source code:
 
-### Clone the RAGFlow repository
+### Clone the RAGFlow Repository
 
 ```bash
 git clone https://github.com/infiniflow/ragflow.git
 cd ragflow/
 ```
 
-### Install Python dependencies
+### Install Python Dependencies
 
 1. Install uv:
    
@@ -56,7 +58,7 @@ cd ragflow/
    uv sync --python 3.13 --group test --frozen && uv pip install sdk/python --group test
    ```
 
-### Launch third-party services
+### Launch Third-Party Services
 
 The following command launches the 'base' services (MinIO, Elasticsearch, Redis, and MySQL) using Docker Compose:
 
@@ -64,7 +66,7 @@ The following command launches the 'base' services (MinIO, Elasticsearch, Redis,
 docker compose -f docker/docker-compose-base.yml up -d
 ```
 
-### Update `host` and `port` Settings for Third-party Services
+### Update `host` and `port` Settings for Third-Party Services
 
 1. Add the following line to `/etc/hosts` to resolve all hosts specified in **docker/service_conf.yaml.template** to `127.0.0.1`:
 
@@ -74,7 +76,7 @@ docker compose -f docker/docker-compose-base.yml up -d
 
 2. In **docker/service_conf.yaml.template**, update mysql port to `5455` and es port to `1200`, as specified in **docker/.env**.
 
-### Launch the RAGFlow backend service
+### Launch the RAGFlow Backend Service
 
 1. Comment out the `nginx` line in **docker/entrypoint.sh**.
 
@@ -107,7 +109,7 @@ docker compose -f docker/docker-compose-base.yml up -d
    python api/ragflow_server.py;
    ```
 
-### Launch the RAGFlow frontend service
+### Launch the RAGFlow Frontend Service
 
 1. Navigate to the `web` directory and install the frontend dependencies:
 
@@ -132,11 +134,11 @@ docker compose -f docker/docker-compose-base.yml up -d
 
    ![](https://github.com/user-attachments/assets/0daf462c-a24d-4496-a66f-92533534e187)
 
-### Access the RAGFlow service
+### Access the RAGFlow Service
 
 In your web browser, enter `http://127.0.0.1:<PORT>/`, ensuring the port number matches that shown in the screenshot above.
 
-### Stop the RAGFlow service when the development is done
+### Stop the RAGFlow Service When the Development Is Done
 
 1. Stop the RAGFlow frontend service:
    ```bash

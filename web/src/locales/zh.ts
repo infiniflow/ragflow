@@ -419,6 +419,9 @@ export default {
       updateTooltip:
         '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档。点击编译并合并到当前 Wiki。',
       updateSheetTitle: '更新 Wiki',
+      updateStructureSheetTitle: '更新{{name}}',
+      updateStructureTooltip:
+        '发现 {{newlyUploaded}} 个新文档，{{removed}} 个已移除文档。点击更新{{name}}。',
       viewUpdateLogs: '查看更新日志',
       log: '日志',
       noSkills: '暂无技能',
@@ -1699,6 +1702,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       addTheModel: '添加',
       apiKey: 'API Key',
       apiKeyMessage: '请输入API Key',
+      apiKeyPlaceholder: '请输入API Key',
       apiKeyTip: 'API Key可以通过注册相应的LLM供应商来获取。',
       aimlapiGetKey: '获取 API Key',
       aimlapiCheckStatus: '检查状态',
@@ -1733,6 +1737,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可选）',
       paddleocrAlgorithm: 'PaddleOCR 算法',
       paddleocrAlgorithmMessage: '请选择 PaddleOCR 算法',
+      paddleocrSelectAlgorithm: '选择算法',
       mineruApiserver: 'MinerU API 服务器',
       mineruApiserverMessage: '请输入 MinerU API 服务器地址！',
       mineruApiserverPlaceholder: '例如：http://host.docker.internal:9987',
@@ -1956,6 +1961,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       addCustomModelTitle: '添加自定义模型',
       batchAddModels: '批量添加当前模型',
       batchRemoveModels: '批量移除当前模型',
+      batchVerifyModels: '批量验证',
+      selectAllFiltered: '全选',
+      batchVerifySelected: '验证 {{count}} 个模型',
       editCustomModelTitle: '编辑模型',
       modelMaxTokens: '最大 Token 数',
       modelTypes: {

@@ -116,3 +116,66 @@ export enum ParseType {
   BuiltIn = 1,
   Pipeline = 2,
 }
+
+export enum ProcessingType {
+  knowledgeGraph = 'Graph',
+  raptor = 'RAPTOR',
+  artifact = 'Artifact',
+  skill = 'Skill',
+  mindmap = 'Mindmap',
+  timeline = 'Timeline',
+  sessionEssence = 'Session_Essence',
+  sessionGraph = 'Session_Graph',
+}
+
+export const ProcessingTypeMap = {
+  [ProcessingType.knowledgeGraph]: 'Knowledge Graph',
+  [ProcessingType.raptor]: 'RAPTOR',
+  [ProcessingType.artifact]: 'Artifact',
+  [ProcessingType.skill]: 'Skill',
+  [ProcessingType.mindmap]: 'Mind Map',
+  [ProcessingType.timeline]: 'Timeline',
+  [ProcessingType.sessionEssence]: 'Session Essence',
+  [ProcessingType.sessionGraph]: 'Session Graph',
+  GraphRAG: 'Knowledge Graph',
+};
+
+export enum GenerateStatus {
+  Running = 'running',
+  Completed = 'completed',
+  Start = 'start',
+  Failed = 'failed',
+}
+
+export enum GenerateType {
+  KnowledgeGraph = 'KnowledgeGraph',
+  Raptor = 'Raptor',
+  Artifact = 'Artifact',
+  ToSkills = 'ToSkills',
+  MindMap = 'MindMap',
+  Timeline = 'Timeline',
+  SessionEssence = 'SessionEssence',
+  SessionGraph = 'SessionGraph',
+}
+
+export enum TraceType {
+  Graph = 'graph',
+  Raptor = 'raptor',
+  Artifact = 'artifact',
+  Skill = 'skill',
+  MindMap = 'mindmap',
+  Timeline = 'timeline',
+  SessionEssence = 'session_essence',
+  SessionGraph = 'session_graph',
+}
+
+export const GenerateTypeMap = {
+  [GenerateType.KnowledgeGraph]: ProcessingType.knowledgeGraph,
+  [GenerateType.Raptor]: ProcessingType.raptor,
+  [GenerateType.Artifact]: ProcessingType.artifact,
+  [GenerateType.ToSkills]: ProcessingType.skill,
+  [GenerateType.MindMap]: ProcessingType.mindmap,
+  [GenerateType.Timeline]: ProcessingType.timeline,
+  [GenerateType.SessionEssence]: ProcessingType.sessionEssence,
+  [GenerateType.SessionGraph]: ProcessingType.sessionGraph,
+};

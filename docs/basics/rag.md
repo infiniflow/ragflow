@@ -3,11 +3,11 @@ sidebar_position: 1
 slug: /what-is-rag
 ---
 
-# What is Retrieval-Augmented-Generation (RAG)?
+# What Is Retrieval-Augmented Generation (RAG)?
 
 Since large language models (LLMs) became the focus of technology, their ability to handle general knowledge has been astonishing. However, when questions shift to internal corporate documents, proprietary knowledge bases, or real-time data, the limitations of LLMs become glaringly apparent: they cannot access private information outside their training data. Retrieval-Augmented Generation (RAG) was born precisely to address this core need. Before an LLM generates an answer, it first retrieves the most relevant context from an external knowledge base and inputs it as "reference material" to the LLM, thereby guiding it to produce accurate answers. In short, RAG elevates LLMs from "relying on memory" to "having evidence to rely on," significantly improving their accuracy and trustworthiness in specialized fields and real-time information queries.
 
-## Why RAG is important?
+## Why Is RAG Important?
 
 Although LLMs excel in language understanding and generation, they have inherent limitations:
 
@@ -22,11 +22,11 @@ The introduction of RAG provides LLMs with real-time, credible "factual groundin
 
 This upgrades LLMs from "speaking from memory" to "speaking with documentation," significantly enhancing reliability in professional and enterprise-level applications.
 
-## How RAG works?
+## How Does RAG Work?
 
 Retrieval-Augmented Generation enables LLMs to generate higher-quality responses by leveraging real-time, external, or private data sources through the introduction of an information retrieval mechanism. Its workflow can be divided into following key steps:
 
-### Data processing and vectorization
+### Data Processing and Vectorization
 
 The knowledge required by RAG comes from unstructured data in various formats, such as documents, database records, or API return content. This data typically needs to be chunked, then transformed into vectors via an embedding model, and stored in a vector database.
 
@@ -38,25 +38,25 @@ Why is Chunking Needed? Indexing entire documents directly faces the following p
 
 Therefore, an intelligent chunking strategy is key to balancing information integrity, retrieval granularity, and computational efficiency.
 
-### Retrieve relevant information
+### Retrieve Relevant Information
 
 The user's query is also converted into a vector to perform semantic relevance searches (e.g., calculating cosine similarity) in the vector database, matching and recalling the most relevant text fragments.
 
-### Context construction and answer generation
+### Context Construction and Answer Generation
 
 The retrieved relevant content is added to the LLM's context as factual grounding, and the LLM finally generates the answer. Therefore, RAG can be seen as Context Engineering 1.0 for automated context construction.
 
-## Deep dive into existing RAG architecture: beyond vector retrieval
+## Deep Dive into Existing RAG Architecture: Beyond Vector Retrieval
 
 An industrial-grade RAG system is far from being as simple as "vector search + LLM"; its complexity and challenges are primarily embedded in the retrieval process.
 
-### Data complexity: multimodal document processing
+### Data Complexity: Multimodal Document Processing
 
 Core Challenge: Corporate knowledge mostly exists in the form of multimodal documents containing text, charts, tables, and formulas. Simple OCR extraction loses a large amount of semantic information.
 
 Advanced Practice: Leading solutions, such as RAGFlow, tend to use Visual Language Models (VLM) or specialized parsing models like DeepDoc to "translate" multimodal documents into unimodal text rich in structural and semantic information. Converting multimodal information into high-quality unimodal text has become standard practice for advanced RAG.
 
-### The complexity of chunking: the trade-off between precision and context
+### The Complexity of Chunking: The Trade-Off Between Precision and Context
 
 A simple "chunk-embed-retrieve" pipeline has an inherent contradiction:
 - Semantic Matching requires small text chunks to ensure clear semantic focus.
@@ -66,7 +66,7 @@ This forces system design into a difficult trade-off between "precise but fragme
 
 Advanced Practice: Leading solutions, such as RAGFlow, employ semantic enhancement techniques like constructing semantic tables of contents and knowledge graphs. These not only address semantic fragmentation caused by physical chunking but also enable the discovery of relevant content across documents based on entity-relationship networks.
 
-### Why is a vector database insufficient for serving RAG?
+### Why Is a Vector Database Insufficient for Serving RAG?
 
 Vector databases excel at semantic similarity search, but RAG requires precise and reliable answers, demanding more capabilities from the retrieval system:
 - Hybrid Search: Relying solely on vector retrieval may miss exact keyword matches (e.g., product codes, regulation numbers). Hybrid search, combining vector retrieval with keyword retrieval (BM25), ensures both semantic breadth and keyword precision.
@@ -75,14 +75,14 @@ Vector databases excel at semantic similarity search, but RAG requires precise a
 
 Therefore, the retrieval layer of RAG is a composite system based on vector search but must integrate capabilities like full-text search, re-ranking, and metadata filtering.
 
-## RAG and memory: Retrieval from the same source but different streams
+## RAG and Memory: Retrieval from the Same Source but Different Streams
 
 Within the agent framework, the essence of the memory mechanism is the same as RAG: both retrieve relevant information from storage based on current needs. The key difference lies in the data source:
 - RAG: Targets pre-existing static or dynamic private data provided by the user in advance (e.g., documents, databases).
 - Memory: Targets dynamic data generated or perceived by the agent in real-time during interaction (e.g., conversation history, environmental state, tool execution results).
 They are highly consistent at the technical base (e.g., vector retrieval, keyword matching) and can be seen as the same retrieval capability applied in different scenarios ("existing knowledge" vs. "interaction memory"). A complete agent system often includes both an RAG module for inherent knowledge and a Memory module for interaction history.
 
-## RAG applications
+## RAG Applications
 
 RAG has demonstrated clear value in several typical scenarios:
 
@@ -93,7 +93,7 @@ RAG has demonstrated clear value in several typical scenarios:
 3. Dynamic Knowledge Fusion and Decision Support  
    In business scenarios requiring the synthesis of information from multiple sources, RAG evolves into a knowledge orchestration and reasoning support system for business decisions. Through a multi-path recall mechanism, it fuses knowledge from different systems and formats, maintaining factual consistency and logical controllability during the generation phase.
 
-## The future of RAG
+## The Future of RAG
 
 The evolution of RAG is unfolding along several clear paths:
 

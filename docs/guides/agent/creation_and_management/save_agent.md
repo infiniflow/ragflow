@@ -1,5 +1,7 @@
 ---
 sidebar_position: 5
+title: Save Agent
+sidebar_label: Save Agent
 slug: /save_agent
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

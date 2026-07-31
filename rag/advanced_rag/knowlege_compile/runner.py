@@ -135,7 +135,7 @@ def load_active_templates(template_ids, tenant_id: str) -> list[tuple[str, dict]
             logging.warning("document_structure_compile: template %s config is invalid", template_id)
             continue
         kind = _compilation_template_kind(parser_cfg.get("kind"))
-        if not kind or kind == "artifacts":
+        if not kind or kind == "wiki":
             continue
         active_templates.append((template_id, parser_cfg))
     return active_templates
@@ -631,7 +631,7 @@ async def run_structure_compile_over_batches(
         synthesis_cfg = (parser_cfg or {}).get("synthesis") or {}
         if synthesis_cfg.get("enabled"):
             example = synthesis_cfg.get("example")
-            compile_kwd = synthesis_cfg.get("compile_kwd", "artifact_page")
+            compile_kwd = synthesis_cfg.get("compile_kwd", "wiki_page")
             plan_cfg = synthesis_cfg.get("plan") or {}
 
             # Reserved for future wiki_plan_from_reduction extension:

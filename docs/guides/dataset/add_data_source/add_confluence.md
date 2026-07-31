@@ -1,5 +1,7 @@
 ---
 sidebar_position: 4
+title: Add Confluence
+sidebar_label: Add Confluence
 slug: /add_confluence
 sidebar_custom_props: {
   categoryIcon: SiGoogledrive
@@ -22,9 +24,9 @@ Before configuring the connector, obtain the following credentials from your Atl
 - **Atlassian API Token**: Generated via [Atlassian Account Settings](https://id.atlassian.com/manage-profile/security/api-tokens).
 - **Confluence base URL**: The instance URL (e.g., `https://<your-org>.atlassian.net/wiki`).
 
-## Configuration steps
+## Configuration Steps
 
-### Define Confluence as an external data source
+### Define Confluence as an External Data Source
 
 Navigate to the **Connectors** or **External Data Source** section in the RAGFlow Admin Panel and select **Confluence**. Enter the following in the popup window:
 
@@ -48,7 +50,7 @@ Once configuration is complete, click **Confirm** to save your changes.
 
 *RAGFlow validates the connection immediately.*
 
-### Link to a dataset
+### Link to a Dataset
 
 Credentials alone do not trigger indexing. You must link the data source to a specific dataset:
 
