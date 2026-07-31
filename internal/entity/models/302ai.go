@@ -42,7 +42,7 @@ func NewAI302Model(baseURL map[string]string, urlSuffix URLSuffix) *AI302Model {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

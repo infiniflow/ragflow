@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"ragflow/internal/server/config"
 	"sort"
 	"strings"
 	"testing"
@@ -389,7 +390,7 @@ func taskRepoRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(wd, "..", "..", ".."))
 }
 
-func mustLoadTaskTestConfig(t *testing.T) *server.Config {
+func mustLoadTaskTestConfig(t *testing.T) *config.Config {
 	t.Helper()
 	if err := common.Init("info", common.FileOutput{}, ""); err != nil {
 		t.Fatalf("init common logger: %v", err)

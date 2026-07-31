@@ -66,6 +66,7 @@ func TestXinferenceFactoryRoute(t *testing.T) {
 }
 
 func TestXinferenceChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	var seen map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -113,6 +114,7 @@ func TestXinferenceChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 }
 
 func TestXinferenceChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
@@ -133,6 +135,7 @@ func TestXinferenceChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
 }
 
 func TestXinferenceChatExtractsReasoningFields(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"choices":[{"message":{
@@ -155,6 +158,7 @@ func TestXinferenceChatExtractsReasoningFields(t *testing.T) {
 }
 
 func TestXinferenceStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
@@ -210,6 +214,7 @@ func TestXinferenceStreamHappyPath(t *testing.T) {
 }
 
 func TestXinferenceStreamRejectsFalseStreamConfig(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	x := newXinferenceForTest("http://unused")
 	stream := false
@@ -225,6 +230,7 @@ func TestXinferenceStreamRejectsFalseStreamConfig(t *testing.T) {
 }
 
 func TestXinferenceStreamCancelsOnIdle(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	withXinferenceIdleTimeout(t, 200*time.Millisecond)
 
@@ -256,6 +262,7 @@ func TestXinferenceStreamCancelsOnIdle(t *testing.T) {
 }
 
 func TestXinferenceListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
@@ -313,6 +320,7 @@ func newXinferenceEmbedServer(t *testing.T, handler func(t *testing.T, body map[
 }
 
 func TestXinferenceEmbedHappyPathAndOmitsEmptyAuth(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newXinferenceEmbedServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "bge-m3" {
@@ -346,6 +354,7 @@ func TestXinferenceEmbedHappyPathAndOmitsEmptyAuth(t *testing.T) {
 }
 
 func TestXinferenceEmbedSendsAuthWhenKeyConfigured(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	gotAuth := ""
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -366,6 +375,7 @@ func TestXinferenceEmbedSendsAuthWhenKeyConfigured(t *testing.T) {
 }
 
 func TestXinferenceEmbedNormalizesBaseURLWithV1Suffix(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newXinferenceEmbedServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_, _ = io.WriteString(w, `{"data":[{"index":0,"embedding":[0.1]}]}`)
@@ -383,6 +393,7 @@ func TestXinferenceEmbedNormalizesBaseURLWithV1Suffix(t *testing.T) {
 }
 
 func TestXinferenceEmbedForwardsDimension(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newXinferenceEmbedServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["dimensions"] != float64(384) {
@@ -400,6 +411,7 @@ func TestXinferenceEmbedForwardsDimension(t *testing.T) {
 }
 
 func TestXinferenceEmbedRejectsDuplicateIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newXinferenceEmbedServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_, _ = io.WriteString(w, `{"data":[{"index":0,"embedding":[0.1]},{"index":0,"embedding":[0.2]}]}`)
@@ -415,6 +427,7 @@ func TestXinferenceEmbedRejectsDuplicateIndex(t *testing.T) {
 }
 
 func TestXinferenceEmbedRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newXinferenceEmbedServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_, _ = io.WriteString(w, `{"data":[{"index":5,"embedding":[0.1]}]}`)
@@ -430,6 +443,7 @@ func TestXinferenceEmbedRejectsOutOfRangeIndex(t *testing.T) {
 }
 
 func TestXinferenceEmbedRejectsMissingIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newXinferenceEmbedServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		// Two inputs requested but only one returned — index 1 is missing.
@@ -446,6 +460,7 @@ func TestXinferenceEmbedRejectsMissingIndex(t *testing.T) {
 }
 
 func TestXinferenceEmbedEmptyTextsShortCircuits(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	x := newXinferenceForTest("http://unused")
 	model := "bge-m3"
@@ -459,6 +474,7 @@ func TestXinferenceEmbedEmptyTextsShortCircuits(t *testing.T) {
 }
 
 func TestXinferenceEmbedRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	x := newXinferenceForTest("http://unused")
 	_, err := x.Embed(ctx, nil, []string{"x"}, &APIConfig{}, nil, nil)
@@ -468,6 +484,7 @@ func TestXinferenceEmbedRequiresModelName(t *testing.T) {
 }
 
 func TestXinferenceEmbedSurfacesHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -484,6 +501,7 @@ func TestXinferenceEmbedSurfacesHTTPError(t *testing.T) {
 }
 
 func TestXinferenceEmbedRejectsMissingEmbeddingSuffix(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	x := NewXinferenceModel(
 		map[string]string{"default": "http://unused"},
@@ -497,6 +515,7 @@ func TestXinferenceEmbedRejectsMissingEmbeddingSuffix(t *testing.T) {
 }
 
 func TestXinferenceMissingBaseURLFailsClearly(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	x := NewXinferenceModel(map[string]string{}, URLSuffix{Chat: "v1/chat/completions"})
 	_, err := x.ChatWithMessages(ctx, "qwen2.5-instruct",
@@ -508,6 +527,7 @@ func TestXinferenceMissingBaseURLFailsClearly(t *testing.T) {
 }
 
 func TestXinferenceUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	x := newXinferenceForTest("http://unused")
 	model := "qwen2.5-instruct"
@@ -566,6 +586,7 @@ func newXinferenceRerankServer(t *testing.T, expectedAuth string, handler func(t
 }
 
 func TestXinferenceRerankHappyPathReordersByIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newXinferenceRerankServer(t, "", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "bge-reranker-v2-m3" {
@@ -608,6 +629,7 @@ func TestXinferenceRerankHappyPathReordersByIndex(t *testing.T) {
 }
 
 func TestXinferenceRerankNormalizesV1BaseURL(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newXinferenceRerankServer(t, "Bearer test-key", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"results": []map[string]interface{}{}})
@@ -627,6 +649,7 @@ func TestXinferenceRerankNormalizesV1BaseURL(t *testing.T) {
 }
 
 func TestXinferenceRerankRespectsTopNConfig(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newXinferenceRerankServer(t, "", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if got := body["top_n"].(float64); got != 2 {
@@ -645,6 +668,7 @@ func TestXinferenceRerankRespectsTopNConfig(t *testing.T) {
 }
 
 func TestXinferenceRerankEmptyDocumentsShortCircuits(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	x := newXinferenceForTest("http://unused")
 	model := "bge-reranker-v2-m3"
@@ -658,6 +682,7 @@ func TestXinferenceRerankEmptyDocumentsShortCircuits(t *testing.T) {
 }
 
 func TestXinferenceRerankRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	x := newXinferenceForTest("http://unused")
 	_, err := x.Rerank(ctx, nil, "q", []string{"a"}, &APIConfig{}, nil, nil)
@@ -667,6 +692,7 @@ func TestXinferenceRerankRequiresModelName(t *testing.T) {
 }
 
 func TestXinferenceRerankRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newXinferenceRerankServer(t, "", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -684,6 +710,7 @@ func TestXinferenceRerankRejectsOutOfRangeIndex(t *testing.T) {
 }
 
 func TestXinferenceRerankRejectsDuplicateIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newXinferenceRerankServer(t, "", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -704,6 +731,7 @@ func TestXinferenceRerankRejectsDuplicateIndex(t *testing.T) {
 }
 
 func TestXinferenceRerankSurfacesHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -720,6 +748,7 @@ func TestXinferenceRerankSurfacesHTTPError(t *testing.T) {
 }
 
 func TestXinferenceRerankRejectsMissingRerankSuffix(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	x := NewXinferenceModel(
 		map[string]string{"default": "http://unused"},

@@ -39,7 +39,7 @@ func NewStepFunModel(baseURL map[string]string, urlSuffix URLSuffix) *StepFunMod
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

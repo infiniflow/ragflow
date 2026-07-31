@@ -23,7 +23,6 @@ export function useChatSettingSchema() {
     prologue: z.string().optional(),
     system: z.string().min(1, { message: t('systemMessage') }),
     refine_multiturn: z.boolean(),
-    use_kg: z.boolean(),
     parameters: z
       .array(
         z.object({
@@ -35,7 +34,6 @@ export function useChatSettingSchema() {
     tavily_api_key: z.string().optional(),
     reasoning: z.boolean().optional(),
     cross_languages: z.array(z.string()).optional(),
-    toc_enhance: z.boolean().optional(),
     reference_metadata: z
       .object({
         include: z.boolean().optional(),

@@ -166,7 +166,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	tkWeight := tkWeightOrig
 	vtWeight := vtWeightOrig
 	qb := GetQueryBuilder()
-	useInfinity := engine.GetEngineType() != engine.EngineElasticsearch
+	useInfinity := engine.GetEngineType() == "infinity"
 	useOceanBase := false // TODO: add OceanBase detection when supported
 
 	// For ES path: call GetScores() for second-pass KNN to get clean cosine similarity
@@ -665,7 +665,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			// Build source with vector column for ES
 			searchSrc := make([]string, len(searchRequest.SelectFields))
 			copy(searchSrc, searchRequest.SelectFields)
-			if engine.GetEngineType() == engine.EngineElasticsearch {
+			if engine.GetEngineType() == "elasticsearch" {
 				searchSrc = append(searchSrc, matchDense.VectorColumnName)
 			}
 

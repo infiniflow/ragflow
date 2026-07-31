@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"regexp"
 	"strconv"
 	"strings"
@@ -105,7 +106,7 @@ type UserResponse struct {
 // Register user registration
 func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*entity.User, common.ErrorCode, error) {
 	cfg := server.GetConfig()
-	if !cfg.Authentication.RegisterEnabled {
+	if !cfg.RegisterEnabled() {
 		return nil, common.CodeOperatingError, fmt.Errorf("user registration is disabled")
 	}
 
@@ -163,31 +164,31 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 
 	tenantName := req.Nickname + "'s Kingdom"
 
-	llmID := cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
+	llmID := cfg.GetDefaultChatModel().Name
 	if llmID == "" {
 		llmID = ""
 	}
-	embdID := cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name
+	embdID := cfg.GetDefaultEmbeddingModel().Name
 	if embdID == "" {
 		embdID = ""
 	}
-	asrID := cfg.UserDefaultLLM.DefaultModels.ASRModel.Name
+	asrID := cfg.GetDefaultASRModel().Name
 	if asrID == "" {
 		asrID = ""
 	}
-	img2txtID := cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name
+	img2txtID := cfg.GetDefaultVisionModel().Name
 	if img2txtID == "" {
 		img2txtID = ""
 	}
-	rerankID := cfg.UserDefaultLLM.DefaultModels.RerankModel.Name
+	rerankID := cfg.GetDefaultRerankModel().Name
 	if rerankID == "" {
 		rerankID = ""
 	}
-	ttsID := cfg.UserDefaultLLM.DefaultModels.TTSModel.Name
+	ttsID := cfg.GetDefaultTTSModel().Name
 	if ttsID == "" {
 		ttsID = ""
 	}
-	ocrID := cfg.UserDefaultLLM.DefaultModels.OCRModel.Name
+	ocrID := cfg.GetDefaultOCRModel().Name
 	if ocrID == "" {
 		ocrID = ""
 	}
@@ -269,22 +270,26 @@ func (s *UserService) getInitTenantLLM(ctx context.Context, userID string) ([]*e
 		return nil, fmt.Errorf("config not initialized")
 	}
 
-	modelConfigs := map[string]server.ModelConfig{
-		entity.ModelTypeChat.String():        cfg.UserDefaultLLM.DefaultModels.ChatModel,
-		entity.ModelTypeEmbedding.String():   cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
-		entity.ModelTypeSpeech2Text.String(): cfg.UserDefaultLLM.DefaultModels.ASRModel,
-		entity.ModelTypeImage2Text.String():  cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
-		entity.ModelTypeRerank.String():      cfg.UserDefaultLLM.DefaultModels.RerankModel,
+	modelConfigs := map[string]config.ModelConfig{
+		entity.ModelTypeChat.String():        cfg.GetDefaultChatModel(),
+		entity.ModelTypeEmbedding.String():   cfg.GetDefaultEmbeddingModel(),
+		entity.ModelTypeSpeech2Text.String(): cfg.GetDefaultASRModel(),
+		entity.ModelTypeImage2Text.String():  cfg.GetDefaultVisionModel(),
+		entity.ModelTypeRerank.String():      cfg.GetDefaultRerankModel(),
+		entity.ModelTypeTTS.String():         cfg.GetDefaultTTSModel(),
+		entity.ModelTypeOCR.String():         cfg.GetDefaultOCRModel(),
 	}
 
 	seenFactories := make(map[string]bool)
-	factoryConfigs := make([]server.ModelConfig, 0, len(modelConfigs))
-	for _, modelConfig := range []server.ModelConfig{
-		cfg.UserDefaultLLM.DefaultModels.ChatModel,
-		cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
-		cfg.UserDefaultLLM.DefaultModels.ASRModel,
-		cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
-		cfg.UserDefaultLLM.DefaultModels.RerankModel,
+	factoryConfigs := make([]config.ModelConfig, 0, len(modelConfigs))
+	for _, modelConfig := range []config.ModelConfig{
+		cfg.GetDefaultChatModel(),
+		cfg.GetDefaultEmbeddingModel(),
+		cfg.GetDefaultASRModel(),
+		cfg.GetDefaultVisionModel(),
+		cfg.GetDefaultRerankModel(),
+		cfg.GetDefaultTTSModel(),
+		cfg.GetDefaultOCRModel(),
 	} {
 		if modelConfig.Factory == "" || seenFactories[modelConfig.Factory] {
 			continue
@@ -840,26 +845,26 @@ type LoginChannel struct {
 
 // GetLoginChannels gets all supported authentication channels
 func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, error) {
-	cfg := server.GetConfig()
+	//cfg := server.GetConfig()
 	channels := make([]*LoginChannel, 0)
 
-	for channel, oauthCfg := range cfg.OAuth {
-		displayName := oauthCfg.DisplayName
-		if displayName == "" {
-			displayName = strings.Title(channel)
-		}
-
-		icon := oauthCfg.Icon
-		if icon == "" {
-			icon = "sso"
-		}
-
-		channels = append(channels, &LoginChannel{
-			Channel:     channel,
-			DisplayName: displayName,
-			Icon:        icon,
-		})
-	}
+	//for channel, oauthCfg := range cfg.OAuth {
+	//	displayName := oauthCfg.DisplayName
+	//	if displayName == "" {
+	//		displayName = strings.Title(channel)
+	//	}
+	//
+	//	icon := oauthCfg.Icon
+	//	if icon == "" {
+	//		icon = "sso"
+	//	}
+	//
+	//	channels = append(channels, &LoginChannel{
+	//		Channel:     channel,
+	//		DisplayName: displayName,
+	//		Icon:        icon,
+	//	})
+	//}
 
 	return channels, common.CodeSuccess, nil
 }
@@ -1193,7 +1198,7 @@ func (s *UserService) ForgotSendOTP(ctx context.Context, email, captchaID, captc
 
 	ttlMin := int(utility.OTPTTL.Minutes())
 	cfg := server.GetConfig()
-	if err := utility.SendResetCodeEmail(cfg.SMTP, email, otp, ttlMin); err != nil {
+	if err = utility.SendResetCodeEmail(cfg.GetSMTPConfig(), email, otp, ttlMin); err != nil {
 		// Roll back: restore prior code/attempts/last-sent or remove the
 		// keys we just wrote so the next attempt isn't blocked by the
 		// resend cooldown a failed send just installed.

@@ -52,7 +52,7 @@ const oauthAuthCookie = "ragflow_auth"
 // @Tags users
 // @Param channel path string true "channel name"
 // @Router /api/v1/auth/login/{channel} [get]
-func (h *UserHandler) OAuthLogin(c *gin.Context) {
+func (h *UserHandler) OAuthLoginDeprecated(c *gin.Context) {
 	channel := c.Param("channel")
 	if channel == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "channel is required")
@@ -89,7 +89,7 @@ func (h *UserHandler) OAuthLogin(c *gin.Context) {
 // @Param code query string true "authorization code"
 // @Param state query string true "state token"
 // @Router /api/v1/auth/oauth/{channel}/callback [get]
-func (h *UserHandler) OAuthChannelCallback(c *gin.Context) {
+func (h *UserHandler) OAuthChannelCallbackDeprecated(c *gin.Context) {
 	channel := c.Param("channel")
 	// An empty channel segment (/auth/oauth//callback) is a malformed path,
 	// not a real channel. Python's router never matches it and returns 404;

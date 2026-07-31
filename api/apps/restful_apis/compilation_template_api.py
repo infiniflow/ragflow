@@ -25,7 +25,7 @@ from api.utils.api_utils import get_json_result, server_error_response
 _validate_template_payload = validate_template_payload
 
 
-@manager.route("/compilation_templates/builtins", methods=["GET"])  # noqa: F821
+@manager.route("/compilation-templates/builtins", methods=["GET"])  # noqa: F821
 @login_required
 def list_builtin_templates() -> Response:
     """Built-in template palette — used as the per-child pre-fill in the
@@ -54,7 +54,7 @@ def list_builtin_templates() -> Response:
         return server_error_response(exc)
 
 
-@manager.route("/compilation_templates/wiki_presets", methods=["GET"])  # noqa: F821
+@manager.route("/compilation-templates/wiki-presets", methods=["GET"])  # noqa: F821
 @login_required
 def list_wiki_presets() -> Response:
     """Wiki page-structure presets loaded from

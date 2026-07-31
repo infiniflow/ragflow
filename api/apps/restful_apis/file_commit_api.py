@@ -362,13 +362,12 @@ def _register_commit_routes(prefix, param_name, resolver_type=None):
 # Register datasets first, workspace second, folders last —
 # the last call's handlers overwrite module-level names for test access.
 _register_commit_routes("/datasets/<entity_id>", "entity_id", resolver_type="datasets")
-_register_commit_routes("/workspace/<entity_id>", "entity_id")  # alias — workspace_id == folder_id
-_register_commit_routes("/folders/<entity_id>", "entity_id")  # direct — entity_id == folder_id (wins)
+_register_commit_routes("/workspaces/<entity_id>", "entity_id")
 # /memories and /skills routes are not mounted until resolvers are implemented.
 
 
 # ── File version history (shared across all entity types) ─────────────────
-@manager.route("/files/<file_id>/versions", methods=["GET"])  # noqa: F821
+@manager.route("/workspace-files/<file_id>/versions", methods=["GET"])  # noqa: F821
 @login_required
 async def get_file_version_history(file_id):
     try:

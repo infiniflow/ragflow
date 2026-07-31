@@ -38,7 +38,7 @@ func NewUpstageModel(baseURL map[string]string, urlSuffix URLSuffix) *UpstageMod
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

@@ -44,7 +44,7 @@ func NewCoHereModel(baseURL map[string]string, urlSuffix URLSuffix) *CoHereModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

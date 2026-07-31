@@ -975,7 +975,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       language: '语言',
       emptyResponse: '空回复',
       emptyResponsePlaceholder: '在知识库中未找到您要寻找的答案！',
-      emptyResponseTip: `如果在知识库中没有检索到用户的问题，它将使用它作为答案。 如果您希望 LLM 在未检索到任何内容时提出自己的意见，请将此留空。`,
+      emptyResponseTip: `如果在知识库中没有检索到用户的问题，它将使用它作为答案。 如果您希望 LLM 在未检索到任何内容时提出自己的意见，请将此留空。仅在思考模式是简单模式时候生效。`,
       emptyResponseMessage: `当知识库中未检索到任何相关信息时，将触发空响应。由于未选择任何知识库，因此请清除“空响应”。`,
       setAnOpener: '设置开场白',
       setAnOpenerInitial: `你好！ 我是你的助理，有什么可以帮到你的吗？`,

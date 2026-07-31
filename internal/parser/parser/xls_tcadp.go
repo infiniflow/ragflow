@@ -38,7 +38,7 @@ func parseSpreadsheetWithTCADP(filename string, data []byte, fileType string, tc
 			"MarkdownImageResponseType": markdownImageResponseType,
 		},
 	}
-	resp, err := models.PostJSONRequest(context.Background(), models.NewDriverHTTPClient(), strings.TrimRight(baseURL, "/")+"/reconstruct_document", bearer(apiKey), requestBody)
+	resp, err := models.PostJSONRequest(context.Background(), models.NewDriverHTTPClient(false), strings.TrimRight(baseURL, "/")+"/reconstruct_document", bearer(apiKey), requestBody)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP submit: %w", err)}
 	}
@@ -66,7 +66,7 @@ func parseSpreadsheetWithTCADP(filename string, data []byte, fileType string, tc
 	if auth := bearer(apiKey); auth != "" {
 		downloadReq.Header.Set("Authorization", auth)
 	}
-	downloadResp, err := models.NewDriverHTTPClient().Do(downloadReq)
+	downloadResp, err := models.NewDriverHTTPClient(false).Do(downloadReq)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP download: %w", err)}
 	}

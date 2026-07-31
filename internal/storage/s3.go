@@ -21,11 +21,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
+	s3Config "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
@@ -37,11 +37,11 @@ type S3Storage struct {
 	client     *s3.Client
 	bucket     string
 	prefixPath string
-	config     *server.S3Config
+	config     config.S3Config
 }
 
 // NewS3Storage creates a new S3 storage instance
-func NewS3Storage(config *server.S3Config) (*S3Storage, error) {
+func NewS3Storage(config config.S3Config) (*S3Storage, error) {
 	storage := &S3Storage{
 		config: config,
 	}
@@ -56,11 +56,11 @@ func NewS3Storage(config *server.S3Config) (*S3Storage, error) {
 func (s *S3Storage) connect() error {
 	ctx := context.Background()
 
-	var opts []func(*config.LoadOptions) error
+	var opts []func(*s3Config.LoadOptions) error
 
 	// Configure region
 	if s.config.Region != "" {
-		opts = append(opts, config.WithRegion(s.config.Region))
+		opts = append(opts, s3Config.WithRegion(s.config.Region))
 	}
 
 	// Configure credentials if provided
@@ -70,11 +70,11 @@ func (s *S3Storage) connect() error {
 			s.config.SecretKey,
 			s.config.SessionToken,
 		)
-		opts = append(opts, config.WithCredentialsProvider(creds))
+		opts = append(opts, s3Config.WithCredentialsProvider(creds))
 	}
 
 	// Load configuration
-	cfg, err := config.LoadDefaultConfig(ctx, opts...)
+	cfg, err := s3Config.LoadDefaultConfig(ctx, opts...)
 	if err != nil {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}

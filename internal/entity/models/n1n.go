@@ -38,7 +38,7 @@ func NewN1NModel(baseURL map[string]string, urlSuffix URLSuffix) *N1NModel {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

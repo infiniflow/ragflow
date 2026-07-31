@@ -41,7 +41,7 @@ func NewBaiduModel(baseURL map[string]string, urlSuffix URLSuffix) *BaiduModel {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

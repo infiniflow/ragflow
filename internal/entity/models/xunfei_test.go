@@ -3,6 +3,7 @@ package models
 import "testing"
 
 func TestXunFeiUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	driver := NewXunFeiModel(map[string]string{"default": "http://unused"}, URLSuffix{}).
 		NewInstance(map[string]string{"default": "http://unused"})

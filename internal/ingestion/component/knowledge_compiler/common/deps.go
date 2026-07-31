@@ -148,7 +148,7 @@ func ResolveDeps(tenantID, llmID, embeddingModel string) (Deps, error) {
 // compilation_template ids they contain. It is a DB-backed seam installed by
 // production wiring in internal/ingestion/task; the knowledge_compiler package
 // itself stays DB-independent. When a component is configured with
-// compilation_template_group_ids but no GroupResolver is installed, the
+// compilation_template_group_id but no GroupResolver is installed, the
 // component fails loudly instead of silently emitting rows that miss
 // compilation_template_ids (a data-loss path).
 type GroupResolver func(ctx context.Context, tenantID string, groupIDs []string) ([]string, error)
@@ -180,7 +180,48 @@ func ResolveGroupTemplateIDs(ctx context.Context, tenantID string, groupIDs []st
 	r := groupResolver
 	groupResolverMu.RUnlock()
 	if r == nil {
-		return nil, fmt.Errorf("knowledge_compiler: compilation_template_group_ids provided but no GroupResolver installed (production wiring must call common.SetGroupResolver)")
+		return nil, fmt.Errorf("knowledge_compiler: compilation_template_group_id provided but no GroupResolver installed (production wiring must call common.SetGroupResolver)")
 	}
 	return r(ctx, tenantID, groupIDs)
+}
+
+// TemplateResolver loads a single compilation template by id for the tenant.
+type TemplateResolver func(ctx context.Context, tenantID, templateID string) (TemplateInfo, error)
+
+// TemplateInfo is a resolved compilation template: its id, the kind that
+// selects the Go compiler variant (see KindToVariant), and its config blob (the
+// template "content"). It is dependency-light so common can return it without
+// importing entity/gorm — production wiring (internal/ingestion/task) converts
+// the entity row into this shape.
+type TemplateInfo struct {
+	ID     string
+	Kind   string
+	Config map[string]any
+}
+
+var (
+	templateResolverMu sync.RWMutex
+	templateResolver   TemplateResolver
+)
+
+// SetTemplateResolver installs the production (or test) TemplateResolver.
+// Production wiring calls this from an init() in internal/ingestion/task; tests
+// may inject a stub.
+func SetTemplateResolver(r TemplateResolver) {
+	templateResolverMu.Lock()
+	defer templateResolverMu.Unlock()
+	templateResolver = r
+}
+
+// ResolveTemplate loads a single compilation template by id via the installed
+// resolver. Returns an error when no resolver is installed (compilation_template_id
+// provided but unwired) rather than silently compiling with no template config.
+func ResolveTemplate(ctx context.Context, tenantID, templateID string) (TemplateInfo, error) {
+	templateResolverMu.RLock()
+	r := templateResolver
+	templateResolverMu.RUnlock()
+	if r == nil {
+		return TemplateInfo{}, fmt.Errorf("knowledge_compiler: compilation_template_id provided but no TemplateResolver installed (production wiring must call common.SetTemplateResolver)")
+	}
+	return r(ctx, tenantID, templateID)
 }

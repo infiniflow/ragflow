@@ -1286,7 +1286,7 @@ func memorySearchIndexNames(memories []*entity.Memory) []string {
 			continue
 		}
 		indexName := memoryIndexName(memory.TenantID)
-		if engine.GetEngineType() == engine.EngineInfinity {
+		if engine.GetEngineType() == "infinity" {
 			indexName = fmt.Sprintf("%s_%s", indexName, memory.ID)
 		}
 		if _, ok := seen[indexName]; ok {

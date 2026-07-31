@@ -42,7 +42,7 @@ func NewReplicateModel(baseURL map[string]string, urlSuffix URLSuffix) *Replicat
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

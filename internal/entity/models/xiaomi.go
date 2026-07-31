@@ -40,7 +40,7 @@ func NewXiaomiModel(baseURL map[string]string, urlSuffix URLSuffix) *XiaomiModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

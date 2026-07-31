@@ -235,6 +235,7 @@ func TestProviderConfigRejectsUnknownURLSuffixKey(t *testing.T) {
 }
 
 func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
+	withSSRFBypass(t)
 	dir, restore := setupProviderTestDir(t, "ppio.json")
 	defer restore()
 

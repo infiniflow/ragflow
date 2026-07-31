@@ -74,7 +74,8 @@ func runVariantChunks(t *testing.T, variant string, extra map[string]any) []sche
 // inputs (e.g. parser_config for the structure variant's template shape).
 func runVariantChunksWithInputs(t *testing.T, variant string, extra, inputsExtra map[string]any) []schema.ChunkDoc {
 	t.Helper()
-	params := map[string]any{"variant": variant, "llm_id": "llm1", "embedding_model": "emb1"}
+	installVariantTemplateResolver(t, variant)
+	params := map[string]any{"compilation_template_id": "tpl-" + variant, "llm_id": "llm1", "embedding_model": "emb1"}
 	for k, v := range extra {
 		params[k] = v
 	}
@@ -224,15 +225,15 @@ func TestGolden_Wiki_ProductCount(t *testing.T) {
 	}
 }
 
-// TestGolden_Raptor_Structure is the 缺口 C gate for the raptor variant: on the
-// fixed corpus, the watershed builder (raptor.go::watershed) must produce a
+// TestGolden_Tree_Structure is the 缺口 C gate for the tree variant: on the
+// fixed corpus, the watershed builder (tree/raptor.go::watershed) must produce a
 // well-formed tree (single root, fully parented, vectors + schema intact, full
 // chunk coverage, bounded depth/cluster count) across several tree_order
 // settings. The structural contract is what a regression would violate; the
-// exact cluster counts are locked in raptor_baseline.json.
-func TestGolden_Raptor_Structure(t *testing.T) {
+// exact cluster counts are locked in tree_baseline.json.
+func TestGolden_Tree_Structure(t *testing.T) {
 	installSignedProseDeps(t)
-	baseline := loadBaseline(t, "raptor_baseline.json")
+	baseline := loadBaseline(t, "tree_baseline.json")
 	nChunks := len(golden.FixedCorpus())
 
 	cases := []struct {
@@ -248,36 +249,36 @@ func TestGolden_Raptor_Structure(t *testing.T) {
 	for _, tc := range cases {
 		var prods []schema.ChunkDoc
 		if tc.order <= 0 {
-			prods = runVariantChunks(t, "raptor", nil)
+			prods = runVariantChunks(t, "tree", nil)
 		} else {
-			prods = runVariantChunks(t, "raptor", map[string]any{
+			prods = runVariantChunks(t, "tree", map[string]any{
 				"extra": map[string]any{"tree_order": tc.order},
 			})
 		}
-		m := golden.AnalyzeRaptorProducts(prods)
-		t.Logf("raptor(%s): products=%d root=%d leafClusters=%d maxDepth=%d coverage=%.2f",
+		m := golden.AnalyzeTreeProducts(prods, goldenCorpusIDs()...)
+		t.Logf("tree(%s): products=%d root=%d leafClusters=%d maxDepth=%d coverage=%.2f",
 			tc.name, m.ProductCount, m.RootCount, m.LeafClusters, m.MaxDepth, m.CoverageFraction(nChunks))
 
 		if m.RootCount != 1 {
-			t.Errorf("raptor(%s): rootCount=%d, want 1", tc.name, m.RootCount)
+			t.Errorf("tree(%s): rootCount=%d, want 1", tc.name, m.RootCount)
 		}
 		if !m.AllParented {
-			t.Errorf("raptor(%s): tree has dangling parent_id references", tc.name)
+			t.Errorf("tree(%s): tree has dangling parent_id references", tc.name)
 		}
 		if !m.VectorOK {
-			t.Errorf("raptor(%s): some products missing vectors", tc.name)
+			t.Errorf("tree(%s): some products missing vectors", tc.name)
 		}
 		if !m.SchemaOK {
-			t.Errorf("raptor(%s): some products missing schema fields", tc.name)
+			t.Errorf("tree(%s): some products missing schema fields", tc.name)
 		}
 		if cov := m.CoverageFraction(nChunks); cov < numFloat(baseline, "leaf_coverage_min") {
-			t.Errorf("raptor(%s): leaf coverage %.2f < baseline %.2f", tc.name, cov, numFloat(baseline, "leaf_coverage_min"))
+			t.Errorf("tree(%s): leaf coverage %.2f < baseline %.2f", tc.name, cov, numFloat(baseline, "leaf_coverage_min"))
 		}
 		if m.LeafClusters < num(baseline, tc.minKey) || m.LeafClusters > num(baseline, tc.maxKey) {
-			t.Errorf("raptor(%s): leafClusters=%d outside [%d,%d]", tc.name, m.LeafClusters, num(baseline, tc.minKey), num(baseline, tc.maxKey))
+			t.Errorf("tree(%s): leafClusters=%d outside [%d,%d]", tc.name, m.LeafClusters, num(baseline, tc.minKey), num(baseline, tc.maxKey))
 		}
 		if m.MaxDepth > num(baseline, "max_depth_max") {
-			t.Errorf("raptor(%s): maxDepth=%d > baseline %d", tc.name, m.MaxDepth, num(baseline, "max_depth_max"))
+			t.Errorf("tree(%s): maxDepth=%d > baseline %d", tc.name, m.MaxDepth, num(baseline, "max_depth_max"))
 		}
 	}
 }
@@ -290,4 +291,16 @@ func numFloat(m map[string]any, key string) float64 {
 		return float64(v)
 	}
 	return 0
+}
+
+// goldenCorpusIDs returns the IDs of every chunk in the fixed golden corpus.
+// Passed to AnalyzeTreeProducts so coverage only counts source chunk IDs that
+// belong to the input corpus (a leaked/unknown ID must not inflate coverage).
+func goldenCorpusIDs() []string {
+	corpus := golden.FixedCorpus()
+	ids := make([]string, 0, len(corpus))
+	for _, c := range corpus {
+		ids = append(ids, c.ID)
+	}
+	return ids
 }

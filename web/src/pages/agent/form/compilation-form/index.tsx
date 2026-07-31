@@ -13,7 +13,7 @@ import { FormWrapper } from '../components/form-wrapper';
 import { Output } from '../components/output';
 
 export const FormSchema = z.object({
-  compilation_template_group_ids: z.string().optional(),
+  compilation_template_group_id: z.string().optional(),
 });
 
 export type CompilationFormSchemaType = z.infer<typeof FormSchema>;
@@ -33,7 +33,7 @@ const CompilationForm = ({ node }: INextOperatorForm) => {
   return (
     <Form {...form}>
       <FormWrapper>
-        <CompilationTemplateFormField name="compilation_template_group_ids"></CompilationTemplateFormField>
+        <CompilationTemplateFormField name="compilation_template_group_id"></CompilationTemplateFormField>
         <Output list={outputList}></Output>
       </FormWrapper>
     </Form>
