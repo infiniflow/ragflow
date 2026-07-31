@@ -13,8 +13,12 @@ import { ICompilationTemplateConfigRequest } from '@/interfaces/request/compilat
 import { CompilationTemplateKind } from '@/constants/compilation';
 
 import { FormSchemaType, TemplateSchemaType } from './schema';
-
-export const DefaultFieldKeys = ['type', 'description', 'rule'];
+import {
+  DefaultFieldKeys,
+  DefaultTemplateValues,
+  FieldKeyOrders,
+  SectionPriority,
+} from './constant';
 
 export const splitExampleToBlueprintFields = (
   example: string,
@@ -30,12 +34,6 @@ export const splitExampleToBlueprintFields = (
   };
 };
 
-export const FieldKeyOrders = [
-  DefaultFieldKeys,
-  ['statement', 'subject'],
-  ['definition_excerpt', 'term'],
-];
-
 export const getFieldKeyOrder = (keys: string[]): string[] => {
   const sortedKeys = [...keys].sort();
   return (
@@ -46,32 +44,6 @@ export const getFieldKeyOrder = (keys: string[]): string[] => {
 
 export const generateTemplateName = () =>
   humanId({ separator: ' ', capitalize: true });
-
-export const DefaultTemplateValues: TemplateSchemaType = {
-  id: undefined,
-  name: '',
-  description: '',
-  llm_id: '',
-  kind: '',
-  config: {
-    kind: '',
-    llm_id: '',
-    global_rules: '',
-    example: '',
-    instruction: '',
-    page_example: '',
-    use_blueprint: false,
-    rechunk: false,
-    rechunk_rules: '',
-  },
-};
-
-export const DefaultValues: FormSchemaType = {
-  name: '',
-  description: '',
-  avatar: '',
-  templates: [DefaultTemplateValues],
-};
 
 export const isConfigMetaKey = (key: string) =>
   [
@@ -317,25 +289,10 @@ export const transformFormToPayload = (values: FormSchemaType) => {
   };
 };
 
-export const SectionTitleKeyMap: Record<string, string> = {
-  entity: 'setting.entitySpecification',
-  relation: 'setting.relationSpecification',
-  concept: 'setting.conceptSpecification',
-  claim: 'setting.claimSpecification',
-};
-
-export const SectionPriority = ['entity', 'relation'];
-
 export const sortSectionNames = (names: string[]): string[] => {
   const priority = SectionPriority.filter((name) => names.includes(name));
   const rest = names.filter((name) => !SectionPriority.includes(name));
   return [...priority, ...rest];
-};
-
-export const FieldLabelKeyMap: Record<string, string> = {
-  type: 'setting.fieldType',
-  description: 'setting.fieldDescription',
-  rule: 'setting.fieldRule',
 };
 
 export const getTypeOptionsFromBuiltinSection = (
