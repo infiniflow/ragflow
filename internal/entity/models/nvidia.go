@@ -49,7 +49,7 @@ func NewNvidiaModel(baseURL map[string]string, urlSuffix URLSuffix) *NvidiaModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 		catalogURL:    nvidiaCatalogURL,
 		hostedAPIHost: nvidiaHostedAPIHost,

@@ -41,7 +41,7 @@ func NewAnthropicModel(baseURL map[string]string, urlSuffix URLSuffix) *Anthropi
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

@@ -37,7 +37,7 @@ func NewHuaweiCloudModel(baseURL map[string]string, urlSuffix URLSuffix) *Huawei
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

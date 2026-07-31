@@ -39,7 +39,7 @@ func NewMinimaxModel(baseURL map[string]string, urlSuffix URLSuffix) *MinimaxMod
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

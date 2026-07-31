@@ -36,7 +36,7 @@ func NewJieKouAIModel(baseURL map[string]string, urlSuffix URLSuffix) *JieKouAIM
 	// JieKouAI's methods issue requests without a per-call context deadline, so
 	// keep an explicit 120s client-level timeout to bound them. Built on the
 	// shared transport via NewDriverHTTPClient.
-	client := NewDriverHTTPClient()
+	client := NewDriverHTTPClient(false)
 	client.Timeout = 120 * time.Second
 	return &JieKouAIModel{
 		baseModel: BaseModel{

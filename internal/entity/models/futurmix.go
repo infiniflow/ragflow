@@ -38,7 +38,7 @@ func NewFuturMixModel(baseURL map[string]string, urlSuffix URLSuffix) *FuturMixM
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

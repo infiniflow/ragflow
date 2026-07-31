@@ -42,7 +42,7 @@ func NewDeepInfraModel(baseURL map[string]string, urlSuffix URLSuffix) *DeepInfr
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
