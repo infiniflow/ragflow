@@ -41,17 +41,23 @@ func NewDatasetArtifactHandler(svc *service.DatasetArtifactService, datasetSvc *
 }
 
 // datasetOwner resolves the dataset and returns its tenant id. It also enforces
-// dataset access permission for the requesting user.
+// dataset access permission for the requesting user. When the request is
+// unauthenticated, the dataset is missing, or the user is not allowed to access
+// it, an error response is written and (nil, "", "") is returned so callers can
+// abort without sending a second response.
 func (h *DatasetArtifactHandler) datasetOwner(c *gin.Context, datasetID string) (*entity.User, string, string) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
+		common.ErrorWithCode(c, code, msg)
 		return nil, "", ""
 	}
 	kb, err := h.datasetSvc.GetKnowledgebaseByID(c.Request.Context(), datasetID)
 	if err != nil || kb == nil {
+		common.ErrorWithCode(c, common.CodeNotFound, "dataset not found")
 		return nil, "", ""
 	}
 	if !h.datasetSvc.Accessible(c.Request.Context(), datasetID, user.ID) {
+		common.ErrorWithCode(c, common.CodeForbidden, "no permission to access this dataset")
 		return nil, "", ""
 	}
 	return user, kb.TenantID, msg
@@ -149,7 +155,6 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 			title = detail.Title
 		}
 		if _, cerr := h.fileCommitSvc.RecordPageEdit(c.Request.Context(), file.PageEditCommitInput{
-			DatasetID:  datasetID,
 			DocID:      docID,
 			Slug:       slug,
 			PageType:   pageType,

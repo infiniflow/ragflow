@@ -238,8 +238,6 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 // page edit as an audit commit, mirroring Python's
 // FileCommitService.record_page_edit.
 type PageEditCommitInput struct {
-	TenantID   string
-	DatasetID  string // knowledgebase id, used as the scope for storage location
 	DocID      string // ES doc id of the page content
 	Slug       string
 	PageType   string
@@ -343,10 +341,6 @@ func unifiedDiff(oldText, newText string) string {
 	var hunks []hunkLine
 
 	// Longest common subsequence over lines, then render the diff.
-	prev := make([][]int, len(oldLines)+1)
-	for i := range prev {
-		prev[i] = make([]int, len(newLines)+1)
-	}
 	cur := make([][]int, len(oldLines)+1)
 	for i := range cur {
 		cur[i] = make([]int, len(newLines)+1)
@@ -362,7 +356,6 @@ func unifiedDiff(oldText, newText string) string {
 			}
 		}
 	}
-	_ = prev
 
 	i, j := 0, 0
 	for i < len(oldLines) && j < len(newLines) {
