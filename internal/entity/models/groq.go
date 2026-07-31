@@ -88,9 +88,21 @@ type groqChatChoice struct {
 }
 
 type groqChatResponse struct {
-	Choices      []groqChatChoice `json:"choices"`
-	Error        interface{}      `json:"error"`
-	FinishReason string           `json:"finish_reason"`
+	ID                string           `json:"id"`
+	Choices           []groqChatChoice `json:"choices"`
+	Error             interface{}      `json:"error"`
+	Usage             *groqChatUsage   `json:"usage"`
+	Created           int64            `json:"created"`
+	Model             string           `json:"model"`
+	Object            string           `json:"object"`
+	SystemFingerprint string           `json:"system_fingerprint"`
+	FinishReason      string           `json:"finish_reason"`
+}
+
+type groqChatUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
 }
 
 func (g *GroqModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -140,27 +152,38 @@ func (g *GroqModel) ChatWithMessages(ctx context.Context, modelName string, mess
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var result groqChatResponse
-	if err = json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse response: %w", err)
-	}
-	if result.Error != nil {
-		return nil, fmt.Errorf("groq: upstream error: %v", result.Error)
-	}
-	if len(result.Choices) == 0 {
-		return nil, fmt.Errorf("no choices in response")
-	}
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, _ *ChatConfig) (chatResponseParts, error) {
+		var result groqChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+		if result.Error != nil {
+			return chatResponseParts{}, fmt.Errorf("groq: upstream error: %v", result.Error)
+		}
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("no choices in response")
+		}
 
-	content := result.Choices[0].Message.Content
-	reasonContent := result.Choices[0].Message.ReasoningContent
-	if reasonContent == "" {
-		reasonContent = result.Choices[0].Message.Reasoning
-	}
+		content := result.Choices[0].Message.Content
+		reasonContent := result.Choices[0].Message.ReasoningContent
+		if reasonContent == "" {
+			reasonContent = result.Choices[0].Message.Reasoning
+		}
 
-	return &ChatResponse{
-		Answer:        &content,
-		ReasonContent: &reasonContent,
-	}, nil
+		parts := chatResponseParts{
+			RequestID:     result.ID,
+			Content:       &content,
+			ReasonContent: &reasonContent,
+		}
+		if result.Usage != nil {
+			parts.Usage = &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			}
+		}
+		return parts, nil
+	})
 }
 
 func (g *GroqModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {

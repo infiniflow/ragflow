@@ -30,10 +30,14 @@ import "time"
 // out-of-order / tombstone guards as the broker-based design without re-reading
 // the queue.
 type KnowledgeCompileDoc struct {
-	DatasetID      string     `gorm:"primaryKey;column:dataset_id;size:64" json:"dataset_id"`
-	TenantID       string     `gorm:"column:tenant_id;size:64;not null;default:''" json:"tenant_id"`
-	BacklogDocIDs  string     `gorm:"column:backlog_doc_ids;type:text;not null;default:'[]'" json:"backlog_doc_ids"`
-	InflightDocIDs string     `gorm:"column:inflight_doc_ids;type:text;not null;default:'[]'" json:"inflight_doc_ids"`
+	DatasetID string `gorm:"primaryKey;column:dataset_id;size:64" json:"dataset_id"`
+	TenantID  string `gorm:"column:tenant_id;size:64;not null;default:''" json:"tenant_id"`
+	// The *_doc_ids columns store a JSON array as TEXT. No DDL default is set:
+	// MySQL (8.0.13+) rejects a literal DEFAULT on TEXT/BLOB columns (Error
+	// 1101), and the application always writes "[]" explicitly on insert/update
+	// (scheduler.go FirstOrCreate / release paths), so the default is redundant.
+	BacklogDocIDs  string     `gorm:"column:backlog_doc_ids;type:text;not null" json:"backlog_doc_ids"`
+	InflightDocIDs string     `gorm:"column:inflight_doc_ids;type:text;not null" json:"inflight_doc_ids"`
 	ClaimOwner     string     `gorm:"column:claim_owner;size:64;not null;default:''" json:"claim_owner"`
 	ClaimToken     string     `gorm:"column:claim_token;size:64;not null;default:''" json:"claim_token"`
 	ClaimExpiresAt *time.Time `gorm:"column:claim_expires_at;default:null" json:"claim_expires_at"`

@@ -702,4 +702,50 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       };
     },
   },
+
+  // ============ SoMark ============
+  [LLMFactory.SoMark]: {
+    llmFactory: LLMFactory.SoMark,
+    title: 'SoMark',
+    fields: [
+      {
+        name: 'instance_name',
+        label: 'instanceName',
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: 'instanceNameMessage',
+        tooltip: 'instanceNameTip',
+        validation: { message: 'instanceNameMessage' },
+      },
+      {
+        name: 'base_url',
+        label: 'somark.baseUrl',
+        type: 'inputSelect',
+        required: true,
+        placeholder: 'somark.baseUrlPlaceholder',
+        shouldRender: 'hideWhenInstanceExists',
+        validation: { message: 'somark.baseUrlMessage' },
+      },
+      {
+        name: 'api_key',
+        label: 'somark.apiKey',
+        type: FormFieldType.Password,
+        required: false,
+        placeholder: 'somark.apiKeyPlaceholder',
+        shouldRender: 'hideWhenInstanceExists',
+      },
+    ],
+    verifyTransform: (values) => ({
+      apiKey: values.api_key ?? '',
+      baseUrl: values.base_url,
+      modelInfo: [],
+    }),
+    submitTransform: (values) => ({
+      instance_name: values.instance_name,
+      llm_factory: LLMFactory.SoMark,
+      api_key: values.api_key ?? '',
+      base_url: values.base_url,
+      model_info: [],
+    }),
+  },
 };

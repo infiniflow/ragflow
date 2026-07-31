@@ -43,6 +43,40 @@ func newGroqForTest(baseURL string) *GroqModel {
 	)
 }
 
+// groqChatPayload returns a minimal valid Groq chat completion response.
+// Tests override the fields they care about.
+func groqChatPayload(content, reasoning string, usage *groqUsage) map[string]any {
+	p := map[string]any{
+		"id":      "chatcmpl-test",
+		"object":  "chat.completion",
+		"created": 1730241104,
+		"model":   "llama-3.3-70b-versatile",
+		"choices": []map[string]any{{
+			"index": 0,
+			"message": map[string]any{
+				"role":              "assistant",
+				"content":           content,
+				"reasoning_content": reasoning,
+			},
+			"finish_reason": "stop",
+		}},
+	}
+	if usage != nil {
+		p["usage"] = map[string]any{
+			"prompt_tokens":     usage.promptTokens,
+			"completion_tokens": usage.completionTokens,
+			"total_tokens":      usage.totalTokens,
+		}
+	}
+	return p
+}
+
+type groqUsage struct {
+	promptTokens     int
+	completionTokens int
+	totalTokens      int
+}
+
 func TestGroqName(t *testing.T) {
 	if got := newGroqForTest("http://unused").Name(); got != "groq" {
 		t.Errorf("Name()=%q", got)
@@ -108,14 +142,9 @@ func TestGroqChatHappyPath(t *testing.T) {
 		if _, ok := body["reasoning_effort"]; ok {
 			t.Errorf("reasoning_effort should not be sent: %v", body["reasoning_effort"])
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"choices": []map[string]interface{}{{
-				"message": map[string]interface{}{
-					"content":           "pong",
-					"reasoning_content": "thinking",
-				},
-			}},
-		})
+		_ = json.NewEncoder(w).Encode(groqChatPayload("pong", "thinking", &groqUsage{
+			promptTokens: 18, completionTokens: 556, totalTokens: 574,
+		}))
 	})
 	defer srv.Close()
 
@@ -142,6 +171,12 @@ func TestGroqChatHappyPath(t *testing.T) {
 	}
 	if resp.ReasonContent == nil || *resp.ReasonContent != "thinking" {
 		t.Fatalf("ReasonContent=%v, want thinking", resp.ReasonContent)
+	}
+	if resp.Usage == nil {
+		t.Fatalf("Usage=nil, want populated")
+	}
+	if resp.Usage.PromptTokens != 18 || resp.Usage.CompletionTokens != 556 || resp.Usage.TotalTokens != 574 {
+		t.Fatalf("Usage=%#v, want prompt=18 completion=556 total=574", resp.Usage)
 	}
 }
 
@@ -340,16 +375,12 @@ func TestGroqBaseURLTrimsTrailingSlash(t *testing.T) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"choices": []map[string]interface{}{{
-				"message": map[string]interface{}{"content": "ok"},
-			}},
-		})
+		_ = json.NewEncoder(w).Encode(groqChatPayload("ok", "", nil))
 	})
 	defer srv.Close()
 
 	apiKey := "test-key"
-	_, err := newGroqForTest(srv.URL+"/").ChatWithMessages(
+	resp, err := newGroqForTest(srv.URL+"/").ChatWithMessages(
 		ctx,
 		"llama-3.3-70b-versatile",
 		[]Message{{Role: "user", Content: "x"}},
@@ -360,6 +391,9 @@ func TestGroqBaseURLTrimsTrailingSlash(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}
+	if resp.Usage != nil {
+		t.Fatalf("Usage=%#v, want nil for usage-less response", resp.Usage)
+	}
 }
 
 func TestGroqUsesEmptyRegionCustomBaseURL(t *testing.T) {
@@ -368,11 +402,7 @@ func TestGroqUsesEmptyRegionCustomBaseURL(t *testing.T) {
 		if r.URL.Path != "/chat/completions" {
 			t.Errorf("path=%s", r.URL.Path)
 		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"choices": []map[string]interface{}{{
-				"message": map[string]interface{}{"content": "ok"},
-			}},
-		})
+		_ = json.NewEncoder(w).Encode(groqChatPayload("ok", "", nil))
 	})
 	defer srv.Close()
 
@@ -382,7 +412,7 @@ func TestGroqUsesEmptyRegionCustomBaseURL(t *testing.T) {
 		map[string]string{"": srv.URL},
 		URLSuffix{Chat: "chat/completions", Models: "models"},
 	)
-	_, err := model.ChatWithMessages(
+	resp, err := model.ChatWithMessages(
 		ctx,
 		"llama-3.3-70b-versatile",
 		[]Message{{Role: "user", Content: "x"}},
@@ -392,6 +422,9 @@ func TestGroqUsesEmptyRegionCustomBaseURL(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if resp.Usage != nil {
+		t.Fatalf("Usage=%#v, want nil for usage-less response", resp.Usage)
 	}
 }
 
