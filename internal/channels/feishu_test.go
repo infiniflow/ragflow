@@ -17,7 +17,6 @@
 package channels
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -72,7 +71,7 @@ func TestFeishuEnqueueDoesNotMarkDroppedMessageSeen(t *testing.T) {
 	worker.queue <- core.IncomingMessage{MessageID: "queued"}
 	ch.workers["chat-1"] = worker
 
-	ok := ch.enqueueIncoming(context.Background(), core.IncomingMessage{
+	ok := ch.enqueueIncoming(core.IncomingMessage{
 		ChatID:    "chat-1",
 		MessageID: "dropped",
 	})
