@@ -37,7 +37,7 @@ func NewMinerLocalUModel(baseURL map[string]string, urlSuffix URLSuffix) *MinerU
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(),
+			httpClient:       NewDriverHTTPClient(true),
 		},
 	}
 }

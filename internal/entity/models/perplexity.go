@@ -36,7 +36,7 @@ func NewPerplexityModel(baseURL map[string]string, urlSuffix URLSuffix) *Perplex
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

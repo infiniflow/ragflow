@@ -28,6 +28,7 @@ func newOllamaForListModelsTest(baseURL string) *OllamaModel {
 }
 
 func TestOllamaListModels(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -54,6 +55,7 @@ func TestOllamaListModels(t *testing.T) {
 }
 
 func TestOllamaListModelsFallsBackToModelField(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Some entries may carry only the "model" field; it should be used as the name.
@@ -74,6 +76,7 @@ func TestOllamaListModelsFallsBackToModelField(t *testing.T) {
 }
 
 func TestOllamaListModelsRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -87,6 +90,7 @@ func TestOllamaListModelsRejectsHTTPError(t *testing.T) {
 }
 
 func TestOllamaListModelsRequiresBaseURL(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := NewOllamaModel(map[string]string{}, URLSuffix{Models: "api/tags"})
 	if _, err := m.ListModels(ctx, &APIConfig{}); err == nil {

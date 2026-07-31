@@ -41,7 +41,7 @@ func NewGroqModel(baseURL map[string]string, urlSuffix URLSuffix) *GroqModel {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

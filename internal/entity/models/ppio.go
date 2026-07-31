@@ -39,7 +39,7 @@ func NewPPIOModel(baseURL map[string]string, urlSuffix URLSuffix) *PPIOModel {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

@@ -41,7 +41,7 @@ func NewTogetherAIModel(baseURL map[string]string, urlSuffix URLSuffix) *Togethe
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

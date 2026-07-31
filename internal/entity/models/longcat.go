@@ -38,7 +38,7 @@ func NewLongCatModel(baseURL map[string]string, urlSuffix URLSuffix) *LongCatMod
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

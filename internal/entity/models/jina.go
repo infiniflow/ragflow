@@ -36,7 +36,7 @@ func NewJinaModel(baseURL map[string]string, urlSuffix URLSuffix) *JinaModel {
 	// Embed/Rerank/ListModels issue requests without a per-call context
 	// deadline, so keep an explicit 90s client-level timeout to bound them.
 	// Built on the shared transport via NewDriverHTTPClient.
-	client := NewDriverHTTPClient()
+	client := NewDriverHTTPClient(false)
 	client.Timeout = 90 * time.Second
 	return &JinaModel{
 		baseModel: BaseModel{

@@ -25,6 +25,7 @@ import (
 )
 
 func TestSiliconflowToolCalls(t *testing.T) {
+	withSSRFBypass(t)
 	newDriver := func(baseURL string) ModelDriver {
 		return NewSiliconflowModel(map[string]string{"default": baseURL}, URLSuffix{Chat: "chat/completions"})
 	}
@@ -37,6 +38,7 @@ func TestSiliconflowToolCalls(t *testing.T) {
 }
 
 func TestSiliconflowChatRejectsMissingContent(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"choices":[{"message":{}}]}`))
 	}))
@@ -51,6 +53,7 @@ func TestSiliconflowChatRejectsMissingContent(t *testing.T) {
 }
 
 func TestSiliconflowChatWithMessagesExtractsResponseAndUsage(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id":      "chatcmpl-siliconflow",
@@ -109,6 +112,7 @@ func TestSiliconflowChatWithMessagesExtractsResponseAndUsage(t *testing.T) {
 }
 
 func TestSiliconflowChatStreamlyWithSenderCollectsUsage(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var requestBody map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
