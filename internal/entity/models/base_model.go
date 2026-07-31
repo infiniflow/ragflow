@@ -99,6 +99,7 @@ func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
 		modelUsage.InputTokens = usage.PromptTokens
 		modelUsage.OutputTokens = usage.CompletionTokens
 		modelUsage.TotalTokens = usage.TotalTokens
+		modelUsage.CacheReadTokens = usage.CacheReadTokens
 	}
 	modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
 	return clickhouse.GetDriver().CollectModelUsage(modelUsage)

@@ -41,9 +41,10 @@ type ModelUsage struct {
 	ResponseTimeMS int64     `json:"response_time_ms"`
 	ErrorMessage   string    `json:"error_message"`
 
-	InputTokens  int `json:"input_tokens"`
-	OutputTokens int `json:"output_tokens"`
-	TotalTokens  int `json:"total_tokens"`
+	InputTokens     int `json:"input_tokens"`
+	OutputTokens    int `json:"output_tokens"`
+	TotalTokens     int `json:"total_tokens"`
+	CacheReadTokens int `json:"cache_read_tokens"`
 }
 
 func (m *ModelUsage) String() string {

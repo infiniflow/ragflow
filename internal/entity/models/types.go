@@ -74,6 +74,8 @@ type TokenUsage struct {
 	PromptTokens     int `json:"prompt_tokens"  mapstructure:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"  mapstructure:"completion_tokens"`
 	TotalTokens      int `json:"total_tokens"  mapstructure:"total_tokens"`
+	CacheReadTokens  int `json:"cache_read_tokens"  mapstructure:"cache_read_tokens"`
+	CacheWriteTokens int `json:"cache_write_tokens"  mapstructure:"cache_write_tokens"`
 }
 
 type EmbeddingData struct {

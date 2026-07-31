@@ -36,6 +36,9 @@ func extractOpenAIUsage(body map[string]any) (*TokenUsage, bool) {
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
 
+	usage.CacheReadTokens = extractCacheReadTokens(rawUsage)
+	usage.CacheWriteTokens = extractCacheWriteTokens(rawUsage)
+
 	return usage, true
 }
 
@@ -56,7 +59,75 @@ func extractOpenAIStreamUsage(event map[string]any) (*TokenUsage, bool) {
 		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
 
+	usage.CacheReadTokens = extractCacheReadTokens(rawUsage)
+	usage.CacheWriteTokens = extractCacheWriteTokens(rawUsage)
+
 	return usage, true
+}
+
+// extractCacheReadTokens extracts cache-hit tokens from the usage block.
+// Providers expose this field under different paths:
+//   - DeepSeek: usage.prompt_cache_hit_tokens
+//   - OpenAI 2024+: usage.prompt_tokens_details.cached_tokens
+//   - Anthropic-compat: usage.cache_read_input_tokens
+//   - input_tokens_details.cached_tokens
+func extractCacheReadTokens(rawUsage map[string]any) int {
+	if v := extractToken(rawUsage, "prompt_cache_hit_tokens", "cache_read_input_tokens"); v > 0 {
+		return v
+	}
+	return extractNestedToken(rawUsage,
+		[]string{"prompt_tokens_details", "cached_tokens"},
+		[]string{"input_tokens_details", "cached_tokens"},
+	)
+}
+
+// extractCacheWriteTokens extracts cache-write tokens from the usage block.
+// Providers expose this field under different paths:
+//   - DeepSeek: usage.prompt_cache_miss_tokens
+//   - Anthropic-compat: usage.cache_creation_input_tokens
+//   - input_tokens_details.cache_write_tokens
+func extractCacheWriteTokens(rawUsage map[string]any) int {
+	if v := extractToken(rawUsage, "prompt_cache_miss_tokens", "cache_creation_input_tokens"); v > 0 {
+		return v
+	}
+	return extractNestedToken(rawUsage,
+		[]string{"prompt_tokens_details", "cache_creation_tokens"},
+		[]string{"input_tokens_details", "cache_write_tokens"},
+	)
+}
+
+// extractNestedToken reads a numeric value at a nested path in the map.
+func extractNestedToken(m map[string]any, paths ...[]string) int {
+	for _, path := range paths {
+		cur := m
+		for i, key := range path {
+			v, ok := cur[key]
+			if !ok {
+				break
+			}
+			if i == len(path)-1 {
+				switch val := v.(type) {
+				case float64:
+					return int(val)
+				case int:
+					return val
+				case int64:
+					return int(val)
+				case json.Number:
+					if n, err := val.Int64(); err == nil {
+						return int(n)
+					}
+				}
+			} else {
+				next, ok := v.(map[string]any)
+				if !ok {
+					break
+				}
+				cur = next
+			}
+		}
+	}
+	return 0
 }
 
 // extractToken reads a numeric field from a map, trying each key in order.
