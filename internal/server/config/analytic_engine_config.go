@@ -82,3 +82,7 @@ func (c *Config) parseClickhouseConfig(v *viper.Viper) error {
 	}
 	return nil
 }
+
+func (c *Config) GetClickhouseConfig() ClickhouseConfig {
+	return c.analyticEngine.Clickhouse
+}

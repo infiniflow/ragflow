@@ -70,3 +70,7 @@ func (c *Config) ParseOpenTelemetryConfig(v *viper.Viper) error {
 
 	return nil
 }
+
+func (c *Config) GetOpenTelemetryConfig() OpenTelemetryConfig {
+	return c.oTel
+}
