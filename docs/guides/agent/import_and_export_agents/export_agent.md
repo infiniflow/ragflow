@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: Export Agent
+sidebar_label: Export Agent
 slug: /export_agent
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

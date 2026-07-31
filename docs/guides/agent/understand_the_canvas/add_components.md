@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Add Components
+sidebar_label: Add Components
 slug: /add_components
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

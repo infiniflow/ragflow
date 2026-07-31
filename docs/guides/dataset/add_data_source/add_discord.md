@@ -1,5 +1,7 @@
 ---
 sidebar_position: 7
+title: Add Discord
+sidebar_label: Add Discord
 slug: /add_discord
 sidebar_custom_props: {
   categoryIcon: SiGoogledrive
@@ -19,7 +21,7 @@ This guide outlines how to ingest messages from your Discord servers into RAGFlo
 - Administrative privileges for the target Discord server.
 - Permissions to add data sources within your RAGFlow environment.
 
-## Setting up a Discord bot
+## Setting Up a Discord Bot
 
 You need a bot application to access and read messages from your server securely.
 
@@ -29,7 +31,7 @@ You need a bot application to access and read messages from your server securely
 - Scroll down to the "Privileged Gateway Intents" section and toggle on "Message Content Intent" so the application can extract message text.
 - Click "Reset Token" to generate your bot token. Copy this token immediately and store it safely.
 
-## Invite the bot to your server
+## Invite the Bot to Your Server
 
 The bot must be authorized to view the specific channels you intend to sync.
 
@@ -39,7 +41,7 @@ The bot must be authorized to view the specific channels you intend to sync.
 - Copy the resulting URL generated at the bottom of the screen.
 - Open this URL in your browser, select your desired server from the dropdown, and approve the authorization prompt.
 
-## Configure the connection in RAGFlow
+## Configure the Connection in RAGFlow
 
 With the bot active in your server, you can finalize the integration inside RAGFlow.
 
@@ -50,7 +52,7 @@ With the bot active in your server, you can finalize the integration inside RAGF
 - Save your settings to establish the connection.
 - Attach this newly created Discord data source to your target dataset to begin syncing your conversations.
 
-### Link to a dataset
+### Link to a Dataset
 
 1. Navigate to the **Dataset** tab.
 2. Select or create the target Dataset.

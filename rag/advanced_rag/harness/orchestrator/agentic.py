@@ -310,7 +310,7 @@ async def _add_template_group_compilations(comps: set[str], parser_config: dict,
                 comps.add("page_index")
             elif kind in {"mindmap", "mind_map"}:
                 comps.add("mindmap")
-            elif kind == "artifacts":
+            elif kind == "wiki":
                 comps.add("wiki")
 
 

@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: Search
+sidebar_label: Search
 slug: /ai_search
 sidebar_custom_props: {
   categoryIcon: LucideSearch
@@ -26,8 +28,8 @@ When debugging your chat assistant, you can use AI search as a reference to veri
 - Ensure that you have configured the system's default models on the **Model providers** page.
 - Ensure that the intended datasets are properly configured and the intended documents have finished file parsing.
 
-## Frequently asked questions
+## Frequently Asked Questions
 
-### Key difference between an AI search and an AI chat?
+### Key Difference Between an AI Search and an AI Chat?
 
 A chat is a multi-turn AI conversation where you can define your retrieval strategy (a weighted reranking score can be used to replace the weighted vector similarity in a hybrid search) and choose your chat model. In an AI chat, you can configure advanced RAG strategies, such as knowledge graphs, auto-keyword, and auto-question, for your specific case. Retrieved chunks are not displayed along with the answer.

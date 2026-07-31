@@ -39,10 +39,10 @@ def _derive_scope(templates: list[dict]) -> str:
     if not templates:
         raise GroupValidationError("A template group must contain at least one template.")
     kinds = [str((t or {}).get("kind") or "").strip() for t in templates]
-    artifact_count = sum(1 for k in kinds if k == "artifacts")
+    artifact_count = sum(1 for k in kinds if k == "wiki")
     if artifact_count > 0:
         if artifact_count != 1 or len(templates) != 1:
-            raise GroupValidationError("An artifacts template cannot be combined with other templates in the same group.")
+            raise GroupValidationError("A wiki template cannot be combined with other templates in the same group.")
         return SCOPE_DATASET
 
     _enforce_single_rechunk_tree(templates)
