@@ -15,7 +15,11 @@ export interface SelectedNavNode {
 }
 
 export function useCompilationNav() {
-  const { data: navList, loading: navLoading } = useFetchDatasetNav();
+  const {
+    data: navList,
+    loading: navLoading,
+    isError: navError,
+  } = useFetchDatasetNav();
   const { deleteNav, loading: deleteNavLoading } = useDeleteDatasetNav();
   const { deleteNavNode, loading: deleteNodeLoading } =
     useDeleteDatasetNavNode();
@@ -134,6 +138,7 @@ export function useCompilationNav() {
   return {
     navList,
     navLoading,
+    navError,
     childrenMap,
     selectedNode,
     deleteNavLoading,

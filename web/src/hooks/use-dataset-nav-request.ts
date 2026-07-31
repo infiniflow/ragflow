@@ -13,28 +13,51 @@ export const DatasetNavKeys = {
     ['dataset_nav', kbId, 'children', name] as const,
 };
 
+type DatasetNavResponse<T> = {
+  code?: number;
+  data?: T;
+  message?: string;
+};
+
+function unwrapDatasetNavResponse<T>(
+  response: DatasetNavResponse<T> | undefined,
+): T | null {
+  if (response?.code === 0) {
+    return response.data ?? null;
+  }
+  const errorMessage =
+    (typeof response?.message === 'string' && response.message) ||
+    i18n.t('datasetNav.loadFailed');
+  message.error(errorMessage);
+  throw new Error(errorMessage);
+}
+
 export function useFetchDatasetNav() {
   const kbId = useKnowledgeBaseId();
 
-  const { data, isFetching: loading } = useQuery<DatasetNavList | null>({
+  const { data, isFetching: loading, isError, error } = useQuery<
+    DatasetNavList | null
+  >({
     queryKey: DatasetNavKeys.list(kbId),
     initialData: null,
     enabled: !!kbId,
     gcTime: 0,
     queryFn: async () => {
       const { data } = await datasetNavService.getNav({ datasetId: kbId });
-      return data?.data ?? null;
+      return unwrapDatasetNavResponse<DatasetNavList>(data);
     },
   });
 
-  return { data, loading };
+  return { data, loading, isError, error };
 }
 
 export function useFetchDatasetNavChildren(parentName: string | null) {
   const kbId = useKnowledgeBaseId();
   const enabled = !!kbId && !!parentName;
 
-  const { data, isFetching: loading } = useQuery<DatasetNavList | null>({
+  const { data, isFetching: loading, isError, error } = useQuery<
+    DatasetNavList | null
+  >({
     queryKey: DatasetNavKeys.children(kbId, parentName ?? ''),
     initialData: null,
     enabled,
@@ -44,11 +67,11 @@ export function useFetchDatasetNavChildren(parentName: string | null) {
         datasetId: kbId,
         name: parentName!,
       });
-      return data?.data ?? null;
+      return unwrapDatasetNavResponse<DatasetNavList>(data);
     },
   });
 
-  return { data, loading };
+  return { data, loading, isError, error };
 }
 
 export function useDeleteDatasetNav() {

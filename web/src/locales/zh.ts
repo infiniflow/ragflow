@@ -2018,6 +2018,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
     datasetNav: {
       title: '目录树',
       empty: '暂无导航节点',
+      loadFailed: '加载目录树失败',
       loading: '加载中...',
       selectNode: '选择子节点以查看详情',
       noDescription: '暂无描述',
