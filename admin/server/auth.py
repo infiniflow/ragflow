@@ -16,6 +16,7 @@
 
 
 import logging
+import os
 import uuid
 from functools import wraps
 from datetime import datetime
@@ -34,6 +35,17 @@ from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format, get_format_time
 from common.connection_utils import sync_construct_response
 from common import settings
+
+# The admin server reports DEFAULT_SUPERUSER_EMAIL and DEFAULT_SUPERUSER_PASSWORD
+# via `services.EnvironmentsMgr.get_all()` and the admin CLI's "list envs"
+# output, so operators reasonably expect the values they set in the
+# environment to drive the bootstrap admin account. Read them once at
+# module load so the bootstrap functions below can reference them as
+# module-level constants, matching `api/db/init_data.py:init_superuser`.
+# See infiniflow/ragflow#16876.
+DEFAULT_SUPERUSER_NICKNAME = os.getenv("DEFAULT_SUPERUSER_NICKNAME", "admin")
+DEFAULT_SUPERUSER_EMAIL = os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
+DEFAULT_SUPERUSER_PASSWORD = os.getenv("DEFAULT_SUPERUSER_PASSWORD", "admin")
 
 
 def setup_auth(login_manager):
@@ -91,10 +103,10 @@ def init_default_admin():
     if not users:
         default_admin = {
             "id": uuid.uuid1().hex,
-            "password": encode_to_base64("admin"),
-            "nickname": "admin",
+            "password": encode_to_base64(DEFAULT_SUPERUSER_PASSWORD),
+            "nickname": DEFAULT_SUPERUSER_NICKNAME,
             "is_superuser": True,
-            "email": "admin@ragflow.io",
+            "email": DEFAULT_SUPERUSER_EMAIL,
             "creator": "system",
             "status": "1",
         }
@@ -104,7 +116,10 @@ def init_default_admin():
     elif not any([u.is_active == ActiveEnum.ACTIVE.value for u in users]):
         raise AdminException("No active admin. Please update 'is_active' in db manually.", 500)
     else:
-        default_admin_rows = [u for u in users if u.email == "admin@ragflow.io"]
+        # Filter existing superuser rows by the configured
+        # ``DEFAULT_SUPERUSER_EMAIL`` so a custom env value steers the
+        # tenant-backfill branch to the right row.
+        default_admin_rows = [u for u in users if u.email == DEFAULT_SUPERUSER_EMAIL]
         if default_admin_rows:
             default_admin = default_admin_rows[0].to_dict()
             exist, default_admin_tenant = TenantService.get_by_id(default_admin["id"])
@@ -181,12 +196,18 @@ def check_admin(username: str, password: str):
     users = UserService.query(email=username)
     if not users:
         logging.info(f"Username: {username} is not registered!")
+        # On first login with an unrecognised username, fall back to the
+        # env-configured default admin bootstrap so an operator who set
+        # ``DEFAULT_SUPERUSER_EMAIL=me@corp.com`` gets an admin at
+        # ``me@corp.com`` — matching what ``services.EnvironmentsMgr.get_all``
+        # advertises and what the API-side ``init_superuser`` already
+        # does. See infiniflow/ragflow#16876.
         user_info = {
             "id": uuid.uuid1().hex,
-            "password": encode_to_base64("admin"),
-            "nickname": "admin",
+            "password": encode_to_base64(DEFAULT_SUPERUSER_PASSWORD),
+            "nickname": DEFAULT_SUPERUSER_NICKNAME,
             "is_superuser": True,
-            "email": "admin@ragflow.io",
+            "email": DEFAULT_SUPERUSER_EMAIL,
             "creator": "system",
             "status": "1",
         }
