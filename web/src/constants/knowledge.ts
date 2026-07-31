@@ -161,7 +161,7 @@ export enum GenerateType {
 export enum TraceType {
   Graph = 'graph',
   Raptor = 'raptor',
-  Artifact = 'artifact',
+  Artifact = 'wiki',
   Skill = 'skill',
   MindMap = 'mindmap',
   Timeline = 'timeline',
