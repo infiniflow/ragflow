@@ -383,13 +383,13 @@ export default {
   // explore
 
   // compilation templates
-  compilationTemplates: `${restAPIv1}/compilation_templates`,
+  compilationTemplates: `${restAPIv1}/compilation-templates`,
   compilationTemplate: (id: string) =>
-    `${restAPIv1}/compilation_templates/${id}`,
+    `${restAPIv1}/compilation-templates/${id}`,
   compilationTemplateGroups: `${restAPIv1}/compilation-template-groups`,
   compilationTemplateGroup: (id: string) =>
     `${restAPIv1}/compilation-template-groups/${id}`,
-  wikiPresets: `${restAPIv1}/compilation_templates/wiki_presets`,
+  wikiPresets: `${restAPIv1}/compilation-templates/wiki-presets`,
 
   // mcp server
   listMcpServer: `${restAPIv1}/mcp/servers`,
