@@ -194,6 +194,18 @@ func groupRecords(records []lineRecord, secIDs []int, p *titleChunkerParam) [][]
 	if len(records) == 0 {
 		return nil
 	}
+	// Size the grouping budget to the configured chunk size rather than the fixed
+	// maxGroupTokens, so a group does not overshoot the budget before
+	// capChunkText splits it. Keep the small-section floor unless the budget is
+	// even smaller than it.
+	minGrp, maxGrp := minGroupTokens, maxGroupTokens
+	if p.ChunkTokenNum != nil && *p.ChunkTokenNum > 0 {
+		maxGrp = *p.ChunkTokenNum
+		if maxGrp < minGrp {
+			minGrp = maxGrp
+		}
+	}
+
 	var recordGroups [][]lineRecord
 	var currentGroup []lineRecord
 	tkCnt := 0
@@ -218,7 +230,7 @@ func groupRecords(records []lineRecord, secIDs []int, p *titleChunkerParam) [][]
 		tokenCount := tokenizer.NumTokensFromString(text)
 		shouldMerge := len(currentGroup) > 0 &&
 			currentGroup[0].isText() &&
-			(tkCnt < minGroupTokens || (tkCnt < maxGroupTokens && secID == lastSID))
+			(tkCnt < minGrp || (tkCnt < maxGrp && secID == lastSID))
 		if shouldMerge {
 			currentGroup = append(currentGroup, rec)
 			tkCnt += tokenCount
@@ -381,13 +393,15 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, pl
 			if rootText != "" {
 				text = rootText + "\n" + text
 			}
-			piece := map[string]any{"text": text}
-			if v, ok := ch["doc_type_kwd"]; ok {
-				piece["doc_type_kwd"] = v
+			// Carry every key (positions, _pdf_positions, doc_type_kwd, img_id, ...)
+			// onto each split piece; only text is replaced. Rebuilding the piece from
+			// scratch dropped positions/_pdf_positions and broke PDF chunk
+			// highlighting whenever a group was split (e.g. root_chunk_as_heading).
+			piece := make(map[string]any, len(ch))
+			for k, v := range ch {
+				piece[k] = v
 			}
-			if v, ok := ch["img_id"]; ok {
-				piece["img_id"] = v
-			}
+			piece["text"] = text
 			out = append(out, piece)
 		}
 	}

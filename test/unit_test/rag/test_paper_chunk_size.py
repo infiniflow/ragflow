@@ -57,3 +57,17 @@ def test_nonpositive_budget_keeps_one_chunk_per_pivot():
 def test_distinct_pivots_are_never_merged():
     sections = [("alpha", ""), ("beta", ""), ("gamma", "")]
     assert _merge_sections_by_pivot(sections, [0, 1, 2], chunk_token_num=1000) == ["alpha", "beta", "gamma"]
+
+
+@pytest.mark.p2
+def test_position_tags_do_not_count_toward_budget():
+    # Each section is 4 body tokens plus a position tag. The @@...## tag is
+    # cropping metadata, not content, so it must not consume the budget: 3 x 4 = 12
+    # body tokens fit chunk_token_num=12 and stay one chunk. Were the tag counted
+    # (it splits into several whitespace-separated tokens) the pivot would break up.
+    tag = "@@1\t72.0\t523.0\t88.0\t101.0##"
+    sections = [("word word word word" + tag, "") for _ in range(3)]
+    chunks = _merge_sections_by_pivot(sections, [0, 0, 0], chunk_token_num=12)
+    assert len(chunks) == 1
+    # The tags stay in the chunk so pdf_parser.crop() can still map page + bbox.
+    assert chunks[0].count("@@") == 3

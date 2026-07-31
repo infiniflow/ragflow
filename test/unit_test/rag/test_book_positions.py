@@ -26,7 +26,7 @@ import re
 import pytest
 
 import rag.nlp as nlp
-from rag.nlp import naive_merge
+from rag.nlp import hierarchical_merge, naive_merge
 from rag.app.book import _sections_with_positions
 
 DELIMITER = "\n。；！？"
@@ -76,3 +76,31 @@ def test_only_the_trailing_tag_is_detached():
     # Content may itself contain "@@"; only the last "@@..##" suffix is the tag.
     normalized = _sections_with_positions([("text a@@b more" + POS, "")])
     assert normalized[0] == ("text a@@b more", POS)
+
+
+@pytest.mark.p2
+def test_hierarchical_merge_honours_chunk_token_num():
+    # Plain leaf sections (no bullet, no title): each is its own group, merged up to
+    # the budget. 6 sections x 3 tokens = 18; a budget of 6 forces several chunks
+    # instead of accumulating against the old fixed 218.
+    sections = [("alpha beta gamma", "") for _ in range(6)]
+    chunks = ["\n".join(g) for g in hierarchical_merge(1, sections, 5, chunk_token_num=6) if g]
+    assert len(chunks) > 1
+    # A section is never split mid-way, so allow one section of slack over budget.
+    assert all(len(re.sub(r"@@[0-9]+\t[^#]*##", "", c).split()) <= 6 + 3 for c in chunks)
+
+
+@pytest.mark.p2
+def test_hierarchical_merge_strips_position_tags_before_counting(monkeypatch):
+    # Override the autouse fixture with a counter that counts every whitespace
+    # token, tags included, so this actually exercises hierarchical_merge's own tag
+    # stripping rather than the fixture's.
+    monkeypatch.setattr(nlp, "num_tokens_from_string", lambda s: len((s or "").split()))
+    # Each section is 2 body tokens plus a position tag that splits into several
+    # whitespace tokens. Body total 6 <= budget 8, so they share chunks; if the tag
+    # tokens counted, each section would exceed the budget and never merge.
+    sections = [("aa bb" + POS, "") for _ in range(3)]
+    chunks = ["\n".join(g) for g in hierarchical_merge(1, sections, 5, chunk_token_num=8) if g]
+    assert len(chunks) <= 2
+    # Tags are retained for cropping.
+    assert sum(c.count("@@") for c in chunks) == 3

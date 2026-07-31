@@ -77,6 +77,7 @@
                     "params": {
                         "hierarchy": 0,
                         "include_heading_content": false,
+                        "chunk_token_num": 512,
                         "levels": [
                             [
                                 "^#[^#]",

@@ -185,17 +185,22 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
     make_colon_as_title(sections)
 
-    # hierarchical_merge ignores chunk_token_num (it accumulates against a fixed
-    # limit and emits singleton groups as-is, so heading-heavy documents yield many
-    # tiny chunks). When a chunk size is configured, route to naive_merge, which
-    # honours it and preserves page positions (it re-appends the @@...## tag, which
-    # tokenize_chunks -> pdf_parser.crop() maps back to page + bbox).
+    # chunk_token_num is honoured on both paths: hierarchical_merge keeps the
+    # heading hierarchy but splits subtrees over the budget, and naive_merge honours
+    # it on the no-bullet path. chunk_token_num == 0 marks sections a parser already
+    # chunked (tcadp/docling/mineru/paddleocr), so those are kept as-is. Both paths
+    # preserve the @@...## page tag that tokenize_chunks -> pdf_parser.crop() maps
+    # back to page + bbox.
     bull = bullets_category(random_choices([t for t, _ in sections], k=100))
-    if bull >= 0 and not parser_config.get("chunk_token_num"):
-        logging.debug("book chunk policy: hierarchical_merge (chunk_token_num unset)")
-        chunks = ["\n".join(ck) for ck in hierarchical_merge(bull, sections, 5)]
+    raw_ctn = parser_config.get("chunk_token_num", 256)
+    chunk_token_num = int(raw_ctn) if raw_ctn is not None else 256
+    if chunk_token_num <= 0:
+        logging.debug("book chunk policy: sections kept as-is (chunk_token_num=0)")
+        chunks = [s for s, _ in sections]
+    elif bull >= 0:
+        logging.debug("book chunk policy: hierarchical_merge (chunk_token_num=%s)", chunk_token_num)
+        chunks = ["\n".join(ck) for ck in hierarchical_merge(bull, sections, 5, chunk_token_num)]
     else:
-        chunk_token_num = parser_config.get("chunk_token_num") or 256
         logging.debug("book chunk policy: naive_merge (chunk_token_num=%s)", chunk_token_num)
         chunks = naive_merge(_sections_with_positions(sections), chunk_token_num, parser_config.get("delimiter", "\n。；！？"))
 

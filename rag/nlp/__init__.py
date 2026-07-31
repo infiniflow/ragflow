@@ -1073,7 +1073,7 @@ def tree_merge(bull, sections, depth):
     return [element for element in root.get_tree() if element]
 
 
-def hierarchical_merge(bull, sections, depth):
+def hierarchical_merge(bull, sections, depth, chunk_token_num=218):
     if not sections or bull < 0:
         return []
     if isinstance(sections[0], str):
@@ -1144,20 +1144,41 @@ def hierarchical_merge(bull, sections, depth):
         cks[i] = [sections[j] for j in cks[i][::-1]]
         logging.debug("\n* ".join(cks[i]))
 
+    def _tok(s):
+        # Position tags (@@page\tx0\t...##) are not body content, so strip them
+        # before counting, matching how naive_merge keeps positions out of the
+        # token budget.
+        return num_tokens_from_string(re.sub(r"@@[0-9]+.*", "", s))
+
     res = [[]]
     num = [0]
     for ck in cks:
         if len(ck) == 1:
-            n = num_tokens_from_string(re.sub(r"@@[0-9]+.*", "", ck[0]))
-            if n + num[-1] < 218:
+            n = _tok(ck[0])
+            if n + num[-1] < chunk_token_num:
                 res[-1].append(ck[0])
                 num[-1] += n
                 continue
             res.append(ck)
             num.append(n)
             continue
-        res.append(ck)
-        num.append(218)
+        # A hierarchy group (a heading and its descendants). Keep it whole while it
+        # fits the budget, then spill the overflow into further chunks so a large
+        # subtree is not emitted as one oversized chunk. The hierarchy is preserved
+        # (sections stay in order, the heading leads its group) and the size is
+        # honoured.
+        cur, cur_n = [], 0
+        for s in ck:
+            n = _tok(s)
+            if cur and cur_n + n > chunk_token_num:
+                res.append(cur)
+                num.append(cur_n)
+                cur, cur_n = [], 0
+            cur.append(s)
+            cur_n += n
+        if cur:
+            res.append(cur)
+            num.append(cur_n)
 
     return res
 

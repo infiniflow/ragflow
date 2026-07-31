@@ -181,7 +181,11 @@ func TestGroupTitleChunker_SingleGroupSplit_RootHeadingNoop(t *testing.T) {
 		c, err := NewGroupTitleChunker(map[string]any{
 			"levels":                [][]string{{`^# `}},
 			"root_chunk_as_heading": root,
-			"chunk_token_num":       1, // force capChunkText to split per line
+			// A budget that fits all three lines keeps them in one group. Grouping is
+			// now sized by chunk_token_num, so a single group never splits (a group
+			// at or under the budget already fits capChunkText); root_chunk_as_heading
+			// therefore has nothing to hoist and must be a no-op.
+			"chunk_token_num": 100,
 		})
 		if err != nil {
 			t.Fatalf("new: %v", err)
@@ -194,8 +198,8 @@ func TestGroupTitleChunker_SingleGroupSplit_RootHeadingNoop(t *testing.T) {
 		return chunks
 	}
 	withRoot, plain := run(true), run(false)
-	if len(withRoot) != len(plain) {
-		t.Fatalf("root heading changed chunk count for a single group: %d vs %d", len(withRoot), len(plain))
+	if len(withRoot) != len(plain) || len(plain) != 1 {
+		t.Fatalf("root heading changed a single group: withRoot=%d plain=%d (want 1 each)", len(withRoot), len(plain))
 	}
 	for i := range plain {
 		if toString(withRoot[i]["text"]) != toString(plain[i]["text"]) {
@@ -350,6 +354,47 @@ func TestGroupChunker_MergesPDFPositionsAndRemovesTags(t *testing.T) {
 		return
 	}
 	t.Fatal("merged body group chunk not found in output")
+}
+
+// When a group is split to honour chunk_token_num, each split piece must keep the
+// group's positions/_pdf_positions. Rebuilding the piece from scratch dropped
+// them and silently broke PDF chunk highlighting under root_chunk_as_heading.
+func TestGroupChunker_SplitCarriesPositions(t *testing.T) {
+	c, err := NewGroupTitleChunker(map[string]any{
+		"levels":                [][]string{{`^# `}},
+		"root_chunk_as_heading": true,
+		"chunk_token_num":       1,
+	})
+	if err != nil {
+		t.Fatalf("NewGroupTitleChunker: %v", err)
+	}
+	// One multi-line body record so capChunkText splits it on line boundaries; a
+	// budget of 1 forces one piece per line. The record's positions must ride onto
+	// every piece.
+	items := []map[string]any{
+		{"text": "# Heading", "doc_type_kwd": "text"},
+		{"text": "alpha alpha\nbeta beta\ngamma gamma\ndelta delta", "doc_type_kwd": "text", "positions": [][]float64{{1, 10, 20, 30, 40}}},
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{"name": "doc", "output_format": "chunks", "chunks": items})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	// Body pieces are exactly the ones carrying positions (the heading has none).
+	// Each must keep positions and get the root heading prepended.
+	bodyPieces := 0
+	for _, ck := range chunks {
+		if _, ok := ck["positions"]; !ok {
+			continue
+		}
+		bodyPieces++
+		if !strings.Contains(toString(ck["text"]), "Heading") {
+			t.Errorf("split body piece missing root heading: %q", ck["text"])
+		}
+	}
+	if bodyPieces < 2 {
+		t.Fatalf("expected the body group to split into >= 2 pieces each carrying positions, got %d", bodyPieces)
+	}
 }
 
 func TestGroupTitleChunker_InvokeDeterministic(t *testing.T) {

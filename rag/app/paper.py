@@ -141,7 +141,11 @@ def _merge_sections_by_pivot(sorted_sections, sec_ids, chunk_token_num):
     chunks = []
     last_sid = -2
     for (txt, _), sec_id in zip(sorted_sections, sec_ids, strict=True):
-        if sec_id == last_sid and chunks and (chunk_token_num <= 0 or num_tokens_from_string(chunks[-1] + "\n" + txt) <= chunk_token_num):
+        # Count body tokens only: the @@page\tx0\t...## position tags are metadata
+        # for pdf_parser.crop(), not content, so strip them before measuring the
+        # budget (the tags stay in chunks[-1] for cropping).
+        merged_body = PdfParser.remove_tag(chunks[-1] + "\n" + txt) if chunks else ""
+        if sec_id == last_sid and chunks and (chunk_token_num <= 0 or num_tokens_from_string(merged_body) <= chunk_token_num):
             chunks[-1] += "\n" + txt
             continue
         chunks.append(txt)
