@@ -63,7 +63,9 @@ def knowledge_compile_gen_conf(chat_mdl, gen_conf: Optional[dict] = None) -> dic
         conf["extra_body"] = extra_body
     elif "qwen3" in model_name:
         # chat_model.py maps this flag to the provider-specific request body.
-        conf["enable_thinking"] = False
+        # -preview variants (e.g. qwen3.8-max-preview) only accept
+        # enable_thinking=True on their API endpoint.
+        conf["enable_thinking"] = True if "-preview" in model_name else False
     else:
         # LiteLLM maps this common control for providers that support it and
         # drops it for providers that do not. Keep model-specific overrides
