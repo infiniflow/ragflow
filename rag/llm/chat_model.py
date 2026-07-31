@@ -396,6 +396,7 @@ class Base(ABC):
         hist.append(
             {
                 "role": "assistant",
+                "content": None,
                 "tool_calls": [
                     {
                         "index": getattr(tool_call, "index", None),
@@ -425,6 +426,7 @@ class Base(ABC):
         hist.append(
             {
                 "role": "assistant",
+                "content": None,
                 "tool_calls": [
                     {
                         "index": getattr(tc, "index", None),
@@ -1862,6 +1864,7 @@ class LiteLLMBase(ABC):
     def _append_history(self, hist, tool_call, tool_res, reasoning_content=None):
         assistant_msg = {
             "role": "assistant",
+            "content": None,
             "tool_calls": [
                 {
                     "index": getattr(tool_call, "index", None),
@@ -1892,6 +1895,7 @@ class LiteLLMBase(ABC):
         """
         assistant_msg = {
             "role": "assistant",
+            "content": None,
             "tool_calls": [
                 {
                     "index": getattr(tc, "index", None),
