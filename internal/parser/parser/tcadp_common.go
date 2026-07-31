@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -80,7 +81,7 @@ func parseWithTCADP(
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: TCADP download request: %w", err)}
 	}
-	if auth := bearer(apiKey); auth != "" {
+	if auth := authHeaderForDownload(baseURL, payload.DocumentRecognizeResultURL, apiKey); auth != "" {
 		downloadReq.Header.Set("Authorization", auth)
 	}
 	downloadResp, err := models.NewDriverHTTPClient(false).Do(downloadReq)
@@ -100,4 +101,28 @@ func parseWithTCADP(
 		return ParseResult{Err: err}
 	}
 	return pdfItemsToResult(filename, items, outputFormat, pageCount)
+}
+
+// authHeaderForDownload returns the bearer Authorization header value to
+// send with a TCADP result-download request — but only when the download
+// URL's host matches the configured API server's host.
+//
+// TCADP result URLs are typically presigned object-storage links
+// (S3/CDN) that don't require auth; sending the key to a non-matching
+// host would leak the credential outside our trust boundary if the URL
+// is ever attacker-influenced. Returns "" when either URL fails to parse
+// or the hosts differ, so a parse failure defaults to the safer behaviour.
+func authHeaderForDownload(apiBaseURL, downloadURL, apiKey string) string {
+	du, err := url.Parse(downloadURL)
+	if err != nil {
+		return ""
+	}
+	au, err := url.Parse(apiBaseURL)
+	if err != nil {
+		return ""
+	}
+	if du.Host != au.Host {
+		return ""
+	}
+	return bearer(apiKey)
 }
