@@ -102,8 +102,6 @@ func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
-
-
 func (n *NvidiaModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := n.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
@@ -160,8 +158,6 @@ func (n *NvidiaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 
 	return HandleStreamingResponse(resp.Body, modelUsage, modelConfig, OpenAIParserConfig, sender)
 }
-
-
 
 type nvidiaEmbeddingResponse struct {
 	Data []struct {

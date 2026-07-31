@@ -141,8 +141,6 @@ func (d *DeepSeekModel) ChatWithMessages(ctx context.Context, modelName string, 
 	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
-
-
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
 func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := d.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -223,8 +221,6 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 
 	return HandleStreamingResponse(resp.Body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 }
-
-
 
 // Embed embeds a list of texts into embeddings
 func (d *DeepSeekModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
