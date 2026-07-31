@@ -19,59 +19,66 @@ type DatasetNavResponse<T> = {
   message?: string;
 };
 
-function unwrapDatasetNavResponse<T>(
-  response: DatasetNavResponse<T> | undefined,
-): T | null {
-  if (response?.code === 0) {
-    return response.data ?? null;
+function isDatasetNavList(payload: unknown): payload is DatasetNavList {
+  if (!payload || typeof payload !== 'object') {
+    return false;
   }
-  const errorMessage =
-    (typeof response?.message === 'string' && response.message) ||
-    i18n.t('datasetNav.loadFailed');
-  message.error(errorMessage);
-  throw new Error(errorMessage);
+  const candidate = payload as DatasetNavList;
+  return (
+    typeof candidate.total === 'number' && Array.isArray(candidate.items)
+  );
+}
+
+function unwrapDatasetNavResponse(
+  response: DatasetNavResponse<DatasetNavList> | undefined,
+): DatasetNavList {
+  if (response?.code !== 0 || !isDatasetNavList(response.data)) {
+    const errorMessage =
+      (typeof response?.message === 'string' && response.message) ||
+      i18n.t('datasetNav.loadFailed');
+    throw new Error(errorMessage);
+  }
+  return response.data;
 }
 
 export function useFetchDatasetNav() {
   const kbId = useKnowledgeBaseId();
 
-  const { data, isFetching: loading, isError, error } = useQuery<
-    DatasetNavList | null
-  >({
+  const { data, isFetching: loading, isError, error, refetch } = useQuery({
     queryKey: DatasetNavKeys.list(kbId),
     initialData: null,
     enabled: !!kbId,
     gcTime: 0,
+    retry: false,
     queryFn: async () => {
       const { data } = await datasetNavService.getNav({ datasetId: kbId });
-      return unwrapDatasetNavResponse<DatasetNavList>(data);
+      return unwrapDatasetNavResponse(data);
     },
   });
 
-  return { data, loading, isError, error };
+  return { data, loading, isError, error, refetch };
 }
 
 export function useFetchDatasetNavChildren(parentName: string | null) {
   const kbId = useKnowledgeBaseId();
   const enabled = !!kbId && !!parentName;
 
-  const { data, isFetching: loading, isError, error } = useQuery<
-    DatasetNavList | null
-  >({
+  const { data, isFetching: loading, isError, error, refetch } = useQuery({
     queryKey: DatasetNavKeys.children(kbId, parentName ?? ''),
     initialData: null,
     enabled,
     gcTime: 0,
+    retry: false,
     queryFn: async () => {
       const { data } = await datasetNavService.getNavChildren({
         datasetId: kbId,
         name: parentName!,
       });
-      return unwrapDatasetNavResponse<DatasetNavList>(data);
+      return unwrapDatasetNavResponse(data);
     },
   });
 
-  return { data, loading, isError, error };
+  return { data, loading, isError, error, refetch };
 }
 
 export function useDeleteDatasetNav() {

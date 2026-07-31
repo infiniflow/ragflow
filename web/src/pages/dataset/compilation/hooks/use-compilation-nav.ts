@@ -32,7 +32,11 @@ export function useCompilationNav() {
     null,
   );
 
-  const { data: childrenData } = useFetchDatasetNavChildren(loadingParent);
+  const {
+    data: childrenData,
+    loading: childrenLoading,
+    isError: childrenError,
+  } = useFetchDatasetNavChildren(loadingParent);
 
   useEffect(() => {
     if (loadingParent && childrenData) {
@@ -43,13 +47,25 @@ export function useCompilationNav() {
     }
   }, [loadingParent, childrenData]);
 
+  useEffect(() => {
+    if (!loadingParent || !childrenError) {
+      return;
+    }
+    const parent = loadingParent;
+    setChildrenMap((prev) => ({
+      ...prev,
+      [parent]: [],
+    }));
+    setLoadingParent(null);
+  }, [loadingParent, childrenError]);
+
   const loadChildren = useCallback(
     (name: string) => {
-      if (!(name in childrenMap)) {
+      if (!(name in childrenMap) && loadingParent !== name) {
         setLoadingParent(name);
       }
     },
-    [childrenMap],
+    [childrenMap, loadingParent],
   );
 
   const removeChild = useCallback((parentName: string, childName: string) => {
@@ -139,6 +155,8 @@ export function useCompilationNav() {
     navList,
     navLoading,
     navError,
+    childrenLoading,
+    childrenError,
     childrenMap,
     selectedNode,
     deleteNavLoading,

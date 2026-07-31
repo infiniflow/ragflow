@@ -47,7 +47,7 @@ def _stub(monkeypatch, name, **attrs):
     return mod
 
 
-def _load_nav_module(monkeypatch, *, accessible=True, index_pack=("idx-1", object()), total=0, field_map=None):
+def _load_nav_module(monkeypatch, *, accessible=True, index_pack=("idx-1", None), total=0, field_map=None):
     doc_store = MagicMock()
     doc_store.search = MagicMock(return_value={})
     doc_store.get_fields = MagicMock(return_value=field_map or {})
