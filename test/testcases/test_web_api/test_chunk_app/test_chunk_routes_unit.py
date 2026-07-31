@@ -521,6 +521,13 @@ def test_restful_chunk_list_get_and_delete_unit(monkeypatch):
     assert res["data"]["total"] == 1, res
     assert res["data"]["chunks"][0]["id"] == "chunk-1", res
     assert res["data"]["chunks"][0]["available"] is True, res
+    assert res["data"]["chunks"][0]["doc_type_kwd"] == "text", res
+
+    module.request = SimpleNamespace(args={"id": "chunk-1"}, headers={})
+    module.settings.docStoreConn.chunk["doc_type_kwd"] = "image"
+    res = _run(_route_core(module.list_chunks)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == 0, res
+    assert res["data"]["chunks"][0]["doc_type_kwd"] == "image", res
 
     res = _run(_route_core(module.get_chunk)("tenant-1", "kb-1", "doc-1", "chunk-1"))
     assert res["code"] == 0, res
@@ -715,3 +722,4 @@ def test_restful_add_chunk_valid_image_base64_stores_before_insert(monkeypatch):
     inserted = module.settings.docStoreConn.inserted[-1]
     assert inserted.get("img_id"), inserted
     assert inserted.get("doc_type_kwd") == "image", inserted
+    assert res["data"]["chunk"]["doc_type_kwd"] == "image", res
