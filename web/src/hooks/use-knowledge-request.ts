@@ -41,6 +41,7 @@ import kbService, {
   listArtifacts,
   datasetFilter,
   listDataset,
+  listDatasetByIds,
   listTag,
   listWikiCommits,
   removeTag,
@@ -1003,6 +1004,8 @@ export const KnowledgeListKeys = {
       keywords,
       pageSize,
     ] as const,
+  byIds: (ids: string[]) =>
+    [KnowledgeApiAction.FetchKnowledgeList, 'byIds', ids] as const,
 };
 
 export const useFetchKnowledgeList = (
@@ -1112,6 +1115,26 @@ export const useSelectKnowledgeOptions = () => {
   }));
 
   return options;
+};
+
+/**
+ * Fetch datasets by a set of IDs. Used to resolve the names of
+ * already-selected datasets that are not present in the first page of
+ * the paginated list so they can be echoed back in the form field.
+ */
+export const useFetchDatasetsByIds = (ids: string[]) => {
+  const sortedIds = useMemo(() => [...ids].sort(), [ids]);
+  const { data, isFetching: loading } = useQuery<IDataset[]>({
+    queryKey: KnowledgeListKeys.byIds(sortedIds),
+    enabled: sortedIds.length > 0,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await listDatasetByIds(sortedIds);
+      return (data?.data ?? []) as IDataset[];
+    },
+  });
+
+  return { data, loading };
 };
 
 //#region tags

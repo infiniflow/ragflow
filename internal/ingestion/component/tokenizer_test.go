@@ -70,6 +70,7 @@ func TestTokenizerComponent_Invoke_HappyPath(t *testing.T) {
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"tenant_id":     "t1",
 		"model_id":      "embd-1",
+		"kb_id":         "kb-1",
 		"name":          "doc.pdf",
 		"output_format": "chunks",
 		"chunks":        chunks,
@@ -222,6 +223,7 @@ func TestTokenizerComponent_Invoke_BatchedEmbedding(t *testing.T) {
 	}
 	if _, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.txt",
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        chunks,
 	}); err != nil {
@@ -298,6 +300,7 @@ func TestTokenizerComponent_Invoke_FullTextAndEmbedding(t *testing.T) {
 	c, _ := withStubEmbedder(t, 4)
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha bravo"}},
 	})
@@ -327,6 +330,7 @@ func TestTokenizerComponent_Invoke_EmbedNoResolver(t *testing.T) {
 	requireTokenizerPool(t)
 	c, _ := NewTokenizerComponent(nil)
 	_, err := c.Invoke(context.Background(), nil, map[string]any{
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}},
 	})
@@ -346,6 +350,7 @@ func TestTokenizerComponent_Invoke_EmbedderError(t *testing.T) {
 	stub.err = errors.New("simulated upstream error")
 
 	_, err := c.Invoke(context.Background(), nil, map[string]any{
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}},
 	})
@@ -372,6 +377,7 @@ func TestTokenizerComponent_Invoke_EncoderCountMismatch(t *testing.T) {
 	c := cIntf.(*TokenizerComponent)
 	_ = stub
 	_, err = c.Invoke(context.Background(), nil, map[string]any{
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "a"}, {"text": "b"}, {"text": "c"}},
 	})
@@ -432,6 +438,7 @@ func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"tenant_id":     "tenant-smoke",
 		"model_id":      "embd-smoke",
+		"kb_id":         "kb-1",
 		"name":          "smoke.pdf",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": chunkText}},
@@ -479,6 +486,7 @@ func TestTokenizerComponent_Embedding_MergesTitleAndContentVectors(t *testing.T)
 	}
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}, {"text": "beta"}},
 	})
@@ -514,6 +522,7 @@ func TestTokenizerComponent_Embedding_UsesFilenameWeight(t *testing.T) {
 	c := cIntf.(*TokenizerComponent)
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}},
 	})
@@ -544,6 +553,7 @@ func TestTokenizerComponent_Embedding_EmptyNameWarnsAndUsesContentVector(t *test
 
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "   ",
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}},
 	})
@@ -577,6 +587,7 @@ func TestTokenizerComponent_Embedding_UsesRawNameNotTrimmed(t *testing.T) {
 
 	if _, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "  report.pdf  ",
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}},
 	}); err != nil {
@@ -599,6 +610,7 @@ func TestTokenizerComponent_Embedding_TruncatesByMaxTokensMinus10(t *testing.T) 
 	longText := strings.Repeat("hello world ", 20)
 	if _, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": longText}},
 	}); err != nil {
@@ -620,6 +632,7 @@ func TestTokenizerComponent_Embedding_SkipsEmptyCleanedTextsButReturnsZeroWhenAl
 	c, stub := withStubEmbedder(t, 2)
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks": []map[string]any{
 			{"text": "<table><tr><td></td></tr></table>"},
@@ -651,6 +664,7 @@ func TestTokenizerComponent_Embedding_SetsTokenConsumptionIncludingTitleCall(t *
 
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha"}, {"text": "beta"}},
 	})
@@ -669,6 +683,7 @@ func TestTokenizerComponent_Embedding_BatchesByConfiguredBatchSize(t *testing.T)
 
 	if _, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks": []map[string]any{
 			{"text": "one"},
@@ -722,11 +737,11 @@ func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testin
 	compA := compAIntf.(*TokenizerComponent)
 	compB := compBIntf.(*TokenizerComponent)
 
-	outA, err := compA.Invoke(context.Background(), nil, map[string]any{"name": "docA", "output_format": "chunks", "chunks": []map[string]any{{"text": "alpha"}}})
+	outA, err := compA.Invoke(context.Background(), nil, map[string]any{"kb_id": "kb-1", "name": "docA", "output_format": "chunks", "chunks": []map[string]any{{"text": "alpha"}}})
 	if err != nil {
 		t.Fatalf("Invoke A: %v", err)
 	}
-	outB, err := compB.Invoke(context.Background(), nil, map[string]any{"name": "docB", "output_format": "chunks", "chunks": []map[string]any{{"text": "beta"}}})
+	outB, err := compB.Invoke(context.Background(), nil, map[string]any{"kb_id": "kb-1", "name": "docB", "output_format": "chunks", "chunks": []map[string]any{{"text": "beta"}}})
 	if err != nil {
 		t.Fatalf("Invoke B: %v", err)
 	}

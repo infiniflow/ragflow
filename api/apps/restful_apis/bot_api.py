@@ -47,6 +47,7 @@ from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
 )
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 
 logger = logging.getLogger(__name__)
 
@@ -331,8 +332,8 @@ async def ask_about_embedded(tenant_id=None):
 @validate_request("kb_id", "question")
 async def retrieval_test_embedded(tenant_id=None):
     req = await get_request_json()
-    page = int(req.get("page", 1))
-    size = int(req.get("size", 30))
+    page = validate_rest_api_page(req.get("page", DEFAULT_PAGE))
+    size = validate_rest_api_page_size(req.get("size", DEFAULT_PAGE_SIZE))
     question = req["question"]
     kb_ids = req["kb_id"]
     if isinstance(kb_ids, str):
