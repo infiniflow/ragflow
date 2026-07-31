@@ -608,9 +608,9 @@ class Compiler(ProcessBase, LLM):
             self.set_output("chunks", chunks)
             return
 
-        for ck in chunks:
+        for idx, ck in enumerate(chunks):
             ck["doc_id"] = doc_id
-            ck["id"] = xxhash.xxh64((ck["text"] + str(ck["doc_id"])).encode("utf-8")).hexdigest()
+            ck["id"] = xxhash.xxh64(f"{ck['text']}\x00{ck['doc_id']}\x00{idx}".encode("utf-8")).hexdigest()
 
         if self._canvas._kb_id:
             e, kb = KnowledgebaseService.get_by_id(self._canvas._kb_id)
