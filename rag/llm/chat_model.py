@@ -165,7 +165,7 @@ def _apply_model_family_policies(
         }:
             sanitized_gen_conf["enable_thinking"] = enable_thinking
         else:
-            _merge_extra_body(sanitized_kwargs, {"enable_thinking": enable_thinking})
+            _merge_extra_body(sanitized_kwargs, {"chat_template_kwargs": {"enable_thinking": enable_thinking}})
 
     if backend == "base":
         return sanitized_gen_conf, sanitized_kwargs
