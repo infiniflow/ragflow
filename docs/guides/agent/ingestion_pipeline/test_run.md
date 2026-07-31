@@ -1,5 +1,7 @@
 ---
 sidebar_position: 7
+title: Test Run
+sidebar_label: Test Run
 slug: /test_run
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

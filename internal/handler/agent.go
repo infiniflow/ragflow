@@ -341,7 +341,14 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
-	common.SuccessWithData(c, true, "success")
+	canvas, err := h.agentService.GetAgent(c.Request.Context(), user.ID, canvasID)
+	if err != nil || canvas == nil {
+		common.SuccessWithData(c, map[string]interface{}{}, "success")
+		return
+	}
+	common.SuccessWithData(c, map[string]interface{}{
+		"update_time": canvas.UpdateTime,
+	}, "success")
 }
 
 // DeleteAgent removes the canvas and cascades to its versions.

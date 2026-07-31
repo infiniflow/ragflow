@@ -1,11 +1,13 @@
 ---
 sidebar_position: 1
+title: Start AI Chat
+sidebar_label: Start AI Chat
 slug: /start_chat
 sidebar_custom_props: {
   categoryIcon: LucideBot
 }
 ---
-# Start AI chat
+# Start AI Chat
 
 Initiate an AI-powered chat with a configured chat assistant.
 
@@ -13,7 +15,7 @@ Initiate an AI-powered chat with a configured chat assistant.
 
 Chats in RAGFlow are based on a particular dataset or multiple datasets. Once you have created your dataset, finished file parsing, and [run a retrieval test](../dataset/run_retrieval_test.md), you can go ahead and start an AI conversation.
 
-## Start an AI chat
+## Start an AI Chat
 
 You start an AI conversation by creating an assistant.
 
@@ -94,11 +96,11 @@ You start an AI conversation by creating an assistant.
    ![time_elapsed](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/time_elapsed.jpg)
 :::
 
-## Update settings of an existing chat assistant
+## Update Settings of an Existing Chat Assistant
 
 ![chat_setting](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_setting.jpg)
 
-## Integrate chat capabilities into your application or webpage
+## Integrate Chat Capabilities into Your Application or Webpage
 
 RAGFlow offers HTTP and Python APIs for you to integrate RAGFlow's capabilities into your applications. Read the following documents for more information:
 

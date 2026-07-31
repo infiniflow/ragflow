@@ -1,5 +1,7 @@
 ---
 sidebar_position: 4
+title: Component Connection Rules
+sidebar_label: Component Connection Rules
 slug: /component_connection_rules
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

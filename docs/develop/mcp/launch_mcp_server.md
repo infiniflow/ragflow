@@ -1,11 +1,13 @@
 ---
 sidebar_position: 1
+title: Launch RAGFlow MCP Server
+sidebar_label: Launch RAGFlow MCP Server
 slug: /launch_mcp_server
 sidebar_custom_props: {
   categoryIcon: LucideTvMinimalPlay
 }
 ---
-# Launch RAGFlow MCP server
+# Launch RAGFlow MCP Server
 
 Launch an MCP server from source or via Docker.
 
@@ -31,11 +33,11 @@ Once a connection is established, an MCP server communicates with its client in 
 If you wish to try out our MCP server without upgrading RAGFlow, community contributor [yiminghub2024](https://github.com/yiminghub2024) 👏 shares their recommended steps [here](#launch-an-mcp-server-without-upgrading-ragflow).
 :::
 
-## Launch an MCP server 
+## Launch an MCP Server
 
 You can start an MCP server either from source code or via Docker. 
 
-### Launch from source code
+### Launch from Source Code
 
 1. Ensure that a RAGFlow server v0.18.0+ is properly running.
 2. Launch the MCP server:
@@ -66,7 +68,7 @@ The RAGFlow MCP server supports two transports: the legacy SSE transport (served
 
 ### Launch from Docker
 
-#### 1. Enable MCP server
+#### 1. Enable MCP Server
 
 The MCP server is designed as an optional component that complements the RAGFlow server and disabled by default. To enable MCP server:
 
@@ -111,7 +113,7 @@ Where:
 If you set `mcp-mode` to `host`, you must add the `--no-transport-streamable-http-enabled` flag, because the streamable-HTTP transport is not yet supported in host mode.
 :::
 
-#### 2. Launch a RAGFlow server with an MCP server
+#### 2. Launch a RAGFlow Server with an MCP Server
 
 Run `docker compose -f docker-compose.yml up` to launch the RAGFlow server together with the MCP server.
 
@@ -166,7 +168,7 @@ Run `docker compose -f docker-compose.yml up` to launch the RAGFlow server toget
   ...
 ```
 
-#### Launch an MCP server without upgrading RAGFlow
+#### Launch an MCP Server Without Upgrading RAGFlow
 
 :::info KUDOS
 This section is contributed by our community contributor [yiminghub2024](https://github.com/yiminghub2024). 👏
@@ -186,7 +188,7 @@ This section is contributed by our community contributor [yiminghub2024](https:/
 docker compose -f docker-compose.yml up -d
 ```
 
-### Check MCP server status
+### Check MCP Server Status
 
 Run the following to check the logs the RAGFlow server and the MCP server:
 
@@ -194,15 +196,15 @@ Run the following to check the logs the RAGFlow server and the MCP server:
 docker logs docker-ragflow-cpu-1
 ```
 
-## Security considerations
+## Security Considerations
 
 As MCP technology is still at early stage and no official best practices for authentication or authorization have been established, RAGFlow currently uses [API key](../acquire_ragflow_api_key.md) to validate identity for the operations described earlier. However, in public environments, this makeshift solution could expose your MCP server to potential network attacks. Therefore, when running a local SSE server, it is recommended to bind only to localhost (`127.0.0.1`) rather than to all interfaces (`0.0.0.0`). 
 
 For further guidance, see the [official MCP documentation](https://modelcontextprotocol.io/docs/concepts/transports#security-considerations).
 
-## Frequently asked questions
+## Frequently Asked Questions
 
-### When to use an API key for authentication?
+### When to Use an API Key for Authentication?
 
 The use of an API key depends on the operating mode of your MCP server. 
 

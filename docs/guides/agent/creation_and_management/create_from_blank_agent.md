@@ -1,5 +1,7 @@
 ---
 sidebar_position: 3
+title: Create from Blank Agent
+sidebar_label: Create from Blank Agent
 slug: /create_from_blank_agent
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

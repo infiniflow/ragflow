@@ -1,18 +1,19 @@
 ---
 sidebar_position: 3
+title: RAGFlow MCP Client Examples
+sidebar_label: RAGFlow MCP Client Examples
 slug: /mcp_client
 sidebar_custom_props: {
   categoryIcon: LucideBookMarked
 }
-
 ---
-# RAGFlow MCP client examples
+# RAGFlow MCP Client Examples
 
 Python and curl MCP client examples.
 
 ------
 
-## Example MCP Python client
+## Example MCP Python Client
 
 We provide a *prototype* MCP client example for testing [here](https://github.com/infiniflow/ragflow/blob/main/mcp/client/client.py).
 
@@ -32,7 +33,7 @@ async with sse_client("http://localhost:9382/sse", headers={"Authorization": "YO
 ```
 :::
 
-## Use curl to interact with the RAGFlow MCP server
+## Use Curl to Interact with the RAGFlow MCP Server
 
 When interacting with the MCP server via HTTP requests, follow this initialization sequence:
 
@@ -47,7 +48,7 @@ For more information about this initialization process, see [here](https://model
 
 In the following sections, we will walk you through a complete tool calling process.
 
-### 1. Obtain a session ID
+### 1. Obtain a Session ID
 
 Each curl request with the MCP server must include a session ID:
 
@@ -70,7 +71,7 @@ event: endpoint
 data: /messages/?session_id=5c6600ef61b845a788ddf30dceb25c54
 ```
 
-### 2. Send an `Initialize` request
+### 2. Send an `Initialize` Request
 
 The client sends an `initialize` request with protocol version and capabilities:
 
@@ -104,7 +105,7 @@ event: message
 data: {"jsonrpc":"2.0","id":1,"result":{"protocolVersion":"2025-03-26","capabilities":{"experimental":{"headers":{"host":"127.0.0.1:9382","user-agent":"curl/8.7.1","accept":"*/*","api_key":"ragflow-xxxxxxxxxxxx","accept-encoding":"gzip"}},"tools":{"listChanged":false}},"serverInfo":{"name":"docker-ragflow-cpu-1","version":"1.9.4"}}}
 ```
 
-### 3. Acknowledge readiness
+### 3. Acknowledge Readiness
 
 The client confirms readiness with an `initialized` notification:
 
@@ -121,7 +122,7 @@ curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
 
  _The connection is established between the client and the server, and further operations (such as tool listing) may proceed._
 
-### 4. Tool listing
+### 4. Tool Listing
 
 ```bash
 curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
@@ -143,7 +144,7 @@ data: {"jsonrpc":"2.0","id":3,"result":{"tools":[{"name":"ragflow_retrieval","de
 
 ```
 
-### 5. Tool calling
+### 5. Tool Calling
 
 ```bash
 curl -X POST "http://127.0.0.1:9382/messages/?session_id=$session_id" \
@@ -172,7 +173,7 @@ data: {"jsonrpc":"2.0","id":4,"result":{...}}
 
 ```
 
-### A complete curl example
+### A Complete Curl Example
 
 ```bash
 session_id="YOUR_SESSION_ID" && \

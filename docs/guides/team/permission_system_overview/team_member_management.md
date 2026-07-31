@@ -1,9 +1,10 @@
 ---
 sidebar_position: 1
-sidebar_label: "Team member management"
+sidebar_label: Team Member Management
+title: Team Member Management
 ---
 
-## Team member management
+# Team Member Management
 
 Each user has a personal workspace. The team page of that workspace is displayed with the current user's nickname and **workspace** as its title.
 
