@@ -395,7 +395,11 @@ func TestNormalizeOverlappedPercent(t *testing.T) {
 	}{
 		{"zero", 0, 0},
 		{"fraction 0.1 -> 10", 0.1, 10},
+		{"fraction 0.29 -> 29 (round, was 28 trunc)", 0.29, 29},
+		{"fraction 0.3 -> 30", 0.3, 30},
 		{"fraction 0.5 -> 50", 0.5, 50},
+		{"fraction 0.57 -> 57 (round, was 56 trunc)", 0.57, 57},
+		{"fraction 0.93 -> 90 (clamp after round)", 0.93, 90},
 		{"fraction 0.95 -> 90 (clamp)", 0.95, 90},
 		{"percent 15", 15, 15},
 		{"int truncation 33.3 -> 33", 33.3, 33},
@@ -413,6 +417,8 @@ func TestNormalizeOverlappedPercent(t *testing.T) {
 		{"huge 1e300 -> 90", 1e300, 90},
 		{"huge -1e300 -> 0", -1e300, 0},
 		{"huge math.MaxFloat64 -> 90", math.MaxFloat64, 90},
+		{"huge math.MaxFloat64 +1 -> 90 (clamp pre-round)", math.MaxFloat64 + 1, 90},
+		{`numeric string fraction "0.29" -> 29`, "0.29", 29},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -491,6 +497,8 @@ func TestTokenChunkerParam_ValidateOverlappedRange(t *testing.T) {
 		wantErr bool
 	}{
 		{"fraction 0.3 -> 30", 0.3, 30, false},
+		{"fraction 0.29 -> 29 (round, was 28 trunc)", 0.29, 29, false},
+		{"fraction 0.57 -> 57 (round, was 56 trunc)", 0.57, 57, false},
 		{"percent 0", 0, 0, false},
 		{"percent 30", 30, 30, false},
 		{"percent 90 (boundary)", 90, 90, false},

@@ -590,7 +590,7 @@ def test_agents_crud_unit_branches(monkeypatch):
     monkeypatch.setattr(
         module.UserCanvasService,
         "get_by_id",
-        lambda _id: (True, SimpleNamespace(title="agent-1", canvas_category=module.CanvasCategory.Agent)),
+        lambda _id: (True, SimpleNamespace(title="agent-1", canvas_category=module.CanvasCategory.Agent, update_time=1234567890)),
     )
     monkeypatch.setattr(
         module.UserCanvasService,

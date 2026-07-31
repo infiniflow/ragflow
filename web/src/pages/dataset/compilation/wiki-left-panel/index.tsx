@@ -94,6 +94,7 @@ export function WikiLeftPanel({
           <Button
             variant="ghost"
             size="icon-sm"
+            className="ml-auto"
             disabled={loading}
             data-testid="wiki-clear-trigger"
           >

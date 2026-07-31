@@ -1153,7 +1153,8 @@ async def update_agent(agent_id, tenant_id):
         if not replica_ok:
             return get_data_error_result(message="agent saved, but replica sync failed.")
 
-    return get_json_result(data=True)
+    _, updated_agent = UserCanvasService.get_by_id(agent_id)
+    return get_json_result(data={"update_time": updated_agent.update_time})
 
 
 @manager.route("/agents/<agent_id>/reset", methods=["POST"])  # noqa: F821

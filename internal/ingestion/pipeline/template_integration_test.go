@@ -19,6 +19,8 @@
 // Tokenizer and title weighting runs - the q_<n>_vec first element is
 // 0.1*len(name) + 0.9*len(content), and embedding_token_consumption includes
 // the one title encode (len(name)) plus the per-chunk content encodes.
+//go:build integration
+
 package pipeline
 
 import (

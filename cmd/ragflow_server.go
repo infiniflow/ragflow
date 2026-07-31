@@ -560,6 +560,13 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 		common.Error("Failed to initialize ingestor", err)
 	}
 
+	// Memory extraction consumer: drains task_type="memory" messages
+	// from the te.0.common Redis stream and runs LLM extraction.
+	memoryConsumerCtx, stopMemoryConsumer := context.WithCancel(ctx)
+	defer stopMemoryConsumer()
+	memoryMessageSvc := service.NewMemoryMessageService(service.NewMemoryService())
+	go memoryMessageSvc.StartTaskConsumer(memoryConsumerCtx)
+
 	common.Info("\n    ____                      __  _\n" +
 		"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +
 		"   / // __ \\/ __ `/ _ \\/ ___/ __/ / __ \\/ __ \\   / ___/ _ \\/ ___/ | / / _ \\/ ___/\n" +

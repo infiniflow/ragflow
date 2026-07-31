@@ -52,8 +52,7 @@ func (l *LongCatModel) Name() string {
 }
 
 // LongCatChatResponse mirrors the OpenAI-compatible response returned by
-// LongCat's POST /openai/v1/chat/completions endpoint. Usage is always
-// present on a successful response.
+// LongCat's POST /openai/v1/chat/completions endpoint.
 type LongCatChatResponse struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`
@@ -70,9 +69,12 @@ type LongCatChatResponse struct {
 		} `json:"message"`
 	} `json:"choices"`
 	Usage struct {
-		PromptTokens     int `json:"prompt_tokens"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
+		PromptTokens            int `json:"prompt_tokens"`
+		CompletionTokens        int `json:"completion_tokens"`
+		TotalTokens             int `json:"total_tokens"`
+		CompletionTokensDetails struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"completion_tokens_details"`
 	} `json:"usage"`
 }
 
@@ -139,17 +141,13 @@ func (l *LongCatModel) ChatWithMessages(ctx context.Context, modelName string, m
 		choice := &result.Choices[0]
 		content := choice.Message.Content
 		// LongCat-Flash-Thinking may emit all output as reasoning_content
-		// with content left null/empty. That is a valid response — only
-		// reject when there is neither content, reasoning, nor tool calls.
+		// with content left empty. That is a valid response — only reject when
+		// there is neither content, reasoning, nor tool calls.
 		if content == "" && choice.Message.ReasoningContent == "" && len(choice.Message.ToolCalls) == 0 {
 			return chatResponseParts{}, fmt.Errorf("invalid content format")
 		}
 
-		// LongCat 2.0 returns the chain-of-thought in a
-		// `reasoning_content` field on the message (OpenAI o-series shape,
-		// also used by kimi-k2.6 and DeepSeek-R1). The field is typically
-		// prefixed with a leading newline — trim it so callers see clean
-		// reasoning. Absent or empty means no reasoning was emitted.
+		// reasoning_content is typically prefixed with a leading newline.
 		reasonContent := choice.Message.ReasoningContent
 		if reasonContent != "" && reasonContent[0] == '\n' {
 			reasonContent = reasonContent[1:]
@@ -241,6 +239,9 @@ func (l *LongCatModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		}
 		if found {
 			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
+			// Aggregate counts only — the full event carries content/reasoning_content.
+			common.Info(fmt.Sprintf("longcat: usage prompt=%d completion=%d total=%d",
+				tokenUsage.PromptTokens, tokenUsage.CompletionTokens, tokenUsage.TotalTokens))
 		}
 
 		choices, ok := event["choices"].([]interface{})

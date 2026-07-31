@@ -64,10 +64,11 @@ type Ingestor struct {
 	ShutdownCh chan struct{}
 
 	// Worker pool
-	taskChan  chan *taskpkg.TaskContext
-	workerWg  sync.WaitGroup
-	startOnce sync.Once
-	stopOnce  sync.Once // guards close(ShutdownCh) against double-close on repeated Stop
+	taskChan   chan *taskpkg.TaskContext
+	workerWg   sync.WaitGroup
+	startOnce  sync.Once
+	workerOnce sync.Once // guards startWorkerPool; must NOT be startOnce (Start wraps start() in startOnce, and start() calls startWorkerPool -> re-entry deadlock)
+	stopOnce   sync.Once // guards close(ShutdownCh) against double-close on repeated Stop
 
 	ingestionTaskSvc *servicepkg.IngestionTaskService
 	docState         *docStateUpdater
@@ -382,7 +383,7 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 }
 
 func (e *Ingestor) startWorkerPool() {
-	e.startOnce.Do(func() {
+	e.workerOnce.Do(func() {
 		for i := int32(0); i < e.maxConcurrency; i++ {
 			e.workerWg.Add(1)
 			go e.workerLoop(i)
