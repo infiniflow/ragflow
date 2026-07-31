@@ -76,26 +76,78 @@ func stringListFromAny(in []any) []string {
 // regex / split helpers
 // ---------------------------------------------------------------------------
 
-// compileDelimPattern joins all delimiter entries into a single
-// alternation. Entries wrapped in backticks are treated as regex
-// literals and regex-escaped; plain strings are simply regex-escaped.
-// Longer patterns win (matches python `sorted(set, key=len, reverse=True)`).
-// Mirrors Python _compile_delimiter_pattern: only backtick-wrapped delimiters
-// produce an active pattern. Plain delimiters are not compiled — they are only
-// used by naive_merge / mergeByTokenSize for sentence-level splitting when no
-// active pattern exists.
-func compileDelimPattern(delims []string) *regexp.Regexp {
-	var custom []string
-	for _, d := range delims {
+// backtickDelimRE extracts backtick-wrapped delimiter tokens.
+// Case-sensitive on purpose (mirrors Python after #17384 / PR #17386):
+// never add (?i) here — delimiter matching must preserve letter casing.
+var backtickDelimRE = regexp.MustCompile("`([^`]+)`")
+
+// getDelimiters ports rag.nlp.get_delimiters (rag/nlp/__init__.py).
+//
+// It walks a single delimiter string, pulling out backtick-wrapped tokens
+// and every bare character outside those spans, then returns a
+// length-sorted, QuoteMeta-escaped alternation suitable for regexp.Split.
+// Matching is case-sensitive: "a" does not match "A", and "`end`" does not
+// match "End" / "END".
+func getDelimiters(delimiters string) string {
+	var dels []string
+	s := 0
+	for _, m := range backtickDelimRE.FindAllStringSubmatchIndex(delimiters, -1) {
+		// m = [fullStart, fullEnd, g1Start, g1End]
+		f, t := m[0], m[1]
+		dels = append(dels, delimiters[m[2]:m[3]])
+		for _, r := range delimiters[s:f] {
+			dels = append(dels, string(r))
+		}
+		s = t
+	}
+	if s < len(delimiters) {
+		for _, r := range delimiters[s:] {
+			dels = append(dels, string(r))
+		}
+	}
+
+	sort.SliceStable(dels, func(i, j int) bool { return len(dels[i]) > len(dels[j]) })
+	escaped := make([]string, 0, len(dels))
+	for _, d := range dels {
 		if d == "" {
 			continue
 		}
-		if strings.HasPrefix(d, "`") && strings.HasSuffix(d, "`") && len(d) >= 2 {
-			custom = append(custom, regexp.QuoteMeta(d[1:len(d)-1]))
+		escaped = append(escaped, regexp.QuoteMeta(d))
+	}
+	return strings.Join(escaped, "|")
+}
+
+// compileDelimPattern joins all delimiter entries into a single
+// alternation. Only backtick-wrapped tokens become an active pattern
+// (mirrors Python _compile_delimiter_pattern). Extraction is
+// case-sensitive — see backtickDelimRE.
+//
+// Plain (non-backtick) delimiters are not compiled here; callers that
+// need bare-char splitting use getDelimiters (naive_merge path).
+func compileDelimPattern(delims []string) *regexp.Regexp {
+	var b strings.Builder
+	for _, d := range delims {
+		if d != "" {
+			b.WriteString(d)
 		}
 	}
-	if len(custom) == 0 {
+	raw := b.String()
+	if raw == "" {
 		return nil
+	}
+	matches := backtickDelimRE.FindAllStringSubmatch(raw, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(matches))
+	custom := make([]string, 0, len(matches))
+	for _, m := range matches {
+		tok := m[1]
+		if _, ok := seen[tok]; ok {
+			continue
+		}
+		seen[tok] = struct{}{}
+		custom = append(custom, regexp.QuoteMeta(tok))
 	}
 	sort.SliceStable(custom, func(i, j int) bool { return len(custom[i]) > len(custom[j]) })
 	return regexp.MustCompile(strings.Join(custom, "|"))
