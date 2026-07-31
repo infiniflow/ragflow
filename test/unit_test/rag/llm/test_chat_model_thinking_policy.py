@@ -46,6 +46,26 @@ def test_qwen3_can_enable_thinking_explicitly():
     assert kwargs["extra_body"] == {"seed": 1, "chat_template_kwargs": {"enable_thinking": True}}
 
 
+def test_qwen3_preserves_existing_chat_template_kwargs():
+    gen_conf, kwargs = _apply_model_family_policies(
+        "qwen3-plus",
+        backend="base",
+        gen_conf={"thinking": "disabled"},
+        request_kwargs={
+            "extra_body": {
+                "seed": 1,
+                "chat_template_kwargs": {"enable_thinking": True, "custom_template_flag": "keep"},
+            }
+        },
+    )
+
+    assert gen_conf == {}
+    assert kwargs["extra_body"] == {
+        "seed": 1,
+        "chat_template_kwargs": {"enable_thinking": False, "custom_template_flag": "keep"},
+    }
+
+
 @pytest.mark.parametrize(
     "provider",
     [SupportedLiteLLMProvider.Tongyi_Qianwen, SupportedLiteLLMProvider.Dashscope],
