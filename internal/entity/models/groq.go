@@ -156,6 +156,7 @@ func (g *GroqModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	applyGroqReasoningRequestParams(reqBody, modelName, chatModelConfig)
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)

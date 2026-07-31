@@ -133,6 +133,7 @@ func (n *NvidiaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		}
 	}
 
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
