@@ -21,20 +21,23 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
+	"ragflow/internal/service/file"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // DatasetArtifactHandler exposes the knowledge-compilation artifact REST APIs
 // backed by DatasetArtifactService.
 type DatasetArtifactHandler struct {
-	svc        *service.DatasetArtifactService
-	datasetSvc *dataset.DatasetService
+	svc           *service.DatasetArtifactService
+	datasetSvc    *dataset.DatasetService
+	fileCommitSvc *file.FileCommitService
 }
 
 // NewDatasetArtifactHandler creates a DatasetArtifactHandler.
-func NewDatasetArtifactHandler(svc *service.DatasetArtifactService, datasetSvc *dataset.DatasetService) *DatasetArtifactHandler {
-	return &DatasetArtifactHandler{svc: svc, datasetSvc: datasetSvc}
+func NewDatasetArtifactHandler(svc *service.DatasetArtifactService, datasetSvc *dataset.DatasetService, fileCommitSvc *file.FileCommitService) *DatasetArtifactHandler {
+	return &DatasetArtifactHandler{svc: svc, datasetSvc: datasetSvc, fileCommitSvc: fileCommitSvc}
 }
 
 // datasetOwner resolves the dataset and returns its tenant id. It also enforces
@@ -99,7 +102,7 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 
 // PUT /artifacts/<page_type>/<slug> — edit a wiki page.
 func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
-	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
+	user, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
 	}
@@ -115,6 +118,17 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
 		return
 	}
+
+	// Read the current page before mutating, so we can record an audit commit
+	// with the old content when the body actually changes it. Mirrors Python's
+	// FileCommitService.record_page_edit.
+	var oldContent string
+	if req.ContentMd != "" {
+		if before, gerr := h.svc.GetWikiPage(c.Request.Context(), tenantID, datasetID, pageType, slug); gerr == nil && before != nil {
+			oldContent = before.ContentMd
+		}
+	}
+
 	detail, err := h.svc.UpdateWikiPage(c.Request.Context(), tenantID, datasetID, pageType, slug, req.ContentMd, req.Title, req.Outlinks)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
@@ -124,6 +138,30 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeNotFound, "page not found")
 		return
 	}
+
+	// Record a wiki-page edit audit commit (git-style parent chain) when the
+	// content actually changed. Best-effort: a commit write failure must not
+	// roll back the page edit already persisted above.
+	if req.ContentMd != "" && req.ContentMd != oldContent && h.fileCommitSvc != nil {
+		docID := pageType + "/" + slug
+		title := req.Title
+		if title == "" {
+			title = detail.Title
+		}
+		if _, cerr := h.fileCommitSvc.RecordPageEdit(c.Request.Context(), file.PageEditCommitInput{
+			DatasetID:  datasetID,
+			DocID:      docID,
+			Slug:       slug,
+			PageType:   pageType,
+			Title:      title,
+			AuthorID:   user.ID,
+			OldContent: oldContent,
+			NewContent: req.ContentMd,
+		}); cerr != nil {
+			common.Warn("failed to record wiki page edit commit", zap.Error(cerr))
+		}
+	}
+
 	common.SuccessWithData(c, detail, "success")
 }
 

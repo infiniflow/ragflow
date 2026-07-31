@@ -835,7 +835,7 @@ func startServer(ctx context.Context) {
 	pipelineHandler := handler.NewPipelineHandler()
 	compilationTemplateHandler := handler.NewCompilationTemplateHandler(service.NewCompilationTemplateService())
 	compilationTemplateGroupHandler := handler.NewCompilationTemplateGroupHandler(service.NewCompilationTemplateGroupService())
-	datasetArtifactHandler := handler.NewDatasetArtifactHandler(service.NewDatasetArtifactService(), datasetsService)
+	datasetArtifactHandler := handler.NewDatasetArtifactHandler(service.NewDatasetArtifactService(), datasetsService, file.NewFileCommitService())
 
 	// Initialize router
 	r := router.NewRouter(authHandler,

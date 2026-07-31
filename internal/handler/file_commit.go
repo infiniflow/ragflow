@@ -38,6 +38,7 @@ type fileCommitService interface {
 	GetCommitTree(ctx context.Context, commitID string) (map[string]interface{}, error)
 	GetCommitFileContent(ctx context.Context, folderID, commitID, fileID string) ([]byte, error)
 	GetFileVersionHistory(ctx context.Context, fileID string) ([]entity.VersionEntry, error)
+	ListPageCommits(ctx context.Context, slug, pageType string, page, pageSize int) ([]*entity.FileCommit, int64, error)
 }
 
 // FileCommitHandler file commit handler
@@ -217,6 +218,43 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+
+	// Python's list_commits supports ?slug=<page_slug> to filter audit commits
+	// for a specific wiki/skill page (written by record_page_edit). These page
+	// commits are not bound to a workspace folder, so route them through the
+	// page-commit path instead of the folder-based ListCommits.
+	if slug := c.Query("slug"); slug != "" {
+		pageType := c.Query("page_type")
+		commits, total, err := h.commitService.ListPageCommits(ctx, slug, pageType, page, pageSize)
+		if err != nil {
+			jsonInternalError(c, err)
+			return
+		}
+		var commitList []entity.CommitResponse
+		for _, commit := range commits {
+			var ct int64
+			if commit.CreateTime != nil {
+				ct = *commit.CreateTime
+			}
+			commitList = append(commitList, entity.CommitResponse{
+				ID:         commit.ID,
+				FolderID:   commit.FolderID,
+				ParentID:   commit.ParentID,
+				Message:    commit.Message,
+				AuthorID:   commit.AuthorID,
+				FileCount:  commit.FileCount,
+				CreateTime: &ct,
+			})
+		}
+		common.SuccessWithData(c, gin.H{
+			"total":     total,
+			"page":      page,
+			"page_size": pageSize,
+			"commits":   commitList,
+		}, common.CodeSuccess.Message())
+		return
+	}
+
 	commits, total, err := h.commitService.ListCommits(ctx, folderID, page, pageSize, orderBy, desc)
 	if err != nil {
 		jsonInternalError(c, err)

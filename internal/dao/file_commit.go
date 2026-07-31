@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"ragflow/internal/entity"
 
 	"gorm.io/gorm"
@@ -110,6 +111,42 @@ func (dao *FileCommitDAO) ListByFolderID(ctx context.Context, db *gorm.DB, folde
 	return commits, total, nil
 }
 
+// ListByIDs lists commits whose IDs are in the given set, preserving the
+// order of commitIDs (most-recent-first for page-edit history). Returns the
+// total matched count for pagination.
+func (dao *FileCommitDAO) ListByIDs(ctx context.Context, db *gorm.DB, commitIDs []string, page, pageSize int) ([]*entity.FileCommit, int64, error) {
+	if len(commitIDs) == 0 {
+		return []*entity.FileCommit{}, 0, nil
+	}
+	var commits []*entity.FileCommit
+	var total int64
+	query := db.WithContext(ctx).Model(&entity.FileCommit{}).Where("id IN ?", commitIDs)
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	// Preserve the incoming (most-recent-first) order via FIND_IN_SET-equivalent.
+	orderClause := "FIELD(id"
+	for _, id := range commitIDs {
+		orderClause += ",'" + id + "'"
+	}
+	orderClause += ")"
+	if err := query.Order(orderClause).Find(&commits).Error; err != nil {
+		return nil, 0, err
+	}
+	if page > 0 && pageSize > 0 {
+		start := (page - 1) * pageSize
+		if start >= len(commits) {
+			return []*entity.FileCommit{}, total, nil
+		}
+		end := start + pageSize
+		if end > len(commits) {
+			end = len(commits)
+		}
+		return commits[start:end], total, nil
+	}
+	return commits, total, nil
+}
+
 // FileCommitItemDAO file commit item data access object
 type FileCommitItemDAO struct{}
 
@@ -145,4 +182,33 @@ func (dao *FileCommitItemDAO) GetByCommitIDAndFileID(ctx context.Context, db *go
 		return nil, err
 	}
 	return &item, nil
+}
+
+// GetLatestCommitIDBySlug returns the most recent commit_id that modified the
+// given wiki page (identified by slug + page_type), or "" if none. Used to
+// build the parent chain for page-edit commits.
+func (dao *FileCommitItemDAO) GetLatestCommitIDBySlug(ctx context.Context, db *gorm.DB, slug, pageType string) (string, error) {
+	var item entity.FileCommitItem
+	err := db.WithContext(ctx).
+		Where("slug_kwd = ? AND page_type_kwd = ?", slug, pageType).
+		Order("create_time DESC").
+		First(&item).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", nil
+		}
+		return "", err
+	}
+	return item.CommitID, nil
+}
+
+// ListBySlug lists all commit items for a specific wiki page (slug + page_type),
+// most recent first. Used to reconstruct a page's commit history.
+func (dao *FileCommitItemDAO) ListBySlug(ctx context.Context, db *gorm.DB, slug, pageType string) ([]*entity.FileCommitItem, error) {
+	var items []*entity.FileCommitItem
+	err := db.WithContext(ctx).
+		Where("slug_kwd = ? AND page_type_kwd = ?", slug, pageType).
+		Order("create_time DESC").
+		Find(&items).Error
+	return items, err
 }

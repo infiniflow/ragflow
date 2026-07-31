@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"sort"
+	"strings"
 	"time"
 
 	"go.uber.org/zap"
@@ -231,6 +232,183 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 	commit.CreateTime = &nowMs
 
 	return commit, nil
+}
+
+// PageEditCommitInput carries the data needed to record a single wiki/skill
+// page edit as an audit commit, mirroring Python's
+// FileCommitService.record_page_edit.
+type PageEditCommitInput struct {
+	TenantID   string
+	DatasetID  string // knowledgebase id, used as the scope for storage location
+	DocID      string // ES doc id of the page content
+	Slug       string
+	PageType   string
+	Title      string
+	AuthorID   string
+	OldContent string
+	NewContent string
+}
+
+// RecordPageEdit records a wiki/skill page edit as an audit commit with a
+// git-style parent chain (each edit points at the previous commit for the same
+// page). The new content_after is referenced in ES by doc_id; a unified diff of
+// old vs new content is stored on the commit item.
+//
+// This path is independent of the workspace File tree (it does not require a
+// File record or a tree_state snapshot), matching Python's record_page_edit.
+func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommitInput) (*entity.FileCommit, error) {
+	// Parent chain: previous commit that touched the same page.
+	parentID, err := s.commitItemDAO.GetLatestCommitIDBySlug(ctx, dao.DB, in.Slug, in.PageType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve page commit parent: %w", err)
+	}
+
+	commitID := utility.GenerateUUID()
+
+	commit := &entity.FileCommit{
+		ID:        commitID,
+		Message:   in.Title,
+		AuthorID:  in.AuthorID,
+		Title:     &in.Title,
+		FileCount: 1,
+	}
+	if parentID != "" {
+		commit.ParentID = &parentID
+	}
+
+	diffText := unifiedDiff(in.OldContent, in.NewContent)
+	contentAfterStorage := "es"
+	contentAfterLocation := in.DocID
+	slugKwd := in.Slug
+	pageTypeKwd := in.PageType
+
+	item := &entity.FileCommitItem{
+		ID:                   utility.GenerateUUID(),
+		CommitID:             commitID,
+		FileID:               in.DocID,
+		Operation:            "modify",
+		Diff:                 &diffText,
+		ContentAfterStorage:  &contentAfterStorage,
+		ContentAfterLocation: &contentAfterLocation,
+		SlugKwd:              &slugKwd,
+		PageTypeKwd:          &pageTypeKwd,
+	}
+
+	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if cerr := tx.Create(commit).Error; cerr != nil {
+			return fmt.Errorf("failed to create page commit: %w", cerr)
+		}
+		if ierr := tx.Create(item).Error; ierr != nil {
+			return fmt.Errorf("failed to create page commit item: %w", ierr)
+		}
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return commit, nil
+}
+
+// ListPageCommits lists audit commits for a specific wiki/skill page.
+func (s *FileCommitService) ListPageCommits(ctx context.Context, slug, pageType string, page, pageSize int) ([]*entity.FileCommit, int64, error) {
+	items, err := s.commitItemDAO.ListBySlug(ctx, dao.DB, slug, pageType)
+	if err != nil {
+		return nil, 0, err
+	}
+	commitIDs := make([]string, 0, len(items))
+	for _, it := range items {
+		commitIDs = append(commitIDs, it.CommitID)
+	}
+	if len(commitIDs) == 0 {
+		return []*entity.FileCommit{}, 0, nil
+	}
+
+	commits, total, err := s.commitDAO.ListByIDs(ctx, dao.DB, commitIDs, page, pageSize)
+	if err != nil {
+		return nil, 0, err
+	}
+	return commits, total, nil
+}
+
+// unifiedDiff produces a simple line-based unified diff between two texts.
+func unifiedDiff(oldText, newText string) string {
+	oldLines := strings.Split(oldText, "\n")
+	newLines := strings.Split(newText, "\n")
+
+	const maxCtx = 3
+	type hunkLine struct {
+		prefix string
+		text   string
+	}
+	var hunks []hunkLine
+
+	// Longest common subsequence over lines, then render the diff.
+	prev := make([][]int, len(oldLines)+1)
+	for i := range prev {
+		prev[i] = make([]int, len(newLines)+1)
+	}
+	cur := make([][]int, len(oldLines)+1)
+	for i := range cur {
+		cur[i] = make([]int, len(newLines)+1)
+	}
+	for i := len(oldLines) - 1; i >= 0; i-- {
+		for j := len(newLines) - 1; j >= 0; j-- {
+			if oldLines[i] == newLines[j] {
+				cur[i][j] = cur[i+1][j+1] + 1
+			} else if cur[i+1][j] >= cur[i][j+1] {
+				cur[i][j] = cur[i+1][j]
+			} else {
+				cur[i][j] = cur[i][j+1]
+			}
+		}
+	}
+	_ = prev
+
+	i, j := 0, 0
+	for i < len(oldLines) && j < len(newLines) {
+		if oldLines[i] == newLines[j] {
+			i++
+			j++
+		} else if cur[i+1][j] >= cur[i][j+1] {
+			hunks = append(hunks, hunkLine{"-", oldLines[i]})
+			i++
+		} else {
+			hunks = append(hunks, hunkLine{"+", newLines[j]})
+			j++
+		}
+	}
+	for ; i < len(oldLines); i++ {
+		hunks = append(hunks, hunkLine{"-", oldLines[i]})
+	}
+	for ; j < len(newLines); j++ {
+		hunks = append(hunks, hunkLine{"+", newLines[j]})
+	}
+
+	if len(hunks) == 0 {
+		return ""
+	}
+	if len(hunks) > maxCtx*2 {
+		var b strings.Builder
+		for k := 0; k < maxCtx; k++ {
+			b.WriteString(hunks[k].prefix)
+			b.WriteString(hunks[k].text)
+			b.WriteString("\n")
+		}
+		b.WriteString("... (" + fmt.Sprintf("%d", len(hunks)-maxCtx*2) + " lines omitted) ...\n")
+		for k := len(hunks) - maxCtx; k < len(hunks); k++ {
+			b.WriteString(hunks[k].prefix)
+			b.WriteString(hunks[k].text)
+			b.WriteString("\n")
+		}
+		return b.String()
+	}
+	var b strings.Builder
+	for _, h := range hunks {
+		b.WriteString(h.prefix)
+		b.WriteString(h.text)
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 // ListCommits lists commits for a workspace folder with pagination
