@@ -15,12 +15,12 @@
 import asyncio
 import io
 import json
+import logging
 import os
 import random
 import re
 from functools import partial
 
-from litellm import logging
 import numpy as np
 from PIL import Image
 
