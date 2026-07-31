@@ -68,6 +68,17 @@ func NewDebugTaskContext(tenantID, canvasID, fileName string, fileData []byte) *
 	}
 }
 
+// IsDebug reports whether this context is a canvas-debug (dry-run) context.
+// A debug context carries no knowledgebase (KB.ID == "", forced by
+// NewDebugTaskContext) — the single debug signal used across the ingestion
+// pipeline. Production ingestion always supplies a KB (LoadFromIngestionTask
+// follows doc -> kb), so KB.ID == "" occurs ONLY in debug mode. A debug run
+// must produce no persistent side effect: the executor skips the persist
+// stage, the tokenizer skips embedding, and the chunker skips image upload.
+func (t *TaskContext) IsDebug() bool {
+	return t.KB.ID == ""
+}
+
 // deriveDocSuffixAndType extracts the file extension (e.g. ".pdf") and a
 // lower-cased document type from a file name. It is best-effort: when the
 // name has no usable extension both return "".

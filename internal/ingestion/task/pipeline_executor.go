@@ -72,15 +72,10 @@ func validateTaskContext(taskCtx *TaskContext) error {
 	if taskCtx.Doc.ID == "" {
 		return fmt.Errorf("pipeline executor: empty document id")
 	}
-	// A canvas-debug (dataflow dry-run) carries no knowledgebase (KB.ID == ""),
-	// so it must not be required to supply one. Production ingestion always
-	// carries a KB, so the KB.ID == "" branch below is never taken in normal
-	// operation. Relaxing the check here lets webhook / chat/completions
-	// DataFlow triggers run debug without supplying a kb_id.
-	if taskCtx.KB.ID != "" {
-		if taskCtx.Doc.KbID == "" {
-			return fmt.Errorf("pipeline executor: empty document knowledgebase id")
-		}
+	// A debug (dry-run) context carries no knowledgebase (see
+	// TaskContext.IsDebug), so it must not be required to supply one.
+	if !taskCtx.IsDebug() && taskCtx.Doc.KbID == "" {
+		return fmt.Errorf("pipeline executor: empty document knowledgebase id")
 	}
 	if taskCtx.Doc.Name == nil || *taskCtx.Doc.Name == "" {
 		return fmt.Errorf("pipeline executor: empty document name")
@@ -167,15 +162,6 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 		return nil, err
 	}
 
-	// A canvas-debug (dataflow dry-run) carries no KB (KB.ID == ""), so it
-	// must not produce any persistent side effect (no MinIO image upload, no
-	// index insert, no pipeline log). This is the single debug signal used
-	// across the ingestion pipeline: kb_id == "" occurs ONLY in debug mode;
-	// production ingestion always supplies a KB, so this branch is never
-	// taken in normal operation. Components gate their own writes on the same
-	// signal (the tokenizer skips embedding, the chunker skips image upload).
-	debug := s.taskCtx.KB.ID == ""
-
 	dsl, correctedID, err := s.loadDSLFunc(ctx, s.canvasID)
 	if err != nil {
 		return nil, err
@@ -189,7 +175,9 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 		return nil, err
 	}
 
-	if debug {
+	// A debug (dry-run) run produces no persistent side effect (no MinIO
+	// image upload, no index insert, no pipeline log); see TaskContext.IsDebug.
+	if s.taskCtx.IsDebug() {
 		return s.collectDebugOutput(ctx, pipelineOutput, start)
 	}
 
@@ -455,7 +443,7 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	}
 
 	// File delivery and doc metadata differ between the two run modes.
-	debug := s.taskCtx.KB.ID == ""
+	debug := s.taskCtx.IsDebug()
 	if debug {
 		// A debug (dry-run) run has no DB document row, so the parser
 		// cannot resolve its bytes via doc_id → storage. Deliver the
@@ -485,7 +473,7 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	// inputs: the parser selects pages from ParserConfig[cpnID][family]
 	// ["pages"] (a list of 1-indexed inclusive ranges), exactly mirroring
 	// NormalizeParserConfigPages / pdf_pages_test.go. See injectDebugPageCap.
-	if s.taskCtx.KB.ID == "" {
+	if debug {
 		injectDebugPageCap(dsl, parserConfig, s.taskCtx.Doc.Type)
 	}
 
