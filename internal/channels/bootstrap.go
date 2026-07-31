@@ -279,6 +279,8 @@ func buildChannel(accountID string, wanted desiredChannel) (core.Channel, error)
 	switch wanted.channel {
 	case "whatsapp":
 		return newWhatsAppChannelFromConfig(accountID, wanted.credential)
+	case "line":
+		return newLineChannelFromConfig(accountID, wanted.credential)
 	default:
 		return nil, fmt.Errorf("unknown channel: %s", wanted.channel)
 	}
