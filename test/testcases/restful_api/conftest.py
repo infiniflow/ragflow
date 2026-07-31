@@ -67,7 +67,6 @@ GO_ONLY_SKIPS = {
         "test_chunk_add_keyword_question_and_tag_contract",
         "test_chunk_add_repeated_and_deleted_document_contract",
         "test_chunk_concurrent_add_contract",
-        "test_documents_update_patch_and_delete",
         "test_documents_update_name_contract",
         "test_documents_update_meta_fields_contract",
         "test_documents_metadata_batch_update_contract",
