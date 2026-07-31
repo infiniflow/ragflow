@@ -223,7 +223,6 @@ func (c *dingTalkChannel) run(ctx context.Context) {
 			c.ctx = nil
 		}
 		c.mu.Unlock()
-		}
 	}()
 	if c.stream == nil {
 		log.Printf("[dingtalk:%s] stream client is not initialized", c.account.AccountID)
