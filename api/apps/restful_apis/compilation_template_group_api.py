@@ -29,7 +29,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.pagination_utils import validate_rest_api_page_size
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 
 
 _GROUP_NAME_MAX = 128
@@ -71,8 +71,8 @@ def _validate_group_payload(req: dict, require_all: bool = True) -> str:
 def list_groups() -> Response:
     keywords = request.args.get("keywords", "")
     scope = request.args.get("scope", "")
-    page_number = int(request.args.get("page", 0))
-    items_per_page = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
+    page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+    items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
     orderby = request.args.get("orderby", "create_time")
     desc = request.args.get("desc", "true").lower() != "false"
 
