@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
@@ -30,6 +31,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 )
@@ -47,9 +49,18 @@ func (e *elasticsearchEngine) CreateMetadataStore(ctx context.Context, tenantID 
 		return nil
 	}
 
-	// Index will be created with mapping from index template (ragflow_doc_meta_mapping)
+	mappingPath, err := utility.FindConfFileInProject("doc_meta_es_mapping.json")
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(*mappingPath)
+	if err != nil {
+		return fmt.Errorf("failed to read mapping file %q: %w", *mappingPath, err)
+	}
+
 	req := esapi.IndicesCreateRequest{
 		Index: indexName,
+		Body:  bytes.NewReader(data),
 	}
 	res, err := req.Do(ctx, e.client)
 	if err != nil {
