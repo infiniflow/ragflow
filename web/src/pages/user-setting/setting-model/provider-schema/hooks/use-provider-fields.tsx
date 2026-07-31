@@ -244,6 +244,7 @@ export const useProviderFields = ({
                   onChange={(value) => fieldProps.onChange(value)}
                   options={inputSelectOptions as any}
                   placeholder={placeholderText}
+                  autoComplete={field.autoComplete}
                 />
               ) : (
                 <Input

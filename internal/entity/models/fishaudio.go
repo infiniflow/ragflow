@@ -41,7 +41,7 @@ func NewFishAudioModel(baseURL map[string]string, urlSuffix URLSuffix) *FishAudi
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

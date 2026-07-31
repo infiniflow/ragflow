@@ -36,7 +36,7 @@ func NewBaichuanModel(baseURL map[string]string, urlSuffix URLSuffix) *BaichuanM
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

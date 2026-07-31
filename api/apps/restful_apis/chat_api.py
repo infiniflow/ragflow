@@ -44,7 +44,7 @@ from api.utils.api_utils import (
     server_error_response,
     validate_request,
 )
-from api.utils.pagination_utils import validate_rest_api_page_size
+from api.utils.pagination_utils import validate_rest_api_page, validate_rest_api_page_size, DEFAULT_PAGE, DEFAULT_PAGE_SIZE
 from common.constants import LLMType, RetCode, StatusEnum
 from common import settings
 from common.misc_utils import get_uuid, thread_pool_exec
@@ -182,7 +182,7 @@ def _build_default_completion_dialog():
     )
 
 
-async def _create_session_for_completion(chat_id, dialog, user_id):
+async def _create_session_for_completion(chat_id, dialog, user_id, save_session=True):
     conv = {
         "id": get_uuid(),
         "dialog_id": chat_id,
@@ -191,6 +191,9 @@ async def _create_session_for_completion(chat_id, dialog, user_id):
         "user_id": user_id,
         "reference": [],
     }
+    if not save_session:
+        conv["id"] = None
+        return SimpleNamespace(**conv)
     await thread_pool_exec(ConversationService.save, **conv)
     ok, conv_obj = await thread_pool_exec(ConversationService.get_by_id, conv["id"])
     if not ok:
@@ -461,15 +464,8 @@ async def list_chats():
     try:
         # Invalid or negative pagination values fall back to defaults
         # instead of leaking internal conversion/SQL errors.
-        try:
-            page_number = max(int(request.args.get("page", 0)), 0)
-        except (TypeError, ValueError):
-            page_number = 0
-        try:
-            parsed_page_size = int(request.args.get("page_size", 0))
-        except (TypeError, ValueError):
-            parsed_page_size = 0
-        items_per_page = validate_rest_api_page_size(parsed_page_size)
+        page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+        items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
 
         if owner_ids:
             chats, total = await thread_pool_exec(
@@ -809,17 +805,8 @@ async def list_sessions(chat_id):
             )
         # Invalid or negative pagination values fall back to defaults
         # instead of leaking internal conversion/SQL errors.
-        try:
-            page_number = int(request.args.get("page", 1))
-        except (TypeError, ValueError):
-            page_number = 1
-        if page_number < 1:
-            page_number = 1
-        try:
-            parsed_page_size = int(request.args.get("page_size", 30))
-        except (TypeError, ValueError):
-            parsed_page_size = 30
-        items_per_page = validate_rest_api_page_size(parsed_page_size)
+        page_number = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+        items_per_page = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
         orderby = request.args.get("orderby", "create_time")
         if orderby not in ("create_time", "update_time", "name"):
             return get_json_result(code=RetCode.ARGUMENT_ERROR, message=f"invalid orderby field: {orderby}")
@@ -1224,7 +1211,7 @@ async def session_completion(chat_id_in_arg=""):
                 if conv.dialog_id != chat_id:
                     return get_data_error_result(message="Session does not belong to this chat!")
             else:
-                conv = await _create_session_for_completion(chat_id, dia, current_user.id)
+                conv = await _create_session_for_completion(chat_id, dia, current_user.id, save_session=store_history_messages)
                 session_id = conv.id
 
             if pass_all_history_messages:

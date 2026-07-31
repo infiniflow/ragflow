@@ -24,6 +24,8 @@ export interface ICompilationTemplateConfigRequest {
   relation?: ICompilationTemplateSectionRequest;
   raptor?: ICompilationTemplateRaptorConfigRequest;
   global_rules?: string;
+  rechunk?: boolean;
+  rechunk_rules?: string;
   [section: string]:
     | ICompilationTemplateSectionRequest
     | ICompilationTemplateRaptorConfigRequest

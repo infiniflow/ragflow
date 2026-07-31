@@ -94,7 +94,7 @@ export function ChildrenDelimiterForm() {
           name="parser_config.children_delimiter"
           render={({ field }) => (
             <FormItem className="items-center space-y-0 ">
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 pr-[1px]">
                 <FormLabel
                   required
                   tooltip={t('knowledgeDetails.childrenDelimiterTip')}

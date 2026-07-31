@@ -403,6 +403,7 @@ def list_datasets(tenant_id: str, args: dict):
     :return: (success, result) or (success, error_message)
     """
     kb_id = args.get("id")
+    kb_ids = args.get("ids")
     name = args.get("name")
     page = int(args.get("page", 1))
     page_size = int(args.get("page_size", 30))
@@ -419,10 +420,13 @@ def list_datasets(tenant_id: str, args: dict):
         # unknown type, default to True
         desc = True
 
+    if kb_id and kb_ids:
+        return False, f"Should not provide both 'id':{kb_id} and 'ids'{kb_ids}"
     if kb_id:
         kbs = KnowledgebaseService.get_kb_by_id(kb_id, tenant_id)
         if not kbs:
             return False, f"User '{tenant_id}' lacks permission for dataset '{kb_id}'"
+
     if name:
         kbs = KnowledgebaseService.get_kb_by_name(name, tenant_id)
         if not kbs:
@@ -438,7 +442,12 @@ def list_datasets(tenant_id: str, args: dict):
         tenants = TenantService.get_joined_tenants_by_user_id(tenant_id)
         tenant_ids = [m["tenant_id"] for m in tenants]
         query_user_id = tenant_id
-    kbs, total = KnowledgebaseService.get_list(tenant_ids, query_user_id, page, page_size, orderby, desc, kb_id, name, keywords, parser_id)
+    if kb_ids:
+        accessible_ids = KnowledgebaseService.get_accessible_ids([m["tenant_id"] for m in tenants], tenant_id, kb_ids)
+        if len(accessible_ids) != len(kb_ids):
+            denied_ids = [kb_id for kb_id in kb_ids if kb_id not in accessible_ids]
+            return False, f"""User '{tenant_id}' lacks permission for datasets: '{", ".join(denied_ids)}'"""
+    kbs, total = KnowledgebaseService.get_list(tenant_ids, query_user_id, page, page_size, orderby, desc, kb_id, name, keywords, parser_id, kb_ids)
     users = UserService.get_by_ids([m["tenant_id"] for m in kbs])
     user_map = {m.id: m.to_dict() for m in users}
 

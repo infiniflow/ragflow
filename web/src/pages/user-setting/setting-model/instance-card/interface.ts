@@ -77,7 +77,7 @@ export interface InstanceSavePayload {
   /**
    * Which save endpoint the parent should dispatch to:
    *  - `'add'`: call `addProviderInstance` (drafts of any provider, plus
-   *    Bedrock / SoMark saved cards which carry an `id` inside the
+   *    Bedrock saved cards which carry an `id` inside the
    *    `addProviderInstance` body).
    *  - `'update'`: call `updateProviderInstance` (generic saved cards,
    *    whose payload matches `IUpdateProviderInstanceRequestBody`).

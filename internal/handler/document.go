@@ -577,9 +577,6 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 		return
 	}
 
-	// Mirror Python: an explicit id/name filter that matches nothing is an
-	// ownership error rather than an empty page. Each filter's existence is
-	// checked independently of the other.
 	if docID := c.Query("id"); docID != "" {
 		idOpts := opts
 		idOpts.DocIDs = []string{docID}
@@ -1350,7 +1347,7 @@ func (h *DocumentHandler) Ingest(c *gin.Context) {
 
 	userID := strings.TrimSpace(user.ID)
 	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No Authentication")
+		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authentication")
 		return
 	}
 

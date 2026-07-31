@@ -43,7 +43,7 @@ func NewCometAPIModel(baseURL map[string]string, urlSuffix URLSuffix) *CometAPIM
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

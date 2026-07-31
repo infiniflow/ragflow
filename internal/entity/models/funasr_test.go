@@ -32,6 +32,7 @@ func writeFunASRTestAudio(t *testing.T) string {
 }
 
 func TestFunASRTranscribeAudioWithoutAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -67,6 +68,7 @@ func TestFunASRTranscribeAudioWithoutAPIKey(t *testing.T) {
 }
 
 func TestFunASRTranscribeAudioRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	file := writeFunASRTestAudio(t)
 	apiKey := "test-key"
 	blankModelName := "   "
@@ -89,6 +91,7 @@ func TestFunASRTranscribeAudioRequiresModelName(t *testing.T) {
 }
 
 func TestFunASRListModelsWithoutAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			t.Errorf("method=%s, want GET", r.Method)
@@ -113,6 +116,7 @@ func TestFunASRListModelsWithoutAPIKey(t *testing.T) {
 }
 
 func TestFunASRListModelsSendsAuthWhenProvided(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer secret" {
 			t.Errorf("Authorization=%q, want Bearer secret", got)

@@ -451,7 +451,7 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 // @Tags users
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/login/channels [get]
-func (h *UserHandler) GetLoginChannels(c *gin.Context) {
+func (h *UserHandler) GetLoginChannelsDeprecated(c *gin.Context) {
 	channels, code, err := h.userService.GetLoginChannels()
 	if err != nil {
 		common.ResponseWithCodeData(c, code, []interface{}{}, "Load channels failure, error: "+err.Error())

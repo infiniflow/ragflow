@@ -271,24 +271,26 @@ func main() {
 		os.Exit(1)
 	}
 
-	config := server.GetConfig()
+	globalConfig := server.GetConfig()
 
 	// override default port if provided
 	switch *arguments.mode {
 	case "api":
-		port := config.APIServer.Port
+		apiServerConfig := globalConfig.GetAPIServerConfig()
+		port := apiServerConfig.HTTPPort
 		if arguments.port != nil {
 			port = *arguments.port
-			config.APIServer.Port = port
+			apiServerConfig.HTTPPort = port
 		}
 		if arguments.name == nil {
 			serverName = fmt.Sprintf("api_server_%d", port)
 		}
 	case "admin":
-		port := config.Admin.Port
+		adminServerConfig := globalConfig.GetAdminServerConfig()
+		port := adminServerConfig.HTTPPort
 		if arguments.port != nil {
 			port = *arguments.port
-			config.Admin.Port = port
+			adminServerConfig.HTTPPort = port
 		}
 		if arguments.name == nil {
 			serverName = fmt.Sprintf("admin_server_%d", port)
@@ -313,8 +315,10 @@ func main() {
 	server.SetServerName(serverName)
 	logFile = fmt.Sprintf("%s.log", serverName)
 
+	logConfig := globalConfig.GetLogConfig()
+
 	// Reinitialize logger with configured level if different
-	logLevel = config.Log.Level
+	logLevel = logConfig.Level
 	if logLevel == "" {
 		logLevel = "info"
 	}
@@ -323,17 +327,17 @@ func main() {
 		logLevel = "debug"
 	}
 
-	config.Log.Level = logLevel
+	globalConfig.SetLogLevel(logLevel)
 
 	fileOut := common.FileOutput{
 		Path:       logFile,
-		MaxSize:    config.Log.MaxSize,
-		MaxBackups: config.Log.MaxBackups,
-		MaxAge:     config.Log.MaxAge,
-		Compress:   common.ResolveCompress(config.Log.Compress),
+		MaxSize:    logConfig.MaxSize,
+		MaxBackups: logConfig.MaxBackups,
+		MaxAge:     logConfig.MaxAge,
+		Compress:   logConfig.Compress,
 	}
-	if config.Log.Path != "" {
-		fileOut.Path = config.Log.Path
+	if logConfig.Path != "" {
+		fileOut.Path = logConfig.Path
 	}
 
 	common.SyncLog()
@@ -344,7 +348,7 @@ func main() {
 	server.SetLogger(common.Logger)
 
 	// Print all configuration settings
-	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, config.General.Mode))
+	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, globalConfig.GetMode()))
 	server.PrintAll()
 
 	// Initialize database
@@ -353,13 +357,13 @@ func main() {
 	}
 
 	// Initialize doc engine
-	if err = engine.Init(&config.DocEngine); err != nil {
+	if err = engine.Init(); err != nil {
 		common.Fatal("Failed to initialize doc engine", zap.Error(err))
 	}
 	defer engine.Close()
 
 	// Initialize Redis cache
-	if err = redis.Init(&config.Redis); err != nil {
+	if err = redis.Init(); err != nil {
 		common.Fatal("Failed to initialize Redis", zap.Error(err))
 	}
 	defer redis.Close()
@@ -369,7 +373,7 @@ func main() {
 	}
 	defer storage.CloseStorage()
 
-	if err = engine.InitMessageQueueEngine(config.Ingestor.MQType); err != nil {
+	if err = engine.InitMessageQueueEngine(); err != nil {
 		common.Error("Failed to initialize message queue engine", err)
 	}
 
@@ -391,22 +395,22 @@ func main() {
 
 	switch *arguments.mode {
 	case "api":
-		if err = runAPI(ctx, arguments, config); err != nil {
+		if err = runAPI(ctx, arguments); err != nil {
 			fmt.Printf("Failed to start API server: %v\n", err)
 			os.Exit(1)
 		}
 	case "admin":
-		if err = runAdmin(ctx, arguments, config); err != nil {
+		if err = runAdmin(ctx, arguments); err != nil {
 			fmt.Printf("Failed to start ADMIN server: %v\n", err)
 			os.Exit(1)
 		}
 	case "ingestor":
-		if err = runIngestor(ctx, cancel, arguments, config); err != nil {
+		if err = runIngestor(ctx, cancel, arguments); err != nil {
 			fmt.Printf("Failed to start INGESTION worker: %v\n", err)
 			os.Exit(1)
 		}
 	case "syncer":
-		if err = runSyncer(ctx, cancel, arguments, config); err != nil {
+		if err = runSyncer(ctx, cancel, arguments); err != nil {
 			fmt.Printf("Failed to start SYNCER: %v\n", err)
 			os.Exit(1)
 		}
@@ -416,10 +420,13 @@ func main() {
 	}
 }
 
-func runAdmin(ctx context.Context, args *serverArgs, config *server.Config) error {
+func runAdmin(ctx context.Context, args *serverArgs) error {
+
+	globalConfig := server.GetConfig()
+	serverMode := globalConfig.GetMode()
 
 	// Set Gin mode
-	if config.General.Mode == "debug" {
+	if serverMode == "debug" {
 		gin.SetMode(gin.DebugMode)
 	} else {
 		gin.SetMode(gin.ReleaseMode)
@@ -454,7 +461,8 @@ func runAdmin(ctx context.Context, args *serverArgs, config *server.Config) erro
 	// Setup routes
 	r.Setup(ginEngine)
 
-	addr := fmt.Sprintf(":%d", config.Admin.Port)
+	adminConfig := globalConfig.GetAdminServerConfig()
+	addr := fmt.Sprintf(":%d", adminConfig.HTTPPort)
 	srv := &http.Server{
 		Addr:    addr,
 		Handler: ginEngine,
@@ -473,7 +481,7 @@ func runAdmin(ctx context.Context, args *serverArgs, config *server.Config) erro
 
 	// Start HTTP server in a goroutine
 	go func() {
-		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", config.Admin.Port))
+		common.Info(fmt.Sprintf("Starting RAGFlow admin HTTP server on port: %d", adminConfig.HTTPPort))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			common.Fatal("Failed to start server", zap.Error(err))
 		}
@@ -501,7 +509,7 @@ func runAdmin(ctx context.Context, args *serverArgs, config *server.Config) erro
 // startHeartbeat initializes and starts the heartbeat reporter to the admin server.
 // It is shared by API, ingestion, and syncer server modes.
 // The caller must defer the returned *utility.ScheduledTask's Stop() method.
-func startHeartbeat(serverType common.ServerType, serverID string, port int, config *server.Config) *utility.ScheduledTask {
+func startHeartbeat(serverType common.ServerType, serverID string, port int, heartBeatInterval time.Duration) *utility.ScheduledTask {
 	localIP, err := utility.GetLocalIP()
 	if err != nil {
 		common.Fatal("fail to get local ip address")
@@ -519,7 +527,7 @@ func startHeartbeat(serverType common.ServerType, serverID string, port int, con
 		return nil
 	}
 
-	heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", config.General.HeartbeatInterval*time.Second, func() {
+	heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", heartBeatInterval*time.Second, func() {
 		if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
 			local.SetAdminStatus(0, "")
 		} else {
@@ -530,7 +538,7 @@ func startHeartbeat(serverType common.ServerType, serverID string, port int, con
 	return heartbeatReporter
 }
 
-func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArgs, config *server.Config) error {
+func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArgs) error {
 	// Initialize tokenizer (rag_analyzer)
 	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
 	if err := tokenizer.Init(&tokenizer.PoolConfig{}); err != nil {
@@ -546,11 +554,11 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	// provisioning error is logged by the Ingestor and the pipeline still
 	// writes available_int=0 compiled chunks; they just won't be merged until
 	// the consumer is available.
-	cfg := server.GetConfig()
+	globalConfig := server.GetConfig()
 	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
 	ingestor.SetKnowledgeCompileModelConfig(
-		cfg.UserDefaultLLM.DefaultModels.ChatModel.Name,
-		cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name,
+		globalConfig.GetDefaultChatModel().Name,
+		globalConfig.GetDefaultEmbeddingModel().Name,
 	)
 
 	// Start returns immediately (it launches the owned consume/compile
@@ -559,6 +567,13 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	if err := ingestor.Start(); err != nil {
 		common.Error("Failed to initialize ingestor", err)
 	}
+
+	// Memory extraction consumer: drains task_type="memory" messages
+	// from the te.0.common Redis stream and runs LLM extraction.
+	memoryConsumerCtx, stopMemoryConsumer := context.WithCancel(ctx)
+	defer stopMemoryConsumer()
+	memoryMessageSvc := service.NewMemoryMessageService(service.NewMemoryService())
+	go memoryMessageSvc.StartTaskConsumer(memoryConsumerCtx)
 
 	common.Info("\n    ____                      __  _\n" +
 		"   /  _/___  ____ ____  _____/ /_(_)___  ____     ________  ______   _____  _____\n" +
@@ -575,7 +590,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 		common.ServerTypeIngestion,
 		fmt.Sprintf("ingestor-%s", ingestor.ID()),
 		-1,
-		config,
+		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
 		defer hb.Stop()
 	}
@@ -601,8 +616,10 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	return nil
 }
 
-func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs, config *server.Config) error {
-	fileSyncer := syncer.NewSyncer(config.FileSyncer.MaxConcurrentSyncs, time.Duration(config.FileSyncer.SyncInterval)*time.Second)
+func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs) error {
+	globalConfig := server.GetConfig()
+	syncerConfig := globalConfig.GetSyncerConfig()
+	fileSyncer := syncer.NewSyncer(syncerConfig.MaxConcurrentSyncs, time.Duration(syncerConfig.SyncInterval)*time.Second)
 
 	go func() {
 		err := fileSyncer.Start()
@@ -627,7 +644,7 @@ func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs,
 		common.ServerTypeFileSyncer,
 		fmt.Sprintf("syncer-%s", fileSyncer.ID()),
 		-1,
-		config,
+		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
 		defer hb.Stop()
 	}
@@ -648,7 +665,7 @@ func runSyncer(ctx context.Context, cancel context.CancelFunc, args *serverArgs,
 	return nil
 }
 
-func runAPI(ctx context.Context, args *serverArgs, config *server.Config) error {
+func runAPI(ctx context.Context, args *serverArgs) error {
 	// Initialize admin status (default: unavailable=1)
 	local.InitAdminStatus(1, "admin server not connected")
 
@@ -667,17 +684,19 @@ func runAPI(ctx context.Context, args *serverArgs, config *server.Config) error 
 		common.Fatal("Failed to initialize query builder", zap.Error(err))
 	}
 
-	startServer(ctx, config)
+	startServer(ctx)
 
 	common.Info("Server exited")
 
 	return nil
 }
 
-func startServer(ctx context.Context, config *server.Config) {
+func startServer(ctx context.Context) {
 
+	globalConfig := server.GetConfig()
+	serverMode := globalConfig.GetMode()
 	// Set Gin mode
-	if config.General.Mode == "debug" {
+	if serverMode == "debug" {
 		gin.SetMode(gin.DebugMode)
 	} else {
 		gin.SetMode(gin.ReleaseMode)
@@ -865,8 +884,10 @@ func startServer(ctx context.Context, config *server.Config) {
 
 	channels.Start(ctx)
 
+	apiServerConfig := globalConfig.GetAPIServerConfig()
+
 	// Create HTTP server with timeouts to prevent slow clients from blocking shutdown
-	addr := fmt.Sprintf(":%d", config.APIServer.Port)
+	addr := fmt.Sprintf(":%d", apiServerConfig.HTTPPort)
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           ginEngine,
@@ -886,7 +907,7 @@ func startServer(ctx context.Context, config *server.Config) {
 				"    /_/ |_|/_/  |_|\\____//_/    /_/ \\____/ |__/|__/\n",
 		)
 		common.Info(fmt.Sprintf("RAGFlow Go Version: %s", common.GetRAGFlowVersion()))
-		common.Info(fmt.Sprintf("Server starting on port: %d", config.APIServer.Port))
+		common.Info(fmt.Sprintf("Server starting on port: %d", apiServerConfig.HTTPPort))
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			common.Fatal("Failed to start server", zap.Error(err))
 		}
@@ -895,9 +916,9 @@ func startServer(ctx context.Context, config *server.Config) {
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeAPI,
-		fmt.Sprintf("ragflow-server-%d", config.APIServer.Port),
-		config.APIServer.Port,
-		config,
+		fmt.Sprintf("ragflow-server-%d", apiServerConfig.HTTPPort),
+		apiServerConfig.HTTPPort,
+		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {
 		defer hb.Stop()
 	}

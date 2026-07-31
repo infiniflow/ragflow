@@ -38,7 +38,7 @@ func NewTokenPonyModel(baseURL map[string]string, urlSuffix URLSuffix) *TokenPon
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

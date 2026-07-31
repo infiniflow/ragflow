@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -109,7 +110,7 @@ func (mockChat) Chat(_ context.Context, req common.ChatRequest) (*common.ChatRes
 }
 
 // proseChat returns generic, non-empty prose for the non-structure variants
-// (wiki/raptor/mindmap/datasetnav), which all just need a summary/outline text.
+// (wiki/tree/mindmap/datasetnav), which all just need a summary/outline text.
 type proseChat struct{}
 
 func (proseChat) Chat(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
@@ -167,9 +168,10 @@ func installMockDeps(t *testing.T) {
 
 func TestKnowledgeCompiler_Structure_EndToEnd(t *testing.T) {
 	installMockDeps(t)
+	installVariantTemplateResolver(t, "structure")
 
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant": "structure", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-structure", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -227,7 +229,7 @@ func TestKnowledgeCompiler_Structure_EndToEnd(t *testing.T) {
 }
 
 func TestKnowledgeCompiler_UnknownVariant(t *testing.T) {
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{"variant": "nope"})
+	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{"compilation_template_id": "nope"})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
 	}
@@ -242,7 +244,7 @@ func TestKnowledgeCompiler_Alias_Mindmap(t *testing.T) {
 	// "mind_map" is the deprecated alias for "mindmap"; both resolve to the
 	// implemented mindmap variant and must run (not ErrUnknownVariant / stub).
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant": "mind_map", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "mind_map", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -266,7 +268,8 @@ func TestKnowledgeCompiler_Alias_Mindmap(t *testing.T) {
 // chunk list (upstream input chunks + compiled knowledge-unit chunks).
 func runVariant(t *testing.T, variant string, extra map[string]any) []map[string]any {
 	t.Helper()
-	params := map[string]any{"variant": variant, "llm_id": "llm1", "embedding_model": "emb1"}
+	installVariantTemplateResolver(t, variant)
+	params := map[string]any{"compilation_template_id": "tpl-" + variant, "llm_id": "llm1", "embedding_model": "emb1"}
 	for k, v := range extra {
 		params[k] = v
 	}
@@ -334,10 +337,10 @@ func TestKnowledgeCompiler_Wiki_EndToEnd(t *testing.T) {
 	}
 }
 
-func TestKnowledgeCompiler_Raptor_EndToEnd(t *testing.T) {
+func TestKnowledgeCompiler_Tree_EndToEnd(t *testing.T) {
 	installProseDeps(t)
 	// watershed (default tree_order): zero external clustering dependency.
-	chunks := runVariant(t, "raptor", nil)
+	chunks := runVariant(t, "tree", nil)
 	foundRoot := false
 	for _, c := range chunks {
 		if kind, _ := c["kc_kind"].(string); kind == "root" {
@@ -345,14 +348,14 @@ func TestKnowledgeCompiler_Raptor_EndToEnd(t *testing.T) {
 		}
 	}
 	if !foundRoot {
-		t.Fatalf("raptor(default): no 'root' chunk; got %d chunks", len(chunks))
+		t.Fatalf("tree(default): no 'root' chunk; got %d chunks", len(chunks))
 	}
 
 	// A smaller tree_order (more, smaller clusters) must also run and still
 	// produce a well-formed tree (root present, chunks non-empty).
-	chunksCoarse := runVariant(t, "raptor", map[string]any{"extra": map[string]any{"tree_order": 2}})
+	chunksCoarse := runVariant(t, "tree", map[string]any{"extra": map[string]any{"tree_order": 2}})
 	if len(chunksCoarse) == 0 {
-		t.Fatalf("raptor(tree_order=2): produced no chunks")
+		t.Fatalf("tree(tree_order=2): produced no chunks")
 	}
 	foundRootCoarse := false
 	for _, c := range chunksCoarse {
@@ -361,7 +364,7 @@ func TestKnowledgeCompiler_Raptor_EndToEnd(t *testing.T) {
 		}
 	}
 	if !foundRootCoarse {
-		t.Fatalf("raptor(tree_order=2): no 'root' chunk; got %d chunks", len(chunksCoarse))
+		t.Fatalf("tree(tree_order=2): no 'root' chunk; got %d chunks", len(chunksCoarse))
 	}
 }
 
@@ -405,9 +408,10 @@ func TestKnowledgeCompiler_Datasetnav_EndToEnd(t *testing.T) {
 // {output_format:"chunks", chunks:[...]}.
 func TestKnowledgeCompiler_EmitsChunks(t *testing.T) {
 	installMockDeps(t)
+	installVariantTemplateResolver(t, "structure")
 
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant": "structure", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-structure", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -461,12 +465,12 @@ func TestKnowledgeCompiler_EmitsChunks(t *testing.T) {
 // pointing back at their originating input chunks.
 func TestKnowledgeCompiler_TemplateIDsAndProvenance(t *testing.T) {
 	installMockDeps(t)
+	installVariantTemplateResolver(t, "structure")
 
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant":                  "structure",
-		"llm_id":                   "llm1",
-		"embedding_model":          "emb1",
-		"compilation_template_ids": []any{"tpl-A", "tpl-B"},
+		"compilation_template_id": "tpl-structure",
+		"llm_id":                  "llm1",
+		"embedding_model":         "emb1",
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -488,7 +492,8 @@ func TestKnowledgeCompiler_TemplateIDsAndProvenance(t *testing.T) {
 		if ck, _ := cm["compile_kwd"].(string); ck != "hypergraph" {
 			continue
 		}
-		// Every compiled chunk must carry the resolved template ids.
+		// Every compiled chunk must carry the resolved template id (one per
+		// template; the component stamps the producing template's id).
 		var tidsCount int
 		switch tids := cm["compilation_template_ids"].(type) {
 		case []any:
@@ -496,8 +501,8 @@ func TestKnowledgeCompiler_TemplateIDsAndProvenance(t *testing.T) {
 		case []string:
 			tidsCount = len(tids)
 		}
-		if tidsCount != 2 {
-			t.Fatalf("compiled chunk %v: compilation_template_ids = %v, want 2", cm["id"], cm["compilation_template_ids"])
+		if tidsCount != 1 {
+			t.Fatalf("compiled chunk %v: compilation_template_ids = %v, want 1 (the resolved template id)", cm["id"], cm["compilation_template_ids"])
 		}
 		// Entity rows must carry source_chunk_ids.
 		if kg, _ := cm["knowledge_graph_kwd"].(string); kg == "entity" {
@@ -534,8 +539,8 @@ func (m constEmbedder) Encode(_ context.Context, texts []string) ([][]float32, e
 	return out, nil
 }
 
-// TestKnowledgeCompiler_Raptor_DegenerateNoInfiniteLoop is a regression for the
-// High-1 bug: RAPTOR could recurse forever when a re-cluster returned a single
+// TestKnowledgeCompiler_Tree_DegenerateNoInfiniteLoop is a regression for the
+// High-1 bug: the tree builder could recurse forever when a re-cluster returned a single
 // label covering all points. The default mockEmbedder emits non-negative
 // vectors, so under the watershed default (tree_order=4, ratio 25) every adjacent pair
 // has cosine >= 0 and a pathological input can collapse into one cluster; with
@@ -543,10 +548,11 @@ func (m constEmbedder) Encode(_ context.Context, texts []string) ([][]float32, e
 // work item at level+1 and hung. This test uses 6 chunks and asserts the run
 // terminates with a well-formed root. (If the guard regresses, go test's timeout
 // turns the hang into a failure.)
-func TestKnowledgeCompiler_Raptor_DegenerateNoInfiniteLoop(t *testing.T) {
+func TestKnowledgeCompiler_Tree_DegenerateNoInfiniteLoop(t *testing.T) {
 	installProseDeps(t)
+	installVariantTemplateResolver(t, "tree")
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant": "raptor", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-tree", "llm_id": "llm1", "embedding_model": "emb1",
 		"extra": map[string]any{"tree_order": 4},
 	})
 	if err != nil {
@@ -565,7 +571,7 @@ func TestKnowledgeCompiler_Raptor_DegenerateNoInfiniteLoop(t *testing.T) {
 		"tenant_id": "t1",
 	})
 	if err != nil {
-		t.Fatalf("Invoke hung or errored (RAPTOR infinite recursion?): %v", err)
+		t.Fatalf("Invoke hung or errored (tree infinite recursion?): %v", err)
 	}
 	raw, ok := out["chunks"].([]any)
 	if !ok {
@@ -580,7 +586,7 @@ func TestKnowledgeCompiler_Raptor_DegenerateNoInfiniteLoop(t *testing.T) {
 		}
 	}
 	if !foundRoot {
-		t.Fatalf("raptor(degenerate): no root chunk; got %d chunks", len(raw))
+		t.Fatalf("tree(degenerate): no root chunk; got %d chunks", len(raw))
 	}
 }
 
@@ -599,8 +605,9 @@ func TestKnowledgeCompiler_Wiki_HistoricalDedupDropsDuplicates(t *testing.T) {
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
 
+	installVariantTemplateResolver(t, "wiki")
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant": "wiki", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -657,8 +664,9 @@ func TestKnowledgeCompiler_Wiki_UpdateMergesExistingPage(t *testing.T) {
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
 
+	installVariantTemplateResolver(t, "wiki")
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant": "wiki", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -737,8 +745,9 @@ func TestKnowledgeCompiler_Wiki_HistoricalDedupScopedByDataset(t *testing.T) {
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
 
+	installVariantTemplateResolver(t, "wiki")
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant": "wiki", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-wiki", "llm_id": "llm1", "embedding_model": "emb1",
 		"enable_historical_dedup": true,
 	})
 	if err != nil {
@@ -809,8 +818,9 @@ func TestKnowledgeCompiler_Datasetnav_LockKeyedByDataset(t *testing.T) {
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
 
+	installVariantTemplateResolver(t, "datasetnav")
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant": "datasetnav", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-datasetnav", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -873,8 +883,9 @@ func TestKnowledgeCompiler_Datasetnav_RootIncludesAllSummaries(t *testing.T) {
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
 
+	installVariantTemplateResolver(t, "datasetnav")
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant": "datasetnav", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-datasetnav", "llm_id": "llm1", "embedding_model": "emb1",
 		// nav_radius > 1 guarantees no two chunks group together (cosine <= 1),
 		// so each chunk becomes its own nav node.
 		"extra": map[string]any{"nav_radius": 1.1},
@@ -983,8 +994,9 @@ func TestKnowledgeCompiler_Structure_FencedJSONNotDropped(t *testing.T) {
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
 
+	installVariantTemplateResolver(t, "structure")
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant": "structure", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-structure", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -1022,8 +1034,9 @@ func TestKnowledgeCompiler_Structure_MalformedJSONFailsLoud(t *testing.T) {
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
 
+	installVariantTemplateResolver(t, "structure")
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant": "structure", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-structure", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -1046,9 +1059,10 @@ func TestKnowledgeCompiler_Structure_MalformedJSONFailsLoud(t *testing.T) {
 // pipeline), so they must be forwarded when present.
 func TestKnowledgeCompiler_PassThroughEnvelope(t *testing.T) {
 	installMockDeps(t)
+	installVariantTemplateResolver(t, "structure")
 
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant": "structure", "llm_id": "llm1", "embedding_model": "emb1",
+		"compilation_template_id": "tpl-structure", "llm_id": "llm1", "embedding_model": "emb1",
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -1091,21 +1105,34 @@ func groupResolverStub(_ context.Context, _ string, groupIDs []string) ([]string
 	return out, nil
 }
 
-// TestKnowledgeCompiler_GroupIDsResolvedToTemplateIDs is a regression for the
-// open question: compilation_template_group_ids were parsed into Param.GroupIDs
-// but never resolved or stamped, so group-only configs silently missed
-// compilation_template_ids. The component now resolves groups via the installed
-// GroupResolver and merges them into the stamped template-id list.
+// TestKnowledgeCompiler_GroupIDsResolvedToTemplateIDs is a regression: a
+// compilation_template_group_id is resolved via the installed GroupResolver to
+// its concrete template ids, and each template is compiled as its own spec and
+// stamped with its producing template id. Group-only configs must not silently
+// miss compilation_template_ids.
 func TestKnowledgeCompiler_GroupIDsResolvedToTemplateIDs(t *testing.T) {
 	installMockDeps(t)
-	common.SetGroupResolver(groupResolverStub)
-	t.Cleanup(func() { common.SetGroupResolver(nil) })
+	// The group resolves to two concrete template ids; each is compiled as its
+	// own spec, so the TemplateResolver must return a valid kind for them.
+	// Override the package stub and restore it afterwards.
+	common.SetTemplateResolver(func(ctx context.Context, tenantID, templateID string) (common.TemplateInfo, error) {
+		kind := templateID
+		if strings.HasPrefix(templateID, "tpl-grp1") {
+			kind = "structure"
+		}
+		return common.TemplateInfo{ID: templateID, Kind: kind, Config: map[string]any{}}, nil
+	})
+	t.Cleanup(func() { common.SetTemplateResolver(testTemplateResolver) })
 
+	common.SetGroupResolver(groupResolverStub)
+	t.Cleanup(func() { common.SetGroupResolver(testGroupResolver) })
+
+	// compilation_template_group_id (not the obsolete plural list) selects the
+	// group; compilation_template_id is absent so the group path is taken.
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant":                        "structure",
-		"llm_id":                         "llm1",
-		"embedding_model":                "emb1",
-		"compilation_template_group_ids": []any{"grp1"},
+		"compilation_template_group_id": "grp1",
+		"llm_id":                        "llm1",
+		"embedding_model":               "emb1",
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -1119,6 +1146,7 @@ func TestKnowledgeCompiler_GroupIDsResolvedToTemplateIDs(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	want := map[string]bool{"tpl-grp1-a": true, "tpl-grp1-b": true}
+	seen := map[string]bool{}
 	checked := 0
 	for _, r := range out["chunks"].([]any) {
 		cm := r.(map[string]any)
@@ -1137,12 +1165,20 @@ func TestKnowledgeCompiler_GroupIDsResolvedToTemplateIDs(t *testing.T) {
 		case []string:
 			got = v
 		}
-		if len(got) != 2 || !want[got[0]] || !want[got[1]] {
-			t.Fatalf("compiled chunk %v: compilation_template_ids = %v, want %v (group ids must resolve to template ids)", cm["id"], got, want)
+		// Each product is stamped with the single template id that produced it.
+		if len(got) != 1 || !want[got[0]] {
+			t.Fatalf("compiled chunk %v: compilation_template_ids = %v, want exactly one of %v", cm["id"], got, want)
 		}
+		seen[got[0]] = true
 	}
 	if checked == 0 {
 		t.Fatalf("no compiled chunks inspected (compile_kwd=list expected); assertion was vacuous")
+	}
+	// Both resolved template ids must appear across the products.
+	for id := range want {
+		if !seen[id] {
+			t.Fatalf("resolved template id %q was never stamped on any product", id)
+		}
 	}
 }
 
@@ -1155,10 +1191,9 @@ func TestKnowledgeCompiler_GroupIDsWithoutResolverFailsLoud(t *testing.T) {
 	common.SetGroupResolver(nil) // ensure no resolver is installed
 
 	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"variant":                        "structure",
-		"llm_id":                         "llm1",
-		"embedding_model":                "emb1",
-		"compilation_template_group_ids": []any{"grp1"},
+		"compilation_template_group_id": "grp1",
+		"llm_id":                        "llm1",
+		"embedding_model":               "emb1",
 	})
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
@@ -1174,4 +1209,45 @@ func TestKnowledgeCompiler_GroupIDsWithoutResolverFailsLoud(t *testing.T) {
 	if !strings.Contains(err.Error(), "GroupResolver") {
 		t.Fatalf("error %q does not mention GroupResolver", err.Error())
 	}
+}
+
+// testTemplateResolver / testGroupResolver are the package-wide stub resolvers
+// installed by TestMain. The stub maps the template id 1:1 onto the template
+// kind, which lets tests resolve arbitrary synthetic ids (e.g. "tpl-structure")
+// to a kind. Tests must pass a TEMPLATE ID, never a variant name, as
+// compilation_template_id; use installVariantTemplateResolver(t, variant) to
+// register a synthetic "tpl-<variant>" id that maps to the desired kind.
+// Production wiring installs the real DB-backed resolvers (see
+// internal/ingestion/task/knowledge_compiler_wiring.go).
+var testTemplateResolver common.TemplateResolver = func(ctx context.Context, tenantID, templateID string) (common.TemplateInfo, error) {
+	return common.TemplateInfo{ID: templateID, Kind: templateID, Config: map[string]any{}}, nil
+}
+
+// installVariantTemplateResolver wires a template resolver so the synthetic
+// template id "tpl-<variant>" resolves to Kind <variant>. This lets a test
+// select a compiler variant through the production id -> kind -> variant path
+// (resolveTemplateSpecs -> KindToVariant) instead of misusing the variant name
+// as the compilation_template_id. Any other template id is delegated to the
+// package default; the default is restored on cleanup.
+func installVariantTemplateResolver(t *testing.T, variant string) {
+	t.Helper()
+	prev := testTemplateResolver
+	common.SetTemplateResolver(func(ctx context.Context, tenantID, templateID string) (common.TemplateInfo, error) {
+		if templateID == "tpl-"+variant {
+			return common.TemplateInfo{ID: templateID, Kind: variant, Config: map[string]any{}}, nil
+		}
+		return prev(ctx, tenantID, templateID)
+	})
+	t.Cleanup(func() { common.SetTemplateResolver(testTemplateResolver) })
+}
+
+var testGroupResolver common.GroupResolver = func(ctx context.Context, tenantID string, groupIDs []string) ([]string, error) {
+	return groupIDs, nil
+}
+
+// TestMain installs the stub resolvers for the variant unit tests.
+func TestMain(m *testing.M) {
+	common.SetTemplateResolver(testTemplateResolver)
+	common.SetGroupResolver(testGroupResolver)
+	os.Exit(m.Run())
 }

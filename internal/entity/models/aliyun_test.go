@@ -25,6 +25,7 @@ import (
 )
 
 func TestAliyunChatWithMessagesSupportsToolCalls(t *testing.T) {
+	withSSRFBypass(t)
 	requestBody := make(chan map[string]interface{}, 1)
 	requestPath := make(chan string, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +88,7 @@ func TestAliyunChatWithMessagesSupportsToolCalls(t *testing.T) {
 }
 
 func TestAliyunChatWithMessagesStopsQwenFlashAfterToolResult(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	requestBody := make(chan map[string]interface{}, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -188,6 +190,7 @@ func TestAliyunToolChoiceStopsOnlyQwenFlashAfterToolResult(t *testing.T) {
 }
 
 func TestAliyunChatStreamlyWithSenderSupportsToolCalls(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	requestBody := make(chan map[string]interface{}, 1)
 	requestPath := make(chan string, 1)
@@ -282,6 +285,7 @@ data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ra
 }
 
 func TestAliyunChatStreamlyWithSenderRejectsStreamFalse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := NewAliyunModel(
 		map[string]string{"default": "https://dashscope.example"},

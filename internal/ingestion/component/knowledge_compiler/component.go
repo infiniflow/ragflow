@@ -1,6 +1,6 @@
 // Package knowledge_compiler implements the KnowledgeCompiler ingestion
 // component: a single runtime.Component that dispatches to one of the
-// knowledge-compile variants (structure / wiki / raptor / mindmap / datasetnav)
+// knowledge-compile variants (structure / wiki / tree / mindmap / datasetnav)
 // based on the `variant` param. See PORT_PLAN.md for the full design.
 package knowledge_compiler
 
@@ -13,8 +13,8 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/datasetnav"
 	"ragflow/internal/ingestion/component/knowledge_compiler/mindmap"
-	"ragflow/internal/ingestion/component/knowledge_compiler/raptor"
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
+	"ragflow/internal/ingestion/component/knowledge_compiler/tree"
 	"ragflow/internal/ingestion/component/knowledge_compiler/wiki"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -92,73 +92,83 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	tenantID, _ := inputs["tenant_id"].(string)
 	datasetID, _ := inputs["dataset_id"].(string)
 
-	// Validate the variant before resolving deps so a bad variant fails fast
-	// with ErrUnknownVariant rather than a deps-resolution error.
-	switch param.Variant {
-	case common.VariantStructure, common.VariantWiki, common.VariantRaptor,
-		common.VariantMindmap, common.VariantDatasetnav:
-		// recognised; dispatch below
-	default:
-		return nil, fmt.Errorf("%w: %q", common.ErrUnknownVariant, param.Variant)
-	}
-
-	deps, err := common.ResolveDeps(tenantID, param.LLMID, param.EmbeddingModel)
+	// Resolve the compilation template spec(s). Priority:
+	// compilation_template_id > compilation_template_group_id. The variant is
+	// derived from each template's kind (see common.KindToVariant), not from
+	// the DSL.
+	specs, err := resolveTemplateSpecs(ctx, tenantID, param)
 	if err != nil {
 		return nil, err
 	}
-	deps.TenantID = tenantID
-	deps.DatasetID = datasetID
-
-	// Resolve compilation-template-group ids to concrete template ids and merge
-	// them with any explicitly-passed template ids. Group-only configs that
-	// cannot be resolved fail loudly rather than silently emitting rows missing
-	// compilation_template_ids (a data-loss path).
-	resolvedGroups, err := common.ResolveGroupTemplateIDs(ctx, tenantID, param.GroupIDs)
-	if err != nil {
-		return nil, err
-	}
-	templateIDs := append(append([]string{}, param.TemplateIDs...), resolvedGroups...)
 
 	in, err := buildInputs(inputs, param)
 	if err != nil {
 		return nil, err
 	}
 
-	// Stamp the resolved template ids onto every compiled product after the
-	// variant returns. All products are buffered in out.Products (there is no
-	// streaming sink path), so the post-Run loop below covers every row (M1).
+	// Each spec compiles independently; products are stamped with the producing
+	// template's id and kind. All products are buffered (no streaming sink), so
+	// the post-run loop below covers every row (M1).
 	var out common.Outputs
-	switch param.Variant {
-	case common.VariantStructure:
-		out, err = structure.Run(ctx, deps, param, in)
-	case common.VariantWiki:
-		out, err = wiki.Run(ctx, deps, param, in)
-	case common.VariantRaptor:
-		out, err = raptor.Run(ctx, deps, param, in)
-	case common.VariantMindmap:
-		out, err = mindmap.Run(ctx, deps, param, in)
-	case common.VariantDatasetnav:
-		out, err = datasetnav.Run(ctx, deps, param, in)
-	default:
-		return nil, fmt.Errorf("%w: %q", common.ErrUnknownVariant, param.Variant)
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	// Stamp the compilation template ids onto every product so the chunk
-	// converter can emit compilation_template_ids (Python stamps one
-	// template_id per row; here we carry the full resolved list since the Go
-	// component runs one variant per Invoke and the caller may pass multiple
-	// template ids from a compilation-template-group). The list is the union of
-	// explicitly-passed template ids and any resolved from group ids.
-	if len(templateIDs) > 0 {
-		for i := range out.Products {
-			if out.Products[i].Meta == nil {
-				out.Products[i].Meta = map[string]any{}
-			}
-			out.Products[i].Meta["compilation_template_ids"] = templateIDs
+	for _, spec := range specs {
+		variant, err := common.KindToVariant(spec.Kind)
+		if err != nil {
+			return nil, err
 		}
+
+		// Per-spec Param: variant + resolved template config, with scalar config
+		// overrides (language, similarity, workers, dedup, llm/embedding) layered
+		// on top of the DSL params and Extra. This is how the template's stored
+		// "content" drives the compile without the caller passing variant-specific
+		// params inline.
+		specParam := param
+		specParam.Variant = variant
+		specParam.TemplateID = spec.ID
+		specParam.TemplateConfig = spec.Config
+		overlayTemplateConfig(&specParam, spec.Config)
+
+		deps, err := common.ResolveDeps(tenantID, specParam.LLMID, specParam.EmbeddingModel)
+		if err != nil {
+			return nil, err
+		}
+		deps.TenantID = tenantID
+		deps.DatasetID = datasetID
+
+		specIn := in
+		if specIn.VariantSpecific == nil {
+			specIn.VariantSpecific = map[string]any{}
+		}
+		specIn.VariantSpecific["config"] = spec.Config
+
+		var o common.Outputs
+		switch variant {
+		case common.VariantStructure:
+			o, err = structure.Run(ctx, deps, specParam, specIn)
+		case common.VariantWiki:
+			o, err = wiki.Run(ctx, deps, specParam, specIn)
+		case common.VariantTree:
+			o, err = tree.Run(ctx, deps, specParam, specIn)
+		case common.VariantMindmap:
+			o, err = mindmap.Run(ctx, deps, specParam, specIn)
+		case common.VariantDatasetnav:
+			o, err = datasetnav.Run(ctx, deps, specParam, specIn)
+		default:
+			return nil, fmt.Errorf("%w: %q", common.ErrUnknownVariant, variant)
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		for i := range o.Products {
+			if o.Products[i].Meta == nil {
+				o.Products[i].Meta = map[string]any{}
+			}
+			o.Products[i].Meta["compilation_template_ids"] = []string{spec.ID}
+			o.Products[i].Kind = spec.Kind
+			o.Products[i].TemplateID = spec.ID
+			o.Products[i].Variant = variant
+		}
+		out.Products = append(out.Products, o.Products...)
 	}
 
 	// Convert the compiled products into chunk-aligned docs (matching
@@ -172,6 +182,79 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	return mergeChunks(inputs, compiled), nil
 }
 
+// resolveTemplateSpecs resolves the configured compilation template spec(s) to
+// their TemplateInfo rows. Priority: compilation_template_id >
+// compilation_template_group_id. The group path resolves the group to its
+// child template ids and then loads each template.
+func resolveTemplateSpecs(ctx context.Context, tenantID string, param common.Param) ([]common.TemplateInfo, error) {
+	if param.CompilationTemplateID != "" {
+		info, err := common.ResolveTemplate(ctx, tenantID, param.CompilationTemplateID)
+		if err != nil {
+			return nil, err
+		}
+		return []common.TemplateInfo{info}, nil
+	}
+	if param.CompilationTemplateGroupID != "" {
+		ids, err := common.ResolveGroupTemplateIDs(ctx, tenantID, []string{param.CompilationTemplateGroupID})
+		if err != nil {
+			return nil, err
+		}
+		specs := make([]common.TemplateInfo, 0, len(ids))
+		for _, id := range ids {
+			info, err := common.ResolveTemplate(ctx, tenantID, id)
+			if err != nil {
+				return nil, err
+			}
+			specs = append(specs, info)
+		}
+		return specs, nil
+	}
+	return nil, fmt.Errorf("knowledge_compiler: one of compilation_template_id or compilation_template_group_id is required")
+}
+
+// overlayTemplateConfig layers scalar fields from the resolved template config
+// (the template "content") onto the param. For self-documenting defaults
+// (language, similarity_threshold, max_workers, enable_historical_dedup) the
+// config value wins when the param is unset. For llm_id / embedding_model, the
+// caller's per-call override always wins; the config only fills them in when
+// the caller left them empty.
+func overlayTemplateConfig(param *common.Param, cfg map[string]any) {
+	if cfg == nil {
+		return
+	}
+	if v, ok := cfg["language"].(string); ok && v != "" {
+		param.Language = v
+	}
+	if v, ok := cfg["similarity_threshold"].(float64); ok && v > 0 {
+		param.SimilarityThreshold = v
+	}
+	if v, ok := cfg["max_workers"].(float64); ok && int(v) > 0 {
+		param.MaxWorkers = int(v)
+	}
+	if v, ok := cfg["enable_historical_dedup"].(bool); ok {
+		param.EnableHistoricalDedup = v
+	}
+	// llm_id / embedding_model are optional per-call overrides documented on
+	// Invoke. The template config supplies defaults, so only apply them when
+	// the caller has not already provided an explicit value (the caller wins).
+	if v, ok := cfg["llm_id"].(string); ok && v != "" && param.LLMID == "" {
+		param.LLMID = v
+	}
+	if v, ok := cfg["embedding_model"].(string); ok && v != "" && param.EmbeddingModel == "" {
+		param.EmbeddingModel = v
+	}
+}
+
+// kindOrVariant returns the original template kind when present (the true
+// compilation_template.kind, e.g. "page_index"), otherwise the collapsed Go
+// variant. It drives the compilation_template_kind_kwd stamp.
+func kindOrVariant(p common.Product) string {
+	if p.Kind != "" {
+		return p.Kind
+	}
+	return string(p.Variant)
+}
+
 // variantCompileKWD maps each Go variant to the compile_kwd discriminator value
 // Python writes into ES (rag/advanced_rag/knowlege_compile). It is the primary
 // key that distinguishes compiled knowledge units from ordinary chunks and
@@ -179,7 +262,7 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 var variantCompileKWD = map[common.Variant]string{
 	common.VariantStructure:  "structure",
 	common.VariantWiki:       "artifact_page",
-	common.VariantRaptor:     "raptor",
+	common.VariantTree:       "tree",
 	common.VariantMindmap:    "mindmap",
 	common.VariantDatasetnav: "dataset_nav",
 }
@@ -237,7 +320,7 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 		if err := doc.SetExtraValue("compile_kwd", compileKWD); err != nil {
 			return nil, err
 		}
-		if err := doc.SetExtraValue("compilation_template_kind_kwd", string(p.Variant)); err != nil {
+		if err := doc.SetExtraValue("compilation_template_kind_kwd", kindOrVariant(p)); err != nil {
 			return nil, err
 		}
 		if p.ParentID != "" {
@@ -398,7 +481,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 			}
 		}
 
-	case common.VariantRaptor:
+	case common.VariantTree:
 		// raptor_kwd tags summary/root nodes; raptor_layer_int records tree depth.
 		if kind != "" {
 			if err := doc.SetExtraValue("raptor_kwd", kind); err != nil {

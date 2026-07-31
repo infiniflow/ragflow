@@ -37,7 +37,7 @@ func NewHuggingFaceModel(baseURL map[string]string, urlSuffix URLSuffix) *Huggin
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

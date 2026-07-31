@@ -23,6 +23,7 @@ import (
 	"math"
 	"math/rand"
 	"ragflow/internal/common"
+	"ragflow/internal/server/config"
 	"strconv"
 	"sync"
 	"time"
@@ -45,7 +46,7 @@ type Client struct {
 	luaDeleteIfEqual *redis.Script
 	luaTokenBucket   *redis.Script
 	luaAutoIncrement *redis.Script
-	config           *server.RedisConfig
+	config           config.RedisConfig
 }
 
 // Message represents a message from Redis Stream
@@ -105,18 +106,21 @@ const (
 )
 
 // Init initializes Redis client
-func Init(cfg *server.RedisConfig) error {
+func Init() error {
 	var initErr error
 	once.Do(func() {
-		if cfg.Host == "" {
+		globalConfig := server.GetConfig()
+		redisConfig := globalConfig.GetRedisConfig()
+
+		if redisConfig.Host == "" {
 			common.Info("Redis host not configured, skipping Redis initialization")
 			return
 		}
 
 		client := redis.NewClient(&redis.Options{
-			Addr:     fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
-			Password: cfg.Password,
-			DB:       cfg.DB,
+			Addr:     fmt.Sprintf("%s:%d", redisConfig.Host, redisConfig.Port),
+			Password: redisConfig.Password,
+			DB:       redisConfig.DB,
 		})
 
 		// Test connection
@@ -130,15 +134,15 @@ func Init(cfg *server.RedisConfig) error {
 
 		globalClient = &Client{
 			client:           client,
-			config:           cfg,
+			config:           redisConfig,
 			luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
 			luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
 		}
 
 		common.Info("Redis client initialized",
-			zap.String("host", cfg.Host),
-			zap.Int("port", cfg.Port),
-			zap.Int("db", cfg.DB),
+			zap.String("host", redisConfig.Host),
+			zap.Int("port", redisConfig.Port),
+			zap.Int("db", redisConfig.DB),
 		)
 	})
 	return initErr

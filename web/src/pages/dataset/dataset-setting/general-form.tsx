@@ -38,8 +38,7 @@ export function GeneralForm() {
         render={({ field }) => (
           <FormItem className="items-center space-y-0">
             <div className="flex">
-              <FormLabel className="text-sm whitespace-nowrap w-1/4">
-                <span className="text-red-600">*</span>
+              <FormLabel className="text-sm whitespace-nowrap w-1/4" required>
                 {t('common.name')}
               </FormLabel>
               <FormControl className="w-3/4">

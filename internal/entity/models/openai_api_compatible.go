@@ -326,7 +326,7 @@ func (m *OpenAIAPICompatibleModel) TranscribeAudio(ctx context.Context, modelNam
 	var result struct {
 		Text string `json:"text"`
 	}
-	if err := json.Unmarshal(respBody, &result); err != nil {
+	if err = json.Unmarshal(respBody, &result); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w, body=%s", err, string(respBody))
 	}
 

@@ -41,7 +41,7 @@ func NewOpenRouterModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenRou
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
