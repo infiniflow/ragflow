@@ -19,7 +19,6 @@ Unit tests for rag/utils/raptor_utils.py module.
 
 from rag.utils.raptor_utils import (
     RAPTOR_TREE_BUILDER,
-    PSI_TREE_BUILDER,
     _as_extra_dict,
     _has_raptor_marker,
     _raptor_methods_from_fields,
@@ -98,7 +97,7 @@ class TestHasRaptorMarker:
 
     def test_returns_false_for_list_without_raptor(self):
         """Test that list without 'raptor' returns False."""
-        assert _has_raptor_marker(["psi", "other"]) is False
+        assert _has_raptor_marker(["other", "unknown"]) is False
 
 
 class TestRaptorMethodsFromFields:
@@ -109,23 +108,23 @@ class TestRaptorMethodsFromFields:
         result = _raptor_methods_from_fields({})
         assert result == {RAPTOR_TREE_BUILDER}
 
-    def test_returns_method_from_extra_dict(self):
-        """Test that method is extracted from extra dict."""
-        fields = {"extra": {"raptor_method": PSI_TREE_BUILDER}}
+    def test_returns_raptor_method_from_extra_dict(self):
+        """Test that the RAPTOR method is extracted from extra dict."""
+        fields = {"extra": {"raptor_method": RAPTOR_TREE_BUILDER}}
         result = _raptor_methods_from_fields(fields)
-        assert result == {PSI_TREE_BUILDER}
+        assert result == {RAPTOR_TREE_BUILDER}
 
     def test_returns_method_from_extra_field(self):
         """Test that method is extracted from extra field directly."""
-        fields = {"extra": "{'raptor_method': 'psi'}"}
+        fields = {"extra": "{'raptor_method': 'raptor'}"}
         result = _raptor_methods_from_fields(fields)
-        assert result == {PSI_TREE_BUILDER}
+        assert result == {RAPTOR_TREE_BUILDER}
 
     def test_handles_list_method(self):
         """Test that list method is converted to set."""
-        fields = {"extra": {"raptor_method": ["raptor", "psi"]}}
+        fields = {"extra": {"raptor_method": ["raptor", "other"]}}
         result = _raptor_methods_from_fields(fields)
-        assert result == {RAPTOR_TREE_BUILDER, PSI_TREE_BUILDER}
+        assert result == {RAPTOR_TREE_BUILDER, "other"}
 
     def test_handles_empty_method(self):
         """Test that empty method returns default."""
@@ -144,21 +143,21 @@ class TestCollectRaptorMethods:
 
     def test_collects_methods_from_raptor_chunks(self):
         """Test that methods are collected from RAPTOR chunks."""
-        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": PSI_TREE_BUILDER}}}
+        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": RAPTOR_TREE_BUILDER}}}
         result = collect_raptor_methods(field_map)
-        assert result == {PSI_TREE_BUILDER}
+        assert result == {RAPTOR_TREE_BUILDER}
 
     def test_skips_non_raptor_chunks(self):
         """Test that non-RAPTOR chunks are skipped."""
-        field_map = {"chunk_1": {"raptor_kwd": "other", "extra": {"raptor_method": PSI_TREE_BUILDER}}}
+        field_map = {"chunk_1": {"raptor_kwd": "other", "extra": {"raptor_method": RAPTOR_TREE_BUILDER}}}
         result = collect_raptor_methods(field_map)
         assert result == set()
 
     def test_collects_multiple_methods(self):
         """Test that multiple methods are collected."""
-        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}, "chunk_2": {"raptor_kwd": "raptor", "extra": {"raptor_method": "psi"}}}
+        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}, "chunk_2": {"raptor_kwd": "raptor", "extra": {"raptor_method": "other"}}}
         result = collect_raptor_methods(field_map)
-        assert result == {RAPTOR_TREE_BUILDER, PSI_TREE_BUILDER}
+        assert result == {RAPTOR_TREE_BUILDER, "other"}
 
 
 class TestCollectRaptorChunkIds:
@@ -177,7 +176,7 @@ class TestCollectRaptorChunkIds:
 
     def test_excludes_specified_methods(self):
         """Test that specified methods are excluded."""
-        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}, "chunk_2": {"raptor_kwd": "raptor", "extra": {"raptor_method": "psi"}}}
+        field_map = {"chunk_1": {"raptor_kwd": "raptor", "extra": {"raptor_method": "raptor"}}, "chunk_2": {"raptor_kwd": "raptor", "extra": {"raptor_method": "other"}}}
         result = collect_raptor_chunk_ids(field_map, exclude_methods={"raptor"})
         assert result == {"chunk_2"}
 
