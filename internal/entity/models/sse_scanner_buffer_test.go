@@ -35,6 +35,7 @@ func largeSSEStreamServer(t *testing.T, content string) *httptest.Server {
 }
 
 func TestChatStreamLargeChunkNotTruncated(t *testing.T) {
+	withSSRFBypass(t)
 	// 128KB content delta: comfortably past the 64KB default so the bare
 	// scanner would fail, well under the 1MB raised cap so the fix succeeds.
 	const big = 128 * 1024

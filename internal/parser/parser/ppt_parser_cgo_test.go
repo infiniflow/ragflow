@@ -135,6 +135,7 @@ type tcadpPresentationParser interface {
 }
 
 func testPresentationTCADPIntegration(t *testing.T, p tcadpPresentationParser, wantFileType, filename string) {
+	withSSRFBypass(t)
 	t.Helper()
 	zipPayload := tcadpZipFixture(t)
 	var gotFileType string
@@ -189,6 +190,7 @@ func testPresentationTCADPIntegration(t *testing.T, p tcadpPresentationParser, w
 // from the TCADP download endpoint is surfaced as an explicit error rather
 // than parsed as a (malformed) ZIP artifact.
 func TestPPTXParser_TCADPDownloadHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {

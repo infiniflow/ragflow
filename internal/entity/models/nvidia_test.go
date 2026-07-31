@@ -12,6 +12,7 @@ import (
 )
 
 func TestNvidiaListModelsUsesExactEndpointIDs(t *testing.T) {
+	withSSRFBypass(t)
 	const apiKey = "nvapi-test"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -99,6 +100,7 @@ func TestParseNvidiaModelListInfersTypesForPresetWithoutTypes(t *testing.T) {
 }
 
 func TestNvidiaListModelsFiltersHostedCatalog(t *testing.T) {
+	withSSRFBypass(t)
 	const apiKey = "nvapi-test"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -142,6 +144,7 @@ func TestNvidiaListModelsFiltersHostedCatalog(t *testing.T) {
 }
 
 func TestNvidiaFetchHostedCatalogPaginates(t *testing.T) {
+	withSSRFBypass(t)
 	resources := make([]nvidiaCatalogResource, nvidiaCatalogPageSize+1)
 	for i := range resources {
 		resources[i] = nvidiaCatalogResource{DisplayName: fmt.Sprintf("model-%d", i)}
@@ -192,6 +195,7 @@ func TestNvidiaFetchHostedCatalogPaginates(t *testing.T) {
 }
 
 func TestNvidiaListModelsRejectsPartialHostedCatalog(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v1/models" {
 			_ = json.NewEncoder(w).Encode(ModelList{Models: []ModelListItem{{ID: "meta/llama-3.1-8b-instruct"}}})

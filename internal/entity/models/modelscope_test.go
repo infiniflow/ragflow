@@ -94,6 +94,7 @@ func TestModelScopeNewModelWithCustomDefaultTransport(t *testing.T) {
 }
 
 func TestModelScopeChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	var seen map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -146,6 +147,7 @@ func TestModelScopeChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 }
 
 func TestModelScopeChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer ms-test" {
@@ -166,6 +168,7 @@ func TestModelScopeChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
 }
 
 func TestModelScopeChatExtractsReasoningFields(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"choices":[{"message":{
@@ -188,6 +191,7 @@ func TestModelScopeChatExtractsReasoningFields(t *testing.T) {
 }
 
 func TestModelScopeStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
@@ -252,6 +256,7 @@ func TestModelScopeStreamHappyPath(t *testing.T) {
 }
 
 func TestModelScopeStreamRejectsFalseStreamConfig(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newModelScopeForTest("http://unused")
 	stream := false
@@ -267,6 +272,7 @@ func TestModelScopeStreamRejectsFalseStreamConfig(t *testing.T) {
 }
 
 func TestModelScopeStreamCancelsOnIdle(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	withModelScopeIdleTimeout(t, 200*time.Millisecond)
 
@@ -297,6 +303,7 @@ func TestModelScopeStreamCancelsOnIdle(t *testing.T) {
 }
 
 func TestModelScopeListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
@@ -325,6 +332,7 @@ func TestModelScopeListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestModelScopeMissingBaseURLFailsClearly(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := NewModelScopeModel(map[string]string{}, URLSuffix{Chat: "v1/chat/completions"})
 	_, err := m.ChatWithMessages(ctx, "Qwen/Qwen2.5-7B-Instruct",
@@ -336,6 +344,7 @@ func TestModelScopeMissingBaseURLFailsClearly(t *testing.T) {
 }
 
 func TestModelScopeUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newModelScopeForTest("http://unused")
 	model := "Qwen/Qwen2.5-7B-Instruct"

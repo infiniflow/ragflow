@@ -60,6 +60,7 @@ func TestTogetherAIFactory(t *testing.T) {
 }
 
 func TestTogetherAIChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTogetherAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
@@ -111,6 +112,7 @@ func TestTogetherAIChatHappyPath(t *testing.T) {
 }
 
 func TestTogetherAIChatForwardsReasoningEnabled(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTogetherAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "Qwen/Qwen3.5-9B" {
@@ -155,6 +157,7 @@ func TestTogetherAIChatForwardsReasoningEnabled(t *testing.T) {
 }
 
 func TestTogetherAIChatRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newTogetherAIForTest("http://unused").ChatWithMessages(ctx, "", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -164,6 +167,7 @@ func TestTogetherAIChatRequiresModelName(t *testing.T) {
 }
 
 func TestTogetherAIStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTogetherAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
@@ -214,6 +218,7 @@ func TestTogetherAIStreamHappyPath(t *testing.T) {
 }
 
 func TestTogetherAIStreamStopsOnRootFinishReason(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTogetherAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -246,6 +251,7 @@ func TestTogetherAIStreamStopsOnRootFinishReason(t *testing.T) {
 }
 
 func TestTogetherAIListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newTogetherAIServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
@@ -276,6 +282,7 @@ func TestTogetherAIListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestTogetherAIUnsupportedMethods(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newTogetherAIForTest("http://unused")
 	apiKey := "test-key"
