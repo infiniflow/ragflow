@@ -213,8 +213,11 @@ func resolveTemplateSpecs(ctx context.Context, tenantID string, param common.Par
 }
 
 // overlayTemplateConfig layers scalar fields from the resolved template config
-// (the template "content") onto the param, keeping the DSL/Extra value when the
-// config omits the key.
+// (the template "content") onto the param. For self-documenting defaults
+// (language, similarity_threshold, max_workers, enable_historical_dedup) the
+// config value wins when the param is unset. For llm_id / embedding_model, the
+// caller's per-call override always wins; the config only fills them in when
+// the caller left them empty.
 func overlayTemplateConfig(param *common.Param, cfg map[string]any) {
 	if cfg == nil {
 		return
@@ -231,10 +234,13 @@ func overlayTemplateConfig(param *common.Param, cfg map[string]any) {
 	if v, ok := cfg["enable_historical_dedup"].(bool); ok {
 		param.EnableHistoricalDedup = v
 	}
-	if v, ok := cfg["llm_id"].(string); ok && v != "" {
+	// llm_id / embedding_model are optional per-call overrides documented on
+	// Invoke. The template config supplies defaults, so only apply them when
+	// the caller has not already provided an explicit value (the caller wins).
+	if v, ok := cfg["llm_id"].(string); ok && v != "" && param.LLMID == "" {
 		param.LLMID = v
 	}
-	if v, ok := cfg["embedding_model"].(string); ok && v != "" {
+	if v, ok := cfg["embedding_model"].(string); ok && v != "" && param.EmbeddingModel == "" {
 		param.EmbeddingModel = v
 	}
 }

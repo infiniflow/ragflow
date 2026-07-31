@@ -16,6 +16,13 @@ type TreeMetrics struct {
 	AllParented  bool
 	VectorOK     bool // every product carries a non-empty vector
 	SchemaOK     bool // every product carries the schema fields
+	// CoveredSources is the number of distinct source chunk IDs referenced by
+	// level-0 leaf clusters via their source_chunk_ids meta. It measures how
+	// completely the input corpus is represented by the tree, independent of
+	// the tree's structural well-formedness.
+	CoveredSources int
+	// covered is the working set of distinct source chunk IDs seen so far.
+	covered map[string]bool
 }
 
 // AnalyzeTreeProducts validates tree integrity and computes structural
@@ -28,7 +35,7 @@ func AnalyzeTreeProducts(chunks []schema.ChunkDoc) TreeMetrics {
 			ids[id] = true
 		}
 	}
-	m := TreeMetrics{ProductCount: len(chunks), AllParented: true, VectorOK: true, SchemaOK: true}
+	m := TreeMetrics{ProductCount: len(chunks), AllParented: true, VectorOK: true, SchemaOK: true, covered: make(map[string]bool)}
 	maxLevel := -1
 	for _, c := range chunks {
 		kind, _ := c.GetExtraString("kc_kind")
@@ -42,6 +49,18 @@ func AnalyzeTreeProducts(chunks []schema.ChunkDoc) TreeMetrics {
 		case "summary":
 			if level == 0 {
 				m.LeafClusters++
+				// Accumulate the distinct source chunk IDs this leaf cluster
+				// was built from. Every input chunk is assigned to exactly one
+				// level-0 cluster in buildTree, so the union of these sets is
+				// the set of covered source chunks.
+				if ids, ok := c.GetExtraStringSlice("source_chunk_ids"); ok {
+					for _, id := range ids {
+						if !m.covered[id] {
+							m.covered[id] = true
+							m.CoveredSources++
+						}
+					}
+				}
 			}
 			if level > maxLevel {
 				maxLevel = level
@@ -70,20 +89,18 @@ func AnalyzeTreeProducts(chunks []schema.ChunkDoc) TreeMetrics {
 }
 
 // CoverageFraction reports how completely the input chunks are represented by
-// the tree. Every source chunk is assigned to exactly one level-0
-// cluster in buildTree, and each such cluster becomes a leaf summary node, so a
-// well-formed tree covers 100% of chunks. nChunks is the input chunk count.
+// the tree. It is the ratio of distinct source chunk IDs referenced by the
+// level-0 leaf clusters (CoveredSources) to the total input chunk count
+// (nChunks). This detects dropped source chunks: a structurally well-formed
+// tree that silently omits input chunks will score below 1.0.
 func (m TreeMetrics) CoverageFraction(nChunks int) float64 {
 	if nChunks <= 0 {
 		return 0
 	}
-	// Every chunk maps to a level-0 cluster; the number of covered chunks
-	// equals the total chunk count when at least one leaf cluster exists and
-	// the tree is well-formed (all parented, single root).
-	if m.LeafClusters > 0 && m.RootCount == 1 && m.AllParented {
-		return 1.0
+	if m.CoveredSources <= 0 {
+		return 0
 	}
-	return 0.0
+	return float64(m.CoveredSources) / float64(nChunks)
 }
 
 // extraFloat reads a numeric Extra value by key.

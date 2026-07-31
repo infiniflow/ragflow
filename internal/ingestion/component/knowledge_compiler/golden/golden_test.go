@@ -99,17 +99,29 @@ func TestAnalyzeTreeProducts_DetectsDanglingParent(t *testing.T) {
 	}
 }
 
-func TestCoverageFraction_AllParentedOneRoot(t *testing.T) {
-	m := TreeMetrics{RootCount: 1, LeafClusters: 3, AllParented: true}
+func TestCoverageFraction_AllSourcesCovered(t *testing.T) {
+	// Coverage is now measured from source_chunk_ids of level-0 leaf clusters,
+	// not structural well-formedness. When every input chunk is referenced, the
+	// fraction is 1.0 regardless of root/parent structure.
+	m := TreeMetrics{RootCount: 1, LeafClusters: 3, AllParented: true, CoveredSources: 12}
 	if cov := m.CoverageFraction(12); cov != 1.0 {
 		t.Errorf("CoverageFraction = %v, want 1.0", cov)
 	}
 }
 
-func TestCoverageFraction_NoRootIsZero(t *testing.T) {
-	m := TreeMetrics{LeafClusters: 3, AllParented: true}
+func TestCoverageFraction_NoCoveredSourcesIsZero(t *testing.T) {
+	// A structurally well-formed tree that references no source chunks covers 0.
+	m := TreeMetrics{RootCount: 1, LeafClusters: 3, AllParented: true, CoveredSources: 0}
 	if cov := m.CoverageFraction(12); cov != 0.0 {
-		t.Errorf("CoverageFraction = %v, want 0.0 (no root)", cov)
+		t.Errorf("CoverageFraction = %v, want 0.0 (no covered sources)", cov)
+	}
+}
+
+func TestCoverageFraction_PartialCoverage(t *testing.T) {
+	// A tree that drops some source chunks scores below 1.0.
+	m := TreeMetrics{RootCount: 1, LeafClusters: 3, AllParented: true, CoveredSources: 9}
+	if cov := m.CoverageFraction(12); cov != 0.75 {
+		t.Errorf("CoverageFraction = %v, want 0.75", cov)
 	}
 }
 
