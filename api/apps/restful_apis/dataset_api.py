@@ -20,7 +20,7 @@ from quart import request
 from common.constants import RetCode
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_json_result, get_result, add_tenant_id_to_kwargs
-from api.utils.pagination_utils import validate_rest_api_page_size
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 from api.utils.validation_utils import (
     CreateDatasetReq,
     DeleteDatasetReq,
@@ -609,10 +609,10 @@ async def list_wiki_pages(tenant_id, dataset_id):
     Success: {"code": 0, "data": {"total": int, "items": [{slug, title, page_type}]}}
     """
     try:
-        page = int(request.args.get("page", 1) or 1)
-        page_size = int(request.args.get("page_size", 200) or 200)
-    except (TypeError, ValueError):
-        return get_error_argument_result("page and page_size must be integers")
+        page = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+        page_size = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
+    except ValueError as e:
+        return get_error_argument_result(str(e))
     page_type = (request.args.get("page_type") or "").strip() or None
     topic = (request.args.get("topic") or "").strip() or None
 
@@ -643,10 +643,10 @@ async def list_wiki_topics(tenant_id, dataset_id):
     Success: {"code": 0, "data": {"total": int, "items": [{topic, title, slug}]}}
     """
     try:
-        page = int(request.args.get("page", 1) or 1)
-        page_size = int(request.args.get("page_size", 200) or 200)
-    except (TypeError, ValueError):
-        return get_error_argument_result("page and page_size must be integers")
+        page = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+        page_size = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
+    except ValueError as e:
+        return get_error_argument_result(str(e))
 
     try:
         success, result = await dataset_api_service.list_wiki_topics(
@@ -1221,8 +1221,8 @@ async def check_embedding(tenant_id, dataset_id):
 @add_tenant_id_to_kwargs
 def list_ingestion_logs(tenant_id, dataset_id):
     try:
-        page = int(request.args.get("page", 0))
-        page_size = validate_rest_api_page_size(int(request.args.get("page_size", 0)))
+        page = validate_rest_api_page(request.args.get("page", DEFAULT_PAGE))
+        page_size = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
         orderby = request.args.get("orderby", "create_time")
         desc = request.args.get("desc", "true").lower() != "false"
         operation_status = request.args.getlist("operation_status")

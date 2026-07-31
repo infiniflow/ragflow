@@ -423,7 +423,7 @@ def test_session_list_page_and_sort_contract(rest_client, create_chat):
         ("page negative", {"page": -1, "page_size": 2}, 0, 2, ""),
         ("page alpha", {"page": "a", "page_size": 2}, 0, 2, ""),
         ("page_size none", {"page_size": None}, 0, 5, ""),
-        ("page_size zero", {"page_size": 0}, 0, 0, ""),
+        ("page_size zero", {"page_size": 0}, 0, 0 if IS_GO_PROXY else 5, ""),
         ("page_size one", {"page_size": 1}, 0, 1, ""),
         ("page_size six", {"page_size": 6}, 0, 5, ""),
         ("page_size negative", {"page_size": -1}, 0, 5, ""),
