@@ -608,6 +608,11 @@ func FromConfigFile(configPath string) error {
 		return fmt.Errorf("parse SMTP config error: %w", err)
 	}
 
+	err = globalConfig.GetEnvironments()
+	if err != nil {
+		return fmt.Errorf("get environments error: %w", err)
+	}
+
 	err = globalConfig.ParseBillingConfig(v)
 	if err != nil {
 		return fmt.Errorf("parse billing config error: %w", err)

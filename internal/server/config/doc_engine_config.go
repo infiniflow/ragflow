@@ -17,8 +17,6 @@
 package config
 
 import (
-	"fmt"
-
 	"github.com/spf13/viper"
 )
 
@@ -44,16 +42,8 @@ type InfinityConfig struct {
 }
 
 func (c *Config) ParseDocEngineConfig(v *viper.Viper) error {
-	docEngineType := c.general.DocEngine
-	switch docEngineType {
-	case "infinity":
-		c.parseInfinityConfig(v)
-	case "es", "elasticsearch":
-		c.parseElasticsearchConfig(v)
-	default:
-		return fmt.Errorf("doc engine type %s is not supported", docEngineType)
-	}
-
+	c.parseInfinityConfig(v)
+	c.parseElasticsearchConfig(v)
 	return nil
 }
 
