@@ -389,7 +389,7 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 	if req == nil {
 		req = updateAgentRequest{}
 	}
-	if err := h.agentService.UpdateAgent(c.Request.Context(), user.ID, canvasID, map[string]interface{}(req)); err != nil {
+	if err := h.agentService.UpdateAgent(c.Request.Context(), user.ID, canvasID, req); err != nil {
 		ec, em := mapAgentError(err)
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return
