@@ -1563,7 +1563,14 @@ async def run_wiki_incremental(
         # chunk now looks "unchanged"), fall through — ``map_results=None`` below
         # makes wiki_compile_incremental rebuild pages from the stored extracts.
         if not existing_map_doc_ids or await _wiki_has_compiled_pages(ctx.tenant_id, ctx.kb_id):
-            progress(1.0, "Wiki is up to date; nothing to compile.")
+            # No compile needed, but still (re)group existing pages under topics —
+            # cheap (embed + stamp) and it backfills pages built before topic
+            # grouping existed. Topic labels are loaded from the persisted MAP rows.
+            from rag.advanced_rag.knowlege_compile.wiki_incremental import _wiki_assign_topics
+
+            progress(0.9, "Wiki is up to date; regrouping topics ...")
+            await _wiki_assign_topics(embedding_model, ctx.tenant_id, ctx.kb_id, callback=lambda p, msg: progress(p, msg))
+            progress(1.0, "Wiki is up to date.")
             return
         logging.info("wiki: MAP rows exist but no pages found for kb=%s; rebuilding from stored extracts.", ctx.kb_id)
 
