@@ -143,22 +143,17 @@ func (dao *FileCommitDAO) ListByIDs(ctx context.Context, db *gorm.DB, commitIDs 
 		orderExpr += " WHEN ? THEN " + strconv.Itoa(i)
 	}
 	orderExpr += " END"
-	if err := query.Clauses(clause.OrderBy{Expression: clause.Expr{
+	ordered := query.Clauses(clause.OrderBy{Expression: clause.Expr{
 		SQL:  orderExpr,
 		Vars: toInterfaceSlice(commitIDs),
-	}}).Find(&commits).Error; err != nil {
-		return nil, 0, err
-	}
+	}})
+	// Apply pagination in the query itself so long histories never load the
+	// full set into memory before slicing.
 	if page > 0 && pageSize > 0 {
-		start := (page - 1) * pageSize
-		if start >= len(commits) {
-			return []*entity.FileCommit{}, total, nil
-		}
-		end := start + pageSize
-		if end > len(commits) {
-			end = len(commits)
-		}
-		return commits[start:end], total, nil
+		ordered = ordered.Offset((page - 1) * pageSize).Limit(pageSize)
+	}
+	if err := ordered.Find(&commits).Error; err != nil {
+		return nil, 0, err
 	}
 	return commits, total, nil
 }
@@ -207,7 +202,10 @@ func (dao *FileCommitItemDAO) GetLatestCommitIDByFileID(ctx context.Context, db 
 	var item entity.FileCommitItem
 	err := db.WithContext(ctx).
 		Where("file_id = ?", fileID).
-		Order("create_time DESC").
+		// Order by the monotonic auto-increment sequence so the most recently
+		// inserted item is always selected even when multiple edits share the
+		// same create_time millisecond.
+		Order("seq DESC").
 		First(&item).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

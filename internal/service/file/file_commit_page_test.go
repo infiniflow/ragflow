@@ -2,7 +2,9 @@ package file
 
 import (
 	"context"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 
 	"ragflow/internal/dao"
@@ -17,6 +19,13 @@ func newPageCommitTestDB(t *testing.T) *gorm.DB {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
+	}
+	// Keep a single connection so the :memory: database is shared across all
+	// goroutines (sqlite :memory: is otherwise per-connection); this also
+	// serializes the concurrent page-commit test through one connection.
+	if sqlDB, serr := db.DB(); serr == nil {
+		sqlDB.SetMaxOpenConns(1)
+		sqlDB.SetMaxIdleConns(1)
 	}
 	if err := db.AutoMigrate(&entity.FileCommit{}, &entity.FileCommitItem{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
@@ -176,6 +185,65 @@ func TestRecordPageEdit_IsolatesDatasets(t *testing.T) {
 	}
 	if *kb1Commit2.ParentID == kb2First.ID {
 		t.Fatal("kb1 parent must not cross into kb2 history")
+	}
+}
+
+func TestRecordPageEdit_ConcurrentEditsFormLinearChain(t *testing.T) {
+	newPageCommitTestDB(t)
+	svc := NewFileCommitService()
+	ctx := context.Background()
+
+	const edits = 8
+	var wg sync.WaitGroup
+	errs := make([]error, edits)
+	for i := 0; i < edits; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			in := PageEditCommitInput{
+				DatasetID:  "kb1",
+				DocID:      "wiki/page-a",
+				Slug:       "page-a",
+				PageType:   "wiki",
+				Title:      "edit-" + strconv.Itoa(idx),
+				AuthorID:   "u1",
+				OldContent: "old",
+				NewContent: "new-" + strconv.Itoa(idx),
+			}
+			_, errs[idx] = svc.RecordPageEdit(ctx, in)
+		}(i)
+	}
+	wg.Wait()
+	for i, e := range errs {
+		if e != nil {
+			t.Fatalf("edit %d failed: %v", i, e)
+		}
+	}
+
+	var commits []entity.FileCommit
+	if err := dao.DB.Where("folder_id = ?", "kb1").Order("create_time ASC").Find(&commits).Error; err != nil {
+		t.Fatalf("load commits: %v", err)
+	}
+	if len(commits) != edits {
+		t.Fatalf("expected %d commits, got %d", edits, len(commits))
+	}
+	// Every commit except the first must have a parent, and the parents must
+	// form a linear chain (no two commits share the same parent).
+	seenParents := map[string]bool{}
+	for i, c := range commits {
+		if i == 0 {
+			if c.ParentID != nil {
+				t.Fatalf("first commit should have no parent")
+			}
+			continue
+		}
+		if c.ParentID == nil {
+			t.Fatalf("commit %s should have a parent", c.ID)
+		}
+		if seenParents[*c.ParentID] {
+			t.Fatalf("two commits share parent %s -> forked chain", *c.ParentID)
+		}
+		seenParents[*c.ParentID] = true
 	}
 }
 

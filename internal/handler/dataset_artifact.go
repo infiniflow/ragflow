@@ -18,6 +18,7 @@ import (
 	"strconv"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
@@ -56,7 +57,15 @@ func (h *DatasetArtifactHandler) datasetOwner(c *gin.Context, datasetID string) 
 		return nil, "", ""
 	}
 	kb, err := h.datasetSvc.GetKnowledgebaseByID(c.Request.Context(), datasetID)
-	if err != nil || kb == nil {
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			common.ErrorWithCode(c, common.CodeNotFound, "dataset not found")
+		} else {
+			common.ErrorWithCode(c, common.CodeServerError, "failed to resolve dataset")
+		}
+		return nil, "", ""
+	}
+	if kb == nil {
 		common.ErrorWithCode(c, common.CodeNotFound, "dataset not found")
 		return nil, "", ""
 	}

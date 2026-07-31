@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/utility"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"go.uber.org/zap"
@@ -266,24 +267,8 @@ func wikiFileID(datasetID, pageType, slug string) string {
 func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommitInput) (*entity.FileCommit, error) {
 	// Parent chain: previous commit that touched the same page file key.
 	fileID := wikiFileID(in.DatasetID, in.PageType, in.Slug)
-	parentID, err := s.commitItemDAO.GetLatestCommitIDByFileID(ctx, dao.DB, fileID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve page commit parent: %w", err)
-	}
 
 	commitID := utility.GenerateUUID()
-
-	commit := &entity.FileCommit{
-		ID:        commitID,
-		FolderID:  in.DatasetID,
-		Message:   in.Title,
-		AuthorID:  in.AuthorID,
-		Title:     &in.Title,
-		FileCount: 1,
-	}
-	if parentID != "" {
-		commit.ParentID = &parentID
-	}
 
 	diffText := unifiedDiff(in.OldContent, in.NewContent)
 	contentAfterStorage := "es"
@@ -303,6 +288,34 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 		PageTypeKwd:          &pageTypeKwd,
 	}
 
+	var commit *entity.FileCommit
+	// Serialize parent selection with insertion in process so two concurrent
+	// edits on the same page cannot both read the same parent and fork the
+	// chain. This is backend-agnostic (works identically on MySQL and SQLite)
+	// and cheaper than row-level DB locks.
+	mu := pageCommitLock(fileID)
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Read the parent inside the lock, on the shared connection, so it always
+	// reflects the previously committed edit for this page.
+	parentID, perr := s.commitItemDAO.GetLatestCommitIDByFileID(ctx, dao.DB, fileID)
+	if perr != nil {
+		return nil, fmt.Errorf("failed to resolve page commit parent: %w", perr)
+	}
+
+	commit = &entity.FileCommit{
+		ID:        commitID,
+		FolderID:  in.DatasetID,
+		Message:   in.Title,
+		AuthorID:  in.AuthorID,
+		Title:     &in.Title,
+		FileCount: 1,
+	}
+	if parentID != "" {
+		commit.ParentID = &parentID
+	}
+
 	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if cerr := tx.Create(commit).Error; cerr != nil {
 			return fmt.Errorf("failed to create page commit: %w", cerr)
@@ -316,6 +329,16 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 	}
 
 	return commit, nil
+}
+
+// pageCommitLocks is a per-page-file-key mutex registry that serializes
+// RecordPageEdit calls for the same page. Entries are retained for the process
+// lifetime (bounded by the number of distinct pages edited).
+var pageCommitLocks sync.Map // fileID -> *sync.Mutex
+
+func pageCommitLock(fileID string) *sync.Mutex {
+	v, _ := pageCommitLocks.LoadOrStore(fileID, &sync.Mutex{})
+	return v.(*sync.Mutex)
 }
 
 // ListPageCommits lists audit commits for a specific wiki/skill page.
