@@ -50,13 +50,11 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         quote: true,
         keyword: false,
         tts: false,
-        use_kg: false,
         refine_multiturn: true,
         system: '',
         parameters: [],
         reasoning: false,
         cross_languages: [],
-        toc_enhance: false,
         reference_metadata: {
           include: false,
           fields: undefined,
