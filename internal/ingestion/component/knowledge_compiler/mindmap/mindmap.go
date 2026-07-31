@@ -12,6 +12,7 @@ package mindmap
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -33,14 +34,13 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 
 	sections := chunkTexts(inputs.Chunks)
-	if len(sections) == 0 {
-		return common.Outputs{}, nil
-	}
 
 	// One LLM task per token-budget batch (mirrors __call__'s task fan-out).
 	batches := packSections(sections, deps.Tokenizer)
 	results := make([]utility.OMap, len(batches))
-	// One LLM task per token-budget batch (mirrors __call__'s task fan-out).
+	// Bounded concurrency. Python fans out with unbounded asyncio.gather plus a
+	// global chat_limiter semaphore; here we cap with a worker pool sized by
+	// MaxWorkers (defaulting to 1, i.e. serial).
 	n := param.MaxWorkers
 	if n <= 0 {
 		n = 1
@@ -119,6 +119,12 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 // becomes a "root" product whose content is the serialized {"id","children"}
 // tree (Python's MindMapResult.output shape); each inner node becomes a
 // "node" product linked via parent_id.
+//
+// NOTE: the per-node "node" products (content = the node title, plus a
+// meta["children"] list of immediate child titles) are a Go component-layer
+// contract for streaming the tree into the upstream chunk list. They go
+// beyond Python's nested dict output and exist so downstream code can index
+// each node independently with parent links.
 func treeToProducts(tenantID, docID string, root *utility.Node) []common.Product {
 	var out []common.Product
 	rootID := common.StableRowID(tenantID, docID, string(common.VariantMindmap), "root")
@@ -179,42 +185,31 @@ func treeToProducts(tenantID, docID string, root *utility.Node) []common.Product
 	return out
 }
 
-// serializeNode renders the tree in Python's MindMapResult.output shape:
-// {"id": ..., "children": [...]}.
-func serializeNode(node *utility.Node) string {
-	var b strings.Builder
-	b.WriteString(`{"id":`)
-	b.WriteString(quoteJSON(node.ID))
-	b.WriteString(`,"children":[`)
-	for i, c := range node.Children {
-		if i > 0 {
-			b.WriteString(",")
-		}
-		b.WriteString(serializeNode(c))
-	}
-	b.WriteString("]}")
-	return b.String()
+// jsonNode mirrors the {"id","children"} mind-map node shape (Python's
+// MindMapResult.output) for JSON serialization.
+type jsonNode struct {
+	ID       string      `json:"id"`
+	Children []*jsonNode `json:"children"`
 }
 
-func quoteJSON(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, r := range s {
-		switch r {
-		case '"':
-			b.WriteString("\\\"")
-		case '\\':
-			b.WriteString("\\\\")
-		case '\n':
-			b.WriteString("\\n")
-		case '\t':
-			b.WriteString("\\t")
-		default:
-			b.WriteRune(r)
-		}
+func toJSONNode(n *utility.Node) *jsonNode {
+	jn := &jsonNode{ID: n.ID}
+	for _, c := range n.Children {
+		jn.Children = append(jn.Children, toJSONNode(c))
 	}
-	b.WriteByte('"')
-	return b.String()
+	return jn
+}
+
+// serializeNode renders the tree in Python's MindMapResult.output shape:
+// {"id": ..., "children": [...]}. Uses encoding/json so every control
+// character (including \r, \b, \f, etc.) is escaped correctly; the previous
+// hand-rolled serializer only escaped ", \, \n and \t.
+func serializeNode(node *utility.Node) string {
+	b, err := json.Marshal(toJSONNode(node))
+	if err != nil {
+		return `{"id":"` + node.ID + `","children":[]}`
+	}
+	return string(b)
 }
 
 func chunkTexts(chunks []common.Chunk) []string {

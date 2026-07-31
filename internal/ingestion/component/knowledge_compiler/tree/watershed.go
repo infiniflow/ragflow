@@ -6,7 +6,7 @@
 // agglomerative hierarchical clustering.
 //
 // See PORT_PLAN.md §3.3 and the M6 validation gate (缺口 C).
-package raptor
+package tree
 
 import (
 	"errors"
@@ -46,7 +46,7 @@ func watershed(embeddings [][]float64, treeOrder int) ([]int, error) {
 	n := len(embeddings)
 	switch {
 	case n == 0:
-		return nil, errors.New("raptor: watershed requires at least one embedding")
+		return nil, errors.New("tree: watershed requires at least one embedding")
 	case n == 1:
 		return []int{0}, nil
 	case n == 2:

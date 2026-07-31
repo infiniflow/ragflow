@@ -7,7 +7,7 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 )
 
-// TreeMetrics summarizes the structural shape of a raptor product tree.
+// TreeMetrics summarizes the structural shape of a tree product tree.
 type TreeMetrics struct {
 	ProductCount int
 	RootCount    int
@@ -16,19 +16,38 @@ type TreeMetrics struct {
 	AllParented  bool
 	VectorOK     bool // every product carries a non-empty vector
 	SchemaOK     bool // every product carries the schema fields
+	// CoveredSources is the number of distinct source chunk IDs referenced by
+	// level-0 leaf clusters via their source_chunk_ids meta. It measures how
+	// completely the input corpus is represented by the tree, independent of
+	// the tree's structural well-formedness.
+	CoveredSources int
+	// covered is the working set of distinct source chunk IDs seen so far.
+	covered map[string]bool
 }
 
-// AnalyzeRaptorProducts validates tree integrity and computes structural
-// metrics from a flat chunk list (the compiled raptor output, expressed as
+// AnalyzeTreeProducts validates tree integrity and computes structural
+// metrics from a flat chunk list (the compiled tree output, expressed as
 // schema.ChunkDoc values). Used by the 缺口 C golden gate.
-func AnalyzeRaptorProducts(chunks []schema.ChunkDoc) TreeMetrics {
+//
+// validSourceIDs, when provided, limits coverage counting to source chunk IDs
+// that actually belong to the input corpus. This prevents an untrusted
+// source_chunk_ids (e.g. a leaked/garbage ID) from inflating CoveredSources
+// past nChunks and pushing CoverageFraction above 1.0. When empty, all
+// source_chunk_ids are counted (backward compatible for unit tests that build
+// synthetic trees).
+func AnalyzeTreeProducts(chunks []schema.ChunkDoc, validSourceIDs ...string) TreeMetrics {
 	ids := make(map[string]bool, len(chunks))
 	for _, c := range chunks {
 		if id, ok := c.GetExtraString("id"); ok {
 			ids[id] = true
 		}
 	}
-	m := TreeMetrics{ProductCount: len(chunks), AllParented: true, VectorOK: true, SchemaOK: true}
+	validSet := make(map[string]bool, len(validSourceIDs))
+	for _, id := range validSourceIDs {
+		validSet[id] = true
+	}
+	checkValid := len(validSet) > 0
+	m := TreeMetrics{ProductCount: len(chunks), AllParented: true, VectorOK: true, SchemaOK: true, covered: make(map[string]bool)}
 	maxLevel := -1
 	for _, c := range chunks {
 		kind, _ := c.GetExtraString("kc_kind")
@@ -42,6 +61,22 @@ func AnalyzeRaptorProducts(chunks []schema.ChunkDoc) TreeMetrics {
 		case "summary":
 			if level == 0 {
 				m.LeafClusters++
+				// Accumulate the distinct source chunk IDs this leaf cluster
+				// was built from. Every input chunk is assigned to exactly one
+				// level-0 cluster in buildTree, so the union of these sets is
+				// the set of covered source chunks. Only IDs that belong to the
+				// input corpus count, so an unknown ID cannot inflate coverage.
+				if src, ok := c.GetExtraStringSlice("source_chunk_ids"); ok {
+					for _, id := range src {
+						if checkValid && !validSet[id] {
+							continue
+						}
+						if !m.covered[id] {
+							m.covered[id] = true
+							m.CoveredSources++
+						}
+					}
+				}
 			}
 			if level > maxLevel {
 				maxLevel = level
@@ -70,20 +105,24 @@ func AnalyzeRaptorProducts(chunks []schema.ChunkDoc) TreeMetrics {
 }
 
 // CoverageFraction reports how completely the input chunks are represented by
-// the raptor tree. Every source chunk is assigned to exactly one level-0
-// cluster in buildTree, and each such cluster becomes a leaf summary node, so a
-// well-formed tree covers 100% of chunks. nChunks is the input chunk count.
+// the tree. It is the ratio of distinct source chunk IDs referenced by the
+// level-0 leaf clusters (CoveredSources) to the total input chunk count
+// (nChunks). This detects dropped source chunks: a structurally well-formed
+// tree that silently omits input chunks will score below 1.0.
 func (m TreeMetrics) CoverageFraction(nChunks int) float64 {
 	if nChunks <= 0 {
 		return 0
 	}
-	// Every chunk maps to a level-0 cluster; the number of covered chunks
-	// equals the total chunk count when at least one leaf cluster exists and
-	// the tree is well-formed (all parented, single root).
-	if m.LeafClusters > 0 && m.RootCount == 1 && m.AllParented {
+	if m.CoveredSources <= 0 {
+		return 0
+	}
+	// Coverage can never exceed 1.0: a source chunk is covered at most once,
+	// and only corpus IDs are counted, so CoveredSources <= nChunks.
+	frac := float64(m.CoveredSources) / float64(nChunks)
+	if frac > 1.0 {
 		return 1.0
 	}
-	return 0.0
+	return frac
 }
 
 // extraFloat reads a numeric Extra value by key.
