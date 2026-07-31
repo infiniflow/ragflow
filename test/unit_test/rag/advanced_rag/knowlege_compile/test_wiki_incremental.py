@@ -135,7 +135,7 @@ def test_extract_raw_entities_basic():
         }
     ]
 
-    raw = _wiki._extract_raw_entities(map_results)
+    raw, claim_index = _wiki._extract_raw_entities(map_results)
 
     names = {e["name"] for e in raw}
     assert names == {"Apple Inc.", "smartphone industry"}, f"Got {names}"
@@ -149,11 +149,16 @@ def test_extract_raw_entities_basic():
             assert entry["type"] == "concept"
             assert entry["claim_count"] == 1
 
+    # claim_index holds the full claim text separately
+    assert len(claim_index["Apple Inc."]) == 1
+    assert claim_index["Apple Inc."][0]["statement"] == "Apple is an American tech company"
+
 
 def test_extract_raw_entities_empty():
     """_extract_raw_entities returns empty list when no entities/concepts."""
-    raw = _wiki._extract_raw_entities([{"doc_id": "d1", "entities": [], "concepts": [], "claims": []}])
+    raw, claim_index = _wiki._extract_raw_entities([{"doc_id": "d1", "entities": [], "concepts": [], "claims": []}])
     assert raw == []
+    assert claim_index == {}
 
 
 def test_extract_raw_entities_duplicate_claims():
@@ -170,9 +175,10 @@ def test_extract_raw_entities_duplicate_claims():
         }
     ]
 
-    raw = _wiki._extract_raw_entities(map_results)
+    raw, claim_index = _wiki._extract_raw_entities(map_results)
     apple = next(e for e in raw if e["name"] == "Apple Inc.")
     assert apple["claim_count"] == 2
+    assert len(claim_index["Apple Inc."]) == 2
 
 
 # ---- Tests for _normalize_key -------------------------------------------------
@@ -307,7 +313,7 @@ async def test_match_entities_exact_match():
         }
     }
 
-    raw = _wiki._extract_raw_entities(
+    raw, _ = _wiki._extract_raw_entities(
         [
             {
                 "doc_id": "doc_2",
@@ -335,7 +341,7 @@ async def test_match_entities_exact_match():
 
 def test_match_entities_concept_no_llm():
     """Concept type entities get correct entity_type after matching."""
-    raw = _wiki._extract_raw_entities(
+    raw, _ = _wiki._extract_raw_entities(
         [
             {
                 "doc_id": "doc_1",
@@ -356,7 +362,7 @@ def test_match_entities_concept_no_llm():
 
 def test_match_entities_incremental_new_entity():
     """Incremental build: exact match + KNN routing logic works correctly."""
-    raw = _wiki._extract_raw_entities(
+    raw, _ = _wiki._extract_raw_entities(
         [
             {
                 "doc_id": "doc_2",
@@ -408,7 +414,7 @@ def test_match_entities_first_build_pairwise():
     Verifies that the same-document entity variants are candidates for merge.
     """
     embd = MockEmbeddingModel(vector_size=8, seed=42)
-    raw = _wiki._extract_raw_entities(
+    raw, _ = _wiki._extract_raw_entities(
         [
             {
                 "doc_id": "doc_1",
@@ -603,7 +609,7 @@ async def test_entity_matching_to_reduce_flow():
         }
     ]
 
-    raw = _wiki._extract_raw_entities(map_results)
+    raw, claim_index = _wiki._extract_raw_entities(map_results)
 
     # Verify matching (synchronous, no _wiki_match_entities call)
     assert any(e["name"] == "Apple Inc." and e["type"] == "org" for e in raw)
@@ -618,11 +624,11 @@ async def test_entity_matching_to_reduce_flow():
     assert canonical_map["smartphone industry"]["type"] == "concept"
 
     # REDUCE (async but clean — only uses asyncio.gather, no _wiki_match_entities)
-    canonical_claims = {n: e.get("claims", []) for n, e in canonical_map.items()}
+    # canonical_claims built from claim_index (full text kept separate)
+    canonical_claims = {n: claim_index.get(n, []) for n in canonical_map}
 
     deltas = await _wiki._wiki_reduce_batch(
         affected_names=set(canonical_map.keys()),
-        map_results=map_results,
         existing_pages={},
         deleted_doc_ids=set(),
         canonical_claims=canonical_claims,
@@ -681,7 +687,7 @@ async def test_reduce_entity_type_preservation():
 
 def test_entity_matching_concept_entity_types():
     """Entity Matching preserves entity_type for both entity and concept."""
-    raw = _wiki._extract_raw_entities(
+    raw, _ = _wiki._extract_raw_entities(
         [
             {
                 "doc_id": "doc_1",

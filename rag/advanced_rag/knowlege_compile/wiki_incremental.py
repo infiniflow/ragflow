@@ -83,7 +83,7 @@ def _wiki_derive_page_id(term: str, prefix: str = "concept") -> str:
 def _entity_to_query_text(entity: dict) -> str:
     return " ".join(
         [
-            entity.get("entity_name") or entity.get("term") or "",
+            entity.get("entity_name") or entity.get("name") or entity.get("term") or "",
             entity.get("definition_excerpt") or entity.get("description") or entity.get("statement", ""),
         ][:2]
     )
@@ -277,13 +277,19 @@ def _normalize_key(name: str) -> str:
 # ----- Entity Matching -----------------------------------------------------
 
 
-def _extract_raw_entities(map_results: list[dict]) -> list[dict]:
-    """Extract raw entity/concept entries from MAP results.
+def _extract_raw_entities(map_results: list[dict]) -> tuple[list[dict], dict[str, list[dict]]]:
+    """Extract lightweight entity/concept metadata + a claim index from MAP.
 
-    Returns list of dicts: {name, type, aliases, claim_count, claims, ...}
-    Also builds concept entries from concepts[] field.
+    Returns a tuple:
+      (entities, claim_index)
+        entities:   list of LIGHTWEIGHT dicts {name, type, aliases, claim_count,
+                    source_doc_ids} — NO full claim text, so Entity Matching
+                    operates on small metadata (mirrors old-mode dedup).
+        claim_index: {name: [claim_dict, ...]} — full claim text kept separately,
+                    loaded on-demand only for affected entities after matching.
     """
     raw: dict[str, dict] = {}
+    claim_index: dict[str, list[dict]] = {}
     for mr in map_results:
         doc_id = mr.get("doc_id", "")
 
@@ -299,10 +305,8 @@ def _extract_raw_entities(map_results: list[dict]) -> list[dict]:
                     "name": name,
                     "type": ent.get("type", "entity"),
                     "aliases": ent.get("aliases") or [],
-                    "claims": [],
                     "claim_count": 0,
                     "source_doc_ids": set(),
-                    "source_chunk_ids": set(),
                 }
             raw[name]["source_doc_ids"].add(doc_id)
 
@@ -318,32 +322,28 @@ def _extract_raw_entities(map_results: list[dict]) -> list[dict]:
                     "name": term,
                     "type": "concept",
                     "aliases": [term],
-                    "claims": [],
                     "claim_count": 0,
                     "source_doc_ids": set(),
-                    "source_chunk_ids": set(),
                 }
             raw[term]["source_doc_ids"].add(doc_id)
 
-        # Process claims and associate with entities/concepts
+        # Process claims, tracking count (metadata) but storing full text only
+        # in claim_index (kept separate, loadable on demand).
         for claim in mr.get("claims") or []:
             if isinstance(claim, str):
                 claim = json.loads(claim)
             subj = claim.get("entity_name") or claim.get("subject") or claim.get("term", "")
-            if not subj or subj not in raw:
+            if not subj:
                 continue
-            raw[subj]["claims"].append(claim)
-            raw[subj]["claim_count"] += 1
-            cid = claim.get("source_chunk_id")
-            if cid:
-                raw[subj]["source_chunk_ids"].add(cid)
+            if subj in raw:
+                raw[subj]["claim_count"] += 1
+                claim_index.setdefault(subj, []).append(claim)
 
     result = []
     for entry in raw.values():
         entry["source_doc_ids"] = list(entry["source_doc_ids"])
-        entry["source_chunk_ids"] = list(entry["source_chunk_ids"])
         result.append(entry)
-    return result
+    return result, claim_index
 
 
 async def _wiki_match_entities(
@@ -574,29 +574,23 @@ async def _wiki_match_entities(
         if cname not in canonical_map:
             existing = existing_canonical.get(cname)
             if existing:
-                # Merge raw entity claims into existing
+                # Lightweight entry — claims loaded separately on demand
                 merged = {
                     "name": cname,
                     "type": existing.get("entity_type_kwd", "entity"),
                     "aliases": existing.get("aliases", []),
-                    "claims": [],
                     "claim_count": existing.get("mention_count_int", 0),
                     "source_doc_ids": existing.get("source_doc_ids", []),
-                    "source_chunk_ids": [],
                 }
                 canonical_map[cname] = merged
 
-    # Merge raw entity claims into canonical entries
+    # Aggregate lightweight metadata (claim_count, source_doc_ids) across all
+    # raw entities that resolved to the same canonical name.
     for entry in raw_entities:
         raw_name = entry["name"]
         cname = name_resolution.get(raw_name, raw_name)
         if cname in canonical_map:
-            # Add claims
-            for claim in entry.get("claims", []):
-                canonical_map[cname]["claims"].append(claim)
-            # Update counts
-            canonical_map[cname]["claim_count"] += len(entry.get("claims", []))
-            # Merge doc IDs
+            canonical_map[cname]["claim_count"] += entry.get("claim_count", 0)
             existing_docs = set(canonical_map[cname].get("source_doc_ids", []))
             existing_docs.update(entry.get("source_doc_ids", []))
             canonical_map[cname]["source_doc_ids"] = list(existing_docs)
@@ -773,12 +767,12 @@ async def _wiki_reduce_entity(
 
 async def _wiki_reduce_batch(
     affected_names: set[str],
-    map_results: list[dict],
     existing_pages: dict[str, dict],
     deleted_doc_ids: set[str],
     canonical_claims: dict[str, list[dict]] | None = None,
     canonical_map: dict[str, dict] | None = None,
     name_resolution: dict[str, str] | None = None,
+    map_results: list[dict] | None = None,
 ) -> list[dict]:
     """Parallel per-entity REDUCE over a batch of affected canonical names.
 
@@ -1656,7 +1650,16 @@ async def wiki_compile_incremental(
     # ----- Phase 2: Entity Matching -----
     _progress("Entity Matching: deduplicating entities and concepts ...")
 
-    raw_entities = _extract_raw_entities(map_results)
+    # Lightweight metadata for matching + separate claim index for on-demand
+    # claim loading.  Keeps Entity Matching operating on small metadata only
+    # (mirrors old-mode dedup); full claim text is loaded per-affected-name
+    # after matching, so peak memory stays bounded.
+    raw_entities, claim_index = _extract_raw_entities(map_results)
+
+    # Release the heavy raw MAP payload as early as possible.  All metadata is
+    # now in raw_entities and full claim text in claim_index; keeping
+    # map_results alive would pin the raw MAP structures in memory.
+    del map_results
 
     canonical_entities = await _load_canonical_entities(tenant_id, kb_id)
 
@@ -1669,6 +1672,9 @@ async def wiki_compile_incremental(
         kb_id=kb_id,
         incremental=incremental,
     )
+
+    # raw_entities (lightweight) no longer needed after matching.
+    del raw_entities
 
     if not canonical_map:
         _progress("Entity Matching: no canonical entities found. Skipping.")
@@ -1724,11 +1730,12 @@ async def wiki_compile_incremental(
     canonical_names: set[str] = set(canonical_map.keys())
 
     if incremental:
+        # Affected doc ids are the docs contributing to this batch's canonical
+        # entities, plus any deleted docs.  Derived from canonical_map (which
+        # carries source_doc_ids) — no need to re-read the released map_results.
         affected_doc_ids = set()
-        for mr in map_results:
-            did = mr.get("doc_id")
-            if did:
-                affected_doc_ids.add(did)
+        for centry in canonical_map.values():
+            affected_doc_ids.update(centry.get("source_doc_ids", []))
         affected_doc_ids = affected_doc_ids | (deleted_doc_ids or set())
 
         # Map doc_page_source entity_names (raw) through name_resolution -> canonical
@@ -1742,17 +1749,6 @@ async def wiki_compile_incremental(
                         cname = name_resolution.get(raw_name, raw_name)
                         if cname in canonical_names:
                             affected_names.add(cname)
-        new_doc_ids = affected_doc_ids - (deleted_doc_ids or set())
-        if new_doc_ids:
-            for mr in map_results:
-                did = mr.get("doc_id")
-                if did in new_doc_ids:
-                    for c in mr.get("claims", []):
-                        raw_name = c.get("entity_name") or c.get("subject") or c.get("term")
-                        if raw_name:
-                            cname = name_resolution.get(raw_name, raw_name)
-                            if cname in canonical_names:
-                                affected_names.add(cname)
         if not affected_names:
             affected_names = canonical_names
     else:
@@ -1765,15 +1761,16 @@ async def wiki_compile_incremental(
         ["slug_kwd", "title_kwd", "md_with_weight", "claims", "source_doc_ids", "page_version_int", "synthesis_version_int", "entity_names_kwd", "related_kb_pages_kwd", "page_type_kwd"],
     )
 
-    # Build deltas using canonical_map claims
-    # Map from canonical name to claims
+    # Build canonical claims ON-DEMAND only for affected names, then release
+    # the full claim_index.  This keeps peak memory bounded by the affected
+    # entity batch rather than the entire KB.
     canonical_claims: dict[str, list[dict]] = {}
-    for cname, centry in canonical_map.items():
-        canonical_claims[cname] = centry.get("claims", [])
+    for name in affected_names:
+        canonical_claims[name] = claim_index.get(name, [])
+    del claim_index
 
     deltas = await _wiki_reduce_batch(
         affected_names=affected_names,
-        map_results=map_results,
         existing_pages=existing_pages,
         deleted_doc_ids=deleted_doc_ids or set(),
         canonical_claims=canonical_claims,
@@ -1786,6 +1783,14 @@ async def wiki_compile_incremental(
         return summary
 
     # ----- Phase 4: Mode-specific dispatch -----
+    # Precompute doc → canonical entity names for doc_page_source tracking,
+    # before canonical_map is released.
+    doc_to_entities: dict[str, list[str]] = {}
+    for cname, centry in canonical_map.items():
+        for did in centry.get("source_doc_ids", []):
+            doc_to_entities.setdefault(did, []).append(cname)
+    del canonical_map
+
     if plan:
         summary = await _wiki_mode_b_run(
             deltas=deltas,
@@ -1796,6 +1801,7 @@ async def wiki_compile_incremental(
             kb_id=kb_id,
             incremental=incremental,
             callback=callback,
+            doc_to_entities=doc_to_entities,
         )
     else:
         # Mode A: only concepts become pages, filter deltas
@@ -1809,8 +1815,13 @@ async def wiki_compile_incremental(
             kb_id=kb_id,
             incremental=incremental,
             callback=callback,
-            canonical_map=canonical_map,
+            canonical_claims=canonical_claims,
+            doc_to_entities=doc_to_entities,
         )
+    del deltas
+    del canonical_claims
+    del name_resolution
+    del existing_pages
 
     # ----- Phase 5: Update doc_page_source with canonical names -----
     # (doc_page_source page_ids is already handled in mode_run)
@@ -1834,13 +1845,16 @@ async def _wiki_mode_a_run(
     kb_id: str,
     incremental: bool,
     callback: Callable | None = None,
-    canonical_map: dict[str, dict] | None = None,
+    canonical_claims: dict[str, list[dict]] | None = None,
+    doc_to_entities: dict[str, list[str]] | None = None,
 ) -> dict:
     """Mode A: concept→page. Only entity_type=concept deltas produce pages.
 
     Args:
         deltas: Already filtered to entity_type="concept" (done in caller)
-        canonical_map: Canonical entity index for enriching entity context
+        canonical_claims: Canonical entity name → claims, for enriching concept
+            page evidence via shared source_chunk_id.
+        doc_to_entities: doc_id → [canonical entity names] for doc_page_source.
     """
     summary = {"pages_created": 0, "pages_modified": 0, "pages_deleted": 0, "errors": []}
 
@@ -1903,13 +1917,12 @@ async def _wiki_mode_a_run(
             entry["action"] = d.get("action")
 
     # Enrich concept pages with entity claims that share source_chunk_ids.
-    # Build a chunk_id → first-claim-text index from non-concept canonical entries.
-    if canonical_map:
+    # Build a chunk_id → first-claim-text index from canonical_claims
+    # (non-concept claims loaded on-demand after matching).
+    if canonical_claims:
         chunk_claims: dict[str, list[str]] = {}
-        for _cname, centry in canonical_map.items():
-            if centry.get("type") == "concept":
-                continue
-            for claim in centry.get("claims", []):
+        for _cname, claims in canonical_claims.items():
+            for claim in claims:
                 cid = claim.get("source_chunk_id")
                 if cid:
                     chunk_claims.setdefault(cid, []).append(claim.get("statement", claim.get("text", "")))
@@ -2023,18 +2036,14 @@ async def _wiki_mode_a_run(
             for pid in pids:
                 if pid not in existing_pids:
                     existing_pids.append(pid)
-            # Collect entity names for this doc from canonical_map
-            doc_entity_names = []
-            if canonical_map:
-                for cname, centry in canonical_map.items():
-                    if did in centry.get("source_doc_ids", []):
-                        doc_entity_names.append(cname)
+            # Collect entity names for this doc from precomputed doc_to_entities
+            doc_entity_names = (doc_to_entities or {}).get(did, []) or existing_dps.get("entity_names")
             await _wiki_update_doc_page_source(
                 tenant_id,
                 kb_id,
                 did,
                 existing_pids,
-                entity_names=doc_entity_names or existing_dps.get("entity_names"),
+                entity_names=doc_entity_names,
                 chunk_hashes=existing_dps.get("source_chunk_hashes"),
                 map_checksum=existing_dps.get("map_checksum"),
             )
@@ -2055,6 +2064,7 @@ async def _wiki_mode_b_run(
     kb_id: str,
     incremental: bool,
     callback: Callable | None = None,
+    doc_to_entities: dict[str, list[str]] | None = None,
 ) -> dict:
     """Mode B: Page Router + per-page REFINE."""
 
@@ -2231,7 +2241,7 @@ async def _wiki_mode_b_run(
                 kb_id,
                 did,
                 existing_pids,
-                entity_names=existing_dps.get("entity_names"),
+                entity_names=(doc_to_entities or {}).get(did, []) or existing_dps.get("entity_names"),
                 chunk_hashes=existing_dps.get("source_chunk_hashes"),
                 map_checksum=existing_dps.get("map_checksum"),
             )
