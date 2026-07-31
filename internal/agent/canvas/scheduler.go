@@ -298,7 +298,8 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 			zap.String("componentName", componentName),
 			zap.Error(err),
 		)
-		nsData = []byte("{}")
+		nsData = []byte(fmt.Sprintf(`{"component_id":%q,"component_name":%q,"component_type":%q}`,
+			cpnID, componentName, componentType))
 	}
 	meta := GetRunMeta(ctx)
 	msgID, sessionID := "", ""
@@ -369,7 +370,8 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 			zap.String("componentName", componentName),
 			zap.Error(err),
 		)
-		nfData = []byte("{}")
+		nfData = []byte(fmt.Sprintf(`{"component_id":%q,"component_name":%q,"component_type":%q}`,
+			cpnID, componentName, componentType))
 	}
 	meta := GetRunMeta(ctx)
 	msgID, sessionID := "", ""

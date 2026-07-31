@@ -291,3 +291,44 @@ func TestNodeLifecycleEventsSafeMarshalNonSerializableInputs(t *testing.T) {
 		}
 	}
 }
+
+func TestNodeLifecycleEventsFallbackMarshalErrorPreservesIdentity(t *testing.T) {
+	events := make(chan RunEvent, 2)
+	ctx := WithRunMeta(context.Background(), &RunMeta{
+		Events:    events,
+		MessageID: "msg-2",
+		SessionID: "session-2",
+	})
+	state := NewCanvasState("run-2", "session-2")
+	inputs := map[string]any{
+		"query":  "hi",
+		"broken": complex(1, 2),
+	}
+
+	nodeStartedAt(ctx, state, "agent_1", "Agent", "Agent", inputs)
+	nodeFinishedNow(ctx, state, "agent_1", "Agent", "Agent", nil)
+
+	for i, wantType := range []string{"node_started", "node_finished"} {
+		select {
+		case ev := <-events:
+			if ev.Type != wantType {
+				t.Fatalf("event[%d].Type = %q, want %q", i, ev.Type, wantType)
+			}
+			var payload map[string]any
+			if err := json.Unmarshal([]byte(ev.Data), &payload); err != nil {
+				t.Fatalf("%s Data should be valid JSON, got %q: %v", wantType, ev.Data, err)
+			}
+			if payload["component_id"] != "agent_1" {
+				t.Fatalf("%s component_id = %v, want agent_1; payload=%v", wantType, payload["component_id"], payload)
+			}
+			if payload["component_name"] != "Agent" {
+				t.Fatalf("%s component_name = %v, want Agent; payload=%v", wantType, payload["component_name"], payload)
+			}
+			if payload["component_type"] != "Agent" {
+				t.Fatalf("%s component_type = %v, want Agent; payload=%v", wantType, payload["component_type"], payload)
+			}
+		default:
+			t.Fatalf("missing %s event", wantType)
+		}
+	}
+}
