@@ -14,11 +14,11 @@
 #  limitations under the License.
 #
 
-import re
 import logging
+import re
 
-from deepdoc.parser.utils import get_text
 from common.token_utils import num_tokens_from_string
+from deepdoc.parser.utils import get_text
 from rag.nlp import _split_oversized_unit
 
 
@@ -56,7 +56,7 @@ class RAGFlowTxtParser:
 
         dels = []
         s = 0
-        for m in re.finditer(r"`([^`]+)`", delimiter, re.I):
+        for m in re.finditer(r"`([^`]+)`", delimiter, re.IGNORECASE):
             f, m_t = m.span()
             dels.append(m.group(1))
             dels.extend(list(delimiter[s:f]))

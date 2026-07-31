@@ -31,7 +31,7 @@ import re
 
 import pytest
 
-import rag.nlp as nlp
+from rag import nlp
 from rag.nlp import naive_merge, naive_merge_with_images
 
 DEFAULT_DELIMITER = "\n!?。；！？"
@@ -322,5 +322,3 @@ def test_images_empty_delimiter_oversized_section_strictly_capped():
     assert len(nonempty) > 1
     assert all(_tok(c) <= 30 for c in nonempty)
     assert len(chunks) == len(imgs)
-
-

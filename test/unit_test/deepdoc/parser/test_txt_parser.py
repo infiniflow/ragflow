@@ -27,7 +27,6 @@ import os
 import sys
 from unittest import mock
 
-
 _MOCK_MODULES = [
     "xgboost",
     "pdfplumber",
@@ -169,4 +168,3 @@ def test_newline_join_token_count_strict_cap(monkeypatch):
     non_empty = [c[0] for c in chunks if c[0].strip()]
     assert all(char_count_tokens(c) <= 20 for c in non_empty)
     assert len(non_empty) == 2
-

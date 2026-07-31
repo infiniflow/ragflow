@@ -14,19 +14,19 @@
 #  limitations under the License.
 #
 
+import copy
 import logging
 import random
+import re
 from collections import Counter, defaultdict
 
-from common.token_utils import num_tokens_from_string
-import re
-import copy
+import chardet
 import roman_numbers as r
-from word2number import w2n
 from cn2an import cn2an
 from PIL import Image
+from word2number import w2n
 
-import chardet
+from common.token_utils import num_tokens_from_string
 
 __all__ = ["rag_tokenizer"]
 
@@ -394,7 +394,7 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
     for ii, ck in enumerate(chunks):
         if len(ck.strip()) == 0:
             continue
-        logging.debug("-- {}".format(ck))
+        logging.debug(f"-- {ck}")
         d = copy.deepcopy(doc)
         if pdf_parser:
             try:
@@ -422,7 +422,7 @@ def doc_tokenize_chunks_with_images(chunks, doc, eng, child_delimiters_pattern=N
         text = ck.get("context_above", "") + ck.get("text") + ck.get("context_below", "")
         if len(text.strip()) == 0:
             continue
-        logging.debug("-- {}".format(ck))
+        logging.debug(f"-- {ck}")
         d = copy.deepcopy(doc)
         if ck.get("image"):
             d["image"] = ck.get("image")
@@ -448,7 +448,7 @@ def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_patte
     for ii, (ck, image) in enumerate(zip(chunks, images)):
         if len(ck.strip()) == 0:
             continue
-        logging.debug("-- {}".format(ck))
+        logging.debug(f"-- {ck}")
         d = copy.deepcopy(doc)
         d["image"] = image
         add_positions(d, [[ii] * 5])
@@ -940,7 +940,7 @@ def remove_contents_table(sections, eng=False):
 
         def get(i):
             nonlocal sections
-            return (sections[i] if isinstance(sections[i], type("")) else sections[i][0]).strip()
+            return (sections[i] if isinstance(sections[i], str) else sections[i][0]).strip()
 
         if not re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$", re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], flags=re.IGNORECASE)):
             i += 1
@@ -968,7 +968,7 @@ def remove_contents_table(sections, eng=False):
 def make_colon_as_title(sections):
     if not sections:
         return []
-    if isinstance(sections[0], type("")):
+    if isinstance(sections[0], str):
         return sections
     i = 0
     while i < len(sections):
@@ -1020,7 +1020,7 @@ def not_title(txt):
 def tree_merge(bull, sections, depth):
     if not sections or bull < 0:
         return sections
-    if isinstance(sections[0], type("")):
+    if isinstance(sections[0], str):
         sections = [(s, "") for s in sections]
 
     # filter out position information in pdf sections
@@ -1033,11 +1033,10 @@ def tree_merge(bull, sections, depth):
         for i, title in enumerate(BULLET_PATTERN[bull]):
             if re.match(title, text.strip()) and not not_bullet(text):
                 return i + 1, text
+        if re.search(r"(title|head)", layout) and not not_title(text):
+            return len(BULLET_PATTERN[bull]) + 1, text
         else:
-            if re.search(r"(title|head)", layout) and not not_title(text):
-                return len(BULLET_PATTERN[bull]) + 1, text
-            else:
-                return len(BULLET_PATTERN[bull]) + 2, text
+            return len(BULLET_PATTERN[bull]) + 2, text
 
     level_set = set()
     lines = []
@@ -1068,7 +1067,7 @@ def tree_merge(bull, sections, depth):
 def hierarchical_merge(bull, sections, depth):
     if not sections or bull < 0:
         return []
-    if isinstance(sections[0], type("")):
+    if isinstance(sections[0], str):
         sections = [(s, "") for s in sections]
     sections = [(t, o) for t, o in sections if t and len(t.split("@")[0].strip()) > 1 and not re.match(r"[0-9]+$", t.split("@")[0].strip())]
     bullets_size = len(BULLET_PATTERN[bull])
@@ -1474,7 +1473,7 @@ def docx_question_level(p, bull=-1):
 
 
 def concat_img(img1, img2):
-    from rag.utils.lazy_image import ensure_pil_image, LazyImage
+    from rag.utils.lazy_image import LazyImage, ensure_pil_image
 
     # Same image must not stack with itself (the LazyImage branch would otherwise
     # concatenate its blob list); mirrors the PIL branch's same-reference guard.
@@ -1770,7 +1769,7 @@ def extract_between(text: str, start_tag: str, end_tag: str) -> list[str]:
 def get_delimiters(delimiters: str):
     dels = []
     s = 0
-    for m in re.finditer(r"`([^`]+)`", delimiters, re.I):
+    for m in re.finditer(r"`([^`]+)`", delimiters, re.IGNORECASE):
         f, t = m.span()
         dels.append(m.group(1))
         dels.extend(list(delimiters[s:f]))
