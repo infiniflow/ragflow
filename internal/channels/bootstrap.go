@@ -285,6 +285,8 @@ func buildChannel(accountID string, wanted desiredChannel) (core.Channel, error)
 		return newQQBotChannelFromConfig(accountID, wanted.credential)
 	case "whatsapp":
 		return newWhatsAppChannelFromConfig(accountID, wanted.credential)
+	case "line":
+		return newLineChannelFromConfig(accountID, wanted.credential)
 	case "telegram":
 		return newTelegramChannelFromConfig(accountID, wanted.credential)
 	case "wecom":
