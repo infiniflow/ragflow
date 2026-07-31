@@ -145,7 +145,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// Emit cluster rows in creation order, then nav_doc leaves in placement
 	// order, then the root overview node (a Go-side convenience: Python's tree
 	// has no root row, but downstream consumers expect one overview product).
-	sink := common.NewProductSink(ctx, param.Guardrails, inputs.Sink)
+	var products []common.Product
 	clusterProductID := map[string]string{}
 	// Pre-compute every cluster id (deterministic from StableRowID) before
 	// resolving parent edges, so a child emitted before its (later-created)
@@ -162,7 +162,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			pid = clusterProductID[c.Parent]
 		}
 		id := clusterProductID[c.Name]
-		if err := sink.Add(common.Product{
+		products = append(products, common.Product{
 			ID:       id,
 			DocID:    docID,
 			TenantID: tenantID,
@@ -179,12 +179,10 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 				"doc_ids":     append([]string{}, c.DocIDs...),
 				"size":        len(c.DocIDs),
 			},
-		}); err != nil {
-			return common.Outputs{}, err
-		}
+		})
 	}
 	for _, d := range tree.docs {
-		if err := sink.Add(common.Product{
+		products = append(products, common.Product{
 			// Scope nav_doc ids by tenant and dataset (not just chunk id) so
 			// synthetic/positional chunk ids from different docs/datasets do not
 			// collide and overwrite each other across tenants (M5).
@@ -203,18 +201,16 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 				"depth":       d.Depth,
 				"doc_ids":     []string{d.ChunkID},
 			},
-		}); err != nil {
-			return common.Outputs{}, err
-		}
+		})
 	}
 
-	// Root overview built from EVERY cluster description (mirrors the retained-
-	// summaries pattern: already-flushed nodes still contribute to the root).
+	// Root overview built from EVERY cluster description (all products are
+	// buffered in the same slice, so every node contributes to the root).
 	rootSummary, err := summarize(ctx, deps, llmID, "Compose a navigation overview from these section summaries:\n\n"+formatNavSummaries(clusterDescs))
 	if err == nil && rootSummary != "" {
 		emb, e2 := deps.Embed.Encode(ctx, []string{rootSummary})
 		if e2 == nil && len(emb) > 0 {
-			if err := sink.Add(common.Product{
+			products = append(products, common.Product{
 				ID:       common.StableRowID(tenantID, docID, string(common.VariantDatasetnav), "root"),
 				DocID:    docID,
 				TenantID: tenantID,
@@ -228,20 +224,12 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 					"depth": 0,
 					"size":  len(tree.docs),
 				},
-			}); err != nil {
-				return common.Outputs{}, err
-			}
+			})
 		}
 	}
 
 	out := common.Outputs{
-		Products:    sink.Products(),
-		VectorBytes: sink.Bytes(),
-		Items:       sink.TotalItems(),
-		Flushed:     sink.Flushed(),
-	}
-	if err := out.EnforceGuardrails(param.Guardrails, inputs.Sink, ctx); err != nil {
-		return common.Outputs{}, err
+		Products: products,
 	}
 	return out, nil
 }

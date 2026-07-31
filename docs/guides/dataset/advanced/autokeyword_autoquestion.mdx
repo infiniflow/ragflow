@@ -1,11 +1,13 @@
 ---
 sidebar_position: 0
+title: Auto-Keyword Auto-Question
+sidebar_label: Auto-Keyword Auto-Question
 slug: /autokeyword_autoquestion
 sidebar_custom_props: {
   categoryIcon: LucideSlidersHorizontal
 }
 ---
-# Auto-keyword Auto-question
+# Auto-Keyword Auto-Question
 import APITable from '@site/src/components/APITable';
 
 Use a chat model to generate keywords or questions from each chunk in the dataset.
@@ -18,7 +20,7 @@ When selecting a chunking method, you can also enable auto-keyword or auto-quest
 Enabling this feature increases document indexing time and uses extra tokens, as all created chunks will be sent to the chat model for keyword or question generation.
 :::
 
-## What is Auto-keyword?
+## What Is Auto-Keyword?
 
 Auto-keyword refers to the auto-keyword generation feature of RAGFlow. It uses a chat model to generate a set of keywords or synonyms from each chunk to correct errors and enhance retrieval accuracy. This feature is implemented as a slider under **Page rank** on the **Configuration** page of your dataset.
 
@@ -33,7 +35,7 @@ Auto-keyword refers to the auto-keyword generation feature of RAGFlow. It uses a
 - An Auto-keyword value must be an integer. If you set it to a non-integer, say 1.7, it will be rounded down to the nearest integer, which in this case is 1.
 :::
 
-## What is Auto-question?
+## What Is Auto-Question?
 
 Auto-question is a feature of RAGFlow that automatically generates questions from chunks of data using a chat model. These questions (e.g. who, what, and why) also help correct errors and improve the matching of user queries. The feature usually works with FAQ retrieval scenarios involving product manuals or policy documents. And you can find this feature as a slider under **Page rank** on the **Configuration** page of your dataset.
 
@@ -48,7 +50,7 @@ Auto-question is a feature of RAGFlow that automatically generates questions fro
 - An Auto-question value must be an integer. If you set it to a non-integer, say 1.7, it will be rounded down to the nearest integer, which in this case is 1.
 :::
 
-## Tips from the community
+## Tips from the Community
 
 The Auto-keyword or Auto-question values relate closely to the chunking size in your dataset. However, if you are new to this feature and unsure which value(s) to start with, the following are some value settings we gathered from our community. While they may not be accurate, they provide a starting point at the very least.
 

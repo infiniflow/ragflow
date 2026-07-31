@@ -6,6 +6,11 @@ import (
 	"sync"
 )
 
+// DefaultLLMContextLength is the fallback chat-model context window (tokens)
+// used for per-cluster text truncation when the model's real max length is
+// unknown (e.g. in tests). Mirrors Python's default llm_model.max_length.
+const DefaultLLMContextLength = 8192
+
 // ChatRequest is the minimal surface a variant needs to dispatch one LLM call.
 type ChatRequest struct {
 	LLMID        string
@@ -16,8 +21,11 @@ type ChatRequest struct {
 	// knowledge compilation pins extraction at 0.1 and merge judging at 0.0,
 	// so variants set it per call site.
 	Temperature *float64
-	APIKey      string
-	BaseURL     string
+	// MaxTokens caps the generated summary length (mirrors Python's
+	// {"max_tokens": max(self._max_token, 512)} config, issue #10235).
+	MaxTokens *int
+	APIKey    string
+	BaseURL   string
 }
 
 // ChatResponse holds the LLM's text answer.
@@ -96,6 +104,10 @@ type Deps struct {
 	Redis         RedisClient   // optional (datasetnav)
 	TenantID      string
 	DatasetID     string
+	// LLMMaxLength is the chat model's context window in tokens. RAPTOR uses it
+	// to truncate each cluster's texts so the summary prompt fits the window
+	// (mirrors Python self._llm_model.max_length).
+	LLMMaxLength int
 }
 
 // DepsResolver resolves the per-run Deps from a tenant/llm/embedding triple.

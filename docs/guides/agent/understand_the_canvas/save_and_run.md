@@ -1,5 +1,7 @@
 ---
 sidebar_position: 3
+title: "Save & Run"
+sidebar_label: "Save & Run"
 slug: /save_and_run
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

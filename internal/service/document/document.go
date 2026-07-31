@@ -113,8 +113,10 @@ type ArtifactResponse struct {
 }
 
 type UpdateDatasetDocumentRequest struct {
-	Name         *string        `json:"name"`
-	ParserID     *string        `json:"parser_id"`
+	Name     *string `json:"name"`
+	ParserID *string `json:"parser_id"`
+	// ChunkMethod is the public alias for parser_id (Python UpdateDocumentReq).
+	ChunkMethod  *string        `json:"chunk_method"`
 	ChunkCount   *int64         `json:"chunk_count"`
 	TokenCount   *int64         `json:"token_count"`
 	PipelineID   *string        `json:"pipeline_id"`

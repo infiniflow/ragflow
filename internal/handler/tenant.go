@@ -456,6 +456,14 @@ func (h *TenantHandler) InsertMetadataFromFile(c *gin.Context) {
 	// Use user.ID as tenant ID (user IS the tenant in user mode)
 	tenantID := user.ID
 
+	// Ensure the metadata store exists before writing (service-layer
+	// create-on-first-write logic; the engine layer assumes it exists).
+	metadataSvc := service.NewMetadataService()
+	if err := metadataSvc.EnsureMetadataStore(c.Request.Context(), tenantID); err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "failed to ensure metadata store: "+err.Error())
+		return
+	}
+
 	// Get the document engine and insert
 	docEngine := engine.Get()
 	result, err := docEngine.InsertMetadata(c.Request.Context(), inputFormat.Chunks, tenantID)

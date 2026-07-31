@@ -1,5 +1,7 @@
 ---
 sidebar_position: 9
+title: Add RSS
+sidebar_label: Add RSS
 slug: /add_rss
 sidebar_custom_props: {
   categoryIcon: SiGoogledrive
@@ -29,7 +31,7 @@ Integrating an RSS data source provides the following advantages:
 - A valid RSS feed URL.
 - An existing dataset in RAGFlow.
 
-## Find an RSS feed URL
+## Find an RSS Feed URL
 
 Before adding the data source, you need the direct URL of the RSS feed you want to monitor. You can typically find this in a few different ways:
 
@@ -37,7 +39,7 @@ Before adding the data source, you need the direct URL of the RSS feed you want 
 - **Try common URL paths**: Often, you can find the feed by appending common RSS paths to the website's main URL (e.g., `https://example.com/rss`, `https://example.com/feed`, or `https://example.com/atom.xml`).
 - **Check the page source**: Right-click on the webpage, select **View Page Source**, and press `Ctrl+F` (or `Cmd+F`) to search for `rss` or `application/rss+xml`. The URL will be listed in the `href` attribute of that tag.
 
-## Add an RSS data source
+## Add an RSS Data Source
 
 To add an RSS feed to your dataset, follow these steps:
 

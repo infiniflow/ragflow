@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Purpose of Agent
+sidebar_label: Purpose of Agent
 slug: /purpose_of_agent
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

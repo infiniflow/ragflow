@@ -1,9 +1,10 @@
 ---
 sidebar_position: 4
-sidebar_label: "Remove members"
+sidebar_label: Remove Members
+title: Remove Members
 ---
 
-## Remove members
+# Remove Members
 
 The team owner can remove members from the team.
 
