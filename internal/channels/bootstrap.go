@@ -283,6 +283,10 @@ func buildChannel(accountID string, wanted desiredChannel) (core.Channel, error)
 		return newQQBotChannelFromConfig(accountID, wanted.credential)
 	case "whatsapp":
 		return newWhatsAppChannelFromConfig(accountID, wanted.credential)
+	case "telegram":
+		return newTelegramChannelFromConfig(accountID, wanted.credential)
+	case "wecom":
+		return newWeComChannelFromConfig(accountID, wanted.credential)
 	case "dingtalk":
 		return newDingTalkChannelFromConfig(accountID, wanted.credential)
 	default:
