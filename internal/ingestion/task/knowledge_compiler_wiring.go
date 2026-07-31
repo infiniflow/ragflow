@@ -47,11 +47,12 @@ import (
 func init() {
 	kc.SetDepsResolver(newKnowledgeCompilerDepsResolver())
 	kc.SetGroupResolver(newKnowledgeCompilerGroupResolver())
+	kc.SetTemplateResolver(newKnowledgeCompilerTemplateResolver())
 }
 
 // newKnowledgeCompilerGroupResolver builds the production GroupResolver backed by
 // the compilation_template DAO. Without it, any config carrying
-// compilation_template_group_ids would fail loud at runtime (the component
+// compilation_template_group_id would fail loud at runtime (the component
 // refuses to silently drop the compilation_template_ids stamp). It resolves each
 // group id to its child template ids so group-based configs stamp the full set
 // on every compiled unit.
@@ -59,6 +60,26 @@ func newKnowledgeCompilerGroupResolver() kc.GroupResolver {
 	tmplDAO := dao.NewCompilationTemplateDAO()
 	return func(ctx context.Context, tenantID string, groupIDs []string) ([]string, error) {
 		return tmplDAO.ResolveGroupTemplateIDs(ctx, tenantID, groupIDs)
+	}
+}
+
+// newKnowledgeCompilerTemplateResolver builds the production TemplateResolver
+// backed by the compilation_template DAO. It loads a single template by id and
+// returns its id, kind (which selects the Go variant via common.KindToVariant),
+// and config (the template "content"). Without it, any config carrying
+// compilation_template_id would fail loudly at runtime.
+func newKnowledgeCompilerTemplateResolver() kc.TemplateResolver {
+	tmplDAO := dao.NewCompilationTemplateDAO()
+	return func(ctx context.Context, tenantID, templateID string) (kc.TemplateInfo, error) {
+		t, err := tmplDAO.GetTemplate(ctx, tenantID, templateID)
+		if err != nil {
+			return kc.TemplateInfo{}, err
+		}
+		return kc.TemplateInfo{
+			ID:     t.ID,
+			Kind:   t.Kind,
+			Config: map[string]any(t.Config),
+		}, nil
 	}
 }
 

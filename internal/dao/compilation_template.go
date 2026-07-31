@@ -92,3 +92,17 @@ func (dao *CompilationTemplateDAO) ResolveGroupTemplateIDs(ctx context.Context, 
 	}
 	return out, nil
 }
+
+// GetTemplate loads a single, valid compilation template by id for the tenant.
+// It backs the KnowledgeCompiler TemplateResolver: the template's kind selects
+// the Go compile variant (see common.KindToVariant) and its config is the
+// template "content" plumbed to the variant.
+func (dao *CompilationTemplateDAO) GetTemplate(ctx context.Context, tenantID, templateID string) (*entity.CompilationTemplate, error) {
+	var t entity.CompilationTemplate
+	if err := DB.WithContext(ctx).
+		Where("id = ? AND tenant_id = ? AND status = ?", templateID, tenantID, string(entity.StatusValid)).
+		First(&t).Error; err != nil {
+		return nil, fmt.Errorf("load compilation template %q: %w", templateID, err)
+	}
+	return &t, nil
+}

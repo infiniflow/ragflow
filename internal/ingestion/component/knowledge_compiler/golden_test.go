@@ -74,7 +74,7 @@ func runVariantChunks(t *testing.T, variant string, extra map[string]any) []sche
 // inputs (e.g. parser_config for the structure variant's template shape).
 func runVariantChunksWithInputs(t *testing.T, variant string, extra, inputsExtra map[string]any) []schema.ChunkDoc {
 	t.Helper()
-	params := map[string]any{"variant": variant, "llm_id": "llm1", "embedding_model": "emb1"}
+	params := map[string]any{"compilation_template_id": variant, "llm_id": "llm1", "embedding_model": "emb1"}
 	for k, v := range extra {
 		params[k] = v
 	}

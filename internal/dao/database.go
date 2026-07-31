@@ -158,6 +158,11 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.FileCommit{},
 		&entity.FileCommitItem{},
 		&entity.KnowledgeCompileDoc{},
+		// Knowledge-compile compilation templates and their groups. The Go
+		// KnowledgeCompilerComponent resolves a compilation_template (or group)
+		// from these tables at runtime, so the Go side must guarantee they exist.
+		&entity.CompilationTemplate{},
+		&entity.CompilationTemplateGroup{},
 	}
 
 	if migrateDB {
