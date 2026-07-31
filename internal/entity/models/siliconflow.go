@@ -115,79 +115,12 @@ func (s *SiliconflowModel) ChatWithMessages(ctx context.Context, modelName strin
 		reqBody["enable_thinking"] = false
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := s.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := s.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
-		var result SiliconflowChatResponse
-		if err := json.Unmarshal(body, &result); err != nil {
-			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
-		}
-		if len(result.Choices) == 0 {
-			return chatResponseParts{}, fmt.Errorf("no choices in response")
-		}
-
-		choice := &result.Choices[0]
-		content := choice.Message.Content
-		if content == "" && len(choice.Message.ToolCalls) == 0 {
-			return chatResponseParts{}, fmt.Errorf("invalid content format")
-		}
-
-		reasonContent := ""
-		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
-			reasonContent = choice.Message.ReasoningContent
-			if reasonContent == "" {
-				reasoning, answer := GetThinkingAndAnswer(chatConfig.ModelClass, &content)
-				if reasoning != nil {
-					reasonContent = *reasoning
-					content = *answer
-				}
-			}
-			if reasonContent != "" && reasonContent[0] == '\n' {
-				reasonContent = reasonContent[1:]
-			}
-		}
-
-		return chatResponseParts{
-			RequestID:     result.ID,
-			Content:       &content,
-			ReasonContent: &reasonContent,
-			ToolCalls:     choice.Message.ToolCalls,
-			Usage: &TokenUsage{
-				PromptTokens:     result.Usage.PromptTokens,
-				CompletionTokens: result.Usage.CompletionTokens,
-				TotalTokens:      result.Usage.TotalTokens,
-			},
-		}, nil
-	})
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -246,72 +179,7 @@ func (s *SiliconflowModel) ChatStreamlyWithSender(ctx context.Context, modelName
 		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// SSE parsing: read line by line
-	sawTerminal := false
-	accumulatedToolCalls := make(map[int]map[string]interface{})
-	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		common.Info(fmt.Sprintf("%v", event))
-
-		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
-		if usageErr != nil {
-			return usageErr
-		}
-		if found {
-			applyStreamUsage(chatModelConfig, modelUsage, tokenUsage)
-		}
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
-			sawTerminal = true
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-		if accumulateToolCallDeltas(delta, accumulatedToolCalls) {
-			return nil
-		}
-
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !done && !sawTerminal {
-		return fmt.Errorf("siliconflow: stream ended before [DONE] or finish_reason")
-	}
-	setSortedToolCallsResult(chatModelConfig, accumulatedToolCalls)
-
-	// Send [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	if err = sender(&endOfStream, nil); err != nil {
-		return err
-	}
-
-	return nil
+	return HandleStreamingResponse(resp.Body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
 }
 
 type siliconflowEmbeddingResponse struct {
