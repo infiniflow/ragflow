@@ -50,22 +50,26 @@ func assertOllamaMultimodalRequest(t *testing.T, body map[string]interface{}, st
 	}
 	messages, ok := body["messages"].([]interface{})
 	if !ok || len(messages) != 1 {
-		t.Fatalf("messages=%v, want one message", body["messages"])
+		t.Errorf("messages=%v, want one message", body["messages"])
+		return
 	}
 	message, ok := messages[0].(map[string]interface{})
 	if !ok {
-		t.Fatalf("message=%v, want object", messages[0])
+		t.Errorf("message=%v, want object", messages[0])
+		return
 	}
 	if message["content"] != "describe\ncarefully" {
 		t.Errorf("content=%v, want joined text parts", message["content"])
 	}
 	images, ok := message["images"].([]interface{})
 	if !ok {
-		t.Fatalf("images=%v, want array", message["images"])
+		t.Errorf("images=%v, want array", message["images"])
+		return
 	}
 	want := []string{"aGVsbG8=", "cmF3LWltYWdl", "https://example.com/cat.png"}
 	if len(images) != len(want) {
-		t.Fatalf("images=%v, want %v", images, want)
+		t.Errorf("images=%v, want %v", images, want)
+		return
 	}
 	for i, expected := range want {
 		if images[i] != expected {
@@ -79,7 +83,9 @@ func TestOllamaChatMapsMultimodalImages(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decode request: %v", err)
+			t.Errorf("decode request: %v", err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
 		}
 		assertOllamaMultimodalRequest(t, body, false)
 		_, _ = io.WriteString(w, `{"message":{"content":"ok","thinking":""}}`)
@@ -107,7 +113,9 @@ func TestOllamaStreamingChatMapsMultimodalImages(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			t.Fatalf("decode request: %v", err)
+			t.Errorf("decode request: %v", err)
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
 		}
 		assertOllamaMultimodalRequest(t, body, true)
 		_, _ = io.WriteString(w, "{\"message\":{\"content\":\"ok\"},\"done\":false}\n{\"done\":true}\n")
