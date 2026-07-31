@@ -72,9 +72,9 @@ func TestExtractOpenAIUsage(t *testing.T) {
 			name: "cache read via prompt_cache_hit_tokens (DeepSeek)",
 			body: map[string]any{
 				"usage": map[string]any{
-					"prompt_tokens":          float64(100),
-					"completion_tokens":      float64(50),
-					"total_tokens":           float64(150),
+					"prompt_tokens":           float64(100),
+					"completion_tokens":       float64(50),
+					"total_tokens":            float64(150),
 					"prompt_cache_hit_tokens": float64(80),
 				},
 			},
