@@ -211,12 +211,18 @@ func (c *dingTalkChannel) run(ctx context.Context) {
 		c.mu.Lock()
 		if c.ctx == ctx {
 			runCancel = c.cancel
-			c.cancel = nil
-			c.ctx = nil
 		}
 		c.mu.Unlock()
 		if runCancel != nil {
 			runCancel()
+		}
+
+		c.mu.Lock()
+		if c.ctx == ctx {
+			c.cancel = nil
+			c.ctx = nil
+		}
+		c.mu.Unlock()
 		}
 	}()
 	if c.stream == nil {
