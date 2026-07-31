@@ -55,9 +55,8 @@ func HandleNonStreamingResponse(
 		recordResponseUsage(modelUsage, extractRequestID(result), usage, "chat")
 		if chatConfig != nil {
 			chatConfig.UsageResult = usage
-			if model, ok := result["model"].(string); ok {
-				common.Info("StreamUsage", zap.String("model", model), zap.Int("prompt", usage.PromptTokens), zap.Int("completion", usage.CompletionTokens), zap.Int("total", usage.TotalTokens))
-			}
+			model, _ := result["model"].(string)
+			common.Info("StreamUsage", zap.String("model", model), zap.Int("prompt", usage.PromptTokens), zap.Int("completion", usage.CompletionTokens), zap.Int("total", usage.TotalTokens))
 		}
 	}
 
