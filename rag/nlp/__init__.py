@@ -1742,7 +1742,6 @@ def naive_merge_docx(
     table_context_size=0,
     image_context_size=0,
 ):
-
     if not sections:
         return [], []
 
