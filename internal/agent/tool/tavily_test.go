@@ -23,6 +23,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/cloudwego/eino/schema"
 )
 
 func TestTavily_BuildRequest(t *testing.T) {
@@ -180,6 +182,52 @@ func TestTavily_Info(t *testing.T) {
 	}
 	if !strings.Contains(info.Desc, "Tavily") {
 		t.Errorf("Desc = %q, want to mention Tavily", info.Desc)
+	}
+}
+
+func TestTavily_InfoArraySchemasIncludeStringItems(t *testing.T) {
+	t.Parallel()
+
+	info, err := NewTavilyTool().Info(context.Background())
+	if err != nil {
+		t.Fatalf("Tavily Info: %v", err)
+	}
+	assertToolArrayItemType(t, info, "include_domains")
+	assertToolArrayItemType(t, info, "exclude_domains")
+
+	extractInfo, err := NewTavilyExtractTool().Info(context.Background())
+	if err != nil {
+		t.Fatalf("Tavily Extract Info: %v", err)
+	}
+	assertToolArrayItemType(t, extractInfo, "urls")
+}
+
+func assertToolArrayItemType(t *testing.T, info *schema.ToolInfo, fieldName string) {
+	t.Helper()
+
+	params, err := info.ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("convert %s schema: %v", info.Name, err)
+	}
+	rawSchema, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal %s schema: %v", info.Name, err)
+	}
+	var schemaMap map[string]any
+	if err := json.Unmarshal(rawSchema, &schemaMap); err != nil {
+		t.Fatalf("decode %s schema: %v", info.Name, err)
+	}
+	properties, ok := schemaMap["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("%s schema properties = %#v", info.Name, schemaMap["properties"])
+	}
+	field, ok := properties[fieldName].(map[string]any)
+	if !ok {
+		t.Fatalf("%s schema field %q = %#v", info.Name, fieldName, properties[fieldName])
+	}
+	items, ok := field["items"].(map[string]any)
+	if !ok || items["type"] != "string" {
+		t.Fatalf("%s schema field %q items = %#v, want {type: string}", info.Name, fieldName, field["items"])
 	}
 }
 
