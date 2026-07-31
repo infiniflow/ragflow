@@ -360,7 +360,12 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		"chunks":        schema.ChunkDocsToMaps(chunks),
 	}
 
-	if contains(c.param.SearchMethod, "embedding") {
+	// Embedding requires a KB: the embedder (and its embd_id) is configured
+	// on the knowledgebase, so without kb_id there is nothing to resolve
+	// against. A canvas-debug (dry-run) run has kb_id == "" by construction,
+	// so embedding is skipped there — debug only exercises parse+chunk and
+	// must stay side-effect free.
+	if shouldHaveEmbedding(c.param.SearchMethod, kbID) {
 		chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, embeddingModel, name, chunks)
 		if err != nil {
 			return nil, err
@@ -368,7 +373,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		out["embedding_token_consumption"] = tokenCount
 		out["chunks"] = schema.ChunkDocsToMaps(chunks)
 	}
-	if err := validateTokenizerOutputs(chunks, c.param.SearchMethod, c.param.Fields); err != nil {
+	if err := validateTokenizerOutputs(chunks, c.param.SearchMethod, c.param.Fields, kbID); err != nil {
 		return nil, err
 	}
 
@@ -776,9 +781,15 @@ func concatFields(ck schema.ChunkDoc, fields []string) string {
 	return b.String()
 }
 
-func validateTokenizerOutputs(chunks []schema.ChunkDoc, searchMethods, fields []string) error {
+// shouldHaveEmbedding reports whether the tokenizer must attach embedding
+// vectors: the search method requests embedding AND a KB is present.
+func shouldHaveEmbedding(searchMethods []string, kbID string) bool {
+	return contains(searchMethods, "embedding") && kbID != ""
+}
+
+func validateTokenizerOutputs(chunks []schema.ChunkDoc, searchMethods, fields []string, kbID string) error {
 	needFullText := contains(searchMethods, "full_text")
-	needEmbedding := contains(searchMethods, "embedding")
+	needEmbedding := shouldHaveEmbedding(searchMethods, kbID)
 	if !needFullText && !needEmbedding {
 		return nil
 	}

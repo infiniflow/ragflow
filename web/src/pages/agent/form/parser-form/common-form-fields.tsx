@@ -1,4 +1,4 @@
-import { crossLanguageOptions } from '@/components/cross-language-form-field';
+import { useCrossLanguageOptions } from '@/components/cross-language-form-field';
 import { LayoutRecognizeFormField } from '@/components/layout-recognize-form-field';
 import {
   SelectWithSearch,
@@ -167,6 +167,7 @@ export function RemoveHeaderFooterFormField({ prefix }: CommonProps) {
 
 export function LanguageFormField({ prefix }: CommonProps) {
   const { t } = useTranslation();
+  const crossLanguageOptions = useCrossLanguageOptions();
 
   return (
     <RAGFlowFormItem

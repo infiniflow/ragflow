@@ -947,7 +947,7 @@ def test_chat_session_list_projection_unit(monkeypatch):
         ),
     )
     res = _run(module.list_sessions.__wrapped__("chat-1"))
-    assert res["data"] == []
+    assert res["data"][0]["id"] == "session-1"
 
 
 @pytest.mark.p2

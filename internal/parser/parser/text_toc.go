@@ -105,3 +105,44 @@ func tocPrefix(text string, eng bool) string {
 	}
 	return string(runes[:3])
 }
+
+// isEnglishTexts reports whether the given texts read as English. It returns
+// true when more than 80% of the (up to 200) sampled non-empty segments consist
+// solely of ASCII letters/digits/punctuation. The result selects the TOC-entry
+// prefix strategy: a 2-word prefix for English content, otherwise a 3-character
+// prefix (used by removeContentsTable / tocPrefix).
+func isEnglishTexts(texts []string) bool {
+	var sampled []string
+	for _, t := range texts {
+		if s := strings.TrimSpace(t); s != "" {
+			sampled = append(sampled, s)
+		}
+		if len(sampled) >= 200 {
+			break
+		}
+	}
+	if len(sampled) == 0 {
+		return false
+	}
+	pat := regexp.MustCompile("^[" + "`" + "a-zA-Z0-9\\s.,':;/\"?<>!()-]+$")
+	eng := 0
+	for _, t := range sampled {
+		if pat.MatchString(t) {
+			eng++
+		}
+	}
+	return float64(eng)/float64(len(sampled)) > 0.8
+}
+
+// isEnglishItems reports whether the parser items read as English, classifying
+// each item's text with isEnglishTexts. It is passed to removeTOCWord /
+// removeContentsTable so English documents use the 2-word TOC prefix.
+func isEnglishItems(items []map[string]any) bool {
+	texts := make([]string, 0, len(items))
+	for _, it := range items {
+		if t := itemText(it); t != "" {
+			texts = append(texts, t)
+		}
+	}
+	return isEnglishTexts(texts)
+}

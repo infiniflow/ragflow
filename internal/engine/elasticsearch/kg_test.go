@@ -14,6 +14,8 @@
 //  limitations under the License.
 //
 
+//go:build integration
+
 package elasticsearch
 
 import (

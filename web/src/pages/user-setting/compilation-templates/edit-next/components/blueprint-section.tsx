@@ -55,7 +55,7 @@ export function BlueprintSection({
               name={instructionPath}
               label={t('setting.instruction')}
             >
-              <Textarea rows={6} />
+              <Textarea rows={8} resize={'vertical'} />
             </RAGFlowFormItem>
 
             <div className="flex h-[50vh] min-h-0 flex-col">
