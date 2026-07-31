@@ -36,16 +36,35 @@ from common.time_utils import current_timestamp, datetime_format, get_format_tim
 from common.connection_utils import sync_construct_response
 from common import settings
 
-# The admin server reports DEFAULT_SUPERUSER_EMAIL and DEFAULT_SUPERUSER_PASSWORD
-# via `services.EnvironmentsMgr.get_all()` and the admin CLI's "list envs"
-# output, so operators reasonably expect the values they set in the
-# environment to drive the bootstrap admin account. Read them once at
-# module load so the bootstrap functions below can reference them as
-# module-level constants, matching `api/db/init_data.py:init_superuser`.
-# See infiniflow/ragflow#16876.
-DEFAULT_SUPERUSER_NICKNAME = os.getenv("DEFAULT_SUPERUSER_NICKNAME", "admin")
-DEFAULT_SUPERUSER_EMAIL = os.getenv("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
-DEFAULT_SUPERUSER_PASSWORD = os.getenv("DEFAULT_SUPERUSER_PASSWORD", "admin")
+# The admin server reports DEFAULT_SUPERUSER_EMAIL via
+# `services.EnvironmentsMgr.get_all()` and the admin CLI's "list envs"
+# output, so operators reasonably expect the env value to drive the
+# bootstrap admin account's email. (DEFAULT_SUPERUSER_PASSWORD is
+# deliberately NOT exposed through the env-listing API — it would
+# leak the bootstrap credential into any audit log that records the
+# full env map.) Read once at module load so the bootstrap functions
+# below can reference the values as module-level constants, matching
+# `api/db/init_data.py:init_superuser`. See infiniflow/ragflow#16876.
+#
+# Reject blank/whitespace values explicitly: ``os.getenv(name, fallback)``
+# only uses the fallback when the variable is *unset*, so a misconfigured
+# operator setting ``DEFAULT_SUPERUSER_PASSWORD=`` would otherwise
+# persist an empty password — every first login would silently fail with
+# "credentials don't match" instead of a clear startup error.
+def _required_env(name, default):
+    value = os.getenv(name, default)
+    if not value or not value.strip():
+        raise RuntimeError(
+            f"admin server: {name} is set but empty/whitespace; "
+            f"either unset it (the default '{default}' will be used) "
+            f"or provide a real value"
+        )
+    return value.strip()
+
+
+DEFAULT_SUPERUSER_NICKNAME = _required_env("DEFAULT_SUPERUSER_NICKNAME", "admin")
+DEFAULT_SUPERUSER_EMAIL = _required_env("DEFAULT_SUPERUSER_EMAIL", "admin@ragflow.io")
+DEFAULT_SUPERUSER_PASSWORD = _required_env("DEFAULT_SUPERUSER_PASSWORD", "admin")
 
 
 def setup_auth(login_manager):
@@ -125,6 +144,24 @@ def init_default_admin():
             exist, default_admin_tenant = TenantService.get_by_id(default_admin["id"])
             if not exist:
                 add_tenant_for_admin(default_admin, UserTenantRole.OWNER)
+        elif any(u.email != DEFAULT_SUPERUSER_EMAIL for u in users):
+            # Active superuser(s) exist but none match the configured
+            # DEFAULT_SUPERUSER_EMAIL — the operator set the env var to a
+            # value that doesn't match any existing admin row. Don't
+            # silently fall back to the original "admin@ragflow.io"
+            # identity (that would diverge the bootstrap credential
+            # from the env), and don't auto-create a new admin (the
+            # user may have intentionally kept the old admin). Surface
+            # the mismatch with explicit migration guidance.
+            raise AdminException(
+                f"Active superuser(s) exist but none match DEFAULT_SUPERUSER_EMAIL "
+                f"({DEFAULT_SUPERUSER_EMAIL!r}). Either unset the env var to "
+                f"keep the existing admin, or run the API-side migration "
+                f"(``python -m api.ragflow_server --init-superuser``) to align "
+                f"the configured email with an existing admin row before "
+                f"restarting.",
+                500,
+            )
 
 
 def add_tenant_for_admin(user_info: dict, role: str):
