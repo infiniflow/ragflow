@@ -354,14 +354,29 @@ async def _wiki_match_entities(
     tenant_id: str,
     kb_id: str,
     incremental: bool,
+    progress: Callable[[str], None] | None = None,
 ) -> tuple[dict[str, dict], dict[str, str]]:
     """Entity Matching: raw entities → canonical entities.
 
     Returns:
         canonical_map: {canonical_name: merged_entry}
-        name_resolution: {raw_name: canonical_name}
+        name_resolution: {raw_name: canonical_name}entries still need semantic matching
     """
+    def _progress(msg: str) -> None:
+        logging.info("wiki entity matching: %s", msg)
+        if progress:
+            try:
+                progress(f"Entity Matching: {msg}")
+            except Exception:
+                logging.exception("wiki: entity matching progress callback failed")
+
+    def _progress_interval(total: int) -> int:
+        if total <= 20:
+            return max(total, 1)
+        return max(10, min(200, total // 10))
+
     # Step 1: Exact match against canonical index
+    _progress(f"exact matching {len(raw_entities)} raw entries against {len(existing_canonical)} canonical entries ...")
     exact_flat: dict[str, str] = {}  # normalized_name → canonical_name
     for cname, centry in existing_canonical.items():
         flat = centry.get("aliases_flat_kwd", "")
@@ -379,6 +394,7 @@ async def _wiki_match_entities(
             name_resolution[raw_name] = exact_flat[norm]
         else:
             unmatched.append(entry)
+    _progress(f"exact matched {len(name_resolution)}; {len(unmatched)} entries still need semantic matching.")
 
     # Step 2: KNN match for unmatched entities
     # Single search at ENTITY_AMBIGUOUS_LOW (0.75), classify by score:
@@ -403,8 +419,10 @@ async def _wiki_match_entities(
             async with sem:
                 return await _knn_one(entry, vec)
 
+        _progress(f"KNN unmatched entities {len(query_texts)} ...")
         knn_tasks = [_async_knn(entry, emb) for entry, emb in zip(unmatched, embeddings)]
         knn_results = await asyncio.gather(*knn_tasks)
+        _progress("KNN unmatched entities done.")
 
         still_unmatched: list[dict] = []
         maybe_pairs: list[tuple[dict, str]] = []
@@ -1627,6 +1645,7 @@ async def wiki_compile_incremental(
         _progress("Entity Matching: no canonical entities found. Skipping.")
         return summary
 
+    _progress("Entity Matching: %d"%len(name_resolution.keys()))
     # Persist new/changed canonical entities
     for cname, centry in canonical_map.items():
         existing = canonical_entities.get(cname)
