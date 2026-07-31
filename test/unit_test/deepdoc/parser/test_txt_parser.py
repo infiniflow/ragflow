@@ -36,43 +36,46 @@ _MOCK_MODULES = [
     "pypdf",
     "sklearn",
     "deepdoc.vision",
+    "deepdoc",
+    "deepdoc.parser",
+    "deepdoc.parser.utils",
 ]
-for _m in _MOCK_MODULES:
-    if _m not in sys.modules:
-        sys.modules[_m] = mock.MagicMock()
+_orig_modules = {m: sys.modules.get(m) for m in _MOCK_MODULES}
 
-# Avoid pulling heavy parsers / rag_tokenizer via deepdoc.parser.__init__.
-if "deepdoc" not in sys.modules:
-    sys.modules["deepdoc"] = mock.MagicMock()
-if "deepdoc.parser" not in sys.modules:
-    sys.modules["deepdoc.parser"] = mock.MagicMock()
-if "deepdoc.parser.utils" not in sys.modules:
-    sys.modules["deepdoc.parser.utils"] = mock.MagicMock()
-# ``get_text`` is invoked by ``RAGFlowTxtParser.__call__`` only, not by
-# ``parser_txt``. Provide a permissive stub so the module loads.
-sys.modules["deepdoc.parser.utils"].get_text = lambda *a, **kw: ""
+try:
+    for _m in _MOCK_MODULES:
+        if _m not in sys.modules:
+            sys.modules[_m] = mock.MagicMock()
 
+    # ``get_text`` is invoked by ``RAGFlowTxtParser.__call__`` only, not by
+    # ``parser_txt``. Provide a permissive stub so the module loads.
+    sys.modules["deepdoc.parser.utils"].get_text = lambda *a, **kw: ""
 
-def _find_project_root(marker="pyproject.toml"):
-    d = os.path.dirname(os.path.abspath(__file__))
-    while d != os.path.dirname(d):
-        if os.path.exists(os.path.join(d, marker)):
-            return d
-        d = os.path.dirname(d)
-    return None
+    def _find_project_root(marker="pyproject.toml"):
+        d = os.path.dirname(os.path.abspath(__file__))
+        while d != os.path.dirname(d):
+            if os.path.exists(os.path.join(d, marker)):
+                return d
+            d = os.path.dirname(d)
+        return None
 
+    _PROJECT_ROOT = _find_project_root()
 
-_PROJECT_ROOT = _find_project_root()
+    _spec = importlib.util.spec_from_file_location(
+        "deepdoc.parser._txt_parser_under_test",
+        os.path.join(_PROJECT_ROOT, "deepdoc", "parser", "txt_parser.py"),
+    )
+    _mod = importlib.util.module_from_spec(_spec)
+    sys.modules["deepdoc.parser._txt_parser_under_test"] = _mod
+    _spec.loader.exec_module(_mod)
 
-_spec = importlib.util.spec_from_file_location(
-    "deepdoc.parser._txt_parser_under_test",
-    os.path.join(_PROJECT_ROOT, "deepdoc", "parser", "txt_parser.py"),
-)
-_mod = importlib.util.module_from_spec(_spec)
-sys.modules["deepdoc.parser._txt_parser_under_test"] = _mod
-_spec.loader.exec_module(_mod)
-
-RAGFlowTxtParser = _mod.RAGFlowTxtParser
+    RAGFlowTxtParser = _mod.RAGFlowTxtParser
+finally:
+    for _m, _orig in _orig_modules.items():
+        if _orig is None:
+            sys.modules.pop(_m, None)
+        else:
+            sys.modules[_m] = _orig
 
 
 # A deterministic, tokenizer-free stand-in for ``num_tokens_from_string`` so
