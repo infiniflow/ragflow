@@ -31,7 +31,7 @@ func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data [
 	case "somark":
 		return parsePDFWithSoMark(filename, data, p)
 	case "tcadp":
-		return parsePDFWithTCADP(filename, data, p)
+		return parsePDFWithTCADP(ctx, filename, data, p)
 	}
 	cfg := deepdoctype.DefaultParserConfig()
 	cfg.SkipOCR = false
