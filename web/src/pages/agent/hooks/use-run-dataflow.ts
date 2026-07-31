@@ -44,6 +44,13 @@ export function useRunDataflow({
 
         return msgId;
       } else {
+        // Even on a run failure the debug log (with the [ERROR] END marker) is
+        // already written; surface its polling key so the log sheet can render
+        // the failure timeline instead of leaving it stuck on an empty state.
+        const msgId = get(res, 'data.data.message_id');
+        if (msgId) {
+          setMessageId(msgId);
+        }
         message.error(get(res, 'data.message', ''));
       }
     },

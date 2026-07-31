@@ -140,6 +140,7 @@ func TestTokenizerComponent_Invoke_EmptyChunks(t *testing.T) {
 	_ = stub
 
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{},
 	})
@@ -190,6 +191,7 @@ func TestTokenizerComponent_Invoke_EmbeddingOnly(t *testing.T) {
 	}
 	out, err := cIntf.(*TokenizerComponent).Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{{"text": "alpha bravo"}},
 	})
@@ -217,6 +219,7 @@ func TestTokenizerComponent_Embedding_ZeroChunksStillEmitsConsumptionZero(t *tes
 	c, stub := withStubEmbedder(t, 2)
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.pdf",
+		"kb_id":         "kb-1",
 		"output_format": "chunks",
 		"chunks":        []map[string]any{},
 	})
@@ -286,14 +289,14 @@ func TestTokenizerComponent_NewTokenizerComponent_BadParam(t *testing.T) {
 }
 
 func TestValidateTokenizerOutputs_FullTextMissingReturnsError(t *testing.T) {
-	err := validateTokenizerOutputs([]schema.ChunkDoc{{Text: "alpha"}}, []string{"full_text"}, []string{"text"})
+	err := validateTokenizerOutputs([]schema.ChunkDoc{{Text: "alpha"}}, []string{"full_text"}, []string{"text"}, "")
 	if err == nil || !strings.Contains(err.Error(), "missing full_text tokens") {
 		t.Fatalf("err = %v, want missing full_text tokens", err)
 	}
 }
 
 func TestValidateTokenizerOutputs_EmbeddingMissingReturnsError(t *testing.T) {
-	err := validateTokenizerOutputs([]schema.ChunkDoc{{Text: "alpha"}}, []string{"embedding"}, []string{"text"})
+	err := validateTokenizerOutputs([]schema.ChunkDoc{{Text: "alpha"}}, []string{"embedding"}, []string{"text"}, "kb-1")
 	if err == nil || !strings.Contains(err.Error(), "missing embedding vector") {
 		t.Fatalf("err = %v, want missing embedding vector", err)
 	}
@@ -301,7 +304,7 @@ func TestValidateTokenizerOutputs_EmbeddingMissingReturnsError(t *testing.T) {
 
 func TestValidateTokenizerOutputs_BothModesFailWhenOneMissing(t *testing.T) {
 	ck := schema.ChunkDoc{Text: "alpha", ContentLtks: "tok", ContentSmLtks: "sm"}
-	err := validateTokenizerOutputs([]schema.ChunkDoc{ck}, []string{"full_text", "embedding"}, []string{"text"})
+	err := validateTokenizerOutputs([]schema.ChunkDoc{ck}, []string{"full_text", "embedding"}, []string{"text"}, "kb-1")
 	if err == nil || !strings.Contains(err.Error(), "missing embedding vector") {
 		t.Fatalf("err = %v, want missing embedding vector", err)
 	}
@@ -317,7 +320,7 @@ func TestValidateTokenizerOutputs_SymbolOnlyContentLtksIsEmptyFails(t *testing.T
 		ContentLtks:   "",
 		ContentSmLtks: "",
 	}
-	err := validateTokenizerOutputs([]schema.ChunkDoc{ck}, []string{"full_text"}, []string{"text"})
+	err := validateTokenizerOutputs([]schema.ChunkDoc{ck}, []string{"full_text"}, []string{"text"}, "")
 	if err == nil || !strings.Contains(err.Error(), "missing full_text tokens") {
 		t.Fatalf("err = %v, want missing full_text tokens", err)
 	}
