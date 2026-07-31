@@ -39,7 +39,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 
 	// One LLM task per token-budget batch (mirrors __call__'s task fan-out).
 	batches := packSections(sections, deps.Tokenizer)
-	results := make([]omap, len(batches))
+	results := make([]utility.OMap, len(batches))
 	// One LLM task per token-budget batch (mirrors __call__'s task fan-out).
 	n := param.MaxWorkers
 	if n <= 0 {
@@ -59,7 +59,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			if err != nil {
 				return err
 			}
-			results[i] = todict(dictify(StripFences(resp.Content)))
+			results[i] = utility.Todict(utility.Dictify(utility.StripFences(resp.Content)))
 			return nil
 		})
 		if err != nil {
@@ -77,14 +77,14 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 
 	// Merge batch dicts in batch order (mirrors reduce(self._merge, res)) and
 	// shape the final tree. Python returns a bare root when nothing parsed.
-	var merged omap
+	var merged utility.OMap
 	if len(results) > 0 {
 		merged = results[0]
 		for _, r := range results[1:] {
-			merged = mergeDicts(merged, r)
+			merged = utility.MergeDicts(merged, r)
 		}
 	}
-	root := shapeTree(merged)
+	root := utility.ShapeTree(merged)
 
 	products := treeToProducts(tenantID, docID, root)
 
@@ -105,24 +105,13 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		}
 	}
 
-	// Stream the tree nodes through a ProductSink so the flush policy caps peak
-	// memory instead of holding the full node set.
-	sink := common.NewProductSink(ctx, param.Guardrails, inputs.Sink)
-	for _, p := range products {
-		if err := sink.Add(p); err != nil {
-			return common.Outputs{}, err
-		}
-	}
+	// Buffer every tree node in one slice; the component merges them into the
+	// upstream chunk stream (matching Python, which appends compiled units onto
+	// the chunk list).
 	out := common.Outputs{
-		Products:    sink.Products(),
-		VectorBytes: sink.Bytes(),
-		Items:       sink.TotalItems(),
-		Flushed:     sink.Flushed(),
+		Products: products,
 	}
 
-	if err := out.EnforceGuardrails(param.Guardrails, inputs.Sink, ctx); err != nil {
-		return common.Outputs{}, err
-	}
 	return out, nil
 }
 
@@ -130,7 +119,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 // becomes a "root" product whose content is the serialized {"id","children"}
 // tree (Python's MindMapResult.output shape); each inner node becomes a
 // "node" product linked via parent_id.
-func treeToProducts(tenantID, docID string, root *Node) []common.Product {
+func treeToProducts(tenantID, docID string, root *utility.Node) []common.Product {
 	var out []common.Product
 	rootID := common.StableRowID(tenantID, docID, string(common.VariantMindmap), "root")
 	out = append(out, common.Product{
@@ -147,7 +136,7 @@ func treeToProducts(tenantID, docID string, root *Node) []common.Product {
 	})
 
 	type pending struct {
-		node     *Node
+		node     *utility.Node
 		parentID string
 		level    int
 	}
@@ -192,7 +181,7 @@ func treeToProducts(tenantID, docID string, root *Node) []common.Product {
 
 // serializeNode renders the tree in Python's MindMapResult.output shape:
 // {"id": ..., "children": [...]}.
-func serializeNode(node *Node) string {
+func serializeNode(node *utility.Node) string {
 	var b strings.Builder
 	b.WriteString(`{"id":`)
 	b.WriteString(quoteJSON(node.ID))

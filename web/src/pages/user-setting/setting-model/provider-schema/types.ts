@@ -86,6 +86,12 @@ export interface FieldConfig {
   /** Default value */
   defaultValue?: any;
   /**
+   * HTML `autocomplete` attribute forwarded to the underlying `<input>`.
+   * Use `'new-password'` to suppress browser autofill (Chrome ignores
+   * `'off'` on forms containing a password field).
+   */
+  autoComplete?: string;
+  /**
    * Validation rules.
    * `message` is treated as an i18n key by the ProviderModal and translated
    * via `t()` at field-build time. In `Number` fields, `min` / `max` bound
@@ -132,6 +138,19 @@ export interface ProviderConfig {
    * `modelInfo` is assembled from `values` by the transform itself (same rules as verifyTransform).
    */
   submitTransform?: (values: Record<string, any>) => Record<string, any>;
+  /**
+   * Inverse of `submitTransform`: maps the raw merged backend instance
+   * (as returned by `showProviderInstance`) back into form values so the
+   * form pre-fills when editing a saved instance. Returns ONLY the
+   * provider-specific credential fields (e.g. `google_project_id`,
+   * `spark_api_password`); the hook layers `instance_name` and
+   * `base_url` fallback on top.
+   *
+   * When absent, the generic echo path runs: `unwrapApiKey` lifts the
+   * bare `api_key` plus `API_KEY_NESTED_FIELDS` (`group_id` /
+   * `api_version` / `provider_order`).
+   */
+  echoTransform?: (instance: Record<string, any>) => Record<string, any>;
   /**
    * Optional link at the bottom of the modal
    * e.g. the official documentation link for Ollama-family providers

@@ -1,9 +1,10 @@
 ---
 sidebar_position: 5
-sidebar_label: "Share knowledge bases"
+sidebar_label: Share Knowledge Bases
+title: Share Knowledge Bases
 ---
 
-## Share knowledge bases
+# Share Knowledge Bases
 
 Share a knowledge base by changing its **Permissions** from **Only me** to **Team**.
 

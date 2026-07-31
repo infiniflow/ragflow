@@ -100,7 +100,7 @@ func TestListAgentVersionsHandler_Success(t *testing.T) {
 		UserCanvasID: "canvas-1",
 		Title:        sptr("v2"),
 		BaseModel: entity.BaseModel{
-			UpdateTime: ptr(now.UnixMilli()),
+			CreateTime: ptr(now.UnixMilli()),
 		},
 	})
 	db.Create(&entity.UserCanvasVersion{
@@ -108,7 +108,7 @@ func TestListAgentVersionsHandler_Success(t *testing.T) {
 		UserCanvasID: "canvas-1",
 		Title:        sptr("v1"),
 		BaseModel: entity.BaseModel{
-			UpdateTime: ptr(now.Add(-time.Hour).UnixMilli()),
+			CreateTime: ptr(now.Add(-time.Hour).UnixMilli()),
 		},
 	})
 

@@ -138,6 +138,7 @@ const GenericProviderInstanceCard = forwardRef<
     instanceDetails,
     isDraft,
     baseUrlOptions,
+    providerConfig.echoTransform,
   );
   const { formFields, formDefaultValues } = useFormFields(
     providerName,

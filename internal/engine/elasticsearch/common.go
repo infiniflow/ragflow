@@ -36,7 +36,9 @@ func (e *elasticsearchEngine) dropIndex(ctx context.Context, indexName string) e
 		return fmt.Errorf("failed to check index existence: %w", err)
 	}
 	if !exists {
-		return fmt.Errorf("index '%s' does not exist", indexName)
+		// Tolerate missing index (mirrors Python's docStoreConn which
+		// silently returns False on a non-existent index).
+		return nil
 	}
 
 	// Delete index

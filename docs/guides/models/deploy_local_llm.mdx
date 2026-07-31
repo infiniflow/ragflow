@@ -1,11 +1,13 @@
 ---
 sidebar_position: 2
+title: Deploy Local Models
+sidebar_label: Deploy Local Models
 slug: /deploy_local_llm
 sidebar_custom_props: {
   categoryIcon: LucideMonitorCog
 }
 ---
-# Deploy local models
+# Deploy Local Models
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
@@ -21,7 +23,7 @@ RAGFlow seamlessly integrates with Ollama and Xinference, without the need for f
 This user guide does not intend to cover much of the installation or configuration details of Ollama or Xinference; its focus is on configurations inside RAGFlow. For the most current information, you may need to check out the official site of Ollama or Xinference.
 :::
 
-## Deploy local models using Ollama
+## Deploy Local Models Using Ollama
 
 [Ollama](https://github.com/ollama/ollama) enables you to run open-source large language models that you deployed locally. It bundles model weights, configurations, and data into a single package, defined by a Modelfile, and optimizes setup and configurations, including GPU usage.
 
@@ -30,7 +32,7 @@ This user guide does not intend to cover much of the installation or configurati
 - For a complete list of supported models and variants, see the [Ollama model library](https://ollama.com/library).
 :::
 
-### 1. Deploy Ollama using Docker
+### 1. Deploy Ollama Using Docker
 
 Ollama can be [installed from binaries](https://ollama.com/download) or [deployed with Docker](https://hub.docker.com/r/ollama/ollama). Here are the instructions to deploy with Docker:
 
@@ -60,7 +62,7 @@ $ sudo docker exec ollama ollama pull bge-m3
 > success 
 ```
 
-### 2. Find Ollama URL and ensure it is accessible
+### 2. Find Ollama URL and Ensure It Is Accessible
 
 - If RAGFlow runs in Docker, the localhost is mapped within the RAGFlow Docker container as `host.docker.internal`. If Ollama runs on the same host machine, the right URL to use for Ollama would be `http://host.docker.internal:11434/' and you should check that Ollama is accessible from inside the RAGFlow container with:
 ```bash
@@ -85,10 +87,9 @@ $ curl http://${IP_OF_OLLAMA_MACHINE}:11434/
 
 In RAGFlow, click on your logo on the top right of the page **>** **Model providers** and add Ollama to RAGFlow:
 
-![add ollama](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
 
-### 4. Complete basic Ollama settings
+### 4. Complete Basic Ollama Settings
 
 In the popup window, complete basic settings for Ollama:
 
@@ -114,7 +115,7 @@ Click on your logo **>** **Model providers** **>** **System Model Settings** to 
 
 Update your model(s) accordingly in **Chat Configuration**.
 
-## Deploy a local model using Xinference
+## Deploy a Local Model Using Xinference
 
 Xorbits Inference ([Xinference](https://github.com/xorbitsai/inference)) enables you to unleash the full potential of cutting-edge AI models.
 
@@ -125,17 +126,17 @@ Xorbits Inference ([Xinference](https://github.com/xorbitsai/inference)) enables
 
 To deploy a local model, e.g., **Mistral**, using Xinference:
 
-### 1. Check firewall settings
+### 1. Check Firewall Settings
 
 Ensure that your host machine's firewall allows inbound connections on port 9997. 
 
-### 2. Start an Xinference instance
+### 2. Start an Xinference Instance
 
 ```bash
 $ xinference-local --host 0.0.0.0 --port 9997
 ```
 
-### 3. Launch your local model
+### 3. Launch Your Local Model
 
 Launch your local model (**Mistral**), ensuring that you replace `${quantization}` with your chosen quantization method:
 
@@ -146,9 +147,8 @@ $ xinference launch -u mistral --model-name mistral-v0.1 --size-in-billions 7 --
 
 In RAGFlow, click on your logo on the top right of the page **>** **Model providers** and add Xinference to RAGFlow:
 
-![add xinference](https://github.com/infiniflow/ragflow/assets/93570324/10635088-028b-4b3d-add9-5c5a6e626814)
 
-### 5. Complete basic Xinference settings
+### 5. Complete Basic Xinference Settings
 
 Enter an accessible base URL, such as `http://<your-xinference-endpoint-domain>:9997/v1`. 
 > For rerank model, please use the `http://<your-xinference-endpoint-domain>:9997/v1/rerank` as the base URL.
@@ -163,13 +163,13 @@ Click on your logo **>** **Model providers** **>** **System Model Settings** to 
 
 Update your chat model accordingly in **Chat Configuration**:
 
-## Deploy a local model using IPEX-LLM
+## Deploy a Local Model Using IPEX-LLM
 
 [IPEX-LLM](https://github.com/intel-analytics/ipex-llm) is a PyTorch library for running LLMs on local Intel CPUs or GPUs (including iGPU or discrete GPUs like Arc, Flex, and Max) with low latency. It supports Ollama on Linux and Windows systems.
 
 To deploy a local model, e.g., **Qwen2**, using IPEX-LLM-accelerated Ollama:
 
-### 1. Check firewall settings
+### 1. Check Firewall Settings
 
 Ensure that your host machine's firewall allows inbound connections on port 11434. For example:
    
@@ -177,7 +177,7 @@ Ensure that your host machine's firewall allows inbound connections on port 1143
 sudo ufw allow 11434/tcp
 ```
 
-### 2. Launch Ollama service using IPEX-LLM
+### 2. Launch Ollama Service Using IPEX-LLM
 
 #### 2.1 Install IPEX-LLM for Ollama
 
@@ -223,7 +223,7 @@ For detailed information about installing IPEX-LLM for Ollama, see [Run llama.cp
    
    *A symbolic link to Ollama appears in your current directory, and you can use this executable file following standard Ollama commands.*
 
-#### 2.3 Launch Ollama service
+#### 2.3 Launch Ollama Service
 
 1. Set the environment variable `OLLAMA_NUM_GPU` to `999` to ensure that all layers of your model run on the Intel GPU; otherwise, some layers may default to CPU.
 2. For optimal performance on Intel Arc™ A-Series Graphics with Linux OS (Kernel 6.2), set the following environment variable before launching the Ollama service:
@@ -272,19 +272,17 @@ For detailed information about installing IPEX-LLM for Ollama, see [Run llama.cp
 To enable the Ollama service to accept connections from all IP addresses, use `OLLAMA_HOST=0.0.0.0 ./ollama serve` rather than simply `./ollama serve`.
 :::
 
-*The console displays messages similar to the following:*
+The console displays service startup messages.
 
-![](https://llm-assets.readthedocs.io/en/latest/_images/ollama_serve.png)
 
-### 3. Pull and Run Ollama model
+### 3. Pull and Run Ollama Model
 
-#### 3.1 Pull Ollama model
+#### 3.1 Pull Ollama Model
 
 With the Ollama service running, open a new terminal and run `./ollama pull <model_name>` (Linux) or `ollama.exe pull <model_name>` (Windows) to pull the desired model. e.g., `qwen2:latest`:
 
-![](https://llm-assets.readthedocs.io/en/latest/_images/ollama_pull.png)
 
-#### 3.2 Run Ollama model
+#### 3.2 Run Ollama Model
 
 <Tabs
   defaultValue="linux"
@@ -323,7 +321,7 @@ ubuntu 22.04/24.04
 ```bash
 pip install vllm
 ```
-### 5.1 RUN VLLM WITH BEST PRACTISE
+### 5.1 Run vLLM with Best Practise
 
 ```bash
 nohup vllm serve /data/Qwen3-8B --served-model-name Qwen3-8B-FP8 --dtype auto --port 1025 --gpu-memory-utilization 0.90 --tool-call-parser hermes --enable-auto-tool-choice  > /var/log/vllm_startup1.log 2>&1 &
@@ -338,23 +336,23 @@ Starting vLLM API server 0 on http://0.0.0.0:1025
 Started server process [19177]
 Application startup complete.
 ```
-### 5.2 INTERGRATEING RAGFLOW WITH VLLM CHAT/EM/RERANK LLM WITH WEBUI
+### 5.2 Intergrateing RAGFlow with vLLM Chat/Em/Rerank LLM with WebUI
 
-setting->model providers->search->vllm->add ,configure as follow:
+Go to **Settings** → **Model Providers** → **Search** → **vLLM** → **Add**; configure as follows:
 
 ![add vllm](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm.png)
 
-select vllm chat model as default llm model as follow:
+Select the vLLM chat model as the default LLM model:
 ![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm1.png)
-### 5.3 chat with vllm chat model
-create chat->create conversations-chat as follow:
+### 5.3 Chat with vLLM Chat Model
+Create a chat and start a conversation as follows:
 ![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm2.png)
 
 ### 6. Deploy GPUStack
 
 ubuntu 22.04/24.04
 
-### 6.1 RUN GPUStack WITH BEST PRACTISE
+### 6.1 Run GPUStack with Best Practise
 
 ```bash
 sudo docker run -d --name gpustack \
@@ -374,7 +372,7 @@ root@gpustack-prod:~# docker ps
 CONTAINER ID   IMAGE               COMMAND                  CREATED       STATUS       PORTS                                                                                  NAMES
 abf59be84b1a   gpustack/gpustack   "/usr/bin/entrypoint…"   6 hours ago   Up 6 hours   0.0.0.0:80->80/tcp, [::]:80->80/tcp, 0.0.0.0:10161->10161/tcp, [::]:10161->10161/tcp   gpustack
 ```
-### 6.2 INTERGRATEING RAGFLOW WITH GPUSTACK CHAT/EM/RERANK LLM WITH WEBUI
+### 6.2 Intergrateing RAGFlow with GPUStack Chat/Em/Rerank LLM with WebUI
 
 setting->model providers->search->gpustack->add ,configure as follow:
 

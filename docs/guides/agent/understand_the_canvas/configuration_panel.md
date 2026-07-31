@@ -1,5 +1,7 @@
 ---
 sidebar_position: 5
+title: Configuration Panel
+sidebar_label: Configuration Panel
 slug: /configuration_panel
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

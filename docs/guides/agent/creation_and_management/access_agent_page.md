@@ -1,5 +1,7 @@
 ---
 sidebar_position: 1
+title: Access Agent Page
+sidebar_label: Access Agent Page
 slug: /access_agent_page
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

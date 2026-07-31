@@ -53,12 +53,12 @@ logger = logging.getLogger(__name__)
 # Content storage for ``content_after`` is switched by a module-level
 # constant so ops can move blobs between MinIO and the doc-store index
 # without touching the schema.
-ARTIFACT_CONTENT_STORAGE = "minio"  # one of {"minio", "es"}
-_ARTIFACT_COMMIT_BUCKET_PREFIX = ".artifact_commits"
-_ARTIFACT_ES_KWD = "artifact_commit_content"
+WIKI_CONTENT_STORAGE = "minio"  # one of {"minio", "es"}
+_WIKI_COMMIT_BUCKET_PREFIX = ".wiki_commits"
+_WIKI_ES_KWD = "wiki_commit_content"
 
 
-def _artifact_file_id(kb_id: str, slug: str) -> str:
+def _wiki_file_id(kb_id: str, slug: str) -> str:
     """Deterministic 32-char id for the artifact-page 'file' identity.
 
     Not a real File row — just an index key that groups all commits for
@@ -83,7 +83,7 @@ def _unified_diff(before: str, after: str, slug: str) -> str:
 
 
 def _store_content_after(kb_id: str, content: str) -> tuple[str, str]:
-    """Persist ``content`` per :data:`ARTIFACT_CONTENT_STORAGE`. Returns
+    """Persist ``content`` per :data:`WIKI_CONTENT_STORAGE`. Returns
     ``(storage_kind, location)`` for the row's persistence columns.
 
     Content-addressed by SHA-256 so re-saves with identical bodies share
@@ -92,8 +92,8 @@ def _store_content_after(kb_id: str, content: str) -> tuple[str, str]:
     content_bytes = (content or "").encode("utf-8")
     content_hash = hashlib.sha256(content_bytes).hexdigest()
 
-    if ARTIFACT_CONTENT_STORAGE == "minio":
-        location = f"{_ARTIFACT_COMMIT_BUCKET_PREFIX}/{content_hash}"
+    if WIKI_CONTENT_STORAGE == "minio":
+        location = f"{_WIKI_COMMIT_BUCKET_PREFIX}/{content_hash}"
         try:
             storage = settings.STORAGE_IMPL
             if storage is not None:
@@ -106,7 +106,7 @@ def _store_content_after(kb_id: str, content: str) -> tuple[str, str]:
             )
         return "minio", location
 
-    if ARTIFACT_CONTENT_STORAGE == "es":
+    if WIKI_CONTENT_STORAGE == "es":
         # Store as a single doc-store row so the same connector serves
         # reads. The row is not retrievable (available_int=0).
         from rag.nlp import search as _rag_search
@@ -116,7 +116,7 @@ def _store_content_after(kb_id: str, content: str) -> tuple[str, str]:
             "id": content_hash,
             "kb_id": kb_id,
             "doc_id": kb_id,
-            "compile_kwd": _ARTIFACT_ES_KWD,
+            "compile_kwd": _WIKI_ES_KWD,
             "content_with_weight": content or "",
             "available_int": 0,
         }
@@ -133,8 +133,8 @@ def _store_content_after(kb_id: str, content: str) -> tuple[str, str]:
     # Unknown storage kind — fall through with empty location; the
     # detail path treats missing location as "content not recoverable".
     logging.warning(
-        "record_page_edit: unknown ARTIFACT_CONTENT_STORAGE=%r; content not persisted",
-        ARTIFACT_CONTENT_STORAGE,
+        "record_page_edit: unknown WIKI_CONTENT_STORAGE=%r; content not persisted",
+        WIKI_CONTENT_STORAGE,
     )
     return "", ""
 
@@ -732,7 +732,7 @@ class FileCommitService(CommonService):
         final_title = f"{(title or '').strip() or f'{title_ts} {slug}'} "
         commit_id = get_uuid()
         item_id = get_uuid()
-        file_id = _artifact_file_id(kb_id, slug)
+        file_id = _wiki_file_id(kb_id, slug)
         now_ts = current_timestamp()
         now_dt = datetime_format(date_time=datetime.datetime.now())
 
@@ -819,7 +819,7 @@ class FileCommitService(CommonService):
         """
         page = max(int(page or 1), 1)
         page_size = max(min(int(page_size or 50), 200), 1)
-        file_id = _artifact_file_id(kb_id, slug)
+        file_id = _wiki_file_id(kb_id, slug)
 
         base = (
             FileCommit.select(

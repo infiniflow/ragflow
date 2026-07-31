@@ -52,7 +52,7 @@
 	"compilation_template_kind_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"chunk_hash_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"input_hash_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
-	"artifact_slug_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+	"wiki_slug_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"md_with_weight": {"type": "varchar", "default": ""},
 	"summary_with_weight": {"type": "varchar", "default": ""},
 	"skill_with_weight": {"type": "varchar", "default": ""},
