@@ -50,9 +50,17 @@ def get_float(v):
 def normalize_overlapped_percent(overlapped_percent):
     try:
         value = float(overlapped_percent)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
+        return 0
+    if value != value or value in (float("inf"), float("-inf")):  # NaN / Inf
         return 0
     if 0 < value < 1:
         value *= 100
-    value = int(value)
-    return max(0, min(value, 90))
+    if value < 0:
+        value = 0
+    if value > 90:
+        value = 90
+    # Round rather than truncate so fraction inputs like 0.29 normalize to
+    # 29 (user expectation) rather than 28. Clamping happens before rounding
+    # so out-of-range values land on 90, not a truncated intermediate.
+    return int(round(value))
