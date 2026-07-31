@@ -42,6 +42,7 @@ type stubBotService struct {
 	chatbotInfoFn      func(ctx context.Context, tenantID, dialogID string) (string, string, string, string, bool, common.ErrorCode, error)
 	agentbotInputsFn   func(ctx context.Context, tenantID, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error)
 	agentbotCompleteFn func(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error)
+	agentbotLogsFn     func(ctx context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error)
 	chatbotCompleteFn  func(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error)
 }
 
@@ -62,6 +63,13 @@ func (s *stubBotService) AgentbotInputs(ctx context.Context, tenantID, agentID s
 func (s *stubBotService) AgentbotCompletion(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
 	if s.agentbotCompleteFn != nil {
 		return s.agentbotCompleteFn(ctx, tenantID, agentID, req)
+	}
+	return nil, common.CodeDataError, errors.New("not stubbed")
+}
+
+func (s *stubBotService) AgentbotLogs(ctx context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
+	if s.agentbotLogsFn != nil {
+		return s.agentbotLogsFn(ctx, tenantID, agentID, messageID)
 	}
 	return nil, common.CodeDataError, errors.New("not stubbed")
 }
@@ -1209,7 +1217,7 @@ func TestGetAgentbotLogs_MissingRouteAgentID(t *testing.T) {
 	}
 }
 
-func TestGetAgentbotLogs_RequiresBoundAgentID(t *testing.T) {
+func TestGetAgentbotLogs_AllowsUnboundTokenForAccessibleAgent(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -1222,6 +1230,99 @@ func TestGetAgentbotLogs_RequiresBoundAgentID(t *testing.T) {
 	}
 
 	h := NewBotHandler(nil)
+	h.botService = &stubBotService{agentbotLogsFn: func(_ context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
+		if tenantID != "u1" || agentID != "agent-a" || messageID != "msg-1" {
+			t.Fatalf("logs arguments = (%q, %q, %q)", tenantID, agentID, messageID)
+		}
+		return map[string]any{"events": []any{}}, common.CodeSuccess, nil
+	}}
+	h.GetAgentbotLogs(c)
+
+	var resp struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Code != int(common.CodeSuccess) {
+		t.Errorf("code = %d, want %d; message=%q", resp.Code, common.CodeSuccess, resp.Message)
+	}
+}
+
+func TestGetAgentbotLogs_AllowsMatchingBoundAgent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/v1/agentbots/agent-a/logs/msg-1", nil)
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("agent_id", "agent-a")
+	c.Params = gin.Params{
+		{Key: "agent_id", Value: "agent-a"},
+		{Key: "message_id", Value: "msg-1"},
+	}
+
+	h := NewBotHandler(nil)
+	h.botService = &stubBotService{agentbotLogsFn: func(_ context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
+		return map[string]any{"events": []any{}}, common.CodeSuccess, nil
+	}}
+	h.GetAgentbotLogs(c)
+
+	var resp struct {
+		Code int `json:"code"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Code != int(common.CodeSuccess) {
+		t.Fatalf("code = %d, want %d; body = %s", resp.Code, common.CodeSuccess, w.Body.String())
+	}
+}
+
+func TestGetAgentbotLogs_DeniesMismatchedBoundAgent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/v1/agentbots/agent-b/logs/msg-1", nil)
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Set("agent_id", "agent-a")
+	c.Params = gin.Params{
+		{Key: "agent_id", Value: "agent-b"},
+		{Key: "message_id", Value: "msg-1"},
+	}
+
+	h := NewBotHandler(nil)
+	h.botService = &stubBotService{agentbotLogsFn: func(context.Context, string, string, string) (map[string]any, common.ErrorCode, error) {
+		t.Fatal("AgentbotLogs should not be called for a mismatched bound agent")
+		return nil, common.CodeServerError, errors.New("unexpected call")
+	}}
+	h.GetAgentbotLogs(c)
+
+	var resp struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Code != int(common.CodeUnauthorized) {
+		t.Fatalf("code = %d, want %d; body = %s", resp.Code, common.CodeUnauthorized, w.Body.String())
+	}
+	if !strings.Contains(resp.Message, "not authorized") {
+		t.Fatalf("message = %q, want bound-agent authorization error", resp.Message)
+	}
+}
+
+func TestGetAgentbotLogs_DeniesInaccessibleAgent(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET",
+		"/api/v1/agentbots/agent-b/logs/msg-1", nil)
+	c.Set("user", &entity.User{ID: "u1"})
+	c.Params = gin.Params{
+		{Key: "agent_id", Value: "agent-b"},
+		{Key: "message_id", Value: "msg-1"},
+	}
+
+	h := NewBotHandler(nil)
+	h.botService = &stubBotService{agentbotLogsFn: func(context.Context, string, string, string) (map[string]any, common.ErrorCode, error) {
+		return nil, common.CodeDataError, errors.New("Can't find agent by ID: agent-b")
+	}}
 	h.GetAgentbotLogs(c)
 
 	var resp struct {
@@ -1232,37 +1333,8 @@ func TestGetAgentbotLogs_RequiresBoundAgentID(t *testing.T) {
 	if resp.Code != int(common.CodeDataError) {
 		t.Errorf("code = %d, want %d", resp.Code, common.CodeDataError)
 	}
-	if !strings.Contains(resp.Message, "not bound") {
-		t.Errorf("message = %q, want it to mention 'not bound'", resp.Message)
-	}
-}
-
-func TestGetAgentbotLogs_CrossAgentDenied(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = httptest.NewRequest("GET",
-		"/api/v1/agentbots/agent-b/logs/msg-1", nil)
-	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("agent_id", "agent-a")
-	c.Params = gin.Params{
-		{Key: "agent_id", Value: "agent-b"},
-		{Key: "message_id", Value: "msg-1"},
-	}
-
-	h := NewBotHandler(nil)
-	h.GetAgentbotLogs(c)
-
-	var resp struct {
-		Code    int    `json:"code"`
-		Message string `json:"message"`
-	}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp.Code != int(common.CodeUnauthorized) {
-		t.Errorf("code = %d, want %d", resp.Code, common.CodeUnauthorized)
-	}
-	if !strings.Contains(resp.Message, "not authorized") {
-		t.Errorf("message = %q, want it to mention 'not authorized'", resp.Message)
+	if !strings.Contains(resp.Message, "Can't find agent") {
+		t.Errorf("message = %q, want an access denial", resp.Message)
 	}
 }
 
@@ -1275,7 +1347,6 @@ func TestGetAgentbotLogs_MissingMessageID(t *testing.T) {
 	c.Request = httptest.NewRequest("GET",
 		"/api/v1/agentbots/shared-x/logs/", nil)
 	c.Set("user", &entity.User{ID: "u1"})
-	c.Set("agent_id", "agent-real")
 	c.Params = gin.Params{{Key: "agent_id", Value: "agent-real"}}
 	// Gin's path param extraction returns "" for a missing
 	// segment so the handler must reject with CodeArgumentError.

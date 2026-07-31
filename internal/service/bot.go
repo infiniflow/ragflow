@@ -24,6 +24,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
@@ -34,6 +35,7 @@ import (
 	"ragflow/internal/agent/dsl"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 )
 
@@ -176,6 +178,27 @@ func (s *BotService) AgentbotCompletion(
 		return nil, common.CodeDataError, err
 	}
 	return ch, common.CodeSuccess, nil
+}
+
+// AgentbotLogs returns the stored execution timeline for an agentbot run.
+// Access is scoped to the caller's accessible tenants, matching the Python
+// agent_bot_logs endpoint.
+func (s *BotService) AgentbotLogs(ctx context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
+	if _, err := s.loadCanvas(ctx, tenantID, agentID); err != nil {
+		return nil, common.CodeDataError, err
+	}
+	payload, err := redis.Get().Get(fmt.Sprintf("%s-%s-logs", agentID, messageID))
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("failed to read agent logs")
+	}
+	data := map[string]any{}
+	if payload == "" {
+		return data, common.CodeSuccess, nil
+	}
+	if err := json.Unmarshal([]byte(payload), &data); err != nil {
+		return nil, common.CodeServerError, errors.New("failed to decode agent logs")
+	}
+	return data, common.CodeSuccess, nil
 }
 
 // AgentbotCompletionRequest is the request body for
