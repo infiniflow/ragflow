@@ -15,6 +15,8 @@ export function NavTreeView() {
     navList,
     navLoading,
     navError,
+    loadingParent,
+    childrenErrorParents,
     childrenMap,
     selectedNode,
     deleteNavLoading,
@@ -33,6 +35,8 @@ export function NavTreeView() {
             navList={navList}
             navLoading={navLoading}
             navError={navError}
+            loadingParent={loadingParent}
+            childrenErrorParents={childrenErrorParents}
             childrenMap={childrenMap}
             deleteNavLoading={deleteNavLoading}
             deleteNodeLoading={deleteNodeLoading}

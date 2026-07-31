@@ -65,6 +65,8 @@ type NavTreeLeftPanelProps = {
   navList: DatasetNavList | null;
   navLoading: boolean;
   navError?: boolean;
+  loadingParent?: string | null;
+  childrenErrorParents?: Record<string, boolean>;
   childrenMap: Record<string, DatasetNavNode[]>;
   deleteNavLoading: boolean;
   deleteNodeLoading: boolean;
@@ -78,6 +80,8 @@ export function NavTreeLeftPanel({
   navList,
   navLoading,
   navError = false,
+  loadingParent = null,
+  childrenErrorParents = {},
   childrenMap,
   deleteNavLoading,
   deleteNodeLoading,
@@ -104,14 +108,19 @@ export function NavTreeLeftPanel({
     () =>
       buildNavTreeData(navList?.items, {
         childrenMap,
+        childrenErrorParents,
+        loadingParent,
         getActions: renderNavActions,
         onParentClick,
         onChildClick,
         loadingPlaceholder: t('datasetNav.loading'),
+        errorPlaceholder: t('datasetNav.childLoadFailed'),
       }),
     [
       navList?.items,
       childrenMap,
+      childrenErrorParents,
+      loadingParent,
       renderNavActions,
       onParentClick,
       onChildClick,

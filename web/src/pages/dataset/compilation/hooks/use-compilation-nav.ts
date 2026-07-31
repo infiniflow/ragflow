@@ -28,23 +28,33 @@ export function useCompilationNav() {
   const [childrenMap, setChildrenMap] = useState<
     Record<string, DatasetNavNode[]>
   >({});
+  const [childrenErrorParents, setChildrenErrorParents] = useState<
+    Record<string, boolean>
+  >({});
   const [selectedNode, setSelectedNode] = useState<SelectedNavNode | null>(
     null,
   );
 
-  const {
-    data: childrenData,
-    loading: childrenLoading,
-    isError: childrenError,
-  } = useFetchDatasetNavChildren(loadingParent);
+  const { data: childrenData, isError: childrenError } =
+    useFetchDatasetNavChildren(loadingParent);
 
   useEffect(() => {
-    if (loadingParent && childrenData) {
-      setChildrenMap((prev) => ({
-        ...prev,
-        [loadingParent]: childrenData.items,
-      }));
+    if (!loadingParent || !childrenData) {
+      return;
     }
+    const parent = loadingParent;
+    setChildrenMap((prev) => ({
+      ...prev,
+      [parent]: childrenData.items,
+    }));
+    setChildrenErrorParents((prev) => {
+      if (!prev[parent]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[parent];
+      return next;
+    });
   }, [loadingParent, childrenData]);
 
   useEffect(() => {
@@ -52,15 +62,31 @@ export function useCompilationNav() {
       return;
     }
     const parent = loadingParent;
-    setChildrenMap((prev) => ({
+    setChildrenMap((prev) => {
+      if (!(parent in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[parent];
+      return next;
+    });
+    setChildrenErrorParents((prev) => ({
       ...prev,
-      [parent]: [],
+      [parent]: true,
     }));
     setLoadingParent(null);
   }, [loadingParent, childrenError]);
 
   const loadChildren = useCallback(
     (name: string) => {
+      setChildrenErrorParents((prev) => {
+        if (!prev[name]) {
+          return prev;
+        }
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
       if (!(name in childrenMap) && loadingParent !== name) {
         setLoadingParent(name);
       }
@@ -90,11 +116,20 @@ export function useCompilationNav() {
       delete next[name];
       return next;
     });
+    setChildrenErrorParents((prev) => {
+      if (!(name in prev)) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
   }, []);
 
   const resetNav = useCallback(() => {
     setSelectedNode(null);
     setChildrenMap({});
+    setChildrenErrorParents({});
     setLoadingParent(null);
   }, []);
 
@@ -155,8 +190,8 @@ export function useCompilationNav() {
     navList,
     navLoading,
     navError,
-    childrenLoading,
-    childrenError,
+    loadingParent,
+    childrenErrorParents,
     childrenMap,
     selectedNode,
     deleteNavLoading,

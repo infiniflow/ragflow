@@ -9,20 +9,26 @@ export type NavTreeActionsFactory = (
 
 type BuildNavTreeDataOptions = {
   childrenMap: Record<string, DatasetNavNode[]>;
+  childrenErrorParents?: Record<string, boolean>;
+  loadingParent?: string | null;
   getActions?: NavTreeActionsFactory;
   onParentClick: (node: DatasetNavNode) => void;
   onChildClick: (node: DatasetNavNode, parentName: string) => void;
   loadingPlaceholder: string;
+  errorPlaceholder: string;
 };
 
 export function buildNavTreeData(
   items: DatasetNavNode[] = [],
   {
     childrenMap,
+    childrenErrorParents,
+    loadingParent,
     getActions,
     onParentClick,
     onChildClick,
     loadingPlaceholder,
+    errorPlaceholder,
   }: BuildNavTreeDataOptions,
 ): TreeDataItem[] {
   return items.map((node) => {
@@ -36,7 +42,11 @@ export function buildNavTreeData(
 
     if (node.has_children) {
       const children = childrenMap[node.name];
-      if (children?.length) {
+      if (childrenErrorParents?.[node.name]) {
+        item.children = [
+          { id: `${node.name}/__error__`, name: errorPlaceholder },
+        ];
+      } else if (children?.length) {
         item.children = children.map((child) => ({
           id: `${node.name}/${child.name}`,
           name: child.name,
@@ -44,9 +54,7 @@ export function buildNavTreeData(
           actions: getActions?.(child, node.name),
           onClick: () => onChildClick(child, node.name),
         }));
-      } else if (!children) {
-        // Children not fetched yet: a placeholder keeps the node rendered as
-        // an expandable branch until the request resolves.
+      } else if (loadingParent === node.name) {
         item.children = [
           { id: `${node.name}/__loading__`, name: loadingPlaceholder },
         ];
