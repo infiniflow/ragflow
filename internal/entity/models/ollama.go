@@ -53,6 +53,92 @@ func (o *OllamaModel) Name() string {
 	return "Ollama"
 }
 
+func buildOllamaRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
+	reqBody := buildRequestBody(cfg, modelName, messages, stream)
+	reqBody["messages"] = buildOllamaMessages(messages)
+	return reqBody
+}
+
+func buildOllamaMessages(messages []Message) []map[string]any {
+	apiMessages := buildChatMessages(messages)
+	for i, message := range messages {
+		content, images, ok := ollamaMultimodalContent(message.Content)
+		if !ok {
+			continue
+		}
+		apiMessages[i]["content"] = content
+		if len(images) > 0 {
+			apiMessages[i]["images"] = images
+		}
+	}
+	return apiMessages
+}
+
+func ollamaMultimodalContent(content interface{}) (string, []string, bool) {
+	var parts []interface{}
+	switch value := content.(type) {
+	case []interface{}:
+		parts = value
+	case []map[string]interface{}:
+		parts = make([]interface{}, len(value))
+		for i := range value {
+			parts[i] = value[i]
+		}
+	default:
+		return "", nil, false
+	}
+
+	var textParts []string
+	var images []string
+	for _, part := range parts {
+		partMap, ok := part.(map[string]interface{})
+		if !ok {
+			if text, ok := part.(string); ok {
+				textParts = append(textParts, text)
+			}
+			continue
+		}
+
+		partType, _ := partMap["type"].(string)
+		switch partType {
+		case "text", "input_text":
+			if text, ok := partMap["text"].(string); ok {
+				textParts = append(textParts, text)
+			}
+		case "image_url":
+			if imageURL := ollamaImageURL(partMap["image_url"]); imageURL != "" {
+				images = append(images, cleanOllamaImageData(imageURL))
+			}
+		}
+	}
+
+	return strings.Join(textParts, "\n"), images, true
+}
+
+func ollamaImageURL(value interface{}) string {
+	switch image := value.(type) {
+	case string:
+		return image
+	case map[string]interface{}:
+		url, _ := image["url"].(string)
+		return url
+	case map[string]string:
+		return image["url"]
+	default:
+		return ""
+	}
+}
+
+func cleanOllamaImageData(image string) string {
+	const base64Marker = ";base64,"
+	if strings.HasPrefix(image, "data:") {
+		if marker := strings.Index(image, base64Marker); marker >= 0 {
+			return image[marker+len(base64Marker):]
+		}
+	}
+	return image
+}
+
 func (o *OllamaModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("message is nil")
@@ -71,7 +157,7 @@ func (o *OllamaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	}
 
 	// Build request body
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	reqBody := buildOllamaRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
 		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
@@ -157,7 +243,7 @@ func (o *OllamaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 
 	// Build request body with streaming enabled
-	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	reqBody := buildOllamaRequestBody(modelConfig, modelName, messages, true)
 
 	if modelConfig.Effort != nil && *modelConfig.Effort != "" {
 		if strings.HasPrefix(strings.ToLower(modelName), "gpt-oss") {
