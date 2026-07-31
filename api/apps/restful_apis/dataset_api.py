@@ -16,7 +16,7 @@
 import logging
 
 from peewee import OperationalError
-from quart import request
+from quart import request, make_response
 from common.constants import RetCode
 from api.apps import login_required, current_user
 from api.utils.api_utils import get_error_argument_result, get_error_data_result, get_json_result, get_result, add_tenant_id_to_kwargs
@@ -578,22 +578,19 @@ async def get_knowledge_graph(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/any_artifact", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/artifacts", methods=["HEAD"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def has_any_wiki(tenant_id, dataset_id):
     """Probe whether this dataset has any compiled artifact pages.
 
-    GET /api/v1/datasets/<dataset_id>/any_artifact
-    Success: {"code": 0, "data": {"has": bool}}
     The frontend uses this to decide whether to surface the Artifact tab
     in the dataset sidebar.
     """
     try:
         success, result = await dataset_api_service.has_any_wiki(dataset_id, tenant_id)
-        if success:
-            return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        response = await make_response("", 200 if success and result["has"] else 404)
+        return response
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
@@ -874,20 +871,15 @@ async def get_wiki_page(tenant_id, dataset_id, page_type, slug):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/any_skill", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/skills", methods=["HEAD"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def has_any_skill(tenant_id, dataset_id):
-    """Probe whether this dataset has a compiled Corpus2Skill tree.
-
-    GET /api/v1/datasets/<dataset_id>/any_skill
-    Success: {"code": 0, "data": {"has": bool}}
-    """
+    """Probe whether this dataset has a compiled Corpus2Skill tree."""
     try:
         success, result = await dataset_api_service.has_any_skill(dataset_id, tenant_id)
-        if success:
-            return get_result(data=result)
-        return get_result(data=False, message=result, code=RetCode.AUTHENTICATION_ERROR)
+        response = await make_response("", 200 if success and result["has"] else 404)
+        return response
     except Exception as e:
         logging.exception(e)
         return get_error_data_result(message="Internal server error")
