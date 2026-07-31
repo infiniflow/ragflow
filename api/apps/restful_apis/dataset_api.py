@@ -633,13 +633,13 @@ async def list_wiki_pages(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/artifacts_topics", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/artifacts/topics", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def list_wiki_topics(tenant_id, dataset_id):
     """List wiki topics for the dataset Artifact tab.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts_topics?page=1&page_size=200
+    GET /api/v1/datasets/<dataset_id>/artifacts/topics?page=1&page_size=200
     Success: {"code": 0, "data": {"total": int, "items": [{topic, title, slug}]}}
     """
     try:
@@ -708,13 +708,13 @@ async def get_wiki_graph(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/artifacts_structure", methods=["GET"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/artifacts/structure", methods=["GET"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 async def get_dataset_structure(tenant_id, dataset_id):
     """Return the dataset-scope (KB-wide) structure graph for one kind.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts_structure?kind=<kind>
+    GET /api/v1/datasets/<dataset_id>/artifacts/structure?kind=<kind>
     where ``kind`` is one of:
       graph | mindmap | timeline | session_essence | session_graph
 
@@ -755,13 +755,13 @@ async def get_dataset_structure(tenant_id, dataset_id):
         return get_error_data_result(message="Internal server error")
 
 
-@manager.route("/datasets/<dataset_id>/artifacts_structure", methods=["DELETE"])  # noqa: F821
+@manager.route("/datasets/<dataset_id>/artifacts/structure", methods=["DELETE"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
 def delete_dataset_structure(tenant_id, dataset_id):
     """Delete the dataset-scope (KB-wide) structure graph for one kind.
 
-    DELETE /api/v1/datasets/<dataset_id>/artifacts_structure?kind=<kind>
+    DELETE /api/v1/datasets/<dataset_id>/artifacts/structure?kind=<kind>
     Optional query param: wipe=false cancels the task without deleting stored rows.
     """
     kind = request.args.get("kind", "")

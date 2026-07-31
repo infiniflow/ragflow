@@ -162,7 +162,7 @@ export default {
   artifactsAlteration: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/alteration`,
   artifactsTopicList: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/artifacts_topics`,
+    `${restAPIv1}/datasets/${datasetId}/artifacts/topics`,
   getArtifactPage: (datasetId: string, pageType: string, slug: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/${pageType}/${slug}`,
   listWikiCommits: (datasetId: string) =>
@@ -172,7 +172,7 @@ export default {
   getArtifactGraph: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts/graph`,
   artifactsStructure: (datasetId: string) =>
-    `${restAPIv1}/datasets/${datasetId}/artifacts_structure`,
+    `${restAPIv1}/datasets/${datasetId}/artifacts/structure`,
   clearWiki: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/artifacts`,
   getDatasetSkillTree: (datasetId: string) =>
