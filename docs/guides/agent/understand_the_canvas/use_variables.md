@@ -1,5 +1,7 @@
 ---
 sidebar_position: 2
+title: Use Variables
+sidebar_label: Use Variables
 slug: /use_variables
 sidebar_custom_props: {
   categoryIcon: RagAiAgent

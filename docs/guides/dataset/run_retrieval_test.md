@@ -1,11 +1,13 @@
 ---
 sidebar_position: 10
+title: Run Retrieval Test
+sidebar_label: Run Retrieval Test
 slug: /run_retrieval_test
 sidebar_custom_props: {
   categoryIcon: LucideTextSearch
 }
 ---
-# Run retrieval test
+# Run Retrieval Test
 
 Conduct a retrieval test on your dataset to check whether the intended chunks can be retrieved.
 
@@ -27,15 +29,15 @@ In contrast, chunks created from [knowledge graph construction](./advanced/const
 
 ## Configurations
 
-### Similarity threshold
+### Similarity Threshold
 
 This sets the bar for retrieving chunks: chunks with similarities below the threshold will be filtered out. By default, the threshold is set to 0.2. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved.
 
-### Vector similarity weight
+### Vector Similarity Weight
 
 This sets the weight of vector similarity in the composite similarity score, whether used with vector cosine similarity or a reranking score. By default, it is set to 0.3, making the weight of the other component 0.7 (1 - 0.3).
 
-### Rerank model
+### Rerank Model
 
 - If left empty, RAGFlow will use a combination of weighted keyword similarity and weighted vector cosine similarity.
 - If a rerank model is selected, weighted keyword similarity will be combined with weighted vector reranking score.
@@ -44,7 +46,7 @@ This sets the weight of vector similarity in the composite similarity score, whe
 Using a rerank model will significantly increase the time to receive a response.
 :::
 
-### Use knowledge graph
+### Use Knowledge Graph
 
 In a knowledge graph, an entity description, a relationship description, or a community report each exists as an independent chunk. This switch indicates whether to add these chunks to the retrieval.
 
@@ -62,7 +64,7 @@ The switch is disabled by default. When enabled, RAGFlow performs the following 
 Using a knowledge graph in a retrieval test will significantly increase the time to receive a response.
 :::
 
-### Cross-language search
+### Cross-Language Search
 
 To perform a [cross-language search](../../references/glossary.mdx#cross-language-search), select one or more target languages from the dropdown menu. The system’s default chat model will then translate your query entered in the Test text field into the selected target language(s). This translation ensures accurate semantic matching across languages, allowing you to retrieve relevant results regardless of language differences.
 
@@ -71,7 +73,7 @@ To perform a [cross-language search](../../references/glossary.mdx#cross-languag
 - If no target language is selected, the system will search only in the language of your query, which may cause relevant information in other languages to be missed.
 :::
 
-### Test text
+### Test Text
 
 This field is where you put in your testing query.
 
@@ -80,18 +82,16 @@ This field is where you put in your testing query.
 1. Navigate to the **Retrieval testing** page of your dataset, enter your query in **Test text**, and click **Testing** to run the test.
 2. If the results are unsatisfactory, tune the options listed in the Configuration section and rerun the test.
 
-   *The following is a screenshot of a retrieval test conducted without using knowledge graph. It demonstrates a hybrid search combining weighted keyword similarity and weighted vector cosine similarity. The overall hybrid similarity score is 28.56, calculated as 25.17 (term similarity score) x 0.7 + 36.49 (vector similarity score) x 0.3:*  
-   ![Image](https://github.com/user-attachments/assets/541554d4-3f3e-44e1-954b-0ae77d7372c6)
+   A retrieval test without a knowledge graph uses hybrid search, combining weighted keyword similarity and weighted vector cosine similarity.
 
-   *The following is a screenshot of a retrieval test conducted using a knowledge graph. It shows that only vector similarity is used for knowledge graph-generated chunks:*  
-   ![Image](https://github.com/user-attachments/assets/30a03091-0f7b-4058-901a-f4dc5ca5aa6b)
+   A retrieval test using a knowledge graph uses vector similarity for knowledge graph-generated chunks.
 
 :::caution WARNING
 If you have adjusted the default settings, such as keyword similarity weight or similarity threshold, to achieve the optimal results, be aware that these changes will not be automatically saved. You must apply them to your chat assistant settings or the **Retrieval** agent component settings.
 :::
 
-## Frequently asked questions
+## Frequently Asked Questions
 
-### Is an LLM used when the Use Knowledge Graph switch is enabled?
+### Is an LLM Used When the Use Knowledge Graph Switch Is Enabled?
 
 Yes, your LLM will be involved to analyze your query and extract the related entities and relationship from the knowledge graph. This also explains why additional tokens and time will be consumed.

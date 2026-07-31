@@ -83,7 +83,8 @@ class Excel(ExcelParser):
                 image_descriptions = vision_figure_parser_figure_xlsx_wrapper(images=images, callback=callback, **kwargs)
                 if image_descriptions and len(image_descriptions) == len(images):
                     for i, bf in enumerate(image_descriptions):
-                        images[i]["image_description"] = "\n".join(bf[0][1])
+                        desc = bf[0][1]
+                        images[i]["image_description"] = "\n".join(desc) if isinstance(desc, list) else str(desc)
                     for img in images:
                         if img["span_type"] == "single_cell" and img.get("image_description"):
                             pending_cell_images.append(img)

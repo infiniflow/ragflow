@@ -21,10 +21,12 @@ import (
 	"fmt"
 	"strings"
 	"sync/atomic"
+	"time"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	kc "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service"
@@ -70,6 +72,17 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		if strings.TrimSpace(llmID) == "" {
 			return kc.Deps{}, fmt.Errorf("knowledge_compiler: llm_id is required for production deps resolution")
 		}
+		// Resolve the chat model's context window so RAPTOR can truncate each
+		// cluster's texts to fit the LLM context (mirrors Python self._llm_model.max_length).
+		llmMax := kc.DefaultLLMContextLength
+		// Bound the model-config lookup so a stalled provider/instance DB read
+		// cannot block document ingestion indefinitely.
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, _, _, ml, merr := svc.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, llmID); merr == nil && ml > 0 {
+			llmMax = ml
+		}
+
 		return kc.Deps{
 			Chat:      &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID},
 			Embed:     &kcEmbedder{svc: svc, tenantID: tenantID, embdID: embeddingModel},
@@ -77,6 +90,7 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 			// HistoricalKNN / Redis are optional (wiki historical dedup,
 			// datasetnav lock). They are wired separately when the
 			// surrounding pipeline supplies the backing services.
+			LLMMaxLength: llmMax,
 		}, nil
 	}
 }
@@ -101,8 +115,16 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// Python's knowledge compilation pins per-call-site temperatures
 	// (extraction 0.1, merge judging 0.0); nil leaves the driver default.
 	var config *models.ChatConfig
-	if req.Temperature != nil {
-		config = &models.ChatConfig{Temperature: req.Temperature}
+	if req.Temperature != nil || req.MaxTokens != nil {
+		config = &models.ChatConfig{}
+		if req.Temperature != nil {
+			config.Temperature = req.Temperature
+		}
+		// MaxTokens caps the generated summary length (mirrors Python's
+		// {"max_tokens": max(self._max_token, 512)}, issue #10235).
+		if req.MaxTokens != nil {
+			config.MaxTokens = req.MaxTokens
+		}
 	}
 	resp, err := c.svc.Chat(ctx, c.tenantID, llmID, msgs, config)
 	if err != nil {

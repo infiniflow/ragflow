@@ -7,8 +7,8 @@ import { Button } from '@/components/ui/button';
 import {
   ITraceInfo,
   useDatasetGenerate,
-} from '@/pages/dataset/dataset/generate-button/hook';
-import { useGenerateStatus } from '@/pages/dataset/dataset/generate-button/use-generate-status';
+  useGenerateStatus,
+} from '@/hooks/use-dataset-generate';
 
 import {
   GenerableViewMode,

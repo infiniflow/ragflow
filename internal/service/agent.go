@@ -412,6 +412,7 @@ type AgentItem struct {
 	CanvasCategory string  `json:"canvas_category"`
 	CreateTime     *int64  `json:"create_time,omitempty"`
 	UpdateTime     *int64  `json:"update_time,omitempty"`
+	ReleaseTime    *int64  `json:"release_time,omitempty"`
 }
 
 // ListAgentsResponse is the response body for GET /api/v1/agents.
@@ -503,6 +504,25 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 	for i, c := range canvases {
 		items[i] = toAgentItem(c)
 	}
+
+	// Attach the latest release time per canvas so agent cards can render
+	// the "published at" line (Python UserCanvasService.get_list parity).
+	if len(items) > 0 {
+		canvasIDs := make([]string, 0, len(items))
+		for _, item := range items {
+			canvasIDs = append(canvasIDs, item.ID)
+		}
+		releaseTimes, err := s.versionDAO.GetLatestReleaseTimes(canvasIDs)
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to get release times: %w", err)
+		}
+		for _, item := range items {
+			if t, ok := releaseTimes[item.ID]; ok {
+				item.ReleaseTime = &t
+			}
+		}
+	}
+
 	return &ListAgentsResponse{Canvas: items, Total: total}, common.CodeSuccess, nil
 }
 
@@ -651,6 +671,20 @@ func (s *AgentService) GetAgent(ctx context.Context, userID, canvasID string) (*
 	return s.loadCanvasForUser(ctx, userID, canvasID)
 }
 
+// GetLastPublishTime returns the update_time of the most recently updated
+// released version, or nil when the canvas has never been published.
+// Mirrors the last_publish_time computation in Python's get_agent handler.
+func (s *AgentService) GetLastPublishTime(ctx context.Context, canvasID string) (*int64, error) {
+	version, err := s.versionDAO.GetLatestReleased(canvasID)
+	if err != nil {
+		if errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return version.UpdateTime, nil
+}
+
 // UpdateAgent applies a draft patch to user_canvas. Settings updates may omit
 // dsl; in that case the existing draft DSL must be preserved.
 //
@@ -681,6 +715,23 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 			updates[key] = value
 		}
 	}
+
+	// Publish flow: the front-end sends release ("true"/true) together with
+	// dsl via PUT, and Python's update_agent coerces it with
+	// `bool(req.get("release", ""))` — any non-empty string is truthy.
+	// Mirror that here so the canvas row and the new version row both carry
+	// the release flag; an absent release keeps parity with Python, which
+	// always writes the coerced value (False when missing).
+	release := false
+	if value, ok := patch["release"]; ok && value != nil {
+		switch v := value.(type) {
+		case bool:
+			release = v
+		case string:
+			release = v != ""
+		}
+	}
+	updates["release"] = release
 	if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
 		canvasCategory := updatedAgentCanvasCategory(canvasInstance, updates)
 		if existing, err := s.canvasDAO.GetByUserAndTitle(ctx, dao.DB, userID, title, canvasCategory); err != nil {
@@ -701,16 +752,10 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		updates["dsl"] = entity.JSONMap(dslpkg.NormalizeForCanvas(dslMap))
 	}
 
-	_, err = s.canvasDAO.UpdateFields(ctx, dao.DB, canvasID, updates)
-	if err != nil {
-		if dao.IsDuplicateKeyErr(err) {
-			if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
-				return agentTitleAlreadyExistsError(title)
-			}
-			return errors.New("agent title already exists")
-		}
-		return fmt.Errorf("update agent %s: %w", canvasID, err)
-	}
+	// Build the version options up front (it only reads the user nickname)
+	// so the canvas row update and the version save can share one
+	// transaction below.
+	var versionOpts *dao.SaveOrReplaceLatestVersionOptions
 	if dslValue, ok := updates["dsl"]; ok {
 		dsl, ok := dslValue.(entity.JSONMap)
 		if !ok {
@@ -722,9 +767,33 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 		} else if canvasInstance.Title != nil {
 			title = *canvasInstance.Title
 		}
-		if _, err := s.saveOrReplaceVersion(ctx, userID, canvasID, dsl, title, nil, false); err != nil {
-			return fmt.Errorf("update agent %s: save version: %w", canvasID, err)
+		opts := s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, title, nil, release)
+		versionOpts = &opts
+	}
+
+	// The canvas release/DSL update and the version save must commit
+	// atomically: if the version write fails after the canvas row is
+	// committed, the canvas is left published (or unpublished) without a
+	// matching version state.
+	err = dao.DB.Transaction(func(tx *gorm.DB) error {
+		if _, err := s.canvasDAO.UpdateFieldsTx(tx, canvasID, updates); err != nil {
+			return err
 		}
+		if versionOpts != nil {
+			if _, err := s.versionDAO.SaveOrReplaceLatestTx(ctx, tx, *versionOpts); err != nil {
+				return fmt.Errorf("save version: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		if dao.IsDuplicateKeyErr(err) {
+			if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
+				return agentTitleAlreadyExistsError(title)
+			}
+			return errors.New("agent title already exists")
+		}
+		return fmt.Errorf("update agent %s: %w", canvasID, err)
 	}
 	return nil
 }
@@ -849,10 +918,6 @@ func (s *AgentService) PublishAgent(ctx context.Context, userID, canvasID string
 		return nil, err
 	}
 	return row, nil
-}
-
-func (s *AgentService) saveOrReplaceVersion(ctx context.Context, userID, canvasID string, dsl entity.JSONMap, title string, description *string, release bool) (*entity.UserCanvasVersion, error) {
-	return s.versionDAO.SaveOrReplaceLatest(ctx, dao.DB, s.saveOrReplaceVersionOptions(ctx, userID, canvasID, dsl, title, description, release))
 }
 
 func (s *AgentService) saveOrReplaceVersionOptions(ctx context.Context, userID, canvasID string, dsl entity.JSONMap, title string, description *string, release bool) dao.SaveOrReplaceLatestVersionOptions {

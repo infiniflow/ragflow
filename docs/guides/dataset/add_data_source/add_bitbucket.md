@@ -1,5 +1,7 @@
 ---
 sidebar_position: 16
+title: Add Bitbucket
+sidebar_label: Add Bitbucket
 slug: /add_confluence
 sidebar_custom_props: {
   categoryIcon: SiGoogledrive
@@ -22,9 +24,9 @@ Before starting, ensure you have the following:
 - **Repository URL:** The full URL of the repository you wish to index.
 - **Workspace ID:** The unique identifier for your Bitbucket workspace.
 
-## Configuration steps
+## Configuration Steps
 
-### Define Bitbucket as an external data source
+### Define Bitbucket as an External Data Source
 
 Navigate to the **Connectors** or **External Data Source** section in the RAGFlow Admin Panel and select **Bitbucket**. Fill in the connector details in the popup window:
 
@@ -41,7 +43,7 @@ Navigate to the **Connectors** or **External Data Source** section in the RAGFlo
 
 *RAGFlow validates the connection immediately and indexes all pull requests from the specified repos or projects.*
 
-### Link to a dataset
+### Link to a Dataset
 
 Credentials alone do not trigger indexing. You must link the data source to a specific dataset:
 
