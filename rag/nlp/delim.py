@@ -65,26 +65,44 @@ alternation pattern with ``re.escape`` applied, ready for
 Frontend parity
 ---------------
 The web UI preview in ``web/src/utils/delimiter-preview.ts``
-(``parseDelimitersForDisplay``) is a *preview*, not a contract. It
-honors the same parsing rule but presents a display-order list with
-whitespace glyph substitution; backend splits use the longest-first
-sorted list. After the consolidation (#17383), the backend and the
-preview should produce the same *set* of delimiters (modulo whitespace
-glyph normalization and dedupe choices).
+(``parseDelimitersForDisplay``) follows the same parsing rule
+(normalization, dedupe, longest-first order) and applies whitespace
+glyph substitution only for display.
 """
 
 from __future__ import annotations
 
+import logging
 import re
 
 # Match a backtick-wrapped token. Case-sensitive on purpose (see #17384).
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
 
 
+def normalize_text_newlines(text: str) -> str:
+    """Normalize CRLF and standalone CR to LF in source text."""
+    if not text:
+        return text
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def has_wrapped_delimiter(s: str) -> bool:
+    """True when the delimiter field contains at least one backtick-wrapped token.
+
+    Used to decide the historical "custom delimiter" mode that bypasses
+    ``chunk_token_num``. Separate from whether any delimiter is present
+    after parsing (bare single-character delimiters still split).
+    """
+    if not s:
+        return False
+    return _BACKTICK_RE.search(s) is not None
+
+
 def parse_delimiter_field(s: str) -> list[str]:
     """Parse the delimiter field into a list of delimiter strings.
 
-    Returns an empty list for an empty or whitespace-only field.
+    Returns an empty list for an empty field. Whitespace characters are
+    treated as valid single-character delimiters.
 
     The output is sorted longest-first and deduplicated while
     preserving the first-occurrence order for equal-length items (the
@@ -98,7 +116,7 @@ def parse_delimiter_field(s: str) -> list[str]:
     # CRLF normalization: \r\n → \n, then standalone \r → \n. We do this
     # before parsing so the parser never sees a \r in either bare-char
     # position or backtick-wrapped content.
-    normalized = s.replace("\r\n", "\n").replace("\r", "\n")
+    normalized = normalize_text_newlines(s)
 
     # Insertion-ordered dedupe so equal-length items keep their first-
     # occurrence order, which is then preserved by the stable sort below.
@@ -126,7 +144,13 @@ def parse_delimiter_field(s: str) -> list[str]:
             delimiters.append(ch)
 
     # Stable sort by length, longest-first.
-    return sorted(delimiters, key=len, reverse=True)
+    result = sorted(delimiters, key=len, reverse=True)
+    logging.debug(
+        "parse_delimiter_field: parsed %d delimiters with lengths %s",
+        len(result),
+        [len(delimiter) for delimiter in result],
+    )
+    return result
 
 
 def compile_delimiter_pattern(delimiters: list[str]) -> str:

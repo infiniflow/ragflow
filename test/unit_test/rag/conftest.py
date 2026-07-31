@@ -14,7 +14,10 @@
 #  limitations under the License.
 #
 
-"""Restore the real ``common.data_source`` package before importing rag unit tests.
+"""Shared fixtures for ``rag`` unit tests.
+
+Also restores the real ``common.data_source`` package before importing rag
+unit tests.
 
 ``test/unit_test/data_source/conftest.py`` registers a lightweight
 ``sys.modules["common.data_source"]`` stub so submodule imports skip the heavy
@@ -50,3 +53,26 @@ def _restore_common_data_source_package() -> None:
 
 
 _restore_common_data_source_package()
+
+
+def _install_pdf_parser_stub() -> None:
+    """Lightweight stub so ``rag.nlp`` imports without the deepdoc/infinity chain.
+
+    ``naive_merge`` does ``from deepdoc.parser.pdf_parser import RAGFlowPdfParser``
+    inside the function body. Installing this stub once lets delimiter tests
+    import ``rag.nlp`` without OCR/native deps.
+    """
+    if "deepdoc.parser.pdf_parser" in sys.modules:
+        return
+    pdf_parser = types.ModuleType("deepdoc.parser.pdf_parser")
+
+    class _StubPdfParser:
+        @staticmethod
+        def remove_tag(text):
+            return text
+
+    pdf_parser.RAGFlowPdfParser = _StubPdfParser
+    sys.modules["deepdoc.parser.pdf_parser"] = pdf_parser
+
+
+_install_pdf_parser_stub()

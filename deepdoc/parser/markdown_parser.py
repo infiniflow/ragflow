@@ -155,8 +155,10 @@ class RAGFlowMarkdownParser:
 
 class MarkdownElementExtractor:
     def __init__(self, markdown_content):
-        self.markdown_content = markdown_content
-        self.lines = markdown_content.split("\n")
+        # Normalize CRLF/CR so compiled delimiter patterns (which use LF)
+        # match Windows-line-ending source the same as Unix source.
+        self.markdown_content = markdown_content.replace("\r\n", "\n").replace("\r", "\n")
+        self.lines = self.markdown_content.split("\n")
 
     def get_delimiters(self, delimiters):
         # Delegate to the canonical parser (#17383). The previous

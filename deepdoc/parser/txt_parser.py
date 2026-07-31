@@ -18,7 +18,11 @@ import re
 
 from deepdoc.parser.utils import get_text
 from common.token_utils import num_tokens_from_string
-from rag.nlp.delim import compile_delimiter_pattern, parse_delimiter_field
+from rag.nlp.delim import (
+    compile_delimiter_pattern,
+    normalize_text_newlines,
+    parse_delimiter_field,
+)
 
 
 class RAGFlowTxtParser:
@@ -46,8 +50,9 @@ class RAGFlowTxtParser:
                     cks[-1] += t
                 tk_nums[-1] += tnum
 
+        txt = normalize_text_newlines(txt)
         dels = compile_delimiter_pattern(parse_delimiter_field(delimiter))
-        secs = re.split(r"(%s)" % dels, txt)
+        secs = re.split(r"(%s)" % dels, txt) if dels else [txt]
         for sec in secs:
             if dels and re.match(f"^{dels}$", sec):
                 continue

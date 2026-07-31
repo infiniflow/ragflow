@@ -43,29 +43,13 @@ Coverage
 
 from __future__ import annotations
 
+import ast
 import re
-import sys
-import types
 from pathlib import Path
 
 import pytest
 
-# Stub the heavy deepdoc + infinity import chain before touching ``rag.nlp``.
-# The helpers under test are pure (only depend on `re`), but the
-# `get_delimiters` shim re-exports through `rag.nlp`, which pulls in the
-# deepdoc chain at import time.
-_pdf_parser = types.ModuleType("deepdoc.parser.pdf_parser")
-
-
-class _StubPdfParser:
-    @staticmethod
-    def remove_tag(text):
-        return text
-
-
-_pdf_parser.RAGFlowPdfParser = _StubPdfParser
-sys.modules.setdefault("deepdoc.parser.pdf_parser", _pdf_parser)
-
+# pdf_parser stub is installed by test/unit_test/rag/conftest.py
 from rag.nlp import get_delimiters
 from rag.nlp.delim import (
     compile_delimiter_pattern,
@@ -81,7 +65,7 @@ def test_empty_string_returns_empty_list():
     assert parse_delimiter_field("") == []
 
 
-def test_whitespace_only_string_returns_empty_list():
+def test_whitespace_only_string_is_treated_as_a_delimiter():
     # Whitespace is treated as a valid delimiter character, not as "no
     # input". A user who pastes a single space gets one delimiter.
     assert parse_delimiter_field(" ") == [" "]
@@ -432,12 +416,44 @@ def test_naive_merge_tooltip_example_uses_all_three_delimiters():
         assert not any(c == delim for c in stripped), (delim, stripped)
 
 
+def test_naive_merge_wrapped_single_char_bypasses_chunk_token_num():
+    # `` `;` `` is a wrapped one-character delimiter; has_custom must
+    # still be true so each segment becomes its own chunk.
+    from rag.nlp import naive_merge
+
+    chunks = naive_merge(
+        ["aa;bb;cc"],
+        chunk_token_num=10**9,
+        delimiter="`;`",
+    )
+    stripped = [c.strip() for c in chunks if c.strip()]
+    assert stripped == ["aa", "bb", "cc"], stripped
+
+
 # --------------------------------------------------------------------------- #
 # Cross-site consistency — every refactored site delegates to the helper
 # --------------------------------------------------------------------------- #
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _split_like_parser_txt(txt: str, delimiter: str) -> list[str]:
+    """Mirror ``RAGFlowTxtParser.parser_txt`` split logic without importing deepdoc."""
+    txt = txt.replace("\r\n", "\n").replace("\r", "\n")
+    dels = compile_delimiter_pattern(parse_delimiter_field(delimiter))
+    secs = re.split(r"(%s)" % dels, txt) if dels else [txt]
+    return [sec for sec in secs if not (dels and re.match(f"^{dels}$", sec))]
+
+
+def test_parser_txt_empty_delimiter_returns_whole_text():
+    assert _split_like_parser_txt("abc", "") == ["abc"]
+
+
+def test_parser_txt_crlf_source_matches_lf_source():
+    lf = _split_like_parser_txt("a\nb\nc", "\n")
+    crlf = _split_like_parser_txt("a\r\nb\r\nc", "\n")
+    assert lf == crlf == ["a", "b", "c"]
 
 
 # (rel_path, function_name) for every site that used to inline a
@@ -457,6 +473,17 @@ _DELEGATING_SITES = [
 ]
 
 
+def _function_source(source: str, function_name: str) -> str:
+    """Return the source text of a top-level or nested function by AST line range."""
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
+            # end_lineno is inclusive
+            lines = source.splitlines(keepends=True)
+            return "".join(lines[node.lineno - 1 : node.end_lineno])
+    raise AssertionError(f"function {function_name!r} not found")
+
+
 @pytest.mark.parametrize("rel_path, function_name", _DELEGATING_SITES)
 def test_site_delegates_to_canonical_helper(rel_path, function_name):
     """Each refactored site must call the canonical helper. No site
@@ -474,13 +501,8 @@ def test_site_delegates_to_canonical_helper(rel_path, function_name):
     assert "from rag.nlp.delim import" in source or ("import rag.nlp.delim" in source), (
         f"{rel_path} does not import rag.nlp.delim — the {function_name} site has been un-delegated from the canonical helper (#17383)"
     )
-    # The function body should NOT contain an inline `re.finditer` for
-    # the backtick pattern (defense-in-depth: even if the import is
-    # present, an inline regex would re-introduce the divergence).
-    fn_start = source.find(f"def {function_name}")
-    assert fn_start != -1, f"{function_name} not found in {rel_path}"
-    body = source[fn_start:]
-    # Conservative check: no backtick-pattern regex in the function body.
+    # Bound the check to the target function body only.
+    body = _function_source(source, function_name)
     assert 're.finditer(r"`[^`]+`"' not in body and 're.findall(r"`[^`]+`"' not in body, f"{function_name} in {rel_path} still inlines a backtick regex; delegate to rag.nlp.delim instead (#17383)"
 
 
@@ -517,29 +539,32 @@ def _frontend_parse(field: str) -> list[str]:
     """Re-implementation of ``parseDelimitersForDisplay`` from
     ``web/src/utils/delimiter-preview.ts``.
 
-    The TS helper:
-      1. Translates literal ``\\n`` / ``\\t`` / ``\\r`` to real chars
-         (the form-field does this in the React layer; for this parity
-         test we assume it has already happened — the field is what
-         arrives at the API).
-      2. Splits on `` `…` `` for backtick-wrapped multi-char tokens.
-      3. For bare chars, preserves the *display* order (input order).
-      4. Applies whitespace glyph substitution for display (e.g.
-         newline → ⏎) — we strip that here since the backend doesn't
-         see glyphs.
+    Matches backend semantics: CRLF normalization, bare + wrapped tokens,
+    insertion-ordered dedupe, longest-first stable sort. Glyph substitution
+    is display-only and omitted here.
     """
+    if not field:
+        return []
+    normalized = field.replace("\r\n", "\n").replace("\r", "\n")
     out: list[str] = []
-    # Same backtick-wrapped extraction as the backend, but in
-    # *display* order (input order, not longest-first) and without
-    # dedupe or sort.
+    seen: set[str] = set()
     cursor = 0
-    for m in re.finditer(r"`([^`]+)`", field):
+    for m in re.finditer(r"`([^`]+)`", normalized):
         f, t = m.span()
-        out.extend(field[cursor:f])
-        out.append(m.group(1))
+        for ch in normalized[cursor:f]:
+            if ch and ch not in seen:
+                seen.add(ch)
+                out.append(ch)
+        token = m.group(1)
+        if token and token not in seen:
+            seen.add(token)
+            out.append(token)
         cursor = t
-    out.extend(field[cursor:])
-    return [d for d in out if d]
+    for ch in normalized[cursor:]:
+        if ch and ch not in seen:
+            seen.add(ch)
+            out.append(ch)
+    return sorted(out, key=len, reverse=True)
 
 
 @pytest.mark.parametrize(
@@ -551,6 +576,7 @@ def _frontend_parse(field: str) -> list[str]:
         " ",
         "\n",
         "\t",
+        "\r",
         "\r\n",
         "\n!?;。；！？",
         "`##`",
@@ -565,20 +591,12 @@ def _frontend_parse(field: str) -> list[str]:
 )
 def test_frontend_and_backend_agree_on_delimiter_set(field):
     """The frontend preview and the backend helper must agree on the
-    *set* of delimiters. The frontend may present them in input order
-    (for display) and with whitespace glyph substitution; the backend
-    sorts longest-first. The underlying *strings* must be identical."""
-    frontend_set = set(_frontend_parse(field))
-    backend_set = set(parse_delimiter_field(field))
-    # Special case: standalone `\r` normalizes to `\n` in the backend
-    # but stays as `\r` in the frontend (the frontend's round-trip is
-    # not normalize-on-parse). We allow that divergence and patch the
-    # frontend set to match the backend.
-    if field == "\r":
-        frontend_set = {"\n"}
-    if field == "\r\n":
-        frontend_set = {"\n"} if "\n" in frontend_set else frontend_set
-    assert frontend_set == backend_set, f"frontend and backend disagree for {field!r}: frontend={frontend_set}, backend={backend_set}"
+    *set* of delimiters after CRLF normalization and dedupe. Order is
+    longest-first on both sides."""
+    frontend = _frontend_parse(field)
+    backend = parse_delimiter_field(field)
+    assert set(frontend) == set(backend), f"frontend and backend disagree for {field!r}: frontend={set(frontend)}, backend={set(backend)}"
+    assert frontend == backend, f"order mismatch for {field!r}: frontend={frontend}, backend={backend}"
 
 
 # --------------------------------------------------------------------------- #

@@ -42,40 +42,15 @@ Sibling sites that previously diverged (now consolidated)
 
 from __future__ import annotations
 
+import ast
 import re
-import sys
-import types
 from pathlib import Path
 
 import pytest
 
-
-# --------------------------------------------------------------------------- #
-# Stub the heavy deepdoc + infinity import chain before touching ``rag.nlp``.
-#
-# ``naive_merge`` does ``from deepdoc.parser.pdf_parser import RAGFlowPdfParser``
-# inside the function body, and the deepdoc package's ``__init__`` pulls in
-# ``infinity`` (a native extension) plus OCR parsers that aren't relevant to
-# delimiter parsing. The mock below gives ``naive_merge`` a no-op
-# ``RAGFlowPdfParser.remove_tag`` so the chunking logic under test runs
-# without the heavy deps.
-# --------------------------------------------------------------------------- #
-_pdf_parser = types.ModuleType("deepdoc.parser.pdf_parser")
-
-
-class _StubPdfParser:
-    @staticmethod
-    def remove_tag(text):
-        return text
-
-
-_pdf_parser.RAGFlowPdfParser = _StubPdfParser
-sys.modules.setdefault("deepdoc.parser.pdf_parser", _pdf_parser)
-
-
-import rag.nlp as nlp
-from rag.nlp import naive_merge, get_delimiters
-
+# pdf_parser stub is installed by test/unit_test/rag/conftest.py
+from rag import nlp
+from rag.nlp import get_delimiters, naive_merge
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -174,6 +149,16 @@ _BACKTICK_RE_SOURCES = [
 ]
 
 
+def _function_source(source: str, function_name: str) -> str:
+    """Return the source text of a function by AST line range."""
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
+            lines = source.splitlines(keepends=True)
+            return "".join(lines[node.lineno - 1 : node.end_lineno])
+    raise AssertionError(f"function {function_name!r} not found")
+
+
 @pytest.mark.parametrize("rel_path, function_name", _BACKTICK_RE_SOURCES)
 def test_no_re_I_on_re_finditer(rel_path, function_name):
     """The ``re.finditer`` calls in the canonical delimiter parser must not
@@ -185,14 +170,7 @@ def test_no_re_I_on_re_finditer(rel_path, function_name):
     would actually change behavior.
     """
     source = (_REPO_ROOT / rel_path).read_text(encoding="utf-8")
-    # Find the function body in the module, then assert no `re.I` /
-    # `re.IGNORECASE` is used on any `re.finditer` call inside it.
-    fn_marker = f"def {function_name}"
-    fn_start = source.find(fn_marker)
-    assert fn_start != -1, f"{function_name} not found in {rel_path}"
-    # Crude "rest of module from the function onwards" slice — good enough
-    # for the single-call-helper contract this module has today.
-    body = source[fn_start:]
+    body = _function_source(source, function_name)
     # Either `re.finditer(...)` directly, or a precompiled regex with
     # `.finditer(...)` (e.g. `_BACKTICK_RE.finditer(normalized)`).
     has_finditer = "re.finditer" in body or ".finditer(" in body
@@ -208,8 +186,6 @@ def test_no_re_I_on_backtick_regex_anywhere_in_parser_module():
     silently regress the case-sensitive matching semantics.
     """
     source = (_REPO_ROOT / "rag/nlp/delim.py").read_text(encoding="utf-8")
-    import ast
-
     tree = ast.parse(source)
     # Collect every `re.finditer` / `re.findall` / `re.compile` call and
     # ensure none of them pass `re.I` / `re.IGNORECASE`.
