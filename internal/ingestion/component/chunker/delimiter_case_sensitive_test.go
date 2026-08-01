@@ -229,10 +229,20 @@ func TestTokenChunker_BacktickASplitsOnlyAtLowercase(t *testing.T) {
 	}
 }
 
-func TestBacktickDelimRE_HasNoIgnoreCaseFlag(t *testing.T) {
-	// Sanity: the pattern still extracts backtick contents case-sensitively.
+func TestBacktickDelimiterIsCaseSensitive(t *testing.T) {
+	// Extraction and compiled pattern must both preserve letter casing.
 	parsed := chunk.ParseDelimiterField("`End`")
 	if len(parsed) != 1 || parsed[0] != "End" {
 		t.Fatalf("ParseDelimiterField(`End`) = %#v, want [End]", parsed)
+	}
+	p := chunk.CompileDelimiterPattern(parsed)
+	if p == nil {
+		t.Fatal("CompileDelimiterPattern returned nil")
+	}
+	if !p.MatchString("End") || p.MatchString("end") || p.MatchString("END") {
+		t.Fatalf("pattern %q is not case-sensitive", p.String())
+	}
+	if strings.Contains(p.String(), "(?i)") {
+		t.Fatalf("compiled pattern must not carry (?i); got %q", p.String())
 	}
 }

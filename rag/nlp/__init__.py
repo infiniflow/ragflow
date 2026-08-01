@@ -1789,8 +1789,6 @@ def extract_between(text: str, start_tag: str, end_tag: str) -> list[str]:
     return re.findall(pattern, text, flags=re.DOTALL)
 
 
-
-
 class Node:
     def __init__(self, level, depth=-1, texts=None):
         self.level = level

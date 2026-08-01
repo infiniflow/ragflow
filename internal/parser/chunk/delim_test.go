@@ -138,7 +138,7 @@ func TestCompileDelimiterPatternShippedDefault(t *testing.T) {
 
 func TestCompileDelimiterPatternCaseSensitive(t *testing.T) {
 	pat := CompileDelimiterPattern(ParseDelimiterField("a"))
-	parts := regexp.MustCompile("(" + pat.String() + ")").Split("AaBb", -1)
+	parts := regexp.MustCompile("("+pat.String()+")").Split("AaBb", -1)
 	// Split removes matches; "A" + "Bb" with "a" consumed.
 	if len(parts) < 2 {
 		t.Fatalf("parts=%v", parts)

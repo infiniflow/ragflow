@@ -64,11 +64,11 @@ import (
 	"strings"
 	"sync"
 
+	"gorm.io/gorm"
 	"ragflow/internal/agent/runtime"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
-	"gorm.io/gorm"
 
 	"ragflow/internal/parser/chunk"
 )

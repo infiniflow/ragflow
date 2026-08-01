@@ -20,7 +20,11 @@ import re
 
 from markdown import markdown
 
-from rag.nlp.delim import compile_delimiter_pattern, parse_delimiter_field
+from rag.nlp.delim import (
+    compile_delimiter_pattern,
+    normalize_text_newlines,
+    parse_delimiter_field,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -157,16 +161,16 @@ class MarkdownElementExtractor:
     def __init__(self, markdown_content):
         # Normalize CRLF/CR so compiled delimiter patterns (which use LF)
         # match Windows-line-ending source the same as Unix source.
-        self.markdown_content = markdown_content.replace("\r\n", "\n").replace("\r", "\n")
+        self.markdown_content = normalize_text_newlines(markdown_content)
         self.lines = self.markdown_content.split("\n")
 
     def get_delimiters(self, delimiters):
         # Delegate to the canonical parser (#17383). The previous
         # implementation matched only backtick-wrapped tokens and dropped
         # bare characters, which silently made the shipped default
-        # (``\n!?;。；！？``) a no-op for the markdown path. The helper
-        # honors both bare chars and wrapped tokens, so the same field
-        # produces the same splits in every file type.
+        # delimiter field a no-op for the markdown path. The helper honors
+        # both bare chars and wrapped tokens, so the same field produces
+        # the same splits in every file type.
         return compile_delimiter_pattern(parse_delimiter_field(delimiters))
 
     def _get_fence_marker(self, line):
