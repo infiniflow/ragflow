@@ -122,6 +122,11 @@ type Product struct {
 	Vector     []float32
 	ParentID   string
 	Meta       map[string]any
+	// Merged marks rows that already went through dataset-level dedup
+	// (kc_merged=1, doc_id=kb). The consumer distinguishes these from the
+	// per-document compiled rows (doc_id=<source doc>, no kc_merged) so it can
+	// KNN against only the merged set instead of re-deduping the whole KB.
+	Merged bool
 }
 
 // Outputs is the result of a variant Run. All compiled products are buffered

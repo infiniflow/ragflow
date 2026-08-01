@@ -20,6 +20,36 @@ import (
 	"ragflow/internal/utility"
 )
 
+// batchSubmitter fans out the batch extraction jobs on the process-wide
+// knowledge-compilation pool. It is injected by the knowledge_compiler wiring
+// (component.go) so every stage shares one vCPU-sized concurrency bound; when
+// nil the batches run sequentially (the historic default).
+var batchSubmitter func(ctx context.Context, jobs []func() error) error
+
+// SetBatchSubmitter installs the shared-pool fan-out used by Run's extraction
+// stage. Pass nil to revert to serial execution.
+func SetBatchSubmitter(submit func(ctx context.Context, jobs []func() error) error) {
+	batchSubmitter = submit
+}
+
+// runBatches mirrors structure.runBatches: concurrent under the wired global
+// compiler pool, or serial when no submitter is set. The first error is
+// returned after all jobs settle; the global pool is never StopWait'd.
+func runBatches(ctx context.Context, jobs []func() error) error {
+	if len(jobs) == 0 {
+		return nil
+	}
+	if batchSubmitter != nil {
+		return batchSubmitter(ctx, jobs)
+	}
+	for _, j := range jobs {
+		if err := j(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // Run executes the mindmap variant.
 func Run(ctx context.Context, deps common.Deps, param common.Param, inputs common.Inputs) (common.Outputs, error) {
 	docID := firstNonEmpty(inputs.DocID, deps.DatasetID)
@@ -38,19 +68,10 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// One LLM task per token-budget batch (mirrors __call__'s task fan-out).
 	batches := packSections(sections, deps.Tokenizer)
 	results := make([]utility.OMap, len(batches))
-	// Bounded concurrency. Python fans out with unbounded asyncio.gather plus a
-	// global chat_limiter semaphore; here we cap with a worker pool sized by
-	// MaxWorkers (defaulting to 1, i.e. serial).
-	n := param.MaxWorkers
-	if n <= 0 {
-		n = 1
-	}
-	wp := utility.NewWorkerPool[func() error, struct{}](n, n,
-		func(_ context.Context, fn func() error) (struct{}, error) { return struct{}{}, fn() })
-	var futs []utility.WorkerPoolFuture[func() error, struct{}]
+	jobs := make([]func() error, 0, len(batches))
 	for i, text := range batches {
 		i, text := i, text
-		f, err := wp.Submit(ctx, func() error {
+		jobs = append(jobs, func() error {
 			resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
 				LLMID:        llmID,
 				SystemPrompt: renderPrompt(text),
@@ -59,20 +80,16 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			if err != nil {
 				return err
 			}
+			// Distinct slice index per batch → no cross-goroutine contention.
 			results[i] = utility.Todict(utility.Dictify(utility.StripFences(resp.Content)))
 			return nil
 		})
-		if err != nil {
-			wp.StopWait()
-			return common.Outputs{}, err
-		}
-		futs = append(futs, f)
 	}
-	wp.StopWait()
-	for _, f := range futs {
-		if res, _ := f.Wait(ctx); res.Err != nil {
-			return common.Outputs{}, res.Err
-		}
+	// The extraction batches are LLM-bounded, not CPU-bounded: run them on the
+	// shared global compiler pool (vCPU-sized) when a submitter is wired in,
+	// otherwise fall back to serial execution (historic default).
+	if err := runBatches(ctx, jobs); err != nil {
+		return common.Outputs{}, err
 	}
 
 	// Merge batch dicts in batch order (mirrors reduce(self._merge, res)) and
