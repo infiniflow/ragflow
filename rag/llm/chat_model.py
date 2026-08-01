@@ -36,7 +36,7 @@ from common.misc_utils import thread_pool_exec
 from common.llm_request_context import current_llm_user
 from common.token_utils import num_tokens_from_string, total_token_count_from_response, usage_from_response
 from rag.llm import FACTORY_DEFAULT_BASE_URL, LITELLM_PROVIDER_PREFIX, SupportedLiteLLMProvider
-from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.key_utils import _normalize_replicate_key, _resolve_azure_credentials
 from rag.llm.tool_decorator import FunctionToolSession, is_tool
 from rag.nlp import is_chinese, is_english
 from rag.utils.url_utils import ensure_v1
@@ -1647,8 +1647,17 @@ class LiteLLMBase(ABC):
                 self.api_key = key
                 self.provider_order = ""
         elif self.provider == SupportedLiteLLMProvider.Azure_OpenAI:
-            self.api_key = json.loads(key).get("api_key", "")
-            self.api_version = json.loads(key).get("api_version", "2024-02-01")
+            # Parse the key via the shared helper. Pre-fix, the bare
+            # ``json.loads(key).get(...)`` calls crashed with
+            # ``json.decoder.JSONDecodeError`` on a plain API key
+            # (the most common Azure Portal mistake) and
+            # ``AttributeError`` on any JSON non-object input. The
+            # helper raises a clear ``ModelException`` instead.
+            # PR #17215 was a partial fix that only modified this
+            # branch and used a silent-fallback helper. This PR
+            # consolidates the Azure-OpenAI pattern with the other 5
+            # helpers in ``rag/llm/key_utils.py``. See #17675.
+            self.api_key, self.api_version = _resolve_azure_credentials(key)
         elif self.provider == SupportedLiteLLMProvider.MiniMax:
             # MiniMax requires GroupId as a query parameter for API authentication
             try:
