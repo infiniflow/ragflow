@@ -158,7 +158,7 @@ func (d *LLMMergeDecider) Decide(ctx context.Context, existing, incoming common.
 	if merged == nil {
 		return DecisionKeepBoth, common.Product{}, nil
 	}
-	replacement, err := d.BuildReplacement(existing, incoming, merged)
+	replacement, err := d.BuildReplacement(ctx, existing, incoming, merged)
 	if err != nil {
 		return DecisionKeepBoth, common.Product{}, err
 	}
@@ -170,7 +170,7 @@ func (d *LLMMergeDecider) Decide(ctx context.Context, existing, incoming common.
 // applied (relations), provenance is unioned, and the payload is re-embedded.
 // Shared by Decide (single pair) and the batched judge so both paths produce
 // identical merged rows.
-func (d *LLMMergeDecider) BuildReplacement(existing, incoming common.Product, merged map[string]any) (common.Product, error) {
+func (d *LLMMergeDecider) BuildReplacement(ctx context.Context, existing, incoming common.Product, merged map[string]any) (common.Product, error) {
 	kind, _ := existing.Meta["kind"].(string)
 	if kind == "entity" {
 		oldName := entityNameValue(existing)
@@ -189,7 +189,7 @@ func (d *LLMMergeDecider) BuildReplacement(existing, incoming common.Product, me
 
 	chunkIDs := unionOrdered(metaStrings(existing.Meta, "source_chunk_ids"), metaStrings(incoming.Meta, "source_chunk_ids"))
 	texts := []string{payloadDescription(merged)}
-	vecs, err := d.Embed.Encode(context.Background(), texts)
+	vecs, err := d.Embed.Encode(ctx, texts)
 	if err != nil {
 		return common.Product{}, err
 	}
@@ -266,7 +266,7 @@ func (d *LLMMergeDecider) DecideBatch(ctx context.Context, pairs []MergePairInpu
 	for i, chunk := range chunks {
 		i, chunk := i, chunk
 		wg.Add(1)
-		_ = d.submit(ctx, func() error {
+		err := d.submit(ctx, func() error {
 			defer wg.Done()
 			sub, err := mergePairsBatch(ctx, d.Chat, d.LLMID, chunk)
 			if err != nil {
@@ -276,6 +276,13 @@ func (d *LLMMergeDecider) DecideBatch(ctx context.Context, pairs []MergePairInpu
 			results[i] = sub
 			return nil
 		})
+		if err != nil {
+			// The job was never enqueued, so the closure's wg.Done() will never
+			// run — decrement here and record the failure so we don't deadlock
+			// on wg.Wait() and don't silently drop the submit error.
+			wg.Done()
+			errOnce.Do(func() { firstErr = err })
+		}
 	}
 	wg.Wait()
 	if firstErr != nil {

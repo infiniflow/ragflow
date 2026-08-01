@@ -200,7 +200,7 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 			"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd", "slug_kwd",
 			"type", "source_chunk_ids", "source_doc_ids", "kc_merged", "compile_kwd"},
 		Filter: map[string]interface{}{
-			"kc_merged":   "1",
+			"kc_merged":   1,
 			"compile_kwd": string(variant),
 		},
 		MatchExprs: []interface{}{

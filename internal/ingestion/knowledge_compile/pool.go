@@ -126,7 +126,10 @@ func SubmitCompilerJob(ctx context.Context, fn compilerJob) error {
 	if err != nil {
 		return err
 	}
-	res, _ := f.Wait(ctx)
+	res, werr := f.Wait(ctx)
+	if werr != nil {
+		return werr
+	}
 	return res.Err
 }
 

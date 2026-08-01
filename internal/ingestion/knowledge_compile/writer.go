@@ -177,7 +177,7 @@ func (w engineWriter) StripMergedSources(ctx context.Context, tenant, kb string,
 			// rows that actually reference a deleted doc are returned (Infinity
 			// array IN means "contains at least one of").
 			Filter: map[string]interface{}{
-				"kc_merged":      "1",
+				"kc_merged":      1,
 				"source_doc_ids": deletedDocIDs,
 			},
 			SelectFields: []string{"id", "source_doc_ids"},
@@ -213,8 +213,9 @@ func (w engineWriter) StripMergedSources(ctx context.Context, tenant, kb string,
 				continue
 			}
 			keptCopy := append([]string(nil), kept...)
+			idCopy := id
 			jobs = append(jobs, func() error {
-				return eng.UpdateChunks(ctx, map[string]interface{}{"id": id},
+				return eng.UpdateChunks(ctx, map[string]interface{}{"id": idCopy},
 					map[string]interface{}{"source_doc_ids": keptCopy}, baseName, kb)
 			})
 		}

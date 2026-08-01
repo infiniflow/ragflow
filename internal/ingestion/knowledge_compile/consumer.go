@@ -284,10 +284,6 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 		deduper = NewNoopDeduper()
 	}
 
-	completedSet := make(map[string]bool, len(completed))
-	for _, e := range completed {
-		completedSet[e.DocID] = true
-	}
 	deletedSet := make(map[string]bool, len(deleted))
 	for _, d := range deleted {
 		deletedSet[d] = true

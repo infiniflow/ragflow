@@ -157,7 +157,7 @@ func (x *llmDeduper) DecideBatch(ctx context.Context, groups []MergeGroup) ([]Me
 				distinct = append(distinct, c)
 				continue
 			}
-			replacement, err := x.decider.BuildReplacement(existing, cand, r.Merged)
+			replacement, err := x.decider.BuildReplacement(ctx, existing, cand, r.Merged)
 			if err != nil {
 				return nil, err
 			}
