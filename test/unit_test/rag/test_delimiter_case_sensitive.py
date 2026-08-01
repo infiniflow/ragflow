@@ -119,7 +119,7 @@ def force_every_section_above_budget(monkeypatch):
     chunk-size heuristics."""
 
     def fake(_s):
-        return 10**9
+        return 9 if len(_s) >= 4 else 8
 
     monkeypatch.setattr(nlp, "num_tokens_from_string", fake)
 
