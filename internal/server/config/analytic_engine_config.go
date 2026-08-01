@@ -86,3 +86,14 @@ func (c *Config) parseClickhouseConfig(v *viper.Viper) error {
 func (c *Config) GetClickhouseConfig() ClickhouseConfig {
 	return c.analyticEngine.Clickhouse
 }
+
+func (c *ClickhouseConfig) ExportConfigs() map[string]interface{} {
+	var clickhouseConfigs map[string]interface{}
+	clickhouseConfigs = make(map[string]interface{})
+	clickhouseConfigs["host"] = c.Host
+	clickhouseConfigs["port"] = c.Port
+	clickhouseConfigs["user"] = c.User
+	clickhouseConfigs["password"] = c.Password
+	clickhouseConfigs["database"] = c.Database
+	return clickhouseConfigs
+}

@@ -23,7 +23,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -1192,72 +1191,6 @@ func (s *Service) getInfinityStatus(serviceType string) map[string]interface{} {
 	}
 }
 
-// checkRAGFlowServerAlive checks if RAGFlow server is alive
-func (s *Service) checkRAGFlowServerAlive(name string) (map[string]interface{}, error) {
-	startTime := time.Now()
-
-	// Get ragflow config from allConfigs
-	var host string
-	var port int
-	allConfigs := server.GetAllConfigs()
-	for _, config := range allConfigs {
-		if serviceType, ok := config["service_type"].(string); ok && serviceType == "ragflow_server" {
-			if h, ok := config["host"].(string); ok {
-				host = h
-			}
-			if p, ok := config["port"].(int); ok {
-				port = p
-			}
-			break
-		}
-	}
-
-	// Default values
-	if host == "" {
-		host = "127.0.0.1"
-	}
-	if port == 0 {
-		port = 9380
-	}
-
-	// Replace 0.0.0.0 with 127.0.0.1 for local check
-	if host == "0.0.0.0" {
-		host = "127.0.0.1"
-	}
-
-	url := fmt.Sprintf("http://%s:%d/v1/system/ping", host, port)
-
-	// Create HTTP client with timeout
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	resp, err := client.Get(url)
-	if err != nil {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "timeout",
-			"message":      fmt.Sprintf("error: %s", err.Error()),
-		}, nil
-	}
-	defer resp.Body.Close()
-
-	elapsed := time.Since(startTime).Milliseconds()
-	if resp.StatusCode == 200 {
-		return map[string]interface{}{
-			"service_name": name,
-			"status":       "alive",
-			"message":      fmt.Sprintf("Confirm elapsed: %.1f ms.", float64(elapsed)),
-		}, nil
-	}
-
-	return map[string]interface{}{
-		"service_name": name,
-		"status":       "timeout",
-		"message":      fmt.Sprintf("Confirm elapsed: %.1f ms.", float64(elapsed)),
-	}, nil
-}
-
 // checkTaskExecutorAlive checks if task executor is alive
 func (s *Service) checkTaskExecutorAlive(name string) (map[string]interface{}, error) {
 	// TODO: Implement actual task executor health check
@@ -1439,7 +1372,10 @@ func (s *Service) SetVariable(ctx context.Context, varName, varValue string) err
 // ListAllConfigs list all configs
 // Returns all service configurations from the config file
 func (s *Service) ListAllConfigs() ([]map[string]interface{}, error) {
-	result := server.GetAllConfigs()
+	result, err := server.GetAllConfigs()
+	if err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 
