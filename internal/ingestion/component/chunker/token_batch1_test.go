@@ -54,24 +54,49 @@ func TestSentenceDelimiterMatchesBangAndQuestion(t *testing.T) {
 // from the previous chunk AFTER remove_tag, otherwise parser tags (e.g.
 // "@@1\t2.3##") leak into the overlap region. Mirrors Python
 // nlp/__init__.py:1181 (remove_tag applied before overlap).
+//
+// After the strict-cap fix, a new chunk is started only when the projected
+// join exceeds the budget — so the first unit must already sit near the
+// budget and the second unit must not fit alongside it.
 func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
+	// Size a and b so:
+	//   - each unit alone fits the budget (no atom-split),
+	//   - the projected join exceeds the budget (forces a new chunk),
+	//   - overlap+b still fits (so the overlap path is exercised).
 	aText := strings.Repeat("word ", 20) + "@@1\t2.3## tail"
+	bText := "body"
+	aN, bN := tokenizeStr(aText), tokenizeStr(bText)
+	joinedN := tokenizeStr(aText + "\n" + bText)
+	// Budget just below the join so a and b cannot merge, but each alone fits.
+	budget := joinedN - 1
+	if budget < aN {
+		budget = aN
+	}
+	if budget < bN {
+		budget = bN
+	}
+	if joinedN <= budget {
+		t.Fatalf("could not derive tight budget (a=%d b=%d joined=%d budget=%d)", aN, bN, joinedN, budget)
+	}
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: aText, DocType: "text", CKType: "text", TKNums: intPtr(100)},
-			{Text: "body", DocType: "text", CKType: "text", TKNums: intPtr(5)},
+			{Text: aText, DocType: "text", CKType: "text", TKNums: intPtr(aN)},
+			{Text: bText, DocType: "text", CKType: "text", TKNums: intPtr(bN)},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 128, 30.0)
+	got := mergeByTokenSizeFromJSON(items, budget, 30.0)
 	merged := got[0]
 	if len(merged) != 2 {
-		t.Fatalf("want 2 merged chunks (overlap path), got %d", len(merged))
+		t.Fatalf("want 2 merged chunks (overlap path), got %d (a=%d b=%d budget=%d)", len(merged), aN, bN, budget)
 	}
 	// The overlap prefix is prepended to the SECOND chunk. The original
 	// first chunk legitimately keeps its own parser tag; only the overlap
 	// region (merged[1]) must be tag-free. .
 	if strings.Contains(merged[1].Text, "@@") || strings.Contains(merged[1].Text, "##") {
 		t.Errorf("overlap prefix leaked parser tag into chunk 1: %q", merged[1].Text)
+	}
+	if n := tokenizeStr(merged[1].Text); n > budget {
+		t.Errorf("overlap pushed second chunk over budget: tokens=%d", n)
 	}
 }
 
