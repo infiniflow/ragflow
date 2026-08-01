@@ -157,6 +157,41 @@ func TestConsumerTombstoneSkipsCompletedBeforeDeleted(t *testing.T) {
 	}
 }
 
+func TestConsumerReingestAfterDeletionWins(t *testing.T) {
+	sch := NewFakeScheduler()
+	r := &fakeReader{products: sampleProducts()}
+	w := &fakeWriter{}
+	c := newTestConsumer(sch, r, w, func(string) (Deduper, error) { return NewNoopDeduper(), nil })
+
+	// deleted (seq 1) then completed (seq 2): the completion has the higher
+	// sequence, so it wins — the doc is re-ingested, NOT deleted. The deletion
+	// must not drop its per-doc products, and the completion must be merged.
+	if err := sch.Publish(context.Background(), "t1", "kb1", "d1", string(EventTypeDeleted), 1); err != nil {
+		t.Fatalf("append deleted: %v", err)
+	}
+	if err := sch.Publish(context.Background(), "t1", "kb1", "d1", string(EventTypeCompleted), 2); err != nil {
+		t.Fatalf("append completed: %v", err)
+	}
+	c.tryClaimAndProcess(context.Background())
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	// No deletion calls: the higher-seq completion overrides the deletion.
+	if len(w.deletedDocLevel) != 0 {
+		t.Fatalf("expected no DeleteDocLevelForDocs, got %v", w.deletedDocLevel)
+	}
+	if len(w.strippedSources) != 0 {
+		t.Fatalf("expected no StripMergedSources, got %v", w.strippedSources)
+	}
+	// The completion is merged into the dataset-level products.
+	if len(w.written) != 1 {
+		t.Fatalf("expected 1 WriteMerged call, got %d", len(w.written))
+	}
+	if len(w.written[0]) != 2 {
+		t.Fatalf("expected 2 merged products, got %d", len(w.written[0]))
+	}
+}
+
 func TestSchedulerClaimClosedBatch(t *testing.T) {
 	sch := NewFakeScheduler()
 	for i := 0; i < 40; i++ {

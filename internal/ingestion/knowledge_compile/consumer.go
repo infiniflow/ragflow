@@ -17,6 +17,7 @@ package knowledge_compile
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"time"
 
@@ -209,55 +210,69 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 	}
 	var completed []BacklogEntry
 	var deleted []string
-	// Per-document seq advances and tombstone clears are staged locally during
-	// the first pass and committed only after the write/delete paths below
-	// return without error, so a failed batch leaves c.seqs/c.tombs untouched
-	// and can be retried on reclaim.
+	// Per-document seq advances and tombstone clears are staged locally and
+	// committed only after the write/delete paths below return without error,
+	// so a failed batch leaves c.seqs/c.tombs untouched (except tombstones
+	// recorded for the deletion events already present in this batch) and can
+	// be retried on reclaim.
 	var pendingSeq []BacklogEntry
 	var pendingTombClear []string
-	// First pass: record every deletion so the tombstone is complete before we
-	// judge completions. Without this, a completion published before its
-	// deletion in the same batch would be accepted even though the final event
-	// is a delete (deletion must win regardless of batch order).
+	// Reconcile each document to its highest-sequence event before classifying
+	// it as deleted or completed. A completion and a deletion for the same doc
+	// can land in the same batch, and completions/deletions can also arrive
+	// out of order across batches. The last event (by per-doc seq) wins, so we
+	// must not delete a doc that was re-ingested after its deletion, nor accept
+	// a stale completion shadowed by a later deletion.
+	type docState struct {
+		winEvent EventType
+		winSeq   uint64
+	}
+	byDoc := make(map[string]*docState, len(entries))
 	for _, e := range entries {
-		if EventType(e.EventType) == EventTypeDeleted {
+		et := EventType(e.EventType)
+		st := byDoc[e.DocID]
+		if st == nil {
+			byDoc[e.DocID] = &docState{winEvent: et, winSeq: e.Seq}
+			continue
+		}
+		if e.Seq >= st.winSeq {
+			st.winEvent = et
+			st.winSeq = e.Seq
+		}
+	}
+	for docID, st := range byDoc {
+		switch st.winEvent {
+		case EventTypeDeleted:
+			// Record the tombstone for this batch's deletion so a stale
+			// completion (seq <= delete seq) is skipped. The tombstone is
+			// committed immediately (deletions are not rolled back on a
+			// failed batch because re-running the delete is idempotent).
 			if tomb == nil {
 				tomb = map[string]uint64{}
 				c.tombs[kb] = tomb
 			}
-			tomb[e.DocID] = e.Seq
-			deleted = append(deleted, e.DocID)
-		}
-	}
-	for _, e := range entries {
-		if EventType(e.EventType) != EventTypeCompleted {
-			continue
-		}
-		// A tombstone means the doc was deleted; a completion with a seq
-		// <= the delete seq is the stale original completion (skip it).
-		// A completion with a higher seq is a genuine re-ingest after
-		// deletion: clear the tombstone so the doc is processed again
-		// (otherwise the tombstone would skip it forever and grow
-		// unbounded across the consumer's lifetime).
-		if delSeq, ok := tomb[e.DocID]; ok {
-			if e.Seq <= delSeq {
-				continue // deleted (or a stale completion) before it completed
+			tomb[docID] = st.winSeq
+			deleted = append(deleted, docID)
+		case EventTypeCompleted:
+			// A re-ingest after an earlier deletion: clear the prior
+			// tombstone (deferred until the batch succeeds).
+			if _, hadTomb := tomb[docID]; hadTomb {
+				pendingTombClear = append(pendingTombClear, docID)
 			}
-			// Genuine re-ingest after deletion: the tombstone clear is deferred
-			// to after the batch succeeds so a failed batch can be retried.
-			pendingTombClear = append(pendingTombClear, e.DocID)
+			// Seq is per-document, so the stale/duplicate check must be
+			// scoped to the document, not the whole dataset (C4).
+			if prev, ok := docSeqs[docID]; ok && st.winSeq <= prev {
+				continue // stale / duplicate completion for this doc
+			}
+			// The seq advance is deferred to after the batch succeeds (see
+			// below), so a transient reader/deduper/writer failure does not
+			// permanently drop the completion on the next reclaim+retry.
+			pendingSeq = append(pendingSeq, BacklogEntry{DocID: docID, EventType: string(EventTypeCompleted), Seq: st.winSeq})
+			completed = append(completed, BacklogEntry{DocID: docID, EventType: string(EventTypeCompleted), Seq: st.winSeq})
 		}
-		// Seq is per-document, so the stale/duplicate check must be scoped
-		// to the document, not the whole dataset (C4).
-		if prev, ok := docSeqs[e.DocID]; ok && e.Seq <= prev {
-			continue // stale / duplicate completion for this doc
-		}
-		// The seq advance is deferred to after the batch succeeds (see below),
-		// so a transient reader/deduper/writer failure does not permanently
-		// drop the completion on the next reclaim+retry.
-		pendingSeq = append(pendingSeq, e)
-		completed = append(completed, e)
 	}
+	// Sort for deterministic iteration in the delete/load passes below.
+	sort.Strings(deleted)
 	c.mu.Unlock()
 
 	if len(deleted) == 0 && len(completed) == 0 {
