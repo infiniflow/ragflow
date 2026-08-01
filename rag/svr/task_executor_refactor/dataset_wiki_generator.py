@@ -116,6 +116,10 @@ WIKI_DERIVED_COMPILE_KWDS = (
     "wiki_entity",
     "wiki_relation",
     "wiki_page_graph",
+    # Canonical entity rows carry a source_doc_ids array; on doc deletion they
+    # must be shrunk (or dropped) too, otherwise the canonical index keeps
+    # referencing removed docs and later incremental merges re-import them.
+    "wiki_canonical_entity",
 )
 
 
@@ -371,6 +375,23 @@ async def _wiki_delete_deleted_doc_state(
         )
         return
 
+    # 1b. doc_page_source rows are keyed by doc_id too — delete outright.
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {
+                "compile_kwd": ["wiki_doc_page_source"],
+                "doc_id": sorted(deleted_doc_ids),
+            },
+            index,
+            kb_id,
+        )
+    except Exception:
+        logging.exception(
+            "wiki: failed to delete doc_page_source rows for removed docs in kb=%s",
+            kb_id,
+        )
+
     # 2. Derived KB-scoped rows: reference-counted self-healing backstop for
     # the eager delete-time cleanup (DocumentService.remove_wiki_products).
     # Read every row referencing any deleted doc, drop the ones left with no
@@ -455,6 +476,106 @@ async def _wiki_delete_deleted_doc_state(
         len(to_delete),
         len(to_shrink),
     )
+
+
+# ----- mode (plan) persistence & full reset ----------------------------------
+
+
+def _wiki_mode_meta_id(kb_id: str) -> str:
+    """Stable row id for the KB-level mode (plan) meta record."""
+    return f"wiki_mode_meta_{kb_id}"
+
+
+async def _wiki_load_mode_plan(tenant_id: str, kb_id: str) -> bool | None:
+    """Return the plan (Mode B) value recorded by the previous build, or None
+    if this KB has never recorded a mode (e.g. first ever build)."""
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = search.index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return None
+    try:
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["plan_kwd"],
+            [],
+            {"compile_kwd": ["wiki_mode_meta"], "id": [_wiki_mode_meta_id(kb_id)]},
+            [],
+            OrderByExpr(),
+            0,
+            1,
+            index,
+            [kb_id],
+        )
+        fm = settings.docStoreConn.get_fields(res, ["plan_kwd"]) or {}
+        for row in fm.values():
+            val = row.get("plan_kwd")
+            if isinstance(val, list):
+                val = val[0] if val else ""
+            val = str(val or "").strip()
+            if val in ("true", "1", "yes"):
+                return True
+            if val in ("false", "0", "no"):
+                return False
+    except Exception:
+        logging.exception("wiki: failed to load mode meta for kb=%s", kb_id)
+    return None
+
+
+async def _wiki_save_mode_plan(tenant_id: str, kb_id: str, plan: bool) -> None:
+    index = search.index_name(tenant_id)
+    row = {
+        "id": _wiki_mode_meta_id(kb_id),
+        "compile_kwd": "wiki_mode_meta",
+        "plan_kwd": "true" if plan else "false",
+        "kb_id": kb_id,
+        "create_timestamp_flt": float(__import__("time").time()),
+    }
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.insert,
+            [row],
+            index,
+            kb_id,
+        )
+    except Exception:
+        logging.exception("wiki: failed to save mode meta for kb=%s", kb_id)
+
+
+async def _wiki_reset_all_wiki_state(tenant_id: str, kb_id: str) -> None:
+    """Drop every wiki-derived row for the KB (canonical, pages, relations,
+    entities, plan/draft/reduce, topics, doc_page_source, mode meta). Used when
+    the plan (mode) setting toggles: Mode A and Mode B pages are structurally
+    different and cannot be merged incrementally, so a mode switch must rebuild
+    from a clean slate."""
+
+    index = search.index_name(tenant_id)
+    if not settings.docStoreConn.index_exist(index, kb_id):
+        return
+    all_kwds = [
+        "wiki_canonical_entity",
+        "wiki_page",
+        "wiki_entity",
+        "wiki_relation",
+        "wiki_page_graph",
+        "wiki_page_topic",
+        "wiki_compilation_plan",
+        "wiki_reduce_result",
+        "wiki_page_draft",
+        "wiki_doc_page_source",
+        "wiki_map_extract",
+        "wiki_mode_meta",
+    ]
+    # Delete in one bulk call using compile_kwd IN filter.
+    try:
+        await thread_pool_exec(
+            settings.docStoreConn.delete,
+            {"compile_kwd": all_kwds},
+            index,
+            kb_id,
+        )
+    except Exception:
+        logging.exception("wiki: failed to reset all wiki state for kb=%s", kb_id)
 
 
 def _wiki_topic_from_page(page: Dict, fallback: str = "") -> str:
@@ -1455,6 +1576,20 @@ async def run_wiki_incremental(
                     break
         except Exception:
             pass  # keep the handler-provided plan as fallback
+
+    # Mode-change detection. plan toggling (A↔B) is a config change: the page
+    # structures differ fundamentally (single-entity pages vs PLAN-grouped
+    # pages), so switching modes must reset all wiki-derived state and rebuild
+    # from scratch instead of incrementally mixing old-mode and new-mode pages.
+    prev_plan = await _wiki_load_mode_plan(ctx.tenant_id, ctx.kb_id)
+    if prev_plan is not None and bool(prev_plan) != bool(plan) and is_incremental:
+        progress(0.05, f"Mode switched (plan: {'on' if prev_plan else 'off'} -> {'on' if plan else 'off'}); rebuilding wiki from scratch...")
+        await _wiki_reset_all_wiki_state(ctx.tenant_id, ctx.kb_id)
+        # Everything is gone; this is now a first build.
+        is_incremental = False
+        existing_map_doc_ids = set()
+        deleted_doc_ids = set()
+    await _wiki_save_mode_plan(ctx.tenant_id, ctx.kb_id, bool(plan))
 
     # 3. Resolve chat model
     llm_bundle_cache: dict[str, LLMBundle] = {}
