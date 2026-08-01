@@ -469,7 +469,10 @@ func (s *SystemService) SetVariable(ctx context.Context, varName, varValue strin
 // ListAllConfigs list all configs
 // Returns all service configurations from the config file
 func (s *SystemService) ListAllConfigs() ([]map[string]interface{}, error) {
-	result := server.GetAllConfigs()
+	result, err := server.GetAllConfigs()
+	if err != nil {
+		return nil, err
+	}
 	return result, nil
 }
 

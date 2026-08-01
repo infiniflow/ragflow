@@ -56,7 +56,6 @@ var (
 	globalConfig *config.Config
 	globalViper  *viper.Viper
 	zapLogger    *zap.Logger
-	allConfigs   []map[string]interface{}
 )
 
 // Init initialize configuration
@@ -197,8 +196,97 @@ func SetLogger(l *zap.Logger) {
 	zapLogger = l
 }
 
-func GetAllConfigs() []map[string]interface{} {
-	return allConfigs
+func GetAllConfigs() ([]map[string]interface{}, error) {
+	var allConfigs []map[string]interface{}
+
+	// Database
+	databaseType := globalConfig.DatabaseType()
+	switch databaseType {
+	case "mysql":
+		mysqlConfig := globalConfig.GetMySQLConfig()
+		exportedMySQLConfigs := mysqlConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedMySQLConfigs)
+	default:
+		return nil, fmt.Errorf("not supported database: %s", databaseType)
+	}
+
+	// Doc engine
+	docEngineType := globalConfig.DocEngineType()
+	switch docEngineType {
+	case "elasticsearch":
+		elasticConfig := globalConfig.GetElasticsearchConfig()
+		exportedESConfigs := elasticConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedESConfigs)
+	case "infinity":
+		infinityConfig := globalConfig.GetInfinityConfig()
+		exportedInfinityConfigs := infinityConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedInfinityConfigs)
+	default:
+		return nil, fmt.Errorf("not supported doc engine: %s", docEngineType)
+	}
+
+	// storage engine
+	storageType := globalConfig.StorageEngineType()
+	switch storageType {
+	case "minio":
+		minioConfig := globalConfig.GetMinioConfig()
+		exportedMinioConfigs := minioConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedMinioConfigs)
+	case "s3":
+		s3Config := globalConfig.GetS3Config()
+		exportedS3Configs := s3Config.ExportConfigs()
+		allConfigs = append(allConfigs, exportedS3Configs)
+	case "oss":
+		ossConfig := globalConfig.GetOSSConfig()
+		exportedOSSConfigs := ossConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedOSSConfigs)
+	case "gcs":
+		gcsConfig := globalConfig.GetGCSConfig()
+		exportedGCSConfigs := gcsConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedGCSConfigs)
+	default:
+		return nil, fmt.Errorf("not supported storage engine: %s", storageType)
+	}
+
+	// cache engine
+	cacheType := globalConfig.CacheEngineType()
+	switch cacheType {
+	case "redis":
+		redisConfig := globalConfig.GetRedisConfig()
+		exportedRedisConfigs := redisConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedRedisConfigs)
+	default:
+		return nil, fmt.Errorf("not supported cache engine: %s", cacheType)
+	}
+
+	// message queue
+	messageQueueType := globalConfig.QueueEngineType()
+	switch messageQueueType {
+	case "nats":
+		natsConfig := globalConfig.GetNATSConfig()
+		exportedNatsConfigs := natsConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedNatsConfigs)
+	default:
+		return nil, fmt.Errorf("not supported message queue: %s", messageQueueType)
+	}
+
+	// analytical engine
+	olapType := globalConfig.AnalyticEngineType()
+	switch olapType {
+	case "clickhouse":
+		clickhouseConfig := globalConfig.GetClickhouseConfig()
+		exportedClickhouseConfigs := clickhouseConfig.ExportConfigs()
+		allConfigs = append(allConfigs, exportedClickhouseConfigs)
+	default:
+		return nil, fmt.Errorf("not supported analytical engine: %s", olapType)
+	}
+
+	// tracing engine
+	oTelConfig := globalConfig.GetOpenTelemetryConfig()
+	exportedOTELConfigs := oTelConfig.ExportConfigs()
+	allConfigs = append(allConfigs, exportedOTELConfigs)
+
+	return allConfigs, nil
 }
 
 // PrintAll prints all configuration settings

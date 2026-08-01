@@ -319,8 +319,6 @@ func (c *CLI) ExecuteUserCommand(cmd *Command) (ResponseIf, error) {
 		return c.Logout()
 	case "api_ping_server":
 		return c.PingServerByCommand(cmd)
-	case "api_list_configs":
-		return c.ListConfigs(cmd)
 	case "api_set_log_level":
 		return c.APISetLogLevelCommand(cmd)
 	case "benchmark":

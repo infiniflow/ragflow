@@ -72,3 +72,11 @@ func (c *Config) parseNATSConfig(v *viper.Viper) error {
 func (c *Config) GetNATSConfig() NATSConfig {
 	return c.queueEngine.NATS
 }
+
+func (n NATSConfig) ExportConfigs() map[string]interface{} {
+	var natsConfigs map[string]interface{}
+	natsConfigs = make(map[string]interface{})
+	natsConfigs["host"] = n.Host
+	natsConfigs["port"] = n.Port
+	return natsConfigs
+}
