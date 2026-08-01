@@ -30,6 +30,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -255,6 +256,8 @@ func wikiFileID(datasetID, pageType, slug string) string {
 	return datasetID + "/" + pageType + "/" + slug
 }
 
+var pageCommitSeq atomic.Uint64
+
 // RecordPageEdit records a wiki/skill page edit as an audit commit with a
 // git-style parent chain (each edit points at the previous commit for the same
 // page). The new content_after is referenced in ES by doc_id; a unified diff of
@@ -296,6 +299,8 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 	mu := pageCommitLock(fileID)
 	mu.Lock()
 	defer mu.Unlock()
+
+	item.Seq = uint(pageCommitSeq.Add(1))
 
 	// Read the parent inside the lock, on the shared connection, so it always
 	// reflects the previously committed edit for this page.
