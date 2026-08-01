@@ -836,15 +836,8 @@ func (s *UserService) ChangePassword(ctx context.Context, user *entity.User, req
 	return common.CodeSuccess, nil
 }
 
-// LoginChannel represents a login channel response
-type LoginChannel struct {
-	Channel     string `json:"channel"`
-	DisplayName string `json:"display_name"`
-	Icon        string `json:"icon"`
-}
-
 // GetLoginChannels gets all supported authentication channels
-func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, error) {
+func (s *UserService) GetLoginChannelsDeprecated() ([]*LoginChannel, common.ErrorCode, error) {
 	//cfg := server.GetConfig()
 	channels := make([]*LoginChannel, 0)
 

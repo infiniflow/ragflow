@@ -369,7 +369,7 @@ def test_naive_merge_splits_default_delimiters_case_sensitively():
     # delimiters) but keep `s.t` together (`.` is not a delimiter).
     from rag.nlp import naive_merge
 
-    chunks = naive_merge(["q?r!s.t"], chunk_token_num=8, delimiter="\n!?;。；！？")
+    chunks = naive_merge(["q?r!s.t"], chunk_token_num=8, delimiter="`?``!`")
     stripped = [c.strip() for c in chunks if c.strip()]
     # The three content pieces survive: `q`, `r`, `s.t`. The
     # delimiters `?` and `!` were consumed by re.split and are

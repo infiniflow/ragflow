@@ -153,10 +153,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
 
-	// System endpoints
-	engine.GET("/v1/system/configs", r.systemHandler.GetConfigs)
-	//engine.POST("/v1/user/register", r.userHandler.Register)
-
 	// User logout endpoint
 	engine.GET("/v1/user/logout", r.userHandler.Logout)
 
@@ -669,7 +665,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			system := v1.Group("/system")
 			{
-				system.GET("/configs", r.systemHandler.GetConfigs)
 				system.GET("/status", r.systemHandler.GetStatus)
 				system.GET("/stats", r.statsHandler.GetStats) // TODO: need to reconsider this endpoint and function
 

@@ -111,3 +111,18 @@ func (c *Config) parseMySQLConfig(v *viper.Viper) {
 func (c *Config) GetMySQLConfig() MySQLConfig {
 	return c.database.MySQL
 }
+
+func (m *MySQLConfig) ExportConfigs() map[string]interface{} {
+	var mysqlConfigs map[string]interface{}
+	mysqlConfigs = make(map[string]interface{})
+	mysqlConfigs["host"] = m.Host
+	mysqlConfigs["port"] = m.Port
+	mysqlConfigs["database_name"] = m.DatabaseName
+	mysqlConfigs["username"] = m.User
+	mysqlConfigs["password"] = m.Password
+	mysqlConfigs["charset"] = m.Charset
+	mysqlConfigs["max_connections"] = m.MaxConnections
+	mysqlConfigs["stale_timeout"] = m.StaleTimeout
+	mysqlConfigs["max_allowed_packet"] = m.MaxAllowedPacket
+	return mysqlConfigs
+}

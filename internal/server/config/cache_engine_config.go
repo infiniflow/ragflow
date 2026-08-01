@@ -103,3 +103,14 @@ func (c *Config) parseRedisConfig(v *viper.Viper) error {
 func (c *Config) GetRedisConfig() RedisConfig {
 	return c.cacheEngine.Redis
 }
+
+func (r RedisConfig) ExportConfigs() map[string]interface{} {
+	var redisConfigs map[string]interface{}
+	redisConfigs = make(map[string]interface{})
+	redisConfigs["host"] = r.Host
+	redisConfigs["port"] = r.Port
+	redisConfigs["username"] = r.Username
+	redisConfigs["password"] = r.Password
+	redisConfigs["db"] = r.DB
+	return redisConfigs
+}
