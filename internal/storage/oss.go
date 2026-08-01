@@ -103,6 +103,8 @@ func (o *OSSStorage) resolveBucketAndPath(bucket, fnm string) (string, string) {
 	return actualBucket, actualPath
 }
 
+func (o *OSSStorage) Type() string { return "oss" }
+
 // Health checks OSS service availability
 func (o *OSSStorage) Health() bool {
 	bucket := o.bucket

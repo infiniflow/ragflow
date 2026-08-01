@@ -374,7 +374,7 @@ func (r *Client) SetNX(key string, value string, exp time.Duration) bool {
 	return ok
 }
 
-// GetOrCreateSecretKey atomically retrieves an existing key or creates a new one
+// GetOrCreateKey atomically retrieves an existing key or creates a new one
 // Uses Redis SETNX command to ensure atomicity across multiple goroutines/processes
 func (r *Client) GetOrCreateKey(key string, value string) (string, error) {
 	if r.client == nil {

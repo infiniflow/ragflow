@@ -45,6 +45,8 @@ func testFileService() *FileService {
 	}
 }
 
+func (f *fakeStorage) Type() string { return "fake_storage" }
+
 func (f *fakeStorage) Health() bool {
 	return true
 }
