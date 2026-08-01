@@ -46,6 +46,34 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 	}
 }
 
+// oauthAuthCookie is the cookie the callback writes on success, so the SPA
+// can pick up the signed access token after the redirect. The frontend
+// reads it and either re-issues the value as an Authorization header on
+// subsequent API calls or hands it off to its own token store. Not
+// HttpOnly so the SPA's JS can read it.
+const oauthAuthCookie = "ragflow_auth"
+
+// setOAuthAuthCookie writes the signed access token so the SPA can pick it
+// up after the redirect. Not HttpOnly so the SPA can copy it into its
+// Authorization header on subsequent fetches. Lifetime mirrors the
+// access-token TTL used by the rest of the app.
+func setOAuthAuthCookie(c *gin.Context, token string) {
+	// the SPA's bootstrap credential after the OAuth redirect. The
+	// SPA reads it via document.cookie and copies it into the
+	// Authorization header. Setting HttpOnly would break the login
+	// flow. The token is short-lived (7 days) and signed with itsdangerous.
+	// codeql[go/cookie-httponly-not-set] Intentional: this cookie is
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     oauthAuthCookie,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   60 * 60 * 24 * 7,
+		HttpOnly: false,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   c.Request.TLS != nil,
+	})
+}
+
 // Register user registration
 // @Summary User Registration
 // @Description Create new user

@@ -836,32 +836,6 @@ func (s *UserService) ChangePassword(ctx context.Context, user *entity.User, req
 	return common.CodeSuccess, nil
 }
 
-// GetLoginChannels gets all supported authentication channels
-func (s *UserService) GetLoginChannelsDeprecated() ([]*LoginChannel, common.ErrorCode, error) {
-	//cfg := server.GetConfig()
-	channels := make([]*LoginChannel, 0)
-
-	//for channel, oauthCfg := range cfg.OAuth {
-	//	displayName := oauthCfg.DisplayName
-	//	if displayName == "" {
-	//		displayName = strings.Title(channel)
-	//	}
-	//
-	//	icon := oauthCfg.Icon
-	//	if icon == "" {
-	//		icon = "sso"
-	//	}
-	//
-	//	channels = append(channels, &LoginChannel{
-	//		Channel:     channel,
-	//		DisplayName: displayName,
-	//		Icon:        icon,
-	//	})
-	//}
-
-	return channels, common.CodeSuccess, nil
-}
-
 // SetTenantInfoRequest represents the request for setting tenant info
 type SetTenantInfoRequest struct {
 	TenantID  *string                `json:"tenant_id"`

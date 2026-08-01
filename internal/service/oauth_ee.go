@@ -21,7 +21,27 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/redis"
+	"ragflow/internal/entity"
+	"time"
 )
+
+// OAuthLoginInit prepares a redirect to the channel's authorization URL.
+// The returned state must also be set as a short-lived cookie on the caller
+// so the callback can perform a CSRF check that ties the state token to the
+// browser that initiated the flow.
+type OAuthLoginInit struct {
+	State        string
+	AuthURL      string
+	Channel      string
+	CookieMaxAge time.Duration
+}
+
+// OAuthCallbackResult is returned to the handler after a successful callback
+// so it can mint the user-facing auth response (cookie + redirect).
+type OAuthCallbackResult struct {
+	User      *entity.User
+	IsNewUser bool
+}
 
 func (s *UserService) OAuthLoginInitiate(channel string, redis *redis.Client) (*OAuthLoginInit, common.ErrorCode, error) {
 	return nil, common.CodeServerError, fmt.Errorf("oauth login initiate not implemented")
