@@ -56,7 +56,7 @@ class RAGFlowTxtParser:
 
         dels = []
         s = 0
-        for m in re.finditer(r"`([^`]+)`", delimiter, re.IGNORECASE):
+        for m in re.finditer(r"`([^`]+)`", delimiter):
             f, m_t = m.span()
             dels.append(m.group(1))
             dels.extend(list(delimiter[s:f]))

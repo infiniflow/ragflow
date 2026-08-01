@@ -833,6 +833,9 @@ func startServer(ctx context.Context) {
 	componentsSvc := service.NewComponentsService()
 	componentsHandler := handler.NewComponentsHandler(componentsSvc)
 	pipelineHandler := handler.NewPipelineHandler()
+	compilationTemplateHandler := handler.NewCompilationTemplateHandler(service.NewCompilationTemplateService())
+	compilationTemplateGroupHandler := handler.NewCompilationTemplateGroupHandler(service.NewCompilationTemplateGroupService())
+	datasetArtifactHandler := handler.NewDatasetArtifactHandler(service.NewDatasetArtifactService(), datasetsService, file.NewFileCommitService())
 
 	// Initialize router
 	r := router.NewRouter(authHandler,
@@ -865,7 +868,10 @@ func startServer(ctx context.Context) {
 		openaiChatHandler,
 		botHandler,
 		componentsHandler,
-		pipelineHandler)
+		pipelineHandler,
+		compilationTemplateHandler,
+		compilationTemplateGroupHandler,
+		datasetArtifactHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
