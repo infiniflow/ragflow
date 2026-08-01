@@ -303,7 +303,9 @@ func splitByTokens(pairs []MergePairInput, budget int) [][]MergePairInput {
 		est := tokenizer.NumTokensFromString(p.Existing) + tokenizer.NumTokensFromString(p.Incoming)
 		if len(cur) > 0 && used+est > budget {
 			chunks = append(chunks, cur)
-			cur = cur[:0]
+			// Fresh backing array: cur[:0] shares the buffer with the chunk we
+			// just appended, so the next iteration would overwrite it.
+			cur = make([]MergePairInput, 0, len(pairs))
 			used = 0
 		}
 		cur = append(cur, p)

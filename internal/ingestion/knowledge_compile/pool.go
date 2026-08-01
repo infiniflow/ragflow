@@ -101,7 +101,16 @@ func runCompilerJobs(ctx context.Context, jobs []compilerJob) error {
 		futures = append(futures, f)
 	}
 	for _, f := range futures {
-		res, _ := f.Wait(ctx)
+		res, werr := f.Wait(ctx)
+		if werr != nil {
+			// Wait returns the context error (not a result error) when ctx wins
+			// the select; surface it so callers don't see a clean nil while jobs
+			// are incomplete.
+			if firstErr == nil {
+				firstErr = werr
+			}
+			continue
+		}
 		if res.Err != nil && firstErr == nil {
 			firstErr = res.Err
 		}

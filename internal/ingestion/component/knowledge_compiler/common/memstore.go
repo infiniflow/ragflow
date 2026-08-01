@@ -307,7 +307,14 @@ func (m *MemStore) appendMatLocked(v []float32) {
 		m.cols = len(v)
 	}
 	m.matData = append(m.matData, float32ToF64(v, m.cols)...)
-	m.matDense = mat.NewDense(len(m.items), m.cols, m.matData)
+	// gonum panics on non-positive dimensions, so skip the view until a real
+	// dimension is known (e.g. a product arrived with an empty vector). The
+	// TopK/bestMatch paths treat a nil matDense as "no usable vectors".
+	if m.cols > 0 {
+		m.matDense = mat.NewDense(len(m.items), m.cols, m.matData)
+	} else {
+		m.matDense = nil
+	}
 }
 
 // replaceMatLocked overwrites matrix row idx with vec (widened to cols, missing
@@ -316,7 +323,9 @@ func (m *MemStore) appendMatLocked(v []float32) {
 func (m *MemStore) replaceMatLocked(idx int, v []float32) {
 	if m.cols == 0 {
 		m.cols = len(v)
-		m.matDense = mat.NewDense(len(m.items), m.cols, m.matData)
+		if m.cols > 0 {
+			m.matDense = mat.NewDense(len(m.items), m.cols, m.matData)
+		}
 	}
 	base := idx * m.cols
 	for j := 0; j < m.cols; j++ {
@@ -338,7 +347,11 @@ func (m *MemStore) removeMatLocked(idx int) {
 		m.matDense = nil
 		return
 	}
-	m.matDense = mat.NewDense(len(m.items), m.cols, m.matData)
+	if m.cols > 0 {
+		m.matDense = mat.NewDense(len(m.items), m.cols, m.matData)
+	} else {
+		m.matDense = nil
+	}
 }
 
 // float32ToF64 widens v to a row of cols float64 values, zero-filling missing

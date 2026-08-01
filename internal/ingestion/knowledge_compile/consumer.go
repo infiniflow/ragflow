@@ -209,6 +209,12 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 	}
 	var completed []BacklogEntry
 	var deleted []string
+	// Per-document seq advances and tombstone clears are staged locally during
+	// the first pass and committed only after the write/delete paths below
+	// return without error, so a failed batch leaves c.seqs/c.tombs untouched
+	// and can be retried on reclaim.
+	var pendingSeq []BacklogEntry
+	var pendingTombClear []string
 	// First pass: record every deletion so the tombstone is complete before we
 	// judge completions. Without this, a completion published before its
 	// deletion in the same batch would be accepted even though the final event
@@ -237,14 +243,19 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 			if e.Seq <= delSeq {
 				continue // deleted (or a stale completion) before it completed
 			}
-			delete(tomb, e.DocID)
+			// Genuine re-ingest after deletion: the tombstone clear is deferred
+			// to after the batch succeeds so a failed batch can be retried.
+			pendingTombClear = append(pendingTombClear, e.DocID)
 		}
 		// Seq is per-document, so the stale/duplicate check must be scoped
 		// to the document, not the whole dataset (C4).
 		if prev, ok := docSeqs[e.DocID]; ok && e.Seq <= prev {
 			continue // stale / duplicate completion for this doc
 		}
-		docSeqs[e.DocID] = e.Seq
+		// The seq advance is deferred to after the batch succeeds (see below),
+		// so a transient reader/deduper/writer failure does not permanently
+		// drop the completion on the next reclaim+retry.
+		pendingSeq = append(pendingSeq, e)
 		completed = append(completed, e)
 	}
 	c.mu.Unlock()
@@ -403,5 +414,17 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 	if err := c.writer.WriteMerged(ctx, tenant, kb, mergedFinal); err != nil {
 		return err
 	}
+
+	// All merge and delete paths succeeded: commit the staged per-document seq
+	// advances and tombstone clears. These are only now persisted so a failed
+	// batch leaves c.seqs/c.tombs untouched and a later reclaim can retry.
+	c.mu.Lock()
+	for _, e := range pendingSeq {
+		c.seqs[kb][e.DocID] = e.Seq
+	}
+	for _, docID := range pendingTombClear {
+		delete(c.tombs[kb], docID)
+	}
+	c.mu.Unlock()
 	return nil
 }

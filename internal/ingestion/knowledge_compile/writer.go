@@ -212,10 +212,10 @@ func (w engineWriter) StripMergedSources(ctx context.Context, tenant, kb string,
 				toDeleteIDs = append(toDeleteIDs, id)
 				continue
 			}
-			id, kept = id, append([]string(nil), kept...)
+			keptCopy := append([]string(nil), kept...)
 			jobs = append(jobs, func() error {
 				return eng.UpdateChunks(ctx, map[string]interface{}{"id": id},
-					map[string]interface{}{"source_doc_ids": kept}, baseName, kb)
+					map[string]interface{}{"source_doc_ids": keptCopy}, baseName, kb)
 			})
 		}
 		if len(res.Chunks) < batchSize {

@@ -337,7 +337,9 @@ func (s *mysqlScheduler) TryClaim(ctx context.Context) (ClaimResult, bool, error
 			return nil
 		}
 		// 2) reclaim an expired lease back into backlog, then claim it.
-		if id, ok := s.reclaimOne(ctx, tx, now); ok {
+		if id, ok, e := s.reclaimOne(ctx, tx, now); e != nil {
+			return e
+		} else if ok {
 			cr, ok, e := s.claimRow(ctx, tx, id)
 			if e != nil {
 				return e
@@ -373,12 +375,12 @@ func (s *mysqlScheduler) findClaimableID(ctx context.Context, tx *gorm.DB, now t
 // and returns that dataset id, or ok=false when nothing is expired. It runs
 // inside caller's transaction so the reclaimed row remains locked when the
 // caller claims it.
-func (s *mysqlScheduler) reclaimOne(ctx context.Context, tx *gorm.DB, now time.Time) (string, bool) {
+func (s *mysqlScheduler) reclaimOne(ctx context.Context, tx *gorm.DB, now time.Time) (string, bool, error) {
 	var rows []entity.KnowledgeCompileDataset
 	if err := tx.Model(&entity.KnowledgeCompileDataset{}).
 		Where("claim_expires_at IS NOT NULL AND claim_expires_at <= ? AND inflight_doc_ids <> '[]' AND inflight_doc_ids <> ''", now).
 		Find(&rows).Error; err != nil {
-		return "", false
+		return "", false, err
 	}
 	for _, row := range rows {
 		var cur entity.KnowledgeCompileDataset
@@ -387,7 +389,7 @@ func (s *mysqlScheduler) reclaimOne(ctx context.Context, tx *gorm.DB, now time.T
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				continue
 			}
-			return "", false
+			return "", false, err
 		}
 		if cur.ClaimExpiresAt != nil && cur.ClaimExpiresAt.After(now) {
 			continue
@@ -404,11 +406,11 @@ func (s *mysqlScheduler) reclaimOne(ctx context.Context, tx *gorm.DB, now time.T
 		cur.ClaimToken = ""
 		cur.ClaimExpiresAt = nil
 		if err := tx.Save(&cur).Error; err != nil {
-			return "", false
+			return "", false, err
 		}
-		return cur.DatasetID, true
+		return cur.DatasetID, true, nil
 	}
-	return "", false
+	return "", false, nil
 }
 
 // notify is the best-effort wake-up published after a successful Publish. It is

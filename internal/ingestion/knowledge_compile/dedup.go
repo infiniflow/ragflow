@@ -74,9 +74,12 @@ func NewLLMDeduper(chat kccommon.ChatInvoker, embed kccommon.Embedder, llmID str
 	decider.SetMaxBatchTokens(llmMaxTokens)
 	// Share the process-wide, vCPU-sized compiler pool so DecideBatch's
 	// token-bounded sub-batches run concurrently with the rest of the pipeline
-	// (LLM-bounded), all under one concurrency limit.
+	// (LLM-bounded), all under one concurrency limit. SubmitCompilerJobs enqueues
+	// every sub-batch then waits on their futures on the caller goroutine — it
+	// never blocks on a single job, so a stopped pool returns an error instead of
+	// hanging DecideBatch.
 	decider.SetSubmitter(func(ctx context.Context, fn func() error) error {
-		return SubmitCompilerJob(ctx, fn)
+		return SubmitCompilerJobs(ctx, []compilerJob{fn})
 	})
 	return &llmDeduper{group: structure.NewGroupedDeduper(decider), decider: decider, embed: embed}
 }

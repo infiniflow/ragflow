@@ -97,10 +97,6 @@ func SetScheduler(s Publisher) {
 	}
 }
 
-// DefaultScheduler returns the package-level Publisher (nil until Provision).
-// Deprecated: prefer DefaultPublisher / DefaultClaimer for role clarity.
-func DefaultScheduler() Publisher { return defaultPublisher }
-
 // DefaultPublisher returns the package-level Publisher used by the producer path.
 func DefaultPublisher() Publisher { return defaultPublisher }
 

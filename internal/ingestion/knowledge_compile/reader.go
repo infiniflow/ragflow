@@ -17,7 +17,9 @@ package knowledge_compile
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
@@ -66,8 +68,15 @@ var compiledSelectFields = []string{
 	"slug_kwd", "type",
 }
 
+// loadDocProductsLimit is the per-page size used when scrolling a single
+// document's compiled rows. A document can compile more than this many rows, so
+// LoadDocProducts pages until the engine returns fewer than a full page.
+const loadDocProductsLimit = 5000
+
 // LoadDocProducts returns the per-document compiled rows for a single document.
-// It is bounded to one document, so the consumer never loads the whole KB.
+// It is bounded to one document, so the consumer never loads the whole KB. The
+// results are paged so a document with more than loadDocProductsLimit rows is
+// not silently truncated.
 func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID string) ([]kccommon.Product, error) {
 	eng := r.eng
 	if eng == nil {
@@ -76,25 +85,33 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 	if eng == nil {
 		return nil, nil
 	}
-	res, err := eng.Search(ctx, &types.SearchRequest{
-		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenant)},
-		KbIDs:        []string{kb},
-		Filter:       map[string]interface{}{"doc_id": docID},
-		SelectFields: compiledSelectFields,
-		Limit:        5000,
-	})
-	if err != nil {
-		return nil, err
-	}
 	var out []kccommon.Product
-	for _, c := range res.Chunks {
-		// Only compiled products carry compile_kwd; skip ordinary source chunks.
-		if _, ok := c["compile_kwd"]; !ok {
-			continue
+	offset := 0
+	for {
+		res, err := eng.Search(ctx, &types.SearchRequest{
+			IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenant)},
+			KbIDs:        []string{kb},
+			Filter:       map[string]interface{}{"doc_id": docID},
+			SelectFields: compiledSelectFields,
+			Limit:        loadDocProductsLimit,
+			Offset:       offset,
+		})
+		if err != nil {
+			return nil, err
 		}
-		if p, ok := productFromChunkMap(c, tenant); ok {
-			out = append(out, p)
+		for _, c := range res.Chunks {
+			// Only compiled products carry compile_kwd; skip ordinary source chunks.
+			if _, ok := c["compile_kwd"]; !ok {
+				continue
+			}
+			if p, ok := productFromChunkMap(c, tenant); ok {
+				out = append(out, p)
+			}
 		}
+		if len(res.Chunks) < loadDocProductsLimit {
+			break
+		}
+		offset += loadDocProductsLimit
 	}
 	return out, nil
 }
@@ -113,7 +130,7 @@ func productFromChunkMap(c map[string]interface{}, tenant string) (kccommon.Prod
 	id, _ := c["id"].(string)
 	docID, _ := c["doc_id"].(string)
 	variant, _ := c["compile_kwd"].(string)
-	merged := c["kc_merged"] == "1"
+	merged := isMerged(c["kc_merged"])
 
 	meta := map[string]any{}
 	if v, ok := c["name_kwd"].(string); ok && v != "" {
@@ -205,8 +222,69 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 		if !ok || !p.Merged {
 			continue
 		}
-		score, _ := c["score"].(float64)
+		score := toFloat64(c["score"])
 		return p, score, nil
 	}
 	return kccommon.Product{}, 0, nil
+}
+
+// isMerged normalizes the boxed kc_merged field returned by the DocEngine,
+// which may be stored as a string ("1"/"0"/"true"), a bool, or a numeric,
+// depending on backend and mapping. Returns true for any positive/true form.
+func isMerged(v interface{}) bool {
+	switch t := v.(type) {
+	case nil:
+		return false
+	case bool:
+		return t
+	case string:
+		switch t {
+		case "1", "true", "True", "TRUE":
+			return true
+		}
+		if f, err := strconv.ParseFloat(t, 64); err == nil {
+			return f > 0
+		}
+		return false
+	case int:
+		return t > 0
+	case int64:
+		return t > 0
+	case float64:
+		return t > 0
+	case float32:
+		return t > 0
+	case json.Number:
+		if f, err := t.Float64(); err == nil {
+			return f > 0
+		}
+	}
+	return false
+}
+
+// toFloat64 normalizes the boxed score field returned by the DocEngine into a
+// float64, accepting float32, float64, numeric strings, and json.Number. It
+// returns 0 when the value is missing or not numeric.
+func toFloat64(v interface{}) float64 {
+	switch t := v.(type) {
+	case nil:
+		return 0
+	case float64:
+		return t
+	case float32:
+		return float64(t)
+	case int:
+		return float64(t)
+	case int64:
+		return float64(t)
+	case string:
+		if f, err := strconv.ParseFloat(t, 64); err == nil {
+			return f
+		}
+	case json.Number:
+		if f, err := t.Float64(); err == nil {
+			return f
+		}
+	}
+	return 0
 }
