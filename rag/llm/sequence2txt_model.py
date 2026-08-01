@@ -394,8 +394,17 @@ class AzureSeq2txt(Base):
     _FACTORY_NAME = "Azure-OpenAI"
 
     def __init__(self, key, model_name, lang="Chinese", **kwargs):
+        from rag.llm.key_utils import _resolve_azure_credentials
+
+        # Parse the key via the shared helper. Pre-fix, the raw ``key``
+        # was passed straight to the AzureOpenAI client, so a JSON
+        # string like ``"{\"api_key\": \"...\"}"`` was used as the
+        # ``api_key`` and the call silently failed at the API with a
+        # 401. The helper raises a clear ``ModelException`` on
+        # non-JSON or JSON non-object input. See #17675.
+        api_key, api_version = _resolve_azure_credentials(key)
         self.base_url = ensure_v1(kwargs["base_url"])
-        self.client = AzureOpenAI(api_key=key, azure_endpoint=self.base_url, api_version="2024-02-01")
+        self.client = AzureOpenAI(api_key=api_key, azure_endpoint=self.base_url, api_version=api_version)
         self.model_name = model_name
         self.lang = lang
 
