@@ -83,7 +83,6 @@ finally:
         _orig_modules["deepdoc.parser"].utils = _orig_modules["deepdoc.parser.utils"]
 
 
-
 # A deterministic, tokenizer-free stand-in for ``num_tokens_from_string`` so
 # the assertions below reason in plain words and are independent of tiktoken.
 
