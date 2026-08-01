@@ -19,9 +19,7 @@ package server
 import (
 	"errors"
 	"fmt"
-	"net/url"
 	"ragflow/internal/server/config"
-	"strconv"
 	"strings"
 	"time"
 
@@ -302,28 +300,4 @@ func PrintAll() {
 		zapLogger.Info("config", zap.String("key", key), zap.Any("value", value))
 	}
 	zapLogger.Info("=== End Configurations ===")
-}
-
-// parseHostPort parses host:port string and returns host and port
-func parseHostPort(hostPort string) (string, int) {
-	if hostPort == "" {
-		return "", 0
-	}
-
-	// Handle URL format like http://host:port
-	if strings.Contains(hostPort, "://") {
-		u, err := url.Parse(hostPort)
-		if err == nil {
-			hostPort = u.Host
-		}
-	}
-
-	// Split host:port
-	parts := strings.Split(hostPort, ":")
-	host := parts[0]
-	port := 0
-	if len(parts) > 1 {
-		port, _ = strconv.Atoi(parts[1])
-	}
-	return host, port
 }
