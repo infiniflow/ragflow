@@ -247,7 +247,7 @@ func (e *Ingestor) startDatasetKnowledgeCompile() {
 		common.Warn(fmt.Sprintf("dataset-level compile consumer unavailable; compiled chunks will not be merged: %v", err))
 		return
 	}
-	e.knowledgeCompile = knowledge_compile.NewConsumer(knowledge_compile.DefaultScheduler())
+	e.knowledgeCompile = knowledge_compile.NewConsumer(knowledge_compile.DefaultClaimer())
 	n := e.kcConcurrency
 	if n <= 0 {
 		n = int32(runtime.NumCPU())

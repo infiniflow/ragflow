@@ -54,53 +54,61 @@ type BacklogEntry struct {
 // ClaimResult is returned by Scheduler.Claim: the KB's tenant plus the closed
 // batch of entries moved into inflight, and the token identifying this claim.
 type ClaimResult struct {
-	TenantID string
-	Entries  []BacklogEntry
-	Token    string
+	DatasetID string
+	TenantID  string
+	Entries   []BacklogEntry
+	Token     string
 }
 
-// Scheduler owns the claim/ack lifecycle against the durable scheduling store
-// (Option E §11.4/§11.5). MySQL is the system of record; NATS notify is only a
-// wake-up. The claim is a move (backlog -> inflight), never a copy, so a doc id
-// is visible to at most one worker at a time; same-KB serialization follows
-// from the inflight set, not from the broker.
-type Scheduler interface {
+// Publisher is the producer-side role (Option E §11.4). It appends a document
+// event to the dataset's durable backlog and wakes idle workers. MySQL is the
+// system of record; NATS notify is only a best-effort wake-up. Publish is the
+// single producer entry point so a publisher never forgets to Notify after
+// enqueue (the two are now one atomic call site).
+type Publisher interface {
 	// Provision ensures the backing store (table + notify subject) exists.
 	Provision(ctx context.Context) error
-	// AppendBacklog adds one doc event to the KB's backlog. The append is
-	// transactional and preserves any existing backlog (concurrent publishers
-	// do not clobber each other).
-	AppendBacklog(ctx context.Context, tenantID, datasetID, docID, eventType string, seq uint64) error
-	// Claim moves a bounded prefix of backlog -> inflight for datasetID and
-	// returns the closed batch. acquired=false when the row is held by another
-	// live lease (the race was lost) or the backlog is empty.
-	Claim(ctx context.Context, datasetID string, batchSize int) (ClaimResult, bool, error)
-	// Ack removes the claimed batch from inflight; clears the claim metadata
-	// only when backlog is also empty. Returns the remaining backlog size.
-	Ack(ctx context.Context, datasetID, token string, batch []BacklogEntry) (backlogRemaining int, err error)
+
+	// Publish records one doc event in the dataset's durable backlog and wakes
+	// idle workers. It is transactional so concurrent publishers do not clobber
+	// each other's backlog, and it always pairs the append with a notify.
+	Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, seq uint64) error
+}
+
+// Claimer is the consumer-side role (Option E §11.5). A cluster of competing
+// workers claims closed batches (backlog -> inflight, a move not a copy) per
+// dataset, keeps the lease alive while processing, and acks when done. The claim
+// is per-KB, so the same dataset is serialized by its single live lease.
+type Claimer interface {
+	// TryClaim finds a dataset with ready backlog and no live lease, or reclaims
+	// an expired lease, claims it atomically, and returns the closed batch.
+	// ok is false when there is nothing to claim or reclaim.
+	TryClaim(ctx context.Context) (ClaimResult, bool, error)
+	// Claim claims datasetID directly (no batch-size argument; the implementation
+	// decides the batch boundary). acquired=false when a live lease already holds
+	// the row (the race was lost) or the backlog is empty.
+	Claim(ctx context.Context, datasetID string) (ClaimResult, bool, error)
 	// TouchClaim extends the lease while processing (heartbeat). Returns false
 	// when the lease is gone (taken over / reclaimed) so the worker must abort.
 	TouchClaim(ctx context.Context, datasetID, token string, ttl time.Duration) (bool, error)
-	// FindClaimable returns up to limit dataset ids with non-empty backlog and
-	// no live lease (a free token to claim).
-	FindClaimable(ctx context.Context, limit int) ([]string, error)
-	// Notify wakes idle workers about a dataset that just got backlog.
-	Notify(ctx context.Context, datasetID string) error
-	// SubscribeNotify returns a channel of dataset ids pushed by Notify, or nil
+	// Ack removes the claimed batch from inflight; clears the claim metadata
+	// only when backlog is also empty.
+	Ack(ctx context.Context, datasetID, token string, batch []BacklogEntry) (backlogRemaining int, err error)
+
+	// SubscribeNotify returns a channel of dataset ids pushed by Publish, or nil
 	// when the implementation has no push wake-up (callers fall back to polling).
 	SubscribeNotify(ctx context.Context) (<-chan string, error)
-	// ReclaimExpired moves expired inflight entries back to backlog (sweeper).
-	ReclaimExpired(ctx context.Context, now time.Time) (int, error)
 }
 
 // newScheduler is the production constructor: a MySQL-backed scheduler with an
 // optional NATS wake-up. holder identifies this ingestor instance; ttl is the
-// claim lease duration.
-func newScheduler(db *gorm.DB, mq engine.MessageQueue, holder string, ttl time.Duration) Scheduler {
+// claim lease duration. The returned *mysqlScheduler satisfies both Publisher
+// and Claimer.
+func newScheduler(db *gorm.DB, mq engine.MessageQueue, holder string, ttl time.Duration) *mysqlScheduler {
 	if ttl <= 0 {
 		ttl = 2 * time.Minute
 	}
-	return &mysqlScheduler{db: db, mq: mq, holder: holder, leaseTTL: ttl}
+	return &mysqlScheduler{db: db, mq: mq, holder: holder, leaseTTL: ttl, claimBatchSize: defaultClaimBatch}
 }
 
 // ---- JSON helpers (the *_doc_ids columns are TEXT holding []BacklogEntry) ----
@@ -134,25 +142,34 @@ func minInt(a, b int) int {
 // ---- MySQL-backed scheduler ----
 
 type mysqlScheduler struct {
-	db       *gorm.DB
-	mq       engine.MessageQueue
-	holder   string
-	leaseTTL time.Duration
+	db             *gorm.DB
+	mq             engine.MessageQueue
+	holder         string
+	leaseTTL       time.Duration
+	claimBatchSize int
 }
+
+// defaultClaimBatch is the closed-batch boundary when Claim is invoked without
+// an explicit size (the previous batchSize argument).
+const defaultClaimBatch = 32
 
 func (s *mysqlScheduler) Provision(ctx context.Context) error {
 	if s.db == nil {
 		return nil
 	}
-	return s.db.WithContext(ctx).AutoMigrate(&entity.KnowledgeCompileDoc{})
+	return s.db.WithContext(ctx).AutoMigrate(&entity.KnowledgeCompileDataset{})
 }
 
-func (s *mysqlScheduler) AppendBacklog(ctx context.Context, tenantID, datasetID, docID, eventType string, seq uint64) error {
+// Publish appends one doc event to the dataset's durable backlog and wakes idle
+// workers. The append is transactional (concurrent publishers do not clobber
+// each other's backlog), and the notify is always paired with the append so a
+// producer never needs a separate Notify call.
+func (s *mysqlScheduler) Publish(ctx context.Context, tenantID, datasetID, docID, eventType string, seq uint64) error {
 	if s.db == nil {
 		return nil
 	}
 	entry := BacklogEntry{DocID: docID, EventType: eventType, Seq: seq}
-	// KnowledgeCompileDoc.dataset_id is the PRIMARY KEY, so the SELECT ... FOR
+	// KnowledgeCompileDataset.dataset_id is the PRIMARY KEY, so the SELECT ... FOR
 	// UPDATE below also takes an InnoDB gap lock for a not-yet-existing dataset;
 	// concurrent publishers for the same dataset serialize on that lock and the
 	// loser observes the row already present. FirstOrCreate then reliably finds
@@ -163,7 +180,7 @@ func (s *mysqlScheduler) AppendBacklog(ctx context.Context, tenantID, datasetID,
 		// Where) so the inserted row is fully populated and later queries by
 		// dataset_id find it (M19: a raw-string Where alone leaves DatasetID
 		// blank on the created row).
-		row := entity.KnowledgeCompileDoc{
+		row := entity.KnowledgeCompileDataset{
 			DatasetID:      datasetID,
 			TenantID:       tenantID,
 			BacklogDocIDs:  "[]",
@@ -183,50 +200,62 @@ func (s *mysqlScheduler) AppendBacklog(ctx context.Context, tenantID, datasetID,
 		return tx.Save(&row).Error
 	})
 	if err != nil {
-		return fmt.Errorf("knowledge_compile: append backlog %s: %w", datasetID, err)
+		return fmt.Errorf("knowledge_compile: publish backlog %s: %w", datasetID, err)
 	}
-	return nil
+	return s.notify(ctx, datasetID)
 }
 
-func (s *mysqlScheduler) Claim(ctx context.Context, datasetID string, batchSize int) (ClaimResult, bool, error) {
+// claimRow atomically claims the closed batch from the row identified by
+// datasetID: it takes a FOR UPDATE row lock, refuses a live lease, moves up to
+// claimBatchSize entries from backlog to inflight, and stamps the lease. The
+// callers (Claim and TryClaim) differ only in how they pick the datasetID; the
+// claim itself is identical so both share this helper and stay race-free.
+func (s *mysqlScheduler) claimRow(ctx context.Context, tx *gorm.DB, datasetID string) (ClaimResult, bool, error) {
+	var row entity.KnowledgeCompileDataset
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("dataset_id = ?", datasetID).First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ClaimResult{}, false, nil // nothing to claim
+		}
+		return ClaimResult{}, false, err
+	}
+	now := time.Now()
+	liveLease := row.ClaimOwner != "" && row.ClaimExpiresAt != nil && row.ClaimExpiresAt.After(now)
+	if liveLease {
+		return ClaimResult{}, false, nil // a live lease means some worker is already processing this KB
+	}
+	backlog := parseEntries(row.BacklogDocIDs)
+	if len(backlog) == 0 {
+		return ClaimResult{}, false, nil
+	}
+	n := minInt(s.claimBatchSize, len(backlog))
+	batch := backlog[:n]
+	inflight := parseEntries(row.InflightDocIDs)
+	inflight = append(inflight, batch...)
+	row.BacklogDocIDs = marshalEntries(backlog[n:])
+	row.InflightDocIDs = marshalEntries(inflight)
+	row.ClaimOwner = s.holder
+	row.ClaimToken = generateHolder()
+	exp := now.Add(s.leaseTTL)
+	row.ClaimExpiresAt = &exp
+	if err := tx.Save(&row).Error; err != nil {
+		return ClaimResult{}, false, err
+	}
+	return ClaimResult{DatasetID: row.DatasetID, TenantID: row.TenantID, Entries: batch, Token: row.ClaimToken}, true, nil
+}
+
+func (s *mysqlScheduler) Claim(ctx context.Context, datasetID string) (ClaimResult, bool, error) {
 	if s.db == nil {
 		return ClaimResult{}, false, nil
 	}
 	var res ClaimResult
 	var acquired bool
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var row entity.KnowledgeCompileDoc
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("dataset_id = ?", datasetID).First(&row).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil // nothing to claim
-			}
-			return err
+		cr, ok, e := s.claimRow(ctx, tx, datasetID)
+		if e != nil {
+			return e
 		}
-		now := time.Now()
-		liveLease := row.ClaimOwner != "" && row.ClaimExpiresAt != nil && row.ClaimExpiresAt.After(now)
-		if liveLease {
-			return nil // a live lease means some worker is already processing this KB
-		}
-		backlog := parseEntries(row.BacklogDocIDs)
-		if len(backlog) == 0 {
-			return nil
-		}
-		n := minInt(batchSize, len(backlog))
-		batch := backlog[:n]
-		inflight := parseEntries(row.InflightDocIDs)
-		inflight = append(inflight, batch...)
-		row.BacklogDocIDs = marshalEntries(backlog[n:])
-		row.InflightDocIDs = marshalEntries(inflight)
-		row.ClaimOwner = s.holder
-		row.ClaimToken = generateHolder()
-		exp := now.Add(s.leaseTTL)
-		row.ClaimExpiresAt = &exp
-		if err := tx.Save(&row).Error; err != nil {
-			return err
-		}
-		res = ClaimResult{TenantID: row.TenantID, Entries: batch, Token: row.ClaimToken}
-		acquired = true
+		res, acquired = cr, ok
 		return nil
 	})
 	if err != nil {
@@ -241,7 +270,7 @@ func (s *mysqlScheduler) Ack(ctx context.Context, datasetID, token string, batch
 	}
 	var remaining int
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var row entity.KnowledgeCompileDoc
+		var row entity.KnowledgeCompileDataset
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("dataset_id = ?", datasetID).First(&row).Error; err != nil {
 			return err
@@ -273,7 +302,7 @@ func (s *mysqlScheduler) TouchClaim(ctx context.Context, datasetID, token string
 	if s.db == nil {
 		return false, nil
 	}
-	res := s.db.WithContext(ctx).Model(&entity.KnowledgeCompileDoc{}).
+	res := s.db.WithContext(ctx).Model(&entity.KnowledgeCompileDataset{}).
 		Where("dataset_id = ? AND claim_token = ?", datasetID, token).
 		Update("claim_expires_at", time.Now().Add(ttl))
 	if res.Error != nil {
@@ -282,23 +311,111 @@ func (s *mysqlScheduler) TouchClaim(ctx context.Context, datasetID, token string
 	return res.RowsAffected > 0, nil
 }
 
-func (s *mysqlScheduler) FindClaimable(ctx context.Context, limit int) ([]string, error) {
-	if s.db == nil || limit <= 0 {
-		return nil, nil
+// TryClaim finds a dataset with ready backlog and no live lease, or reclaims an
+// expired lease, claims it atomically within a single transaction, and returns
+// the closed batch. ok is false when there is nothing to claim or reclaim.
+//
+// The find and the claim run inside one locked transaction so there is no race
+// window between picking a dataset and taking its lease: a concurrent worker
+// cannot claim the same row out from under us. Reclaim is inlined here so the
+// sweeper and the poller share one entry point (no separate ReclaimExpired).
+func (s *mysqlScheduler) TryClaim(ctx context.Context) (ClaimResult, bool, error) {
+	if s.db == nil {
+		return ClaimResult{}, false, nil
 	}
-	var ids []string
-	err := s.db.WithContext(ctx).Model(&entity.KnowledgeCompileDoc{}).
-		Where("(claim_expires_at IS NULL OR claim_expires_at <= ?) AND backlog_doc_ids <> '[]' AND backlog_doc_ids <> '' AND backlog_doc_ids IS NOT NULL", time.Now()).
-		Order("priority DESC, updated_at ASC").
-		Limit(limit).
-		Pluck("dataset_id", &ids).Error
+	var res ClaimResult
+	var acquired bool
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		// 1) a ready dataset (backlog, no live lease) — claim it directly.
+		if id, ok := s.findClaimableID(ctx, tx, now); ok {
+			cr, ok, e := s.claimRow(ctx, tx, id)
+			if e != nil {
+				return e
+			}
+			res, acquired = cr, ok
+			return nil
+		}
+		// 2) reclaim an expired lease back into backlog, then claim it.
+		if id, ok, e := s.reclaimOne(ctx, tx, now); e != nil {
+			return e
+		} else if ok {
+			cr, ok, e := s.claimRow(ctx, tx, id)
+			if e != nil {
+				return e
+			}
+			res, acquired = cr, ok
+			return nil
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, err
+		return ClaimResult{}, false, err
 	}
-	return ids, nil
+	return res, acquired, nil
 }
 
-func (s *mysqlScheduler) Notify(ctx context.Context, datasetID string) error {
+// findClaimableID returns one dataset id with non-empty backlog and no live
+// lease, or ok=false when none exists. It runs inside caller's transaction so
+// the returned id is still locked when the caller claims it.
+func (s *mysqlScheduler) findClaimableID(ctx context.Context, tx *gorm.DB, now time.Time) (string, bool) {
+	var id string
+	err := tx.Model(&entity.KnowledgeCompileDataset{}).
+		Where("(claim_expires_at IS NULL OR claim_expires_at <= ?) AND backlog_doc_ids <> '[]' AND backlog_doc_ids <> '' AND backlog_doc_ids IS NOT NULL", now).
+		Order("priority DESC, updated_at ASC").
+		Limit(1).
+		Pluck("dataset_id", &id).Error
+	if err != nil || id == "" {
+		return "", false
+	}
+	return id, true
+}
+
+// reclaimOne moves one expired inflight batch back to backlog (crash recovery)
+// and returns that dataset id, or ok=false when nothing is expired. It runs
+// inside caller's transaction so the reclaimed row remains locked when the
+// caller claims it.
+func (s *mysqlScheduler) reclaimOne(ctx context.Context, tx *gorm.DB, now time.Time) (string, bool, error) {
+	var rows []entity.KnowledgeCompileDataset
+	if err := tx.Model(&entity.KnowledgeCompileDataset{}).
+		Where("claim_expires_at IS NOT NULL AND claim_expires_at <= ? AND inflight_doc_ids <> '[]' AND inflight_doc_ids <> ''", now).
+		Find(&rows).Error; err != nil {
+		return "", false, err
+	}
+	for _, row := range rows {
+		var cur entity.KnowledgeCompileDataset
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("dataset_id = ?", row.DatasetID).First(&cur).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return "", false, err
+		}
+		if cur.ClaimExpiresAt != nil && cur.ClaimExpiresAt.After(now) {
+			continue
+		}
+		inflight := parseEntries(cur.InflightDocIDs)
+		if len(inflight) == 0 {
+			continue
+		}
+		backlog := parseEntries(cur.BacklogDocIDs)
+		backlog = append(backlog, inflight...)
+		cur.BacklogDocIDs = marshalEntries(backlog)
+		cur.InflightDocIDs = "[]"
+		cur.ClaimOwner = ""
+		cur.ClaimToken = ""
+		cur.ClaimExpiresAt = nil
+		if err := tx.Save(&cur).Error; err != nil {
+			return "", false, err
+		}
+		return cur.DatasetID, true, nil
+	}
+	return "", false, nil
+}
+
+// notify is the best-effort wake-up published after a successful Publish. It is
+// a no-op without a configured NATS subject; callers fall back to polling.
+func (s *mysqlScheduler) notify(ctx context.Context, datasetID string) error {
 	if s.mq == nil {
 		return nil
 	}
@@ -311,50 +428,6 @@ func (s *mysqlScheduler) SubscribeNotify(ctx context.Context) (<-chan string, er
 		return nil, nil
 	}
 	return s.mq.SubscribeNotify(ctx)
-}
-
-func (s *mysqlScheduler) ReclaimExpired(ctx context.Context, now time.Time) (int, error) {
-	if s.db == nil {
-		return 0, nil
-	}
-	var rows []entity.KnowledgeCompileDoc
-	if err := s.db.WithContext(ctx).Model(&entity.KnowledgeCompileDoc{}).
-		Where("claim_expires_at IS NOT NULL AND claim_expires_at <= ? AND inflight_doc_ids <> '[]' AND inflight_doc_ids <> ''", now).
-		Find(&rows).Error; err != nil {
-		return 0, err
-	}
-	total := 0
-	for _, row := range rows {
-		inflight := parseEntries(row.InflightDocIDs)
-		if len(inflight) == 0 {
-			continue
-		}
-		total += len(inflight)
-		err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			var cur entity.KnowledgeCompileDoc
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-				Where("dataset_id = ?", row.DatasetID).First(&cur).Error; err != nil {
-				return err
-			}
-			// Re-check liveness under the lock so we don't clobber a lease that
-			// was refreshed between the scan and now.
-			if cur.ClaimExpiresAt != nil && cur.ClaimExpiresAt.After(now) {
-				return nil
-			}
-			backlog := parseEntries(cur.BacklogDocIDs)
-			backlog = append(backlog, parseEntries(cur.InflightDocIDs)...)
-			cur.BacklogDocIDs = marshalEntries(backlog)
-			cur.InflightDocIDs = "[]"
-			cur.ClaimOwner = ""
-			cur.ClaimToken = ""
-			cur.ClaimExpiresAt = nil
-			return tx.Save(&cur).Error
-		})
-		if err != nil {
-			return total, err
-		}
-	}
-	return total, nil
 }
 
 // removeEntries drops every entry in batch from the inflight slice (match by
@@ -390,8 +463,8 @@ type fakeRow struct {
 	expires  *time.Time
 }
 
-// FakeScheduler is an in-memory Scheduler used by tests. It mirrors the
-// MySQL semantics (move-not-copy claim, token-checked ack, lease takeover).
+// FakeScheduler is an in-memory Publisher + Claimer used by tests. It mirrors
+// the MySQL semantics (move-not-copy claim, token-checked ack, lease takeover).
 type FakeScheduler struct {
 	mu       sync.Mutex
 	rows     map[string]*fakeRow
@@ -412,7 +485,8 @@ func NewFakeScheduler() *FakeScheduler {
 
 func (f *FakeScheduler) Provision(_ context.Context) error { return nil }
 
-func (f *FakeScheduler) AppendBacklog(_ context.Context, tenantID, datasetID, docID, eventType string, seq uint64) error {
+// Publish appends one doc event and pushes a notify (same as the MySQL path).
+func (f *FakeScheduler) Publish(_ context.Context, tenantID, datasetID, docID, eventType string, seq uint64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	r, ok := f.rows[datasetID]
@@ -424,10 +498,14 @@ func (f *FakeScheduler) AppendBacklog(_ context.Context, tenantID, datasetID, do
 		r.tenant = tenantID
 	}
 	r.backlog = append(r.backlog, BacklogEntry{DocID: docID, EventType: eventType, Seq: seq})
+	select {
+	case f.notifyCh <- datasetID:
+	default:
+	}
 	return nil
 }
 
-func (f *FakeScheduler) Claim(_ context.Context, datasetID string, batchSize int) (ClaimResult, bool, error) {
+func (f *FakeScheduler) Claim(_ context.Context, datasetID string) (ClaimResult, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	r, ok := f.rows[datasetID]
@@ -442,7 +520,7 @@ func (f *FakeScheduler) Claim(_ context.Context, datasetID string, batchSize int
 	if len(r.backlog) == 0 {
 		return ClaimResult{}, false, nil
 	}
-	n := minInt(batchSize, len(r.backlog))
+	n := minInt(defaultClaimBatch, len(r.backlog))
 	batch := append([]BacklogEntry{}, r.backlog[:n]...)
 	r.inflight = append(r.inflight, batch...)
 	r.backlog = append([]BacklogEntry{}, r.backlog[n:]...)
@@ -450,7 +528,7 @@ func (f *FakeScheduler) Claim(_ context.Context, datasetID string, batchSize int
 	r.token = generateHolder()
 	exp := now.Add(f.leaseTTL)
 	r.expires = &exp
-	return ClaimResult{TenantID: r.tenant, Entries: batch, Token: r.token}, true, nil
+	return ClaimResult{DatasetID: datasetID, TenantID: r.tenant, Entries: batch, Token: r.token}, true, nil
 }
 
 func (f *FakeScheduler) Ack(_ context.Context, datasetID, token string, batch []BacklogEntry) (int, error) {
@@ -482,53 +560,42 @@ func (f *FakeScheduler) TouchClaim(_ context.Context, datasetID, token string, _
 	return true, nil
 }
 
-func (f *FakeScheduler) FindClaimable(_ context.Context, limit int) ([]string, error) {
+// TryClaim mirrors the production flow: claim a ready dataset, otherwise reclaim
+// an expired lease and claim it.
+func (f *FakeScheduler) TryClaim(ctx context.Context) (ClaimResult, bool, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
-	var ids []string
 	now := time.Now()
+	var readyID, expiredID string
 	for id, r := range f.rows {
-		if len(r.backlog) == 0 {
-			continue
-		}
-		if r.owner != "" && r.expires != nil && r.expires.After(now) {
-			continue
-		}
-		ids = append(ids, id)
-		if limit > 0 && len(ids) >= limit {
+		if len(r.backlog) > 0 && (r.owner == "" || r.expires == nil || !r.expires.After(now)) {
+			readyID = id
 			break
 		}
 	}
-	return ids, nil
-}
-
-func (f *FakeScheduler) Notify(_ context.Context, datasetID string) error {
-	select {
-	case f.notifyCh <- datasetID:
-	default:
+	if readyID == "" {
+		for id, r := range f.rows {
+			if r.owner != "" && r.expires != nil && r.expires.After(now) {
+				continue
+			}
+			if len(r.inflight) > 0 {
+				r.backlog = append(r.backlog, r.inflight...)
+				r.inflight = nil
+				r.owner, r.token, r.expires = "", "", nil
+				expiredID = id
+				break
+			}
+		}
 	}
-	return nil
+	f.mu.Unlock()
+	if readyID != "" {
+		return f.Claim(ctx, readyID)
+	}
+	if expiredID != "" {
+		return f.Claim(ctx, expiredID)
+	}
+	return ClaimResult{}, false, nil
 }
 
 func (f *FakeScheduler) SubscribeNotify(_ context.Context) (<-chan string, error) {
 	return f.notifyCh, nil
-}
-
-func (f *FakeScheduler) ReclaimExpired(_ context.Context, now time.Time) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	total := 0
-	for _, r := range f.rows {
-		if r.owner != "" && r.expires != nil && r.expires.After(now) {
-			continue
-		}
-		if len(r.inflight) == 0 {
-			continue
-		}
-		total += len(r.inflight)
-		r.backlog = append(r.backlog, r.inflight...)
-		r.inflight = nil
-		r.owner, r.token, r.expires = "", "", nil
-	}
-	return total, nil
 }
