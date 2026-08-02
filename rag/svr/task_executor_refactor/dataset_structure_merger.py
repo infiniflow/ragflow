@@ -199,7 +199,6 @@ def record_doc_deletion(tenant_id: str, kb_id: str, doc_id: str) -> None:
                     kb_id,
                     {"deleted_doc_id": {"type": "varchar", "default": "", "analyzer": "whitespace-#"}},
                 )
-            _UPGRADED_TABLES.add((index, kb_id))
         row = {
             "id": f"{_DELETION_META_KWD}:{kb_id}:{doc_id}",
             "kb_id": kb_id,
@@ -209,6 +208,7 @@ def record_doc_deletion(tenant_id: str, kb_id: str, doc_id: str) -> None:
             "create_timestamp_flt": datetime.datetime.now().timestamp(),
         }
         settings.docStoreConn.insert([row], index, kb_id)
+        _UPGRADED_TABLES.add((index, kb_id))
     except Exception:
         logging.exception("structure_merge: failed to record doc deletion kb=%s doc=%s", kb_id, doc_id)
 

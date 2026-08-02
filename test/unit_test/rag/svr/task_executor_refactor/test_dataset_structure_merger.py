@@ -57,9 +57,10 @@ class TestRecordDocDeletion:
             assert inserted_rows[0]["deleted_doc_id"] == doc_id
             assert inserted_rows[0]["kb_id"] == kb_id
 
-    def test_record_doc_deletion_caches_upgraded_tables(self):
+    def test_record_doc_deletion_caches_upgraded_tables_per_kb(self):
         tenant_id = "tenant_123"
-        kb_id = "kb_456"
+        kb_id1 = "kb_456"
+        kb_id2 = "kb_789"
 
         mock_conn = MagicMock()
         mock_conn.index_exist.return_value = True
@@ -69,11 +70,38 @@ class TestRecordDocDeletion:
             mock_settings.docStoreConn = mock_conn
             mock_search.index_name.return_value = "ragflow_tenant_123"
 
-            record_doc_deletion(tenant_id, kb_id, "doc_1")
-            record_doc_deletion(tenant_id, kb_id, "doc_2")
+            record_doc_deletion(tenant_id, kb_id1, "doc_1")
+            record_doc_deletion(tenant_id, kb_id1, "doc_2")
+            record_doc_deletion(tenant_id, kb_id2, "doc_3")
 
-            # ensure_columns is only called once due to caching
-            assert mock_conn.ensure_columns.call_count == 1
+            # ensure_columns is called twice: once for kb_456, once for kb_789
+            assert mock_conn.ensure_columns.call_count == 2
+            assert mock_conn.insert.call_count == 3
+            inserted_doc_ids = [call.args[0][0]["deleted_doc_id"] for call in mock_conn.insert.call_args_list]
+            assert inserted_doc_ids == ["doc_1", "doc_2", "doc_3"]
+
+    def test_record_doc_deletion_retries_ensure_columns_on_insert_failure(self):
+        tenant_id = "tenant_123"
+        kb_id = "kb_456"
+
+        mock_conn = MagicMock()
+        mock_conn.index_exist.return_value = True
+        mock_conn.ensure_columns = MagicMock()
+        # First insert fails, second succeeds
+        mock_conn.insert.side_effect = [RuntimeError("insert failed"), None]
+
+        with patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings, patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search:
+            mock_settings.docStoreConn = mock_conn
+            mock_search.index_name.return_value = "ragflow_tenant_123"
+
+            record_doc_deletion(tenant_id, kb_id, "doc_1")
+            assert (("ragflow_tenant_123", kb_id)) not in _UPGRADED_TABLES
+
+            record_doc_deletion(tenant_id, kb_id, "doc_2")
+            assert (("ragflow_tenant_123", kb_id)) in _UPGRADED_TABLES
+
+            # ensure_columns was retried on the second attempt
+            assert mock_conn.ensure_columns.call_count == 2
             assert mock_conn.insert.call_count == 2
 
     def test_record_doc_deletion_when_index_not_exist(self):
