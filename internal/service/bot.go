@@ -187,7 +187,7 @@ func (s *BotService) AgentbotLogs(ctx context.Context, tenantID, agentID, messag
 	if _, err := s.loadCanvas(ctx, tenantID, agentID); err != nil {
 		return nil, common.CodeDataError, err
 	}
-	payload, err := redis.Get().Get(fmt.Sprintf("%s-%s-logs", agentID, messageID))
+	payload, err := redis.Get().Get(ctx, fmt.Sprintf("%s-%s-logs", agentID, messageID))
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("failed to read agent logs")
 	}
@@ -251,7 +251,7 @@ func (s *BotService) persistLock(sessionID string) *sync.Mutex {
 
 // loadCanvas is the IDOR guard for agentbot reads. It mirrors the
 // private loadCanvasForUser helper on AgentService without taking a
-// dependency on the agentService pointer (so BotService can be unit-
+// dependency on the agentService pointer (so BotService can be
 // tested with a nil agentService).
 func (s *BotService) loadCanvas(ctx context.Context, tenantID, agentID string) (*entity.UserCanvas, error) {
 	if agentID == "" {

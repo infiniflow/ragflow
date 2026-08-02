@@ -361,7 +361,7 @@ func main() {
 	defer engine.Close()
 
 	// Initialize Redis cache
-	if err = redis.Init(); err != nil {
+	if err = redis.Init(ctx); err != nil {
 		common.Fatal("Failed to initialize Redis", zap.Error(err))
 	}
 	defer redis.Close()
@@ -784,7 +784,7 @@ func startServer(ctx context.Context) {
 		agentOpts.stateSerializer,
 		agentOpts.runTracker,
 	)
-	agentHandler := handler.NewAgentHandler(agentService, fileService)
+	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService)
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.

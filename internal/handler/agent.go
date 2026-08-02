@@ -129,13 +129,13 @@ func (h *AgentHandler) WithDocumentService(s documentAccessChecker) *AgentHandle
 
 // NewAgentHandler create agent handler
 
-func NewAgentHandler(agentService *service.AgentService, fileService *file.FileService) *AgentHandler {
+func NewAgentHandler(ctx context.Context, agentService *service.AgentService, fileService *file.FileService) *AgentHandler {
 	return &AgentHandler{
 		agentService: agentService,
 		chatRunner:   agentService,
 		fileService:  fileService,
 		loader:       agentService,
-		redisGet:     func(key string) (string, error) { return redis.Get().Get(key) },
+		redisGet:     func(key string) (string, error) { return redis.Get().Get(ctx, key) },
 		redisStore:   redis.Get(),
 		newExecutor: func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {
 			return task.NewPipelineExecutor(taskCtx, canvasID, docBulkSize)
