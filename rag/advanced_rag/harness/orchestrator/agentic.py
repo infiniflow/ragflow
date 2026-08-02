@@ -3,18 +3,18 @@
 import asyncio
 import logging
 
-from rag.advanced_rag.harness.types import (
-    ClaimTarget,
-    AgentResult,
-    OrchestratorContext,
-)
+from rag.advanced_rag.harness.agent import research_agent_loop
 from rag.advanced_rag.harness.config import get_mode
 from rag.advanced_rag.harness.pipeline import Pipeline
-from rag.advanced_rag.harness.agent import research_agent_loop
 from rag.advanced_rag.harness.sufficiency import (
-    cross_check_claim,
     compute_fusion_score,
+    cross_check_claim,
     route_sufficiency_verdict,
+)
+from rag.advanced_rag.harness.types import (
+    AgentResult,
+    ClaimTarget,
+    OrchestratorContext,
 )
 
 _LOG = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ async def agentic_research(state: dict, tools) -> dict:
 
     claims = [ClaimTarget(**c) if isinstance(c, dict) else c for c in claims_raw]
     ctx = OrchestratorContext(question=question, claims=claims, mode=mode_label)
-    pipeline = Pipeline(tools, compilation_map)
+    pipeline = Pipeline(tools, compilation_map, has_local_evidence=bool(state.get("seed_chunks")))
 
     for cycle in range(mode.max_orchestrator_cycles):
         ctx.iteration = cycle
@@ -101,7 +101,7 @@ async def agentic_research(state: dict, tools) -> dict:
         verdict = compute_fusion_score(agent_results_list, cross_results, mode)
         ctx.verdict = verdict
 
-        action, should_continue = route_sufficiency_verdict(
+        action, _should_continue = route_sufficiency_verdict(
             verdict,
             mode_label,
             cycle,
@@ -276,8 +276,8 @@ async def _add_template_group_compilations(comps: set[str], parser_config: dict,
     if not tenant_id:
         return
     try:
-        from common.misc_utils import thread_pool_exec
         from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
+        from common.misc_utils import thread_pool_exec
         from rag.svr.task_executor_refactor.chunk_post_processor import (
             _parser_config_compilation_template_group_ids,
         )
