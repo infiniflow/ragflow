@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/service/nav"
 )
 
 // mockChat answers the structure variant's three LLM call shapes under the
@@ -110,7 +111,7 @@ func (mockChat) Chat(_ context.Context, req common.ChatRequest) (*common.ChatRes
 }
 
 // proseChat returns generic, non-empty prose for the non-structure variants
-// (wiki/tree/mindmap/datasetnav), which all just need a summary/outline text.
+// (wiki/tree/mindmap), which all just need a summary/outline text.
 type proseChat struct{}
 
 func (proseChat) Chat(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
@@ -236,6 +237,136 @@ func TestKnowledgeCompiler_UnknownVariant(t *testing.T) {
 	_, err = c.Invoke(context.Background(), nil, map[string]any{"chunks": []any{}})
 	if !errors.Is(err, common.ErrUnknownVariant) {
 		t.Fatalf("err = %v, want ErrUnknownVariant", err)
+	}
+}
+
+// TestKnowledgeCompiler_Datasetnav_NoVariant locks the removal of the standalone
+// datasetnav variant: dataset navigation is NOT an independent compile kind in
+// Python (it is a by-product written after tree/page_index compile via
+// internal/service datasetnav), so "datasetnav"/"dataset_nav" must now fail as
+// an unknown variant rather than silently compile nothing.
+func TestKnowledgeCompiler_Datasetnav_NoVariant(t *testing.T) {
+	for _, kind := range []string{"datasetnav", "dataset_nav"} {
+		_, err := common.KindToVariant(kind)
+		if !errors.Is(err, common.ErrUnknownVariant) {
+			t.Fatalf("KindToVariant(%q) err = %v, want ErrUnknownVariant", kind, err)
+		}
+	}
+}
+
+// fakeNavSvc records the most recent UpsertDoc call so a test can assert the
+// tree by-product hook feeds the nav service the root document summary.
+type fakeNavSvc struct {
+	mu      sync.Mutex
+	called  bool
+	summary string
+	docID   string
+	kbID    string
+}
+
+func (f *fakeNavSvc) UpsertDoc(_ context.Context, in nav.UpsertDocInput) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.called = true
+	f.summary = in.Summary
+	f.docID = in.DocID
+	f.kbID = in.KbID
+	return nil
+}
+func (f *fakeNavSvc) RemoveDoc(context.Context, string, string, string) error { return nil }
+func (f *fakeNavSvc) Search(context.Context, string, string, string, []float32, int) ([]nav.NavHit, error) {
+	return nil, nil
+}
+func (f *fakeNavSvc) ListClusters(context.Context, string, string, int, int) ([]nav.NavNode, int64, error) {
+	return nil, 0, nil
+}
+func (f *fakeNavSvc) ListChildren(context.Context, string, string, string, int, int) ([]nav.NavNode, int64, error) {
+	return nil, 0, nil
+}
+
+// TestKnowledgeCompiler_TreeNavByProduct asserts the tree compile-complete hook
+// writes the dataset-nav by-product: after tree.Run produces a root product,
+// upsertTreeNav calls NavService.UpsertDoc with the root summary and the
+// doc/dataset context, and never aborts on failure.
+func TestKnowledgeCompiler_TreeNavByProduct(t *testing.T) {
+	fake := &fakeNavSvc{}
+	nav.SetNavService(fake)
+	t.Cleanup(func() { nav.SetNavService(nil) })
+
+	deps := common.Deps{
+		TenantID:  "t1",
+		DatasetID: "kb1",
+		Chat:      proseChat{},
+		Embed:     mockEmbedder{dim: 8},
+	}
+	products := []common.Product{
+		{Content: "section one body", Meta: map[string]any{"kind": "summary", "level": 0}},
+		{Content: "overall doc theme root summary", Vector: []float32{0.1, 0.2}, Meta: map[string]any{"kind": "root", "level": -1}},
+	}
+	upsertTreeNav(context.Background(), deps, "d1", products)
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if !fake.called {
+		t.Fatal("upsertTreeNav did not call NavService.UpsertDoc")
+	}
+	if fake.docID != "d1" {
+		t.Errorf("doc_id = %q, want d1", fake.docID)
+	}
+	if fake.kbID != "kb1" {
+		t.Errorf("kb_id = %q, want kb1", fake.kbID)
+	}
+	if !strings.Contains(fake.summary, "overall doc theme root summary") {
+		t.Errorf("summary = %q, want the tree root summary", fake.summary)
+	}
+}
+
+// TestKnowledgeCompiler_TreeNavByProduct_NilServiceDoesNotAbort asserts the
+// by-product hook tolerates a missing NavService without erroring (nav is a
+// derived artifact; its absence must never abort compilation).
+func TestKnowledgeCompiler_TreeNavByProduct_NilServiceDoesNotAbort(t *testing.T) {
+	nav.SetNavService(nil)
+	t.Cleanup(func() { nav.SetNavService(nil) })
+	// Should not panic and must return normally.
+	upsertTreeNav(context.Background(), common.Deps{}, "d1",
+		[]common.Product{{Content: "x", Meta: map[string]any{"kind": "root"}}})
+}
+
+// TestKnowledgeCompiler_StructureNavByProduct asserts the structure/page_index
+// by-product hook summarizes the graph product entities and feeds NavService.
+func TestKnowledgeCompiler_StructureNavByProduct(t *testing.T) {
+	fake := &fakeNavSvc{}
+	nav.SetNavService(fake)
+	t.Cleanup(func() { nav.SetNavService(nil) })
+
+	graphJSON := `{"entities":[{"name":"Engine","description":"a propulsion device"},{"name":"Fuel","description":"combustion source"}]}`
+	products := []common.Product{
+		{Content: graphJSON, Vector: []float32{0.1, 0.2}, Meta: map[string]any{"kind": "graph", "compile_kwd": "page_index"}},
+	}
+	upsertStructureNav(context.Background(), common.Deps{TenantID: "t1", DatasetID: "kb1"}, "d1", products)
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if !fake.called {
+		t.Fatal("upsertStructureNav did not call NavService.UpsertDoc")
+	}
+	if fake.docID != "d1" {
+		t.Errorf("doc_id = %q, want d1", fake.docID)
+	}
+	if !strings.Contains(fake.summary, "Engine: a propulsion device") {
+		t.Errorf("summary = %q, want entity descriptions", fake.summary)
+	}
+}
+
+// TestPageIndexSummary asserts entity descriptions are concatenated into a
+// document summary.
+func TestPageIndexSummary(t *testing.T) {
+	got := pageIndexSummary(`{"entities":[{"name":"A","description":"one  thing"},{"name":"B","description":""}]}`)
+	if !strings.Contains(got, "A: one thing") {
+		t.Errorf("summary = %q, want entity A", got)
+	}
+	if strings.Contains(got, "B") {
+		t.Errorf("summary should skip empty-description entity, got %q", got)
 	}
 }
 
@@ -385,20 +516,6 @@ func TestKnowledgeCompiler_Mindmap_EndToEnd(t *testing.T) {
 	}
 	if pid, _ := root["parent_kwd"].(string); pid != "" {
 		t.Fatalf("mindmap: root parent_kwd = %q, want empty", pid)
-	}
-}
-
-func TestKnowledgeCompiler_Datasetnav_EndToEnd(t *testing.T) {
-	installProseDeps(t)
-	chunks := runVariant(t, "datasetnav", nil)
-	foundRoot := false
-	for _, c := range chunks {
-		if kind, _ := c["kc_kind"].(string); kind == "root" {
-			foundRoot = true
-		}
-	}
-	if !foundRoot {
-		t.Fatalf("datasetnav: no 'root' chunk; got %d chunks", len(chunks))
 	}
 }
 
@@ -782,140 +899,6 @@ func TestKnowledgeCompiler_Wiki_HistoricalDedupScopedByDataset(t *testing.T) {
 			if _, has := cm["compile_kwd"]; has {
 				t.Fatalf("wiki historical dedup failed: a compiled chunk survived despite a matching historical hit: %v", cm)
 			}
-		}
-	}
-}
-
-// fakeDatasetnavLock records the key it was asked to acquire, so a test can
-// assert the datasetnav rebuild lock is scoped to the dataset, not the document.
-type fakeDatasetnavLock struct {
-	mu      sync.Mutex
-	lastKey string
-}
-
-func (f *fakeDatasetnavLock) Acquire(_ context.Context, key string) (bool, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.lastKey = key
-	return true, nil
-}
-func (f *fakeDatasetnavLock) Release(_ context.Context, _ string) error { return nil }
-
-// TestKnowledgeCompiler_Datasetnav_LockKeyedByDataset is a regression for the
-// Medium bug: the distributed rebuild lock used to be keyed by doc_id, so two
-// runs against the same dataset (with different per-document doc_id values)
-// took different locks and could interleave. This test supplies both doc_id
-// ("d1") and dataset_id ("ds1") and asserts the lock key uses the dataset.
-func TestKnowledgeCompiler_Datasetnav_LockKeyedByDataset(t *testing.T) {
-	lk := &fakeDatasetnavLock{}
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
-		return common.Deps{
-			Chat:     proseChat{},
-			Embed:    mockEmbedder{dim: 8},
-			TenantID: tenantID,
-			Redis:    lk,
-		}, nil
-	})
-	t.Cleanup(func() { common.SetDepsResolver(nil) })
-
-	installVariantTemplateResolver(t, "datasetnav")
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"compilation_template_id": "tpl-datasetnav", "llm_id": "llm1", "embedding_model": "emb1",
-	})
-	if err != nil {
-		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
-	}
-	if _, err := c.Invoke(context.Background(), nil, map[string]any{
-		"chunks": []any{
-			map[string]any{"id": "c1", "text": "The quick brown fox jumps over the lazy dog near the river bank."},
-			map[string]any{"id": "c2", "text": "A red fox and a lazy dog rest beside a calm river at dawn."},
-		},
-		"doc_id":     "d1",
-		"dataset_id": "ds1",
-		"tenant_id":  "t1",
-	}); err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	lk.mu.Lock()
-	key := lk.lastKey
-	lk.mu.Unlock()
-	want := "datasetnav:t1:ds1"
-	if key != want {
-		t.Fatalf("datasetnav lock key = %q, want %q (lock must be scoped to the dataset, not the document)", key, want)
-	}
-}
-
-// recordingNavChat echoes each nav-group summary back verbatim (so the child
-// summaries are identifiable) and records the root-synthesis user prompt so a
-// test can assert which child summaries reached the root overview.
-type recordingNavChat struct {
-	mu         sync.Mutex
-	rootPrompt string
-}
-
-func (r *recordingNavChat) Chat(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
-	if strings.HasPrefix(req.UserPrompt, "Compose a navigation overview") {
-		r.mu.Lock()
-		r.rootPrompt = req.UserPrompt
-		r.mu.Unlock()
-		return &common.ChatResponse{Content: "root overview"}, nil
-	}
-	// Nav-group summary: echo the group text so the marker survives into the
-	// root prompt when the root is built from all child summaries.
-	return &common.ChatResponse{Content: strings.TrimSpace(req.UserPrompt)}, nil
-}
-
-// TestKnowledgeCompiler_Datasetnav_RootIncludesAllSummaries is a regression for
-// root-overview completeness: the root synthesis must be built from ALL child
-// summaries, not from a partial buffer. The Go implementation buffers every
-// product in Outputs.Products (no streaming sink), so the root always sees the
-// full child set even when the result set is large. Here nav_radius>1 forces
-// each chunk into its own nav node, and we assert every child marker appears in
-// the recorded root-synthesis prompt.
-func TestKnowledgeCompiler_Datasetnav_RootIncludesAllSummaries(t *testing.T) {
-	chat := &recordingNavChat{}
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
-		return common.Deps{
-			Chat:     chat,
-			Embed:    mockEmbedder{dim: 8},
-			TenantID: tenantID,
-		}, nil
-	})
-	t.Cleanup(func() { common.SetDepsResolver(nil) })
-
-	installVariantTemplateResolver(t, "datasetnav")
-	c, err := NewKnowledgeCompilerComponent("KnowledgeCompiler", map[string]any{
-		"compilation_template_id": "tpl-datasetnav", "llm_id": "llm1", "embedding_model": "emb1",
-		// nav_radius > 1 guarantees no two chunks group together (cosine <= 1),
-		// so each chunk becomes its own nav node.
-		"extra": map[string]any{"nav_radius": 1.1},
-	})
-	if err != nil {
-		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
-	}
-
-	markers := []string{"NAVMARKA", "NAVMARKB", "NAVMARKC", "NAVMARKD", "NAVMARKE"}
-	chunks := make([]any, len(markers))
-	for i, m := range markers {
-		chunks[i] = map[string]any{"id": m, "text": m + " unique section body text"}
-	}
-	if _, err := c.Invoke(context.Background(), nil, map[string]any{
-		"chunks":    chunks,
-		"doc_id":    "d1",
-		"tenant_id": "t1",
-	}); err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-
-	chat.mu.Lock()
-	root := chat.rootPrompt
-	chat.mu.Unlock()
-	if root == "" {
-		t.Fatalf("root synthesis prompt was never recorded (root node not built)")
-	}
-	for _, m := range markers {
-		if !strings.Contains(root, m) {
-			t.Fatalf("root overview is missing child summary %q; the root must be built from ALL child summaries.\nroot prompt:\n%s", m, root)
 		}
 	}
 }

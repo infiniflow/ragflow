@@ -1,22 +1,24 @@
 // Package knowledge_compiler implements the KnowledgeCompiler ingestion
 // component: a single runtime.Component that dispatches to one of the
-// knowledge-compile variants (structure / wiki / tree / mindmap / datasetnav)
-// based on the `variant` param. See PORT_PLAN.md for the full design.
+// knowledge-compile variants (structure / wiki / tree / mindmap) based on the
+// `variant` param. See PORT_PLAN.md for the full design.
 package knowledge_compiler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
-	"ragflow/internal/ingestion/component/knowledge_compiler/datasetnav"
 	"ragflow/internal/ingestion/component/knowledge_compiler/mindmap"
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
 	"ragflow/internal/ingestion/component/knowledge_compiler/tree"
 	"ragflow/internal/ingestion/component/knowledge_compiler/wiki"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/service/nav"
 	"ragflow/internal/tokenizer"
 
 	"gorm.io/gorm"
@@ -110,6 +112,11 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	// template's id and kind. All products are buffered (no streaming sink), so
 	// the post-run loop below covers every row (M1).
 	var out common.Outputs
+	var (
+		navDeps     common.Deps
+		navProducts []common.Product
+		navVariant  common.Variant
+	)
 	for _, spec := range specs {
 		variant, err := common.KindToVariant(spec.Kind)
 		if err != nil {
@@ -150,13 +157,18 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 			o, err = tree.Run(ctx, deps, specParam, specIn)
 		case common.VariantMindmap:
 			o, err = mindmap.Run(ctx, deps, specParam, specIn)
-		case common.VariantDatasetnav:
-			o, err = datasetnav.Run(ctx, deps, specParam, specIn)
 		default:
 			return nil, fmt.Errorf("%w: %q", common.ErrUnknownVariant, variant)
 		}
 		if err != nil {
 			return nil, err
+		}
+
+		// Remember the latest tree/structure output so the dataset-nav by-product
+		// can be written ONCE after the spec loop (not once per spec). nav is a
+		// derived artifact; its failures are logged and never abort the pipeline.
+		if variant == common.VariantTree || variant == common.VariantStructure {
+			navDeps, navProducts, navVariant = deps, o.Products, variant
 		}
 
 		for i := range o.Products {
@@ -171,6 +183,17 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		out.Products = append(out.Products, o.Products...)
 	}
 
+	// Write the dataset-nav by-product once after all specs ran. tree by-product
+	// (Python compiler.py:475) and structure/page_index by-product (Python
+	// runner.py:189). Failures are logged and never abort the pipeline.
+	if len(navProducts) > 0 {
+		if navVariant == common.VariantTree {
+			upsertTreeNav(ctx, navDeps, in.DocID, navProducts)
+		} else {
+			upsertStructureNav(ctx, navDeps, in.DocID, navProducts)
+		}
+	}
+
 	// Convert the compiled products into chunk-aligned docs (matching
 	// conf/infinity_mapping.json) and merge them into the upstream input
 	// chunks. The component stays DB-independent and no longer routes through a
@@ -180,6 +203,135 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		return nil, err
 	}
 	return mergeChunks(inputs, compiled), nil
+}
+
+// upsertTreeNav writes the dataset-nav by-product after tree compilation. It
+// finds the tree root product (Meta kind=root) whose Content is the document
+// summary, and places it into the ES-backed nav tree. Any failure (missing nav
+// service, missing root, embedding/upsert error) is logged and skipped — the
+// nav artifact must never block the compile pipeline.
+func upsertTreeNav(ctx context.Context, deps common.Deps, docID string, products []common.Product) {
+	ns := nav.GetNavService()
+	if ns == nil {
+		log.Printf("knowledge_compiler: datasetnav by-product skipped (NavService not initialized)")
+		return
+	}
+	var summary string
+	var vec []float32
+	for i := range products {
+		if kind, _ := products[i].Meta["kind"].(string); kind == "root" {
+			summary = products[i].Content
+			vec = products[i].Vector
+			break
+		}
+	}
+	if strings.TrimSpace(summary) == "" {
+		log.Printf("knowledge_compiler: datasetnav by-product skipped (tree has no root summary)")
+		return
+	}
+	if len(vec) == 0 {
+		if deps.Embed == nil {
+			log.Printf("knowledge_compiler: datasetnav by-product skipped (no embedder, no precomputed vector)")
+			return
+		}
+		embeddings, err := deps.Embed.Encode(ctx, []string{summary})
+		if err != nil {
+			log.Printf("knowledge_compiler: datasetnav by-product skipped (embedding failed): %v", err)
+			return
+		}
+		if len(embeddings) == 0 {
+			log.Printf("knowledge_compiler: datasetnav by-product skipped (embedding produced no vector)")
+			return
+		}
+		vec = embeddings[0]
+	}
+	if err := ns.UpsertDoc(ctx, nav.UpsertDocInput{
+		TenantID: deps.TenantID,
+		KbID:     deps.DatasetID,
+		DocID:    docID,
+		Summary:  summary,
+		Embedd:   vec,
+	}); err != nil {
+		// Log and continue: nav is a derived artifact, never abort compile.
+		log.Printf("knowledge_compiler: datasetnav by-product upsert failed (continuing): %v", err)
+	}
+}
+
+// upsertStructureNav writes the dataset-nav by-product after structure/page_index
+// compilation (mirroring Python runner.py:189 _upsert_dataset_nav_from_page_index).
+// It finds the graph product (Meta kind=graph), summarizes its entity
+// descriptions into a document-level summary, and places it into the nav tree.
+// Failures are logged and never abort the compile pipeline.
+func upsertStructureNav(ctx context.Context, deps common.Deps, docID string, products []common.Product) {
+	ns := nav.GetNavService()
+	if ns == nil {
+		log.Printf("knowledge_compiler: datasetnav by-product skipped (NavService not initialized)")
+		return
+	}
+	var graph *common.Product
+	for i := range products {
+		if kind, _ := products[i].Meta["kind"].(string); kind == "graph" {
+			graph = &products[i]
+			break
+		}
+	}
+	if graph == nil {
+		return
+	}
+	summary := pageIndexSummary(graph.Content)
+	if strings.TrimSpace(summary) == "" {
+		log.Printf("knowledge_compiler: datasetnav by-product skipped (structure graph has no entity descriptions)")
+		return
+	}
+	vec := graph.Vector
+	if len(vec) == 0 && deps.Embed != nil {
+		embeddings, err := deps.Embed.Encode(ctx, []string{summary})
+		if err != nil || len(embeddings) == 0 {
+			log.Printf("knowledge_compiler: datasetnav by-product skipped (structure embedding failed): %v", err)
+			return
+		}
+		vec = embeddings[0]
+	}
+	if len(vec) == 0 {
+		log.Printf("knowledge_compiler: datasetnav by-product skipped (no vector)")
+		return
+	}
+	if err := ns.UpsertDoc(ctx, nav.UpsertDocInput{
+		TenantID: deps.TenantID,
+		KbID:     deps.DatasetID,
+		DocID:    docID,
+		Summary:  summary,
+		Embedd:   vec,
+	}); err != nil {
+		log.Printf("knowledge_compiler: datasetnav by-product upsert failed (continuing): %v", err)
+	}
+}
+
+// pageIndexSummary concatenates entity descriptions from a structure graph JSON
+// ({"entities": [{"name","description"}, ...]}), producing a document-level
+// summary for dataset navigation.
+func pageIndexSummary(graphJSON string) string {
+	var graph struct {
+		Entities []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		} `json:"entities"`
+	}
+	if err := json.Unmarshal([]byte(graphJSON), &graph); err != nil {
+		return ""
+	}
+	var b strings.Builder
+	for _, e := range graph.Entities {
+		desc := strings.Join(strings.Fields(e.Description), " ")
+		if desc == "" {
+			continue
+		}
+		if e.Name != "" {
+			b.WriteString(e.Name + ": ")
+		}
+		b.WriteString(desc + "\n")
+	}
+	return b.String()
 }
 
 // resolveTemplateSpecs resolves the configured compilation template spec(s) to
@@ -260,11 +412,10 @@ func kindOrVariant(p common.Product) string {
 // key that distinguishes compiled knowledge units from ordinary chunks and
 // routes retrieval-side filters (e.g. "compile_kwd": ["artifact_page"]).
 var variantCompileKWD = map[common.Variant]string{
-	common.VariantStructure:  "structure",
-	common.VariantWiki:       "artifact_page",
-	common.VariantTree:       "tree",
-	common.VariantMindmap:    "mindmap",
-	common.VariantDatasetnav: "dataset_nav",
+	common.VariantStructure: "structure",
+	common.VariantWiki:      "artifact_page",
+	common.VariantTree:      "tree",
+	common.VariantMindmap:   "mindmap",
 }
 
 // productsToChunkDocs converts the internal compiled Product rows into
@@ -517,35 +668,6 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 		}
 		if v := metaStringSlice(p.Meta, "children"); len(v) > 0 {
 			if err := doc.SetExtraValue("children_kwd", v); err != nil {
-				return err
-			}
-		}
-
-	case common.VariantDatasetnav:
-		// nav_cluster / nav_doc rows: type_kwd discriminates the row kind.
-		if v := metaString(p.Meta, "type"); v != "" {
-			if err := doc.SetExtraValue("type_kwd", v); err != nil {
-				return err
-			}
-		}
-		if v := metaString(p.Meta, "name"); v != "" {
-			if err := doc.SetExtraValue("title_kwd", v); err != nil {
-				return err
-			}
-			setTitleTokens(doc, v)
-		}
-		if v, ok := metaInt(p.Meta, "depth"); ok {
-			if err := doc.SetExtraValue("depth_int", v); err != nil {
-				return err
-			}
-		}
-		if v, ok := metaInt(p.Meta, "size"); ok {
-			if err := doc.SetExtraValue("doc_count_int", v); err != nil {
-				return err
-			}
-		}
-		if v := metaStringSlice(p.Meta, "doc_ids"); len(v) > 0 {
-			if err := doc.SetExtraValue("doc_ids_kwd", v); err != nil {
 				return err
 			}
 		}

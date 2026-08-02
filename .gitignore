@@ -239,6 +239,7 @@ internal/binding/cpp/cmake-build-debug/
 # Go server build output
 bin/*
 !bin/.gitkeep
+/ragflow_server
 .claude/settings.local.json
 
 .run/
