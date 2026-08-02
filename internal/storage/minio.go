@@ -110,7 +110,7 @@ func (m *MinioStorage) resolveBucketAndPath(bucket, fnm string) (string, string)
 func (m *MinioStorage) Type() string { return "minio" }
 
 // Health checks MinIO service availability
-func (m *MinioStorage) Health() bool {
+func (m *MinioStorage) Health(ctx context.Context) bool {
 	cancelFunction, err := m.client.HealthCheck(time.Second * 5)
 	if cancelFunction != nil {
 		defer cancelFunction()
@@ -125,10 +125,8 @@ func (m *MinioStorage) Health() bool {
 }
 
 // Put uploads an object to MinIO
-func (m *MinioStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {
+func (m *MinioStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
-
-	ctx := context.Background()
 
 	var err error
 
@@ -169,10 +167,8 @@ func (m *MinioStorage) Put(bucket, fnm string, binary []byte, tenantID ...string
 }
 
 // Get retrieves an object from MinIO
-func (m *MinioStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
+func (m *MinioStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
-
-	ctx := context.Background()
 
 	for i := 0; i < 2; i++ {
 		obj, err := m.client.GetObject(ctx, bucket, fnm, minio.GetObjectOptions{})
@@ -199,10 +195,8 @@ func (m *MinioStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, erro
 }
 
 // Remove removes an object from MinIO
-func (m *MinioStorage) Remove(bucket, fnm string, tenantID ...string) error {
+func (m *MinioStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
-
-	ctx := context.Background()
 
 	if err := m.client.RemoveObject(ctx, bucket, fnm, minio.RemoveObjectOptions{}); err != nil {
 		common.Warn("Failed to remove object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
@@ -213,10 +207,8 @@ func (m *MinioStorage) Remove(bucket, fnm string, tenantID ...string) error {
 }
 
 // ObjExist checks if an object exists in MinIO
-func (m *MinioStorage) ObjExist(bucket, fnm string, tenantID ...string) bool {
+func (m *MinioStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {
 	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
-
-	ctx := context.Background()
 
 	exists, err := m.client.BucketExists(ctx, bucket)
 	if err != nil || !exists {
@@ -237,10 +229,8 @@ func (m *MinioStorage) ObjExist(bucket, fnm string, tenantID ...string) bool {
 }
 
 // GetPresignedURL generates a presigned URL for accessing an object
-func (m *MinioStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
+func (m *MinioStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
-
-	ctx := context.Background()
 
 	for i := 0; i < 10; i++ {
 		url, err := m.client.PresignedGetObject(ctx, bucket, fnm, expires, nil)
@@ -258,13 +248,11 @@ func (m *MinioStorage) GetPresignedURL(bucket, fnm string, expires time.Duration
 }
 
 // BucketExists checks if a bucket exists
-func (m *MinioStorage) BucketExists(bucket string) bool {
+func (m *MinioStorage) BucketExists(ctx context.Context, bucket string) bool {
 	actualBucket := bucket
 	if m.bucket != "" {
 		actualBucket = m.bucket
 	}
-
-	ctx := context.Background()
 
 	exists, err := m.client.BucketExists(ctx, actualBucket)
 	if err != nil {
@@ -275,8 +263,7 @@ func (m *MinioStorage) BucketExists(bucket string) bool {
 	return exists
 }
 
-func (m *MinioStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
-	ctx := context.Background()
+func (m *MinioStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
 
 	var objects []string
 	for obj := range m.client.ListObjects(ctx, bucket, minio.ListObjectsOptions{
@@ -294,15 +281,13 @@ func (m *MinioStorage) ListObjects(bucket string, tenantID ...string) ([]string,
 }
 
 // RemoveBucket removes a bucket and all its objects
-func (m *MinioStorage) RemoveBucket(bucket string) error {
+func (m *MinioStorage) RemoveBucket(ctx context.Context, bucket string) error {
 	actualBucket := bucket
 	origBucket := bucket
 
 	if m.bucket != "" {
 		actualBucket = m.bucket
 	}
-
-	ctx := context.Background()
 
 	// Build prefix for single-bucket mode
 	prefix := ""
@@ -346,11 +331,9 @@ func (m *MinioStorage) RemoveBucket(bucket string) error {
 }
 
 // Copy copies an object from source to destination
-func (m *MinioStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool {
+func (m *MinioStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	srcBucket, srcPath = m.resolveBucketAndPath(srcBucket, srcPath)
 	destBucket, destPath = m.resolveBucketAndPath(destBucket, destPath)
-
-	ctx := context.Background()
 
 	// Ensure destination bucket exists
 	if m.bucket == "" {
@@ -394,9 +377,9 @@ func (m *MinioStorage) Copy(srcBucket, srcPath, destBucket, destPath string) boo
 }
 
 // Move moves an object from source to destination
-func (m *MinioStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
-	if m.Copy(srcBucket, srcPath, destBucket, destPath) {
-		if err := m.Remove(srcBucket, srcPath); err != nil {
+func (m *MinioStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+	if m.Copy(ctx, srcBucket, srcPath, destBucket, destPath) {
+		if err := m.Remove(ctx, srcBucket, srcPath); err != nil {
 			common.Warn("Failed to remove source object after copy", zap.String("bucket", srcBucket), zap.String("key", srcPath), zap.Error(err))
 			return false
 		}

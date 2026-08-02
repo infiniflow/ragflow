@@ -486,7 +486,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 	var blob []byte
 	var getErr error
 	if file.Location != nil && *file.Location != "" {
-		blob, getErr = storageImpl.Get(file.ParentID, *file.Location)
+		blob, getErr = storageImpl.Get(ctx, file.ParentID, *file.Location)
 	}
 
 	// If blob is empty, try fallback via file2document
@@ -497,7 +497,7 @@ func (h *FileHandler) Download(c *gin.Context) {
 			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to get file storage address: "+err.Error())
 			return
 		}
-		blob, getErr = storageImpl.Get(storageAddr.Bucket, storageAddr.Name)
+		blob, getErr = storageImpl.Get(ctx, storageAddr.Bucket, storageAddr.Name)
 	}
 
 	// Check if we got valid data

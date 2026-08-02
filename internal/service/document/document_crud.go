@@ -83,7 +83,7 @@ func (s *DocumentService) DownloadDocument(ctx context.Context, datasetID, docID
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	data, err := storageImpl.Get(bucket, name)
+	data, err := storageImpl.Get(ctx, bucket, name)
 	if err != nil {
 		return nil, err
 	}
@@ -474,7 +474,7 @@ func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID strin
 		if file.Location != nil && *file.Location != "" {
 			storageImpl := storage.GetStorageFactory().GetStorage()
 			if storageImpl != nil {
-				if rmErr := storageImpl.Remove(file.ParentID, *file.Location); rmErr != nil {
+				if rmErr := storageImpl.Remove(ctx, file.ParentID, *file.Location); rmErr != nil {
 					common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
 				}
 			}

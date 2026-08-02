@@ -366,7 +366,7 @@ func main() {
 	}
 	defer redis.Close()
 
-	if err = storage.Init(); err != nil {
+	if err = storage.Init(ctx); err != nil {
 		common.Error("Failed to initialize storage factory", err)
 	}
 	defer storage.CloseStorage()
