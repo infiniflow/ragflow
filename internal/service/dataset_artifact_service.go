@@ -657,9 +657,12 @@ func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, 
 	return items, total, nil
 }
 
-// DeleteNav deletes all navigation clusters of a dataset. DEPRECATED — deletion
-// is deferred in the minimal closed loop; this is a best-effort no-op that
-// returns 0 (callers should prefer NavService in future work).
+// DeleteNav removes the direct nav_doc children of every root cluster of a
+// dataset. DEPRECATED — this is the minimal-loop approximation of Python
+// delete_nav: it drains only the immediate nav_doc rows under root clusters and
+// does NOT implement Python's full subtree traversal or empty-cluster cascade
+// cleanup. Prefer the NavService (future work) for a complete delete. Returns
+// the number of nav_doc rows removed.
 func (s *DatasetArtifactService) DeleteNav(ctx context.Context, tenantID, datasetID string) (int, error) {
 	ns := nav.GetNavService()
 	if ns == nil {
@@ -671,18 +674,26 @@ func (s *DatasetArtifactService) DeleteNav(ctx context.Context, tenantID, datase
 	}
 	deleted := 0
 	for _, c := range clusters {
-		if err := ns.RemoveDoc(ctx, tenantID, datasetID, c.DocID); err != nil {
-			return deleted, err
+		children, _, err := ns.ListChildren(ctx, tenantID, datasetID, c.Name, 0, 10000)
+		if err != nil {
+			continue
 		}
-		if c.DocID != "" {
-			deleted++
+		for _, ch := range children {
+			if ch.DocID != "" {
+				if err := ns.RemoveDoc(ctx, tenantID, datasetID, ch.DocID); err != nil {
+					return deleted, err
+				}
+				deleted++
+			}
 		}
 	}
 	return deleted, nil
 }
 
-// DeleteNavNode deletes a single navigation cluster by name. DEPRECATED — the
-// minimal closed loop defers tree-node deletion; no-op returning 0.
+// DeleteNavNode deletes the direct nav_doc children of a named cluster.
+// DEPRECATED — the minimal loop only drains immediate doc children (returns the
+// count); it does NOT delete sub-clusters recursively nor perform Python's
+// empty-cluster cascade. A full tree-node delete is future NavService work.
 func (s *DatasetArtifactService) DeleteNavNode(ctx context.Context, tenantID, datasetID, name string) (int, error) {
 	ns := nav.GetNavService()
 	if ns == nil {
