@@ -106,7 +106,7 @@ type UserResponse struct {
 // Register user registration
 func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*entity.User, common.ErrorCode, error) {
 	cfg := server.GetConfig()
-	if !cfg.RegisterEnabled() {
+	if !cfg.EnableRegister() {
 		return nil, common.CodeOperatingError, fmt.Errorf("user registration is disabled")
 	}
 

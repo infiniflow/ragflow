@@ -38,7 +38,7 @@ type GeneralConfig struct {
 func (c *Config) ParseGeneralConfig(v *viper.Viper) error {
 
 	// Default General config
-	c.general.HeartbeatInterval = 3
+	c.general.HeartbeatInterval = 3 * time.Second
 	c.general.Mode = "release"
 	c.general.Database = "mysql"
 	c.general.DocEngine = "elasticsearch"
