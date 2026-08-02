@@ -391,7 +391,7 @@ func taskRepoRoot(t *testing.T) string {
 
 func mustLoadTaskTestConfig(t *testing.T) *config.Config {
 	t.Helper()
-	if err := common.Init("info", common.FileOutput{}, ""); err != nil {
+	if err := common.InitLogger("info", common.FileOutput{}, ""); err != nil {
 		t.Fatalf("init common logger: %v", err)
 	}
 	configPath := filepath.Join(taskRepoRoot(t), "conf", "service_conf.yaml")
