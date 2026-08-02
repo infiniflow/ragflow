@@ -16,78 +16,63 @@
 
 """Regression tests for case-sensitive delimiter parsing.
 
-Locks in case-sensitive matching for the two delimiter-parsing
-implementations that pass ``re.I`` to ``re.finditer`` (#17384). The flag is
-currently dead code — it does not propagate from ``re.finditer`` to
-``m.group(1)`` or to downstream ``re.split`` / ``re.match`` calls — but the
-inconsistency with the three sibling implementations is misleading. These
-tests guard against any future refactor that accidentally makes matching
-case-insensitive.
+Locks in case-sensitive matching for the canonical delimiter parser
+(#17384, #17383). The flag is currently dead code — it does not propagate
+from ``re.finditer`` to ``m.group(1)`` or to downstream ``re.split`` /
+``re.match`` calls — but the inconsistency with the three sibling
+implementations was misleading. After #17383 all six divergent
+implementations were collapsed into ``rag.nlp.delim.parse_delimiter_field``,
+which is the single site these tests guard against regressing.
 
-Affected sites
---------------
-* ``rag.nlp.get_delimiters``  (line 1633)
-* ``deepdoc.parser.txt_parser.parser_txt``  (line 51)
+Affected site (after #17383 consolidation)
+------------------------------------------
+* ``rag.nlp.delim.parse_delimiter_field``  (the only ``re.finditer`` call
+  in the canonical parser module)
 
-Sibling sites that already correctly omit ``re.I``
---------------------------------------------------
-* ``rag.nlp.naive_merge`` custom-delimiter path  (line 1195)
-* ``rag.nlp.naive_merge_with_images`` custom-delimiter path  (line 1269)
-* ``rag.nlp._build_cks``  (line 1389)
+Sibling sites that previously diverged (now consolidated)
+--------------------------------------------------------
+* ``rag.nlp.naive_merge`` custom-delimiter path  (now delegates to ``delim``)
+* ``rag.nlp.naive_merge_with_images`` custom-delimiter path  (now delegates)
+* ``rag.nlp._build_cks``  (now delegates)
+* ``rag.nlp.get_delimiters``  (now a backwards-compat shim over ``delim``)
+* ``deepdoc.parser.txt_parser.parser_txt``  (now delegates)
+* ``deepdoc.parser.markdown_parser.MarkdownElementExtractor.get_delimiters``
+  (now delegates)
 """
 
 from __future__ import annotations
 
 import ast
 import re
-import sys
-import types
 from pathlib import Path
 
 import pytest
 
-
-@pytest.fixture(autouse=True)
-def stub_pdf_parser(monkeypatch):
-    """Stub ``deepdoc.parser.pdf_parser`` for the duration of each test.
-
-    ``naive_merge`` does ``from deepdoc.parser.pdf_parser import
-    RAGFlowPdfParser`` inside the function body, and the deepdoc package's
-    ``__init__`` pulls in ``infinity`` (a native extension) plus OCR parsers
-    that aren't relevant to delimiter parsing. ``monkeypatch.setitem`` (a)
-    replaces any pre-existing parser entry — not just stubs one in if absent
-    — and (b) restores ``sys.modules`` after the test so the mock never leaks
-    across tests.
-    """
-    pdf_parser = types.ModuleType("deepdoc.parser.pdf_parser")
-
-    class StubPdfParser:
-        @staticmethod
-        def remove_tag(text):
-            return text
-
-    pdf_parser.RAGFlowPdfParser = StubPdfParser
-    monkeypatch.setitem(sys.modules, "deepdoc.parser.pdf_parser", pdf_parser)
-
+pytestmark = pytest.mark.usefixtures("pdf_parser_stub")
 
 from rag import nlp
-from rag.nlp import get_delimiters, naive_merge
+from rag.nlp import naive_merge
+from rag.nlp.delim import compile_delimiter_pattern, parse_delimiter_field
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
+def _get_delim_pattern(field: str) -> str:
+    return compile_delimiter_pattern(parse_delimiter_field(field))
+
+
 # --------------------------------------------------------------------------- #
-# get_delimiters — direct pattern checks
+# delim helper — direct pattern checks
 # --------------------------------------------------------------------------- #
 
 
 def test_get_delimiters_bare_char_a_returns_literal_pattern():
     """Bare-char delimiter ``a`` must produce the pattern ``a``, not ``a|A``."""
-    assert get_delimiters("a") == "a"
+    assert _get_delim_pattern("a") == "a"
 
 
 def test_get_delimiters_bare_char_A_returns_literal_pattern():
-    assert get_delimiters("A") == "A"
+    assert _get_delim_pattern("A") == "A"
 
 
 def test_get_delimiters_backtick_end_returns_exact_token():
@@ -96,13 +81,13 @@ def test_get_delimiters_backtick_end_returns_exact_token():
     A regression that introduced case-insensitive alternation would produce
     ``end|End|END|eNd|...`` instead of the literal ``end``.
     """
-    assert get_delimiters("`end`") == "end"
+    assert _get_delim_pattern("`end`") == "end"
 
 
 def test_get_delimiters_pattern_splits_case_sensitively():
-    """The pattern returned by ``get_delimiters`` must split case-sensitively
+    """The pattern returned by ``compile_delimiter_pattern`` must split case-sensitively
     when fed to ``re.split`` without any flags."""
-    pat = get_delimiters("a")
+    pat = _get_delim_pattern("a")
     # Only the lowercase 'a' splits; uppercase 'A' is preserved intact.
     assert re.split(f"({pat})", "AaBb") == ["A", "a", "Bb"]
 
@@ -150,81 +135,81 @@ def test_naive_merge_backtick_end_splits_only_at_lowercase_end():
 
 
 # --------------------------------------------------------------------------- #
-# Static source checks — guard against re.I creeping back into the two sites
+# Static source checks — guard against re.I creeping back into the canonical
+# delimiter parser.
 #
-# ``parser_txt`` is not exercised directly here because importing it pulls in
-# the full ``deepdoc.parser`` package (``infinity`` native extension, OCR
-# parsers, etc.). The two sites share the same ``re.finditer`` pattern, so
-# the behavioral tests above (which exercise ``get_delimiters`` via
-# ``naive_merge``) are sufficient to lock in the chunking semantics. The
-# static checks below ensure the cleanup lands in both files and cannot be
-# silently undone.
+# After #17383, the six divergent parser implementations were collapsed into
+# ``rag/nlp/delim.py`` (one ``re.finditer`` site). The previous locations
+# (``rag/nlp/__init__.py`` ~1633, ``deepdoc/parser/txt_parser.py`` ~51) no
+# longer have ``re.finditer`` calls — they delegate to the helper. The
+# single line-number-based check below therefore targets the new helper,
+# and a broader check (over the whole module) guards against re.I leaking
+# into any backtick-pattern regex in the parser module.
 # --------------------------------------------------------------------------- #
 
 
-_CASE_INSENSITIVE_RE_ATTRS = frozenset({"I", "IGNORECASE"})
+_BACKTICK_RE_SOURCES = [
+    # The canonical helper. After #17383, this is the single place where
+    # ``re.finditer`` for the `` `[^`]+` `` pattern lives.
+    ("rag/nlp/delim.py", "parse_delimiter_field"),
+]
 
 
-def _iter_re_finditer_calls(func_node: ast.AST):
-    """Yield ``ast.Call`` nodes whose callee is ``re.finditer``."""
-    for node in ast.walk(func_node):
+def _function_source(source: str, function_name: str) -> str:
+    """Return the source text of a function by AST line range."""
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name:
+            lines = source.splitlines(keepends=True)
+            return "".join(lines[node.lineno - 1 : node.end_lineno])
+    raise AssertionError(f"function {function_name!r} not found")
+
+
+@pytest.mark.parametrize("rel_path, function_name", _BACKTICK_RE_SOURCES)
+def test_no_re_I_on_re_finditer(rel_path, function_name):
+    """The ``re.finditer`` calls in the canonical delimiter parser must not
+    pass ``re.I`` (or any case-insensitive flag) to the regex engine.
+
+    Why this matters even though the flag is currently dead code: keeping
+    the parser consistent makes a future refactor less likely to propagate
+    the flag to a downstream ``re.split`` / ``re.match`` call where it
+    would actually change behavior.
+    """
+    source = (_REPO_ROOT / rel_path).read_text(encoding="utf-8")
+    body = _function_source(source, function_name)
+    # Either `re.finditer(...)` directly, or a precompiled regex with
+    # `.finditer(...)` (e.g. `_BACKTICK_RE.finditer(normalized)`).
+    has_finditer = "re.finditer" in body or ".finditer(" in body
+    assert has_finditer, f"expected at least one `re.finditer` (or `.finditer`) in {function_name} (see issue #17384)"
+    assert "re.I" not in body and "re.IGNORECASE" not in body, f"`re.I` / `re.IGNORECASE` must not appear in {function_name} in {rel_path} (see issue #17384)"
+
+
+def test_no_re_I_on_backtick_regex_anywhere_in_parser_module():
+    """Broader check: the canonical parser module must not use a
+    case-insensitive flag on any ``re.finditer`` / ``re.findall`` /
+    ``re.compile`` that targets the backtick regex. Future refactors that
+    add a new ``re.finditer`` call elsewhere in the module would otherwise
+    silently regress the case-sensitive matching semantics.
+    """
+    source = (_REPO_ROOT / "rag/nlp/delim.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    # Collect every `re.finditer` / `re.findall` / `re.compile` call and
+    # ensure none of them pass `re.I` / `re.IGNORECASE`.
+    for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
         func = node.func
-        if isinstance(func, ast.Attribute) and func.attr == "finditer" and isinstance(func.value, ast.Name) and func.value.id == "re":
-            yield node
-
-
-def _is_case_insensitive_flag(arg: ast.AST) -> bool:
-    """True if ``arg`` is the expression ``re.I`` or ``re.IGNORECASE``."""
-    return isinstance(arg, ast.Attribute) and isinstance(arg.value, ast.Name) and arg.value.id == "re" and arg.attr in _CASE_INSENSITIVE_RE_ATTRS
-
-
-def _find_function_def(tree: ast.Module, fn_name: str) -> ast.FunctionDef | None:
-    """Locate a function/method named ``fn_name`` anywhere in the module AST.
-
-    Looks at both top-level ``def`` statements and methods inside classes
-    (e.g. ``parser_txt`` is a ``@classmethod`` on ``RAGFlowTxtParser``).
-    """
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef) and node.name == fn_name:
-            return node
-    return None
-
-
-@pytest.mark.parametrize(
-    "rel_path, fn_name",
-    [
-        ("rag/nlp/__init__.py", "get_delimiters"),
-        ("deepdoc/parser/txt_parser.py", "parser_txt"),
-    ],
-)
-def test_no_re_I_on_re_finditer(rel_path, fn_name):
-    """The ``re.finditer`` calls inside the two delimiter-parsing functions
-    must not pass ``re.I`` (or any case-insensitive flag) to the regex
-    engine.
-
-    Why this matters even though the flag is currently dead code: the three
-    sibling implementations (``naive_merge`` L1195, ``naive_merge_with_images``
-    L1269, ``_build_cks`` L1389) already correctly omit ``re.I``. Keeping
-    the two outlier sites consistent makes a future refactor less likely to
-    propagate the flag to a downstream ``re.split`` / ``re.match`` call
-    where it would actually change behavior.
-
-    The check is structural (AST-based) rather than line-number-based so
-    unrelated edits above either implementation cannot move the call beyond
-    a fragile ±N-line window.
-    """
-    source = (_REPO_ROOT / rel_path).read_text(encoding="utf-8")
-    tree = ast.parse(source, filename=rel_path)
-
-    func_def = _find_function_def(tree, fn_name)
-    assert func_def is not None, f"function {fn_name!r} not found in {rel_path}"
-
-    calls = list(_iter_re_finditer_calls(func_def))
-    assert calls, f"expected at least one `re.finditer(...)` call inside {fn_name!r} in {rel_path}"
-
-    for call in calls:
-        all_args = [*call.args, *(kw.value for kw in call.keywords)]
-        for arg in all_args:
-            assert not _is_case_insensitive_flag(arg), f"`re.I` / `re.IGNORECASE` must not be passed to `re.finditer` inside {fn_name!r} ({rel_path}). See issue #17384."
+        # Match `re.finditer(...)` / `re.findall(...)` / `re.compile(...)`
+        if not (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) and func.value.id == "re"):
+            continue
+        if func.attr not in ("finditer", "findall", "compile"):
+            continue
+        for kw in node.keywords:
+            if kw.arg == "flags":
+                flag_node = kw.value
+                if isinstance(flag_node, ast.Attribute) and flag_node.attr in ("I", "IGNORECASE"):
+                    raise AssertionError(f"`re.{flag_node.attr}` must not be passed as `flags=` to `re.{func.attr}` in rag/nlp/delim.py (see #17384)")
+                if isinstance(flag_node, ast.BinOp):
+                    for sub in ast.walk(flag_node):
+                        if isinstance(sub, ast.Attribute) and sub.attr in ("I", "IGNORECASE"):
+                            raise AssertionError(f"`re.{sub.attr}` must not appear in a `flags=` expression passed to `re.{func.attr}` in rag/nlp/delim.py (see #17384)")

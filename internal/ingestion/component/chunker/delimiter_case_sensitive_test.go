@@ -32,7 +32,17 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"ragflow/internal/parser/chunk"
 )
+
+func getDelimiters(delimiters string) string {
+	p := chunk.CompileDelimiterPattern(chunk.ParseDelimiterField(delimiters))
+	if p == nil {
+		return ""
+	}
+	return p.String()
+}
 
 func TestGetDelimiters_BareCharAReturnsLiteralPattern(t *testing.T) {
 	// Bare-char delimiter "a" must produce the pattern "a", not "a|A".
@@ -219,15 +229,20 @@ func TestTokenChunker_BacktickASplitsOnlyAtLowercase(t *testing.T) {
 	}
 }
 
-func TestBacktickDelimRE_HasNoIgnoreCaseFlag(t *testing.T) {
-	// Structural guard: the shared backtick extractor must stay case-sensitive.
-	src := backtickDelimRE.String()
-	if strings.Contains(src, "(?i)") || strings.HasPrefix(src, "(?i)") {
-		t.Fatalf("backtickDelimRE must not use (?i); got %q", src)
+func TestBacktickDelimiterIsCaseSensitive(t *testing.T) {
+	// Extraction and compiled pattern must both preserve letter casing.
+	parsed := chunk.ParseDelimiterField("`End`")
+	if len(parsed) != 1 || parsed[0] != "End" {
+		t.Fatalf("ParseDelimiterField(`End`) = %#v, want [End]", parsed)
 	}
-	// Sanity: the pattern still extracts backtick contents.
-	m := backtickDelimRE.FindStringSubmatch("`End`")
-	if len(m) < 2 || m[1] != "End" {
-		t.Fatalf("backtickDelimRE(`End`) = %#v, want group1=End", m)
+	p := chunk.CompileDelimiterPattern(parsed)
+	if p == nil {
+		t.Fatal("CompileDelimiterPattern returned nil")
+	}
+	if !p.MatchString("End") || p.MatchString("end") || p.MatchString("END") {
+		t.Fatalf("pattern %q is not case-sensitive", p.String())
+	}
+	if strings.Contains(p.String(), "(?i)") {
+		t.Fatalf("compiled pattern must not carry (?i); got %q", p.String())
 	}
 }
