@@ -26,7 +26,6 @@ import (
 
 	"github.com/glebarez/sqlite"
 
-	"go.uber.org/zap"
 	"gorm.io/gorm"
 	gormlogger "gorm.io/gorm/logger"
 )
@@ -395,7 +394,6 @@ func mustLoadTaskTestConfig(t *testing.T) *config.Config {
 	if err := common.Init("info", common.FileOutput{}, ""); err != nil {
 		t.Fatalf("init common logger: %v", err)
 	}
-	server.SetLogger(zap.NewNop())
 	configPath := filepath.Join(taskRepoRoot(t), "conf", "service_conf.yaml")
 	if err := server.Init(configPath); err != nil {
 		t.Fatalf("init service config from %s: %v", configPath, err)

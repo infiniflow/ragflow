@@ -345,8 +345,6 @@ func main() {
 		common.Error("Failed to reinitialize logger with configured level", err)
 	}
 
-	server.SetLogger(common.Logger)
-
 	// Print all configuration settings
 	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, globalConfig.GetMode()))
 	server.PrintAll()
