@@ -166,10 +166,10 @@ func (s *SystemService) getStorageStatus(ctx context.Context) ComponentStatus {
 		}
 	}
 
-	_, cancel := context.WithTimeout(ctx, 5*time.Second)
+	timeOutCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	if !factory.Health(ctx) {
+	if !factory.Health(timeOutCtx) {
 		return ComponentStatus{
 			"type":    storageType,
 			"status":  "red",

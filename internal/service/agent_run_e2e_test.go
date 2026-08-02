@@ -2043,7 +2043,7 @@ func TestRunAgent_FilesPopulateIteration(t *testing.T) {
 
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
-		context.Background(),
+		ctx,
 		"user-1",
 		canvasID,
 		sessionID,

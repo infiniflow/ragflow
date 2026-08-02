@@ -264,7 +264,7 @@ func TestParserComponent_Invoke_ResolvesBinaryFromDocID(t *testing.T) {
 	}
 
 	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
-	out, err := c.Invoke(context.Background(), db, map[string]any{"doc_id": "doc-parser"})
+	out, err := c.Invoke(ctx, db, map[string]any{"doc_id": "doc-parser"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestParserComponent_Invoke_ResolvesBinaryFromBucketPath(t *testing.T) {
 	}
 
 	c := &ParserComponent{Param: schema.ParserParam{}.Defaults()}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{
+	out, err := c.Invoke(ctx, nil, map[string]any{
 		"bucket": "bucket-1",
 		"path":   "docs/explicit.txt",
 	})

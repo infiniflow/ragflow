@@ -85,8 +85,9 @@ func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 		t.Fatalf("create user canvas: %v", err)
 	}
 	t.Cleanup(func() {
-		_ = realDB.Where("id = ?", canvasID).Delete(&entity.UserCanvas{}).Error
-		cleanupTaskRealPipelineDocument(ctx, realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath)
+		cleanUpCtx := context.Background()
+		_ = realDB.WithContext(cleanUpCtx).Where("id = ?", canvasID).Delete(&entity.UserCanvas{}).Error
+		cleanupTaskRealPipelineDocument(cleanUpCtx, realDB, realStorage, tenantID, kbID, docID, fileID, bucket, objectPath)
 	})
 
 	taskCtx := &TaskContext{
