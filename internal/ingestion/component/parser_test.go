@@ -244,7 +244,8 @@ func TestParserComponent_Invoke_ResolvesBinaryFromDocID(t *testing.T) {
 	ms := withMemoryStorage(t)
 	db := withFileComponentTestDB(t)
 	location := "docs/from-parser.txt"
-	if err := ms.Put("kb-parser", location, []byte("alpha\fbeta")); err != nil {
+	ctx := t.Context()
+	if err := ms.Put(ctx, "kb-parser", location, []byte("alpha\fbeta")); err != nil {
 		t.Fatalf("seed storage: %v", err)
 	}
 	docName := "parser.txt"
@@ -281,7 +282,8 @@ func TestParserComponent_Invoke_ResolvesBinaryFromDocID(t *testing.T) {
 
 func TestParserComponent_Invoke_ResolvesBinaryFromBucketPath(t *testing.T) {
 	ms := withMemoryStorage(t)
-	if err := ms.Put("bucket-1", "docs/explicit.txt", []byte("bucket content")); err != nil {
+	ctx := t.Context()
+	if err := ms.Put(ctx, "bucket-1", "docs/explicit.txt", []byte("bucket content")); err != nil {
 		t.Fatalf("seed storage: %v", err)
 	}
 
