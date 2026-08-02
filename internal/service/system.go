@@ -45,8 +45,8 @@ func NewSystemService() *SystemService {
 
 // ConfigResponse system configuration response
 type ConfigResponse struct {
-	EnableRegister       bool `json:"enable_register"`
-	DisablePasswordLogin bool `json:"disable_password_login"`
+	EnableRegister       bool `json:"registerEnabled"`
+	DisablePasswordLogin bool `json:"disablePasswordLogin"`
 }
 
 // GetConfig get system configuration
