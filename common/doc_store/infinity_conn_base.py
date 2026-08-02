@@ -720,7 +720,10 @@ class InfinityConnectionBase(DocStoreConnection):
                 return 0
             filter = self.equivalent_condition_to_str(condition, table_instance)
             if condition and (not filter or filter == "1=1"):
-                self.logger.warning(f"INFINITY delete aborted: non-empty condition {condition} yielded unconstrained filter '{filter}' on table {table_name}.")
+                self.logger.warning(
+                    "INFINITY delete aborted: non-empty condition produced an unconstrained filter on table %s.",
+                    table_name,
+                )
                 return 0
             self.logger.debug(f"INFINITY delete table {table_name}, filter {filter}.")
             res = table_instance.delete(filter)
