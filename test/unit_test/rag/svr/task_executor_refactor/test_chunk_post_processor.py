@@ -42,6 +42,7 @@ class TestSanitizeKeywordTerm:
     def test_splits_oversized_term_by_whitespace(self):
         oversized = "word " * 20000
         pieces = _sanitize_keyword_term(oversized)
+        assert len(pieces) == 20000
         assert all(len(p.encode("utf-8")) <= _ES_KEYWORD_MAX_TERM_BYTES for p in pieces)
         assert all(p == "word" for p in pieces)
 

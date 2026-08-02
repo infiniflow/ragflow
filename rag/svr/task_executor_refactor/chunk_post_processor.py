@@ -61,9 +61,15 @@ def _sanitize_keyword_term(term: str) -> list[str]:
     term = term.strip()
     if not term:
         return []
-    if len(term.encode("utf-8")) <= _ES_KEYWORD_MAX_TERM_BYTES:
+    term_byte_length = len(term.encode("utf-8"))
+    if term_byte_length <= _ES_KEYWORD_MAX_TERM_BYTES:
         return [term]
 
+    logging.warning(
+        "Sanitizing oversized keyword term (%d bytes, limit %d)",
+        term_byte_length,
+        _ES_KEYWORD_MAX_TERM_BYTES,
+    )
     pieces = []
     for piece in term.split():
         encoded = piece.encode("utf-8")
