@@ -34,7 +34,7 @@ class TestDocMetadataServiceConnectorGetCalls:
         mock_doc_store.index_exist.return_value = True
         mock_doc_store.get.return_value = None  # No metadata found
 
-        with patch("api.db.services.doc_metadata_service.settings") as mock_settings:
+        with patch("api.db.services.doc_metadata_service.settings") as mock_settings, patch("api.db.db_models.DB.connection_context"):
             mock_settings.docStoreConn = mock_doc_store
 
             res = DocMetadataService.delete_document_metadata("doc_789", "kb_123", tenant_id="tenant_456")
@@ -54,7 +54,11 @@ class TestDocMetadataServiceConnectorGetCalls:
         mock_doc.knowledgebase.tenant_id = "tenant_456"
         mock_doc.kb_id = "kb_123"
 
-        with patch("api.db.services.doc_metadata_service.settings") as mock_settings, patch("api.db.services.doc_metadata_service.Document") as mock_document_model:
+        with (
+            patch("api.db.services.doc_metadata_service.settings") as mock_settings,
+            patch("api.db.services.doc_metadata_service.Document") as mock_document_model,
+            patch("api.db.db_models.DB.connection_context"),
+        ):
             mock_settings.docStoreConn = mock_doc_store
             mock_document_model.select.return_value.join.return_value.where.return_value.first.return_value = mock_doc
 
