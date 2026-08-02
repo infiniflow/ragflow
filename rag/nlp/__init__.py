@@ -1748,13 +1748,19 @@ def _merge_cks(cks, chunk_token_num, has_custom):
                 image_idxs.append(len(merged) - 1)
             continue
 
-        if prev_text_ck < 0 or merged[prev_text_ck]["tk_nums"] >= chunk_token_num or has_custom:
+        # Proactive check: merge only if the *projected* total (already-accumulated
+        # + incoming) still fits the budget, mirroring #17203's fix for naive_merge /
+        # parser_txt. The prior check only looked at the already-accumulated total,
+        # so a chunk could grow past chunk_token_num by up to a full incoming unit
+        # before the overflow was noticed on the *next* iteration.
+        incoming_tk = cks[i].get("tk_nums", 0)
+        if prev_text_ck < 0 or has_custom or merged[prev_text_ck]["tk_nums"] + incoming_tk > chunk_token_num:
             merged.append(cks[i])
             prev_text_ck = len(merged) - 1
             continue
 
         merged[prev_text_ck]["text"] = (merged[prev_text_ck].get("text") or "") + (cks[i].get("text") or "")
-        merged[prev_text_ck]["tk_nums"] = merged[prev_text_ck].get("tk_nums", 0) + cks[i].get("tk_nums", 0)
+        merged[prev_text_ck]["tk_nums"] = merged[prev_text_ck].get("tk_nums", 0) + incoming_tk
 
     return merged, image_idxs
 
