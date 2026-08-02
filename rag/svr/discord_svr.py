@@ -15,8 +15,9 @@
 #
 import logging
 import discord
-import requests
+import aiohttp
 import base64
+import io
 import asyncio
 
 URL = '{YOUR_IP_ADDRESS:PORT}/v1/api/completion_aibotk'  # Default: https://cloud.ragflow.io/v1/api/completion_aibotk
@@ -50,8 +51,9 @@ async def on_message(message):
             await message.channel.send("Hi~ How can I help you? ")
         else:
             JSON_DATA['word'] = message.content.split('> ')[1]
-            response = requests.post(URL, json=JSON_DATA)
-            response_data = response.json().get('data', [])
+            async with aiohttp.ClientSession() as session:
+                async with session.post(URL, json=JSON_DATA) as response:
+                    response_data = (await response.json()).get('data', [])
             image_bool = False
 
             for i in response_data:
@@ -60,9 +62,7 @@ async def on_message(message):
                 if i['type'] == 3:
                     image_bool = True
                     image_data = base64.b64decode(i['url'])
-                    with open('tmp_image.png', 'wb') as file:
-                        file.write(image_data)
-                    image = discord.File('tmp_image.png')
+                    image = discord.File(io.BytesIO(image_data), filename='image.png')
 
             await message.channel.send(f"{message.author.mention}{res}")
 
