@@ -14,24 +14,25 @@
 #  limitations under the License.
 #
 
+import json
 import logging
 import os
 import random
 import re
-import json
 import time
 from abc import abstractmethod
 from typing import Callable, TypeVar
 
 import infinity
-from infinity.common import ConflictType
-from infinity.index import IndexInfo, IndexType
-from infinity.errors import ErrorCode
 import pandas as pd
-from common.file_utils import get_project_base_directory
-from rag.nlp import is_english
+from infinity.common import ConflictType
+from infinity.errors import ErrorCode
+from infinity.index import IndexInfo, IndexType
+
 from common import settings
 from common.doc_store.doc_store_base import DocStoreConnection, MatchExpr, OrderByExpr
+from common.file_utils import get_project_base_directory
+from rag.nlp import is_english
 
 # Concurrent CREATE/DROP TABLE on the same Infinity instance can race on
 # Infinity's RocksDB-backed catalog counters (e.g. ``db|1|next_table_id``).
@@ -328,13 +329,20 @@ class InfinityConnectionBase(DocStoreConnection):
                     col_type = (columns.get(k, ("",))[0] or "").lower()
                 is_json_col = "json" in col_type
                 col_present = bool(columns) and k in columns
+                logger = getattr(self, "logger", None) or logging.getLogger(__name__)
+                if is_json_col:
+                    logger.debug("INFINITY filter: using json_contains for JSON column %s", k)
+                elif col_present and "char" in col_type:
+                    logger.debug("INFINITY filter: using filter_fulltext fallback for Varchar column %s", k)
+                else:
+                    logger.debug("INFINITY filter: skipping predicate for unmapped/non-string column %s", k)
                 list_conditions = []
                 for item in values:
                     if is_json_col:
                         # ``json_contains`` accepts any JSON-encodable value.
                         literal = json.dumps(item, ensure_ascii=False).replace("'", "''")
                         list_conditions.append(f"json_contains({k}, '{literal}')")
-                    elif col_present and isinstance(item, str):
+                    elif col_present and "char" in col_type and isinstance(item, str):
                         # Legacy Varchar column: bare item matches a token
                         # under the `whitespace-#` analyzer for the old
                         # `###`-joined encoding. Numeric / other non-string
@@ -342,9 +350,7 @@ class InfinityConnectionBase(DocStoreConnection):
                         # legacy encoding, so skip them rather than emit a
                         # query that returns nothing.
                         escaped = item.replace("'", "''")
-                        list_conditions.append(
-                            f"filter_fulltext('{self.convert_matching_field(k)}', '{escaped}')"
-                        )
+                        list_conditions.append(f"filter_fulltext('{self.convert_matching_field(k)}', '{escaped}')")
                     # else: either the column is unknown to the table (we
                     # cannot tell the type, so we skip the predicate rather
                     # than emit a query that Infinity will reject) or the

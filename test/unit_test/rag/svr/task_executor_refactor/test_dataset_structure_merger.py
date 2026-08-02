@@ -21,10 +21,13 @@ import pytest
 
 pytestmark = pytest.mark.p2
 
-from rag.svr.task_executor_refactor.dataset_structure_merger import record_doc_deletion
+from rag.svr.task_executor_refactor.dataset_structure_merger import _UPGRADED_TABLES, record_doc_deletion
 
 
 class TestRecordDocDeletion:
+    def setup_method(self):
+        _UPGRADED_TABLES.clear()
+
     def test_record_doc_deletion_invokes_ensure_columns_and_insert(self):
         tenant_id = "tenant_123"
         kb_id = "kb_456"
@@ -44,7 +47,7 @@ class TestRecordDocDeletion:
             mock_conn.ensure_columns.assert_called_once_with(
                 "ragflow_tenant_123",
                 kb_id,
-                {"deleted_doc_id": {"type": "varchar", "default": ""}},
+                {"deleted_doc_id": {"type": "varchar", "default": "", "analyzer": "whitespace-#"}},
             )
             mock_conn.insert.assert_called_once()
             inserted_rows, index, kb = mock_conn.insert.call_args[0]
@@ -53,6 +56,25 @@ class TestRecordDocDeletion:
             assert len(inserted_rows) == 1
             assert inserted_rows[0]["deleted_doc_id"] == doc_id
             assert inserted_rows[0]["kb_id"] == kb_id
+
+    def test_record_doc_deletion_caches_upgraded_tables(self):
+        tenant_id = "tenant_123"
+        kb_id = "kb_456"
+
+        mock_conn = MagicMock()
+        mock_conn.index_exist.return_value = True
+        mock_conn.ensure_columns = MagicMock()
+
+        with patch("rag.svr.task_executor_refactor.dataset_structure_merger.settings") as mock_settings, patch("rag.svr.task_executor_refactor.dataset_structure_merger.search") as mock_search:
+            mock_settings.docStoreConn = mock_conn
+            mock_search.index_name.return_value = "ragflow_tenant_123"
+
+            record_doc_deletion(tenant_id, kb_id, "doc_1")
+            record_doc_deletion(tenant_id, kb_id, "doc_2")
+
+            # ensure_columns is only called once due to caching
+            assert mock_conn.ensure_columns.call_count == 1
+            assert mock_conn.insert.call_count == 2
 
     def test_record_doc_deletion_when_index_not_exist(self):
         mock_conn = MagicMock()

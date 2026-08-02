@@ -143,6 +143,7 @@ EXTRA_COLUMNS: list[Column] = [
     column_raptor_kwd,
     column_raptor_layer_int,
     column_n_hop_with_weight,
+    column_deleted_doc_id,
 ]
 
 
