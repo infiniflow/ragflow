@@ -181,6 +181,17 @@ def record_doc_deletion(tenant_id: str, kb_id: str, doc_id: str) -> None:
         index = search.index_name(tenant_id)
         if not settings.docStoreConn.index_exist(index, kb_id):
             return
+        # Chunk tables created before #17685 don't have a `deleted_doc_id`
+        # column; the next insert() would fail with 3013. Upgrade the table
+        # in place if needed. New tables pick the column up from
+        # conf/infinity_mapping.json automatically.
+        ensure_fn = getattr(settings.docStoreConn, "ensure_columns", None)
+        if callable(ensure_fn):
+            ensure_fn(
+                index,
+                kb_id,
+                {"deleted_doc_id": {"type": "varchar", "default": ""}},
+            )
         row = {
             "id": f"{_DELETION_META_KWD}:{kb_id}:{doc_id}",
             "kb_id": kb_id,
