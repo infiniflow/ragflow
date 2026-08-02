@@ -102,13 +102,13 @@ type StatusResponse struct {
 }
 
 // GetStatus gets health status for core system dependencies.
-func (s *SystemService) GetStatus() (*StatusResponse, error) {
+func (s *SystemService) GetStatus(ctx context.Context) (*StatusResponse, error) {
 	return &StatusResponse{
 		DocEngine:              s.getDocEngineStatus(),
 		Storage:                s.getStorageStatus(),
 		Database:               s.getDatabaseStatus(),
-		Redis:                  s.getRedisStatus(),
-		TaskExecutorHeartbeats: s.getTaskExecutorHeartbeats(),
+		Redis:                  s.getRedisStatus(ctx),
+		TaskExecutorHeartbeats: s.getTaskExecutorHeartbeats(ctx),
 	}, nil
 }
 
@@ -228,7 +228,7 @@ func (s *SystemService) getDatabaseStatus() ComponentStatus {
 	}
 }
 
-func (s *SystemService) getRedisStatus() ComponentStatus {
+func (s *SystemService) getRedisStatus(ctx context.Context) ComponentStatus {
 	startedAt := time.Now()
 	redisClient := redis.Get()
 	if redisClient == nil {
@@ -238,7 +238,7 @@ func (s *SystemService) getRedisStatus() ComponentStatus {
 			"error":   "redis not initialized",
 		}
 	}
-	if !redisClient.Health() {
+	if !redisClient.Health(ctx) {
 		return ComponentStatus{
 			"status":  "red",
 			"elapsed": elapsedMilliseconds(startedAt),
@@ -252,21 +252,21 @@ func (s *SystemService) getRedisStatus() ComponentStatus {
 	}
 }
 
-func (s *SystemService) getTaskExecutorHeartbeats() map[string][]interface{} {
+func (s *SystemService) getTaskExecutorHeartbeats(ctx context.Context) map[string][]interface{} {
 	heartbeatsByExecutor := map[string][]interface{}{}
 	redisClient := redis.Get()
 	if redisClient == nil {
 		return heartbeatsByExecutor
 	}
 
-	taskExecutorIDs, err := redisClient.SMembers("TASKEXE")
+	taskExecutorIDs, err := redisClient.SMembers(ctx, "TASKEXE")
 	if err != nil {
 		return heartbeatsByExecutor
 	}
 
 	now := float64(time.Now().Unix())
 	for _, taskExecutorID := range taskExecutorIDs {
-		rawHeartbeats, err := redisClient.ZRangeByScore(taskExecutorID, now-60*30, now)
+		rawHeartbeats, err := redisClient.ZRangeByScore(ctx, taskExecutorID, now-60*30, now)
 		if err != nil {
 			continue
 		}
@@ -329,7 +329,7 @@ func GetComponentsHealthz(ctx context.Context) (*HealthzResponse, bool) {
 
 	redisOK, redisMeta := timedHealthCheck(func() error {
 		redisClient := redis.Get()
-		if redisClient == nil || !redisClient.Health() {
+		if redisClient == nil || !redisClient.Health(ctx) {
 			return fmt.Errorf("redis is not healthy")
 		}
 		return nil

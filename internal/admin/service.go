@@ -1121,7 +1121,7 @@ func (s *Service) getRedisInfo(ctx context.Context) ServiceStatus {
 	startTime := time.Now()
 
 	redisClient := redis.Get()
-	if redisClient.Health() {
+	if redisClient.Health(ctx) {
 		return newServiceStatus(serviceType, name, "alive", startTime, "")
 	}
 

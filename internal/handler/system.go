@@ -109,7 +109,8 @@ func (h *SystemHandler) GetStatus(c *gin.Context) {
 		return
 	}
 
-	status, err := h.systemService.GetStatus()
+	ctx := c.Request.Context()
+	status, err := h.systemService.GetStatus(ctx)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
