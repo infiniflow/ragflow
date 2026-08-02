@@ -1184,6 +1184,7 @@ type chunkImageStorage struct {
 	putCalls  int
 }
 
+func (s *chunkImageStorage) Type() string { return "chunk_image_storage" }
 func (s *chunkImageStorage) Health() bool { return true }
 func (s *chunkImageStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {
 	s.putCalls++

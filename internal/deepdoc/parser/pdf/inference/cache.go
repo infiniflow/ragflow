@@ -45,8 +45,8 @@ const cacheKeyPrefix = "ddoc:cache:"
 // out of the wrapping path.
 type cacheStore interface {
 	Enabled() bool
-	GetObj(key string, dest any) bool
-	SetObj(key string, value any, ttl time.Duration) bool
+	GetObj(ctx context.Context, key string, dest any) bool
+	SetObj(ctx context.Context, key string, value any, ttl time.Duration) bool
 }
 
 // redisCacheStore is the production store, backed by the
@@ -61,13 +61,13 @@ func (redisCacheStore) Enabled() bool { return redis.IsEnabled() }
 // GetObj forwards to the package-level Redis singleton.
 // Errors are logged inside the engine; we treat any failure
 // (including connectivity) as a cache miss for safety.
-func (redisCacheStore) GetObj(key string, dest any) bool {
-	return redis.Get().GetObj(key, dest)
+func (redisCacheStore) GetObj(ctx context.Context, key string, dest any) bool {
+	return redis.Get().GetObj(ctx, key, dest)
 }
 
 // SetObj forwards to the package-level Redis singleton.
-func (redisCacheStore) SetObj(key string, value any, ttl time.Duration) bool {
-	return redis.Get().SetObj(key, value, ttl)
+func (redisCacheStore) SetObj(ctx context.Context, key string, value any, ttl time.Duration) bool {
+	return redis.Get().SetObj(ctx, key, value, ttl)
 }
 
 // DocAnalyzerCache wraps an inner doctype.DocAnalyzer and
@@ -156,7 +156,7 @@ func cacheKeyOrEmpty(method string, img image.Image) string {
 func (c *DocAnalyzerCache) DLA(ctx context.Context, img image.Image) ([]doctype.DLARegion, error) {
 	if key := cacheKeyOrEmpty("dla", img); key != "" && c.store.Enabled() {
 		var cached []doctype.DLARegion
-		if c.store.GetObj(key, &cached) {
+		if c.store.GetObj(ctx, key, &cached) {
 			return cached, nil
 		}
 	}
@@ -165,7 +165,7 @@ func (c *DocAnalyzerCache) DLA(ctx context.Context, img image.Image) ([]doctype.
 		return out, err
 	}
 	if key := cacheKeyOrEmpty("dla", img); key != "" && c.store.Enabled() {
-		c.store.SetObj(key, out, c.ttl)
+		c.store.SetObj(ctx, key, out, c.ttl)
 	}
 	return out, nil
 }
@@ -174,7 +174,7 @@ func (c *DocAnalyzerCache) DLA(ctx context.Context, img image.Image) ([]doctype.
 func (c *DocAnalyzerCache) TSR(ctx context.Context, img image.Image) ([]doctype.TSRCell, error) {
 	if key := cacheKeyOrEmpty("tsr", img); key != "" && c.store.Enabled() {
 		var cached []doctype.TSRCell
-		if c.store.GetObj(key, &cached) {
+		if c.store.GetObj(ctx, key, &cached) {
 			return cached, nil
 		}
 	}
@@ -183,7 +183,7 @@ func (c *DocAnalyzerCache) TSR(ctx context.Context, img image.Image) ([]doctype.
 		return out, err
 	}
 	if key := cacheKeyOrEmpty("tsr", img); key != "" && c.store.Enabled() {
-		c.store.SetObj(key, out, c.ttl)
+		c.store.SetObj(ctx, key, out, c.ttl)
 	}
 	return out, nil
 }
@@ -192,7 +192,7 @@ func (c *DocAnalyzerCache) TSR(ctx context.Context, img image.Image) ([]doctype.
 func (c *DocAnalyzerCache) OCRDetect(ctx context.Context, img image.Image) ([]doctype.OCRBox, error) {
 	if key := cacheKeyOrEmpty("ocr_detect", img); key != "" && c.store.Enabled() {
 		var cached []doctype.OCRBox
-		if c.store.GetObj(key, &cached) {
+		if c.store.GetObj(ctx, key, &cached) {
 			return cached, nil
 		}
 	}
@@ -201,7 +201,7 @@ func (c *DocAnalyzerCache) OCRDetect(ctx context.Context, img image.Image) ([]do
 		return out, err
 	}
 	if key := cacheKeyOrEmpty("ocr_detect", img); key != "" && c.store.Enabled() {
-		c.store.SetObj(key, out, c.ttl)
+		c.store.SetObj(ctx, key, out, c.ttl)
 	}
 	return out, nil
 }
@@ -210,7 +210,7 @@ func (c *DocAnalyzerCache) OCRDetect(ctx context.Context, img image.Image) ([]do
 func (c *DocAnalyzerCache) OCRRecognize(ctx context.Context, img image.Image) ([]doctype.OCRText, error) {
 	if key := cacheKeyOrEmpty("ocr_recognize", img); key != "" && c.store.Enabled() {
 		var cached []doctype.OCRText
-		if c.store.GetObj(key, &cached) {
+		if c.store.GetObj(ctx, key, &cached) {
 			return cached, nil
 		}
 	}
@@ -219,7 +219,7 @@ func (c *DocAnalyzerCache) OCRRecognize(ctx context.Context, img image.Image) ([
 		return out, err
 	}
 	if key := cacheKeyOrEmpty("ocr_recognize", img); key != "" && c.store.Enabled() {
-		c.store.SetObj(key, out, c.ttl)
+		c.store.SetObj(ctx, key, out, c.ttl)
 	}
 	return out, nil
 }
