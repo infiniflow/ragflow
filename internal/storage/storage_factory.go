@@ -42,8 +42,8 @@ func GetStorageFactory() *StorageFactory {
 	return globalFactory
 }
 
-// InitStorageFactory initializes the storage factory with configuration
-func InitStorageFactory() error {
+// Init initializes the storage factory with configuration
+func Init() error {
 	factory := GetStorageFactory()
 
 	globalConfig := server.GetConfig()

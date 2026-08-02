@@ -87,7 +87,7 @@ func logLevelName(level zapcore.Level) string {
 	return strings.ToUpper(level.String())
 }
 
-// Init initializes the global logger. stdout is always written. If file.Path
+// InitLogger initializes the global logger. stdout is always written. If file.Path
 // is non-empty, a rotated file is also written via lumberjack.
 //
 // Callers should pass a non-empty Path so that file logging is preserved
@@ -96,7 +96,7 @@ func logLevelName(level zapcore.Level) string {
 //
 // Numeric fields (MaxSize, MaxBackups, MaxAge) are defaulted to 100/10/30
 // when zero. Compress is taken as supplied.
-func Init(level string, file FileOutput, serviceName string) error {
+func InitLogger(level string, file FileOutput, serviceName string) error {
 	zapLevel, err := parseZapLevel(level)
 	if err != nil {
 		zapLevel = zapcore.InfoLevel
