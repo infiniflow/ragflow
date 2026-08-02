@@ -19,6 +19,7 @@ package server
 import (
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/server/config"
 	"strings"
 	"time"
@@ -33,7 +34,6 @@ const DefaultConnectTimeout = 5 * time.Second
 var (
 	globalConfig *config.Config
 	globalViper  *viper.Viper
-	zapLogger    *zap.Logger
 )
 
 // Init initialize configuration
@@ -64,7 +64,7 @@ func Init(configPath string) error {
 		if !errors.As(err, &configFileNotFoundError) {
 			return fmt.Errorf("read config file error: %w", err)
 		}
-		zapLogger.Info("Config file not found, using environment variables only")
+		common.Info("Config file not found, using environment variables only")
 	}
 
 	// Save viper instance
@@ -169,11 +169,6 @@ func GetConfig() *config.Config {
 	return globalConfig
 }
 
-// SetLogger sets the logger instance
-func SetLogger(l *zap.Logger) {
-	zapLogger = l
-}
-
 func GetAllConfigs() ([]map[string]interface{}, error) {
 	var allConfigs []map[string]interface{}
 
@@ -270,14 +265,14 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 // PrintAll prints all configuration settings
 func PrintAll() {
 	if globalViper == nil {
-		zapLogger.Info("Configuration not initialized")
+		common.Info("Configuration not initialized")
 		return
 	}
 
 	allSettings := globalViper.AllSettings()
-	zapLogger.Info("=== All Configurations ===")
+	common.Info("=== All Configurations ===")
 	for key, value := range allSettings {
-		zapLogger.Info("config", zap.String("key", key), zap.Any("value", value))
+		common.Info("config", zap.String("key", key), zap.Any("value", value))
 	}
-	zapLogger.Info("=== End Configurations ===")
+	common.Info("=== End Configurations ===")
 }

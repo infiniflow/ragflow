@@ -105,7 +105,7 @@ const (
 	`
 )
 
-// Init initializes Redis client
+// Init InitRedis initializes Redis client
 func Init() error {
 	var initErr error
 	once.Do(func() {

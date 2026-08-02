@@ -256,7 +256,7 @@ func main() {
 		logLevel = "debug"
 	}
 
-	if err = common.Init(logLevel, common.FileOutput{Path: logFile}, serverName); err != nil {
+	if err = common.InitLogger(logLevel, common.FileOutput{Path: logFile}, serverName); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -341,11 +341,9 @@ func main() {
 	}
 
 	common.SyncLog()
-	if err = common.Init(logLevel, fileOut, serverName); err != nil {
+	if err = common.InitLogger(logLevel, fileOut, serverName); err != nil {
 		common.Error("Failed to reinitialize logger with configured level", err)
 	}
-
-	server.SetLogger(common.Logger)
 
 	// Print all configuration settings
 	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, globalConfig.GetMode()))
@@ -357,7 +355,7 @@ func main() {
 	}
 
 	// Initialize doc engine
-	if err = engine.Init(); err != nil {
+	if err = engine.InitDocEngine(); err != nil {
 		common.Fatal("Failed to initialize doc engine", zap.Error(err))
 	}
 	defer engine.Close()
@@ -368,12 +366,12 @@ func main() {
 	}
 	defer redis.Close()
 
-	if err = storage.InitStorageFactory(); err != nil {
+	if err = storage.Init(); err != nil {
 		common.Error("Failed to initialize storage factory", err)
 	}
 	defer storage.CloseStorage()
 
-	if err = engine.InitMessageQueueEngine(); err != nil {
+	if err = engine.InitMessageQueue(); err != nil {
 		common.Error("Failed to initialize message queue engine", err)
 	}
 
@@ -527,7 +525,7 @@ func startHeartbeat(serverType common.ServerType, serverID string, port int, hea
 		return nil
 	}
 
-	heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", heartBeatInterval*time.Second, func() {
+	heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", heartBeatInterval, func() {
 		if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
 			local.SetAdminStatus(0, "")
 		} else {

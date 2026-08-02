@@ -38,7 +38,7 @@ type GeneralConfig struct {
 func (c *Config) ParseGeneralConfig(v *viper.Viper) error {
 
 	// Default General config
-	c.general.HeartbeatInterval = 3
+	c.general.HeartbeatInterval = 3 * time.Second
 	c.general.Mode = "release"
 	c.general.Database = "mysql"
 	c.general.DocEngine = "elasticsearch"
@@ -46,7 +46,7 @@ func (c *Config) ParseGeneralConfig(v *viper.Viper) error {
 	c.general.CacheEngine = "redis"
 	c.general.QueueEngine = "nats"
 	c.general.AnalyticEngine = "clickhouse"
-	c.general.Language = "english"
+	c.general.Language = "en"
 
 	if !v.IsSet("general") {
 		return nil
@@ -119,4 +119,11 @@ func (c *Config) QueueEngineType() string {
 
 func (c *Config) AnalyticEngineType() string {
 	return c.general.AnalyticEngine
+}
+
+func (c *Config) Language() string {
+	if c.environments.Language != "" {
+		return c.environments.Language
+	}
+	return c.general.Language
 }

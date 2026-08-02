@@ -72,7 +72,7 @@ func (h *SystemHandler) Healthz(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/system/config [get]
+// @Router /api/v1/system/config [get]
 func (h *SystemHandler) GetConfig(c *gin.Context) {
 	config, err := h.systemService.GetConfig()
 	if err != nil {
