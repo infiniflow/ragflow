@@ -32,6 +32,8 @@ This module pins that behavior down (#17685).
 Run with: python -m pytest test/unit_test/common/test_infinity_condition.py -v
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 pytestmark = pytest.mark.p2
@@ -340,6 +342,32 @@ class TestOtherConditionBranches:
     def test_kb_id_varchar(self):
         result = _translate({"kb_id": "kb-1"}, {"kb_id": ("Varchar", "")})
         assert result == "kb_id='kb-1'"
+
+
+class TestDeleteSafety:
+    """``delete()`` must abort and return 0 if a non-empty condition generates
+    an unconstrained filter ('1=1') to prevent accidental table truncation."""
+
+    def test_delete_aborts_when_condition_yields_unconstrained_filter(self):
+        inst = _InfinityConnection.__new__(_InfinityConnection)
+        inst.dbName = "default_db"
+        inst.logger = MagicMock()
+        inst.connPool = MagicMock()
+
+        inf_conn = MagicMock()
+        db = MagicMock()
+        table = MagicMock()
+        # Empty schema -> equivalent_condition_to_str yields "1=1"
+        table.show_columns.return_value.rows.return_value = []
+        db.get_table.return_value = table
+        inf_conn.get_database.return_value = db
+
+        with patch.object(inst.connPool, "get_conn", return_value=inf_conn), patch.object(inst.connPool, "release_conn"):
+            deleted = inst.delete({"source_doc_ids": ["doc-1"]}, "ragflow_tenant", "kb-1")
+
+        # Must abort (return 0) and MUST NOT call table.delete()
+        assert deleted == 0
+        table.delete.assert_not_called()
 
 
 if __name__ == "__main__":

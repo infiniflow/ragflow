@@ -719,6 +719,9 @@ class InfinityConnectionBase(DocStoreConnection):
                 self.logger.warning(f"Skipped deleting from table {table_name} since the table doesn't exist.")
                 return 0
             filter = self.equivalent_condition_to_str(condition, table_instance)
+            if condition and (not filter or filter == "1=1"):
+                self.logger.warning(f"INFINITY delete aborted: non-empty condition {condition} yielded unconstrained filter '{filter}' on table {table_name}.")
+                return 0
             self.logger.debug(f"INFINITY delete table {table_name}, filter {filter}.")
             res = table_instance.delete(filter)
             return res.deleted_rows
