@@ -28,6 +28,15 @@ from word2number import w2n
 
 from common.token_utils import num_tokens_from_string
 
+# Re-exported below for backwards compatibility; the canonical parser lives
+# in ``rag.nlp.delim``.
+from rag.nlp.delim import (
+    compile_delimiter_pattern,
+    has_wrapped_delimiter,
+    normalize_text_newlines,
+    parse_delimiter_field,
+)
+
 __all__ = ["rag_tokenizer"]
 
 all_codecs = [
@@ -1290,7 +1299,7 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
     if isinstance(sections[0], str):
         sections = [(s, "") for s in sections]
     # Normalize line endings so delimiter ``\n`` matches ``\r\n`` and standalone ``\r``.
-    sections = [(s.replace("\r\n", "\n").replace("\r", "\n"), pos) for s, pos in sections]
+    sections = [(normalize_text_newlines(s), pos) for s, pos in sections]
     cks = [""]
     tk_nums = [0]
 
@@ -1304,16 +1313,22 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
             cks.append(text)
             tk_nums.append(tk_num)
 
-    custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
-    has_custom = bool(custom_delimiters)
+    # Parse the delimiter field once, via the canonical helper (#17383).
+    # `has_custom` means the field contains a backtick-wrapped token — the
+    # historical signal that chunk_token_num should be bypassed. Splitting
+    # itself uses every parsed delimiter (bare and wrapped).
+    parsed_dels = parse_delimiter_field(delimiter)
+    has_custom = has_wrapped_delimiter(delimiter)
     if has_custom:
         # Custom delimiters ignore chunk_token_num: each segment is its own chunk.
-        custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
+        custom_pattern = compile_delimiter_pattern(parsed_dels)
         cks, tk_nums = [], []
         for sec, pos in sections:
-            split_sec = re.split(r"(%s)" % custom_pattern, sec, flags=re.DOTALL)
+            split_sec = re.split(r"(%s)" % custom_pattern, sec, flags=re.DOTALL) if custom_pattern else [sec]
             for sub_sec in split_sec:
-                if re.fullmatch(custom_pattern, sub_sec or ""):
+                if not sub_sec:
+                    continue
+                if custom_pattern and re.fullmatch(custom_pattern, sub_sec):
                     continue
                 text = "\n" + sub_sec
                 local_pos = pos
@@ -1329,7 +1344,7 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
     # Units that exceed the budget after the regex split (a single long line with
     # no delimiter, e.g. PDF / .txt runs of unbroken text) are sub-split on
     # whitespace atoms with a character-window fallback, mirroring the html path.
-    dels = get_delimiters(delimiter)
+    dels = compile_delimiter_pattern(parsed_dels)
     for sec, pos in sections:
         sec_text = "\n" + sec
         if num_tokens_from_string(sec_text) <= chunk_token_num:
@@ -1386,20 +1401,26 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
             result_images.append(image)
             tk_nums.append(tk_num)
 
-    custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
-    has_custom = bool(custom_delimiters)
+    # Parse the delimiter field once, via the canonical helper (#17383).
+    # See the matching block in ``naive_merge`` for the rationale on
+    # `has_custom` (backtick-wrapped tokens opt into chunk-token-num bypass).
+    parsed_dels = parse_delimiter_field(delimiter)
+    has_custom = has_wrapped_delimiter(delimiter)
     if has_custom:
         # Custom delimiters ignore chunk_token_num: each segment is its own chunk.
-        custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
+        custom_pattern = compile_delimiter_pattern(parsed_dels)
         cks, result_images, tk_nums = [], [], []
         for text, image in zip(texts, images):
             text_str = text[0] if isinstance(text, tuple) else text
             if text_str is None:
                 text_str = ""
+            text_str = normalize_text_newlines(text_str)
             text_pos = text[1] if isinstance(text, tuple) and len(text) > 1 else ""
-            split_sec = re.split(r"(%s)" % custom_pattern, text_str)
+            split_sec = re.split(r"(%s)" % custom_pattern, text_str) if custom_pattern else [text_str]
             for sub_sec in split_sec:
-                if re.fullmatch(custom_pattern, sub_sec or ""):
+                if not sub_sec:
+                    continue
+                if custom_pattern and re.fullmatch(custom_pattern, sub_sec):
                     continue
                 text_seg = "\n" + sub_sec
                 local_pos = text_pos
@@ -1416,7 +1437,7 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
     # along on every piece (concat_img dedupes when pieces re-merge into a chunk).
     # Units still exceeding the budget after the regex split are sub-split on
     # whitespace atoms so they cannot blow past the token cap.
-    dels = get_delimiters(delimiter)
+    dels = compile_delimiter_pattern(parsed_dels)
     for text, image in zip(texts, images):
         # if text is tuple, unpack it
         if isinstance(text, tuple):
@@ -1425,7 +1446,7 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         else:
             text_str = text or ""
             text_pos = ""
-
+        text_str = normalize_text_newlines(text_str)
         text_seg = "\n" + text_str
         if num_tokens_from_string(text_seg) <= chunk_token_num:
             add_chunk(text_seg, image, text_pos)
@@ -1524,15 +1545,14 @@ def _build_cks(sections, delimiter):
     tables = []
     images = []
 
-    # extract custom delimiters wrapped by backticks: `##`, `---`, etc.
-    custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
-    has_custom = bool(custom_delimiters)
-
-    if has_custom:
-        # escape delimiters and build alternation pattern, longest first
-        custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
-        # capture delimiters so they appear in re.split results
-        pattern = r"(%s)" % custom_pattern
+    # Parse the delimiter field once, via the canonical helper (#17383).
+    # Split on every parsed delimiter (bare and wrapped). `has_custom`
+    # only controls whether _merge_cks bypasses chunk_token_num (wrapped
+    # token present in the original field).
+    parsed_dels = parse_delimiter_field(delimiter)
+    has_custom = has_wrapped_delimiter(delimiter)
+    split_pattern = compile_delimiter_pattern(parsed_dels)
+    pattern = r"(%s)" % split_pattern if split_pattern else ""
 
     seg = ""
     for text, image, table in sections:
@@ -1540,7 +1560,7 @@ def _build_cks(sections, delimiter):
         if not text:
             text = ""
         else:
-            text = "\n" + str(text)
+            text = "\n" + normalize_text_newlines(str(text))
 
         if table:
             # table chunk
@@ -1571,12 +1591,16 @@ def _build_cks(sections, delimiter):
             images.append(idx)
             continue
 
-        # pure text chunk(s)
-        if has_custom:
+        # pure text chunk(s) — split on every parsed delimiter when present
+        if split_pattern:
             split_sec = re.split(pattern, text)
             for sub_sec in split_sec:
-                # ① empty or whitespace-only segment → flush current buffer
-                if not sub_sec or not sub_sec.strip():
+                if not sub_sec:
+                    continue
+
+                # ① matched delimiter (exact capture; do not strip — wrapped
+                # whitespace delimiters such as `` ` ` `` or `\n` must match here)
+                if re.fullmatch(split_pattern, sub_sec):
                     if seg and seg.strip():
                         s = seg.strip()
                         cks.append(
@@ -1590,8 +1614,8 @@ def _build_cks(sections, delimiter):
                     seg = ""
                     continue
 
-                # ② matched custom delimiter (allow surrounding whitespace)
-                if re.fullmatch(custom_pattern, sub_sec.strip()):
+                # ② empty or whitespace-only ordinary segment → flush current buffer
+                if not sub_sec.strip():
                     if seg and seg.strip():
                         s = seg.strip()
                         cks.append(
@@ -1619,8 +1643,8 @@ def _build_cks(sections, delimiter):
                     }
                 )
 
-    # final flush after loop (only when custom delimiters are used)
-    if has_custom and seg and seg.strip():
+    # final flush after loop (only when delimiters were used for splitting)
+    if split_pattern and seg and seg.strip():
         s = seg.strip()
         cks.append(
             {
@@ -1763,25 +1787,6 @@ def naive_merge_docx(
 def extract_between(text: str, start_tag: str, end_tag: str) -> list[str]:
     pattern = re.escape(start_tag) + r"(.*?)" + re.escape(end_tag)
     return re.findall(pattern, text, flags=re.DOTALL)
-
-
-def get_delimiters(delimiters: str):
-    dels = []
-    s = 0
-    for m in re.finditer(r"`([^`]+)`", delimiters):
-        f, t = m.span()
-        dels.append(m.group(1))
-        dels.extend(list(delimiters[s:f]))
-        s = t
-    if s < len(delimiters):
-        dels.extend(list(delimiters[s:]))
-
-    dels.sort(key=lambda x: -len(x))
-    dels = [re.escape(d) for d in dels if d]
-    dels = [d for d in dels if d]
-    dels_pattern = "|".join(dels)
-
-    return dels_pattern
 
 
 class Node:

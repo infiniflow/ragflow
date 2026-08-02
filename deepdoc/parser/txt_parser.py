@@ -20,6 +20,11 @@ import re
 from common.token_utils import num_tokens_from_string
 from deepdoc.parser.utils import get_text
 from rag.nlp import _split_oversized_unit
+from rag.nlp.delim import (
+    compile_delimiter_pattern,
+    normalize_text_newlines,
+    parse_delimiter_field,
+)
 
 
 class RAGFlowTxtParser:
@@ -33,10 +38,9 @@ class RAGFlowTxtParser:
             raise TypeError("txt type should be str!")
         cks = [""]
         tk_nums = [0]
-        delimiter = delimiter.encode("utf-8").decode("unicode_escape").encode("latin1").decode("utf-8")
 
         def add_chunk(t):
-            nonlocal cks, tk_nums, delimiter
+            nonlocal cks, tk_nums
             tnum = num_tokens_from_string(t)
 
             if cks[-1] == "":
@@ -54,21 +58,17 @@ class RAGFlowTxtParser:
             cks.append(t)
             tk_nums.append(tnum)
 
-        dels = []
-        s = 0
-        for m in re.finditer(r"`([^`]+)`", delimiter):
-            f, m_t = m.span()
-            dels.append(m.group(1))
-            dels.extend(list(delimiter[s:f]))
-            s = m_t
-        if s < len(delimiter):
-            dels.extend(list(delimiter[s:]))
-        dels = [re.escape(d) for d in dels if d]
-        dels = [d for d in dels if d]
-        dels = "|".join(dels)
-        secs = re.split(r"(%s)" % dels, txt)
+        txt = normalize_text_newlines(txt)
+        parsed_dels = parse_delimiter_field(delimiter)
+        dels = compile_delimiter_pattern(parsed_dels)
+        logging.debug(
+            "RAGFlowTxtParser.parser_txt: delimiter_count=%d, splitting=%s",
+            len(parsed_dels),
+            bool(dels),
+        )
+        secs = re.split(r"(%s)" % dels, txt) if dels else [txt]
         for sec in secs:
-            if re.match(f"^{dels}$", sec):
+            if dels and re.match(f"^{dels}$", sec):
                 continue
             if not sec:
                 continue

@@ -23,10 +23,11 @@
 //     mirroring Python's normalize_overlapped_percent), table_context_size ≥ 0,
 //     image_context_size ≥ 0. enum/range checks live in param.Check.
 //
-//   - DELIMITER PARSING mirrors python `_compile_delimiter_pattern`:
-//     entries wrapped in backticks (e.g. "`\\n\\n`") are treated as
-//     regex split points; plain strings are regex-escaped and joined
-//     into the same alternation. Empty entries are filtered.
+//   - DELIMITER PARSING for the TokenChunker list API mirrors Python
+//     token_chunker: only entries wrapped in backticks (e.g. "`\\n\\n`")
+//     produce an active split pattern. Plain list entries are not
+//     compiled into the pattern. Single-string parser_config.delimiter
+//     parsing lives in ragflow/internal/parser/chunk (ParseDelimiterField).
 //
 //   - CHILDREN DELIMITERS (the secondary split) is implemented via the
 //     shared splitKeepingDelim helper; emitted chunks carry the parent
@@ -63,12 +64,13 @@ import (
 	"strings"
 	"sync"
 
+	"gorm.io/gorm"
 	"ragflow/internal/agent/runtime"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 
-	"gorm.io/gorm"
+	"ragflow/internal/parser/chunk"
 )
 
 const ComponentNameTokenChunker = "TokenChunker"
@@ -1075,14 +1077,9 @@ func hasActiveDelimiter(p *regexp.Regexp) bool {
 
 // hasCustomDelim reports whether any delimiter uses backtick syntax
 // (`pattern`). Python's naive_merge skips token-size merging when
-// custom delimiters are present (naive_merge:1194-1213).
+// custom delimiters are present. Delegates to the canonical helper.
 func hasCustomDelim(delims []string) bool {
-	for _, d := range delims {
-		if strings.HasPrefix(d, "`") && strings.HasSuffix(d, "`") && len(d) >= 2 {
-			return true
-		}
-	}
-	return false
+	return chunk.HasCustomDelimiterList(delims)
 }
 
 // applyChildrenDelim mirrors token_chunker.py:325-334.

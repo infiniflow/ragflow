@@ -19,11 +19,11 @@ package chunker
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/chunk"
 	"ragflow/internal/tokenizer"
 )
 
@@ -76,87 +76,14 @@ func stringListFromAny(in []any) []string {
 // regex / split helpers
 // ---------------------------------------------------------------------------
 
-// backtickDelimRE extracts backtick-wrapped delimiter tokens.
-// Case-sensitive on purpose (mirrors Python after #17384 / PR #17386):
-// never add (?i) here — delimiter matching must preserve letter casing.
-var backtickDelimRE = regexp.MustCompile("`([^`]+)`")
-
-// escapeAndSort QuoteMeta-escapes tokens and sorts longest-first.
-// Empty tokens are dropped. When dedup is true, exact duplicate tokens
-// are collapsed (first occurrence wins). Matching stays case-sensitive.
-func escapeAndSort(tokens []string, dedup bool) []string {
-	out := make([]string, 0, len(tokens))
-	var seen map[string]struct{}
-	if dedup {
-		seen = make(map[string]struct{}, len(tokens))
-	}
-	for _, tok := range tokens {
-		if tok == "" {
-			continue
-		}
-		if dedup {
-			if _, ok := seen[tok]; ok {
-				continue
-			}
-			seen[tok] = struct{}{}
-		}
-		out = append(out, regexp.QuoteMeta(tok))
-	}
-	sort.SliceStable(out, func(i, j int) bool { return len(out[i]) > len(out[j]) })
-	return out
-}
-
-// getDelimiters ports rag.nlp.get_delimiters (rag/nlp/__init__.py).
-//
-// It walks a single delimiter string, pulling out backtick-wrapped tokens
-// and every bare character outside those spans, then returns a
-// length-sorted, QuoteMeta-escaped alternation suitable for regexp.Split.
-// Matching is case-sensitive: "a" does not match "A", and "`end`" does not
-// match "End" / "END".
-func getDelimiters(delimiters string) string {
-	var dels []string
-	s := 0
-	for _, m := range backtickDelimRE.FindAllStringSubmatchIndex(delimiters, -1) {
-		// m = [fullStart, fullEnd, g1Start, g1End]
-		f, t := m[0], m[1]
-		dels = append(dels, delimiters[m[2]:m[3]])
-		for _, r := range delimiters[s:f] {
-			dels = append(dels, string(r))
-		}
-		s = t
-	}
-	if s < len(delimiters) {
-		for _, r := range delimiters[s:] {
-			dels = append(dels, string(r))
-		}
-	}
-	// Python get_delimiters does not dedup; preserve that behavior.
-	return strings.Join(escapeAndSort(dels, false), "|")
-}
-
-// compileDelimPattern builds an alternation from backtick-wrapped tokens
-// across delimiter entries (mirrors Python _compile_delimiter_pattern).
-// Each entry is scanned independently so token boundaries cannot span
-// adjacent slice elements. Extraction is case-sensitive — see backtickDelimRE.
-//
-// Plain (non-backtick) delimiters are not compiled here; callers that
-// need bare-char splitting use getDelimiters (naive_merge path).
+// compileDelimPattern compiles a TokenChunker-style []string delimiter list.
+// Only backtick-wrapped entries produce an active pattern (Python
+// token_chunker / rag/nlp/delim list helper). Plain entries are ignored here
+// and used by mergeByTokenSize for sentence-level splitting when no active
+// pattern exists. Canonical single-string parser_config.delimiter parsing
+// lives in ragflow/internal/parser/chunk (ParseDelimiterField).
 func compileDelimPattern(delims []string) *regexp.Regexp {
-	var tokens []string
-	for _, d := range delims {
-		if d == "" {
-			continue
-		}
-		for _, m := range backtickDelimRE.FindAllStringSubmatch(d, -1) {
-			tokens = append(tokens, m[1])
-		}
-	}
-	// Python _compile_delimiter_pattern dedups via set(...).
-	custom := escapeAndSort(tokens, true)
-	if len(custom) == 0 {
-		return nil
-	}
-	return regexp.MustCompile(strings.Join(custom, "|"))
+	return chunk.CompileDelimiterListPattern(delims)
 }
 
 // splitKeepingDelim mirrors Python token_chunker._split_text_by_pattern

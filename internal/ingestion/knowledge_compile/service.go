@@ -30,15 +30,6 @@ import (
 // Option configures a Consumer.
 type Option func(*Consumer)
 
-// WithBatchSize sets the per-KB batch size trigger (closed-batch boundary).
-func WithBatchSize(n int) Option {
-	return func(c *Consumer) {
-		if n > 0 {
-			c.batchSize = n
-		}
-	}
-}
-
 // WithTTL sets the per-KB claim lease TTL.
 func WithTTL(d time.Duration) Option {
 	return func(c *Consumer) {
@@ -67,8 +58,8 @@ func WithPollInterval(d time.Duration) Option {
 	}
 }
 
-// WithSweepInterval sets how often the worker runs ReclaimExpired to recover
-// inflight left by crashed workers.
+// WithSweepInterval sets how often the worker tick calls TryClaim, which
+// reclaims inflight left by crashed workers before claiming any ready batch.
 func WithSweepInterval(d time.Duration) Option {
 	return func(c *Consumer) {
 		if d > 0 {
@@ -110,7 +101,7 @@ func defaultDeduperFactory(tenant string) (Deduper, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewLLMDeduper(deps.Chat, deps.Embed, defaultLLMID, 0.99), nil
+	return NewLLMDeduper(deps.Chat, deps.Embed, defaultLLMID, 0.99, deps.LLMMaxLength), nil
 }
 
 func generateHolder() string {
