@@ -103,6 +103,10 @@ export const formSchema = z
           .optional(),
         enable_metadata: z.boolean().optional(),
         llm_id: z.string().optional(),
+        // Compilation template group (e.g. the "wiki" Artifacts template with
+        // plan=yes/no). Persisted to parser_config so the wiki build backend can
+        // resolve the template and honour plan (Mode A vs Mode B).
+        compilation_template_group_id: z.string().nullish(),
         // Table parser: "auto" = all columns both, "manual" = use column role selector
         table_column_mode: z.enum(['auto', 'manual']).optional(),
         // Table parser: column name -> role (indexing | metadata | both); legacy "vectorize" -> indexing

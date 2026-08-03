@@ -104,14 +104,14 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	}
 
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	exists, err := s.docEngine.ChunkStoreExists(context.Background(), indexName, doc.KbID)
+	exists, err := s.docEngine.ChunkStoreExists(ctx, indexName, doc.KbID)
 	if err != nil {
 		return err
 	}
 	if !exists {
 		return nil
 	}
-	if _, err := s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+	if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
 		return err
 	}
 	return nil
@@ -380,8 +380,8 @@ func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *enti
 		}
 		if s.docEngine != nil {
 			indexName := fmt.Sprintf("ragflow_%s", tenantID)
-			s.deleteChunkImages(doc, indexName)
-			if _, err = s.docEngine.DeleteChunks(context.Background(), map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
+			s.deleteChunkImages(ctx, doc, indexName)
+			if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
 				return err
 			}
 		}
@@ -390,7 +390,7 @@ func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *enti
 	return nil
 }
 
-func (s *DocumentService) deleteChunkImages(doc *entity.Document, indexName string) {
+func (s *DocumentService) deleteChunkImages(ctx context.Context, doc *entity.Document, indexName string) {
 	if s.docEngine == nil {
 		return
 	}
@@ -401,7 +401,7 @@ func (s *DocumentService) deleteChunkImages(doc *entity.Document, indexName stri
 
 	const pageSize = 1000
 	for offset := 0; ; offset += pageSize {
-		result, err := s.docEngine.Search(context.Background(), &enginetypes.SearchRequest{
+		result, err := s.docEngine.Search(ctx, &enginetypes.SearchRequest{
 			IndexNames:   []string{indexName},
 			KbIDs:        []string{doc.KbID},
 			Offset:       offset,
@@ -420,8 +420,8 @@ func (s *DocumentService) deleteChunkImages(doc *entity.Document, indexName stri
 			if !ok {
 				continue
 			}
-			if storageImpl.ObjExist(doc.KbID, imageKey) {
-				_ = storageImpl.Remove(doc.KbID, imageKey)
+			if storageImpl.ObjExist(ctx, doc.KbID, imageKey) {
+				_ = storageImpl.Remove(ctx, doc.KbID, imageKey)
 			}
 		}
 	}
@@ -499,7 +499,7 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 	return s.docEngine.UpdateChunks(
-		context.Background(),
+		ctx,
 		map[string]interface{}{"doc_id": doc.ID},
 		map[string]interface{}{"available_int": status},
 		indexName,

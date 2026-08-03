@@ -180,6 +180,16 @@ func normalizeDatasetID(id string) (string, error) {
 	return strings.ReplaceAll(parsedUUID.String(), "-", ""), nil
 }
 
+// pythonStringListRepr renders a string slice the way Python prints a list of
+// strings, e.g. ['a', 'b'], for error messages that mirror the Python API.
+func pythonStringListRepr(items []string) string {
+	quoted := make([]string, 0, len(items))
+	for _, item := range items {
+		quoted = append(quoted, "'"+item+"'")
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
 func canvasAccessibleForUser(ctx context.Context, userID, canvasID string) (bool, error) {
 	tenantIDs, _ := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
 	return dao.NewUserCanvasDAO().Accessible(ctx, dao.DB, canvasID, userID, tenantIDs), nil

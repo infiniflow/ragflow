@@ -323,7 +323,7 @@ class TokenChunker(ProcessBase):
                 else naive_merge(
                     payload,
                     self._param.chunk_token_size,
-                    "",
+                    "".join(self._param.delimiters),
                     overlapped_percent,
                 )
             )

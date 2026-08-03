@@ -245,7 +245,7 @@ func (c *ExtractorComponent) loadTagFileIndexed(ctx context.Context) (*indexedTa
 		return nil, false
 	}
 	tenantID := globals.GlobalOrInput(ctx, nil, "tenant_id", "")
-	data, err := stg.Get(f.ParentID, *f.Location, tenantID)
+	data, err := stg.Get(ctx, f.ParentID, *f.Location, tenantID)
 	if err != nil {
 		common.Warn(fmt.Sprintf("extractor tags: load tag source %q/%q: %v", f.ParentID, *f.Location, err))
 		return nil, false

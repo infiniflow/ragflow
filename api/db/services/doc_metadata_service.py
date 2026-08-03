@@ -955,7 +955,7 @@ class DocMetadataService:
             where_clause = f"{kb_filter} AND {sql_filter}"
             logging.debug(f"Infinity metadata filter: {where_clause}")
 
-            inf_conn = settings.docStoreConn.connPool.get_conn()
+            inf_conn = settings.docStoreConn.acquire_conn()
             try:
                 db_instance = inf_conn.get_database(settings.docStoreConn.dbName)
                 table_instance = db_instance.get_table(index_name)
