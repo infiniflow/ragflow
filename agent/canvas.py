@@ -835,6 +835,8 @@ class Canvas(Graph):
             )
             text = emoji_pattern.sub("", text)
 
+            text = re.sub(r"<[^>]*>", "", text)
+
             text = re.sub(r"\s+", " ", text).strip()
 
             MAX_LEN = 500
