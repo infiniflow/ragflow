@@ -15,6 +15,8 @@
 #
 
 import logging
+import os
+
 from common.crypto_utils import CryptoUtil
 
 
@@ -258,6 +260,12 @@ def create_encrypted_storage(storage_impl, algorithm=None, key=None, encryption_
     Returns:
         Encrypted storage wrapper instance
     """
+    # Resolve the documented defaults. Passing algorithm=None straight through
+    # raises "Unsupported algorithm: None", so the default in this signature was
+    # unusable, and the key never actually fell back to the environment.
+    algorithm = algorithm or os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
+    key = key or os.environ.get("RAGFLOW_CRYPTO_KEY")
+
     wrapper = EncryptedStorageWrapper(storage_impl, algorithm=algorithm, key=key)
 
     wrapper.encryption_enabled = encryption_enabled
