@@ -121,8 +121,183 @@ func (n *NovitaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
 	return n.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
-		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
+		// Novita qwen3 embeds <think>...</think> inline in
+		// delta.content (tags can span multiple SSE deltas). Split
+		// those blocks so reasoning routes to the sender's second arg.
+		return novitaHandleStream(body, modelUsage, chatModelConfig, sender)
 	})
+}
+
+// novitaThinkSegment is one routing decision: emit `content` via the
+// sender's first arg, or emit `reasoning` via the second. Exactly one of
+// the two fields is non-empty.
+type novitaThinkSegment struct {
+	content   string
+	reasoning string
+}
+
+// novitaThinkSplitter holds state across streaming content chunks so a
+// <think>...</think> block that spans multiple SSE deltas is still split
+// correctly. Trailing bytes that could be the start of a tag are held
+// back until the next chunk.
+type novitaThinkSplitter struct {
+	buf    strings.Builder
+	inside bool
+}
+
+const (
+	novitaThinkOpen  = "<think>"
+	novitaThinkClose = "</think>"
+)
+
+func (s *novitaThinkSplitter) feed(chunk string) []novitaThinkSegment {
+	s.buf.WriteString(chunk)
+	str := s.buf.String()
+	var out []novitaThinkSegment
+	for {
+		var marker string
+		if s.inside {
+			marker = novitaThinkClose
+		} else {
+			marker = novitaThinkOpen
+		}
+		idx := strings.Index(str, marker)
+		if idx < 0 {
+			// No marker yet. Emit everything except a possible
+			// partial-tag suffix at the very end.
+			reserve := max(len(novitaThinkOpen)-1, len(novitaThinkClose)-1)
+			safe := max(len(str)-reserve, 0)
+			if safe < len(str) && !strings.Contains(str[safe:], "<") {
+				safe = len(str)
+			}
+			if safe > 0 {
+				if s.inside {
+					out = append(out, novitaThinkSegment{reasoning: str[:safe]})
+				} else {
+					out = append(out, novitaThinkSegment{content: str[:safe]})
+				}
+				str = str[safe:]
+			}
+			s.buf.Reset()
+			s.buf.WriteString(str)
+			return out
+		}
+		if s.inside {
+			out = append(out, novitaThinkSegment{reasoning: str[:idx]})
+		} else {
+			out = append(out, novitaThinkSegment{content: str[:idx]})
+		}
+		str = str[idx+len(marker):]
+		s.inside = !s.inside
+	}
+}
+
+func (s *novitaThinkSplitter) flush() *novitaThinkSegment {
+	if s.buf.Len() == 0 {
+		return nil
+	}
+	remaining := s.buf.String()
+	s.buf.Reset()
+	if s.inside {
+		return &novitaThinkSegment{reasoning: remaining}
+	}
+	return &novitaThinkSegment{content: remaining}
+}
+
+// novitaHandleStream processes a Novita streaming chat response, splitting
+// inline <think>...</think> blocks in delta.content across SSE deltas.
+func novitaHandleStream(
+	body io.Reader,
+	modelUsage *common.ModelUsage,
+	chatConfig *ChatConfig,
+	sender func(*string, *string) error,
+) error {
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+
+	var sawTerminal bool
+	thinkSplitter := &novitaThinkSplitter{}
+
+	done, err := ParseSSEStream[map[string]any](body, func(event map[string]any) error {
+		tokenUsage, found := extractOpenAIStreamUsage(event)
+		if found && chatConfig != nil {
+			applyStreamUsage(chatConfig, modelUsage, tokenUsage)
+		}
+
+		if apiErr, ok := event["error"]; ok && apiErr != nil {
+			return fmt.Errorf("upstream stream error: %v", apiErr)
+		}
+
+		choices, ok := event["choices"].([]any)
+		if !ok || len(choices) == 0 {
+			return nil
+		}
+
+		firstChoice, ok := choices[0].(map[string]any)
+		if !ok {
+			return nil
+		}
+
+		delta, ok := firstChoice["delta"].(map[string]any)
+		if !ok {
+			return nil
+		}
+
+		if reasoningContent, ok := delta["reasoning_content"].(string); ok && reasoningContent != "" {
+			if err := sender(nil, &reasoningContent); err != nil {
+				return err
+			}
+		}
+
+		if content, ok := delta["content"].(string); ok && content != "" {
+			for _, seg := range thinkSplitter.feed(content) {
+				if seg.content != "" {
+					c := seg.content
+					if err := sender(&c, nil); err != nil {
+						return err
+					}
+				}
+				if seg.reasoning != "" {
+					r := seg.reasoning
+					if err := sender(nil, &r); err != nil {
+						return err
+					}
+				}
+			}
+		}
+
+		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("failed to scan response body: %w", err)
+	}
+
+	if !done && !sawTerminal {
+		return fmt.Errorf("stream ended before [DONE] or finish_reason")
+	}
+
+	if seg := thinkSplitter.flush(); seg != nil {
+		if seg.content != "" {
+			c := seg.content
+			if err := sender(&c, nil); err != nil {
+				return err
+			}
+		}
+		if seg.reasoning != "" {
+			r := seg.reasoning
+			if err := sender(nil, &r); err != nil {
+				return err
+			}
+		}
+	}
+
+	endOfStream := "[DONE]"
+	return sender(&endOfStream, nil)
 }
 
 // ListModels returns the list of model ids visible to the API key.

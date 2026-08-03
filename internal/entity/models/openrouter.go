@@ -150,7 +150,6 @@ func openRouterHandleStream(
 	var streamUsage *TokenUsage
 	accumulatedToolCalls := make(map[int]map[string]any)
 	sawTerminal := false
-	thinkSplitter := &streamThinkSplitter{}
 
 	var streamModel string
 	done, err := ParseSSEStream[map[string]any](body, func(event map[string]any) error {
@@ -196,19 +195,8 @@ func openRouterHandleStream(
 		}
 
 		if content, ok := delta["content"].(string); ok && content != "" {
-			for _, seg := range thinkSplitter.feed(content) {
-				if seg.content != "" {
-					c := seg.content
-					if err := sender(&c, nil); err != nil {
-						return err
-					}
-				}
-				if seg.reasoning != "" {
-					r := seg.reasoning
-					if err := sender(nil, &r); err != nil {
-						return err
-					}
-				}
+			if err := sender(&content, nil); err != nil {
+				return err
 			}
 		}
 
@@ -235,21 +223,6 @@ func openRouterHandleStream(
 		if chatConfig != nil {
 			chatConfig.UsageResult = streamUsage
 			common.Info("StreamUsage", zap.String("model", streamModel), zap.Int("prompt", streamUsage.PromptTokens), zap.Int("completion", streamUsage.CompletionTokens), zap.Int("total", streamUsage.TotalTokens))
-		}
-	}
-
-	if seg := thinkSplitter.flush(); seg != nil {
-		if seg.content != "" {
-			c := seg.content
-			if err := sender(&c, nil); err != nil {
-				return err
-			}
-		}
-		if seg.reasoning != "" {
-			r := seg.reasoning
-			if err := sender(nil, &r); err != nil {
-				return err
-			}
 		}
 	}
 

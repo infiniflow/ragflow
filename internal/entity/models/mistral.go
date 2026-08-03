@@ -33,7 +33,76 @@ import (
 	"time"
 )
 
-// MistralModel implements ModelDriver for Mistral AI.
+// normalizeMistralStructuredContent rewrites a Mistral magistral response
+// whose message.content is a structured array ([{type:text},{type:thinking,
+// thinking:[{type:text}]}]) into the flat string shape the shared handler
+// expects: content becomes the concatenated text parts and a top-level
+// reasoning_content carries the thinking parts. The rewrite is in-place and
+// only applied when content is actually an array.
+func normalizeMistralStructuredContent(body []byte) []byte {
+	var result map[string]any
+	if err := json.Unmarshal(body, &result); err != nil {
+		return body
+	}
+	choices, ok := result["choices"].([]any)
+	if !ok || len(choices) == 0 {
+		return body
+	}
+	firstChoice, ok := choices[0].(map[string]any)
+	if !ok {
+		return body
+	}
+	messageMap, ok := firstChoice["message"].(map[string]any)
+	if !ok {
+		return body
+	}
+	parts, ok := messageMap["content"].([]any)
+	if !ok {
+		return body
+	}
+
+	var answer, reasoning strings.Builder
+	for _, p := range parts {
+		part, ok := p.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch part["type"] {
+		case "text":
+			if t, ok := part["text"].(string); ok {
+				answer.WriteString(t)
+			}
+		case "thinking":
+			if thinking, ok := part["thinking"].([]any); ok {
+				for _, tp := range thinking {
+					if tpm, ok := tp.(map[string]any); ok {
+						if t, ok := tpm["text"].(string); ok {
+							reasoning.WriteString(t)
+						}
+					}
+				}
+			}
+		}
+	}
+	// Only rewrite if we actually extracted something; otherwise leave
+	// the body untouched so the shared handler surfaces its normal error.
+	if answer.Len() == 0 && reasoning.Len() == 0 {
+		return body
+	}
+
+	messageMap["content"] = answer.String()
+	if existing, ok := messageMap["reasoning_content"].(string); ok && existing != "" {
+		reasoning.WriteString(existing)
+	}
+	if reasoning.Len() > 0 {
+		messageMap["reasoning_content"] = reasoning.String()
+	}
+	out, err := json.Marshal(result)
+	if err != nil {
+		return body
+	}
+	return out
+}
 
 type MistralModel struct {
 	baseModel BaseModel
@@ -79,6 +148,10 @@ func (m *MistralModel) ChatWithMessages(ctx context.Context, modelName string, m
 	if err != nil {
 		return nil, err
 	}
+
+	// Mistral magistral returns content as a structured array. Normalize it
+	// to the flat string shape the shared handler understands.
+	body = normalizeMistralStructuredContent(body)
 
 	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }

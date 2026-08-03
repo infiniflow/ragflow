@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"ragflow/internal/common"
-	"strings"
 
 	"go.uber.org/zap"
 )
@@ -87,7 +86,6 @@ func HandleStreamingResponse(
 	sawTerminal := false
 
 	var streamModel string
-	thinkSplitter := &streamThinkSplitter{}
 	done, err := ParseSSEStream[map[string]any](body, func(event map[string]any) error {
 		if u, ok := cfg.StreamParser(event); ok {
 			streamUsage = u
@@ -124,22 +122,8 @@ func HandleStreamingResponse(
 		}
 
 		if content, ok := delta["content"].(string); ok && content != "" {
-			// Split inline <think>...</think> blocks that some
-			// providers (e.g. Novita qwen3) embed in delta.content
-			// so reasoning routes to the sender's second arg.
-			for _, seg := range thinkSplitter.feed(content) {
-				if seg.content != "" {
-					c := seg.content
-					if err := sender(&c, nil); err != nil {
-						return err
-					}
-				}
-				if seg.reasoning != "" {
-					r := seg.reasoning
-					if err := sender(nil, &r); err != nil {
-						return err
-					}
-				}
+			if err := sender(&content, nil); err != nil {
+				return err
 			}
 		}
 
@@ -169,101 +153,8 @@ func HandleStreamingResponse(
 		}
 	}
 
-	// Flush any buffered think-tag tail so the final segment is emitted
-	// before the [DONE] sentinel.
-	if seg := thinkSplitter.flush(); seg != nil {
-		if seg.content != "" {
-			c := seg.content
-			if err := sender(&c, nil); err != nil {
-				return err
-			}
-		}
-		if seg.reasoning != "" {
-			r := seg.reasoning
-			if err := sender(nil, &r); err != nil {
-				return err
-			}
-		}
-	}
-
 	endOfStream := "[DONE]"
 	return sender(&endOfStream, nil)
-}
-
-// streamThinkSplitter holds state across streaming content chunks so a
-// <think>...</think> block that spans multiple SSE deltas is still split
-// correctly between content and reasoning. Trailing bytes that could be
-// the start of a tag are held back until the next chunk.
-type streamThinkSplitter struct {
-	buf    strings.Builder
-	inside bool
-}
-
-// novitaThinkSegment is one routing decision: emit `content` via the
-// sender's first arg, or emit `reasoning` via the second. Exactly one of
-// the two fields is non-empty.
-type novitaThinkSegment struct {
-	content   string
-	reasoning string
-}
-
-const (
-	streamThinkOpen  = "<think>"
-	streamThinkClose = "</think>"
-)
-
-func (s *streamThinkSplitter) feed(chunk string) []novitaThinkSegment {
-	s.buf.WriteString(chunk)
-	str := s.buf.String()
-	var out []novitaThinkSegment
-	for {
-		var marker string
-		if s.inside {
-			marker = streamThinkClose
-		} else {
-			marker = streamThinkOpen
-		}
-		idx := strings.Index(str, marker)
-		if idx < 0 {
-			// No marker yet. Emit everything except a possible
-			// partial-tag suffix at the very end.
-			reserve := max(len(streamThinkOpen)-1, len(streamThinkClose)-1)
-			safe := max(len(str)-reserve, 0)
-			if safe < len(str) && !strings.Contains(str[safe:], "<") {
-				safe = len(str)
-			}
-			if safe > 0 {
-				if s.inside {
-					out = append(out, novitaThinkSegment{reasoning: str[:safe]})
-				} else {
-					out = append(out, novitaThinkSegment{content: str[:safe]})
-				}
-				str = str[safe:]
-			}
-			s.buf.Reset()
-			s.buf.WriteString(str)
-			return out
-		}
-		if s.inside {
-			out = append(out, novitaThinkSegment{reasoning: str[:idx]})
-		} else {
-			out = append(out, novitaThinkSegment{content: str[:idx]})
-		}
-		str = str[idx+len(marker):]
-		s.inside = !s.inside
-	}
-}
-
-func (s *streamThinkSplitter) flush() *novitaThinkSegment {
-	if s.buf.Len() == 0 {
-		return nil
-	}
-	remaining := s.buf.String()
-	s.buf.Reset()
-	if s.inside {
-		return &novitaThinkSegment{reasoning: remaining}
-	}
-	return &novitaThinkSegment{content: remaining}
 }
 
 // extractContentAndChoices extracts content, reasoning_content, and tool_calls
@@ -285,68 +176,24 @@ func extractContentAndChoices(result map[string]any) (*string, *string, []map[st
 	}
 
 	var content *string
-	var structuredReason *string
 	if c, ok := messageMap["content"].(string); ok {
 		cc := c
 		content = &cc
-	} else if parts, ok := messageMap["content"].([]any); ok {
-		// Structured content array (e.g. Mistral magistral): each part is
-		// {type: "text", text: "..."} or {type: "thinking",
-		// thinking: [{type: "text", text: "..."}]}. Concatenate text
-		// parts into Answer and thinking parts into ReasonContent.
-		var answer, reasoning strings.Builder
-		for _, p := range parts {
-			part, ok := p.(map[string]any)
-			if !ok {
-				continue
-			}
-			switch part["type"] {
-			case "text":
-				if t, ok := part["text"].(string); ok {
-					answer.WriteString(t)
-				}
-			case "thinking":
-				if thinking, ok := part["thinking"].([]any); ok {
-					for _, tp := range thinking {
-						if tpm, ok := tp.(map[string]any); ok {
-							if t, ok := tpm["text"].(string); ok {
-								reasoning.WriteString(t)
-							}
-						}
-					}
-				}
-			}
-		}
-		// Only treat as structured content if we extracted something;
-		// otherwise fall through so callers see an empty Answer.
-		if answer.Len() > 0 || reasoning.Len() > 0 {
-			ans := answer.String()
-			content = &ans
-			rc := reasoning.String()
-			structuredReason = &rc
-		}
-	}
-	if content == nil {
-		if _, ok := messageMap["tool_calls"].([]any); ok {
-			// content may be nil when the response only carries tool calls.
-			// Return an empty-string pointer so callers can rely on a non-nil Answer.
-			empty := ""
-			content = &empty
-		} else if rc, ok := messageMap["reasoning_content"].(string); ok && rc != "" {
-			// content may be nil when the response only carries reasoning_content.
-			empty := ""
-			content = &empty
-		}
+	} else if _, ok := messageMap["tool_calls"].([]any); ok {
+		// content may be nil when the response only carries tool calls.
+		// Return an empty-string pointer so callers can rely on a non-nil Answer.
+		empty := ""
+		content = &empty
+	} else if rc, ok := messageMap["reasoning_content"].(string); ok && rc != "" {
+		// content may be nil when the response only carries reasoning_content.
+		empty := ""
+		content = &empty
 	}
 
-	// A structured content array already carries its own reasoning;
-	// use that instead of the top-level reasoning_content field.
 	var reasonContent *string
-	if structuredReason != nil {
-		reasonContent = structuredReason
-	} else if rc, ok := messageMap["reasoning_content"].(string); ok && rc != "" {
+	if rc, ok := messageMap["reasoning_content"].(string); ok && rc != "" {
 		reason := rc
-		if reason != "" && reason[0] == '\n' {
+		if reason[0] == '\n' {
 			reason = reason[1:]
 		}
 		reasonContent = &reason
