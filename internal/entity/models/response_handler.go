@@ -191,11 +191,16 @@ func extractContentAndChoices(result map[string]any) (*string, *string, []map[st
 	}
 
 	var reasonContent *string
-	if rc, ok := messageMap["reasoning_content"].(string); ok {
+	if rc, ok := messageMap["reasoning_content"].(string); ok && rc != "" {
 		reason := rc
-		if reason != "" && reason[0] == '\n' {
+		if reason[0] == '\n' {
 			reason = reason[1:]
 		}
+		reasonContent = &reason
+	} else if rc, ok := messageMap["reasoning"].(string); ok && rc != "" {
+		// Some providers (e.g. Avian) report reasoning under a top-level
+		// "reasoning" field instead of "reasoning_content".
+		reason := rc
 		reasonContent = &reason
 	} else {
 		// Always return a non-nil pointer so callers can rely on it.

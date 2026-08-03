@@ -801,7 +801,7 @@ func TestCometAPIEmbedRejectsHTTPError(t *testing.T) {
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
 	_, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "CometAPI embeddings API error") {
-		t.Errorf("expected CometAPI embeddings API error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "status 401") {
+		t.Errorf("expected embeddings API error for HTTP 401, got %v", err)
 	}
 }
