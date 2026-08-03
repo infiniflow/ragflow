@@ -1114,6 +1114,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       variableTip: `Used together with RAGFlow's chat assistant management APIs, variables can help develop more flexible system prompt strategies. The defined variables will be used by 'System prompt' as part of the prompts for the LLM. {knowledge} is a reserved special variable representing chunks retrieved from specified dataset(s), and all variables should be enclosed in curly braces {} in the 'System prompt'. See https://ragflow.io/docs/dev/set_chat_variables for details.`,
       add: 'Add',
       key: 'Key',
+      variableKeyMessage: 'Please input the variable key',
       optional: 'Optional',
       operation: 'Operation',
       model: 'Model',
