@@ -273,7 +273,8 @@ export const useFetchChat = () => {
 export const useFetchSessionList = () => {
   const { id } = useParams();
 
-  const { searchString, handleInputChange } = useHandleSearchStrChange();
+  const { searchString, handleInputChange, setSearchString } =
+    useHandleSearchStrChange();
 
   const {
     data,
@@ -299,7 +300,14 @@ export const useFetchSessionList = () => {
     },
   });
 
-  return { data, loading, refetch, searchString, handleInputChange };
+  return {
+    data,
+    loading,
+    refetch,
+    searchString,
+    handleInputChange,
+    setSearchString,
+  };
 };
 
 export function useFetchSessionManually() {
