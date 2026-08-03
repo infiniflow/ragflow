@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from rag.nlp import rag_tokenizer, query
 from rag.nlp.fusion import build_fusion_expr
 import numpy as np
-from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr, DocStoreConnection
+from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByExpr, DocStoreConnection
 from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD

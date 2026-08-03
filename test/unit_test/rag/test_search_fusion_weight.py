@@ -26,8 +26,11 @@ from common.doc_store.doc_store_base import MatchTextExpr, FusionExpr
 
 
 class _DummyFulltextQueryer:
-    def question(self, text, min_match):
+    def question(self, text, min_match=0):
         return MatchTextExpr(fields=["content_ltks"], matching_text=text, topn=10, extra_options={}), ["keyword"]
+
+    def token_similarity(self, keywords, documents):
+        return [0.4] * len(documents)
 
 
 _ROOT = Path(__file__).parents[3]
@@ -89,7 +92,8 @@ class _CapturingDataStore:
         self.match_expressions = None
 
     def search(self, *args, **kwargs):
-        self.match_expressions = args[3]
+        if len(args[3]) == 3:
+            self.match_expressions = args[3]
         return object()
 
     def get_total(self, result):
@@ -107,6 +111,9 @@ class _CapturingDataStore:
                 "kb_id": "kb-1",
             }
         }
+
+    def get_scores(self, result):
+        return {"chunk-1": 0.5}
 
     def get_highlight(self, result, keywords, field_name):
         return {}
@@ -141,3 +148,31 @@ async def test_dealer_retrieval_passes_vector_similarity_weight_to_fusion_expr(s
     assert fusion_expr.fusion_params["weights"] == "0.2,0.8"
     assert "Dealer.search fusion" in caplog.text
     assert "vector_similarity_weight=0.8" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_dealer_retrieval_keeps_elasticsearch_fusion_weight(search_environment):
+    data_store = _CapturingDataStore()
+    dealer = search_environment(data_store)
+
+    import common
+
+    common.settings.DOC_ENGINE_INFINITY = False
+
+    await dealer.retrieval(
+        question="test question",
+        embd_mdl=_FakeEmbeddingModel(),
+        tenant_ids=["tenant-1"],
+        kb_ids=["kb-1"],
+        page=1,
+        page_size=10,
+        similarity_threshold=0.0,
+        vector_similarity_weight=0.8,
+        top=10,
+        aggs=False,
+    )
+
+    assert data_store.match_expressions is not None
+    fusion_expr = data_store.match_expressions[2]
+    assert isinstance(fusion_expr, FusionExpr)
+    assert fusion_expr.fusion_params["weights"] == "0.001,1"
