@@ -84,8 +84,7 @@ func finalizeGoogleModelList(list []ListModelResponse) []ListModelResponse {
 	for _, item := range list {
 		types := item.ModelTypes
 		if len(types) == 0 {
-			pureName, _, _ := strings.Cut(item.Name, "@")
-			types = InferModelTypes(pureName)
+			types = InferModelTypes(item.Name)
 		}
 		supported := make([]string, 0, len(types))
 		for _, t := range types {

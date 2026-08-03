@@ -17,8 +17,10 @@
 package document
 
 import (
+	"context"
 	"errors"
 	"ragflow/internal/service"
+	"ragflow/internal/storage"
 	"regexp"
 	"time"
 
@@ -219,10 +221,10 @@ type IngestDocumentRequest struct {
 
 // StartParseOptions controls StartParseDocuments behavior.
 type StartParseOptions struct {
-	// ApplyKB merges the knowledgebase's parser_config (llm_id, metadata)
+	// ApplyKB merges the knowledge base's parser_config (llm_id, metadata)
 	// into the document before parsing.
 	ApplyKB bool
-	// RerunWithDelete clears prior chunks/tasks/counters before re-parsing.
+	// RerunWithDelete clears prior chunks/tasks/counters before reparsing.
 	RerunWithDelete bool
 }
 
@@ -252,7 +254,7 @@ const knowledgebaseFolderName = ".knowledgebase"
 const maxUploadDocSize = 128 * 1024 * 1024
 
 // MetadataUpdate is one update item: set key to value.
-type DocumentMetadataUpdate struct {
+type MetadataUpdate struct {
 	Key       string      `json:"key"`
 	Value     interface{} `json:"value"`
 	Match     interface{} `json:"match,omitempty"`
@@ -260,19 +262,44 @@ type DocumentMetadataUpdate struct {
 }
 
 // MetadataDelete removes a whole key, or a specific value from a list field.
-type DocumentMetadataDelete struct {
+type MetadataDelete struct {
 	Key   string      `json:"key"`
 	Value interface{} `json:"value,omitempty"`
 }
 
 // MetadataSelector selects which documents to target.
-type DocumentMetadataSelector struct {
+type MetadataSelector struct {
 	DocumentIDs       []string               `json:"document_ids"`
 	MetadataCondition map[string]interface{} `json:"metadata_condition"`
 }
 
-// BatchUpdateDocumentMetadatasResponse summarises the operation.
-type BatchUpdateDocumentMetadatasResponse struct {
+// BatchUpdateMetadatasResponse summarises the operation.
+type BatchUpdateMetadatasResponse struct {
 	Updated     int `json:"updated"`
 	MatchedDocs int `json:"matched_docs"`
+}
+
+// removeObjectBestEffort retries blob deletion on a context that survives the
+// originating request. Bounded by a timeout so a wedged storage SDK cannot
+// block the caller forever. It always uses the parent request's storage impl,
+// but deliberately NOT the request context, because a cancelled request must
+// not leak the blob it already wrote (or orphan a blob whose row was deleted).
+func removeObjectBestEffort(storageImpl storage.Storage, bucket, object string) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(context.Background()), 30*time.Second)
+	defer cancel()
+
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		if err := storageImpl.Remove(ctx, bucket, object); err != nil {
+			lastErr = err
+			// Treat cancellation of the *new* cleanup ctx as terminal.
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				break
+			}
+			time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+			continue
+		}
+		return nil
+	}
+	return lastErr
 }

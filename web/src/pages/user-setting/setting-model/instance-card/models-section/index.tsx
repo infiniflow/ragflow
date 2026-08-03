@@ -86,6 +86,8 @@ export function ModelsSection(props: ModelsSectionProps) {
   const {
     catalog,
     setCatalog,
+    updateCatalogModel,
+    clearCatalogOverride,
     manualListLoading,
     hasFetched,
     handleListModels,
@@ -237,6 +239,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     filteredModels,
     addedSet,
     setCatalog,
+    clearCatalogOverride,
     addDraftModel,
     removeDraftModel,
     setDraftModelsList: setDraftModels,
@@ -255,7 +258,10 @@ export function ModelsSection(props: ModelsSectionProps) {
   } = useModelEdit({
     providerName,
     instanceName,
+    addedSet,
     isDraftInstance,
+    updateCatalogModel,
+    clearCatalogOverride,
     updateDraftModel,
   });
 

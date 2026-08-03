@@ -125,7 +125,7 @@ OS = {}
 GCS = {}
 
 DOC_MAXIMUM_SIZE: int = 128 * 1024 * 1024
-DOC_BULK_SIZE: int = 4
+DOC_BULK_SIZE: int = 32
 EMBEDDING_BATCH_SIZE: int = 16
 
 PARALLEL_DEVICES: int = 0
@@ -175,7 +175,8 @@ def init_secret_key():
 def get_secret_key():
     global SECRET_KEY
     if SECRET_KEY is None:
-        return _get_or_create_secret_key()
+        # Why need cache it, if REDIS evict keys due to lack of memory, new secret key will be generated, cause all requests 401
+        SECRET_KEY = _get_or_create_secret_key()
     return SECRET_KEY
 
 
@@ -394,7 +395,7 @@ def init_settings():
 
     global DOC_MAXIMUM_SIZE, DOC_BULK_SIZE, EMBEDDING_BATCH_SIZE
     DOC_MAXIMUM_SIZE = int(os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024))
-    DOC_BULK_SIZE = int(os.environ.get("DOC_BULK_SIZE", 4))
+    DOC_BULK_SIZE = int(os.environ.get("DOC_BULK_SIZE", 32))
     EMBEDDING_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", 16))
 
     os.environ["DOTNET_SYSTEM_GLOBALIZATION_INVARIANT"] = "1"

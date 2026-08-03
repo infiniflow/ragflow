@@ -63,36 +63,36 @@ func newFakeUploadStorage() *fakeUploadStorage {
 }
 
 func (f *fakeUploadStorage) Type() string                  { return "fake_upload_storage" }
-func (f *fakeUploadStorage) Health() bool                  { return true }
+func (f *fakeUploadStorage) Health(_ context.Context) bool { return true }
 func (f *fakeUploadStorage) key(bucket, fnm string) string { return bucket + "/" + fnm }
-func (f *fakeUploadStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {
+func (f *fakeUploadStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	f.objects[f.key(bucket, fnm)] = append([]byte(nil), binary...)
 	return nil
 }
-func (f *fakeUploadStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
+func (f *fakeUploadStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	v, ok := f.objects[f.key(bucket, fnm)]
 	if !ok {
 		return nil, errors.New("not found")
 	}
 	return append([]byte(nil), v...), nil
 }
-func (f *fakeUploadStorage) Remove(bucket, fnm string, tenantID ...string) error {
+func (f *fakeUploadStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	delete(f.objects, f.key(bucket, fnm))
 	return nil
 }
-func (f *fakeUploadStorage) ObjExist(bucket, fnm string, tenantID ...string) bool {
+func (f *fakeUploadStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {
 	_, ok := f.objects[f.key(bucket, fnm)]
 	return ok
 }
-func (f *fakeUploadStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+func (f *fakeUploadStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
 	return []string{}, nil
 }
-func (f *fakeUploadStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
+func (f *fakeUploadStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
-func (f *fakeUploadStorage) BucketExists(bucket string) bool  { return true }
-func (f *fakeUploadStorage) RemoveBucket(bucket string) error { return nil }
-func (f *fakeUploadStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool {
+func (f *fakeUploadStorage) BucketExists(ctx context.Context, bucket string) bool  { return true }
+func (f *fakeUploadStorage) RemoveBucket(ctx context.Context, bucket string) error { return nil }
+func (f *fakeUploadStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	v, ok := f.objects[f.key(srcBucket, srcPath)]
 	if !ok {
 		return false
@@ -100,8 +100,8 @@ func (f *fakeUploadStorage) Copy(srcBucket, srcPath, destBucket, destPath string
 	f.objects[f.key(destBucket, destPath)] = append([]byte(nil), v...)
 	return true
 }
-func (f *fakeUploadStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
-	if !f.Copy(srcBucket, srcPath, destBucket, destPath) {
+func (f *fakeUploadStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+	if !f.Copy(ctx, srcBucket, srcPath, destBucket, destPath) {
 		return false
 	}
 	delete(f.objects, f.key(srcBucket, srcPath))
@@ -796,7 +796,7 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		t.Fatalf("parser_config=%v", cfg)
 	}
 
-	storedBlob, err := mockStorage.Get(kb.ID, "nested/path/deck(1).pptx")
+	storedBlob, err := mockStorage.Get(ctx, kb.ID, "nested/path/deck(1).pptx")
 	if err != nil {
 		t.Fatalf("blob not stored: %v", err)
 	}
@@ -2119,12 +2119,12 @@ func TestBatchUpdateDocumentMetadatasMatchesPythonSemantics(t *testing.T) {
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1", "doc-2", "doc-3"},
-	}, []DocumentMetadataUpdate{
+	}, []MetadataUpdate{
 		{Key: "tags", Value: "new", Match: "old"},
 		{Key: "category", Value: "paper"},
-	}, []DocumentMetadataDelete{
+	}, []MetadataDelete{
 		{Key: "author", Value: "alice"},
 	})
 	if err != nil {
@@ -2180,9 +2180,9 @@ func TestBatchUpdateDocumentMetadatasDoesNotReplaceWhenCurrentSearchIsStale(t *t
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1"},
-	}, []DocumentMetadataUpdate{
+	}, []MetadataUpdate{
 		{Key: "category", Value: "paper"},
 	}, nil)
 	if err != nil || code != common.CodeSuccess {
@@ -2217,9 +2217,9 @@ func TestBatchUpdateDocumentMetadatasDeletesEmptyMetadataAndNoOps(t *testing.T) 
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1", "doc-2"},
-	}, nil, []DocumentMetadataDelete{{Key: "status", Value: "draft"}})
+	}, nil, []MetadataDelete{{Key: "status", Value: "draft"}})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("delete batch failed: code=%v err=%v", code, err)
 	}
@@ -2246,9 +2246,9 @@ func TestBatchUpdateDocumentMetadatasNormalizesNumberValues(t *testing.T) {
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1"},
-	}, []DocumentMetadataUpdate{
+	}, []MetadataUpdate{
 		{Key: "score", Value: "42", ValueType: "number"},
 	}, nil)
 	if err != nil || code != common.CodeSuccess {
@@ -2276,7 +2276,7 @@ func TestBatchUpdateDocumentMetadatasNormalizesNumberValues(t *testing.T) {
 func TestBatchUpdateDocumentMetadatasRejectsMissingValue(t *testing.T) {
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{}, []DocumentMetadataUpdate{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{}, []MetadataUpdate{
 		{Key: "status"},
 	}, nil)
 	if err == nil {

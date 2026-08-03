@@ -38,6 +38,11 @@ func HandleNonStreamingResponse(
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
+	// Check for upstream error.
+	if apiErr, ok := result["error"]; ok && apiErr != nil {
+		return nil, fmt.Errorf("upstream error: %v", apiErr)
+	}
+
 	// Extract usage via the protocol-specific parser.
 	var usage *TokenUsage
 	if u, ok := cfg.ResponseParser(result); ok {
@@ -115,8 +120,15 @@ func HandleStreamingResponse(
 
 		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
-		if reasoningContent, ok := delta["reasoning_content"].(string); ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
+		// Extract reasoning via the protocol hook so each provider can
+		// name its reasoning field differently (reasoning_content,
+		// reasoning, ...) without the shared handler knowing which.
+		extractReasoning := cfg.ExtractStreamReasoning
+		if extractReasoning == nil {
+			extractReasoning = extractDefaultStreamReasoning
+		}
+		if reasoning := extractReasoning(delta); reasoning != "" {
+			if err := sender(nil, &reasoning); err != nil {
 				return err
 			}
 		}
@@ -128,6 +140,9 @@ func HandleStreamingResponse(
 		}
 
 		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
+		if finishReason, ok := event["finish_reason"].(string); ok && finishReason != "" {
 			sawTerminal = true
 		}
 
@@ -191,11 +206,16 @@ func extractContentAndChoices(result map[string]any) (*string, *string, []map[st
 	}
 
 	var reasonContent *string
-	if rc, ok := messageMap["reasoning_content"].(string); ok {
+	if rc, ok := messageMap["reasoning_content"].(string); ok && rc != "" {
 		reason := rc
-		if reason != "" && reason[0] == '\n' {
+		if reason[0] == '\n' {
 			reason = reason[1:]
 		}
+		reasonContent = &reason
+	} else if rc, ok := messageMap["reasoning"].(string); ok && rc != "" {
+		// Some providers (e.g. Avian) report reasoning under a top-level
+		// "reasoning" field instead of "reasoning_content".
+		reason := rc
 		reasonContent = &reason
 	} else {
 		// Always return a non-nil pointer so callers can rely on it.

@@ -1006,7 +1006,7 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 
 	// storage engine
 	storageImpl := storage.GetStorageFactory().GetStorage()
-	storageHealth := storageImpl.Health()
+	storageHealth := storageImpl.Health(ctx)
 	if storageHealth {
 		results = append(results, newServiceStatus("storage_engine", storageImpl.Type(), "alive", time.Now(), ""))
 	} else {

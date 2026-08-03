@@ -20,7 +20,8 @@ import random
 import re
 from functools import partial
 
-from litellm import logging
+import logging
+
 import numpy as np
 from PIL import Image
 
@@ -1130,6 +1131,7 @@ class Parser(ProcessBase):
             blob,
             conf.get("chunk_token_num", 128),
             conf.get("delimiter", "\n!?;。；！？"),
+            keep_delimiters=True,
         )
         if conf.get("output_format") == "json":
             self.set_output("json", [{"text": section[0], "doc_type_kwd": "text"} for section in sections if section[0]])

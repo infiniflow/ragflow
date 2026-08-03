@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 import asyncio
+import html
 import logging
 import re
 import time
@@ -807,8 +808,15 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     retrieval_ts = timer()
     if not knowledges and prompt_config.get("empty_response"):
         empty_res = prompt_config["empty_response"]
-        yield {"answer": empty_res, "reference": {}, "prompt": "", "audio_binary": None, "final": False}
-        yield {"answer": empty_res, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res), "final": True}
+        logging.debug("async_chat empty_response path: empty_res=%r tts_mdl=%r", empty_res, tts_mdl)
+        # HTML-escape for frontend display so DOMPurify does not strip
+        # unknown tags (e.g. <abc> → &lt;abc&gt;), which would otherwise
+        # leave the content blank and stall the UI on "Searching…".
+        # The raw value is still used for TTS (which has its own tag-
+        # stripping in clean_tts_text).
+        escaped_answer = html.escape(empty_res)
+        yield {"answer": escaped_answer, "reference": {}, "prompt": "", "audio_binary": None, "final": False}
+        yield {"answer": escaped_answer, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res), "final": True}
         return
 
     # Only overwrite kwargs["knowledge"] when retrieval produced something;
@@ -1481,6 +1489,8 @@ def clean_tts_text(text: str) -> str:
     if not text:
         return ""
 
+    logging.debug("clean_tts_text BEFORE: %r", text)
+
     text = text.encode("utf-8", "ignore").decode("utf-8", "ignore")
 
     text = re.sub(r"[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]", "", text)
@@ -1490,12 +1500,17 @@ def clean_tts_text(text: str) -> str:
     )
     text = emoji_pattern.sub("", text)
 
+    # Strip XML/SSML/HTML-like tags so the TTS engine does not hang on
+    # unclosed or unknown markup (e.g. <abc> in empty_response).
+    text = re.sub(r"<[^>]*>", "", text)
+
     text = re.sub(r"\s+", " ", text).strip()
 
     MAX_LEN = 500
     if len(text) > MAX_LEN:
         text = text[:MAX_LEN]
 
+    logging.debug("clean_tts_text AFTER: %r", text)
     return text
 
 
@@ -1844,16 +1859,15 @@ async def gen_mindmap(question, kb_ids, tenant_id, search_config={}):
 
 
 async def rag_agent(dialog, messages, stream=True, **kwargs):
-    logging.debug("Begin rag_agent")
+    prompt_config = dialog.prompt_config or {}
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
-    prompt_config = dialog.prompt_config
     if not prompt_config.get("reasoning", 0) and not kwargs.get("reasoning"):
         async for ans in async_chat(dialog, messages, stream, **kwargs):
             yield ans
         return
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
     use_web_search = _should_use_web_search(prompt_config, kwargs.get("internet"))
-    logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
+    logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
     # "reasoning" arrives as "1".."4" mapping to the ordered THINKING_MODES
     # (low, medium, high, ultra); fall back to "medium" on anything else.
@@ -1866,12 +1880,13 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     except (TypeError, ValueError):
         thinking_mode = "medium"
 
+    gen_conf = dialog.llm_setting or {}
     rag_tools = RAGTools(
         tenant_ids,
         chat_mdl,
         embed_mdl=embd_mdl,
         kb_ids=dialog.kb_ids,
-        tav=Tavily(prompt_config["tavily_api_key"]) if use_web_search else None,
+        tav=Tavily(prompt_config.get("tavily_api_key")) if use_web_search else None,
         do_refer=False,
         thinking_mode=thinking_mode,
     )
@@ -1934,7 +1949,6 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     # small models mangle or drop, so the client receives nothing.
     if getattr(chat_mdl, "mdl", None) is not None:
         chat_mdl.mdl.terminal_tools = {"rag"}
-    gen_conf = dialog.llm_setting
     if stream:
         # Surface the agentic pipeline's bracket-tagged progress logs to the
         # client as <think> content, interleaved with the real token stream.

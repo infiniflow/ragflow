@@ -690,7 +690,7 @@ func (d *DatasetService) DeleteIndex(ctx context.Context, userID, datasetID, ind
 
 	if taskID != "" {
 		redisClient := redisengine.Get()
-		if redisClient == nil || !redisClient.Set(ctx, fmt.Sprintf("%s-cancel", taskID), "x", 0) {
+		if redisClient == nil || !redisClient.Set(ctx, fmt.Sprintf("%s-cancel", taskID), "x", time.Hour) {
 			common.Warn("Failed to set dataset index cancellation marker", zap.String("dataset_id", datasetID), zap.String("task_id", taskID))
 		}
 		if err := dao.DB.Unscoped().Where("id = ?", taskID).Delete(&entity.Task{}).Error; err != nil {

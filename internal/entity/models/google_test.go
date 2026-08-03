@@ -393,8 +393,8 @@ func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 	}
 
 	expectedModels := []ListModelResponse{
-		{Name: "Gemini 2.5 Flash@Google", ModelTypes: []string{"chat"}},
-		{Name: "Gemini 2.5 Pro@Google", ModelTypes: []string{"chat"}},
+		{Name: "Gemini 2.5 Flash", ModelTypes: []string{"chat"}},
+		{Name: "Gemini 2.5 Pro", ModelTypes: []string{"chat"}},
 	}
 	if !reflect.DeepEqual(models, expectedModels) {
 		t.Fatalf("expected models %v, got %v", expectedModels, models)
@@ -435,18 +435,18 @@ func TestCollectGoogleModelNamesReturnsPageError(t *testing.T) {
 
 func TestFinalizeGoogleModelListFiltersUnknownModelTypes(t *testing.T) {
 	list := []ListModelResponse{
-		{Name: "gemini-2.5-pro@Gemini"},                                    // not in catalog: inferred
-		{Name: "gemini-embedding-001@Gemini"},                              // not in catalog: inferred
-		{Name: "custom@Gemini", ModelTypes: []string{"chat", "image-gen"}}, // unsupported value stripped
-		{Name: "broken@Gemini", ModelTypes: []string{"image-gen"}},         // no supported type: dropped
+		{Name: "gemini-2.5-pro"},                                    // not in catalog: inferred
+		{Name: "gemini-embedding-001"},                              // not in catalog: inferred
+		{Name: "custom", ModelTypes: []string{"chat", "image-gen"}}, // unsupported value stripped
+		{Name: "broken", ModelTypes: []string{"image-gen"}},         // no supported type: dropped
 	}
 
 	got := finalizeGoogleModelList(list)
 
 	expected := []ListModelResponse{
-		{Name: "gemini-2.5-pro@Gemini", ModelTypes: []string{"chat"}},
-		{Name: "gemini-embedding-001@Gemini", ModelTypes: []string{"embedding"}},
-		{Name: "custom@Gemini", ModelTypes: []string{"chat"}},
+		{Name: "gemini-2.5-pro", ModelTypes: []string{"chat"}},
+		{Name: "gemini-embedding-001", ModelTypes: []string{"embedding"}},
+		{Name: "custom", ModelTypes: []string{"chat"}},
 	}
 	if !reflect.DeepEqual(got, expected) {
 		t.Fatalf("expected models %v, got %v", expected, got)

@@ -100,6 +100,15 @@ func NewRunTrackerWithClient(client *redis.Client, ttl time.Duration) *RunTracke
 	return &RunTracker{client: client, ttl: ttl}
 }
 
+func (t *RunTracker) setRunFields(ctx context.Context, runID string, values ...interface{}) error {
+	key := runKey(runID)
+	pipe := t.client.Pipeline()
+	pipe.HSet(ctx, key, values...)
+	pipe.Expire(ctx, key, t.ttl)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
 // Start records a new run as in-progress. canvasID and tenantID identify
 // the source DSL and tenant; parentRunID may be empty for fresh runs and
 // carries the source run-id for resume chains (R1 in plan §2.6).
@@ -134,7 +143,7 @@ func (t *RunTracker) AttachCheckpoint(ctx context.Context, runID, checkpointID s
 	if t == nil || t.client == nil {
 		return errors.New("run tracker: redis client not initialized")
 	}
-	return t.client.HSet(ctx, runKey(runID), "checkpoint_id", checkpointID).Err()
+	return t.setRunFields(ctx, runID, "checkpoint_id", checkpointID)
 }
 
 // AttachInterrupt persists the eino interrupt id that paused this run
@@ -147,7 +156,7 @@ func (t *RunTracker) AttachInterrupt(ctx context.Context, runID, interruptID str
 	if t == nil || t.client == nil {
 		return errors.New("run tracker: redis client not initialized")
 	}
-	return t.client.HSet(ctx, runKey(runID), runFieldInterruptID, interruptID).Err()
+	return t.setRunFields(ctx, runID, runFieldInterruptID, interruptID)
 }
 
 // GetInterruptID returns the persisted interrupt id for runID. The bool is
@@ -186,10 +195,10 @@ func (t *RunTracker) MarkSucceeded(ctx context.Context, runID string) error {
 	if t == nil || t.client == nil {
 		return errors.New("run tracker: redis client not initialized")
 	}
-	return t.client.HSet(ctx, runKey(runID),
+	return t.setRunFields(ctx, runID,
 		"status", runStatusSucceeded,
 		"finished_at", time.Now().UnixMilli(),
-	).Err()
+	)
 }
 
 // MarkFailed transitions the run to status=2 and records the reason.
@@ -197,11 +206,11 @@ func (t *RunTracker) MarkFailed(ctx context.Context, runID, reason string) error
 	if t == nil || t.client == nil {
 		return errors.New("run tracker: redis client not initialized")
 	}
-	return t.client.HSet(ctx, runKey(runID),
+	return t.setRunFields(ctx, runID,
 		"status", runStatusFailed,
 		"finished_at", time.Now().UnixMilli(),
 		"failure_reason", reason,
-	).Err()
+	)
 }
 
 // MarkCancelled transitions the run to status=3 and sets the cancel flag.
