@@ -564,11 +564,24 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		req.CanvasCategory = "agent_canvas"
 	}
 
-	if existing, err := s.canvasDAO.GetByUserAndTitle(ctx, dao.DB, req.UserID, title, req.CanvasCategory); err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", err)
-	} else if existing != nil {
-		return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
+	var duplicateCheckErr error
+	title, err := common.DuplicateName(func(title string, tid string) bool {
+		existing, queryErr := s.canvasDAO.GetByUserAndTitle(ctx, dao.DB, tid, title, req.CanvasCategory)
+		if queryErr != nil {
+			duplicateCheckErr = queryErr
+			return false
+		}
+		return existing != nil
+	}, title, req.UserID)
+	if duplicateCheckErr != nil {
+		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", duplicateCheckErr)
 	}
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("failed to create agent: %w", err)
+	} else {
+		req.Title = &title
+	}
+
 	// Normalize legacy v1 / Go-v2 payloads to a React-Flow-shaped graph so
 	// the front-end can render the canvas without a migration. Idempotent;
 	// no-op when graph.nodes is already non-empty.

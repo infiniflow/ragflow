@@ -353,21 +353,21 @@ func TestChatServiceCreateValidatesName(t *testing.T) {
 	}
 }
 
-func TestChatServiceCreateRejectsDuplicateName(t *testing.T) {
+func TestChatServiceCreateDedupesDuplicateNameCaseInsensitive(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
 	ctx := t.Context()
-	_, code, err := svc.Create(ctx, "user-1", map[string]interface{}{"name": "chat-chat-1"})
-	if err == nil {
-		t.Fatal("expected duplicate name error")
+	resp, code, err := svc.Create(ctx, "user-1", map[string]interface{}{"name": "CHAT-chat-1"})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
 	}
-	if !strings.Contains(err.Error(), "duplicated chat name") {
-		t.Fatalf("unexpected error: %v", err)
+	if got := resp["name"]; got != "CHAT-chat-1(1)" {
+		t.Fatalf("expected deduped chat name, got %v", got)
 	}
 }
 

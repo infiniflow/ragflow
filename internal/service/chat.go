@@ -221,6 +221,22 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
+
+	var duplicateCheckErr error
+	name, err = common.DuplicateName(func(name string, tid string) bool {
+		existing, queryErr := s.chatDAO.GetByNameAndTenantID(ctx, dao.DB, name, tid)
+		if queryErr != nil {
+			duplicateCheckErr = queryErr
+			return false
+		}
+		return existing != nil
+	}, name, userID)
+	if duplicateCheckErr != nil {
+		return nil, common.CodeServerError, fmt.Errorf("check duplicate chat name: %w", duplicateCheckErr)
+	}
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
 	req["name"] = name
 
 	if datasetIDsValue, ok := req["dataset_ids"]; ok {

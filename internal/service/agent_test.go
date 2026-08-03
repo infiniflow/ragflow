@@ -486,6 +486,42 @@ func TestGetVersion_NotFound(t *testing.T) {
 	}
 }
 
+func TestCreateAgentDedupesTitleCaseInsensitive(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	t.Helper()
+
+	if err := testDB.AutoMigrate(&entity.UserCanvas{}); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+	pushServiceDB(t, testDB)
+
+	if err := testDB.Create(&entity.UserCanvas{
+		ID:             "agent-existing",
+		UserID:         "user-1",
+		Title:          sptr("W"),
+		CanvasCategory: "agent_canvas",
+	}).Error; err != nil {
+		t.Fatalf("failed to create existing canvas: %v", err)
+	}
+
+	title := "w"
+	svc := NewAgentService()
+	row, code, err := svc.CreateAgent(t.Context(), &CreateAgentRequest{
+		UserID: "user-1",
+		Title:  &title,
+		DSL:    entity.JSONMap{"components": map[string]any{}},
+	})
+	if err != nil {
+		t.Fatalf("CreateAgent failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if row.Title == nil || *row.Title != "w(1)" {
+		t.Fatalf("expected deduped agent title, got %v", row.Title)
+	}
+}
+
 // TestRunAgent_VersionBelongsToOtherCanvas pins the v3.5.2 IDOR
 // fix: when the caller supplies an explicit version id, RunAgent
 // must verify that the row belongs to the canvas being run, not

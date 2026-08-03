@@ -260,7 +260,7 @@ func (dao *UserCanvasDAO) DeleteTx(ctx context.Context, tx *gorm.DB, id string) 
 // already exists" rule that the Python agent API mirrors with
 // UserCanvasService.query(user_id=..., title=...).
 func (dao *UserCanvasDAO) GetByUserAndTitle(ctx context.Context, db *gorm.DB, userID, title, canvasCategory string) (*entity.UserCanvas, error) {
-	q := db.WithContext(ctx).Where("user_id = ? AND title = ?", userID, title)
+	q := db.WithContext(ctx).Where("user_id = ? AND LOWER(title) = LOWER(?)", userID, title)
 	if canvasCategory != "" {
 		q = q.Where("canvas_category = ?", canvasCategory)
 	}
