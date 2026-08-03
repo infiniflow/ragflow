@@ -29,15 +29,6 @@
       "reason": "Python _merge_text_chunks_by_token_size merges adjacent text chunks across JSON items into a global token budget (6 chunks at chunk_token_size=128); Go merges within each item separately, emitting one chunk per item (40 chunks). The Go side is the defect: a multi-item document is over-segmented. token__json_two_item is the minimal reproduction: two items that jointly fit the budget still come back as 2 chunks from Go and 1 from Python."
     },
     {
-      "id": "token-text-delimiters-dropped",
-      "tag": "python_bug",
-      "kind": "chunk_text",
-      "applies_to": ["token__markdown_default_delim", "token__text_default_delim", "token__html_default_delim", "token__text_token_liveness"],
-      "owner_fix_side": "python",
-      "tracking": "FIXED in PR #17721 (https://github.com/infiniflow/ragflow/pull/17721): token_chunker.py now forwards \"\".join(self._param.delimiters) to naive_merge instead of a hardcoded \"\". Cleanup: after that PR merges, re-capture the golden for token__markdown_default_delim / token__text_default_delim / token__html_default_delim / token__text_token_liveness with the fixed Python, confirm it matches the Go snapshot, then DELETE this rule.",
-      "reason": "On the markdown/text/html path Python only treats backtick-wrapped delimiters as split points: _compile_delimiter_pattern (token_chunker.py:70-76) scans for `...` and returns '' for a bare [\"\\n\"], after which _invoke (token_chunker.py:323-328) calls naive_merge(payload, chunk_token_size, \"\", ...) with a hardcoded empty delimiter instead of forwarding self._param.delimiters. naive_merge itself supports bare delimiters (rag/nlp/__init__.py:1347-1363), but with '' it falls through to _split_oversized_unit (1364-1367) and cuts on whitespace atoms — mid-sentence, e.g. '...balance recall and' | 'precision.'. Go segments on its sentenceDelimiter '\\n' (token.go:338) and merges whole lines by token size, so both sides emit the same chunk count but break at different offsets. Go does what the configured delimiters ask for; Python drops them."
-    },
-    {
       "id": "token-custom-delim-newline-and-field",
       "tag": "go_bug",
       "kind": "chunk_text",
@@ -67,11 +58,11 @@
     {
       "id": "token-text-overlap-split",
       "tag": "go_bug",
-      "kind": "chunk_count",
+      "kind": "chunk_text",
       "applies_to": ["token__text_overlap"],
       "owner_fix_side": "go",
-      "tracking": "TODO: file issue — Go emits one extra chunk than Python under overlapped_percent on the text path",
-      "reason": "Text path with chunk_token_size=64, delimiters=['\\n'], overlapped_percent=0.1 over three delimiter-separated lines. Python merges the three lines into 2 chunks; Go produces 3. Same per-item/over-segmentation family as the json merge divergence but on the text path, and the overlap prefix handling (computeOverlapPrefix, token.go:457) changes where the boundary falls."
+      "tracking": "TODO: file issue — Go carries a longer overlap prefix into the next chunk than Python under overlapped_percent on the text path",
+      "reason": "Text path with chunk_token_size=64, delimiters=['\\n'], overlapped_percent=0.1 over three delimiter-separated lines. The chunk COUNT divergence (Python 2 vs Go 3) was resolved by Python PR #17721, which forwards the configured delimiters so Python now splits on '\\n' and emits 3 chunks matching Go. A residual CONTENT divergence remains: the overlap prefix carried into the next chunk differs in length — Python carries a shorter char prefix (e.g. 'ta' from 'beta') while Go carries a longer one (e.g. 'eta'). This is the overlap-prefix handling (computeOverlapPrefix, token.go:457) rounding, a Go-side behaviour that Python does not replicate."
     }
   ]
 }
