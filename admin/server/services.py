@@ -500,6 +500,11 @@ class SandboxMgr:
             "description": "Tenki - Disposable microVM code sandboxes",
             "tags": ["saas", "cloud", "microvm", "isolated"],
         },
+        "novita": {
+            "name": "Novita Sandbox",
+            "description": "Novita Agent Sandbox - Cloud-based code execution",
+            "tags": ["saas", "cloud", "scalable"],
+        },
     }
 
     @staticmethod
@@ -520,6 +525,7 @@ class SandboxMgr:
             AliyunCodeInterpreterProvider,
             E2BProvider,
             TenkiProvider,
+            NovitaSandboxProvider,
         )
 
         schemas = {
@@ -529,6 +535,7 @@ class SandboxMgr:
             "aliyun_codeinterpreter": AliyunCodeInterpreterProvider.get_config_schema(),
             "e2b": E2BProvider.get_config_schema(),
             "tenki": TenkiProvider.get_config_schema(),
+            "novita": NovitaSandboxProvider.get_config_schema(),
         }
 
         if provider_id not in schemas:
@@ -595,6 +602,7 @@ class SandboxMgr:
             AliyunCodeInterpreterProvider,
             E2BProvider,
             TenkiProvider,
+            NovitaSandboxProvider,
         )
 
         try:
@@ -640,6 +648,7 @@ class SandboxMgr:
                 "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
                 "e2b": E2BProvider,
                 "tenki": TenkiProvider,
+                "novita": NovitaSandboxProvider,
             }
             provider = provider_classes[provider_type]()
             is_valid, error_msg = provider.validate_config(config)
@@ -688,6 +697,7 @@ class SandboxMgr:
                 AliyunCodeInterpreterProvider,
                 E2BProvider,
                 TenkiProvider,
+                NovitaSandboxProvider,
             )
 
             # Instantiate provider based on type
@@ -698,6 +708,7 @@ class SandboxMgr:
                 "aliyun_codeinterpreter": AliyunCodeInterpreterProvider,
                 "e2b": E2BProvider,
                 "tenki": TenkiProvider,
+                "novita": NovitaSandboxProvider,
             }
 
             if provider_type not in provider_classes:

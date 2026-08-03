@@ -78,6 +78,7 @@ def _load_provider_from_settings() -> None:
             LocalProvider,
             SSHProvider,
             TenkiProvider,
+            NovitaSandboxProvider,
         )
 
         provider_classes = {
@@ -87,6 +88,7 @@ def _load_provider_from_settings() -> None:
             "local": LocalProvider,
             "ssh": SSHProvider,
             "tenki": TenkiProvider,
+            "novita": NovitaSandboxProvider,
         }
 
         if provider_type not in provider_classes:

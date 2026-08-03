@@ -26,7 +26,7 @@ Configure sandbox providers from the admin page:
 - `self_managed`: Uses the executor manager service.
 - `local`: Runs code on the current machine.
 - `ssh`: Runs code on a remote machine over SSH.
-- `aliyun_codeinterpreter`, `e2b`, and `tenki`: Cloud providers.
+- `aliyun_codeinterpreter`, `e2b`, `tenki`, and `novita`: Cloud providers.
 
 
 ## Provider Options
@@ -40,6 +40,7 @@ Admin > Sandbox Settings after the services are up.
 - `ssh`: Runs code on a remote machine over SSH.
 - `aliyun_codeinterpreter` and `e2b`: Cloud-hosted providers that remain available in the admin provider list.
 - `tenki`: Cloud-hosted provider that runs each execution in a disposable [Tenki](https://tenki.cloud) microVM. See [Tenki](#tenki) below.
+- `novita`: Cloud-hosted provider using the [Novita Agent Sandbox](https://novita.ai/docs/guides/sandbox-overview). See [Novita Sandbox](#novita-sandbox) below.
 
 ### Tenki
 
@@ -65,6 +66,27 @@ Notes:
 - Supported languages are Python and JavaScript.
 - Files written to the `artifacts/` directory of the working directory are returned as run artifacts.
 - The provider uses only Tenki's create/exec/destroy operations; it does not use volumes or snapshots.
+
+### Novita Sandbox
+
+`novita` runs each code execution in a [Novita Agent Sandbox](https://novita.ai/docs/guides/sandbox-overview) cloud sandbox. It is cloud-hosted, so it needs no local sandbox services, gVisor, or Docker base images — only outbound network access and an API key.
+
+The `novita-sandbox` SDK is an optional dependency (it pulls in `httpx`/`pydantic`/`protobuf` version ranges that may differ from RAGFlow's pinned stack), so it is not installed by default. Install it into the RAGFlow runtime before selecting this provider:
+
+```bash
+pip install novita-sandbox
+```
+
+Configure it in **Admin > Sandbox Settings**:
+
+- `api_key` (required): Novita API key.
+- `domain` (optional): override the Novita sandbox domain, defaults to the SDK's built-in default.
+- `timeout` (optional): request timeout in seconds, defaults to 30.
+
+Notes:
+
+- Supported languages are Python and JavaScript.
+- The provider uses the SDK's `code_interpreter.Sandbox` create/run_code/kill operations.
 
 ## Prerequisites
 

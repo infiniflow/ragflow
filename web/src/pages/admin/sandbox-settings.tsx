@@ -64,6 +64,7 @@ const PROVIDER_ICONS: Record<string, React.ElementType> = {
   aliyun_codeinterpreter: LucideCloud,
   e2b: LucideZap,
   tenki: LucideCloudLightning,
+  novita: LucideCloud,
 };
 
 function AdminSandboxSettings() {
