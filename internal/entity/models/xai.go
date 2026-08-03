@@ -29,13 +29,6 @@ import (
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
-	"time"
-)
-
-var (
-	nonStreamCallTimeout = 120 * time.Second
-	streamCallTimeout    = 10 * time.Minute
-	longOpCallTimeout    = 10 * time.Minute
 )
 
 // XAIModel implements ModelDriver for xAI (Grok models)

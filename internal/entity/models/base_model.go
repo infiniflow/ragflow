@@ -34,6 +34,12 @@ import (
 	"github.com/mitchellh/mapstructure"
 )
 
+var (
+	nonStreamCallTimeout = 120 * time.Second
+	streamCallTimeout    = 10 * time.Minute
+	longOpCallTimeout    = 10 * time.Minute
+)
+
 type BaseModel struct {
 	BaseURL          map[string]string
 	URLSuffix        URLSuffix
