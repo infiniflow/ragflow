@@ -143,33 +143,36 @@ export function useModelsCatalog({
   const [catalogOverrides, setCatalogOverrides] = useState<
     Record<string, IProviderModelItem>
   >({});
+  const catalogOverridesRef = useRef(catalogOverrides);
   const [manualListLoading, setManualListLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
 
-  const applyCatalogOverrides = useCallback(
-    (items: IProviderModelItem[], overrides = catalogOverrides) => {
-      const names = new Set<string>();
-      const merged = items.map((item) => {
-        names.add(item.name);
-        const override = overrides[item.name];
-        return override ? { ...item, ...override, name: item.name } : item;
-      });
-      Object.entries(overrides).forEach(([name, override]) => {
-        if (!names.has(name)) {
-          merged.push(override);
-        }
-      });
-      return merged;
-    },
-    [catalogOverrides],
-  );
+  const applyCatalogOverrides = useCallback((items: IProviderModelItem[]) => {
+    const overrides = catalogOverridesRef.current;
+    const names = new Set<string>();
+    const merged = items.map((item) => {
+      names.add(item.name);
+      const override = overrides[item.name];
+      return override ? { ...item, ...override, name: item.name } : item;
+    });
+    Object.entries(overrides).forEach(([name, override]) => {
+      if (!names.has(name)) {
+        merged.push(override);
+      }
+    });
+    return merged;
+  }, []);
 
   const updateCatalogModel = useCallback(
     (name: string, item: IProviderModelItem) => {
-      setCatalogOverrides((prev) => ({
-        ...prev,
-        [name]: { ...(prev[name] ?? {}), ...item, name },
-      }));
+      setCatalogOverrides((prev) => {
+        const next = {
+          ...prev,
+          [name]: { ...(prev[name] ?? {}), ...item, name },
+        };
+        catalogOverridesRef.current = next;
+        return next;
+      });
       setCatalog((prev) => {
         if (!prev.some((m) => m.name === name)) {
           return [...prev, { ...item, name }];
@@ -185,6 +188,7 @@ export function useModelsCatalog({
       if (!prev[name]) return prev;
       const next = { ...prev };
       delete next[name];
+      catalogOverridesRef.current = next;
       return next;
     });
   }, []);
