@@ -230,6 +230,26 @@ class TestEnsureColumns:
 
         release.assert_called_once_with(inf_conn)
 
+    def test_logs_exception_when_other_infinity_error(self):
+        """Non-TABLE_NOT_EXIST Infinity exceptions are re-raised internally
+        and caught/logged by the outer exception handler."""
+        from infinity.common import InfinityException
+
+        conn = self._new_conn()
+        inf_conn = MagicMock()
+        db = MagicMock()
+        db.get_table.side_effect = InfinityException(3000, "catalog corrupted")
+        inf_conn.get_database.return_value = db
+
+        with patch.object(conn.connPool, "get_conn", return_value=inf_conn), patch.object(conn.connPool, "release_conn") as release:
+            conn.ensure_columns(
+                "ragflow_tenant-A",
+                "kb-1",
+                {"deleted_doc_id": {"type": "varchar", "default": ""}},
+            )
+
+        release.assert_called_once_with(inf_conn)
+
     def test_meta_table_uses_index_name_directly(self):
         conn = self._new_conn()
         inf_conn = MagicMock()

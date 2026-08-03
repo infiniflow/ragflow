@@ -423,7 +423,10 @@ class InfinityConnection(InfinityConnectionBase):
             db_instance = inf_conn.get_database(self.dbName)
             try:
                 table_instance = db_instance.get_table(table_name)
-            except InfinityException:
+            except InfinityException as e:
+                # src/common/status.cppm, kTableNotExist = 3022
+                if e.error_code != ErrorCode.TABLE_NOT_EXIST:
+                    raise
                 # Table doesn't exist yet — the next insert() will create it
                 # with the current schema, so we have nothing to upgrade.
                 return
