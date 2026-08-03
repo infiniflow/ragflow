@@ -2119,12 +2119,12 @@ func TestBatchUpdateDocumentMetadatasMatchesPythonSemantics(t *testing.T) {
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1", "doc-2", "doc-3"},
-	}, []DocumentMetadataUpdate{
+	}, []MetadataUpdate{
 		{Key: "tags", Value: "new", Match: "old"},
 		{Key: "category", Value: "paper"},
-	}, []DocumentMetadataDelete{
+	}, []MetadataDelete{
 		{Key: "author", Value: "alice"},
 	})
 	if err != nil {
@@ -2180,9 +2180,9 @@ func TestBatchUpdateDocumentMetadatasDoesNotReplaceWhenCurrentSearchIsStale(t *t
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1"},
-	}, []DocumentMetadataUpdate{
+	}, []MetadataUpdate{
 		{Key: "category", Value: "paper"},
 	}, nil)
 	if err != nil || code != common.CodeSuccess {
@@ -2217,9 +2217,9 @@ func TestBatchUpdateDocumentMetadatasDeletesEmptyMetadataAndNoOps(t *testing.T) 
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1", "doc-2"},
-	}, nil, []DocumentMetadataDelete{{Key: "status", Value: "draft"}})
+	}, nil, []MetadataDelete{{Key: "status", Value: "draft"}})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("delete batch failed: code=%v err=%v", code, err)
 	}
@@ -2246,9 +2246,9 @@ func TestBatchUpdateDocumentMetadatasNormalizesNumberValues(t *testing.T) {
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{
 		DocumentIDs: []string{"doc-1"},
-	}, []DocumentMetadataUpdate{
+	}, []MetadataUpdate{
 		{Key: "score", Value: "42", ValueType: "number"},
 	}, nil)
 	if err != nil || code != common.CodeSuccess {
@@ -2276,7 +2276,7 @@ func TestBatchUpdateDocumentMetadatasNormalizesNumberValues(t *testing.T) {
 func TestBatchUpdateDocumentMetadatasRejectsMissingValue(t *testing.T) {
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &DocumentMetadataSelector{}, []DocumentMetadataUpdate{
+	resp, code, err := svc.BatchUpdateDocumentMetadatas(ctx, "kb-1", &MetadataSelector{}, []MetadataUpdate{
 		{Key: "status"},
 	}, nil)
 	if err == nil {

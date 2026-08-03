@@ -231,6 +231,10 @@ func (m *GCSStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, d
 	if m.Copy(ctx, srcBucket, srcPath, destBucket, destPath) {
 		if err := m.Remove(ctx, srcBucket, srcPath); err != nil {
 			common.Warn("Failed to remove source object after copy", zap.String("bucket", srcBucket), zap.String("key", srcPath), zap.Error(err))
+			err = m.Remove(ctx, destBucket, destPath)
+			if err != nil {
+				common.Warn("Failed to roll back copied destination object", zap.String("bucket", destBucket), zap.String("key", destPath), zap.Error(rmErr))
+			}
 			return false
 		}
 		return true

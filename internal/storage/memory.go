@@ -20,8 +20,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // ErrMemoryNotFound is returned when a key does not exist in the in-memory backend.
@@ -219,6 +222,10 @@ func (m *MemoryStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket
 		return false
 	}
 	if err := m.Remove(ctx, srcBucket, srcPath); err != nil {
+		err = m.Remove(ctx, destBucket, destPath)
+		if err != nil {
+			common.Warn("Failed to roll back copied destination object", zap.String("bucket", destBucket), zap.String("key", destPath), zap.Error(rmErr))
+		}
 		return false
 	}
 	return true
