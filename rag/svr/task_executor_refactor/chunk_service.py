@@ -314,7 +314,7 @@ class ChunkService:
     ) -> bool:
         """Insert mother chunks in batches."""
         for b in range(0, len(mothers), doc_bulk_size):
-            await self._intercept_doc_store_insert(mothers[b : b + doc_bulk_size], search.index_name(task_tenant_id), task_dataset_id)
+            await self._intercept_doc_store_insert(mothers[b : b + doc_bulk_size], search.index_name(task_tenant_id), task_dataset_id, refresh=False)
 
             if self._task_context.has_canceled_func(task_id):
                 self._task_context.progress_cb(-1, msg="Task has been canceled.")
@@ -328,13 +328,13 @@ class ChunkService:
         else:
             return await thread_pool_exec(settings.docStoreConn.delete, condition, index_name, task_dataset_id)
 
-    async def _intercept_doc_store_insert(self, chunks: list, index_name: str, task_dataset_id: str) -> Any:
+    async def _intercept_doc_store_insert(self, chunks: list, index_name: str, task_dataset_id: str, refresh: str | bool = "wait_for") -> Any:
         if self._task_context.write_interceptor:
             if self._task_context.doc_id == GRAPH_RAPTOR_FAKE_DOC_ID:  # raptor - non-determinisic
                 return self._task_context.write_interceptor.intercept("docStoreConn.insert", [])
             return self._task_context.write_interceptor.intercept("docStoreConn.insert")
         else:
-            return await thread_pool_exec(settings.docStoreConn.insert, chunks, index_name, task_dataset_id)
+            return await thread_pool_exec(settings.docStoreConn.insert, chunks, index_name, task_dataset_id, refresh)
 
     async def _insert_main_chunks(
         self,
@@ -345,8 +345,13 @@ class ChunkService:
         doc_bulk_size: int,
     ) -> bool:
         """Insert main chunks in batches with cancellation handling."""
+        # Persist task chunk IDs periodically instead of once per bulk request.
+        # This keeps the task resumable while avoiding one MySQL transaction for
+        # every small document-store batch.
+        checkpoint_batches = max(1, 256 // doc_bulk_size)
+        last_checkpoint = 0
         for b in range(0, len(chunks), doc_bulk_size):
-            doc_store_result = await self._intercept_doc_store_insert(chunks[b : b + doc_bulk_size], search.index_name(task_tenant_id), task_dataset_id)
+            doc_store_result = await self._intercept_doc_store_insert(chunks[b : b + doc_bulk_size], search.index_name(task_tenant_id), task_dataset_id, refresh=False)
 
             if self._task_context.has_canceled_func(task_id):
                 # Roll back partial RAPTOR summary inserts
@@ -362,13 +367,20 @@ class ChunkService:
                 self._task_context.progress_cb(-1, msg=error_message)
                 raise Exception(error_message)
 
-            # Update chunk IDs in task
-            chunk_ids = [chunk["id"] for chunk in chunks[: b + doc_bulk_size]]
-            if not await self._update_task_chunk_ids(task_id, chunk_ids):
-                # Roll back on failure
-                await self._rollback_insertion(task_tenant_id, task_dataset_id, chunk_ids)
-                self._task_context.progress_cb(-1, msg=f"Chunk updates failed since task {task_id} is unknown.")
-                return False
+            batch_end = min(b + doc_bulk_size, len(chunks))
+            is_last_batch = batch_end == len(chunks)
+            if is_last_batch or batch_end - last_checkpoint >= checkpoint_batches * doc_bulk_size:
+                chunk_ids = [chunk["id"] for chunk in chunks[:batch_end]]
+                if not await self._update_task_chunk_ids(task_id, chunk_ids):
+                    # Roll back on failure
+                    await self._rollback_insertion(task_tenant_id, task_dataset_id, chunk_ids)
+                    self._task_context.progress_cb(-1, msg=f"Chunk updates failed since task {task_id} is unknown.")
+                    return False
+                last_checkpoint = batch_end
+
+        refresh_idx = getattr(settings.docStoreConn, "refresh_idx", None)
+        if callable(refresh_idx):
+            await thread_pool_exec(refresh_idx, search.index_name(task_tenant_id))
 
         return True
 

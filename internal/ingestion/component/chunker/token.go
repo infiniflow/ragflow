@@ -397,14 +397,19 @@ func splitOversizedUnitWith(text string, chunkTokenNum int, countFn func(string)
 	}
 	var pieces []string
 	current := ""
+	// Running sum of per-atom token counts for the current piece. Mirrors
+	// Python rag/nlp._split_oversized_unit's `current_tokens`. We flush when
+	// this running sum (not the exact count of the joined string) would
+	// exceed the budget, because cl100k token counting is not additive across
+	// whitespace joins: token(a)+token(b) can differ from token(a+b), so the
+	// joined-string fit check drifts one atom off Python's boundary.
+	currentTokens := 0
 	tokenCache := map[string]int{}
 
 	atomTokens := func(atom string) int {
 		// Whitespace-only atoms contribute 0 in isolation (mirrors Python
 		// atom.isspace()), matching the packing heuristic used by
-		// rag/nlp._split_oversized_unit. Fit checks below still use an
-		// exact projected countFn(current+atom) so cl100k space-join
-		// effects cannot push a piece over the hard cap.
+		// rag/nlp._split_oversized_unit.
 		if strings.TrimSpace(atom) == "" {
 			return 0
 		}
@@ -422,28 +427,20 @@ func splitOversizedUnitWith(text string, chunkTokenNum int, countFn func(string)
 			if current != "" {
 				pieces = append(pieces, current)
 				current = ""
+				currentTokens = 0
 			}
 			pieces = append(pieces, splitAtomByTokenBudget(atom, chunkTokenNum, countFn)...)
 			continue
 		}
-		// Exact projected-total check (not sum of atom counts): cl100k can
-		// count a joined "word word" differently than token(word)+token(word).
-		if current != "" && countFn(current+atom) > chunkTokenNum {
+		// Running-sum fit check, identical to Python's
+		// `current_tokens + a_tokens > chunk_token_num`.
+		if current != "" && currentTokens+aTokens > chunkTokenNum {
 			pieces = append(pieces, current)
 			current = ""
-			// Leading whitespace after a flush has no content value; drop it
-			// so the next piece does not start with a pure-space prefix that
-			// would never fit usefully on its own.
-			if strings.TrimSpace(atom) == "" {
-				continue
-			}
-			// If the atom alone still exceeds (pathological), carve it.
-			if atomTokens(atom) > chunkTokenNum {
-				pieces = append(pieces, splitAtomByTokenBudget(atom, chunkTokenNum, countFn)...)
-				continue
-			}
+			currentTokens = 0
 		}
 		current += atom
+		currentTokens += aTokens
 	}
 	if current != "" {
 		pieces = append(pieces, current)

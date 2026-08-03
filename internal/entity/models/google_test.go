@@ -392,7 +392,7 @@ func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	expectedModels := []ListModelResponse{{Name: "Gemini 2.5 Flash@Google"}, {Name: "Gemini 2.5 Pro@Google"}}
+	expectedModels := []ListModelResponse{{Name: "Gemini 2.5 Flash"}, {Name: "Gemini 2.5 Pro"}}
 	if !reflect.DeepEqual(models, expectedModels) {
 		t.Fatalf("expected models %v, got %v", expectedModels, models)
 	}
