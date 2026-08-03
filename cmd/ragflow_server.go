@@ -38,6 +38,7 @@ import (
 	dataset "ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
 	"ragflow/internal/service/file"
+	"ragflow/internal/service/nav"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
@@ -366,7 +367,7 @@ func main() {
 	}
 	defer redis.Close()
 
-	if err = storage.Init(); err != nil {
+	if err = storage.Init(ctx); err != nil {
 		common.Error("Failed to initialize storage factory", err)
 	}
 	defer storage.CloseStorage()
@@ -834,6 +835,16 @@ func startServer(ctx context.Context) {
 	compilationTemplateHandler := handler.NewCompilationTemplateHandler(service.NewCompilationTemplateService())
 	compilationTemplateGroupHandler := handler.NewCompilationTemplateGroupHandler(service.NewCompilationTemplateGroupService())
 	datasetArtifactHandler := handler.NewDatasetArtifactHandler(service.NewDatasetArtifactService(), datasetsService, file.NewFileCommitService())
+
+	// Install the production eino-based chat invoker as the shared chat default,
+	// so agentic-search harness LLM calls work in production. Without this,
+	// chat.GetDefaultInvoker() stays nil and the harness falls back gracefully.
+	component.InstallDefaultChatInvoker()
+
+	// Install the dataset-nav ES-backed service (internal/service/nav +
+	// internal/service/nlp). The embedder resolves the tenant's embedding model
+	// on demand so Search/UpsertDoc can embed queries/summaries automatically.
+	nav.SetNavService(nlp.NewNavService(service.NewNavEmbedder(modelProviderService, "")))
 
 	// Initialize router
 	r := router.NewRouter(authHandler,

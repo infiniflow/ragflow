@@ -55,6 +55,9 @@ type RetrievalRequest struct {
 	KeywordsSimilarityWeight *float64
 	UseKG                    bool
 	SimilarityThreshold      float64
+	// DocScope restricts retrieval to a set of document ids (the doc_id list
+	// routed by the dataset_navigation_by_tree tool). Empty = no doc filter.
+	DocScope []string
 	// TenantID is the calling tenant (== user_id in RAGFlow's data model).
 	// Optional for the nlp adapter; the KG adapter uses it to resolve the
 	// tenant's default chat + embedding models. Reads from
