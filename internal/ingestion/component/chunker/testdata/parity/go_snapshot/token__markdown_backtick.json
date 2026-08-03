@@ -1,0 +1,17 @@
+{
+  "case_id": "token__markdown_backtick",
+  "chunks": [
+    {
+      "doc_type_kwd": "text",
+      "text": "# Title\n"
+    },
+    {
+      "doc_type_kwd": "text",
+      "text": "Paragraph one.\n"
+    },
+    {
+      "doc_type_kwd": "text",
+      "text": "Paragraph two."
+    }
+  ]
+}

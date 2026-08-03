@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "id": "go-only-chunk-id",
+      "tag": "go_intentional",
+      "kind": "extra_fields",
+      "applies_to": ["*"],
+      "fields": ["id"],
+      "permanent": true,
+      "reason": "register.go MustRegisterChunker wraps every chunker in imageUploadDecorator, which writes ck[\"id\"] = common.ChunkID(doc_id, text) before any image upload so uploadChunkImage and the persist stage share one chunk identity. Python derives chunk ids outside the chunker, so its _finalize_json_chunks output has no id."
+    },
+    {
+      "id": "go-only-token-metadata",
+      "tag": "go_intentional",
+      "kind": "extra_fields",
+      "applies_to": ["token__*"],
+      "fields": ["ck_type", "tk_nums"],
+      "permanent": true,
+      "reason": "Python builds both fields internally (token_chunker.py:141,144) but _finalize_json_chunks (token_chunker.py:256-259) whitelists only text/doc_type_kwd/_pdf_positions/mom/img_id, dropping them. Go keeps them because they are still live downstream: needsCrop (pdfcrop_cgo.go:151) reads ck_type, and tokenizer.go:615 forwards tk_nums. The divergence follows from Go cropping after the chunker returns, whereas Python crops inside _invoke (token_chunker.py:370) before finalizing."
+    },
+    {
+      "id": "token-json-per-item-merge",
+      "tag": "go_bug",
+      "kind": "chunk_count",
+      "applies_to": ["token__json_multi_item_40", "token__json_two_item"],
+      "owner_fix_side": "go",
+      "tracking": "TODO: file issue — TokenChunker json path merges per item (one chunk per item) instead of globally like Python _merge_text_chunks_by_token_size",
+      "reason": "Python _merge_text_chunks_by_token_size merges adjacent text chunks across JSON items into a global token budget (6 chunks at chunk_token_size=128); Go merges within each item separately, emitting one chunk per item (40 chunks). The Go side is the defect: a multi-item document is over-segmented. token__json_two_item is the minimal reproduction: two items that jointly fit the budget still come back as 2 chunks from Go and 1 from Python."
+    },
+    {
+      "id": "token-text-delimiters-dropped",
+      "tag": "python_bug",
+      "kind": "chunk_text",
+      "applies_to": ["token__markdown_default_delim", "token__text_default_delim", "token__html_default_delim", "token__text_token_liveness"],
+      "owner_fix_side": "python",
+      "tracking": "FIXED in PR #17721 (https://github.com/infiniflow/ragflow/pull/17721): token_chunker.py now forwards \"\".join(self._param.delimiters) to naive_merge instead of a hardcoded \"\". Cleanup: after that PR merges, re-capture the golden for token__markdown_default_delim / token__text_default_delim / token__html_default_delim / token__text_token_liveness with the fixed Python, confirm it matches the Go snapshot, then DELETE this rule.",
+      "reason": "On the markdown/text/html path Python only treats backtick-wrapped delimiters as split points: _compile_delimiter_pattern (token_chunker.py:70-76) scans for `...` and returns '' for a bare [\"\\n\"], after which _invoke (token_chunker.py:323-328) calls naive_merge(payload, chunk_token_size, \"\", ...) with a hardcoded empty delimiter instead of forwarding self._param.delimiters. naive_merge itself supports bare delimiters (rag/nlp/__init__.py:1347-1363), but with '' it falls through to _split_oversized_unit (1364-1367) and cuts on whitespace atoms — mid-sentence, e.g. '...balance recall and' | 'precision.'. Go segments on its sentenceDelimiter '\\n' (token.go:338) and merges whole lines by token size, so both sides emit the same chunk count but break at different offsets. Go does what the configured delimiters ask for; Python drops them."
+    },
+    {
+      "id": "token-custom-delim-newline-and-field",
+      "tag": "go_bug",
+      "kind": "chunk_text",
+      "applies_to": ["token__text_backtick", "token__markdown_backtick", "token__html_backtick"],
+      "owner_fix_side": "go",
+      "tracking": "TODO: file issue — Go keeps the backtick delimiter itself in chunk text and emits doc_type_kwd on the text/markdown/html path where Python emits only text",
+      "reason": "With a backtick-wrapped delimiter (e.g. `\\n`, _compile_delimiter_pattern, token_chunker.py:70-76) Python takes the custom-pattern branch. On that branch Python's _split_text_by_pattern (rag/flow/chunker/token_chunker.py:80-95) keeps the delimiter text and the finalize step drops it, so a split chunk reads 'first sentence here' WITHOUT the trailing newline; the output is a list of {'text': ...} with no doc_type_kwd (token_chunker.py:341). Go instead keeps the delimiter in the text ('first sentence here\\n', splitKeepingDelim) and, because invokeTextPayload (token.go:298-331, applyChildrenDelim at 1086-1097) defaults every chunk to DocType:'text', emits a doc_type_kwd:'text' that Python never produces. Two Go-only behaviours on the custom-delimiter text path: retained delimiter + an extra field."
+    },
+    {
+      "id": "token-json-custom-delim-drops-newline",
+      "tag": "go_bug",
+      "kind": "chunk_text",
+      "applies_to": ["token__json_backtick"],
+      "owner_fix_side": "go",
+      "tracking": "TODO: file issue — Go drops the backtick delimiter when splitting json items, while Python keeps it",
+      "reason": "On the json path the custom delimiter is correctly kept in the split segment, but invokeJSONPayload then runs every chunk through removeTag(strings.TrimSpace(m.Text)) (token.go:658) before output, which strips the trailing newline that the delimiter left behind. Python's json path (_build_json_chunks, token_chunker.py:122-129) keeps the delimiter segment verbatim and only .strip()s the FINAL output, so 'first segment line one\\n' reaches the golden with its newline. Net effect: Python keeps the newline, Go drops it. This is the inverse of the text-path custom-delimiter divergence (token-custom-delim-newline-and-field), where Go keeps the newline and Python drops it — so whichever language the field ends up in, the delimiter-surrounding text disagrees."
+    },
+    {
+      "id": "token-json-single-item-oversize",
+      "tag": "go_bug",
+      "kind": "chunk_count",
+      "applies_to": ["token__json_single_long"],
+      "owner_fix_side": "go",
+      "tracking": "TODO: file issue — Go sub-splits a single json item that exceeds chunk_token_size; Python keeps it as one oversize chunk",
+      "reason": "A single json item far over chunk_token_size. chunkFromItem (token.go:675-699) splits the item on the delimiter and mergeByTokenSizeFromJSON (880) then sub-splits the segments to the token budget, so Go emits 2 chunks for one input item. Python's json path does not sub-split a single item at all: _build_json_chunks keeps each item whole and the only per-item merge is by token size, so an over-budget single item stays as exactly one chunk. The divergence is purely a Go-side over-segmentation of one logical item."
+    },
+    {
+      "id": "token-text-overlap-split",
+      "tag": "go_bug",
+      "kind": "chunk_count",
+      "applies_to": ["token__text_overlap"],
+      "owner_fix_side": "go",
+      "tracking": "TODO: file issue — Go emits one extra chunk than Python under overlapped_percent on the text path",
+      "reason": "Text path with chunk_token_size=64, delimiters=['\\n'], overlapped_percent=0.1 over three delimiter-separated lines. Python merges the three lines into 2 chunks; Go produces 3. Same per-item/over-segmentation family as the json merge divergence but on the text path, and the overlap prefix handling (computeOverlapPrefix, token.go:457) changes where the boundary falls."
+    }
+  ]
+}
