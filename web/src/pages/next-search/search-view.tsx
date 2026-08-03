@@ -204,7 +204,9 @@ export default function SearchingView({
                   <RetrievalDocuments
                     selectedDocumentIds={selectedDocumentIds}
                     setSelectedDocumentIds={setSelectedDocumentIds}
-                    onTesting={handleTestChunk}
+                    onTesting={(vals: string[]) =>
+                      handleTestChunk(vals, 1, pageSize)
+                    }
                     setLoading={(loading: boolean) => {
                       setRetrievalLoading(loading);
                     }}
