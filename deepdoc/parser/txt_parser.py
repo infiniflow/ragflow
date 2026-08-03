@@ -19,7 +19,6 @@ import re
 
 from common.token_utils import num_tokens_from_string
 from deepdoc.parser.utils import get_text
-from rag.nlp import _split_oversized_unit
 from rag.nlp.delim import (
     compile_delimiter_pattern,
     normalize_text_newlines,
@@ -28,12 +27,12 @@ from rag.nlp.delim import (
 
 
 class RAGFlowTxtParser:
-    def __call__(self, fnm, binary=None, chunk_token_num=128, delimiter="\n!?;。；！？"):
+    def __call__(self, fnm, binary=None, chunk_token_num=128, delimiter="\n!?;。；！？", keep_delimiters=False):
         txt = get_text(fnm, binary)
-        return self.parser_txt(txt, chunk_token_num, delimiter)
+        return self.parser_txt(txt, chunk_token_num, delimiter, keep_delimiters)
 
     @classmethod
-    def parser_txt(cls, txt, chunk_token_num=128, delimiter="\n!?;。；！？"):
+    def parser_txt(cls, txt, chunk_token_num=128, delimiter="\n!?;。；！？", keep_delimiters=False):
         if not isinstance(txt, str):
             raise TypeError("txt type should be str!")
         cks = [""]
@@ -42,21 +41,15 @@ class RAGFlowTxtParser:
         def add_chunk(t):
             nonlocal cks, tk_nums
             tnum = num_tokens_from_string(t)
-
-            if cks[-1] == "":
-                cks[-1] = t
-                tk_nums[-1] = tnum
-                return
-
-            merged = cks[-1] + "\n" + t
-            merged_tnum = num_tokens_from_string(merged)
-            if merged_tnum <= chunk_token_num:
-                cks[-1] = merged
-                tk_nums[-1] = merged_tnum
-                return
-
-            cks.append(t)
-            tk_nums.append(tnum)
+            if tk_nums[-1] > chunk_token_num:
+                cks.append(t)
+                tk_nums.append(tnum)
+            else:
+                if cks[-1]:
+                    cks[-1] += "\n" + t
+                else:
+                    cks[-1] += t
+                tk_nums[-1] += tnum
 
         txt = normalize_text_newlines(txt)
         parsed_dels = parse_delimiter_field(delimiter)
@@ -67,18 +60,14 @@ class RAGFlowTxtParser:
             bool(dels),
         )
         secs = re.split(r"(%s)" % dels, txt) if dels else [txt]
-        for sec in secs:
+        for index, sec in enumerate(secs):
             if dels and re.match(f"^{dels}$", sec):
                 continue
             if not sec:
                 continue
-            if num_tokens_from_string(sec) <= chunk_token_num:
-                add_chunk(sec)
-                continue
-            pieces = _split_oversized_unit(sec, chunk_token_num, token_count_fn=num_tokens_from_string)
-            logging.debug("parser_txt: split oversized section (%d tokens) into %d pieces", num_tokens_from_string(sec), len(pieces))
-            for piece in pieces:
-                add_chunk(piece)
+            if keep_delimiters and index + 1 < len(secs) and re.match(f"^{dels}$", secs[index + 1]):
+                sec += secs[index + 1]
+            add_chunk(sec)
 
         logging.debug("parser_txt: %d sections -> %d chunks (chunk_token_num=%d)", len(secs), len(cks), chunk_token_num)
         return [[c, ""] for c in cks]
