@@ -62,7 +62,7 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 	if file.Location != nil && *file.Location != "" {
 		storageImpl := storage.GetStorageFactory().GetStorage()
 		if storageImpl != nil {
-			if err := storageImpl.Remove(file.ParentID, *file.Location); err != nil {
+			if err := storageImpl.Remove(ctx, file.ParentID, *file.Location); err != nil {
 				common.Logger.Error(fmt.Sprintf("Fail to remove object: %s/%s, error: %v", file.ParentID, *file.Location, err))
 			}
 		}

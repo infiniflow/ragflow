@@ -786,7 +786,7 @@ func (s *SkillIndexerService) getFileContent(ctx context.Context, tenantID strin
 		// Fallback to tenantID if ParentID is empty (should not happen)
 		bucket = tenantID
 	}
-	content, err := storageImpl.Get(bucket, *file.Location)
+	content, err := storageImpl.Get(ctx, bucket, *file.Location)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get file from storage (bucket=%s, location=%s): %w", bucket, *file.Location, err)
 	}

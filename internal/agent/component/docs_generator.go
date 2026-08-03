@@ -388,7 +388,7 @@ func storeAgentAttachment(ctx context.Context, docID string, payload []byte) (bo
 		return false, fmt.Errorf("storage not initialized")
 	}
 	bucket := fmt.Sprintf("%s-downloads", tenantID)
-	if err := storageImpl.Put(bucket, docID, payload); err != nil {
+	if err = storageImpl.Put(ctx, bucket, docID, payload); err != nil {
 		return false, err
 	}
 	return true, nil

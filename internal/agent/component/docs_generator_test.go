@@ -192,7 +192,7 @@ func TestDocsGenerator_Invoke_StoresAgentAttachment(t *testing.T) {
 	}
 	state := canvas.NewCanvasState("run-1", "task-1")
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := canvas.WithState(context.Background(), state)
+	ctx := canvas.WithState(t.Context(), state)
 
 	out, err := c.Invoke(ctx, nil, map[string]any{})
 	if err != nil {
@@ -205,7 +205,7 @@ func TestDocsGenerator_Invoke_StoresAgentAttachment(t *testing.T) {
 	if !ok || docID == "" {
 		t.Fatalf("doc_id = %v, want non-empty string", out["doc_id"])
 	}
-	blob, err := memStorage.Get("tenant-1-downloads", docID)
+	blob, err := memStorage.Get(ctx, "tenant-1-downloads", docID)
 	if err != nil {
 		t.Fatalf("stored blob missing: %v", err)
 	}
