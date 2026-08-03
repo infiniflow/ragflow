@@ -28,9 +28,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"gorm.io/gorm"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/pipeline"
+
+	"gorm.io/gorm"
 )
 
 // capturedStore is a fake DebugLogStore that records every write so tests can
@@ -40,7 +41,7 @@ type capturedStore struct {
 	data map[string]string
 }
 
-func (c *capturedStore) Set(key, value string, ttl time.Duration) bool {
+func (c *capturedStore) Set(ctx context.Context, key, value string, ttl time.Duration) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.data == nil {
@@ -50,7 +51,7 @@ func (c *capturedStore) Set(key, value string, ttl time.Duration) bool {
 	return true
 }
 
-func (c *capturedStore) get(key string) string {
+func (c *capturedStore) Get(ctx context.Context, key string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.data[key]
@@ -96,20 +97,21 @@ func loadArray(t *testing.T, raw string) []map[string]any {
 func TestDebugLogSink_RecordsTraceAndEndMarker(t *testing.T) {
 	store := &capturedStore{}
 	sink := NewDebugLogSink("c1", "m1", store)
+	ctx := t.Context()
 
-	sink.OnComponentProgress(context.Background(), pipeline.ProgressEvent{
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
 		Component: "File", Message: "File Started", Phase: phaseEnter,
 	})
-	sink.OnComponentProgress(context.Background(), pipeline.ProgressEvent{
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
 		Component: "File", Message: "File Done", Phase: phaseExit,
 	})
-	sink.OnComponentProgress(context.Background(), pipeline.ProgressEvent{
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
 		Component: "Chunker", Message: "Chunker Done", Phase: phaseExit,
 	})
 
-	sink.Flush(context.Background(), nil)
+	sink.Flush(ctx, nil)
 
-	raw := store.get("c1-m1-logs")
+	raw := store.Get(ctx, "c1-m1-logs")
 	if raw == "" {
 		t.Fatalf("expected key c1-m1-logs to be written")
 	}
@@ -148,13 +150,14 @@ func TestDebugLogSink_RecordsTraceAndEndMarker(t *testing.T) {
 func TestDebugLogSink_ErrorPrefix(t *testing.T) {
 	store := &capturedStore{}
 	sink := NewDebugLogSink("c1", "m1", store)
+	ctx := t.Context()
 
-	sink.OnComponentProgress(context.Background(), pipeline.ProgressEvent{
+	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
 		Component: "Tokenizer", Message: "Tokenizer: boom", Phase: phaseError,
 	})
-	sink.Flush(context.Background(), errors.New("boom"))
+	sink.Flush(ctx, errors.New("boom"))
 
-	raw := store.get("c1-m1-logs")
+	raw := store.Get(ctx, "c1-m1-logs")
 	arr := loadArray(t, raw)
 
 	// First element is the errored component; its message must carry [ERROR].
@@ -180,9 +183,11 @@ func TestDebugLogSink_ErrorPrefix(t *testing.T) {
 // the debug log array shape does not use it.
 func TestDebugLogSink_OnComponentTotalIsNoOp(t *testing.T) {
 	store := &capturedStore{}
+	ctx := t.Context()
+
 	sink := NewDebugLogSink("c1", "m1", store)
 	// Must not panic and must not write.
-	sink.OnComponentTotal(context.Background(), "task-1", 5)
+	sink.OnComponentTotal(ctx, "task-1", 5)
 	if len(store.data) != 0 {
 		t.Errorf("OnComponentTotal must not write to the store, wrote %v", store.data)
 	}
@@ -195,7 +200,7 @@ func TestDebugLogSink_OnComponentTotalIsNoOp(t *testing.T) {
 // pipeline and its events land in the persisted debug-log array (with the END
 // marker), without touching the DB/index persist path.
 func TestPipelineExecutor_DebugRunWritesLogViaSink(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	taskCtx := NewDebugTaskContext("tenant-1", "c1", "doc.pdf", nil)
 	exec, err := NewPipelineExecutor(taskCtx, "c1", 0)
 	if err != nil {
@@ -228,7 +233,7 @@ func TestPipelineExecutor_DebugRunWritesLogViaSink(t *testing.T) {
 	// Mirrors runCanvasPipelineDebug: flush (incl. END marker) after the run.
 	sink.Flush(ctx, nil)
 
-	raw := store.get("c1-m1-logs")
+	raw := store.Get(ctx, "c1-m1-logs")
 	if raw == "" {
 		t.Fatalf("expected debug log written to c1-m1-logs")
 	}
@@ -280,6 +285,7 @@ func (traceChunkComponent) Invoke(_ context.Context, _ *gorm.DB, _ map[string]an
 // observation that a debug run's polled log appeared to stay at progress 0 —
 // per the code, each component's trace must contain [Started, Done].
 func TestDebugLogSink_RealPipeline_EachComponentTraceHasStartedAndDone(t *testing.T) {
+	ctx := t.Context()
 	const (
 		compA = "trace.RealStubA"
 		compB = "trace.RealStubB"
@@ -305,12 +311,12 @@ func TestDebugLogSink_RealPipeline_EachComponentTraceHasStartedAndDone(t *testin
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	if _, err := pipe.Run(context.Background(), map[string]any{"name": "doc-trace"}, nil); err != nil {
+	if _, err = pipe.Run(ctx, map[string]any{"name": "doc-trace"}, nil); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	sink.Flush(context.Background(), nil)
+	sink.Flush(ctx, nil)
 
-	raw := store.get("c-trace-m-trace-logs")
+	raw := store.Get(ctx, "c-trace-m-trace-logs")
 	if raw == "" {
 		t.Fatalf("expected debug log written to c-trace-m-trace-logs")
 	}
@@ -370,6 +376,7 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 		compC = "trace.RealStubC"
 		compD = "trace.RealStubD"
 	)
+	ctx := t.Context()
 	runtime.MustRegister(compC, runtime.CategoryIngestion,
 		func(_ string, _ map[string]any) (runtime.Component, error) { return traceStubComponent{}, nil },
 		runtime.Metadata{Version: "1.0.0"})
@@ -391,7 +398,7 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	output, err := pipe.Run(context.Background(), map[string]any{"name": "doc-dsl"}, nil)
+	output, err := pipe.Run(ctx, map[string]any{"name": "doc-dsl"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -402,9 +409,9 @@ func TestDebugLogSink_RealPipeline_EndMarkerCarriesDSL(t *testing.T) {
 		t.Fatalf("BuildDebugResultDSL: %v", err)
 	}
 	sink.SetResult(resultDSL)
-	sink.Flush(context.Background(), nil)
+	sink.Flush(ctx, nil)
 
-	raw := store.get("c-dsl-m-dsl-logs")
+	raw := store.Get(ctx, "c-dsl-m-dsl-logs")
 	if raw == "" {
 		t.Fatalf("expected debug log written to c-dsl-m-dsl-logs")
 	}
@@ -467,6 +474,7 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 		compC = "trace.RealStubChunks"
 		compD = "trace.RealStubD2"
 	)
+	ctx := t.Context()
 	runtime.MustRegister(compC, runtime.CategoryIngestion,
 		func(_ string, _ map[string]any) (runtime.Component, error) { return traceChunkComponent{}, nil },
 		runtime.Metadata{Version: "1.0.0"})
@@ -488,7 +496,7 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPipelineFromDSL: %v", err)
 	}
-	output, err := pipe.Run(context.Background(), map[string]any{"name": "doc-chunk"}, nil)
+	output, err := pipe.Run(ctx, map[string]any{"name": "doc-chunk"}, nil)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
@@ -498,9 +506,9 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 		t.Fatalf("BuildDebugResultDSL: %v", err)
 	}
 	sink.SetResult(resultDSL)
-	sink.Flush(context.Background(), nil)
+	sink.Flush(ctx, nil)
 
-	raw := store.get("c-chunk-m-chunk-logs")
+	raw := store.Get(ctx, "c-chunk-m-chunk-logs")
 	if raw == "" {
 		t.Fatalf("expected debug log written")
 	}
@@ -514,7 +522,7 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 	var dslDoc map[string]any
 	switch v := endFirst["dsl"].(type) {
 	case string:
-		if err := json.Unmarshal([]byte(v), &dslDoc); err != nil {
+		if err = json.Unmarshal([]byte(v), &dslDoc); err != nil {
 			t.Fatalf("END dsl not valid JSON: %v", err)
 		}
 	case map[string]any:
@@ -569,7 +577,7 @@ func TestDebugLogSink_RealPipeline_EndMarkerDSLShowsChunks(t *testing.T) {
 func TestDebugLogSink_ElapsedTimeIsInSeconds(t *testing.T) {
 	store := &capturedStore{}
 	sink := NewDebugLogSink("c-elapsed", "m-elapsed", store)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	t0 := time.Now()
 	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
@@ -582,7 +590,7 @@ func TestDebugLogSink_ElapsedTimeIsInSeconds(t *testing.T) {
 	})
 	sink.Flush(ctx, nil)
 
-	raw := store.get("c-elapsed-m-elapsed-logs")
+	raw := store.Get(ctx, "c-elapsed-m-elapsed-logs")
 	if raw == "" {
 		t.Fatalf("expected debug log written to c-elapsed-m-elapsed-logs")
 	}
@@ -621,7 +629,7 @@ func TestDebugLogSink_ElapsedTimeIsInSeconds(t *testing.T) {
 func TestDebugLogSink_TimestampIsInSeconds(t *testing.T) {
 	store := &capturedStore{}
 	sink := NewDebugLogSink("c-ts", "m-ts", store)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	before := time.Now().Unix()
 	sink.OnComponentProgress(ctx, pipeline.ProgressEvent{
@@ -629,7 +637,7 @@ func TestDebugLogSink_TimestampIsInSeconds(t *testing.T) {
 	})
 	sink.Flush(ctx, nil)
 
-	raw := store.get("c-ts-m-ts-logs")
+	raw := store.Get(ctx, "c-ts-m-ts-logs")
 	if raw == "" {
 		t.Fatalf("expected debug log written to c-ts-m-ts-logs")
 	}
@@ -661,7 +669,7 @@ func TestDebugLogSink_TimestampIsInSeconds(t *testing.T) {
 // Counts are deliberately bounded so the test stays fast: we only need to exceed
 // each cap by a small margin to prove clamping, not replay millions of events.
 func TestDebugLogSink_RespectsCaps(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 
 	// Component cap: more distinct components than maxLogEntries (each one trace,
 	// one over-long message that must be truncated to the rune cap).
@@ -676,7 +684,7 @@ func TestDebugLogSink_RespectsCaps(t *testing.T) {
 	}
 	sinkA.Flush(ctx, nil)
 
-	arrA := loadArray(t, storeA.get("c1-mA-logs"))
+	arrA := loadArray(t, storeA.Get(ctx, "c1-mA-logs"))
 	// Flush always appends the terminal END marker, so count only real components.
 	var compCountA int
 	for _, el := range arrA {
@@ -702,7 +710,7 @@ func TestDebugLogSink_RespectsCaps(t *testing.T) {
 		}
 	}
 	if !clientConsidersComplete(arrA) {
-		t.Errorf("clamped log must still satisfy completion predicate; raw=%s", storeA.get("c1-mA-logs"))
+		t.Errorf("clamped log must still satisfy completion predicate; raw=%s", storeA.Get(ctx, "c1-mA-logs"))
 	}
 
 	// Trace cap: a single component with more traces than maxTracePerEntry.
@@ -717,17 +725,17 @@ func TestDebugLogSink_RespectsCaps(t *testing.T) {
 	}
 	sinkB.Flush(ctx, nil)
 
-	arrB := loadArray(t, storeB.get("c1-mB-logs"))
+	arrB := loadArray(t, storeB.Get(ctx, "c1-mB-logs"))
 	// Busy (the only real component) + the END completion marker = 2 elements.
 	if len(arrB) != 2 {
-		t.Fatalf("Busy + END expected, got %d elements: %s", len(arrB), storeB.get("c1-mB-logs"))
+		t.Fatalf("Busy + END expected, got %d elements: %s", len(arrB), storeB.Get(ctx, "c1-mB-logs"))
 	}
 	busyTrace, _ := arrB[0]["trace"].([]any)
 	if len(busyTrace) > maxTracePerEntry {
 		t.Fatalf("Busy trace len=%d want <= %d", len(busyTrace), maxTracePerEntry)
 	}
 	if !clientConsidersComplete(arrB) {
-		t.Errorf("trace-capped log must still satisfy completion predicate; raw=%s", storeB.get("c1-mB-logs"))
+		t.Errorf("trace-capped log must still satisfy completion predicate; raw=%s", storeB.Get(ctx, "c1-mB-logs"))
 	}
 }
 
@@ -738,7 +746,7 @@ func TestDebugLogSink_RespectsCaps(t *testing.T) {
 func TestDebugLogSink_PayloadHardCap(t *testing.T) {
 	store := &capturedStore{}
 	sink := NewDebugLogSink("c1", "m1", store)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	for i := 0; i < maxLogEntries; i++ {
 		comp := fmt.Sprintf("Comp-%d", i)
@@ -752,7 +760,7 @@ func TestDebugLogSink_PayloadHardCap(t *testing.T) {
 	}
 	sink.Flush(ctx, nil)
 
-	raw := store.get("c1-m1-logs")
+	raw := store.Get(ctx, "c1-m1-logs")
 	if raw == "" {
 		t.Fatalf("expected debug log written to c1-m1-logs")
 	}

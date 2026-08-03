@@ -19,11 +19,11 @@ package chunker
 import (
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/chunk"
 	"ragflow/internal/tokenizer"
 )
 
@@ -76,29 +76,14 @@ func stringListFromAny(in []any) []string {
 // regex / split helpers
 // ---------------------------------------------------------------------------
 
-// compileDelimPattern joins all delimiter entries into a single
-// alternation. Entries wrapped in backticks are treated as regex
-// literals and regex-escaped; plain strings are simply regex-escaped.
-// Longer patterns win (matches python `sorted(set, key=len, reverse=True)`).
-// Mirrors Python _compile_delimiter_pattern: only backtick-wrapped delimiters
-// produce an active pattern. Plain delimiters are not compiled — they are only
-// used by naive_merge / mergeByTokenSize for sentence-level splitting when no
-// active pattern exists.
+// compileDelimPattern compiles a TokenChunker-style []string delimiter list.
+// Only backtick-wrapped entries produce an active pattern (Python
+// token_chunker / rag/nlp/delim list helper). Plain entries are ignored here
+// and used by mergeByTokenSize for sentence-level splitting when no active
+// pattern exists. Canonical single-string parser_config.delimiter parsing
+// lives in ragflow/internal/parser/chunk (ParseDelimiterField).
 func compileDelimPattern(delims []string) *regexp.Regexp {
-	var custom []string
-	for _, d := range delims {
-		if d == "" {
-			continue
-		}
-		if strings.HasPrefix(d, "`") && strings.HasSuffix(d, "`") && len(d) >= 2 {
-			custom = append(custom, regexp.QuoteMeta(d[1:len(d)-1]))
-		}
-	}
-	if len(custom) == 0 {
-		return nil
-	}
-	sort.SliceStable(custom, func(i, j int) bool { return len(custom[i]) > len(custom[j]) })
-	return regexp.MustCompile(strings.Join(custom, "|"))
+	return chunk.CompileDelimiterListPattern(delims)
 }
 
 // splitKeepingDelim mirrors Python token_chunker._split_text_by_pattern

@@ -68,6 +68,8 @@ func (m *GCSStorage) reconnect() {
 	}
 }
 
+func (m *GCSStorage) Type() string { return "gcs" }
+
 // Health checks GCS service availability
 func (m *GCSStorage) Health() bool {
 	return m.BucketExists(m.config.Bucket)

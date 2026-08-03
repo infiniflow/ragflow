@@ -35,7 +35,7 @@ const DebugLogTTL = 30 * time.Minute
 // ttl)); tests pass a capturing closure. Keeping it to a single method keeps the
 // sink free of any redis-package import.
 type DebugLogStore interface {
-	Set(key, value string, ttl time.Duration) bool
+	Set(ctx context.Context, key, value string, ttl time.Duration) bool
 }
 
 // funcStore adapts a plain function to DebugLogStore so tests (and callers that
@@ -250,7 +250,7 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 		}
 	}
 	key := s.canvasID + "-" + s.messageID + "-logs"
-	s.store.Set(key, string(payload), s.ttl)
+	s.store.Set(ctx, key, string(payload), s.ttl)
 }
 
 // truncateRunes returns s truncated to at most max runes, preserving the original

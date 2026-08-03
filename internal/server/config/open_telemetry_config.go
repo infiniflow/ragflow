@@ -70,3 +70,19 @@ func (c *Config) ParseOpenTelemetryConfig(v *viper.Viper) error {
 
 	return nil
 }
+
+func (c *Config) GetOpenTelemetryConfig() OpenTelemetryConfig {
+	return c.oTel
+}
+
+func (o OpenTelemetryConfig) ExportConfigs() map[string]interface{} {
+	var oTelConfigs map[string]interface{}
+	oTelConfigs = make(map[string]interface{})
+	oTelConfigs["host"] = o.Host
+	oTelConfigs["port"] = o.Port
+	oTelConfigs["secure"] = o.Secure
+	oTelConfigs["sample_ratio"] = o.SampleRatio
+	oTelConfigs["stdout"] = o.Stdout
+	oTelConfigs["enable"] = o.Enable
+	return oTelConfigs
+}

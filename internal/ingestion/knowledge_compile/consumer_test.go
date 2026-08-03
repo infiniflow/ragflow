@@ -24,30 +24,42 @@ import (
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// fakeReader returns a fixed product set.
+// fakeReader returns a fixed per-document product set, keyed by docID.
 type fakeReader struct {
 	mu       sync.Mutex
 	products []kccommon.Product
 	calls    int
 }
 
-func (r *fakeReader) LoadCompiledProducts(_ context.Context, _, _ string) ([]kccommon.Product, error) {
+func (r *fakeReader) LoadDocProducts(_ context.Context, _, _, docID string) ([]kccommon.Product, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls++
-	out := make([]kccommon.Product, len(r.products))
-	copy(out, r.products)
+	var out []kccommon.Product
+	for _, p := range r.products {
+		if p.DocID == docID {
+			out = append(out, p)
+		}
+	}
 	return out, nil
+}
+
+func (r *fakeReader) SearchSimilar(_ context.Context, _, _ string, _ kccommon.Variant, _ []float64, _ int, _ float64) (kccommon.Product, float64, error) {
+	return kccommon.Product{}, 0, nil
 }
 
 // fakeWriter captures written merged products.
 type fakeWriter struct {
-	mu      sync.Mutex
-	written [][]kccommon.Product
-	deleted []string
+	mu              sync.Mutex
+	written         [][]kccommon.Product
+	deletedDocLevel []string
+	strippedSources []string
 }
 
 func (w *fakeWriter) WriteMerged(_ context.Context, _, _ string, products []kccommon.Product) error {
+	if len(products) == 0 {
+		return nil
+	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	cp := make([]kccommon.Product, len(products))
@@ -56,10 +68,17 @@ func (w *fakeWriter) WriteMerged(_ context.Context, _, _ string, products []kcco
 	return nil
 }
 
-func (w *fakeWriter) DeleteMergedForDoc(_ context.Context, _, _, docID string) error {
+func (w *fakeWriter) DeleteDocLevelForDocs(_ context.Context, _, _ string, docIDs []string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	w.deleted = append(w.deleted, docID)
+	w.deletedDocLevel = append(w.deletedDocLevel, docIDs...)
+	return nil
+}
+
+func (w *fakeWriter) StripMergedSources(_ context.Context, _, _ string, docIDs []string) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.strippedSources = append(w.strippedSources, docIDs...)
 	return nil
 }
 
@@ -77,7 +96,6 @@ func newTestConsumer(sch *FakeScheduler, r *fakeReader, w *fakeWriter, factory D
 		WithReader(r),
 		WithWriter(w),
 		WithDeduperFactory(factory),
-		WithBatchSize(32),
 	)
 }
 
@@ -87,10 +105,10 @@ func TestConsumerCompletedWritesMerged(t *testing.T) {
 	w := &fakeWriter{}
 	c := newTestConsumer(sch, r, w, func(string) (Deduper, error) { return NewNoopDeduper(), nil })
 
-	if err := sch.AppendBacklog(context.Background(), "t1", "kb1", "d1", string(EventTypeCompleted), 1); err != nil {
+	if err := sch.Publish(context.Background(), "t1", "kb1", "d1", string(EventTypeCompleted), 1); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	c.processDataset(context.Background(), "kb1")
+	c.tryClaimAndProcess(context.Background())
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -101,8 +119,8 @@ func TestConsumerCompletedWritesMerged(t *testing.T) {
 		t.Fatalf("expected 2 merged products, got %d", len(w.written[0]))
 	}
 	// After ack, the claim row must be cleared (no live lease left behind).
-	if got, _ := sch.FindClaimable(context.Background(), 1); len(got) != 0 {
-		t.Fatalf("expected no claimable row after ack, got %v", got)
+	if _, ok, _ := sch.TryClaim(context.Background()); ok {
+		t.Fatalf("expected no claimable row after ack")
 	}
 }
 
@@ -112,19 +130,65 @@ func TestConsumerTombstoneSkipsCompletedBeforeDeleted(t *testing.T) {
 	w := &fakeWriter{}
 	c := newTestConsumer(sch, r, w, func(string) (Deduper, error) { return NewNoopDeduper(), nil })
 
-	// deleted before completed -> completed must be skipped.
-	if err := sch.AppendBacklog(context.Background(), "t1", "kb1", "d1", string(EventTypeDeleted), 1); err != nil {
-		t.Fatalf("append deleted: %v", err)
-	}
-	if err := sch.AppendBacklog(context.Background(), "t1", "kb1", "d1", string(EventTypeCompleted), 2); err != nil {
+	// completed (seq 1) before deleted (seq 2): the completion is the stale
+	// original, so it must be skipped and d1's per-doc products orphaned.
+	if err := sch.Publish(context.Background(), "t1", "kb1", "d1", string(EventTypeCompleted), 1); err != nil {
 		t.Fatalf("append completed: %v", err)
 	}
-	c.processDataset(context.Background(), "kb1")
+	if err := sch.Publish(context.Background(), "t1", "kb1", "d1", string(EventTypeDeleted), 2); err != nil {
+		t.Fatalf("append deleted: %v", err)
+	}
+	c.tryClaimAndProcess(context.Background())
 
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if len(w.deleted) != 1 {
-		t.Fatalf("expected 1 orphan-delete call for d1, got %d", len(w.deleted))
+	// No merged write (completed skipped). The deletion is handled entirely on
+	// the DocEngine: d1's per-doc products are dropped in one call and d1 is
+	// stripped from every dataset-level product in one call. No products are
+	// loaded into memory.
+	if len(w.written) != 0 {
+		t.Fatalf("expected no merged write, got %d", len(w.written))
+	}
+	if len(w.deletedDocLevel) != 1 || w.deletedDocLevel[0] != "d1" {
+		t.Fatalf("expected DeleteDocLevelForDocs([d1]), got %v", w.deletedDocLevel)
+	}
+	if len(w.strippedSources) != 1 || w.strippedSources[0] != "d1" {
+		t.Fatalf("expected StripMergedSources([d1]), got %v", w.strippedSources)
+	}
+}
+
+func TestConsumerReingestAfterDeletionWins(t *testing.T) {
+	sch := NewFakeScheduler()
+	r := &fakeReader{products: sampleProducts()}
+	w := &fakeWriter{}
+	c := newTestConsumer(sch, r, w, func(string) (Deduper, error) { return NewNoopDeduper(), nil })
+
+	// deleted (seq 1) then completed (seq 2): the completion has the higher
+	// sequence, so it wins — the doc is re-ingested, NOT deleted. The deletion
+	// must not drop its per-doc products, and the completion must be merged.
+	if err := sch.Publish(context.Background(), "t1", "kb1", "d1", string(EventTypeDeleted), 1); err != nil {
+		t.Fatalf("append deleted: %v", err)
+	}
+	if err := sch.Publish(context.Background(), "t1", "kb1", "d1", string(EventTypeCompleted), 2); err != nil {
+		t.Fatalf("append completed: %v", err)
+	}
+	c.tryClaimAndProcess(context.Background())
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	// No deletion calls: the higher-seq completion overrides the deletion.
+	if len(w.deletedDocLevel) != 0 {
+		t.Fatalf("expected no DeleteDocLevelForDocs, got %v", w.deletedDocLevel)
+	}
+	if len(w.strippedSources) != 0 {
+		t.Fatalf("expected no StripMergedSources, got %v", w.strippedSources)
+	}
+	// The completion is merged into the dataset-level products.
+	if len(w.written) != 1 {
+		t.Fatalf("expected 1 WriteMerged call, got %d", len(w.written))
+	}
+	if len(w.written[0]) != 2 {
+		t.Fatalf("expected 2 merged products, got %d", len(w.written[0]))
 	}
 }
 
@@ -132,12 +196,12 @@ func TestSchedulerClaimClosedBatch(t *testing.T) {
 	sch := NewFakeScheduler()
 	for i := 0; i < 40; i++ {
 		docID := "d" + string(rune('a'+i%26)) + string(rune('0'+i/26))
-		if err := sch.AppendBacklog(context.Background(), "t1", "kb1", docID, string(EventTypeCompleted), uint64(i)); err != nil {
+		if err := sch.Publish(context.Background(), "t1", "kb1", docID, string(EventTypeCompleted), uint64(i)); err != nil {
 			t.Fatalf("append: %v", err)
 		}
 	}
-	// First claim returns the bounded prefix (batchSize=32), not all 40.
-	cr1, ok, err := sch.Claim(context.Background(), "kb1", 32)
+	// First claim returns the bounded prefix (default batch=32), not all 40.
+	cr1, ok, err := sch.Claim(context.Background(), "kb1")
 	if err != nil || !ok {
 		t.Fatalf("claim1: ok=%v err=%v", ok, err)
 	}
@@ -146,7 +210,7 @@ func TestSchedulerClaimClosedBatch(t *testing.T) {
 	}
 	// A second claim by the same holder (still live lease) must not re-claim
 	// the same dataset until the first batch is acked.
-	_, ok2, _ := sch.Claim(context.Background(), "kb1", 32)
+	_, ok2, _ := sch.Claim(context.Background(), "kb1")
 	if ok2 {
 		t.Fatalf("second claim should have lost the race (live lease)")
 	}
@@ -154,7 +218,7 @@ func TestSchedulerClaimClosedBatch(t *testing.T) {
 	if _, err := sch.Ack(context.Background(), "kb1", cr1.Token, cr1.Entries); err != nil {
 		t.Fatalf("ack: %v", err)
 	}
-	cr3, ok3, err := sch.Claim(context.Background(), "kb1", 32)
+	cr3, ok3, err := sch.Claim(context.Background(), "kb1")
 	if err != nil || !ok3 {
 		t.Fatalf("claim3: ok=%v err=%v", ok3, err)
 	}
@@ -165,23 +229,19 @@ func TestSchedulerClaimClosedBatch(t *testing.T) {
 
 func TestSchedulerReclaimExpired(t *testing.T) {
 	sch := NewFakeScheduler()
-	if err := sch.AppendBacklog(context.Background(), "t1", "kb1", "d1", string(EventTypeCompleted), 1); err != nil {
+	if err := sch.Publish(context.Background(), "t1", "kb1", "d1", string(EventTypeCompleted), 1); err != nil {
 		t.Fatalf("append: %v", err)
 	}
-	_, ok, err := sch.Claim(context.Background(), "kb1", 32)
+	_, ok, err := sch.Claim(context.Background(), "kb1")
 	if err != nil || !ok {
 		t.Fatalf("claim: ok=%v err=%v", ok, err)
 	}
-	// Simulate a crash: the inflight is never acked. Reclaim moves it back.
-	n, err := sch.ReclaimExpired(context.Background(), time.Now().Add(10*time.Minute))
-	if err != nil {
-		t.Fatalf("reclaim: %v", err)
-	}
-	if n != 1 {
-		t.Fatalf("expected 1 reclaimed entry, got %d", n)
-	}
-	// The entry is claimable again.
-	cr2, ok2, err := sch.Claim(context.Background(), "kb1", 32)
+	// Simulate a crash: the inflight is never acked and the lease has expired.
+	past := time.Now().Add(-time.Hour)
+	sch.rows["kb1"].expires = &past
+	// TryClaim reclaims the expired lease back into backlog and immediately
+	// claims it again.
+	cr2, ok2, err := sch.TryClaim(context.Background())
 	if err != nil || !ok2 {
 		t.Fatalf("reclaim claim: ok=%v err=%v", ok2, err)
 	}

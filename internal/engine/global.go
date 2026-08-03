@@ -38,8 +38,8 @@ var (
 	once               sync.Once
 )
 
-// Init initializes document engine
-func Init() error {
+// InitDocEngine initializes document engine
+func InitDocEngine() error {
 
 	var initErr error
 	once.Do(func() {
@@ -89,12 +89,12 @@ func GetMessageQueueEngine() MessageQueue {
 
 // SetMessageQueueEngine installs the global message-queue engine. It exists
 // primarily as a test seam so callers can drive Start() without a real server
-// config; production code uses InitMessageQueueEngine.
+// config; production code uses InitMessageQueue.
 func SetMessageQueueEngine(mq MessageQueue) {
 	messageQueueEngine = mq
 }
 
-func InitMessageQueueEngine() error {
+func InitMessageQueue() error {
 	globalConfig := server.GetConfig()
 	messageQueueType := globalConfig.QueueEngineType()
 	switch messageQueueType {

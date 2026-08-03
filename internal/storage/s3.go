@@ -111,6 +111,8 @@ func (s *S3Storage) resolveBucketAndPath(bucket, fnm string) (string, string) {
 	return actualBucket, actualPath
 }
 
+func (s *S3Storage) Type() string { return "s3" }
+
 // Health checks S3 service availability
 func (s *S3Storage) Health() bool {
 	bucket := s.bucket
