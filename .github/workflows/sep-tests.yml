@@ -320,14 +320,55 @@ jobs:
         #
         # Excludes packages whose tests fail for environmental reasons
         # unrelated to the diff:
-        #   - internal/tokenizer: tests need /usr/share/infinity/resource
-        #     dict files, only mounted inside the docker builder, not
-        #     in the Go test environment.
+        #   - internal/tokenizer is split: the pure-Go BPE loader tests
+        #     (bpe_loader_test.go) run in the default tier; the C++ binding /
+        #     dict-dependent tests (tokenizer_test.go,
+        #     tokenizer_concurrent_test.go) and the on-disk anchor test
+        #     (bpe_loader_anchors_test.go) are tagged `manual` and need the
+        #     docker builder's /usr/share/infinity/resource, so they stay out
+        #     of the default run.
         run: |
           set -euo pipefail
+
+          # Provide the cl100k BPE table for the offline tokenizer loader.
+          # The loader reads <repo>/ragflow_deps/cl100k_base.tiktoken (or
+          # TIKTOKEN_CACHE_DIR). Try to fetch it directly from the upstream
+          # openai blob first (small ~1.6MB, reachable from the CI runner — the
+          # pre-PR code downloaded it on the fly, so the network path is known
+          # good). If the direct fetch fails (e.g. GFW), fall back to extracting
+          # it from the local infiniflow/ragflow_deps image *if already present*
+          # on the runner (no `docker pull`, since that huge image is first
+          # fetched at the later "Build ragflow:nightly" step). Best-effort: if
+          # neither source works, the loader still fails loudly (no silent
+          # 0-token degradation).
+          if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
+            mkdir -p ragflow_deps
+            if command -v curl >/dev/null 2>&1; then
+              if curl -fsSL -o ragflow_deps/cl100k_base.tiktoken \
+                https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken; then
+                echo "tiktoken: cl100k table fetched via curl from openai blob"
+              else
+                echo "tiktoken: curl fetch failed (network/GFW); will try cached image"
+              fi
+            fi
+            if [ ! -f ragflow_deps/cl100k_base.tiktoken ] && docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
+              CID=$(docker create infiniflow/ragflow_deps:latest true) || true
+              if [ -n "${CID:-}" ]; then
+                if docker cp "$CID":/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken 2>/dev/null; then
+                  echo "tiktoken: cl100k table copied from cached infiniflow/ragflow_deps image"
+                fi
+                docker rm -f "$CID" >/dev/null 2>&1 || true
+              fi
+            fi
+          fi
+          if [ -f ragflow_deps/cl100k_base.tiktoken ]; then
+            echo "tiktoken: cl100k table provisioned ($(wc -c < ragflow_deps/cl100k_base.tiktoken) bytes)"
+          else
+            echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
+          fi
+
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
-            | grep -v '/internal/tokenizer$' \
             | grep -v '/internal/handler$' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
@@ -895,14 +936,55 @@ jobs:
         #
         # Excludes packages whose tests fail for environmental reasons
         # unrelated to the diff:
-        #   - internal/tokenizer: tests need /usr/share/infinity/resource
-        #     dict files, only mounted inside the docker builder, not
-        #     in the Go test environment.
+        #   - internal/tokenizer is split: the pure-Go BPE loader tests
+        #     (bpe_loader_test.go) run in the default tier; the C++ binding /
+        #     dict-dependent tests (tokenizer_test.go,
+        #     tokenizer_concurrent_test.go) and the on-disk anchor test
+        #     (bpe_loader_anchors_test.go) are tagged `manual` and need the
+        #     docker builder's /usr/share/infinity/resource, so they stay out
+        #     of the default run.
         run: |
           set -euo pipefail
+
+          # Provide the cl100k BPE table for the offline tokenizer loader.
+          # The loader reads <repo>/ragflow_deps/cl100k_base.tiktoken (or
+          # TIKTOKEN_CACHE_DIR). Try to fetch it directly from the upstream
+          # openai blob first (small ~1.6MB, reachable from the CI runner — the
+          # pre-PR code downloaded it on the fly, so the network path is known
+          # good). If the direct fetch fails (e.g. GFW), fall back to extracting
+          # it from the local infiniflow/ragflow_deps image *if already present*
+          # on the runner (no `docker pull`, since that huge image is first
+          # fetched at the later "Build ragflow:nightly" step). Best-effort: if
+          # neither source works, the loader still fails loudly (no silent
+          # 0-token degradation).
+          if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
+            mkdir -p ragflow_deps
+            if command -v curl >/dev/null 2>&1; then
+              if curl -fsSL -o ragflow_deps/cl100k_base.tiktoken \
+                https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken; then
+                echo "tiktoken: cl100k table fetched via curl from openai blob"
+              else
+                echo "tiktoken: curl fetch failed (network/GFW); will try cached image"
+              fi
+            fi
+            if [ ! -f ragflow_deps/cl100k_base.tiktoken ] && docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
+              CID=$(docker create infiniflow/ragflow_deps:latest true) || true
+              if [ -n "${CID:-}" ]; then
+                if docker cp "$CID":/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken 2>/dev/null; then
+                  echo "tiktoken: cl100k table copied from cached infiniflow/ragflow_deps image"
+                fi
+                docker rm -f "$CID" >/dev/null 2>&1 || true
+              fi
+            fi
+          fi
+          if [ -f ragflow_deps/cl100k_base.tiktoken ]; then
+            echo "tiktoken: cl100k table provisioned ($(wc -c < ragflow_deps/cl100k_base.tiktoken) bytes)"
+          else
+            echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
+          fi
+
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
-            | grep -v '/internal/tokenizer$' \
             | grep -v '/internal/handler$' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
