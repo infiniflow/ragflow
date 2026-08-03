@@ -345,12 +345,8 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 		if pm != nil {
 			modelEntity = pm.GetModelByNameOrAlias(modelName)
 		}
-		var name string
-		if model.OwnedBy != "" {
-			name = modelName + "@" + model.OwnedBy
-		}
-		modelResponse.Name = name
-		modelResponse.ModelName = modelName
+
+		modelResponse.Name = modelName
 		if modelEntity != nil {
 			modelResponse.MaxDimension = modelEntity.MaxDimension
 			modelResponse.Dimensions = modelEntity.Dimensions
