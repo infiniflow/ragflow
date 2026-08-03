@@ -695,7 +695,7 @@ def test_documents_update_invalid_field_and_guard_contract(rest_client, create_d
         ({"chunk_count": 100}, 102, "can't change `chunk_count`"),
         ({"token_count": 100}, 102, "can't change `token_count`"),
         ({"progress": 2.0}, 102, "Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <2.0>"),
-        ({"progress": 1.0}, 102, "Can't change `progress`."),
+        ({"progress": 1.0}, 102, "can't change `progress`"),
         ({"meta_fields": []}, 102, "Field: <meta_fields> - Message: <Input should be a valid dictionary> - Value: <[]>"),
     ]
     for payload, expected_code, expected_message in strict_guard_cases:

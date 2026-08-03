@@ -1112,7 +1112,7 @@ def validate_immutable_fields(update_doc_req: UpdateDocumentReq, doc):
         progress_from_db = float(getattr(doc, "progress", -1.0))
         # should not use "==" to compare two float values
         if not math.isclose(update_doc_req.progress, progress_from_db):
-            return "Can't change `progress`.", RetCode.DATA_ERROR
+            return "can't change `progress`", RetCode.DATA_ERROR
 
     return None, None
 
