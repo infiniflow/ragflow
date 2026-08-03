@@ -30,6 +30,7 @@ export const useSelectDerivedConversationList = () => {
     loading,
     handleInputChange,
     searchString,
+    setSearchString,
   } = useFetchSessionList();
 
   const { id: dialogId } = useParams();
@@ -38,6 +39,9 @@ export const useSelectDerivedConversationList = () => {
 
   const addTemporaryConversation = useCallback(() => {
     const conversationId = generateConversationId();
+    // Clear the search keyword, otherwise the newly created session will be
+    // filtered out by the search after it is persisted and refetched.
+    setSearchString('');
     setList((pre) => {
       if (dialogId) {
         setConversationBoth(conversationId, 'true');
@@ -61,7 +65,14 @@ export const useSelectDerivedConversationList = () => {
 
       return pre;
     });
-  }, [dialogId, setConversationBoth, t, prologue, conversationList]);
+  }, [
+    dialogId,
+    setConversationBoth,
+    t,
+    prologue,
+    conversationList,
+    setSearchString,
+  ]);
 
   const removeTemporaryConversation = useCallback((conversationId: string) => {
     setList((prevList) => {
