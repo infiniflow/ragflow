@@ -28,8 +28,6 @@ import (
 	"path/filepath"
 	"ragflow/internal/common"
 	"strings"
-
-	"go.uber.org/zap"
 )
 
 // OpenRouterModel implements ModelDriver for OpenRouter AI
@@ -123,111 +121,8 @@ func (o *OpenRouterModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 	}
 
 	return o.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
-		// OpenRouter emits reasoning under delta.reasoning (not
-		// delta.reasoning_content), so it needs its own event loop to
-		// forward that field. Everything else follows the shared handler
-		// contract.
-		return openRouterHandleStream(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
+		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
 	})
-}
-
-// openRouterHandleStream processes an OpenRouter streaming chat response.
-// OpenRouter uses delta.reasoning for reasoning (unlike most providers that
-// use delta.reasoning_content), so it needs its own event loop to forward
-// that field. Everything else (usage, tool calls, terminal detection) follows
-// the shared handler contract.
-func openRouterHandleStream(
-	body io.Reader,
-	modelUsage *common.ModelUsage,
-	chatConfig *ChatConfig,
-	cfg *ParserConfig,
-	sender func(*string, *string) error,
-) error {
-	if sender == nil {
-		return fmt.Errorf("sender is required")
-	}
-
-	var streamUsage *TokenUsage
-	accumulatedToolCalls := make(map[int]map[string]any)
-	sawTerminal := false
-
-	var streamModel string
-	done, err := ParseSSEStream[map[string]any](body, func(event map[string]any) error {
-		if u, ok := cfg.StreamParser(event); ok {
-			streamUsage = u
-		}
-		if m, ok := event["model"].(string); ok {
-			streamModel = m
-		}
-
-		if apiErr, ok := event["error"]; ok && apiErr != nil {
-			return fmt.Errorf("upstream stream error: %v", apiErr)
-		}
-
-		choices, ok := event["choices"].([]any)
-		if !ok || len(choices) == 0 {
-			return nil
-		}
-
-		firstChoice, ok := choices[0].(map[string]any)
-		if !ok {
-			return nil
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]any)
-		if !ok {
-			return nil
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
-		// OpenRouter uses delta.reasoning for reasoning content.
-		if reasoning, ok := delta["reasoning"].(string); ok && reasoning != "" {
-			if err := sender(nil, &reasoning); err != nil {
-				return err
-			}
-		}
-
-		if reasoningContent, ok := delta["reasoning_content"].(string); ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		if content, ok := delta["content"].(string); ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
-			sawTerminal = true
-		}
-
-		return nil
-	})
-	if err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-
-	if chatConfig != nil {
-		setSortedToolCallsResult(chatConfig, accumulatedToolCalls)
-	}
-
-	if !done && !sawTerminal {
-		return fmt.Errorf("stream ended before [DONE] or finish_reason")
-	}
-
-	if streamUsage != nil {
-		recordResponseUsage(modelUsage, "", streamUsage, "chat")
-		if chatConfig != nil {
-			chatConfig.UsageResult = streamUsage
-			common.Info("StreamUsage", zap.String("model", streamModel), zap.Int("prompt", streamUsage.PromptTokens), zap.Int("completion", streamUsage.CompletionTokens), zap.Int("total", streamUsage.TotalTokens))
-		}
-	}
-
-	endOfStream := "[DONE]"
-	return sender(&endOfStream, nil)
 }
 
 // OpenRouterEmbeddingResponse mirrors OpenRouter's embeddings response.

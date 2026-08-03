@@ -119,6 +119,15 @@ func HandleStreamingResponse(
 			if err := sender(nil, &reasoningContent); err != nil {
 				return err
 			}
+		} else if reasoning, ok := delta["reasoning"].(string); ok && reasoning != "" {
+			// OpenRouter (and a few others) emit reasoning under
+			// delta.reasoning instead of delta.reasoning_content.
+			// Only fall back to it when reasoning_content is absent:
+			// some providers (e.g. Groq) carry both with different
+			// meanings and expect reasoning to be ignored.
+			if err := sender(nil, &reasoning); err != nil {
+				return err
+			}
 		}
 
 		if content, ok := delta["content"].(string); ok && content != "" {
