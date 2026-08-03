@@ -107,7 +107,7 @@ def test_validate_immutable_fields_chunk_count_mismatch():
     doc.progress = 0.5
 
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `chunk_count`."
+    assert error_msg == "can't change `chunk_count`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -185,7 +185,7 @@ def test_validate_immutable_fields_zero_values_must_match():
     doc.progress = 0.5
 
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `chunk_count`."
+    assert error_msg == "can't change `chunk_count`"
     assert error_code == RetCode.DATA_ERROR
 
 

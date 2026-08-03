@@ -263,7 +263,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 	ctx := c.Request.Context()
 	preview, err := h.documentService.GetDocumentPreview(ctx, docID)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, "Document not found!")
+		common.ErrorWithCode(c, common.CodeDataError, "document not found")
 		return
 	}
 

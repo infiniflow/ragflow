@@ -221,7 +221,7 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"chunk_count": 1}, 102, "Can't change `chunk_count`."),
+            ({"chunk_count": 1}, 102, "can't change `chunk_count`"),
             pytest.param(
                 {"create_date": "Fri, 14 Mar 2025 16:53:42 GMT"},
                 102,
@@ -339,7 +339,7 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"chunk_count": 100}, 102, "Can't change `chunk_count`."),
+            ({"chunk_count": 100}, 102, "can't change `chunk_count`"),
             ({"token_count": 100}, 102, "Can't change `token_count`."),
             ({"progress": 2.0}, 102, "Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <2.0>"),
             ({"progress": 1.0}, 102, "Can't change `progress`."),
