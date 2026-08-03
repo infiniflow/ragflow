@@ -46,6 +46,8 @@ func NewMemoryStorage() Storage {
 	return &MemoryStorage{objects: make(map[string]map[string][]byte)}
 }
 
+func (m *MemoryStorage) Type() string { return "memory_storage" }
+
 // Health always reports healthy for the in-memory backend.
 func (m *MemoryStorage) Health() bool {
 	return true

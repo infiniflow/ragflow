@@ -1518,6 +1518,66 @@ func TestUpdateAgentAllowsExistingTitleForSameCanvas(t *testing.T) {
 	}
 }
 
+func TestUpdateAgentTeamMemberPermissionAndOwnerTitleChecks(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	ctx := t.Context()
+
+	status := "1"
+	for _, row := range []*entity.UserCanvas{
+		{
+			ID:             "canvas-team-edit",
+			UserID:         "owner-1",
+			Title:          sptr("Editable Title"),
+			Permission:     string(entity.TenantPermissionTeam),
+			CanvasCategory: "agent_canvas",
+			DSL:            entity.JSONMap{},
+		},
+		{
+			ID:             "canvas-owner-duplicate",
+			UserID:         "owner-1",
+			Title:          sptr("Owner Duplicate"),
+			Permission:     string(entity.TenantPermissionMe),
+			CanvasCategory: "agent_canvas",
+			DSL:            entity.JSONMap{},
+		},
+	} {
+		if err := dao.DB.WithContext(ctx).Create(row).Error; err != nil {
+			t.Fatalf("failed to seed canvas %s: %v", row.ID, err)
+		}
+	}
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserTenant{
+		ID:        "ut-agent-team",
+		UserID:    "member-1",
+		TenantID:  "owner-1",
+		Role:      "normal",
+		InvitedBy: "owner-1",
+		Status:    &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed user tenant: %v", err)
+	}
+
+	samePermission := " TEAM "
+	if err := NewAgentService().UpdateAgent(ctx, "member-1", "canvas-team-edit", map[string]interface{}{
+		"description": "member edit",
+		"permission":  samePermission,
+	}); err != nil {
+		t.Fatalf("UpdateAgent with same permission failed: %v", err)
+	}
+
+	nextPermission := "me"
+	if err := NewAgentService().UpdateAgent(ctx, "member-1", "canvas-team-edit", map[string]interface{}{
+		"permission": nextPermission,
+	}); err == nil {
+		t.Fatal("UpdateAgent permission change error = nil, want error")
+	}
+
+	if err := NewAgentService().UpdateAgent(ctx, "member-1", "canvas-team-edit", map[string]interface{}{
+		"title": "Owner Duplicate",
+	}); err == nil || err.Error() != "Owner Duplicate already exists." {
+		t.Fatalf("UpdateAgent duplicate title error = %v, want Owner Duplicate already exists.", err)
+	}
+}
+
 func TestUpdateAgentRejectsDuplicateTitleInDestinationCategory(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 	ctx := t.Context()

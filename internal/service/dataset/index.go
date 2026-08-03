@@ -134,9 +134,9 @@ func createDatasetIndexTaskInTx(tx *gorm.DB, task *entity.Task, queueDocID strin
 	return &document, nil
 }
 
-func enqueueDatasetIndexTask(priority int, queueMessage map[string]interface{}) error {
+func enqueueDatasetIndexTask(ctx context.Context, priority int, queueMessage map[string]interface{}) error {
 	redisClient := redisengine.Get()
-	if redisClient == nil || !redisClient.QueueProduct(datasetIndexQueueName(priority), queueMessage) {
+	if redisClient == nil || !redisClient.QueueProduct(ctx, datasetIndexQueueName(priority), queueMessage) {
 		return errors.New("can't access Redis. Please check the Redis' status")
 	}
 	return nil
@@ -251,12 +251,12 @@ func datasetIndexQueueName(priority int) string {
 	return fmt.Sprintf("%s.%d.common", serverQueueNamePrefix, priority)
 }
 
-func clearGraphPhaseMarkers(redisClient *redisengine.Client, datasetID string) {
+func clearGraphPhaseMarkers(ctx context.Context, redisClient *redisengine.Client, datasetID string) {
 	if redisClient == nil || datasetID == "" {
 		return
 	}
 	for _, phase := range []string{graphPhaseResolutionDone, graphPhaseCommunityDone} {
-		if !redisClient.Delete(fmt.Sprintf("graphrag:phase:%s:%s", datasetID, phase)) {
+		if !redisClient.Delete(ctx, fmt.Sprintf("graphrag:phase:%s:%s", datasetID, phase)) {
 			common.Warn("Failed to clear GraphRAG phase marker", zap.String("dataset_id", datasetID), zap.String("phase", phase))
 		}
 	}
@@ -343,7 +343,7 @@ func (d *DatasetService) RunIndex(ctx context.Context, userID, datasetID, indexT
 		return nil, common.CodeDataError, errors.New("internal server error")
 	}
 
-	if err = enqueueDatasetIndexTask(0, queueMessage); err != nil {
+	if err = enqueueDatasetIndexTask(ctx, 0, queueMessage); err != nil {
 		if cleanupErr := cleanupFailedDatasetIndexTask(task.ID, updatedDocument, kb.ID, indexType); cleanupErr != nil {
 			err = errors.Join(err, cleanupErr)
 		}
@@ -690,7 +690,7 @@ func (d *DatasetService) DeleteIndex(ctx context.Context, userID, datasetID, ind
 
 	if taskID != "" {
 		redisClient := redisengine.Get()
-		if redisClient == nil || !redisClient.Set(fmt.Sprintf("%s-cancel", taskID), "x", 0) {
+		if redisClient == nil || !redisClient.Set(ctx, fmt.Sprintf("%s-cancel", taskID), "x", 0) {
 			common.Warn("Failed to set dataset index cancellation marker", zap.String("dataset_id", datasetID), zap.String("task_id", taskID))
 		}
 		if err := dao.DB.Unscoped().Where("id = ?", taskID).Delete(&entity.Task{}).Error; err != nil {
@@ -712,7 +712,7 @@ func (d *DatasetService) DeleteIndex(ctx context.Context, userID, datasetID, ind
 			common.Warn("Failed to delete GraphRAG artefacts", zap.String("dataset_id", datasetID), zap.Error(err))
 			return common.CodeDataError, errors.New("internal server error")
 		}
-		clearGraphPhaseMarkers(redisengine.Get(), datasetID)
+		clearGraphPhaseMarkers(ctx, redisengine.Get(), datasetID)
 		common.Info("delete_index: cleared GraphRAG artefacts and phase markers", zap.String("dataset_id", datasetID))
 	} else if wipe && indexType == "raptor" {
 		if d.docEngine == nil {

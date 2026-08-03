@@ -62,6 +62,7 @@ func newFakeUploadStorage() *fakeUploadStorage {
 	return &fakeUploadStorage{objects: map[string][]byte{}}
 }
 
+func (f *fakeUploadStorage) Type() string                  { return "fake_upload_storage" }
 func (f *fakeUploadStorage) Health() bool                  { return true }
 func (f *fakeUploadStorage) key(bucket, fnm string) string { return bucket + "/" + fnm }
 func (f *fakeUploadStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {

@@ -921,7 +921,7 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	// Best-effort: a missing Redis client or any cache error falls through to
 	// a live call instead of failing the extraction.
 	var parsed map[string]any
-	if cached, hit := getMetadataLLMCache(in.llmID, schemaStr, chunkText); hit {
+	if cached, hit := getMetadataLLMCache(ctx, in.llmID, schemaStr, chunkText); hit {
 		parsed = cached
 	} else {
 		metaTemp := extractorTemperature
@@ -956,7 +956,7 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 			return nil
 		}
 		parsed = parsedObj
-		setMetadataLLMCache(in.llmID, schemaStr, chunkText, parsed)
+		setMetadataLLMCache(ctx, in.llmID, schemaStr, chunkText, parsed)
 	}
 	// Merge into the chunk metadata map, preserving existing keys.
 	var meta map[string]any
@@ -997,17 +997,17 @@ func metadataLLMCacheKey(llmID, schemaJSON, chunkText string) string {
 
 // getMetadataLLMCache returns a cached extraction for the given chunk, or
 // (nil, false) on miss / Redis unavailable / decode error. Best-effort.
-func getMetadataLLMCache(llmID, schemaJSON, chunkText string) (map[string]any, bool) {
+func getMetadataLLMCache(ctx context.Context, llmID, schemaJSON, chunkText string) (map[string]any, bool) {
 	client := redis.Get()
 	if client == nil {
 		return nil, false
 	}
-	data, err := client.Get(metadataLLMCacheKey(llmID, schemaJSON, chunkText))
+	data, err := client.Get(ctx, metadataLLMCacheKey(llmID, schemaJSON, chunkText))
 	if err != nil || data == "" {
 		return nil, false
 	}
 	var parsed map[string]any
-	if err := json.Unmarshal([]byte(data), &parsed); err != nil {
+	if err = json.Unmarshal([]byte(data), &parsed); err != nil {
 		return nil, false
 	}
 	return parsed, true
@@ -1015,7 +1015,7 @@ func getMetadataLLMCache(llmID, schemaJSON, chunkText string) (map[string]any, b
 
 // setMetadataLLMCache stores an extraction result for 24h. Best-effort: a
 // missing Redis client or marshal error is silently ignored.
-func setMetadataLLMCache(llmID, schemaJSON, chunkText string, parsed map[string]any) {
+func setMetadataLLMCache(ctx context.Context, llmID, schemaJSON, chunkText string, parsed map[string]any) {
 	client := redis.Get()
 	if client == nil {
 		return
@@ -1024,7 +1024,7 @@ func setMetadataLLMCache(llmID, schemaJSON, chunkText string, parsed map[string]
 	if err != nil {
 		return
 	}
-	client.Set(metadataLLMCacheKey(llmID, schemaJSON, chunkText), string(data), metadataLLMCacheTTL)
+	client.Set(ctx, metadataLLMCacheKey(llmID, schemaJSON, chunkText), string(data), metadataLLMCacheTTL)
 }
 
 // cleanExtractionResult strips `</think>` tags and rejects `**ERROR**` responses,

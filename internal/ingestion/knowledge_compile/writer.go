@@ -31,29 +31,62 @@ import (
 type Writer interface {
 	// WriteMerged upserts the dataset-level merged products (available_int=1).
 	WriteMerged(ctx context.Context, tenant, kb string, products []kccommon.Product) error
-	// DeleteMergedForDoc removes merged products that became fully orphaned by
-	// the deletion of docID. Multi-doc merged products are recomputed by the
-	// caller (via the Reader + Deduper), not here.
-	DeleteMergedForDoc(ctx context.Context, tenant, kb, docID string) error
+	// DeleteDocLevelForDocs drops every per-document (doc-level, kc_merged != 1)
+	// product of the deleted docs in a single DocEngine call. Dataset-level
+	// merged rows are not targeted because their doc_id equals the kb, never a
+	// deleted source doc id.
+	DeleteDocLevelForDocs(ctx context.Context, tenant, kb string, deletedDocIDs []string) error
+	// StripMergedSources removes deletedDocIDs from the source_doc_ids array of
+	// every dataset-level (kc_merged=1) product for the dataset. It searches the
+	// merged set once, rewrites the source array of every non-empty survivor in a
+	// single update pass, and deletes (in one call) any product whose array
+	// became empty.
+	StripMergedSources(ctx context.Context, tenant, kb string, deletedDocIDs []string) error
 }
 
-type infinityWriter struct{}
+// engineWriter persists dataset-level merged products through the global
+// DocEngine (§11.7). Like engineReader, it depends on the process-wide DocEngine
+// obtained via engine.Get(); the storage schema lives behind the engine
+// abstraction rather than in this package.
+type engineWriter struct {
+	eng engine.DocEngine
+}
 
-func (infinityWriter) WriteMerged(ctx context.Context, tenant, kb string, products []kccommon.Product) error {
+// writeMergedBatchSize bounds how many rows each parallel InsertChunks call
+// carries, so the DocEngine write fan-out stays granular under the shared pool.
+const writeMergedBatchSize = 200
+
+func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, products []kccommon.Product) error {
 	if len(products) == 0 {
 		return nil
 	}
-	eng := engine.Get()
+	eng := w.eng
+	if eng == nil {
+		eng = engine.Get()
+	}
 	if eng == nil {
 		return nil
 	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
-	chunks := make([]map[string]interface{}, 0, len(products))
-	for _, p := range products {
-		chunks = append(chunks, mergedChunkMap(tenant, kb, p))
+	// Shard the rows and drive the inserts through the shared global pool
+	// (docengine-bounded) instead of one monolithic InsertChunks call.
+	jobs := make([]compilerJob, 0, (len(products)+writeMergedBatchSize-1)/writeMergedBatchSize)
+	for start := 0; start < len(products); start += writeMergedBatchSize {
+		end := start + writeMergedBatchSize
+		if end > len(products) {
+			end = len(products)
+		}
+		batch := products[start:end]
+		jobs = append(jobs, func() error {
+			chunks := make([]map[string]interface{}, 0, len(batch))
+			for _, p := range batch {
+				chunks = append(chunks, mergedChunkMap(tenant, kb, p))
+			}
+			_, err := eng.InsertChunks(ctx, chunks, baseName, kb)
+			return err
+		})
 	}
-	_, err := eng.InsertChunks(ctx, chunks, baseName, kb)
-	return err
+	return runCompilerJobs(ctx, jobs)
 }
 
 // mergedChunkMap builds the chunk-index document for a dataset-level merged
@@ -77,33 +110,79 @@ func mergedChunkMap(tenant, kb string, p kccommon.Product) map[string]interface{
 	}
 	// Persist the merged product's embedding under the dimension-suffixed column
 	// used elsewhere in the index, so dataset-level rows remain vector-searchable
-	// and Reader.LoadCompiledProducts can reconstruct them (otherwise the vector
-	// is silently dropped and search returns nothing for merged rows).
+	// and the Reader can reconstruct them (otherwise the vector is silently
+	// dropped and KNN search returns nothing for merged rows).
 	if dim := len(p.Vector); dim > 0 {
 		m[fmt.Sprintf("q_%d_vec", dim)] = p.Vector
 	}
 	return m
 }
 
-func (infinityWriter) DeleteMergedForDoc(ctx context.Context, tenant, kb, docID string) error {
-	eng := engine.Get()
+// DeleteDocLevelForDocs removes the per-document (doc-level) products of every
+// deleted doc in a single DocEngine call. The table is scoped to the dataset
+// (kb), and merged rows carry doc_id == kb, so filtering on doc_id IN
+// deletedDocIDs can only match the per-document products of the deleted docs.
+func (w engineWriter) DeleteDocLevelForDocs(ctx context.Context, tenant, kb string, deletedDocIDs []string) error {
+	if len(deletedDocIDs) == 0 {
+		return nil
+	}
+	eng := w.eng
+	if eng == nil {
+		eng = engine.Get()
+	}
 	if eng == nil {
 		return nil
 	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
+	_, err := eng.DeleteChunks(ctx, map[string]interface{}{
+		"doc_id": deletedDocIDs,
+	}, baseName, kb)
+	return err
+}
+
+// StripMergedSources removes deletedDocIDs from the source_doc_ids array of
+// every dataset-level (kc_merged=1) product for the dataset. The query filters
+// on source_doc_ids IN deletedDocIDs so the engine only returns rows that
+// actually reference a deleted doc (intersection pushed down); the survivors'
+// source arrays are rewritten in a single update pass driven by the shared
+// pool, and any product whose array became empty is deleted in one call. The
+// deleted docs' products themselves are never loaded into memory.
+func (w engineWriter) StripMergedSources(ctx context.Context, tenant, kb string, deletedDocIDs []string) error {
+	if len(deletedDocIDs) == 0 {
+		return nil
+	}
+	eng := w.eng
+	if eng == nil {
+		eng = engine.Get()
+	}
+	if eng == nil {
+		return nil
+	}
+	baseName := fmt.Sprintf("ragflow_%s", tenant)
+	delSet := make(map[string]bool, len(deletedDocIDs))
+	for _, d := range deletedDocIDs {
+		delSet[d] = true
+	}
+
 	const batchSize = 2000
-	// Re-query from the start each iteration (deletions shift the result set),
-	// deleting every fully-orphaned merged row we find, until a page returns
-	// fewer than batchSize candidates. Without pagination, orphaned merged rows
-	// beyond the 2000 cap would never be cleaned up.
+	var toDeleteIDs []string
+	var jobs []compilerJob
+	offset := 0
 	for {
 		res, err := eng.Search(ctx, &types.SearchRequest{
-			IndexNames:   []string{baseName},
-			KbIDs:        []string{kb},
-			Filter:       map[string]interface{}{"available_int": 1, "kc_merged": 1},
+			IndexNames: []string{baseName},
+			KbIDs:      []string{kb},
+			// kc_merged=1 isolates dataset-level rows; source_doc_ids IN
+			// deletedDocIDs pushes the intersection test into the engine so only
+			// rows that actually reference a deleted doc are returned (Infinity
+			// array IN means "contains at least one of").
+			Filter: map[string]interface{}{
+				"kc_merged":      1,
+				"source_doc_ids": deletedDocIDs,
+			},
 			SelectFields: []string{"id", "source_doc_ids"},
 			Limit:        batchSize,
-			Offset:       0,
+			Offset:       offset,
 		})
 		if err != nil {
 			return err
@@ -112,20 +191,48 @@ func (infinityWriter) DeleteMergedForDoc(ctx context.Context, tenant, kb, docID 
 			break
 		}
 		for _, c := range res.Chunks {
-			ids := metaStringSlice(c, "source_doc_ids")
-			// Fully orphaned: the only contributor is the deleted document.
-			if len(ids) == 1 && ids[0] == docID {
-				if _, err := eng.DeleteChunks(ctx, map[string]interface{}{
-					"id":            c["id"],
-					"kb_id":         kb,
-					"available_int": 1,
-				}, baseName, kb); err != nil {
-					return err
-				}
+			id, _ := c["id"].(string)
+			if id == "" {
+				continue
 			}
+			src := metaStringSlice(c, "source_doc_ids")
+			kept := make([]string, 0, len(src))
+			changed := false
+			for _, d := range src {
+				if delSet[d] {
+					changed = true
+					continue
+				}
+				kept = append(kept, d)
+			}
+			if !changed {
+				continue
+			}
+			if len(kept) == 0 {
+				toDeleteIDs = append(toDeleteIDs, id)
+				continue
+			}
+			keptCopy := append([]string(nil), kept...)
+			idCopy := id
+			jobs = append(jobs, func() error {
+				return eng.UpdateChunks(ctx, map[string]interface{}{"id": idCopy},
+					map[string]interface{}{"source_doc_ids": keptCopy}, baseName, kb)
+			})
 		}
 		if len(res.Chunks) < batchSize {
 			break
+		}
+		offset += batchSize
+	}
+	if err := runCompilerJobs(ctx, jobs); err != nil {
+		return err
+	}
+	if len(toDeleteIDs) > 0 {
+		if _, err := eng.DeleteChunks(ctx, map[string]interface{}{
+			"id":    toDeleteIDs,
+			"kb_id": kb,
+		}, baseName, kb); err != nil {
+			return err
 		}
 	}
 	return nil
