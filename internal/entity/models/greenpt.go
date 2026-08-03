@@ -115,6 +115,10 @@ func (m *GreenPTModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
+	if chatModelConfig != nil {
+		chatModelConfig.ToolCallsResult = nil
+		chatModelConfig.UsageResult = nil
+	}
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
