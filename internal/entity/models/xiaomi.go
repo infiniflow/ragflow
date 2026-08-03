@@ -41,6 +41,11 @@ func NewXiaomiModel(baseURL map[string]string, urlSuffix URLSuffix) *XiaomiModel
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
 			httpClient: NewDriverHTTPClient(false),
+			// Xiaomi authenticates with the non-standard "api-key" header
+			// instead of "Authorization: Bearer".
+			authHeader: func(cfg *APIConfig) (string, string) {
+				return "api-key", *cfg.ApiKey
+			},
 		},
 	}
 }
@@ -92,35 +97,9 @@ func (x *XiaomiModel) ChatWithMessages(ctx context.Context, modelName string, me
 		}
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := x.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", *apiConfig.ApiKey)
-
-	resp, err := x.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, err
 	}
 
 	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
@@ -147,6 +126,9 @@ func (x *XiaomiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 	delete(reqBody, "max_tokens")
+	reqBody["stream_options"] = map[string]interface{}{
+		"include_usage": true,
+	}
 
 	if modelConfig != nil {
 		if modelConfig.MaxTokens != nil {
@@ -167,34 +149,9 @@ func (x *XiaomiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", *apiConfig.ApiKey)
-
-	resp, err := x.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return HandleStreamingResponse(resp.Body, modelUsage, modelConfig, OpenAIParserConfig, sender)
+	return x.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
+	})
 }
 
 func (x *XiaomiModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
@@ -378,7 +335,7 @@ func (x *XiaomiModel) newXiaomiASRRequest(ctx context.Context, modelName *string
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", *apiConfig.ApiKey)
+	x.baseModel.applyAuth(req, apiConfig)
 
 	return req, nil
 }
@@ -572,7 +529,7 @@ func (x *XiaomiModel) newXiaomiTTSRequest(ctx context.Context, modelName *string
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("api-key", *apiConfig.ApiKey)
+	x.baseModel.applyAuth(req, apiConfig)
 
 	return req, nil
 }
