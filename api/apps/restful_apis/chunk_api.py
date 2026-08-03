@@ -105,6 +105,7 @@ class Chunk(BaseModel):
     questions: list = Field(default_factory=list)
     question_tks: str = ""
     image_id: str = ""
+    doc_type_kwd: str = ""
     available: bool = True
     positions: list[list[int]] = Field(default_factory=list)
 
@@ -489,6 +490,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
             "questions": chunk.get("question_kwd", []),
             "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
             "image_id": chunk.get("img_id", ""),
+            "doc_type_kwd": chunk.get("doc_type_kwd") if isinstance(chunk.get("doc_type_kwd"), str) else "text",
             "available": bool(chunk.get("available_int", 1)),
             "positions": chunk.get("position_int", []),
             "tag_kwd": chunk.get("tag_kwd", []),
@@ -516,6 +518,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
                 "questions": sres.field[chunk_id].get("question_kwd", []),
                 "dataset_id": sres.field[chunk_id].get("kb_id", sres.field[chunk_id].get("dataset_id")),
                 "image_id": sres.field[chunk_id].get("img_id", ""),
+                "doc_type_kwd": sres.field[chunk_id].get("doc_type_kwd") if isinstance(sres.field[chunk_id].get("doc_type_kwd"), str) else "text",
                 "available": bool(int(sres.field[chunk_id].get("available_int", "1"))),
                 "positions": sres.field[chunk_id].get("position_int", []),
             }
@@ -969,6 +972,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         "id": chunk_id,
         "content_ltks": rag_tokenizer.tokenize(req["content"]),
         "content_with_weight": req["content"],
+        "doc_type_kwd": "text",
     }
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     d["important_kwd"] = req.get("important_keywords", [])
@@ -1024,6 +1028,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         "create_time": "create_time",
         "document_keyword": "document",
         "img_id": "image_id",
+        "doc_type_kwd": "doc_type_kwd",
     }
     renamed_chunk = {new_key: d[key] for key, new_key in key_mapping.items() if key in d}
     _ = Chunk(**renamed_chunk)
