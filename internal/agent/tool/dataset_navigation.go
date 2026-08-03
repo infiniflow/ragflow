@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
@@ -116,20 +117,17 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 	}
 
 	tenantID := canvasTenantID(ctx)
-	datasetID := canvasDatasetID(ctx, args.DatasetIDs)
-	if tenantID == "" || datasetID == "" {
+	datasetIDs := canvasDatasetIDs(ctx, args.DatasetIDs)
+	if tenantID == "" || len(datasetIDs) == 0 {
 		return datasetNavigationJSON(datasetNavigationResult{
 			NotFound: true,
 			Error:    "dataset navigation requires a tenant and dataset context",
 		}), nil
 	}
 
-	// One-level drill-down from root clusters (minimal closed loop).
-	clusters, _, err := ns.ListClusters(ctx, tenantID, datasetID, 0, 100)
-	if err != nil {
-		return datasetNavigationJSON(datasetNavigationResult{Error: err.Error()}), nil
-	}
-
+	// Route RELEVANT docs by querying the nav tree with the topic (semantic KNN).
+	// The topic is the routing signal — we must not return arbitrary doc ids.
+	query := strings.TrimSpace(args.Topic + " " + args.Keywords)
 	seen := map[string]struct{}{}
 	var docs []string
 	collect := func(id string) {
@@ -146,19 +144,49 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 		docs = append(docs, id)
 	}
 
-	for _, c := range clusters {
-		children, _, err := ns.ListChildren(ctx, tenantID, datasetID, c.Name, 0, 100)
+	// Primary: semantic search over each dataset's nav tree.
+	for _, datasetID := range datasetIDs {
+		hits, err := ns.Search(ctx, tenantID, datasetID, query, nil, d.maxDocs())
 		if err != nil {
 			continue
 		}
-		for _, ch := range children {
-			collect(ch.DocID)
-			if len(docs) >= d.maxDocs() {
-				break
+		for _, h := range hits {
+			collect(h.DocID)
+			for _, id := range h.DocIDs {
+				collect(id)
 			}
 		}
 		if len(docs) >= d.maxDocs() {
 			break
+		}
+	}
+
+	// Fallback: if semantic routing found nothing (e.g. no embedder), walk the
+	// root clusters so the tool still returns a useful (if coarse) doc set.
+	if len(docs) == 0 {
+		for _, datasetID := range datasetIDs {
+			clusters, _, err := ns.ListClusters(ctx, tenantID, datasetID, 0, 100)
+			if err != nil {
+				continue
+			}
+			for _, c := range clusters {
+				children, _, err := ns.ListChildren(ctx, tenantID, datasetID, c.Name, 0, 100)
+				if err != nil {
+					continue
+				}
+				for _, ch := range children {
+					collect(ch.DocID)
+					if len(docs) >= d.maxDocs() {
+						break
+					}
+				}
+				if len(docs) >= d.maxDocs() {
+					break
+				}
+			}
+			if len(docs) >= d.maxDocs() {
+				break
+			}
 		}
 	}
 

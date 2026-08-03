@@ -36,18 +36,24 @@ func canvasTenantID(ctx context.Context) string {
 	return userID
 }
 
-// canvasDatasetID returns the first explicit dataset id, else the canvas sys
-// dataset_id.
-func canvasDatasetID(ctx context.Context, explicit []string) string {
+// canvasDatasetIDs returns the explicit dataset ids (all of them, preserving
+// multi-KB sessions), else the canvas sys dataset_id as a single-element list.
+func canvasDatasetIDs(ctx context.Context, explicit []string) []string {
 	if len(explicit) > 0 {
-		return explicit[0]
+		out := make([]string, 0, len(explicit))
+		for _, id := range explicit {
+			if id != "" {
+				out = append(out, id)
+			}
+		}
+		return out
 	}
 	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 	if err != nil || state == nil {
-		return ""
+		return nil
 	}
 	if id, _ := state.Sys["dataset_id"].(string); id != "" {
-		return id
+		return []string{id}
 	}
-	return ""
+	return nil
 }

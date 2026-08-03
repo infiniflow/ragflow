@@ -111,9 +111,7 @@ func (a *AgenticSearchTool) InvokableRun(ctx context.Context, argumentsInJSON st
 	tenantID := canvasTenantID(ctx)
 	datasetIDs := args.KbIDs
 	if len(datasetIDs) == 0 {
-		if id := canvasDatasetID(ctx, nil); id != "" {
-			datasetIDs = []string{id}
-		}
+		datasetIDs = canvasDatasetIDs(ctx, nil)
 	}
 	if svc == nil || tenantID == "" || len(datasetIDs) == 0 {
 		return jsonChunksEmpty(), nil

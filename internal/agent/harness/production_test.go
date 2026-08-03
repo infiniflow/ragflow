@@ -88,16 +88,22 @@ func TestProductionRunner_E2E_RouteToScopedSearch(t *testing.T) {
 		return `{"chunks":[{"chunk_id":"c1","content_with_weight":"scoped evidence"}]}`
 	}}
 
-	runner := newProductionRunnerWithTools(nil, "t1", []string{"kb1"}, searchTool, navSvc)
+	// Multi-KB session: routing must cover every bound dataset, not just the
+	// first KB.
+	runner := newProductionRunnerWithTools(nil, "t1", []string{"kb1", "kb2"}, searchTool, navSvc)
 	res := runner.Run(context.Background(), "Compare A and B", "", "medium")
 
 	if res.FinalAnswer != "final scoped answer" {
 		t.Errorf("final answer = %q, want chat output", res.FinalAnswer)
 	}
 	// The search tool must receive doc_scope=[d1,d2] — the docs the nav router
-	// selected — proving retrieval is scoped to those docs.
+	// selected — proving retrieval is scoped to those docs across KBs.
 	if !strings.Contains(searchTool.args(), `"doc_scope":["d1","d2"]`) {
 		t.Errorf("hybrid_search not scoped to routed docs; args=%s", searchTool.args())
+	}
+	// The search tool must receive all bound KBs (not collapsed to one).
+	if !strings.Contains(searchTool.args(), `"kb_ids":["kb1","kb2"]`) {
+		t.Errorf("hybrid_search kb_ids must include all bound KBs; args=%s", searchTool.args())
 	}
 }
 

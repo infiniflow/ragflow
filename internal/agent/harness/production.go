@@ -108,14 +108,11 @@ func (r *ProductionRunner) search(ctx context.Context, query, keywords string, d
 }
 
 // routeDocs derives the doc scope via the canonical dataset-nav router
-// (harness.NavigateDatasetByTree — the full LLM two-round selection). This is
-// the single production nav entry; tool.DatasetNavigationByTree remains the
-// thin registered einotool for direct agent calls.
+// (harness.NavigateDatasetByTree — the full LLM two-round selection). It routes
+// across ALL bound datasets and merges the doc ids, so every KB contributes its
+// own relevant docs to the shared scope (a multi-KB session must not collapse to
+// the first KB only).
 func (r *ProductionRunner) routeDocs(ctx context.Context, topic, keywords string) []string {
-	kbID := ""
-	if len(r.datasetIDs) > 0 {
-		kbID = r.datasetIDs[0]
-	}
 	ns := r.navSvc
 	if ns == nil {
 		ns = nav.GetNavService()
@@ -124,7 +121,17 @@ func (r *ProductionRunner) routeDocs(ctx context.Context, topic, keywords string
 		log.Printf("agentic_rag: dataset nav service not initialized; skipping doc routing")
 		return nil
 	}
-	return NavigateDatasetByTree(ctx, r.db, ns, r.tenantID, kbID, topic)
+	seen := map[string]bool{}
+	var docs []string
+	for _, kbID := range r.datasetIDs {
+		for _, id := range NavigateDatasetByTree(ctx, r.db, ns, r.tenantID, kbID, topic) {
+			if id != "" && !seen[id] {
+				seen[id] = true
+				docs = append(docs, id)
+			}
+		}
+	}
+	return docs
 }
 
 func mustJSON(v interface{}) string {
