@@ -304,13 +304,18 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 		return c.mergeByTokenSize(text, childrenPattern)
 	}
 
-	parts := splitKeepingDelim(text, delimPattern)
+	parts := splitDroppingDelim(text, delimPattern)
 	cleaned := make([]string, 0, len(parts))
 	for _, p := range parts {
-		if strings.TrimSpace(p) == "" {
+		// Python's text path keeps only the even-index (text) parts from
+		// _split_text_by_pattern and then .strip()s each one
+		// (token_chunker.py:316-338), so the delimiter is dropped and
+		// surrounding whitespace is trimmed.
+		trimmed := strings.TrimSpace(p)
+		if trimmed == "" {
 			continue
 		}
-		cleaned = append(cleaned, p)
+		cleaned = append(cleaned, trimmed)
 	}
 	if len(cleaned) == 0 {
 		return emptyOutputs()
@@ -652,7 +657,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// the merge paths may carry @@...## markers that must not leak into
 		// indexed/embedded chunk text. Crop above reads positions, not text,
 		// so the ordering is safe.
-		m.Text = removeTag(strings.TrimSpace(m.Text))
+		m.Text = removeTag(m.Text)
 		if m.Text == "" {
 			continue
 		}

@@ -132,10 +132,10 @@ func TestTokenChunker_DelimNeverStandaloneChunk(t *testing.T) {
 			t.Errorf("chunk[%d] is the bare delimiter %q", i, text)
 		}
 	}
-	if got, want := chunks[0]["text"], "alpha section\n666"; got != want {
+	if got, want := chunks[0]["text"], "alpha section"; got != want {
 		t.Errorf("chunk[0] text = %q, want %q", got, want)
 	}
-	if got, want := chunks[1]["text"], "\nbeta section"; got != want {
+	if got, want := chunks[1]["text"], "beta section"; got != want {
 		t.Errorf("chunk[1] text = %q, want %q", got, want)
 	}
 }

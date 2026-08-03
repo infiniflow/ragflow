@@ -118,6 +118,38 @@ func splitKeepingDelim(text string, pattern *regexp.Regexp) []string {
 	return out
 }
 
+// splitDroppingDelim mirrors Python's _split_text_by_pattern
+// (token_chunker.py:79-90). Unlike splitKeepingDelim, the captured delimiter
+// is DISCARDED rather than glued to the preceding segment: re.split with a
+// captured group keeps delimiters at odd indices, and only the even-index
+// (text) parts are kept. This is the behaviour the text/markdown/html path
+// must reproduce so a split chunk reads "first sentence here" without the
+// trailing delimiter.
+func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
+	if pattern == nil {
+		return []string{text}
+	}
+	idxs := pattern.FindAllStringIndex(text, -1)
+	if len(idxs) == 0 {
+		return []string{text}
+	}
+	var out []string
+	cursor := 0
+	for _, idx := range idxs {
+		start, end := idx[0], idx[1]
+		if start == cursor {
+			cursor = end
+			continue
+		}
+		out = append(out, text[cursor:start])
+		cursor = end
+	}
+	if cursor < len(text) {
+		out = append(out, text[cursor:])
+	}
+	return out
+}
+
 // ---------------------------------------------------------------------------
 // chunk-doc helpers
 // ---------------------------------------------------------------------------
