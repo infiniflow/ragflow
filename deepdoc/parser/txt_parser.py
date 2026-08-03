@@ -21,12 +21,12 @@ from common.token_utils import num_tokens_from_string
 
 
 class RAGFlowTxtParser:
-    def __call__(self, fnm, binary=None, chunk_token_num=128, delimiter="\n!?;。；！？"):
+    def __call__(self, fnm, binary=None, chunk_token_num=128, delimiter="\n!?;。；！？", keep_delimiters=False):
         txt = get_text(fnm, binary)
-        return self.parser_txt(txt, chunk_token_num, delimiter)
+        return self.parser_txt(txt, chunk_token_num, delimiter, keep_delimiters)
 
     @classmethod
-    def parser_txt(cls, txt, chunk_token_num=128, delimiter="\n!?;。；！？"):
+    def parser_txt(cls, txt, chunk_token_num=128, delimiter="\n!?;。；！？", keep_delimiters=False):
         if not isinstance(txt, str):
             raise TypeError("txt type should be str!")
         cks = [""]
@@ -59,9 +59,11 @@ class RAGFlowTxtParser:
         dels = [d for d in dels if d]
         dels = "|".join(dels)
         secs = re.split(r"(%s)" % dels, txt)
-        for sec in secs:
+        for index, sec in enumerate(secs):
             if re.match(f"^{dels}$", sec):
                 continue
+            if keep_delimiters and index + 1 < len(secs) and re.match(f"^{dels}$", secs[index + 1]):
+                sec += secs[index + 1]
             add_chunk(sec)
 
         return [[c, ""] for c in cks]
