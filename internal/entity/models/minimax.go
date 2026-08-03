@@ -238,10 +238,25 @@ func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	// shared handler skips those silently. We surface them so the retry
 	// predicates can match and the caller sees the real reason.
 	pr, pw := io.Pipe()
+	// Close pr when this function returns so an early exit from
+	// HandleStreamingResponse unblocks the producer goroutine below
+	// (its pw.Write fails) and releases resp.Body instead of leaving
+	// the reader blocked on a live pipe.
+	defer pr.Close()
 	streamErr := make(chan error, 1)
 	go func() {
 		defer pw.Close()
 		defer resp.Body.Close()
+
+		var scanErr error
+		// Ensure streamErr always receives a result, on every exit
+		// path, so the final receive below can never block.
+		defer func() {
+			select {
+			case streamErr <- scanErr:
+			default:
+			}
+		}()
 
 		scanner := bufio.NewScanner(resp.Body)
 		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
@@ -260,10 +275,11 @@ func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 				}
 			}
 			if _, err := pw.Write([]byte(line + "\n")); err != nil {
+				scanErr = err
 				return
 			}
 		}
-		streamErr <- scanner.Err()
+		scanErr = scanner.Err()
 	}()
 
 	if err := HandleStreamingResponse(pr, modelUsage, modelConfig, OpenAIParserConfig, sender); err != nil {
