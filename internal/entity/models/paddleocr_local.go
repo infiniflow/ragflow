@@ -37,7 +37,7 @@ func NewPaddleOCRLocalModel(baseURL map[string]string, urlSuffix URLSuffix) *Pad
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(true),
 		},
 	}
 }

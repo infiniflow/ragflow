@@ -173,7 +173,7 @@ func (dao *KnowledgebaseDAO) Count(ctx context.Context, db *gorm.DB, filters map
 
 // GetByTenantIDs retrieves knowledge bases by tenant IDs with pagination
 // This matches the Python get_by_tenant_ids method
-func (dao *KnowledgebaseDAO) GetByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, pageNumber, itemsPerPage int, orderby string, desc bool, keywords, parserID, id, name string) ([]*entity.KnowledgebaseListItem, int64, error) {
+func (dao *KnowledgebaseDAO) GetByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, pageNumber, itemsPerPage int, orderby string, desc bool, keywords, parserID, id, name string, ids []string) ([]*entity.KnowledgebaseListItem, int64, error) {
 	var kbs []*entity.KnowledgebaseListItem
 	var total int64
 
@@ -191,6 +191,10 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(ctx context.Context, db *gorm.DB, te
 
 	if id != "" {
 		query = query.Where("knowledgebase.id = ?", id)
+	}
+
+	if len(ids) > 0 {
+		query = query.Where("knowledgebase.id IN ?", ids)
 	}
 
 	if name != "" {
@@ -316,6 +320,21 @@ func (dao *KnowledgebaseDAO) Accessible(ctx context.Context, db *gorm.DB, datase
 		return false
 	}
 	return count > 0
+}
+
+// GetAccessibleIDs returns the subset of ids that are visible to the user:
+// team-permission KBs owned by any joined tenant, plus the user's own KBs.
+// This matches the Python get_accessible_ids method.
+func (dao *KnowledgebaseDAO) GetAccessibleIDs(ctx context.Context, db *gorm.DB, joinedTenantIDs []string, userID string, ids []string) ([]string, error) {
+	accessibleIDs := make([]string, 0, len(ids))
+	err := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
+		Where("id IN ? AND ((tenant_id IN ? AND permission = ?) OR tenant_id = ?) AND status = ?",
+			ids, joinedTenantIDs, string(entity.TenantPermissionTeam), userID, string(entity.StatusValid)).
+		Pluck("id", &accessibleIDs).Error
+	if err != nil {
+		return nil, err
+	}
+	return accessibleIDs, nil
 }
 
 // Accessible4Deletion checks if a knowledge base can be deleted by a user

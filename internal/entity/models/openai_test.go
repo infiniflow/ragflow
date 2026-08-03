@@ -68,6 +68,7 @@ func TestOpenAIConfigAdvertisedAudioModelsHaveSuffixes(t *testing.T) {
 }
 
 func TestOpenAITranscribeAudioPostsMultipartToAudioEndpoint(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -146,6 +147,7 @@ func TestOpenAITranscribeAudioPostsMultipartToAudioEndpoint(t *testing.T) {
 }
 
 func TestOpenAITranscribeAudioWithSenderStreamsDeltas(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -214,6 +216,7 @@ func TestOpenAITranscribeAudioWithSenderStreamsDeltas(t *testing.T) {
 }
 
 func TestOpenAIAudioSpeechPostsJSONToAudioEndpoint(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -281,6 +284,7 @@ func TestOpenAIAudioSpeechPostsJSONToAudioEndpoint(t *testing.T) {
 }
 
 func TestOpenAIAudioSpeechRequiresVoice(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
 	model := "tts-1"
 	input := "hello"
@@ -300,6 +304,7 @@ func TestOpenAIAudioSpeechRequiresVoice(t *testing.T) {
 }
 
 func TestOpenAIAudioSpeechRejectsNonStringVoice(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	model := "tts-1"
@@ -319,6 +324,7 @@ func TestOpenAIAudioSpeechRejectsNonStringVoice(t *testing.T) {
 }
 
 func TestOpenAIAudioSpeechWithSenderStreamsRawAudio(t *testing.T) {
+	withSSRFBypass(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s, want POST", r.Method)
@@ -383,6 +389,7 @@ func TestOpenAIAudioSpeechWithSenderStreamsRawAudio(t *testing.T) {
 }
 
 func TestOpenAIAudioSpeechWithSenderStreamsSSEAudioDeltas(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Accept"); got != "text/event-stream" {

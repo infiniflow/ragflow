@@ -23,6 +23,7 @@ func newDeepInfraForTest(baseURL string) *DeepInfraModel {
 
 // TestDeepInfraRerankHappyPath verifies request shape and score mapping.
 func TestDeepInfraRerankHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	const modelPath = "/v1/inference/Qwen/Qwen3-Reranker-4B"
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -79,6 +80,7 @@ func TestDeepInfraRerankHappyPath(t *testing.T) {
 
 // TestDeepInfraRerankNoTopNLimit returns every scored document when TopN is unset.
 func TestDeepInfraRerankNoTopNLimit(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -110,6 +112,7 @@ func TestDeepInfraRerankNoTopNLimit(t *testing.T) {
 
 // TestDeepInfraRerankEmptyDocuments returns an empty result without calling the API.
 func TestDeepInfraRerankEmptyDocuments(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	model := "Qwen/Qwen3-Reranker-4B"
@@ -124,6 +127,7 @@ func TestDeepInfraRerankEmptyDocuments(t *testing.T) {
 
 // TestDeepInfraRerankRequiresAPIKey rejects requests without an API key.
 func TestDeepInfraRerankRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := "Qwen/Qwen3-Reranker-4B"
 	_, err := newDeepInfraForTest("http://unused").Rerank(ctx, &model, "q", []string{"a"}, &APIConfig{}, nil, nil)
@@ -134,6 +138,7 @@ func TestDeepInfraRerankRequiresAPIKey(t *testing.T) {
 
 // TestDeepInfraRerankRejectsScoreCountMismatch errors when scores length mismatches documents.
 func TestDeepInfraRerankRejectsScoreCountMismatch(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{"scores": []float64{0.5}})

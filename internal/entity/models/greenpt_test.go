@@ -26,6 +26,7 @@ import (
 )
 
 func TestGreenPTListModelsClassifiesSpeech(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -69,6 +70,7 @@ func TestGreenPTListModelsClassifiesSpeech(t *testing.T) {
 }
 
 func TestGreenPTTranscribeAudio(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/listen" || r.URL.Query().Get("model") != "green-s" {
 			t.Errorf("unexpected request URL: %s", r.URL.String())

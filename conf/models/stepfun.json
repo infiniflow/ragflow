@@ -2,7 +2,8 @@
   "name": "StepFun",
   "url": {
     "default": "https://api.stepfun.ai/v1",
-    "china": "https://api.stepfun.com/v1"
+    "china": "https://api.stepfun.com/v1",
+    "plan": "https://api.stepfun.com/step_plan/v1"
   },
   "url_suffix": {
     "chat": "chat/completions",

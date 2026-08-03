@@ -38,7 +38,7 @@ func NewVoyageModel(baseURL map[string]string, urlSuffix URLSuffix) *VoyageModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

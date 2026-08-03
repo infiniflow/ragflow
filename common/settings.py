@@ -175,7 +175,8 @@ def init_secret_key():
 def get_secret_key():
     global SECRET_KEY
     if SECRET_KEY is None:
-        return _get_or_create_secret_key()
+        # Why need cache it, if REDIS evict keys due to lack of memory, new secret key will be generated, cause all requests 401
+        SECRET_KEY = _get_or_create_secret_key()
     return SECRET_KEY
 
 

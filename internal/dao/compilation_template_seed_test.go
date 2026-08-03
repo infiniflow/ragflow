@@ -25,6 +25,18 @@ import (
 	"gorm.io/gorm"
 )
 
+// TestBuiltinCompilationTemplateKinds_NoDatasetnav locks the removal of the
+// datasetnav template from the built-in catalogue: dataset navigation is not an
+// independent compile kind (see component_test.TestKnowledgeCompiler_Datasetnav_NoVariant),
+// so it must not appear in the seeded template kinds.
+func TestBuiltinCompilationTemplateKinds_NoDatasetnav(t *testing.T) {
+	for _, k := range builtinCompilationTemplateKinds {
+		if k.Kind == "datasetnav" || k.Kind == "dataset_nav" {
+			t.Fatalf("builtin compilation template kind %q must not exist (datasetnav is a by-product, not a compile kind)", k.Kind)
+		}
+	}
+}
+
 func TestSeedBuiltinCompilationTemplatesForTenant(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {

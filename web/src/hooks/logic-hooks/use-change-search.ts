@@ -10,5 +10,5 @@ export const useHandleSearchStrChange = () => {
     [],
   );
 
-  return { handleInputChange, searchString };
+  return { handleInputChange, searchString, setSearchString };
 };

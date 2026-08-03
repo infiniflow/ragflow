@@ -24,7 +24,47 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
+	"strings"
 )
+
+// sparkModelVersions maps the catalog model names to the version identifiers
+// the XunFei Spark HTTP API expects in the request body's "model" field.
+// Mirrors SparkChat.model2version in rag/llm/chat_model.py.
+var sparkModelVersions = map[string]string{
+	"Spark-Max":       "generalv3.5",
+	"Spark-Max-32K":   "max-32k",
+	"Spark-Lite":      "lite",
+	"Spark-Pro":       "generalv3",
+	"Spark-Pro-128K":  "pro-128k",
+	"Spark-4.0-Ultra": "4.0Ultra",
+}
+
+func resolveSparkModel(modelName string) string {
+	if version, ok := sparkModelVersions[modelName]; ok {
+		return version
+	}
+	return modelName
+}
+
+// resolveBearerToken extracts the credential used as the Bearer token. The
+// instance stores the XunFei credential bundle (API password, APPID, API
+// secret, API key) as a JSON object string; the Spark HTTP API authenticates
+// with the bundle's spark_api_password.
+func resolveBearerToken(apiConfig *APIConfig) string {
+	if apiConfig == nil || apiConfig.ApiKey == nil {
+		return ""
+	}
+	key := strings.TrimSpace(*apiConfig.ApiKey)
+	if strings.HasPrefix(key, "{") {
+		var bundle map[string]interface{}
+		if err := json.Unmarshal([]byte(key), &bundle); err == nil {
+			if password, ok := bundle["spark_api_password"].(string); ok && password != "" {
+				return password
+			}
+		}
+	}
+	return key
+}
 
 type XunFeiModel struct {
 	baseModel BaseModel
@@ -35,7 +75,7 @@ func NewXunFeiModel(baseURL map[string]string, urlSuffix URLSuffix) *XunFeiModel
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -62,7 +102,7 @@ func (x *XunFeiModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, err
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.Chat)
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	reqBody := buildRequestBody(chatModelConfig, resolveSparkModel(modelName), messages, false)
 
 	if chatModelConfig != nil {
 		if chatModelConfig.Thinking != nil {
@@ -92,7 +132,7 @@ func (x *XunFeiModel) ChatWithMessages(ctx context.Context, modelName string, me
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", resolveBearerToken(apiConfig)))
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -103,6 +143,10 @@ func (x *XunFeiModel) ChatWithMessages(ctx context.Context, modelName string, me
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Parse Response
@@ -167,7 +211,7 @@ func (x *XunFeiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.Chat)
 
-	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	reqBody := buildRequestBody(modelConfig, resolveSparkModel(modelName), messages, true)
 
 	if modelConfig != nil {
 		if modelConfig.Thinking != nil {
@@ -197,7 +241,7 @@ func (x *XunFeiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", resolveBearerToken(apiConfig)))
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -323,7 +367,7 @@ func (x *XunFeiModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", resolveBearerToken(apiConfig)))
 
 	resp, err := x.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -358,7 +402,16 @@ func (x *XunFeiModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[st
 }
 
 func (x *XunFeiModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	return fmt.Errorf("%s, no such method", x.Name())
+	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+
+	// Verify the credential bundle with a minimal chat request against the
+	// free Spark-Lite model.
+	maxTokens := 1
+	chatConfig := &ChatConfig{MaxTokens: &maxTokens}
+	_, err := x.ChatWithMessages(ctx, "Spark-Lite", []Message{{Role: "user", Content: "Hi"}}, apiConfig, chatConfig, nil)
+	return err
 }
 
 func (x *XunFeiModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {

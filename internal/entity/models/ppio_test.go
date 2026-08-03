@@ -76,6 +76,7 @@ func TestPPIONewModelWithCustomDefaultTransport(t *testing.T) {
 }
 
 func TestPPIOChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
@@ -162,6 +163,7 @@ func TestPPIOChatHappyPath(t *testing.T) {
 }
 
 func TestPPIOChatRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newPPIOForTest("http://unused").ChatWithMessages(ctx, "", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -171,6 +173,7 @@ func TestPPIOChatRequiresModelName(t *testing.T) {
 }
 
 func TestPPIOChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newPPIOForTest("http://unused").ChatWithMessages(ctx, "deepseek/deepseek-r1", nil, &APIConfig{ApiKey: &apiKey}, nil, nil)
@@ -180,6 +183,7 @@ func TestPPIOChatRequiresMessages(t *testing.T) {
 }
 
 func TestPPIOChatSurfacesHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		http.Error(w, "bad key", http.StatusUnauthorized)
@@ -194,6 +198,7 @@ func TestPPIOChatSurfacesHTTPError(t *testing.T) {
 }
 
 func TestPPIOChatRejectsProviderError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -210,6 +215,7 @@ func TestPPIOChatRejectsProviderError(t *testing.T) {
 }
 
 func TestPPIOStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/chat/completions" {
@@ -276,6 +282,7 @@ func TestPPIOStreamHappyPath(t *testing.T) {
 }
 
 func TestPPIOEmbedRecordsUsage(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/embeddings" {
@@ -315,6 +322,7 @@ func TestPPIOEmbedRecordsUsage(t *testing.T) {
 }
 
 func TestPPIORerankRecordsUsage(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.URL.Path != "/rerank" {
@@ -355,6 +363,7 @@ func TestPPIORerankRecordsUsage(t *testing.T) {
 }
 
 func TestPPIOStreamSurfacesHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		http.Error(w, "bad key", http.StatusUnauthorized)
@@ -375,6 +384,7 @@ func TestPPIOStreamSurfacesHTTPError(t *testing.T) {
 }
 
 func TestPPIOStreamStopsOnSenderError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -396,6 +406,7 @@ func TestPPIOStreamStopsOnSenderError(t *testing.T) {
 }
 
 func TestPPIOStreamRejectsExplicitFalse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	stream := false
@@ -414,6 +425,7 @@ func TestPPIOStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestPPIOStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	err := newPPIOForTest("http://unused").ChatStreamlyWithSender(
@@ -428,6 +440,7 @@ func TestPPIOStreamRequiresSender(t *testing.T) {
 }
 
 func TestPPIOStreamRequiresTerminalEvent(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -449,6 +462,7 @@ func TestPPIOStreamRequiresTerminalEvent(t *testing.T) {
 }
 
 func TestPPIOListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
@@ -481,6 +495,7 @@ func TestPPIOListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestPPIOListModelsRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	_, err := newPPIOForTest("http://unused").ListModels(ctx, &APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
@@ -489,6 +504,7 @@ func TestPPIOListModelsRequiresAPIKey(t *testing.T) {
 }
 
 func TestPPIOListModelsRejectsProviderError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newPPIOServer(t, func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -568,6 +584,7 @@ func TestPPIOMissingRegionBaseURL(t *testing.T) {
 }
 
 func TestPPIOUnsupportedMethods(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newPPIOForTest("http://unused")
 	if _, err := m.Balance(ctx, nil); err == nil || !strings.Contains(err.Error(), "no such method") {

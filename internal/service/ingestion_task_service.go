@@ -254,7 +254,7 @@ func (s *IngestionTaskService) RequestStop(ctx context.Context, taskID string) (
 		// running worker's pollCancel detects the stop immediately rather
 		// than waiting for the next DB poll (up to 3s).
 		if rc := redis2.Get(); rc != nil {
-			rc.Set(fmt.Sprintf("%s-cancel", taskID), "x", 1*time.Hour)
+			rc.Set(ctx, fmt.Sprintf("%s-cancel", taskID), "x", 1*time.Hour)
 		}
 		return task, nil
 	default:

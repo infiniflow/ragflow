@@ -28,6 +28,7 @@ func withGoogleListModelsStub(t *testing.T, fn func(context.Context, *genai.Clie
 }
 
 func TestGoogleModelListModelsRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	cases := []struct {
@@ -83,6 +84,7 @@ func TestGoogleModelListModelsRequiresAPIKey(t *testing.T) {
 }
 
 func TestGoogleModelListModelsReturnsModelNames(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	apiKey := "test-api-key"
@@ -106,6 +108,7 @@ func TestGoogleModelListModelsReturnsModelNames(t *testing.T) {
 }
 
 func TestGoogleModelCheckConnectionUsesListModels(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	customBaseURL := "https://check-connection.example.test/google"
 	model := NewGoogleModel(map[string]string{"default": customBaseURL}, URLSuffix{})
@@ -132,6 +135,7 @@ func TestGoogleModelCheckConnectionUsesListModels(t *testing.T) {
 }
 
 func TestGoogleModelCheckConnectionRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	calls := 0
@@ -184,6 +188,7 @@ func TestGoogleModelCheckConnectionRequiresAPIKey(t *testing.T) {
 }
 
 func TestGoogleModelCheckConnectionReturnsListModelsError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	apiKey := "test-api-key"
@@ -200,6 +205,7 @@ func TestGoogleModelCheckConnectionReturnsListModelsError(t *testing.T) {
 }
 
 func TestGoogleModelChatStreamlyRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	messages := []Message{{Role: "user", Content: "hello"}}
@@ -230,6 +236,7 @@ func TestGoogleModelChatStreamlyRequiresAPIKey(t *testing.T) {
 }
 
 func TestGoogleModelChatRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := &GoogleModel{}
 	apiKey := "test-api-key"
@@ -313,6 +320,7 @@ func TestGoogleModelNewInstancePreservesCustomBaseURL(t *testing.T) {
 }
 
 func TestGoogleModelListModelsPassesBaseURL(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-api-key"
 	cases := []struct {
 		name            string

@@ -17,7 +17,7 @@ package entity
 
 import "time"
 
-// KnowledgeCompileDoc is the MySQL scheduling row for the dataset-level
+// KnowledgeCompileDataset is the MySQL scheduling row for the dataset-level
 // post-processing consumer (knowledge_compile_design.md §11.4, Option E). It is
 // the scheduling system of record: backlog_doc_ids holds the not-yet-processed
 // doc entries for the KB, inflight_doc_ids the ones a worker has claimed (the
@@ -29,7 +29,7 @@ import "time"
 // (doc_id + event_type + seq) as TEXT so the consumer can re-apply the same
 // out-of-order / tombstone guards as the broker-based design without re-reading
 // the queue.
-type KnowledgeCompileDoc struct {
+type KnowledgeCompileDataset struct {
 	DatasetID string `gorm:"primaryKey;column:dataset_id;size:64" json:"dataset_id"`
 	TenantID  string `gorm:"column:tenant_id;size:64;not null;default:''" json:"tenant_id"`
 	// The *_doc_ids columns store a JSON array as TEXT. No DDL default is set:
@@ -47,4 +47,4 @@ type KnowledgeCompileDoc struct {
 }
 
 // TableName pins the scheduling table name.
-func (KnowledgeCompileDoc) TableName() string { return "knowledge_compile_docs" }
+func (KnowledgeCompileDataset) TableName() string { return "knowledge_compile_docs" }

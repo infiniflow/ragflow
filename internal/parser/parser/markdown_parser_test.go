@@ -203,6 +203,7 @@ func TestResolveMarkdownImage_NoImage(t *testing.T) {
 }
 
 func TestResolveMarkdownImage_HTTPImage(t *testing.T) {
+	withSSRFBypass(t)
 	// httptest servers bind loopback, which the SSRF guard rejects by
 	// default. Allow loopback for this test so the HTTP fetch path is
 	// exercised (production keeps ssrfAllowLoopback == false).
@@ -236,6 +237,7 @@ func TestFetchImageAsBase64_RejectsCredentials(t *testing.T) {
 }
 
 func TestFetchImageAsBase64_InvalidURL(t *testing.T) {
+	withSSRFBypass(t)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))

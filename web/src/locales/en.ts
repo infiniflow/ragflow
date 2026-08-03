@@ -1078,7 +1078,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       assistantAvatar: 'Assistant avatar',
       language: 'Language',
       emptyResponse: 'Empty response',
-      emptyResponseTip: `Set this as a response if no results are retrieved from the datasets for your query, or leave this field blank to allow the LLM to improvise when nothing is found.`,
+      emptyResponseTip: `Set this as a response if no results are retrieved from the datasets for your query, or leave this field blank to allow the LLM to improvise when nothing is found. This setting only takes effect when Thinking Mode is set to Naive.`,
       emptyResponseMessage: `Empty response will be triggered when nothing relevant is retrieved from datasets. You must clear the 'Empty response' field if no dataset is selected.`,
       emptyResponsePlaceholder:
         'The answer you are looking for is not found in the dataset!',

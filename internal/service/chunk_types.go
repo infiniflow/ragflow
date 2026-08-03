@@ -223,7 +223,7 @@ func (s *ChunkService) cancelAllTasksOfDoc(ctx context.Context, docID string) er
 		if task == nil {
 			continue
 		}
-		redisClient.Set(fmt.Sprintf("%s-cancel", task.ID), "x", 0)
+		redisClient.Set(ctx, fmt.Sprintf("%s-cancel", task.ID), "x", 0)
 	}
 
 	return nil

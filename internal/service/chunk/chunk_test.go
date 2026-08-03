@@ -690,6 +690,7 @@ func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 		exists:    true,
 		oldBinary: oldImage,
 	}
+	ctx := t.Context()
 
 	factory := storage.GetStorageFactory()
 	originalStorage := factory.GetStorage()
@@ -699,7 +700,7 @@ func TestStoreChunkImageMergesExistingImage(t *testing.T) {
 	})
 
 	svc := &ChunkService{}
-	if err := svc.storeChunkImage("kb-1", "chunk-1", newImage); err != nil {
+	if err := svc.storeChunkImage(ctx, "kb-1", "chunk-1", newImage); err != nil {
 		t.Fatalf("storeChunkImage() error = %v", err)
 	}
 	if mockStorage.putCalls != 1 {
@@ -1184,29 +1185,38 @@ type chunkImageStorage struct {
 	putCalls  int
 }
 
-func (s *chunkImageStorage) Health() bool { return true }
-func (s *chunkImageStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {
+func (s *chunkImageStorage) Type() string                  { return "chunk_image_storage" }
+func (s *chunkImageStorage) Health(_ context.Context) bool { return true }
+func (s *chunkImageStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 	s.putCalls++
 	return nil
 }
-func (s *chunkImageStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
+func (s *chunkImageStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	return s.oldBinary, nil
 }
-func (s *chunkImageStorage) Remove(bucket, fnm string, tenantID ...string) error  { return nil }
-func (s *chunkImageStorage) ObjExist(bucket, fnm string, tenantID ...string) bool { return s.exists }
+func (s *chunkImageStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
+	return nil
+}
+func (s *chunkImageStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {
+	return s.exists
+}
 
 // ListObjects lists all objects in a bucket
-func (s *chunkImageStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
+func (s *chunkImageStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
 	return []string{}, nil
 }
-func (s *chunkImageStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
+func (s *chunkImageStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
-func (s *chunkImageStorage) BucketExists(bucket string) bool                           { return true }
-func (s *chunkImageStorage) RemoveBucket(bucket string) error                          { return nil }
-func (s *chunkImageStorage) Copy(srcBucket, srcPath, destBucket, destPath string) bool { return false }
-func (s *chunkImageStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool { return false }
-func (s *chunkImageStorage) Close() error                                              { return nil }
+func (s *chunkImageStorage) BucketExists(ctx context.Context, bucket string) bool  { return true }
+func (s *chunkImageStorage) RemoveBucket(ctx context.Context, bucket string) error { return nil }
+func (s *chunkImageStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+	return false
+}
+func (s *chunkImageStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+	return false
+}
+func (s *chunkImageStorage) Close() error { return nil }
 
 func mustEncodePNG(t *testing.T, rect image.Rectangle) []byte {
 	t.Helper()

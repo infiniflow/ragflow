@@ -96,6 +96,7 @@ func TestHunyuanFactory(t *testing.T) {
 }
 
 func TestHunyuanChatHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newHunyuanServer(t, http.MethodPost, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "hunyuan-pro" {
 			t.Errorf("model=%v", body["model"])
@@ -144,6 +145,7 @@ func TestHunyuanChatHappyPath(t *testing.T) {
 }
 
 func TestHunyuanChatNoReasoning(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newHunyuanServer(t, http.MethodPost, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
@@ -173,6 +175,7 @@ func TestHunyuanChatNoReasoning(t *testing.T) {
 }
 
 func TestHunyuanChatRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	_, err := newHunyuanForTest("http://unused").ChatWithMessages(
 		ctx,
@@ -186,6 +189,7 @@ func TestHunyuanChatRequiresAPIKey(t *testing.T) {
 }
 
 func TestHunyuanChatRequiresMessages(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	_, err := newHunyuanForTest("http://unused").ChatWithMessages(
@@ -198,6 +202,7 @@ func TestHunyuanChatRequiresMessages(t *testing.T) {
 }
 
 func TestHunyuanChatPropagatesHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newHunyuanServer(t, http.MethodPost, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":"bad key"}`))
@@ -218,6 +223,7 @@ func TestHunyuanChatPropagatesHTTPError(t *testing.T) {
 }
 
 func TestHunyuanStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newHunyuanSSEServer(t, "/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"content":"Hello"}}]}`+"\n"+
@@ -258,6 +264,7 @@ func TestHunyuanStreamHappyPath(t *testing.T) {
 }
 
 func TestHunyuanStreamSplitsReasoning(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newHunyuanSSEServer(t, "/chat/completions",
 		`data: {"choices":[{"index":0,"delta":{"role":"assistant"}}]}`+"\n"+
 			`data: {"choices":[{"index":0,"delta":{"reasoning_content":"step 1. "}}]}`+"\n"+
@@ -299,6 +306,7 @@ func TestHunyuanStreamSplitsReasoning(t *testing.T) {
 }
 
 func TestHunyuanStreamRejectsExplicitFalse(t *testing.T) {
+	withSSRFBypass(t)
 	apiKey := "test-key"
 	stream := false
 	ctx := t.Context()
@@ -316,6 +324,7 @@ func TestHunyuanStreamRejectsExplicitFalse(t *testing.T) {
 }
 
 func TestHunyuanStreamRequiresSender(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	err := newHunyuanForTest("http://unused").ChatStreamlyWithSender(
@@ -329,6 +338,7 @@ func TestHunyuanStreamRequiresSender(t *testing.T) {
 }
 
 func TestHunyuanStreamFailsWithoutTerminal(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newHunyuanSSEServer(t, "/chat/completions",
 		`data: {"choices":[{"delta":{"content":"half"}}]}`+"\n",
 	)
@@ -348,8 +358,10 @@ func TestHunyuanStreamFailsWithoutTerminal(t *testing.T) {
 }
 
 func TestHunyuanStreamAcceptsTerminalWithoutDelta(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newHunyuanSSEServer(t, "/chat/completions",
-		`data: {"choices":[{"finish_reason":"stop"}]}`+"\n\n",
+		`data: {"choices":[{"finish_reason":"stop"}]}`+"\n\n"+
+			`data: [DONE]`+"\n\n",
 	)
 	defer srv.Close()
 
@@ -374,6 +386,7 @@ func TestHunyuanStreamAcceptsTerminalWithoutDelta(t *testing.T) {
 }
 
 func TestHunyuanStreamRejectsMalformedFrame(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newHunyuanSSEServer(t, "/chat/completions",
 		`data: {"choices":[{"delta":{"content":"ok"}}]}`+"\n"+
 			`data: {oops not json}`+"\n",
@@ -394,6 +407,7 @@ func TestHunyuanStreamRejectsMalformedFrame(t *testing.T) {
 }
 
 func TestHunyuanStreamSurfacesUpstreamError(t *testing.T) {
+	withSSRFBypass(t)
 	srv := newHunyuanSSEServer(t, "/chat/completions",
 		`data: {"choices":[{"delta":{"content":"partial "}}]}`+"\n"+
 			`data: {"error":{"message":"rate limit","type":"rate_limit_error"}}`+"\n",
@@ -417,6 +431,7 @@ func TestHunyuanStreamSurfacesUpstreamError(t *testing.T) {
 }
 
 func TestHunyuanListModelsHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newHunyuanServer(t, http.MethodGet, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -441,6 +456,7 @@ func TestHunyuanListModelsHappyPath(t *testing.T) {
 }
 
 func TestHunyuanListModelsRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	_, err := newHunyuanForTest("http://unused").ListModels(ctx, &APIConfig{})
 	if err == nil || !strings.Contains(err.Error(), "api key is required") {
@@ -449,6 +465,7 @@ func TestHunyuanListModelsRequiresAPIKey(t *testing.T) {
 }
 
 func TestHunyuanCheckConnectionDelegatesToListModels(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newHunyuanServer(t, http.MethodGet, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -464,6 +481,7 @@ func TestHunyuanCheckConnectionDelegatesToListModels(t *testing.T) {
 }
 
 func TestHunyuanCheckConnectionPropagatesError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newHunyuanServer(t, http.MethodGet, "/models", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -479,6 +497,7 @@ func TestHunyuanCheckConnectionPropagatesError(t *testing.T) {
 }
 
 func TestHunyuanBaseURLForRegionUnknown(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newHunyuanForTest("http://unused")
 	apiKey := "test-key"
@@ -490,6 +509,7 @@ func TestHunyuanBaseURLForRegionUnknown(t *testing.T) {
 }
 
 func TestHunyuanEmbedHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newHunyuanServer(t, http.MethodPost, "/embeddings", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "hunyuan-embedding" {
@@ -522,6 +542,7 @@ func TestHunyuanEmbedHappyPath(t *testing.T) {
 }
 
 func TestHunyuanEmbedValidatesInputs(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	model := "hunyuan-embedding"
@@ -549,6 +570,7 @@ func TestHunyuanEmbedValidatesInputs(t *testing.T) {
 }
 
 func TestHunyuanAudioOCRReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newHunyuanForTest("http://unused")
 	model := "x"

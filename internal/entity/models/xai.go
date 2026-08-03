@@ -49,7 +49,7 @@ func NewXAIModel(baseURL map[string]string, urlSuffix URLSuffix) *XAIModel {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }

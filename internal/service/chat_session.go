@@ -432,7 +432,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 			continue
 		}
 
-		s.removeSessionUploadFiles(userID, session)
+		s.removeSessionUploadFiles(ctx, userID, session)
 
 		if err = s.chatSessionDAO.DeleteByID(ctx, dao.DB, sid); err != nil {
 			return nil, "", common.CodeServerError, err
@@ -485,7 +485,7 @@ func stringSliceFromValue(value interface{}) ([]string, bool) {
 	return ids, true
 }
 
-func (s *ChatSessionService) removeSessionUploadFiles(userID string, session *entity.ChatSession) {
+func (s *ChatSessionService) removeSessionUploadFiles(ctx context.Context, userID string, session *entity.ChatSession) {
 	messages := parseMessages(session.Message)
 	bucket := fmt.Sprintf("%s-downloads", userID)
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -511,7 +511,7 @@ func (s *ChatSessionService) removeSessionUploadFiles(userID string, session *en
 				continue
 			}
 
-			if err := storageImpl.Remove(bucket, fileID); err != nil {
+			if err := storageImpl.Remove(ctx, bucket, fileID); err != nil {
 				common.Warn("Failed to delete chat upload blob",
 					zap.String("bucket", bucket),
 					zap.String("file_id", fileID),
@@ -1449,7 +1449,7 @@ func (s *ChatSessionService) ChatCompletions(
 	chatID string, sessionID string,
 	messages []map[string]interface{}, question string, files []interface{},
 	llmID string, genConfig map[string]interface{}, kwargs map[string]interface{},
-	passAllHistory bool, legacy bool,
+	passAllHistory bool, storeHistory bool, legacy bool,
 	stream bool, streamChan chan<- string,
 ) (map[string]interface{}, error) {
 	if ctx == nil {
@@ -1505,7 +1505,7 @@ func (s *ChatSessionService) ChatCompletions(
 				return fail(common.NewCodedError(common.CodeDataError, "Session does not belong to this chat!"))
 			}
 		} else {
-			session, err = s.createSessionForCompletion(ctx, chatID, dialog, userID)
+			session, err = s.createSessionForCompletion(ctx, chatID, dialog, userID, storeHistory)
 			if err != nil {
 				return fail(err)
 			}
@@ -1669,7 +1669,7 @@ func (s *ChatSessionService) ChatCompletions(
 		sendOrCancel(fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(wrapper)))
 
 		// Persist session state (matches Python's update_by_id after loop)
-		if session != nil {
+		if session != nil && storeHistory {
 			s.updateSessionMessages(ctx, session, s.getSessionMessagesAsSlice(session), reference)
 		}
 	} else {
@@ -1679,7 +1679,9 @@ func (s *ChatSessionService) ChatCompletions(
 			if chatID != "" {
 				result["chat_id"] = chatID
 			}
-			s.updateSessionMessages(ctx, session, s.getSessionMessagesAsSlice(session), reference)
+			if storeHistory {
+				s.updateSessionMessages(ctx, session, s.getSessionMessagesAsSlice(session), reference)
+			}
 			return sanitizeJSONFloats(result).(map[string]interface{}), nil
 		}
 		ans["id"] = messageID
@@ -1830,8 +1832,7 @@ func (s *ChatSessionService) buildDefaultCompletionDialog(tenantID string) *enti
 	}
 }
 
-func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, chatID string, dialog *entity.Chat, userID string) (*entity.ChatSession, error) {
-	newID := utility.GenerateUUID()
+func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, chatID string, dialog *entity.Chat, userID string, saveSession bool) (*entity.ChatSession, error) {
 	name := "New session"
 
 	prologue := "Hi! I'm your assistant. What can I do for you?"
@@ -1848,13 +1849,18 @@ func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, cha
 	refJSON, _ := json.Marshal([]interface{}{})
 
 	session := &entity.ChatSession{
-		ID:        newID,
 		DialogID:  chatID,
 		Name:      &name,
 		Message:   msgJSON,
 		UserID:    &userID,
 		Reference: refJSON,
 	}
+	if !saveSession {
+		// Multi-model comparison sends store_history_messages=false; the
+		// ephemeral session must not be persisted (mirrors Python).
+		return session, nil
+	}
+	session.ID = utility.GenerateUUID()
 	if err := s.chatSessionDAO.Create(ctx, dao.DB, session); err != nil {
 		return nil, err
 	}

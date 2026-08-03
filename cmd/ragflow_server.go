@@ -38,6 +38,7 @@ import (
 	dataset "ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
 	"ragflow/internal/service/file"
+	"ragflow/internal/service/nav"
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
@@ -256,7 +257,7 @@ func main() {
 		logLevel = "debug"
 	}
 
-	if err = common.Init(logLevel, common.FileOutput{Path: logFile}, serverName); err != nil {
+	if err = common.InitLogger(logLevel, common.FileOutput{Path: logFile}, serverName); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -341,11 +342,9 @@ func main() {
 	}
 
 	common.SyncLog()
-	if err = common.Init(logLevel, fileOut, serverName); err != nil {
+	if err = common.InitLogger(logLevel, fileOut, serverName); err != nil {
 		common.Error("Failed to reinitialize logger with configured level", err)
 	}
-
-	server.SetLogger(common.Logger)
 
 	// Print all configuration settings
 	common.Info(fmt.Sprintf("Starting %s server: %s, mode: %s", *arguments.mode, serverName, globalConfig.GetMode()))
@@ -357,23 +356,23 @@ func main() {
 	}
 
 	// Initialize doc engine
-	if err = engine.Init(); err != nil {
+	if err = engine.InitDocEngine(); err != nil {
 		common.Fatal("Failed to initialize doc engine", zap.Error(err))
 	}
 	defer engine.Close()
 
 	// Initialize Redis cache
-	if err = redis.Init(); err != nil {
+	if err = redis.Init(ctx); err != nil {
 		common.Fatal("Failed to initialize Redis", zap.Error(err))
 	}
 	defer redis.Close()
 
-	if err = storage.InitStorageFactory(); err != nil {
+	if err = storage.Init(ctx); err != nil {
 		common.Error("Failed to initialize storage factory", err)
 	}
 	defer storage.CloseStorage()
 
-	if err = engine.InitMessageQueueEngine(); err != nil {
+	if err = engine.InitMessageQueue(); err != nil {
 		common.Error("Failed to initialize message queue engine", err)
 	}
 
@@ -527,7 +526,7 @@ func startHeartbeat(serverType common.ServerType, serverID string, port int, hea
 		return nil
 	}
 
-	heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", heartBeatInterval*time.Second, func() {
+	heartbeatReporter := utility.NewScheduledTask("Heartbeat reporter", heartBeatInterval, func() {
 		if err = service.AdminServiceClient.SendHeartbeat(); err == nil {
 			local.SetAdminStatus(0, "")
 		} else {
@@ -786,7 +785,7 @@ func startServer(ctx context.Context) {
 		agentOpts.stateSerializer,
 		agentOpts.runTracker,
 	)
-	agentHandler := handler.NewAgentHandler(agentService, fileService)
+	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService)
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
 	// api/v1/agentbots/...) and the agent attachment download.
@@ -833,6 +832,19 @@ func startServer(ctx context.Context) {
 	componentsSvc := service.NewComponentsService()
 	componentsHandler := handler.NewComponentsHandler(componentsSvc)
 	pipelineHandler := handler.NewPipelineHandler()
+	compilationTemplateHandler := handler.NewCompilationTemplateHandler(service.NewCompilationTemplateService())
+	compilationTemplateGroupHandler := handler.NewCompilationTemplateGroupHandler(service.NewCompilationTemplateGroupService())
+	datasetArtifactHandler := handler.NewDatasetArtifactHandler(service.NewDatasetArtifactService(), datasetsService, file.NewFileCommitService())
+
+	// Install the production eino-based chat invoker as the shared chat default,
+	// so agentic-search harness LLM calls work in production. Without this,
+	// chat.GetDefaultInvoker() stays nil and the harness falls back gracefully.
+	component.InstallDefaultChatInvoker()
+
+	// Install the dataset-nav ES-backed service (internal/service/nav +
+	// internal/service/nlp). The embedder resolves the tenant's embedding model
+	// on demand so Search/UpsertDoc can embed queries/summaries automatically.
+	nav.SetNavService(nlp.NewNavService(service.NewNavEmbedder(modelProviderService, "")))
 
 	// Initialize router
 	r := router.NewRouter(authHandler,
@@ -865,7 +877,10 @@ func startServer(ctx context.Context) {
 		openaiChatHandler,
 		botHandler,
 		componentsHandler,
-		pipelineHandler)
+		pipelineHandler,
+		compilationTemplateHandler,
+		compilationTemplateGroupHandler,
+		datasetArtifactHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()
