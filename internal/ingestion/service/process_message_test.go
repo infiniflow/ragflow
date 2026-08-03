@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"ragflow/internal/common"
@@ -128,6 +129,43 @@ func TestExecuteMemoryTaskAlreadyFailedAcks(t *testing.T) {
 	ingestor.executeMemoryTask(context.Background(), taskCtx)
 	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
 		t.Fatalf("already-failed memory task: expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
+// TestExecuteMemoryTaskTransientFailureNacks verifies that a transient (non-terminal)
+// failure from HandleSaveToMemoryTask — e.g. a task-load DB error before any durable
+// progress=-1 marker is written — is Nacked so the message is redelivered, instead of
+// being Acked and permanently dropped. The tasks table is intentionally NOT migrated
+// so taskDAO.GetByID fails with a "no such table" error rather than gorm.ErrRecordNotFound.
+func TestExecuteMemoryTaskTransientFailureNacks(t *testing.T) {
+	// Migrate only a table unrelated to tasks so GetByID returns a transient
+	// "no such table: tasks" error (not gorm.ErrRecordNotFound).
+	db := testutil.SetupTestDB(t, &entity.IngestionTask{})
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	ingestor := NewIngestor("test", 1, []string{"pdf"})
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService()))
+
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "mem-task-x", TaskType: common.TaskTypeMemory}}
+	taskCtx := taskpkg.NewMemoryTaskContextForScheduling(context.Background(), map[string]any{
+		"id": "mem-task-x", "task_type": "memory", "memory_id": "mem-x", "source_id": 1,
+		"message_dict": map[string]any{"user_id": "u", "agent_id": "a", "session_id": "s"},
+	}, handle)
+
+	// Precondition: with no tasks table, HandleSaveToMemoryTask must fail with a
+	// transient error that is NOT wrapped in ErrMemoryTaskTerminal.
+	err := ingestor.memorySvc.HandleSaveToMemoryTask(context.Background(), taskCtx.MemoryPayload)
+	if err == nil {
+		t.Fatal("expected HandleSaveToMemoryTask to fail with missing tasks table, got nil")
+	}
+	if errors.Is(err, service.ErrMemoryTaskTerminal) {
+		t.Fatalf("expected a transient error, got terminal: %v", err)
+	}
+
+	ingestor.executeMemoryTask(context.Background(), taskCtx)
+	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
+		t.Fatalf("transient memory task failure: expected 0 Ack/1 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
 	}
 }
 

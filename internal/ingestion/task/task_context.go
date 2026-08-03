@@ -68,10 +68,11 @@ type TaskContext struct {
 	//   - TaskKindIngestion: ack on a durably-persisted terminal status and
 	//     nack otherwise (e.g. shutdown mid-task) so the message is redelivered
 	//     and resumed after restart.
-	//   - TaskKindMemory: ack on both success AND failure. HandleSaveToMemoryTask
-	//     already persists progress=-1 for failed memory tasks, so nacking would
-	//     redeliver an already-failed row into an infinite retry loop. See
-	//     executeMemoryTask.
+	//   - TaskKindMemory: ack on success and on terminal failure (task absent,
+	//     already-failed, or progress=-1 persisted by HandleSaveToMemoryTask);
+	//     nack on transient failure (task-load DB error before any marker, or
+	//     LLM/network error that did not reach progress=-1) so the message is
+	//     redelivered. See executeMemoryTask.
 	Handle common.TaskHandle
 }
 

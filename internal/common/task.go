@@ -19,6 +19,12 @@ package common
 import "encoding/json"
 
 const (
+	// TaskSubject is the NATS subject on which ingestion and memory tasks are
+	// published and consumed. Producer and consumer must reference this single
+	// symbol so the routing contract cannot diverge (mirrors the RAGFLOW_TASKS
+	// JetStream subject in internal/engine/nats).
+	TaskSubject = "tasks.RAGFLOW"
+
 	TaskTypeIngestionTask = "ingestion_task"
 	TaskTypeIngestionTest = "ingestion_test"
 	// TaskTypeMemory is the async memory-extraction task type. Memory tasks

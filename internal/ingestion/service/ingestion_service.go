@@ -159,7 +159,7 @@ func (e *Ingestor) Start() error {
 // error is retained and returned to every later caller.
 func (e *Ingestor) start() error {
 	msgQueueEngine := engine.GetMessageQueueEngine()
-	if err := msgQueueEngine.InitConsumer("tasks.RAGFLOW"); err != nil {
+	if err := msgQueueEngine.InitConsumer(common.TaskSubject); err != nil {
 		return err
 	}
 
@@ -461,10 +461,15 @@ func (e *Ingestor) workerLoop(id int32) {
 // executeMemoryTask runs one async memory-extraction task (TaskKindMemory) on
 // a worker of the shared pool. Unlike ingestion tasks, memory tasks have no
 // ingestion_task row / state machine: HandleSaveToMemoryTask persists the
-// extracted messages and the worker acks on success. On failure the worker ALSO
-// acks: HandleSaveToMemoryTask already persisted progress=-1 for the failed
-// memory task, so nacking would redeliver an already-failed row into an
-// infinite retry loop.
+// extracted messages and settles task progress on the way out.
+//
+// Settlement is error-category aware:
+//   - Terminal failure (task row absent, already-failed, or progress=-1 already
+//     persisted) is Acked so an already-consumed message is never redelivered
+//     into an infinite nack loop.
+//   - Transient failure (a task-load DB error before any durable marker, or an
+//     LLM/network failure that did not reach progress=-1) is Nacked so the
+//     message is redelivered and retried instead of being silently dropped.
 func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskContext) {
 	taskID, _ := taskCtx.MemoryPayload["id"].(string)
 	if taskID == "" {
@@ -483,13 +488,19 @@ func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskC
 		return
 	}
 	if err := e.memorySvc.HandleSaveToMemoryTask(ctx, taskCtx.MemoryPayload); err != nil {
-		// HandleSaveToMemoryTask persists task progress on failure (progress=-1,
-		// see updateTaskProgress) and treats a task already marked failed as a
-		// terminal, already-consumed error. Ack rather than Nack so a failed
-		// memory task is not redelivered into an infinite nack loop.
-		common.Error(fmt.Sprintf("memory task %s failed, ack", taskID), err)
-		if ackErr := taskCtx.Handle.Ack(); ackErr != nil {
-			common.Error(fmt.Sprintf("ack failed memory task %s", taskID), ackErr)
+		// HandleSaveToMemoryTask wraps terminal outcomes in ErrMemoryTaskTerminal
+		// (durable progress=-1 written, or no row to retry). Everything else is
+		// transient and must be redelivered rather than dropped.
+		if errors.Is(err, servicepkg.ErrMemoryTaskTerminal) {
+			common.Error(fmt.Sprintf("memory task %s failed terminally, ack", taskID), err)
+			if ackErr := taskCtx.Handle.Ack(); ackErr != nil {
+				common.Error(fmt.Sprintf("ack failed memory task %s", taskID), ackErr)
+			}
+			return
+		}
+		common.Error(fmt.Sprintf("memory task %s failed transiently, nack for redelivery", taskID), err)
+		if nackErr := taskCtx.Handle.Nack(); nackErr != nil {
+			common.Error(fmt.Sprintf("nack memory task %s", taskID), nackErr)
 		}
 		return
 	}

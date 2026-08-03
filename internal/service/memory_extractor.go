@@ -48,11 +48,19 @@ import (
 	models "ragflow/internal/entity/models"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // memoryTimeLayout is the storage format for valid_at / invalid_at,
 // matching timestamp_to_date on the Python side.
 const memoryTimeLayout = "2006-01-02 15:04:05"
+
+// ErrMemoryTaskTerminal marks a memory-task failure that already has a durable
+// terminal outcome (task row absent, or progress already persisted as failed),
+// so the caller must Ack rather than Nack/redeliver. Transient failures (DB
+// read hiccup, LLM/network errors before any durable marker) return plain
+// errors so executeMemoryTask can Nack and let the message be redelivered.
+var ErrMemoryTaskTerminal = errors.New("memory: terminal task failure, do not redeliver")
 
 // extractedMemory is one LLM-extracted memory item ready for persistence.
 type extractedMemory struct {
@@ -65,9 +73,15 @@ type extractedMemory struct {
 // HandleSaveToMemoryTask processes one queued memory task. Mirrors
 // Python handle_save_to_memory_task: validate the task row, then
 // extract + persist, settling task progress on the way out.
+//
+// The returned error is wrapped in ErrMemoryTaskTerminal when the failure has
+// already produced a durable terminal outcome (dependency/config error, task
+// row absent, task already failed, or extraction failed after progress=-1 was
+// persisted). Transient failures (a task-load DB error before any marker was
+// written) return an unwrapped error so the caller can Nack and redeliver.
 func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, payload map[string]any) error {
 	if s == nil || s.taskDAO == nil || s.memories == nil {
-		return errors.New("memory: nil MemoryMessageService or memory dependency")
+		return fmt.Errorf("%w: memory: nil MemoryMessageService or memory dependency", ErrMemoryTaskTerminal)
 	}
 	taskID, _ := payload["id"].(string)
 	if taskID == "" {
@@ -86,15 +100,21 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, paylo
 
 	task, err := s.taskDAO.GetByID(ctx, dao.DB, taskID)
 	if err != nil {
-		return fmt.Errorf("memory: task %s is not found", taskID)
+		// Record-not-found is terminal: no row to retry against. Any other
+		// task-load error is transient and must be redelivered (no progress=-1
+		// marker was written).
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: memory: task %s is not found", ErrMemoryTaskTerminal, taskID)
+		}
+		return fmt.Errorf("memory: load task %s: %w", taskID, err)
 	}
 	if task.Progress == -1 {
-		return fmt.Errorf("memory: task %s is already failed", taskID)
+		return fmt.Errorf("%w: memory: task %s is already failed", ErrMemoryTaskTerminal, taskID)
 	}
 
 	if err := s.saveExtractedToMemory(ctx, memoryID, msg, sourceID, taskID); err != nil {
 		s.updateTaskProgress(taskID, -1, err.Error())
-		return err
+		return fmt.Errorf("%w: %v", ErrMemoryTaskTerminal, err)
 	}
 	return nil
 }
