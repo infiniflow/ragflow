@@ -50,37 +50,6 @@ func (h *HuaweiCloudModel) Name() string {
 	return "huaweicloud"
 }
 
-// HuaweiCloudChatResponse captures the OpenAI-compatible fields consumed by RAGFlow.
-type HuaweiCloudChatResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		FinishReason string `json:"finish_reason"`
-		Index        int    `json:"index"`
-		Logprobs     any    `json:"logprobs"`
-		Message      struct {
-			Content          string           `json:"content"`
-			ReasoningContent string           `json:"reasoning_content"`
-			Role             string           `json:"role"`
-			ToolCalls        []map[string]any `json:"tool_calls"`
-		} `json:"message"`
-	} `json:"choices"`
-	SystemFingerprint string `json:"system_fingerprint"`
-	Usage             struct {
-		CompletionTokens        int `json:"completion_tokens"`
-		PromptTokens            int `json:"prompt_tokens"`
-		TotalTokens             int `json:"total_tokens"`
-		CompletionTokensDetails struct {
-			ReasoningTokens int `json:"reasoning_tokens"`
-		} `json:"completion_tokens_details"`
-		PromptTokensDetails struct {
-			CachedTokens int `json:"cached_tokens"`
-		} `json:"prompt_tokens_details"`
-	} `json:"usage"`
-}
-
 func huaweiCloudRegion(api *APIConfig) string {
 	region := "default"
 	if api != nil && api.Region != nil && *api.Region != "" {
