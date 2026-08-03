@@ -1351,11 +1351,9 @@ async def run_wiki(
                     parser_config=parser_cfg,
                     batch_size_cap=8,
                     window_fraction=0.5,
-                    # Keep a bounded internal worker queue. The shared pool
-                    # globally limits active + admitted waiting calls to
-                    # WIKI_MAP_MAX_PENDING, while this prevents every outer
-                    # batch from creating all of its sub-batch tasks at once.
-                    max_workers=6,
+                    # Match the shared pool width. The pool is the single
+                    # admission/concurrency control for actual MAP LLM calls.
+                    max_workers=WIKI_MAP_LLM_POOL_SIZE,
                 )
                 for key in stats["agg"]:
                     stats["agg"][key] += len(phase1.get(key) or [])
@@ -1431,7 +1429,12 @@ async def run_wiki(
 
         progress(0.75, "Planning wiki pages...")
         await wiki_plan_from_reduction(
-            chat_mdl=kb_chat_mdl,
+            chat_mdl=map_llm_pool.wrap(
+                kb_chat_mdl,
+                priority=20,
+                label="wiki-plan",
+                context=f"{ctx.kb_id}:plan",
+            ),
             embd_mdl=embedding_model,
             tenant_id=ctx.tenant_id,
             kb_id=ctx.kb_id,
@@ -1681,7 +1684,7 @@ async def run_wiki_incremental(
                     parser_config=parser_cfg,
                     batch_size_cap=8,
                     window_fraction=0.5,
-                    max_workers=6,
+                    max_workers=WIKI_MAP_LLM_POOL_SIZE,
                 )
                 # Only forward extracts that actually produced content. An
                 # all-unchanged doc (MAP fully resumed from prior rows) returns an

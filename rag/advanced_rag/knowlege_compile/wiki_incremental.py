@@ -27,12 +27,15 @@ from common.misc_utils import thread_pool_exec
 from rag.prompts.generator import message_fit_in
 from rag.nlp import search
 
-from ._common import knowledge_compile_gen_conf as _knowledge_compile_gen_conf, stable_row_id as _stable_row_id
+from ._common import (
+    knowledge_compile_gen_conf as _knowledge_compile_gen_conf,
+    stable_row_id as _stable_row_id,
+)
 
 
 # ----- REFINE concurrency control -----
 
-WIKI_REFINE_MAX_CONCURRENT = 12  # max LLM calls at once for page REFINE
+WIKI_REFINE_MAX_CONCURRENT = 20  # shared LLM pool size used by the Wiki runner
 
 
 # ----- constants ----
@@ -50,6 +53,8 @@ ENTITY_PAIRWISE_BLOCK_SIZE = 1024  # blockwise embedding matrix block size
 
 # Number of concurrent KNN queries for entity matching
 ENTITY_MATCH_KNN_CONCURRENT = 20
+CANONICAL_PERSIST_CONCURRENT = 20
+PAGE_ROUTER_KNN_CONCURRENT = 20
 
 # Thematic topic grouping. No-plan pages have no PLAN step, so pages are grouped
 # post-hoc by matching them to the thematic topic labels the MAP phase extracted.
@@ -115,11 +120,11 @@ async def _chat_mdl_ask(chat_mdl, system_prompt: str, user_prompt: str, temperat
         _, msg = message_fit_in(msg, chat_mdl.max_length)
     except Exception:
         logging.exception("wiki incremental: message_fit_in failed; sending untrimmed")
-    raw = await chat_mdl.async_chat(
-        msg[0]["content"],
-        msg[1:],
-        _knowledge_compile_gen_conf(chat_mdl, {"temperature": temperature}),
-    )
+    request_conf = _knowledge_compile_gen_conf(chat_mdl, {"temperature": temperature})
+    try:
+        raw = await chat_mdl.async_chat(msg[0]["content"], msg[1:], request_conf)
+    except Exception:
+        raise
     if isinstance(raw, tuple):
         raw = raw[0]
     return _strip_think(raw or "")
@@ -325,7 +330,7 @@ async def _load_canonical_entities(
     return results
 
 
-async def _save_canonical_entity(
+def _build_canonical_entity_doc(
     tenant_id: str,
     kb_id: str,
     entity_name: str,
@@ -334,9 +339,8 @@ async def _save_canonical_entity(
     source_doc_ids: list[str],
     claim_count: int,
     embedding: list[float] | None = None,
-) -> None:
-    """Insert or update a canonical entity row."""
-    index = search.index_name(tenant_id)
+) -> dict:
+    """Build a canonical entity row for insert or update."""
     dim = len(embedding) if embedding else 768
     doc = {
         "id": _stable_row_id(WIKI_CANONICAL_ENTITY_COMPILE_KWD, kb_id, entity_name),
@@ -351,6 +355,31 @@ async def _save_canonical_entity(
     if embedding is not None:
         vec_col = f"q_{dim}_vec"
         doc[vec_col] = embedding
+    return doc
+
+
+async def _save_canonical_entity(
+    tenant_id: str,
+    kb_id: str,
+    entity_name: str,
+    entity_type: str,
+    aliases: list[str],
+    source_doc_ids: list[str],
+    claim_count: int,
+    embedding: list[float] | None = None,
+) -> None:
+    """Insert or update a canonical entity row."""
+    index = search.index_name(tenant_id)
+    doc = _build_canonical_entity_doc(
+        tenant_id,
+        kb_id,
+        entity_name,
+        entity_type,
+        aliases,
+        source_doc_ids,
+        claim_count,
+        embedding,
+    )
 
     condition = {"compile_kwd": [WIKI_CANONICAL_ENTITY_COMPILE_KWD], "entity_kwd": [entity_name]}
     existing = await thread_pool_exec(
@@ -375,6 +404,35 @@ async def _save_canonical_entity(
         )
     else:
         await thread_pool_exec(settings.docStoreConn.insert, [doc], index, kb_id)
+
+
+async def _update_canonical_entity(
+    tenant_id: str,
+    kb_id: str,
+    entity_name: str,
+    entity_type: str,
+    aliases: list[str],
+    source_doc_ids: list[str],
+    claim_count: int,
+) -> None:
+    """Update a known canonical row without an existence query."""
+    index = search.index_name(tenant_id)
+    doc = _build_canonical_entity_doc(
+        tenant_id,
+        kb_id,
+        entity_name,
+        entity_type,
+        aliases,
+        source_doc_ids,
+        claim_count,
+    )
+    await thread_pool_exec(
+        settings.docStoreConn.update,
+        {"compile_kwd": [WIKI_CANONICAL_ENTITY_COMPILE_KWD], "entity_kwd": entity_name},
+        doc,
+        index,
+        kb_id,
+    )
 
 
 async def _delete_canonical_entity(
@@ -843,6 +901,10 @@ async def _search_existing_pages(
             logging.exception("wiki: failed to load existing pages for kb=%s", kb_id)
             return results
         for row_id, row in field_map.items():
+            # Keep the storage document id.  FINALIZE must update by id so
+            # markdown values go through the document update fast path and
+            # retain their newlines.
+            row["id"] = row_id
             slug = row.get("slug_kwd", row.get("page_id", ""))
             if isinstance(slug, list):
                 slug = slug[0] if slug else ""
@@ -1204,13 +1266,24 @@ async def _wiki_reduce_entity(
     and entity_type for downstream filtering.
     """
     if existing_page is None:
-        # Mode A compiles EVERY entity AND concept into a page. A concept with
-        # no dedicated claim rows must still be created (has_delta=True),
-        # otherwise a claim-less concept is treated as a no-op and never gets
-        # a page. Entities with zero claims are likewise still created.
         if isinstance(entity_type, list):
             entity_type = entity_type[0] if entity_type else "entity"
         entity_type = str(entity_type or "entity").strip()
+        # A page must have grounded evidence. MAP can mention an entity as a
+        # relation endpoint or metadata-only item without producing a claim;
+        # creating a page for that item would persist empty source_doc_ids and
+        # source_chunk_ids and make the REFINE prompt generate a placeholder
+        # page. Such new entities/concepts are intentionally skipped.
+        if not new_claims:
+            return {
+                "action": "noop",
+                "entity_name": entity_name,
+                "entity_type": entity_type,
+                "additions": [],
+                "retractions": [],
+                "retained_source_doc_ids": [],
+                "has_delta": False,
+            }
         return {
             "action": "create",
             "entity_name": entity_name,
@@ -1580,8 +1653,16 @@ async def _wiki_refine_page(
     new_version = page_version + 1
     raw_doc_ids = existing.get("source_doc_ids", [])
     doc_ids = json.loads(raw_doc_ids) if isinstance(raw_doc_ids, str) else list(raw_doc_ids)
+    source_chunk_ids = set(_as_str_list(existing.get("source_chunk_ids")))
+    for claim in claims or []:
+        did = claim.get("source_doc_id") if isinstance(claim, dict) else None
+        if did and did not in doc_ids:
+            doc_ids.append(did)
     if source_chunks:
         for chunk in source_chunks:
+            cid = chunk.get("id") or chunk.get("chunk_id")
+            if cid:
+                source_chunk_ids.add(str(cid))
             did = chunk.get("doc_id") or chunk.get("source_doc_id")
             if did and did not in doc_ids:
                 doc_ids.append(did)
@@ -1602,6 +1683,7 @@ async def _wiki_refine_page(
         "md_with_weight": content,
         "summary_with_weight": summary or page_title,
         "entity_names_kwd": [page_title],
+        "source_chunk_ids": sorted(source_chunk_ids),
         "source_doc_ids": json.dumps(doc_ids, ensure_ascii=False),
         "claims": json.dumps(claims, ensure_ascii=False) if claims else "[]",
         "page_version_int": new_version,
@@ -1781,6 +1863,7 @@ Write the ENTIRE page in the SAME LANGUAGE as the source chunks. If the source c
 2. CROSS-DOCUMENT SYNTHESIS: Weave information from multiple sources into coherent paragraphs. Compare evidence, explain contradictions.
 3. OPENING PARAGRAPH: 2-4 sentences defining the concept. Mention key entities. No heading.
 4. SECTIONS: H2 headings, prose first, then sub-points if needed.
+   Markdown formatting is mandatory: put every heading on its own line and separate every paragraph with a blank line.
 5. WIKILINKS: Use ONLY the exact page IDs listed in "Available Pages for [[wikilinks]]" (they already carry the entity/ or concept/ prefix). Insert [[EXACT_PAGE_ID]] on first mention of a related concept/entity. NEVER invent a link target, NEVER drop the prefix, NEVER write English names.
 6. DICTIONARY PREVENTION: Do NOT group content by source document. Do NOT create one section per entity. Do NOT write flat bullet lists.
 
@@ -1808,6 +1891,7 @@ Write the ENTIRE page in the SAME LANGUAGE as the source chunks. If the source c
 4. WIKILINKS: Keep existing and add new [[page_id]] links where appropriate. Use ONLY the exact page IDs listed in "Available Pages for [[wikilinks]]" (they already carry the entity/ or concept/ prefix). NEVER invent a link target, NEVER drop the prefix, NEVER write English names.
 5. For FULL RE-SYNTHESIS: Use all source chunks + all claims to rewrite from scratch.
 6. For INCREMENTAL MODIFY: Integrate additions, remove retracted content, keep unchanged content.
+7. MARKDOWN FORMATTING: Put every heading on its own line and separate every paragraph with a blank line. Do not return the whole page as one line.
 
 ## DICTIONARY PREVENTION
 - Do NOT group content by source document.
@@ -1863,12 +1947,17 @@ async def _wiki_page_router(
     embd_mdl,
     tenant_id: str,
     kb_id: str,
+    existing_page_ids: set[str] | None = None,
 ) -> dict[str, list[dict]]:
     """Route affected entities to existing wiki pages via KNN.
 
     Returns: {page_id: [entity_deltas]}
     - "_new_{page_id}" → new page to create
     - existing page_id → entities assigned to that page
+
+    ``existing_page_ids`` is supplied by Mode B from its already-loaded page
+    set. An explicitly empty set means this is a first build, so page-index
+    KNN routing can be skipped and entities can go straight to clustering.
     """
     from common.misc_utils import thread_pool_exec
     from rag.nlp import search
@@ -1882,55 +1971,67 @@ async def _wiki_page_router(
 
     assignments: dict[str, list[dict]] = {}
     orphans: list[dict] = []
+    embedding_by_entity_id = {id(entity): vec for entity, vec in zip(affected_entities, embeddings, strict=False)}
 
-    for entity, vec in zip(affected_entities, embeddings):
-        match_expr = MatchDenseExpr(
-            vector_column_name=f"q_{len(vec)}_vec",
-            embedding_data=vec.tolist() if hasattr(vec, "tolist") else vec,
-            embedding_data_type="float",
-            distance_type="cosine",
-            topn=1,
-            extra_options={"similarity": PAGE_ROUTER_MAYBE_THRESHOLD},
-        )
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            ["slug_kwd", "title_kwd", "_score"],
-            [],
-            condition,
-            [match_expr],
-            OrderByExpr(),
-            0,
-            1,
-            index,
-            [kb_id],
-        )
-        field_map = settings.docStoreConn.get_fields(res, ["slug_kwd", "title_kwd", "_score"])
+    if existing_page_ids is not None and not existing_page_ids:
+        # On a first build there are no pages that can accept a routed entity.
+        # Querying the page index once per entity only produces orphans, so go
+        # directly to clustering and reuse the embeddings already computed.
+        orphans = list(affected_entities)
+    else:
+        router_sem = asyncio.Semaphore(PAGE_ROUTER_KNN_CONCURRENT)
 
-        if not field_map:
-            orphans.append(entity)
-            continue
+        async def _search_page(entity: dict, vec) -> tuple[dict, dict]:
+            async with router_sem:
+                match_expr = MatchDenseExpr(
+                    vector_column_name=f"q_{len(vec)}_vec",
+                    embedding_data=vec.tolist() if hasattr(vec, "tolist") else vec,
+                    embedding_data_type="float",
+                    distance_type="cosine",
+                    topn=1,
+                    extra_options={"similarity": PAGE_ROUTER_MAYBE_THRESHOLD},
+                )
+                res = await thread_pool_exec(
+                    settings.docStoreConn.search,
+                    ["slug_kwd", "title_kwd", "_score"],
+                    [],
+                    condition,
+                    [match_expr],
+                    OrderByExpr(),
+                    0,
+                    1,
+                    index,
+                    [kb_id],
+                )
+                return entity, settings.docStoreConn.get_fields(res, ["slug_kwd", "title_kwd", "_score"])
 
-        for row in field_map.values():
-            score = row.get("_score", 0.0)
-            page_id = row.get("slug_kwd", "")
-            if isinstance(page_id, (list, tuple)):
-                page_id = page_id[0] if page_id else ""
-            page_id = str(page_id or "").strip()
-
-            # slug_kwd is a *_kwd field; Infinity may return it empty / mangled
-            # on the matched row. A blank page id would route the entity onto a
-            # `slug_kwd: [""]` query (Infinity 3052) — treat as orphan instead.
-            if not page_id:
+        route_results = await asyncio.gather(*(_search_page(entity, vec) for entity, vec in zip(affected_entities, embeddings, strict=False)))
+        for entity, field_map in route_results:
+            if not field_map:
                 orphans.append(entity)
                 continue
 
-            if score >= PAGE_ROUTER_UPDATE_THRESHOLD:
-                assignments.setdefault(page_id, []).append(entity)
-            elif score >= PAGE_ROUTER_MAYBE_THRESHOLD:
-                assignments.setdefault(f"_maybe_{page_id}", []).append(entity)
-            else:
-                orphans.append(entity)
-            break
+            for row in field_map.values():
+                score = row.get("_score", 0.0)
+                page_id = row.get("slug_kwd", "")
+                if isinstance(page_id, (list, tuple)):
+                    page_id = page_id[0] if page_id else ""
+                page_id = str(page_id or "").strip()
+
+                # slug_kwd is a *_kwd field; Infinity may return it empty / mangled
+                # on the matched row. A blank page id would route the entity onto a
+                # `slug_kwd: [""]` query (Infinity 3052) — treat as orphan instead.
+                if not page_id:
+                    orphans.append(entity)
+                    continue
+
+                if score >= PAGE_ROUTER_UPDATE_THRESHOLD:
+                    assignments.setdefault(page_id, []).append(entity)
+                elif score >= PAGE_ROUTER_MAYBE_THRESHOLD:
+                    assignments.setdefault(f"_maybe_{page_id}", []).append(entity)
+                else:
+                    orphans.append(entity)
+                break
 
     # Handle maybe candidates (batch LLM confirm optional)
     for key in list(assignments.keys()):
@@ -1952,8 +2053,7 @@ async def _wiki_page_router(
 
     # Orphans: cluster by similarity, create grouped pages
     if orphans:
-        orphan_texts = [_entity_to_query_text(e) for e in orphans]
-        orphan_embs, _ = await thread_pool_exec(embd_mdl.encode, orphan_texts)
+        orphan_embs = [embedding_by_entity_id[id(entity)] for entity in orphans]
         clusters = _wiki_cluster_entities(orphans, orphan_embs, threshold=PAGE_ROUTER_CLUSTER_THRESHOLD)
         for cluster in clusters:
             names = [e.get("entity_name") or e.get("term", "") for e in cluster]
@@ -2077,6 +2177,7 @@ async def _wiki_finalize(
         kb_id,
         [
             "slug_kwd",
+            "id",
             "title_kwd",
             "md_with_weight",
             "outlinks_kwd",
@@ -2264,7 +2365,7 @@ async def _wiki_finalize(
         index = search.index_name(tenant_id)
         await thread_pool_exec(
             settings.docStoreConn.update,
-            {"slug_kwd": pid},
+            {"id": page["id"]},
             update,
             index,
             kb_id,
@@ -2666,6 +2767,7 @@ async def wiki_compile_incremental(
     # API is invoked per text by the underlying driver — batching 95 entities as
     # one call is ~95x faster than a per-entity call, each of which only carries
     # a handful of tokens and spends ~0.3s in round-trip latency).
+    changed_items: list[tuple[str, dict]] = []
     new_items: list[tuple[str, dict, str]] = []  # (cname, centry, emb_text)
     for cname, centry in canonical_map.items():
         existing = canonical_entities.get(cname)
@@ -2673,8 +2775,18 @@ async def wiki_compile_incremental(
             old_docs = set(k for k in (existing.get("source_doc_ids") or []))
             new_docs = set(centry.get("source_doc_ids", []))
             if old_docs != new_docs or centry["claim_count"] > existing.get("mention_count_int", 0):
-                # Only persist when data changes; reuse existing embedding
-                await _save_canonical_entity(
+                # Only persist when data changes; reuse the existing embedding.
+                changed_items.append((cname, centry))
+        else:
+            new_items.append((cname, centry, _entity_to_query_text(centry)))
+
+    if changed_items:
+        persist_sem = asyncio.Semaphore(CANONICAL_PERSIST_CONCURRENT)
+
+        async def _update_changed(item: tuple[str, dict]) -> None:
+            cname, centry = item
+            async with persist_sem:
+                await _update_canonical_entity(
                     tenant_id,
                     kb_id,
                     cname,
@@ -2682,16 +2794,15 @@ async def wiki_compile_incremental(
                     centry.get("aliases", []),
                     centry.get("source_doc_ids", []),
                     centry["claim_count"],
-                    embedding=None,
                 )
-        else:
-            new_items.append((cname, centry, _entity_to_query_text(centry)))
+
+        await asyncio.gather(*(_update_changed(item) for item in changed_items))
 
     if new_items and embd_mdl:
         batch_texts = [t for _, _, t in new_items]
         batch_embs, _ = await thread_pool_exec(embd_mdl.encode, batch_texts)
-        for (cname, centry, _), emb in zip(new_items, batch_embs, strict=False):
-            await _save_canonical_entity(
+        new_rows = [
+            _build_canonical_entity_doc(
                 tenant_id,
                 kb_id,
                 cname,
@@ -2701,6 +2812,33 @@ async def wiki_compile_incremental(
                 centry["claim_count"],
                 embedding=emb.tolist() if hasattr(emb, "tolist") else emb,
             )
+            for (cname, centry, _), emb in zip(new_items, batch_embs, strict=False)
+        ]
+        await thread_pool_exec(
+            settings.docStoreConn.insert,
+            new_rows,
+            search.index_name(tenant_id),
+            kb_id,
+        )
+    elif new_items:
+        new_rows = [
+            _build_canonical_entity_doc(
+                tenant_id,
+                kb_id,
+                cname,
+                centry["type"],
+                centry.get("aliases", []),
+                centry.get("source_doc_ids", []),
+                centry["claim_count"],
+            )
+            for cname, centry, _ in new_items
+        ]
+        await thread_pool_exec(
+            settings.docStoreConn.insert,
+            new_rows,
+            search.index_name(tenant_id),
+            kb_id,
+        )
 
     # Clean up deleted canonical entities (from doc deletion)
     if deleted_doc_ids:
@@ -2745,7 +2883,19 @@ async def wiki_compile_incremental(
     existing_pages = await _search_existing_pages(
         tenant_id,
         kb_id,
-        ["slug_kwd", "title_kwd", "md_with_weight", "claims", "source_doc_ids", "page_version_int", "synthesis_version_int", "entity_names_kwd", "related_kb_pages_kwd", "page_type_kwd"],
+        [
+            "slug_kwd",
+            "title_kwd",
+            "md_with_weight",
+            "claims",
+            "source_chunk_ids",
+            "source_doc_ids",
+            "page_version_int",
+            "synthesis_version_int",
+            "entity_names_kwd",
+            "related_kb_pages_kwd",
+            "page_type_kwd",
+        ],
     )
 
     # Build canonical claims ON-DEMAND only for affected names, then release
@@ -2851,7 +3001,7 @@ async def _wiki_mode_a_run(
     canonical_claims: dict[str, list[dict]] | None = None,
     doc_to_entities: dict[str, list[str]] | None = None,
 ) -> dict:
-    """Mode A: every entity AND concept compiles to its own wiki page.
+    """Mode A: every grounded entity and concept compiles to its own page.
 
     No PLAN grouping — each canonical entity/concept is a single page.
     Args:
@@ -2874,7 +3024,8 @@ async def _wiki_mode_a_run(
         for n in _as_str_list(page.get("entity_names_kwd")):
             name_to_page[n] = pid
 
-    # Build page-level deltas. Each entity/concept becomes one page.
+    # Build page-level deltas. Each grounded entity/concept becomes one page;
+    # REDUCE has already filtered metadata-only entities without claims.
     page_deltas: dict[str, dict] = {}
     for d in deltas:
         name = d.get("entity_name", "")
@@ -2910,6 +3061,7 @@ async def _wiki_mode_a_run(
                     {
                         "id": cid,
                         "text": claim.get("statement", claim.get("text", "")),
+                        "source_doc_id": claim.get("source_doc_id"),
                     }
                 )
 
@@ -2939,7 +3091,8 @@ async def _wiki_mode_a_run(
                     entry["source_chunks"].append({"id": cid, "text": texts[0]})
 
     # Concept depth check: thin CONCEPTS don't create pages (avoids dictionary
-    # entries). Entities always create pages regardless of depth.
+    # entries). Pages without grounded claims have already been filtered by
+    # REDUCE above.
     # ONLY on the very first full build (non-incremental), when concept claims
     # are complete.  During incremental builds the deltas carry only the
     # changed claims, so a threshold check would wrongly reject every new
@@ -2962,7 +3115,11 @@ async def _wiki_mode_a_run(
 
     all_page_ids = list(existing_pages.keys())
     doc_updates: dict[str, list[str]] = {}
-    sem = asyncio.Semaphore(WIKI_REFINE_MAX_CONCURRENT)
+    # Do not use a 20-slot semaphore around the whole page worker.  The worker
+    # also performs source loading, embedding, and persistence after the LLM
+    # returns; limiting that whole region would artificially starve the LLM
+    # pool.  LLMCallPool is the only limit for actual chat calls.
+    sem = asyncio.Semaphore(max(1, len(page_deltas)))
 
     async def _refine_one(pid: str, entry: dict) -> None:
         async with sem:
@@ -3035,7 +3192,7 @@ async def _wiki_mode_a_run(
 
     tasks = [_refine_one(pid, entry) for pid, entry in page_deltas.items()]
     if tasks:
-        _progress(f"REFINE A: {len(tasks)} pages (max {WIKI_REFINE_MAX_CONCURRENT} concurrent) ...")
+        _progress(f"REFINE A: {len(tasks)} pages (LLM pool max {WIKI_REFINE_MAX_CONCURRENT}) ...")
         await asyncio.gather(*tasks)
 
     for did, pids in doc_updates.items():
@@ -3109,6 +3266,7 @@ async def _wiki_mode_b_run(
         embd_mdl=embd_mdl,
         tenant_id=tenant_id,
         kb_id=kb_id,
+        existing_page_ids=set(existing_pages),
     )
 
     if not assignments:
@@ -3126,12 +3284,21 @@ async def _wiki_mode_b_run(
         for ent in entities:
             for c in ent.get("claims", []):
                 for cid in _wiki_claim_chunk_ids(c):
-                    chunks.append({"id": cid, "text": c.get("statement", c.get("text", ""))})
+                    chunks.append(
+                        {
+                            "id": cid,
+                            "text": c.get("statement", c.get("text", "")),
+                            "source_doc_id": c.get("source_doc_id"),
+                        }
+                    )
         if chunks:
             page_source_chunks[page_key] = chunks
 
     doc_updates: dict[str, list[str]] = {}  # doc_id → [page_ids]
-    sem = asyncio.Semaphore(WIKI_REFINE_MAX_CONCURRENT)
+    # The shared LLMCallPool limits chat calls.  This semaphore must not cap
+    # the complete worker because embedding and page persistence happen after
+    # the chat call and should not consume an LLM concurrency slot.
+    sem = asyncio.Semaphore(max(1, len(assignments)))
 
     async def _refine_one(page_id: str, entities: list) -> None:
         async with sem:
@@ -3243,7 +3410,7 @@ async def _wiki_mode_b_run(
 
     tasks = [_refine_one(pid, ents) for pid, ents in assignments.items()]
     if tasks:
-        _progress(f"REFINE B: {len(tasks)} pages (max {WIKI_REFINE_MAX_CONCURRENT} concurrent) ...")
+        _progress(f"REFINE B: {len(tasks)} pages (LLM pool max {WIKI_REFINE_MAX_CONCURRENT}) ...")
         await asyncio.gather(*tasks)
 
     # Apply doc_page_source updates serially (no race), preserving metadata
