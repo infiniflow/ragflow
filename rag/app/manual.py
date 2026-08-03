@@ -241,7 +241,8 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         sections = [(txt, sec_ids[i], poss) for i, (txt, _, poss) in enumerate(sections)]
         for (img, rows), poss in tbls:
-            if not rows:
+            # Unpositioned media remains in tbls and is tokenized independently.
+            if not rows or not poss:
                 continue
             sections.append((rows if isinstance(rows, str) else rows[0], -1, [(p[0] + 1 - from_page, p[1], p[2], p[3], p[4]) for p in poss]))
 

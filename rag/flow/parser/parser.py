@@ -15,12 +15,12 @@
 import asyncio
 import io
 import json
+import logging
 import os
 import random
 import re
 from functools import partial
 
-from litellm import logging
 import numpy as np
 from PIL import Image
 
@@ -410,7 +410,7 @@ class Parser(ProcessBase):
             ocr_model = LLMBundle(tenant_id, ocr_model_config, lang=conf.get("lang", "Chinese"))
             pdf_parser = ocr_model.mdl
 
-            lines, _ = pdf_parser.parse_pdf(
+            lines, mineru_media_blocks = pdf_parser.parse_pdf(
                 filepath=name,
                 binary=blob,
                 callback=self.callback,
@@ -433,6 +433,21 @@ class Parser(ProcessBase):
                 image = pdf_parser.crop(poss, 1)
                 if image is not None:
                     box["image"] = image
+                bboxes.append(box)
+
+            for (img, html_or_caption), positions in mineru_media_blocks or []:
+                box = {"layout_type": "table" if not isinstance(html_or_caption, list) else "figure"}
+                if isinstance(html_or_caption, str):
+                    box["text"] = html_or_caption
+                elif isinstance(html_or_caption, list):
+                    box["text"] = "\n".join(str(text) for text in html_or_caption if str(text).strip())
+                if img is not None:
+                    box["image"] = img
+                if positions:
+                    try:
+                        box["positions"] = [[p[0] + 1, p[1], p[2], p[3], p[4]] for p in positions]
+                    except Exception:
+                        pass
                 bboxes.append(box)
 
         elif parse_method.lower() == "docling":
@@ -785,7 +800,11 @@ class Parser(ProcessBase):
                 if b.get("layout_type", "") == "title":
                     mkdn += "\n## "
                 if b.get("layout_type", "") == "figure":
-                    mkdn += "\n![Image]({})".format(VLM.image2base64(b["image"]))
+                    image = b.get("image")
+                    if image is None:
+                        logging.warning(f"Skipping figure in markdown output for {name}: image resource is unavailable (parse_method={parse_method}).")
+                        continue
+                    mkdn += "\n![Image]({})".format(VLM.image2base64(image))
                     continue
                 mkdn += b.get("text", "") + "\n"
             self.set_output("markdown", mkdn)
