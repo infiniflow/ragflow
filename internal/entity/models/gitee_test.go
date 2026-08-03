@@ -57,7 +57,8 @@ func TestGiteeStreamAcceptsTerminalWithoutDelta(t *testing.T) {
 			t.Errorf("method=%s, want POST", r.Method)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, `data: {"choices":[{"finish_reason":"stop"}]}`+"\n\n")
+		_, _ = io.WriteString(w, `data: {"choices":[{"finish_reason":"stop"}]}`+"\n\n"+
+			`data: [DONE]`+"\n\n")
 	}))
 	defer srv.Close()
 
