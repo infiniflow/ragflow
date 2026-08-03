@@ -255,7 +255,9 @@ export function ModelsSection(props: ModelsSectionProps) {
   } = useModelEdit({
     providerName,
     instanceName,
+    addedSet,
     isDraftInstance,
+    setCatalog,
     updateDraftModel,
   });
 

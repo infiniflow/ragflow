@@ -652,7 +652,10 @@ export function useModelMutations({
       model_name: model.name,
       model_type: model.model_types ?? [],
       max_tokens: model.max_tokens ?? 0,
-      extra: { is_tools: hasToolFeature(model.features), ...(model.extra ?? {}) },
+      extra: {
+        is_tools: hasToolFeature(model.features),
+        ...(model.extra ?? {}),
+      },
     });
   };
 
@@ -750,14 +753,18 @@ export function useModelMutations({
 interface UseModelEditArgs {
   providerName: string;
   instanceName: string;
+  addedSet: Set<string>;
   isDraftInstance?: boolean;
+  setCatalog: Dispatch<SetStateAction<IProviderModelItem[]>>;
   updateDraftModel?: (item: IProviderModelItem) => void;
 }
 
 export function useModelEdit({
   providerName,
   instanceName,
+  addedSet,
   isDraftInstance,
+  setCatalog,
   updateDraftModel,
 }: UseModelEditArgs) {
   const queryClient = useQueryClient();
@@ -807,10 +814,7 @@ export function useModelEdit({
     // Build the features array from `extra` booleans whose keys match
     // the standard feature (`is_tools`) or the provider-specific
     // whitelist. Only `true` values become selected switch-group entries.
-    const featureKeySet = new Set<string>([
-      'is_tools',
-      ...providerFeatureKeys,
-    ]);
+    const featureKeySet = new Set<string>(['is_tools', ...providerFeatureKeys]);
     const features: string[] = [];
     const featureBooleans = new Set<string>();
     for (const [key, value] of Object.entries(extra)) {
@@ -823,9 +827,7 @@ export function useModelEdit({
     }
     // Remaining extra fields (non-feature: element-format selects, etc.).
     const remainingExtra = Object.fromEntries(
-      Object.entries(extra).filter(
-        ([k]) => !featureBooleans.has(k),
-      ),
+      Object.entries(extra).filter(([k]) => !featureBooleans.has(k)),
     );
     return {
       name: editingModel.name,
@@ -851,6 +853,14 @@ export function useModelEdit({
       return;
     }
 
+    if (!addedSet.has(targetName)) {
+      setCatalog((prev) =>
+        prev.map((m) => (m.name === targetName ? { ...m, ...item } : m)),
+      );
+      setEditingModel(null);
+      return;
+    }
+
     queryClient.setQueryData<IInstanceModel[]>(
       LlmKeys.instanceModels(providerName, instanceName),
       (prev) => {
@@ -864,7 +874,10 @@ export function useModelEdit({
           max_tokens: item.max_tokens ?? 0,
           model_type: item.model_types ?? [],
           is_tools: hasToolFeature(item.features),
-          extra: { is_tools: hasToolFeature(item.features), ...(item.extra ?? {}) },
+          extra: {
+            is_tools: hasToolFeature(item.features),
+            ...(item.extra ?? {}),
+          },
         };
         return next;
       },
