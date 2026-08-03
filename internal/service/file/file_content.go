@@ -85,7 +85,7 @@ func (s *FileService) DownloadAgentFile(ctx context.Context, tenantID, location 
 
 	bucketName := fmt.Sprintf("%s-downloads", tenantID)
 
-	blob, err := storageImpl.Get(bucketName, location)
+	blob, err := storageImpl.Get(ctx, bucketName, location)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read file from storage: %w", err)
 	}
@@ -132,7 +132,7 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 			return nil, nil, fmt.Errorf("no authorization")
 		}
 
-		data, derr := storageImpl.Get(createdBy+"-downloads", id)
+		data, derr := storageImpl.Get(ctx, createdBy+"-downloads", id)
 		if derr != nil || len(data) == 0 {
 			continue
 		}
@@ -156,7 +156,7 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 	return texts, images, nil
 }
 
-// parseAgentUploads resolves descriptors returned by upload_info from the
+// ParseAgentUploads resolves descriptors returned by upload_info from the
 // caller's downloads bucket and converts them to sys.files values.
 func (s *FileService) ParseAgentUploads(ctx context.Context, userID string, fileDicts []map[string]interface{}, layoutRecognize string) ([]string, error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -177,7 +177,7 @@ func (s *FileService) ParseAgentUploads(ctx context.Context, userID string, file
 			return nil, fmt.Errorf("file %q: created_by does not match the current user", name)
 		}
 
-		data, err := storageImpl.Get(createdBy+"-downloads", id)
+		data, err := storageImpl.Get(ctx, createdBy+"-downloads", id)
 		if err != nil {
 			return nil, fmt.Errorf("file %q: read upload: %w", name, err)
 		}
