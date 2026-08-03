@@ -78,7 +78,7 @@ func TestTogetherAIChatHappyPath(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
 				"message": map[string]interface{}{
-					"content":   "pong",
+					"content":           "pong",
 					"reasoning_content": "thinking",
 				},
 			}},
@@ -176,8 +176,8 @@ func TestTogetherAIStreamHappyPath(t *testing.T) {
 		if body["stream"] != true {
 			t.Errorf("stream=%v want true", body["stream"])
 		}
-		if got := r.Header.Get("Accept"); got != "" {
-			t.Errorf("Accept=%q", got)
+		if got := r.Header.Get("Accept"); got != "text/event-stream" {
+			t.Errorf("Accept=%q, want text/event-stream", got)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w,

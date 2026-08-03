@@ -307,8 +307,8 @@ func TestStepFunChatExtractsReasoning(t *testing.T) {
 			"choices": []map[string]interface{}{{
 				"index": 0,
 				"message": map[string]interface{}{
-					"role":      "assistant",
-					"content":   "The answer is 42.",
+					"role":              "assistant",
+					"content":           "The answer is 42.",
 					"reasoning_content": "I need to think about this...",
 				},
 				"finish_reason": "stop",
@@ -392,8 +392,8 @@ func TestStepFunChatAcceptsReasoningOnlyResponse(t *testing.T) {
 			"choices": []map[string]interface{}{{
 				"index": 0,
 				"message": map[string]interface{}{
-					"role":      "assistant",
-					"content":   nil,
+					"role":              "assistant",
+					"content":           nil,
 					"reasoning_content": "The answer is 4.",
 				},
 				"finish_reason": "stop",
