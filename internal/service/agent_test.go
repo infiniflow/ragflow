@@ -1180,12 +1180,12 @@ func TestUpdateAgentTagsServiceSuccess(t *testing.T) {
 		t.Fatal("expected update to succeed")
 	}
 
-	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
+	canvasInstance, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to get canvas: %v", err)
 	}
-	if canvas.Tags != "alpha,beta,with comma" {
-		t.Fatalf("expected normalized tags, got %q", canvas.Tags)
+	if canvasInstance.Tags != "alpha,beta,with comma" {
+		t.Fatalf("expected normalized tags, got %q", canvasInstance.Tags)
 	}
 }
 
@@ -1206,12 +1206,12 @@ func TestUpdateAgentTagsServiceInvalidPayload(t *testing.T) {
 		t.Fatal("expected update to fail")
 	}
 
-	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
+	canvasInstance, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to get canvas: %v", err)
 	}
-	if canvas.Tags != "" {
-		t.Fatalf("expected tags to remain unchanged, got %q", canvas.Tags)
+	if canvasInstance.Tags != "" {
+		t.Fatalf("expected tags to remain unchanged, got %q", canvasInstance.Tags)
 	}
 }
 
@@ -1232,12 +1232,12 @@ func TestUpdateAgentTagsServiceNoPermission(t *testing.T) {
 		t.Fatal("expected update to fail")
 	}
 
-	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
+	canvasInstance, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to get canvas: %v", err)
 	}
-	if canvas.Tags != "" {
-		t.Fatalf("expected tags to remain unchanged, got %q", canvas.Tags)
+	if canvasInstance.Tags != "" {
+		t.Fatalf("expected tags to remain unchanged, got %q", canvasInstance.Tags)
 	}
 }
 
@@ -1305,7 +1305,7 @@ func TestTestDBConnectionUnsupportedDatabaseType(t *testing.T) {
 	if code != common.CodeExceptionError {
 		t.Fatalf("expected code %d, got %d", common.CodeExceptionError, code)
 	}
-	if err.Error() != "Unsupported database type." {
+	if err.Error() != "unsupported database type" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

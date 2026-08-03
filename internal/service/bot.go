@@ -92,7 +92,7 @@ func (s *BotService) ChatbotInfo(ctx context.Context, tenantID, dialogID string)
 	if dialog == nil || dialog.TenantID != tenantID ||
 		dialog.Status == nil || *dialog.Status != common.StatusDialogValid {
 		return "", "", "", "", false, common.CodeDataError,
-			errors.New("Authentication error: no access to this chatbot!")
+			errors.New("authentication error: no access to this chatbot")
 	}
 	pc := dialog.PromptConfig
 	// Defensive lookups mirroring python's

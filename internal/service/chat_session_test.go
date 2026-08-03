@@ -324,7 +324,7 @@ func TestListChatSessions_NotOwner(t *testing.T) {
 
 	ctx := t.Context()
 	_, err := svc.ListChatSessions(ctx, "user-1", "chat-1", "", "", "create_time", true, 1, 30)
-	if err == nil || !strings.Contains(err.Error(), "No authorization") {
+	if err == nil || !strings.Contains(err.Error(), "no authorization") {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -401,7 +401,7 @@ func TestGetSession_NotOwner(t *testing.T) {
 
 	ctx := t.Context()
 	_, code, err := svc.GetSession(ctx, "user-1", "chat-1", "session-1")
-	if err == nil || err.Error() != "No authorization." {
+	if err == nil || err.Error() != "no authorization" {
 		t.Fatalf("err=%v", err)
 	}
 	if code != common.CodeAuthenticationError {

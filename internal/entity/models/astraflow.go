@@ -229,7 +229,7 @@ func (a *AstraflowModel) Embed(ctx context.Context, modelName *string, texts []s
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Astraflow embedding API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("astraflow embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var parsedResponse struct {
@@ -244,7 +244,7 @@ func (a *AstraflowModel) Embed(ctx context.Context, modelName *string, texts []s
 	}
 
 	if len(parsedResponse.Data) == 0 {
-		return nil, fmt.Errorf("Astraflow embedding response contains no data: %s", string(body))
+		return nil, fmt.Errorf("astraflow embedding response contains no data: %s", string(body))
 	}
 
 	var embeddings []EmbeddingData
@@ -310,7 +310,7 @@ func (a *AstraflowModel) Rerank(ctx context.Context, modelName *string, query st
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Astraflow Rerank API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("astraflow Rerank API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var rerankResp struct {

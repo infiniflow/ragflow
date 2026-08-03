@@ -232,7 +232,7 @@ func (dr *DeepResearcher) _research(
 
 	// 1. Retrieve information (KB + optional web)
 	st := time.Now()
-	kbinfos, err := dr._retrieve_information(ctx, query)
+	kbinfos, err := dr.retrieveInformation(ctx, query)
 	if err != nil {
 		return "", err
 	}
@@ -340,8 +340,8 @@ func (dr *DeepResearcher) _research(
 // Retrieval (KB + optional Web)
 // ──────────────────────────────────────────────────────────────────────
 
-// _retrieve_information does KB + optional web retrieval.
-func (dr *DeepResearcher) _retrieve_information(ctx context.Context, query string) (map[string]interface{}, error) {
+// retrieveInformation does KB + optional web retrieval.
+func (dr *DeepResearcher) retrieveInformation(ctx context.Context, query string) (map[string]interface{}, error) {
 	kbinfos := map[string]interface{}{
 		"total":    int64(0),
 		"chunks":   []map[string]interface{}{},

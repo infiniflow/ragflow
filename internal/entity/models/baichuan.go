@@ -143,7 +143,7 @@ func (b *BaichuanModel) Embed(ctx context.Context, modelName *string, texts []st
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Baichuan embedding API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("baichuan embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var parsedResponse struct {
@@ -163,7 +163,7 @@ func (b *BaichuanModel) Embed(ctx context.Context, modelName *string, texts []st
 	}
 
 	if len(parsedResponse.Data) == 0 {
-		return nil, fmt.Errorf("Baichuan embedding response contains no data: %s", string(body))
+		return nil, fmt.Errorf("baichuan embedding response contains no data: %s", string(body))
 	}
 
 	var embeddings []EmbeddingData

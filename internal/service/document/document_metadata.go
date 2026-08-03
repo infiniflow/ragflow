@@ -594,7 +594,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 			}
 		}
 		if len(invalidIDs) > 0 {
-			return nil, common.CodeDataError, fmt.Errorf("These documents do not belong to dataset %s: %s",
+			return nil, common.CodeDataError, fmt.Errorf("these documents do not belong to dataset %s: %s",
 				datasetID, strings.Join(invalidIDs, ", "))
 		}
 		for _, id := range selector.DocumentIDs {
@@ -610,7 +610,7 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 		}
 
 		// ParseAndConvert mirrors Python convert_conditions: conditions arrive as
-		// {name, comparison_operator, value}, the operator is normalised, and the
+		// {name, comparison_operator, value}, the operator is normalized, and the
 		// (possibly non-string) value is preserved. MetaFilter then matches against
 		// the common.MetaData returned by GetFlattedMetaByKBs.
 		filterInput := common.ParseAndConvert(selector.MetadataCondition)
@@ -685,17 +685,17 @@ func validateBatchUpdateDocumentMetadatasRequest(
 ) (common.ErrorCode, error) {
 	for _, upd := range updates {
 		if strings.TrimSpace(upd.Key) == "" || upd.Value == nil {
-			return common.CodeDataError, errors.New("Each update requires key and value.")
+			return common.CodeDataError, errors.New("each update requires key and value")
 		}
 	}
 	for _, del := range deletes {
 		if strings.TrimSpace(del.Key) == "" {
-			return common.CodeDataError, errors.New("Each delete requires key.")
+			return common.CodeDataError, errors.New("each delete requires key")
 		}
 	}
 	if selector != nil && selector.MetadataCondition != nil {
 		if _, ok := selector.MetadataCondition["conditions"]; !ok && len(selector.MetadataCondition) > 0 {
-			return common.CodeDataError, errors.New("metadata_condition must be an object.")
+			return common.CodeDataError, errors.New("metadata_condition must be an object")
 		}
 	}
 	return common.CodeSuccess, nil
