@@ -227,6 +227,24 @@ class TestEncryptedStorageWrapper:
 
         assert wrapper.crypto.algorithm_name == "aes-128-cbc"
 
+    def test_explicit_empty_key_is_rejected_not_read_from_environment(self, monkeypatch):
+        """An empty key is a broken value, not a request for the environment key.
+
+        Falling back here would encrypt with a key the caller never asked for,
+        and the caller could not tell that it happened.
+        """
+        monkeypatch.setenv("RAGFLOW_CRYPTO_KEY", "key-from-env")
+
+        with pytest.raises(ValueError, match="Encryption key not provided"):
+            create_encrypted_storage(FakeStorage(), key="")
+
+    def test_explicit_empty_algorithm_is_rejected(self, monkeypatch):
+        """Likewise for the algorithm: validation must see the empty value."""
+        monkeypatch.setenv("RAGFLOW_CRYPTO_ALGORITHM", "sm4-cbc")
+
+        with pytest.raises(ValueError, match="Unsupported algorithm"):
+            create_encrypted_storage(FakeStorage(), algorithm="", key="test-key")
+
 
 class TestInitSettingsCrypto:
     """The crypto branch of init_settings must not fall back to plaintext.
