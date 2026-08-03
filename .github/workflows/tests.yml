@@ -219,16 +219,27 @@ jobs:
           if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
             mkdir -p ragflow_deps
             if command -v curl >/dev/null 2>&1; then
-              curl -fsSL -o ragflow_deps/cl100k_base.tiktoken \
-                https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken || true
+              if curl -fsSL -o ragflow_deps/cl100k_base.tiktoken \
+                https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken; then
+                echo "tiktoken: cl100k table fetched via curl from openai blob"
+              else
+                echo "tiktoken: curl fetch failed (network/GFW); will try cached image"
+              fi
             fi
             if [ ! -f ragflow_deps/cl100k_base.tiktoken ] && docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
               CID=$(docker create infiniflow/ragflow_deps:latest true) || true
               if [ -n "${CID:-}" ]; then
-                docker cp "$CID":/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken 2>/dev/null || true
+                if docker cp "$CID":/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken 2>/dev/null; then
+                  echo "tiktoken: cl100k table copied from cached infiniflow/ragflow_deps image"
+                fi
                 docker rm -f "$CID" >/dev/null 2>&1 || true
               fi
             fi
+          fi
+          if [ -f ragflow_deps/cl100k_base.tiktoken ]; then
+            echo "tiktoken: cl100k table provisioned ($(wc -c < ragflow_deps/cl100k_base.tiktoken) bytes)"
+          else
+            echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
           fi
 
           PKGS=$(go list ./... 2>/dev/null \
@@ -690,16 +701,27 @@ jobs:
           if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
             mkdir -p ragflow_deps
             if command -v curl >/dev/null 2>&1; then
-              curl -fsSL -o ragflow_deps/cl100k_base.tiktoken \
-                https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken || true
+              if curl -fsSL -o ragflow_deps/cl100k_base.tiktoken \
+                https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken; then
+                echo "tiktoken: cl100k table fetched via curl from openai blob"
+              else
+                echo "tiktoken: curl fetch failed (network/GFW); will try cached image"
+              fi
             fi
             if [ ! -f ragflow_deps/cl100k_base.tiktoken ] && docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
               CID=$(docker create infiniflow/ragflow_deps:latest true) || true
               if [ -n "${CID:-}" ]; then
-                docker cp "$CID":/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken 2>/dev/null || true
+                if docker cp "$CID":/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken 2>/dev/null; then
+                  echo "tiktoken: cl100k table copied from cached infiniflow/ragflow_deps image"
+                fi
                 docker rm -f "$CID" >/dev/null 2>&1 || true
               fi
             fi
+          fi
+          if [ -f ragflow_deps/cl100k_base.tiktoken ]; then
+            echo "tiktoken: cl100k table provisioned ($(wc -c < ragflow_deps/cl100k_base.tiktoken) bytes)"
+          else
+            echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
           fi
 
           PKGS=$(go list ./... 2>/dev/null || true)
