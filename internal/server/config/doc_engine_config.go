@@ -115,10 +115,30 @@ func (c *Config) GetElasticsearchConfig() ElasticsearchConfig {
 	return c.docEngine.ES
 }
 
+func (e ElasticsearchConfig) ExportConfigs() map[string]interface{} {
+	var esConfigs map[string]interface{}
+	esConfigs = make(map[string]interface{})
+	esConfigs["hosts"] = e.Hosts
+	esConfigs["username"] = e.Username
+	esConfigs["password"] = e.Password
+	return esConfigs
+}
+
 func (c *Config) IsElasticConfigured() bool {
 	return c.docEngine.ES.Hosts != ""
 }
 
 func (c *Config) GetInfinityConfig() InfinityConfig {
 	return c.docEngine.Infinity
+}
+
+func (i InfinityConfig) ExportConfigs() map[string]interface{} {
+	var infinityConfigs map[string]interface{}
+	infinityConfigs = make(map[string]interface{})
+	infinityConfigs["uri"] = i.URI
+	infinityConfigs["postgres_port"] = i.PostgresPort
+	infinityConfigs["db_name"] = i.DBName
+	infinityConfigs["mapping_file_name"] = i.MappingFileName
+	infinityConfigs["doc_meta_mapping_file_name"] = i.DocMetaMappingFileName
+	return infinityConfigs
 }

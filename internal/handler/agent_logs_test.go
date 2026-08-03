@@ -113,6 +113,7 @@ func TestParseAgentLogs(t *testing.T) {
 func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
+	ctx := t.Context()
 	db := setupHandlerAgentsTestDB(t)
 	orig := dao.DB
 	dao.DB = db
@@ -134,13 +135,13 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 		`{"component_id":"File","trace":[{"progress":1,"message":"parsed","datetime":"10:00:00","timestamp":1.0,"elapsed_time":0}]},` +
 		`{"component_id":"END","trace":[{"progress":1,"message":"done","datetime":"10:00:01","timestamp":2.0,"elapsed_time":1.0}]}` +
 		`]`
-	if err := rdb.Set(context.Background(), logKey, arrayPayload, 0).Err(); err != nil {
+	if err = rdb.Set(ctx, logKey, arrayPayload, 0).Err(); err != nil {
 		t.Fatalf("seed redis: %v", err)
 	}
 
-	h := NewAgentHandler(service.NewAgentService(), nil).
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithRedisGetter(func(key string) (string, error) {
-			return rdb.Get(context.Background(), key).Result()
+			return rdb.Get(ctx, key).Result()
 		})
 
 	run := func(messageID string) map[string]interface{} {
@@ -224,6 +225,7 @@ func clientConsidersComplete(arr []map[string]interface{}) bool {
 // byte-for-byte through JSON round-tripping.
 func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	ctx := t.Context()
 
 	db := setupHandlerAgentsTestDB(t)
 	orig := dao.DB
@@ -246,7 +248,7 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 		`{"component_id":"File","trace":[{"progress":1,"message":"parsed","datetime":"10:00:00","timestamp":1.0,"elapsed_time":0}]},` +
 		`{"component_id":"END","trace":[{"progress":1,"message":"run finished","datetime":"10:00:01","timestamp":2.0,"elapsed_time":1.0}]}` +
 		`]`
-	if err := rdb.Set(context.Background(), "c1-msg-good-logs", goodPayload, 0).Err(); err != nil {
+	if err = rdb.Set(ctx, "c1-msg-good-logs", goodPayload, 0).Err(); err != nil {
 		t.Fatalf("seed redis: %v", err)
 	}
 
@@ -257,13 +259,13 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 		`{"component_id":"File","trace":[{"progress":1,"message":"parsed","datetime":"10:00:00","timestamp":1.0,"elapsed_time":0}]},` +
 		`{"component_id":"END","trace":[{"progress":1,"message":"","datetime":"10:00:01","timestamp":2.0,"elapsed_time":1.0}]}` +
 		`]`
-	if err := rdb.Set(context.Background(), "c1-msg-bad-logs", badPayload, 0).Err(); err != nil {
+	if err = rdb.Set(ctx, "c1-msg-bad-logs", badPayload, 0).Err(); err != nil {
 		t.Fatalf("seed redis: %v", err)
 	}
 
-	h := NewAgentHandler(service.NewAgentService(), nil).
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithRedisGetter(func(key string) (string, error) {
-			return rdb.Get(context.Background(), key).Result()
+			return rdb.Get(ctx, key).Result()
 		})
 
 	call := func(messageID string) []map[string]interface{} {
@@ -310,7 +312,7 @@ type capturedStore struct {
 	data map[string]string
 }
 
-func (s *capturedStore) Set(key, value string, _ time.Duration) bool {
+func (s *capturedStore) Set(ctx context.Context, key, value string, _ time.Duration) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.data == nil {
@@ -320,7 +322,7 @@ func (s *capturedStore) Set(key, value string, _ time.Duration) bool {
 	return true
 }
 
-func (s *capturedStore) get(key string) (string, bool) {
+func (s *capturedStore) Get(ctx context.Context, key string) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v, ok := s.data[key]
@@ -463,10 +465,10 @@ func TestRespondWithDebugResult_ErrorCarriesMessageID(t *testing.T) {
 // before — the failure log was written but unreachable because message_id was
 // dropped on the error path.
 func TestRunCanvasPipelineDebug_ErrorStillExposesMessageID(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := &capturedStore{}
 
-	h := NewAgentHandler(service.NewAgentService(), nil).
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithRedisStore(store).
 		WithNewExecutor(func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {
 			return &fakeDebugExecutor{
@@ -489,7 +491,7 @@ func TestRunCanvasPipelineDebug_ErrorStillExposesMessageID(t *testing.T) {
 
 	// The failure log must be written under the composed key.
 	key := "c1-" + result.MessageID + "-logs"
-	raw, ok := store.get(key)
+	raw, ok := store.Get(ctx, key)
 	if !ok {
 		t.Fatalf("failure log not written under key %q; store keys=%v", key, keysOf(store))
 	}
@@ -511,10 +513,10 @@ func TestRunCanvasPipelineDebug_ErrorStillExposesMessageID(t *testing.T) {
 // satisfy the completion predicate (END last, non-empty END message) so the
 // Log box stops polling.
 func TestRunCanvasPipelineDebug_WiresMessageIDAndLog(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	store := &capturedStore{}
 
-	h := NewAgentHandler(service.NewAgentService(), nil).
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithRedisStore(store).
 		WithNewExecutor(func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {
 			return &fakeDebugExecutor{
@@ -537,7 +539,7 @@ func TestRunCanvasPipelineDebug_WiresMessageIDAndLog(t *testing.T) {
 
 	// The log array must be written under the composed key.
 	key := "c1-" + result.MessageID + "-logs"
-	raw, ok := store.get(key)
+	raw, ok := store.Get(ctx, key)
 	if !ok {
 		t.Fatalf("log not written under key %q; store keys=%v", key, keysOf(store))
 	}
@@ -570,8 +572,8 @@ type miniredisDebugStore struct {
 	rdb *goredis.Client
 }
 
-func (s miniredisDebugStore) Set(key, value string, ttl time.Duration) bool {
-	if err := s.rdb.Set(context.Background(), key, value, ttl).Err(); err != nil {
+func (s miniredisDebugStore) Set(ctx context.Context, key, value string, ttl time.Duration) bool {
+	if err := s.rdb.Set(ctx, key, value, ttl).Err(); err != nil {
 		return false
 	}
 	return true
@@ -589,7 +591,7 @@ func (s miniredisDebugStore) Set(key, value string, ttl time.Duration) bool {
 // seeds Redis directly rather than going through the writer.
 func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	db := setupHandlerAgentsTestDB(t)
 	orig := dao.DB
@@ -608,7 +610,7 @@ func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 	// Both seams point at the same miniredis: the writer stores via
 	// WithRedisStore and the reader fetches via WithRedisGetter, mirroring
 	// production where both hit one Redis.
-	h := NewAgentHandler(service.NewAgentService(), nil).
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithRedisStore(miniredisDebugStore{rdb: rdb}).
 		WithRedisGetter(func(key string) (string, error) {
 			return rdb.Get(ctx, key).Result()

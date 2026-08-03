@@ -28,8 +28,8 @@ type Environments struct {
 
 	SecretKey string `mapstructure:"secret_key"`
 
-	RegisterEnabled      bool `mapstructure:"register_enabled"`
-	DisablePasswordLogin bool `mapstructure:"disable_password_login"`
+	EnableRegister       *bool `mapstructure:"enable_register"`
+	DisablePasswordLogin *bool `mapstructure:"disable_password_login"`
 
 	DocumentEngineType string `mapstructure:"document_engine_type"`
 	DatabaseType       string `mapstructure:"database_type"`
@@ -54,23 +54,27 @@ func (c *Config) GetEnvironments() error {
 		c.environments.SecretKey = envVal
 	}
 
-	// Load REGISTER_ENABLED from environment variable (default: true)
-	if envVal := common.GetEnv(common.EnvRegisterEnabled); envVal != "" {
+	if envVal := common.GetEnv(common.EnvEnableRegister); envVal != "" {
+		if c.environments.EnableRegister == nil {
+			c.environments.EnableRegister = new(bool)
+		}
 		str := strings.ToLower(envVal)
 		if str == "true" || str == "1" || str == "yes" {
-			c.environments.RegisterEnabled = true
+			*c.environments.EnableRegister = true
 		} else {
-			c.environments.RegisterEnabled = false
+			*c.environments.EnableRegister = false
 		}
 	}
 
-	// Load DISABLE_PASSWORD_LOGIN from environment variable (default: false)
 	if envVal := common.GetEnv(common.EnvDisablePasswordLogin); envVal != "" {
+		if c.environments.DisablePasswordLogin == nil {
+			c.environments.DisablePasswordLogin = new(bool)
+		}
 		str := strings.ToLower(envVal)
 		if str == "true" || str == "1" || str == "yes" {
-			c.environments.DisablePasswordLogin = true
+			*c.environments.DisablePasswordLogin = true
 		} else {
-			c.environments.DisablePasswordLogin = false
+			*c.environments.DisablePasswordLogin = false
 		}
 	}
 

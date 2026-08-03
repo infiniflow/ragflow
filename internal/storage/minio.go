@@ -107,6 +107,8 @@ func (m *MinioStorage) resolveBucketAndPath(bucket, fnm string) (string, string)
 	return actualBucket, actualPath
 }
 
+func (m *MinioStorage) Type() string { return "minio" }
+
 // Health checks MinIO service availability
 func (m *MinioStorage) Health() bool {
 	cancelFunction, err := m.client.HealthCheck(time.Second * 5)
