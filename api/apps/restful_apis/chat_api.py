@@ -413,7 +413,7 @@ async def create():
             req["kb_ids"] = kb_ids
             req.pop("dataset_ids", None)
 
-        if "llm_id" not in req and "tenant_llm_id" not in req:
+        if req.get("llm_id") is None and req.get("tenant_llm_id") is None:
             req["llm_id"] = tenant.tenant_llm_id
         if "rerank_id" not in req and "tenant_rerank_id" not in req:
             req["rerank_id"] = ""
