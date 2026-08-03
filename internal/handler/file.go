@@ -105,7 +105,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	orderby := c.DefaultQuery("orderby", "create_time")
 	desc := true
 	if descStr := c.Query("desc"); descStr != "" {
-		desc = descStr != "false"
+		desc = !strings.EqualFold(descStr, "false")
 	}
 
 	ctx := c.Request.Context()

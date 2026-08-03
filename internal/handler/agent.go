@@ -174,7 +174,7 @@ func (h *AgentHandler) WithNewExecutor(f func(taskCtx *task.TaskContext, canvasI
 // @Param keywords query string false "Filter by title keyword"
 // @Param page query int false "Page number (0 = no pagination)"
 // @Param page_size query int false "Items per page (0 = no pagination)"
-// @Param orderby query string false "Order-by field (default: create_time)"
+// @Param orderby query string false "Order-by field (default: update_time for the merged view, create_time otherwise)"
 // @Param desc query bool false "Descending order (default: true)"
 // @Param owner_ids query string false "Comma-separated owner IDs to filter (default: all authorised tenants)"
 // @Param canvas_category query string false "Canvas category (default: agent_canvas)"
@@ -205,8 +205,6 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 		}
 	}
 
-	orderby := c.DefaultQuery("orderby", "create_time")
-
 	desc := true
 	if v := c.Query("desc"); v != "" {
 		desc = strings.ToLower(v) != "false"
@@ -230,6 +228,7 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 			}
 		}
 	}
+	orderby := resolveAgentListOrderBy(c.Query("orderby"), canvasCategory, canvasType, tags)
 	ctx := c.Request.Context()
 
 	result, code, err := h.agentService.ListAgents(
@@ -251,6 +250,19 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, result, "success")
+}
+
+func resolveAgentListOrderBy(requested, canvasCategory, canvasType string, tags []string) string {
+	// The unfiltered page is the merged agent/template-group view, whose visible
+	// ordering key is update_time. Agent-only filtered views retain their
+	// requested key and default to create_time.
+	if canvasCategory == "" && canvasType == "" && len(tags) == 0 {
+		return "update_time"
+	}
+	if requested == "" {
+		return "create_time"
+	}
+	return requested
 }
 
 // mapAgentError normalises service-layer errors onto the existing
@@ -917,8 +929,8 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	keywords := c.Query("keywords")
 	fromDate := c.Query("from_date")
 	toDate := c.Query("to_date")
-	orderby := c.DefaultQuery("orderby", "create_time")
-	desc := c.DefaultQuery("desc", "true") != "false"
+	orderby := c.DefaultQuery("orderby", "update_time")
+	desc := !strings.EqualFold(c.DefaultQuery("desc", "true"), "false")
 	sessionID := c.Query("id")
 	expUserID := c.Query("user_id")
 	includeDSL := c.Query("dsl") == "true"

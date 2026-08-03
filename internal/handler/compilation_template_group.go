@@ -18,6 +18,7 @@ package handler
 
 import (
 	"strconv"
+	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/service"
@@ -67,7 +68,7 @@ func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 	keywords := c.Query("keywords")
 	scope := c.Query("scope")
 	orderby := c.DefaultQuery("orderby", "create_time")
-	desc := c.DefaultQuery("desc", "true") != "false"
+	desc := !strings.EqualFold(c.DefaultQuery("desc", "true"), "false")
 
 	groups, err := h.compilationTemplateGroupService.ListSaved(c.Request.Context(), user.ID, keywords, scope, orderby, desc)
 	if err != nil {

@@ -81,6 +81,160 @@ func setupGinContextWithUserAndDB(t *testing.T, method, path string) (*gin.Conte
 	return c, w, db
 }
 
+func TestResolveAgentListOrderBy(t *testing.T) {
+	tests := []struct {
+		name           string
+		requested      string
+		canvasCategory string
+		canvasType     string
+		tags           []string
+		want           string
+	}{
+		{name: "merged view defaults to update time", want: "update_time"},
+		{name: "merged view always uses update time", requested: "create_time", want: "update_time"},
+		{name: "category filter defaults to create time", canvasCategory: "agent_canvas", want: "create_time"},
+		{name: "type filter defaults to create time", canvasType: "pipeline", want: "create_time"},
+		{name: "tag filter defaults to create time", tags: []string{"reviewed"}, want: "create_time"},
+		{name: "filtered view preserves requested key", requested: "title", canvasCategory: "agent_canvas", want: "title"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := resolveAgentListOrderBy(test.requested, test.canvasCategory, test.canvasType, test.tags)
+			if got != test.want {
+				t.Fatalf("resolveAgentListOrderBy() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestListAgentsDefaultsToUpdateTimeInMergedView(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents")
+	createdLater := int64(3000)
+	createdEarlier := int64(1000)
+	updatedLater := int64(4000)
+	updatedEarlier := int64(2000)
+	rows := []*entity.UserCanvas{
+		{
+			ID:             "created-later",
+			UserID:         "user-1",
+			Title:          sptr("Created Later"),
+			Permission:     "me",
+			CanvasCategory: "agent_canvas",
+			BaseModel: entity.BaseModel{
+				CreateTime: &createdLater,
+				UpdateTime: &updatedEarlier,
+			},
+		},
+		{
+			ID:             "updated-later",
+			UserID:         "user-1",
+			Title:          sptr("Updated Later"),
+			Permission:     "me",
+			CanvasCategory: "agent_canvas",
+			BaseModel: entity.BaseModel{
+				CreateTime: &createdEarlier,
+				UpdateTime: &updatedLater,
+			},
+		},
+	}
+	if err := db.Create(rows).Error; err != nil {
+		t.Fatalf("create canvases: %v", err)
+	}
+
+	h := NewAgentHandler(t.Context(), service.NewAgentService(), nil)
+	h.ListAgents(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Code int `json:"code"`
+		Data struct {
+			Canvas []struct {
+				ID string `json:"id"`
+			} `json:"canvas"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Code != int(common.CodeSuccess) {
+		t.Fatalf("code = %d, body = %s", response.Code, w.Body.String())
+	}
+	if len(response.Data.Canvas) != 2 {
+		t.Fatalf("canvas count = %d, want 2", len(response.Data.Canvas))
+	}
+	if response.Data.Canvas[0].ID != "updated-later" {
+		t.Fatalf("first canvas = %q, want updated-later", response.Data.Canvas[0].ID)
+	}
+}
+
+func TestListAgentSessionsDefaultsToUpdateTime(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodGet, "/api/v1/agents/canvas-1/sessions")
+	c.Params = gin.Params{{Key: "canvas_id", Value: "canvas-1"}}
+	if err := db.Create(&entity.UserCanvas{
+		ID:             "canvas-1",
+		UserID:         "user-1",
+		Title:          sptr("Agent"),
+		Permission:     "me",
+		CanvasCategory: "agent_canvas",
+	}).Error; err != nil {
+		t.Fatalf("create canvas: %v", err)
+	}
+
+	createdLater := int64(3000)
+	createdEarlier := int64(1000)
+	updatedLater := int64(4000)
+	updatedEarlier := int64(2000)
+	sessions := []*entity.API4Conversation{
+		{
+			ID:        "created-later",
+			DialogID:  "canvas-1",
+			UserID:    "user-1",
+			Message:   json.RawMessage(`[]`),
+			Reference: json.RawMessage(`[]`),
+			BaseModel: entity.BaseModel{CreateTime: &createdLater, UpdateTime: &updatedEarlier},
+		},
+		{
+			ID:        "updated-later",
+			DialogID:  "canvas-1",
+			UserID:    "user-1",
+			Message:   json.RawMessage(`[]`),
+			Reference: json.RawMessage(`[]`),
+			BaseModel: entity.BaseModel{CreateTime: &createdEarlier, UpdateTime: &updatedLater},
+		},
+	}
+	if err := db.Create(sessions).Error; err != nil {
+		t.Fatalf("create sessions: %v", err)
+	}
+
+	h := NewAgentHandler(t.Context(), service.NewAgentService(), nil)
+	h.ListAgentSessions(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Code int `json:"code"`
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if response.Code != int(common.CodeSuccess) {
+		t.Fatalf("code = %d, body = %s", response.Code, w.Body.String())
+	}
+	if len(response.Data) != 2 {
+		t.Fatalf("session count = %d, want 2", len(response.Data))
+	}
+	if response.Data[0].ID != "updated-later" {
+		t.Fatalf("first session = %q, want updated-later", response.Data[0].ID)
+	}
+}
+
 // TestListAgentVersionsHandler_Success verifies the happy path with real DB.
 func TestListAgentVersionsHandler_Success(t *testing.T) {
 	c, w, db := setupGinContextWithUserAndDB(t, "GET", "/api/v1/agents/canvas-1/versions")

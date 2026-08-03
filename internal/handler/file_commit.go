@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -214,7 +215,7 @@ func (h *FileCommitHandler) ListCommits(c *gin.Context) {
 	orderBy := c.DefaultQuery("order_by", "create_time")
 	desc := true
 	if descStr := c.Query("desc"); descStr != "" {
-		desc = descStr != "false"
+		desc = !strings.EqualFold(descStr, "false")
 	}
 
 	ctx := c.Request.Context()

@@ -111,7 +111,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 
 	desc := true
 	if descStr := c.Query("desc"); descStr != "" {
-		desc = descStr != "false"
+		desc = !strings.EqualFold(descStr, "false")
 	}
 
 	ownerIDs := getOwnerIDs(c)
