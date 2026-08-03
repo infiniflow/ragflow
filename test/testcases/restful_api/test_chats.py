@@ -765,6 +765,15 @@ def _load_chat_routes_unit_module(monkeypatch):
 
     tenant_model_service_mod = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_service_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
+
+    def _get_model_config_by_id(_tenant_id, _model_type, model_ref):
+        if model_ref == "tenant-llm-id":
+            return {}
+        raise LookupError(f"unknown tenant model id: {model_ref}")
+
+    tenant_model_service_mod.get_model_config_by_id = _get_model_config_by_id
+    tenant_model_service_mod.resolve_model_id = lambda _tenant_id, _model_type, model_name: model_name
+    tenant_model_service_mod.get_composite_model_name_by_id = lambda model_id: model_id
     tenant_model_service_mod.resolve_model_config = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
     tenant_model_service_mod.get_api_key = lambda *_args, **_kwargs: SimpleNamespace(id=1)
@@ -1149,11 +1158,11 @@ def test_chat_create_accepts_provider_scoped_rerank_id_unit(monkeypatch):
     monkeypatch.setattr(module.KnowledgebaseService, "query", lambda **_kwargs: [_DummyKB()])
     monkeypatch.setattr(module.KnowledgebaseService, "get_by_id", lambda _id: (True, _DummyKB()))
 
-    def _get_model_config_from_provider_instance(**kwargs):
-        query_calls.append(kwargs)
-        return {}
+    def _resolve_model_id(tenant_id, model_type, model_name):
+        query_calls.append({"tenant_id": tenant_id, "model_ref": model_name, "model_type": model_type})
+        return model_name
 
-    monkeypatch.setattr(module, "resolve_model_config", _get_model_config_from_provider_instance)
+    monkeypatch.setattr(module, "resolve_model_id", _resolve_model_id)
 
     def _save(**kwargs):
         saved.update(kwargs)
