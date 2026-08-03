@@ -174,6 +174,28 @@ func TestLocalBpeLoader_RejectsMalformedTable(t *testing.T) {
 	}
 }
 
+// A candidate that exists but cannot be read as a file must surface as a read
+// error rather than being skipped as "missing". LoadTiktokenBpe only continues
+// past os.IsNotExist; a directory at the candidate path fails ReadFile with a
+// distinct error, which this test pins to the read-error path.
+func TestLocalBpeLoader_ReadErrorIsReported(t *testing.T) {
+	dir := isolate(t)
+	// A directory at the sha1-named candidate path exists but is not a
+	// regular file, so os.ReadFile fails with a non-IsNotExist error.
+	candidate := filepath.Join(dir, cacheFileName(testBpeURL))
+	if err := os.Mkdir(candidate, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	_, err := localBpeLoader{}.LoadTiktokenBpe(testBpeURL)
+	if err == nil {
+		t.Fatal("expected a read error for a non-file candidate, got nil")
+	}
+	if strings.Contains(err.Error(), "no local BPE table") {
+		t.Errorf("read error was masked as not-found: %v", err)
+	}
+}
+
 // TestNumTokensFromString_MatchesPythonAnchors pins exact counts taken from the
 // Python reference suite (test/unit_test/common/test_token_utils.py:28-49) and
 // from common.token_utils.num_tokens_from_string for the CJK cases.

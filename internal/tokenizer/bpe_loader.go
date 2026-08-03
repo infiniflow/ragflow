@@ -18,31 +18,13 @@ package tokenizer
 
 // Offline BPE table loading for tiktoken.
 //
-// tiktoken-go's stock loader fetches the encoding table over HTTP and caches it
-// under TIKTOKEN_CACHE_DIR, falling back to os.TempDir()/data-gym-cache. Neither
-// works for RAGFlow:
-//
-//   - The variable is exported only inside the Python process, by
-//     common/token_utils.py. docker/entrypoint.sh starts bin/ragflow_server from
-//     a shell, so the Go process never inherits it.
-//   - The Dockerfile does ship the table — it lands in the working directory
-//     under its sha1 name — but nothing tells the Go side to look there.
-//   - Reaching openaipublic.blob.core.windows.net at runtime is not an option
-//     for air-gapped installs, and is unreliable in regions where that host is
-//     blocked.
-//
-// The consequence was silent rather than loud. NumTokensFromString returns 0
-// when the encoder fails to build, and the failure is memoised by a sync.Once,
-// so a single miss at startup makes every token count zero for the lifetime of
-// the process. Chunk merging then never crosses its token budget and an entire
-// document collapses into one chunk.
-//
-// Python does not have this failure mode: its encoder is built at import time,
-// so a missing table aborts startup instead of degrading silently.
-//
-// This loader closes the gap by resolving the table from disk only. It never
-// performs I/O over the network, and when nothing is found it reports every
-// path it tried.
+// RAGFlow ships the cl100k_base table on disk (Dockerfile drops it into the
+// working directory under its sha1 name; download_deps.py writes it to
+// ragflow_deps/). tiktoken-go's stock loader instead downloads it over HTTP and
+// relies on TIKTOKEN_CACHE_DIR, which the Go server never inherits, so a
+// missing table degrades every token count to 0. This loader resolves the
+// table from disk only: it performs no network I/O, and when nothing is found
+// it reports every path it tried.
 
 import (
 	"crypto/sha1"
@@ -75,7 +57,12 @@ func (localBpeLoader) LoadTiktokenBpe(bpeURL string) (map[string]int, error) {
 	for _, candidate := range candidates {
 		contents, err := os.ReadFile(candidate)
 		if err != nil {
-			continue
+			// Only a missing candidate is skippable; a permission or I/O
+			// failure must not be masked as "not found".
+			if os.IsNotExist(err) {
+				continue
+			}
+			return nil, fmt.Errorf("reading BPE table %s: %w", candidate, err)
 		}
 		ranks, err := parseBpeTable(contents)
 		if err != nil {
@@ -178,6 +165,7 @@ func startingDirs() []string {
 func parseBpeTable(contents []byte) (map[string]int, error) {
 	ranks := make(map[string]int)
 	for i, line := range strings.Split(string(contents), "\n") {
+		line = strings.TrimRight(line, "\r")
 		if line == "" {
 			continue
 		}
