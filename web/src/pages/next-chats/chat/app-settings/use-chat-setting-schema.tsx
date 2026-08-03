@@ -26,7 +26,7 @@ export function useChatSettingSchema() {
     parameters: z
       .array(
         z.object({
-          key: z.string(),
+          key: z.string().min(1, { message: t('variableKeyMessage') }),
           optional: z.boolean(),
         }),
       )
