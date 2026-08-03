@@ -132,7 +132,6 @@
         "wan-2-6"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -142,7 +141,6 @@
         "wan2-7"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -340,19 +338,16 @@
     {
       "name": "animate-anyone-detect-gen2",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "animate-anyone-gen2",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "animate-anyone-template-gen2",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -1948,7 +1943,6 @@
         "nava"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -2518,7 +2512,6 @@
         "video_eraser"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -2527,7 +2520,6 @@
         "video_foreground_mask"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -2536,7 +2528,6 @@
         "video_increase_resolution"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -2545,7 +2536,6 @@
         "video_mask_by_key_points"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -2554,7 +2544,6 @@
         "video_mask_by_prompt"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -2563,7 +2552,6 @@
         "video_remove_background"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -2713,7 +2701,6 @@
         "ByteDance Seedance 1.0 Lite"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -2723,7 +2710,6 @@
         "ByteDance Seedance 1.0 Pro"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -2732,7 +2718,6 @@
         "Seedance-1.5-Pro"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -2742,7 +2727,6 @@
         "ByteDance Seedance 2.0"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -2849,7 +2833,6 @@
         "doubao-seedance-1-5-pro-251215"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -2896,7 +2879,6 @@
         "doubao-seedance-2-0"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -2965,8 +2947,7 @@
         "dreamina-seedance-2-0-260128"
       ],
       "model_types": [
-        "chat",
-        "video_generation"
+        "chat"
       ]
     },
     {
@@ -3111,7 +3092,6 @@
     {
       "name": "chanjing-video",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -3525,7 +3505,6 @@
     {
       "name": "cogvideox",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -5755,7 +5734,6 @@
         "doubao-seaweed"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -6051,7 +6029,6 @@
     {
       "name": "doubao-seedance-1-0-lite-i2v-250428",
       "model_types": [
-        "video_generation"
       ],
       "alias": [
         "doubao-seedance-1-0-lite-i2v"
@@ -6060,7 +6037,6 @@
     {
       "name": "doubao-seedance-1-0-lite-t2v-250428",
       "model_types": [
-        "video_generation"
       ],
       "alias": [
         "doubao-seedance-1-0-lite-t2v"
@@ -6069,7 +6045,6 @@
     {
       "name": "doubao-seedance-1-0-pro-250528",
       "model_types": [
-        "video_generation"
       ],
       "alias": [
         "doubao-seedance-1-0-pro"
@@ -6078,7 +6053,6 @@
     {
       "name": "doubao-seedance-1-0-pro-fast-251015",
       "model_types": [
-        "video_generation"
       ],
       "alias": [
         "doubao-seedance-1-0-pro-fast"
@@ -6087,14 +6061,12 @@
     {
       "name": "doubao-seedance-2-0-260128",
       "model_types": [
-        "video_generation"
       ],
       "alias": []
     },
     {
       "name": "doubao-seedance-2-0-fast-260128",
       "model_types": [
-        "video_generation"
       ],
       "alias": [
         "doubao-seedance-2-0-fast"
@@ -6205,7 +6177,6 @@
     {
       "name": "dreamina-seedance-2-0-fast-260128",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -6232,13 +6203,11 @@
     {
       "name": "emo-detect-v1",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "emo-v1",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -6433,7 +6402,6 @@
         "LTX2-Distilled-Diffusers"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -7151,7 +7119,6 @@
         "chat",
         "vision",
         "image2text",
-        "video_generation",
         "speech2text"
       ]
     },
@@ -8756,7 +8723,6 @@
         "gemini-omni-fast"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -9923,7 +9889,6 @@
         "veo-3.1-fast-generate-preview"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -9933,7 +9898,6 @@
         "veo-3.1-generate-preview"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -9943,7 +9907,6 @@
         "veo-3.1-lite-generate-preview"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -9952,7 +9915,6 @@
         "veo3"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -9961,7 +9923,6 @@
         "veo3-fast"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -9971,7 +9932,6 @@
         "veo3-1"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -9981,7 +9941,6 @@
         "veo3-1-fast"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -9991,7 +9950,6 @@
         "veo-4"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -10433,8 +10391,7 @@
     {
       "name": "gpt-4o-realtime-preview-2024-10-01",
       "model_types": [
-        "chat",
-        "video_generation"
+        "chat"
       ]
     },
     {
@@ -10903,7 +10860,6 @@
     {
       "name": "gpt-audio-2025-08-28",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -10990,8 +10946,7 @@
       "name": "gpt-realtime-2025-08-28",
       "max_tokens": 32000,
       "model_types": [
-        "chat",
-        "video_generation"
+        "chat"
       ]
     },
     {
@@ -11191,7 +11146,6 @@
     {
       "name": "grok-imagine-video-1.5-preview",
       "model_types": [
-        "video_generation"
       ],
       "alias": [
         "xai/grok-imagine-video-1.5-preview",
@@ -11201,13 +11155,11 @@
     {
       "name": "grok-video-3",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "grok-video-3-10s",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -11272,7 +11224,6 @@
     {
       "name": "happyhorse-1.0-i2v",
       "model_types": [
-        "video_generation"
       ],
       "alias": [
         "alibaba/happyhorse-1.0-i2v",
@@ -11282,7 +11233,6 @@
     {
       "name": "happyhorse-1.0-r2v",
       "model_types": [
-        "video_generation"
       ],
       "alias": [
         "alibaba/happyhorse-1.0-r2v",
@@ -11292,7 +11242,6 @@
     {
       "name": "happyhorse-1.0-t2v",
       "model_types": [
-        "video_generation"
       ],
       "alias": [
         "alibaba/happyhorse-1.0-t2v",
@@ -11302,7 +11251,6 @@
     {
       "name": "happyhorse-1.0-video-edit",
       "model_types": [
-        "video_generation",
         "video_understanding"
       ]
     },
@@ -11543,19 +11491,16 @@
     {
       "name": "I2V-01",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "I2V-01-Director",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "I2V-01-live",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14001,7 +13946,6 @@
     {
       "name": "kimi-k2.7-code",
       "model_types": [
-        "video_generation",
         "chat",
         "vision",
         "image2text"
@@ -14048,25 +13992,21 @@
     {
       "name": "Kling-3.0",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "Kling-3.0-Omni",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "kling-advanced-custom-elements",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "kling-advanced-lip-sync",
       "model_types": [
-        "video_generation",
         "video_understanding"
       ]
     },
@@ -14079,14 +14019,12 @@
     {
       "name": "kling-avatar-image2video",
       "model_types": [
-        "video_generation",
         "video_understanding"
       ]
     },
     {
       "name": "kling-custom-elements",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14098,7 +14036,6 @@
     {
       "name": "kling-effects",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14129,21 +14066,18 @@
     {
       "name": "kling-motion-control",
       "model_types": [
-        "video_generation",
         "video_understanding"
       ]
     },
     {
       "name": "kling-multi-elements",
       "model_types": [
-        "video_generation",
         "video_understanding"
       ]
     },
     {
       "name": "Kling-O1",
       "model_types": [
-        "video_generation"
       ],
       "thinking": {
         "default_value": true,
@@ -14160,7 +14094,6 @@
     {
       "name": "kling-omni-video",
       "model_types": [
-        "video_generation"
       ],
       "thinking": {
         "default_value": true,
@@ -14239,7 +14172,6 @@
     {
       "name": "kling-video",
       "model_types": [
-        "video_generation"
       ],
       "thinking": {
         "default_value": true,
@@ -14249,7 +14181,6 @@
     {
       "name": "kling-video-extend",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14287,7 +14218,6 @@
         "kling-advanced-lip-syn"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14307,7 +14237,6 @@
         "kling-audio-video-to-audio"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14316,7 +14245,6 @@
         "kling_avatar_image2video"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14325,7 +14253,6 @@
         "kling_effects"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14334,7 +14261,6 @@
         "kling_extend"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14344,7 +14270,6 @@
         "kling-identify-face"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14373,7 +14298,6 @@
         "kling_image_recognize"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14383,7 +14307,6 @@
         "kling-multi-elements-submit"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14413,7 +14336,6 @@
         "kling_video"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14471,7 +14393,6 @@
         "Kling 1.6 Pro"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14481,7 +14402,6 @@
         "Kling 1.6 Standard"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14491,7 +14411,6 @@
         "Kling 2.0 Master"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14501,7 +14420,6 @@
         "Kling 2.1 Master"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14511,7 +14429,6 @@
         "Kling 2.1 Pro"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14521,7 +14438,6 @@
         "Kling 2.1 Standard"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -14569,13 +14485,11 @@
     {
       "name": "liveportrait",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "liveportrait-detect",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -15028,7 +14942,6 @@
         "LongCat-Video"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -15037,7 +14950,6 @@
         "LongCat-Video-Avatar"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -15046,7 +14958,6 @@
         "LongCat-Video-Avatar-1.5"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -16293,7 +16204,6 @@
         "mj-fast-video"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -16537,8 +16447,7 @@
       "model_types": [
         "chat",
         "image2text",
-        "vision",
-        "video_generation"
+        "vision"
       ],
       "alias": [
         "XiaomiMiMo/MiMo-V2.5"
@@ -16584,7 +16493,6 @@
         "MiniMax Hailuo 02"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -16594,7 +16502,6 @@
         "happy-horse-1-0"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -16684,7 +16591,6 @@
         "minimax-video-01"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -16694,7 +16600,6 @@
         "MiniMax 01 Director"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -16717,14 +16622,12 @@
     {
       "name": "MiniMax-Hailuo-02",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "MiniMax-Hailuo-2.3",
       "model_types": [
         "chat",
-        "video_generation",
         "video_understanding"
       ]
     },
@@ -17094,19 +16997,16 @@
     {
       "name": "minimaxi_text2voice",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "minimaxi_video-01",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "minimaxi_video-01-live2d",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -17820,7 +17720,6 @@
         "mj-video"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -18061,8 +17960,7 @@
       "model_types": [
         "chat",
         "vision",
-        "image2text",
-        "video_generation"
+        "image2text"
       ],
       "max_tokens": 262144,
       "thinking": {
@@ -20056,7 +19954,6 @@
         "cosmos-predict2.5-14b"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -20065,7 +19962,6 @@
         "Cosmos-Predict2.5-2B"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -20103,7 +19999,6 @@
         "cosmos-transfer-lidargen"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -20112,7 +20007,6 @@
         "cosmos-transfer1-7b"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -20121,7 +20015,6 @@
         "Cosmos-Transfer2.5-2B"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -20130,7 +20023,6 @@
         "Cosmos3-Nano"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -20139,8 +20031,7 @@
         "Cosmos3-Super"
       ],
       "model_types": [
-        "other",
-        "video_generation"
+        "other"
       ]
     },
     {
@@ -20187,7 +20078,6 @@
         "DreamDojo"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -21541,7 +21431,6 @@
         "NVILA-8B-HD-Video"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -21559,7 +21448,6 @@
         "omni-dreams-models"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -23541,7 +23429,6 @@
       "name": "openai/sora-2",
       "alias": [],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -23551,7 +23438,6 @@
         "Sora 2 Pro"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -24458,7 +24344,6 @@
         "Pixverse-6-I2V"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -24467,7 +24352,6 @@
         "Pixverse-6-T2V"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -24476,7 +24360,6 @@
         "Pixverse-T2V"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -24485,7 +24368,6 @@
         "Pixverse-T2V-HD"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -24495,7 +24377,6 @@
         "PixVerse v6"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -24505,7 +24386,6 @@
         "PixVerse v5.6"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -24515,13 +24395,11 @@
         "PixVerse v5"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "pixverse-image-template",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -24533,35 +24411,30 @@
     {
       "name": "pixverse-mask-selection",
       "model_types": [
-        "video_generation",
         "video_understanding"
       ]
     },
     {
       "name": "pixverse-mimic",
       "model_types": [
-        "video_generation",
         "video_understanding"
       ]
     },
     {
       "name": "pixverse-modify",
       "model_types": [
-        "video_generation",
         "video_understanding"
       ]
     },
     {
       "name": "pixverse-multi-transition",
       "model_types": [
-        "video_generation",
         "video_understanding"
       ]
     },
     {
       "name": "pixverse-restyle",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -24573,7 +24446,6 @@
     {
       "name": "pixverse-swap",
       "model_types": [
-        "video_generation",
         "video_understanding"
       ]
     },
@@ -24586,7 +24458,6 @@
     {
       "name": "pixverse-video",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -24767,7 +24638,6 @@
         "p-video"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -24776,7 +24646,6 @@
         "p-video-avatar"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -25136,8 +25005,7 @@
         "chat",
         "image2text",
         "vision",
-        "video_understanding",
-        "video_generation"
+        "video_understanding"
       ],
       "max_tokens": 262144,
       "thinking": {
@@ -25492,8 +25360,7 @@
         "chat",
         "image2text",
         "vision",
-        "video_understanding",
-        "video_generation"
+        "video_understanding"
       ],
       "max_tokens": 262144,
       "thinking": {
@@ -28023,8 +27890,7 @@
         "chat",
         "image2text",
         "vision",
-        "ocr",
-        "video_generation"
+        "ocr"
       ],
       "max_tokens": 262144,
       "thinking": {
@@ -28069,8 +27935,7 @@
       "model_types": [
         "chat",
         "image2text",
-        "vision",
-        "video_generation"
+        "vision"
       ],
       "max_tokens": 262144,
       "thinking": {
@@ -28166,8 +28031,7 @@
         "qwen3-vl-32b-thinking"
       ],
       "model_types": [
-        "chat",
-        "video_generation"
+        "chat"
       ],
       "max_tokens": 262144,
       "thinking": {
@@ -28299,8 +28163,7 @@
       "model_types": [
         "chat",
         "image2text",
-        "vision",
-        "video_generation"
+        "vision"
       ],
       "max_tokens": 262144,
       "thinking": {
@@ -28345,8 +28208,7 @@
       "model_types": [
         "chat",
         "image2text",
-        "vision",
-        "video_generation"
+        "vision"
       ],
       "max_tokens": 262144,
       "thinking": {
@@ -28435,8 +28297,7 @@
         "chat",
         "image2text",
         "vision",
-        "video_understanding",
-        "video_generation"
+        "video_understanding"
       ],
       "thinking": {
         "default_value": true,
@@ -32715,7 +32576,6 @@
         "runway-act-one"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -32725,7 +32585,6 @@
         "runway-video"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -32735,7 +32594,6 @@
         "runway-video2video"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -32745,7 +32603,6 @@
         "runwayml-character-performance"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -32755,7 +32612,6 @@
         "runwayml-image-to-video"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -32776,7 +32632,6 @@
         "runwayml-upscale-video"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -32786,7 +32641,6 @@
         "runwayml-video-to-video"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -33003,25 +32857,21 @@
     {
       "name": "Seedance 2.0",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "seedance-1-0-pro-250528",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "seedance-1-0-pro-fast-251015",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "seedance-1-5-pro-251215",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -33226,7 +33076,6 @@
         "viduq3"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -33236,7 +33085,6 @@
         "viduq3-turbo"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -33756,8 +33604,7 @@
       "name": "sora-2",
       "max_tokens": 60000,
       "model_types": [
-        "chat",
-        "video_generation"
+        "chat"
       ],
       "alias": [
         "Sora 2"
@@ -34556,7 +34403,6 @@
         "suno-concat-open"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -34565,7 +34411,6 @@
         "suno-lyrics-open"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -34583,7 +34428,6 @@
         "suno-persona-open"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -34592,7 +34436,6 @@
         "suno-upload-open"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -34610,7 +34453,6 @@
         "suno-upsample-tags"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -34619,7 +34461,6 @@
         "suno-upsample-open"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -34646,13 +34487,11 @@
     {
       "name": "T2V-01",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "T2V-01-Director",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -35044,7 +34883,6 @@
         "Hunyuan-GameCraft-1.0"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -35215,7 +35053,6 @@
         "HunyuanCustom"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -35277,7 +35114,6 @@
         "HunyuanPortrait"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -35286,7 +35122,6 @@
         "HunyuanVideo"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -35295,7 +35130,6 @@
         "HunyuanVideo-1.5"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -35304,7 +35138,6 @@
         "HunyuanVideo-Avatar"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -35322,7 +35155,6 @@
         "HunyuanVideo-I2V"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -35359,7 +35191,6 @@
         "HunyuanWorld-Voyager"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -35643,7 +35474,6 @@
         "HY-OmniWeaving"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -35652,7 +35482,6 @@
         "HY-Video-PRFL"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -35670,7 +35499,6 @@
         "HY-WorldPlay"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -35741,7 +35569,6 @@
         "MimicMotion"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -36406,7 +36233,6 @@
         "Vidu 2.0"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -36416,7 +36242,6 @@
         "Vidu Q1"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -36425,7 +36250,6 @@
         "Vidu Q3"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -36434,7 +36258,6 @@
         "Vidu Q3 Turbo"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -36446,19 +36269,16 @@
     {
       "name": "vidu2.0",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "viduq1",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "viduq1-classic",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -36472,26 +36292,22 @@
     {
       "name": "viduq2-pro",
       "model_types": [
-        "video_generation",
         "video_understanding"
       ]
     },
     {
       "name": "viduq2-turbo",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "viduq3-mix",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "viduq3-pro",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -36906,7 +36722,6 @@
         "Wan 2.7 R2V"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -36915,7 +36730,6 @@
         "Wan2.1-T2V-1.3B"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -36924,7 +36738,6 @@
         "Wan2.1-T2V-14B"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -36934,7 +36747,6 @@
         "Wan 2.2 I2V"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -36944,7 +36756,6 @@
         "Wan 2.2 T2V"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -36953,7 +36764,6 @@
         "Wan2.6-I2V"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -36993,7 +36803,6 @@
         "Wan2.6-T2V"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -37003,7 +36812,6 @@
         "Wan 2.7 I2V"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -37023,7 +36831,6 @@
         "Wan 2.7 T2V"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -37034,31 +36841,26 @@
         "wan2-1-14b-flf2v-250417"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "wan2.2-animate-mix",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "wan2.2-animate-move",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "wan2.2-kf2v-flash",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "wan2.2-t2v-plus",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -37071,31 +36873,26 @@
     {
       "name": "wan2.5-i2v-preview",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "wan2.6-i2v-flash",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "wan2.6-i2v-us",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "wan2.6-r2v",
       "model_types": [
-        "video_generation"
       ]
     },
     {
       "name": "wan2.6-r2v-flash",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -37117,7 +36914,6 @@
     {
       "name": "wan2.7-videoedit",
       "model_types": [
-        "video_generation"
       ]
     },
     {
@@ -37377,7 +37173,6 @@
         "xai/grok-imagine-video"
       ],
       "model_types": [
-        "video_generation"
       ]
     },
     {

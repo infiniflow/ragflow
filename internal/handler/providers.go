@@ -154,7 +154,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		return
 	}
 
-	// 1. Get static models from config (may be nil when models list is empty)
+	// 1. Get static models from config (maybe nil when models list is empty)
 	staticModels, _ := dao.GetModelProviderManager().ListModels(providerName)
 	if staticModels == nil {
 		staticModels = []map[string]interface{}{}
@@ -179,7 +179,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 				if liveModels, err := driver.ListModels(c.Request.Context(), apiConfig); err == nil {
 					for _, m := range liveModels {
 						remoteModels = append(remoteModels, map[string]interface{}{
-							"name":        m.Name,
+							"name":        m.ModelName,
 							"model_types": m.ModelTypes,
 							"max_tokens":  m.MaxTokens,
 						})

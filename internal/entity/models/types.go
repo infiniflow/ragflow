@@ -106,6 +106,7 @@ type OCRFileResponse struct {
 
 type ListModelResponse struct {
 	Name         string         `json:"name"`
+	ModelName    string         `json:"modelName"`
 	MaxTokens    *int           `json:"max_tokens"`
 	ModelTypes   []string       `json:"model_types"`
 	Thinking     *ModelThinking `json:"thinking"`
