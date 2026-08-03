@@ -18,11 +18,10 @@ import (
 type Variant string
 
 const (
-	VariantStructure  Variant = "structure"
-	VariantWiki       Variant = "wiki"
-	VariantTree       Variant = "tree"
-	VariantMindmap    Variant = "mindmap"
-	VariantDatasetnav Variant = "datasetnav"
+	VariantStructure Variant = "structure"
+	VariantWiki      Variant = "wiki"
+	VariantTree      Variant = "tree"
+	VariantMindmap   Variant = "mindmap"
 )
 
 // Sentinel errors.
@@ -189,10 +188,13 @@ func ParseParam(m map[string]any) (Param, error) {
 //	knowledge_graph                 ->
 //
 // The canonical variant names are also accepted as identity (so a template kind
-// may equal the variant, e.g. "datasetnav" which has no Python kind, and the
-// internal unit tests can drive each variant through a template id). Unknown
-// kinds return ErrUnknownVariant; the caller turns that into a hard failure
-// rather than silently emitting uncompiled rows.
+// may equal the variant). Unknown kinds return ErrUnknownVariant; the caller
+// turns that into a hard failure rather than silently emitting uncompiled rows.
+//
+// Note: "datasetnav"/"dataset_nav" intentionally has NO mapping here — dataset
+// navigation is not an independent compile kind in Python; it is a by-product
+// written after tree/page_index compilation via internal/service datasetnav
+// (see tasks/agentic_search_port_plan.md).
 func KindToVariant(kind string) (Variant, error) {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "tree":
@@ -201,8 +203,6 @@ func KindToVariant(kind string) (Variant, error) {
 		return VariantMindmap, nil
 	case "wiki":
 		return VariantWiki, nil
-	case "datasetnav", "dataset_nav":
-		return VariantDatasetnav, nil
 	case "page_index", "session_essence", "session_graph", "timeline",
 		"knowledge_graph", "structure", "knowledgegraph", "graph":
 		return VariantStructure, nil

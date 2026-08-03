@@ -152,10 +152,13 @@ export function NextMessageInput({
   }, []);
 
   const submit = React.useCallback(() => {
-    if (isUploading || sendLoading) return;
+    // Mirror the send button's disabled condition so pressing Enter with an
+    // empty message does nothing — previously it cleared the uploaded file
+    // list without sending anything.
+    if (sendDisabled || isUploading || sendLoading || !value.trim()) return;
     pressEnter();
     setFiles([]);
-  }, [isUploading, sendLoading, pressEnter]);
+  }, [sendDisabled, isUploading, sendLoading, value, pressEnter]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {

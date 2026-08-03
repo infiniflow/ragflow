@@ -214,6 +214,7 @@ func (b *BaseModel) doStreamRequest(ctx context.Context, url string, apiConfig *
 	if err != nil {
 		return err
 	}
+	req.Header.Set("Accept", "text/event-stream")
 
 	resp, err := b.httpClient.Do(req)
 	if err != nil {
