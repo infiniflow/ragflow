@@ -86,7 +86,7 @@ from .structure import (
 # ---------------------------------------------------------------------------
 
 WIKI_MAP_COMPILE_KWD = "wiki_map_extract"
-DEFAULT_WIKI_MAP_WORKERS = 6
+DEFAULT_WIKI_MAP_WORKERS = 20
 DEFAULT_WIKI_MAP_TIMEOUT = 600
 
 
@@ -838,13 +838,14 @@ async def _wiki_extract_one_batch(
         chunk_id_list="\n".join(f"- {label}" for label in labels),
         packed_chunks=body,
     )
+    request_conf = _knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1})
     try:
         res = await asyncio.wait_for(
             gen_json(
                 WIKI_MAP_SYSTEM,
                 user_prompt,
                 chat_mdl,
-                gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.1}),
+                gen_conf=request_conf,
             ),
             timeout=llm_timeout,
         )
@@ -958,7 +959,8 @@ async def wiki_map_from_chunks(
             extracted item via ``chunk_ids``.
         tenant_id, kb_id: address the doc-store index for resume reads + writes.
         language: reserved for future prompt localization.
-        max_workers: maximum concurrent batches. Defaults to 6.
+        max_workers: maximum concurrent batches. Defaults to 20, matching the
+            task-scoped Wiki LLM pool used by the task executor.
         llm_timeout: seconds per batch extraction call.
         callback: optional ``(progress: float, msg: str)`` progress callback.
         parser_config: optional YAML-style config (same shape that
@@ -974,7 +976,6 @@ async def wiki_map_from_chunks(
         performed here — that is the REDUCE phase's responsibility.
     """
     _ = embd_mdl  # noqa: F841 — accepted for symmetry with downstream phases
-
     if not chunks:
         # Even with zero chunks we still want to sweep any orphaned MAP
         # rows that point at chunks the doc no longer has — otherwise
@@ -1983,13 +1984,14 @@ async def _wiki_resolve_maybe_items(
             "Return ONLY the JSON array.\n\n" + "\n".join(lines)
         )
 
+        request_conf = _knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0})
         try:
             res = await asyncio.wait_for(
                 gen_json(
                     WIKI_PLAN_RECONCILE_SYSTEM,
                     user_prompt,
                     chat_mdl,
-                    gen_conf=_knowledge_compile_gen_conf(chat_mdl, {"temperature": 0.0}),
+                    gen_conf=request_conf,
                 ),
                 timeout=llm_timeout,
             )
@@ -2132,16 +2134,17 @@ async def _wiki_planning_call(
         max_page_count=max_page_count,
     )
 
+    request_conf = _knowledge_compile_gen_conf(
+        chat_mdl,
+        {"temperature": 0.1, "max_tokens": output_tokens},
+    )
     try:
         res = await asyncio.wait_for(
             gen_json(
                 WIKI_PLAN_PLANNING_SYSTEM,
                 user_prompt,
                 chat_mdl,
-                gen_conf=_knowledge_compile_gen_conf(
-                    chat_mdl,
-                    {"temperature": 0.1, "max_tokens": output_tokens},
-                ),
+                gen_conf=request_conf,
             ),
             timeout=llm_timeout,
         )
@@ -2585,6 +2588,7 @@ WIKI_TEMPLATE_EXAMPLE = (
     "Each page must be a proper encyclopedic article, NOT a flat bullet list:\n"
     "1. Opening paragraph (2-4 sentences defining what this is). No heading.\n"
     "2. Sections with H2 headings, each starting with prose before sub-bullets.\n"
+    "   Put every heading on its own line and separate every paragraph with a blank line.\n"
     "3. Bold key terms on first use; link them with [[ ]] wikilinks.\n"
     "4. Examples or implications where the source provides them.\n"
     "5. ## See also section at the end with wikilinks to highly related pages(less than 12).\n\n"
@@ -2687,6 +2691,7 @@ But also look for additional relevant information in the source text above.
 
 ## Instructions
 Write the complete wiki page in markdown based on the source text above.
+Put every heading on its own line and separate every paragraph with a blank line. Do not return the page as one line.
 Cross-link to other pages using [[slug]] or [[slug|display text]] — ONLY
 use slugs from the "Available pages" list. Do NOT invent new slugs.
 Do NOT include Citations or Footnotes sections.
@@ -3227,12 +3232,13 @@ async def _wiki_chat_text(
         _, msg = message_fit_in(msg, chat_mdl.max_length)
     except Exception:
         logging.exception("wiki_refine: message_fit_in failed; sending untrimmed")
+    request_conf = _knowledge_compile_gen_conf(chat_mdl, {"temperature": temperature})
     try:
         raw = await asyncio.wait_for(
             chat_mdl.async_chat(
                 msg[0]["content"],
                 msg[1:],
-                _knowledge_compile_gen_conf(chat_mdl, {"temperature": temperature}),
+                request_conf,
             ),
             timeout=llm_timeout,
         )
@@ -3284,13 +3290,14 @@ async def _wiki_write_page_simple(
         evidence_blocks=_wiki_format_evidence_blocks(evidence),
     )
 
-    return await _wiki_chat_text(
+    content = await _wiki_chat_text(
         chat_mdl,
         _build_refine_writer_system(example),
         user_prompt,
         temperature=0.15,
         llm_timeout=llm_timeout,
     )
+    return content
 
 
 async def _wiki_merge_page_content(

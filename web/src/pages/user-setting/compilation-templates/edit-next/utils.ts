@@ -51,6 +51,7 @@ export const isConfigMetaKey = (key: string) =>
     'page_example',
     'synthesis',
     'use_blueprint',
+    'plan',
     'rechunk',
     'rechunk_rules',
   ].includes(key);
@@ -104,6 +105,10 @@ export const buildConfigFromBuiltin = (
       : {}),
     use_blueprint:
       kind === CompilationTemplateKind.Artifacts && example.length > 0,
+    plan:
+      typeof builtinTemplate.config?.plan === 'boolean'
+        ? builtinTemplate.config.plan
+        : true,
     ...(kind !== CompilationTemplateKind.Tree
       ? {
           rechunk: builtinTemplate.config?.rechunk === true,
@@ -130,7 +135,8 @@ export const buildConfigFromBuiltin = (
       raptor: {
         prompt: builtinRaptor.prompt ?? '',
         max_token: builtinRaptor.max_token ?? 512,
-        threshold: builtinRaptor.threshold ?? 0.1,
+        clustering_threshold: builtinRaptor.clustering_threshold ?? 0.3,
+        clustering_ratio: builtinRaptor.clustering_ratio ?? 0.5,
         rechunk: builtinRaptor.rechunk ?? false,
       },
     };
@@ -164,6 +170,7 @@ export const transformDetailToForm = (
       : {}),
     use_blueprint:
       detail.kind === CompilationTemplateKind.Artifacts && example.length > 0,
+    plan: typeof config.plan === 'boolean' ? config.plan : true,
     ...(detail.kind !== CompilationTemplateKind.Tree
       ? {
           rechunk: config.rechunk === true,
@@ -195,7 +202,8 @@ export const transformDetailToForm = (
         raptor: {
           prompt: raptor.prompt ?? '',
           max_token: raptor.max_token ?? 512,
-          threshold: raptor.threshold ?? 0.1,
+          clustering_threshold: raptor.clustering_threshold ?? 0.3,
+          clustering_ratio: raptor.clustering_ratio ?? 0.5,
           rechunk: raptor.rechunk ?? false,
         },
       },
@@ -244,6 +252,10 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
     if (key === 'kind' || key === 'llm_id') return;
     if (key === 'instruction' || key === 'page_example') return;
     if (key === 'synthesis') {
+      config[key] = value as ICompilationTemplateConfigRequest[string];
+      return;
+    }
+    if (key === 'plan') {
       config[key] = value as ICompilationTemplateConfigRequest[string];
       return;
     }

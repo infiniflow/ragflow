@@ -51,6 +51,20 @@ var builtinCompilationTemplateKinds = []struct {
 
 func strptr(s string) *string { return &s }
 
+// builtinTemplateID derives a deterministic, <=32-byte id for a built-in
+// compilation template from "<builtin-group-id>-<kind>". A plain concatenation
+// overflows the varchar(32) id column for long kinds (e.g. knowledge_graph),
+// so we take the last 32 bytes. Each kind ends up inside those last bytes (the
+// "-<kind>" suffix is preserved and kinds are distinct), so the truncated ids
+// stay unique and readable, and the seed stays idempotent (OnConflict on id).
+func builtinTemplateID(kind string) string {
+	full := BuiltinCompilationTemplateGroupID + "-" + kind
+	if len(full) <= 32 {
+		return full
+	}
+	return full[len(full)-32:]
+}
+
 // SeedBuiltinCompilationTemplates provisions the built-in compilation template
 // group (and its child templates) as a global, tenant-agnostic catalogue, so
 // the Go compiler (and the frontend "create from template" catalogue) can
@@ -59,7 +73,7 @@ func strptr(s string) *string { return &s }
 // resolvable for every tenant.
 func SeedBuiltinCompilationTemplates(ctx context.Context, db *gorm.DB) error {
 	if err := SeedBuiltinCompilationTemplatesForTenant(ctx, db, ""); err != nil {
-		common.Warn("failed to seed built-in compilation templates", zap.Error(err))
+		common.Warn("Failed to seed built-in compilation templates", zap.Error(err))
 		return err
 	}
 	return nil
@@ -89,7 +103,7 @@ func SeedBuiltinCompilationTemplatesForTenant(ctx context.Context, db *gorm.DB, 
 
 		for _, t := range builtinCompilationTemplateKinds {
 			tmpl := &entity.CompilationTemplate{
-				ID:       BuiltinCompilationTemplateGroupID + "-" + t.Kind,
+				ID:       builtinTemplateID(t.Kind),
 				TenantID: nil, // global built-in catalogue
 				GroupID:  strptr(BuiltinCompilationTemplateGroupID),
 				Name:     t.Name,

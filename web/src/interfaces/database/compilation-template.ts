@@ -13,7 +13,8 @@ export interface ICompilationTemplateSection {
 export interface ICompilationTemplateRaptorConfig {
   prompt?: string;
   max_token?: number;
-  threshold?: number;
+  clustering_threshold?: number;
+  clustering_ratio?: number;
   rechunk?: boolean;
 }
 
