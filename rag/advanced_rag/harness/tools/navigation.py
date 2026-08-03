@@ -476,7 +476,7 @@ async def dataset_navigation_by_tree(tools, topic: str, keywords: str = "", doc_
 
     Returns the routed ``doc_id`` list (capped at ``_NAV_MAX_DOCS``), or ``[]``
     when no question/keywords are given, there is no cluster tree, or the model
-    finds nothing relevant. This function only routes — it does not retrieve.
+    finds nothing relevant. This function only routes — it does not retrieve. ###
     """
     query = " ".join(part for part in ((topic or "").strip(), (keywords or "").strip()) if part).strip()
     if not query:
