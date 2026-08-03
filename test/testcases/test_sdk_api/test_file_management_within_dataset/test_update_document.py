@@ -215,7 +215,7 @@ class TestDocumentsUpdated:
                 "The input parameters are invalid",
                 marks=pytest.mark.skip(reason="issues/6104"),
             ),
-            ({"token_count": 1}, "Can't change `token_count`"),
+            ({"token_count": 1}, "can't change `token_count`"),
             pytest.param(
                 {"type": "ragflow_test"},
                 "The input parameters are invalid",
@@ -260,7 +260,7 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"token_count": 9999}, "Can't change `token_count`"),  # Attempt to change immutable field
+            ({"token_count": 9999}, "can't change `token_count`"),  # Attempt to change immutable field
         ],
     )
     def test_immutable_fields_token_count(self, add_documents, payload, expected_message):

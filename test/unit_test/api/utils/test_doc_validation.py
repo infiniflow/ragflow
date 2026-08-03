@@ -120,7 +120,7 @@ def test_validate_immutable_fields_token_count_mismatch():
     doc.progress = 0.5
 
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `token_count`."
+    assert error_msg == "can't change `token_count`"
     assert error_code == RetCode.DATA_ERROR
 
 
@@ -198,7 +198,7 @@ def test_validate_immutable_fields_zero_token_count_mismatch_when_chunk_count_ma
     doc.progress = 0.0
 
     error_msg, error_code = validate_immutable_fields(update_doc_req, doc)
-    assert error_msg == "Can't change `token_count`."
+    assert error_msg == "can't change `token_count`"
     assert error_code == RetCode.DATA_ERROR
 
 

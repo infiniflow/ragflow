@@ -1106,7 +1106,7 @@ def validate_immutable_fields(update_doc_req: UpdateDocumentReq, doc):
         return "can't change `chunk_count`", RetCode.DATA_ERROR
 
     if update_doc_req.token_count is not None and update_doc_req.token_count != int(getattr(doc, "token_num", -1)):
-        return "Can't change `token_count`.", RetCode.DATA_ERROR
+        return "can't change `token_count`", RetCode.DATA_ERROR
 
     if update_doc_req.progress is not None:
         progress_from_db = float(getattr(doc, "progress", -1.0))
