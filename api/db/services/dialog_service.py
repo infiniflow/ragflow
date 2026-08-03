@@ -652,13 +652,24 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         attachments_ = "\n\n".join(text_attachments)
 
     prompt_config = dialog.prompt_config
+    if dialog.meta_data_filter:
+        attachments = await apply_meta_data_filter(
+            dialog.meta_data_filter,
+            None,
+            questions[-1],
+            chat_mdl,
+            attachments,
+            kb_ids=dialog.kb_ids,
+            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids),
+        )
+
     include_reference_metadata, metadata_fields = _resolve_reference_metadata(prompt_config, request_payload=kwargs)
     field_map = KnowledgebaseService.get_field_map(dialog.kb_ids)
     logging.debug(f"field_map retrieved: {field_map}")
     # try to use sql if field mapping is good to go
     if field_map:
         logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
-        ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids)
+        ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids, doc_ids=attachments)
         # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
         if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
             if include_reference_metadata and ans.get("reference", {}).get("chunks"):
@@ -697,17 +708,6 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     if prompt_config.get("cross_languages"):
         questions = [await cross_languages(dialog.tenant_id, dialog.llm_id, questions[0], prompt_config["cross_languages"])]
-
-    if dialog.meta_data_filter:
-        attachments = await apply_meta_data_filter(
-            dialog.meta_data_filter,
-            None,
-            questions[-1],
-            chat_mdl,
-            attachments,
-            kb_ids=dialog.kb_ids,
-            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids),
-        )
 
     if prompt_config.get("keyword", False):
         questions[-1] = questions[-1] + "," + await keyword_extraction(chat_mdl, questions[-1])
@@ -989,7 +989,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     return
 
 
-async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None):
+async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=None, doc_ids=None):
     """Answer a natural-language question by generating and executing SQL against the document index.
 
     Detects the active document engine (Infinity, OceanBase, or Elasticsearch), asks the
@@ -1003,6 +1003,7 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         chat_mdl: LLM bundle used to generate SQL from the question.
         quota: Whether to enforce token-quota checks (default True).
         kb_ids: Optional list of knowledge-base UUIDs to restrict the query scope.
+        doc_ids: Optional list of document UUIDs to restrict the query scope.
 
     Returns:
         A dict with keys ``answer`` (formatted response string), ``reference``
@@ -1020,11 +1021,18 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         doc_engine = "es"
 
     def _assert_valid_uuid(value: str, label: str = "id") -> None:
+        if label == "doc_id" and str(value) == "-999":
+            return
         try:
             uuid.UUID(str(value))
         except (ValueError, AttributeError, TypeError):
             logger.warning("SQL injection guard rejected invalid %s value (length=%d)", label, len(str(value)))
             raise ValueError(f"Invalid {label} format: {value!r}")
+
+    if isinstance(doc_ids, str):
+        doc_ids = [doc_id for doc_id in doc_ids.split(",") if doc_id]
+    else:
+        doc_ids = [doc_id for doc_id in doc_ids or [] if doc_id]
 
     # Construct the full table name
     # For Elasticsearch: ragflow_{tenant_id} (kb_id is in WHERE clause)
@@ -1068,34 +1076,40 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
         return sql.rstrip().rstrip(";").strip()
 
     def add_kb_filter(sql):
-        """Inject a validated kb_id WHERE filter into *sql* for ES/OceanBase engines.
+        """Inject validated scope filters into *sql*.
 
-        Infinity encodes the knowledge-base scope in the table name, so this
-        function is a no-op for that engine.  All kb_id values are validated as
-        canonical UUIDs before interpolation to prevent SQL injection.
+        Infinity encodes single-KB scope in the table name, so only document
+        scope is injected there. All ids are validated before interpolation.
         """
-        # Add kb_id filter for ES/OS only (Infinity already has it in table name)
-        if doc_engine == "infinity" or not kb_ids:
+        scope_filters = []
+        sql_lower = sql.lower()
+        if doc_engine != "infinity" and kb_ids and "kb_id =" not in sql_lower and "kb_id=" not in sql_lower:
+            for kid in kb_ids:
+                _assert_valid_uuid(kid, "kb_id")
+            if len(kb_ids) == 1:
+                scope_filters.append(f"kb_id = '{kb_ids[0]}'")
+            else:
+                scope_filters.append("(" + " OR ".join([f"kb_id = '{kid}'" for kid in kb_ids]) + ")")
+        if doc_ids:
+            for doc_id in doc_ids:
+                _assert_valid_uuid(doc_id, "doc_id")
+            if len(doc_ids) == 1:
+                scope_filters.append(f"doc_id = '{doc_ids[0]}'")
+            else:
+                scope_filters.append("(" + " OR ".join([f"doc_id = '{doc_id}'" for doc_id in doc_ids]) + ")")
+        if not scope_filters:
             return sql
 
-        # Validate all kb_ids are UUIDs before interpolating into SQL
-        for kid in kb_ids:
-            _assert_valid_uuid(kid, "kb_id")
+        scope_filter = " and ".join(scope_filters)
 
-        # Build kb_filter: single KB or multiple KBs with OR
-        if len(kb_ids) == 1:
-            kb_filter = f"kb_id = '{kb_ids[0]}'"
-        else:
-            kb_filter = "(" + " OR ".join([f"kb_id = '{kid}'" for kid in kb_ids]) + ")"
-
-        if "where " not in sql.lower():
-            o = sql.lower().split("order by")
-            if len(o) > 1:
-                sql = o[0] + f" WHERE {kb_filter}  order by " + o[1]
+        if not re.search(r"\bwhere\b", sql, flags=re.IGNORECASE):
+            order_match = re.search(r"\border\s+by\b", sql, flags=re.IGNORECASE)
+            if order_match:
+                sql = sql[: order_match.start()].rstrip() + f" WHERE {scope_filter} " + sql[order_match.start() :]
             else:
-                sql += f" WHERE {kb_filter}"
-        elif "kb_id =" not in sql.lower() and "kb_id=" not in sql.lower():
-            sql = re.sub(r"\bwhere\b ", f"where {kb_filter} and ", sql, flags=re.IGNORECASE)
+                sql += f" WHERE {scope_filter}"
+        else:
+            sql = re.sub(r"\bwhere\b\s+", f"where {scope_filter} and ", sql, count=1, flags=re.IGNORECASE)
         return sql
 
     def is_row_count_question(q: str) -> bool:
@@ -1880,13 +1894,33 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     except (TypeError, ValueError):
         thinking_mode = "medium"
 
-    gen_conf = dialog.llm_setting or {}
+    doc_scope = None
+    if "doc_ids" in kwargs:
+        if isinstance(kwargs["doc_ids"], str):
+            doc_scope = [doc_id for doc_id in kwargs["doc_ids"].split(",") if doc_id]
+        elif isinstance(kwargs["doc_ids"], list):
+            doc_scope = [doc_id for doc_id in kwargs["doc_ids"] if doc_id]
+    if "doc_ids" in messages[-1]:
+        doc_scope = [doc_id for doc_id in messages[-1]["doc_ids"] if doc_id]
+    if dialog.meta_data_filter:
+        doc_scope = await apply_meta_data_filter(
+            dialog.meta_data_filter,
+            None,
+            messages[-1].get("content", ""),
+            chat_mdl,
+            doc_scope,
+            kb_ids=dialog.kb_ids,
+            metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids),
+        )
+
     rag_tools = RAGTools(
         tenant_ids,
         chat_mdl,
         embed_mdl=embd_mdl,
         kb_ids=dialog.kb_ids,
         tav=Tavily(prompt_config.get("tavily_api_key")) if use_web_search else None,
+        meta_data_filter=dialog.meta_data_filter,
+        doc_scope=doc_scope,
         do_refer=False,
         thinking_mode=thinking_mode,
     )

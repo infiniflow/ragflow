@@ -314,6 +314,8 @@ async def ontology_navigate(tools, topic: str, keywords: str = "", doc_scope: li
 
     :returns: ``{"answer": "", "chunks": [...], "doc_aggs": [...]}``
     """
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
     if not doc_scope:
         doc_scope = []
     _LOG.info(f'[Ontology navigation] Looking through the document catalog for "{topic}" (keywords: {keywords}) in doc: {len(doc_scope)}')
@@ -332,6 +334,8 @@ async def mindmap_navigate(tools, topic: str, keywords: str = "", doc_scope: lis
 
     :returns: ``{"answer": "", "chunks": [...], "doc_aggs": [...]}``
     """
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
     if not doc_scope:
         doc_scope = []
     _LOG.info(f'[Mindmap navigation] Following the concept mindmap for "{topic}" (keywords: {keywords}) in doc: {len(doc_scope)}')
@@ -418,7 +422,7 @@ async def _ask_nav_select(tools, query: str, items: list[dict], noun: str, max_i
     return out
 
 
-async def _collect_nav_leaves(dataset_api_service, clusters: list[dict]) -> list[dict]:
+async def _collect_nav_leaves(dataset_api_service, clusters: list[dict], doc_scope: list[str] | None = None) -> list[dict]:
     """BFS from the selected clusters down to their document leaves.
 
     Each cluster carries ``name`` + ``kb``. A node's children are either document
@@ -429,6 +433,7 @@ async def _collect_nav_leaves(dataset_api_service, clusters: list[dict]) -> list
     seen_docs: set[str] = set()
     seen_nodes: set[tuple] = set()
     frontier: list[tuple] = [(c["kb"], c["name"], 0) for c in clusters if c.get("name")]
+    allowed_docs = set(doc_scope or [])
 
     while frontier and len(leaves) < _NAV_TREE_MAX_LEAVES:
         kb, name, depth = frontier.pop(0)
@@ -446,7 +451,7 @@ async def _collect_nav_leaves(dataset_api_service, clusters: list[dict]) -> list
         for item in data.get("items") or []:
             if item.get("type") == "doc":
                 did = str(item.get("doc_id") or "").strip()
-                if did and did not in seen_docs:
+                if did and (not allowed_docs or did in allowed_docs) and did not in seen_docs:
                     seen_docs.add(did)
                     leaves.append({**item, "kb": kb})
                     if len(leaves) >= _NAV_TREE_MAX_LEAVES:
@@ -481,6 +486,8 @@ async def dataset_navigation_by_tree(tools, topic: str, keywords: str = "", doc_
     query = " ".join(part for part in ((topic or "").strip(), (keywords or "").strip()) if part).strip()
     if not query:
         return []
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
 
     _LOG.info('[Dataset navigation] Walking the dataset tree for "%s"', query)
 
@@ -514,7 +521,7 @@ async def dataset_navigation_by_tree(tools, topic: str, keywords: str = "", doc_
     _LOG.info("[Dataset navigation] %d/%d cluster(s) selected.", len(selected_clusters), len(clusters))
 
     # 3. Descend the selected clusters to their document leaves.
-    leaves = await _collect_nav_leaves(dataset_api_service, selected_clusters)
+    leaves = await _collect_nav_leaves(dataset_api_service, selected_clusters, doc_scope)
     if not leaves:
         _LOG.info("[Dataset navigation] no leaf under selected cluster %s.", _nav_cluster_names(selected_clusters))
         return []
@@ -566,6 +573,8 @@ async def _kg_scopes(tools, doc_scope: list[str] | None = None):
     """
     from common.misc_utils import thread_pool_exec
 
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
     if doc_scope:
         by_kb: dict[tuple, list[str]] = {}
         for doc_id in doc_scope:
@@ -759,6 +768,8 @@ async def graph_explore(tools, query: str, keywords: str = "", doc_scope: list[s
     from rag.advanced_rag.harness.tools.search import _narrow_by_keywords
 
     _empty = {"answer": "", "chunks": [], "doc_aggs": []}
+    if hasattr(tools, "scoped_doc_ids"):
+        doc_scope = tools.scoped_doc_ids(doc_scope)
     _LOG.info(f'[Graph exploration] Exploring the knowledge graph for "{query}" (keywords: {keywords})')
 
     scopes = await _kg_scopes(tools, doc_scope)
