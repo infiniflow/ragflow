@@ -388,7 +388,7 @@ func (o *OSSStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, d
 			common.Error("Failed to remove source object after copy", err, zap.String("bucket", srcBucket), zap.String("key", srcPath))
 			err = o.Remove(ctx, destBucket, destPath)
 			if err != nil {
-				common.Warn("Failed to roll back copied destination object", zap.String("bucket", destBucket), zap.String("key", destPath), zap.Error(rmErr))
+				common.Warn("Failed to roll back copied destination object", zap.String("bucket", destBucket), zap.String("key", destPath), zap.Error(err))
 			}
 			return false
 		}
