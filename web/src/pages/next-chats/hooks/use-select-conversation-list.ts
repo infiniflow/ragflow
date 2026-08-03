@@ -15,7 +15,7 @@ export const useFindPrologueFromDialogList = () => {
   const { data } = useFetchChatList();
 
   const prologue = useMemo(() => {
-    return data.chats.find((x) => x.id === dialogId)?.prompt_config?.prologue;
+    return data?.chats.find((x) => x.id === dialogId)?.prompt_config?.prologue;
   }, [dialogId, data]);
 
   return prologue;
@@ -74,7 +74,14 @@ export const useSelectDerivedConversationList = () => {
   // When you first enter the page, select the top conversation card
 
   useEffect(() => {
-    setList([...conversationList]);
+    setList((prevList) => {
+      const tempItems = prevList.filter((item) => item.is_new);
+      const existingTempIds = new Set(tempItems.map((t) => t.id));
+      const newItems = conversationList.filter(
+        (item) => !existingTempIds.has(item.id),
+      );
+      return [...tempItems, ...newItems];
+    });
   }, [conversationList]);
 
   return {
