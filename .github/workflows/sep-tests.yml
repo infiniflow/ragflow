@@ -329,6 +329,25 @@ jobs:
         #     of the default run.
         run: |
           set -euo pipefail
+
+          # Provide the cl100k BPE table for the offline tokenizer loader.
+          # The loader reads <repo>/ragflow_deps/cl100k_base.tiktoken (or
+          # TIKTOKEN_CACHE_DIR). The table is baked into the
+          # infiniflow/ragflow_deps image, so extract it from there instead of
+          # fetching from openaipublic.blob.core.windows.net (unreliable /
+          # GFW-blocked). Best-effort: if the image is unavailable, the loader
+          # still fails loudly (no silent 0-token degradation).
+          if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
+            if docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1 || docker pull infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
+              mkdir -p ragflow_deps
+              CID=$(docker create infiniflow/ragflow_deps:latest true) || true
+              if [ -n "${CID:-}" ]; then
+                docker cp "$CID":/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken 2>/dev/null || true
+                docker rm -f "$CID" >/dev/null 2>&1 || true
+              fi
+            fi
+          fi
+
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/handler$' || true)
@@ -907,6 +926,25 @@ jobs:
         #     of the default run.
         run: |
           set -euo pipefail
+
+          # Provide the cl100k BPE table for the offline tokenizer loader.
+          # The loader reads <repo>/ragflow_deps/cl100k_base.tiktoken (or
+          # TIKTOKEN_CACHE_DIR). The table is baked into the
+          # infiniflow/ragflow_deps image, so extract it from there instead of
+          # fetching from openaipublic.blob.core.windows.net (unreliable /
+          # GFW-blocked). Best-effort: if the image is unavailable, the loader
+          # still fails loudly (no silent 0-token degradation).
+          if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
+            if docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1 || docker pull infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
+              mkdir -p ragflow_deps
+              CID=$(docker create infiniflow/ragflow_deps:latest true) || true
+              if [ -n "${CID:-}" ]; then
+                docker cp "$CID":/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken 2>/dev/null || true
+                docker rm -f "$CID" >/dev/null 2>&1 || true
+              fi
+            fi
+          fi
+
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/handler$' || true)
