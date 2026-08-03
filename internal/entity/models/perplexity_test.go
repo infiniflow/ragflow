@@ -79,7 +79,7 @@ func TestPerplexityChatHappyPath(t *testing.T) {
 			"choices": []map[string]interface{}{{
 				"message": map[string]interface{}{
 					"content":   "pong",
-					"reasoning": "thinking",
+					"reasoning_content": "thinking",
 				},
 			}},
 		})
@@ -178,12 +178,12 @@ func TestPerplexityStreamHappyPath(t *testing.T) {
 		if body["stream"] != true {
 			t.Errorf("stream=%v want true", body["stream"])
 		}
-		if got := r.Header.Get("Accept"); got != "text/event-stream" {
+		if got := r.Header.Get("Accept"); got != "" {
 			t.Errorf("Accept=%q", got)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w,
-			`data: {"choices":[{"delta":{"reasoning":"think "}}]}`+"\n"+
+			`data: {"choices":[{"delta":{"reasoning_content":"think "}}]}`+"\n"+
 				`data: {"choices":[{"delta":{"content":"Hello"}}]}`+"\n"+
 				`data: {"choices":[{"delta":{"content":" world"},"finish_reason":"stop"}]}`+"\n",
 		)

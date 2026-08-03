@@ -228,7 +228,7 @@ func TestPPIOStreamHappyPath(t *testing.T) {
 		if !ok || streamOptions["include_usage"] != true {
 			t.Errorf("stream_options=%#v, want include_usage=true", body["stream_options"])
 		}
-		if got := r.Header.Get("Accept"); got != "text/event-stream" {
+		if got := r.Header.Get("Accept"); got != "" {
 			t.Errorf("Accept=%q", got)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
