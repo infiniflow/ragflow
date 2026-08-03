@@ -140,8 +140,54 @@ export function useModelsCatalog({
 }: UseModelsCatalogArgs) {
   const { listProviderModels } = useListProviderModels();
   const [catalog, setCatalog] = useState<IProviderModelItem[]>([]);
+  const [catalogOverrides, setCatalogOverrides] = useState<
+    Record<string, IProviderModelItem>
+  >({});
   const [manualListLoading, setManualListLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
+
+  const applyCatalogOverrides = useCallback(
+    (items: IProviderModelItem[], overrides = catalogOverrides) => {
+      const names = new Set<string>();
+      const merged = items.map((item) => {
+        names.add(item.name);
+        const override = overrides[item.name];
+        return override ? { ...item, ...override, name: item.name } : item;
+      });
+      Object.entries(overrides).forEach(([name, override]) => {
+        if (!names.has(name)) {
+          merged.push(override);
+        }
+      });
+      return merged;
+    },
+    [catalogOverrides],
+  );
+
+  const updateCatalogModel = useCallback(
+    (name: string, item: IProviderModelItem) => {
+      setCatalogOverrides((prev) => ({
+        ...prev,
+        [name]: { ...(prev[name] ?? {}), ...item, name },
+      }));
+      setCatalog((prev) => {
+        if (!prev.some((m) => m.name === name)) {
+          return [...prev, { ...item, name }];
+        }
+        return prev.map((m) => (m.name === name ? { ...m, ...item, name } : m));
+      });
+    },
+    [],
+  );
+
+  const clearCatalogOverride = useCallback((name: string) => {
+    setCatalogOverrides((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  }, []);
 
   // Manual "List models" handler — hits the upstream catalog endpoint.
   // The result is merged into `catalog`; the displayed list then becomes
@@ -160,7 +206,9 @@ export function useModelsCatalog({
         base_url: baseUrl,
       });
       if (ret?.code === 0) {
-        setCatalog((ret.data as IProviderModelItem[]) ?? []);
+        setCatalog(
+          applyCatalogOverrides((ret.data as IProviderModelItem[]) ?? []),
+        );
       }
       setHasFetched(true);
     } catch {
@@ -203,6 +251,8 @@ export function useModelsCatalog({
   return {
     catalog,
     setCatalog,
+    updateCatalogModel,
+    clearCatalogOverride,
     manualListLoading,
     hasFetched,
     handleListModels,
@@ -599,6 +649,7 @@ interface UseModelMutationsArgs {
   filteredModels: IProviderModelItem[];
   addedSet: Set<string>;
   setCatalog: Dispatch<SetStateAction<IProviderModelItem[]>>;
+  clearCatalogOverride: (name: string) => void;
   /**
    * Local mutators for the draft instance's model list. Required when
    * `isDraftInstance` is true so per-model add / remove / batch updates
@@ -621,6 +672,7 @@ export function useModelMutations({
   filteredModels,
   addedSet,
   setCatalog,
+  clearCatalogOverride,
   addDraftModel,
   removeDraftModel,
   setDraftModelsList,
@@ -644,6 +696,7 @@ export function useModelMutations({
     // rides along with the instance save (model_info in the add body).
     if (isDraftInstance) {
       addDraftModel?.(model);
+      clearCatalogOverride(model.name);
       return;
     }
     await addInstanceModel({
@@ -657,6 +710,7 @@ export function useModelMutations({
         ...(model.extra ?? {}),
       },
     });
+    clearCatalogOverride(model.name);
   };
 
   const handleRemoveModel = async (model: IProviderModelItem) => {
@@ -686,6 +740,7 @@ export function useModelMutations({
       // dropped on save.
       if (isDraftInstance) {
         addDraftModel?.(item);
+        clearCatalogOverride(item.name);
       }
       return;
     }
@@ -697,6 +752,7 @@ export function useModelMutations({
       max_tokens: item.max_tokens ?? 0,
       extra: { is_tools: hasToolFeature(item.features), ...(item.extra ?? {}) },
     });
+    clearCatalogOverride(item.name);
   };
 
   // Batch attach/detach the currently visible (filtered) models.
@@ -721,6 +777,11 @@ export function useModelMutations({
 
     if (isDraftInstance) {
       setDraftModelsList?.(nextModels);
+      filteredModels.forEach((m) => {
+        if (!addedSet.has(m.name)) {
+          clearCatalogOverride(m.name);
+        }
+      });
       return;
     }
 
@@ -733,6 +794,11 @@ export function useModelMutations({
       base_url: baseUrl,
       region: instance?.region ?? 'default',
       model_info: buildModelInfo(nextModels),
+    });
+    filteredModels.forEach((m) => {
+      if (!addedSet.has(m.name)) {
+        clearCatalogOverride(m.name);
+      }
     });
   };
 
@@ -755,7 +821,8 @@ interface UseModelEditArgs {
   instanceName: string;
   addedSet: Set<string>;
   isDraftInstance?: boolean;
-  setCatalog: Dispatch<SetStateAction<IProviderModelItem[]>>;
+  updateCatalogModel: (name: string, item: IProviderModelItem) => void;
+  clearCatalogOverride: (name: string) => void;
   updateDraftModel?: (item: IProviderModelItem) => void;
 }
 
@@ -764,7 +831,8 @@ export function useModelEdit({
   instanceName,
   addedSet,
   isDraftInstance,
-  setCatalog,
+  updateCatalogModel,
+  clearCatalogOverride,
   updateDraftModel,
 }: UseModelEditArgs) {
   const queryClient = useQueryClient();
@@ -847,16 +915,14 @@ export function useModelEdit({
     if (!editingModel) return;
     const targetName = editingModel.name;
 
-    if (isDraftInstance && updateDraftModel) {
+    if (isDraftInstance && updateDraftModel && addedSet.has(targetName)) {
       updateDraftModel(item);
       setEditingModel(null);
       return;
     }
 
     if (!addedSet.has(targetName)) {
-      setCatalog((prev) =>
-        prev.map((m) => (m.name === targetName ? { ...m, ...item } : m)),
-      );
+      updateCatalogModel(targetName, item);
       setEditingModel(null);
       return;
     }
@@ -891,6 +957,7 @@ export function useModelEdit({
       model_type: item.model_types ?? [],
       extra: { is_tools: hasToolFeature(item.features), ...(item.extra ?? {}) },
     });
+    clearCatalogOverride(targetName);
     setEditingModel(null);
   };
 

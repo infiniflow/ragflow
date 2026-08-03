@@ -189,7 +189,7 @@ func TestGiteeListModelsMapsAllDeepSeekAliasesToModelMetadata(t *testing.T) {
 	}
 }
 
-func TestGiteeListModelsKeepsOwnedBySuffixAfterAliasMetadataLookup(t *testing.T) {
+func TestGiteeListModelsKeepsModelNameAfterAliasMetadataLookup(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	initProviderManagerWithGiteeForTest(t)
@@ -207,8 +207,8 @@ func TestGiteeListModelsKeepsOwnedBySuffixAfterAliasMetadataLookup(t *testing.T)
 		t.Fatalf("len(models)=%d, want 1", len(models))
 	}
 	model := models[0]
-	if model.Name != "deepseek/deepseek-v4-pro@gitee" {
-		t.Fatalf("Name=%q, want deepseek/deepseek-v4-pro@gitee", model.Name)
+	if model.Name != "deepseek/deepseek-v4-pro" {
+		t.Fatalf("Name=%q, want deepseek/deepseek-v4-pro", model.Name)
 	}
 	if model.MaxTokens == nil || *model.MaxTokens != 1048576 {
 		t.Fatalf("MaxTokens=%v, want 1048576", model.MaxTokens)
