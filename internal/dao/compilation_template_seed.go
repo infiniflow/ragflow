@@ -43,7 +43,6 @@ var builtinCompilationTemplateKinds = []struct {
 	{Kind: "mind_map", Name: "Mind map - Radial concept hierarchy"},
 	{Kind: "wiki", Name: "Wiki — Graph-based wiki"},
 	{Kind: "knowledge_graph", Name: "Knowledge graph"},
-	{Kind: "datasetnav", Name: "Dataset nav — top-down drill-down"},
 	{Kind: "page_index", Name: "Page index"},
 	{Kind: "session_essence", Name: "Session essence"},
 	{Kind: "session_graph", Name: "Session graph"},
