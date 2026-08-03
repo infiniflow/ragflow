@@ -390,7 +390,7 @@ def get_parser_config(chunk_method, parser_config):
         "one": None,
         "knowledge_graph": {
             "chunk_token_num": 8192,
-            "delimiter": r"\n",
+            "delimiter": "\n",
             "entity_types": ["organization", "person", "location", "event", "time"],
             "raptor": {"use_raptor": False},
             "graphrag": {"use_graphrag": False},
