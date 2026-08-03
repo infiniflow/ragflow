@@ -582,7 +582,7 @@ async def test_mode_a_incremental_creates_low_claim_concept():
 
     with (
         patch(
-            "rag.advanced_rag.knowlege_compile.wiki_incremental._wiki_mode_a_refine",
+            "rag.advanced_rag.knowlege_compile.wiki_incremental._wiki_refine_page",
             new_callable=AsyncMock,
             return_value={"page_id": "concept/brand-new-concept"},
         ) as mock_refine,
@@ -646,7 +646,7 @@ async def test_mode_a_compiles_entity_and_concept_pages():
 
     with (
         patch(
-            "rag.advanced_rag.knowlege_compile.wiki_incremental._wiki_mode_a_refine",
+            "rag.advanced_rag.knowlege_compile.wiki_incremental._wiki_refine_page",
             new_callable=AsyncMock,
             return_value={"page_id": "x"},
         ) as mock_refine,

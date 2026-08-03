@@ -63,18 +63,11 @@ PAGE_ROUTER_UPDATE_THRESHOLD = 0.80
 PAGE_ROUTER_MAYBE_THRESHOLD = 0.50
 PAGE_ROUTER_CLUSTER_THRESHOLD = 0.50
 
-# Concept depth threshold (Mode A): a concept needs enough evidence to
-# warrant a standalone wiki page.
-CONCEPT_MIN_CLAIMS = 3
-
 # Re-synthesis triggers (both modes)
 RE_SYNTHESIS_MIN_SOURCES = 5
 RE_SYNTHESIS_GROWTH_RATIO = 1.5
 RE_SYNTHESIS_MIN_CLAIMS = 15
 RE_SYNTHESIS_MIN_VERSIONS = 3
-
-# FINALIZE debounce
-FINALIZE_DEBOUNCE_SECONDS = 300
 
 # Evidence quality (WeKnora-style verbatim chunk sourcing).
 # The page-writer sees the ACTUAL source-chunk text (not just the condensed
@@ -1228,7 +1221,7 @@ async def _wiki_reduce_entity(
         }
 
     existing_claims = existing_page.get("claims", [])
-    # The stored `claims` column is a JSON string (json.dumps in _wiki_mode_a_refine).
+    # The stored `claims` column is a JSON string (json.dumps in _wiki_refine_page).
     # Normalize to a list of dicts defensively — iterating a raw string yields
     # characters and breaks every `c.get(...)` below.
     if isinstance(existing_claims, str):
@@ -1293,10 +1286,7 @@ async def _wiki_reduce_batch(
     """
     name_to_page: dict[str, dict] = {}
     for pid, page in existing_pages.items():
-        names = page.get("entity_names_kwd", [])
-        if isinstance(names, str):
-            names = json.loads(names) if names else []
-        for n in names:
+        for n in _as_str_list(page.get("entity_names_kwd")):
             name_to_page[n] = page
         slug = pid.split("/")[-1] if "/" in pid else pid
         name_to_page.setdefault(slug, page)
@@ -1474,7 +1464,7 @@ async def _wiki_delete_doc_page_source(
 # ----- Mode A: no-plan REFINE -----------------------------------------------
 
 
-async def _wiki_mode_a_refine(
+async def _wiki_refine_page(
     *,
     mode: str,  # "generate" | "modify" | "re-synthesize" | "delete"
     page_id: str,
@@ -1611,7 +1601,7 @@ async def _wiki_mode_a_refine(
         "title_kwd": page_title,
         "md_with_weight": content,
         "summary_with_weight": summary or page_title,
-        "entity_names_kwd": json.dumps([page_title], ensure_ascii=False),
+        "entity_names_kwd": [page_title],
         "source_doc_ids": json.dumps(doc_ids, ensure_ascii=False),
         "claims": json.dumps(claims, ensure_ascii=False) if claims else "[]",
         "page_version_int": new_version,
@@ -1852,10 +1842,7 @@ def _wiki_build_contextual_hints(
             elif isinstance(rp, list):
                 related = rp
     if not related:
-        names = existing_page.get("entity_names_kwd", []) if existing_page else []
-        if isinstance(names, str):
-            names = json.loads(names)
-        for name in names:
+        for name in _as_str_list(existing_page.get("entity_names_kwd") if existing_page else None):
             related.extend(all_relations.get(name, []))
     if not related:
         return ""
@@ -2133,16 +2120,9 @@ async def _wiki_finalize(
         # group page by Mode B's plan/grouping) to this page. Otherwise relation
         # endpoints like "梁大伟" that were merged into another page won't match
         # and most wiki pages stay unlinked.
-        entity_names = all_pages[pid].get("entity_names_kwd")
-        if isinstance(entity_names, str):
-            try:
-                entity_names = json.loads(entity_names) if entity_names else []
-            except (json.JSONDecodeError, TypeError):
-                entity_names = []
-        if isinstance(entity_names, (list, tuple)):
-            for en in entity_names:
-                if isinstance(en, str) and en and en != plain:
-                    name_slug[en] = pid
+        for en in _as_str_list(all_pages[pid].get("entity_names_kwd")):
+            if en and en != plain:
+                name_slug[en] = pid
     ordered_names = sorted(name_slug.keys(), key=lambda n: (-len(n), n))
 
     # RELATION-BASED LINKING: use the semantic (from, to) edges extracted during
@@ -2891,10 +2871,7 @@ async def _wiki_mode_a_run(
     # Map names to existing page IDs
     name_to_page: dict[str, str] = {}
     for pid, page in existing_pages.items():
-        names = page.get("entity_names_kwd", [])
-        if isinstance(names, str):
-            names = json.loads(names) if names else []
-        for n in names:
+        for n in _as_str_list(page.get("entity_names_kwd")):
             name_to_page[n] = pid
 
     # Build page-level deltas. Each entity/concept becomes one page.
@@ -2993,7 +2970,7 @@ async def _wiki_mode_a_run(
                 existing = entry["existing_page"]
                 page_type = "concept" if pid.startswith("concept/") else "entity"
                 if entry.get("action") == "delete":
-                    await _wiki_mode_a_refine(
+                    await _wiki_refine_page(
                         mode="delete",
                         page_id=pid,
                         page_title=entry["page_title"],
@@ -3023,7 +3000,7 @@ async def _wiki_mode_a_run(
                 else:
                     refine_mode = "generate"
 
-                result = await _wiki_mode_a_refine(
+                result = await _wiki_refine_page(
                     mode=refine_mode,
                     page_id=pid,
                     page_title=entry["page_title"],
@@ -3192,7 +3169,7 @@ async def _wiki_mode_b_run(
                         action = "delete"
 
                 if action == "delete":
-                    await _wiki_mode_a_refine(
+                    await _wiki_refine_page(
                         mode="delete",
                         page_id=page_key,
                         page_title=existing.get("title_kwd", page_key) if existing else page_key,
@@ -3221,7 +3198,7 @@ async def _wiki_mode_b_run(
                 ):
                     refine_mode = "re-synthesize"
 
-                result = await _wiki_mode_a_refine(
+                result = await _wiki_refine_page(
                     mode=refine_mode,
                     page_id=page_key,
                     page_title=existing.get("title_kwd", page_key) if existing else entities[0].get("entity_name", page_key),
@@ -3430,7 +3407,7 @@ async def wiki_handle_document_deleted(
             page_type = existing.get("page_type_kwd", "concept" if not plan else "entity")
 
             if not source_doc_ids:
-                await _wiki_mode_a_refine(
+                await _wiki_refine_page(
                     mode="delete",
                     page_id=page_id,
                     page_title=existing.get("title_kwd", page_id),
@@ -3457,7 +3434,7 @@ async def wiki_handle_document_deleted(
                 retractions = [c for c in existing_claims if c.get("source_doc_id") == doc_id]
                 retained = [c for c in existing_claims if c.get("source_doc_id") != doc_id]
 
-                await _wiki_mode_a_refine(
+                await _wiki_refine_page(
                     mode="modify",
                     page_id=page_id,
                     page_title=existing.get("title_kwd", page_id),
@@ -3537,7 +3514,7 @@ __all__ = [
     "_wiki_match_entities",
     "_wiki_page_router",
     "_wiki_finalize",
-    "_wiki_mode_a_refine",
+    "_wiki_refine_page",
     "_wiki_update_doc_page_source",
     "_load_canonical_entities",
     "_save_canonical_entity",
