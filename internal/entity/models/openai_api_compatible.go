@@ -127,6 +127,9 @@ func (m *OpenAIAPICompatibleModel) ChatStreamlyWithSender(ctx context.Context, m
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
 	}
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
 
 	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
