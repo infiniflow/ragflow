@@ -296,7 +296,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		}
 	}
 
-	bestName, sim, err := s.findBestCluster(ctx, in.TenantID, in.KbID, vec)
+	bestName, sim, bestDepth, err := s.findBestCluster(ctx, in.TenantID, in.KbID, vec)
 	if err != nil {
 		return err
 	}
@@ -308,12 +308,14 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			return err
 		}
 		_, err = de.InsertChunks(ctx, []map[string]interface{}{{
-			"compile_kwd":         navCompileKwd,
-			"available_int":       0,
-			"type_kwd":            "nav_doc",
-			"title_kwd":           in.DocID,
-			"parent_kwd":          parent,
-			"depth_int":           1,
+			"compile_kwd":   navCompileKwd,
+			"available_int": 0,
+			"type_kwd":      "nav_doc",
+			"title_kwd":     in.DocID,
+			"parent_kwd":    parent,
+			// The nav_doc sits one level below its (possibly nested) parent
+			// cluster, so its depth is parentDepth+1 — not a hard-coded 1.
+			"depth_int":           bestDepth + 1,
 			"doc_id":              in.DocID,
 			"doc_count_int":       1,
 			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
@@ -329,7 +331,9 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	depth := 0
 	if bestName != "" && sim >= navMinSim {
 		parent = bestName
-		depth = 1
+		// A sibling of the (possibly nested) best cluster is one level deeper
+		// than it, so depth = parentDepth+1 — not a hard-coded 1.
+		depth = bestDepth + 1
 	}
 	name := navDocName(in.DocID, in.Summary)
 	_, err = de.InsertChunks(ctx, []map[string]interface{}{{
@@ -350,13 +354,15 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 // findBestCluster finds the best-matching cluster via level-by-level descent
 // (mirroring Python _find_best_cluster). It KNNs the current level's clusters
 // and, when the best match is >= recurse threshold, descends into that cluster's
-// children. Returns the best cluster name + similarity.
-func (s *NavService) findBestCluster(ctx context.Context, tenantID, kbID string, vec []float32) (string, float64, error) {
+// children. Returns the best cluster name, similarity, and its depth (0 = root)
+// so callers can assign consistent child depth_int values.
+func (s *NavService) findBestCluster(ctx context.Context, tenantID, kbID string, vec []float32) (string, float64, int, error) {
 	f64 := f32ToF64Slice(vec)
 	parent := navRootParent
 	bestName := ""
 	bestSim := 0.0
-	for depth := 0; depth < navMaxDepth; depth++ {
+	bestDepth := 0
+	for level := 0; level < navMaxDepth; level++ {
 		// KNN among clusters whose parent is the current level.
 		chunks, _, err := s.navSearch(ctx, tenantID, kbID,
 			navFilter(map[string]interface{}{
@@ -373,7 +379,7 @@ func (s *NavService) findBestCluster(ctx context.Context, tenantID, kbID string,
 				ExtraOptions:      map[string]interface{}{"similarity": 0.0},
 			}})
 		if err != nil {
-			return "", 0, err
+			return "", 0, 0, err
 		}
 		if len(chunks) == 0 {
 			break
@@ -381,9 +387,10 @@ func (s *NavService) findBestCluster(ctx context.Context, tenantID, kbID string,
 		name := firstStringValue(chunks[0]["title_kwd"])
 		sim := rowScore(chunks[0])
 		// Keep the STRONGEST match seen so far across all levels, so a strong
-		// ancestor is never displaced by a weaker descendant.
+		// ancestor is never displaced by a weaker descendant. Record its depth
+		// so the caller can set consistent child depth_int values.
 		if sim > bestSim {
-			bestName, bestSim = name, sim
+			bestName, bestSim, bestDepth = name, sim, level
 		}
 		// Descend only while the current match is strong enough that a deeper
 		// child could be a better target.
@@ -392,7 +399,7 @@ func (s *NavService) findBestCluster(ctx context.Context, tenantID, kbID string,
 		}
 		parent = name
 	}
-	return bestName, bestSim, nil
+	return bestName, bestSim, bestDepth, nil
 }
 
 // rowScore extracts the engine's _score field as float64.

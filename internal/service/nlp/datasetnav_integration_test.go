@@ -108,11 +108,32 @@ func TestDatasetNav_AvailableIntZero_Isolation(t *testing.T) {
 	// The written nav row must carry compile_kwd=dataset_nav and available_int=0,
 	// so the default retriever (available_int=1 filter) will not surface it.
 	row := findNavRow(t, tenantID, kbID, docID)
-	if ck, _ := row["compile_kwd"].(string); !strings.Contains(ck, "dataset_nav") {
+	// compile_kwd may come back list-wrapped by the engine, so use firstStrOrSlice.
+	if ck := firstStrOrSlice(row["compile_kwd"]); !strings.Contains(ck, "dataset_nav") {
 		t.Errorf("nav row compile_kwd = %q, want dataset_nav", ck)
 	}
 	avail := intValue(row["available_int"])
 	if avail != 0 {
 		t.Errorf("nav row available_int = %d, want 0 (so it is hidden from the default retriever)", avail)
 	}
+}
+
+// firstStrOrSlice returns the first string of a value that may be a plain string
+// or a list-wrapped string (engine fields are often returned as []interface{}).
+func firstStrOrSlice(v interface{}) string {
+	switch tv := v.(type) {
+	case string:
+		return tv
+	case []string:
+		if len(tv) > 0 {
+			return tv[0]
+		}
+	case []interface{}:
+		if len(tv) > 0 {
+			if s, ok := tv[0].(string); ok {
+				return s
+			}
+		}
+	}
+	return ""
 }

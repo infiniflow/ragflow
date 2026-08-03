@@ -62,7 +62,9 @@ type NavService interface {
 	// UpsertDoc places one document summary into the nav tree (incremental,
 	// ES-backed read-modify-write; deterministic placement in the minimal loop).
 	UpsertDoc(ctx context.Context, in UpsertDocInput) error
-	// RemoveDoc removes a document and cascades empty-cluster cleanup.
+	// RemoveDoc removes a document's nav rows for the given doc. The minimal-loop
+	// implementation deletes the nav_doc row(s) for the doc; empty-cluster
+	// cascade cleanup is NOT yet implemented.
 	RemoveDoc(ctx context.Context, tenantID, kbID, docID string) error
 
 	// Search runs query KNN over nav rows and returns the routed doc ids.

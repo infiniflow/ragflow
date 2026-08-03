@@ -71,8 +71,9 @@ type configError struct{ msg string }
 func (e *configError) Error() string { return e.msg }
 
 var (
-	mu   sync.RWMutex
-	inst Invoker
+	mu           sync.RWMutex
+	inst         Invoker
+	defaultModel string
 )
 
 // SetDefaultInvoker installs the (production or test) invoker. Pass nil to
@@ -81,6 +82,22 @@ func SetDefaultInvoker(inv Invoker) {
 	mu.Lock()
 	defer mu.Unlock()
 	inst = inv
+}
+
+// SetDefaultModelName records the tenant-default chat model name. The production
+// invoker uses it when a Request omits ModelName, so harness/agentic-search LLM
+// calls work without threading model config through every node.
+func SetDefaultModelName(name string) {
+	mu.Lock()
+	defer mu.Unlock()
+	defaultModel = name
+}
+
+// GetDefaultModelName returns the configured default model name ("" if unset).
+func GetDefaultModelName() string {
+	mu.RLock()
+	defer mu.RUnlock()
+	return defaultModel
 }
 
 // GetDefaultInvoker returns the installed invoker. It returns nil when no

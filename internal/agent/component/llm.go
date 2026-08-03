@@ -168,20 +168,30 @@ func getDefaultChatInvoker() ChatInvoker {
 	return &einoChatInvoker{}
 }
 
-// einoChatInvoker is the production ChatInvoker — it constructs a fresh
-// models.EinoChatModel per call from the request and dispatches.
-type einoChatInvoker struct{}
-
-// init installs the production eino-based invoker as the shared chat default so
-// LLM calls work out of the box; tests override it via SetDefaultChatInvoker.
-func init() {
+// InstallDefaultChatInvoker registers the production eino-based invoker as the
+// shared chat default. Called at server bootstrap so harness/agentic-search LLM
+// calls work in production; without it, chat.GetDefaultInvoker() stays nil and
+// harness falls back gracefully.
+func InstallDefaultChatInvoker() {
 	chat.SetDefaultInvoker(&einoChatInvoker{})
 }
+
+// einoChatInvoker is the production ChatInvoker — it constructs a fresh
+// models.EinoChatModel per call from the request and dispatches. It is NOT
+// registered as the shared chat default at init (so chat.GetDefaultInvoker()
+// stays nil until bootstrap); cmd registers it via SetDefaultChatInvoker.
+type einoChatInvoker struct{}
 
 // Invoke satisfies ChatInvoker.
 func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	if req.ModelName == "" {
-		return nil, fmt.Errorf("component: LLM: model_id is required")
+		// Harness/agentic-search nodes may omit the model; fall back to the
+		// bootstrap-registered tenant default so those calls work in production.
+		if def := chat.GetDefaultModelName(); def != "" {
+			req.ModelName = def
+		} else {
+			return nil, fmt.Errorf("component: LLM: model_id is required and no default model is configured")
+		}
 	}
 	driver := req.Driver
 	modelName := req.ModelName

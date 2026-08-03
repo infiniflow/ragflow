@@ -364,6 +364,27 @@ func TestNavService_Acceptance4_ListChildren(t *testing.T) {
 	}
 }
 
+// TestNavService_NavDocDepth asserts a nav_doc merged under a root cluster
+// (depth 0) gets depth_int = parentDepth+1 = 1, not a hard-coded value.
+func TestNavService_NavDocDepth(t *testing.T) {
+	eng := newMemNavEngine()
+	ns := newTestNav(eng)
+	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d1", "aaa one")); err != nil {
+		t.Fatal(err)
+	}
+	if err := ns.UpsertDoc(context.Background(), navUpsertInput("t1", "kb1", "d2", "aaa two")); err != nil {
+		t.Fatal(err)
+	}
+	// The nav_doc for d2 sits under the root cluster; its depth_int must be 1.
+	for _, row := range eng.rows {
+		if row["doc_id"] == "d2" {
+			if d, ok := row["depth_int"].(int); !ok || d != 1 {
+				t.Errorf("nav_doc d2 depth_int = %v, want 1 (parentDepth 0 + 1)", row["depth_int"])
+			}
+		}
+	}
+}
+
 func navUpsertInput(tenant, kb, doc, summary string) nav.UpsertDocInput {
 	return nav.UpsertDocInput{TenantID: tenant, KbID: kb, DocID: doc, Summary: summary}
 }

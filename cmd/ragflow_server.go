@@ -836,6 +836,11 @@ func startServer(ctx context.Context) {
 	compilationTemplateGroupHandler := handler.NewCompilationTemplateGroupHandler(service.NewCompilationTemplateGroupService())
 	datasetArtifactHandler := handler.NewDatasetArtifactHandler(service.NewDatasetArtifactService(), datasetsService, file.NewFileCommitService())
 
+	// Install the production eino-based chat invoker as the shared chat default,
+	// so agentic-search harness LLM calls work in production. Without this,
+	// chat.GetDefaultInvoker() stays nil and the harness falls back gracefully.
+	component.InstallDefaultChatInvoker()
+
 	// Install the dataset-nav ES-backed service (internal/service/nav +
 	// internal/service/nlp). The embedder resolves the tenant's embedding model
 	// on demand so Search/UpsertDoc can embed queries/summaries automatically.
