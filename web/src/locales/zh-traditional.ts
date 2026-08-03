@@ -791,6 +791,7 @@ export default {
       modified: '更新成功',
       created: '創建成功',
       deleted: '刪除成功',
+      noLangfuseConfigToDelete: '沒有可刪除的 Langfuse 配置',
       renamed: '重命名成功',
       operated: '操作成功',
       updated: '更新成功',

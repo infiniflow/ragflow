@@ -20,7 +20,8 @@ import random
 import re
 from functools import partial
 
-from litellm import logging
+import logging
+
 import numpy as np
 from PIL import Image
 

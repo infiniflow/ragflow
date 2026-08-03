@@ -55,6 +55,7 @@ export const isConfigMetaKey = (key: string) =>
     'page_example',
     'synthesis',
     'use_blueprint',
+    'plan',
     'rechunk',
     'rechunk_rules',
   ].includes(key);
@@ -108,6 +109,10 @@ export const buildConfigFromBuiltin = (
       : {}),
     use_blueprint:
       kind === CompilationTemplateKind.Artifacts && example.length > 0,
+    plan:
+      typeof builtinTemplate.config?.plan === 'boolean'
+        ? builtinTemplate.config.plan
+        : true,
     ...(kind !== CompilationTemplateKind.Tree
       ? {
           rechunk: builtinTemplate.config?.rechunk === true,
@@ -168,6 +173,7 @@ export const transformDetailToForm = (
       : {}),
     use_blueprint:
       detail.kind === CompilationTemplateKind.Artifacts && example.length > 0,
+    plan: typeof config.plan === 'boolean' ? config.plan : true,
     ...(detail.kind !== CompilationTemplateKind.Tree
       ? {
           rechunk: config.rechunk === true,
@@ -248,6 +254,10 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
     if (key === 'kind' || key === 'llm_id') return;
     if (key === 'instruction' || key === 'page_example') return;
     if (key === 'synthesis') {
+      config[key] = value as ICompilationTemplateConfigRequest[string];
+      return;
+    }
+    if (key === 'plan') {
       config[key] = value as ICompilationTemplateConfigRequest[string];
       return;
     }

@@ -45,6 +45,7 @@
 	"extra": {"type": "varchar", "default": ""},
 
 	"compile_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+	"plan_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"scope_kwd": {"type": "varchar", "default": "doc", "analyzer": "whitespace-#"},
 	"source_chunk_ids": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
 	"source_doc_ids": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
@@ -64,8 +65,19 @@
 	"topic_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"page_type_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"entity_names_kwd": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
+	"entity_names": {"type": "json", "default": "[]", "enabled": false},
 	"outlinks_kwd": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
 	"related_kb_pages_kwd": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
+
+	"page_version_int": {"type": "integer", "default": 1},
+	"synthesis_version_int": {"type": "integer", "default": 0},
+	"claims": {"type": "json", "default": "[]", "enabled": false},
+	"page_ids": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
+	"page_id": {"type": "varchar", "default": ""},
+	"deleted_doc_id": {"type": "varchar", "default": ""},
+	"source_chunk_hashes": {"type": "json", "default": "{}", "enabled": false},
+	"map_checksum": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
+
 	"type_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"from_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"to_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
@@ -77,5 +89,8 @@
 	"depth_int": {"type": "integer", "default": 0},
 	"parent_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"outlinks_int": {"type": "integer", "default": 0},
-	"token_num": {"type": "integer", "default": 0}
+	"token_num": {"type": "integer", "default": 0},
+
+	"aliases": {"type": "json", "default": "[]", "enabled": false},
+	"aliases_flat_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"}
 }

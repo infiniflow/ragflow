@@ -22,6 +22,7 @@ export const DefaultTemplateValues: TemplateSchemaType = {
     instruction: '',
     page_example: '',
     use_blueprint: false,
+    plan: true,
     rechunk: false,
     rechunk_rules: '',
   },

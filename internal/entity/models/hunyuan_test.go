@@ -360,7 +360,8 @@ func TestHunyuanStreamFailsWithoutTerminal(t *testing.T) {
 func TestHunyuanStreamAcceptsTerminalWithoutDelta(t *testing.T) {
 	withSSRFBypass(t)
 	srv := newHunyuanSSEServer(t, "/chat/completions",
-		`data: {"choices":[{"finish_reason":"stop"}]}`+"\n\n",
+		`data: {"choices":[{"finish_reason":"stop"}]}`+"\n\n"+
+			`data: [DONE]`+"\n\n",
 	)
 	defer srv.Close()
 

@@ -392,7 +392,11 @@ class TaskService(CommonService):
                         - progress_msg (str, optional): Progress message to append
                         - progress (float, optional): Progress percentage (0.0 to 1.0)
         """
-        task = cls.model.get_by_id(id)
+        try:
+            task = cls.model.get_by_id(id)
+        except cls.model.DoesNotExist:
+            logging.info("Skip progress update for deleted task %s", id)
+            return
         if not task:
             logging.warning("Update_progress error: task not found")
             return
