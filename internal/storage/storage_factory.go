@@ -26,20 +26,20 @@ import (
 )
 
 var (
-	globalFactory *StorageFactory
+	globalFactory *Factory
 	once          sync.Once
 )
 
-// StorageFactory creates storage instances based on configuration
-type StorageFactory struct {
+// Factory creates storage instances based on configuration
+type Factory struct {
 	storage Storage
 	mu      sync.RWMutex
 }
 
 // GetStorageFactory returns the singleton storage factory instance
-func GetStorageFactory() *StorageFactory {
+func GetStorageFactory() *Factory {
 	once.Do(func() {
-		globalFactory = &StorageFactory{}
+		globalFactory = &Factory{}
 	})
 	return globalFactory
 }
@@ -67,7 +67,7 @@ func CloseStorage() error {
 	return factory.storage.Close()
 }
 
-func (f *StorageFactory) initStorage(ctx context.Context) error {
+func (f *Factory) initStorage(ctx context.Context) error {
 	globalConfig := server.GetConfig()
 	switch globalConfig.StorageEngineType() {
 	case "minio":
@@ -83,7 +83,7 @@ func (f *StorageFactory) initStorage(ctx context.Context) error {
 	}
 }
 
-func (f *StorageFactory) initMinio() error {
+func (f *Factory) initMinio() error {
 	globalConfig := server.GetConfig()
 	storage, err := NewMinioStorage(globalConfig.GetMinioConfig())
 	if err != nil {
@@ -97,7 +97,7 @@ func (f *StorageFactory) initMinio() error {
 	return nil
 }
 
-func (f *StorageFactory) initS3(ctx context.Context) error {
+func (f *Factory) initS3(ctx context.Context) error {
 	globalConfig := server.GetConfig()
 	storage, err := NewS3Storage(ctx, globalConfig.GetS3Config())
 	if err != nil {
@@ -111,7 +111,7 @@ func (f *StorageFactory) initS3(ctx context.Context) error {
 	return nil
 }
 
-func (f *StorageFactory) initOSS(ctx context.Context) error {
+func (f *Factory) initOSS(ctx context.Context) error {
 	globalConfig := server.GetConfig()
 	storage, err := NewOSSStorage(ctx, globalConfig.GetOSSConfig())
 	if err != nil {
@@ -125,7 +125,7 @@ func (f *StorageFactory) initOSS(ctx context.Context) error {
 	return nil
 }
 
-func (f *StorageFactory) initGCS(ctx context.Context) error {
+func (f *Factory) initGCS(ctx context.Context) error {
 	globalConfig := server.GetConfig()
 	storage, err := NewGCSStorage(ctx, globalConfig.GetGCSConfig())
 	if err != nil {
@@ -140,14 +140,14 @@ func (f *StorageFactory) initGCS(ctx context.Context) error {
 }
 
 // GetStorage returns the current storage instance
-func (f *StorageFactory) GetStorage() Storage {
+func (f *Factory) GetStorage() Storage {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 	return f.storage
 }
 
 // SetStorage sets the storage instance (useful for testing)
-func (f *StorageFactory) SetStorage(storage Storage) {
+func (f *Factory) SetStorage(storage Storage) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.storage = storage

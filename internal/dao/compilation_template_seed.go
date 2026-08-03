@@ -73,7 +73,7 @@ func builtinTemplateID(kind string) string {
 // resolvable for every tenant.
 func SeedBuiltinCompilationTemplates(ctx context.Context, db *gorm.DB) error {
 	if err := SeedBuiltinCompilationTemplatesForTenant(ctx, db, ""); err != nil {
-		common.Warn("failed to seed built-in compilation templates", zap.Error(err))
+		common.Warn("Failed to seed built-in compilation templates", zap.Error(err))
 		return err
 	}
 	return nil

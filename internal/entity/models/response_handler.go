@@ -33,6 +33,11 @@ func HandleNonStreamingResponse(body []byte, modelUsage *common.ModelUsage, chat
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
+	// Check for upstream error.
+	if apiErr, ok := result["error"]; ok && apiErr != nil {
+		return nil, fmt.Errorf("upstream error: %v", apiErr)
+	}
+
 	// Extract usage via the protocol-specific parser.
 	var usage *TokenUsage
 	if u, ok := cfg.ResponseParser(result); ok {
@@ -124,6 +129,9 @@ func HandleStreamingResponse(body io.Reader, modelUsage *common.ModelUsage, chat
 		}
 
 		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
+		}
+		if finishReason, ok := event["finish_reason"].(string); ok && finishReason != "" {
 			sawTerminal = true
 		}
 
