@@ -128,8 +128,14 @@ func (j *JinaModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 	if err := j.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
+	if modelName == "" {
+		return fmt.Errorf("model name is required")
+	}
 	if len(messages) == 0 {
 		return fmt.Errorf("messages is empty")
+	}
+	if err := validateStreamConfig(chatModelConfig); err != nil {
+		return err
 	}
 
 	baseURL, err := j.baseModel.GetBaseURL(apiConfig)
@@ -144,6 +150,7 @@ func (j *JinaModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 
 	if chatModelConfig != nil {
 		chatModelConfig.ToolCallsResult = nil
+		chatModelConfig.UsageResult = nil
 		if chatModelConfig.Thinking != nil {
 			reqBody["enable_thinking"] = *chatModelConfig.Thinking
 		}

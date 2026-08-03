@@ -233,6 +233,7 @@ func (h *HuaweiCloudModel) ChatStreamlyWithSender(ctx context.Context, modelName
 	huaweiCloudApplyChatConfig(reqBody, modelName, chatModelConfig)
 	if chatModelConfig != nil {
 		chatModelConfig.ToolCallsResult = nil
+		chatModelConfig.UsageResult = nil
 	}
 	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
