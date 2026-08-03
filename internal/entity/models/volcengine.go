@@ -170,7 +170,7 @@ func (v *VolcEngine) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/chat/completions", resolvedBaseURL)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
