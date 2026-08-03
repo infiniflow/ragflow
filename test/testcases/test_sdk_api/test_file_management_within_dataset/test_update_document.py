@@ -148,7 +148,7 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"chunk_count": 1}, "Can't change `chunk_count`"),
+            ({"chunk_count": 1}, "can't change `chunk_count`"),
             pytest.param(
                 {"create_date": "Fri, 14 Mar 2025 16:53:42 GMT"},
                 "The input parameters are invalid",
@@ -245,7 +245,7 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"chunk_count": 1}, "Can't change `chunk_count`"),
+            ({"chunk_count": 1}, "can't change `chunk_count`"),
         ],
     )
     def test_immutable_fields_chunk_count(self, add_documents, payload, expected_message):
