@@ -88,8 +88,12 @@ func SeedBuiltinCompilationTemplatesForTenant(ctx context.Context, db *gorm.DB, 
 		}
 
 		for _, t := range builtinCompilationTemplateKinds {
+			// Built-in template id is the kind itself (mirrors the Python
+			// seed, which derives the id from the template file name, e.g.
+			// knowledge_graph.yaml -> "knowledge_graph"). It stays well under
+			// the varchar(32) id column, unlike group-id + kind concatenation.
 			tmpl := &entity.CompilationTemplate{
-				ID:       BuiltinCompilationTemplateGroupID + "-" + t.Kind,
+				ID:       t.Kind,
 				TenantID: nil, // global built-in catalogue
 				GroupID:  strptr(BuiltinCompilationTemplateGroupID),
 				Name:     t.Name,
