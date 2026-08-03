@@ -154,7 +154,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 		return
 	}
 
-	// 1. Get static models from config (may be nil when models list is empty)
+	// 1. Get static models from config (maybe nil when models list is empty)
 	staticModels, _ := dao.GetModelProviderManager().ListModels(providerName)
 	if staticModels == nil {
 		staticModels = []map[string]interface{}{}
