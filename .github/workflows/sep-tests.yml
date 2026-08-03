@@ -16,7 +16,7 @@ on:
   # — pull_request workflows use the workflow files from the pull request branch, and secrets are unavailable.
   # We use pull_request_target so that GITEE_TOKEN (and other repo secrets) are available when building
   # ragflow:nightly from a fork PR, while still running the full test suite on PRs labeled with `ci`.
-  pull_request_target:
+  pull_request:
     types: [synchronize, labeled]
     paths-ignore:
       - 'docs/**'
@@ -24,8 +24,6 @@ on:
       - '*.mdx'
   schedule:
     - cron: '0 16 * * *'  # This schedule runs every 16:00:00Z(00:00:00+08:00)
-  # Allow maintainers to trigger a full build+test run manually (secrets are available).
-  workflow_dispatch:
 
 # https://docs.github.com/en/actions/using-jobs/using-concurrency
 concurrency:
@@ -243,7 +241,7 @@ jobs:
       - name: Prepare Python test environment
         if: steps.detect_changes.outputs.has_python_changes == 'true'
         run: |
-          git config --global url."https://oauth2:${{ secrets.GITEE_TOKEN }}@gitee.com/".insteadOf "https://gitee.com/"
+          git config --global url."https://oauth2:${GITEE_TOKEN}@gitee.com/".insteadOf "https://gitee.com/"
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
@@ -346,7 +344,7 @@ jobs:
           # Pass the Gitee personal access token to the Docker build as a BuildKit secret
           # (mounted inside the builder at /run/secrets/gitee_token, never persisted in any layer).
           GITEE_TOKEN_FILE="$(mktemp)"
-          printf '%s' '${{ secrets.GITEE_TOKEN }}' > "${GITEE_TOKEN_FILE}"
+          printf '%s' '${GITEE_TOKEN}' > "${GITEE_TOKEN_FILE}"
           (
             flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME}"
@@ -358,7 +356,7 @@ jobs:
       - name: Prepare Python test environment
         if: env.API_PROXY_SCHEME != 'web'
         run: |
-          git config --global url."https://oauth2:${{ secrets.GITEE_TOKEN }}@gitee.com/".insteadOf "https://gitee.com/"
+          git config --global url."https://oauth2:${GITEE_TOKEN}@gitee.com/".insteadOf "https://gitee.com/"
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
@@ -921,7 +919,7 @@ jobs:
           # Pass the Gitee personal access token to the Docker build as a BuildKit secret
           # (mounted inside the builder at /run/secrets/gitee_token, never persisted in any layer).
           GITEE_TOKEN_FILE="$(mktemp)"
-          printf '%s' '${{ secrets.GITEE_TOKEN }}' > "${GITEE_TOKEN_FILE}"
+          printf '%s' '${GITEE_TOKEN }' > "${GITEE_TOKEN_FILE}"
           (
             flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}/${API_PROXY_SCHEME}"
@@ -933,7 +931,7 @@ jobs:
       - name: Prepare Python test environment
         if: env.API_PROXY_SCHEME != 'web'
         run: |
-          git config --global url."https://oauth2:${{ secrets.GITEE_TOKEN }}@gitee.com/".insteadOf "https://gitee.com/"
+          git config --global url."https://oauth2:${GITEE_TOKEN}@gitee.com/".insteadOf "https://gitee.com/"
           uv sync --python 3.13 --group test --frozen
           uv pip install -e sdk/python
 
