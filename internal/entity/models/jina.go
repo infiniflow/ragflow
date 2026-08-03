@@ -384,7 +384,7 @@ func (j *JinaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Lis
 	// convert result["data"] to []map[string]interface{}
 	models := make([]ModelListItem, 0, len(result["data"].([]interface{})))
 	for _, model := range result["data"].([]interface{}) {
-		modelName := model.(map[string]interface{})["name"].(string)
+		modelName := model.(map[string]interface{})["id"].(string)
 		models = append(models, ModelListItem{
 			ID:      modelName,
 			OwnedBy: "",
