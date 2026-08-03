@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package task
+package indexdoc
 
 import (
 	"fmt"
@@ -30,16 +30,16 @@ func NormalizeChunks(output map[string]any) []map[string]any {
 	}
 
 	if chunks, ok := output["chunks"].([]map[string]any); ok {
-		return deepCopyChunks(chunks)
+		return DeepCopyChunks(chunks)
 	}
 	if chunks, ok := toChunkMaps(output["chunks"]); ok {
-		return deepCopyChunks(chunks)
+		return DeepCopyChunks(chunks)
 	}
 	if json, ok := output["json"].([]map[string]any); ok {
-		return deepCopyChunks(json)
+		return DeepCopyChunks(json)
 	}
 	if json, ok := toChunkMaps(output["json"]); ok {
-		return deepCopyChunks(json)
+		return DeepCopyChunks(json)
 	}
 	if md, ok := output["markdown"].(string); ok && md != "" {
 		return []map[string]any{{"text": md}}
@@ -69,10 +69,10 @@ func toChunkMaps(v any) ([]map[string]any, bool) {
 	return out, true
 }
 
-// deepCopyChunks returns a deep copy of the chunk slice and each chunk map.
+// DeepCopyChunks returns a deep copy of the chunk slice and each chunk map.
 // Slice values (e.g. []float64 vectors) are fully copied, not shared.
 // Mirrors Python: copy.deepcopy()
-func deepCopyChunks(chunks []map[string]any) []map[string]any {
+func DeepCopyChunks(chunks []map[string]any) []map[string]any {
 	if chunks == nil {
 		return nil
 	}

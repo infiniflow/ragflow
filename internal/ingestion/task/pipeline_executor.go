@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 
 	"gorm.io/gorm"
 )
@@ -198,13 +199,13 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 // performs no DB/index writes — the embedding vectors already computed by the
 // pipeline run are left on the chunks. This keeps debug runs side-effect free.
 func (s *PipelineExecutor) collectDebugOutput(ctx context.Context, pipelineOutput map[string]any, start time.Time) (*PipelineResult, error) {
-	chunks := NormalizeChunks(pipelineOutput)
+	chunks := indexdoc.NormalizeChunks(pipelineOutput)
 	return &PipelineResult{
 		DocID:            s.taskCtx.Doc.ID,
 		KbID:             s.taskCtx.Doc.KbID,
 		Chunks:           chunks,
 		ChunkCount:       countDistinctChunkIDs(chunks),
-		TokenConsumption: GetEmbeddingTokenConsumption(pipelineOutput),
+		TokenConsumption: indexdoc.GetEmbeddingTokenConsumption(pipelineOutput),
 		Duration:         time.Since(start).Seconds(),
 	}, nil
 }
@@ -217,13 +218,13 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 
-	chunks := NormalizeChunks(pipelineOutput)
+	chunks := indexdoc.NormalizeChunks(pipelineOutput)
 	if len(chunks) == 0 {
 		return nil, nil
 	}
 
-	embeddingTokenConsumption := GetEmbeddingTokenConsumption(pipelineOutput)
-	metadata, err := ProcessChunksForPipeline(
+	embeddingTokenConsumption := indexdoc.GetEmbeddingTokenConsumption(pipelineOutput)
+	metadata, err := indexdoc.ProcessChunksForPipeline(
 		chunks,
 		s.taskCtx.Doc.ID,
 		s.taskCtx.Doc.KbID,
@@ -234,7 +235,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 
-	tableMeta := AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
+	tableMeta := indexdoc.AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
 	if tableMeta != nil {
 		if metadata == nil {
 			metadata = make(map[string]any)
