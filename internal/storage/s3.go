@@ -164,9 +164,14 @@ func (s *S3Storage) Put(ctx context.Context, bucket, fnm string, binary []byte, 
 				Bucket: aws.String(bucket),
 			})
 			if err != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return ctxErr
+				}
 				common.Error("Failed to create bucket", err, zap.String("bucket", bucket), zap.Error(err))
 				s.reconnect(ctx)
-				time.Sleep(time.Second)
+				if err = sleepOrAbort(ctx, time.Second); err != nil {
+					return err
+				}
 				continue
 			}
 			common.Info("Created bucket", zap.String("bucket", bucket))
@@ -179,9 +184,14 @@ func (s *S3Storage) Put(ctx context.Context, bucket, fnm string, binary []byte, 
 			Body:   reader,
 		})
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
 			common.Error("Failed to put object", err, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			s.reconnect(ctx)
-			time.Sleep(time.Second)
+			if err = sleepOrAbort(ctx, time.Second); err != nil {
+				return err
+			}
 			continue
 		}
 

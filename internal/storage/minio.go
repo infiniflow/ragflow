@@ -136,16 +136,26 @@ func (m *MinioStorage) Put(ctx context.Context, bucket, fnm string, binary []byt
 		if m.bucket == "" {
 			exists, err = m.client.BucketExists(ctx, bucket)
 			if err != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return ctxErr
+				}
 				common.Warn("Failed to check bucket existence", zap.String("bucket", bucket), zap.Error(err))
 				m.reconnect()
-				time.Sleep(time.Second)
+				if err = sleepOrAbort(ctx, time.Second); err != nil {
+					return err
+				}
 				continue
 			}
 			if !exists {
 				if err = m.client.MakeBucket(ctx, bucket, minio.MakeBucketOptions{}); err != nil {
+					if ctxErr := ctx.Err(); ctxErr != nil {
+						return ctxErr
+					}
 					common.Warn("Failed to create bucket", zap.String("bucket", bucket), zap.Error(err))
 					m.reconnect()
-					time.Sleep(time.Second)
+					if err = sleepOrAbort(ctx, time.Second); err != nil {
+						return err
+					}
 					continue
 				}
 			}
@@ -154,9 +164,14 @@ func (m *MinioStorage) Put(ctx context.Context, bucket, fnm string, binary []byt
 		reader := bytes.NewReader(binary)
 		_, err = m.client.PutObject(ctx, bucket, fnm, reader, int64(len(binary)), minio.PutObjectOptions{})
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
 			common.Warn("Failed to put object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			m.reconnect()
-			time.Sleep(time.Second)
+			if err = sleepOrAbort(ctx, time.Second); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -173,18 +188,28 @@ func (m *MinioStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...
 	for i := 0; i < 2; i++ {
 		obj, err := m.client.GetObject(ctx, bucket, fnm, minio.GetObjectOptions{})
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 			common.Warn("failed to get object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			m.reconnect()
-			time.Sleep(time.Second)
+			if err = sleepOrAbort(ctx, time.Second); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		defer obj.Close()
 
 		buf := new(bytes.Buffer)
 		if _, err = buf.ReadFrom(obj); err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 			common.Warn("failed to read object data", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			m.reconnect()
-			time.Sleep(time.Second)
+			if err = sleepOrAbort(ctx, time.Second); err != nil {
+				return nil, err
+			}
 			continue
 		}
 
@@ -235,9 +260,14 @@ func (m *MinioStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, 
 	for i := 0; i < 10; i++ {
 		url, err := m.client.PresignedGetObject(ctx, bucket, fnm, expires, nil)
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return "", ctxErr
+			}
 			common.Warn("Failed to get presigned URL", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
 			m.reconnect()
-			time.Sleep(time.Second)
+			if err = sleepOrAbort(ctx, time.Second); err != nil {
+				return "", err
+			}
 			continue
 		}
 

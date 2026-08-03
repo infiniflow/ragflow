@@ -156,9 +156,14 @@ func (o *OSSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte,
 				Bucket: aws.String(bucket),
 			})
 			if err != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return ctxErr
+				}
 				common.Error("Failed to create bucket", err, zap.String("bucket", bucket))
 				o.reconnect(ctx)
-				time.Sleep(time.Second)
+				if err = sleepOrAbort(ctx, time.Second); err != nil {
+					return err
+				}
 				continue
 			}
 			common.Info("Created bucket", zap.String("bucket", bucket))
@@ -171,9 +176,14 @@ func (o *OSSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte,
 			Body:   reader,
 		})
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return ctxErr
+			}
 			common.Error("Failed to put object", err, zap.String("bucket", bucket), zap.String("key", fnm))
 			o.reconnect(ctx)
-			time.Sleep(time.Second)
+			if err = sleepOrAbort(ctx, time.Second); err != nil {
+				return err
+			}
 			continue
 		}
 
@@ -193,18 +203,28 @@ func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...st
 			Key:    aws.String(fnm),
 		})
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 			common.Error("Failed to get object", err, zap.String("bucket", bucket), zap.String("key", fnm))
 			o.reconnect(ctx)
-			time.Sleep(time.Second)
+			if err = sleepOrAbort(ctx, time.Second); err != nil {
+				return nil, err
+			}
 			continue
 		}
 		defer result.Body.Close()
 
 		buf := new(bytes.Buffer)
 		if _, err = buf.ReadFrom(result.Body); err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, ctxErr
+			}
 			common.Error("Failed to read object data", err, zap.String("bucket", bucket), zap.String("key", fnm))
 			o.reconnect(ctx)
-			time.Sleep(time.Second)
+			if err = sleepOrAbort(ctx, time.Second); err != nil {
+				return nil, err
+			}
 			continue
 		}
 

@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"sync"
+	"time"
 )
 
 var (
@@ -145,38 +146,23 @@ func (f *StorageFactory) GetStorage() Storage {
 	return f.storage
 }
 
-// Create creates a new storage instance based on the storage type
-// This is the factory method equivalent to Python's StorageFactory.create()
-//func (f *StorageFactory) Create(storageType StorageType) (Storage, error) {
-//	var storage Storage
-//	var err error
-//
-//	switch storageType {
-//	case StorageMinio:
-//		storage, err = NewMinioStorage(f.config.Minio)
-//		if err != nil {
-//			return nil, fmt.Errorf("MinIO config not available: %w, %v", err, f.config.Minio)
-//		}
-//	case StorageAWSS3:
-//		storage, err = NewS3Storage(f.config.S3)
-//		if err != nil {
-//			return nil, fmt.Errorf("S3 config not available: %w, %v", err, f.config.S3)
-//		}
-//	case StorageOSS:
-//		storage, err = NewOSSStorage(f.config.OSS)
-//		if err != nil {
-//			return nil, fmt.Errorf("OSS config not available: %w, %v", err, f.config.OSS)
-//		}
-//	default:
-//		return nil, fmt.Errorf("unsupported storage type: %v", storageType)
-//	}
-//
-//	return storage, nil
-//}
-
 // SetStorage sets the storage instance (useful for testing)
 func (f *StorageFactory) SetStorage(storage Storage) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.storage = storage
+}
+
+func sleepOrAbort(ctx context.Context, d time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }

@@ -280,9 +280,6 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		return err
 	}
 	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
-		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
-	}
-	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
 		if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
 			return fmt.Errorf("RemoveDocumentKeepFile: failed to delete tasks for %s: %w", docID, delErr)
 		}

@@ -67,6 +67,10 @@ func (m *MemoryStorage) Put(ctx context.Context, bucket, fnm string, binary []by
 		return fmt.Errorf("memory storage: key is required")
 	}
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -105,6 +109,10 @@ func (m *MemoryStorage) Get(ctx context.Context, bucket, fnm string, tenantID ..
 // Remove deletes an object from the in-memory backend. Removing a
 // non-existent key is a no-op and returns nil.
 func (m *MemoryStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -178,6 +186,10 @@ func (m *MemoryStorage) BucketExists(ctx context.Context, bucket string) bool {
 // RemoveBucket deletes a bucket and all of its keys. Removing a
 // non-existent bucket is a no-op and returns nil.
 func (m *MemoryStorage) RemoveBucket(ctx context.Context, bucket string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -189,6 +201,10 @@ func (m *MemoryStorage) RemoveBucket(ctx context.Context, bucket string) error {
 // The source is left untouched. Returns false if the source does not exist
 // or if the destination bucket creation fails.
 func (m *MemoryStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+	if err := ctx.Err(); err != nil {
+		return false
+	}
+
 	m.mu.RLock()
 	srcBucketMap, ok := m.objects[srcBucket]
 	if !ok {
@@ -218,6 +234,11 @@ func (m *MemoryStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket
 // Move transfers an object to a new location, deleting the source on success.
 // Returns false if the source does not exist or the copy step fails.
 func (m *MemoryStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+
+	if err := ctx.Err(); err != nil {
+		return false
+	}
+
 	if !m.Copy(ctx, srcBucket, srcPath, destBucket, destPath) {
 		return false
 	}
