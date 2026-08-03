@@ -243,7 +243,9 @@ func (m *MemoryStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket
 		return false
 	}
 	if err := m.Remove(ctx, srcBucket, srcPath); err != nil {
-		err = m.Remove(ctx, destBucket, destPath)
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		err = m.Remove(rollbackCtx, destBucket, destPath)
 		if err != nil {
 			common.Warn("Failed to roll back copied destination object", zap.String("bucket", destBucket), zap.String("key", destPath), zap.Error(err))
 		}
