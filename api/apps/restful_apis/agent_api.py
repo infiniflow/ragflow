@@ -2572,7 +2572,7 @@ async def _stream_agent_attachment(tenant_id, attachment_id, *, inline: bool):
     content_type, ext, filename = _attachment_request_metadata()
     data = await thread_pool_exec(settings.STORAGE_IMPL.get, tenant_id, attachment_id)
     if not data:
-        return get_data_error_result(message="Document not found!")
+        return get_data_error_result(message="document not found")
     response = await make_response(data)
     if inline:
         apply_preview_file_response_headers(response, content_type, ext, filename)

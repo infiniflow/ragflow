@@ -18,7 +18,7 @@ import (
 func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*entity.File, error) {
 	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil || file == nil {
-		return nil, fmt.Errorf("Document not found!")
+		return nil, fmt.Errorf("document not found")
 	}
 	if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
 		return nil, fmt.Errorf("no authorization")

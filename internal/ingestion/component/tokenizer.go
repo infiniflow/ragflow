@@ -244,7 +244,7 @@ func newTokenizerComponent(params map[string]any, resolver EmbedderResolver) (ru
 		embeddingModel = embeddingModelFromSetups(params)
 	}
 	if err := p.Validate(); err != nil {
-		return nil, fmt.Errorf("Tokenizer: param check: %w", err)
+		return nil, fmt.Errorf("tokenizer: param check: %w", err)
 	}
 	return &TokenizerComponent{param: p, resolver: resolver, embeddingModel: embeddingModel}, nil
 }
@@ -395,14 +395,14 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 		resolver = DefaultEmbedderResolver
 	}
 	if resolver == nil {
-		return nil, 0, fmt.Errorf("Tokenizer: embedding requested but no embedder resolver configured")
+		return nil, 0, fmt.Errorf("tokenizer: embedding requested but no embedder resolver configured")
 	}
 	embedder, err := resolver(ctx, tenantID, kbID, embeddingModel)
 	if err != nil {
-		return nil, 0, fmt.Errorf("Tokenizer: resolve embedder: %w", err)
+		return nil, 0, fmt.Errorf("tokenizer: resolve embedder: %w", err)
 	}
 	if embedder == nil {
-		return nil, 0, fmt.Errorf("Tokenizer: embedding requested but encoder resolution returned nil")
+		return nil, 0, fmt.Errorf("tokenizer: embedding requested but encoder resolution returned nil")
 	}
 
 	texts := make([]string, 0, len(chunks))
@@ -437,10 +437,10 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 		// `.strip()==""` check at tokenizer.py:200.
 		titleResults, err := embedder.Encode(ctx, []string{name})
 		if err != nil {
-			return nil, 0, fmt.Errorf("Tokenizer: encode title: %w", err)
+			return nil, 0, fmt.Errorf("tokenizer: encode title: %w", err)
 		}
 		if len(titleResults) != 1 {
-			return nil, 0, fmt.Errorf("Tokenizer: encode title returned %d vectors for 1 chunk", len(titleResults))
+			return nil, 0, fmt.Errorf("tokenizer: encode title returned %d vectors for 1 chunk", len(titleResults))
 		}
 		titleVec = titleResults[0].Vector
 		tokenCount = titleResults[0].TokenCount
@@ -455,10 +455,10 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 		}
 		batchResults, err := embedder.Encode(ctx, texts[start:end])
 		if err != nil {
-			return nil, 0, fmt.Errorf("Tokenizer: encode: %w", err)
+			return nil, 0, fmt.Errorf("tokenizer: encode: %w", err)
 		}
 		if len(batchResults) != end-start {
-			return nil, 0, fmt.Errorf("Tokenizer: encode returned %d vectors for %d chunks", len(batchResults), end-start)
+			return nil, 0, fmt.Errorf("tokenizer: encode returned %d vectors for %d chunks", len(batchResults), end-start)
 		}
 		for _, result := range batchResults {
 			tokenCount += result.TokenCount
@@ -472,11 +472,11 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 		if hasTitleVec {
 			merged, err = mergeEmbeddingVectors(titleVec, contentResults[i].Vector, titleWeight)
 			if err != nil {
-				return nil, 0, fmt.Errorf("Tokenizer: merge vectors: %w", err)
+				return nil, 0, fmt.Errorf("tokenizer: merge vectors: %w", err)
 			}
 		}
 		if err := chunks[idx].SetExtraValue(fmt.Sprintf("q_%d_vec", len(merged)), merged); err != nil {
-			return nil, 0, fmt.Errorf("Tokenizer: vector marshal: %w", err)
+			return nil, 0, fmt.Errorf("tokenizer: vector marshal: %w", err)
 		}
 	}
 	return chunks, tokenCount, nil
@@ -530,17 +530,17 @@ func mergeEmbeddingVectors(titleVec, contentVec []float64, titleWeight float64) 
 func decodeTokenizerFromUpstream(inputs map[string]any) (schema.TokenizerFromUpstream, error) {
 	var out schema.TokenizerFromUpstream
 	if inputs == nil {
-		return out, fmt.Errorf("Tokenizer: inputs map is nil")
+		return out, fmt.Errorf("tokenizer: inputs map is nil")
 	}
 	data, err := json.Marshal(stripRuntimeTimestamps(inputs))
 	if err != nil {
-		return out, fmt.Errorf("Tokenizer: encode inputs: %w", err)
+		return out, fmt.Errorf("tokenizer: encode inputs: %w", err)
 	}
-	if err := json.Unmarshal(data, &out); err != nil {
-		return out, fmt.Errorf("Tokenizer: decode inputs: %w", err)
+	if err = json.Unmarshal(data, &out); err != nil {
+		return out, fmt.Errorf("tokenizer: decode inputs: %w", err)
 	}
-	if err := out.Validate(); err != nil {
-		return out, fmt.Errorf("Tokenizer: input error: %w", err)
+	if err = out.Validate(); err != nil {
+		return out, fmt.Errorf("tokenizer: input error: %w", err)
 	}
 	return out, nil
 }
@@ -674,11 +674,11 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 		ck.ChunkOrderInt = intPtr(i)
 		titleTk, err := tok.Tokenize(titleStem)
 		if err != nil {
-			return fmt.Errorf("Tokenizer: title tokenize: %w", err)
+			return fmt.Errorf("tokenizer: title tokenize: %w", err)
 		}
 		titleSmTk, err := tok.FineGrainedTokenize(titleTk)
 		if err != nil {
-			return fmt.Errorf("Tokenizer: title fine-grain: %w", err)
+			return fmt.Errorf("tokenizer: title fine-grain: %w", err)
 		}
 		ck.TitleTks = titleTk
 		ck.TitleSmTks = titleSmTk
@@ -686,27 +686,27 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 		// Question / keyword / summary fields are optional. The python
 		// path branches on each independently.
 		if q := ck.Questions; q != "" {
-			if err := ck.SetExtraValue("question_kwd", strings.Split(q, "\n")); err != nil {
-				return fmt.Errorf("Tokenizer: question keywords marshal: %w", err)
+			if err = ck.SetExtraValue("question_kwd", strings.Split(q, "\n")); err != nil {
+				return fmt.Errorf("tokenizer: question keywords marshal: %w", err)
 			}
 			qt, err := tok.Tokenize(q)
 			if err != nil {
-				return fmt.Errorf("Tokenizer: question tokenize: %w", err)
+				return fmt.Errorf("tokenizer: question tokenize: %w", err)
 			}
-			if err := ck.SetExtraValue("question_tks", qt); err != nil {
-				return fmt.Errorf("Tokenizer: question tokens marshal: %w", err)
+			if err = ck.SetExtraValue("question_tks", qt); err != nil {
+				return fmt.Errorf("tokenizer: question tokens marshal: %w", err)
 			}
 		}
 		if kw := ck.Keywords; kw != "" {
-			if err := ck.SetExtraValue("important_kwd", utility.SplitKeywords(kw)); err != nil {
-				return fmt.Errorf("Tokenizer: keyword list marshal: %w", err)
+			if err = ck.SetExtraValue("important_kwd", utility.SplitKeywords(kw)); err != nil {
+				return fmt.Errorf("tokenizer: keyword list marshal: %w", err)
 			}
 			it, err := tok.Tokenize(kw)
 			if err != nil {
-				return fmt.Errorf("Tokenizer: keyword tokenize: %w", err)
+				return fmt.Errorf("tokenizer: keyword tokenize: %w", err)
 			}
-			if err := ck.SetExtraValue("important_tks", it); err != nil {
-				return fmt.Errorf("Tokenizer: keyword tokens marshal: %w", err)
+			if err = ck.SetExtraValue("important_tks", it); err != nil {
+				return fmt.Errorf("tokenizer: keyword tokens marshal: %w", err)
 			}
 		}
 		// Keep Go: skip whitespace-only summaries so they don't shadow
@@ -715,7 +715,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 		if s := strings.TrimSpace(ck.Summary); s != "" {
 			st, err := tok.Tokenize(s)
 			if err != nil {
-				return fmt.Errorf("Tokenizer: summary tokenize: %w", err)
+				return fmt.Errorf("tokenizer: summary tokenize: %w", err)
 			}
 			if st == "" {
 				st = s
@@ -723,7 +723,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			ck.ContentLtks = st
 			smt, err := tok.FineGrainedTokenize(st)
 			if err != nil {
-				return fmt.Errorf("Tokenizer: summary fine-grain: %w", err)
+				return fmt.Errorf("tokenizer: summary fine-grain: %w", err)
 			}
 			if smt == "" {
 				smt = st
@@ -732,7 +732,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 		} else if t := ck.Text; strings.TrimSpace(t) != "" {
 			tt, err := tok.Tokenize(t)
 			if err != nil {
-				return fmt.Errorf("Tokenizer: text tokenize: %w", err)
+				return fmt.Errorf("tokenizer: text tokenize: %w", err)
 			}
 			if tt == "" {
 				tt = t
@@ -740,7 +740,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			ck.ContentLtks = tt
 			smt, err := tok.FineGrainedTokenize(tt)
 			if err != nil {
-				return fmt.Errorf("Tokenizer: text fine-grain: %w", err)
+				return fmt.Errorf("tokenizer: text fine-grain: %w", err)
 			}
 			if smt == "" {
 				smt = tt
@@ -796,12 +796,12 @@ func validateTokenizerOutputs(chunks []schema.ChunkDoc, searchMethods, fields []
 	for i := range chunks {
 		if needFullText && requiresFullTextTokens(chunks[i]) {
 			if strings.TrimSpace(chunks[i].ContentLtks) == "" || strings.TrimSpace(chunks[i].ContentSmLtks) == "" {
-				return fmt.Errorf("Tokenizer: chunk[%d] missing full_text tokens", i)
+				return fmt.Errorf("tokenizer: chunk[%d] missing full_text tokens", i)
 			}
 		}
 		if needEmbedding && requiresEmbeddingVector(chunks[i], fields) {
 			if !hasEmbeddingVector(chunks[i]) {
-				return fmt.Errorf("Tokenizer: chunk[%d] missing embedding vector", i)
+				return fmt.Errorf("tokenizer: chunk[%d] missing embedding vector", i)
 			}
 		}
 	}

@@ -243,21 +243,21 @@ func main() {
 	}
 
 	// Temporary logger initialization
-	var logFile string
+	var logFileName string
 	var serverName string
 	if arguments.name != nil {
 		serverName = *arguments.name
 	} else {
 		serverName = fmt.Sprintf("%s_server", *arguments.mode)
 	}
-	logFile = fmt.Sprintf("%s.log", serverName)
+	logFileName = fmt.Sprintf("%s.log", serverName)
 
 	logLevel := "info"
 	if arguments.debugLog {
 		logLevel = "debug"
 	}
 
-	if err = common.InitLogger(logLevel, common.FileOutput{Path: logFile}, serverName); err != nil {
+	if err = common.InitLogger(logLevel, common.FileOutput{Filename: logFileName, Path: "logs"}, serverName); err != nil {
 		panic("failed to initialize logger: " + err.Error())
 	}
 
@@ -314,7 +314,9 @@ func main() {
 
 	// set server name and log file path
 	server.SetServerName(serverName)
-	logFile = fmt.Sprintf("%s.log", serverName)
+
+	// rename log filename
+	logFileName = fmt.Sprintf("%s.log", serverName)
 
 	logConfig := globalConfig.GetLogConfig()
 
@@ -331,14 +333,12 @@ func main() {
 	globalConfig.SetLogLevel(logLevel)
 
 	fileOut := common.FileOutput{
-		Path:       logFile,
+		Filename:   logFileName,
+		Path:       logConfig.Path,
 		MaxSize:    logConfig.MaxSize,
 		MaxBackups: logConfig.MaxBackups,
 		MaxAge:     logConfig.MaxAge,
 		Compress:   logConfig.Compress,
-	}
-	if logConfig.Path != "" {
-		fileOut.Path = logConfig.Path
 	}
 
 	common.SyncLog()

@@ -126,7 +126,7 @@ def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None)
     # Update document
     e = DocumentService.update_by_id(doc.id, update_fields)
     if not e:
-        return get_error_data_result(message="Document not found!")
+        return get_error_data_result(message="document not found")
 
     # Update document statistics before deleting all document rows. Pipeline
     # compilation rows may exist even when token_num is zero, so the doc-store
@@ -141,9 +141,9 @@ def reset_document_for_reparse(doc, tenant_id, parser_id=None, pipeline_id=None)
                 doc.process_duration * -1,
             )
         except LookupError:
-            return get_error_data_result(message="Document not found!")
+            return get_error_data_result(message="document not found")
         if not e:
-            return get_error_data_result(message="Document not found!")
+            return get_error_data_result(message="document not found")
     settings.docStoreConn.delete({"doc_id": doc.id}, search.index_name(tenant_id), doc.kb_id)
 
     # Delete chunk images

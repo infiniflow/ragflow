@@ -14,6 +14,7 @@
 //  limitations under the License.
 //
 
+// Package chunker implements the GroupTitleChunker variant: aggregates adjacent
 // SCOPE (honest) for group.go:
 //
 //   - Implements the GroupTitleChunker variant: aggregates adjacent

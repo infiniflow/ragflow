@@ -321,7 +321,7 @@ func (h *HuaweiCloudModel) Embed(ctx context.Context, modelName *string, texts [
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Huawei Cloud embedding API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("huawei cloud embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var parsed huaweiCloudEmbeddingResponse
@@ -426,7 +426,7 @@ func (h *HuaweiCloudModel) Rerank(ctx context.Context, modelName *string, query 
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Huawei Cloud rerank API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("huawei cloud rerank API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var parsed huaweiCloudRerankResponse
@@ -521,7 +521,7 @@ func (h *HuaweiCloudModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Huawei Cloud models API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("huawei cloud models API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var parsed struct {

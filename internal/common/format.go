@@ -37,7 +37,7 @@ func PtrString[T any](p *T) string {
 	return fmt.Sprintf("%v", *p)
 }
 
-// composite model name format: model_name@instance_name@provider_name
+// IsCompositeModelName checks if a model name is a valid composite model name format model_name@instance_name@provider_name.
 func IsCompositeModelName(modelName string) bool {
 	parts := strings.Split(modelName, "@")
 	if len(parts) != 3 {

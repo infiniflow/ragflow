@@ -85,7 +85,7 @@ const (
 // fail-closed default. PR review round 5 (#2) — the previous
 // form leaked that distinction via two different messages.
 var errWebhookFailClosed = errors.New(
-	"webhook security is required. Set allow_anonymous to true to permit unauthenticated webhooks.",
+	"webhook security is required. Set allow_anonymous to true to permit unauthenticated webhooks",
 )
 
 // validateWebhookSecurity is the orchestrator.
@@ -362,15 +362,15 @@ func isTruthyAllowAnonymous(cfg map[string]any) bool {
 func validateTokenAuth(c *gin.Context, cfg map[string]any) error {
 	rawToken, _ := cfg["token"].(map[string]any)
 	if rawToken == nil {
-		return fmt.Errorf("Invalid token authentication")
+		return fmt.Errorf("invalid token authentication")
 	}
 	header, _ := rawToken["token_header"].(string)
 	want, _ := rawToken["token_value"].(string)
 	if header == "" || want == "" {
-		return fmt.Errorf("Invalid token authentication")
+		return fmt.Errorf("invalid token authentication")
 	}
 	if c.GetHeader(header) != want {
-		return fmt.Errorf("Invalid token authentication")
+		return fmt.Errorf("invalid token authentication")
 	}
 	return nil
 }
@@ -382,16 +382,16 @@ func validateTokenAuth(c *gin.Context, cfg map[string]any) error {
 func validateBasicAuth(c *gin.Context, cfg map[string]any) error {
 	rawBasic, _ := cfg["basic_auth"].(map[string]any)
 	if rawBasic == nil {
-		return fmt.Errorf("Invalid Basic Auth credentials")
+		return fmt.Errorf("invalid basic auth credentials")
 	}
 	username, _ := rawBasic["username"].(string)
 	password, _ := rawBasic["password"].(string)
 	if username == "" || password == "" {
-		return fmt.Errorf("Invalid Basic Auth credentials")
+		return fmt.Errorf("invalid basic auth credentials")
 	}
 	u, p, ok := c.Request.BasicAuth()
 	if !ok || u != username || p != password {
-		return fmt.Errorf("Invalid Basic Auth credentials")
+		return fmt.Errorf("invalid basic auth credentials")
 	}
 	return nil
 }

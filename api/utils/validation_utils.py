@@ -1103,16 +1103,16 @@ def validate_immutable_fields(update_doc_req: UpdateDocumentReq, doc):
         or (None, None) if validation passes.
     """
     if update_doc_req.chunk_count is not None and update_doc_req.chunk_count != int(getattr(doc, "chunk_num", -1)):
-        return "Can't change `chunk_count`.", RetCode.DATA_ERROR
+        return "can't change `chunk_count`", RetCode.DATA_ERROR
 
     if update_doc_req.token_count is not None and update_doc_req.token_count != int(getattr(doc, "token_num", -1)):
-        return "Can't change `token_count`.", RetCode.DATA_ERROR
+        return "can't change `token_count`", RetCode.DATA_ERROR
 
     if update_doc_req.progress is not None:
         progress_from_db = float(getattr(doc, "progress", -1.0))
         # should not use "==" to compare two float values
         if not math.isclose(update_doc_req.progress, progress_from_db):
-            return "Can't change `progress`.", RetCode.DATA_ERROR
+            return "can't change `progress`", RetCode.DATA_ERROR
 
     return None, None
 

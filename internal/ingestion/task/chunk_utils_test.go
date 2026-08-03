@@ -199,8 +199,8 @@ func TestNormalizeChunks_DoesNotMutateInput(t *testing.T) {
 func TestNormalizeChunks_DeepCopyVectors(t *testing.T) {
 	// Python: copy.deepcopy creates fully independent copies.
 	// Mutating a slice element in the result must NOT affect the original.
-	original_vec := []float64{0.1, 0.2, 0.3}
-	original := []map[string]any{{"text": "hello", "q_3_vec": original_vec}}
+	originalVec := []float64{0.1, 0.2, 0.3}
+	original := []map[string]any{{"text": "hello", "q_3_vec": originalVec}}
 	input := map[string]any{"chunks": original}
 	result := NormalizeChunks(input)
 	// Mutate the slice *element* in-place (not replace the slice)

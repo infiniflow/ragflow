@@ -35,7 +35,7 @@ func TestValidateDatasetEmbeddingModels_MixedErrors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for mixed embedding")
 	}
-	if err.Error() != "Cannot search across datasets where some have embedding models and others do not." {
+	if err.Error() != "cannot search across datasets where some have embedding models and others do not" {
 		t.Errorf("unexpected error: %v", err)
 	}
 }

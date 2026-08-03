@@ -103,7 +103,7 @@ func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, texts []str
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Builtin embeddings API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("builtin embeddings API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	// TEI returns a simple array of embeddings by default

@@ -394,13 +394,13 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
-	canvas, err := h.agentService.GetAgent(c.Request.Context(), user.ID, canvasID)
-	if err != nil || canvas == nil {
+	canvasInstance, err := h.agentService.GetAgent(c.Request.Context(), user.ID, canvasID)
+	if err != nil || canvasInstance == nil {
 		common.SuccessWithData(c, map[string]interface{}{}, "success")
 		return
 	}
 	common.SuccessWithData(c, map[string]interface{}{
-		"update_time": canvas.UpdateTime,
+		"update_time": canvasInstance.UpdateTime,
 	}, "success")
 }
 

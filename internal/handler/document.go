@@ -263,7 +263,7 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 	ctx := c.Request.Context()
 	preview, err := h.documentService.GetDocumentPreview(ctx, docID)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, "Document not found!")
+		common.ErrorWithCode(c, common.CodeDataError, "document not found")
 		return
 	}
 
@@ -636,7 +636,7 @@ func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentLis
 	docID := c.Query("id")
 	docIDs := queryValues(c, "ids")
 	if docID != "" && len(docIDs) > 0 {
-		return opts, fmt.Sprintf("Should not provide both 'id':%s and 'ids'%v", docID, docIDs)
+		return opts, fmt.Sprintf("should not provide both 'id':%s and 'ids'%v", docID, docIDs)
 	}
 	if docID != "" {
 		opts.DocIDs = []string{docID}
