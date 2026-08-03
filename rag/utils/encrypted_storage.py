@@ -263,8 +263,14 @@ def create_encrypted_storage(storage_impl, algorithm=None, key=None, encryption_
     # Resolve the documented defaults. Passing algorithm=None straight through
     # raises "Unsupported algorithm: None", so the default in this signature was
     # unusable, and the key never actually fell back to the environment.
-    algorithm = algorithm or os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
-    key = key or os.environ.get("RAGFLOW_CRYPTO_KEY")
+    #
+    # Only None means "unset". An explicitly empty argument is a broken value and
+    # must reach validation rather than silently pick up an ambient environment
+    # key, which would encrypt with a key the caller did not ask for.
+    if algorithm is None:
+        algorithm = os.environ.get("RAGFLOW_CRYPTO_ALGORITHM", "aes-256-cbc")
+    if key is None:
+        key = os.environ.get("RAGFLOW_CRYPTO_KEY")
 
     wrapper = EncryptedStorageWrapper(storage_impl, algorithm=algorithm, key=key)
 
