@@ -110,8 +110,8 @@ func TestFunASRListModelsWithoutAPIKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if len(models) != 1 || models[0].Name != "fun-asr-nano@funasr" {
-		t.Fatalf("models=%v, want fun-asr-nano@funasr", models)
+	if len(models) != 1 || models[0].Name != "fun-asr-nano" {
+		t.Fatalf("models=%v, want fun-asr-nano", models)
 	}
 }
 
