@@ -77,17 +77,6 @@ func (a *AvianModel) ChatWithMessages(ctx context.Context, modelName string, mes
 	}
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
-	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
-		if *chatModelConfig.Thinking {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "enabled",
-			}
-		} else {
-			reqBody["thinking"] = map[string]interface{}{
-				"type": "disabled",
-			}
-		}
-	}
 
 	body, err := a.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
