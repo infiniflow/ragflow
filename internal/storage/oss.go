@@ -213,14 +213,18 @@ func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...st
 			}
 			continue
 		}
-		defer result.Body.Close()
-
 		buf := new(bytes.Buffer)
-		if _, err = buf.ReadFrom(result.Body); err != nil {
+
+		readErr := func() error {
+			defer result.Body.Close()
+			_, err = buf.ReadFrom(result.Body)
+			return err
+		}()
+		if readErr != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
-			common.Error("Failed to read object data", err, zap.String("bucket", bucket), zap.String("key", fnm))
+			common.Error("Failed to read object data", readErr, zap.String("bucket", bucket), zap.String("key", fnm))
 			o.reconnect(ctx)
 			if err = sleepOrAbort(ctx, time.Second); err != nil {
 				return nil, err
@@ -299,9 +303,14 @@ func (o *OSSStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, ex
 			Key:    aws.String(fnm),
 		}, s3.WithPresignExpires(expires))
 		if err != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return "", ctxErr
+			}
 			common.Error("Failed to generate presigned URL", err, zap.String("bucket", bucket), zap.String("key", fnm))
 			o.reconnect(ctx)
-			time.Sleep(time.Second)
+			if err = sleepOrAbort(ctx, time.Second); err != nil {
+				return "", err
+			}
 			continue
 		}
 
