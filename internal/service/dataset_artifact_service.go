@@ -21,6 +21,7 @@ import (
 
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/service/nav"
 )
 
 // Compile keyword constants used by the knowledge-compilation artifacts stored
@@ -601,113 +602,118 @@ func (s *DatasetArtifactService) DeleteDocumentGraph(ctx context.Context, tenant
 	return len(ids), nil
 }
 
-// NavigationItem is a single navigation cluster.
+// NavigationItem is a single navigation cluster (REST response shape, kept
+// stable for frontend compatibility).
 type NavigationItem struct {
 	Name  string `json:"name"`
 	Title string `json:"title"`
 	Count int    `json:"count"`
 }
 
-// ListNavClusters returns the navigation clusters of a dataset.
-func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, datasetID string) ([]NavigationItem, int64, error) {
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdDatasetNav}},
-		[]string{"nav_cluster_kwd", "title_kwd", "count_int"}, 0, 10000, nil)
-	if err != nil {
-		return nil, 0, err
-	}
-	items := make([]NavigationItem, 0, len(chunks))
-	for _, c := range chunks {
-		count := intValue(c["count_int"])
-		items = append(items, NavigationItem{
-			Name:  firstStringValue(c["nav_cluster_kwd"]),
-			Title: firstStringValue(c["title_kwd"]),
-			Count: count,
-		})
-	}
-	return items, total, nil
-}
-
-// DeleteNav deletes all navigation clusters of a dataset.
-func (s *DatasetArtifactService) DeleteNav(ctx context.Context, tenantID, datasetID string) (int, error) {
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return 0, fmt.Errorf("document engine is not initialized")
-	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdDatasetNav}}, []string{"id"}, 0, 10000, nil)
-	if err != nil {
-		return 0, err
-	}
-	if len(chunks) == 0 {
-		return 0, nil
-	}
-	ids := make([]string, 0, len(chunks))
-	for _, c := range chunks {
-		if id, ok := c["id"].(string); ok {
-			ids = append(ids, id)
-		}
-	}
-	cond := map[string]interface{}{"id": ids, "kb_id": datasetID}
-	if _, err := docEngine.DeleteChunks(ctx, cond, wikiIndexName(tenantID), datasetID); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
-}
-
-// DeleteNavNode deletes a single navigation cluster by name.
-func (s *DatasetArtifactService) DeleteNavNode(ctx context.Context, tenantID, datasetID, name string) (int, error) {
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return 0, fmt.Errorf("document engine is not initialized")
-	}
-	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdDatasetNav}, "nav_cluster_kwd": []string{name}},
-		[]string{"id"}, 0, 10000, nil)
-	if err != nil {
-		return 0, err
-	}
-	if len(chunks) == 0 {
-		return 0, nil
-	}
-	ids := make([]string, 0, len(chunks))
-	for _, c := range chunks {
-		if id, ok := c["id"].(string); ok {
-			ids = append(ids, id)
-		}
-	}
-	cond := map[string]interface{}{"id": ids, "kb_id": datasetID}
-	if _, err := docEngine.DeleteChunks(ctx, cond, wikiIndexName(tenantID), datasetID); err != nil {
-		return 0, err
-	}
-	return len(ids), nil
-}
-
-// NavChildItem is a single child entry under a navigation cluster.
+// NavChildItem is a single child entry under a navigation cluster (REST
+// response shape, kept stable for frontend compatibility).
 type NavChildItem struct {
 	Name  string `json:"name"`
 	Title string `json:"title"`
 	Count int    `json:"count"`
 }
 
-// ListNavChildren returns the children of a navigation cluster.
-func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, datasetID, name string) ([]NavChildItem, int64, error) {
-	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdDatasetNav}, "nav_cluster_kwd": []string{name}},
-		[]string{"nav_child_kwd", "title_kwd", "count_int"}, 0, 10000, nil)
+// ListNavClusters returns the navigation clusters of a dataset. It is DEPRECATED
+// and now delegates to the ES-backed NavService (internal/service datasetnav):
+// the previous implementation queried nav_cluster_kwd/count_int fields that
+// Python never writes, so it could never read the real nav tree. Do not add
+// field-level patches here — route everything through NavService.
+func (s *DatasetArtifactService) ListNavClusters(ctx context.Context, tenantID, datasetID string) ([]NavigationItem, int64, error) {
+	ns := nav.GetNavService()
+	if ns == nil {
+		return nil, 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
+	}
+	nodes, total, err := ns.ListClusters(ctx, tenantID, datasetID, 0, 10000)
 	if err != nil {
 		return nil, 0, err
 	}
-	items := make([]NavChildItem, 0, len(chunks))
-	for _, c := range chunks {
-		count := intValue(c["count_int"])
-		items = append(items, NavChildItem{
-			Name:  firstStringValue(c["nav_child_kwd"]),
-			Title: firstStringValue(c["title_kwd"]),
-			Count: count,
-		})
+	items := make([]NavigationItem, 0, len(nodes))
+	for _, n := range nodes {
+		items = append(items, NavigationItem{Name: n.Name, Title: n.Description, Count: n.DocCount})
 	}
 	return items, total, nil
+}
+
+// ListNavChildren returns the children of a navigation cluster. DEPRECATED —
+// delegates to NavService.ListChildren.
+func (s *DatasetArtifactService) ListNavChildren(ctx context.Context, tenantID, datasetID, name string) ([]NavChildItem, int64, error) {
+	ns := nav.GetNavService()
+	if ns == nil {
+		return nil, 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
+	}
+	nodes, total, err := ns.ListChildren(ctx, tenantID, datasetID, name, 0, 10000)
+	if err != nil {
+		return nil, 0, err
+	}
+	items := make([]NavChildItem, 0, len(nodes))
+	for _, n := range nodes {
+		items = append(items, NavChildItem{Name: n.Name, Title: n.Description, Count: n.DocCount})
+	}
+	return items, total, nil
+}
+
+// DeleteNav removes the direct nav_doc children of every root cluster of a
+// dataset. DEPRECATED — this is the minimal-loop approximation of Python
+// delete_nav: it drains only the immediate nav_doc rows under root clusters and
+// does NOT implement Python's full subtree traversal or empty-cluster cascade
+// cleanup. Prefer the NavService (future work) for a complete delete. Returns
+// the number of nav_doc rows removed.
+func (s *DatasetArtifactService) DeleteNav(ctx context.Context, tenantID, datasetID string) (int, error) {
+	ns := nav.GetNavService()
+	if ns == nil {
+		return 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
+	}
+	clusters, _, err := ns.ListClusters(ctx, tenantID, datasetID, 0, 10000)
+	if err != nil {
+		return 0, err
+	}
+	deleted := 0
+	for _, c := range clusters {
+		children, _, err := ns.ListChildren(ctx, tenantID, datasetID, c.Name, 0, 10000)
+		if err != nil {
+			continue
+		}
+		for _, ch := range children {
+			if ch.DocID != "" {
+				if err := ns.RemoveDoc(ctx, tenantID, datasetID, ch.DocID); err != nil {
+					return deleted, err
+				}
+				deleted++
+			}
+		}
+	}
+	return deleted, nil
+}
+
+// DeleteNavNode deletes the direct nav_doc children of a named cluster.
+// DEPRECATED — the minimal loop only drains immediate doc children (returns the
+// count); it does NOT delete sub-clusters recursively nor perform Python's
+// empty-cluster cascade. A full tree-node delete is future NavService work.
+func (s *DatasetArtifactService) DeleteNavNode(ctx context.Context, tenantID, datasetID, name string) (int, error) {
+	ns := nav.GetNavService()
+	if ns == nil {
+		return 0, fmt.Errorf("datasetnav: NavService not initialized (SetNavService must be called at bootstrap)")
+	}
+	// Minimal loop has no per-node delete; drain direct children's docs.
+	children, _, err := ns.ListChildren(ctx, tenantID, datasetID, name, 0, 10000)
+	if err != nil {
+		return 0, err
+	}
+	deleted := 0
+	for _, ch := range children {
+		if ch.DocID != "" {
+			if err := ns.RemoveDoc(ctx, tenantID, datasetID, ch.DocID); err != nil {
+				return deleted, err
+			}
+			deleted++
+		}
+	}
+	return deleted, nil
 }
 
 // SkillTreeItem is a single skill-tree page summary.

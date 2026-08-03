@@ -162,6 +162,7 @@ func nlpRequestFromRetrieval(req RetrievalRequest, tenantIDs []string, topN int)
 		Question:  req.Query,
 		TenantIDs: append([]string(nil), tenantIDs...),
 		KbIDs:     append([]string(nil), req.DatasetIDs...),
+		DocIDs:    append([]string(nil), compactStrings(req.DocScope)...),
 		Page:      1,
 		PageSize:  topN,
 		Aggs:      boolPtr(false),
