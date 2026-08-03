@@ -24,7 +24,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"ragflow/internal/agent/component"
+	"ragflow/internal/agent/chat"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 )
@@ -183,8 +183,11 @@ func normalizeKind(row map[string]interface{}) string {
 
 func askStructureSelect(ctx context.Context, query, noun string, entities []structureEntity) ([]structureEntity, error) {
 	rendered := renderStructureEntities(entities)
-	inv := component.GetDefaultChatInvokerForTest()
-	resp, err := inv.Invoke(ctx, nil, component.ChatInvokeRequest{
+	inv := chat.GetDefaultInvoker()
+	if inv == nil {
+		return nil, fmt.Errorf("dataset navigation: chat invoker not configured")
+	}
+	resp, err := inv.Invoke(ctx, nil, chat.Request{
 		Messages: []schema.Message{
 			{Role: schema.System, Content: strings.ReplaceAll(navSystemPrompt, "{noun}", noun)},
 			{Role: schema.User, Content: fmt.Sprintf("Question:\n%s\n\n%s:\n%s\n\nOutput JSON:", query, noun, rendered)},

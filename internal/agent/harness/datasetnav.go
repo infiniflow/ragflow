@@ -25,7 +25,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"gorm.io/gorm"
-	"ragflow/internal/agent/component"
+	"ragflow/internal/agent/chat"
 	"ragflow/internal/service/nav"
 )
 
@@ -148,8 +148,12 @@ func askNavSelect(ctx context.Context, db *gorm.DB, query, noun string, items []
 	system := strings.ReplaceAll(navSelectSystem, "{noun}", noun)
 	user := fmt.Sprintf("Question:\n%s\n\n%s (numbered):\n%s\n\nOutput JSON:", query, strings.Title(noun), b.String())
 
-	inv := component.GetDefaultChatInvokerForTest()
-	resp, err := inv.Invoke(ctx, db, component.ChatInvokeRequest{
+	inv := chat.GetDefaultInvoker()
+	if inv == nil {
+		log.Printf("datasetnav: LLM %s selection skipped (chat invoker not configured)", noun)
+		return nil
+	}
+	resp, err := inv.Invoke(ctx, db, chat.Request{
 		Messages: []schema.Message{
 			{Role: schema.System, Content: system},
 			{Role: schema.User, Content: user},

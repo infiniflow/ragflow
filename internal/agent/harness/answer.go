@@ -24,7 +24,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 
 	"gorm.io/gorm"
-	"ragflow/internal/agent/component"
+	"ragflow/internal/agent/chat"
 )
 
 // FINAL_ANSWER_SYSTEM mirrors Python report_prompt.FINAL_ANSWER_SYSTEM.
@@ -87,8 +87,11 @@ func FormalizeAnswer(ctx context.Context, db *gorm.DB, question string, kb *Kbin
 	}
 
 	system := strings.ReplaceAll(finalAnswerSystem, "{cite_rules}", defaultCiteRules)
-	inv := component.GetDefaultChatInvokerForTest()
-	resp, err := inv.Invoke(ctx, db, component.ChatInvokeRequest{
+	inv := chat.GetDefaultInvoker()
+	if inv == nil {
+		return AnswerResult{FinalAnswer: "I'm sorry, the chat invoker is not configured."}
+	}
+	resp, err := inv.Invoke(ctx, db, chat.Request{
 		Messages: []schema.Message{
 			{Role: schema.System, Content: system},
 			{Role: schema.User, Content: b.String()},

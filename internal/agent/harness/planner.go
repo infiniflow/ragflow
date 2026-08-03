@@ -24,7 +24,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"ragflow/internal/agent/component"
+	"ragflow/internal/agent/chat"
 
 	"gorm.io/gorm"
 )
@@ -75,8 +75,12 @@ func PlannerNode(ctx context.Context, db *gorm.DB, route RouteDecision, seedChun
 
 	prompt := fmt.Sprintf(decomposePrompt, maxClaims, route.Question, detail, formatSeedChunks(seedChunks))
 
-	inv := component.GetDefaultChatInvokerForTest()
-	resp, err := inv.Invoke(ctx, db, component.ChatInvokeRequest{
+	inv := chat.GetDefaultInvoker()
+	if inv == nil {
+		log.Printf("agentic_rag: planner_node skipped (chat invoker not configured); fallback direct")
+		return directPlan(route.Question)
+	}
+	resp, err := inv.Invoke(ctx, db, chat.Request{
 		Messages: []schema.Message{
 			{Role: schema.System, Content: prompt},
 			{Role: schema.User, Content: route.Question},

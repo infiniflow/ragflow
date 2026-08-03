@@ -25,7 +25,7 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 
-	"ragflow/internal/agent/component"
+	"ragflow/internal/agent/chat"
 
 	"gorm.io/gorm"
 )
@@ -62,8 +62,11 @@ func RouteNode(ctx context.Context, db *gorm.DB, question, modeLabel string) Rou
 	if strings.TrimSpace(question) == "" {
 		return fallbackRoute(question, modeLabel, "fallback: empty question")
 	}
-	inv := component.GetDefaultChatInvokerForTest()
-	resp, err := inv.Invoke(ctx, db, component.ChatInvokeRequest{
+	inv := chat.GetDefaultInvoker()
+	if inv == nil {
+		return fallbackRoute(question, modeLabel, "fallback: chat invoker not configured")
+	}
+	resp, err := inv.Invoke(ctx, db, chat.Request{
 		Messages: []schema.Message{
 			{Role: schema.System, Content: strings.ReplaceAll(routePrompt, "%s", question)},
 			{Role: schema.User, Content: question},
