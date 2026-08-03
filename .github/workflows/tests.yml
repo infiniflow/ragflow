@@ -197,15 +197,18 @@ jobs:
         #
         # Excludes packages whose tests fail for environmental reasons
         # unrelated to the diff:
-        #   - internal/tokenizer: tests need /usr/share/infinity/resource
-        #     dict files, only mounted inside the docker builder, not
-        #     in the Go test environment.
+        #   - internal/tokenizer is split: the pure-Go BPE loader tests
+        #     (bpe_loader_test.go) run in the default tier; the C++ binding /
+        #     dict-dependent tests (tokenizer_test.go,
+        #     tokenizer_concurrent_test.go) and the on-disk anchor test
+        #     (bpe_loader_anchors_test.go) are tagged `manual` and need the
+        #     docker builder's /usr/share/infinity/resource, so they stay out
+        #     of the default run.
         run: |
           set -euo pipefail
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/agent$' \
-            | grep -v '/internal/tokenizer$' \
             | grep -v '/internal/handler$' || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
@@ -640,13 +643,16 @@ jobs:
         #
         # Excludes packages whose tests fail for environmental reasons
         # unrelated to the diff:
-        #   - internal/tokenizer: tests need /usr/share/infinity/resource
-        #     dict files, only mounted inside the docker builder, not
-        #     in the Go test environment.
+        #   - internal/tokenizer is split: the pure-Go BPE loader tests
+        #     (bpe_loader_test.go) run in the default tier; the C++ binding /
+        #     dict-dependent tests (tokenizer_test.go,
+        #     tokenizer_concurrent_test.go) and the on-disk anchor test
+        #     (bpe_loader_anchors_test.go) are tagged `manual` and need the
+        #     docker builder's /usr/share/infinity/resource, so they stay out
+        #     of the default run.
         run: |
           set -euo pipefail
-          PKGS=$(go list ./... 2>/dev/null \
-            | grep -v '/internal/tokenizer$' || true)
+          PKGS=$(go list ./... 2>/dev/null || true)
           if [ -z "$PKGS" ]; then
             ./build.sh --test
           else

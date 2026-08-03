@@ -45,6 +45,21 @@ func init() {
 	tiktoken.SetBpeLoader(localBpeLoader{})
 }
 
+// expectedBpeHashes maps a tiktoken table URL to the SHA-1 of its canonical
+// on-disk content. We only ship cl100k_base today; entries here let the loader
+// reject a corrupt or tampered file instead of trusting it. Unknown URLs are
+// loaded without a digest check (defense-in-depth, not a hard gate).
+//
+// NOTE: this is the digest of the file *contents*, not the tiktoken cache
+// filename. tiktoken-go names its cached file by sha1(bpeURL)
+// (223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7 for
+// cl100k_base); that value identifies the path, while the value below verifies
+// the bytes we actually load. Compute it from the table shipped by
+// ragflow_deps/download_deps.py: `sha1sum cl100k_base.tiktoken`.
+var expectedBpeHashes = map[string]string{
+	"https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken": "6494e42d5aad2bbb441ea9793af9e7db335c8d9c",
+}
+
 // localBpeLoader resolves tiktoken BPE tables from the local filesystem.
 type localBpeLoader struct{}
 
@@ -64,6 +79,17 @@ func (localBpeLoader) LoadTiktokenBpe(bpeURL string) (map[string]int, error) {
 			}
 			return nil, fmt.Errorf("reading BPE table %s: %w", candidate, err)
 		}
+		// Integrity check: for tables we ship, a digest mismatch means the
+		// file is corrupt or tampered with. Refuse to load it rather than
+		// skipping to the next candidate — a different candidate holds the
+		// same (wrong) content, and masking the failure would defeat the
+		// check. This mirrors the malformed-table path just below.
+		if want, ok := expectedBpeHashes[bpeURL]; ok {
+			if got := fmt.Sprintf("%x", sha1.Sum(contents)); got != want {
+				return nil, fmt.Errorf("BPE table %s digest mismatch (got %s, want %s); refusing to load a corrupt or tampered file", candidate, got, want)
+			}
+		}
+
 		ranks, err := parseBpeTable(contents)
 		if err != nil {
 			// A file that exists but does not parse is a corrupt download or a
