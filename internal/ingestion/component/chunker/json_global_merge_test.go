@@ -12,8 +12,8 @@
 //  and to permit persons to whom the Software is furnished to do so,
 //  subject to the following conditions:
 //
-//  The above copyright notice and this permission notice shall be
-//  included in all copies or substantial portions of the Software.
+//  The above copyright notice and this permission notice shall be included
+//  in all copies or substantial portions of the Software.
 //
 //  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
 //  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
@@ -26,16 +26,9 @@
 package chunker
 
 // TestJSONGlobalMergeMatchesPython pins the TokenChunker json path's
-// cross-item merge against Python's _merge_text_chunks_by_token_size.
-//
-// Python merges adjacent text chunks across JSON items into a single global
-// token budget, so two items that jointly fit chunk_token_size come back as
-// ONE chunk. Go historically merged within each item separately, emitting one
-// chunk per item. The oracle (chunk count = 1) is Python's behaviour and must
-// hold.
-//
-// Self-contained: it drives NewTokenChunker directly (no .venv, no golden
-// harness), so it runs in the default unit tier.
+// cross-item merge: adjacent text chunks across JSON items collapse into one
+// chunk when they jointly fit chunk_token_size, matching Python's
+// _merge_text_chunks_by_token_size.
 import (
 	"context"
 	"strings"
@@ -75,19 +68,27 @@ func TestJSONGlobalMergeMatchesPython(t *testing.T) {
 	}
 	chunks, _ := out["chunks"].([]map[string]any)
 	if len(chunks) != 1 {
-		t.Fatalf("want 1 chunk (Python global merge across items), got %d", len(chunks))
+		t.Fatalf("want 1 chunk (global merge across items), got %d", len(chunks))
 	}
 	text, _ := chunks[0]["text"].(string)
-	if !strings.Contains(text, "alpha beta gamma") || !strings.Contains(text, "another long item") {
+
+	first := "alpha beta gamma"
+	second := "another long item"
+	i1 := strings.Index(text, first)
+	i2 := strings.Index(text, second)
+	if i1 < 0 || i2 < 0 {
 		t.Errorf("merged chunk does not contain both items:\n%q", text)
+	}
+	// The two items must appear in source order within the single merged chunk.
+	if i1 >= i2 {
+		t.Errorf("merged chunk reordered items (want %q before %q):\n%q", first, second, text)
 	}
 }
 
-// TestJSONSingleItemNotSubSplitMatchesPython pins the TokenChunker json
-// path's handling of a single item that exceeds chunk_token_size. Python's
-// json path keeps each over-budget item whole (no sub-split), so one input
-// item yields exactly one chunk. Go historically sub-split it via
-// splitOversizedUnit, emitting two chunks for one logical item.
+// TestJSONSingleItemNotSubSplitMatchesPython pins the TokenChunker json path's
+// handling of a single item that exceeds chunk_token_size: the over-budget
+// item is kept whole (no sub-split), yielding exactly one chunk whose text
+// equals the input verbatim.
 func TestJSONSingleItemNotSubSplitMatchesPython(t *testing.T) {
 	const budget = 128
 	comp, err := NewTokenChunker(map[string]any{
@@ -116,6 +117,9 @@ func TestJSONSingleItemNotSubSplitMatchesPython(t *testing.T) {
 	}
 	chunks, _ := out["chunks"].([]map[string]any)
 	if len(chunks) != 1 {
-		t.Fatalf("want 1 chunk (Python keeps over-budget single item whole), got %d", len(chunks))
+		t.Fatalf("want 1 chunk (over-budget single item kept whole), got %d", len(chunks))
+	}
+	if got := strings.TrimSpace(chunks[0]["text"].(string)); got != strings.TrimSpace(long) {
+		t.Errorf("over-budget item not kept whole:\n got=%q\nwant=%q", got, strings.TrimSpace(long))
 	}
 }
