@@ -934,8 +934,12 @@ async def run_dataflow(task: dict):
 
     time_cost = timer() - start_ts
     task_time_cost = timer() - task_start_ts
+    try:
+        ret = DocumentService.increment_chunk_num(doc_id, task_dataset_id, embedding_token_consumption, len(chunks), task_time_cost)
+    except Exception:
+        logging.exception("increment_chunk_num failed for doc %s", doc_id)
+        ret = None
     set_progress(task_id, prog=1.0, msg="Indexing done ({:.2f}s). Task done ({:.2f}s)".format(time_cost, task_time_cost))
-    ret = DocumentService.increment_chunk_num(doc_id, task_dataset_id, embedding_token_consumption, len(chunks), task_time_cost)
     get_recording_context().save_func_return_value("DocumentService.increment_chunk_num", ret)
     logging.info("[Done], chunks({}), token({}), elapsed:{:.2f}".format(len(chunks), embedding_token_consumption, task_time_cost))
     get_recording_context().record("dataflow_chunks", chunks)
