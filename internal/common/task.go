@@ -16,14 +16,26 @@
 
 package common
 
+import "encoding/json"
+
 const (
 	TaskTypeIngestionTask = "ingestion_task"
 	TaskTypeIngestionTest = "ingestion_test"
+	// TaskTypeMemory is the async memory-extraction task type. Memory tasks
+	// share the tasks.RAGFLOW subject and the Ingestor's consumer + worker
+	// pool with ingestion tasks; processMessage dispatches them by TaskType.
+	// The memory-specific payload (message_dict/memory_id/source_id) is
+	// carried in TaskMessage.Payload.
+	TaskTypeMemory = "memory"
 )
 
 type TaskMessage struct {
 	TaskID   string `json:"task_id" binding:"required"`
 	TaskType string `json:"task_type" binding:"required"`
+	// Payload carries the task-specific body for non-ingestion task types
+	// (e.g. the memory extraction payload). It is left empty for ingestion
+	// tasks and old messages, so existing consumers are unaffected.
+	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
 type TaskHandle interface {

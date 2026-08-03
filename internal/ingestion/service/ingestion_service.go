@@ -18,9 +18,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"ragflow/internal/utility"
 	"runtime"
 	"strings"
 	"sync"
@@ -37,6 +37,7 @@ import (
 	taskpkg "ragflow/internal/ingestion/task"
 	servicepkg "ragflow/internal/service"
 	documentpkg "ragflow/internal/service/document"
+	"ragflow/internal/utility"
 
 	"github.com/cenkalti/backoff/v5"
 )
@@ -72,6 +73,10 @@ type Ingestor struct {
 
 	ingestionTaskSvc *servicepkg.IngestionTaskService
 	docState         *docStateUpdater
+	// memorySvc runs async memory-extraction tasks (TaskKindMemory) that share
+	// the worker pool with ingestion tasks. nil disables memory extraction
+	// (e.g. tests that don't exercise it).
+	memorySvc *servicepkg.MemoryMessageService
 
 	// knowledgeCompile is the dataset-level post-processing consumer (§11,
 	// Option E) owned by this ingestor. It is driven by kcConcurrency owned
@@ -211,6 +216,13 @@ func (e *Ingestor) consumeLoop() {
 	}
 }
 
+// SetMemoryMessageService installs the memory-extraction service used by
+// TaskKindMemory tasks that share the worker pool. Call it before Start; a nil
+// value disables memory extraction (received memory tasks are ack-skipped).
+func (e *Ingestor) SetMemoryMessageService(memorySvc *servicepkg.MemoryMessageService) {
+	e.memorySvc = memorySvc
+}
+
 // SetKnowledgeCompileModelConfig supplies the default LLM/embedding model ids
 // used by the dataset-level compile consumer's deduper. Call it before Start.
 func (e *Ingestor) SetKnowledgeCompileModelConfig(llmID, embedding string) {
@@ -297,6 +309,40 @@ func (e *Ingestor) processMessage(handle common.TaskHandle) {
 			e.releaseTask(claimedTaskID)
 		}
 	}()
+
+	// Memory-extraction tasks share the tasks.RAGFLOW consumer and the worker
+	// pool with ingestion tasks. They do NOT use the ingestion state machine
+	// (no ingestion_task row): the message body is dispatched straight to a
+	// worker via TaskContext.Kind==TaskKindMemory, which runs the memory
+	// extractor and acks/nacks on its own.
+	if taskMessage.TaskType == common.TaskTypeMemory {
+		if e.memorySvc == nil {
+			common.Warn(fmt.Sprintf("memory task %s received but memory extractor is disabled, ack", taskMessage.TaskID))
+			if err := handle.Ack(); err != nil {
+				common.Error(fmt.Sprintf("error ack memory task %s", taskMessage.TaskID), err)
+			}
+			return
+		}
+		var payload map[string]any
+		if len(taskMessage.Payload) == 0 || json.Unmarshal(taskMessage.Payload, &payload) != nil {
+			common.Warn(fmt.Sprintf("memory task %s has no parseable payload, ack", taskMessage.TaskID))
+			if err := handle.Ack(); err != nil {
+				common.Error(fmt.Sprintf("error ack memory task %s", taskMessage.TaskID), err)
+			}
+			return
+		}
+		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, payload, handle)
+		select {
+		case e.taskChan <- taskCtx:
+			common.Info(fmt.Sprintf("Memory task %s queued (channel: %d/%d)", taskMessage.TaskID, len(e.taskChan), cap(e.taskChan)))
+		default:
+			common.Info(fmt.Sprintf("No available slot for memory task %s, nack", taskMessage.TaskID))
+			if nackErr := handle.Nack(); nackErr != nil {
+				common.Error(fmt.Sprintf("error nack memory task %s", taskMessage.TaskID), nackErr)
+			}
+		}
+		return
+	}
 
 	if taskMessage.TaskType != common.TaskTypeIngestionTask {
 		common.Info(fmt.Sprintf("task %s is not an ingestion task", taskMessage.TaskID))
@@ -402,9 +448,54 @@ func (e *Ingestor) workerLoop(id int32) {
 		case <-e.ctx.Done():
 			return
 		case taskCtx := <-e.taskChan:
+			if taskCtx.Kind == taskpkg.TaskKindMemory {
+				e.executeMemoryTask(e.ctx, taskCtx)
+				continue
+			}
 			common.Info("task context:" + taskCtx.IngestionTask.ID)
 			e.executeTask(e.ctx, taskCtx)
 		}
+	}
+}
+
+// executeMemoryTask runs one async memory-extraction task (TaskKindMemory) on
+// a worker of the shared pool. Unlike ingestion tasks, memory tasks have no
+// ingestion_task row / state machine: HandleSaveToMemoryTask persists the
+// extracted messages and the worker acks on success. On failure the worker ALSO
+// acks: HandleSaveToMemoryTask already persisted progress=-1 for the failed
+// memory task, so nacking would redeliver an already-failed row into an
+// infinite retry loop.
+func (e *Ingestor) executeMemoryTask(ctx context.Context, taskCtx *taskpkg.TaskContext) {
+	taskID, _ := taskCtx.MemoryPayload["id"].(string)
+	if taskID == "" {
+		taskID, _ = taskCtx.MemoryPayload["task_id"].(string)
+	}
+	common.Info(fmt.Sprintf("Starting memory task %s", taskID))
+	if taskCtx.Handle == nil {
+		common.Warn("memory task handle is nil, skip")
+		return
+	}
+	if e.memorySvc == nil {
+		common.Warn(fmt.Sprintf("memory task %s: memory extractor disabled, ack", taskID))
+		if err := taskCtx.Handle.Ack(); err != nil {
+			common.Error(fmt.Sprintf("ack memory task %s", taskID), err)
+		}
+		return
+	}
+	if err := e.memorySvc.HandleSaveToMemoryTask(ctx, taskCtx.MemoryPayload); err != nil {
+		// HandleSaveToMemoryTask persists task progress on failure (progress=-1,
+		// see updateTaskProgress) and treats a task already marked failed as a
+		// terminal, already-consumed error. Ack rather than Nack so a failed
+		// memory task is not redelivered into an infinite nack loop.
+		common.Error(fmt.Sprintf("memory task %s failed, ack", taskID), err)
+		if ackErr := taskCtx.Handle.Ack(); ackErr != nil {
+			common.Error(fmt.Sprintf("ack failed memory task %s", taskID), ackErr)
+		}
+		return
+	}
+	common.Info(fmt.Sprintf("Memory task %s completed", taskID))
+	if err := taskCtx.Handle.Ack(); err != nil {
+		common.Error(fmt.Sprintf("ack memory task %s", taskID), err)
 	}
 }
 
