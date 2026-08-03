@@ -484,7 +484,7 @@ async def test_finalize_dead_link_cleanup():
     # Verify [[C]] was removed (dead link) while [[B]] was preserved
     update_calls = doc_store.update.call_args_list
     for args in update_calls:
-        slug = args[0][0].get("slug_kwd", "")
+        slug = args[0][0].get("id", "")
         upd = args[0][1]
         if slug == "concept/A":
             content = upd.get("md_with_weight", "")
@@ -521,7 +521,7 @@ async def test_finalize_entity_reference():
 
     update_calls = doc_store.update.call_args_list
     for args in update_calls:
-        slug = args[0][0].get("slug_kwd", "")
+        slug = args[0][0].get("id", "")
         upd = args[0][1]
         if slug == "concept/smartphone":
             content = upd.get("md_with_weight", "")
@@ -965,7 +965,7 @@ async def test_finalize_writes_outlinks():
     for args in update_calls:
         cond = args[0][0]
         upd = args[0][1]
-        if cond.get("slug_kwd") == "concept/A":
+        if cond.get("id") == "concept/A":
             # outlinks_kwd is a *_kwd field: Infinity shreds json.dumps strings
             # on read-back, so _wiki_finalize writes a native list (mirroring
             # the old-mode writer) which Infinity stores/reads back correctly.
@@ -1008,7 +1008,7 @@ async def test_finalize_auto_links_mentions():
     google_upd = None
     for args in update_calls:
         cond = args[0][0]
-        if cond.get("slug_kwd") == "entity/Google":
+        if cond.get("id") == "entity/Google":
             google_upd = args[0][1]
             break
     assert google_upd is not None, "entity/Google not updated"
@@ -1111,6 +1111,7 @@ async def test_search_existing_pages_normalizes_slug():
 
     assert "concept/询问笔录" in pages
     assert pages["concept/询问笔录"]["title_kwd"] == ["询问笔录"]  # raw preserved
+    assert pages["concept/询问笔录"]["id"] == "concept/询问笔录"
 
 
 # ---- relation-based linking in FINALIZE -------------------------------------
@@ -1164,7 +1165,7 @@ async def test_finalize_links_via_map_relations():
     update_calls = doc_store.update.call_args_list
     xiaoliang_upd = None
     for args in update_calls:
-        if args[0][0].get("slug_kwd") == "entity/肖亮":
+        if args[0][0].get("id") == "entity/肖亮":
             xiaoliang_upd = args[0][1]
             break
     assert xiaoliang_upd is not None, "entity/肖亮 not updated"
@@ -1211,7 +1212,7 @@ async def test_wiki_finalize_renders_navigable_links():
     update_calls = doc_store.update.call_args_list
     upd = None
     for args in update_calls:
-        if args[0][0].get("slug_kwd") == "entity/肖亮":
+        if args[0][0].get("id") == "entity/肖亮":
             upd = args[0][1]
             break
     assert upd is not None
@@ -1220,9 +1221,8 @@ async def test_wiki_finalize_renders_navigable_links():
 
 
 @pytest.mark.asyncio
-async def test_reduce_entity_claimless_concept_has_delta():
-    """A claim-less concept must still be created (has_delta=True) under Mode A,
-    otherwise it is treated as a no-op and never gets a wiki page."""
+async def test_reduce_entity_claimless_concept_is_skipped():
+    """A new concept without claims must not create an ungrounded page."""
     from rag.advanced_rag.knowlege_compile import wiki_incremental as _wiki
 
     result = await _wiki._wiki_reduce_entity(
@@ -1232,6 +1232,37 @@ async def test_reduce_entity_claimless_concept_has_delta():
         new_claims=[],  # concepts have no dedicated claim rows
         deleted_doc_ids=set(),
     )
-    assert result["action"] == "create"
-    assert result["has_delta"] is True, "claim-less concept must be created"
+    assert result["action"] == "noop"
+    assert result["has_delta"] is False
     assert result["entity_type"] == "concept"
+
+
+@pytest.mark.asyncio
+async def test_page_router_skips_knn_when_no_existing_pages():
+    """A first Mode B build should cluster directly without page-index searches."""
+    entities = [
+        {"entity_name": "Apple", "entity_type": "org", "claims": []},
+        {"entity_name": "Banana", "entity_type": "org", "claims": []},
+    ]
+    embd_mdl = MockEmbeddingModel()
+    embd_mdl.encode = MagicMock(wraps=embd_mdl.encode)
+    doc_store = make_doc_store()
+
+    with (
+        patch("common.settings.docStoreConn", doc_store),
+        patch(
+            f"{_wiki.__name__}._wiki_cluster_entities",
+            side_effect=lambda items, embeddings, threshold: [items],
+        ),
+    ):
+        assignments = await _wiki._wiki_page_router(
+            affected_entities=entities,
+            embd_mdl=embd_mdl,
+            tenant_id="t1",
+            kb_id="kb1",
+            existing_page_ids=set(),
+        )
+
+    assert assignments == {"_new_entity/apple": entities}
+    assert embd_mdl.encode.call_count == 1
+    doc_store.search.assert_not_called()

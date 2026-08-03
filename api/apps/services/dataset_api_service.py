@@ -2141,6 +2141,26 @@ def _alteration_result(current_doc_ids: set, involved_doc_ids: set, eligible_doc
     }
 
 
+def _flatten_provenance_doc_ids(value) -> set[str]:
+    """Normalize source_doc_ids stored as JSON strings, lists, or scalars."""
+    if value is None:
+        return set()
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return set()
+        try:
+            return _flatten_provenance_doc_ids(json.loads(raw))
+        except (json.JSONDecodeError, TypeError):
+            return {raw}
+    if isinstance(value, (list, tuple, set)):
+        result: set[str] = set()
+        for item in value:
+            result.update(_flatten_provenance_doc_ids(item))
+        return result
+    return {str(value)}
+
+
 def _eligible_doc_ids_for_kind(docs, tenant_id: str, kind: str) -> set:
     """Doc ids whose parser_config or pipeline carries a template of ``kind``."""
     accepted = _ALTERATION_ELIGIBLE_TEMPLATE_KINDS.get(kind) or set()
@@ -2197,10 +2217,7 @@ async def _involved_doc_ids_paged(index_nm, dataset_id: str, condition: dict, fi
         for row in rows.values():
             value = row.get(field)
             if from_list:
-                if isinstance(value, str):
-                    value = [value]
-                if isinstance(value, list):
-                    involved.update(str(d) for d in value if d)
+                involved.update(_flatten_provenance_doc_ids(value))
             elif value:
                 involved.add(str(value))
 
