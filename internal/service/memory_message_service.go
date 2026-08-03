@@ -54,15 +54,18 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"ragflow/internal/utility"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	redisengine "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	models "ragflow/internal/entity/models"
+	"ragflow/internal/utility"
 )
 
 // MemoryMessage is the wire shape for QueueSaveToMemoryTask. It
@@ -352,14 +355,32 @@ func queueMemoryTask(ctx context.Context, memoryID, tenantID string, rawMessageI
 			"agent_response": msg.AgentResponse,
 		},
 	}
-	if redisClient := redisengine.Get(); redisClient == nil || !redisClient.QueueProduct(ctx, memoryTaskQueueName(0), message) {
-		return errors.New("Can't access Redis.")
+	// Publish the memory-extraction task to NATS (tasks.RAGFLOW) so it is
+	// consumed by the Ingestor's shared consumer + worker pool, dispatched by
+	// TaskType=="memory" in processMessage. This keeps Go out of the Python
+	// te.*.common Redis stream entirely, removing the cross-consumer
+	// contention that previously stole Python dataflow tasks.
+	mq := engine.GetMessageQueueEngine()
+	if mq == nil {
+		return errors.New("can't access message queue engine")
+	}
+	payload, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("marshal memory task payload: %w", err)
+	}
+	taskMessage := common.TaskMessage{
+		TaskID:   taskID,
+		TaskType: common.TaskTypeMemory,
+		Payload:  payload,
+	}
+	tmPayload, err := json.Marshal(taskMessage)
+	if err != nil {
+		return fmt.Errorf("marshal memory task message: %w", err)
+	}
+	if err := mq.PublishTask(common.TaskSubject, tmPayload); err != nil {
+		return fmt.Errorf("publish memory task %s: %w", taskID, err)
 	}
 	return nil
-}
-
-func memoryTaskQueueName(priority int) string {
-	return fmt.Sprintf("te.%d.common", priority)
 }
 
 func mapStringAny(in map[string]any) map[string]interface{} {
