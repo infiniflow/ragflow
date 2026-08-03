@@ -332,14 +332,22 @@ jobs:
 
           # Provide the cl100k BPE table for the offline tokenizer loader.
           # The loader reads <repo>/ragflow_deps/cl100k_base.tiktoken (or
-          # TIKTOKEN_CACHE_DIR). The table is baked into the
-          # infiniflow/ragflow_deps image, so extract it from there instead of
-          # fetching from openaipublic.blob.core.windows.net (unreliable /
-          # GFW-blocked). Best-effort: if the image is unavailable, the loader
-          # still fails loudly (no silent 0-token degradation).
+          # TIKTOKEN_CACHE_DIR). Try to fetch it directly from the upstream
+          # openai blob first (small ~1.6MB, reachable from the CI runner — the
+          # pre-PR code downloaded it on the fly, so the network path is known
+          # good). If the direct fetch fails (e.g. GFW), fall back to extracting
+          # it from the local infiniflow/ragflow_deps image *if already present*
+          # on the runner (no `docker pull`, since that huge image is first
+          # fetched at the later "Build ragflow:nightly" step). Best-effort: if
+          # neither source works, the loader still fails loudly (no silent
+          # 0-token degradation).
           if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
-            if docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1 || docker pull infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
-              mkdir -p ragflow_deps
+            mkdir -p ragflow_deps
+            if command -v curl >/dev/null 2>&1; then
+              curl -fsSL -o ragflow_deps/cl100k_base.tiktoken \
+                https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken || true
+            fi
+            if [ ! -f ragflow_deps/cl100k_base.tiktoken ] && docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
               CID=$(docker create infiniflow/ragflow_deps:latest true) || true
               if [ -n "${CID:-}" ]; then
                 docker cp "$CID":/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken 2>/dev/null || true
@@ -929,14 +937,22 @@ jobs:
 
           # Provide the cl100k BPE table for the offline tokenizer loader.
           # The loader reads <repo>/ragflow_deps/cl100k_base.tiktoken (or
-          # TIKTOKEN_CACHE_DIR). The table is baked into the
-          # infiniflow/ragflow_deps image, so extract it from there instead of
-          # fetching from openaipublic.blob.core.windows.net (unreliable /
-          # GFW-blocked). Best-effort: if the image is unavailable, the loader
-          # still fails loudly (no silent 0-token degradation).
+          # TIKTOKEN_CACHE_DIR). Try to fetch it directly from the upstream
+          # openai blob first (small ~1.6MB, reachable from the CI runner — the
+          # pre-PR code downloaded it on the fly, so the network path is known
+          # good). If the direct fetch fails (e.g. GFW), fall back to extracting
+          # it from the local infiniflow/ragflow_deps image *if already present*
+          # on the runner (no `docker pull`, since that huge image is first
+          # fetched at the later "Build ragflow:nightly" step). Best-effort: if
+          # neither source works, the loader still fails loudly (no silent
+          # 0-token degradation).
           if [ ! -f ragflow_deps/cl100k_base.tiktoken ]; then
-            if docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1 || docker pull infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
-              mkdir -p ragflow_deps
+            mkdir -p ragflow_deps
+            if command -v curl >/dev/null 2>&1; then
+              curl -fsSL -o ragflow_deps/cl100k_base.tiktoken \
+                https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken || true
+            fi
+            if [ ! -f ragflow_deps/cl100k_base.tiktoken ] && docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
               CID=$(docker create infiniflow/ragflow_deps:latest true) || true
               if [ -n "${CID:-}" ]; then
                 docker cp "$CID":/cl100k_base.tiktoken ragflow_deps/cl100k_base.tiktoken 2>/dev/null || true
