@@ -1366,7 +1366,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		if err != nil {
 			return nil, addChunkError{code: common.CodeDataError, message: err.Error()}
 		}
-		if err := s.storeChunkImage(req.DatasetID, chunkID, imageBinary); err != nil {
+		if err = s.storeChunkImage(ctx, req.DatasetID, chunkID, imageBinary); err != nil {
 			return nil, addChunkError{code: common.CodeDataError, message: "Failed to store chunk image"}
 		}
 		chunkData["img_id"] = fmt.Sprintf("%s-%s", req.DatasetID, chunkID)
@@ -1396,12 +1396,12 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 
 	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Second)
 	defer cancel()
-	if _, err := s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID); err != nil {
+	if _, err = s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID); err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("insert chunk: %v", err)}
 	}
 
 	tokenNum := int64(s.numTokens(req.Content))
-	if err := s.incrementChunkStats(req.DocumentID, req.DatasetID, tokenNum, 1, 0); err != nil {
+	if err = s.incrementChunkStats(req.DocumentID, req.DatasetID, tokenNum, 1, 0); err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("increment chunk stats: %v", err)}
 	}
 
@@ -1640,7 +1640,7 @@ func (s *ChunkService) decrementChunkStats(docID, kbID string, tokenNum, chunkNu
 	})
 }
 
-func (s *ChunkService) storeChunkImage(bucket, chunkID string, imageBinary []byte) error {
+func (s *ChunkService) storeChunkImage(ctx context.Context, bucket, chunkID string, imageBinary []byte) error {
 	if s.storeChunkImageFunc != nil {
 		return s.storeChunkImageFunc(bucket, chunkID, imageBinary)
 	}
@@ -1656,11 +1656,11 @@ func (s *ChunkService) storeChunkImage(bucket, chunkID string, imageBinary []byt
 		releaseChunkImageMergeLock(lockKey)
 	}()
 
-	if !storageImpl.ObjExist(bucket, chunkID) {
-		return storageImpl.Put(bucket, chunkID, imageBinary)
+	if !storageImpl.ObjExist(ctx, bucket, chunkID) {
+		return storageImpl.Put(ctx, bucket, chunkID, imageBinary)
 	}
 
-	oldBinary, err := storageImpl.Get(bucket, chunkID)
+	oldBinary, err := storageImpl.Get(ctx, bucket, chunkID)
 	if err != nil {
 		return err
 	}
@@ -1684,10 +1684,10 @@ func (s *ChunkService) storeChunkImage(bucket, chunkID string, imageBinary []byt
 	draw.Draw(combined, image.Rect(0, oldBounds.Dy(), newBounds.Dx(), oldBounds.Dy()+newBounds.Dy()), newImage, newBounds.Min, draw.Src)
 
 	var buf bytes.Buffer
-	if err := jpeg.Encode(&buf, combined, nil); err != nil {
+	if err = jpeg.Encode(&buf, combined, nil); err != nil {
 		return err
 	}
-	return storageImpl.Put(bucket, chunkID, buf.Bytes())
+	return storageImpl.Put(ctx, bucket, chunkID, buf.Bytes())
 }
 
 func acquireChunkImageMergeLock(key string) *chunkImageMergeLock {

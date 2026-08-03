@@ -37,21 +37,19 @@ type GCSStorage struct {
 }
 
 // NewGCSStorage creates a new GCS storage instance
-func NewGCSStorage(config config.GCSConfig) (*GCSStorage, error) {
+func NewGCSStorage(ctx context.Context, config config.GCSConfig) (*GCSStorage, error) {
 	gcsStorage := &GCSStorage{
 		config: config,
 	}
 
-	if err := gcsStorage.connect(); err != nil {
+	if err := gcsStorage.connect(ctx); err != nil {
 		return nil, err
 	}
 
 	return gcsStorage, nil
 }
 
-func (m *GCSStorage) connect() error {
-
-	ctx := context.Background()
+func (m *GCSStorage) connect(ctx context.Context) error {
 
 	client, err := storage.NewClient(ctx)
 	if err != nil {
@@ -62,8 +60,8 @@ func (m *GCSStorage) connect() error {
 	return nil
 }
 
-func (m *GCSStorage) reconnect() {
-	if err := m.connect(); err != nil {
+func (m *GCSStorage) reconnect(ctx context.Context) {
+	if err := m.connect(ctx); err != nil {
 		common.Fatal(fmt.Sprintf("Failed to reconnect to GCS, %s", err.Error()))
 	}
 }
@@ -71,13 +69,12 @@ func (m *GCSStorage) reconnect() {
 func (m *GCSStorage) Type() string { return "gcs" }
 
 // Health checks GCS service availability
-func (m *GCSStorage) Health() bool {
-	return m.BucketExists(m.config.Bucket)
+func (m *GCSStorage) Health(ctx context.Context) bool {
+	return m.BucketExists(ctx, m.config.Bucket)
 }
 
 // Put uploads an object to GCS
-func (m *GCSStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) error {
-	ctx := context.Background()
+func (m *GCSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
 
 	obj := m.client.Bucket(bucket).Object(fnm)
 	w := obj.NewWriter(ctx)
@@ -93,8 +90,7 @@ func (m *GCSStorage) Put(bucket, fnm string, binary []byte, tenantID ...string) 
 }
 
 // Get retrieves an object from GCS
-func (m *GCSStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error) {
-	ctx := context.Background()
+func (m *GCSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 
 	r, err := m.client.Bucket(bucket).Object(fnm).NewReader(ctx)
 	if err != nil {
@@ -111,8 +107,7 @@ func (m *GCSStorage) Get(bucket, fnm string, tenantID ...string) ([]byte, error)
 }
 
 // Remove removes an object from GCS
-func (m *GCSStorage) Remove(bucketName, objectName string, tenantID ...string) error {
-	ctx := context.Background()
+func (m *GCSStorage) Remove(ctx context.Context, bucketName, objectName string, tenantID ...string) error {
 
 	obj := m.client.Bucket(bucketName).Object(objectName)
 	if err := obj.Delete(ctx); err != nil {
@@ -123,8 +118,7 @@ func (m *GCSStorage) Remove(bucketName, objectName string, tenantID ...string) e
 }
 
 // ObjExist checks if an object exists in GCS
-func (m *GCSStorage) ObjExist(bucketName, objectName string, tenantID ...string) bool {
-	ctx := context.Background()
+func (m *GCSStorage) ObjExist(ctx context.Context, bucketName, objectName string, tenantID ...string) bool {
 
 	obj := m.client.Bucket(bucketName).Object(objectName)
 
@@ -136,8 +130,7 @@ func (m *GCSStorage) ObjExist(bucketName, objectName string, tenantID ...string)
 	return true
 }
 
-func (m *GCSStorage) ListObjects(bucket string, tenantID ...string) ([]string, error) {
-	ctx := context.Background()
+func (m *GCSStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
 
 	bucketObject := m.client.Bucket(bucket)
 	it := bucketObject.Objects(ctx, nil)
@@ -159,7 +152,7 @@ func (m *GCSStorage) ListObjects(bucket string, tenantID ...string) ([]string, e
 }
 
 // GetPresignedURL generates a presigned URL for accessing an object
-func (m *GCSStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
+func (m *GCSStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 
 	bucketObject := m.client.Bucket(bucket)
 	objectPath := fmt.Sprintf("%s/%s", bucket, fnm)
@@ -175,13 +168,11 @@ func (m *GCSStorage) GetPresignedURL(bucket, fnm string, expires time.Duration, 
 }
 
 // BucketExists checks if a bucket exists
-func (m *GCSStorage) BucketExists(bucket string) bool {
+func (m *GCSStorage) BucketExists(ctx context.Context, bucket string) bool {
 	actualBucket := bucket
 	if m.config.Bucket != "" {
 		actualBucket = m.config.Bucket
 	}
-
-	ctx := context.Background()
 
 	_, err := m.client.Bucket(actualBucket).Attrs(ctx)
 	if err != nil {
@@ -192,12 +183,10 @@ func (m *GCSStorage) BucketExists(bucket string) bool {
 }
 
 // RemoveBucket removes a bucket and all its objects
-func (m *GCSStorage) RemoveBucket(bucketName string) error {
+func (m *GCSStorage) RemoveBucket(ctx context.Context, bucketName string) error {
 	if bucketName == "" {
 		return fmt.Errorf("attempt to delete bucket without name")
 	}
-
-	ctx := context.Background()
 
 	bucket := m.client.Bucket(bucketName)
 
@@ -224,8 +213,8 @@ func (m *GCSStorage) RemoveBucket(bucketName string) error {
 }
 
 // Copy copies an object from source to destination
-func (m *GCSStorage) Copy(srcBucket, srcObject, destBucket, destObject string) bool {
-	ctx := context.Background()
+func (m *GCSStorage) Copy(ctx context.Context, srcBucket, srcObject, destBucket, destObject string) bool {
+
 	src := m.client.Bucket(srcBucket).Object(srcObject)
 	dst := m.client.Bucket(destBucket).Object(destObject)
 	copier := dst.CopierFrom(src)
@@ -238,10 +227,16 @@ func (m *GCSStorage) Copy(srcBucket, srcObject, destBucket, destObject string) b
 }
 
 // Move moves an object from source to destination
-func (m *GCSStorage) Move(srcBucket, srcPath, destBucket, destPath string) bool {
-	if m.Copy(srcBucket, srcPath, destBucket, destPath) {
-		if err := m.Remove(srcBucket, srcPath); err != nil {
+func (m *GCSStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
+	if m.Copy(ctx, srcBucket, srcPath, destBucket, destPath) {
+		if err := m.Remove(ctx, srcBucket, srcPath); err != nil {
 			common.Warn("Failed to remove source object after copy", zap.String("bucket", srcBucket), zap.String("key", srcPath), zap.Error(err))
+			rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			err = m.Remove(rollbackCtx, destBucket, destPath)
+			if err != nil {
+				common.Warn("Failed to roll back copied destination object", zap.String("bucket", destBucket), zap.String("key", destPath), zap.Error(err))
+			}
 			return false
 		}
 		return true
