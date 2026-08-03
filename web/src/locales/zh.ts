@@ -2035,6 +2035,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       modified: '更新成功',
       created: '创建成功',
       deleted: '删除成功',
+      noLangfuseConfigToDelete: '没有可删除的 Langfuse 配置',
       renamed: '重命名成功',
       operated: '操作成功',
       updated: '更新成功',
