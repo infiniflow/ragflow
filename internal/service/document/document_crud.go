@@ -83,7 +83,7 @@ func (s *DocumentService) DownloadDocument(ctx context.Context, datasetID, docID
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	data, err := storageImpl.Get(bucket, name)
+	data, err := storageImpl.Get(ctx, bucket, name)
 	if err != nil {
 		return nil, err
 	}
@@ -280,13 +280,10 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		return err
 	}
 	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
-		common.Logger.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
-	}
-	if _, delErr := s.taskDAO.DeleteByDocIDs(ctx, dao.DB, []string{docID}); delErr != nil {
 		if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
 			return fmt.Errorf("RemoveDocumentKeepFile: failed to delete tasks for %s: %w", docID, delErr)
 		}
-		common.Logger.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
+		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
 	}
 	return s.deleteDocRecordWithCounters(ctx, doc, kb.ID)
 }
@@ -357,7 +354,7 @@ func (s *DocumentService) deleteDocEngineData(docID, tenantID, kbID string) {
 	ctx := context.Background()
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	if _, delErr := s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": docID}, indexName, kbID); delErr != nil {
-		common.Logger.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
+		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
 	}
 	// Notify the dataset-level post-processing consumer (§11) that this document's
 	// source + per-doc compiled chunks are gone. The consumer removes the
@@ -369,7 +366,7 @@ func (s *DocumentService) deleteDocEngineData(docID, tenantID, kbID string) {
 	pubCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := knowledge_compile.PublishDeleted(pubCtx, tenantID, kbID, docID, 0); err != nil {
-		common.Logger.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
+		common.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	if s.metadataSvc != nil {
 		_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
@@ -422,7 +419,7 @@ func (s *DocumentService) rollbackAddFileFromKBError(ctx context.Context, doc *e
 func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID string) error {
 	mappings, mapErr := s.file2DocumentDAO.GetByDocumentID(ctx, dao.DB, docID)
 	if mapErr != nil {
-		common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to get f2d mappings for %s: %v", docID, mapErr))
+		common.Warn(fmt.Sprintf("cleanupFileReferences: failed to get f2d mappings for %s: %v", docID, mapErr))
 		return mapErr
 	}
 	if len(mappings) == 0 {
@@ -442,7 +439,7 @@ func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID strin
 
 	// Delete all file2document rows for this document
 	if delErr := s.file2DocumentDAO.DeleteByDocumentID(ctx, dao.DB, docID); delErr != nil {
-		common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete f2d for %s: %v", docID, delErr))
+		common.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete f2d for %s: %v", docID, delErr))
 		return delErr
 	}
 
@@ -451,7 +448,7 @@ func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID strin
 	for _, fileID := range fileIDs {
 		remaining, remErr := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
 		if remErr != nil {
-			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to check remaining f2d for %s: %v", fileID, remErr))
+			common.Warn(fmt.Sprintf("cleanupFileReferences: failed to check remaining f2d for %s: %v", fileID, remErr))
 			continue
 		}
 		if len(remaining) > 0 {
@@ -461,21 +458,22 @@ func (s *DocumentService) cleanupFileReferences(ctx context.Context, docID strin
 		fileDAO := dao.NewFileDAO()
 		file, fErr := fileDAO.GetByID(ctx, dao.DB, fileID)
 		if fErr != nil || file == nil {
-			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: file not found %s: %v", fileID, fErr))
+			common.Warn(fmt.Sprintf("cleanupFileReferences: file not found %s: %v", fileID, fErr))
 			continue
 		}
 		if entity.FileSource(file.SourceType) != entity.FileSourceKnowledgebase {
 			continue // linked from file management — unlink only, keep the file
 		}
 		if _, delErr := fileDAO.DeleteByIDs(ctx, dao.DB, []string{fileID}); delErr != nil {
-			common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete file %s: %v", fileID, delErr))
+			common.Warn(fmt.Sprintf("cleanupFileReferences: failed to delete file %s: %v", fileID, delErr))
 			continue // keep the blob so the live file row still has its object
 		}
 		if file.Location != nil && *file.Location != "" {
 			storageImpl := storage.GetStorageFactory().GetStorage()
 			if storageImpl != nil {
-				if rmErr := storageImpl.Remove(file.ParentID, *file.Location); rmErr != nil {
-					common.Logger.Warn(fmt.Sprintf("cleanupFileReferences: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
+				rmErr := removeObjectBestEffort(storageImpl, file.ParentID, *file.Location)
+				if rmErr != nil {
+					common.Warn(fmt.Sprintf("cleanupFileReferences: failed to remove blob %s/%s: %v", file.ParentID, *file.Location, rmErr))
 				}
 			}
 		}

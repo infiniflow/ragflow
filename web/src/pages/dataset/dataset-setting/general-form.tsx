@@ -1,4 +1,5 @@
 import { AvatarUpload } from '@/components/avatar-upload';
+import { CompilationTemplateFormField } from '@/components/compilation-template-form-field';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import PageRankFormField from '@/components/page-rank-form-field';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
@@ -129,6 +130,7 @@ export function GeneralForm() {
         ownerTenantId={useKnowledgeBaseContext().knowledgeBase?.tenant_id}
       ></EmbeddingModelItem>
       <PageRankFormField></PageRankFormField>
+      <CompilationTemplateFormField horizontal={true}></CompilationTemplateFormField>
 
       <TagItems></TagItems>
     </>

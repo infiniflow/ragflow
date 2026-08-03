@@ -120,8 +120,15 @@ func HandleStreamingResponse(
 
 		accumulateToolCallDeltas(delta, accumulatedToolCalls)
 
-		if reasoningContent, ok := delta["reasoning_content"].(string); ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
+		// Extract reasoning via the protocol hook so each provider can
+		// name its reasoning field differently (reasoning_content,
+		// reasoning, ...) without the shared handler knowing which.
+		extractReasoning := cfg.ExtractStreamReasoning
+		if extractReasoning == nil {
+			extractReasoning = extractDefaultStreamReasoning
+		}
+		if reasoning := extractReasoning(delta); reasoning != "" {
+			if err := sender(nil, &reasoning); err != nil {
 				return err
 			}
 		}
