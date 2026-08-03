@@ -16,6 +16,44 @@ func TestCrossCheckClaim_NumberMatch(t *testing.T) {
 	}
 }
 
+// TestKbinfosMerge_GlobalIndices asserts Merge returns the GLOBAL indices of the
+// contributed chunks in the accumulated list, so a later claim's EvidenceIDs
+// still resolve correctly after earlier claims pushed more chunks in.
+func TestKbinfosMerge_GlobalIndices(t *testing.T) {
+	kb := &Kbinfos{}
+	// First claim's search returns chunks a,b.
+	first := kb.Merge([]map[string]interface{}{
+		{"chunk_id": "a", "content_with_weight": "alpha 7"},
+		{"chunk_id": "b", "content_with_weight": "beta"},
+	}, nil)
+	// a->0, b->1 in the global list.
+	if len(first) != 2 || first[0] != 0 || first[1] != 1 {
+		t.Fatalf("first merge global indices = %v, want [0 1]", first)
+	}
+	// Second claim's search returns chunk c (now global index 2) and a dup of a.
+	second := kb.Merge([]map[string]interface{}{
+		{"chunk_id": "c", "content_with_weight": "gamma 9"},
+		{"chunk_id": "a", "content_with_weight": "alpha 7"},
+	}, nil)
+	// c->2, a(dup)->0; NOT per-search [0 1].
+	if len(second) != 2 || second[0] != 2 || second[1] != 0 {
+		t.Fatalf("second merge global indices = %v, want [2 0]", second)
+	}
+	// CrossCheckClaim must resolve both claims' evidence against the global list.
+	allChunks := map[int]map[string]interface{}{}
+	for i, c := range kb.Chunks {
+		allChunks[i] = c
+	}
+	r1 := CrossCheckClaim(&AgentResult{ClaimID: "c1", IsVerified: true, Report: "alpha 7", EvidenceIDs: first}, allChunks)
+	if !r1.HasEvidence {
+		t.Error("claim 1 should have evidence at global indices")
+	}
+	r2 := CrossCheckClaim(&AgentResult{ClaimID: "c2", IsVerified: true, Report: "gamma 9", EvidenceIDs: second}, allChunks)
+	if !r2.HasEvidence {
+		t.Error("claim 2 should have evidence at global index 2 (not per-search 0)")
+	}
+}
+
 // TestCrossCheckClaim_Unverified asserts an unverified agent fails the check.
 func TestCrossCheckClaim_Unverified(t *testing.T) {
 	r := CrossCheckClaim(&AgentResult{ClaimID: "c0", IsVerified: false}, nil)

@@ -35,16 +35,25 @@ type Kbinfos struct {
 
 func (k *Kbinfos) HasChunks() bool { return len(k.Chunks) > 0 }
 
-func (k *Kbinfos) Merge(chunks, aggs []map[string]interface{}) {
+// Merge appends the given chunks/aggs, deduplicating by chunkKey. It returns the
+// GLOBAL indices (positions in k.Chunks after the merge) of the chunks this call
+// contributed, so callers can store stable evidence references across multiple
+// Merge calls (per-search indices would diverge from the accumulated list).
+func (k *Kbinfos) Merge(chunks, aggs []map[string]interface{}) []int {
 	seen := map[string]bool{}
 	for _, c := range k.Chunks {
 		seen[chunkKey(c)] = true
 	}
+	var added []int
 	for _, c := range chunks {
-		if kk := chunkKey(c); !seen[kk] {
+		kk := chunkKey(c)
+		if !seen[kk] {
 			seen[kk] = true
 			k.Chunks = append(k.Chunks, c)
 		}
+		// Record the global index of every contributed chunk (dedup or new),
+		// so EvidenceIDs always reference the accumulated kbinfos positions.
+		added = append(added, indexOfChunk(k.Chunks, kk))
 	}
 	dseen := map[string]bool{}
 	for _, d := range k.DocAggs {
@@ -58,6 +67,17 @@ func (k *Kbinfos) Merge(chunks, aggs []map[string]interface{}) {
 			k.DocAggs = append(k.DocAggs, d)
 		}
 	}
+	return added
+}
+
+// indexOfChunk returns the global index of the chunk whose key matches kk.
+func indexOfChunk(chunks []map[string]interface{}, kk string) int {
+	for i, c := range chunks {
+		if chunkKey(c) == kk {
+			return i
+		}
+	}
+	return -1
 }
 
 // chunkKey returns a stable dedup key for a chunk. Prefers chunk_id/id when
@@ -154,11 +174,14 @@ func DecomposeAndSearch(ctx context.Context, search SearchFn, question, keywords
 			if len(chunks) > 0 {
 				c.IsVerified = true
 				c.Confidence = 0.8
+				// Merge returns the GLOBAL indices of this claim's chunks in the
+				// accumulated kbinfos, which is what CrossCheckClaim resolves
+				// against (allChunks is keyed by that global position).
+				global := kbinfos.Merge(chunks, aggs)
 				c.AgentResult = &AgentResult{
 					ClaimID: c.ClaimID, Report: summarize(chunks), IsVerified: true, Confidence: 0.8,
-					EvidenceIDs: intRange(len(chunks)),
+					EvidenceIDs: global,
 				}
-				kbinfos.Merge(chunks, aggs)
 			} else {
 				c.AgentResult = &AgentResult{ClaimID: c.ClaimID, IsVerified: false, Confidence: 0.0}
 			}

@@ -112,11 +112,9 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	// template's id and kind. All products are buffered (no streaming sink), so
 	// the post-run loop below covers every row (M1).
 	var out common.Outputs
-	var (
-		navDeps     common.Deps
-		navProducts []common.Product
-		navVariant  common.Variant
-	)
+	// navByProducts accumulates every tree/structure by-product job so each is
+	// written after the spec loop (not just the last one).
+	var navByProducts []navByProduct
 	for _, spec := range specs {
 		variant, err := common.KindToVariant(spec.Kind)
 		if err != nil {
@@ -164,11 +162,11 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 			return nil, err
 		}
 
-		// Remember the latest tree/structure output so the dataset-nav by-product
-		// can be written ONCE after the spec loop (not once per spec). nav is a
-		// derived artifact; its failures are logged and never abort the pipeline.
+		// Accumulate tree/structure by-product jobs so each is written after the
+		// spec loop (a multi-spec batch must not drop any spec's products). nav is
+		// a derived artifact; its failures are logged and never abort the pipeline.
 		if variant == common.VariantTree || variant == common.VariantStructure {
-			navDeps, navProducts, navVariant = deps, o.Products, variant
+			navByProducts = append(navByProducts, navByProduct{deps: deps, variant: variant, products: o.Products})
 		}
 
 		for i := range o.Products {
@@ -183,14 +181,14 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		out.Products = append(out.Products, o.Products...)
 	}
 
-	// Write the dataset-nav by-product once after all specs ran. tree by-product
+	// Write each dataset-nav by-product after all specs ran. tree by-product
 	// (Python compiler.py:475) and structure/page_index by-product (Python
 	// runner.py:189). Failures are logged and never abort the pipeline.
-	if len(navProducts) > 0 {
-		if navVariant == common.VariantTree {
-			upsertTreeNav(ctx, navDeps, in.DocID, navProducts)
+	for _, job := range navByProducts {
+		if job.variant == common.VariantTree {
+			upsertTreeNav(ctx, job.deps, in.DocID, job.products)
 		} else {
-			upsertStructureNav(ctx, navDeps, in.DocID, navProducts)
+			upsertStructureNav(ctx, job.deps, in.DocID, job.products)
 		}
 	}
 
@@ -203,6 +201,14 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		return nil, err
 	}
 	return mergeChunks(inputs, compiled), nil
+}
+
+// navByProduct is one deferred dataset-nav by-product job: the compile variant
+// that produced it and the products to summarize from.
+type navByProduct struct {
+	deps     common.Deps
+	variant  common.Variant
+	products []common.Product
 }
 
 // upsertTreeNav writes the dataset-nav by-product after tree compilation. It
@@ -283,19 +289,18 @@ func upsertStructureNav(ctx context.Context, deps common.Deps, docID string, pro
 		log.Printf("knowledge_compiler: datasetnav by-product skipped (structure graph has no entity descriptions)")
 		return
 	}
-	vec := graph.Vector
-	if len(vec) == 0 && deps.Embed != nil {
-		embeddings, err := deps.Embed.Encode(ctx, []string{summary})
-		if err != nil || len(embeddings) == 0 {
-			log.Printf("knowledge_compiler: datasetnav by-product skipped (structure embedding failed): %v", err)
-			return
-		}
-		vec = embeddings[0]
-	}
-	if len(vec) == 0 {
-		log.Printf("knowledge_compiler: datasetnav by-product skipped (no vector)")
+	// Embed the SUMMARY text, not the graph JSON — the nav doc's vector must
+	// represent the summary semantics for the KNN router to match correctly.
+	if deps.Embed == nil {
+		log.Printf("knowledge_compiler: datasetnav by-product skipped (no embedder)")
 		return
 	}
+	embeddings, err := deps.Embed.Encode(ctx, []string{summary})
+	if err != nil || len(embeddings) == 0 {
+		log.Printf("knowledge_compiler: datasetnav by-product skipped (structure embedding failed): %v", err)
+		return
+	}
+	vec := embeddings[0]
 	if err := ns.UpsertDoc(ctx, nav.UpsertDocInput{
 		TenantID: deps.TenantID,
 		KbID:     deps.DatasetID,

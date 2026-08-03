@@ -380,11 +380,16 @@ func (s *NavService) findBestCluster(ctx context.Context, tenantID, kbID string,
 		}
 		name := firstStringValue(chunks[0]["title_kwd"])
 		sim := rowScore(chunks[0])
-		// Descend only while the match is strong enough to warrant it.
-		if sim < navRecurse {
-			return name, sim, nil
+		// Keep the STRONGEST match seen so far across all levels, so a strong
+		// ancestor is never displaced by a weaker descendant.
+		if sim > bestSim {
+			bestName, bestSim = name, sim
 		}
-		bestName, bestSim = name, sim
+		// Descend only while the current match is strong enough that a deeper
+		// child could be a better target.
+		if sim < navRecurse {
+			break
+		}
 		parent = name
 	}
 	return bestName, bestSim, nil
@@ -435,8 +440,17 @@ func (s *NavService) appendDocToCluster(ctx context.Context, de engine.DocEngine
 	if !found {
 		count++
 	}
+	// Pin the update to the nav_cluster row only: a regular chunk sharing the
+	// same title_kwd must never be clobbered. The read-modify-write here is
+	// expected to run under a per-dataset lock held by the UpsertDoc caller;
+	// without it, concurrent appends to the same cluster can lose updates.
 	return de.UpdateChunks(ctx,
-		map[string]interface{}{"title_kwd": []string{clusterName}, "kb_id": kbID},
+		map[string]interface{}{
+			"compile_kwd": []string{navCompileKwd},
+			"type_kwd":    []string{"nav_cluster"},
+			"title_kwd":   []string{clusterName},
+			"kb_id":       kbID,
+		},
 		map[string]interface{}{"doc_ids_kwd": ids, "doc_count_int": count},
 		s.navIndexName(tenantID), kbID)
 }

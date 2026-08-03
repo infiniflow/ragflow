@@ -108,6 +108,11 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 	if args.Topic == "" {
 		return "", fmt.Errorf("dataset_navigation: topic is required")
 	}
+	// Per-request max_docs overrides the node default; default to a sane cap.
+	maxDocs := args.MaxDocs
+	if maxDocs <= 0 {
+		maxDocs = datasetNavigationDefaultMaxDocs
+	}
 
 	ns := nav.GetNavService()
 	if ns == nil {
@@ -137,7 +142,7 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 		if _, ok := seen[id]; ok {
 			return
 		}
-		if len(docs) >= d.maxDocs() {
+		if len(docs) >= maxDocs {
 			return
 		}
 		seen[id] = struct{}{}
@@ -146,7 +151,7 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 
 	// Primary: semantic search over each dataset's nav tree.
 	for _, datasetID := range datasetIDs {
-		hits, err := ns.Search(ctx, tenantID, datasetID, query, nil, d.maxDocs())
+		hits, err := ns.Search(ctx, tenantID, datasetID, query, nil, maxDocs)
 		if err != nil {
 			continue
 		}
@@ -156,7 +161,7 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 				collect(id)
 			}
 		}
-		if len(docs) >= d.maxDocs() {
+		if len(docs) >= maxDocs {
 			break
 		}
 	}
@@ -176,15 +181,15 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 				}
 				for _, ch := range children {
 					collect(ch.DocID)
-					if len(docs) >= d.maxDocs() {
+					if len(docs) >= maxDocs {
 						break
 					}
 				}
-				if len(docs) >= d.maxDocs() {
+				if len(docs) >= maxDocs {
 					break
 				}
 			}
-			if len(docs) >= d.maxDocs() {
+			if len(docs) >= maxDocs {
 				break
 			}
 		}
@@ -204,13 +209,6 @@ func (d *DatasetNavigationByTree) mergeDefaults(args datasetNavigationArgs) data
 		args.MaxDocs = d.defaults.MaxDocs
 	}
 	return args
-}
-
-func (d *DatasetNavigationByTree) maxDocs() int {
-	if d.defaults.MaxDocs <= 0 {
-		return datasetNavigationDefaultMaxDocs
-	}
-	return d.defaults.MaxDocs
 }
 
 func datasetNavigationJSON(r datasetNavigationResult) string {

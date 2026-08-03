@@ -66,8 +66,10 @@ func PlannerNode(ctx context.Context, db *gorm.DB, route RouteDecision, seedChun
 	if !route.RequiresDecomposition {
 		return directPlan(route.Question)
 	}
-	mode, _ := GetMode(route.ThinkingMode)
-	if route.ThinkingMode == "" {
+	mode, ok := GetMode(route.ThinkingMode)
+	if !ok {
+		// Unknown or empty mode label: fall back to medium so the planner is not
+		// driven by a zero-valued mode (which would yield a degenerate plan).
 		mode = THINKING_MODES["medium"]
 	}
 	maxClaims := maxClaimsFor(mode.Label)

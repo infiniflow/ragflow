@@ -80,7 +80,9 @@ func CrossCheckClaim(agent *AgentResult, allChunks map[int]map[string]interface{
 			}
 		}
 		for _, ent := range entities {
-			if !strings.Contains(text, strings.ToLower(ent)) {
+			if strings.Contains(text, strings.ToLower(ent)) {
+				matches = append(matches, fmt.Sprintf("entity '%s' found in chunk %d", ent, eid))
+			} else {
 				mismatches = append(mismatches, fmt.Sprintf("entity '%s' not found in chunk %d", ent, eid))
 			}
 		}
@@ -93,7 +95,9 @@ func CrossCheckClaim(agent *AgentResult, allChunks map[int]map[string]interface{
 	if total > 0 {
 		crossScore = float64(len(matches)) / float64(total)
 	}
-	crossPassed := hasEvidence && len(mismatches) < len(matches)/2
+	// Entity presence now contributes to matches too, so it can raise the score;
+	// use a float comparison to avoid integer-division truncation bias.
+	crossPassed := hasEvidence && float64(len(mismatches)) < float64(len(matches))/2.0
 	return ClaimCrossCheckResult{
 		ClaimID: agent.ClaimID, CrossCheckPassed: crossPassed, CrossCheckScore: crossScore,
 		EvidenceMatches: matches, Mismatches: mismatches, HasEvidence: hasEvidence,

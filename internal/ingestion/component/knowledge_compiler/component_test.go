@@ -343,7 +343,9 @@ func TestKnowledgeCompiler_StructureNavByProduct(t *testing.T) {
 	products := []common.Product{
 		{Content: graphJSON, Vector: []float32{0.1, 0.2}, Meta: map[string]any{"kind": "graph", "compile_kwd": "page_index"}},
 	}
-	upsertStructureNav(context.Background(), common.Deps{TenantID: "t1", DatasetID: "kb1"}, "d1", products)
+	// The by-product embeds the SUMMARY (not the graph JSON vector), so an
+	// embedder must be present.
+	upsertStructureNav(context.Background(), common.Deps{TenantID: "t1", DatasetID: "kb1", Embed: mockEmbedder{dim: 8}}, "d1", products)
 
 	fake.mu.Lock()
 	defer fake.mu.Unlock()

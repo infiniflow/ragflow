@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 
@@ -121,10 +122,13 @@ func (r *ProductionRunner) routeDocs(ctx context.Context, topic, keywords string
 		log.Printf("agentic_rag: dataset nav service not initialized; skipping doc routing")
 		return nil
 	}
+	// Combine topic + keywords into the routing query so the nav router actually
+	// uses the full user signal (keywords must not be dropped).
+	query := strings.TrimSpace(topic + " " + keywords)
 	seen := map[string]bool{}
 	var docs []string
 	for _, kbID := range r.datasetIDs {
-		for _, id := range NavigateDatasetByTree(ctx, r.db, ns, r.tenantID, kbID, topic) {
+		for _, id := range NavigateDatasetByTree(ctx, r.db, ns, r.tenantID, kbID, query) {
 			if id != "" && !seen[id] {
 				seen[id] = true
 				docs = append(docs, id)

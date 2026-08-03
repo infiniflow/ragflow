@@ -89,8 +89,10 @@ func RunAgenticRAG(ctx context.Context, db *gorm.DB, question, keywords, modeLab
 
 	// ── formalize_answer ──
 	res := FormalizeAnswer(ctx, db, state.Question, state.Kbinfos, state.PartialAnswer, state.Abstain, state.EmptyResult)
-	log.Printf("agentic_rag: finished for %q (strategy=%s, chunks=%d, partial=%v, abstain=%v)",
-		state.Question, state.Route.ExecutionStrategy, len(state.Kbinfos.Chunks), state.PartialAnswer, state.Abstain)
+	// Log only the question length, never its content, to avoid persisting user
+	// input in logs.
+	log.Printf("agentic_rag: finished (qlen=%d, strategy=%s, chunks=%d, partial=%v, abstain=%v)",
+		len(state.Question), state.Route.ExecutionStrategy, len(state.Kbinfos.Chunks), state.PartialAnswer, state.Abstain)
 	return res
 }
 

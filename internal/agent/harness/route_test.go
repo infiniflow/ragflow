@@ -110,6 +110,23 @@ func TestPlannerNode_Decomposes(t *testing.T) {
 	}
 }
 
+// TestPlannerNode_UnknownModeFallsBack asserts an unknown (non-empty) mode label
+// falls back to medium so the planner is not driven by a zero-valued mode
+// (which would produce a degenerate plan with max_claims=0).
+func TestPlannerNode_UnknownModeFallsBack(t *testing.T) {
+	installChat(t, `{"claims":[{"claim_id":"c0","description":"fact one","priority":0}]}`)
+	plan := PlannerNode(context.Background(), nil, RouteDecision{
+		Question: "Q", RequiresDecomposition: true, ThinkingMode: "turbo-unknown",
+	}, nil)
+	// medium maxOrchestratorCycles = 3, and claims must still be built.
+	if plan.MaxIterations != 3 {
+		t.Errorf("max_iterations = %d, want 3 (medium fallback)", plan.MaxIterations)
+	}
+	if len(plan.Claims) != 1 {
+		t.Errorf("claims = %d, want 1", len(plan.Claims))
+	}
+}
+
 // TestPlannerNode_BadJSONFallsBack asserts unparseable planner output falls back
 // to the direct plan.
 func TestPlannerNode_BadJSONFallsBack(t *testing.T) {
