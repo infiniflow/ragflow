@@ -35,7 +35,7 @@ import (
 // by the MCP server handler.
 type MCPRetrievalService interface {
 	SearchDatasets(req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error)
-	ListDatasets(id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string) ([]map[string]interface{}, int64, common.ErrorCode, error)
+	ListDatasets(id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string, ids []string) ([]map[string]interface{}, int64, common.ErrorCode, error)
 }
 
 // MCPServerHandler handles MCP protocol requests (JSON-RPC over HTTP).
@@ -118,7 +118,7 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 func MCPListDatasets(ctx context.Context, ds *dataset.DatasetService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
 	data, total, _, err := ds.ListDatasets(ctx,
 		"", "", page, pageSize, orderby, desc,
-		"", nil, "", userID,
+		"", nil, "", userID, nil,
 	)
 	return data, total, err
 }
@@ -154,7 +154,7 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 		for {
 			data, _, _, err := ds.ListDatasets(ctx,
 				"", "", page, maxPageSize, "create_time", true,
-				"", nil, "", userID,
+				"", nil, "", userID, nil,
 			)
 			if err != nil {
 				return "", fmt.Errorf("cannot resolve accessible datasets: %w", err)
