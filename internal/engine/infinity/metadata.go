@@ -386,6 +386,11 @@ func (e *Engine) deleteMetadataWithTable(table *infinity.Table, condition map[st
 	// Build filter from condition
 	filter := buildFilterFromCondition(condition, clmns)
 
+	if len(condition) > 0 && (filter == "" || filter == "1=1") {
+		common.Warn("INFINITY delete aborted: non-empty condition yielded unconstrained filter")
+		return 0, nil
+	}
+
 	delResp, err := table.Delete(filter)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete metadata: %w", err)

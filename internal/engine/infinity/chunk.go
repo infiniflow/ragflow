@@ -689,6 +689,11 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	// Build filter from condition
 	filter := buildFilterFromCondition(condition, clmns)
 
+	if len(condition) > 0 && (filter == "" || filter == "1=1") {
+		common.Warn(fmt.Sprintf("INFINITY delete aborted: non-empty condition yielded unconstrained filter on table %s", tableName))
+		return 0, nil
+	}
+
 	delResp, err := table.Delete(filter)
 	if err != nil {
 		return 0, fmt.Errorf("failed to delete: %w", err)
