@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from rag.nlp import rag_tokenizer, query
 from rag.nlp.fusion import build_fusion_expr
 import numpy as np
-from common.doc_store.doc_store_base import MatchDenseExpr, OrderByExpr, DocStoreConnection
+from common.doc_store.doc_store_base import MatchDenseExpr, FusionExpr, OrderByExpr, DocStoreConnection
 from common.string_utils import remove_redundant_spaces
 from common.float_utils import get_float
 from common.constants import PAGERANK_FLD, TAG_FLD
@@ -208,13 +208,16 @@ class Dealer:
                 if settings.DOC_ENGINE_OCEANBASE:
                     src.append(f"q_{len(q_vec)}_vec")
 
-                vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
-                logging.debug(
-                    "Dealer.search fusion: topk=%s vector_similarity_weight=%s",
-                    topk,
-                    vector_similarity_weight,
-                )
-                fusionExpr = build_fusion_expr(topk, vector_similarity_weight)
+                if settings.DOC_ENGINE_INFINITY:
+                    vector_similarity_weight = float(req.get("vector_similarity_weight", 0.3))
+                    logging.debug(
+                        "Dealer.search fusion: topk=%s vector_similarity_weight=%s",
+                        topk,
+                        vector_similarity_weight,
+                    )
+                    fusionExpr = build_fusion_expr(topk, vector_similarity_weight)
+                else:
+                    fusionExpr = FusionExpr("weighted_sum", topk, {"weights": "0.001,1"})
                 matchExprs = [matchText, matchDense, fusionExpr]
 
                 res = await thread_pool_exec(self.dataStore.search, src, highlightFields, filters, matchExprs, orderBy, offset, limit, idx_names, kb_ids, rank_feature=rank_feature)
