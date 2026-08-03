@@ -66,14 +66,14 @@ type DocEngine interface {
 	GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{}
 	GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string
 
-	// Run SQL
+	// RunSQL runs a SQL query
 	RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error)
 
 	GetChunkIDs(chunks []map[string]interface{}) []string
 	KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error)
 	GetScores(searchResult map[string]interface{}) map[string]float64
 
-	// Health check
+	// Ping check the engine is alive
 	Ping(ctx context.Context) error
 	Close() error
 
@@ -101,6 +101,7 @@ func Type(docEngine DocEngine) EngineType {
 
 type MessageQueue interface {
 	Init() error
+	Type() string
 	InitConsumer(subject string) error
 	PublishTask(subject string, payload []byte) error
 	GetMessages(messageCount int) ([]common.TaskHandle, error)

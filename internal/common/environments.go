@@ -168,7 +168,7 @@ const (
 	EnvTCADPApiServerURL                 = "TCADP_APISERVER_URL"
 	EnvTCADPApiKey                       = "TCADP_API_KEY"
 	EnvRAGFlowSecretKey                  = "RAGFLOW_SECRET_KEY"
-	EnvRegisterEnabled                   = "REGISTER_ENABLED"
+	EnvEnableRegister                    = "ENABLE_REGISTER"
 	EnvDisablePasswordLogin              = "DISABLE_PASSWORD_LOGIN"
 	EnvMinioHost                         = "MINIO_HOST"
 	EnvMinioRegion                       = "MINIO_REGION"

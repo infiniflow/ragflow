@@ -56,6 +56,8 @@ func (s StorageType) String() string {
 
 // Storage defines the interface for storage operations
 type Storage interface {
+	Type() string
+
 	// Health checks the storage service availability
 	Health() bool
 

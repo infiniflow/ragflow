@@ -17,45 +17,84 @@ package knowledge_compile
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// Reader loads the per-document compiled products (available_int=0) of a KB so
-// the consumer can recompute the dataset-level merged set (§11.6 step 1, §11.7
-// incremental re-dedup).
+// Reader finds the compiled products needed for incremental dedup without
+// loading the whole KB into memory (§11.6 step 1, §11.7 incremental re-dedup).
+//
+// The dedup between an incoming per-document product and the already-merged
+// rows lives in external storage (DocEngine): the consumer only keeps the
+// in-flight batch in memory and asks the engine for nearest matches via KNN.
+// It never scans every compiled chunk of the KB, which would OOM on a large
+// knowledge base — this mirrors Python's _struct_doc_storage_dedup_batch, which
+// takes only the just-compiled docs and KNN-queries the store per doc.
 type Reader interface {
-	LoadCompiledProducts(ctx context.Context, tenant, kb string) ([]kccommon.Product, error)
+	// LoadDocProducts returns the per-document compiled rows for a single
+	// document (doc_id == source_doc). Bounded by one document, never the whole
+	// KB.
+	LoadDocProducts(ctx context.Context, tenant, kb, docID string) ([]kccommon.Product, error)
+
+	// SearchSimilar runs a dense (KNN) search over the existing merged rows of
+	// the given variant and returns the single most-similar row whose score is
+	// at least minScore, plus that score. It returns a zero Product when nothing
+	// clears the threshold. This mirrors Python's _struct_doc_storage_knn_candidate
+	// (topn=1, similarity_threshold): find the dot product above the threshold
+	// and maximum, then decide duplication with the LLM.
+	SearchSimilar(ctx context.Context, tenant, kb string, variant kccommon.Variant, vector []float64, topN int, minScore float64) (kccommon.Product, float64, error)
 }
 
-type infinityReader struct{}
+// engineReader loads the per-document compiled products through the global
+// DocEngine (§11.6 step 1, §11.7 incremental re-dedup). It depends on the
+// process-wide DocEngine obtained via engine.Get(); the engine abstraction owns
+// the storage schema, so this reader is not backend-specific.
+type engineReader struct {
+	eng engine.DocEngine
+}
 
-func (infinityReader) LoadCompiledProducts(ctx context.Context, tenant, kb string) ([]kccommon.Product, error) {
-	eng := engine.Get()
+// compiledSelectFields are the columns needed to reconstruct a Product from a
+// stored compiled chunk document.
+var compiledSelectFields = []string{
+	"id", "doc_id", "tenant_id", "compile_kwd",
+	"content_with_weight", "kc_payload",
+	"source_chunk_ids", "source_doc_ids",
+	"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
+	"slug_kwd", "type",
+}
+
+// loadDocProductsLimit is the per-page size used when scrolling a single
+// document's compiled rows. A document can compile more than this many rows, so
+// LoadDocProducts pages until the engine returns fewer than a full page.
+const loadDocProductsLimit = 5000
+
+// LoadDocProducts returns the per-document compiled rows for a single document.
+// It is bounded to one document, so the consumer never loads the whole KB. The
+// results are paged so a document with more than loadDocProductsLimit rows is
+// not silently truncated.
+func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID string) ([]kccommon.Product, error) {
+	eng := r.eng
+	if eng == nil {
+		eng = engine.Get()
+	}
 	if eng == nil {
 		return nil, nil
 	}
-	baseName := fmt.Sprintf("ragflow_%s", tenant)
-	const batchSize = 5000
 	var out []kccommon.Product
 	offset := 0
 	for {
 		res, err := eng.Search(ctx, &types.SearchRequest{
-			IndexNames: []string{baseName},
-			KbIDs:      []string{kb},
-			Filter:     map[string]interface{}{"available_int": 0},
-			SelectFields: []string{
-				"id", "doc_id", "tenant_id", "compile_kwd",
-				"content_with_weight", "kc_payload",
-				"source_chunk_ids", "source_doc_ids",
-				"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
-				"slug_kwd", "type",
-			},
-			Limit:  batchSize,
-			Offset: offset,
+			IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenant)},
+			KbIDs:        []string{kb},
+			Filter:       map[string]interface{}{"doc_id": docID},
+			SelectFields: compiledSelectFields,
+			Limit:        loadDocProductsLimit,
+			Offset:       offset,
 		})
 		if err != nil {
 			return nil, err
@@ -69,13 +108,10 @@ func (infinityReader) LoadCompiledProducts(ctx context.Context, tenant, kb strin
 				out = append(out, p)
 			}
 		}
-		// The KB-wide scan is paginated: keep fetching until a page returns
-		// fewer than batchSize rows, so a KB larger than the cap merges against
-		// the full compiled set instead of a truncated slice.
-		if len(res.Chunks) < batchSize {
+		if len(res.Chunks) < loadDocProductsLimit {
 			break
 		}
-		offset += batchSize
+		offset += loadDocProductsLimit
 	}
 	return out, nil
 }
@@ -94,6 +130,7 @@ func productFromChunkMap(c map[string]interface{}, tenant string) (kccommon.Prod
 	id, _ := c["id"].(string)
 	docID, _ := c["doc_id"].(string)
 	variant, _ := c["compile_kwd"].(string)
+	merged := isMerged(c["kc_merged"])
 
 	meta := map[string]any{}
 	if v, ok := c["name_kwd"].(string); ok && v != "" {
@@ -137,5 +174,117 @@ func productFromChunkMap(c map[string]interface{}, tenant string) (kccommon.Prod
 		Content:  content,
 		Vector:   vec,
 		Meta:     meta,
+		Merged:   merged,
 	}, true
+}
+
+// SearchSimilar runs a dense KNN over the existing merged rows (kc_merged=1,
+// compile_kwd=variant) of the KB and returns the closest hit above minScore.
+func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, variant kccommon.Variant, vector []float64, topN int, minScore float64) (kccommon.Product, float64, error) {
+	eng := r.eng
+	if eng == nil {
+		eng = engine.Get()
+	}
+	if eng == nil {
+		return kccommon.Product{}, 0, nil
+	}
+	if topN <= 0 {
+		topN = 1
+	}
+	dim := len(vector)
+	req := &types.SearchRequest{
+		IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)},
+		KbIDs:      []string{kb},
+		Limit:      topN,
+		SelectFields: []string{"id", "doc_id", "kb_id", "content_with_weight", "kc_payload",
+			"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd", "slug_kwd",
+			"type", "source_chunk_ids", "source_doc_ids", "kc_merged", "compile_kwd"},
+		Filter: map[string]interface{}{
+			"kc_merged":   1,
+			"compile_kwd": string(variant),
+		},
+		MatchExprs: []interface{}{
+			&types.MatchDenseExpr{
+				VectorColumnName: fmt.Sprintf("q_%d_vec", dim),
+				EmbeddingData:    vector,
+				DistanceType:     "cosine",
+				TopN:             topN,
+				ExtraOptions:     map[string]interface{}{"min_score": minScore},
+			},
+		},
+	}
+	res, err := eng.Search(ctx, req)
+	if err != nil {
+		return kccommon.Product{}, 0, err
+	}
+	for _, c := range res.Chunks {
+		p, ok := productFromChunkMap(c, tenant)
+		if !ok || !p.Merged {
+			continue
+		}
+		score := toFloat64(c["score"])
+		return p, score, nil
+	}
+	return kccommon.Product{}, 0, nil
+}
+
+// isMerged normalizes the boxed kc_merged field returned by the DocEngine,
+// which may be stored as a string ("1"/"0"/"true"), a bool, or a numeric,
+// depending on backend and mapping. Returns true for any positive/true form.
+func isMerged(v interface{}) bool {
+	switch t := v.(type) {
+	case nil:
+		return false
+	case bool:
+		return t
+	case string:
+		switch t {
+		case "1", "true", "True", "TRUE":
+			return true
+		}
+		if f, err := strconv.ParseFloat(t, 64); err == nil {
+			return f > 0
+		}
+		return false
+	case int:
+		return t > 0
+	case int64:
+		return t > 0
+	case float64:
+		return t > 0
+	case float32:
+		return t > 0
+	case json.Number:
+		if f, err := t.Float64(); err == nil {
+			return f > 0
+		}
+	}
+	return false
+}
+
+// toFloat64 normalizes the boxed score field returned by the DocEngine into a
+// float64, accepting float32, float64, numeric strings, and json.Number. It
+// returns 0 when the value is missing or not numeric.
+func toFloat64(v interface{}) float64 {
+	switch t := v.(type) {
+	case nil:
+		return 0
+	case float64:
+		return t
+	case float32:
+		return float64(t)
+	case int:
+		return float64(t)
+	case int64:
+		return float64(t)
+	case string:
+		if f, err := strconv.ParseFloat(t, 64); err == nil {
+			return f
+		}
+	case json.Number:
+		if f, err := t.Float64(); err == nil {
+			return f
+		}
+	}
+	return 0
 }

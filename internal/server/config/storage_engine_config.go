@@ -284,14 +284,66 @@ func (c *Config) GetMinioConfig() MinioConfig {
 	return c.storageEngine.Minio
 }
 
+func (m MinioConfig) ExportConfigs() map[string]interface{} {
+	var minioConfigs map[string]interface{}
+	minioConfigs = make(map[string]interface{})
+	minioConfigs["host"] = m.Host
+	minioConfigs["user"] = m.User
+	minioConfigs["password"] = m.Password
+	minioConfigs["bucket"] = m.Bucket
+	minioConfigs["prefix_path"] = m.PrefixPath
+	minioConfigs["secure"] = m.Secure
+	minioConfigs["verify"] = m.Verify
+	minioConfigs["region"] = m.Region
+	return minioConfigs
+}
+
 func (c *Config) GetS3Config() S3Config {
 	return c.storageEngine.S3
+}
+
+func (s S3Config) ExportConfigs() map[string]interface{} {
+	var s3Configs map[string]interface{}
+	s3Configs = make(map[string]interface{})
+	s3Configs["access_key"] = s.AccessKey
+	s3Configs["secret_key"] = s.SecretKey
+	s3Configs["region"] = s.Region
+	s3Configs["session_token"] = s.SessionToken
+	s3Configs["endpoint_url"] = s.EndpointURL
+	s3Configs["signature_version"] = s.SignatureVersion
+	s3Configs["addressing_style"] = s.AddressingStyle
+	s3Configs["bucket"] = s.Bucket
+	s3Configs["prefix_path"] = s.PrefixPath
+	return s3Configs
 }
 
 func (c *Config) GetOSSConfig() OSSConfig {
 	return c.storageEngine.OSS
 }
 
+func (o OSSConfig) ExportConfigs() map[string]interface{} {
+	var ossConfigs map[string]interface{}
+	ossConfigs = make(map[string]interface{})
+	ossConfigs["access_key"] = o.AccessKey
+	ossConfigs["secret_key"] = o.SecretKey
+	ossConfigs["endpoint_url"] = o.EndpointURL
+	ossConfigs["region"] = o.Region
+	ossConfigs["bucket"] = o.Bucket
+	ossConfigs["prefix_path"] = o.PrefixPath
+	ossConfigs["signature_version"] = o.SignatureVersion
+	ossConfigs["addressing_style"] = o.AddressingStyle
+	return ossConfigs
+}
+
 func (c *Config) GetGCSConfig() GCSConfig {
 	return c.storageEngine.GCS
+}
+
+func (g GCSConfig) ExportConfigs() map[string]interface{} {
+	var gcsConfigs map[string]interface{}
+	gcsConfigs = make(map[string]interface{})
+	gcsConfigs["bucket"] = g.Bucket
+	gcsConfigs["prefix_path"] = g.PrefixPath
+	gcsConfigs["endpoint_url"] = g.EndpointURL
+	return gcsConfigs
 }

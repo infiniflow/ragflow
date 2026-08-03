@@ -83,7 +83,7 @@ func (s *MemoryMessageService) StartTaskConsumer(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		msg, err := redisClient.QueueConsumer(queueName, memoryTaskConsumerGroup, consumerName, ">")
+		msg, err := redisClient.QueueConsumer(ctx, queueName, memoryTaskConsumerGroup, consumerName, ">")
 		if err != nil {
 			common.Error("memory task consumer: consume error", err)
 			select {
@@ -99,13 +99,13 @@ func (s *MemoryMessageService) StartTaskConsumer(ctx context.Context) {
 		payload := msg.GetMessage()
 		if taskType, _ := payload["task_type"].(string); taskType != "memory" {
 			common.Warn(fmt.Sprintf("memory task consumer: skip task_type %q", taskType))
-			msg.Ack()
+			msg.Ack(ctx)
 			continue
 		}
 		if err := s.HandleSaveToMemoryTask(ctx, payload); err != nil {
 			common.Error("memory task consumer: handle task failed", err)
 		}
-		msg.Ack()
+		msg.Ack(ctx)
 	}
 }
 
@@ -174,7 +174,7 @@ func (s *MemoryMessageService) saveExtractedToMemory(ctx context.Context, memory
 	now := time.Now().UTC()
 	messages := make([]map[string]any, 0, len(extracted))
 	for _, item := range extracted {
-		messages = append(messages, buildExtractedMessage(generateRawMessageID(), sourceID, memoryID, msg, item, now))
+		messages = append(messages, buildExtractedMessage(generateRawMessageID(ctx), sourceID, memoryID, msg, item, now))
 	}
 	if err := s.embedAndSaveMessages(ctx, mem, messages); err != nil {
 		return err

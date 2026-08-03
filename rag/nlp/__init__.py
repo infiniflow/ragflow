@@ -14,19 +14,28 @@
 #  limitations under the License.
 #
 
+import copy
 import logging
 import random
+import re
 from collections import Counter, defaultdict
 
-from common.token_utils import num_tokens_from_string
-import re
-import copy
+import chardet
 import roman_numbers as r
-from word2number import w2n
 from cn2an import cn2an
 from PIL import Image
+from word2number import w2n
 
-import chardet
+from common.token_utils import num_tokens_from_string
+
+# Re-exported below for backwards compatibility; the canonical parser lives
+# in ``rag.nlp.delim``.
+from rag.nlp.delim import (
+    compile_delimiter_pattern,
+    has_wrapped_delimiter,
+    normalize_text_newlines,
+    parse_delimiter_field,
+)
 
 __all__ = ["rag_tokenizer"]
 
@@ -394,7 +403,7 @@ def tokenize_chunks(chunks, doc, eng, pdf_parser=None, child_delimiters_pattern=
     for ii, ck in enumerate(chunks):
         if len(ck.strip()) == 0:
             continue
-        logging.debug("-- {}".format(ck))
+        logging.debug(f"-- {ck}")
         d = copy.deepcopy(doc)
         if pdf_parser:
             try:
@@ -422,7 +431,7 @@ def doc_tokenize_chunks_with_images(chunks, doc, eng, child_delimiters_pattern=N
         text = ck.get("context_above", "") + ck.get("text") + ck.get("context_below", "")
         if len(text.strip()) == 0:
             continue
-        logging.debug("-- {}".format(ck))
+        logging.debug(f"-- {ck}")
         d = copy.deepcopy(doc)
         if ck.get("image"):
             d["image"] = ck.get("image")
@@ -448,7 +457,7 @@ def tokenize_chunks_with_images(chunks, doc, eng, images, child_delimiters_patte
     for ii, (ck, image) in enumerate(zip(chunks, images)):
         if len(ck.strip()) == 0:
             continue
-        logging.debug("-- {}".format(ck))
+        logging.debug(f"-- {ck}")
         d = copy.deepcopy(doc)
         d["image"] = image
         add_positions(d, [[ii] * 5])
@@ -940,7 +949,7 @@ def remove_contents_table(sections, eng=False):
 
         def get(i):
             nonlocal sections
-            return (sections[i] if isinstance(sections[i], type("")) else sections[i][0]).strip()
+            return (sections[i] if isinstance(sections[i], str) else sections[i][0]).strip()
 
         if not re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$", re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], flags=re.IGNORECASE)):
             i += 1
@@ -968,7 +977,7 @@ def remove_contents_table(sections, eng=False):
 def make_colon_as_title(sections):
     if not sections:
         return []
-    if isinstance(sections[0], type("")):
+    if isinstance(sections[0], str):
         return sections
     i = 0
     while i < len(sections):
@@ -1020,7 +1029,7 @@ def not_title(txt):
 def tree_merge(bull, sections, depth):
     if not sections or bull < 0:
         return sections
-    if isinstance(sections[0], type("")):
+    if isinstance(sections[0], str):
         sections = [(s, "") for s in sections]
 
     # filter out position information in pdf sections
@@ -1033,11 +1042,10 @@ def tree_merge(bull, sections, depth):
         for i, title in enumerate(BULLET_PATTERN[bull]):
             if re.match(title, text.strip()) and not not_bullet(text):
                 return i + 1, text
+        if re.search(r"(title|head)", layout) and not not_title(text):
+            return len(BULLET_PATTERN[bull]) + 1, text
         else:
-            if re.search(r"(title|head)", layout) and not not_title(text):
-                return len(BULLET_PATTERN[bull]) + 1, text
-            else:
-                return len(BULLET_PATTERN[bull]) + 2, text
+            return len(BULLET_PATTERN[bull]) + 2, text
 
     level_set = set()
     lines = []
@@ -1068,7 +1076,7 @@ def tree_merge(bull, sections, depth):
 def hierarchical_merge(bull, sections, depth):
     if not sections or bull < 0:
         return []
-    if isinstance(sections[0], type("")):
+    if isinstance(sections[0], str):
         sections = [(s, "") for s in sections]
     sections = [(t, o) for t, o in sections if t and len(t.split("@")[0].strip()) > 1 and not re.match(r"[0-9]+$", t.split("@")[0].strip())]
     bullets_size = len(BULLET_PATTERN[bull])
@@ -1154,9 +1162,136 @@ def hierarchical_merge(bull, sections, depth):
     return res
 
 
-def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
-    from deepdoc.parser.pdf_parser import RAGFlowPdfParser
+def _compute_overlap_prefix(prev_text, overlapped_percent):
+    """Return (overlap_text, overlap_token_count) carved from the tail of ``prev_text``.
 
+    ``prev_text`` is treated as if HTML/PDF markup has been stripped, so the carve
+    index is computed against the visible characters, matching the existing
+    behaviour of ``RAGFlowPdfParser.remove_tag`` callers above.
+    """
+    visible = re.sub(r"@@[\t0-9.-]+?##", "", prev_text or "")
+    if not visible:
+        return "", 0
+    overlap_start = int(len(visible) * (100 - overlapped_percent) / 100.0)
+    overlap_text = visible[overlap_start:]
+    return overlap_text, num_tokens_from_string(overlap_text)
+
+
+def _split_atom_by_token_budget(atom, chunk_token_num, token_count_fn=None):
+    """Split a single non-whitespace string `atom` into substrings that each
+    have <= chunk_token_num tokens.
+    """
+    if token_count_fn is None:
+        token_count_fn = num_tokens_from_string
+    if not atom:
+        return []
+    if token_count_fn(atom) <= chunk_token_num:
+        return [atom]
+    pieces = []
+    start = 0
+    n = len(atom)
+    while start < n:
+        low = start + 1
+        high = n
+        best_end = start + 1
+        while low <= high:
+            mid = (low + high) // 2
+            substring = atom[start:mid]
+            if token_count_fn(substring) <= chunk_token_num:
+                best_end = mid
+                low = mid + 1
+            else:
+                high = mid - 1
+        pieces.append(atom[start:best_end])
+        start = best_end
+    return pieces
+
+
+def _split_oversized_unit(text, chunk_token_num, token_count_fn=None):
+    """Split a single unit that exceeds ``chunk_token_num`` tokens into pieces
+    that each fit the budget. Whitespace is used as the primary break (mirrors
+    ``RAGFlowHtmlParser._split_oversized_block``); a single run of non-whitespace
+    longer than the budget falls back to token-budget-based character windows.
+    """
+    if token_count_fn is None:
+        token_count_fn = num_tokens_from_string
+    if token_count_fn(text or "") <= chunk_token_num:
+        return [text]
+    pieces = []
+    current = ""
+    current_tokens = 0
+    token_cache = {}
+
+    def atom_tokens(atom):
+        if atom.isspace():
+            return 0
+        if atom not in token_cache:
+            token_cache[atom] = token_count_fn(atom)
+        return token_cache[atom]
+
+    # Match whitespace runs OR non-whitespace runs (i.e. individual words/tokens).
+    for atom in re.findall(r"\s+|\S+", text or ""):
+        a_tokens = atom_tokens(atom)
+        if a_tokens > chunk_token_num and not atom.isspace():
+            # An atom longer than the budget: flush current buffer, then carve
+            # token-budget-based slices out of the atom itself.
+            if current:
+                pieces.append(current)
+                current = ""
+                current_tokens = 0
+            for sub_piece in _split_atom_by_token_budget(atom, chunk_token_num, token_count_fn):
+                pieces.append(sub_piece)
+            continue
+        if current and current_tokens + a_tokens > chunk_token_num:
+            pieces.append(current)
+            current = ""
+            current_tokens = 0
+        current += atom
+        current_tokens += a_tokens
+    if current:
+        pieces.append(current)
+    return pieces
+
+
+def _compute_chunk_update(last_ck: str, t: str, pos: str, chunk_token_num: int, overlapped_percent: float):
+    tnum = num_tokens_from_string(t)
+    if not pos or tnum < 8:
+        pos = ""
+
+    # First chunk ever — no previous content to overlap with.
+    if last_ck == "":
+        new_t = t + pos if t.find(pos) < 0 else t
+        final_t = new_t if num_tokens_from_string(new_t) <= chunk_token_num else t
+        return "first", final_t, num_tokens_from_string(final_t)
+
+    # Proactive merge: append only if the *projected* total still fits.
+    merged = last_ck + t
+    merged_pos = merged + pos if last_ck.find(pos) < 0 else merged
+    if num_tokens_from_string(merged_pos) <= chunk_token_num:
+        return "merge", merged_pos, num_tokens_from_string(merged_pos)
+    elif num_tokens_from_string(merged) <= chunk_token_num:
+        return "merge", merged, num_tokens_from_string(merged)
+
+    # Need a new chunk. Apply overlap prefix from the previous chunk —
+    # but only when the projected size (overlap + t) fits — otherwise drop
+    # the overlap for this boundary so the chunk stays within budget.
+    new_t = t
+    new_tnum = tnum
+    if overlapped_percent > 0:
+        overlap_text, overlap_tokens = _compute_overlap_prefix(last_ck, overlapped_percent)
+        if overlap_tokens + new_tnum <= chunk_token_num:
+            new_t = overlap_text + t
+            new_tnum = num_tokens_from_string(new_t)
+    if t.find(pos) < 0:
+        new_t_with_pos = new_t + pos
+        new_tnum_with_pos = num_tokens_from_string(new_t_with_pos)
+        if new_tnum_with_pos <= chunk_token_num:
+            new_t = new_t_with_pos
+            new_tnum = new_tnum_with_pos
+    return "append", new_t, new_tnum
+
+
+def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
     if not sections:
         return []
     if isinstance(sections, str):
@@ -1164,44 +1299,36 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
     if isinstance(sections[0], str):
         sections = [(s, "") for s in sections]
     # Normalize line endings so delimiter ``\n`` matches ``\r\n`` and standalone ``\r``.
-    sections = [(s.replace("\r\n", "\n").replace("\r", "\n"), pos) for s, pos in sections]
+    sections = [(normalize_text_newlines(s), pos) for s, pos in sections]
     cks = [""]
     tk_nums = [0]
 
     def add_chunk(t, pos):
-        nonlocal cks, tk_nums, delimiter
-        tnum = num_tokens_from_string(t)
-        if not pos:
-            pos = ""
-        if tnum < 8:
-            pos = ""
-        # Ensure that the length of the merged chunk does not exceed chunk_token_num
-        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent) / 100.0:
-            if cks:
-                overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
-                t = overlapped[int(len(overlapped) * (100 - overlapped_percent) / 100.0) :] + t
-                # Recount with the overlap prefix included, else chunks overshoot chunk_token_num.
-                tnum = num_tokens_from_string(t)
-            if t.find(pos) < 0:
-                t += pos
-            cks.append(t)
-            tk_nums.append(tnum)
+        nonlocal cks, tk_nums
+        action, text, tk_num = _compute_chunk_update(cks[-1], t, pos, chunk_token_num, overlapped_percent)
+        if action in ("first", "merge"):
+            cks[-1] = text
+            tk_nums[-1] = tk_num
         else:
-            if cks[-1].find(pos) < 0:
-                t += pos
-            cks[-1] += t
-            tk_nums[-1] += tnum
+            cks.append(text)
+            tk_nums.append(tk_num)
 
-    custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
-    has_custom = bool(custom_delimiters)
+    # Parse the delimiter field once, via the canonical helper (#17383).
+    # `has_custom` means the field contains a backtick-wrapped token — the
+    # historical signal that chunk_token_num should be bypassed. Splitting
+    # itself uses every parsed delimiter (bare and wrapped).
+    parsed_dels = parse_delimiter_field(delimiter)
+    has_custom = has_wrapped_delimiter(delimiter)
     if has_custom:
         # Custom delimiters ignore chunk_token_num: each segment is its own chunk.
-        custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
+        custom_pattern = compile_delimiter_pattern(parsed_dels)
         cks, tk_nums = [], []
         for sec, pos in sections:
-            split_sec = re.split(r"(%s)" % custom_pattern, sec, flags=re.DOTALL)
+            split_sec = re.split(r"(%s)" % custom_pattern, sec, flags=re.DOTALL) if custom_pattern else [sec]
             for sub_sec in split_sec:
-                if re.fullmatch(custom_pattern, sub_sec or ""):
+                if not sub_sec:
+                    continue
+                if custom_pattern and re.fullmatch(custom_pattern, sub_sec):
                     continue
                 text = "\n" + sub_sec
                 local_pos = pos
@@ -1214,23 +1341,41 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
         return cks
 
     # Split oversized sections at sentence delimiters; add_chunk re-merges to size.
-    dels = get_delimiters(delimiter)
+    # Units that exceed the budget after the regex split (a single long line with
+    # no delimiter, e.g. PDF / .txt runs of unbroken text) are sub-split on
+    # whitespace atoms with a character-window fallback, mirroring the html path.
+    dels = compile_delimiter_pattern(parsed_dels)
     for sec, pos in sections:
-        if not dels or num_tokens_from_string(sec) < chunk_token_num:
-            add_chunk("\n" + sec, pos)
+        sec_text = "\n" + sec
+        if num_tokens_from_string(sec_text) <= chunk_token_num:
+            add_chunk(sec_text, pos)
             continue
-        for sub_sec in re.split(r"(%s)" % dels, sec, flags=re.DOTALL):
-            if not sub_sec or re.fullmatch(dels, sub_sec):
-                continue
-            add_chunk("\n" + sub_sec, pos)
+        if dels:
+            for sub_sec in re.split(r"(%s)" % dels, sec, flags=re.DOTALL):
+                if not sub_sec or re.fullmatch(dels, sub_sec):
+                    continue
+                text = "\n" + sub_sec
+                if num_tokens_from_string(text) <= chunk_token_num:
+                    add_chunk(text, pos)
+                else:
+                    logging.debug("Splitting oversized unit (len=%d, tokens=%d) via _split_oversized_unit", len(text), num_tokens_from_string(text))
+                    for piece in _split_oversized_unit(text, chunk_token_num):
+                        add_chunk(piece, pos)
+        else:
+            logging.debug("Splitting oversized unit (len=%d, tokens=%d) via _split_oversized_unit (no delimiters)", len(sec_text), num_tokens_from_string(sec_text))
+            for piece in _split_oversized_unit(sec_text, chunk_token_num):
+                add_chunk(piece, pos)
 
     logging.debug("naive_merge: %d sections -> %d chunks (delimiter=%r)", len(sections), len(cks), delimiter)
+    # Drop the leading empty placeholder that exists only so ``add_chunk`` could
+    # detect "first chunk ever" without an extra flag.
+    if cks and cks[0] == "":
+        cks = cks[1:]
+        tk_nums = tk_nums[1:]
     return cks
 
 
 def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0):
-    from deepdoc.parser.pdf_parser import RAGFlowPdfParser
-
     if not texts or len(texts) != len(images):
         return [], []
     cks = [""]
@@ -1238,48 +1383,44 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
     tk_nums = [0]
 
     def add_chunk(t, image, pos=""):
-        nonlocal cks, result_images, tk_nums, delimiter
-        tnum = num_tokens_from_string(t)
-        if not pos:
-            pos = ""
-        if tnum < 8:
-            pos = ""
-        # Ensure that the length of the merged chunk does not exceed chunk_token_num
-        if cks[-1] == "" or tk_nums[-1] > chunk_token_num * (100 - overlapped_percent) / 100.0:
-            if cks:
-                overlapped = RAGFlowPdfParser.remove_tag(cks[-1])
-                t = overlapped[int(len(overlapped) * (100 - overlapped_percent) / 100.0) :] + t
-                # Recount with the overlap prefix included, else chunks overshoot chunk_token_num.
-                tnum = num_tokens_from_string(t)
-            if t.find(pos) < 0:
-                t += pos
-            cks.append(t)
-            result_images.append(image)
-            tk_nums.append(tnum)
-        else:
-            if cks[-1].find(pos) < 0:
-                t += pos
-            cks[-1] += t
+        nonlocal cks, result_images, tk_nums
+        action, text, tk_num = _compute_chunk_update(cks[-1], t, pos, chunk_token_num, overlapped_percent)
+        if action == "first":
+            cks[-1] = text
+            tk_nums[-1] = tk_num
+            result_images[-1] = image
+        elif action == "merge":
+            cks[-1] = text
+            tk_nums[-1] = tk_num
             if result_images[-1] is None:
                 result_images[-1] = image
             else:
                 result_images[-1] = concat_img(result_images[-1], image)
-            tk_nums[-1] += tnum
+        else:
+            cks.append(text)
+            result_images.append(image)
+            tk_nums.append(tk_num)
 
-    custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
-    has_custom = bool(custom_delimiters)
+    # Parse the delimiter field once, via the canonical helper (#17383).
+    # See the matching block in ``naive_merge`` for the rationale on
+    # `has_custom` (backtick-wrapped tokens opt into chunk-token-num bypass).
+    parsed_dels = parse_delimiter_field(delimiter)
+    has_custom = has_wrapped_delimiter(delimiter)
     if has_custom:
         # Custom delimiters ignore chunk_token_num: each segment is its own chunk.
-        custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
+        custom_pattern = compile_delimiter_pattern(parsed_dels)
         cks, result_images, tk_nums = [], [], []
         for text, image in zip(texts, images):
             text_str = text[0] if isinstance(text, tuple) else text
             if text_str is None:
                 text_str = ""
+            text_str = normalize_text_newlines(text_str)
             text_pos = text[1] if isinstance(text, tuple) and len(text) > 1 else ""
-            split_sec = re.split(r"(%s)" % custom_pattern, text_str)
+            split_sec = re.split(r"(%s)" % custom_pattern, text_str) if custom_pattern else [text_str]
             for sub_sec in split_sec:
-                if re.fullmatch(custom_pattern, sub_sec or ""):
+                if not sub_sec:
+                    continue
+                if custom_pattern and re.fullmatch(custom_pattern, sub_sec):
                     continue
                 text_seg = "\n" + sub_sec
                 local_pos = text_pos
@@ -1294,7 +1435,9 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
 
     # Split oversized sections at sentence delimiters; the section's image rides
     # along on every piece (concat_img dedupes when pieces re-merge into a chunk).
-    dels = get_delimiters(delimiter)
+    # Units still exceeding the budget after the regex split are sub-split on
+    # whitespace atoms so they cannot blow past the token cap.
+    dels = compile_delimiter_pattern(parsed_dels)
     for text, image in zip(texts, images):
         # if text is tuple, unpack it
         if isinstance(text, tuple):
@@ -1303,15 +1446,32 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
         else:
             text_str = text or ""
             text_pos = ""
-        if not dels or num_tokens_from_string(text_str) < chunk_token_num:
-            add_chunk("\n" + text_str, image, text_pos)
+        text_str = normalize_text_newlines(text_str)
+        text_seg = "\n" + text_str
+        if num_tokens_from_string(text_seg) <= chunk_token_num:
+            add_chunk(text_seg, image, text_pos)
             continue
-        for sub_sec in re.split(r"(%s)" % dels, text_str, flags=re.DOTALL):
-            if not sub_sec or re.fullmatch(dels, sub_sec):
-                continue
-            add_chunk("\n" + sub_sec, image, text_pos)
+        if dels:
+            for sub_sec in re.split(r"(%s)" % dels, text_str, flags=re.DOTALL):
+                if not sub_sec or re.fullmatch(dels, sub_sec):
+                    continue
+                sub_text = "\n" + sub_sec
+                if num_tokens_from_string(sub_text) <= chunk_token_num:
+                    add_chunk(sub_text, image, text_pos)
+                else:
+                    logging.debug("Splitting oversized unit (len=%d, tokens=%d) via _split_oversized_unit", len(sub_text), num_tokens_from_string(sub_text))
+                    for piece in _split_oversized_unit(sub_text, chunk_token_num):
+                        add_chunk(piece, image, text_pos)
+        else:
+            logging.debug("Splitting oversized unit (len=%d, tokens=%d) via _split_oversized_unit (no delimiters)", len(text_seg), num_tokens_from_string(text_seg))
+            for piece in _split_oversized_unit(text_seg, chunk_token_num):
+                add_chunk(piece, image, text_pos)
 
     logging.debug("naive_merge_with_images: %d texts -> %d chunks (delimiter=%r)", len(texts), len(cks), delimiter)
+    if cks and cks[0] == "":
+        cks = cks[1:]
+        result_images = result_images[1:]
+        tk_nums = tk_nums[1:]
     return cks, result_images
 
 
@@ -1334,7 +1494,7 @@ def docx_question_level(p, bull=-1):
 
 
 def concat_img(img1, img2):
-    from rag.utils.lazy_image import ensure_pil_image, LazyImage
+    from rag.utils.lazy_image import LazyImage, ensure_pil_image
 
     # Same image must not stack with itself (the LazyImage branch would otherwise
     # concatenate its blob list); mirrors the PIL branch's same-reference guard.
@@ -1385,15 +1545,14 @@ def _build_cks(sections, delimiter):
     tables = []
     images = []
 
-    # extract custom delimiters wrapped by backticks: `##`, `---`, etc.
-    custom_delimiters = [m.group(1) for m in re.finditer(r"`([^`]+)`", delimiter)]
-    has_custom = bool(custom_delimiters)
-
-    if has_custom:
-        # escape delimiters and build alternation pattern, longest first
-        custom_pattern = "|".join(re.escape(t) for t in sorted(set(custom_delimiters), key=len, reverse=True))
-        # capture delimiters so they appear in re.split results
-        pattern = r"(%s)" % custom_pattern
+    # Parse the delimiter field once, via the canonical helper (#17383).
+    # Split on every parsed delimiter (bare and wrapped). `has_custom`
+    # only controls whether _merge_cks bypasses chunk_token_num (wrapped
+    # token present in the original field).
+    parsed_dels = parse_delimiter_field(delimiter)
+    has_custom = has_wrapped_delimiter(delimiter)
+    split_pattern = compile_delimiter_pattern(parsed_dels)
+    pattern = r"(%s)" % split_pattern if split_pattern else ""
 
     seg = ""
     for text, image, table in sections:
@@ -1401,7 +1560,7 @@ def _build_cks(sections, delimiter):
         if not text:
             text = ""
         else:
-            text = "\n" + str(text)
+            text = "\n" + normalize_text_newlines(str(text))
 
         if table:
             # table chunk
@@ -1432,12 +1591,16 @@ def _build_cks(sections, delimiter):
             images.append(idx)
             continue
 
-        # pure text chunk(s)
-        if has_custom:
+        # pure text chunk(s) — split on every parsed delimiter when present
+        if split_pattern:
             split_sec = re.split(pattern, text)
             for sub_sec in split_sec:
-                # ① empty or whitespace-only segment → flush current buffer
-                if not sub_sec or not sub_sec.strip():
+                if not sub_sec:
+                    continue
+
+                # ① matched delimiter (exact capture; do not strip — wrapped
+                # whitespace delimiters such as `` ` ` `` or `\n` must match here)
+                if re.fullmatch(split_pattern, sub_sec):
                     if seg and seg.strip():
                         s = seg.strip()
                         cks.append(
@@ -1451,8 +1614,8 @@ def _build_cks(sections, delimiter):
                     seg = ""
                     continue
 
-                # ② matched custom delimiter (allow surrounding whitespace)
-                if re.fullmatch(custom_pattern, sub_sec.strip()):
+                # ② empty or whitespace-only ordinary segment → flush current buffer
+                if not sub_sec.strip():
                     if seg and seg.strip():
                         s = seg.strip()
                         cks.append(
@@ -1480,8 +1643,8 @@ def _build_cks(sections, delimiter):
                     }
                 )
 
-    # final flush after loop (only when custom delimiters are used)
-    if has_custom and seg and seg.strip():
+    # final flush after loop (only when delimiters were used for splitting)
+    if split_pattern and seg and seg.strip():
         s = seg.strip()
         cks.append(
             {
@@ -1603,7 +1766,6 @@ def naive_merge_docx(
     table_context_size=0,
     image_context_size=0,
 ):
-
     if not sections:
         return [], []
 
@@ -1625,25 +1787,6 @@ def naive_merge_docx(
 def extract_between(text: str, start_tag: str, end_tag: str) -> list[str]:
     pattern = re.escape(start_tag) + r"(.*?)" + re.escape(end_tag)
     return re.findall(pattern, text, flags=re.DOTALL)
-
-
-def get_delimiters(delimiters: str):
-    dels = []
-    s = 0
-    for m in re.finditer(r"`([^`]+)`", delimiters, re.I):
-        f, t = m.span()
-        dels.append(m.group(1))
-        dels.extend(list(delimiters[s:f]))
-        s = t
-    if s < len(delimiters):
-        dels.extend(list(delimiters[s:]))
-
-    dels.sort(key=lambda x: -len(x))
-    dels = [re.escape(d) for d in dels if d]
-    dels = [d for d in dels if d]
-    dels_pattern = "|".join(dels)
-
-    return dels_pattern
 
 
 class Node:

@@ -148,7 +148,7 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 		// keeps the same field set as Python:344-386 so the
 		// downstream extractor can consume the row without
 		// schema changes.
-		rawMessageID := generateRawMessageID()
+		rawMessageID := generateRawMessageID(ctx)
 		rawMessage := buildRawMessage(rawMessageID, memoryID, msg)
 
 		if err := s.embedAndSave(ctx, mem, rawMessage); err != nil {
@@ -167,7 +167,7 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 			})
 			continue
 		}
-		if err := queueMemoryTask(memoryID, mem.TenantID, rawMessageID, task, msg); err != nil {
+		if err = queueMemoryTask(ctx, memoryID, mem.TenantID, rawMessageID, task, msg); err != nil {
 			res.Failed = append(res.Failed, MemoryFailure{
 				MemoryID: memoryID,
 				FailMsg:  err.Error(),
@@ -179,9 +179,9 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 
 // generateRawMessageID returns the Redis auto-increment id used by the Python
 // side (`REDIS_CONN.generate_auto_increment_id(namespace="memory")`).
-func generateRawMessageID() int64 {
+func generateRawMessageID(ctx context.Context) int64 {
 	if redisClient := redisengine.Get(); redisClient != nil {
-		if id := redisClient.GenerateAutoIncrementID("id_generator", "memory", 1, nil); id > 0 {
+		if id := redisClient.GenerateAutoIncrementID(ctx, "id_generator", "memory", 1, nil); id > 0 {
 			return id
 		}
 	}
@@ -335,7 +335,7 @@ func taskFromRow(row map[string]any) *entity.Task {
 	}
 }
 
-func queueMemoryTask(memoryID, tenantID string, rawMessageID int64, task map[string]any, msg MemoryMessage) error {
+func queueMemoryTask(ctx context.Context, memoryID, tenantID string, rawMessageID int64, task map[string]any, msg MemoryMessage) error {
 	taskID := fmt.Sprint(task["id"])
 	message := map[string]any{
 		"id":        taskID,
@@ -352,7 +352,7 @@ func queueMemoryTask(memoryID, tenantID string, rawMessageID int64, task map[str
 			"agent_response": msg.AgentResponse,
 		},
 	}
-	if redisClient := redisengine.Get(); redisClient == nil || !redisClient.QueueProduct(memoryTaskQueueName(0), message) {
+	if redisClient := redisengine.Get(); redisClient == nil || !redisClient.QueueProduct(ctx, memoryTaskQueueName(0), message) {
 		return errors.New("Can't access Redis.")
 	}
 	return nil
