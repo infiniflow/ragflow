@@ -76,6 +76,12 @@ RE_SYNTHESIS_MIN_VERSIONS = 3
 # FINALIZE debounce
 FINALIZE_DEBOUNCE_SECONDS = 300
 
+# Evidence quality (WeKnora-style verbatim chunk sourcing).
+# The page-writer sees the ACTUAL source-chunk text (not just the condensed
+# claim statement) so pages stay fact-grounded and information-dense.
+WIKI_SOURCE_BUDGET_CHARS = 32_768  # cap on verbatim chunk text fed to the writer
+WIKI_SOURCE_BUDGET_RUNES = 12_000  # per-chunk-batch budget (rune-based, mirrors WeKnora)
+
 
 # ----- helpers ---------------------------------------------------------------
 
@@ -143,6 +149,91 @@ def _wiki_should_re_synthesize(
         and versions_since >= RE_SYNTHESIS_MIN_VERSIONS
         and len(total_sources) >= len(existing_sources) * RE_SYNTHESIS_GROWTH_RATIO
     )
+
+
+async def _wiki_load_chunk_texts(tenant_id: str, kb_id: str, chunk_ids: list[str]) -> dict[str, str]:
+    """Fetch verbatim chunk text from the doc store by chunk id.
+
+    Returns ``{chunk_id: content_with_weight}``. Used to ground page writing in
+    the ACTUAL source text (WeKnora-style evidence) rather than the condensed
+    claim statements. Mirrors ``wiki._wiki_load_chunks_by_id`` which lives in
+    the old-mode module and is intentionally NOT imported here.
+    """
+    if not chunk_ids:
+        return {}
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    index = search.index_name(tenant_id)
+    unique = [c for c in dict.fromkeys(chunk_ids) if isinstance(c, str) and c]
+    if not unique:
+        return {}
+    out: dict[str, str] = {}
+    BATCH = 500
+    for i in range(0, len(unique), BATCH):
+        batch = unique[i : i + BATCH]
+        try:
+            res = await thread_pool_exec(
+                settings.docStoreConn.search,
+                ["id", "content_with_weight"],
+                [],
+                {"id": batch},
+                [],
+                OrderByExpr(),
+                0,
+                len(batch),
+                index,
+                [kb_id],
+            )
+            field_map = settings.docStoreConn.get_fields(res, ["id", "content_with_weight"]) or {}
+        except Exception:
+            logging.exception("wiki: batch chunk fetch failed (%d ids)", len(batch))
+            field_map = {}
+        for cid, row in field_map.items():
+            content = row.get("content_with_weight")
+            if isinstance(content, str) and content:
+                out[cid] = content
+    # Honor the rune budget: do not accumulate verbatim text we won't feed the
+    # writer (mirrors WeKnora maxRunesPerCitationBatch=12000).
+    total_runes = sum(len(v) for v in out.values())
+    if total_runes > WIKI_SOURCE_BUDGET_RUNES:
+        trimmed: dict[str, str] = {}
+        budget = 0
+        for cid, content in out.items():
+            budget += len(content)
+            if budget > WIKI_SOURCE_BUDGET_RUNES:
+                break
+            trimmed[cid] = content
+        out = trimmed
+    return out
+
+
+def _wiki_enrich_source_chunks(source_chunks: list[dict], chunk_texts: dict[str, str]) -> list[dict]:
+    """Merge verbatim chunk text into source_chunks.
+
+    Each source_chunk entry is ``{"id": <chunk_id>, "text": <claim-original>}``.
+    When the verbatim chunk content is available it REPLACES ``text`` (the
+    writer should read the source, not the condensed claim); otherwise the
+    claim text is kept as a fallback. Preserves original order and dedups by id.
+    """
+    enriched: list[dict] = []
+    seen: set[str] = set()
+    for sc in source_chunks:
+        cid = sc.get("id") or sc.get("chunk_id")
+        if not cid:
+            continue
+        cid = str(cid)
+        if cid in seen:
+            continue
+        seen.add(cid)
+        verbatim = chunk_texts.get(cid)
+        enriched.append(
+            {
+                "id": cid,
+                "text": verbatim if verbatim else sc.get("text", sc.get("content_with_weight", "")),
+                "_verbatim": bool(verbatim),
+            }
+        )
+    return enriched
 
 
 # ----- Canonical Entity Index CRUD -----------------------------------------
@@ -984,6 +1075,65 @@ def _wiki_render_links(content: str, kb_id: str, valid_slugs: set[str]) -> str:
     return rendered
 
 
+def _wiki_resolve_dead_slug(link: str, valid_ids: set[str], name_slug: dict[str, str]) -> str | None:
+    """WeKnora-style fuzzy resolution of a dead wikilink to a live page.
+
+    A ``[[dead_slug]]`` may fail to match a valid page because the target page
+    was renamed / its slug changed, or because the writer used an alias. Try,
+    in order: exact match, normalized-slug match, display-text reverse lookup
+    (via ``name_slug``), then bigram-token similarity over the plain names.
+    Returns a valid target slug or ``None`` (caller then degrades to text).
+    """
+    if not link:
+        return None
+
+    def _norm(s: str) -> str:
+        return re.sub(r"[-_]+", "-", s.strip().lower())
+
+    plain = link.rsplit("/", 1)[-1] if "/" in link else link
+    l_norm = _norm(link)
+    p_norm = _norm(plain)
+
+    # 1. Exact / normalized target.
+    if link in valid_ids:
+        return link
+    if l_norm in valid_ids:
+        return l_norm
+
+    # 2. Display-text reverse lookup via name_slug (plain names + titles + aliases).
+    if plain in name_slug:
+        return name_slug[plain]
+    if p_norm in {_norm(k) for k in name_slug}:
+        for k, v in name_slug.items():
+            if _norm(k) == p_norm:
+                return v
+
+    # 3. Bigram-token similarity over plain names (longest tokens, then best match).
+    def _bigrams(text: str) -> set[str]:
+        return {text[i : i + 2] for i in range(max(0, len(text) - 1))}
+
+    p_tokens = _norm(plain).split("-")
+    p_bigrams = _bigrams(p_norm)
+    best: tuple[float, str] | None = None
+    for cand_name, cand_slug in name_slug.items():
+        c_norm = _norm(cand_name)
+        c_tokens = c_norm.split("-")
+        # Require at least one shared token (or a shared prefix token) to avoid
+        # linking unrelated pages.
+        if not (set(p_tokens) & set(c_tokens)):
+            continue
+        cb = _bigrams(c_norm)
+        denom = len(p_bigrams | cb)
+        if denom == 0:
+            continue
+        score = len(p_bigrams & cb) / denom
+        if best is None or score > best[0]:
+            best = (score, cand_slug)
+    if best and best[0] >= 0.5:
+        return best[1]
+    return None
+
+
 def _as_str_list(raw) -> list[str]:
     """Coerce a stored field (JSON string / list / None) into a list of str."""
     if raw is None:
@@ -999,6 +1149,25 @@ def _as_str_list(raw) -> list[str]:
     if isinstance(raw, (list, tuple)):
         return [str(v) for v in raw if v is not None]
     return []
+
+
+def _wiki_claim_chunk_ids(claim: dict) -> list[str]:
+    """Return the source chunk id(s) a MAP claim is attributed to.
+
+    MAP (``wiki._wiki_resolve_chunk_ids``) rewrites every item's
+    ``source_chunk_id`` into ``chunk_ids=[real_id]`` (an array). Later stages
+    must read the array, falling back to the singular ``source_chunk_id`` for
+    robustness.
+    """
+    if not isinstance(claim, dict):
+        return []
+    ids = claim.get("chunk_ids")
+    if isinstance(ids, str):
+        ids = [ids]
+    if isinstance(ids, (list, tuple)):
+        return [str(c) for c in ids if c]
+    s = claim.get("source_chunk_id")
+    return [str(s)] if s else []
 
 
 def _wiki_decide_concept_pages(all_concepts: list[dict]) -> list[dict]:
@@ -1059,6 +1228,18 @@ async def _wiki_reduce_entity(
         }
 
     existing_claims = existing_page.get("claims", [])
+    # The stored `claims` column is a JSON string (json.dumps in _wiki_mode_a_refine).
+    # Normalize to a list of dicts defensively — iterating a raw string yields
+    # characters and breaks every `c.get(...)` below.
+    if isinstance(existing_claims, str):
+        try:
+            existing_claims = json.loads(existing_claims) if existing_claims else []
+        except (json.JSONDecodeError, TypeError):
+            existing_claims = []
+    if isinstance(existing_claims, (list, tuple)):
+        existing_claims = [c for c in existing_claims if isinstance(c, dict)]
+    else:
+        existing_claims = []
     deleted_set = deleted_doc_ids or set()
 
     retractions = [c for c in existing_claims if c.get("source_doc_id") in deleted_set]
@@ -1331,6 +1512,20 @@ async def _wiki_mode_a_refine(
         )
         return None
 
+    # WeKnora-style verbatim evidence: load the ACTUAL source-chunk text for
+    # every referenced chunk id so the writer is grounded in the source, not
+    # just in the condensed claim statements. This runs per-page (incremental
+    # friendly) and is bounded by WIKI_SOURCE_BUDGET_CHARS.
+    if source_chunks:
+        chunk_ids = [sc.get("id") or sc.get("chunk_id") for sc in source_chunks if (sc.get("id") or sc.get("chunk_id"))]
+        if chunk_ids:
+            try:
+                chunk_texts = await _wiki_load_chunk_texts(tenant_id, kb_id, [str(c) for c in chunk_ids])
+                if chunk_texts:
+                    source_chunks = _wiki_enrich_source_chunks(source_chunks, chunk_texts)
+            except Exception:
+                logging.exception("wiki: verbatim chunk enrichment failed for page %s", page_id)
+
     # Build the prompt based on mode
     if mode == "generate":
         system_prompt = _WIKI_MODE_A_GENERATE_SYSTEM
@@ -1463,6 +1658,37 @@ async def _wiki_mode_a_refine(
     return page
 
 
+def _build_source_chunks_block(source_chunks: list[dict], max_budget: int = WIKI_SOURCE_BUDGET_CHARS) -> str:
+    """Render the verbatim source-chunk block for the writer prompt.
+
+    Chunks carrying verbatim text (``_verbatim=True``) are labelled clearly so
+    the writer treats them as ground truth; the whole block is capped at
+    ``max_budget`` characters. Missing/empty chunks are dropped.
+    """
+    if not source_chunks:
+        return ""
+    parts: list[str] = []
+    total = 0
+    for c in source_chunks:
+        cid = c.get("id") or c.get("chunk_id")
+        text = c.get("content_with_weight") or c.get("text") or ""
+        if not text or not cid:
+            continue
+        if c.get("_verbatim"):
+            block = f"[SOURCE {cid}]\n{text}"
+        else:
+            block = f"[CHUNK {cid}]\n{text}"
+        if total + len(block) + 2 > max_budget:
+            break
+        parts.append(block)
+        total += len(block) + 2
+    if not parts:
+        return ""
+    if total >= max_budget:
+        parts.append("[…further source chunks omitted to fit context budget…]")
+    return "\n\n".join(parts)
+
+
 def _build_mode_a_generate_prompt(
     page_id: str,
     page_title: str,
@@ -1471,17 +1697,17 @@ def _build_mode_a_generate_prompt(
     available_pages: list[str],
     contextual_hints: str,
 ) -> str:
-    chunks_text = "\n\n".join(f"[CHUNK {c.get('id', c.get('chunk_id', i))}]\n{c.get('content_with_weight') or c.get('text', '')}" for i, c in enumerate(source_chunks))
+    chunks_text = _build_source_chunks_block(source_chunks)
     claims_text = "\n".join(f"- {c.get('statement', c.get('text', ''))}" for c in claims) if claims else "(no claims)"
 
     return f"""## Concept Page Identity
 - Page ID: {page_id}
 - Title: {page_title}
 
-## Source Chunks
+## Source Chunks (verbatim source text — ground every fact in these)
 {chunks_text or "(no source chunks available)"}
 
-## Extracted Claims
+## Extracted Claims (checklist)
 {claims_text}
 
 ## Available Pages for [[wikilinks]]
@@ -1508,7 +1734,7 @@ def _build_mode_a_modify_prompt(
     if not force_full:
         additions_text = "\n".join(f"- {c.get('statement', c.get('text', ''))}" for c in (additions or [])) if additions else "(none)"
         retractions_text = "\n".join(f"- {c.get('statement', c.get('text', ''))}" for c in (retractions or [])) if retractions else "(none)"
-        chunks_text = "\n\n".join(f"[CHUNK {c.get('id', i)}]\n{c.get('content_with_weight') or c.get('text', '')}" for i, c in enumerate(source_chunks))[: _get_source_budget_chars()]
+        chunks_text = _build_source_chunks_block(source_chunks)
 
         return f"""## Page Identity
 - Page ID: {page_id}
@@ -1523,7 +1749,7 @@ def _build_mode_a_modify_prompt(
 ## Claims to Retract
 {retractions_text}
 
-## Source Chunks for New Information
+## Source Chunks for New Information (verbatim source text — ground every fact in these)
 {chunks_text}
 
 ## Available Pages for [[wikilinks]]
@@ -1532,15 +1758,15 @@ def _build_mode_a_modify_prompt(
 {contextual_hints}
 """
     else:
-        # Full re-synthesis: all claims + all source chunks
-        chunks_text = "\n\n".join(f"[CHUNK {c.get('id', i)}]\n{c.get('content_with_weight') or c.get('text', '')}" for i, c in enumerate(source_chunks))[: _get_source_budget_chars(max_budget=120_000)]
+        # Full re-synthesis: all claims + all source chunks (larger budget)
+        chunks_text = _build_source_chunks_block(source_chunks, max_budget=120_000)
         claims_text = "\n".join(f"- {c.get('statement', c.get('text', ''))}" for c in claims)
 
         return f"""## Page Identity
 - Page ID: {page_id}
 - Title: {page_title}
 
-## All Source Chunks (for full re-synthesis)
+## All Source Chunks (for full re-synthesis — verbatim source text)
 {chunks_text or "(none)"}
 
 ## All Claims
@@ -1553,13 +1779,9 @@ def _build_mode_a_modify_prompt(
 """
 
 
-def _get_source_budget_chars(max_budget: int = 60_000) -> int:
-    return max_budget
-
-
 # System prompts for Mode A
 
-_WIKI_MODE_A_GENERATE_SYSTEM = """You are a wiki writer. Generate a new wiki page for the given concept using the provided source chunks and extracted claims.
+_WIKI_MODE_A_GENERATE_SYSTEM = """You are a wiki COMPILER. Generate a new wiki page for the given concept using the provided source chunks and extracted claims.
 
 ## LANGUAGE
 Write the ENTIRE page in the SAME LANGUAGE as the source chunks. If the source chunks are written in Chinese, write the page in Chinese. Do not switch to English, and do not translate entity names (keep them verbatim: e.g. keep "张伟", do not write "Zhang Wei").
@@ -1571,6 +1793,12 @@ Write the ENTIRE page in the SAME LANGUAGE as the source chunks. If the source c
 4. SECTIONS: H2 headings, prose first, then sub-points if needed.
 5. WIKILINKS: Use ONLY the exact page IDs listed in "Available Pages for [[wikilinks]]" (they already carry the entity/ or concept/ prefix). Insert [[EXACT_PAGE_ID]] on first mention of a related concept/entity. NEVER invent a link target, NEVER drop the prefix, NEVER write English names.
 6. DICTIONARY PREVENTION: Do NOT group content by source document. Do NOT create one section per entity. Do NOT write flat bullet lists.
+
+## SOURCE GROUNDING (COMPILER, not writer)
+- The "Source Chunks" section contains VERBATIM source text. Stay close to the source wording — reuse the source's own sentences and facts where possible.
+- Every newly added factual claim, entity, or numerical value MUST be directly supported by the provided source chunks. Do NOT invent facts, figures, dates, or relationships not present in the sources.
+- Do NOT add rhetorical filler (e.g. "旨在帮助…", "designed to…", "aims to provide…") unless it appears verbatim in a source.
+- If the sources disagree, present both views and add a "## Contradictions" section rather than silently picking one.
 
 ## OUTPUT
 Return ONLY the complete markdown page.
@@ -1595,6 +1823,12 @@ Write the ENTIRE page in the SAME LANGUAGE as the source chunks. If the source c
 - Do NOT group content by source document.
 - Do NOT simply append new claims at the end.
 - Do NOT create one section per entity.
+
+## SOURCE GROUNDING (COMPILER, not writer)
+- The "Source Chunks" section contains VERBATIM source text. Stay close to the source wording — reuse the source's own sentences and facts where possible.
+- Every newly added factual claim, entity, or numerical value MUST be directly supported by the provided source chunks. Do NOT invent facts, figures, dates, or relationships not present in the sources.
+- Do NOT add rhetorical filler (e.g. "旨在帮助…", "designed to…", "aims to provide…") unless it appears verbatim in a source.
+- If new sources contradict existing page content, present both views and add a "## Contradictions / Updates" section rather than silently overwriting.
 
 ## OUTPUT
 Return ONLY the complete updated markdown page.
@@ -1944,9 +2178,18 @@ async def _wiki_finalize(
                 # Entity reference (Mode A): remove [[]] keep plain text
                 content = content.replace(f"[[{link}]]", link, 1)
             else:
-                # Dead link: remove [[]] keep plain text
-                content = content.replace(f"[[{link}]]", link, 1)
-                dead_links.setdefault(pid, []).append(link)
+                # Dead link — try WeKnora-style fuzzy resolution to a similar
+                # existing page before giving up. If a close slug exists, retarget
+                # the link (cross-link survives); otherwise degrade to plain text.
+                resolved = _wiki_resolve_dead_slug(link, valid_ids, name_slug)
+                if resolved:
+                    content = content.replace(f"[[{link}]]", f"[[{resolved}]]", 1)
+                    relation_map.setdefault(pid, []).append({"entity_name": resolved.split("/")[-1] if "/" in resolved else resolved, "relation": "see_also"})
+                    if resolved not in outlink_map.setdefault(pid, []):
+                        outlink_map[pid].append(resolved)
+                else:
+                    content = content.replace(f"[[{link}]]", link, 1)
+                    dead_links.setdefault(pid, []).append(link)
 
         # AUTO-LINK: guarantee cross-page connections even when the LLM omits
         # [[...]]. Scan for standalone mentions of other pages' plain names and
@@ -2018,15 +2261,24 @@ async def _wiki_finalize(
 
         relations = relation_map.get(pid, [])
         if relations:
-            update["related_kb_pages_kwd"] = json.dumps(relations[:20], ensure_ascii=False)
+            # NOTE: *_kwd fields are analyzed by whitespace-#. Storing a
+            # json.dumps string makes Infinity shred it so get_fields reads it
+            # back as [] (breaking every consumer of related_kb_pages_kwd).
+            # Mirror the old-mode format: a native list of STRINGS (Infinity
+            # stores it and get_fields/_as_str_list restore it as a list). The
+            # old-mode related_kb_pages is exactly a list of page slugs/names,
+            # so we collapse each {entity_name, relation} entry to its string.
+            update["related_kb_pages_kwd"] = [r.get("entity_name") or r.get("slug") or str(r) for r in relations[:20]]
         elif page.get("related_kb_pages_kwd"):
             # Clear stale related_pages if no relations remain
-            update["related_kb_pages_kwd"] = "[]"
+            update["related_kb_pages_kwd"] = []
 
         # Always refresh outlinks: unique valid targets (graph + list ordering
         # depend on outlinks_int). Preserves ordering for a stable canvas.
+        # Store a native list (NOT json.dumps) so the *_kwd field reads back
+        # correctly instead of being shredded into [] by whitespace-#.
         outlinks = outlink_map.get(pid) or []
-        update["outlinks_kwd"] = json.dumps(outlinks, ensure_ascii=False)
+        update["outlinks_kwd"] = list(outlinks)
         update["outlinks_int"] = len(outlinks)
 
         index = search.index_name(tenant_id)
@@ -2676,8 +2928,7 @@ async def _wiki_mode_a_run(
 
         # Collect source chunks from claims
         for claim in d.get("claims", []):
-            cid = claim.get("source_chunk_id")
-            if cid:
+            for cid in _wiki_claim_chunk_ids(claim):
                 entry["source_chunks"].append(
                     {
                         "id": cid,
@@ -2697,8 +2948,7 @@ async def _wiki_mode_a_run(
         chunk_claims: dict[str, list[str]] = {}
         for _cname, claims in canonical_claims.items():
             for claim in claims:
-                cid = claim.get("source_chunk_id")
-                if cid:
+                for cid in _wiki_claim_chunk_ids(claim):
                     chunk_claims.setdefault(cid, []).append(claim.get("statement", claim.get("text", "")))
 
         for _pid, entry in page_deltas.items():
@@ -2898,8 +3148,7 @@ async def _wiki_mode_b_run(
         chunks: list[dict] = []
         for ent in entities:
             for c in ent.get("claims", []):
-                cid = c.get("source_chunk_id")
-                if cid:
+                for cid in _wiki_claim_chunk_ids(c):
                     chunks.append({"id": cid, "text": c.get("statement", c.get("text", ""))})
         if chunks:
             page_source_chunks[page_key] = chunks
