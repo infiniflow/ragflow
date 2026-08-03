@@ -636,14 +636,14 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     retriever = settings.retriever
     questions = [m["content"] for m in messages if m["role"] == "user"][-3:]
-    attachments = None
+    scoped_doc_ids = None
     if "doc_ids" in kwargs:
-        attachments = [doc_id for doc_id in kwargs["doc_ids"].split(",") if doc_id]
+        scoped_doc_ids = [doc_id for doc_id in kwargs["doc_ids"].split(",") if doc_id]
     attachments_ = ""
     image_attachments = []
     image_files = []
     if "doc_ids" in messages[-1]:
-        attachments = [doc_id for doc_id in messages[-1]["doc_ids"] if doc_id]
+        scoped_doc_ids = [doc_id for doc_id in messages[-1]["doc_ids"] if doc_id]
     if "files" in messages[-1]:
         if llm_model_config["model_type"] == "chat":
             text_attachments, image_attachments = split_file_attachments(messages[-1]["files"])
@@ -653,12 +653,12 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
 
     prompt_config = dialog.prompt_config
     if dialog.meta_data_filter:
-        attachments = await apply_meta_data_filter(
+        scoped_doc_ids = await apply_meta_data_filter(
             dialog.meta_data_filter,
             None,
             questions[-1],
             chat_mdl,
-            attachments,
+            scoped_doc_ids,
             kb_ids=dialog.kb_ids,
             metas_loader=lambda: DocMetadataService.get_flatted_meta_by_kbs(dialog.kb_ids),
         )
@@ -669,7 +669,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     # try to use sql if field mapping is good to go
     if field_map:
         logging.debug("Use SQL to retrieval:{}".format(questions[-1]))
-        ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids, doc_ids=attachments)
+        ans = await use_sql(questions[-1], field_map, dialog.tenant_id, chat_mdl, prompt_config.get("quote", True), dialog.kb_ids, doc_ids=scoped_doc_ids)
         # For aggregate queries (COUNT, SUM, etc.), chunks may be empty but answer is still valid
         if ans and (ans.get("reference", {}).get("chunks") or ans.get("answer")):
             if include_reference_metadata and ans.get("reference", {}).get("chunks"):
@@ -689,7 +689,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         logging.warning("prompt_config['parameters'] is missing 'knowledge' entry despite kb_ids being set; auto-fixing.")
         prompt_config.setdefault("parameters", []).append({"key": "knowledge", "optional": False})
         param_keys.append("knowledge")
-    logging.debug(f"attachments={attachments}, param_keys={param_keys}, embd_mdl={embd_mdl}")
+    logging.debug(f"scoped_doc_ids={scoped_doc_ids}, param_keys={param_keys}, embd_mdl={embd_mdl}")
 
     sys_date = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     kwargs["date"] = sys_date
@@ -735,7 +735,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     page_size=dialog.top_n,
                     similarity_threshold=0.2,
                     vector_similarity_weight=0.3,
-                    doc_ids=attachments,
+                    doc_ids=scoped_doc_ids,
                 ),
                 internet_enabled=use_web_search,
             )
@@ -770,7 +770,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                     dialog.top_n,
                     dialog.similarity_threshold,
                     dialog.vector_similarity_weight,
-                    doc_ids=attachments,
+                    doc_ids=scoped_doc_ids,
                     top=dialog.top_k,
                     aggs=True,
                     rerank_mdl=rerank_mdl,
