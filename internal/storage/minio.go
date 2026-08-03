@@ -198,14 +198,18 @@ func (m *MinioStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...
 			}
 			continue
 		}
-		defer obj.Close()
-
 		buf := new(bytes.Buffer)
-		if _, err = buf.ReadFrom(obj); err != nil {
+
+		readErr := func() error {
+			defer obj.Close()
+			_, err = buf.ReadFrom(obj)
+			return err
+		}()
+		if readErr != nil {
 			if ctxErr := ctx.Err(); ctxErr != nil {
 				return nil, ctxErr
 			}
-			common.Warn("failed to read object data", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
+			common.Error("failed to read object data", err, zap.String("bucket", bucket), zap.String("key", fnm))
 			m.reconnect()
 			if err = sleepOrAbort(ctx, time.Second); err != nil {
 				return nil, err

@@ -216,11 +216,15 @@ func (s *S3Storage) Get(ctx context.Context, bucket, fnm string, tenantID ...str
 			time.Sleep(time.Second)
 			continue
 		}
-		defer result.Body.Close()
-
 		buf := new(bytes.Buffer)
-		if _, err = buf.ReadFrom(result.Body); err != nil {
-			common.Error("Failed to read object data", err, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
+
+		readErr := func() error {
+			defer result.Body.Close()
+			_, err = buf.ReadFrom(result.Body)
+			return err
+		}()
+		if readErr != nil {
+			common.Error("Failed to read object data", readErr, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(readErr))
 			s.reconnect(ctx)
 			time.Sleep(time.Second)
 			continue
