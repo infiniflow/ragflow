@@ -560,7 +560,18 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 		parts := sentenceDelimiter.Split(sec, -1)
 		hadPart := false
 		for _, part := range parts {
-			part = strings.TrimSpace(part)
+			// Keep the raw split fragment, including any inter-line trailing
+			// whitespace. Python's naive_merge builds each unit from
+			// "\n" + sub_sec (naive_merge:1357) where sub_sec retains its
+			// trailing space and is never TrimSpaced — the only post-processing
+			// is dropping the leading empty placeholder (naive_merge:1370-1375),
+			// never per-unit trimming. Trimming here drops that space, so the
+			// overlap prefix carved from the previous chunk (which runs over the
+			// untrimmed segment) loses a character and diverges from Python.
+			// Only genuinely empty fragments are skipped, mirroring naive_merge's
+			// `if not sub_sec` guard. (The final-output TrimSpace at token.go:587
+			// only removes a chunk's own leading/trailing whitespace, not the
+			// inter-line space preserved here.)
 			if part == "" {
 				continue
 			}
