@@ -1008,6 +1008,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       “系统提示词”中的所有变量都必须用大括号{}括起来。详见 https://ragflow.io/docs/dev/set_chat_variables。`,
       add: '新增',
       key: '关键字',
+      variableKeyMessage: '请输入变量 key',
       optional: '可选的',
       operation: '操作',
       model: '模型',
