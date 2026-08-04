@@ -3034,7 +3034,7 @@ curl --request POST \
   - `"cross_languages"`: `list[string]`
   - `"web_search_provider"`: `string` The web search service to use. Supported values are `"tavily"` and `"querit"`. Defaults to `"tavily"` when omitted.
   - `"tavily_api_key"`: `string`
-  - `"querit_api_key"`: `string`
+  - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
   - `"toc_enhance"`: `boolean`
 - `"similarity_threshold"`: (*Body parameter*), `float`
 - `"vector_similarity_weight"`: (*Body parameter*), `float`

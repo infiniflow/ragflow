@@ -140,7 +140,8 @@ func TestRetrieveQueritWebSearchUsesChatDefaultsAndReturnsReferenceShape(t *test
 			t.Errorf("Authorization = %q, want %q", got, "Bearer querit-test")
 		}
 		if err := json.NewDecoder(request.Body).Decode(&requestBody); err != nil {
-			t.Fatalf("decode request: %v", err)
+			t.Errorf("decode request: %v", err)
+			return
 		}
 		response.Header().Set("Content-Type", "application/json")
 		_, _ = response.Write([]byte(`{

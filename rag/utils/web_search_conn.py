@@ -14,6 +14,7 @@
 #  limitations under the License.
 #
 
+import logging
 from typing import Protocol
 
 from rag.utils.querit_conn import Querit
@@ -21,6 +22,8 @@ from rag.utils.tavily_conn import Tavily
 
 WEB_SEARCH_PROVIDER_TAVILY = "tavily"
 WEB_SEARCH_PROVIDER_QUERIT = "querit"
+
+logger = logging.getLogger(__name__)
 
 
 class WebSearchProvider(Protocol):
@@ -45,8 +48,19 @@ def has_web_search_provider(prompt_config: dict | None) -> bool:
 
 
 def create_web_search_provider(prompt_config: dict | None) -> WebSearchProvider | None:
-    if not prompt_config or not has_web_search_provider(prompt_config):
+    if not prompt_config:
+        logger.debug("Web search provider resolution: provider=none status=disabled")
         return None
-    if prompt_config.get("web_search_provider", WEB_SEARCH_PROVIDER_TAVILY) == WEB_SEARCH_PROVIDER_QUERIT:
+
+    provider = prompt_config.get("web_search_provider", WEB_SEARCH_PROVIDER_TAVILY)
+    if provider not in (WEB_SEARCH_PROVIDER_TAVILY, WEB_SEARCH_PROVIDER_QUERIT):
+        logger.debug("Web search provider resolution: provider=%s status=invalid", provider)
+        return None
+    if not has_web_search_provider(prompt_config):
+        logger.debug("Web search provider resolution: provider=%s status=disabled", provider)
+        return None
+
+    logger.debug("Web search provider resolution: provider=%s status=resolved", provider)
+    if provider == WEB_SEARCH_PROVIDER_QUERIT:
         return Querit(_get_api_key(prompt_config, "querit_api_key"))
     return Tavily(_get_api_key(prompt_config, "tavily_api_key"))

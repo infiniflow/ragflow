@@ -125,12 +125,12 @@ type AsyncChatResult struct {
 //	│                                                       │
 //	│  reasoning=true?                                      │
 //	│   YES → DeepResearcher (recursive, maxDepth=3)        │
-//	│         each layer: KB → Web(Tavily) → KG(use_kg)     │
+//	│         each layer: KB → Web search → KG(use_kg)      │
 //	│         → sufficiencyCheck → multiQueriesGen → recurse│
 //	│   NO  → Standard vector retrieval                     │
 //	│         vector/hybrid search → rerank →               │
 //	│         TOC enhance → child chunk retrieval →         │
-//	│         Tavily web search → KG retrieval (prepend)    │
+//	│         Web search → KG retrieval (prepend)           │
 //	│                                                       │
 //	│    enrichChunksWithMetadata (doc metadata)            │
 //	│    kbPrompt (build knowledge blocks)                  │
@@ -612,7 +612,7 @@ func (s *ChatPipelineService) AsyncChat(
 		//   b) Otherwise: standard retrieval, then:
 		//      - TOC enhancement (if toc_enhance is enabled).
 		//      - Child chunk retrieval.
-		//      - Tavily web search (if internet is enabled).
+		//      - Web search provider (if internet is enabled).
 		//      - Knowledge graph retrieval (if use_kg is enabled).
 		// Populates kbinfos (chunks + doc_aggs) and knowledges.
 		// When false, the entire block is skipped.

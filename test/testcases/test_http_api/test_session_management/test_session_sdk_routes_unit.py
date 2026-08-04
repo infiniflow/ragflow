@@ -1670,6 +1670,23 @@ def test_chatbot_routes_auth_stream_nonstream_unit(monkeypatch):
     assert res["data"]["has_tavily_key"] is True
     assert res["data"]["has_web_search_provider"] is True
 
+    # Explicit Querit configuration also enables the provider-neutral flag.
+    querit_dialog = SimpleNamespace(
+        name="My Querit Bot",
+        icon="avatar.png",
+        tenant_id="tenant-1",
+        status="1",
+        prompt_config={
+            "prologue": "Hello!",
+            "web_search_provider": "querit",
+            "querit_api_key": "querit-key123",
+        },
+    )
+    monkeypatch.setattr(module.DialogService, "get_by_id", lambda _dialog_id: (True, querit_dialog))
+    res = _run(inspect.unwrap(module.chatbots_inputs)("dialog-querit"))
+    assert res["code"] == 0
+    assert res["data"]["has_web_search_provider"] is True
+
 
 @pytest.mark.p2
 def test_agentbot_routes_auth_stream_nonstream_unit(monkeypatch):
