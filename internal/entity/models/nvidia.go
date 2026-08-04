@@ -56,7 +56,7 @@ func NewNvidiaModel(baseURL map[string]string, urlSuffix URLSuffix) *NvidiaModel
 	}
 }
 
-func (n NvidiaModel) NewInstance(baseURL map[string]string) ModelDriver {
+func (n *NvidiaModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewNvidiaModel(baseURL, n.baseModel.URLSuffix)
 }
 
@@ -77,11 +77,7 @@ func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	if err != nil {
 		return nil, err
 	}
-	baseURL := resolvedBaseURL
-	if baseURL == "" {
-		baseURL = resolvedBaseURL
-	}
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, n.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -116,11 +112,7 @@ func (n *NvidiaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	if err != nil {
 		return err
 	}
-	baseURL := resolvedBaseURL
-	if baseURL == "" {
-		baseURL = resolvedBaseURL
-	}
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Chat)
+	url := fmt.Sprintf("%s/%s", resolvedBaseURL, n.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
 	if modelConfig != nil {
@@ -134,34 +126,10 @@ func (n *NvidiaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
 
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := n.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
-	}
-
-	return HandleStreamingResponse(resp.Body, modelUsage, modelConfig, OpenAIParserConfig, sender)
+	return n.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
+	})
 }
 
 type nvidiaEmbeddingResponse struct {
@@ -188,12 +156,8 @@ func (n NvidiaModel) Embed(ctx context.Context, modelName *string, texts []strin
 	if err != nil {
 		return nil, err
 	}
-	baseURL := resolvedBaseURL
-	if baseURL == "" {
-		baseURL = resolvedBaseURL
-	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), n.baseModel.URLSuffix.Embedding)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), n.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
@@ -304,12 +268,8 @@ func (n NvidiaModel) Rerank(ctx context.Context, modelName *string, query string
 	if err != nil {
 		return nil, err
 	}
-	baseURL := resolvedBaseURL
-	if baseURL == "" {
-		baseURL = resolvedBaseURL
-	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), n.baseModel.URLSuffix.Rerank)
+	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), n.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
