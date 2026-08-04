@@ -91,6 +91,46 @@ func TestCodeExec_Info(t *testing.T) {
 	if !strings.Contains(info.Desc, "Python") {
 		t.Errorf("Desc = %q, want to mention Python", info.Desc)
 	}
+
+	params, err := info.ParamsOneOf.ToJSONSchema()
+	if err != nil {
+		t.Fatalf("Info schema: %v", err)
+	}
+	encoded, err := json.Marshal(params)
+	if err != nil {
+		t.Fatalf("marshal Info schema: %v", err)
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(encoded, &schema); err != nil {
+		t.Fatalf("decode Info schema: %v", err)
+	}
+	properties, ok := schema["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("Info schema properties = %#v, want object", schema["properties"])
+	}
+	for _, name := range []string{"lang", "script"} {
+		if _, ok := properties[name]; !ok {
+			t.Errorf("Info schema missing %q", name)
+		}
+	}
+	for _, name := range []string{"language", "code", "arguments", "outputs"} {
+		if _, ok := properties[name]; ok {
+			t.Errorf("Info schema unexpectedly exposes node field %q", name)
+		}
+	}
+	required, ok := schema["required"].([]any)
+	if !ok {
+		t.Fatalf("Info schema required = %#v, want array", schema["required"])
+	}
+	requiredFields := make(map[string]bool, len(required))
+	for _, field := range required {
+		if name, ok := field.(string); ok {
+			requiredFields[name] = true
+		}
+	}
+	if !requiredFields["lang"] || !requiredFields["script"] {
+		t.Errorf("Info schema required = %#v, want lang and script", required)
+	}
 }
 
 // TestCodeExec_ResultExtractsArtifacts pins the artifact

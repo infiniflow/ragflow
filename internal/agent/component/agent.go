@@ -172,6 +172,11 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: tools,
 		},
+		// Python's streaming tool loop consumes the complete provider
+		// response before deciding whether the round contains a tool call.
+		// Eino's default checker only inspects the first non-empty chunk,
+		// which can miss a ToolCall emitted after explanatory text.
+		StreamToolCallChecker: scanAllStreamForToolCall,
 		MessageModifier: func(_ context.Context, msgs []*schema.Message) []*schema.Message {
 			if p.SystemPrompt != "" {
 				return append([]*schema.Message{schema.SystemMessage(p.SystemPrompt)}, msgs...)
@@ -218,6 +223,28 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		return nil, err
 	}
 	return msg, nil
+}
+
+// scanAllStreamForToolCall mirrors Python's async_chat_streamly_with_tools:
+// consume the whole model response, then branch to the Tools node only when
+// any streamed message contains a ToolCall. This keeps tool_choice=auto — a
+// model may still answer directly when it decides no tool is needed.
+func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*schema.Message]) (bool, error) {
+	defer stream.Close()
+
+	hasToolCall := false
+	for {
+		msg, err := stream.Recv()
+		if err == io.EOF {
+			return hasToolCall, nil
+		}
+		if err != nil {
+			return false, err
+		}
+		if msg != nil && len(msg.ToolCalls) > 0 {
+			hasToolCall = true
+		}
+	}
 }
 
 // buildAgentInputMessages assembles the Python-compatible Agent prompt: the

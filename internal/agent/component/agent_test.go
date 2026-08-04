@@ -70,6 +70,145 @@ func TestAgent_NoToolsReAct(t *testing.T) {
 	}
 }
 
+func TestScanAllStreamForToolCallWaitsPastTextChunks(t *testing.T) {
+	stream := schema.StreamReaderFromArray([]*schema.Message{
+		{Role: schema.Assistant, Content: "I will calculate this."},
+		{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{{
+				ID:   "call-1",
+				Type: "function",
+				Function: schema.FunctionCall{
+					Name:      "execute_code",
+					Arguments: `{"lang":"python","script":"def main(): return 2"}`,
+				},
+			}},
+		},
+	})
+
+	hasToolCall, err := scanAllStreamForToolCall(t.Context(), stream)
+	if err != nil {
+		t.Fatalf("scanAllStreamForToolCall: %v", err)
+	}
+	if !hasToolCall {
+		t.Fatal("scanAllStreamForToolCall = false, want true")
+	}
+}
+
+func TestScanAllStreamForToolCallAllowsDirectAnswer(t *testing.T) {
+	stream := schema.StreamReaderFromArray([]*schema.Message{
+		{Role: schema.Assistant, Content: "No tool is needed."},
+	})
+
+	hasToolCall, err := scanAllStreamForToolCall(t.Context(), stream)
+	if err != nil {
+		t.Fatalf("scanAllStreamForToolCall: %v", err)
+	}
+	if hasToolCall {
+		t.Fatal("scanAllStreamForToolCall = true, want false")
+	}
+}
+
+type textThenToolCallModel struct {
+	turn       int
+	boundTools []*schema.ToolInfo
+}
+
+func (m *textThenToolCallModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	m.boundTools = append([]*schema.ToolInfo(nil), tools...)
+	return m, nil
+}
+
+func (m *textThenToolCallModel) Generate(_ context.Context, _ []*schema.Message, _ ...model.Option) (*schema.Message, error) {
+	m.turn++
+	if m.turn == 1 {
+		return &schema.Message{
+			Role: schema.Assistant,
+			ToolCalls: []schema.ToolCall{{
+				ID:   "call-1",
+				Type: "function",
+				Function: schema.FunctionCall{
+					Name:      "execute_code",
+					Arguments: `{"lang":"python","script":"def main(): return 2"}`,
+				},
+			}},
+		}, nil
+	}
+	return &schema.Message{Role: schema.Assistant, Content: "2"}, nil
+}
+
+func (m *textThenToolCallModel) Stream(_ context.Context, _ []*schema.Message, _ ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	m.turn++
+	if m.turn == 1 {
+		return schema.StreamReaderFromArray([]*schema.Message{
+			{Role: schema.Assistant, Content: "I will calculate this."},
+			{
+				Role: schema.Assistant,
+				ToolCalls: []schema.ToolCall{{
+					ID:   "call-1",
+					Type: "function",
+					Function: schema.FunctionCall{
+						Name:      "execute_code",
+						Arguments: `{"lang":"python","script":"def main(): return 2"}`,
+					},
+				}},
+			},
+		}), nil
+	}
+	return schema.StreamReaderFromArray([]*schema.Message{
+		{Role: schema.Assistant, Content: "2"},
+	}), nil
+}
+
+func TestReactStreamCheckerExecutesToolCallAfterText(t *testing.T) {
+	mdl := &textThenToolCallModel{}
+	tool := &passthroughTool{name: "execute_code"}
+	agent, err := react.NewAgent(t.Context(), &react.AgentConfig{
+		ToolCallingModel: mdl,
+		ToolsConfig: compose.ToolsNodeConfig{
+			Tools: []einotool.BaseTool{tool},
+		},
+		StreamToolCallChecker: scanAllStreamForToolCall,
+		MaxStep:               4,
+	})
+	if err != nil {
+		t.Fatalf("react.NewAgent: %v", err)
+	}
+
+	stream, err := agent.Stream(t.Context(), []*schema.Message{schema.UserMessage("calculate")})
+	if err != nil {
+		t.Fatalf("agent.Stream: %v", err)
+	}
+	defer stream.Close()
+
+	var chunks []*schema.Message
+	for {
+		chunk, recvErr := stream.Recv()
+		if recvErr == io.EOF {
+			break
+		}
+		if recvErr != nil {
+			t.Fatalf("stream.Recv: %v", recvErr)
+		}
+		if chunk != nil {
+			chunks = append(chunks, chunk)
+		}
+	}
+	if mdl.turn < 2 {
+		t.Fatalf("model turns = %d, want a second turn after tool execution", mdl.turn)
+	}
+	if len(mdl.boundTools) != 1 || mdl.boundTools[0].Name != "execute_code" {
+		t.Fatalf("bound tools = %#v, want execute_code", mdl.boundTools)
+	}
+	final, err := schema.ConcatMessages(chunks)
+	if err != nil {
+		t.Fatalf("schema.ConcatMessages: %v", err)
+	}
+	if final.Content != "2" {
+		t.Fatalf("final content = %q, want 2", final.Content)
+	}
+}
+
 func TestAgent_EmitsThinking(t *testing.T) {
 	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
 		return &schema.Message{
