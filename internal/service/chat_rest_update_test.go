@@ -355,21 +355,24 @@ func TestChatServiceCreateValidatesName(t *testing.T) {
 	}
 }
 
-func TestChatServiceCreateDedupesDuplicateNameCaseInsensitive(t *testing.T) {
+func TestChatServiceCreateRejectsDuplicateNameCaseInsensitive(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
 	ctx := t.Context()
 	resp, code, err := svc.Create(ctx, "user-1", map[string]interface{}{"name": "CHAT-chat-1"})
-	if err != nil {
-		t.Fatalf("Create failed: %v", err)
+	if err == nil {
+		t.Fatal("expected duplicate chat name error")
 	}
-	if code != common.CodeSuccess {
-		t.Fatalf("expected success code, got %d", code)
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
 	}
-	if got := resp["name"]; got != "CHAT-chat-1(1)" {
-		t.Fatalf("expected deduped chat name, got %v", got)
+	if resp != nil {
+		t.Fatalf("expected nil response, got %+v", resp)
+	}
+	if err.Error() != "duplicated chat name in creating chat" {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -395,7 +398,7 @@ func TestChatServiceCreateIgnoresInvalidDuplicateName(t *testing.T) {
 	}
 }
 
-func TestChatServiceCreateConcurrentDedupesNames(t *testing.T) {
+func TestChatServiceCreateConcurrentRejectsDuplicateNames(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	sqlDB, err := db.DB()
 	if err != nil {
@@ -408,7 +411,7 @@ func TestChatServiceCreateConcurrentDedupesNames(t *testing.T) {
 
 	const workers = 5
 	svc := NewChatService()
-	names := make(chan string, workers)
+	successes := make(chan string, workers)
 	errs := make(chan error, workers)
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
@@ -417,38 +420,32 @@ func TestChatServiceCreateConcurrentDedupesNames(t *testing.T) {
 			defer wg.Done()
 			resp, code, err := svc.Create(t.Context(), "user-1", map[string]interface{}{"name": "Concurrent Chat"})
 			if err != nil {
-				errs <- err
+				if code != common.CodeDataError || err.Error() != "duplicated chat name in creating chat" {
+					errs <- err
+				}
 				return
 			}
 			if code != common.CodeSuccess {
 				errs <- errors.New("unexpected create code")
 				return
 			}
-			name, ok := resp["name"].(string)
-			if !ok {
-				errs <- errors.New("created chat response has no string name")
-				return
-			}
-			names <- name
+			successes <- resp["name"].(string)
 		}()
 	}
 	wg.Wait()
-	close(names)
+	close(successes)
 	close(errs)
 
 	for err := range errs {
 		t.Fatalf("Create failed: %v", err)
 	}
 
-	got := map[string]bool{}
-	for name := range names {
-		got[name] = true
+	got := make([]string, 0)
+	for name := range successes {
+		got = append(got, name)
 	}
-	want := []string{"Concurrent Chat", "Concurrent Chat(1)", "Concurrent Chat(2)", "Concurrent Chat(3)", "Concurrent Chat(4)"}
-	for _, name := range want {
-		if !got[name] {
-			t.Fatalf("missing generated name %q; got %+v", name, got)
-		}
+	if len(got) != 1 || got[0] != "Concurrent Chat" {
+		t.Fatalf("expected exactly one created chat name, got %+v", got)
 	}
 }
 

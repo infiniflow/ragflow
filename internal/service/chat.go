@@ -322,45 +322,33 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	applyCreatePromptDefaults(req)
 	filterCreateChatPersistedFields(req)
 
-	const maxCreateNameRetries = 8
-	for attempt := 0; attempt < maxCreateNameRetries; attempt++ {
-		var duplicateCheckErr error
-		name, err = common.DuplicateName(func(name string, tid string) bool {
-			existing, queryErr := s.chatDAO.GetByNameAndTenantID(ctx, dao.DB, name, tid)
-			if queryErr != nil {
-				duplicateCheckErr = queryErr
-				return false
-			}
-			return existing != nil
-		}, baseName, userID)
-		if duplicateCheckErr != nil {
-			return nil, common.CodeServerError, fmt.Errorf("check duplicate chat name: %w", duplicateCheckErr)
-		}
-		if err != nil {
-			return nil, common.CodeDataError, err
-		}
-		req["name"] = name
-
-		chat := buildCreateChatEntity(req, userID)
-		if err = s.chatDAO.Create(ctx, dao.DB, chat); err != nil {
-			if dao.IsDuplicateKeyErr(err) {
-				continue
-			}
-			return nil, common.CodeDataError, errors.New("failed to create chat")
-		}
-
-		chat, err = s.chatDAO.GetByID(ctx, dao.DB, chat.ID)
-		if err != nil {
-			return nil, common.CodeDataError, errors.New("failed to retrieve created chat")
-		}
-
-		response, err := s.buildCreateChatResponse(ctx, chat)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-		return response, common.CodeSuccess, nil
+	existing, err := s.chatDAO.GetByNameAndTenantID(ctx, dao.DB, baseName, userID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("check duplicate chat name: %w", err)
 	}
-	return nil, common.CodeDataError, errors.New("duplicated chat name in creating chat")
+	if existing != nil {
+		return nil, common.CodeDataError, errors.New("duplicated chat name in creating chat")
+	}
+	req["name"] = name
+
+	chat := buildCreateChatEntity(req, userID)
+	if err = s.chatDAO.Create(ctx, dao.DB, chat); err != nil {
+		if dao.IsDuplicateKeyErr(err) {
+			return nil, common.CodeDataError, errors.New("duplicated chat name in creating chat")
+		}
+		return nil, common.CodeDataError, errors.New("failed to create chat")
+	}
+
+	chat, err = s.chatDAO.GetByID(ctx, dao.DB, chat.ID)
+	if err != nil {
+		return nil, common.CodeDataError, errors.New("failed to retrieve created chat")
+	}
+
+	response, err := s.buildCreateChatResponse(ctx, chat)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	return response, common.CodeSuccess, nil
 }
 
 func validateCreateChatName(value interface{}) (string, error) {

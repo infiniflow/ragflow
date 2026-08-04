@@ -487,7 +487,7 @@ func TestGetVersion_NotFound(t *testing.T) {
 	}
 }
 
-func TestCreateAgentDedupesTitleCaseInsensitive(t *testing.T) {
+func TestCreateAgentRejectsDuplicateTitleCaseInsensitive(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	t.Helper()
 
@@ -512,18 +512,21 @@ func TestCreateAgentDedupesTitleCaseInsensitive(t *testing.T) {
 		Title:  &title,
 		DSL:    entity.JSONMap{"components": map[string]any{}},
 	})
-	if err != nil {
-		t.Fatalf("CreateAgent failed: %v", err)
+	if err == nil {
+		t.Fatal("expected duplicate title error")
 	}
-	if code != common.CodeSuccess {
-		t.Fatalf("expected success code, got %d", code)
+	if code != common.CodeDataError {
+		t.Fatalf("expected data error code, got %d", code)
 	}
-	if row.Title == nil || *row.Title != "w(1)" {
-		t.Fatalf("expected deduped agent title, got %v", row.Title)
+	if row != nil {
+		t.Fatalf("expected nil row, got %+v", row)
+	}
+	if err.Error() != "w already exists." {
+		t.Fatalf("unexpected duplicate title error: %v", err)
 	}
 }
 
-func TestCreateAgentConcurrentDedupesTitles(t *testing.T) {
+func TestCreateAgentConcurrentRejectsDuplicateTitles(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	t.Helper()
 
@@ -542,7 +545,7 @@ func TestCreateAgentConcurrentDedupesTitles(t *testing.T) {
 
 	const workers = 5
 	svc := NewAgentService()
-	titles := make(chan string, workers)
+	successes := make(chan string, workers)
 	errs := make(chan error, workers)
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
@@ -556,7 +559,9 @@ func TestCreateAgentConcurrentDedupesTitles(t *testing.T) {
 				DSL:    entity.JSONMap{"components": map[string]any{}},
 			})
 			if err != nil {
-				errs <- err
+				if code != common.CodeDataError || err.Error() != "Concurrent Agent already exists." {
+					errs <- err
+				}
 				return
 			}
 			if code != common.CodeSuccess {
@@ -567,26 +572,23 @@ func TestCreateAgentConcurrentDedupesTitles(t *testing.T) {
 				errs <- errors.New("missing title")
 				return
 			}
-			titles <- *row.Title
+			successes <- *row.Title
 		}()
 	}
 	wg.Wait()
-	close(titles)
+	close(successes)
 	close(errs)
 
 	for err := range errs {
 		t.Fatalf("CreateAgent failed: %v", err)
 	}
 
-	got := map[string]bool{}
-	for title := range titles {
-		got[title] = true
+	got := make([]string, 0)
+	for title := range successes {
+		got = append(got, title)
 	}
-	want := []string{"Concurrent Agent", "Concurrent Agent(1)", "Concurrent Agent(2)", "Concurrent Agent(3)", "Concurrent Agent(4)"}
-	for _, title := range want {
-		if !got[title] {
-			t.Fatalf("missing generated title %q; got %+v", title, got)
-		}
+	if len(got) != 1 || got[0] != "Concurrent Agent" {
+		t.Fatalf("expected exactly one created title, got %+v", got)
 	}
 }
 
