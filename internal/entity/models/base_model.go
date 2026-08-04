@@ -79,9 +79,22 @@ func parseChatCompletionResponse(body []byte, chatConfig *ChatConfig, modelUsage
 
 // recordResponseUsage records the request ID and token usage returned by a
 // completed model response.
+//
+// When modelUsage is nil (caller did not pass a usage context) but
+// usage is non-nil, we still surface a single CollectModelUsage call
+// against a synthetic empty ModelUsage so the analytics path can
+// observe the provider's reported token counts. Without this, drivers
+// whose upstream service layer passes nil — common in the current
+// model_chat / generator code paths — would never reach the stats
+// driver and the token usage would be invisible. The synthetic record
+// carries zero UserID/TenantID; production callers should pass a
+// populated *common.ModelUsage to attribute usage to a tenant.
 func recordResponseUsage(modelUsage *common.ModelUsage, requestID string, usage *TokenUsage, modelType string) {
-	if modelUsage == nil {
+	if usage == nil {
 		return
+	}
+	if modelUsage == nil {
+		modelUsage = &common.ModelUsage{}
 	}
 	if modelUsage.Type == "" {
 		modelUsage.Type = modelType
@@ -104,13 +117,25 @@ func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
 		modelUsage.OutputTokens = usage.CompletionTokens
 		modelUsage.TotalTokens = usage.TotalTokens
 	}
-	modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
+	// StartAt may be zero when the synthetic ModelUsage came from
+	// recordResponseUsage's nil-caller path. In that case we cannot
+	// compute a meaningful response time; leave it at zero instead
+	// of reporting a 50-year epoch delta.
+	if !modelUsage.StartAt.IsZero() {
+		modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
+	}
 	return clickhouse.GetDriver().CollectModelUsage(modelUsage)
 }
 
 // applyStreamUsage exposes streamed token usage to the caller and records it
 // for model-usage analytics when a usage event is received. Analytics failures
 // are logged but do not interrupt the stream.
+//
+// Like recordResponseUsage, a nil modelUsage (the common case from the
+// model_chat / generator service layer) still surfaces a synthetic
+// CollectModelUsage call so streaming usage is not silently dropped. The
+// synthetic record carries zero UserID/TenantID; production callers should
+// pass a populated *common.ModelUsage to attribute usage to a tenant.
 func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usage *TokenUsage) {
 	if usage == nil {
 		return
@@ -119,7 +144,10 @@ func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usa
 		chatConfig.UsageResult = usage
 	}
 	if modelUsage == nil {
-		return
+		modelUsage = &common.ModelUsage{}
+	}
+	if modelUsage.Type == "" {
+		modelUsage.Type = "chat"
 	}
 	if err := collectModelUsage(modelUsage, usage); err != nil {
 		common.Error("Failed to collect model usage", err)
