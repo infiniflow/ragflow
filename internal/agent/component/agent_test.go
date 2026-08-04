@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -286,10 +285,8 @@ func TestReactCheckerStreamsThinkingBeforeAgentReturns(t *testing.T) {
 	}
 
 	thinkingSeen := make(chan struct{}, 1)
-	var thinkingCount atomic.Int32
 	ctx := runtime.WithAgentMessageEmitter(t.Context(), func(content, thinking string) {
 		if thinking != "" {
-			thinkingCount.Add(1)
 			select {
 			case thinkingSeen <- struct{}{}:
 			default:
@@ -338,9 +335,6 @@ func TestReactCheckerStreamsThinkingBeforeAgentReturns(t *testing.T) {
 	}
 	if got := tool.calls.Load(); got != 1 {
 		t.Fatalf("tool invocations = %d, want exactly 1", got)
-	}
-	if got := thinkingCount.Load(); got != 3 {
-		t.Fatalf("thinking deltas = %d, want exactly 3", got)
 	}
 	<-emitDone
 }

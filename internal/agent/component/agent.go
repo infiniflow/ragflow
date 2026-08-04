@@ -202,7 +202,10 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	stream, err := agent.Stream(ctx, input, opt)
 	if err != nil {
 		// Drain the collector so its goroutine exits before we return.
-		<-emitDone
+		select {
+		case <-emitDone:
+		case <-ctx.Done():
+		}
 		return nil, err
 	}
 	defer stream.Close()
@@ -214,7 +217,10 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 			break
 		}
 		if err != nil {
-			<-emitDone
+			select {
+			case <-emitDone:
+			case <-ctx.Done():
+			}
 			return nil, err
 		}
 		if chunk == nil {
