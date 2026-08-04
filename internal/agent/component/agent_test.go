@@ -654,6 +654,43 @@ func TestAgent_NewAcceptsCanvasToolObjects(t *testing.T) {
 	}
 }
 
+func TestAgent_NewAcceptsCodeExecCanvasToolObject(t *testing.T) {
+	cmp, err := New("Agent", map[string]any{
+		"model_id":    "stub",
+		"user_prompt": "x",
+		"tools": []any{
+			map[string]any{
+				"component_name": "CodeExec",
+				"params":         map[string]any{},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	agent, ok := cmp.(*AgentComponent)
+	if !ok {
+		t.Fatalf("New(Agent) returned %T, want *AgentComponent", cmp)
+	}
+	if len(agent.param.Tools) != 1 || agent.param.Tools[0] != "CodeExec" {
+		t.Fatalf("agent.param.Tools = %#v, want [CodeExec]", agent.param.Tools)
+	}
+	tools, err := buildAgentTools(t.Context(), agent.param)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("len(tools) = %d, want 1", len(tools))
+	}
+	info, err := tools[0].Info(t.Context())
+	if err != nil {
+		t.Fatalf("CodeExec tool Info: %v", err)
+	}
+	if info.Name != "execute_code" {
+		t.Errorf("CodeExec tool Info().Name = %q, want execute_code", info.Name)
+	}
+}
+
 type fakeToolCallingChatModel struct {
 	tools []*schema.ToolInfo
 }

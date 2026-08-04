@@ -470,7 +470,7 @@ class DocMetadataService:
             logging.debug(f"[update_document_metadata] Updating doc_id: {doc_id}, kb_id: {kb_id}, meta_fields: {processed_meta}")
 
             # For Elasticsearch, use efficient partial update
-            if not settings.DOC_ENGINE_INFINITY and not settings.DOC_ENGINE_OCEANBASE:
+            if not settings.DOC_ENGINE_INFINITY and not settings.DOC_ENGINE_OCEANBASE and not settings.DOC_ENGINE_SERENEDB:
                 # Check if index exists first
                 index_exists = settings.docStoreConn.index_exist(index_name, "")
                 if not index_exists:

@@ -192,6 +192,10 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		}
 	}
 
+	// Request token usage in streaming response. DeepSeek only includes
+	// usage when stream_options.include_usage is set.
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
+
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
