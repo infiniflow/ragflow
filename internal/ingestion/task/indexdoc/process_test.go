@@ -53,12 +53,8 @@ func TestProcessChunksForPipeline_SetsDocIDAndKBID(t *testing.T) {
 	if chunks[0]["doc_id"] != "doc-1" {
 		t.Errorf("doc_id = %q, want \"doc-1\"", chunks[0]["doc_id"])
 	}
-	if kbIDs, ok := chunks[0]["kb_id"].([]string); ok {
-		if len(kbIDs) != 1 || kbIDs[0] != "kb-1" {
-			t.Errorf("kb_id = %v, want [\"kb-1\"]", chunks[0]["kb_id"])
-		}
-	} else {
-		t.Errorf("kb_id should be []string, got %T", chunks[0]["kb_id"])
+	if kbID, ok := chunks[0]["kb_id"].(string); !ok || kbID != "kb-1" {
+		t.Errorf("kb_id = %v, want \"kb-1\" (string)", chunks[0]["kb_id"])
 	}
 }
 

@@ -77,7 +77,7 @@ func ProcessChunksForPipeline(
 
 	for _, ck := range chunks {
 		ck["doc_id"] = docID
-		ck["kb_id"] = []string{kbID}
+		ck["kb_id"] = kbID
 		ck["docnm_kwd"] = docName
 		ck["create_time"] = timeStr
 		ck["create_timestamp_flt"] = timestamp
