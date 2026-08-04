@@ -16,9 +16,15 @@ env:
   # - `elasticsearch` (default)
   # - `infinity` (https://github.com/infiniflow/infinity)
   # - `opensearch` (https://github.com/opensearch-project/OpenSearch)
+  # - `gaussdb` GaussDB Centralized / Distributed DocEngine
   # DOC_ENGINE: elasticsearch
   DOC_ENGINE: infinity
   # DOC_ENGINE: opensearch
+  # DOC_ENGINE: gaussdb
+
+  # The business metadata database type.
+  # Available options: mysql (default), postgres, gaussdb, oceanbase.
+  DB_TYPE: mysql
 
   # The version of Elasticsearch.
   STACK_VERSION: "8.11.3"
@@ -30,6 +36,14 @@ env:
   # At least one uppercase letter, one lowercase letter, one digit, and one special character
   OPENSEARCH_PASSWORD: infini_rag_flow_OS_01
 
+  # GaussDB DocEngine connection. The chart does not deploy GaussDB.
+  GAUSSDB_HOST: ""
+  GAUSSDB_PORT: ""
+  GAUSSDB_DATABASE: postgres
+  GAUSSDB_USER: ""
+  GAUSSDB_PASSWORD: ""
+  GAUSSDB_SCHEMA: public
+
   # The password for MySQL
   MYSQL_PASSWORD: infini_rag_flow_helm
   # The database of the MySQL service to use
@@ -40,6 +54,17 @@ env:
   # MYSQL_PORT: "3306"
   # External MySQL user (only when mysql.enabled=false), default is root if omitted
   # MYSQL_USER: "root"
+
+  # External GaussDB metadata database settings, used when DB_TYPE=gaussdb.
+  # These are separate from the GAUSSDB_* DocEngine settings above.
+  # GAUSSDB_METADATA_HOST: gaussdb.example.com
+  # GAUSSDB_METADATA_PORT: "8000"
+  # GAUSSDB_METADATA_USER: rag_flow
+  # GAUSSDB_METADATA_PASSWORD: "<your-gaussdb-password>"
+  # GAUSSDB_METADATA_DBNAME: rag_flow
+  GAUSSDB_METADATA_SCHEMA: public
+  # GAUSSDB_METADATA_MAX_CONNECTIONS: "100"
+  # GAUSSDB_METADATA_STALE_TIMEOUT: "30"
 
   # The username for MinIO.
   MINIO_ROOT_USER: rag_flow
