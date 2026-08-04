@@ -930,7 +930,7 @@ async def run_tree_templates(
         raptor_config = {
             "prompt": raptor_cfg.get("prompt") or "Please write a concise summary of the following texts:\n{cluster_content}",
             "max_token": int(raptor_cfg.get("max_token") or 512),
-            "threshold": float(raptor_cfg.get("threshold") or 0.1),
+            "clustering_threshold": float(raptor_cfg.get("threshold") or 0.1),
             "random_seed": int(raptor_cfg.get("random_seed") or 0),
             "max_cluster": int(raptor_cfg.get("max_cluster") or 64),
             "ext": raptor_cfg.get("ext") or {},

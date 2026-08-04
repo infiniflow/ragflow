@@ -363,13 +363,23 @@ class RaptorConfig(Base):
             default="Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}"
         ),
     ]
-    max_token: Annotated[int, Field(default=512, ge=512, le=2048)]
+    max_token: Annotated[int, Field(default=512, ge=256, le=2048)]
     clustering_threshold: Annotated[float, Field(default=0.3, ge=0.0, le=1.0)]
+    threshold: Annotated[float, Field(default=0.3, ge=0.0, le=1.0)]
     clustering_ratio: Annotated[float, Field(default=0.5, ge=0.0, le=1.0)]
     max_cluster: Annotated[int, Field(default=64, ge=1, le=1024)]
     random_seed: Annotated[int, Field(default=0, ge=0)]
     scope: Annotated[Literal["file", "dataset"], Field(default="file")]
     auto_disable_for_structured_data: Annotated[bool, Field(default=True)]
+    ext: Annotated[dict, Field(default={})]
+
+    @model_validator(mode="after")
+    def sync_threshold_to_clustering(self):
+        """Sync the value of 'threshold' (sent by the frontend) into 'clustering_threshold'
+        (used by backend services) whenever 'threshold' was explicitly set by the client."""
+        if "threshold" in self.model_fields_set and self.threshold != self.clustering_threshold:
+            self.clustering_threshold = self.threshold
+        return self
 
 
 class GraphragConfig(Base):
