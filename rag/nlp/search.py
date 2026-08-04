@@ -563,6 +563,7 @@ class Dealer:
         highlight=False,
         rank_feature: dict | None = {PAGERANK_FLD: 10},
         trace_id=None,
+        must_not: dict | None = None,
     ):
         ranks = {"total": 0, "chunks": [], "doc_aggs": {}}
         if not question:
@@ -587,6 +588,8 @@ class Dealer:
             "similarity": similarity_threshold,
             "available_int": 1,
         }
+        if isinstance(must_not, dict) and must_not:
+            req["must_not"] = must_not
         logging.debug(f"[Search] global_offset={global_offset}, rerank_limit={RERANK_LIMIT}, page_size={page_size}, page={page}")
 
         if isinstance(tenant_ids, str):
