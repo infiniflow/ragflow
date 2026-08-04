@@ -720,8 +720,8 @@ func taskS3SafeBucketName(s string) string {
 }
 
 // taskChunkFieldEqualsStr compares a chunk field to a plain string, tolerating
-// the slice form used internally (e.g. kb_id is []string{kbID} and survives a
-// JSON round-trip as []any{kbID}).
+// either form a producer may emit: a plain string (e.g. kb_id is "kb-1" after
+// T1) or a single-element slice that survives a JSON round-trip as []any{"kb-1"}.
 func taskChunkFieldEqualsStr(v any, want string) bool {
 	switch val := v.(type) {
 	case string:

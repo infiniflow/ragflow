@@ -20,11 +20,10 @@ package elasticsearch
 
 import (
 	"context"
+	"ragflow/internal/common"
 	"testing"
 
-	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
-	"ragflow/internal/server/config"
 )
 
 // TestKGSearchSelectFields verifies that SelectFields overrides default output
@@ -76,7 +75,7 @@ func TestKGSearchSelectFields(t *testing.T) {
 
 // getTestConfig returns a minimal ES config for testing.
 // Reads from environment or uses defaults pointing to localhost.
-func getTestConfig() config.ElasticsearchConfig {
+func getTestConfig() map[string]interface{} {
 	hosts := common.GetEnv(common.EnvESHost)
 	if hosts == "" {
 		hosts = "http://localhost:1200"
@@ -89,9 +88,9 @@ func getTestConfig() config.ElasticsearchConfig {
 	if password == "" {
 		password = "infini_rag_flow"
 	}
-	return config.ElasticsearchConfig{
-		Hosts:    hosts,
-		Username: username,
-		Password: password,
+	return map[string]interface{}{
+		"hosts":    []string{hosts},
+		"username": username,
+		"password": password,
 	}
 }

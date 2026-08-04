@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/server/config"
 )
 
 // TestInsertChunks_ReadBackSuffixedFields is the T0 integration-tier read-back
@@ -37,7 +38,7 @@ func TestInsertChunks_ReadBackSuffixedFields(t *testing.T) {
 		t.Skip("Skipping ES integration test; set ES_TEST=1 to run")
 	}
 
-	engine, err := NewEngine(getTestConfig())
+	engine, err := NewEngine(getESTestConfig())
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
@@ -49,7 +50,7 @@ func TestInsertChunks_ReadBackSuffixedFields(t *testing.T) {
 	chunk := map[string]interface{}{
 		"doc_id":               "doc-1",
 		"id":                   chunkID,
-		"kb_id":                datasetID,
+		"kb_id":                "producer-kb-1",
 		"docnm_kwd":            "sample.md",
 		"content_with_weight":  "hello world",
 		"create_timestamp_flt": float64(123.0),
@@ -76,7 +77,34 @@ func TestInsertChunks_ReadBackSuffixedFields(t *testing.T) {
 	assertStoredField(t, stored, "content_with_weight", "hello world")
 	assertStoredField(t, stored, "create_timestamp_flt", float64(123.0))
 	assertStoredField(t, stored, "page_num_int", float64(1))
+	// The input kb_id ("producer-kb-1") differs from datasetID ("kb-1"); the
+	// stored value must equal datasetID, proving InsertChunks overrides it.
+	assertStoredField(t, stored, "kb_id", datasetID)
 	if v, ok := stored["question_kwd"]; !ok || !reflect.DeepEqual(v, []interface{}{"q1", "q2"}) {
 		t.Errorf("stored question_kwd = %#v, want [q1 q2]", v)
+	}
+}
+
+// getESTestConfig builds an Elasticsearch config for integration tests from
+// the environment, falling back to localhost defaults. It is kept local to this
+// file so the read-back test does not depend on kg_test.go (whose getTestConfig
+// is an unrelated main-branch compile fix tracked separately).
+func getESTestConfig() config.ElasticsearchConfig {
+	hosts := common.GetEnv(common.EnvESHost)
+	if hosts == "" {
+		hosts = "http://localhost:1200"
+	}
+	username := common.GetEnv(common.EnvESUsername)
+	if username == "" {
+		username = "elastic"
+	}
+	password := common.GetEnv(common.EnvESPassword)
+	if password == "" {
+		password = "infini_rag_flow"
+	}
+	return config.ElasticsearchConfig{
+		Hosts:    hosts,
+		Username: username,
+		Password: password,
 	}
 }

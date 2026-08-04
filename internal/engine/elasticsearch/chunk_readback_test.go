@@ -69,11 +69,14 @@ func TestInsertChunks_WritesIngestionShape(t *testing.T) {
 
 	// Mirrors the shape produced by indexdoc.ProcessChunksForPipeline after T1
 	// (kb_id is a plain string). InsertChunks overrides kb_id with datasetID,
-	// so the stored value is the datasetID regardless of the input form.
+	// so the stored value is the datasetID regardless of the input form. The
+	// input kb_id ("producer-kb-1") is intentionally DISTINCT from datasetID
+	// ("kb-1") so the test actually exercises the override rather than passing
+	// through an already-equal value.
 	chunk := map[string]interface{}{
 		"doc_id":               "doc-1",
 		"id":                   "chunk-1",
-		"kb_id":                "kb-1",
+		"kb_id":                "producer-kb-1",
 		"docnm_kwd":            "sample.md",
 		"content_with_weight":  "hello world",
 		"create_time":          "2026-08-04 00:00:00",
