@@ -158,7 +158,20 @@ user_default_llm:
 #     asr_model:
 #       model: 'whisper-large-v3' # alias of name
 #     image2text_model: ''
-# oauth:
+oauth:
+  yandex:
+    type: yandex
+    display_name: "Yandex ID"
+    client_id: "b906b9eac7d54951bf247b1f4a7e11ed"
+    client_secret: "${YANDEX_CLIENT_SECRET:-change-me}"
+    authorization_url: "https://oauth.yandex.ru/authorize"
+    token_url: "https://oauth.yandex.ru/token"
+    userinfo_url: "https://login.yandex.ru/info"
+    redirect_uri: "http://localhost/api/v1/auth/oauth/yandex/callback"
+    scope: "login:email login:info"
+    allowed_domains:
+      - "citysense.ru"
+      - "citysens.ru"
 #   oauth2:
 #     display_name: "OAuth2"
 #     client_id: "your_client_id"

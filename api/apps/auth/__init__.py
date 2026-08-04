@@ -17,9 +17,15 @@
 from .oauth import OAuthClient
 from .oidc import OIDCClient
 from .github import GithubOAuthClient
+from .yandex import YandexOAuthClient
 
 
-CLIENT_TYPES = {"oauth2": OAuthClient, "oidc": OIDCClient, "github": GithubOAuthClient}
+CLIENT_TYPES = {
+    "oauth2": OAuthClient,
+    "oidc": OIDCClient,
+    "github": GithubOAuthClient,
+    "yandex": YandexOAuthClient,
+}
 
 
 def get_auth_client(config) -> OAuthClient:
