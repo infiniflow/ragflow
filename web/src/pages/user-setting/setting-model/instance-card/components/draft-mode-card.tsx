@@ -73,6 +73,7 @@ export function DraftModeCard({
         onSubmit={() => undefined}
         defaultValues={formDefaultValues}
         labelClassName="font-normal"
+        resetOptions={{ keepDirtyValues: true }}
       />
 
       {providerName === LLMFactory.AIMLAPI && (

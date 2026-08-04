@@ -77,6 +77,7 @@ class RAGTools:
         kbs: list[Knowledgebase] | None = None,
         tav: Tavily | None = None,
         meta_data_filter: dict | None = None,
+        doc_scope: List[str] | None = None,
         user_defined_prompts: dict | None = None,
         do_refer: bool | None = True,
         thinking_mode: str = "medium",
@@ -107,6 +108,7 @@ class RAGTools:
 
         self.tav = tav
         self.meta_data_filter = meta_data_filter
+        self.doc_scope = list(dict.fromkeys(doc_scope)) if doc_scope is not None else None
         self.user_defined_prompts = user_defined_prompts or {}
         self.kbinfos = {"chunks": [], "doc_aggs": []}
         self.do_refer = do_refer
@@ -139,6 +141,14 @@ class RAGTools:
 
     def has_llm(self) -> bool:
         return self.chat_mdl is not None
+
+    def scoped_doc_ids(self, doc_scope: List[str] | None = None) -> List[str] | None:
+        if self.doc_scope is None:
+            return doc_scope
+        if not doc_scope:
+            return list(self.doc_scope)
+        allowed = set(self.doc_scope)
+        return [doc_id for doc_id in doc_scope if doc_id in allowed]
 
     async def _fit_messages(self, system: str, user: str) -> list:
         """Fit system+user messages into the model's context window."""
@@ -369,6 +379,9 @@ class RAGTools:
             keywords = ",".join(keywords)
         logging.info(f"@retrieve: {question}@{keywords}")
 
+        doc_scope = self.scoped_doc_ids(doc_scope)
+        if doc_scope == ["-999"]:
+            return {"chunks": [], "doc_aggs": []}
         if doc_scope:
             candidates = [d for d in doc_scope if isinstance(d, str)]
             known = await thread_pool_exec(self._filter_known_doc_ids, candidates)
@@ -376,6 +389,8 @@ class RAGTools:
             if valid:
                 doc_scope = valid
             else:
+                if self.doc_scope is not None:
+                    return {"chunks": [], "doc_aggs": []}
                 if candidates:
                     logging.warning("retrieve: every supplied doc ID was unknown; falling back to unfiltered retrieval")
                 doc_scope = None
@@ -434,7 +449,7 @@ class RAGTools:
         sql_kb_ids = [kb.id for kb in self.sql_kbs]
         tenant_id = self.sql_kbs[0].tenant_id
         try:
-            ans = await use_sql(question, self.field_map, tenant_id, self.chat_mdl, quota=True, kb_ids=sql_kb_ids)
+            ans = await use_sql(question, self.field_map, tenant_id, self.chat_mdl, quota=True, kb_ids=sql_kb_ids, doc_ids=self.scoped_doc_ids())
         except Exception as e:
             logging.exception(f"structured_retrieve: use_sql failed: {e}")
             return {"answer": "", "chunks": [], "doc_aggs": []}
@@ -490,6 +505,8 @@ class RAGTools:
     async def fetch_full_document(self, doc_id: str) -> dict[str, list]:
         """Fetch a whole document's chunks in reading order (raw kbinfos)."""
         if not self.kb_ids:
+            return {"chunks": [], "doc_aggs": []}
+        if self.doc_scope is not None and doc_id not in self.doc_scope:
             return {"chunks": [], "doc_aggs": []}
         resolved = await thread_pool_exec(self._resolve_doc_tenant, doc_id)
         if resolved is None:
