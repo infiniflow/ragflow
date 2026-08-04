@@ -27,7 +27,7 @@ from langfuse import propagate_attributes
 from api.db.db_models import LLM
 from api.db.services.common_service import CommonService
 from api.db.services.tenant_llm_service import LLM4Tenant
-from common.token_utils import num_tokens_from_string, record_run_token_usage, langfuse_run_attrs
+from common.token_utils import langfuse_run_attrs, num_tokens_from_string, record_run_token_usage, truncate
 
 
 class LLMService(CommonService):
@@ -144,7 +144,14 @@ class LLMBundle(LLM4Tenant):
             token_size = num_tokens_from_string(text)
             if token_size > self.max_length * 0.95:
                 target_len = int(self.max_length * 0.95)
-                safe_texts.append(text[:target_len])
+                logging.debug(
+                    "LLMBundle.encode truncating input: index=%d model=%s original_tokens=%d target_tokens=%d",
+                    idx,
+                    self.model_config["llm_name"],
+                    token_size,
+                    target_len,
+                )
+                safe_texts.append(truncate(text, target_len))
             else:
                 safe_texts.append(text)
 
