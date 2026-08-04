@@ -13,6 +13,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+import asyncio
 import logging
 import json
 import os
@@ -143,7 +144,7 @@ async def create_dataset(tenant_id: str, req: dict):
     return True, response_data
 
 
-async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = False):
+def _delete_datasets_sync(tenant_id: str, ids: list = None, delete_all: bool = False):
     """
     Delete datasets.
 
@@ -218,6 +219,10 @@ async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = F
         return False, error_message
 
     return True, {"success_count": success_count, "errors": errors[:5]}
+
+
+async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = False):
+    return await asyncio.to_thread(_delete_datasets_sync, tenant_id, ids, delete_all)
 
 
 def get_dataset(dataset_id: str, tenant_id: str):
