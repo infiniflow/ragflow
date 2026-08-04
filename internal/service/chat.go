@@ -322,7 +322,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	applyCreatePromptDefaults(req)
 	filterCreateChatPersistedFields(req)
 
-	const maxCreateNameRetries = 1000
+	const maxCreateNameRetries = 8
 	for attempt := 0; attempt < maxCreateNameRetries; attempt++ {
 		var duplicateCheckErr error
 		name, err = common.DuplicateName(func(name string, tid string) bool {
@@ -360,7 +360,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		}
 		return response, common.CodeSuccess, nil
 	}
-	return nil, common.CodeServerError, fmt.Errorf("failed to create chat with a unique name after %d attempts", maxCreateNameRetries)
+	return nil, common.CodeDataError, errors.New("duplicated chat name in creating chat")
 }
 
 func validateCreateChatName(value interface{}) (string, error) {

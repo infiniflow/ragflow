@@ -569,7 +569,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 	// no-op when graph.nodes is already non-empty.
 	req.DSL = dslpkg.NormalizeForCanvas(req.DSL)
 
-	const maxCreateNameRetries = 1000
+	const maxCreateNameRetries = 8
 	for attempt := 0; attempt < maxCreateNameRetries; attempt++ {
 		var duplicateCheckErr error
 		candidateTitle, err := common.DuplicateName(func(title string, tid string) bool {
@@ -607,7 +607,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		req.Title = &titlePtr
 		return row, common.CodeSuccess, nil
 	}
-	return nil, common.CodeServerError, fmt.Errorf("failed to create agent with a unique title after %d attempts", maxCreateNameRetries)
+	return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
 }
 
 func agentTitleAlreadyExistsError(title string) error {
