@@ -15,7 +15,6 @@
 #
 from io import BytesIO
 from datetime import datetime
-import asyncio
 import logging
 import json
 import os
@@ -72,7 +71,7 @@ from api.utils.validation_utils import (
 from common import settings
 from common.constants import ParserType, RetCode, TaskStatus, SANDBOX_ARTIFACT_BUCKET
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
-from common.misc_utils import get_uuid, thread_pool_exec
+from common.misc_utils import get_uuid, thread_pool_exec, thread_pool_exec_long_time
 from api.utils.file_utils import filename_type, thumbnail
 from api.utils.file_response import apply_preview_file_response_headers
 from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url, apply_safe_file_response_headers
@@ -1204,7 +1203,7 @@ async def delete_documents(tenant_id, dataset_id):
             doc_ids = unique_doc_ids
 
         # Delete documents using existing FileService.delete_docs
-        errors = await asyncio.to_thread(FileService.delete_docs, doc_ids, tenant_id)
+        errors = await thread_pool_exec_long_time(FileService.delete_docs, doc_ids, tenant_id)
 
         if errors:
             return get_error_data_result(message=str(errors))

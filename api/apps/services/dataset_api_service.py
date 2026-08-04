@@ -32,7 +32,7 @@ from api.db.services.tenant_model_service import TenantModelService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from common.constants import FileSource, StatusEnum
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
-from common.misc_utils import thread_pool_exec
+from common.misc_utils import thread_pool_exec, thread_pool_exec_long_time
 from rag.advanced_rag.knowlege_compile.wiki import WIKI_PAGE_COMPILE_KWD
 
 # KB-wide structure-graph merge index types. Each (re)builds the ``dataset_graph``
@@ -143,7 +143,7 @@ async def create_dataset(tenant_id: str, req: dict):
     return True, response_data
 
 
-async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = False):
+def _delete_datasets_sync(tenant_id: str, ids: list = None, delete_all: bool = False):
     """
     Delete datasets.
 
@@ -218,6 +218,10 @@ async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = F
         return False, error_message
 
     return True, {"success_count": success_count, "errors": errors[:5]}
+
+
+async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = False):
+    return await thread_pool_exec_long_time(_delete_datasets_sync, tenant_id, ids, delete_all)
 
 
 def get_dataset(dataset_id: str, tenant_id: str):
