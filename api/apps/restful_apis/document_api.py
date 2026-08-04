@@ -15,6 +15,7 @@
 #
 from io import BytesIO
 from datetime import datetime
+import asyncio
 import logging
 import json
 import os
@@ -1203,7 +1204,7 @@ async def delete_documents(tenant_id, dataset_id):
             doc_ids = unique_doc_ids
 
         # Delete documents using existing FileService.delete_docs
-        errors = await thread_pool_exec(FileService.delete_docs, doc_ids, tenant_id)
+        errors = await asyncio.to_thread(FileService.delete_docs, doc_ids, tenant_id)
 
         if errors:
             return get_error_data_result(message=str(errors))
