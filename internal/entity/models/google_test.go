@@ -682,6 +682,45 @@ func TestGoogleToolCallsConvertsFunctionCalls(t *testing.T) {
 	}
 }
 
+// TestGoogleUsageFromMetadataIncludesToolUsePromptTokens verifies that
+// ToolUsePromptTokenCount from the genai SDK is folded into
+// PromptTokens, that it is treated as non-zero by the presence check
+// (so the helper does not return nil), and that TotalTokenCount is
+// used as the authoritative total when it is present.
+func TestGoogleUsageFromMetadataIncludesToolUsePromptTokens(t *testing.T) {
+	m := &genai.GenerateContentResponseUsageMetadata{
+		PromptTokenCount:        10,
+		CandidatesTokenCount:    4,
+		ToolUsePromptTokenCount: 5,
+		ThoughtsTokenCount:      1,
+		TotalTokenCount:         20,
+	}
+	got := googleUsageFromMetadata(m)
+	if got == nil {
+		t.Fatal("googleUsageFromMetadata returned nil, want populated TokenUsage")
+	}
+	if got.PromptTokens != 15 {
+		t.Errorf("PromptTokens=%d, want 15 (10 prompt + 5 tool-use prompt)", got.PromptTokens)
+	}
+	if got.CompletionTokens != 5 {
+		t.Errorf("CompletionTokens=%d, want 5 (4 candidates + 1 thoughts)", got.CompletionTokens)
+	}
+	if got.TotalTokens != 20 {
+		t.Errorf("TotalTokens=%d, want 20 (SDK authoritative total)", got.TotalTokens)
+	}
+
+	// When TotalTokenCount is absent, the helper must fall back to
+	// prompt + completion so callers still get a consistent total.
+	m.TotalTokenCount = 0
+	got = googleUsageFromMetadata(m)
+	if got == nil {
+		t.Fatal("googleUsageFromMetadata returned nil for non-zero counts")
+	}
+	if got.TotalTokens != 20 {
+		t.Errorf("TotalTokens=%d, want 20 (15 prompt + 5 completion)", got.TotalTokens)
+	}
+}
+
 func stringPtr(value string) *string {
 	return &value
 }
