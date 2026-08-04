@@ -45,6 +45,38 @@ func testFileService() *FileService {
 	}
 }
 
+func TestDeploymentUploadMaxBytes(t *testing.T) {
+	t.Setenv("MAX_CONTENT_LENGTH", "")
+	if got := DeploymentUploadMaxBytes(); got != defaultDeploymentUploadMaxBytes {
+		t.Fatalf("default limit = %d, want %d", got, defaultDeploymentUploadMaxBytes)
+	}
+
+	t.Setenv("MAX_CONTENT_LENGTH", "12345")
+	if got := DeploymentUploadMaxBytes(); got != 12345 {
+		t.Fatalf("configured limit = %d, want 12345", got)
+	}
+
+	t.Setenv("MAX_CONTENT_LENGTH", "invalid")
+	if got := DeploymentUploadMaxBytes(); got != defaultDeploymentUploadMaxBytes {
+		t.Fatalf("invalid limit = %d, want default %d", got, defaultDeploymentUploadMaxBytes)
+	}
+}
+
+func TestReadDeploymentUploadDataLimit(t *testing.T) {
+	data, err := readDeploymentUploadData(strings.NewReader("hello"), 5)
+	if err != nil {
+		t.Fatalf("readDeploymentUploadData exact limit: %v", err)
+	}
+	if string(data) != "hello" {
+		t.Fatalf("data = %q, want hello", string(data))
+	}
+
+	_, err = readDeploymentUploadData(strings.NewReader("hello!"), 5)
+	if err == nil || !strings.Contains(err.Error(), "deployment upload limit of 5 bytes") {
+		t.Fatalf("error = %v, want deployment upload limit", err)
+	}
+}
+
 func (f *fakeStorage) Type() string { return "fake_storage" }
 
 func (f *fakeStorage) Health(ctx context.Context) bool {

@@ -96,6 +96,7 @@
                                             {
                                                 "component_name": "TavilySearch",
                                                 "name": "TavilySearch",
+                                                "id": "TavilySearch:FairToolsLive",
                                                 "params": {
                                                     "api_key": "",
                                                     "days": 7,
@@ -170,6 +171,7 @@
                                             {
                                                 "component_name": "TavilyExtract",
                                                 "name": "TavilyExtract",
+                                                "id": "TavilyExtract:SlickYearsCough",
                                                 "params": {
                                                     "api_key": ""
                                                 }
@@ -489,6 +491,7 @@
                                     {
                                         "component_name": "TavilySearch",
                                         "name": "TavilySearch",
+                                        "id": "TavilySearch:FairToolsLive",
                                         "params": {
                                             "api_key": "",
                                             "days": 7,
@@ -578,6 +581,7 @@
                                     {
                                         "component_name": "TavilyExtract",
                                         "name": "TavilyExtract",
+                                        "id": "TavilyExtract:SlickYearsCough",
                                         "params": {
                                             "api_key": ""
                                         }

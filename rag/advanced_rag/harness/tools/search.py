@@ -217,6 +217,7 @@ async def hybrid_search(tools, query: str, kb_ids: list[str] | None = None, top_
         aggs=True,
         highlight=False,
         doc_ids=doc_scope,
+        must_not={"exists": "compile_kwd"},  # plain retrieval = document chunks only; compiled products have their own tools
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
     if keywords:
@@ -253,6 +254,7 @@ async def vector_search(tools, query: str, kb_ids: list[str] | None = None, top_
         aggs=False,
         highlight=False,
         doc_ids=doc_scope,
+        must_not={"exists": "compile_kwd"},
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
     if keywords:
@@ -280,6 +282,7 @@ async def bm25_search(tools, query: str, kb_ids: list[str] | None = None, top_n:
         aggs=False,
         highlight=False,
         doc_ids=doc_scope,
+        must_not={"exists": "compile_kwd"},
     )
     kbinfos = _normalize(kbinfos, tools.tenant_ids)
     if keywords:

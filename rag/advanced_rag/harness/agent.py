@@ -155,6 +155,7 @@ async def research_agent_loop(
         compilation_map=compilation_map,
         context=context,
         has_routed_scope=bool(getattr(pipeline, "_routed_docs", None)),
+        web_enabled=bool(getattr(tools, "has_web", lambda: False)()),
     )
 
     # Clone so binding tools never leaks onto the shared chat model.
