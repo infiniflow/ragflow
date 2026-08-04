@@ -101,6 +101,7 @@ export interface FormFieldConfig {
    * fields like api_key / instance_name / base_url / group_id.
    */
   autoComplete?: string;
+  fieldConfig?: Record<string, any>;
 }
 
 // Component props interface
@@ -449,9 +450,11 @@ export const RenderField = ({
               : fieldProps;
             return (
               <Textarea
+                {...field.fieldConfig}
                 {...finalFieldProps}
                 placeholder={field.placeholder}
                 disabled={field.disabled}
+                // resize="vertical"
                 // className="resize-none"
               />
             );
@@ -470,7 +473,6 @@ export const RenderField = ({
               ? {
                   ...fieldProps,
                   onChange: (value: string) => {
-                    console.log('select value', value);
                     if (fieldProps.onChange) {
                       fieldProps.onChange(value);
                     }

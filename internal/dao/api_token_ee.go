@@ -15,3 +15,9 @@
 //
 
 package dao
+
+type EnterpriseAPITokenDAO struct{}
+
+func NewEnterpriseAPITokenDAO() *EnterpriseAPITokenDAO {
+	return &EnterpriseAPITokenDAO{}
+}

@@ -15,3 +15,9 @@
 //
 
 package dao
+
+type EnterpriseUserCanvasDAO struct{}
+
+func NewEnterpriseUserCanvasDAO() *EnterpriseUserCanvasDAO {
+	return &EnterpriseUserCanvasDAO{}
+}

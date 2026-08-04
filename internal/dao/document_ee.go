@@ -15,3 +15,9 @@
 //
 
 package dao
+
+type EnterpriseDocumentDAO struct{}
+
+func NewEnterpriseDocumentDAO() *EnterpriseDocumentDAO {
+	return &EnterpriseDocumentDAO{}
+}

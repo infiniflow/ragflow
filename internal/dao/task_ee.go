@@ -15,3 +15,9 @@
 //
 
 package dao
+
+type EnterpriseTaskDAO struct{}
+
+func NewEnterpriseTaskDAO() *EnterpriseTaskDAO {
+	return &EnterpriseTaskDAO{}
+}

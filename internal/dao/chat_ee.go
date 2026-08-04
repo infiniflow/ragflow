@@ -15,3 +15,9 @@
 //
 
 package dao
+
+type EnterpriseChatDAO struct{}
+
+func NewEnterpriseChatDAO() *EnterpriseChatDAO {
+	return &EnterpriseChatDAO{}
+}
