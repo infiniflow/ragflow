@@ -33,11 +33,13 @@ import (
 )
 
 // ResultSink is an OPTIONAL capability a ProgressSink may implement to receive
-// the debug-run result DSL. The pipeline executor probes for it via a type
-// assertion, so the ProgressSink contract stays unchanged and non-debug
-// (DB-backed) sinks simply ignore it — keeping the coupling one-directional.
+// the debug-run result DSL plus the raw pipeline run output (output["state"]
+// [<id>] is each component's outputs map). The pipeline executor probes for it
+// via a type assertion, so the ProgressSink contract stays unchanged and
+// non-debug (DB-backed) sinks simply ignore it — keeping the coupling
+// one-directional.
 type ResultSink interface {
-	SetResult(dsl map[string]any)
+	SetResult(dsl map[string]any, output map[string]any)
 }
 
 // outputFormats is the priority order used to pick a component's payload key,

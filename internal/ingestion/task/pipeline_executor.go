@@ -495,7 +495,7 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	// contract is unchanged, keeping the coupling one-directional.
 	if rs, ok := s.progressSink.(ResultSink); ok {
 		if resultDSL, e := BuildDebugResultDSL(dsl, output); e == nil {
-			rs.SetResult(resultDSL)
+			rs.SetResult(resultDSL, output)
 		}
 	}
 
