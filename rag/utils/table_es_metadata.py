@@ -210,7 +210,7 @@ def aggregate_table_doc_metadata(chunks: list, task: dict) -> dict:
                 e,
                 exc_info=True,
             )
-    if not fm and not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE):
+    if not fm and not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB):
         logging.debug(f"[TABLE_META_DEBUG] field_map empty on task snapshot — will use ES key probe on chunk dicts; kb_parser_config keys={list((task.get('kb_parser_config') or {}).keys())}")
     logging.debug(f"[TABLE_META_DEBUG] meta_cols={meta_cols}, field_map entries={len(fm)}, infinity={settings.DOC_ENGINE_INFINITY}, oceanbase={settings.DOC_ENGINE_OCEANBASE}")
     sample_ck = next((c for c in chunks if isinstance(c, dict)), None)
@@ -219,7 +219,7 @@ def aggregate_table_doc_metadata(chunks: list, task: dict) -> dict:
         logging.debug(f"[TABLE_META_DEBUG] first chunk non-vector keys (sample): {sk}")
 
     es_col_keys: dict[str, tuple[str | None, str]] = {}
-    if not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE):
+    if not (settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB):
         for col in meta_cols:
             tk, src = _resolve_es_chunk_field_key(col, fm, sample_ck)
             es_col_keys[col] = (tk, src)
@@ -230,7 +230,7 @@ def aggregate_table_doc_metadata(chunks: list, task: dict) -> dict:
     for i, ck in enumerate(chunks):
         if not isinstance(ck, dict):
             continue
-        if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE:
+        if settings.DOC_ENGINE_INFINITY or settings.DOC_ENGINE_OCEANBASE or settings.DOC_ENGINE_SERENEDB:
             cd = ck.get("chunk_data")
             if not isinstance(cd, dict):
                 continue

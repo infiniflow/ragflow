@@ -32,6 +32,7 @@ type EngineType string
 const (
 	EngineElasticsearch EngineType = "elasticsearch"
 	EngineInfinity      EngineType = "infinity"
+	EngineSereneDB      EngineType = "serenedb"
 )
 
 // DocEngine document storage engine interface
