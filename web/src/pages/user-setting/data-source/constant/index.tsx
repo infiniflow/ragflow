@@ -14,6 +14,7 @@ import { confluenceConstant } from './confluence-constant';
 import { jiraConstant } from './jira-constant';
 import { S3Constant } from './s3-constant';
 import { seafileConstant } from './seafile-constant';
+import { YandexDiskConstant } from './yandex-disk-constant';
 
 export enum DataSourceKey {
   CONFLUENCE = 'confluence',
@@ -48,6 +49,7 @@ export enum DataSourceKey {
   OUTLOOK = 'outlook',
   SALESFORCE = 'salesforce',
   AZURE_BLOB = 'azure_blob',
+  YANDEX_DISK = 'yandex_disk',
   TEAMS = 'teams',
   SLACK = 'slack',
   SHAREPOINT = 'sharepoint',
@@ -96,6 +98,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
     syncDeletedFiles: true,
   },
   [DataSourceKey.OCI_STORAGE]: {
+    syncDeletedFiles: true,
+  },
+  [DataSourceKey.YANDEX_DISK]: {
     syncDeletedFiles: true,
   },
   [DataSourceKey.NOTION]: {
@@ -205,6 +210,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'S3',
       description: t(`setting.${DataSourceKey.S3}Description`),
       icon: <SvgIcon name={'data-source/s3'} width={38} />,
+    },
+    [DataSourceKey.YANDEX_DISK]: {
+      name: 'Yandex Disk',
+      description: t(`setting.${DataSourceKey.YANDEX_DISK}Description`),
+      icon: <SvgIcon name={'data-source/yandex-disk'} width={38} />,
     },
     [DataSourceKey.NOTION]: {
       name: 'Notion',
@@ -830,6 +840,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
     },
   ],
   [DataSourceKey.S3]: S3Constant(t),
+  [DataSourceKey.YANDEX_DISK]: YandexDiskConstant(t),
   [DataSourceKey.NOTION]: [
     {
       label: t('setting.dataSourceFieldNotionIntegrationToken'),
@@ -1982,6 +1993,16 @@ export const DataSourceFormDefaultValues = {
         aws_role_arn: '',
         endpoint_url: '',
         addressing_style: 'virtual',
+      },
+    },
+  },
+  [DataSourceKey.YANDEX_DISK]: {
+    name: '',
+    source: DataSourceKey.YANDEX_DISK,
+    config: {
+      path: '/',
+      credentials: {
+        oauth_token: '',
       },
     },
   },

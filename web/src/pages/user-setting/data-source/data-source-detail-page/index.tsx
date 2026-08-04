@@ -233,7 +233,8 @@ const SourceDetailPage = () => {
           </div>
           <div className="max-w-[1200px] flex justify-end gap-2">
             {(detail?.source === DataSourceKey.REST_API ||
-              detail?.source === DataSourceKey.BIGQUERY) && (
+              detail?.source === DataSourceKey.BIGQUERY ||
+              detail?.source === DataSourceKey.YANDEX_DISK) && (
               <Button
                 type="button"
                 variant="outline"

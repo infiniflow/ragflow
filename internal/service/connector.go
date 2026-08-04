@@ -353,9 +353,9 @@ func (s *ConnectorService) accessible(ctx context.Context, connectorID, userID s
 // Equivalent to Python's test_connector. Per-connector credential validation
 // lives in the Python common.data_source package and is not yet available in
 // Go; for now this verifies access, that the connector exists, that the source
-// is REST_API (the only source Python currently tests), and that credentials
-// are present in the stored config. It returns ErrConnectorTestUnsupported for
-// other sources.
+// is one Python can actually test (REST API or Yandex Disk), and that the
+// required credentials are present in the stored config. It returns
+// ErrConnectorTestUnsupported for other sources.
 func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userID string) error {
 	ok, err := s.accessible(ctx, connectorID, userID)
 	if err != nil && errors.Is(err, ErrConnectorNotFound) {
@@ -373,7 +373,7 @@ func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userI
 		return ErrConnectorNotFound
 	}
 
-	if conn.Source != "rest_api" {
+	if conn.Source != "rest_api" && conn.Source != "yandex_disk" {
 		return ErrConnectorTestUnsupported
 	}
 
@@ -384,6 +384,11 @@ func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userI
 	creds, ok := config["credentials"].(map[string]interface{})
 	if !ok || len(creds) == 0 {
 		return fmt.Errorf("connector credentials are missing")
+	}
+	if conn.Source == "yandex_disk" {
+		if token, ok := creds["oauth_token"].(string); !ok || strings.TrimSpace(token) == "" {
+			return fmt.Errorf("Yandex Disk OAuth token is missing")
+		}
 	}
 	return nil
 }

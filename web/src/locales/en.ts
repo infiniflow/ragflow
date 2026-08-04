@@ -1569,6 +1569,12 @@ Example: Virtual Hosted Style`,
         'Integrate your Confluence workspace to search documentation.',
       s3Description:
         'Connect to your AWS S3 bucket to import and sync stored files.',
+      yandex_diskDescription:
+        'Connect to your Yandex Disk to import and sync stored files.',
+      yandexDiskTokenTip:
+        'Paste the OAuth token for the Yandex Disk API. Issue one at https://oauth.yandex.ru/ (scopes: cloud_api:disk.read, cloud_api:disk.info).',
+      yandexDiskPathTip:
+        'Optional folder path on Yandex Disk to sync. Leave empty to sync the whole Disk. Example: /Documents/Reports',
       google_cloud_storageDescription:
         'Connect your Google Cloud Storage bucket to import and sync files.',
       r2Description:

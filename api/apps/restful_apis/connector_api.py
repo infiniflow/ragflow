@@ -192,7 +192,12 @@ async def test_connector(connector_id):
     if not ConnectorService.accessible(connector_id, current_user.id):
         return _connector_auth_error(connector_id, current_user.id)
 
-    from common.data_source.exceptions import ConnectorMissingCredentialError, ConnectorValidationError
+    from common.data_source.exceptions import (
+        ConnectorMissingCredentialError,
+        ConnectorValidationError,
+        CredentialExpiredError,
+        InsufficientPermissionsError,
+    )
 
     ok, conn = ConnectorService.get_by_id(connector_id)
     if not ok:
@@ -266,6 +271,32 @@ async def test_connector(connector_id):
             return get_json_result(
                 code=RetCode.SERVER_ERROR,
                 message="BigQuery connector validation failed, please check logs.",
+                data=False,
+            )
+
+        return get_json_result(data=True)
+
+    if conn.source == DocumentSource.YANDEX_DISK:
+        from common.data_source.yandex_disk_connector import YandexDiskConnector
+
+        def _validate_yandex_disk():
+            connector = YandexDiskConnector(path=config.get("path", "/"))
+            connector.load_credentials(credentials)
+            connector.validate_connector_settings()
+
+        try:
+            await asyncio.to_thread(_validate_yandex_disk)
+        except (ConnectorValidationError, ConnectorMissingCredentialError, CredentialExpiredError, InsufficientPermissionsError) as exc:
+            return get_json_result(
+                code=RetCode.DATA_ERROR,
+                message=str(exc),
+                data=False,
+            )
+        except Exception as exc:
+            logging.exception("Yandex Disk connector validation failed: %s", exc)
+            return get_json_result(
+                code=RetCode.SERVER_ERROR,
+                message="Yandex Disk connector validation failed, please check logs.",
                 data=False,
             )
 

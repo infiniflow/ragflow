@@ -1207,6 +1207,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         '连接公开的 RSS 或 Atom feed，并将 feed 条目同步到知识库。',
       confluenceDescription: '连接你的 Confluence 工作区以搜索文档内容。',
       s3Description: ' 连接你的 AWS S3 存储桶以导入和同步文件。',
+      yandex_diskDescription: '连接你的 Yandex Disk 以导入和同步存储的文件。',
+      yandexDiskTokenTip:
+        '粘贴 Yandex Disk API 的 OAuth 令牌。可在 https://oauth.yandex.ru/ 获取（scope: cloud_api:disk.read、cloud_api:disk.info）。',
+      yandexDiskPathTip:
+        '要同步的 Yandex Disk 文件夹路径（可选）。留空则同步整个磁盘。示例：/Documents/Reports',
       google_cloud_storageDescription:
         '连接你的 Google Cloud Storage 存储桶以导入和同步文件。',
       discordDescription: ' 连接你的 Discord 服务器以访问和分析聊天数据。',
