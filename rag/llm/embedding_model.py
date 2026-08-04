@@ -973,9 +973,41 @@ class SILICONFLOWEmbed(Base):
     def _clean_batch(self, batch):
         if self.model_name in ["BAAI/bge-large-zh-v1.5", "BAAI/bge-large-en-v1.5"]:
             # limit 512, 340 is almost safe
-            return [" " if not text.strip() else truncate(text, 256) for text in batch]
+            limit = 256
+            cleaned = []
+            for index, text in enumerate(batch):
+                if not text.strip():
+                    cleaned.append(" ")
+                    continue
+                original_tokens = num_tokens_from_string(text)
+                if original_tokens > limit:
+                    logger.debug(
+                        "Embedding input truncated: model=%s input_index=%d original_tokens=%d target_tokens=%d",
+                        self.model_name,
+                        index,
+                        original_tokens,
+                        limit,
+                    )
+                cleaned.append(truncate(text, limit))
+            return cleaned
         if self.model_name in ["BAAI/bge-m3", "Pro/BAAI/bge-m3"]:
-            return [" " if not text.strip() else truncate(text, 4096) for text in batch]
+            limit = 4096
+            cleaned = []
+            for index, text in enumerate(batch):
+                if not text.strip():
+                    cleaned.append(" ")
+                    continue
+                original_tokens = num_tokens_from_string(text)
+                if original_tokens > limit:
+                    logger.debug(
+                        "Embedding input truncated: model=%s input_index=%d original_tokens=%d target_tokens=%d",
+                        self.model_name,
+                        index,
+                        original_tokens,
+                        limit,
+                    )
+                cleaned.append(truncate(text, limit))
+            return cleaned
         return [" " if not text.strip() else text for text in batch]
 
     def _call(self, batch):

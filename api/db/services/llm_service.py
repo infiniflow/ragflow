@@ -144,6 +144,13 @@ class LLMBundle(LLM4Tenant):
             token_size = num_tokens_from_string(text)
             if token_size > self.max_length * 0.95:
                 target_len = int(self.max_length * 0.95)
+                logging.debug(
+                    "LLMBundle.encode truncating input: index=%d model=%s original_tokens=%d target_tokens=%d",
+                    idx,
+                    self.model_config["llm_name"],
+                    token_size,
+                    target_len,
+                )
                 safe_texts.append(truncate(text, target_len))
             else:
                 safe_texts.append(text)

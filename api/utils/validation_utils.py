@@ -379,29 +379,26 @@ class RaptorConfig(Base):
             return value
 
         normalized = dict(value)
-        legacy_ext = normalized.pop("ext", {})
+        changed_fields = []
+        legacy_ext = normalized.pop("ext", None)
+        if legacy_ext is not None:
+            changed_fields.append("ext")
         if isinstance(legacy_ext, dict) and normalized.get("clustering_threshold") is None:
             if "clustering_threshold" in legacy_ext:
                 normalized["clustering_threshold"] = legacy_ext["clustering_threshold"]
+                changed_fields.append("ext.clustering_threshold")
 
         for field in ("threshold", "clustering_method", "tree_builder"):
-            normalized.pop(field, None)
-        if isinstance(normalized.get("max_token"), (int, float)) and normalized["max_token"] < 512:
+            if field in normalized:
+                normalized.pop(field)
+                changed_fields.append(field)
+        max_token = normalized.get("max_token")
+        if isinstance(max_token, (int, float)) and not isinstance(max_token, bool) and max_token < 512:
             normalized["max_token"] = 512
+            changed_fields.append("max_token")
+        if changed_fields:
+            logging.debug("RaptorConfig normalized legacy fields: %s", sorted(changed_fields))
         return normalized
-
-    @model_validator(mode="before")
-    @classmethod
-    def ignore_legacy_fields(cls, value: Any) -> Any:
-        """Accept old RAPTOR settings without retaining them."""
-        if not isinstance(value, dict):
-            return value
-        value = dict(value)
-        for field in ("ext", "threshold", "clustering_method", "tree_builder"):
-            value.pop(field, None)
-        if isinstance(value.get("max_token"), (int, float)) and value["max_token"] < 512:
-            value["max_token"] = 512
-        return value
 
 
 class GraphragConfig(Base):

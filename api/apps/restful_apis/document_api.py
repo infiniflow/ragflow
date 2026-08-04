@@ -88,10 +88,23 @@ def _normalize_legacy_raptor_config(req: dict) -> None:
     if not isinstance(raptor, dict):
         return
 
-    for field in ("ext", "threshold", "clustering_method", "tree_builder"):
-        raptor.pop(field, None)
-    if isinstance(raptor.get("max_token"), (int, float)) and raptor["max_token"] < 512:
+    normalized_fields = []
+    legacy_ext = raptor.pop("ext", None)
+    if legacy_ext is not None:
+        normalized_fields.append("ext")
+        if isinstance(legacy_ext, dict) and "clustering_threshold" in legacy_ext and "clustering_threshold" not in raptor:
+            raptor["clustering_threshold"] = legacy_ext["clustering_threshold"]
+            normalized_fields.append("ext.clustering_threshold")
+    for field in ("threshold", "clustering_method", "tree_builder"):
+        if field in raptor:
+            raptor.pop(field)
+            normalized_fields.append(field)
+    max_token = raptor.get("max_token")
+    if isinstance(max_token, (int, float)) and not isinstance(max_token, bool) and max_token < 512:
         raptor["max_token"] = 512
+        normalized_fields.append("max_token")
+    if normalized_fields:
+        logging.debug("Document RAPTOR config normalized legacy fields: %s", sorted(normalized_fields))
 
 
 def _normalize_parser_config_compilation_template_group_ids(parser_config) -> bool:
