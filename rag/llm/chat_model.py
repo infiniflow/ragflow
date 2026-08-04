@@ -27,7 +27,6 @@ from urllib.parse import urljoin
 import json_repair
 from json.decoder import JSONDecodeError
 import litellm
-import openai
 from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
@@ -1020,6 +1019,7 @@ class MistralChat(Base):
         return ans, total_token_count_from_response(response)
 
     def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        from mistralai.client.errors import MistralError
         gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -1041,7 +1041,7 @@ class MistralChat(Base):
                         ans += LENGTH_NOTIFICATION_EN
                 yield ans
 
-        except openai.APIError as e:
+        except MistralError as e:
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
