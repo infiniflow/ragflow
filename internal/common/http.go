@@ -28,7 +28,7 @@ type response struct {
 	Code    ErrorCode   `json:"code"`
 	Data    interface{} `json:"data"`
 	Message interface{} `json:"message"`
-	Total   interface{} `json:"total"`
+	Total   interface{} `json:"total,omitempty"`
 }
 
 // errorResponse error response
