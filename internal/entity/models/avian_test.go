@@ -124,7 +124,7 @@ func TestAvianChatHappyPath(t *testing.T) {
 		"deepseek/deepseek-v3.2",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
+		&ChatConfig{MaxOutput: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
 		nil,
 	)
 	if err != nil {

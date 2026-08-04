@@ -97,7 +97,7 @@ func TestTogetherAIChatHappyPath(t *testing.T) {
 		"openai/gpt-oss-20b",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
+		&ChatConfig{MaxOutput: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
 		nil,
 	)
 	if err != nil {

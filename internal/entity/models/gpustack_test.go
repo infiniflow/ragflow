@@ -192,7 +192,7 @@ func TestGPUStackChatForwardsDocumentedFields(t *testing.T) {
 		"qwen3-8b",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
+		&ChatConfig{MaxOutput: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
 		nil,
 	)
 	if err != nil {

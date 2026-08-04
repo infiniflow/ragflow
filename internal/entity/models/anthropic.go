@@ -92,9 +92,8 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.baseModel.URLSuffix.Chat, "/"))
 
 	reqBody := map[string]interface{}{
-		"model":      modelName,
-		"messages":   apiMessages,
-		"max_tokens": 1024,
+		"model":    modelName,
+		"messages": apiMessages,
 	}
 	if systemPrompt != "" {
 		reqBody["system"] = systemPrompt
@@ -132,8 +131,10 @@ func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *C
 	if chatModelConfig == nil {
 		return
 	}
-	if chatModelConfig.ContentLength != nil {
-		reqBody["max_tokens"] = *chatModelConfig.ContentLength
+	if chatModelConfig.MaxOutput != nil {
+		reqBody["max_tokens"] = *chatModelConfig.MaxOutput
+	} else {
+		reqBody["max_tokens"] = 1024 // default when not configured
 	}
 	if chatModelConfig.Temperature != nil {
 		reqBody["temperature"] = *chatModelConfig.Temperature
@@ -479,10 +480,9 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.baseModel.URLSuffix.Chat, "/"))
 
 	reqBody := map[string]interface{}{
-		"model":      modelName,
-		"messages":   apiMessages,
-		"max_tokens": 1024,
-		"stream":     true,
+		"model":    modelName,
+		"messages": apiMessages,
+		"stream":   true,
 	}
 	if systemPrompt != "" {
 		reqBody["system"] = systemPrompt

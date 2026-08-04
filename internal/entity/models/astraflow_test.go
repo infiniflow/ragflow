@@ -126,7 +126,7 @@ func TestAstraflowChatHappyPath(t *testing.T) {
 		"claude-opus-4-7",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp},
+		&ChatConfig{MaxOutput: &mt, Temperature: &temp},
 		nil,
 	)
 	if err != nil {

@@ -451,8 +451,8 @@ func (m *ModelProviderService) reconcileNvidiaInstanceModels(
 
 		for _, remote := range normalized {
 			maxTokens := 8192
-			if remote.ContentLength != nil && *remote.ContentLength > 0 {
-				maxTokens = *remote.ContentLength
+			if remote.MaxOutput != nil && *remote.MaxOutput > 0 {
+				maxTokens = *remote.MaxOutput
 			}
 			modelType := int(entity.ModelTypeFromStrings(remote.ModelTypes))
 
@@ -3484,8 +3484,8 @@ func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID st
 
 	maxTokens := 0
 	if mi, _ := dao.GetModelProviderManager().GetModelByName(providerEntity.ProviderName, modelEntity.ModelName); mi != nil {
-		if mi.ContentLength != nil {
-			maxTokens = *mi.ContentLength
+		if mi.MaxOutput != nil {
+			maxTokens = *mi.MaxOutput
 		}
 	}
 	maxTokens, err = maxTokensFromTenantModelExtra(modelEntity, maxTokens)
@@ -3880,10 +3880,10 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 			apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
 			maxTokens := 0
 			if mi, _ := dao.GetModelProviderManager().GetModelByName("Builtin", pureModelName); mi != nil {
-				if mi.ContentLength == nil {
+				if mi.MaxOutput == nil {
 					maxTokens = 0
 				} else {
-					maxTokens = *mi.ContentLength
+					maxTokens = *mi.MaxOutput
 				}
 			}
 			return builtinDriver, pureModelName, apiConfig, maxTokens, nil
@@ -3942,10 +3942,10 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		}
 		maxTokens := 0
 		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil {
-			if mi.ContentLength == nil {
+			if mi.MaxOutput == nil {
 				maxTokens = 0
 			} else {
-				maxTokens = *mi.ContentLength
+				maxTokens = *mi.MaxOutput
 			}
 		}
 		maxTokens, driverErr = maxTokensFromTenantModelExtra(modelObj, maxTokens)
@@ -4000,8 +4000,8 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 	maxTokens := 0
-	if llmInfo.ContentLength != nil {
-		maxTokens = *llmInfo.ContentLength
+	if llmInfo.MaxOutput != nil {
+		maxTokens = *llmInfo.MaxOutput
 	}
 	return driver, llmInfo.Name, apiConfig, maxTokens, nil
 }
@@ -4067,10 +4067,10 @@ func (m *ModelProviderService) getModelConfig(ctx context.Context, tenantID, com
 	modelInfo, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 	maxTokens := 0
 	if err == nil && modelInfo != nil {
-		if modelInfo.ContentLength == nil {
+		if modelInfo.MaxOutput == nil {
 			maxTokens = 0
 		} else {
-			maxTokens = *modelInfo.ContentLength
+			maxTokens = *modelInfo.MaxOutput
 		}
 	}
 

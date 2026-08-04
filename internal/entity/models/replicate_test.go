@@ -129,7 +129,7 @@ func TestReplicateOfficialChatHappyPath(t *testing.T) {
 		"meta/meta-llama-3-70b-instruct",
 		[]Message{{Role: "system", Content: "be helpful"}, {Role: "user", Content: "hello"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &maxTokens, Stop: &stop},
+		&ChatConfig{MaxOutput: &maxTokens, Stop: &stop},
 		nil,
 	)
 	if err != nil {

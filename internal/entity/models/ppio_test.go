@@ -144,7 +144,7 @@ func TestPPIOChatHappyPath(t *testing.T) {
 		"deepseek/deepseek-r1",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
+		&ChatConfig{MaxOutput: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
 		usage,
 	)
 	if err != nil {

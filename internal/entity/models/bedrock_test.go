@@ -202,7 +202,7 @@ func TestMapChatConfigToInferenceForwardsAllFields(t *testing.T) {
 	topP := 0.9
 	stop := []string{"END"}
 	inf := mapChatConfigToInference(&ChatConfig{
-		MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop,
+		MaxOutput: &mt, Temperature: &temp, TopP: &topP, Stop: &stop,
 	})
 	if inf == nil {
 		t.Fatal("expected non-nil inferenceConfig")

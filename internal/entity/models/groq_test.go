@@ -161,7 +161,7 @@ func TestGroqChatHappyPath(t *testing.T) {
 		"llama-3.3-70b-versatile",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temperature, TopP: &topP, Stop: &stop, Effort: &effort},
+		&ChatConfig{MaxOutput: &maxTokens, Temperature: &temperature, TopP: &topP, Stop: &stop, Effort: &effort},
 		nil,
 	)
 	if err != nil {

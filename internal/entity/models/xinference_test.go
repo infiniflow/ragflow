@@ -85,7 +85,7 @@ func TestXinferenceChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 	resp, err := x.ChatWithMessages(ctx, "qwen2.5-instruct",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{},
-		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temp}, nil)
+		&ChatConfig{MaxOutput: &maxTokens, Temperature: &temp}, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}

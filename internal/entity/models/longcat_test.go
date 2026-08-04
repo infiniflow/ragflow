@@ -326,7 +326,7 @@ func TestLongCatChatDropsUndocumentedFields(t *testing.T) {
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
 		// Deliberately pass Stop/Effort to prove they are filtered out.
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
+		&ChatConfig{MaxOutput: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
 		nil,
 	)
 	if err != nil {

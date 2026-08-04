@@ -130,7 +130,7 @@ func TestHunyuanChatHappyPath(t *testing.T) {
 		"hunyuan-pro",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp},
+		&ChatConfig{MaxOutput: &mt, Temperature: &temp},
 		nil,
 	)
 	if err != nil {

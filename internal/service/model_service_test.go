@@ -282,8 +282,8 @@ func TestReconcileNvidiaInstanceModelsAddsUpdatesAndDeletes(t *testing.T) {
 	maxTokens := 131072
 	maxDimension := 2048
 	remote := []modelModule.ListModelResponse{
-		{Name: "nvidia/keep", MaxTokens: &maxTokens, ModelTypes: []string{"chat", "vision"}},
-		{Name: "nvidia/new-embed", MaxTokens: ptrService(8192), MaxDimension: &maxDimension, Dimensions: []int{1024, 2048}, ModelTypes: []string{"embedding"}},
+		{Name: "nvidia/keep", MaxOutput: &maxTokens, ModelTypes: []string{"chat", "vision"}},
+		{Name: "nvidia/new-embed", MaxOutput: ptrService(8192), MaxDimension: &maxDimension, Dimensions: []int{1024, 2048}, ModelTypes: []string{"embedding"}},
 	}
 
 	err := NewModelProviderService().reconcileNvidiaInstanceModels(context.Background(), db, provider, instance, remote)
@@ -292,7 +292,7 @@ func TestReconcileNvidiaInstanceModelsAddsUpdatesAndDeletes(t *testing.T) {
 	}
 
 	var got []*entity.TenantModel
-	if err := db.Order("model_name").Find(&got).Error; err != nil {
+	if err = db.Order("model_name").Find(&got).Error; err != nil {
 		t.Fatalf("list models: %v", err)
 	}
 	if len(got) != 2 || got[0].ModelName != "nvidia/keep" || got[1].ModelName != "nvidia/new-embed" {
@@ -305,14 +305,14 @@ func TestReconcileNvidiaInstanceModelsAddsUpdatesAndDeletes(t *testing.T) {
 		t.Fatalf("retained model type = %d", got[0].ModelType)
 	}
 	var keepExtra map[string]interface{}
-	if err := json.Unmarshal([]byte(got[0].Extra), &keepExtra); err != nil {
+	if err = json.Unmarshal([]byte(got[0].Extra), &keepExtra); err != nil {
 		t.Fatalf("decode retained extra: %v", err)
 	}
 	if keepExtra["custom"] != "preserved" || keepExtra["verify"] != "success" || int(keepExtra["max_tokens"].(float64)) != maxTokens {
 		t.Fatalf("retained extra = %#v", keepExtra)
 	}
 	var newExtra map[string]interface{}
-	if err := json.Unmarshal([]byte(got[1].Extra), &newExtra); err != nil {
+	if err = json.Unmarshal([]byte(got[1].Extra), &newExtra); err != nil {
 		t.Fatalf("decode new extra: %v", err)
 	}
 	if newExtra["verify"] != entity.ModelVerifyUnknown || int(newExtra["max_dimension"].(float64)) != maxDimension {
@@ -336,7 +336,7 @@ func TestReconcileNvidiaInstanceModelsRejectsEmptyDiscoveryWithoutMutation(t *te
 		t.Fatal("reconcileNvidiaInstanceModels() error = nil, want empty discovery error")
 	}
 	var count int64
-	if err := db.Model(&entity.TenantModel{}).Where("id = ?", existing.ID).Count(&count).Error; err != nil {
+	if err = db.Model(&entity.TenantModel{}).Where("id = ?", existing.ID).Count(&count).Error; err != nil {
 		t.Fatalf("count retained model: %v", err)
 	}
 	if count != 1 {
@@ -373,7 +373,7 @@ func TestReconcileNvidiaInstanceModelsRollsBackPartialRefresh(t *testing.T) {
 	}
 
 	var got []*entity.TenantModel
-	if err := db.Order("model_name").Find(&got).Error; err != nil {
+	if err = db.Order("model_name").Find(&got).Error; err != nil {
 		t.Fatalf("list models: %v", err)
 	}
 	if len(got) != 1 || got[0].ID != existing.ID {

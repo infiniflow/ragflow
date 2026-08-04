@@ -350,7 +350,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	language := globals.GlobalOrInput(ctx, inputs, "lang", "English")
 
 	if contains(c.param.SearchMethod, "full_text") {
-		if err := tokenizeChunks(chunks, titleStem, language); err != nil {
+		if err = tokenizeChunks(chunks, titleStem, language); err != nil {
 			return nil, err
 		}
 	}
@@ -373,7 +373,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		out["embedding_token_consumption"] = tokenCount
 		out["chunks"] = schema.ChunkDocsToMaps(chunks)
 	}
-	if err := validateTokenizerOutputs(chunks, c.param.SearchMethod, c.param.Fields, kbID); err != nil {
+	if err = validateTokenizerOutputs(chunks, c.param.SearchMethod, c.param.Fields, kbID); err != nil {
 		return nil, err
 	}
 

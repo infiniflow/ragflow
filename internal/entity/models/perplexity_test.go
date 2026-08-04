@@ -97,7 +97,7 @@ func TestPerplexityChatHappyPath(t *testing.T) {
 		"sonar-reasoning-pro",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
+		&ChatConfig{MaxOutput: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort},
 		nil,
 	)
 	if err != nil {

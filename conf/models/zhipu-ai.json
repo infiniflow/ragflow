@@ -20,8 +20,8 @@
   "models": [
     {
       "name": "glm-5.2",
-      "input_max_tokens": 1048576,
-      "output_max_tokens": 131072,
+      "content_length": 1048576,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -35,8 +35,8 @@
     },
     {
       "name": "glm-5.1",
-      "input_max_tokens": 204800,
-      "output_max_tokens": 131072,
+      "content_length": 204800,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -50,8 +50,8 @@
     },
     {
       "name": "glm-5",
-      "input_max_tokens": 204800,
-      "output_max_tokens": 131072,
+      "content_length": 204800,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -65,8 +65,8 @@
     },
     {
       "name": "glm-5-turbo",
-      "input_max_tokens": 204800,
-      "output_max_tokens": 131072,
+      "content_length": 204800,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -80,8 +80,8 @@
     },
     {
       "name": "glm-5v-turbo",
-      "input_max_tokens": 204800,
-      "output_max_tokens": 131072,
+      "content_length": 204800,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -95,8 +95,8 @@
     },
     {
       "name": "glm-4.7",
-      "input_max_tokens": 204800,
-      "output_max_tokens": 131072,
+      "content_length": 204800,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -110,8 +110,8 @@
     },
     {
       "name": "glm-4.7-flashx",
-      "input_max_tokens": 204800,
-      "output_max_tokens": 131072,
+      "content_length": 204800,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -125,8 +125,8 @@
     },
     {
       "name": "glm-4.6",
-      "input_max_tokens": 204800,
-      "output_max_tokens": 131072,
+      "content_length": 204800,
+      "max_output": 131072,
       "model_types": [
         "chat"
       ],
@@ -140,8 +140,8 @@
     },
     {
       "name": "glm-4.6v-Flash",
-      "input_max_tokens": 204800,
-      "output_max_tokens": 131072,
+      "content_length": 204800,
+      "max_output": 131072,
       "model_types": [
         "chat",
         "vision"
@@ -156,8 +156,8 @@
     },
     {
       "name": "glm-4.5",
-      "input_max_tokens": 131072,
-      "output_max_tokens": 98304,
+      "content_length": 131072,
+      "max_output": 98304,
       "model_types": [
         "chat"
       ],
@@ -171,8 +171,8 @@
     },
     {
       "name": "glm-4.5-x",
-      "input_max_tokens": 131072,
-      "output_max_tokens": 98304,
+      "content_length": 131072,
+      "max_output": 98304,
       "model_types": [
         "chat"
       ],
@@ -186,8 +186,8 @@
     },
     {
       "name": "glm-4.5-air",
-      "input_max_tokens": 131072,
-      "output_max_tokens": 98304,
+      "content_length": 131072,
+      "max_output": 98304,
       "model_types": [
         "chat"
       ],
@@ -201,8 +201,8 @@
     },
     {
       "name": "glm-4.5-airx",
-      "input_max_tokens": 131072,
-      "output_max_tokens": 98304,
+      "content_length": 131072,
+      "max_output": 98304,
       "model_types": [
         "chat"
       ],
@@ -216,8 +216,8 @@
     },
     {
       "name": "glm-4.5-flash",
-      "input_max_tokens": 131072,
-      "output_max_tokens": 98304,
+      "content_length": 131072,
+      "max_output": 98304,
       "model_types": [
         "chat"
       ],
@@ -231,8 +231,8 @@
     },
     {
       "name": "glm-4.5v",
-      "input_max_tokens": 65536,
-      "output_max_tokens": 16384,
+      "content_length": 65536,
+      "max_output": 16384,
       "model_types": [
         "vision"
       ],
@@ -246,8 +246,8 @@
     },
     {
       "name": "glm-4-plus",
-      "input_max_tokens": 131072,
-      "output_max_tokens": 32768,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -257,8 +257,8 @@
     },
     {
       "name": "glm-4-0520",
-      "input_max_tokens": 131072,
-      "output_max_tokens": 32768,
+      "content_length": 131072,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -268,8 +268,8 @@
     },
     {
       "name": "glm-4",
-      "input_max_tokens": 131072,
-      "output_max_tokens": 4096,
+      "content_length": 131072,
+      "max_output": 4096,
       "model_types": [
         "chat"
       ],
@@ -279,8 +279,8 @@
     },
     {
       "name": "glm-4-airx",
-      "input_max_tokens": 8192,
-      "output_max_tokens": 4096,
+      "content_length": 8192,
+      "max_output": 4096,
       "model_types": [
         "chat"
       ],
@@ -290,8 +290,8 @@
     },
     {
       "name": "glm-4-air",
-      "input_max_tokens": 8192,
-      "output_max_tokens": 4096,
+      "content_length": 8192,
+      "max_output": 4096,
       "model_types": [
         "chat"
       ],
@@ -301,8 +301,8 @@
     },
     {
       "name": "glm-4-flash",
-      "input_max_tokens": 131072,
-      "output_max_tokens": 4096,
+      "content_length": 131072,
+      "max_output": 4096,
       "model_types": [
         "chat"
       ],
@@ -312,8 +312,8 @@
     },
     {
       "name": "glm-4-flashx",
-      "input_max_tokens": 131072,
-      "output_max_tokens": 16384,
+      "content_length": 131072,
+      "max_output": 16384,
       "model_types": [
         "chat"
       ],
@@ -323,8 +323,8 @@
     },
     {
       "name": "glm-4-long",
-      "input_max_tokens": 1048576,
-      "output_max_tokens": 4096,
+      "content_length": 1048576,
+      "max_output": 4096,
       "model_types": [
         "chat"
       ],
@@ -334,16 +334,16 @@
     },
     {
       "name": "glm-4v",
-      "input_max_tokens": 16384,
-      "output_max_tokens": 1024,
+      "content_length": 16384,
+      "max_output": 1024,
       "model_types": [
         "vision"
       ]
     },
     {
       "name": "glm-4-9b",
-      "input_max_tokens": 8192,
-      "output_max_tokens": 1024,
+      "content_length": 8192,
+      "max_output": 1024,
       "model_types": [
         "chat"
       ],

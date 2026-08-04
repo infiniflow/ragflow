@@ -97,7 +97,7 @@ func (a *AzureOpenAIModel) ChatWithMessages(ctx context.Context, modelName strin
 
 	if chatModelConfig != nil {
 		if chatModelConfig.ContentLength != nil {
-			reqBody["max_tokens"] = *chatModelConfig.ContentLength
+			reqBody["max_tokens"] = *chatModelConfig.MaxOutput
 		}
 		if chatModelConfig.Temperature != nil {
 			reqBody["temperature"] = *chatModelConfig.Temperature
@@ -188,7 +188,7 @@ func (a *AzureOpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
 		if chatModelConfig.ContentLength != nil {
-			reqBody["max_tokens"] = *chatModelConfig.ContentLength
+			reqBody["max_tokens"] = *chatModelConfig.MaxOutput
 		}
 		if chatModelConfig.Temperature != nil {
 			reqBody["temperature"] = *chatModelConfig.Temperature

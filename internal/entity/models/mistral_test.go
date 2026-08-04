@@ -137,7 +137,7 @@ func TestMistralChatPropagatesConfig(t *testing.T) {
 	stop := []string{"END"}
 	_, err := m.ChatWithMessages(ctx, "mistral-large-latest", []Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
+		&ChatConfig{MaxOutput: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
 		nil,
 	)
 	if err != nil {

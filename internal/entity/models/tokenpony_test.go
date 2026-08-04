@@ -126,7 +126,7 @@ func TestTokenPonyChatHappyPath(t *testing.T) {
 		"qwen3-32b",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp},
+		&ChatConfig{MaxOutput: &mt, Temperature: &temp},
 		nil,
 	)
 	if err != nil {

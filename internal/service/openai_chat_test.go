@@ -188,8 +188,8 @@ func TestOpenAI_MergeThenBuild_AllGenerationParamsReachChatConfig(t *testing.T) 
 	if cfg.TopP == nil || *cfg.TopP != 0.9 {
 		t.Fatalf("ChatConfig.TopP: expected 0.9, got %v", cfg.TopP)
 	}
-	if cfg.MaxTokens == nil || *cfg.MaxTokens != 256 {
-		t.Fatalf("ChatConfig.MaxTokens: expected 256, got %v", cfg.MaxTokens)
+	if cfg.MaxOutput == nil || *cfg.MaxOutput != 256 {
+		t.Fatalf("ChatConfig.MaxOutput: expected 256, got %v", cfg.MaxOutput)
 	}
 }
 

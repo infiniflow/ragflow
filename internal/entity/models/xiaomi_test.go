@@ -117,7 +117,7 @@ func TestXiaomiChatHappyPath(t *testing.T) {
 		"mimo-v2.5-pro",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &maxTokens, Thinking: &thinking}, nil,
+		&ChatConfig{MaxOutput: &maxTokens, Thinking: &thinking}, nil,
 	)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)

@@ -161,7 +161,7 @@ func TestJinaChatPropagatesConfig(t *testing.T) {
 	stop := []string{"END"}
 	_, err := j.ChatWithMessages(ctx, "jina-vlm", []Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temperature, TopP: &topP, Stop: &stop},
+		&ChatConfig{MaxOutput: &maxTokens, Temperature: &temperature, TopP: &topP, Stop: &stop},
 		nil,
 	)
 	if err != nil {

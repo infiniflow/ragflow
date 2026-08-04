@@ -179,7 +179,7 @@ func TestAnthropicChatMapsSystemConfigAndImages(t *testing.T) {
 			}},
 		},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temperature, TopP: &topP, Stop: &stop},
+		&ChatConfig{MaxOutput: &maxTokens, Temperature: &temperature, TopP: &topP, Stop: &stop},
 		&common.ModelUsage{},
 	)
 	if err != nil {

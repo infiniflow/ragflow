@@ -146,7 +146,7 @@ func TestCometAPIChatPropagatesConfig(t *testing.T) {
 	stop := []string{"END"}
 	_, err := m.ChatWithMessages(ctx, "gpt-5", []Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
+		&ChatConfig{MaxOutput: &mt, Temperature: &temp, TopP: &topP, Stop: &stop},
 		nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)

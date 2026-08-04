@@ -115,7 +115,7 @@ func TestModelScopeChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 	resp, err := m.ChatWithMessages(ctx, "Qwen/Qwen2.5-7B-Instruct",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{},
-		&ChatConfig{MaxTokens: &maxTokens, Temperature: &temp}, nil)
+		&ChatConfig{MaxOutput: &maxTokens, Temperature: &temp}, nil)
 	if err != nil {
 		t.Fatalf("ChatWithMessages: %v", err)
 	}

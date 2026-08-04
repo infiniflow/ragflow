@@ -197,7 +197,7 @@ func TestUpstageRequestBodyMatchesSolarAPIShape(t *testing.T) {
 	_, err := u.ChatWithMessages(ctx, "solar-pro2",
 		[]Message{{Role: "user", Content: "x"}},
 		&APIConfig{ApiKey: &apiKey},
-		&ChatConfig{MaxTokens: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort}, nil)
+		&ChatConfig{MaxOutput: &mt, Temperature: &temp, TopP: &topP, Stop: &stop, Effort: &effort}, nil)
 	if err != nil {
 		t.Fatalf("Chat: %v", err)
 	}
