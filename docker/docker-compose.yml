@@ -64,9 +64,6 @@ services:
       # - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
-      - ../api/apps/auth/yandex.py:/ragflow/api/apps/auth/yandex.py
-      - ../api/apps/auth/__init__.py:/ragflow/api/apps/auth/__init__.py
-      - ../api/apps/restful_apis/user_api.py:/ragflow/api/apps/restful_apis/user_api.py
     env_file: .env
     networks:
       - ragflow
@@ -119,9 +116,6 @@ services:
       # - ./nginx/nginx.conf:/etc/nginx/nginx.conf
       - ./service_conf.yaml.template:/ragflow/conf/service_conf.yaml.template
       - ./entrypoint.sh:/ragflow/entrypoint.sh
-      - ../api/apps/auth/yandex.py:/ragflow/api/apps/auth/yandex.py
-      - ../api/apps/auth/__init__.py:/ragflow/api/apps/auth/__init__.py
-      - ../api/apps/restful_apis/user_api.py:/ragflow/api/apps/restful_apis/user_api.py
     env_file: .env
     networks:
       - ragflow
