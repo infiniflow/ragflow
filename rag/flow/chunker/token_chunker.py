@@ -369,21 +369,55 @@ class TokenChunker(ProcessBase):
                     return
                 # Join buffered text items with "\n" so adjacent item text is not
                 # glued together (e.g. "hello" + "world" must not become "helloworld").
-                # PDF coordinates are carried on the combined chunk.
-                combined_text = "\n".join(text_buffer)
-                combined_pos = []
-                for pos in text_buffer_pos:
-                    combined_pos.extend(pos or [])
-                split_texts = _split_text_by_pattern(combined_text, delimiter_pattern)
-                for text in split_texts:
+                # The delimiter is then applied to the combined text; a segment may
+                # span across item boundaries (the "\n" glue is not itself a
+                # delimiter), so each segment carries only the PDF positions of the
+                # buffered item(s) whose text contributed to it -- never the union of
+                # every item (which previously leaked page-N coordinates into
+                # page-M chunks and made all segments share one preview image).
+                parts = []
+                item_ranges = []  # (start, end) of each buffered item in combined_text
+                offset = 0
+                for text in text_buffer:
+                    start = offset
+                    parts.append(text)
+                    offset += len(text)
+                    item_ranges.append((start, offset))
+                    parts.append("\n")
+                    offset += 1
+                combined_text = "".join(parts[:-1])  # drop the trailing glue
+
+                if delimiter_pattern:
+                    raw = re.split(r"(%s)" % delimiter_pattern, combined_text, flags=re.DOTALL)
+                    segments = []  # (text, start, end) within combined_text
+                    pos = 0
+                    for i in range(0, len(raw), 2):
+                        seg = raw[i]
+                        seg_start = pos
+                        seg_end = pos + len(seg)
+                        if seg:
+                            segments.append((seg, seg_start, seg_end))
+                        pos = seg_end
+                        if i + 1 < len(raw):
+                            pos += len(raw[i + 1])
+                else:
+                    segments = [(combined_text, 0, len(combined_text))]
+
+                for text, seg_start, seg_end in segments:
                     if not text.strip():
                         continue
+                    seg_pos = []
+                    for (istart, iend), item_pos in zip(item_ranges, text_buffer_pos):
+                        # A segment overlaps an item when their character ranges
+                        # intersect; collect that item's coordinates.
+                        if seg_start < iend and istart < seg_end:
+                            seg_pos.extend(item_pos or [])
                     chunks.append(
                         {
                             "text": text,
                             "doc_type_kwd": "text",
                             "ck_type": "text",
-                            PDF_POSITIONS_KEY: deepcopy(combined_pos),
+                            PDF_POSITIONS_KEY: deepcopy(seg_pos),
                             "tk_nums": num_tokens_from_string(text),
                         }
                     )
