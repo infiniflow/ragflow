@@ -167,7 +167,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	vtWeight := vtWeightOrig
 	qb := GetQueryBuilder()
 	useInfinity := engine.GetEngineType() == "infinity"
-	useOceanBase := false // TODO: add OceanBase detection when supported
+	useOceanBase := engine.IsOceanBaseFamily(s.docEngine.GetType())
 
 	// For ES path: call GetScores() for second-pass KNN to get clean cosine similarity
 	// For Infinity path: use _score directly (scores already normalized during fusion)
@@ -212,13 +212,19 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		term_similarity = sim
 		vector_similarity = sim
 	} else if useOceanBase {
-		// OceanBase: extract vectors and compute locally (not implemented)
-		sim = make([]float64, len(searchResult.IDs))
-		for i := range searchResult.IDs {
-			sim[i] = 0.0
-		}
-		term_similarity = sim
-		vector_similarity = sim
+		// OceanBase returns the selected vector column, so reranking can
+		// reproduce the Python connector's local cosine calculation.
+		sim, term_similarity, vector_similarity = RerankStandard(
+			searchResult.Chunks,
+			nil,
+			searchResult.QueryVector,
+			req.Question,
+			tkWeight,
+			vtWeight,
+			"content_ltks",
+			qb,
+			*req.RankFeature,
+		)
 	} else {
 		// ES PATH: Two-pass KNN approach for clean cosine similarity scores
 		//
@@ -665,7 +671,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			// Build source with vector column for ES
 			searchSrc := make([]string, len(searchRequest.SelectFields))
 			copy(searchSrc, searchRequest.SelectFields)
-			if engine.GetEngineType() == "elasticsearch" {
+			if engine.GetEngineType() == "elasticsearch" || engine.IsOceanBaseFamily(engine.GetEngineType()) {
 				searchSrc = append(searchSrc, matchDense.VectorColumnName)
 			}
 

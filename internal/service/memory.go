@@ -814,16 +814,16 @@ func sameStringSet(a, b []string) bool {
 //	err := service.DeleteMemory(ctx, "user123", "memory456")
 func (s *MemoryService) DeleteMemory(ctx context.Context, userID, memoryID string) error {
 	// Verify the caller has access to this memory
-	if _, err := s.requireMemoryAccess(ctx, userID, memoryID); err != nil {
+	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
+	if err != nil {
 		return err
 	}
 
-	// TODO: Delete associated message index - Implementation pending MessageService
-	// messageService := NewMessageService()
-	// hasIndex, _ := messageService.HasIndex(memory.TenantID, memoryID)
-	// if hasIndex {
-	//     messageService.DeleteMessage(nil, memory.TenantID, memoryID)
-	// }
+	if s.docEngine != nil && engine.IsOceanBaseFamily(s.docEngine.GetType()) {
+		if err := s.docEngine.DropChunkStore(ctx, memoryIndexName(memory.TenantID), memoryID); err != nil {
+			return fmt.Errorf("delete memory messages: %w", err)
+		}
+	}
 
 	// Delete memory record
 	if err := s.memoryDAO.DeleteByID(ctx, dao.DB, memoryID); err != nil {
@@ -850,8 +850,12 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 	forgetTime := now.Format("2006-01-02 15:04:05")
 	messageDocID := fmt.Sprintf("%s_%d", memoryID, messageID)
 	updates := map[string]interface{}{
-		"forget_at":     forgetTime,
-		"forget_at_flt": now.UnixMilli(),
+		"forget_at": forgetTime,
+	}
+	// Only Infinity stores the numeric companion field. OceanBase/SeekDB use
+	// the legacy memory schema, which has forget_at but no forget_at_flt.
+	if s.docEngine.GetType() == "infinity" {
+		updates["forget_at_flt"] = now.UnixMilli()
 	}
 	condition := map[string]interface{}{
 		"id": messageDocID,

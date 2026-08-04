@@ -17,12 +17,35 @@
 package config
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/spf13/viper"
 )
 
 type DocEngineConfig struct {
-	ES       ElasticsearchConfig `mapstructure:"es"`
-	Infinity InfinityConfig      `mapstructure:"infinity"`
+	ES        ElasticsearchConfig `mapstructure:"es"`
+	Infinity  InfinityConfig      `mapstructure:"infinity"`
+	OceanBase OceanBaseConfig     `mapstructure:"oceanbase"`
+	SeekDB    OceanBaseConfig     `mapstructure:"seekdb"`
+}
+
+// OceanBaseConfig mirrors the existing oceanbase/seekdb service_conf.yaml
+// structure used by the Python connector.
+type OceanBaseConfig struct {
+	Scheme string                    `mapstructure:"scheme"`
+	Config OceanBaseConnectionConfig `mapstructure:"config"`
+}
+
+// OceanBaseConnectionConfig contains the MySQL-protocol connection settings
+// used by both OceanBase and SeekDB document engines.
+type OceanBaseConnectionConfig struct {
+	DBName         string `mapstructure:"db_name"`
+	User           string `mapstructure:"user"`
+	Password       string `mapstructure:"password"`
+	Host           string `mapstructure:"host"`
+	Port           int    `mapstructure:"port"`
+	MaxConnections int    `mapstructure:"max_connections"`
 }
 
 // ElasticsearchConfig Elasticsearch configuration
@@ -44,7 +67,107 @@ type InfinityConfig struct {
 func (c *Config) ParseDocEngineConfig(v *viper.Viper) error {
 	c.parseInfinityConfig(v)
 	c.parseElasticsearchConfig(v)
+	c.parseOceanBaseConfig(v, "oceanbase", &c.docEngine.OceanBase)
+	c.parseOceanBaseConfig(v, "seekdb", &c.docEngine.SeekDB)
 	return nil
+}
+
+func (c *Config) parseOceanBaseConfig(v *viper.Viper, key string, target *OceanBaseConfig) {
+	target.Scheme = "oceanbase"
+	target.Config = OceanBaseConnectionConfig{
+		DBName:         "test",
+		User:           "root@test",
+		Password:       "infini_rag_flow",
+		Host:           "localhost",
+		Port:           2881,
+		MaxConnections: 300,
+	}
+	if key == "seekdb" {
+		target.Config.DBName = "ragflow_doc"
+		target.Config.User = "root"
+	}
+
+	if !v.IsSet(key) {
+		return
+	}
+	sub := v.Sub(key)
+	if sub == nil {
+		return
+	}
+	if sub.IsSet("scheme") {
+		target.Scheme = sub.GetString("scheme")
+	}
+	connection := sub.Sub("config")
+	if connection == nil {
+		return
+	}
+	if connection.IsSet("db_name") {
+		target.Config.DBName = connection.GetString("db_name")
+	}
+	if connection.IsSet("user") {
+		target.Config.User = connection.GetString("user")
+	}
+	if connection.IsSet("password") {
+		target.Config.Password = connection.GetString("password")
+	}
+	if connection.IsSet("host") {
+		target.Config.Host = connection.GetString("host")
+	}
+	if connection.IsSet("port") {
+		target.Config.Port = connection.GetInt("port")
+	}
+	if connection.IsSet("max_connections") {
+		target.Config.MaxConnections = connection.GetInt("max_connections")
+	}
+}
+
+// ResolveOceanBaseConnection returns the effective existing configuration for
+// an OceanBase-family document engine. With scheme=mysql, Python takes the
+// endpoint and credentials from the mysql section while retaining db_name from
+// the nested oceanbase/seekdb config; Go intentionally follows that contract.
+func (c *Config) ResolveOceanBaseConnection(engineType string) (OceanBaseConnectionConfig, error) {
+	var configured OceanBaseConfig
+	switch strings.ToLower(engineType) {
+	case "oceanbase":
+		configured = c.docEngine.OceanBase
+	case "seekdb":
+		configured = c.docEngine.SeekDB
+	default:
+		return OceanBaseConnectionConfig{}, fmt.Errorf("not an OceanBase-family engine: %s", engineType)
+	}
+
+	resolved := configured.Config
+	if strings.EqualFold(configured.Scheme, "mysql") {
+		mysqlConfig := c.database.MySQL
+		resolved.User = mysqlConfig.User
+		resolved.Password = mysqlConfig.Password
+		resolved.Host = mysqlConfig.Host
+		resolved.Port = mysqlConfig.Port
+		resolved.MaxConnections = mysqlConfig.MaxConnections
+	}
+	return resolved, nil
+}
+
+func (c *Config) GetOceanBaseConfig() OceanBaseConfig {
+	return c.docEngine.OceanBase
+}
+
+func (c *Config) GetSeekDBConfig() OceanBaseConfig {
+	return c.docEngine.SeekDB
+}
+
+func (o OceanBaseConfig) ExportConfigs() map[string]interface{} {
+	return map[string]interface{}{
+		"scheme": o.Scheme,
+		"config": map[string]interface{}{
+			"db_name":         o.Config.DBName,
+			"user":            o.Config.User,
+			"password":        o.Config.Password,
+			"host":            o.Config.Host,
+			"port":            o.Config.Port,
+			"max_connections": o.Config.MaxConnections,
+		},
+	}
 }
 
 func (c *Config) parseInfinityConfig(v *viper.Viper) {
