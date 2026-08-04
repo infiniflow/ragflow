@@ -27,7 +27,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 
 	_, err := s.fileDAO.GetByID(ctx, dao.DB, parentID)
 	if err != nil {
-		return nil, fmt.Errorf("Can't find this folder!")
+		return nil, fmt.Errorf("can't find this folder")
 	}
 
 	maxFileNumPerUser := common.GetEnv(common.EnvMaxFileNumPerUser)
@@ -40,7 +40,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 				return nil, fmt.Errorf("failed to get document count: %w", err)
 			}
 			if docCount >= maxNum {
-				return nil, fmt.Errorf("Exceed the maximum file number of a free user!")
+				return nil, fmt.Errorf("exceed the maximum file number of a free user")
 			}
 		}
 	}
@@ -235,12 +235,12 @@ func (s *FileService) checkUploadInfoHealth(ctx context.Context, userID, filenam
 				return fmt.Errorf("failed to get document count: %w", err)
 			}
 			if docCount >= maxNum {
-				return fmt.Errorf("Exceed the maximum file number of a free user!")
+				return fmt.Errorf("exceed the maximum file number of a free user")
 			}
 		}
 	}
 	if len([]byte(filename)) > 255 {
-		return fmt.Errorf("Exceed the maximum length of file name!")
+		return fmt.Errorf("exceed the maximum length of file name")
 	}
 	return nil
 }

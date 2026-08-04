@@ -256,7 +256,7 @@ func (a *AliyunModel) Embed(ctx context.Context, modelName *string, texts []stri
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Aliyun embeddings API error: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("aliyun embeddings API error: %s, body: %s", resp.Status, string(body))
 	}
 
 	var parsed aliyunEmbeddingResponse
@@ -362,7 +362,7 @@ func (a *AliyunModel) Rerank(ctx context.Context, modelName *string, query strin
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Aliyun rerank API error: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("aliyun rerank API error: %s, body: %s", resp.Status, string(body))
 	}
 
 	var parsed aliyunRerankResponse

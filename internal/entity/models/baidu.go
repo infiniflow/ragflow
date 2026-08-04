@@ -258,7 +258,7 @@ func (b *BaiduModel) Embed(ctx context.Context, modelName *string, texts []strin
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Baidu embedding API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("baidu embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var parsed baiduEmbeddingResponse
@@ -357,7 +357,7 @@ func (b *BaiduModel) Rerank(ctx context.Context, modelName *string, query string
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Baidu rerank API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("baidu rerank API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var rerankResp struct {

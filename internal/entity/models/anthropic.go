@@ -122,7 +122,7 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Anthropic messages API error: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("anthropic messages API error: %s, body: %s", resp.Status, string(body))
 	}
 
 	answer, reasoning, err := parseAnthropicChatResponse(body)
@@ -410,7 +410,7 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Anthropic models API error: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("anthropic models API error: %s, body: %s", resp.Status, string(body))
 	}
 
 	var result struct {
@@ -496,7 +496,7 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Anthropic messages API error: %s, body: %s", resp.Status, string(body))
+		return fmt.Errorf("anthropic messages API error: %s, body: %s", resp.Status, string(body))
 	}
 
 	sawTerminal := false
@@ -551,7 +551,7 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 		case "error":
 			errInfo, _ := event["error"].(map[string]interface{})
 			message, _ := errInfo["message"].(string)
-			return fmt.Errorf("Anthropic stream error: %s", message)
+			return fmt.Errorf("anthropic stream error: %s", message)
 		}
 		return nil
 	})

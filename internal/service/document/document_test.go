@@ -861,7 +861,7 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 	var existingUser entity.User
 	if err := dao.DB.Where("id = ?", userID).First(&existingUser).Error; err != nil {
 		u := &entity.User{ID: userID, Nickname: "test-user", Email: userID + "@test.com", Password: sptr("x")}
-		if err := dao.DB.Create(u).Error; err != nil {
+		if err = dao.DB.Create(u).Error; err != nil {
 			t.Fatalf("insert test user: %v", err)
 		}
 	}
@@ -874,7 +874,7 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 			EmbdID: "embd-default",
 			ASRID:  "asr-default",
 		}
-		if err := dao.DB.Create(tn).Error; err != nil {
+		if err = dao.DB.Create(tn).Error; err != nil {
 			t.Fatalf("insert test tenant: %v", err)
 		}
 	}
@@ -887,7 +887,7 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 			TenantID: tenantID,
 			Role:     "admin",
 		}
-		if err := dao.DB.Create(ut).Error; err != nil {
+		if err = dao.DB.Create(ut).Error; err != nil {
 			t.Fatalf("insert test user_tenant: %v", err)
 		}
 	}
@@ -1644,7 +1644,7 @@ func TestUpdateDatasetDocumentRejectsCounterMutation(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
 	}
-	if err.Error() != "Can't change `chunk_count`." {
+	if err.Error() != "can't change `chunk_count`" {
 		t.Fatalf("err = %q", err.Error())
 	}
 }
@@ -2288,7 +2288,7 @@ func TestBatchUpdateDocumentMetadatasRejectsMissingValue(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("code = %v, want data error", code)
 	}
-	if !strings.Contains(err.Error(), "Each update requires key and value.") {
+	if !strings.Contains(err.Error(), "each update requires key and value") {
 		t.Fatalf("err = %v", err)
 	}
 }

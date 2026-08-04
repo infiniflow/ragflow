@@ -326,7 +326,7 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 	// Split-then-merge: split on delimiters, then greedily merge to
 	// chunk_token_size with optional overlap.
 	perItem := [][]schema.ChunkDoc{docs}
-	merged := mergeByTokenSizeFromJSON(perItem, c.param.ChunkTokenSize, c.param.OverlappedPercent)
+	merged := mergeByTokenSizeFromJSON(perItem, c.param.ChunkTokenSize, c.param.OverlappedPercent, true)
 	return chunkOutputs(flatten(merged))
 }
 
@@ -635,7 +635,11 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 	// Otherwise split-then-merge: delimiter-split segments are greedily
 	// merged to chunk_token_size with optional overlap.
 	if !hasCustomDelim(c.param.Delimiters) {
-		attached = mergeByTokenSizeFromJSON(attached, c.param.ChunkTokenSize, c.param.OverlappedPercent)
+		// Python _merge_text_chunks_by_token_size merges adjacent text
+		// chunks across JSON items into one global token budget. Flatten the
+		// per-item structure into a single sequence first so the merge is
+		// global; non-text chunks still break the merge via their CKType.
+		attached = mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flatten(attached)}, c.param.ChunkTokenSize, c.param.OverlappedPercent, false)
 	}
 
 	flat := flatten(attached)
@@ -874,7 +878,7 @@ func takeFromStart(text string, tokens int) string {
 // hard cap (rag/nlp/__init__.py after the strict chunk_token_num fix).
 // Oversized text units are sub-split via splitOversizedUnit before merge;
 // overlap is applied only when overlap+segment still fits the budget.
-func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64) [][]schema.ChunkDoc {
+func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64, subSplitOversize bool) [][]schema.ChunkDoc {
 	// overlappedPct is a [0,100] percentage. Clamp defensively because this
 	// helper is also exercised directly by tests.
 	if overlappedPct < 0 {
@@ -947,7 +951,15 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 				addTextChunk(ck)
 				continue
 			}
-			// Hard-cap atomic oversize units before merge.
+			// Over-budget unit.
+			if !subSplitOversize {
+				// JSON path: Python keeps each over-budget item whole — it does
+				// not sub-split a single item, so emit it as one chunk.
+				addTextChunk(ck)
+				continue
+			}
+			// Text path: hard-cap atomic oversize units before merge, matching
+			// Python's _split_oversized_unit.
 			slog.Debug("TokenChunker: splitting oversized JSON unit via splitOversizedUnit",
 				"len", len(ck.Text), "tokens", tk, "chunk_token_size", chunkTokens)
 			for _, piece := range splitOversizedUnit(ck.Text, chunkTokens) {

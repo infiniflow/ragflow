@@ -120,10 +120,10 @@ func ValidateDatasetEmbeddingModels(kbs []*entity.Knowledgebase) error {
 		}
 	}
 	if hasEmbd && noEmbd {
-		return fmt.Errorf("Cannot search across datasets where some have embedding models and others do not.")
+		return fmt.Errorf("cannot search across datasets where some have embedding models and others do not")
 	}
 	if len(embdIDs) > 1 {
-		return fmt.Errorf("Datasets use different embedding models: %v", getEmbdIDs(kbs))
+		return fmt.Errorf("datasets use different embedding models: %v", getEmbdIDs(kbs))
 	}
 	return nil
 }

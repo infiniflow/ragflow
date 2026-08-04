@@ -131,7 +131,6 @@ type UpdateDatasetDocumentRequest struct {
 	ParseType *int `json:"parse_type,omitempty"`
 }
 
-// PATCH /api/v1/datasets/:dataset_id/documents/:document_id.
 type UpdateDatasetDocumentResponse struct {
 	ID              string                 `json:"id"`
 	Thumbnail       *string                `json:"thumbnail,omitempty"`
@@ -163,9 +162,9 @@ type UpdateDatasetDocumentResponse struct {
 }
 
 var (
-	ErrArtifactInvalidFilename = errors.New("Invalid filename.")
-	ErrArtifactInvalidFileType = errors.New("Invalid file type.")
-	ErrArtifactNotFound        = errors.New("Artifact not found.")
+	ErrArtifactInvalidFilename = errors.New("invalid filename")
+	ErrArtifactInvalidFileType = errors.New("invalid file type")
+	ErrArtifactNotFound        = errors.New("artifact not found")
 )
 
 var artifactContentTypes = map[string]string{

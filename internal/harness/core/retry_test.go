@@ -97,7 +97,7 @@ func TestWithModelRetry_Exhausted(t *testing.T) {
 
 func TestRetryExhaustedError_Unwrap(t *testing.T) {
 	e := &RetryExhaustedError{LastErr: errors.New("boom"), TotalRetries: 3}
-	if errors.Unwrap(e) != ErrExceedMaxRetries {
+	if !errors.Is(errors.Unwrap(e), ErrExceedMaxRetries) {
 		t.Error("Unwrap should return ErrExceedMaxRetries")
 	}
 	if e.Error() == "" {

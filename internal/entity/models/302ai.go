@@ -86,7 +86,7 @@ func (a *AI302Model) ChatWithMessages(ctx context.Context, modelName string, mes
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Chat)
+	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, strings.TrimSpace(modelName), messages, false)
@@ -112,7 +112,7 @@ func (a *AI302Model) ChatWithMessages(ctx context.Context, modelName string, mes
 		}
 	}
 
-	body, err := a.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
+	body, err := a.baseModel.doRequest(ctx, baseURL, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -138,7 +138,7 @@ func (a *AI302Model) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), a.baseModel.URLSuffix.Chat)
+	baseURL := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), a.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, strings.TrimSpace(modelName), messages, true)
@@ -166,7 +166,7 @@ func (a *AI302Model) ChatStreamlyWithSender(ctx context.Context, modelName strin
 
 	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
-	return a.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+	return a.baseModel.doStreamRequest(ctx, baseURL, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
 		return HandleStreamingResponse(body, modelUsage, modelConfig, OpenAIParserConfig, sender)
 	})
 }
@@ -188,7 +188,7 @@ func (a *AI302Model) Embed(ctx context.Context, modelName *string, texts []strin
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Embedding)
+	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": model,
@@ -203,7 +203,7 @@ func (a *AI302Model) Embed(ctx context.Context, modelName *string, texts []strin
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -223,7 +223,7 @@ func (a *AI302Model) Embed(ctx context.Context, modelName *string, texts []strin
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Jina embedding API error: status %d, body: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("JINA embedding API error: status %d, body: %s", resp.StatusCode, string(body))
 	}
 
 	var parsedResponse struct {
@@ -238,7 +238,7 @@ func (a *AI302Model) Embed(ctx context.Context, modelName *string, texts []strin
 	}
 
 	if len(parsedResponse.Data) == 0 {
-		return nil, fmt.Errorf("Jina embedding response contains no data: %s", string(body))
+		return nil, fmt.Errorf("JINA embedding response contains no data: %s", string(body))
 	}
 
 	var embeddings []EmbeddingData
@@ -273,7 +273,7 @@ func (a *AI302Model) Rerank(ctx context.Context, modelName *string, query string
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Rerank)
+	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Rerank)
 
 	var topN int
 	if rerankConfig != nil && rerankConfig.TopN != 0 {
@@ -295,7 +295,7 @@ func (a *AI302Model) Rerank(ctx context.Context, modelName *string, query string
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -359,7 +359,7 @@ func (a *AI302Model) TranscribeAudio(ctx context.Context, modelName *string, fil
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.ASR)
+	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
@@ -432,7 +432,7 @@ func (a *AI302Model) TranscribeAudio(ctx context.Context, modelName *string, fil
 	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -500,7 +500,7 @@ func (a *AI302Model) OCRFile(ctx context.Context, modelName *string, content []b
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.OCR)
+	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.OCR)
 
 	var docURL string
 	if urls != nil && strings.TrimSpace(*urls) != "" {
@@ -530,7 +530,7 @@ func (a *AI302Model) OCRFile(ctx context.Context, modelName *string, content []b
 	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -550,7 +550,7 @@ func (a *AI302Model) OCRFile(ctx context.Context, modelName *string, content []b
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Mistral OCR API error: %s, body: %s", resp.Status, string(body))
+		return nil, fmt.Errorf("MISTRAL OCR API error: %s, body: %s", resp.Status, string(body))
 	}
 
 	var mistralResp struct {
@@ -659,12 +659,12 @@ func (a *AI302Model) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Models)
+	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", baseURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

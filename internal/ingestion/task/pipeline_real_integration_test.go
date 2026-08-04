@@ -422,7 +422,7 @@ func mustOpenTaskTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open in-memory sqlite db: %v", err)
 	}
-	if err := db.AutoMigrate(
+	if err = db.AutoMigrate(
 		&entity.Tenant{},
 		&entity.Knowledgebase{},
 		&entity.Document{},
@@ -433,11 +433,12 @@ func mustOpenTaskTestDB(t *testing.T) *gorm.DB {
 	); err != nil {
 		t.Fatalf("auto-migrate sqlite tables: %v", err)
 	}
-	if sqlDB, err := db.DB(); err != nil {
+
+	sqlDB, err := db.DB()
+	if err != nil {
 		t.Fatalf("get sql.DB from gorm: %v", err)
-	} else {
-		sqlDB.SetMaxOpenConns(1)
 	}
+	sqlDB.SetMaxOpenConns(1)
 	return db
 }
 
