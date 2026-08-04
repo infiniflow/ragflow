@@ -60,13 +60,13 @@ type Reasoning struct {
 	RawType string           `json:"type"`
 }
 
-// Reasoning represents the reasoning capability (can be one of three types)
+// ClearReasoningContent represents the clear reasoning content capability
 type ClearReasoningContent struct {
 	DefaultValue    bool     `json:"default_value"`
 	SupportedModels []string `json:"supported_models"`
 }
 
-// Reasoning represents the reasoning capability (can be one of three types)
+// Thinking represents the thinking capability (can be one of three types)
 type Thinking struct {
 	DefaultValue    bool     `json:"default_value"`
 	SupportedModels []string `json:"supported_models"`
@@ -160,17 +160,19 @@ type ModelTools struct {
 
 // Model represents a single LLM model
 type Model struct {
-	Name         string         `json:"name"`
-	MaxTokens    *int           `json:"max_tokens"`
-	ModelTypes   []string       `json:"model_types"`
-	Thinking     *ModelThinking `json:"thinking"`
-	Tools        *ModelTools    `json:"tools"`
-	Class        *string        `json:"class"`
-	MaxDimension *int           `json:"max_dimension"` // used by embedding models
-	Dimensions   []int          `json:"dimensions"`
-	Alias        []string       `json:"alias"`
-	Rank         *int           `json:"rank"`
-	ModelTypeMap map[string]bool
+	Name            string         `json:"name"`
+	MaxTokens       *int           `json:"max_tokens"`
+	MaxInputTokens  *int           `json:"max_input_tokens"`
+	MaxOutputTokens *int           `json:"max_output_tokens"`
+	ModelTypes      []string       `json:"model_types"`
+	Thinking        *ModelThinking `json:"thinking"`
+	Tools           *ModelTools    `json:"tools"`
+	Class           *string        `json:"class"`
+	MaxDimension    *int           `json:"max_dimension"` // used by embedding models
+	Dimensions      []int          `json:"dimensions"`
+	Alias           []string       `json:"alias"`
+	Rank            *int           `json:"rank"`
+	ModelTypeMap    map[string]bool
 }
 
 // Provider represents an LLM provider
@@ -301,7 +303,7 @@ func InitProviderManager(dirPath string) error {
 		return fmt.Errorf("no JSON files found in directory %s", dirPath)
 	}
 
-	// Read the file.  Use a repo-root-relative path so that go test
+	// Read the file.  Use a repo-root-relative path so that go tests
 	// (which sets CWD to the package directory) can still find it.
 	var data []byte
 	data, err = os.ReadFile(filepath.Join(findRepoRoot(), "conf", "all_models.json"))
@@ -350,7 +352,7 @@ func InitProviderManager(dirPath string) error {
 	return nil
 }
 
-// 1. List all providers
+// ListProviders 1. List all providers
 func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 
 	var providers []map[string]interface{}
@@ -446,7 +448,7 @@ func (pm *ProviderManager) GetModelByNameOrAlias(modelName string) *Model {
 	return nil
 }
 
-// 2. Show specific provider information (including base_url)
+// GetProviderByName get specific provider information (including base_url)
 func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]interface{}, error) {
 
 	provider := pm.FindProvider(providerName)
@@ -463,7 +465,7 @@ func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]in
 	return providerInfo, nil
 }
 
-// 3. List models under a specific provider
+// ListModels list models under a specific provider
 func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interface{}, error) {
 	provider := pm.FindProvider(providerName)
 	if provider == nil {
@@ -554,7 +556,7 @@ func (pm *ProviderManager) GetModelUrl(providerName, modelName, modelType string
 	}
 }
 
-// 4. Search specific model information with filtering by max_tokens or type
+// SearchModelInfo search specific model information with filtering by max_tokens or type
 func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filterBy string, filterValue interface{}) ModelResponse {
 	resp := ModelResponse{
 		Code:    0,
@@ -621,7 +623,7 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 	return resp
 }
 
-// 5. Display models with specific features
+// SearchByFeature search models with specific features
 func (pm *ProviderManager) SearchByFeature(featureType string) ModelResponse {
 	resp := ModelResponse{
 		Code:    0,
@@ -652,7 +654,7 @@ func (pm *ProviderManager) SearchByFeature(featureType string) ModelResponse {
 	return resp
 }
 
-// 6. Display models with specific type
+// SearchByType search models with specific type
 func (pm *ProviderManager) SearchByType(modelType string) ModelResponse {
 	resp := ModelResponse{
 		Code:    0,
@@ -784,7 +786,7 @@ func findRepoRoot() string {
 	return "."
 }
 
-// Helper: Find provider by name
+// FindProvider find provider by name
 func (pm *ProviderManager) FindProvider(name string) *Provider {
 	for i := range pm.Providers {
 		if strings.EqualFold(pm.Providers[i].Name, name) {
@@ -794,7 +796,7 @@ func (pm *ProviderManager) FindProvider(name string) *Provider {
 	return nil
 }
 
-// Helper: Find model by name
+// FindModel find model by provider and model name
 func (pm *ProviderManager) FindModel(provider *Provider, modelName string) *Model {
 	for i := range provider.Models {
 		if strings.EqualFold(provider.Models[i].Name, modelName) {
