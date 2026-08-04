@@ -93,16 +93,18 @@ export function VersionDialog({
               </ul>
             )}
           </div>
-          <div className="relative flex-1 ">
+          <div className="relative flex-1 min-w-0">
             {versionLoading ? (
               <Spin className="top-1/2" />
             ) : (
               <Card className="h-full">
                 <CardContent className="h-full p-5 flex flex-col">
                   <section className="flex justify-between pb-2">
-                    <div>
+                    <div className="min-w-0">
                       <div className="flex">
-                        <span className="pb-1 truncate">{agent?.title}</span>
+                        <span className="pb-1 truncate min-w-0">
+                          {agent?.title}
+                        </span>
                         {agent?.release && (
                           <RAGFlowTooltip tooltip={t('flow.productionTooltip')}>
                             <Button className="bg-accent-primary-5 ml-3">
