@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"math"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"strings"
 
 	"google.golang.org/genai"
@@ -44,10 +45,60 @@ func collectGoogleModelNames(ctx context.Context, listPage func(context.Context,
 
 		models = append(models, page.items...)
 		if page.nextPageToken == "" {
-			return ParseListModel(ModelList{Models: models}), nil
+			return finalizeGoogleModelList(ParseListModel(ModelList{Models: models})), nil
 		}
 		pageToken = page.nextPageToken
 	}
+}
+
+// googleUsableActions lists the Gemini supportedActions RAGFlow can serve:
+// generateContent covers chat/vision/tts, embedContent covers embedding.
+var googleUsableActions = []string{"generateContent", "embedContent", "batchEmbedContents"}
+
+// googleSupportsUsableAction reports whether the model supports at least one
+// action RAGFlow can use. Models limited to other actions (image/video/music
+// generation, question answering, etc.) are filtered out while listing so
+// the list never offers models whose model type is unknown or unsupported.
+func googleSupportsUsableAction(actions []string) bool {
+	for _, action := range actions {
+		for _, usable := range googleUsableActions {
+			if action == usable {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// finalizeGoogleModelList resolves model types for listed models and filters
+// out unknown or unsupported model_type values at list-generation time,
+// rather than letting them flow into AddModel where they would be stored as
+// model_type = 0 and repaired later. Catalog types win; models missing from
+// the static catalog fall back to name-hint inference; models that still
+// have no supported type are dropped.
+func finalizeGoogleModelList(list []ListModelResponse) []ListModelResponse {
+	if list == nil {
+		return nil
+	}
+	filtered := make([]ListModelResponse, 0, len(list))
+	for _, item := range list {
+		types := item.ModelTypes
+		if len(types) == 0 {
+			types = InferModelTypes(item.Name)
+		}
+		supported := make([]string, 0, len(types))
+		for _, t := range types {
+			if entity.ModelTypeFromString(t) != 0 {
+				supported = append(supported, t)
+			}
+		}
+		if len(supported) == 0 {
+			continue
+		}
+		item.ModelTypes = supported
+		filtered = append(filtered, item)
+	}
+	return filtered
 }
 
 var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]ListModelResponse, error) {
@@ -64,14 +115,25 @@ var googleListModels = func(ctx context.Context, config *genai.ClientConfig) ([]
 
 		var modelNames []ModelListItem
 		for _, m := range models.Items {
-			modelName := strings.TrimSpace(m.DisplayName)
+			// Skip models limited to actions RAGFlow cannot serve
+			// (e.g. imagen/veo generation-only models); see
+			// finalizeGoogleModelList.
+			if len(m.SupportedActions) > 0 && !googleSupportsUsableAction(m.SupportedActions) {
+				continue
+			}
+			// Use the API model ID ("models/gemini-2.5-flash" →
+			// "gemini-2.5-flash") so listed models match the static
+			// catalog (model types / max_tokens) and are directly
+			// usable in chat requests. Display names ("Gemini 2.5
+			// Flash") are not accepted by the Gemini API.
+			modelName := strings.TrimSpace(strings.TrimPrefix(m.Name, "models/"))
 			if modelName == "" {
-				modelName = strings.TrimSpace(m.Name)
+				modelName = strings.TrimSpace(m.DisplayName)
 			}
 			if modelName != "" {
 				modelNames = append(modelNames, ModelListItem{
 					ID:      modelName,
-					OwnedBy: "Google",
+					OwnedBy: "Gemini",
 				})
 			}
 		}

@@ -392,7 +392,10 @@ func TestCollectGoogleModelNamesPaginates(t *testing.T) {
 		t.Fatalf("expected no error, got %v", err)
 	}
 
-	expectedModels := []ListModelResponse{{Name: "Gemini 2.5 Flash"}, {Name: "Gemini 2.5 Pro"}}
+	expectedModels := []ListModelResponse{
+		{Name: "Gemini 2.5 Flash", ModelTypes: []string{"chat"}},
+		{Name: "Gemini 2.5 Pro", ModelTypes: []string{"chat"}},
+	}
 	if !reflect.DeepEqual(models, expectedModels) {
 		t.Fatalf("expected models %v, got %v", expectedModels, models)
 	}
@@ -427,6 +430,57 @@ func TestCollectGoogleModelNamesReturnsPageError(t *testing.T) {
 	})
 	if !errors.Is(err, pageErr) {
 		t.Fatalf("expected page error %v, got %v", pageErr, err)
+	}
+}
+
+func TestFinalizeGoogleModelListFiltersUnknownModelTypes(t *testing.T) {
+	list := []ListModelResponse{
+		{Name: "gemini-2.5-pro"},                                    // not in catalog: inferred
+		{Name: "gemini-embedding-001"},                              // not in catalog: inferred
+		{Name: "custom", ModelTypes: []string{"chat", "image-gen"}}, // unsupported value stripped
+		{Name: "broken", ModelTypes: []string{"image-gen"}},         // no supported type: dropped
+	}
+
+	got := finalizeGoogleModelList(list)
+
+	expected := []ListModelResponse{
+		{Name: "gemini-2.5-pro", ModelTypes: []string{"chat"}},
+		{Name: "gemini-embedding-001", ModelTypes: []string{"embedding"}},
+		{Name: "custom", ModelTypes: []string{"chat"}},
+	}
+	if !reflect.DeepEqual(got, expected) {
+		t.Fatalf("expected models %v, got %v", expected, got)
+	}
+}
+
+func TestFinalizeGoogleModelListPreservesNil(t *testing.T) {
+	if got := finalizeGoogleModelList(nil); got != nil {
+		t.Fatalf("expected nil, got %v", got)
+	}
+}
+
+func TestGoogleSupportsUsableAction(t *testing.T) {
+	usable := [][]string{
+		{"generateContent", "countTokens"},
+		{"embedContent"},
+		{"batchEmbedContents"},
+	}
+	for _, actions := range usable {
+		if !googleSupportsUsableAction(actions) {
+			t.Fatalf("expected actions %v to be usable", actions)
+		}
+	}
+	unusable := [][]string{
+		nil,
+		{"predict"},             // imagen-style image generation
+		{"predictLongRunning"},  // veo-style video generation
+		{"generateAnswer"},      // aqa-style question answering
+		{"createCachedContent"}, // cache-only entry
+	}
+	for _, actions := range unusable {
+		if googleSupportsUsableAction(actions) {
+			t.Fatalf("expected actions %v to be filtered out", actions)
+		}
 	}
 }
 
