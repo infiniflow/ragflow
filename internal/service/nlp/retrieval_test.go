@@ -66,8 +66,13 @@ func intPtr(value int) *int {
 
 type captureSearchDocEngine struct {
 	engine.DocEngine
+	engineType    string
 	searchRequest *types.SearchRequest
 	result        *types.SearchResult
+}
+
+func (e *captureSearchDocEngine) GetType() string {
+	return e.engineType
 }
 
 func (e *captureSearchDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
@@ -111,7 +116,7 @@ func TestSearchPassesVectorSimilarityWeightToFusionExpr(t *testing.T) {
 	}
 
 	vectorWeight := 0.8
-	docEngine := &captureSearchDocEngine{}
+	docEngine := &captureSearchDocEngine{engineType: string(engine.EngineInfinity)}
 	service := NewRetrievalService(docEngine, nil)
 
 	_, err := service.Search(context.Background(), &RetrievalSearchRequest{
@@ -149,7 +154,8 @@ func TestRetrievalPassesVectorSimilarityWeightToSearch(t *testing.T) {
 	vectorWeight := 0.8
 	top := 10
 	docEngine := &captureSearchDocEngine{
-		result: &types.SearchResult{Chunks: []map[string]interface{}{}, Total: 0},
+		engineType: string(engine.EngineInfinity),
+		result:     &types.SearchResult{Chunks: []map[string]interface{}{}, Total: 0},
 	}
 	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
 
@@ -177,5 +183,49 @@ func TestRetrievalPassesVectorSimilarityWeightToSearch(t *testing.T) {
 	}
 	if got := fusionExpr.FusionParams["weights"]; got != "0.2,0.8" {
 		t.Fatalf("expected weights=0.2,0.8, got %v", got)
+	}
+}
+
+func TestBuildRetrievalFusionExprKeepsLegacyWeightsOutsideInfinity(t *testing.T) {
+	expr := buildRetrievalFusionExpr(string(engine.EngineElasticsearch), 10, float64Ptr(0.8))
+
+	if got := expr.FusionParams["weights"]; got != "0.05,0.95" {
+		t.Fatalf("expected Elasticsearch weights=0.05,0.95, got %v", got)
+	}
+}
+
+func TestSearchKeepsLegacyFusionWeightForElasticsearch(t *testing.T) {
+	if GetQueryBuilder() == nil {
+		globalQueryBuilder = NewQueryBuilder()
+	}
+
+	vectorWeight := 0.8
+	docEngine := &captureSearchDocEngine{engineType: string(engine.EngineElasticsearch)}
+	service := NewRetrievalService(docEngine, nil)
+
+	_, err := service.Search(context.Background(), &RetrievalSearchRequest{
+		Question:               "test question",
+		TenantIDs:              []string{"tenant-1"},
+		KbIDs:                  []string{"kb-1"},
+		Page:                   1,
+		PageSize:               10,
+		Top:                    10,
+		RankFeature:            map[string]float64{},
+		EmbeddingModel:         &modelModule.EmbeddingModel{ModelDriver: &captureEmbeddingDriver{}},
+		VectorSimilarityWeight: &vectorWeight,
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+
+	if docEngine.searchRequest == nil || len(docEngine.searchRequest.MatchExprs) != 3 {
+		t.Fatalf("expected three match expressions, got %#v", docEngine.searchRequest)
+	}
+	fusionExpr, ok := docEngine.searchRequest.MatchExprs[2].(*types.FusionExpr)
+	if !ok {
+		t.Fatalf("expected third match expression to be FusionExpr, got %T", docEngine.searchRequest.MatchExprs[2])
+	}
+	if got := fusionExpr.FusionParams["weights"]; got != "0.05,0.95" {
+		t.Fatalf("expected Elasticsearch weights=0.05,0.95, got %v", got)
 	}
 }
