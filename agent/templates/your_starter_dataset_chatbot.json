@@ -28,7 +28,7 @@
                         "exception_method": null,
                         "frequencyPenaltyEnabled": false,
                         "frequency_penalty": 0.7,
-                        "llm_id": "deepseek-chat@DeepSeek",
+                        "llm_id": "",
                         "maxTokensEnabled": false,
                         "max_retries": 3,
                         "max_rounds": 5,
@@ -61,6 +61,7 @@
                                     "description": "This is  a technical docs knowledge bases.",
                                     "empty_response": "",
                                     "kb_ids": [],
+                                    "retrieval_from": "dataset",
                                     "keywords_similarity_weight": 0.7,
                                     "outputs": {
                                         "formalized_content": {
@@ -72,8 +73,7 @@
                                     "similarity_threshold": 0.2,
                                     "top_k": 1024,
                                     "top_n": 8,
-                                    "use_kg": false,
-                                    "retrieval_from": "dataset"
+                                    "use_kg": false
                                 }
                             }
                         ],
@@ -180,7 +180,7 @@
                             "exception_method": null,
                             "frequencyPenaltyEnabled": false,
                             "frequency_penalty": 0.7,
-                            "llm_id": "deepseek-chat@DeepSeek",
+                            "llm_id": "",
                             "maxTokensEnabled": false,
                             "max_retries": 3,
                             "max_rounds": 5,
@@ -213,6 +213,7 @@
                                         "description": "This is  a technical docs knowledge bases.",
                                         "empty_response": "",
                                         "kb_ids": [],
+                                        "retrieval_from": "dataset",
                                         "keywords_similarity_weight": 0.7,
                                         "outputs": {
                                             "formalized_content": {
@@ -224,8 +225,7 @@
                                         "similarity_threshold": 0.2,
                                         "top_k": 1024,
                                         "top_n": 8,
-                                        "use_kg": false,
-                                        "retrieval_from": "dataset"
+                                        "use_kg": false
                                     }
                                 }
                             ],

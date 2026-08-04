@@ -24,7 +24,7 @@
                             "field_name": "summary",
                             "frequencyPenaltyEnabled": true,
                             "frequency_penalty": 0.7,
-                            "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                            "llm_id": "",
                             "maxTokensEnabled": false,
                             "max_tokens": 256,
                             "outputs": {
@@ -570,7 +570,7 @@
                                 "field_name": "summary",
                                 "frequencyPenaltyEnabled": true,
                                 "frequency_penalty": 0.7,
-                                "llm_id": "THUDM/GLM-4.1V-9B-Thinking@SILICONFLOW",
+                                "llm_id": "",
                                 "maxTokensEnabled": false,
                                 "max_tokens": 256,
                                 "outputs": {
