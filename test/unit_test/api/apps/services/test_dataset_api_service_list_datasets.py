@@ -169,6 +169,7 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         monkeypatch,
         "common.misc_utils",
         thread_pool_exec=MagicMock(),
+        thread_pool_exec_long_time=MagicMock(),
     )
     _stub(
         monkeypatch,

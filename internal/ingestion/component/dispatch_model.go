@@ -22,6 +22,7 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -158,8 +159,8 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 		return nil, "", nil, 0, err
 	}
 	maxTokens := 0
-	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil && mi.MaxTokens != nil {
-		maxTokens = *mi.MaxTokens
+	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil && mi.MaxOutput != nil {
+		maxTokens = *mi.MaxOutput
 	}
 	if strings.TrimSpace(modelObj.Extra) != "" {
 		var tenantExtra tenantModelExtra
@@ -216,8 +217,8 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 			return nil, "", nil, 0, err
 		}
 		maxTokens := 0
-		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil && mi.MaxTokens != nil {
-			maxTokens = *mi.MaxTokens
+		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil && mi.MaxOutput != nil {
+			maxTokens = *mi.MaxOutput
 		}
 		if modelObj != nil && strings.TrimSpace(modelObj.Extra) != "" {
 			var tenantExtra tenantModelExtra
@@ -258,8 +259,8 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 	maxTokens := 0
-	if llmInfo.MaxTokens != nil {
-		maxTokens = *llmInfo.MaxTokens
+	if llmInfo.MaxOutput != nil {
+		maxTokens = *llmInfo.MaxOutput
 	}
 	return driver, llmInfo.Name, apiConfig, maxTokens, nil
 }
@@ -297,5 +298,5 @@ func newModelDriverForBaseURLLocal(driver modelModule.ModelDriver, providerName,
 }
 
 func errorsIsRecordNotFound(err error) bool {
-	return err != nil && (err == gorm.ErrRecordNotFound || strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()))
+	return err != nil && (errors.Is(err, gorm.ErrRecordNotFound) || strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()))
 }

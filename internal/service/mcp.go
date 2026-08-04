@@ -316,6 +316,15 @@ func (s *MCPService) UpdateMCPServer(ctx context.Context, tenantID, mcpID string
 	if serverName != "" && len([]byte(serverName)) > mcpServerNameLimit {
 		return nil, common.CodeDataError, fmt.Errorf("Invalid MCP name or length is %d which is large than 255.", len([]byte(serverName)))
 	}
+	if serverNameProvided && serverName != server.Name {
+		exists, err := s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, serverName, tenantID)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
+		if exists {
+			return nil, common.CodeDataError, errors.New("duplicated MCP server name")
+		}
+	}
 
 	serverURL := server.URL
 	serverURLProvided := false

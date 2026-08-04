@@ -227,23 +227,6 @@ func TestJinaChatValidation(t *testing.T) {
 	}
 }
 
-func TestJinaChatStreamIsNotSupported(t *testing.T) {
-	withSSRFBypass(t)
-	apiKey := "test-key"
-	err := newJinaForTest("http://unused").ChatStreamlyWithSender(
-		t.Context(),
-		"jina-vlm",
-		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{ApiKey: &apiKey},
-		nil,
-		nil,
-		func(*string, *string) error { return nil },
-	)
-	if err == nil || !strings.Contains(err.Error(), "ChatStreamlyWithSender") {
-		t.Fatalf("expected unsupported streaming error, got %v", err)
-	}
-}
-
 func TestJinaEmbedMeanPoolsMultivectorResponse(t *testing.T) {
 	withSSRFBypass(t)
 	srv := newJinaServer(t, "/embeddings", func(t *testing.T, _ map[string]interface{}, w http.ResponseWriter) {

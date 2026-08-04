@@ -77,7 +77,7 @@ def _compile_delimiter_pattern(delimiters):
 
 
 def _split_text_by_pattern(text, pattern):
-    # Split text by the compiled delimiter pattern and keep delimiter text in each chunk.
+    # Split text by the compiled delimiter pattern and discard delimiters.
     if not pattern:
         return [text or ""]
 
@@ -85,10 +85,6 @@ def _split_text_by_pattern(text, pattern):
     chunks = []
     for i in range(0, len(split_texts), 2):
         chunk = split_texts[i]
-        if not chunk:
-            continue
-        if i + 1 < len(split_texts):
-            chunk += split_texts[i + 1]
         if chunk.strip():
             chunks.append(chunk)
     return chunks
@@ -317,16 +313,17 @@ class TokenChunker(ProcessBase):
                 self.set_output("chunks", [{"text": payload}] if payload.strip() else [])
                 self.callback(1, "Done.")
                 return
-            cks = (
-                _split_text_by_pattern(payload, delimiter_pattern)
-                if delimiter_pattern
-                else naive_merge(
+            if self._param.delimiter_mode == "delimiter":
+                cks = _split_text_by_pattern(payload, delimiter_pattern)
+            elif delimiter_pattern:
+                cks = _split_text_by_pattern(payload, delimiter_pattern)
+            else:
+                cks = naive_merge(
                     payload,
                     self._param.chunk_token_size,
-                    "",
+                    "".join(self._param.delimiters),
                     overlapped_percent,
                 )
-            )
             if custom_pattern:
                 docs = []
                 for c in cks:
@@ -357,11 +354,47 @@ class TokenChunker(ProcessBase):
             self.set_output("chunks", [{"text": merged_text}] if merged_text.strip() else [])
             self.callback(1, "Done.")
             return
+
+        if self._param.delimiter_mode == "delimiter":
+            text_chunks = _build_json_chunks(json_result, "")
+            chunks = []
+            text_buffer = []
+
+            def flush_text_buffer():
+                if not text_buffer:
+                    return
+                combined_text = "".join(text_buffer)
+                split_texts = _split_text_by_pattern(combined_text, delimiter_pattern)
+                chunks.extend(
+                    {
+                        "text": text,
+                        "doc_type_kwd": "text",
+                        "ck_type": "text",
+                        "tk_nums": num_tokens_from_string(text),
+                    }
+                    for text in split_texts
+                    if text.strip()
+                )
+                text_buffer.clear()
+
+            for chunk in text_chunks:
+                if chunk["ck_type"] == "text":
+                    text_buffer.append(chunk["text"])
+                else:
+                    flush_text_buffer()
+                    chunks.append(chunk)
+            flush_text_buffer()
+            _attach_context_to_media_chunks(chunks, self._param.table_context_size, self._param.image_context_size)
+            await restore_pdf_text_previews(chunks, from_upstream, self._canvas)
+            self.set_output("chunks", _finalize_json_chunks(chunks))
+            self.callback(1, "Done.")
+            return
+
         # Structured JSON input is normalized first, then optionally enriched with
         # media context, and finally merged only when delimiter splitting is inactive.
         chunks = _build_json_chunks(json_result, delimiter_pattern)
         _attach_context_to_media_chunks(chunks, self._param.table_context_size, self._param.image_context_size)
-        if not delimiter_pattern:
+        if self._param.delimiter_mode == "token_size" and not delimiter_pattern:
             chunks = _merge_text_chunks_by_token_size(chunks, self._param.chunk_token_size, overlapped_percent)
 
         if custom_pattern:

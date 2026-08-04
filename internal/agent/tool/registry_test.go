@@ -40,27 +40,67 @@ func TestBuildAll_UnknownTool(t *testing.T) {
 	}
 }
 
-func TestBuildByName_TavilyCanvasComponentNames(t *testing.T) {
-	for _, tc := range []struct {
-		name string
+func TestBuildByName_CanvasComponentNames(t *testing.T) {
+	tests := []struct {
+		name         string
+		wantToolName string
 	}{
-		{name: "TavilySearch"},
-		{name: "TavilyExtract"},
+		{name: "CodeExec", wantToolName: "execute_code"},
+		{name: "GoogleScholar", wantToolName: "google_scholar_search"},
+		{name: "KeenableSearch", wantToolName: "keenable_search"},
+		{name: "QueritSearch", wantToolName: "querit_search"},
+		{name: "TavilyExtract", wantToolName: "tavily_extract"},
+		{name: "TavilySearch", wantToolName: "tavily_search"},
+		{name: "YahooFinance", wantToolName: "yahoo_finance"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			built, err := BuildByName(tc.name, nil)
+			if err != nil {
+				t.Fatalf("BuildByName(%q): %v", tc.name, err)
+			}
+			info, err := built.Info(t.Context())
+			if err != nil {
+				t.Fatalf("BuildByName(%q).Info: %v", tc.name, err)
+			}
+			if info.Name != tc.wantToolName {
+				t.Errorf("BuildByName(%q).Info().Name = %q, want %q", tc.name, info.Name, tc.wantToolName)
+			}
+		})
+	}
+}
+
+func TestBuildAll_CanvasComponentNameUsesCanonicalParams(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		paramsKey string
+		topN      int
+	}{
+		{name: "canonical key", paramsKey: "google_scholar", topN: 7},
+		{name: "canvas key", paramsKey: "googlescholar", topN: 9},
 	} {
-		built, err := BuildByName(tc.name, nil)
-		if err != nil {
-			t.Fatalf("BuildByName(%q): %v", tc.name, err)
-		}
-		switch tc.name {
-		case "TavilySearch":
-			if _, ok := built.(*TavilyTool); !ok {
-				t.Errorf("BuildByName(%q) returned %T, want *TavilyTool", tc.name, built)
+		t.Run(tc.name, func(t *testing.T) {
+			tools, err := BuildAll(
+				[]string{"GoogleScholar"},
+				map[string]map[string]any{
+					tc.paramsKey: {"top_n": tc.topN},
+				},
+			)
+			if err != nil {
+				t.Fatalf("BuildAll: %v", err)
 			}
-		case "TavilyExtract":
-			if _, ok := built.(*TavilyExtractTool); !ok {
-				t.Errorf("BuildByName(%q) returned %T, want *TavilyExtractTool", tc.name, built)
+			if len(tools) != 1 {
+				t.Fatalf("len(tools) = %d, want 1", len(tools))
 			}
-		}
+			scholar, ok := tools[0].(*GoogleScholarTool)
+			if !ok {
+				t.Fatalf("tools[0] = %T, want *GoogleScholarTool", tools[0])
+			}
+			if scholar.defaults.TopN != tc.topN {
+				t.Errorf("GoogleScholar defaults.TopN = %d, want %d", scholar.defaults.TopN, tc.topN)
+			}
+		})
 	}
 }
 
@@ -100,7 +140,7 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
-		"querit", "querit_search", "queritsearch",
+		"querit", "querit_search",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
@@ -164,7 +204,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"akshare", "arxiv", "bgpt", "code_exec", "crawler", "deepl",
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
-		"querit", "querit_search", "queritsearch",
+		"querit", "querit_search",
 		"retrieval", "search_my_dataset", "search_my_dateset", "searxng",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
@@ -236,7 +276,6 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"wikipedia_search":      "wikipedia_search",
 		"querit":                "querit_search",
 		"querit_search":         "querit_search",
-		"queritsearch":          "querit_search",
 	}
 	for _, name := range names {
 		canonical, ok := canonicalByAlias[name]

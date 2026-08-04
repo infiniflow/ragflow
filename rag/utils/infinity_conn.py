@@ -379,7 +379,7 @@ class InfinityConnection(InfinityConnectionBase):
             chunk["id"] = chunk_id
         return chunk
 
-    def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None) -> list[str]:
+    def insert(self, documents: list[dict], index_name: str, knowledgebase_id: str = None, refresh: str | bool = "wait_for") -> list[str]:
         """
         # Save input to file to test inserting from file in GO
         import datetime

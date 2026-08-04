@@ -470,7 +470,7 @@ class DocMetadataService:
             logging.debug(f"[update_document_metadata] Updating doc_id: {doc_id}, kb_id: {kb_id}, meta_fields: {processed_meta}")
 
             # For Elasticsearch, use efficient partial update
-            if not settings.DOC_ENGINE_INFINITY and not settings.DOC_ENGINE_OCEANBASE:
+            if not settings.DOC_ENGINE_INFINITY and not settings.DOC_ENGINE_OCEANBASE and not settings.DOC_ENGINE_SERENEDB:
                 # Check if index exists first
                 index_exists = settings.docStoreConn.index_exist(index_name, "")
                 if not index_exists:
@@ -955,7 +955,7 @@ class DocMetadataService:
             where_clause = f"{kb_filter} AND {sql_filter}"
             logging.debug(f"Infinity metadata filter: {where_clause}")
 
-            inf_conn = settings.docStoreConn.connPool.get_conn()
+            inf_conn = settings.docStoreConn.acquire_conn()
             try:
                 db_instance = inf_conn.get_database(settings.docStoreConn.dbName)
                 table_instance = db_instance.get_table(index_name)

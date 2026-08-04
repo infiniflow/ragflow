@@ -20,7 +20,7 @@
   "models": [
     {
       "name": "qwen3-8b",
-      "max_tokens": 32768,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -30,7 +30,7 @@
     },
     {
       "name": "qwen3-0.6b",
-      "max_tokens": 32768,
+      "max_output": 32768,
       "model_types": [
         "chat"
       ],
@@ -40,7 +40,7 @@
     },
     {
       "name": "glm-4.7-flash",
-      "max_tokens": 204800,
+      "max_output": 204800,
       "model_types": [
         "chat"
       ],

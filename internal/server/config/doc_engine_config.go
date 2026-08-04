@@ -23,6 +23,7 @@ import (
 type DocEngineConfig struct {
 	ES       ElasticsearchConfig `mapstructure:"es"`
 	Infinity InfinityConfig      `mapstructure:"infinity"`
+	SereneDB SereneDBConfig      `mapstructure:"serenedb"`
 }
 
 // ElasticsearchConfig Elasticsearch configuration
@@ -41,10 +42,64 @@ type InfinityConfig struct {
 	DocMetaMappingFileName string `mapstructure:"doc_meta_mapping_file_name"`
 }
 
+// SereneDBConfig SereneDB configuration. SereneDB speaks the PostgreSQL wire
+// protocol, so the engine connects with database/sql + lib/pq.
+type SereneDBConfig struct {
+	Host     string `mapstructure:"host"`
+	Port     int    `mapstructure:"port"`
+	User     string `mapstructure:"user"`
+	Password string `mapstructure:"password"`
+	DBName   string `mapstructure:"db_name"`
+	// SSLMode is the lib/pq sslmode; empty defaults to "disable" for a trusted
+	// local deployment. Set it (e.g. "require") to encrypt the connection.
+	SSLMode string `mapstructure:"ssl_mode"`
+}
+
 func (c *Config) ParseDocEngineConfig(v *viper.Viper) error {
 	c.parseInfinityConfig(v)
 	c.parseElasticsearchConfig(v)
+	c.parseSereneDBConfig(v)
 	return nil
+}
+
+func (c *Config) parseSereneDBConfig(v *viper.Viper) {
+	// Default SereneDB config
+	c.docEngine.SereneDB.Host = "localhost"
+	c.docEngine.SereneDB.Port = 5432
+	c.docEngine.SereneDB.User = "postgres"
+	c.docEngine.SereneDB.DBName = "default_db"
+
+	if !v.IsSet("serenedb") {
+		return
+	}
+	sub := v.Sub("serenedb")
+	if sub == nil {
+		return
+	}
+
+	if sub.IsSet("host") {
+		c.docEngine.SereneDB.Host = sub.GetString("host")
+	}
+
+	if sub.IsSet("port") {
+		c.docEngine.SereneDB.Port = sub.GetInt("port")
+	}
+
+	if sub.IsSet("user") {
+		c.docEngine.SereneDB.User = sub.GetString("user")
+	}
+
+	if sub.IsSet("password") {
+		c.docEngine.SereneDB.Password = sub.GetString("password")
+	}
+
+	if sub.IsSet("db_name") {
+		c.docEngine.SereneDB.DBName = sub.GetString("db_name")
+	}
+
+	if sub.IsSet("ssl_mode") {
+		c.docEngine.SereneDB.SSLMode = sub.GetString("ssl_mode")
+	}
 }
 
 func (c *Config) parseInfinityConfig(v *viper.Viper) {
@@ -141,4 +196,8 @@ func (i InfinityConfig) ExportConfigs() map[string]interface{} {
 	infinityConfigs["mapping_file_name"] = i.MappingFileName
 	infinityConfigs["doc_meta_mapping_file_name"] = i.DocMetaMappingFileName
 	return infinityConfigs
+}
+
+func (c *Config) GetSereneDBConfig() SereneDBConfig {
+	return c.docEngine.SereneDB
 }

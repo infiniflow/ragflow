@@ -41,6 +41,12 @@ infinity:
   uri: '${INFINITY_HOST:-infinity}:23817'
   postgres_port: 5432
   db_name: 'default_db'
+serenedb:
+  host: '${SERENEDB_HOST:-serenedb}'
+  port: 7890
+  user: '${SERENEDB_USER:-postgres}'
+  password: '${SERENEDB_PASSWORD:-infini_rag_flow}'
+  db_name: '${SERENEDB_DBNAME:-postgres}'
 oceanbase:
   scheme: 'oceanbase' # set 'mysql' to create connection using mysql config
   config:
