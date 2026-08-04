@@ -1101,15 +1101,13 @@ async def use_sql(question, field_map, tenant_id, chat_mdl, quota=True, kb_ids=N
             return sql
 
         scope_filter = " and ".join(scope_filters)
+        trailing_clause = re.search(r"\b(group\s+by|having|order\s+by|limit|offset)\b", sql, flags=re.IGNORECASE)
+        insert_pos = trailing_clause.start() if trailing_clause else len(sql)
 
         if not re.search(r"\bwhere\b", sql, flags=re.IGNORECASE):
-            order_match = re.search(r"\border\s+by\b", sql, flags=re.IGNORECASE)
-            if order_match:
-                sql = sql[: order_match.start()].rstrip() + f" WHERE {scope_filter} " + sql[order_match.start() :]
-            else:
-                sql += f" WHERE {scope_filter}"
+            sql = sql[:insert_pos].rstrip() + f" WHERE {scope_filter}" + (" " + sql[insert_pos:] if trailing_clause else "")
         else:
-            sql = re.sub(r"\bwhere\b\s+", f"where {scope_filter} and ", sql, count=1, flags=re.IGNORECASE)
+            sql = sql[:insert_pos].rstrip() + f" and {scope_filter}" + (" " + sql[insert_pos:] if trailing_clause else "")
         return sql
 
     def is_row_count_question(q: str) -> bool:
