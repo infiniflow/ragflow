@@ -14,10 +14,7 @@
 //  limitations under the License.
 //
 
-package task
+package indexdoc
 
-// Special doc_id values used in task messages (mirrors Python constants).
-const (
-	// GRAPH_RAPTOR_FAKE_DOC_ID is the fake doc_id used for RAPTOR-generated chunks.
-	GRAPH_RAPTOR_FAKE_DOC_ID = "graph_raptor_fake_doc"
-)
+// EmbeddingTokenConsumptionKey is the key in pipeline output for embedding token count.
+const EmbeddingTokenConsumptionKey = "embedding_token_consumption"

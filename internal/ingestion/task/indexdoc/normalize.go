@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package task
+package indexdoc
 
 import (
 	"fmt"
@@ -30,16 +30,16 @@ func NormalizeChunks(output map[string]any) []map[string]any {
 	}
 
 	if chunks, ok := output["chunks"].([]map[string]any); ok {
-		return deepCopyChunks(chunks)
+		return DeepCopyChunks(chunks)
 	}
 	if chunks, ok := toChunkMaps(output["chunks"]); ok {
-		return deepCopyChunks(chunks)
+		return DeepCopyChunks(chunks)
 	}
 	if json, ok := output["json"].([]map[string]any); ok {
-		return deepCopyChunks(json)
+		return DeepCopyChunks(json)
 	}
 	if json, ok := toChunkMaps(output["json"]); ok {
-		return deepCopyChunks(json)
+		return DeepCopyChunks(json)
 	}
 	if md, ok := output["markdown"].(string); ok && md != "" {
 		return []map[string]any{{"text": md}}
@@ -69,10 +69,16 @@ func toChunkMaps(v any) ([]map[string]any, bool) {
 	return out, true
 }
 
-// deepCopyChunks returns a deep copy of the chunk slice and each chunk map.
-// Slice values (e.g. []float64 vectors) are fully copied, not shared.
-// Mirrors Python: copy.deepcopy()
-func deepCopyChunks(chunks []map[string]any) []map[string]any {
+// DeepCopyChunks returns a copy of the chunk slice and each chunk map.
+// The chunk maps themselves are freshly allocated, and the value types that
+// the pipeline actually emits — []float64 (vectors), []int, and []string — are
+// element-wise copied so callers cannot mutate the originals through them.
+// Other value types (nested maps, [][]float64 positions, etc.) are shared by
+// reference, not recursively deep-copied; positions are later flattened and
+// copied independently by processChunkPositions. It is therefore NOT a full
+// recursive deep copy (unlike Python's copy.deepcopy), only the copy needed
+// for the post-processing pass over pipeline output.
+func DeepCopyChunks(chunks []map[string]any) []map[string]any {
 	if chunks == nil {
 		return nil
 	}
