@@ -15,3 +15,9 @@
 //
 
 package dao
+
+type EnterpriseKnowledgebaseDAO struct{}
+
+func NewEnterpriseKnowledgebaseDAO() *EnterpriseKnowledgebaseDAO {
+	return &EnterpriseKnowledgebaseDAO{}
+}
