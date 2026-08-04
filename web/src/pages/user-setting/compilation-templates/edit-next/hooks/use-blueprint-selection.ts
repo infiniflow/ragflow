@@ -1,10 +1,15 @@
 import { SelectWithSearchFlagOptionType } from '@/components/originui/select-with-search';
-import { IWikiPreset } from '@/interfaces/database/compilation-template';
+import {
+  ICompilationTemplateBuiltin,
+  IWikiPreset,
+} from '@/interfaces/database/compilation-template';
+import { capitalize, lowerCase } from 'lodash';
 import { useCallback, useMemo, useState } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 import { FormSchemaType } from '../schema';
+import { splitExampleToBlueprintFields } from '../utils';
 
 export const CustomBlueprintValue = '__custom__';
 
@@ -12,6 +17,7 @@ type UseBlueprintSelectionParams = {
   form: UseFormReturn<FormSchemaType>;
   selectedTemplateIndex: number;
   presets: IWikiPreset[];
+  builtins: ICompilationTemplateBuiltin[];
 };
 
 const isSameBlueprintContent = (
@@ -26,10 +32,12 @@ export function useBlueprintSelection({
   form,
   selectedTemplateIndex,
   presets,
+  builtins,
 }: UseBlueprintSelectionParams) {
   const { t } = useTranslation();
   const [explicitValue, setExplicitValue] = useState<string>();
 
+  const kindPath = `templates.${selectedTemplateIndex}.kind` as const;
   const instructionPath =
     `templates.${selectedTemplateIndex}.config.instruction` as const;
   const pageExamplePath =
@@ -37,6 +45,10 @@ export function useBlueprintSelection({
   const useBlueprintPath =
     `templates.${selectedTemplateIndex}.config.use_blueprint` as const;
 
+  const kind = useWatch({
+    control: form.control,
+    name: kindPath,
+  });
   const instruction = useWatch({
     control: form.control,
     name: instructionPath,
@@ -63,7 +75,7 @@ export function useBlueprintSelection({
   const options = useMemo<SelectWithSearchFlagOptionType[]>(
     () => [
       ...presets.map((preset) => ({
-        label: preset.id,
+        label: capitalize(lowerCase(preset.id)),
         value: preset.id,
       })),
       { label: t('setting.custom'), value: CustomBlueprintValue },
@@ -77,19 +89,23 @@ export function useBlueprintSelection({
       setExplicitValue(value);
 
       if (value === CustomBlueprintValue) {
-        const defaultConfig =
-          form.formState.defaultValues?.templates?.[selectedTemplateIndex]
-            ?.config;
-        form.setValue(
-          instructionPath,
-          String(defaultConfig?.instruction ?? ''),
-          { shouldValidate: false },
+        const builtinTemplate = builtins.find(
+          (template) => template.kind === kind,
         );
-        form.setValue(
-          pageExamplePath,
-          String(defaultConfig?.page_example ?? ''),
-          { shouldValidate: false },
-        );
+        const example =
+          typeof builtinTemplate?.config?.example === 'string'
+            ? builtinTemplate.config.example
+            : '';
+        const {
+          instruction: defaultInstruction,
+          page_example: defaultPageExample,
+        } = splitExampleToBlueprintFields(example);
+        form.setValue(instructionPath, defaultInstruction, {
+          shouldValidate: false,
+        });
+        form.setValue(pageExamplePath, defaultPageExample, {
+          shouldValidate: false,
+        });
       } else {
         const preset = presets.find((item) => item.id === value);
         if (!preset) return;
@@ -104,11 +120,12 @@ export function useBlueprintSelection({
       form.setValue(useBlueprintPath, true, { shouldValidate: false });
     },
     [
+      builtins,
       form,
       instructionPath,
+      kind,
       pageExamplePath,
       presets,
-      selectedTemplateIndex,
       selectedValue,
       useBlueprintPath,
     ],
