@@ -371,6 +371,38 @@ class RaptorConfig(Base):
     scope: Annotated[Literal["file", "dataset"], Field(default="file")]
     auto_disable_for_structured_data: Annotated[bool, Field(default=True)]
 
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_legacy_fields(cls, value: Any) -> Any:
+        """Accept old RAPTOR fields but do not retain them in the config."""
+        if not isinstance(value, dict):
+            return value
+
+        normalized = dict(value)
+        legacy_ext = normalized.pop("ext", {})
+        if isinstance(legacy_ext, dict) and normalized.get("clustering_threshold") is None:
+            if "clustering_threshold" in legacy_ext:
+                normalized["clustering_threshold"] = legacy_ext["clustering_threshold"]
+
+        for field in ("threshold", "clustering_method", "tree_builder"):
+            normalized.pop(field, None)
+        if isinstance(normalized.get("max_token"), (int, float)) and normalized["max_token"] < 512:
+            normalized["max_token"] = 512
+        return normalized
+
+    @model_validator(mode="before")
+    @classmethod
+    def ignore_legacy_fields(cls, value: Any) -> Any:
+        """Accept old RAPTOR settings without retaining them."""
+        if not isinstance(value, dict):
+            return value
+        value = dict(value)
+        for field in ("ext", "threshold", "clustering_method", "tree_builder"):
+            value.pop(field, None)
+        if isinstance(value.get("max_token"), (int, float)) and value["max_token"] < 512:
+            value["max_token"] = 512
+        return value
+
 
 class GraphragConfig(Base):
     """Dataset parser configuration for GraphRAG generation."""

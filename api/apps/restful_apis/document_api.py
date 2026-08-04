@@ -79,6 +79,21 @@ from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
 
 
+def _normalize_legacy_raptor_config(req: dict) -> None:
+    """Drop RAPTOR fields removed from the current parser-config schema."""
+    parser_config = req.get("parser_config")
+    if not isinstance(parser_config, dict):
+        return
+    raptor = parser_config.get("raptor")
+    if not isinstance(raptor, dict):
+        return
+
+    for field in ("ext", "threshold", "clustering_method", "tree_builder"):
+        raptor.pop(field, None)
+    if isinstance(raptor.get("max_token"), (int, float)) and raptor["max_token"] < 512:
+        raptor["max_token"] = 512
+
+
 def _normalize_parser_config_compilation_template_group_ids(parser_config) -> bool:
     from rag.svr.task_executor_refactor.chunk_post_processor import (
         _parser_config_compilation_template_group_ids,
@@ -212,6 +227,7 @@ async def update_document(tenant_id, dataset_id, document_id):
           type: object
     """
     req = await get_request_json()
+    _normalize_legacy_raptor_config(req)
 
     # An explicit null name is a type error, not an unset field.
     if "name" in req and req["name"] is None:

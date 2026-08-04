@@ -974,6 +974,8 @@ class SILICONFLOWEmbed(Base):
         if self.model_name in ["BAAI/bge-large-zh-v1.5", "BAAI/bge-large-en-v1.5"]:
             # limit 512, 340 is almost safe
             return [" " if not text.strip() else truncate(text, 256) for text in batch]
+        if self.model_name in ["BAAI/bge-m3", "Pro/BAAI/bge-m3"]:
+            return [" " if not text.strip() else truncate(text, 4096) for text in batch]
         return [" " if not text.strip() else text for text in batch]
 
     def _call(self, batch):
