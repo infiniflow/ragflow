@@ -184,7 +184,7 @@ func (s *ChatPipelineService) AsyncChat(
 	if useWebSearch {
 		common.Debug("web_search",
 			zap.Bool("kb", hasKBs),
-			zap.Bool("tavily", chat.PromptConfig != nil && chat.PromptConfig["tavily_api_key"] != "" && chat.PromptConfig["tavily_api_key"] != nil),
+			zap.Bool("configured", resolveWebSearchProvider(chat.PromptConfig) != nil),
 			zap.Any("internet", kwargs["internet"]),
 			zap.Bool("enabled", useWebSearch))
 	}
@@ -772,21 +772,21 @@ func (s *ChatPipelineService) AsyncChat(
 					kbinfos["chunks"] = nlp.RetrievalByChildren(existingChunks, kbTenantIDStrings(kbs), engine.Get(), ctx)
 				}
 
-				// Web search via Tavily
+				// Web search
 				if s.shouldUseWebSearch(chat, kwargs["internet"]) {
-					tavilyKey, _ := chat.PromptConfig["tavily_api_key"].(string)
-					tavResult, tavErr := s.tavilyRetrieve(ctx, tavilyKey, searchQuestion)
-					if tavErr != nil {
-						common.Warn("Tavily web search failed", zap.Error(tavErr))
+					provider := resolveWebSearchProvider(chat.PromptConfig)
+					webResult, webErr := s.retrieveWebSearch(ctx, provider, searchQuestion)
+					if webErr != nil {
+						common.Warn("Web search failed", zap.Error(webErr))
 					} else {
 						// Extend chunks and doc_aggs with web search results.
 						if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
-							if newChunks, ok := tavResult["chunks"].([]map[string]interface{}); ok {
+							if newChunks, ok := webResult["chunks"].([]map[string]interface{}); ok {
 								kbinfos["chunks"] = append(existingChunks, newChunks...)
 							}
 						}
 						if existingAggs, ok := kbinfos["doc_aggs"].([]interface{}); ok {
-							if newAggs, ok := tavResult["doc_aggs"].([]interface{}); ok {
+							if newAggs, ok := webResult["doc_aggs"].([]interface{}); ok {
 								kbinfos["doc_aggs"] = append(existingAggs, newAggs...)
 							}
 						}
@@ -1755,7 +1755,7 @@ func normalizeInternetFlag(v interface{}) *bool {
 
 // shouldUseWebSearch returns true if web search should be enabled.
 // Mirrors Python's _should_use_web_search (dialog_service.py:122-126):
-// Tavily key must be present on chat.PromptConfig AND the internet
+// A web search provider must be configured on chat.PromptConfig AND the internet
 // flag must normalize to explicit true.
 //
 // The second parameter takes the raw internet value (typically
@@ -1765,8 +1765,7 @@ func (s *ChatPipelineService) shouldUseWebSearch(chat *entity.Chat, internet int
 	if chat.PromptConfig == nil {
 		return false
 	}
-	tavilyKey, _ := chat.PromptConfig["tavily_api_key"].(string)
-	if tavilyKey == "" {
+	if resolveWebSearchProvider(chat.PromptConfig) == nil {
 		return false
 	}
 	normalized := normalizeInternetFlag(internet)

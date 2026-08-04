@@ -1668,6 +1668,7 @@ def test_chatbot_routes_auth_stream_nonstream_unit(monkeypatch):
     assert res["data"]["avatar"] == "avatar.png"
     assert res["data"]["prologue"] == "Hello!"
     assert res["data"]["has_tavily_key"] is True
+    assert res["data"]["has_web_search_provider"] is True
 
 
 @pytest.mark.p2
