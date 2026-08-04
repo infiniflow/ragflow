@@ -213,9 +213,9 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvok
 	cm := models.NewChatModel(d, &modelName, cfg)
 
 	chatCfg := &models.ChatConfig{
-		Temperature: req.Temperature,
-		TopP:        req.TopP,
-		MaxTokens:   req.MaxTokens,
+		Temperature:   req.Temperature,
+		TopP:          req.TopP,
+		ContentLength: req.MaxTokens,
 	}
 	// Propagate the agent-level Thinking setting to the driver so
 	// providers like DeepSeek can send thinking: {type: "disabled"}

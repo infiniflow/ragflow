@@ -159,12 +159,12 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 		return nil, "", nil, 0, err
 	}
 	maxTokens := 0
-	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil && mi.MaxTokens != nil {
-		maxTokens = *mi.MaxTokens
+	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil && mi.ContentLength != nil {
+		maxTokens = *mi.ContentLength
 	}
 	if strings.TrimSpace(modelObj.Extra) != "" {
 		var tenantExtra tenantModelExtra
-		if err := json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
+		if err = json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
 			return nil, "", nil, 0, err
 		}
 		if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
@@ -217,12 +217,12 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 			return nil, "", nil, 0, err
 		}
 		maxTokens := 0
-		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil && mi.MaxTokens != nil {
-			maxTokens = *mi.MaxTokens
+		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil && mi.ContentLength != nil {
+			maxTokens = *mi.ContentLength
 		}
 		if modelObj != nil && strings.TrimSpace(modelObj.Extra) != "" {
 			var tenantExtra tenantModelExtra
-			if err := json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
+			if err = json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
 				return nil, "", nil, 0, err
 			}
 			if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
@@ -259,8 +259,8 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 	maxTokens := 0
-	if llmInfo.MaxTokens != nil {
-		maxTokens = *llmInfo.MaxTokens
+	if llmInfo.ContentLength != nil {
+		maxTokens = *llmInfo.ContentLength
 	}
 	return driver, llmInfo.Name, apiConfig, maxTokens, nil
 }

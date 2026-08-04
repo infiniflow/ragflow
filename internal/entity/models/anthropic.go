@@ -132,8 +132,8 @@ func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *C
 	if chatModelConfig == nil {
 		return
 	}
-	if chatModelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
+	if chatModelConfig.ContentLength != nil {
+		reqBody["max_tokens"] = *chatModelConfig.ContentLength
 	}
 	if chatModelConfig.Temperature != nil {
 		reqBody["temperature"] = *chatModelConfig.Temperature

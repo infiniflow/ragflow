@@ -705,7 +705,7 @@ func containsNvidiaCatalogValue(values []string, target string) bool {
 }
 
 func parseNvidiaModelList(modelList ModelList, provider *Provider) []ListModelResponse {
-	const defaultMaxTokens = 8192
+	const defaultMaxInputTokens = 8192
 
 	models := make([]ListModelResponse, 0, len(modelList.Models))
 	seen := make(map[string]struct{}, len(modelList.Models))
@@ -730,14 +730,14 @@ func parseNvidiaModelList(modelList ModelList, provider *Provider) []ListModelRe
 			}
 		}
 		if preset != nil {
-			response.MaxTokens = preset.MaxTokens
+			response.ContentLength = preset.ContentLength
 			response.ModelTypes = append([]string(nil), preset.ModelTypes...)
 			response.Thinking = preset.Thinking
 			response.MaxDimension = preset.MaxDimension
 			response.Dimensions = append([]int(nil), preset.Dimensions...)
 		} else {
-			maxTokens := defaultMaxTokens
-			response.MaxTokens = &maxTokens
+			maxTokens := defaultMaxInputTokens
+			response.ContentLength = &maxTokens
 			response.ModelTypes = InferModelTypes(modelName)
 		}
 		if len(response.ModelTypes) == 0 {

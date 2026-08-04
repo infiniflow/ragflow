@@ -4189,7 +4189,7 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		}
 		if v, ok := dialog.LLMSetting["max_tokens"].(float64); ok {
 			i := int(v)
-			cfg.MaxTokens = &i
+			cfg.ContentLength = &i
 		}
 		if v, ok := dialog.LLMSetting["temperature"].(float64); ok {
 			cfg.Temperature = &v
@@ -4229,7 +4229,7 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		}
 		if v, ok := config["max_tokens"].(float64); ok {
 			i := int(v)
-			cfg.MaxTokens = &i
+			cfg.ContentLength = &i
 		}
 		if v, ok := config["temperature"].(float64); ok {
 			cfg.Temperature = &v

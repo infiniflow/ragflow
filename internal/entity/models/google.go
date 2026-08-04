@@ -325,11 +325,11 @@ func googleGenerateContentConfig(chatModelConfig *ChatConfig, systemInstruction 
 			value := float32(*chatModelConfig.TopP)
 			cfg.TopP = &value
 		}
-		if chatModelConfig.MaxTokens != nil {
-			if *chatModelConfig.MaxTokens < 0 || *chatModelConfig.MaxTokens > math.MaxInt32 {
-				return nil, fmt.Errorf("gemini: max_tokens %d is out of range for int32", *chatModelConfig.MaxTokens)
+		if chatModelConfig.MaxOutput != nil {
+			if *chatModelConfig.MaxOutput < 0 || *chatModelConfig.MaxOutput > math.MaxInt32 {
+				return nil, fmt.Errorf("gemini: max_tokens %d is out of range for int32", *chatModelConfig.MaxOutput)
 			}
-			cfg.MaxOutputTokens = int32(*chatModelConfig.MaxTokens)
+			cfg.MaxOutputTokens = int32(*chatModelConfig.MaxOutput)
 		}
 		if chatModelConfig.Stop != nil {
 			cfg.StopSequences = *chatModelConfig.Stop

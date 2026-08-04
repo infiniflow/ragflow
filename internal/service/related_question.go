@@ -111,7 +111,7 @@ func relatedQuestionsConfig(searchConfig map[string]interface{}) *modelModule.Ch
 			}
 		case "max_tokens":
 			if v, ok := intFromRelatedQuestionConfig(value); ok {
-				cfg.MaxTokens = &v
+				cfg.ContentLength = &v
 			}
 		case "temperature":
 			if v, ok := floatFromRelatedQuestionConfig(value); ok {

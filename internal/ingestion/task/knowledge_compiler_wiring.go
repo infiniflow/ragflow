@@ -144,7 +144,7 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 		// MaxTokens caps the generated summary length (mirrors Python's
 		// {"max_tokens": max(self._max_token, 512)}, issue #10235).
 		if req.MaxTokens != nil {
-			config.MaxTokens = req.MaxTokens
+			config.ContentLength = req.MaxTokens
 		}
 	}
 	resp, err := c.svc.Chat(ctx, c.tenantID, llmID, msgs, config)

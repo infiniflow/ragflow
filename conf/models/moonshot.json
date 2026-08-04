@@ -12,6 +12,54 @@
   "class": "kimi",
   "models": [
     {
+      "name": "kimi-k3",
+      "input_max_tokens": 1048576,
+      "output_max_tokens": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k2.7-code",
+      "input_max_tokens": 262144,
+      "output_max_tokens": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k2.7-code-highspeed",
+      "input_max_tokens": 262144,
+      "output_max_tokens": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
       "name": "kimi-k2.6",
       "max_tokens": 262144,
       "model_types": [

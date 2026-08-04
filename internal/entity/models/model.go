@@ -160,19 +160,18 @@ type ModelTools struct {
 
 // Model represents a single LLM model
 type Model struct {
-	Name            string         `json:"name"`
-	MaxTokens       *int           `json:"max_tokens"`
-	MaxInputTokens  *int           `json:"max_input_tokens"`
-	MaxOutputTokens *int           `json:"max_output_tokens"`
-	ModelTypes      []string       `json:"model_types"`
-	Thinking        *ModelThinking `json:"thinking"`
-	Tools           *ModelTools    `json:"tools"`
-	Class           *string        `json:"class"`
-	MaxDimension    *int           `json:"max_dimension"` // used by embedding models
-	Dimensions      []int          `json:"dimensions"`
-	Alias           []string       `json:"alias"`
-	Rank            *int           `json:"rank"`
-	ModelTypeMap    map[string]bool
+	Name          string         `json:"name"`
+	ContentLength *int           `json:"content_length,omitempty"`
+	MaxOutput     *int           `json:"max_output,omitempty"`
+	ModelTypes    []string       `json:"model_types"`
+	Thinking      *ModelThinking `json:"thinking"`
+	Tools         *ModelTools    `json:"tools"`
+	Class         *string        `json:"class"`
+	MaxDimension  *int           `json:"max_dimension"` // used by embedding models
+	Dimensions    []int          `json:"dimensions"`
+	Alias         []string       `json:"alias"`
+	Rank          *int           `json:"rank"`
+	ModelTypeMap  map[string]bool
 }
 
 // Provider represents an LLM provider
@@ -413,8 +412,11 @@ func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
 		if model.Thinking != nil {
 			modelData["thinking"] = model.Thinking
 		}
-		if model.MaxTokens != nil {
-			modelData["max_tokens"] = *model.MaxTokens
+		if model.ContentLength != nil {
+			modelData["content_length"] = *model.ContentLength
+		}
+		if model.MaxOutput != nil {
+			modelData["max_output"] = *model.MaxOutput
 		}
 		if model.MaxDimension != nil {
 			modelData["max_dimension"] = *model.MaxDimension
@@ -489,11 +491,12 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 		// keep the response shape stable for clients that destructure
 		// the object.
 		modelData := map[string]interface{}{
-			"name":          model.Name,
-			"max_tokens":    model.MaxTokens,
-			"model_types":   model.ModelTypes,
-			"max_dimension": model.MaxDimension,
-			"dimensions":    model.Dimensions,
+			"name":           model.Name,
+			"content_length": model.ContentLength,
+			"max_output":     model.MaxOutput,
+			"model_types":    model.ModelTypes,
+			"max_dimension":  model.MaxDimension,
+			"dimensions":     model.Dimensions,
 		}
 		if model.Thinking != nil {
 			modelData["thinking"] = "supported"
@@ -582,13 +585,13 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 	matchFilter := true
 	if filterBy != "" && filterValue != nil {
 		switch filterBy {
-		case "max_tokens":
+		case "content_length":
 			if maxVal, ok := filterValue.(int); ok {
-				if *model.MaxTokens < maxVal {
+				if *model.ContentLength < maxVal {
 					matchFilter = false
 					resp.Code = 400
-					resp.Message = fmt.Sprintf("Model does not meet filter criteria: max_tokens (%d) < %d",
-						model.MaxTokens, maxVal)
+					resp.Message = fmt.Sprintf("Model does not meet filter criteria: content_length (%d) < %d",
+						model.ContentLength, maxVal)
 				}
 			}
 		case "type":
@@ -604,9 +607,10 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 
 	if matchFilter {
 		modelData := map[string]interface{}{
-			"name":        model.Name,
-			"max_tokens":  model.MaxTokens,
-			"model_types": model.ModelTypes,
+			"name":           model.Name,
+			"content_length": model.ContentLength,
+			"max_output":     model.MaxOutput,
+			"model_types":    model.ModelTypes,
 			//"features":    getFeaturesMap(model.Features),
 		}
 
@@ -666,10 +670,11 @@ func (pm *ProviderManager) SearchByType(modelType string) ModelResponse {
 		for _, model := range provider.Models {
 			if containsModelType(model.ModelTypes, modelType) {
 				modelData := map[string]interface{}{
-					"provider":    provider.Name,
-					"name":        model.Name,
-					"max_tokens":  model.MaxTokens,
-					"model_types": model.ModelTypes,
+					"provider":       provider.Name,
+					"name":           model.Name,
+					"content_length": model.ContentLength,
+					"max_output":     model.MaxOutput,
+					"model_types":    model.ModelTypes,
 					//"features":    getFeaturesMap(model.Features),
 				}
 				resp.Data = append(resp.Data, modelData)

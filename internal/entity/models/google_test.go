@@ -539,8 +539,8 @@ func TestGoogleGenerateContentConfigRejectsMaxTokensOverflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("googleGenerateContentConfig error = %v", err)
 	}
-	if cfg == nil || cfg.MaxOutputTokens != math.MaxInt32 {
-		t.Fatalf("cfg.MaxOutputTokens = %#v, want %d", cfg, int32(math.MaxInt32))
+	if cfg == nil || cfg.MaxOutput != math.MaxInt32 {
+		t.Fatalf("cfg.MaxOutput = %#v, want %d", cfg, int32(math.MaxInt32))
 	}
 }
 

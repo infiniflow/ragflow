@@ -179,9 +179,9 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 				if liveModels, err := driver.ListModels(c.Request.Context(), apiConfig); err == nil {
 					for _, m := range liveModels {
 						remoteModels = append(remoteModels, map[string]interface{}{
-							"name":        m.Name,
-							"model_types": m.ModelTypes,
-							"max_tokens":  m.MaxTokens,
+							"name":             m.Name,
+							"model_types":      m.ModelTypes,
+							"content_length": m.ContentLength,
 						})
 					}
 				}
@@ -831,16 +831,16 @@ func (h *ProviderHandler) ChatToModel(c *gin.Context) {
 	}
 
 	chatConfig := models.ChatConfig{
-		Thinking:    &req.Thinking,
-		Stream:      &req.Stream,
-		Vision:      nil,
-		Stop:        &[]string{},
-		DoSample:    nil,
-		MaxTokens:   nil,
-		Temperature: nil,
-		TopP:        nil,
-		Effort:      req.Effort,
-		Verbosity:   req.Verbosity,
+		Thinking:      &req.Thinking,
+		Stream:        &req.Stream,
+		Vision:        nil,
+		Stop:          &[]string{},
+		DoSample:      nil,
+		ContentLength: nil,
+		Temperature:   nil,
+		TopP:          nil,
+		Effort:        req.Effort,
+		Verbosity:     req.Verbosity,
 	}
 
 	userID := c.GetString("user_id")

@@ -241,7 +241,7 @@ func (x *XunFeiModel) CheckConnection(ctx context.Context, apiConfig *APIConfig)
 	// Verify the credential bundle with a minimal chat request against the
 	// free Spark-Lite model.
 	maxTokens := 1
-	chatConfig := &ChatConfig{MaxTokens: &maxTokens}
+	chatConfig := &ChatConfig{ContentLength: &maxTokens}
 	_, err := x.ChatWithMessages(ctx, "Spark-Lite", []Message{{Role: "user", Content: "Hi"}}, apiConfig, chatConfig, nil)
 	return err
 }

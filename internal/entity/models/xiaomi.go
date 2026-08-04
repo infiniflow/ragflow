@@ -80,8 +80,8 @@ func (x *XiaomiModel) ChatWithMessages(ctx context.Context, modelName string, me
 	delete(reqBody, "max_tokens")
 
 	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			reqBody["max_completion_tokens"] = *chatModelConfig.MaxTokens
+		if chatModelConfig.ContentLength != nil {
+			reqBody["max_completion_tokens"] = *chatModelConfig.ContentLength
 		}
 
 		if chatModelConfig.Thinking != nil {
@@ -131,8 +131,8 @@ func (x *XiaomiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 
 	if modelConfig != nil {
-		if modelConfig.MaxTokens != nil {
-			reqBody["max_completion_tokens"] = *modelConfig.MaxTokens
+		if modelConfig.ContentLength != nil {
+			reqBody["max_completion_tokens"] = *modelConfig.ContentLength
 		}
 
 		if modelConfig.Thinking != nil {
