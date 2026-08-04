@@ -36,6 +36,7 @@ from common.metadata_utils import apply_meta_data_filter
 from api.db.services.search_service import SearchService
 from api.db.services.user_service import UserTenantService
 from api.db.joint_services.tenant_model_service import get_tenant_default_model_by_type, resolve_model_config
+from api.apps.restful_apis._generation_params import resolve_llm_setting
 from common.misc_utils import thread_pool_exec
 from api.utils.api_utils import get_error_data_result, get_json_result, add_tenant_id_to_kwargs, get_result, get_request_json, server_error_response, validate_request
 from rag.app.tag import label_question
@@ -493,7 +494,7 @@ async def related_questions_embedded(tenant_id=None):
         chat_model_config = await thread_pool_exec(get_tenant_default_model_by_type, tenant_id, LLMType.CHAT)
     chat_mdl = LLMBundle(tenant_id, chat_model_config)
 
-    gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
+    gen_conf = resolve_llm_setting(search_config.get("llm_setting"))
     prompt = load_prompt("related_question")
     ans = await chat_mdl.async_chat(
         prompt,

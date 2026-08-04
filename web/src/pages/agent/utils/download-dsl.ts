@@ -8,10 +8,7 @@ import { clearSensitiveFields } from './clear-sensitive-fields';
  * canvas export button and the version-history dialog so both emit
  * the same structure.
  */
-export const downloadDsl = (
-  dsl: DSL | Record<string, any>,
-  title: string,
-) => {
+export const downloadDsl = (dsl: DSL | Record<string, any>, title: string) => {
   const sanitizedDsl = clearSensitiveFields(dsl);
   downloadJsonFile(
     { ...sanitizedDsl, globals: { ...(sanitizedDsl.globals ?? {}) } },

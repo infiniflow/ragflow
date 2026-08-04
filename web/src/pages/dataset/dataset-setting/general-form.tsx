@@ -130,7 +130,9 @@ export function GeneralForm() {
         ownerTenantId={useKnowledgeBaseContext().knowledgeBase?.tenant_id}
       ></EmbeddingModelItem>
       <PageRankFormField></PageRankFormField>
-      <CompilationTemplateFormField horizontal={true}></CompilationTemplateFormField>
+      <CompilationTemplateFormField
+        horizontal={true}
+      ></CompilationTemplateFormField>
 
       <TagItems></TagItems>
     </>
