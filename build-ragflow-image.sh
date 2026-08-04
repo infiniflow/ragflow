@@ -93,10 +93,14 @@ docker "${BUILD_ARGS[@]}" .
 
 # --- 4. Optional deploy ----------------------------------------------
 if [ "$DEPLOY" = "1" ]; then
-  log "Starting docker compose (app)"
+  log "Starting docker compose (base services + app)"
   cd docker
-  docker compose -f docker-compose.yml up -d --force-recreate ragflow-cpu
-  echo "Follow logs: docker logs -f ragflow-cpu-1"
+  # up -d (без имени сервиса): поднимает ВСЕ сервисы — es01, mysql, minio,
+  # redis из include docker-compose-base.yml + ragflow-cpu/ragflow-gpu.
+  # Compose сам пересоздаст ragflow-cpu, если образ изменился.
+  docker compose -f docker-compose.yml up -d
+  echo "Check: docker compose -f docker-compose.yml ps"
+  echo "Follow logs: docker logs -f docker-ragflow-cpu-1"
 fi
 
 log "Done"
