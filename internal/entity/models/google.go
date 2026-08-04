@@ -439,6 +439,33 @@ func googleToolCalls(functionCalls []*genai.FunctionCall) []map[string]interface
 	return toolCalls
 }
 
+// googleUsageFromMetadata converts the SDK's
+// GenerateContentResponseUsageMetadata into the package's TokenUsage.
+// It returns nil when the metadata is absent so callers can pass the
+// result directly to recordResponseUsage without a separate presence
+// check. ThoughtsTokenCount is summed into CompletionTokens because
+// reasoning output is part of what the model emits; the SDK's
+// authoritative TotalTokenCount is used as-is when present.
+func googleUsageFromMetadata(m *genai.GenerateContentResponseUsageMetadata) *TokenUsage {
+	if m == nil {
+		return nil
+	}
+	in := int(m.PromptTokenCount)
+	out := int(m.CandidatesTokenCount + m.ThoughtsTokenCount)
+	total := int(m.TotalTokenCount)
+	if in == 0 && out == 0 && total == 0 {
+		return nil
+	}
+	if total == 0 {
+		total = in + out
+	}
+	return &TokenUsage{
+		PromptTokens:     in,
+		CompletionTokens: out,
+		TotalTokens:      total,
+	}
+}
+
 func (g *GoogleModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -477,6 +504,7 @@ func (g *GoogleModel) ChatWithMessages(ctx context.Context, modelName string, me
 
 	// Extract text from response
 	answer := response.Text()
+	recordResponseUsage(modelUsage, response.ResponseID, googleUsageFromMetadata(response.UsageMetadata), "chat")
 
 	return &ChatResponse{Answer: &answer, ToolCalls: googleToolCalls(response.FunctionCalls())}, nil
 }
@@ -516,6 +544,12 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 	var toolCalls []map[string]interface{}
 
+	// Capture the most recent UsageMetadata across the stream so we
+	// can record it once after the iterator finishes. Each chunk may
+	// carry partial counts; the SDK's authoritative total is in the
+	// final chunk's UsageMetadata.
+	var streamUsage *TokenUsage
+	var responseID string
 	for response, err := range client.Models.GenerateContentStream(
 		ctx,
 		modelName,
@@ -552,6 +586,17 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 				return err
 			}
 		}
+
+		if u := googleUsageFromMetadata(response.UsageMetadata); u != nil {
+			streamUsage = u
+		}
+		if responseID == "" {
+			responseID = response.ResponseID
+		}
+	}
+
+	if streamUsage != nil {
+		recordResponseUsage(modelUsage, responseID, streamUsage, "chat")
 	}
 
 	if chatModelConfig != nil && len(toolCalls) > 0 {

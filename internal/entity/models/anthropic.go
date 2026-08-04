@@ -42,6 +42,11 @@ func NewAnthropicModel(baseURL map[string]string, urlSuffix URLSuffix) *Anthropi
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
 			httpClient: NewDriverHTTPClient(false),
+			// Anthropic authenticates with the "x-api-key" header instead
+			// of the default "Authorization: Bearer".
+			authHeader: func(cfg *APIConfig) (string, string) {
+				return "x-api-key", strings.TrimSpace(*cfg.ApiKey)
+			},
 		},
 	}
 }
@@ -65,7 +70,6 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 	if err := a.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("messages is empty")
 	}
@@ -97,19 +101,15 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 	}
 	applyAnthropicChatConfig(reqBody, chatModelConfig)
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	req, err := a.baseModel.newJSONPostRequest(ctx, url, apiConfig, reqBody)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+		return nil, err
 	}
-	setAnthropicHeaders(req, apiKey, false)
+	req.Header.Set("anthropic-version", anthropicVersion)
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := a.baseModel.httpClient.Do(req)
 	if err != nil {
@@ -125,14 +125,7 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 		return nil, fmt.Errorf("anthropic messages API error: %s, body: %s", resp.Status, string(body))
 	}
 
-	answer, reasoning, err := parseAnthropicChatResponse(body)
-	if err != nil {
-		return nil, err
-	}
-	return &ChatResponse{
-		Answer:        &answer,
-		ReasonContent: &reasoning,
-	}, nil
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, parseAnthropicChatResponse)
 }
 
 func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *ChatConfig) {
@@ -341,19 +334,24 @@ func parseDataImageURL(url string) (string, string, error) {
 	return parts[0], parts[1], nil
 }
 
-func parseAnthropicChatResponse(body []byte) (string, string, error) {
+func parseAnthropicChatResponse(body []byte, _ *ChatConfig) (chatResponseParts, error) {
 	var result struct {
+		ID      string `json:"id"`
 		Content []struct {
 			Type     string `json:"type"`
 			Text     string `json:"text"`
 			Thinking string `json:"thinking"`
 		} `json:"content"`
+		Usage struct {
+			InputTokens  int `json:"input_tokens"`
+			OutputTokens int `json:"output_tokens"`
+		} `json:"usage"`
 	}
 	if err := json.Unmarshal(body, &result); err != nil {
-		return "", "", fmt.Errorf("failed to parse response: %w", err)
+		return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
 	}
 	if len(result.Content) == 0 {
-		return "", "", fmt.Errorf("no content in Anthropic response")
+		return chatResponseParts{}, fmt.Errorf("no content in Anthropic response")
 	}
 
 	var answer strings.Builder
@@ -367,9 +365,26 @@ func parseAnthropicChatResponse(body []byte) (string, string, error) {
 		}
 	}
 	if answer.Len() == 0 {
-		return "", "", fmt.Errorf("no text content in Anthropic response")
+		return chatResponseParts{}, fmt.Errorf("no text content in Anthropic response")
 	}
-	return answer.String(), reasoning.String(), nil
+
+	usage := &TokenUsage{
+		PromptTokens:     result.Usage.InputTokens,
+		CompletionTokens: result.Usage.OutputTokens,
+		TotalTokens:      result.Usage.InputTokens + result.Usage.OutputTokens,
+	}
+	if usage.PromptTokens == 0 && usage.CompletionTokens == 0 {
+		usage = nil
+	}
+
+	ans := answer.String()
+	reason := reasoning.String()
+	return chatResponseParts{
+		RequestID:     result.ID,
+		Content:       &ans,
+		ReasonContent: &reason,
+		Usage:         usage,
+	}, nil
 }
 
 func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
