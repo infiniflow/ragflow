@@ -1,7 +1,12 @@
+# ruff: noqa: E402
+
 import asyncio
 import sys
 from pathlib import Path
 from types import ModuleType
+
+_ORIGINAL_MODULES = {name: module for name, module in sys.modules.items() if name == "rag.advanced_rag" or name.startswith("rag.advanced_rag.") or name == "infinity" or name.startswith("infinity.")}
+
 
 # Import the harness modules without loading the optional DeepResearcher facade.
 if "rag.advanced_rag" not in sys.modules:
@@ -51,6 +56,15 @@ from rag.advanced_rag.harness.tools import search as search_module
 from rag.advanced_rag.harness.tools.gating import get_gated_tools
 from rag.advanced_rag.harness.tools.registry import TOOL_REGISTRY
 from rag.advanced_rag.harness.types import ClaimTarget, OrchestratorContext
+
+
+def teardown_module(_module):
+    """Restore package entries changed by the import stubs after this module."""
+    prefixes = ("rag.advanced_rag", "infinity")
+    for name in list(sys.modules):
+        if (name in prefixes or name.startswith(prefixes)) and name not in _ORIGINAL_MODULES:
+            sys.modules.pop(name, None)
+    sys.modules.update(_ORIGINAL_MODULES)
 
 
 class _WebOnlyTools:

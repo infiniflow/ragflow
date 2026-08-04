@@ -43,6 +43,13 @@ async def decompose_and_search(state: dict, tools) -> dict:
                 if not result.get("chunks"):
                     web_queries.setdefault(normalize_search_query(c.description), c.description)
             uncached_queries = {key: query for key, query in web_queries.items() if key not in web_cache}
+            cache_reuse_count = len(web_queries) - len(uncached_queries)
+            if web_queries:
+                _LOG.debug(
+                    "medium local-empty web fallback: %d new request(s), %d cache reuse(s)",
+                    len(uncached_queries),
+                    cache_reuse_count,
+                )
             if uncached_queries:
                 web_results = await asyncio.gather(*(web_search(tools, query=query, keywords=keywords) for query in uncached_queries.values()))
                 web_cache.update(zip(uncached_queries, web_results))

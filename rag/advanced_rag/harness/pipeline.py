@@ -47,10 +47,12 @@ class Pipeline:
         cache_key = web_search_cache_key(kwargs.get("query", ""), kwargs.get("keywords", ""))
         cached = self._web_search_cache.get(cache_key)
         if cached is not None:
+            _LOG.debug("web_search cache hit")
             return cached
 
         task = self._web_search_inflight.get(cache_key)
         if task is None:
+            _LOG.debug("web_search provider task created")
             task = asyncio.create_task(self._execute_uncached("web_search", **kwargs))
             self._web_search_inflight[cache_key] = task
 
@@ -64,6 +66,8 @@ class Pipeline:
                     self._web_search_cache[cache_key] = result
 
             task.add_done_callback(finish)
+        else:
+            _LOG.debug("web_search joined in-flight task")
 
         return await asyncio.shield(task)
 
