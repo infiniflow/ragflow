@@ -159,7 +159,9 @@ func (dao *ChatDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entit
 // GetByNameAndTenantID gets a chat by name and tenant ID.
 func (dao *ChatDAO) GetByNameAndTenantID(ctx context.Context, db *gorm.DB, name, tenantID string) (*entity.Chat, error) {
 	var chat entity.Chat
-	err := db.WithContext(ctx).Where("LOWER(name) = LOWER(?) AND tenant_id = ?", name, tenantID).First(&chat).Error
+	err := db.WithContext(ctx).
+		Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", name, tenantID, string(entity.StatusValid)).
+		First(&chat).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil

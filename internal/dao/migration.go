@@ -68,6 +68,11 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to add unique index on user_canvas (user_id, canvas_category, title): %w", err)
 	}
 
+	// Add case-insensitive unique constraint on valid dialog names.
+	if err := migrateDialogNameUnique(ctx, db); err != nil {
+		return fmt.Errorf("failed to add unique index on dialog (tenant_id, name): %w", err)
+	}
+
 	common.Info("All manual migrations completed successfully")
 	return nil
 }
@@ -342,7 +347,25 @@ func migrateUserCanvasTitleUnique(ctx context.Context, db *gorm.DB) error {
 		return nil
 	}
 
-	const indexName = "idx_user_canvas_user_category_title"
+	var colExists int64
+	if err := db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_canvas' AND COLUMN_NAME = 'title_ci'`).Scan(&colExists).Error; err != nil {
+		return err
+	}
+	if colExists == 0 {
+		common.Info("Adding generated column title_ci to user_canvas...")
+		if err := db.WithContext(ctx).Exec(`ALTER TABLE user_canvas
+			ADD COLUMN title_ci VARCHAR(255) GENERATED ALWAYS AS (LOWER(title)) VIRTUAL`).Error; err != nil {
+			errStr := err.Error()
+			if strings.Contains(errStr, "Error 1060") && strings.Contains(errStr, "Duplicate column name") {
+				common.Info("Column title_ci already exists, skipping", zap.String("error", errStr))
+			} else {
+				return fmt.Errorf("failed to add generated column title_ci: %w", err)
+			}
+		}
+	}
+
+	const indexName = "idx_user_canvas_user_category_title_ci"
 
 	var idxExists int64
 	if err := db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
@@ -356,9 +379,9 @@ func migrateUserCanvasTitleUnique(ctx context.Context, db *gorm.DB) error {
 	var duplicateCount int64
 	if err := db.WithContext(ctx).Raw(`
 		SELECT COUNT(*) FROM (
-			SELECT user_id, canvas_category, title FROM user_canvas
-			WHERE title IS NOT NULL
-			GROUP BY user_id, canvas_category, title HAVING COUNT(*) > 1
+			SELECT user_id, canvas_category, title_ci FROM user_canvas
+			WHERE title_ci IS NOT NULL
+			GROUP BY user_id, canvas_category, title_ci HAVING COUNT(*) > 1
 		) AS duplicates
 	`).Scan(&duplicateCount).Error; err != nil {
 		return err
@@ -367,14 +390,77 @@ func migrateUserCanvasTitleUnique(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("found %d duplicate (user_id, canvas_category, title) groups in user_canvas; resolve these before the unique index can be created", duplicateCount)
 	}
 
-	common.Info("Adding unique index on user_canvas (user_id, canvas_category, title)...")
-	if err := db.WithContext(ctx).Exec("ALTER TABLE user_canvas ADD UNIQUE INDEX " + indexName + " (user_id, canvas_category, title)").Error; err != nil {
+	common.Info("Adding unique index on user_canvas (user_id, canvas_category, title_ci)...")
+	if err := db.WithContext(ctx).Exec("ALTER TABLE user_canvas ADD UNIQUE INDEX " + indexName + " (user_id, canvas_category, title_ci)").Error; err != nil {
 		errStr := err.Error()
 		if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
 			common.Info("Index already exists, skipping", zap.String("error", errStr))
 			return nil
 		}
-		return fmt.Errorf("failed to add unique index on user_canvas (user_id, canvas_category, title): %w", err)
+		return fmt.Errorf("failed to add unique index on user_canvas (user_id, canvas_category, title_ci): %w", err)
+	}
+
+	return nil
+}
+
+func migrateDialogNameUnique(ctx context.Context, db *gorm.DB) error {
+	if !db.WithContext(ctx).Migrator().HasTable("dialog") {
+		return nil
+	}
+
+	var colExists int64
+	if err := db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dialog' AND COLUMN_NAME = 'name_ci'`).Scan(&colExists).Error; err != nil {
+		return err
+	}
+	if colExists == 0 {
+		common.Info("Adding generated column name_ci to dialog...")
+		if err := db.WithContext(ctx).Exec(`ALTER TABLE dialog
+			ADD COLUMN name_ci VARCHAR(255) GENERATED ALWAYS AS (
+				CASE WHEN status = '1' THEN LOWER(name) ELSE NULL END
+			) VIRTUAL`).Error; err != nil {
+			errStr := err.Error()
+			if strings.Contains(errStr, "Error 1060") && strings.Contains(errStr, "Duplicate column name") {
+				common.Info("Column name_ci already exists, skipping", zap.String("error", errStr))
+			} else {
+				return fmt.Errorf("failed to add generated column name_ci to dialog: %w", err)
+			}
+		}
+	}
+
+	const indexName = "idx_dialog_tenant_name_ci"
+
+	var idxExists int64
+	if err := db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'dialog' AND INDEX_NAME = ?`, indexName).Scan(&idxExists).Error; err != nil {
+		return err
+	}
+	if idxExists > 0 {
+		return nil
+	}
+
+	var duplicateCount int64
+	if err := db.WithContext(ctx).Raw(`
+		SELECT COUNT(*) FROM (
+			SELECT tenant_id, name_ci FROM dialog
+			WHERE name_ci IS NOT NULL
+			GROUP BY tenant_id, name_ci HAVING COUNT(*) > 1
+		) AS duplicates
+	`).Scan(&duplicateCount).Error; err != nil {
+		return err
+	}
+	if duplicateCount > 0 {
+		return fmt.Errorf("found %d duplicate (tenant_id, name) groups in dialog; resolve these before the unique index can be created", duplicateCount)
+	}
+
+	common.Info("Adding unique index on dialog (tenant_id, name_ci)...")
+	if err := db.WithContext(ctx).Exec("ALTER TABLE dialog ADD UNIQUE INDEX " + indexName + " (tenant_id, name_ci)").Error; err != nil {
+		errStr := err.Error()
+		if strings.Contains(errStr, "Error 1061") && strings.Contains(errStr, "Duplicate key name") {
+			common.Info("Index already exists, skipping", zap.String("error", errStr))
+			return nil
+		}
+		return fmt.Errorf("failed to add unique index on dialog (tenant_id, name_ci): %w", err)
 	}
 
 	return nil

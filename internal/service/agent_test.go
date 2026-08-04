@@ -22,6 +22,7 @@ import (
 	"net/netip"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -519,6 +520,73 @@ func TestCreateAgentDedupesTitleCaseInsensitive(t *testing.T) {
 	}
 	if row.Title == nil || *row.Title != "w(1)" {
 		t.Fatalf("expected deduped agent title, got %v", row.Title)
+	}
+}
+
+func TestCreateAgentConcurrentDedupesTitles(t *testing.T) {
+	testDB := setupServiceTestDB(t)
+	t.Helper()
+
+	if err := testDB.AutoMigrate(&entity.UserCanvas{}); err != nil {
+		t.Fatalf("failed to migrate: %v", err)
+	}
+	sqlDB, err := testDB.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := testDB.Exec(`CREATE UNIQUE INDEX idx_user_canvas_title_ci_test ON user_canvas(user_id, canvas_category, lower(title))`).Error; err != nil {
+		t.Fatalf("failed to create unique index: %v", err)
+	}
+	pushServiceDB(t, testDB)
+
+	const workers = 5
+	svc := NewAgentService()
+	titles := make(chan string, workers)
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			title := "Concurrent Agent"
+			row, code, err := svc.CreateAgent(t.Context(), &CreateAgentRequest{
+				UserID: "user-1",
+				Title:  &title,
+				DSL:    entity.JSONMap{"components": map[string]any{}},
+			})
+			if err != nil {
+				errs <- err
+				return
+			}
+			if code != common.CodeSuccess {
+				errs <- errors.New("unexpected create code")
+				return
+			}
+			if row.Title == nil {
+				errs <- errors.New("missing title")
+				return
+			}
+			titles <- *row.Title
+		}()
+	}
+	wg.Wait()
+	close(titles)
+	close(errs)
+
+	for err := range errs {
+		t.Fatalf("CreateAgent failed: %v", err)
+	}
+
+	got := map[string]bool{}
+	for title := range titles {
+		got[title] = true
+	}
+	want := []string{"Concurrent Agent", "Concurrent Agent(1)", "Concurrent Agent(2)", "Concurrent Agent(3)", "Concurrent Agent(4)"}
+	for _, title := range want {
+		if !got[title] {
+			t.Fatalf("missing generated title %q; got %+v", title, got)
+		}
 	}
 }
 

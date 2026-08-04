@@ -564,45 +564,50 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		req.CanvasCategory = "agent_canvas"
 	}
 
-	var duplicateCheckErr error
-	title, err := common.DuplicateName(func(title string, tid string) bool {
-		existing, queryErr := s.canvasDAO.GetByUserAndTitle(ctx, dao.DB, tid, title, req.CanvasCategory)
-		if queryErr != nil {
-			duplicateCheckErr = queryErr
-			return false
-		}
-		return existing != nil
-	}, title, req.UserID)
-	if duplicateCheckErr != nil {
-		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", duplicateCheckErr)
-	}
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to create agent: %w", err)
-	} else {
-		req.Title = &title
-	}
-
 	// Normalize legacy v1 / Go-v2 payloads to a React-Flow-shaped graph so
 	// the front-end can render the canvas without a migration. Idempotent;
 	// no-op when graph.nodes is already non-empty.
 	req.DSL = dslpkg.NormalizeForCanvas(req.DSL)
-	row := &entity.UserCanvas{
-		ID:             utility.GenerateUUID(),
-		UserID:         req.UserID,
-		Title:          req.Title,
-		Description:    req.Description,
-		Permission:     req.Permission,
-		CanvasType:     req.CanvasType,
-		CanvasCategory: req.CanvasCategory,
-		DSL:            req.DSL,
-	}
-	if err := s.canvasDAO.Create(ctx, dao.DB, row); err != nil {
-		if dao.IsDuplicateKeyErr(err) {
-			return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
+
+	const maxCreateNameRetries = 1000
+	for attempt := 0; attempt < maxCreateNameRetries; attempt++ {
+		var duplicateCheckErr error
+		candidateTitle, err := common.DuplicateName(func(title string, tid string) bool {
+			existing, queryErr := s.canvasDAO.GetByUserAndTitle(ctx, dao.DB, tid, title, req.CanvasCategory)
+			if queryErr != nil {
+				duplicateCheckErr = queryErr
+				return false
+			}
+			return existing != nil
+		}, title, req.UserID)
+		if duplicateCheckErr != nil {
+			return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", duplicateCheckErr)
 		}
-		return nil, common.CodeServerError, fmt.Errorf("create agent: %w", err)
+		if err != nil {
+			return nil, common.CodeServerError, fmt.Errorf("failed to create agent: %w", err)
+		}
+
+		titlePtr := candidateTitle
+		row := &entity.UserCanvas{
+			ID:             utility.GenerateUUID(),
+			UserID:         req.UserID,
+			Title:          &titlePtr,
+			Description:    req.Description,
+			Permission:     req.Permission,
+			CanvasType:     req.CanvasType,
+			CanvasCategory: req.CanvasCategory,
+			DSL:            req.DSL,
+		}
+		if err := s.canvasDAO.Create(ctx, dao.DB, row); err != nil {
+			if dao.IsDuplicateKeyErr(err) {
+				continue
+			}
+			return nil, common.CodeServerError, fmt.Errorf("create agent: %w", err)
+		}
+		req.Title = &titlePtr
+		return row, common.CodeSuccess, nil
 	}
-	return row, common.CodeSuccess, nil
+	return nil, common.CodeServerError, fmt.Errorf("failed to create agent with a unique title after %d attempts", maxCreateNameRetries)
 }
 
 func agentTitleAlreadyExistsError(title string) error {

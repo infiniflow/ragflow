@@ -1,7 +1,9 @@
 package service
 
 import (
+	"errors"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -368,6 +370,80 @@ func TestChatServiceCreateDedupesDuplicateNameCaseInsensitive(t *testing.T) {
 	}
 	if got := resp["name"]; got != "CHAT-chat-1(1)" {
 		t.Fatalf("expected deduped chat name, got %v", got)
+	}
+}
+
+func TestChatServiceCreateIgnoresInvalidDuplicateName(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+	invalidStatus := string(entity.StatusInvalid)
+	if err := db.Model(&entity.Chat{}).Where("id = ?", "chat-1").Update("status", invalidStatus).Error; err != nil {
+		t.Fatalf("failed to invalidate chat: %v", err)
+	}
+
+	svc := NewChatService()
+	ctx := t.Context()
+	resp, code, err := svc.Create(ctx, "user-1", map[string]interface{}{"name": "CHAT-chat-1"})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if got := resp["name"]; got != "CHAT-chat-1" {
+		t.Fatalf("expected reused chat name without suffix, got %v", got)
+	}
+}
+
+func TestChatServiceCreateConcurrentDedupesNames(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get sql DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	if err := db.Exec(`CREATE UNIQUE INDEX idx_dialog_tenant_name_ci_test ON dialog(tenant_id, lower(name)) WHERE status = '1'`).Error; err != nil {
+		t.Fatalf("failed to create unique index: %v", err)
+	}
+
+	const workers = 5
+	svc := NewChatService()
+	names := make(chan string, workers)
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			resp, code, err := svc.Create(t.Context(), "user-1", map[string]interface{}{"name": "Concurrent Chat"})
+			if err != nil {
+				errs <- err
+				return
+			}
+			if code != common.CodeSuccess {
+				errs <- errors.New("unexpected create code")
+				return
+			}
+			names <- resp["name"].(string)
+		}()
+	}
+	wg.Wait()
+	close(names)
+	close(errs)
+
+	for err := range errs {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	got := map[string]bool{}
+	for name := range names {
+		got[name] = true
+	}
+	want := []string{"Concurrent Chat", "Concurrent Chat(1)", "Concurrent Chat(2)", "Concurrent Chat(3)", "Concurrent Chat(4)"}
+	for _, name := range want {
+		if !got[name] {
+			t.Fatalf("missing generated name %q; got %+v", name, got)
+		}
 	}
 }
 
