@@ -22,8 +22,6 @@ import (
 	"math"
 	"sort"
 	"strings"
-
-	"ragflow/internal/engine/highlight"
 )
 
 func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
@@ -90,7 +88,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 
 func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
 	result := make(map[string]string)
-	marker := highlight.NewMarker(keywords)
+	marker := newHighlightMarker(keywords)
 	for _, chunk := range chunks {
 		id := stringValue(chunk["id"])
 		text := stringValue(chunk[fieldName])
@@ -101,7 +99,7 @@ func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string
 		if fieldName == "content_with_weight" {
 			tokenizedText = stringValue(chunk["content_ltks"])
 		}
-		if highlighted := marker.MarkText(text, tokenizedText); highlighted != "" {
+		if highlighted := marker.markText(text, tokenizedText); highlighted != "" {
 			result[id] = highlighted
 		}
 	}

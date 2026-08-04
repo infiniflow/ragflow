@@ -130,7 +130,7 @@ func newEngineWithDB(engineType, dbName string, db *sql.DB) *Engine {
 
 func (e *Engine) initialize(ctx context.Context) error {
 	var version string
-	if err := e.db.QueryRowContext(ctx, "SELECT OB_VERSION() FROM DUAL").Scan(&version); err != nil {
+	if err := e.db.QueryRowContext(ctx, "SELECT OB_VERSION()").Scan(&version); err != nil {
 		return fmt.Errorf("get OceanBase version: %w", err)
 	}
 	if compareVersions(version, minimumOceanBaseVersion) < 0 {

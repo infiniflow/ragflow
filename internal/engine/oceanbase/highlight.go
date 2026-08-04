@@ -14,8 +14,7 @@
 //  limitations under the License.
 //
 
-// Package highlight marks query terms in document text.
-package highlight
+package oceanbase
 
 import (
 	"regexp"
@@ -30,18 +29,18 @@ type textMatch struct {
 	end   int
 }
 
-// Marker holds the normalized keywords and compiled patterns for one query.
-type Marker struct {
+// highlightMarker holds the normalized keywords and compiled patterns for one query.
+type highlightMarker struct {
 	keywords           []string
 	keywordSet          map[string]struct{}
 	englishPatterns     []*regexp.Regexp
 	nonEnglishPatterns []*regexp.Regexp
 }
 
-// NewMarker prepares a reusable text marker for a query's keywords.
-func NewMarker(keywords []string) *Marker {
+// newHighlightMarker prepares a reusable text marker for a query's keywords.
+func newHighlightMarker(keywords []string) *highlightMarker {
 	keywords = normalizeKeywords(keywords)
-	marker := &Marker{
+	marker := &highlightMarker{
 		keywords:           keywords,
 		keywordSet:          make(map[string]struct{}, len(keywords)),
 		englishPatterns:     make([]*regexp.Regexp, 0, len(keywords)),
@@ -56,10 +55,10 @@ func NewMarker(keywords []string) *Marker {
 	return marker
 }
 
-// MarkText wraps matching terms in em tags. English terms are matched without
+// markText wraps matching terms in em tags. English terms are matched without
 // case sensitivity at word boundaries. Non-English text uses tokenizedText
 // when available so highlighting follows the indexed token boundaries.
-func (m *Marker) MarkText(text, tokenizedText string) string {
+func (m *highlightMarker) markText(text, tokenizedText string) string {
 	if m == nil || text == "" || len(m.keywords) == 0 {
 		return ""
 	}
