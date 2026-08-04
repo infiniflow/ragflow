@@ -579,6 +579,18 @@ func buildInfinityFusionExpr(topn int, vectorSimilarityWeight *float64) *types.F
 	}
 }
 
+func buildRetrievalFusionExpr(docEngineType string, topn int, vectorSimilarityWeight *float64) *types.FusionExpr {
+	if docEngineType == string(engine.EngineInfinity) {
+		return buildInfinityFusionExpr(topn, vectorSimilarityWeight)
+	}
+
+	return &types.FusionExpr{
+		Method:       "weighted_sum",
+		TopN:         topn,
+		FusionParams: map[string]interface{}{"weights": "0.05,0.95"},
+	}
+}
+
 type RetrievalSearchResult struct {
 	Chunks      []map[string]interface{}          // Search results
 	Total       int64                             // Total number of matches
@@ -689,7 +701,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			}
 
 			// Execute search with fusion
-			fusionExpr := buildInfinityFusionExpr(topk, req.VectorSimilarityWeight)
+			fusionExpr := buildRetrievalFusionExpr(s.docEngine.GetType(), topk, req.VectorSimilarityWeight)
 
 			// Build source with vector column for ES
 			searchSrc := make([]string, len(searchRequest.SelectFields))
