@@ -15,3 +15,9 @@
 //
 
 package dao
+
+type EnterpriseSearchDAO struct{}
+
+func NewEnterpriseSearchDAO() *EnterpriseSearchDAO {
+	return &EnterpriseSearchDAO{}
+}

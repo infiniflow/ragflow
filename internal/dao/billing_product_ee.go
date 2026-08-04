@@ -15,3 +15,9 @@
 //
 
 package dao
+
+type EnterpriseBillingProductDAO struct{}
+
+func NewEnterpriseBillingProductDAO() *EnterpriseBillingProductDAO {
+	return &EnterpriseBillingProductDAO{}
+}
