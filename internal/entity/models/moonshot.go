@@ -82,12 +82,12 @@ func validateMoonshotModelName(modelName string) (string, error) {
 }
 
 // applyMoonshotThinkingPolicy injects the `thinking` directive into the
-// request body and applies the kimi-k2.5/k2.6 parameter policy (mirroring
-// the Python `_apply_model_family_policies` behavior): those models ignore
-// temperature and require pinned top_p / penalty values.
+// request body for any model, and applies the kimi-k2.5/k2.6 parameter
+// policy (mirroring the Python `_apply_model_family_policies` behavior)
+// only to those models: they ignore temperature and require pinned top_p /
+// penalty values.
 func applyMoonshotThinkingPolicy(reqBody map[string]interface{}, modelName string, chatModelConfig *ChatConfig) {
-	thinkingSet := chatModelConfig != nil && chatModelConfig.Thinking != nil
-	if thinkingSet {
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
 		thinkingType := "disabled"
 		if *chatModelConfig.Thinking {
 			thinkingType = "enabled"
@@ -96,7 +96,7 @@ func applyMoonshotThinkingPolicy(reqBody map[string]interface{}, modelName strin
 	}
 
 	modelLower := strings.ToLower(modelName)
-	if thinkingSet || strings.Contains(modelLower, "kimi-k2.5") || strings.Contains(modelLower, "kimi-k2.6") {
+	if strings.Contains(modelLower, "kimi-k2.5") || strings.Contains(modelLower, "kimi-k2.6") {
 		delete(reqBody, "temperature")
 		reqBody["top_p"] = 0.95
 		reqBody["n"] = 1

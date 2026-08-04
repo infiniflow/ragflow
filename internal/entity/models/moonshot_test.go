@@ -186,6 +186,105 @@ func TestMoonshotChatSupportsTools(t *testing.T) {
 	}
 }
 
+func TestMoonshotChatNonKimiThinkingPreservesSampling(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newMoonshotServer(t, func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		thinking, ok := body["thinking"].(map[string]interface{})
+		if !ok || thinking["type"] != "enabled" {
+			t.Errorf("thinking=%#v, want type=enabled", body["thinking"])
+		}
+		if body["temperature"] != 0.7 {
+			t.Errorf("temperature=%v, want 0.7", body["temperature"])
+		}
+		if body["top_p"] != 0.8 {
+			t.Errorf("top_p=%v, want 0.8", body["top_p"])
+		}
+		for _, key := range []string{"n", "presence_penalty", "frequency_penalty"} {
+			if _, ok := body[key]; ok {
+				t.Errorf("%s=%v, want absent for non-Kimi model", key, body[key])
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{"content": "pong"},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	thinking := true
+	temperature := 0.7
+	topP := 0.8
+	resp, err := newMoonshotForTest(srv.URL).ChatWithMessages(
+		ctx,
+		"moonshot-v1-8k",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{
+			Thinking:    &thinking,
+			Temperature: &temperature,
+			TopP:        &topP,
+		}, nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if resp.Answer == nil || *resp.Answer != "pong" {
+		t.Errorf("Answer=%v, want pong", resp.Answer)
+	}
+}
+
+func TestMoonshotChatKimiThinkingAppliesSamplingPolicy(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newMoonshotServer(t, func(t *testing.T, _ *http.Request, body map[string]interface{}, w http.ResponseWriter) {
+		thinking, ok := body["thinking"].(map[string]interface{})
+		if !ok || thinking["type"] != "enabled" {
+			t.Errorf("thinking=%#v, want type=enabled", body["thinking"])
+		}
+		if _, ok := body["temperature"]; ok {
+			t.Errorf("temperature=%v, want deleted", body["temperature"])
+		}
+		if body["top_p"] != 0.95 {
+			t.Errorf("top_p=%v, want 0.95", body["top_p"])
+		}
+		if body["n"] != float64(1) {
+			t.Errorf("n=%v, want 1", body["n"])
+		}
+		if body["presence_penalty"] != 0.0 {
+			t.Errorf("presence_penalty=%v, want 0", body["presence_penalty"])
+		}
+		if body["frequency_penalty"] != 0.0 {
+			t.Errorf("frequency_penalty=%v, want 0", body["frequency_penalty"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{"content": "pong"},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	thinking := true
+	temperature := 0.7
+	resp, err := newMoonshotForTest(srv.URL).ChatWithMessages(
+		ctx,
+		"kimi-k2.5",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{Thinking: &thinking, Temperature: &temperature}, nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if resp.Answer == nil || *resp.Answer != "pong" {
+		t.Errorf("Answer=%v, want pong", resp.Answer)
+	}
+}
+
 func TestMoonshotChatParsesCompletionSchema(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
