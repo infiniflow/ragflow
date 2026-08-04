@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"ragflow/internal/service"
 	"strings"
+	"sync"
 
 	"go.uber.org/zap"
 
@@ -162,11 +163,21 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	return nil
 }
 
+// convertFilesMu serializes background conversions. LinkToDatasets runs
+// convertFiles in a fire-and-forget goroutine per request, so two concurrent
+// link requests could otherwise interleave their "list existing names → pick a
+// unique name → insert" sequences and both insert the same document name into
+// the same KB.
+var convertFilesMu sync.Mutex
+
 // convertFiles mirrors Python _convert_files: for each file, depending on mode,
 // either remove existing documents/mappings (replace) or keep them and skip
 // already-linked KBs (add), then create a new document in each target KB and
 // a fresh mapping.
 func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs []string, userID, mode string) error {
+	convertFilesMu.Lock()
+	defer convertFilesMu.Unlock()
+
 	replaceExisting := mode != "add"
 	for _, fileID := range fileIDs {
 		mappings, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, fileID)
