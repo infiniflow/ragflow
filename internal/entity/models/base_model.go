@@ -130,6 +130,12 @@ func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
 // applyStreamUsage exposes streamed token usage to the caller and records it
 // for model-usage analytics when a usage event is received. Analytics failures
 // are logged but do not interrupt the stream.
+//
+// Like recordResponseUsage, a nil modelUsage (the common case from the
+// model_chat / generator service layer) still surfaces a synthetic
+// CollectModelUsage call so streaming usage is not silently dropped. The
+// synthetic record carries zero UserID/TenantID; production callers should
+// pass a populated *common.ModelUsage to attribute usage to a tenant.
 func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usage *TokenUsage) {
 	if usage == nil {
 		return
@@ -138,7 +144,10 @@ func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usa
 		chatConfig.UsageResult = usage
 	}
 	if modelUsage == nil {
-		return
+		modelUsage = &common.ModelUsage{}
+	}
+	if modelUsage.Type == "" {
+		modelUsage.Type = "chat"
 	}
 	if err := collectModelUsage(modelUsage, usage); err != nil {
 		common.Error("Failed to collect model usage", err)
