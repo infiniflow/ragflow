@@ -70,6 +70,7 @@ from common.data_source import (
     TeamsConnector,
     SlackConnector,
     SharePointConnector,
+    YandexDiskConnector,
 )
 from common.data_source.models import ConnectorFailure, SeafileSyncScope
 from common.data_source.webdav_connector import WebDAVConnector
@@ -487,6 +488,36 @@ class OCI_STORAGE(_BlobLikeBase):
 class GOOGLE_CLOUD_STORAGE(_BlobLikeBase):
     SOURCE_NAME: str = FileSource.GOOGLE_CLOUD_STORAGE
     DEFAULT_BUCKET_TYPE: str = "google_cloud_storage"
+
+
+class YandexDisk(_BlobLikeBase):
+    SOURCE_NAME: str = FileSource.YANDEX_DISK
+    DEFAULT_BUCKET_TYPE: str = "yandex_disk"
+
+    async def _generate(self, task: dict):
+        self.connector = YandexDiskConnector(
+            path=self.conf.get("path", "/"),
+        )
+        self.connector.set_allow_images(self.conf.get("allow_images", False))
+        self.connector.load_credentials(self.conf["credentials"])
+
+        # Fingerprint-bypass path: skip re-downloading unchanged md5s. Disabled
+        # on full reindex (we want to re-fetch everything in that case).
+        use_fingerprint_path = task["reindex"] != "1"
+        if use_fingerprint_path:
+            document_batch_generator = self._fingerprint_filtered_generator(task)
+        else:
+            document_batch_generator = self.connector.load_from_state()
+
+        _begin_info = "fingerprint-bypass" if use_fingerprint_path else "full reindex"
+
+        logging.info(
+            "Connect to Yandex Disk: path/{} {}".format(
+                self.conf.get("path", "/"),
+                _begin_info,
+            )
+        )
+        return document_batch_generator
 
 
 class RSS(SyncBase):
@@ -2172,6 +2203,7 @@ func_factory = {
     FileSource.BIGQUERY: BigQuery,
     FileSource.DINGTALK_AI_TABLE: DingTalkAITable,
     FileSource.REST_API: REST_API,
+    FileSource.YANDEX_DISK: YandexDisk,
 }
 
 

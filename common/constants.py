@@ -176,6 +176,7 @@ class FileSource(StrEnum):
     OUTLOOK = "outlook"
     SALESFORCE = "salesforce"
     AZURE_BLOB = "azure_blob"
+    YANDEX_DISK = "yandex_disk"
 
 
 class PipelineTaskType(StrEnum):

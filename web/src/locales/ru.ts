@@ -1026,6 +1026,14 @@ export default {
         'Интегрируйте ваше рабочее пространство Confluence для поиска документации.',
       s3Description:
         'Подключитесь к вашему AWS S3 бакету для импорта и синхронизации хранимых файлов.',
+      yandex_diskDescription:
+        'Подключитесь к вашему Яндекс Диску для импорта и синхронизации хранимых файлов.',
+      yandexDiskTokenTip:
+        'Вставьте OAuth-токен для API Яндекс Диска. Получить его можно на https://oauth.yandex.ru/ (права: cloud_api:disk.read, cloud_api:disk.info).',
+      yandexDiskPathTip:
+        'Необязательный путь к папке на Яндекс Диске для синхронизации. Оставьте пустым, чтобы синхронизировать весь диск. Пример: /Documents/Reports',
+      dataSourceFieldAccessToken: 'Токен доступа',
+      dataSourceFieldFolderPathOptional: 'Путь к папке (необязательно)',
       google_cloud_storageDescription:
         'Подключите бакет Google Cloud Storage для импорта и синхронизации файлов.',
       r2Description:
