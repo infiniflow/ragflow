@@ -201,6 +201,11 @@ func (a *AzureOpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName
 		}
 	}
 
+	// Request token usage in streaming response. Azure OpenAI only
+	// includes usage in the final chunk when stream_options.include_usage
+	// is set.
+	reqBody["stream_options"] = map[string]any{"include_usage": true}
+
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request: %w", err)
