@@ -231,12 +231,14 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     "",
                     cnt,
                 )
+                cnt = str(cnt or "").strip()
                 logging.debug(f"SUM: {cnt}")
 
                 self._check_task_canceled(task_id, "before embedding")
 
                 embds = await self._embedding_encode(cnt)
-                return cnt.split("\n")[0], cnt, embds
+                title = cnt.splitlines()[0].strip() if cnt else ""
+                return title, cnt, embds
         except TaskCanceledException:
             raise
         except Exception as exc:
