@@ -1462,3 +1462,48 @@ func TestBuildChatConfig_FromEmptyDialog(t *testing.T) {
 		t.Fatalf("expected temperature %v, got %v", temp, cfg.Temperature)
 	}
 }
+
+// TestBuildChatConfig_ThinkingForms pins down the accepted `thinking`
+// representations: the web UI stores an enum string ("default"/"enabled"/
+// "disabled"), while API callers may use a bool or {"type": ...} dict.
+func TestBuildChatConfig_ThinkingForms(t *testing.T) {
+	cases := []struct {
+		name  string
+		value interface{}
+		want  *bool
+	}{
+		{"string enabled", "enabled", ptrBool(true)},
+		{"string disabled", "disabled", ptrBool(false)},
+		{"string default", "default", nil},
+		{"bool true", true, ptrBool(true)},
+		{"bool false", false, ptrBool(false)},
+		{"dict enabled", map[string]interface{}{"type": "enabled"}, ptrBool(true)},
+		{"dict disabled", map[string]interface{}{"type": "disabled"}, ptrBool(false)},
+		{"unknown string", "auto", nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dialog := &entity.Chat{LLMSetting: entity.JSONMap{"thinking": tc.value}}
+			cfg := BuildChatConfig(dialog, nil)
+			if tc.want == nil {
+				if cfg.Thinking != nil {
+					t.Fatalf("expected nil Thinking, got %v", *cfg.Thinking)
+				}
+				return
+			}
+			if cfg.Thinking == nil || *cfg.Thinking != *tc.want {
+				t.Fatalf("expected Thinking %v, got %v", *tc.want, cfg.Thinking)
+			}
+		})
+	}
+}
+
+// TestBuildChatConfig_ThinkingRequestOverride verifies a request-level
+// string override wins over the dialog setting.
+func TestBuildChatConfig_ThinkingRequestOverride(t *testing.T) {
+	dialog := &entity.Chat{LLMSetting: entity.JSONMap{"thinking": "enabled"}}
+	cfg := BuildChatConfig(dialog, map[string]interface{}{"thinking": "disabled"})
+	if cfg.Thinking == nil || *cfg.Thinking {
+		t.Fatalf("expected Thinking=false from request override, got %v", cfg.Thinking)
+	}
+}

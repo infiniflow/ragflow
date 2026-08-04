@@ -4174,6 +4174,38 @@ func kbTenantIDStrings(kbs []*entity.Knowledgebase) []string {
 	return out
 }
 
+// thinkingFromSetting normalizes the `thinking` setting into a *bool.
+// The web UI stores it as an enum string ("default" / "enabled" /
+// "disabled"); older dialogs and API callers may use a bool or the
+// {"type": "enabled"|"disabled"} dict form. Returns nil for "default"
+// or unrecognized values so no thinking directive is sent.
+func thinkingFromSetting(v interface{}) *bool {
+	switch t := v.(type) {
+	case bool:
+		return &t
+	case string:
+		return thinkingFromString(t)
+	case map[string]interface{}:
+		if s, ok := t["type"].(string); ok {
+			return thinkingFromString(s)
+		}
+	}
+	return nil
+}
+
+func thinkingFromString(s string) *bool {
+	var b bool
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "enabled":
+		b = true
+	case "disabled":
+		b = false
+	default:
+		return nil
+	}
+	return &b
+}
+
 // BuildChatConfig converts the dialog's LLM setting (with optional
 // per-request overrides) into a typed ChatConfig for the LLM driver.
 // Dialog values are read first; request config values win when present.
@@ -4184,8 +4216,8 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := dialog.LLMSetting["stream"].(bool); ok {
 			cfg.Stream = &v
 		}
-		if v, ok := dialog.LLMSetting["thinking"].(bool); ok {
-			cfg.Thinking = &v
+		if v, present := dialog.LLMSetting["thinking"]; present {
+			cfg.Thinking = thinkingFromSetting(v)
 		}
 		if v, ok := dialog.LLMSetting["max_tokens"].(float64); ok {
 			i := int(v)
@@ -4224,8 +4256,8 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		if v, ok := config["stream"].(bool); ok {
 			cfg.Stream = &v
 		}
-		if v, ok := config["thinking"].(bool); ok {
-			cfg.Thinking = &v
+		if v, present := config["thinking"]; present {
+			cfg.Thinking = thinkingFromSetting(v)
 		}
 		if v, ok := config["max_tokens"].(float64); ok {
 			i := int(v)

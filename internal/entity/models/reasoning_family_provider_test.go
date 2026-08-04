@@ -174,3 +174,99 @@ func assertThinkingResponse(t *testing.T, resp *ChatResponse) {
 		t.Fatalf("ReasonContent=%v, want reasoning", resp.ReasonContent)
 	}
 }
+
+// TestMoonshotChatSendsThinkingDisabled verifies that disabling thinking
+// produces `thinking: {type: "disabled"}` on the wire and applies the
+// kimi-k2.6 parameter policy (temperature dropped, top_p/penalties pinned),
+// mirroring the Python model-family policy.
+func TestMoonshotChatSendsThinkingDisabled(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newReasoningFamilyChatServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if body["model"] != "kimi-k2.6" {
+			t.Errorf("model=%v, want kimi-k2.6", body["model"])
+		}
+		thinking, ok := body["thinking"].(map[string]interface{})
+		if !ok || thinking["type"] != "disabled" {
+			t.Errorf("thinking=%#v, want {type: disabled}", body["thinking"])
+		}
+		if _, present := body["temperature"]; present {
+			t.Errorf("temperature=%v, want absent", body["temperature"])
+		}
+		if body["top_p"] != 0.95 {
+			t.Errorf("top_p=%v, want 0.95", body["top_p"])
+		}
+		if body["n"] != float64(1) {
+			t.Errorf("n=%v, want 1", body["n"])
+		}
+		if body["presence_penalty"] != float64(0) || body["frequency_penalty"] != float64(0) {
+			t.Errorf("penalties=%v/%v, want 0/0", body["presence_penalty"], body["frequency_penalty"])
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{
+					"content": "<think>\nreasoning</think>\nanswer",
+				},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	thinking := false
+	temperature := 0.0
+	topP := 0.0
+	resp, err := NewMoonshotModel(
+		map[string]string{"default": srv.URL},
+		URLSuffix{Chat: "chat/completions"},
+	).ChatWithMessages(
+		ctx,
+		"kimi-k2.6",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{Thinking: &thinking, Temperature: &temperature, TopP: &topP},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	assertThinkingResponse(t, resp)
+}
+
+// TestMoonshotChatOmitsThinkingWhenUnset verifies no thinking directive is
+// sent when the config leaves it unset (the UI "default" option).
+func TestMoonshotChatOmitsThinkingWhenUnset(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newReasoningFamilyChatServer(t, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		if _, present := body["thinking"]; present {
+			t.Errorf("thinking=%#v, want absent", body["thinking"])
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{
+					"content": "<think>\nreasoning</think>\nanswer",
+				},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	resp, err := NewMoonshotModel(
+		map[string]string{"default": srv.URL},
+		URLSuffix{Chat: "chat/completions"},
+	).ChatWithMessages(
+		ctx,
+		"moonshot-v1-8k",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		&ChatConfig{},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	assertThinkingResponse(t, resp)
+}

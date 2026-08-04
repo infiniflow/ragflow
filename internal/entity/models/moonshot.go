@@ -81,6 +81,30 @@ func validateMoonshotModelName(modelName string) (string, error) {
 	return strings.TrimSpace(modelName), nil
 }
 
+// applyMoonshotThinkingPolicy injects the `thinking` directive into the
+// request body and applies the kimi-k2.5/k2.6 parameter policy (mirroring
+// the Python `_apply_model_family_policies` behavior): those models ignore
+// temperature and require pinned top_p / penalty values.
+func applyMoonshotThinkingPolicy(reqBody map[string]interface{}, modelName string, chatModelConfig *ChatConfig) {
+	thinkingSet := chatModelConfig != nil && chatModelConfig.Thinking != nil
+	if thinkingSet {
+		thinkingType := "disabled"
+		if *chatModelConfig.Thinking {
+			thinkingType = "enabled"
+		}
+		reqBody["thinking"] = map[string]interface{}{"type": thinkingType}
+	}
+
+	modelLower := strings.ToLower(modelName)
+	if thinkingSet || strings.Contains(modelLower, "kimi-k2.5") || strings.Contains(modelLower, "kimi-k2.6") {
+		delete(reqBody, "temperature")
+		reqBody["top_p"] = 0.95
+		reqBody["n"] = 1
+		reqBody["presence_penalty"] = 0.0
+		reqBody["frequency_penalty"] = 0.0
+	}
+}
+
 func (m *MoonshotModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -99,21 +123,7 @@ func (m *MoonshotModel) ChatWithMessages(ctx context.Context, modelName string, 
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
-
-	if chatModelConfig != nil {
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "enabled",
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
-		}
-
-	}
+	applyMoonshotThinkingPolicy(reqBody, modelName, chatModelConfig)
 
 	body, err := m.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
@@ -146,20 +156,7 @@ func (m *MoonshotModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
-
-	if chatModelConfig != nil {
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "enabled",
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
-			}
-		}
-	}
+	applyMoonshotThinkingPolicy(reqBody, modelName, chatModelConfig)
 
 	jsonData, err := json.Marshal(reqBody)
 	if err != nil {
