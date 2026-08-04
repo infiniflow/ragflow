@@ -213,6 +213,11 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 	if len(kbIDs) == 0 || len(conditions) == 0 || (logic != "and" && logic != "or") {
 		return nil
 	}
+	predicate, predicateArgs, err := buildMetaPushdownPredicate(conditions, logic)
+	if err != nil {
+		common.Debug("OceanBase metadata push-down is unsupported", zap.Error(err))
+		return nil
+	}
 	tenantID, err := dao.GetTenantIDByKBID(ctx, sqlDB, kbIDs[0])
 	if err != nil {
 		return nil
@@ -220,11 +225,6 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 	tableName := metadataTableName(tenantID)
 	exists, err := e.tableExists(ctx, tableName)
 	if err != nil || !exists {
-		return nil
-	}
-	predicate, predicateArgs, err := buildMetaPushdownPredicate(conditions, logic)
-	if err != nil {
-		common.Debug("OceanBase metadata push-down is unsupported", zap.Error(err))
 		return nil
 	}
 	kbPlaceholders := make([]string, len(kbIDs))
@@ -271,20 +271,18 @@ func buildMetaPushdownPredicate(conditions []map[string]interface{}, logic strin
 		path := "$." + key
 		value := condition["value"]
 		expression := "JSON_EXTRACT(meta_fields, ?)"
+		if op == "≠" || op == "not in" {
+			return "", nil, fmt.Errorf("metadata operator %s is unsafe for multi-valued fields", op)
+		}
 		switch op {
-		case "=", "≠":
+		case "=":
 			candidate, err := encodeJSONCandidate(value)
 			if err != nil {
 				return "", nil, err
 			}
 			contains := "JSON_CONTAINS(" + expression + ", ?)"
-			if op == "=" {
-				parts = append(parts, contains)
-				args = append(args, path, candidate)
-			} else {
-				parts = append(parts, expression+" IS NOT NULL AND NOT "+contains)
-				args = append(args, path, path, candidate)
-			}
+			parts = append(parts, contains)
+			args = append(args, path, candidate)
 		case ">", "<", "≥", "≤":
 			operator := map[string]string{">": ">", "<": "<", "≥": ">=", "≤": "<="}[op]
 			coerced := coerceMetadataScalar(value)
@@ -294,7 +292,7 @@ func buildMetaPushdownPredicate(conditions []map[string]interface{}, logic strin
 				parts = append(parts, "LOWER(JSON_UNQUOTE("+expression+")) "+operator+" LOWER(?)")
 			}
 			args = append(args, path, coerced)
-		case "in", "not in":
+		case "in":
 			values := metadataMembers(value)
 			if len(values) == 0 {
 				return "", nil, fmt.Errorf("metadata %s requires at least one value", op)
@@ -305,18 +303,10 @@ func buildMetaPushdownPredicate(conditions []map[string]interface{}, logic strin
 				if err != nil {
 					return "", nil, err
 				}
-				prefix := ""
-				if op == "not in" {
-					prefix = "NOT "
-				}
-				memberParts = append(memberParts, prefix+"JSON_CONTAINS("+expression+", ?)")
+				memberParts = append(memberParts, "JSON_CONTAINS("+expression+", ?)")
 				args = append(args, path, candidate)
 			}
-			joiner := " OR "
-			if op == "not in" {
-				joiner = " AND "
-			}
-			parts = append(parts, "("+strings.Join(memberParts, joiner)+")")
+			parts = append(parts, "("+strings.Join(memberParts, " OR ")+")")
 		case "contains", "not contains", "start with", "end with":
 			text := stringValue(value)
 			if text == "" {

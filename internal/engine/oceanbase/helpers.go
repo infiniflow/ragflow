@@ -22,6 +22,8 @@ import (
 	"math"
 	"sort"
 	"strings"
+
+	"ragflow/internal/engine/highlight"
 )
 
 func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
@@ -52,54 +54,54 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 
 func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{} {
 	counts := make(map[string]int)
+	values := make([]string, 0)
+	addValue := func(value string) {
+		if counts[value] == 0 {
+			values = append(values, value)
+		}
+		counts[value]++
+	}
 	for _, chunk := range chunks {
 		value := chunk[fieldName]
 		if items, ok := interfaceSlice(value); ok {
 			for _, item := range items {
-				text := strings.TrimSpace(stringValue(item))
-				if text != "" {
-					counts[text]++
+				text, ok := item.(string)
+				if ok && strings.TrimSpace(text) != "" {
+					addValue(text)
 				}
 			}
 			continue
 		}
-		text := strings.TrimSpace(stringValue(value))
-		if text == "" {
+		text, ok := value.(string)
+		if !ok || strings.TrimSpace(text) == "" {
 			continue
 		}
-		separator := ","
-		if fieldName == "tag_kwd" && strings.Contains(text, "###") {
-			separator = "###"
-		}
-		for _, item := range strings.Split(text, separator) {
-			if item = strings.TrimSpace(item); item != "" {
-				counts[item]++
-			}
-		}
+		addValue(text)
 	}
-	result := make([]map[string]interface{}, 0, len(counts))
-	for value, count := range counts {
-		result = append(result, map[string]interface{}{"key": value, "count": count})
+	result := make([]map[string]interface{}, 0, len(values))
+	for _, value := range values {
+		result = append(result, map[string]interface{}{"key": value, "count": counts[value]})
 	}
-	sort.Slice(result, func(i, j int) bool { return result[i]["count"].(int) > result[j]["count"].(int) })
+	sort.SliceStable(result, func(i, j int) bool {
+		return result[i]["count"].(int) > result[j]["count"].(int)
+	})
 	return result
 }
 
 func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
 	result := make(map[string]string)
+	marker := highlight.NewMarker(keywords)
 	for _, chunk := range chunks {
 		id := stringValue(chunk["id"])
 		text := stringValue(chunk[fieldName])
 		if id == "" || text == "" {
 			continue
 		}
-		highlighted := text
-		for _, keyword := range keywords {
-			if keyword != "" {
-				highlighted = strings.ReplaceAll(highlighted, keyword, "<em>"+keyword+"</em>")
-			}
+		tokenizedText := ""
+		if fieldName == "content_with_weight" {
+			tokenizedText = stringValue(chunk["content_ltks"])
 		}
-		if highlighted != text {
+		if highlighted := marker.MarkText(text, tokenizedText); highlighted != "" {
 			result[id] = highlighted
 		}
 	}

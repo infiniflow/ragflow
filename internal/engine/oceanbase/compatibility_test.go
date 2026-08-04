@@ -231,6 +231,25 @@ func TestMetadataJSONPushdownOperators(t *testing.T) {
 	}
 }
 
+func TestMetadataJSONPushdownRejectsUnsafeNegativeOperators(t *testing.T) {
+	for _, operator := range []string{"≠", "not in"} {
+		_, _, err := buildMetaPushdownPredicate([]map[string]interface{}{
+			{"key": "tags", "op": operator, "value": []string{"a"}},
+		}, "and")
+		if err == nil {
+			t.Errorf("operator %q must reject metadata push-down", operator)
+		}
+	}
+
+	for _, operator := range []string{"=", "in"} {
+		if _, _, err := buildMetaPushdownPredicate([]map[string]interface{}{
+			{"key": "tags", "op": operator, "value": []string{"a"}},
+		}, "and"); err != nil {
+			t.Errorf("operator %q unexpectedly rejected metadata push-down: %v", operator, err)
+		}
+	}
+}
+
 func TestHybridFallbackOnlyForUnavailablePackage(t *testing.T) {
 	if !isHybridUnavailableError(assertError("ERROR 1305: FUNCTION DBMS_HYBRID_SEARCH.SEARCH does not exist")) {
 		t.Fatal("missing DBMS package must trigger SQL fallback")

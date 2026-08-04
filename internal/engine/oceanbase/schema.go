@@ -438,11 +438,18 @@ func (e *Engine) DropChunkStore(ctx context.Context, baseName, datasetID string)
 		return err
 	}
 	if datasetID != "" && datasetID != "skill" {
+		exists, err := e.tableExists(ctx, baseName)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return nil
+		}
 		field := "kb_id"
 		if strings.HasPrefix(baseName, "memory_") {
 			field = "memory_id"
 		}
-		_, err := e.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE %s = ?",
+		_, err = e.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE %s = ?",
 			quoteIdentifier(baseName), quoteIdentifier(field)), datasetID)
 		return err
 	}
