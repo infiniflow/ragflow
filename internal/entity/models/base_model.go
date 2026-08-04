@@ -410,7 +410,7 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 		if modelEntity != nil {
 			modelResponse.MaxDimension = modelEntity.MaxDimension
 			modelResponse.Dimensions = modelEntity.Dimensions
-			modelResponse.MaxTokens = modelEntity.MaxTokens
+			modelResponse.MaxOutput = modelEntity.MaxOutput
 			modelResponse.ModelTypes = modelEntity.ModelTypes
 			modelResponse.Thinking = modelEntity.Thinking
 			modelResponse.Dimensions = modelEntity.Dimensions
