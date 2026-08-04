@@ -16,8 +16,8 @@
 
 package dao
 
-type EnterpriseMemoryDAO struct{}
+type MemoryDAO struct{}
 
-func NewEnterpriseMemoryDAO() *EnterpriseMemoryDAO {
-	return &EnterpriseMemoryDAO{}
+func NewMemoryDAO() *MemoryDAO {
+	return &MemoryDAO{}
 }

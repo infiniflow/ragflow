@@ -16,8 +16,8 @@
 
 package dao
 
-type EnterpriseSearchDAO struct{}
+type SearchDAO struct{}
 
-func NewEnterpriseSearchDAO() *EnterpriseSearchDAO {
-	return &EnterpriseSearchDAO{}
+func NewSearchDAO() *SearchDAO {
+	return &SearchDAO{}
 }

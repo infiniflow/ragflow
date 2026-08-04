@@ -65,20 +65,10 @@ type Service struct {
 	ingestionTaskLogDao *dao.IngestionTaskLogDAO
 	ingestionTaskSvc    *servicepkg.IngestionTaskService
 
-	enterpriseUserDAO                *dao.EnterpriseUserDAO
-	enterpriseTaskDAO                *dao.EnterpriseTaskDAO
-	enterpriseFileDAO                *dao.EnterpriseFileDAO
-	enterpriseAPITokenDAO            *dao.EnterpriseAPITokenDAO
-	enterpriseBillingProductDAO      *dao.EnterpriseBillingProductDAO
-	enterpriseBillingSubscriptionDAO *dao.EnterpriseBillingSubscriptionDAO
-	enterpriseChatDAO                *dao.EnterpriseChatDAO
-	enterpriseDocumentDAO            *dao.EnterpriseDocumentDAO
-	enterpriseMemoryDAO              *dao.EnterpriseMemoryDAO
-	enterpriseSearchDAO              *dao.EnterpriseSearchDAO
-	enterpriseTenantDAO              *dao.EnterpriseTenantDAO
-	enterpriseUserCanvasDAO          *dao.EnterpriseUserCanvasDAO
-	enterpriseUserTenantDAO          *dao.EnterpriseUserTenantDAO
-	enterpriseKnowledgebaseDAO       *dao.EnterpriseKnowledgebaseDAO
+	BillingProductDAO      *dao.BillingProductDAO
+	BillingSubscriptionDAO *dao.BillingSubscriptionDAO
+	MemoryDAO              *dao.MemoryDAO
+	SearchDAO              *dao.SearchDAO
 }
 
 // NewService create admin service
@@ -105,20 +95,10 @@ func NewService() *Service {
 		ingestionTaskLogDao: dao.NewIngestionTaskLogDAO(),
 		ingestionTaskSvc:    servicepkg.NewIngestionTaskService(),
 
-		enterpriseUserDAO:                dao.NewEnterpriseUserDAO(),
-		enterpriseTaskDAO:                dao.NewEnterpriseTaskDAO(),
-		enterpriseFileDAO:                dao.NewEnterpriseFileDAO(),
-		enterpriseAPITokenDAO:            dao.NewEnterpriseAPITokenDAO(),
-		enterpriseBillingProductDAO:      dao.NewEnterpriseBillingProductDAO(),
-		enterpriseBillingSubscriptionDAO: dao.NewEnterpriseBillingSubscriptionDAO(),
-		enterpriseChatDAO:                dao.NewEnterpriseChatDAO(),
-		enterpriseDocumentDAO:            dao.NewEnterpriseDocumentDAO(),
-		enterpriseMemoryDAO:              dao.NewEnterpriseMemoryDAO(),
-		enterpriseSearchDAO:              dao.NewEnterpriseSearchDAO(),
-		enterpriseTenantDAO:              dao.NewEnterpriseTenantDAO(),
-		enterpriseUserCanvasDAO:          dao.NewEnterpriseUserCanvasDAO(),
-		enterpriseUserTenantDAO:          dao.NewEnterpriseUserTenantDAO(),
-		enterpriseKnowledgebaseDAO:       dao.NewEnterpriseKnowledgebaseDAO(),
+		BillingProductDAO:      dao.NewBillingProductDAO(),
+		BillingSubscriptionDAO: dao.NewBillingSubscriptionDAO(),
+		MemoryDAO:              dao.NewMemoryDAO(),
+		SearchDAO:              dao.NewSearchDAO(),
 	}
 }
 
