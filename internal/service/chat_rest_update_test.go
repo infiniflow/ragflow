@@ -424,7 +424,12 @@ func TestChatServiceCreateConcurrentDedupesNames(t *testing.T) {
 				errs <- errors.New("unexpected create code")
 				return
 			}
-			names <- resp["name"].(string)
+			name, ok := resp["name"].(string)
+			if !ok {
+				errs <- errors.New("created chat response has no string name")
+				return
+			}
+			names <- name
 		}()
 	}
 	wg.Wait()
