@@ -443,14 +443,17 @@ func googleToolCalls(functionCalls []*genai.FunctionCall) []map[string]interface
 // GenerateContentResponseUsageMetadata into the package's TokenUsage.
 // It returns nil when the metadata is absent so callers can pass the
 // result directly to recordResponseUsage without a separate presence
-// check. ThoughtsTokenCount is summed into CompletionTokens because
-// reasoning output is part of what the model emits; the SDK's
-// authoritative TotalTokenCount is used as-is when present.
+// check. Per the SDK, TotalTokenCount is the authoritative sum of
+// prompt + candidates + tool-use prompt + thoughts, so we sum the
+// per-bucket counts the same way and use TotalTokenCount as-is when
+// it is present. ToolUsePromptTokenCount is treated as part of the
+// prompt (it is input billed to the user even though the SDK counts
+// it separately from PromptTokenCount).
 func googleUsageFromMetadata(m *genai.GenerateContentResponseUsageMetadata) *TokenUsage {
 	if m == nil {
 		return nil
 	}
-	in := int(m.PromptTokenCount)
+	in := int(m.PromptTokenCount + m.ToolUsePromptTokenCount)
 	out := int(m.CandidatesTokenCount + m.ThoughtsTokenCount)
 	total := int(m.TotalTokenCount)
 	if in == 0 && out == 0 && total == 0 {
@@ -549,7 +552,6 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	// carry partial counts; the SDK's authoritative total is in the
 	// final chunk's UsageMetadata.
 	var streamUsage *TokenUsage
-	var responseID string
 	for response, err := range client.Models.GenerateContentStream(
 		ctx,
 		modelName,
@@ -590,13 +592,14 @@ func (g *GoogleModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		if u := googleUsageFromMetadata(response.UsageMetadata); u != nil {
 			streamUsage = u
 		}
-		if responseID == "" {
-			responseID = response.ResponseID
-		}
 	}
 
 	if streamUsage != nil {
-		recordResponseUsage(modelUsage, responseID, streamUsage, "chat")
+		// Use the shared applyStreamUsage path so chatConfig.UsageResult
+		// and the clickhouse collection happen together — matching the
+		// behaviour of every other streaming driver — and so we do
+		// not collect the same usage twice.
+		applyStreamUsage(chatModelConfig, modelUsage, streamUsage)
 	}
 
 	if chatModelConfig != nil && len(toolCalls) > 0 {

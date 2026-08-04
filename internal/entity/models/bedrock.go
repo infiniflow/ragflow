@@ -726,8 +726,9 @@ func (b *BedrockModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 
 	// Bedrock sends final token usage inside a "metadata" event frame
 	// at end-of-stream. We capture the last seen usage via this closure
-	// and record it through the shared handler once the decoder
-	// returns so the chat-usage path is symmetric with non-streaming.
+	// and route it through applyStreamUsage so chatConfig.UsageResult
+	// and the clickhouse collection path are both populated, matching
+	// the unified streaming behaviour used by other drivers.
 	var streamUsage *TokenUsage
 	onMetadata := func(meta map[string]any) error {
 		if u, ok := meta["usage"].(map[string]any); ok {
@@ -738,18 +739,22 @@ func (b *BedrockModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	if err := decodeBedrockEventStream(resp.Body, sender, onMetadata); err != nil {
 		return err
 	}
-	if streamUsage != nil {
-		recordResponseUsage(modelUsage, "", streamUsage, "chat")
-	}
+	applyStreamUsage(chatModelConfig, modelUsage, streamUsage)
 	done := "[DONE]"
 	return sender(&done, nil)
 }
 
 // decodeBedrockEventStream reads vnd.amazon.eventstream frames off the
 // supplied reader and dispatches each to the supplied sender. The
-// loop exits cleanly on a messageStop event or on EOF; an exception
-// frame is surfaced as a Go error so partial streams cannot be
-// mistaken for successful ones.
+// loop exits cleanly on EOF after a messageStop has been seen; an
+// exception frame is surfaced as a Go error so partial streams
+// cannot be mistaken for successful ones.
+//
+// messageStop is recorded as the terminal marker but does NOT return
+// from the loop, because the AWS Bedrock Converse-Stream protocol
+// sends a final "metadata" frame carrying token usage AFTER
+// messageStop. Returning early would drop that metadata and the
+// caller would never see the usage block.
 //
 // onMetadata is invoked with the JSON-decoded payload of each
 // "metadata" lifecycle frame. Bedrock sends final token usage inside
@@ -787,8 +792,10 @@ func decodeBedrockEventStream(r io.Reader, sender func(*string, *string) error, 
 				return err
 			}
 		case "messageStop":
+			// Mark the stream terminal but keep decoding so the
+			// post-messageStop "metadata" frame (which carries
+			// final token usage) still reaches onMetadata.
 			sawTerminal = true
-			return nil
 		case "metadata":
 			if onMetadata == nil {
 				continue
