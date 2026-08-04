@@ -74,7 +74,8 @@
                                     "top_k": 1024,
                                     "top_n": 8,
                                     "use_kg": false
-                                }
+                                },
+                                "id": "Retrieval:WarmOwlsCough"
                             }
                         ],
                         "topPEnabled": false,
@@ -226,7 +227,8 @@
                                         "top_k": 1024,
                                         "top_n": 8,
                                         "use_kg": false
-                                    }
+                                    },
+                                    "id": "Retrieval:WarmWeeksRead"
                                 }
                             ],
                             "topPEnabled": false,
