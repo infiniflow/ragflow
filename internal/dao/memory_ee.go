@@ -15,9 +15,3 @@
 //
 
 package dao
-
-type MemoryDAO struct{}
-
-func NewMemoryDAO() *MemoryDAO {
-	return &MemoryDAO{}
-}

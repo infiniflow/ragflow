@@ -15,9 +15,3 @@
 //
 
 package dao
-
-type SearchDAO struct{}
-
-func NewSearchDAO() *SearchDAO {
-	return &SearchDAO{}
-}
