@@ -283,9 +283,13 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
     if not req:
         return False, "no properties were modified"
 
-    kb = KnowledgebaseService.get_or_none(id=dataset_id, tenant_id=tenant_id)
-    if kb is None:
+    kbs = KnowledgebaseService.get_kb_by_id(dataset_id, tenant_id)
+    if not kbs:
         return False, f"User '{tenant_id}' lacks permission for dataset '{dataset_id}'"
+
+    kb = KnowledgebaseService.get_or_none(id=dataset_id)
+    if kb is None:
+        return False, "Invalid Dataset ID"
 
     # Extract ext field for additional parameters
     ext_fields = req.pop("ext", {})
@@ -345,7 +349,7 @@ async def update_dataset(tenant_id: str, dataset_id: str, req: dict):
         req["pipeline_id"] = ""
 
     if "name" in req and req["name"].lower() != kb.name.lower():
-        exists = KnowledgebaseService.get_or_none(name=req["name"], tenant_id=tenant_id, status=StatusEnum.VALID.value)
+        exists = KnowledgebaseService.get_or_none(name=req["name"], tenant_id=kb.tenant_id, status=StatusEnum.VALID.value)
         if exists:
             return False, f"Dataset name '{req['name']}' already exists"
 
