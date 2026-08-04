@@ -3,6 +3,8 @@ package task
 import (
 	"testing"
 	"time"
+
+	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 )
 
 func TestProcessPipelineOutputForGolden_Markdown(t *testing.T) {
@@ -44,7 +46,7 @@ func TestProcessChunksForPipeline_StableFields(t *testing.T) {
 		},
 	}
 
-	meta, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "sample.md", now)
+	meta, err := indexdoc.ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "sample.md", now)
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
