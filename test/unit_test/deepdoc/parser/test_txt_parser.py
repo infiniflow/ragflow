@@ -26,8 +26,8 @@ The contract (see the TokenChunker handoff):
 * ``RESPECT_CAP`` is available as an explicit alternative strategy.
 """
 
-import deepdoc.parser.txt_parser as txt_mod
 from deepdoc.parser.txt_parser import RAGFlowTxtParser
+import rag.nlp as nlp_mod
 
 
 def _fake_word_tokens(s):
@@ -39,7 +39,7 @@ def _nonempty(chunks):
 
 
 def test_over_cap_pairs_adjacent_paragraphs(monkeypatch):
-    monkeypatch.setattr(txt_mod, "num_tokens_from_string", _fake_word_tokens)
+    monkeypatch.setattr(nlp_mod, "num_tokens_from_string", _fake_word_tokens)
     text = "\n".join(["alpha beta gamma delta" for _ in range(8)])  # 4 tokens each
     chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=50, delimiter="\n"))
     # OVER_CAP pairs adjacent paragraphs -> 4 chunks of 8 tokens.
@@ -48,7 +48,7 @@ def test_over_cap_pairs_adjacent_paragraphs(monkeypatch):
 
 
 def test_oversize_unit_not_atom_split(monkeypatch):
-    monkeypatch.setattr(txt_mod, "num_tokens_from_string", _fake_word_tokens)
+    monkeypatch.setattr(nlp_mod, "num_tokens_from_string", _fake_word_tokens)
     text = "word " * 200  # ~200 tokens, no delimiter -> one paragraph
     chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=30, delimiter="\n!?;。；！？"))
     # No atom-split: the whole unit is a single chunk.
@@ -57,7 +57,7 @@ def test_oversize_unit_not_atom_split(monkeypatch):
 
 
 def test_delimiter_text_not_in_chunk(monkeypatch):
-    monkeypatch.setattr(txt_mod, "num_tokens_from_string", _fake_word_tokens)
+    monkeypatch.setattr(nlp_mod, "num_tokens_from_string", _fake_word_tokens)
     text = "first##second##third"
     chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=1000, delimiter="##"))
     assert all("##" not in c for c in chunks)
@@ -66,7 +66,7 @@ def test_delimiter_text_not_in_chunk(monkeypatch):
 
 
 def test_consecutive_delimiters_do_not_leak_delimiter_text(monkeypatch):
-    monkeypatch.setattr(txt_mod, "num_tokens_from_string", _fake_word_tokens)
+    monkeypatch.setattr(nlp_mod, "num_tokens_from_string", _fake_word_tokens)
     # pattern "##": consecutive delimiters must not glue the sides with "##".
     text = "A####B"
     chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=1000, delimiter="##"))
@@ -76,14 +76,14 @@ def test_consecutive_delimiters_do_not_leak_delimiter_text(monkeypatch):
 
 
 def test_token_size_zero_keeps_each_paragraph_alone(monkeypatch):
-    monkeypatch.setattr(txt_mod, "num_tokens_from_string", _fake_word_tokens)
+    monkeypatch.setattr(nlp_mod, "num_tokens_from_string", _fake_word_tokens)
     text = "first second third"
     chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=0, delimiter=" "))
     assert chunks == ["first", "second", "third"]
 
 
 def test_delimiter_boundary_when_segment_exceeds_cap(monkeypatch):
-    monkeypatch.setattr(txt_mod, "num_tokens_from_string", _fake_word_tokens)
+    monkeypatch.setattr(nlp_mod, "num_tokens_from_string", _fake_word_tokens)
     # Each paragraph is 2 tokens (> cap=1) -> its own chunk.
     text = "aa aa\nbb bb\ncc cc"
     chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=1, delimiter="\n"))
@@ -91,7 +91,7 @@ def test_delimiter_boundary_when_segment_exceeds_cap(monkeypatch):
 
 
 def test_keep_delimiters_preserves_delimiter(monkeypatch):
-    monkeypatch.setattr(txt_mod, "num_tokens_from_string", _fake_word_tokens)
+    monkeypatch.setattr(nlp_mod, "num_tokens_from_string", _fake_word_tokens)
     text = "first|second"
     chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=1000, delimiter="|", keep_delimiters=True))
     # When keep_delimiters=True the delimiter is retained in the chunk.

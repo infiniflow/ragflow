@@ -1246,13 +1246,19 @@ def _merge_paragraph_groups(paragraphs, token_size, strategy, size):
     return groups
 
 
-def merge_paragraphs(paragraphs, token_size, strategy=MergeStrategy.OVER_CAP, size=num_tokens_from_string):
+def merge_paragraphs(paragraphs, token_size, strategy=MergeStrategy.OVER_CAP, size=None):
     """Group delimiter-split ``paragraphs`` into chunks using ``strategy``.
 
     Pure function: no pos / PDF coordinate handling, no atom-split. Returns a
     list of chunks, each a list of the original paragraph strings (order and
     identity preserved). ``token_size`` is a soft target; see ``MergeStrategy``.
+
+    ``size`` defaults to ``num_tokens_from_string`` and is resolved at call
+    time (not captured at definition) so tests can monkeypatch the tokenizer
+    deterministically via ``rag.nlp.num_tokens_from_string``.
     """
+    if size is None:
+        size = num_tokens_from_string
     groups = _merge_paragraph_groups(paragraphs, token_size, strategy, size)
     return [[paragraphs[i] for i in g] for g in groups]
 
