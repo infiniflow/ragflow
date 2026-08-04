@@ -727,11 +727,6 @@ func (h *ProviderHandler) AddModel(c *gin.Context) {
 		return
 	}
 
-	if len(req.ModelTypes) == 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "model_type is required")
-		return
-	}
-
 	userID := c.GetString("user_id")
 	ctx := c.Request.Context()
 
