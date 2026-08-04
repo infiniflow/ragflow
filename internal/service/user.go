@@ -958,8 +958,8 @@ func (s *UserService) GetUserByAPIToken(ctx context.Context, authorization strin
 
 	// Query API token from database
 	apiTokenDAO := dao.NewAPITokenDAO()
-	userToken, err := apiTokenDAO.GetUserByAPIToken(ctx, dao.DB, token)
-	if err != nil {
+	userToken, err := apiTokenDAO.GetByAPIToken(ctx, dao.DB, token)
+	if err != nil || userToken == nil {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token")
 	}
 
