@@ -78,6 +78,9 @@ def _compile_delimiter_pattern(delimiters):
 
 def _split_text_by_pattern(text, pattern):
     # Split text by the compiled delimiter pattern and discard delimiters.
+    # No atom-split is performed; empty segments between consecutive delimiters
+    # are dropped but whitespace-only segments are preserved (the delimiter is
+    # the boundary, not stripped away).
     if not pattern:
         return [text or ""]
 
@@ -85,7 +88,7 @@ def _split_text_by_pattern(text, pattern):
     chunks = []
     for i in range(0, len(split_texts), 2):
         chunk = split_texts[i]
-        if chunk.strip():
+        if chunk:
             chunks.append(chunk)
     return chunks
 
@@ -359,31 +362,45 @@ class TokenChunker(ProcessBase):
             text_chunks = _build_json_chunks(json_result, "")
             chunks = []
             text_buffer = []
+            text_buffer_pos = []
 
             def flush_text_buffer():
                 if not text_buffer:
                     return
-                combined_text = "".join(text_buffer)
+                # Join buffered text items with "\n" so adjacent item text is not
+                # glued together (e.g. "hello" + "world" must not become "helloworld").
+                # PDF coordinates are carried on the combined chunk.
+                combined_text = "\n".join(text_buffer)
+                combined_pos = []
+                for pos in text_buffer_pos:
+                    combined_pos.extend(pos or [])
                 split_texts = _split_text_by_pattern(combined_text, delimiter_pattern)
-                chunks.extend(
-                    {
-                        "text": text,
-                        "doc_type_kwd": "text",
-                        "ck_type": "text",
-                        "tk_nums": num_tokens_from_string(text),
-                    }
-                    for text in split_texts
-                    if text.strip()
-                )
+                for text in split_texts:
+                    if not text.strip():
+                        continue
+                    chunks.append(
+                        {
+                            "text": text,
+                            "doc_type_kwd": "text",
+                            "ck_type": "text",
+                            PDF_POSITIONS_KEY: deepcopy(combined_pos),
+                            "tk_nums": num_tokens_from_string(text),
+                        }
+                    )
                 text_buffer.clear()
+                text_buffer_pos.clear()
 
             for chunk in text_chunks:
                 if chunk["ck_type"] == "text":
                     text_buffer.append(chunk["text"])
+                    text_buffer_pos.append(chunk.get(PDF_POSITIONS_KEY))
                 else:
                     flush_text_buffer()
                     chunks.append(chunk)
             flush_text_buffer()
+            # Apply children_delimiters (secondary split) before finalizing.
+            if custom_pattern:
+                chunks = _split_chunk_docs_by_children(chunks, custom_pattern)
             _attach_context_to_media_chunks(chunks, self._param.table_context_size, self._param.image_context_size)
             await restore_pdf_text_previews(chunks, from_upstream, self._canvas)
             self.set_output("chunks", _finalize_json_chunks(chunks))

@@ -86,12 +86,17 @@ def test_oversized_section_is_split_at_sentence_boundaries():
 
 
 @pytest.mark.p2
-def test_small_sections_are_merged_not_oversplit():
+def test_small_sections_are_paired_by_over_cap():
+    # Default strategy is OVER_CAP: adjacent small paragraphs are paired into
+    # chunks even though each pair stays well under chunk_token_num. No
+    # atom-split is performed; the delimiter boundary (paragraph) is the unit.
     sentences = ["alpha beta gamma delta" for _ in range(8)]  # 4 tokens each
     chunks = _nonempty(naive_merge(sentences, chunk_token_num=50, delimiter=DEFAULT_DELIMITER))
-    # All 32 tokens comfortably fit one chunk.
-    assert len(chunks) == 1
-    assert _tok(chunks[0]) == 32
+    # 8 paragraphs -> 4 pairs under OVER_CAP.
+    assert len(chunks) == 4
+    assert all(_tok(c) == 8 for c in chunks)
+    # Content is preserved (32 tokens total).
+    assert sum(_tok(c) for c in chunks) == 32
 
 
 @pytest.mark.p2
@@ -247,8 +252,10 @@ def test_strict_cap_with_overlap_drops_overlap_at_overflow_boundary():
 
 
 @pytest.mark.p2
-def test_strict_cap_single_overlong_section_is_sub_split_on_whitespace(monkeypatch):
-    # Override tokenizer in nlp to treat characters as tokens for testing character fallback
+def test_no_atom_split_keeps_oversize_unit_whole(monkeypatch):
+    # The strict-cap atom sub-splitter is gone. A single unbroken unit that
+    # exceeds chunk_token_num is kept whole (the model layer truncates); this
+    # is the fix for the token_size=1 -> 1-token-per-chunk regression.
     def char_count_tokens(s):
         return len(s or "")
 
@@ -256,9 +263,8 @@ def test_strict_cap_single_overlong_section_is_sub_split_on_whitespace(monkeypat
 
     big_section = "a" * 80  # unbroken, token-dense string
     chunks = _nonempty(naive_merge([big_section], chunk_token_num=50, delimiter=DEFAULT_DELIMITER))
-    assert len(chunks) >= 2
-    assert all(char_count_tokens(c) <= 50 for c in chunks)
-    assert "".join(chunks) == big_section
+    assert len(chunks) == 1
+    assert "".join(chunks).strip() == big_section
 
 
 @pytest.mark.p2
@@ -304,21 +310,21 @@ def test_strict_cap_pos_text_does_not_overshoot_budget(monkeypatch):
 
 
 @pytest.mark.p2
-def test_empty_delimiter_oversized_section_strictly_capped():
-    # When delimiter="" and a section exceeds chunk_token_num, it must be sub-split
-    # so no chunk exceeds chunk_token_num.
+def test_empty_delimiter_keeps_unit_whole():
+    # Empty delimiter -> no split; the whole section is one chunk (no atom-split).
+    # The model layer truncates oversize units.
     long_section = "word " * 100  # ~100 tokens
     chunks = _nonempty(naive_merge([long_section], chunk_token_num=30, delimiter=""))
-    assert len(chunks) > 1
-    assert all(_tok(c) <= 30 for c in chunks)
+    assert len(chunks) == 1
+    assert "".join(chunks).count("word") == 100
 
 
 @pytest.mark.p2
-def test_images_empty_delimiter_oversized_section_strictly_capped():
+def test_images_empty_delimiter_keeps_unit_whole():
     long_section = "word " * 100
     images = [None]
     chunks, imgs = naive_merge_with_images([long_section], images, chunk_token_num=30, delimiter="")
     nonempty = _nonempty(chunks)
-    assert len(nonempty) > 1
-    assert all(_tok(c) <= 30 for c in nonempty)
+    assert len(nonempty) == 1
+    assert "".join(nonempty).count("word") == 100
     assert len(chunks) == len(imgs)
