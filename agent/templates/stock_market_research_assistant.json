@@ -185,6 +185,7 @@
                                                     "kb_ids": [
                                                         "60c53ed89acc11f0bc1e7a2a6d0b2755"
                                                     ],
+                                                    "retrieval_from": "dataset",
                                                     "keywords_similarity_weight": 0.7,
                                                     "outputs": {
                                                         "formalized_content": {
@@ -1009,6 +1010,7 @@
                                             "kb_ids": [
                                                 "60c53ed89acc11f0bc1e7a2a6d0b2755"
                                             ],
+                                            "retrieval_from": "dataset",
                                             "keywords_similarity_weight": 0.7,
                                             "outputs": {
                                                 "formalized_content": {
