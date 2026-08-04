@@ -1676,6 +1676,7 @@ def test_chatbot_routes_auth_stream_nonstream_unit(monkeypatch):
         icon="avatar.png",
         tenant_id="tenant-1",
         status="1",
+        llm_id="",
         prompt_config={
             "prologue": "Hello!",
             "web_search_provider": "querit",
