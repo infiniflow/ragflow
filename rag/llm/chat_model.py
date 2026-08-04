@@ -1020,6 +1020,7 @@ class MistralChat(Base):
 
     def chat_streamly(self, system, history, gen_conf=None, **kwargs):
         from mistralai.client.errors import MistralError
+
         gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
