@@ -19,7 +19,9 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/cloudwego/eino/components/model"
@@ -200,6 +202,9 @@ func TestReactStreamCheckerExecutesToolCallAfterText(t *testing.T) {
 	if len(mdl.boundTools) != 1 || mdl.boundTools[0].Name != "execute_code" {
 		t.Fatalf("bound tools = %#v, want execute_code", mdl.boundTools)
 	}
+	if got := tool.calls.Load(); got != 1 {
+		t.Fatalf("tool invocations = %d, want exactly 1", got)
+	}
 	final, err := schema.ConcatMessages(chunks)
 	if err != nil {
 		t.Fatalf("schema.ConcatMessages: %v", err)
@@ -207,6 +212,137 @@ func TestReactStreamCheckerExecutesToolCallAfterText(t *testing.T) {
 	if final.Content != "2" {
 		t.Fatalf("final content = %q, want 2", final.Content)
 	}
+}
+
+// slowThinkingModel streams a few reasoning chunks (each delayed) before a
+// tool call, then answers directly on the second turn. It is used to prove
+// that thinking deltas reach the agent message emitter while agent.Stream is
+// still blocked inside the stream-tool-call checker.
+type slowThinkingModel struct {
+	turn int
+}
+
+func (m *slowThinkingModel) WithTools(_ []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	return m, nil
+}
+
+func (m *slowThinkingModel) Generate(_ context.Context, _ []*schema.Message, _ ...model.Option) (*schema.Message, error) {
+	m.turn++
+	return &schema.Message{Role: schema.Assistant, Content: "2"}, nil
+}
+
+func (m *slowThinkingModel) Stream(_ context.Context, _ []*schema.Message, _ ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	m.turn++
+	if m.turn == 1 {
+		sr, sw := schema.Pipe[*schema.Message](1)
+		go func() {
+			defer sw.Close()
+			for _, chunk := range []*schema.Message{
+				{Role: schema.Assistant, ReasoningContent: "thinking one"},
+				{Role: schema.Assistant, ReasoningContent: "thinking two"},
+				{Role: schema.Assistant, ReasoningContent: "thinking three"},
+				{
+					Role: schema.Assistant,
+					ToolCalls: []schema.ToolCall{{
+						ID:   "call-1",
+						Type: "function",
+						Function: schema.FunctionCall{
+							Name:      "execute_code",
+							Arguments: `{"lang":"python","script":"def main(): return 2"}`,
+						},
+					}},
+				},
+			} {
+				time.Sleep(30 * time.Millisecond)
+				if sw.Send(chunk, nil) {
+					return
+				}
+			}
+		}()
+		return sr, nil
+	}
+	return schema.StreamReaderFromArray([]*schema.Message{{Role: schema.Assistant, Content: "2"}}), nil
+}
+
+// TestReactCheckerStreamsThinkingBeforeAgentReturns pins the fix for the
+// stream realtime regression: the stream-tool-call checker drains the whole
+// round synchronously inside the graph main loop, so agent.Stream cannot
+// return until the model finishes. The collector (emitAgentModelStreams)
+// must therefore be started before agent.Stream and deliver the first
+// thinking delta while the model is still streaming.
+func TestReactCheckerStreamsThinkingBeforeAgentReturns(t *testing.T) {
+	mdl := &slowThinkingModel{}
+	tool := &passthroughTool{name: "execute_code"}
+	agent, err := react.NewAgent(t.Context(), &react.AgentConfig{
+		ToolCallingModel: mdl,
+		ToolsConfig: compose.ToolsNodeConfig{
+			Tools: []einotool.BaseTool{tool},
+		},
+		StreamToolCallChecker: scanAllStreamForToolCall,
+		MaxStep:               4,
+	})
+	if err != nil {
+		t.Fatalf("react.NewAgent: %v", err)
+	}
+
+	thinkingSeen := make(chan struct{}, 1)
+	var thinkingCount atomic.Int32
+	ctx := runtime.WithAgentMessageEmitter(t.Context(), func(content, thinking string) {
+		if thinking != "" {
+			thinkingCount.Add(1)
+			select {
+			case thinkingSeen <- struct{}{}:
+			default:
+			}
+		}
+	})
+
+	opt, future := react.WithMessageFuture()
+	emitDone := emitAgentModelStreams(ctx, future)
+
+	streamCh := make(chan *schema.StreamReader[*schema.Message], 1)
+	errCh := make(chan error, 1)
+	go func() {
+		s, streamErr := agent.Stream(ctx, []*schema.Message{schema.UserMessage("calculate")}, opt)
+		if streamErr != nil {
+			errCh <- streamErr
+			return
+		}
+		streamCh <- s
+	}()
+
+	select {
+	case <-thinkingSeen:
+		// First thinking delta arrived while the model is still streaming.
+	case <-streamCh:
+		t.Fatal("agent.Stream returned before any thinking delta was emitted")
+	case <-errCh:
+		t.Fatal("agent.Stream errored before any thinking delta was emitted")
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for a thinking delta")
+	}
+
+	var stream *schema.StreamReader[*schema.Message]
+	select {
+	case stream = <-streamCh:
+	case err := <-errCh:
+		t.Fatalf("agent.Stream: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("agent.Stream did not return")
+	}
+	defer stream.Close()
+	for {
+		if _, recvErr := stream.Recv(); recvErr == io.EOF {
+			break
+		}
+	}
+	if got := tool.calls.Load(); got != 1 {
+		t.Fatalf("tool invocations = %d, want exactly 1", got)
+	}
+	if got := thinkingCount.Load(); got != 3 {
+		t.Fatalf("thinking deltas = %d, want exactly 3", got)
+	}
+	<-emitDone
 }
 
 func TestAgent_EmitsThinking(t *testing.T) {

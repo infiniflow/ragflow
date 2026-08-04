@@ -131,6 +131,28 @@ func TestCodeExec_Info(t *testing.T) {
 	if !requiredFields["lang"] || !requiredFields["script"] {
 		t.Errorf("Info schema required = %#v, want lang and script", required)
 	}
+	langProp, ok := properties["lang"].(map[string]any)
+	if !ok {
+		t.Fatalf("lang property = %#v, want object", properties["lang"])
+	}
+	if typ, _ := langProp["type"].(string); typ != "string" {
+		t.Errorf("lang.type = %q, want string", typ)
+	}
+	enum, ok := langProp["enum"].([]any)
+	if !ok {
+		t.Fatalf("lang.enum = %#v, want array", langProp["enum"])
+	}
+	gotEnum := make([]string, len(enum))
+	for i, e := range enum {
+		s, ok := e.(string)
+		if !ok {
+			t.Fatalf("lang.enum[%d] = %#v, want string", i, e)
+		}
+		gotEnum[i] = s
+	}
+	if len(gotEnum) != 2 || gotEnum[0] != "python" || gotEnum[1] != "javascript" {
+		t.Errorf("lang.enum = %v, want [python javascript]", gotEnum)
+	}
 }
 
 // TestCodeExec_ResultExtractsArtifacts pins the artifact

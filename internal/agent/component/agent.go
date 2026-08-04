@@ -191,12 +191,21 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 
 	opt, future := react.WithMessageFuture()
 	ctx = setArtifactCollector(ctx, future)
+	// Start the model-stream collector BEFORE agent.Stream. The checker
+	// (scanAllStreamForToolCall) must consume the whole round before the
+	// graph releases its output stream, so agent.Stream does not return
+	// until the model finishes. GetMessageStreams blocks on the future's
+	// started signal (closed by the graph onStart callback), so starting
+	// the collector first lets thinking deltas stream out in real time
+	// while the checker runs, instead of buffering the entire round.
+	emitDone := emitAgentModelStreams(ctx, future)
 	stream, err := agent.Stream(ctx, input, opt)
 	if err != nil {
+		// Drain the collector so its goroutine exits before we return.
+		<-emitDone
 		return nil, err
 	}
 	defer stream.Close()
-	emitDone := emitAgentModelStreams(ctx, future)
 
 	chunks := make([]*schema.Message, 0)
 	for {
@@ -205,6 +214,7 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 			break
 		}
 		if err != nil {
+			<-emitDone
 			return nil, err
 		}
 		if chunk == nil {
@@ -225,10 +235,18 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	return msg, nil
 }
 
-// scanAllStreamForToolCall mirrors Python's async_chat_streamly_with_tools:
-// consume the whole model response, then branch to the Tools node only when
-// any streamed message contains a ToolCall. This keeps tool_choice=auto — a
-// model may still answer directly when it decides no tool is needed.
+// scanAllStreamForToolCall consumes the whole model response, then branches
+// to the Tools node only when any streamed message contains a ToolCall. It
+// must read to EOF because providers append the tool-call message at the end
+// of the stream (see EinoChatModel.Stream), mirroring Python's
+// async_chat_streamly_with_tools, which likewise consumes an entire SSE round
+// before deciding. This keeps tool_choice=auto — a model may still answer
+// directly when it decides no tool is needed.
+//
+// The checker runs synchronously inside the graph's main loop, so
+// runEinoReActAgent starts emitAgentModelStreams before agent.Stream to keep
+// thinking deltas streaming in real time while this function drains the
+// round.
 func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*schema.Message]) (bool, error) {
 	defer stream.Close()
 
