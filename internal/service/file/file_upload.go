@@ -15,6 +15,8 @@ import (
 	"time"
 )
 
+const maxUploadFileSize = 10 * 1024 * 1024
+
 // UploadFile uploads files to a folder
 func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
 	if parentID == "" {
@@ -56,6 +58,10 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 		filename := fileHeader.Filename
 		if filename == "" {
 			return nil, fmt.Errorf("no file selected")
+		}
+
+		if fileHeader.Size > maxUploadFileSize {
+			return nil, fmt.Errorf("file %s exceeds maximum size of 10MB", filename)
 		}
 
 		fileType := utility.FilenameType(filename)
@@ -101,10 +107,14 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 		}
 
 		var data []byte
-		data, err = io.ReadAll(src)
+		reader := io.LimitReader(src, maxUploadFileSize+1)
+		data, err = io.ReadAll(reader)
 		src.Close()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file data: %w", err)
+		}
+		if int64(len(data)) > maxUploadFileSize {
+			return nil, fmt.Errorf("file %s exceeds maximum size of 10MB", filename)
 		}
 
 		if err = storageImpl.Put(ctx, lastFolder.ID, location, data); err != nil {
