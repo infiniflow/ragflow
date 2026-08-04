@@ -45,17 +45,26 @@ func (dao *FileDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entit
 	return &file, nil
 }
 
-// GetByPfID gets files by parent folder ID with pagination and filtering
+// GetByPfID gets files by parent folder ID with pagination and filtering.
+// When keywords is empty, only direct children of pfID are listed; when
+// keywords is non-empty, the search covers the whole subtree under pfID so
+// files and folders nested in sub-folders can be found too.
 func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, orderBy string, desc bool, keywords string) ([]*entity.File, int64, error) {
 	var files []*entity.File
 	var total int64
 
 	query := db.WithContext(ctx).Model(&entity.File{}).
-		Where("tenant_id = ? AND parent_id = ? AND id != ?", tenantID, pfID, pfID)
+		Where("tenant_id = ? AND id != ?", tenantID, pfID)
 
-	// Apply keyword filter
 	if keywords != "" {
-		query = query.Where("LOWER(name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
+		descendantIDs, err := dao.GetSubtreeIDs(ctx, db, tenantID, pfID)
+		if err != nil {
+			return nil, 0, err
+		}
+		query = query.Where("parent_id IN ?", descendantIDs).
+			Where("LOWER(name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
+	} else {
+		query = query.Where("parent_id = ?", pfID)
 	}
 
 	// Count total
@@ -83,6 +92,43 @@ func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID s
 	}
 
 	return files, total, nil
+}
+
+// GetSubtreeIDs returns pfID itself plus the IDs of all entries nested under
+// it (folders and files), used to scope recursive keyword searches.
+func (dao *FileDAO) GetSubtreeIDs(ctx context.Context, db *gorm.DB, tenantID, pfID string) ([]string, error) {
+	var rows []struct {
+		ID       string
+		ParentID string
+	}
+	if err := db.WithContext(ctx).Model(&entity.File{}).
+		Select("id", "parent_id").
+		Where("tenant_id = ?", tenantID).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	children := make(map[string][]string, len(rows))
+	for _, row := range rows {
+		children[row.ParentID] = append(children[row.ParentID], row.ID)
+	}
+
+	ids := []string{pfID}
+	inTree := map[string]struct{}{pfID: {}}
+	queue := []string{pfID}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, child := range children[cur] {
+			if _, ok := inTree[child]; ok {
+				continue
+			}
+			inTree[child] = struct{}{}
+			ids = append(ids, child)
+			queue = append(queue, child)
+		}
+	}
+	return ids, nil
 }
 
 // GetRootFolder gets or creates root folder for tenant
