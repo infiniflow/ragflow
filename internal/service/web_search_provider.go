@@ -29,8 +29,8 @@ import (
 
 const (
 	webSearchProviderTavily = "tavily"
-	webSearchProviderQuerit  = "querit"
-	queritWebSearchEndpoint  = "https://api.querit.ai/v1/search"
+	webSearchProviderQuerit = "querit"
+	queritWebSearchEndpoint = "https://api.querit.ai/v1/search"
 )
 
 var queritWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
