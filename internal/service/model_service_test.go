@@ -292,7 +292,7 @@ func TestReconcileNvidiaInstanceModelsAddsUpdatesAndDeletes(t *testing.T) {
 	}
 
 	var got []*entity.TenantModel
-	if err := db.Order("model_name").Find(&got).Error; err != nil {
+	if err = db.Order("model_name").Find(&got).Error; err != nil {
 		t.Fatalf("list models: %v", err)
 	}
 	if len(got) != 2 || got[0].ModelName != "nvidia/keep" || got[1].ModelName != "nvidia/new-embed" {
