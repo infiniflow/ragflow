@@ -263,6 +263,11 @@ export default {
         <p>
         <li>系統將使用視覺檢測模型將連續文本分割成多個片段。</li>
         <li>接下來，這些連續的片段被合併成Token數不超過“Token數”的塊。</li></p>`,
+      general: `<p>支持的文件格式為<b>MD、MDX、DOCX、XLSX、XLS (Excel 97-2003)、PPT、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
+        <p>此方法將簡單的方法應用於塊文件：</p>
+        <p>
+        <li>系統將使用視覺檢測模型將連續文本分割成多個片段。</li>
+        <li>接下來，這些連續的片段被合併成Token數不超過“Token數”的塊。</li></p>`,
       paper: `<p>僅支持<b>PDF</b>文件。</p><p>
         如果我們的模型運行良好，論文將按其部分進行切片，例如<i>摘要、1.1、1.2</i>等。</p><p>
         這樣做的好處是LLM可以更好的概括論文中相關章節的內容，

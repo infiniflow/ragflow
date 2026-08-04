@@ -258,6 +258,11 @@ export default {
       <p>
       <li>Usa um modelo de detecção visual para dividir os textos em segmentos menores.</li>
       <li>Depois, combina segmentos adjacentes até que a contagem de tokens ultrapasse o limite definido em 'Número de tokens por fragmento', criando então um fragmento.</li></p>`,
+      general: `<p>Os formatos de arquivo suportados são <b>MD, MDX, DOCX, XLSX, XLS (Excel 97-2003), PPT, PDF, TXT, JPEG, JPG, PNG, TIF, GIF, CSV, JSON, EML, HTML</b>.</p>
+      <p>Este método fragmenta arquivos de maneira 'simples':</p>
+      <p>
+      <li>Usa um modelo de detecção visual para dividir os textos em segmentos menores.</li>
+      <li>Depois, combina segmentos adjacentes até que a contagem de tokens ultrapasse o limite definido em 'Número de tokens por fragmento', criando então um fragmento.</li></p>`,
       paper: `<p>Apenas <b>PDF</b> é suportado.</p><p>
       Os artigos serão divididos por seção, como <i>resumo, 1.1, 1.2</i>. </p><p>
       Essa abordagem permite que o LLM resuma o artigo de forma mais eficaz e forneça respostas mais compreensíveis. No entanto, aumenta o contexto para conversas de IA e o custo computacional do LLM. Durante uma conversa, considere reduzir o valor de '<b>topN</b>'.</p>`,

@@ -752,6 +752,11 @@ export default {
       <p>
       <li>系统将使用视觉检测模型将连续文本分割成多个片段。</li>
       <li>接下来，这些连续的片段被合并成Token数不超过“Token数”的块。</li></p>`,
+      general: `<p>支持的文件格式为<b>MD、MDX、DOCX、XLSX、XLS (Excel 97-2003)、PPTX、PDF、TXT、JPEG、JPG、PNG、TIF、GIF、CSV、JSON、EML、HTML</b>。</p>
+      <p>此方法将简单的方法应用于块文件：</p>
+      <p>
+      <li>系统将使用视觉检测模型将连续文本分割成多个片段。</li>
+      <li>接下来，这些连续的片段被合并成Token数不超过“Token数”的块。</li></p>`,
       paper: `<p>仅支持<b>PDF</b>文件。</p><p>
       如果我们的模型运行良好，论文将按其部分进行切片，例如<i>摘要、1.1、1.2</i>等。</p><p>
       这样做的好处是LLM可以更好的概括论文中相关章节的内容，
