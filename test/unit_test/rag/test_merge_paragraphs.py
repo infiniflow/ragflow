@@ -21,7 +21,7 @@
 paragraphs (no delimiter text) into chunks. It implements the two merge
 strategies from the TokenChunker handoff:
 
-* ``RESPECT_CAP``: only merge the next paragraph when the projected total still
+* ``UNDER_CAP``: only merge the next paragraph when the projected total still
   fits the soft ``token_size`` target.
 * ``OVER_CAP`` (default): pair adjacent paragraphs even when the pair exceeds
   ``token_size``; a paragraph larger than ``token_size`` stands alone.
@@ -51,10 +51,10 @@ def _flatten(groups):
 # --------------------------------------------------------------------------- #
 
 
-def test_respect_cap_example():
+def test_under_cap_example():
     # cap=100, paragraph sizes 150/60/50/30 -> [[150], [60], [80]]
     paras, size = _paras_with_sizes([150, 60, 50, 30])
-    groups = merge_paragraphs(paras, 100, MergeStrategy.RESPECT_CAP, size=size)
+    groups = merge_paragraphs(paras, 100, MergeStrategy.UNDER_CAP, size=size)
     assert groups == [["p0"], ["p1"], ["p2", "p3"]]
 
 
@@ -86,41 +86,90 @@ def test_single_paragraph():
 
 def test_all_paragraphs_over_cap_stand_alone():
     paras, size = _paras_with_sizes([200, 300, 150])
-    for strategy in (MergeStrategy.RESPECT_CAP, MergeStrategy.OVER_CAP):
+    for strategy in (MergeStrategy.UNDER_CAP, MergeStrategy.OVER_CAP):
         groups = merge_paragraphs(paras, 100, strategy, size=size)
         assert groups == [["p0"], ["p1"], ["p2"]]
 
 
 def test_all_under_cap_mergeable():
     paras, size = _paras_with_sizes([10, 20, 30])
-    # RESPECT_CAP: 10+20+30=60 <= 100 -> one chunk.
-    assert merge_paragraphs(paras, 100, MergeStrategy.RESPECT_CAP, size=size) == [["p0", "p1", "p2"]]
-    # OVER_CAP: pairs -> [[10,20],[30]].
-    assert merge_paragraphs(paras, 100, MergeStrategy.OVER_CAP, size=size) == [["p0", "p1"], ["p2"]]
+    # UNDER_CAP: 10+20+30=60 <= 100 -> one chunk.
+    assert merge_paragraphs(paras, 100, MergeStrategy.UNDER_CAP, size=size) == [["p0", "p1", "p2"]]
+    # OVER_CAP: all 60 <= 100 -> one chunk (NOT pairwise [[10,20],[30]]).
+    assert merge_paragraphs(paras, 100, MergeStrategy.OVER_CAP, size=size) == [["p0", "p1", "p2"]]
 
 
 def test_alternating_non_mergeable():
     # 60,60,60,60 with cap=100.
     paras, size = _paras_with_sizes([60, 60, 60, 60])
-    # RESPECT_CAP: 60+60=120 > 100 -> every paragraph alone.
-    assert merge_paragraphs(paras, 100, MergeStrategy.RESPECT_CAP, size=size) == [["p0"], ["p1"], ["p2"], ["p3"]]
+    # UNDER_CAP: 60+60=120 > 100 -> every paragraph alone.
+    assert merge_paragraphs(paras, 100, MergeStrategy.UNDER_CAP, size=size) == [["p0"], ["p1"], ["p2"], ["p3"]]
     # OVER_CAP: pairs.
     assert merge_paragraphs(paras, 100, MergeStrategy.OVER_CAP, size=size) == [["p0", "p1"], ["p2", "p3"]]
 
 
 def test_token_size_zero_every_paragraph_alone():
     paras, size = _paras_with_sizes([3, 2, 4])
-    for strategy in (MergeStrategy.RESPECT_CAP, MergeStrategy.OVER_CAP):
+    for strategy in (MergeStrategy.UNDER_CAP, MergeStrategy.OVER_CAP):
         groups = merge_paragraphs(paras, 0, strategy, size=size)
         assert len(groups) == 3
         assert all(len(g) == 1 for g in groups)
+
+
+# --------------------------------------------------------------------------- #
+# OVER_CAP greedy accumulation (contract: merge while projected total <= cap,
+# allow one boundary overflow; oversized paragraph stands alone).
+# See memory: feedback_over_cap_contract.
+# --------------------------------------------------------------------------- #
+
+
+def test_over_cap_accumulates_beyond_two():
+    # 8 paragraphs of size 10 (total 80) under cap 128 must become ONE chunk,
+    # proving OVER_CAP accumulates past pairs instead of stopping at two.
+    paras, size = _paras_with_sizes([10] * 8)
+    groups = merge_paragraphs(paras, 128, MergeStrategy.OVER_CAP, size=size)
+    assert groups == [paras]
+
+
+def test_over_cap_boundary_overflow():
+    # 100+60 exceeds 128 -> OVER_CAP allows the boundary pair to overflow.
+    paras, size = _paras_with_sizes([100, 60, 100])
+    groups = merge_paragraphs(paras, 128, MergeStrategy.OVER_CAP, size=size)
+    assert groups == [["p0", "p1"], ["p2"]]
+
+
+def test_over_cap_vs_under_cap_boundary():
+    # The ONLY semantic difference: OVER_CAP permits the boundary overflow.
+    paras, size = _paras_with_sizes([100, 60, 100])
+    assert merge_paragraphs(paras, 128, MergeStrategy.UNDER_CAP, size=size) == [["p0"], ["p1"], ["p2"]]
+    assert merge_paragraphs(paras, 128, MergeStrategy.OVER_CAP, size=size) == [["p0", "p1"], ["p2"]]
+
+
+def test_over_cap_oversized_stands_alone():
+    # A paragraph larger than cap must never be paired (Bug A).
+    paras, size = _paras_with_sizes([60, 150, 60])
+    groups = merge_paragraphs(paras, 128, MergeStrategy.OVER_CAP, size=size)
+    assert groups == [["p0"], ["p1"], ["p2"]]
+
+
+def test_over_cap_oversized_then_accumulate():
+    # Oversized boundary followed by normal accumulation in one input.
+    paras, size = _paras_with_sizes([10, 200, 10, 10, 10])
+    groups = merge_paragraphs(paras, 128, MergeStrategy.OVER_CAP, size=size)
+    assert groups == [["p0"], ["p1"], ["p2", "p3", "p4"]]
+
+
+def test_over_cap_single_oversized():
+    paras, size = _paras_with_sizes([200])
+    groups = merge_paragraphs(paras, 128, MergeStrategy.OVER_CAP, size=size)
+    assert groups == [["p0"]]
 
 
 def test_token_size_one_delimiter_boundaries_not_one_token():
     # Token_size=1 on delimiter segments [3,2,4]: each segment is its own chunk
     # (delimiter boundary), NEVER atom-split into 1-token pieces.
     paras, size = _paras_with_sizes([3, 2, 4])
-    for strategy in (MergeStrategy.RESPECT_CAP, MergeStrategy.OVER_CAP):
+    for strategy in (MergeStrategy.UNDER_CAP, MergeStrategy.OVER_CAP):
         groups = merge_paragraphs(paras, 1, strategy, size=size)
         assert len(groups) == 3
         assert _flatten(groups) == paras

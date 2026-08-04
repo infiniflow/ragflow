@@ -1181,13 +1181,15 @@ def _compute_overlap_prefix(prev_text, overlapped_percent):
 class MergeStrategy(Enum):
     """How ``merge_paragraphs`` groups delimiter-split paragraphs into chunks.
 
-    ``OVER_CAP`` (default) pairs adjacent paragraphs even when the pair exceeds
-    ``token_size``; ``RESPECT_CAP`` only merges when the projected total still
-    fits the soft ``token_size`` target. Switching strategy is a single enum
-    value — no logic change elsewhere.
+    ``OVER_CAP`` (default) greedily accumulates adjacent paragraphs while the
+    projected total stays within ``token_size``; when the next paragraph would
+    exceed ``token_size``, it is still merged (one boundary overflow is allowed),
+    then the chunk is closed. ``UNDER_CAP`` only merges when the projected total
+    still fits the soft ``token_size`` target and never overflows. Switching
+    strategy is a single enum value — no logic change elsewhere.
     """
 
-    RESPECT_CAP = "respect_cap"
+    UNDER_CAP = "under_cap"
     OVER_CAP = "over_cap"
 
 
@@ -1202,7 +1204,7 @@ def _merge_paragraph_groups(paragraphs, token_size, strategy, size):
     n = len(paragraphs)
     groups = []
 
-    if strategy == MergeStrategy.RESPECT_CAP:
+    if strategy == MergeStrategy.UNDER_CAP:
         cur = []
         cur_tokens = 0
         for i in range(n):
@@ -1230,19 +1232,35 @@ def _merge_paragraph_groups(paragraphs, token_size, strategy, size):
             groups.append(cur)
         return groups
 
-    # OVER_CAP (default): pair adjacent paragraphs; a paragraph larger than the
-    # cap stands alone.
-    i = 0
-    while i < n:
-        if size(paragraphs[i]) > cap:
+    # OVER_CAP (default): greedily accumulate adjacent paragraphs while the
+    # projected total stays within ``token_size``; when the next paragraph would
+    # exceed ``token_size``, merge it anyway (one boundary overflow allowed),
+    # then close the chunk. A paragraph larger than ``token_size`` always stands
+    # alone. Never pair into fixed-size twos.
+    cur, cur_t = [], 0
+    for i in range(n):
+        pt = size(paragraphs[i])
+        if pt > cap:
+            if cur:
+                groups.append(cur)
             groups.append([i])
-            i += 1
-        elif i + 1 < n:
-            groups.append([i, i + 1])
-            i += 2
+            cur, cur_t = [], 0
+            continue
+        if not cur:
+            cur, cur_t = [i], pt
+            continue
+        if cur_t + pt <= cap:
+            cur.append(i)
+            cur_t += pt
         else:
-            groups.append([i])
-            i += 1
+            # Boundary overflow allowed: merge this one in, then close the chunk
+            # so a chunk can exceed cap by at most ~one paragraph (not unbounded).
+            cur.append(i)
+            cur_t += pt
+            groups.append(cur)
+            cur, cur_t = [], 0
+    if cur:
+        groups.append(cur)
     return groups
 
 
@@ -1354,12 +1372,16 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
     # delimiter text), then group paragraphs with the chosen merge strategy.
     # No atom-split is performed: a paragraph larger than ``chunk_token_num``
     # becomes its own chunk; the model layer truncates oversize units.
+    #
+    # A section is split on the delimiter whenever one is present -- even when
+    # the whole section already fits ``chunk_token_num``. The delimiter is a
+    # chunk boundary and its text must never leak into a chunk; only the
+    # empty-delimiter (size-only) mode below skips splitting.
     dels = compile_delimiter_pattern(parsed_dels)
     paragraphs = []  # list of (text, pos)
     for sec, pos in sections:
-        sec_text = "\n" + sec
-        if not dels or num_tokens_from_string(sec_text) <= chunk_token_num:
-            paragraphs.append((sec_text, pos))
+        if not dels:
+            paragraphs.append(("\n" + sec, pos))
             continue
         for sub_sec in re.split(r"(%s)" % dels, sec, flags=re.DOTALL):
             if not sub_sec or re.fullmatch(dels, sub_sec):
@@ -1409,6 +1431,8 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
     # Default path: split every text on the delimiter into paragraphs (no
     # delimiter text) carrying its image, then group with the merge strategy.
     # Images of merged paragraphs are concatenated; no atom-split is performed.
+    # As in ``naive_merge``, a small text is still split on the delimiter so
+    # the boundary text never leaks into a chunk; only empty-delimiter skips.
     dels = compile_delimiter_pattern(parsed_dels)
     paragraphs = []  # list of (text, pos, image)
     for text, image in zip(texts, images):
@@ -1420,9 +1444,8 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。
             text_str = text or ""
             text_pos = ""
         text_str = normalize_text_newlines(text_str)
-        text_seg = "\n" + text_str
-        if not dels or num_tokens_from_string(text_seg) <= chunk_token_num:
-            paragraphs.append((text_seg, text_pos, image))
+        if not dels:
+            paragraphs.append(("\n" + text_str, text_pos, image))
             continue
         for sub_sec in re.split(r"(%s)" % dels, text_str, flags=re.DOTALL):
             if not sub_sec or re.fullmatch(dels, sub_sec):

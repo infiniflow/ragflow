@@ -23,7 +23,8 @@ The contract (see the TokenChunker handoff):
 * ``token_size`` = soft target + merge strategy (``OVER_CAP`` default); no
   atom-split — a paragraph larger than ``chunk_token_num`` stands alone and the
   model layer truncates it;
-* ``RESPECT_CAP`` is available as an explicit alternative strategy.
+* ``UNDER_CAP`` is available as an explicit alternative strategy (never overflows
+  ``chunk_token_num``; ``OVER_CAP`` allows one boundary overflow).
 """
 
 from deepdoc.parser.txt_parser import RAGFlowTxtParser
@@ -38,13 +39,16 @@ def _nonempty(chunks):
     return [c for c, _ in chunks if c.strip()]
 
 
-def test_over_cap_pairs_adjacent_paragraphs(monkeypatch):
+def test_over_cap_accumulates_adjacent_paragraphs(monkeypatch):
     monkeypatch.setattr(nlp_mod, "num_tokens_from_string", _fake_word_tokens)
     text = "\n".join(["alpha beta gamma delta" for _ in range(8)])  # 4 tokens each
     chunks = _nonempty(RAGFlowTxtParser.parser_txt(text, chunk_token_num=50, delimiter="\n"))
-    # OVER_CAP pairs adjacent paragraphs -> 4 chunks of 8 tokens.
-    assert len(chunks) == 4
-    assert all(len(c.split()) == 8 for c in chunks)
+    # OVER_CAP greedily accumulates adjacent paragraphs while under cap, instead
+    # of capping at fixed pairs: 8 * 4 = 32 tokens all fit under 50 -> 1 chunk.
+    assert len(chunks) == 1
+    assert len(chunks[0].split()) == 32
+    # Content is preserved (32 tokens total).
+    assert sum(len(c.split()) for c in chunks) == 32
 
 
 def test_oversize_unit_not_atom_split(monkeypatch):
