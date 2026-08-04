@@ -279,6 +279,12 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	if strings.Contains(contentType, "multipart/form-data") {
+		uploadLimit := file.DeploymentUploadMaxBytes()
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, uploadLimit)
+		if cl := c.Request.ContentLength; cl > uploadLimit {
+			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "request body exceeds deployment upload limit")
+			return
+		}
 		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
 			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Failed to parse multipart form: "+err.Error())
 			return
@@ -313,7 +319,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		}
 
 		ctx := c.Request.Context()
-		result, err := h.fileService.UploadFile(ctx, userID, parentID, files)
+		result, err := h.fileService.UploadFile(ctx, userID, parentID, files, uploadLimit)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
