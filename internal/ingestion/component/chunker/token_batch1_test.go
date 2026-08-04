@@ -84,7 +84,7 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 			{Text: bText, DocType: "text", CKType: "text", TKNums: intPtr(bN)},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, budget, 30.0)
+	got := mergeByTokenSizeFromJSON(items, budget, 30.0, true)
 	merged := got[0]
 	if len(merged) != 2 {
 		t.Fatalf("want 2 merged chunks (overlap path), got %d (a=%d b=%d budget=%d)", len(merged), aN, bN, budget)
@@ -130,12 +130,12 @@ func clampOverlapFixture() [][]schema.ChunkDoc {
 }
 
 func TestMergeByTokenSizeFromJSON_ClampsOverlappedPct(t *testing.T) {
-	at100 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 100)
+	at100 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 100, true)
 	if at100 == nil || len(at100) == 0 {
 		t.Fatalf("overlappedPct=100: nil/empty result")
 	}
-	at150 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 150)
-	atHuge := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 1e300)
+	at150 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 150, true)
+	atHuge := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 1e300, true)
 	if !reflect.DeepEqual(at100, at150) {
 		t.Errorf("overlappedPct=150 should clamp to 100; output differs from 100")
 	}
@@ -143,12 +143,12 @@ func TestMergeByTokenSizeFromJSON_ClampsOverlappedPct(t *testing.T) {
 		t.Errorf("overlappedPct=1e300 should clamp to 100; output differs from 100")
 	}
 
-	at0 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 0)
+	at0 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 0, true)
 	if at0 == nil || len(at0) == 0 {
 		t.Fatalf("overlappedPct=0: nil/empty result")
 	}
-	atNeg := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -5)
-	atNegHuge := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -1e300)
+	atNeg := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -5, true)
+	atNegHuge := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -1e300, true)
 	if !reflect.DeepEqual(at0, atNeg) {
 		t.Errorf("overlappedPct=-5 should clamp to 0; output differs from 0")
 	}
@@ -169,7 +169,7 @@ func TestMergeByTokenSizeFromJSON_EmptyPrevKeepsChunk(t *testing.T) {
 			{Text: "keepme", DocType: "text", CKType: "text", TKNums: intPtr(5)},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 128, 0)
+	got := mergeByTokenSizeFromJSON(items, 128, 0, true)
 	merged := got[0]
 	if len(merged) != 1 {
 		t.Fatalf("want 1 merged chunk, got %d", len(merged))

@@ -216,10 +216,7 @@ const useGraphStore = create<RFState>()(
       clickedToolId: '',
       onNodesChange: (changes) => {
         set({
-          nodes: applyNodeChanges(
-            changes, // The issue of errors when using templates was resolved by using cloneDeep.
-            cloneDeep(get().nodes) as RAGFlowNodeType[], //   Cannot assign to read only property 'width' of object '#<Object>'
-          ),
+          nodes: applyNodeChanges(changes, get().nodes),
         });
       },
       onEdgesChange: (changes: EdgeChange[]) => {
@@ -527,38 +524,31 @@ const useGraphStore = create<RFState>()(
         values: any,
         path: (string | number)[] = [],
       ) => {
-        const nextNodes = get().nodes.map((node) => {
-          if (node.id === nodeId) {
-            let nextForm: Record<string, unknown> = { ...node.data.form };
-            if (path.length === 0) {
-              nextForm = Object.assign(nextForm, values);
-            } else {
-              lodashSet(nextForm, path, values);
-            }
-            return {
-              ...node,
-              data: {
-                ...node.data,
-                form: nextForm,
-              },
-            } as any;
+        set((state) => {
+          const node = state.nodes.find((x) => x.id === nodeId);
+          if (!node) {
+            return;
           }
-
-          return node;
+          const form = (node.data.form ??= {});
+          // Deep clone to decouple from react-hook-form's internal values:
+          // immer freezes the produced state, and RHF keeps mutating the same
+          // nested references afterwards, which would throw on frozen arrays.
+          if (path.length === 0) {
+            Object.assign(form, cloneDeep(values));
+          } else {
+            lodashSet(form, path, cloneDeep(values));
+          }
         });
-        set({
-          nodes: nextNodes,
-        });
 
-        return nextNodes;
+        return get().nodes;
       },
       replaceNodeForm(nodeId, values) {
         if (nodeId) {
           set((state) => {
             for (const node of state.nodes) {
               if (node.id === nodeId) {
-                //cloneDeep Solving the issue of react-hook-form errors
-                node.data.form = cloneDeep(values); // TypeError: Cannot assign to read only property '0' of object '[object Array]'
+                // See updateNodeForm for why the deep clone is needed.
+                node.data.form = cloneDeep(values);
                 break;
               }
             }

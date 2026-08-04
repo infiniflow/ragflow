@@ -27,12 +27,7 @@ import (
 
 // HandleNonStreamingResponse processes a complete non-streaming chat
 // response using the ParserConfig's ResponseParser to extract usage.
-func HandleNonStreamingResponse(
-	body []byte,
-	modelUsage *common.ModelUsage,
-	chatConfig *ChatConfig,
-	cfg *ParserConfig,
-) (*ChatResponse, error) {
+func HandleNonStreamingResponse(body []byte, modelUsage *common.ModelUsage, chatConfig *ChatConfig, cfg *ParserConfig) (*ChatResponse, error) {
 	var result map[string]any
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
@@ -75,13 +70,7 @@ func HandleNonStreamingResponse(
 
 // HandleStreamingResponse processes a streaming chat response using the
 // ParserConfig's StreamParser to extract usage from each event.
-func HandleStreamingResponse(
-	body io.Reader,
-	modelUsage *common.ModelUsage,
-	chatConfig *ChatConfig,
-	cfg *ParserConfig,
-	sender func(*string, *string) error,
-) error {
+func HandleStreamingResponse(body io.Reader, modelUsage *common.ModelUsage, chatConfig *ChatConfig, cfg *ParserConfig, sender func(*string, *string) error) error {
 	if sender == nil {
 		return fmt.Errorf("sender is required")
 	}
@@ -101,6 +90,14 @@ func HandleStreamingResponse(
 
 		if apiErr, ok := event["error"]; ok && apiErr != nil {
 			return fmt.Errorf("upstream stream error: %v", apiErr)
+		}
+
+		// Some providers emit a terminal event that carries only a root-level
+		// finish_reason with no choices. Check it before the choices guard so
+		// the stream terminates cleanly instead of being rejected as "ended
+		// before [DONE] or finish_reason".
+		if finishReason, ok := event["finish_reason"].(string); ok && finishReason != "" {
+			sawTerminal = true
 		}
 
 		choices, ok := event["choices"].([]any)
@@ -140,9 +137,6 @@ func HandleStreamingResponse(
 		}
 
 		if finishReason, ok := firstChoice["finish_reason"].(string); ok && finishReason != "" {
-			sawTerminal = true
-		}
-		if finishReason, ok := event["finish_reason"].(string); ok && finishReason != "" {
 			sawTerminal = true
 		}
 

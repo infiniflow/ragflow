@@ -20,7 +20,4 @@ package task
 const (
 	// GRAPH_RAPTOR_FAKE_DOC_ID is the fake doc_id used for RAPTOR-generated chunks.
 	GRAPH_RAPTOR_FAKE_DOC_ID = "graph_raptor_fake_doc"
-
-	// EmbeddingTokenConsumptionKey is the key in pipeline output for embedding token count.
-	EmbeddingTokenConsumptionKey = "embedding_token_consumption"
 )

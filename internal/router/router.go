@@ -153,9 +153,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 	// Health check
 	engine.GET("/health", r.systemHandler.Health)
 
-	// User logout endpoint
-	engine.GET("/v1/user/logout", r.userHandler.Logout)
-
 	apiNoAuth := engine.Group("/api/v1")
 	{
 		apiNoAuth.GET("/system/ping", r.systemHandler.Ping)
@@ -641,14 +638,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				connectors.DELETE("/:connector_id", r.connectorHandler.DeleteConnector)
 				connectors.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
 				connectors.POST("/:connector_id/test", r.connectorHandler.TestConnector)
-			}
-
-			// Connector routes
-			connector := authorized.Group("/v1/connector")
-			{
-				connector.GET("/list", r.connectorHandler.ListConnectors)
-				connector.GET("/:connector_id", r.connectorHandler.GetConnector)
-				connector.POST("/:connector_id/rebuild", r.connectorHandler.RebuildConnector)
 			}
 
 			// MCP server routes.

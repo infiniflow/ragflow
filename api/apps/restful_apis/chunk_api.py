@@ -1199,9 +1199,9 @@ async def switch_chunks(tenant_id, dataset_id, document_id):
         def _switch_sync():
             e, doc = DocumentService.get_by_id(document_id)
             if not e:
-                return get_error_data_result(message="Document not found!")
+                return get_error_data_result(message="document not found")
             if not doc or str(doc.kb_id) != str(dataset_id):
-                return get_error_data_result(message="Document not found!")
+                return get_error_data_result(message="document not found")
             for cid in req["chunk_ids"]:
                 if not settings.docStoreConn.update(
                     {"id": cid},

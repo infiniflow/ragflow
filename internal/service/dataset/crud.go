@@ -331,7 +331,7 @@ func (d *DatasetService) deleteDataset(tenantID string, kb *entity.Knowledgebase
 func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, orderby string, desc bool, keywords string, ownerIDs []string, parserID, userID string, ids []string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	id = strings.TrimSpace(id)
 	if id != "" && len(ids) > 0 {
-		return nil, 0, common.CodeDataError, fmt.Errorf("Should not provide both 'id':%s and 'ids'%s", id, pythonStringListRepr(ids))
+		return nil, 0, common.CodeDataError, fmt.Errorf("should not provide both 'id':%s and 'ids':%s", id, pythonStringListRepr(ids))
 	}
 	if id != "" {
 		normalizedID, err := normalizeDatasetID(id)
@@ -441,7 +441,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 			}
 		}
 		if len(deniedIDs) > 0 {
-			return nil, 0, common.CodeDataError, fmt.Errorf("User '%s' lacks permission for datasets: '%s'", userID, strings.Join(deniedIDs, ", "))
+			return nil, 0, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for datasets: '%s'", userID, strings.Join(deniedIDs, ", "))
 		}
 	}
 

@@ -32,6 +32,8 @@ from rag.graphrag.utils import (
 )
 from common.misc_utils import thread_pool_exec
 
+from ._common import knowledge_compile_gen_conf
+
 
 class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
     """Build RAPTOR summary layers with the classic or Psi tree strategy."""
@@ -221,22 +223,32 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     [
                         {
                             "role": "user",
-                            "content": "Beside the summarization, give a title at the first line of your summarization. Must be in the same language as the paragraphs.",
+                            "content": (
+                                "Beside the summarization, give a title at the first line of your summarization. "
+                                "Must be in the same language as the paragraphs. "
+                                f"Keep the summary concise and target approximately {self._max_token} tokens."
+                            ),
                         }
                     ],
-                    {"max_tokens": max(self._max_token, 512)},  # fix issue:  #10235
+                    # ``max_token`` is the target size of the generated node,
+                    # not the provider's per-request output ceiling. Keep the
+                    # provider budget independent so reasoning tokens cannot
+                    # consume the node-size setting and truncate the summary.
+                    knowledge_compile_gen_conf(self._llm_model),
                 )
                 cnt = re.sub(
                     "(······\n由于长度的原因，回答被截断了，要继续吗？|For the content length reason, it stopped, continue?)",
                     "",
                     cnt,
                 )
+                cnt = str(cnt or "").strip()
                 logging.debug(f"SUM: {cnt}")
 
                 self._check_task_canceled(task_id, "before embedding")
 
                 embds = await self._embedding_encode(cnt)
-                return cnt.split("\n")[0], cnt, embds
+                title = cnt.splitlines()[0].strip() if cnt else ""
+                return title, cnt, embds
         except TaskCanceledException:
             raise
         except Exception as exc:

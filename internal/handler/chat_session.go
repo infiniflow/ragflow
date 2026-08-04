@@ -105,9 +105,9 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID, c.Query("id"), c.Query("name"), orderby, desc, page, pageSize)
 	if err != nil {
-		// Mirror Python: ownership failures return code 109 "No authorization."
-		if strings.Contains(err.Error(), "No authorization") {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "No authorization.")
+		// Mirror Python: ownership failures return code 109 "no authorization"
+		if strings.Contains(err.Error(), "no authorization") {
+			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 			return
 		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())

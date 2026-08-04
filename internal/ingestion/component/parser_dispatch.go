@@ -118,7 +118,7 @@ func resolveOutputFormat(family string, setups map[string]schema.ParserSetup, al
 		}
 	}
 	return "", fmt.Errorf(
-		"Parser: output_format %q for %q is not in allowed_output_format %v",
+		"parser: output_format %q for %q is not in allowed_output_format %v",
 		format, family, allowedList,
 	)
 }
@@ -156,13 +156,13 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 
 	p, err := parser.GetParser(fileType)
 	if err != nil {
-		return parserDispatchResult{Err: fmt.Errorf("Parser: resolve %q: %w", fileType, err)}
+		return parserDispatchResult{Err: fmt.Errorf("parser: resolve %q: %w", fileType, err)}
 	}
 	configureParserFromSetups(p, fileType, setups)
 
 	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
-		return parserDispatchResult{Err: fmt.Errorf("Parser: %q: %w", fileType, res.Err)}
+		return parserDispatchResult{Err: fmt.Errorf("parser: %q: %w", fileType, res.Err)}
 	}
 	// Carry the configured parse_method on the file metadata so
 	// downstream consumers can read which provider ran.

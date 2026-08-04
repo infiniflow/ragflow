@@ -2069,7 +2069,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Document not found!"
+    "message": "document not found"
 }
 ```
 
@@ -2636,7 +2636,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Document not found!"
+    "message": "document not found"
 }
 ```
 
@@ -7520,7 +7520,7 @@ Failure:
 ```json
 {
     "code": 404,
-    "message": "Document not found!"
+    "message": "document not found"
 }
 ```
 

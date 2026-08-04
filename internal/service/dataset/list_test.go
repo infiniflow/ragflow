@@ -90,7 +90,7 @@ func TestDatasetServiceListDatasetsRejectsIDAndIDsTogether(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	expected := "Should not provide both 'id':kb-1 and 'ids'['kb-1']"
+	expected := "should not provide both 'id':kb-1 and 'ids':['kb-1']"
 	if err.Error() != expected {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestDatasetServiceListDatasetsRejectsDeniedIDs(t *testing.T) {
 	if code != common.CodeDataError {
 		t.Fatalf("expected data error code, got %d", code)
 	}
-	expected := "User 'user-1' lacks permission for datasets: 'kb-private'"
+	expected := "user 'user-1' lacks permission for datasets: 'kb-private'"
 	if !strings.Contains(err.Error(), expected) {
 		t.Fatalf("unexpected error: %v", err)
 	}

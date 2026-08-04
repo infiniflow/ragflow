@@ -1,4 +1,4 @@
-package task
+package indexdoc
 
 import (
 	"testing"

@@ -122,12 +122,13 @@ func TestElasticsearchGetFieldsEmptyAndSkippedIDs(t *testing.T) {
 	if _, ok := got["missing-id.md"]; ok {
 		t.Fatalf("chunk without id should be skipped: %#v", got)
 	}
-	if fallbackMap, ok := got["fallback-chunk"]; !ok {
+	fallbackMap, ok := got["fallback-chunk"]
+	if !ok {
 		t.Fatalf("GetFields keys=%v, want fallback-chunk", got)
-	} else {
-		assertEqual(t, fallbackMap["id"], "fallback-chunk")
-		assertEqual(t, fallbackMap["docnm_kwd"], "fallback.md")
 	}
+
+	assertEqual(t, fallbackMap["id"], "fallback-chunk")
+	assertEqual(t, fallbackMap["docnm_kwd"], "fallback.md")
 }
 
 func TestElasticsearchGetAggregationSplitsCountsAndSorts(t *testing.T) {

@@ -67,11 +67,11 @@ func (s *DocumentService) GetDocumentStorageAddress(ctx context.Context, doc *en
 
 func (s *DocumentService) DownloadDocument(ctx context.Context, datasetID, docID string) (*DownloadDocumentResp, error) {
 	if docID == "" {
-		return nil, fmt.Errorf("Specify document_id please.")
+		return nil, fmt.Errorf("specify document_id please")
 	}
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil || doc.KbID != datasetID {
-		return nil, fmt.Errorf("Document not found!")
+		return nil, fmt.Errorf("document not found")
 	}
 	bucket, name, err := s.GetDocumentStorageAddress(ctx, doc)
 	if err != nil {
@@ -88,7 +88,7 @@ func (s *DocumentService) DownloadDocument(ctx context.Context, datasetID, docID
 		return nil, err
 	}
 	if len(data) == 0 {
-		return nil, fmt.Errorf("This file is empty.")
+		return nil, fmt.Errorf("this document is empty")
 	}
 
 	fileName := ""

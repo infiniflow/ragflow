@@ -28,7 +28,7 @@
                             "exception_method": "",
                             "frequencyPenaltyEnabled": false,
                             "frequency_penalty": 0.7,
-                            "llm_id": "qwen-turbo-latest@Tongyi-Qianwen",
+                            "llm_id": "",
                             "maxTokensEnabled": false,
                             "max_retries": 3,
                             "max_rounds": 1,
@@ -185,6 +185,7 @@
                                                     "kb_ids": [
                                                         "60c53ed89acc11f0bc1e7a2a6d0b2755"
                                                     ],
+                                                    "retrieval_from": "dataset",
                                                     "keywords_similarity_weight": 0.7,
                                                     "outputs": {
                                                         "formalized_content": {
@@ -232,7 +233,7 @@
                             "exception_method": "",
                             "frequencyPenaltyEnabled": false,
                             "frequency_penalty": 0.7,
-                            "llm_id": "qwen-turbo-latest@Tongyi-Qianwen",
+                            "llm_id": "",
                             "maxTokensEnabled": false,
                             "max_retries": 3,
                             "max_rounds": 1,
@@ -622,7 +623,7 @@
                                 "exception_method": "",
                                 "frequencyPenaltyEnabled": false,
                                 "frequency_penalty": 0.7,
-                                "llm_id": "qwen-turbo-latest@Tongyi-Qianwen",
+                                "llm_id": "",
                                 "maxTokensEnabled": false,
                                 "max_retries": 3,
                                 "max_rounds": 1,
@@ -891,7 +892,7 @@
                                 "exception_method": "",
                                 "frequencyPenaltyEnabled": false,
                                 "frequency_penalty": 0.7,
-                                "llm_id": "qwen-turbo-latest@Tongyi-Qianwen",
+                                "llm_id": "",
                                 "maxTokensEnabled": false,
                                 "max_retries": 3,
                                 "max_rounds": 1,
@@ -1009,6 +1010,7 @@
                                             "kb_ids": [
                                                 "60c53ed89acc11f0bc1e7a2a6d0b2755"
                                             ],
+                                            "retrieval_from": "dataset",
                                             "keywords_similarity_weight": 0.7,
                                             "outputs": {
                                                 "formalized_content": {

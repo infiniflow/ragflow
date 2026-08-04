@@ -22,6 +22,7 @@ package component
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -297,5 +298,5 @@ func newModelDriverForBaseURLLocal(driver modelModule.ModelDriver, providerName,
 }
 
 func errorsIsRecordNotFound(err error) bool {
-	return err != nil && (err == gorm.ErrRecordNotFound || strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()))
+	return err != nil && (errors.Is(err, gorm.ErrRecordNotFound) || strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()))
 }

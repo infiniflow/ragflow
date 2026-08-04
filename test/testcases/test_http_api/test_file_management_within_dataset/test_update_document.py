@@ -221,7 +221,7 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"chunk_count": 1}, 102, "Can't change `chunk_count`."),
+            ({"chunk_count": 1}, 102, "can't change `chunk_count`"),
             pytest.param(
                 {"create_date": "Fri, 14 Mar 2025 16:53:42 GMT"},
                 102,
@@ -270,7 +270,7 @@ class TestDocumentsUpdated:
                 "The input parameters are invalid.",
                 marks=pytest.mark.skip(reason="issues/6104"),
             ),
-            pytest.param({"progress": 1.0}, 102, "Can't change `progress`."),
+            pytest.param({"progress": 1.0}, 102, "can't change `progress`"),
             pytest.param(
                 {"progress_msg": "ragflow_test"},
                 102,
@@ -301,7 +301,7 @@ class TestDocumentsUpdated:
                 "The input parameters are invalid.",
                 marks=pytest.mark.skip(reason="issues/6104"),
             ),
-            ({"token_count": 1}, 102, "Can't change `token_count`."),
+            ({"token_count": 1}, 102, "can't change `token_count`"),
             pytest.param(
                 {"type": "ragflow_test"},
                 102,
@@ -339,10 +339,10 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "payload, expected_code, expected_message",
         [
-            ({"chunk_count": 100}, 102, "Can't change `chunk_count`."),
-            ({"token_count": 100}, 102, "Can't change `token_count`."),
+            ({"chunk_count": 100}, 102, "can't change `chunk_count`"),
+            ({"token_count": 100}, 102, "can't change `token_count`"),
             ({"progress": 2.0}, 102, "Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <2.0>"),
-            ({"progress": 1.0}, 102, "Can't change `progress`."),
+            ({"progress": 1.0}, 102, "can't change `progress`"),
             ({"meta_fields": []}, 102, "Field: <meta_fields> - Message: <Input should be a valid dictionary> - Value: <[]>"),
         ],
     )

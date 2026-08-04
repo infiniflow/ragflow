@@ -769,7 +769,7 @@ func (s *ChunkService) Parse(ctx context.Context, userID, datasetID string, req 
 			return map[string]interface{}{
 				"success_count": successCount,
 				"errors":        duplicateMessages,
-			}, common.CodeSuccess, fmt.Errorf("Partially parsed %d documents with %d errors", successCount, len(duplicateMessages))
+			}, common.CodeSuccess, fmt.Errorf("partially parsed %d documents with %d errors", successCount, len(duplicateMessages))
 		}
 		return nil, common.CodeDataError, fmt.Errorf("%s", strings.Join(duplicateMessages, ";"))
 	}

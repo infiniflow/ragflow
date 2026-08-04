@@ -36,14 +36,12 @@ const (
 	CompileKwdDatasetNav   = "dataset_nav"
 	CompileKwdRaptorGraph  = "raptor_graph"
 
-	// Structure / graph compilation keywords.
 	CompileKwdStructure          = "structure"
 	CompileKwdStructureIndex     = "structureIndex"
 	CompileKwdStructureEntity    = "structureEntity"
 	CompileKwdStructureRelation  = "structureRelation"
 	CompileKwdStructureCommunity = "structureCommunity"
 
-	// Field name for the structure index type discriminator.
 	FieldStructureIndexType = "structure_index_type"
 	FieldStructureKind      = "structure_kind"
 	FieldPageID             = "page_id"

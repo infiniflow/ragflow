@@ -148,7 +148,7 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"chunk_count": 1}, "Can't change `chunk_count`"),
+            ({"chunk_count": 1}, "can't change `chunk_count`"),
             pytest.param(
                 {"create_date": "Fri, 14 Mar 2025 16:53:42 GMT"},
                 "The input parameters are invalid",
@@ -189,7 +189,7 @@ class TestDocumentsUpdated:
                 "The input parameters are invalid",
                 marks=pytest.mark.skip(reason="issues/6104"),
             ),
-            ({"progress": 1.0}, "Can't change `progress`"),
+            ({"progress": 1.0}, "can't change `progress`"),
             pytest.param(
                 {"progress_msg": "ragflow_test"},
                 "The input parameters are invalid",
@@ -215,7 +215,7 @@ class TestDocumentsUpdated:
                 "The input parameters are invalid",
                 marks=pytest.mark.skip(reason="issues/6104"),
             ),
-            ({"token_count": 1}, "Can't change `token_count`"),
+            ({"token_count": 1}, "can't change `token_count`"),
             pytest.param(
                 {"type": "ragflow_test"},
                 "The input parameters are invalid",
@@ -245,7 +245,7 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"chunk_count": 1}, "Can't change `chunk_count`"),
+            ({"chunk_count": 1}, "can't change `chunk_count`"),
         ],
     )
     def test_immutable_fields_chunk_count(self, add_documents, payload, expected_message):
@@ -260,7 +260,7 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"token_count": 9999}, "Can't change `token_count`"),  # Attempt to change immutable field
+            ({"token_count": 9999}, "can't change `token_count`"),  # Attempt to change immutable field
         ],
     )
     def test_immutable_fields_token_count(self, add_documents, payload, expected_message):
@@ -275,7 +275,7 @@ class TestDocumentsUpdated:
     @pytest.mark.parametrize(
         "payload, expected_message",
         [
-            ({"progress": 0.5}, "Can't change `progress`"),  # Attempt to change immutable field
+            ({"progress": 0.5}, "can't change `progress`"),  # Attempt to change immutable field
             ({"progress": 1.5}, "Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <1.5>"),  # Attempt to change immutable field
         ],
     )

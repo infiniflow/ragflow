@@ -551,17 +551,19 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 
 	var req document.LinkToDatasetsRequest
 	// Tolerate bind errors: a malformed or empty body simply leaves the fields
-	// empty, which the validate_request-style check below reports as missing
+	// nil, which the validate_request-style check below reports as missing
 	// arguments — matching Python's @validate_request behaviour and code.
 	_ = c.ShouldBindJSON(&req)
 
-	// Mirror Python @validate_request("file_ids", "kb_ids"): missing arguments
-	// return ARGUMENT_ERROR (101) with data=null and the aggregated message.
+	// Mirror Python @validate_request("file_ids", "kb_ids"): a key absent from
+	// the body returns ARGUMENT_ERROR (101) with data=null and the aggregated
+	// message. Python's check is key-presence based, so an explicit empty list
+	// is valid — e.g. kb_ids: [] in replace mode unlinks all datasets.
 	var missing []string
-	if len(req.FileIDs) == 0 {
+	if req.FileIDs == nil {
 		missing = append(missing, "file_ids")
 	}
-	if len(req.KbIDs) == 0 {
+	if req.KbIDs == nil {
 		missing = append(missing, "kb_ids")
 	}
 	if len(missing) > 0 {

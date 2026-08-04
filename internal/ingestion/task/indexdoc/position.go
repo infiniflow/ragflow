@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package task
+package indexdoc
 
 // AddPositions adds position fields to a chunk map.
 // Input positions is a flat []float64 grouped as [pn, left, right, top, bottom]

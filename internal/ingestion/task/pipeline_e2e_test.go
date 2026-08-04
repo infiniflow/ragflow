@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
+	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 	"ragflow/internal/ingestion/testutil"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
@@ -247,7 +248,7 @@ func TestPipelineE2E_PipelineExecutor(t *testing.T) {
 							"q_2_vec": []float64{0.3, 0.4}, // Pre-vectorized to skip embedding
 						},
 					},
-					EmbeddingTokenConsumptionKey: 100,
+					indexdoc.EmbeddingTokenConsumptionKey: 100,
 				}, dsl, nil
 			})
 

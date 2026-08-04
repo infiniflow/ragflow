@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package task
+package indexdoc
 
 import (
 	"fmt"

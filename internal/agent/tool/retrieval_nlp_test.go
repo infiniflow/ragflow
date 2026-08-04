@@ -28,6 +28,7 @@ package tool
 
 import (
 	"context"
+	"errors"
 	"math"
 	"testing"
 
@@ -227,7 +228,7 @@ func TestNewNLPRetrievalAdapter_NilService(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error from nil-service adapter")
 	}
-	if err != ErrRetrievalServiceMissing {
+	if !errors.Is(err, ErrRetrievalServiceMissing) {
 		t.Errorf("err = %v, want ErrRetrievalServiceMissing", err)
 	}
 }
