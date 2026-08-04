@@ -15,9 +15,3 @@
 //
 
 package dao
-
-type EnterpriseMemoryDAO struct{}
-
-func NewEnterpriseMemoryDAO() *EnterpriseMemoryDAO {
-	return &EnterpriseMemoryDAO{}
-}
