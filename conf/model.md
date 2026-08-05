@@ -1,0 +1,106 @@
+# Model Configuration Reference
+
+This document explains the JSON field conventions used in `conf/models/*.json` and `conf/all_models.json`, and the decimal vs. binary conventions used by different model vendors.
+
+## JSON Fields
+
+Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in the global catalog (`conf/all_models.json`) supports the following fields:
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Canonical model identifier (e.g. `gpt-4o`, `claude-opus-4-8`). Must be unique within a provider file. |
+| `content_length` | integer | No | Maximum **context window** in tokens — the total number of tokens (input + output) the model can process in a single request. Previously named `max_tokens` (until PR #17807). |
+| `max_output` | integer | No | Maximum **output generation** in tokens — the upper bound for tokens the model will generate in a response. Previously encoded in the same `max_tokens` field. |
+| `model_types` | string[] | Yes | Capabilities of the model. Common values: `chat`, `vision`, `embedding`, `rerank`, `asr`, `tts`, `ocr`, `doc_parse`. |
+| `thinking` | object | No | Extended-thinking configuration. `default_value` (bool) sets whether thinking is on by default; `clear_thinking` (bool) enables the API to disable thinking per-request. |
+| `tools` | object | No | Tool-use capability. `support` (bool) indicates whether the model supports function/tool calling. |
+| `class` | string | No | Provider-specific model class used to select the correct driver (e.g. `glm`, `kimi`). |
+| `alias` | string[] | No | Alternative names for the same model. Used for model lookup when a tenant refers to the model by an alias. |
+| `rank` | integer | No | Sort priority (lower = higher rank). Used when ordering model lists in the UI. |
+
+### Relationship Between Fields
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  content_length                      │
+│  (total context window: input + output combined)    │
+│                                                     │
+│  ┌─────────────────────────────────────────────┐    │
+│  │           prompt tokens (input)              │    │
+│  └─────────────────────────────────────────────┘    │
+│                                                     │
+│  ┌─────────────────────────────────────────────┐    │
+│  │        max_output (generated tokens)         │    │
+│  └─────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────┘
+```
+
+- `content_length` is the **total** budget (input + output).
+- `max_output` is the **generation** budget alone.
+- For most models, `max_output <= content_length`. Some vendors set them equal (output can fill the entire window).
+
+### Migration Note
+
+Before PR #17807, a single `max_tokens` field served double duty — it was documented as the context window but often used as the output cap at runtime. The split into `content_length` + `max_output` removes this ambiguity:
+
+- **Old `max_tokens`** → `content_length` (context window, the original intent).
+- **New `max_output`** → the actual generation cap, verified against vendor docs.
+
+## Decimal vs. Binary Conventions
+
+Different vendors express context windows using different numerical conventions. **This configuration preserves the exact numbers from each vendor's official documentation**, even when vendors disagree on whether "128K" means 128,000 or 131,072.
+
+### How to Identify
+
+| Convention | Pattern | Example |
+|---|---|---|
+| **Decimal (base-10)** | Round numbers in powers of 10 | 128,000 · 200,000 · 400,000 · 1,000,000 |
+| **Binary (base-2)** | Powers of 2 (exact) | 131,072 = 2^17 · 262,144 = 2^18 · 1,048,576 = 2^20 |
+
+A quick test: if `n & (n-1) == 0`, the value is a power of 2 (binary). Otherwise, it is decimal.
+
+### Vendor Breakdown
+
+| Vendor | `content_length` convention | `max_output` convention | Source |
+|---|---|---|---|
+| **OpenAI** | Binary | Binary | [OpenAI Models](https://developers.openai.com/api/docs/models/) |
+| **Anthropic** | Decimal (200K, 1M) | Binary (8K, 16K, 32K, 64K, 128K) | [Anthropic Docs](https://docs.anthropic.com/en/docs/about-claude/models) |
+| **Google (Gemini)** | Binary (1M, 2M) | Binary (8K, 64K) | [Google AI Docs](https://ai.google.dev/gemini-api/docs/models/gemini) |
+| **Google (Gemma)** | Binary | Binary | [Gemma Docs](https://ai.google.dev/gemma/docs) |
+| **Meta (Llama)** | Binary | Binary | [Llama Model Cards](https://github.com/meta-llama/llama-models) |
+| **DeepSeek** | Binary (128K, 1M) | Binary (8K, 32K, 64K, 384K) | [DeepSeek API Docs](https://api-docs.deepseek.com/) |
+| **Alibaba (Qwen)** | Binary (32K, 128K, 256K, 1M) | Binary (8K, 16K, 32K, 64K) | [Alibaba Bailian Docs](https://help.aliyun.com/zh/model-studio/) |
+| **Moonshot (Kimi)** | Binary (256K, 1M) | Binary (128K) | [Kimi API Docs](https://platform.kimi.com/docs/api/models-overview) |
+| **Mistral** | Binary | Binary (= content_length) | [Mistral Docs](https://docs.mistral.ai/getting-started/models/models_overview/) |
+| **NVIDIA** | Binary | Binary | [NVIDIA NIM Docs](https://build.nvidia.com/nemotron) |
+| **xAI (Grok)** | Decimal (131K, 262K) | Decimal (128K, 131K) | [xAI Docs](https://docs.x.ai/docs/models) |
+| **GLM (Zhipu)** | Decimal (128K, 200K, 204K, 1M) | Decimal (4K, 16K, 96K, 128K) | [Zhipu AI Docs](https://docs.bigmodel.cn/cn/guide/start/model-overview) |
+| **MiniMax** | Decimal (1M, 204K, 196K) | Decimal (131K, 16K) | [MiniMax Docs](https://platform.minimaxi.com/docs/guides/text-generation) |
+| **Cohere** | Decimal (128K, 256K) | Decimal (4K, 8K, 32K, 64K) | [Cohere Docs](https://docs.cohere.com/docs/models) |
+| **Baichuan** | Decimal (32K, 128K, 192K) | Decimal (8K) | [Baichuan Docs](https://platform.baichuan-ai.com/docs) |
+| **Amazon Nova** | Decimal (128K, 300K) | Decimal (5K) | [AWS Bedrock Docs](https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html) |
+| **Perplexity** | Decimal (128K, 200K) | Binary (128K) | [Perplexity Docs](https://docs.perplexity.ai/docs/sonar/models) |
+
+### Key Takeaways
+
+1. **Never round or convert** a value to match a different convention. If Anthropic says 200K, write `200000` — not `2097152` or `262144`.
+2. **OpenAI, Google, Meta, NVIDIA, DeepSeek, Qwen, Kimi, Mistral** all use binary (powers of 2).
+3. **Anthropic, xAI, GLM/Zhipu, MiniMax, Cohere, Baichuan, Amazon** use decimal (powers of 10, or vendor-specific round numbers).
+4. **Some vendors mix conventions** within their own catalog (e.g. Anthropic uses decimal for context but binary for output).
+5. **When in doubt**, check the official API documentation linked above. The number in this config should match the vendor's stated limit exactly.
+
+## How to Add a New Model
+
+1. Determine the model's `content_length` (context window) and `max_output` (generation cap) from the **official API documentation**.
+2. Use the exact number stated — do not convert between decimal and binary.
+3. Add the entry to the appropriate `conf/models/<provider>.json` file.
+4. If the model is also listed in `conf/all_models.json`, update that entry too (or add it).
+5. Run `go test ./internal/entity/models/...` to verify the config loads correctly.
+
+## How to Update an Existing Model
+
+1. Find the latest official spec from the vendor's documentation.
+2. Update `content_length` and/or `max_output` to match.
+3. If the model appears in multiple provider files (e.g. DeepSeek models appear in `deepseek.json`, `ppio.json`, `qiniu.json`), update all copies.
+4. Update `conf/all_models.json` if the model has an entry there.
+5. Run `go test ./internal/entity/models/...` to verify.
