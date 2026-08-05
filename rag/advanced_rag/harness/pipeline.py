@@ -1,11 +1,12 @@
 """Pipeline — unified tool execution dispatcher."""
 
-import time
+import asyncio
 import logging
+import time
 from typing import Any
 
-from rag.advanced_rag.harness.types import ToolResult
 from rag.advanced_rag.harness.tools.registry import TOOL_REGISTRY
+from rag.advanced_rag.harness.types import ToolResult
 
 _LOG = logging.getLogger(__name__)
 
@@ -25,15 +26,53 @@ class Pipeline:
     - trace: execution history for auditing
     """
 
-    def __init__(self, rag_tools, compilation_map: dict[str, set[str]] | None = None):
+    def __init__(self, rag_tools, compilation_map: dict[str, set[str]] | None = None, has_local_evidence: bool = False):
         self.tools = rag_tools
         self.compilation_map = compilation_map or {}
+        self.has_local_evidence = has_local_evidence
         self.trace: list[dict] = []
+        self._web_search_cache: dict[str, ToolResult] = {}
+        self._web_search_inflight: dict[str, asyncio.Task[ToolResult]] = {}
         # Latest relevant-document set produced by a routing tool this run.
         self._routed_docs: list[str] = list(getattr(rag_tools, "doc_scope", None) or [])
 
     async def execute(self, tool_name: str, **kwargs) -> ToolResult:
         """Execute a registered tool by name."""
+        if tool_name == "web_search":
+            return await self._execute_web_search(**kwargs)
+
+        return await self._execute_uncached(tool_name, **kwargs)
+
+    async def _execute_web_search(self, **kwargs) -> ToolResult:
+        cache_key = web_search_cache_key(kwargs.get("query", ""), kwargs.get("keywords", ""))
+        cached = self._web_search_cache.get(cache_key)
+        if cached is not None:
+            _LOG.debug("web_search cache hit")
+            return cached
+
+        task = self._web_search_inflight.get(cache_key)
+        if task is None:
+            _LOG.debug("web_search provider task created")
+            task = asyncio.create_task(self._execute_uncached("web_search", **kwargs))
+            self._web_search_inflight[cache_key] = task
+
+            def finish(done: asyncio.Task[ToolResult]) -> None:
+                if self._web_search_inflight.get(cache_key) is done:
+                    self._web_search_inflight.pop(cache_key, None)
+                if done.cancelled():
+                    return
+                result = done.result()
+                if not result.error:
+                    self._web_search_cache[cache_key] = result
+
+            task.add_done_callback(finish)
+        else:
+            _LOG.debug("web_search joined in-flight task")
+
+        return await asyncio.shield(task)
+
+    async def _execute_uncached(self, tool_name: str, **kwargs) -> ToolResult:
+        """Execute a registered tool without Web cache handling."""
         tool = TOOL_REGISTRY.get(tool_name)
         if not tool:
             return ToolResult(chunks=[], metadata={}, error=f"Unknown tool: {tool_name}")
@@ -153,3 +192,12 @@ def filter_available_tools(tool_names: list[str], compilation_map: dict[str, set
                 continue
         available.append(name)
     return available
+
+
+def normalize_search_query(query: str) -> str:
+    """Normalize only insignificant whitespace for execution-local deduplication."""
+    return " ".join((query or "").split())
+
+
+def web_search_cache_key(query: str, keywords: str = "") -> str:
+    return f"{normalize_search_query(query)}\x00{normalize_search_query(keywords)}"

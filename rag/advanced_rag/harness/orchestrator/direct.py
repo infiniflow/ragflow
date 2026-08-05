@@ -2,7 +2,7 @@
 
 import logging
 
-from rag.advanced_rag.harness.tools.search import hybrid_search
+from rag.advanced_rag.harness.tools.search import hybrid_search, web_search
 
 _LOG = logging.getLogger(__name__)
 
@@ -14,6 +14,9 @@ async def direct_search(state: dict, tools) -> dict:
     _LOG.info('[Direct search] Looking up the knowledge base for: "%s" (keywords: %s)', question, keywords)
 
     result = await hybrid_search(tools, query=question, keywords=keywords, use_compiled=True)
+    if not result.get("chunks") and tools.has_web():
+        _LOG.info("[Direct search] Local retrieval returned no passages; trying web search.")
+        result = await web_search(tools, query=question, keywords=keywords)
     _merge_kbinfos(tools, result)
 
     if not _has_chunks(tools):

@@ -1,8 +1,7 @@
 """Tool selection gating: phase-based filtering and fallback chain."""
 
-from rag.advanced_rag.harness.types import OrchestratorContext
 from rag.advanced_rag.harness.tools.registry import TOOL_REGISTRY
-
+from rag.advanced_rag.harness.types import OrchestratorContext
 
 # Search phase definitions
 
@@ -14,6 +13,7 @@ SEARCH_PHASES = {
             "ontology_navigate",
             "mindmap_navigate",
             "hybrid_search",
+            "web_search",
             "bm25_search",
             "wiki_query",
         ],
@@ -122,9 +122,11 @@ def _default_defs(tool_names: list[str], web_enabled: bool = True) -> list[dict]
     return [TOOL_REGISTRY[n]["function_schema"] for n in tool_names if n in TOOL_REGISTRY and (web_enabled or n != "web_search")]
 
 
-def determine_current_phase(context: OrchestratorContext) -> str:
+def determine_current_phase(context: OrchestratorContext, has_local_evidence: bool | None = None) -> str:
     """Determine the current search phase based on context."""
-    if not context.has_any_chunks():
+    if has_local_evidence is None:
+        has_local_evidence = context.has_any_chunks()
+    if not has_local_evidence:
         return "locate"
     if context.verdict and context.verdict.has_conflicts:
         return "verify"

@@ -15,18 +15,18 @@ import json
 import logging
 import re
 
-from rag.advanced_rag.harness.types import ClaimTarget, ExecutionStrategy, ToolResult
 from rag.advanced_rag.harness.pipeline import Pipeline
-from rag.advanced_rag.harness.tools.gating import (
-    get_gated_tools,
-    determine_current_phase,
-    SEARCH_PHASES,
-)
-from rag.advanced_rag.harness.tools.registry import _generate_report_schema, _think_schema
 from rag.advanced_rag.harness.prompts.research_agent_prompt import (
     RESEARCH_AGENT_PROMPT,
     RESEARCH_AGENT_TEXT_PROMPT,
 )
+from rag.advanced_rag.harness.tools.gating import (
+    SEARCH_PHASES,
+    determine_current_phase,
+    get_gated_tools,
+)
+from rag.advanced_rag.harness.tools.registry import _generate_report_schema, _think_schema
+from rag.advanced_rag.harness.types import ClaimTarget, ExecutionStrategy, ToolResult
 
 _LOG = logging.getLogger(__name__)
 
@@ -147,11 +147,12 @@ async def research_agent_loop(
     compilation_map: dict,
 ) -> dict:
     """Inner loop for a single claim — native tool-calling with a text fallback."""
-    phase = determine_current_phase(context)
+    phase = determine_current_phase(context, has_local_evidence=pipeline.has_local_evidence)
     phase_config = SEARCH_PHASES.get(phase, {})
+    available_tools = [tool_name for tool_name in mode.available_tools if tool_name != "web_search" or tools.has_web()]
     gated_defs = get_gated_tools(
         phase=phase,
-        available_tools=mode.available_tools,
+        available_tools=available_tools,
         compilation_map=compilation_map,
         context=context,
         has_routed_scope=bool(getattr(pipeline, "_routed_docs", None)),
@@ -301,6 +302,8 @@ async def execute_with_fallback(
     **kwargs,
 ) -> ToolResult:
     """Execute tool; if empty, fall back along phase priority."""
+    if tool_name == "web_search" and not pipeline.tools.has_web():
+        return ToolResult(chunks=[], metadata={})
     result = await pipeline.execute(tool_name, **kwargs)
 
     if result.chunks or result.error:
@@ -313,6 +316,8 @@ async def execute_with_fallback(
         -1,
     )
     for fallback_name in priority[current_idx + 1 :]:
+        if fallback_name == "web_search" and not pipeline.tools.has_web():
+            continue
         fallback_result = await pipeline.execute(fallback_name, **kwargs)
         if fallback_result.chunks:
             _LOG.info("fallback: %s empty → %s found %d chunks", tool_name, fallback_name, len(fallback_result.chunks))
