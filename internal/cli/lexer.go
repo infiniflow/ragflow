@@ -377,6 +377,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenRetrieve, Value: ident}
 	case "CURRENT":
 		return Token{Type: TokenCurrent, Value: ident}
+	case "SOFT":
+		return Token{Type: TokenSoft, Value: ident}
 	case "FINGERPRINT":
 		return Token{Type: TokenFingerprint, Value: ident}
 	case "LICENSE":
