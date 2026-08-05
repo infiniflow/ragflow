@@ -214,6 +214,98 @@ func TestBuildParserConfig_AllComponentsPresent(t *testing.T) {
 	}
 }
 
+func TestCleanComponentParams_ParserAcceptsUnknownFamilyKey(t *testing.T) {
+	dslJSON := generalDSL(t)
+	raw := map[string]any{
+		"Parser:HipSignsRhyme": map[string]any{
+			// "slides" is a canonical family but has no default in the
+			// general-template fixture.
+			"slides": map[string]any{"output_format": "json", "order_index": float64(0)},
+		},
+	}
+	result := CleanComponentParams(dslJSON, raw)
+	params, ok := result["Parser:HipSignsRhyme"].(map[string]any)
+	if !ok {
+		t.Fatal("expected Parser:HipSignsRhyme to pass through")
+	}
+	if _, ok := params["slides"]; !ok {
+		t.Error("expected canonical family key 'slides' to be kept")
+	}
+}
+
+func TestCleanComponentParams_ParserStillDropsUnknownParam(t *testing.T) {
+	dslJSON := generalDSL(t)
+	raw := map[string]any{
+		"Parser:HipSignsRhyme": map[string]any{
+			"not_a_family": map[string]any{"foo": "bar"},
+		},
+	}
+	result := CleanComponentParams(dslJSON, raw)
+	if _, ok := result["Parser:HipSignsRhyme"]; ok {
+		t.Error("expected non-family param 'not_a_family' to be dropped")
+	}
+}
+
+// TestBuildParserConfig_ParserFamilySetIsAuthoritative covers the dataset
+// settings flow where the user replaces one file type with another
+// (pdf → slides): the removed family must not be resurrected from the DSL
+// defaults, the added family must survive even without a DSL default, and
+// per-family order_index must be preserved.
+func TestBuildParserConfig_ParserFamilySetIsAuthoritative(t *testing.T) {
+	dslJSON := generalDSL(t)
+	overrides := map[string]any{
+		"Parser:HipSignsRhyme": map[string]any{
+			"slides": map[string]any{"output_format": "json", "order_index": float64(0)},
+			"docx":   map[string]any{"output_format": "markdown", "order_index": float64(1)},
+		},
+	}
+	result := BuildParserConfig(dslJSON, overrides)
+	parser, ok := result["Parser:HipSignsRhyme"].(map[string]any)
+	if !ok {
+		t.Fatal("expected Parser:HipSignsRhyme in result")
+	}
+	if _, ok := parser["pdf"]; ok {
+		t.Error("expected removed family 'pdf' to stay removed")
+	}
+	slides, ok := parser["slides"].(map[string]any)
+	if !ok {
+		t.Fatal("expected added family 'slides' to be kept")
+	}
+	if slides["order_index"] != float64(0) {
+		t.Errorf("expected slides order_index=0, got %v", slides["order_index"])
+	}
+	docx, ok := parser["docx"].(map[string]any)
+	if !ok {
+		t.Fatal("expected family 'docx' to be kept")
+	}
+	if docx["output_format"] != "markdown" {
+		t.Errorf("expected docx output_format overridden, got %v", docx["output_format"])
+	}
+	if docx["order_index"] != float64(1) {
+		t.Errorf("expected docx order_index=1, got %v", docx["order_index"])
+	}
+}
+
+// TestBuildParserConfig_ParserWithoutOverrideKeepsDefaults ensures the
+// defaults-fill path still applies when the incoming config carries no
+// entry for the Parser component at all.
+func TestBuildParserConfig_ParserWithoutOverrideKeepsDefaults(t *testing.T) {
+	dslJSON := generalDSL(t)
+	overrides := map[string]any{
+		"Chunker:LegalReadersDecide": map[string]any{
+			"chunk_size": float64(1024),
+		},
+	}
+	result := BuildParserConfig(dslJSON, overrides)
+	parser, ok := result["Parser:HipSignsRhyme"].(map[string]any)
+	if !ok {
+		t.Fatal("expected Parser:HipSignsRhyme in result")
+	}
+	if _, ok := parser["pdf"]; !ok {
+		t.Error("expected DSL default family 'pdf' to be present")
+	}
+}
+
 // --- ResolveComponentParamsDefaults ---
 
 func TestResolveComponentParamsDefaults_Basic(t *testing.T) {
