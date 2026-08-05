@@ -212,6 +212,14 @@ async def _start_channel(running: dict, account_id: str, channel: str, credentia
         await ch.start()
     except Exception as ex:
         LOGGER.error("failed to start chat channel %s (%s): %s", account_id, channel, ex)
+        try:
+            await ch.stop()
+        except Exception as cleanup_ex:
+            LOGGER.error(
+                "failed to clean up chat channel %s after start failure: %s",
+                account_id,
+                cleanup_ex,
+            )
         return False
 
     running[account_id] = {"ch": ch, "fp": fp}
