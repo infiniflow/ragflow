@@ -3,7 +3,7 @@
  "chunks": [
   {
    "doc_type_kwd": "text",
-   "text": "first segment line one\n"
+   "text": "first segment line one"
   },
   {
    "doc_type_kwd": "text",
@@ -11,7 +11,7 @@
   },
   {
    "doc_type_kwd": "text",
-   "text": "second segment line one\n"
+   "text": "second segment line one"
   },
   {
    "doc_type_kwd": "text",
