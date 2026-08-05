@@ -32,7 +32,8 @@
       "max_tokens": 131072,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 10
     }
   ]
 }

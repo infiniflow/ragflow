@@ -43,7 +43,8 @@
       ],
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 2048
     },
     {
       "name": "green-rerank",
