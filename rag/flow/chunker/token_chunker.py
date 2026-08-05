@@ -78,6 +78,9 @@ def _compile_delimiter_pattern(delimiters):
 
 def _split_text_by_pattern(text, pattern):
     # Split text by the compiled delimiter pattern and discard delimiters.
+    # No atom-split is performed; empty segments between consecutive delimiters
+    # are dropped but whitespace-only segments are preserved (the delimiter is
+    # the boundary, not stripped away).
     if not pattern:
         return [text or ""]
 
@@ -85,7 +88,7 @@ def _split_text_by_pattern(text, pattern):
     chunks = []
     for i in range(0, len(split_texts), 2):
         chunk = split_texts[i]
-        if chunk.strip():
+        if chunk:
             chunks.append(chunk)
     return chunks
 
@@ -359,31 +362,79 @@ class TokenChunker(ProcessBase):
             text_chunks = _build_json_chunks(json_result, "")
             chunks = []
             text_buffer = []
+            text_buffer_pos = []
 
             def flush_text_buffer():
                 if not text_buffer:
                     return
-                combined_text = "".join(text_buffer)
-                split_texts = _split_text_by_pattern(combined_text, delimiter_pattern)
-                chunks.extend(
-                    {
-                        "text": text,
-                        "doc_type_kwd": "text",
-                        "ck_type": "text",
-                        "tk_nums": num_tokens_from_string(text),
-                    }
-                    for text in split_texts
-                    if text.strip()
-                )
+                # Join buffered text items with "\n" so adjacent item text is not
+                # glued together (e.g. "hello" + "world" must not become "helloworld").
+                # The delimiter is then applied to the combined text; a segment may
+                # span across item boundaries (the "\n" glue is not itself a
+                # delimiter), so each segment carries only the PDF positions of the
+                # buffered item(s) whose text contributed to it -- never the union of
+                # every item (which previously leaked page-N coordinates into
+                # page-M chunks and made all segments share one preview image).
+                parts = []
+                item_ranges = []  # (start, end) of each buffered item in combined_text
+                offset = 0
+                for text in text_buffer:
+                    start = offset
+                    parts.append(text)
+                    offset += len(text)
+                    item_ranges.append((start, offset))
+                    parts.append("\n")
+                    offset += 1
+                combined_text = "".join(parts[:-1])  # drop the trailing glue
+
+                if delimiter_pattern:
+                    raw = re.split(r"(%s)" % delimiter_pattern, combined_text, flags=re.DOTALL)
+                    segments = []  # (text, start, end) within combined_text
+                    pos = 0
+                    for i in range(0, len(raw), 2):
+                        seg = raw[i]
+                        seg_start = pos
+                        seg_end = pos + len(seg)
+                        if seg:
+                            segments.append((seg, seg_start, seg_end))
+                        pos = seg_end
+                        if i + 1 < len(raw):
+                            pos += len(raw[i + 1])
+                else:
+                    segments = [(combined_text, 0, len(combined_text))]
+
+                for text, seg_start, seg_end in segments:
+                    if not text.strip():
+                        continue
+                    seg_pos = []
+                    for (istart, iend), item_pos in zip(item_ranges, text_buffer_pos):
+                        # A segment overlaps an item when their character ranges
+                        # intersect; collect that item's coordinates.
+                        if seg_start < iend and istart < seg_end:
+                            seg_pos.extend(item_pos or [])
+                    chunks.append(
+                        {
+                            "text": text,
+                            "doc_type_kwd": "text",
+                            "ck_type": "text",
+                            PDF_POSITIONS_KEY: deepcopy(seg_pos),
+                            "tk_nums": num_tokens_from_string(text),
+                        }
+                    )
                 text_buffer.clear()
+                text_buffer_pos.clear()
 
             for chunk in text_chunks:
                 if chunk["ck_type"] == "text":
                     text_buffer.append(chunk["text"])
+                    text_buffer_pos.append(chunk.get(PDF_POSITIONS_KEY))
                 else:
                     flush_text_buffer()
                     chunks.append(chunk)
             flush_text_buffer()
+            # Apply children_delimiters (secondary split) before finalizing.
+            if custom_pattern:
+                chunks = _split_chunk_docs_by_children(chunks, custom_pattern)
             _attach_context_to_media_chunks(chunks, self._param.table_context_size, self._param.image_context_size)
             await restore_pdf_text_previews(chunks, from_upstream, self._canvas)
             self.set_output("chunks", _finalize_json_chunks(chunks))
