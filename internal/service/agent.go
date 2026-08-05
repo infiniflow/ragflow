@@ -1269,6 +1269,12 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		"session_id": sessionID,
 		"user_id":    userID,
 	}
+	// The session row above was created by this request (first touch);
+	// if the run then fails, the run closure drops the row again so a
+	// failed exploration never shows up in the session list.
+	if !sessionFound || newSession {
+		root["__drop_session_on_failure__"] = true
+	}
 	// The stable run id is derived from the canvas and session. It is only a
 	// checkpoint/status storage key; session_id remains the public run and
 	// cancellation identity.
@@ -1412,7 +1418,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 // compose.WithInterruptBeforeNodes) resumes and reads the user's
 // follow-up via compose.GetResumeContext.
 func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanvasVersion, dsl map[string]any) canvas.RunFunc {
-	return func(ctx context.Context, root map[string]any) (*canvas.CanvasState, error) {
+	return func(ctx context.Context, root map[string]any) (runState *canvas.CanvasState, runErr error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -1428,6 +1434,31 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		messageID, _ := root["__message_id__"].(string)
 		sessionID, _ := root["__session_id__"].(string)
 		userID, _ := root["user_id"].(string)
+
+		// A failed first-touch run must not leave the freshly-created
+		// empty session row behind — otherwise every failed exploration
+		// inflates the session list with a title-less conversation.
+		// Interrupts (UserFillUp waits) and user-initiated cancels keep
+		// the row: both are resumable, visible states, not failures.
+		if dropOnFailure, _ := root["__drop_session_on_failure__"].(bool); dropOnFailure {
+			delete(root, "__drop_session_on_failure__")
+			defer func() {
+				if runErr == nil || canvas.IsInterruptError(runErr) || errors.Is(runErr, context.Canceled) {
+					return
+				}
+				if s.api4ConversationDAO == nil || dao.DB == nil {
+					return
+				}
+				cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+				defer cancel()
+				if _, err := s.api4ConversationDAO.DeleteBySessionIDAndAgentID(cleanupCtx, dao.DB, sessionID, canvasID); err != nil {
+					common.Warn("agent run: drop failed-run session failed",
+						zap.String("canvas_id", canvasID),
+						zap.String("session_id", sessionID),
+						zap.Error(err))
+				}
+			}()
+		}
 
 		// Install per-run Langfuse correlation attrs so LLM calls inside
 		// this turn are grouped by session/user. Mirrors Python's
@@ -1868,7 +1899,24 @@ func (s *AgentService) createAgentRunSession(
 // session name defaults to the first 250 runes of the user's input
 // so the exploration sidebar shows a meaningful title.
 func deriveAgentSessionName(userInput any) string {
-	text := stringifyAgentUserInput(userInput)
+	var text string
+	if m, ok := userInput.(map[string]any); ok {
+		// A dict-shaped input carries the user's message under
+		// query/question; serialising the whole dict would leak
+		// `{"query":...}` — or `{}` for an empty dict — into the
+		// session list as the title.
+		for _, key := range []string{"query", "question"} {
+			if s, ok := m[key].(string); ok && s != "" {
+				text = s
+				break
+			}
+		}
+		if text == "" && len(m) > 0 {
+			text = stringifyAgentUserInput(m)
+		}
+	} else {
+		text = stringifyAgentUserInput(userInput)
+	}
 	runes := []rune(text)
 	if len(runes) > 250 {
 		runes = runes[:250]

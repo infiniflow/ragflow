@@ -157,19 +157,30 @@ func (s *BotService) AgentbotCompletion(
 	if _, err := s.loadCanvas(ctx, tenantID, agentID); err != nil {
 		return nil, common.CodeDataError, err
 	}
-	// Compose the canvas user input from req.UserInput (the `inputs`
-	// dict body field) plus the top-level `question`. Files remain a
-	// separate RunAgent argument so they can populate sys.files. The
-	// Python canvas_service.completion reads the same three fields
-	// separately; the previous code dropped question/files, so a body like
-	// `{"question":"hi"}` reached the canvas with empty inputs.
-	userInput := make(map[string]any, len(req.UserInput)+1)
-	for k, v := range req.UserInput {
-		userInput[k] = v
+	// Python canvas_service.completion (canvas_service.py:300) reads
+	// `query` first and falls back to `question`; the embedded web page
+	// sends `query` while older API clients send `question`. The canvas
+	// expects a scalar user input (sys.query is consumed as a string by
+	// Begin and every downstream component), so pass the string through
+	// — merging it into the inputs dict would surface an object-typed
+	// sys.query and break components that read it as a string.
+	query := req.Query
+	if query == "" {
+		query = req.Question
 	}
-	if req.Question != "" {
-		userInput["question"] = req.Question
+	var userInput any = query
+	if query == "" && len(req.UserInput) > 0 {
+		// Form-driven canvases (begin input form, no free-text query):
+		// fall back to the raw inputs dict so the form fields still
+		// reach the canvas.
+		input := make(map[string]any, len(req.UserInput))
+		for k, v := range req.UserInput {
+			input[k] = v
+		}
+		userInput = input
 	}
+	// Files remain a separate RunAgent argument so they can populate
+	// sys.files.
 	ch, err := s.agentService.RunAgent(ctx, tenantID, agentID,
 		req.SessionID, "", userInput, req.Files)
 	if err != nil {
@@ -209,9 +220,14 @@ type AgentbotCompletionRequest struct {
 	UserID    string `json:"user_id"`
 	Stream    bool   `json:"stream"`
 	// UserInput is the dict-shaped root input the canvas run expects.
-	UserInput map[string]any           `json:"inputs"`
-	Question  string                   `json:"question"`
-	Files     []map[string]interface{} `json:"files"`
+	UserInput map[string]any `json:"inputs"`
+	// Query is the free-text chat input the embedded web page sends
+	// (web/src/pages/agent/chat/use-send-agent-message.ts). Python
+	// accepts both `query` and `question` (canvas_service.py:300);
+	// missing `query` here silently dropped the user's message.
+	Query    string                   `json:"query"`
+	Question string                   `json:"question"`
+	Files    []map[string]interface{} `json:"files"`
 }
 
 // ChatbotCompletionRequest is the request body for
