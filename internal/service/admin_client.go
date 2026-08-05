@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/utility"
@@ -28,6 +29,7 @@ import (
 	"go.uber.org/zap"
 )
 
+var licenseStatusCode common.ErrorCode
 var AdminServiceClient *AdminClient
 
 // AdminClient is responsible for sending heartbeat reports to the admin server
@@ -41,10 +43,12 @@ type AdminClient struct {
 	version      string
 	lastSuccess  bool
 	attemptCount int
+	clusterInfo  *utility.ClusterInfo
 }
 
 // NewAdminClient creates a new heartbeat service instance
 func NewAdminClient(logger *zap.Logger, serverType common.ServerType, serverName, host string, port int) *AdminClient {
+	licenseStatusCode = common.CodeSuccess
 	return &AdminClient{
 		logger:       logger,
 		serverType:   serverType,
@@ -75,6 +79,11 @@ func (h *AdminClient) InitHTTPClient() error {
 		zap.String("admin_host", adminConfig.Host),
 		zap.Int("admin_port", adminConfig.HTTPPort),
 	)
+
+	err := h.InitHTTPClientEE()
+	if err != nil {
+		h.logger.Fatal(fmt.Sprintf("Fail to init enterprise service: %v", err))
+	}
 
 	return nil
 }
@@ -110,6 +119,8 @@ func (h *AdminClient) SendHeartbeat() error {
 		Ext:         nil,
 	}
 
+	message.Ext = h.clusterInfo
+
 	jsonData, err := json.Marshal(message)
 	if err != nil {
 		h.logger.Error("Failed to marshal heartbeat message", zap.Error(err))
@@ -122,22 +133,31 @@ func (h *AdminClient) SendHeartbeat() error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-		// extract the Code and Message field of the response
-		var responseBody map[string]interface{}
-		err = json.NewDecoder(resp.Body).Decode(&responseBody)
-		if err != nil {
-			return err
-		}
-		code, ok := responseBody["code"].(float64)
-		if !ok {
-			return fmt.Errorf("unexpected heartbeat response (status %d): missing or non-numeric \"code\" field", resp.StatusCode)
-		}
-		responseCode := common.ErrorCode(code)
-		if responseCode != common.CodeLicenseValid {
-			return errors.New(responseCode.Message())
-		}
+	// extract the Code and Message field of the response
+	var responseBody map[string]interface{}
+	err = json.NewDecoder(resp.Body).Decode(&responseBody)
+	if err != nil {
+		return err
 	}
+	code, ok := responseBody["code"].(float64)
+	if !ok {
+		return fmt.Errorf("unexpected heartbeat response (status %d): missing or non-numeric \"code\" field", resp.StatusCode)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("error HTTP status code: %d", resp.StatusCode)
+	}
+
+	responseCode := common.ErrorCode(code)
+	if responseCode != common.CodeLicenseValid {
+		if responseCode != licenseStatusCode {
+			licenseStatusCode = responseCode
+			h.logger.Warn(fmt.Sprintf("Heartbeat response error: %s, code: %d", responseCode.Message(), responseCode))
+		}
+
+		return errors.New(responseCode.Message())
+	}
+	licenseStatusCode = responseCode
 
 	h.logger.Debug("Heartbeat sent successfully",
 		zap.String("server_id", h.serverName),
