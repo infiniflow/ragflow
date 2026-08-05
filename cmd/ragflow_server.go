@@ -516,7 +516,6 @@ func startHeartbeat(serverType common.ServerType, serverID string, port int, hea
 	}
 
 	service.AdminServiceClient = service.NewAdminClient(
-		common.Logger,
 		serverType,
 		serverID,
 		localIP,
