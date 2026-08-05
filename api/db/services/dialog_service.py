@@ -2003,7 +2003,11 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
             if delta:
                 event_queue.put_nowait(("inner_think" if is_think else "answer", delta))
 
+        def _tool_started_sink():
+            event_queue.put_nowait(("tool_started",))
+
         rag_tools.answer_sink = _answer_sink
+        rag_tools.tool_started_sink = _tool_started_sink
 
         async def _drive_stream():
             try:
@@ -2040,14 +2044,23 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
             while True:
                 item = await event_queue.get()
                 if item[0] == "log":
+                    if think_closed:
+                        continue
                     yield {"answer": item[1] + "\n", "reference": {}, "audio_binary": None, "final": False}
                     continue
+                if item[0] == "tool_started":
+                    outer_tool_started = True
+                    continue
                 if item[0] == "answer":
+                    if not answer_started:
+                        async for output in _close_think_and_flush_answer():
+                            yield output
                     answer_deltas.append(item[1])
-                    if answer_started:
-                        yield {"answer": item[1], "reference": {}, "audio_binary": tts(tts_mdl, item[1]), "final": False}
+                    yield {"answer": item[1], "reference": {}, "audio_binary": tts(tts_mdl, item[1]), "final": False}
                     continue
                 if item[0] == "inner_think":
+                    if think_closed:
+                        continue
                     value = re.sub(r"</?think>", "", item[1])
                     if value:
                         yield {"answer": value, "reference": {}, "audio_binary": None, "final": False}
@@ -2066,11 +2079,6 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                 # Once that section is closed and the terminal tool has
                 # started, subsequent text is the aggregate tool result and is
                 # intentionally ignored.
-                if "Running the " in value:
-                    outer_tool_started = True
-                    value = re.sub(r"</?think>", "", value)
-                    yield {"answer": value, "reference": {}, "audio_binary": None, "final": False}
-                    continue
                 if state is not None and state.in_think:
                     value = re.sub(r"</?think>", "", value)
                     if value:
@@ -2097,12 +2105,11 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
                 logging.exception("rag_agent: drive task error")
 
         answer_text = "".join(answer_deltas)
-        if answer_text:
-            final = await decorate_answer(answer_text)
-            final["final"] = True
-            final["answer"] = ""
-            final["audio_binary"] = None
-            yield final
+        final = await decorate_answer(answer_text)
+        final["final"] = True
+        final["answer"] = ""
+        final["audio_binary"] = None
+        yield final
     else:
         answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), messages, gen_conf)
         user_content = messages[-1].get("content", "[content not available]")

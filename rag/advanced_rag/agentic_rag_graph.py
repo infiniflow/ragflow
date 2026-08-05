@@ -99,6 +99,7 @@ async def _split_think_stream(stream):
 
     async for token in stream:
         if not isinstance(token, str):
+            _LOG.warning("Ignoring non-string agentic RAG stream item of type %s", type(token).__name__)
             continue
         buf += token
 
@@ -257,6 +258,7 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
 
         no_evidence = abstain or empty_result or not kbinfos["chunks"]
         if no_evidence and tools.empty_response:
+            _LOG.info("[Composing the answer] No supporting evidence was found; returning the configured empty response without calling the answer model.")
             token_queue.put_nowait(tools.empty_response)
             return {"final_answer": tools.empty_response}
 

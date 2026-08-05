@@ -32,6 +32,7 @@ the fast non-tool-calling path.
 
 import logging
 import re
+from collections.abc import Callable
 from typing import Any, List
 
 import json_repair
@@ -112,13 +113,13 @@ class RAGTools:
         self.doc_scope = list(dict.fromkeys(doc_scope)) if doc_scope is not None else None
         self.user_defined_prompts = user_defined_prompts or {}
         self.empty_response = empty_response
-        self.kbinfos = {"chunks": [], "doc_aggs": []}
         self.do_refer = do_refer
         # Optional sink used by the outer agent stream to preserve the final
         # answer deltas produced by the inner research graph.  The tool API
         # still returns the complete string to the caller, but the stream
         # endpoint can forward the original deltas instead of that aggregate.
-        self.answer_sink = None
+        self.answer_sink: Callable[[str, bool], None] | None = None
+        self.tool_started_sink: Callable[[], None] | None = None
         # Citation pool shared with the final-answer node: the graph publishes
         # the chunks it actually used here (in the SAME order the answer's
         # ``[ID:n]`` markers index), so the caller can resolve references.
@@ -569,6 +570,8 @@ class RAGTools:
         """
         from rag.advanced_rag.agentic_rag_graph import run_agentic_rag
 
+        if self.tool_started_sink is not None:
+            self.tool_started_sink()
         messages = [{"role": "user", "content": question}] if question else []
         final = ""
         async for kind, delta in _split_think_stream(run_agentic_rag(self, messages)):
