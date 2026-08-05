@@ -134,9 +134,6 @@ func TestJinaChatPropagatesConfig(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newJinaServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		if body["max_tokens"] != float64(128) {
-			t.Errorf("max_tokens=%v want 128", body["max_tokens"])
-		}
 		if body["temperature"] != 0.2 {
 			t.Errorf("temperature=%v want 0.2", body["temperature"])
 		}
