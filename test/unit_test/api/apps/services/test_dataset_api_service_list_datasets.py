@@ -189,8 +189,8 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
 
 def _stub_kbs():
     return [
-        {"id": "kb-a", "tenant_id": "tenant-1", "name": "Alpha"},
-        {"id": "kb-b", "tenant_id": "tenant-1", "name": "Beta"},
+        {"id": "kb-a", "tenant_id": "tenant-1", "name": "Alpha", "embedding_model": "emb-a"},
+        {"id": "kb-b", "tenant_id": "tenant-1", "name": "Beta", "embedding_model": "emb-b"},
     ]
 
 
