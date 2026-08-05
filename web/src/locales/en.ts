@@ -3115,7 +3115,6 @@ This delimiter is used to split the input text into several text pieces echo of 
       variableSettings: 'Variable settings',
       systemPrompt: 'System prompt',
       userPrompt: 'User prompt',
-      tocDataSource: 'Data source',
       tagFile: 'Tag file',
       addCategory: 'Add category',
       categoryName: 'Category name',
@@ -3352,7 +3351,6 @@ The Indexer will store the content in the corresponding data structures for the 
       keywords: 'Keywords',
       questions: 'Questions',
       metadata: 'Metadata',
-      toc: 'PageIndex',
       fieldName: 'Result destination',
       prompts: {
         system: {
@@ -3390,7 +3388,6 @@ Key Instructions:
           metadata: `Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.
 
 Important structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.`,
-          toc: '',
         },
         user: {
           keywords: `Text Content
@@ -3400,7 +3397,6 @@ Important structured information may include: names, dates, locations, events, k
           summary: `Text to Summarize:
 [Insert text here]`,
           metadata: `Content: [INSERT CONTENT HERE]`,
-          toc: '[Insert text here]',
         },
       },
       cancel: 'Cancel',
