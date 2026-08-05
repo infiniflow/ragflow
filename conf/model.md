@@ -25,7 +25,7 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 |---|---|---|---|
 | `name` | string | Yes | Canonical model identifier (e.g. `gpt-4o`, `claude-opus-4-8`). Must be unique within a provider file. |
 | `content_length` | integer | No | Maximum **context window** in tokens — the total number of tokens (input + output) the model can process in a single request. Previously named `max_tokens` (until PR #17807). |
-| `max_output` | integer | No | Maximum **output generation** in tokens — the upper bound for tokens the model will generate. May be a fixed vendor limit, or dynamic (`content_length - input_tokens`). See [Vendor Breakdown](#vendor-breakdown). |
+| `max_output` | integer | No | Maximum **output generation** in tokens — the upper bound for tokens the model will generate. It may be a fixed vendor limit, or dynamic (computed as `content_length - input_tokens`). See [Vendor Breakdown](#vendor-breakdown). |
 | `model_types` | string[] | Yes | Capabilities of the model. Common values: `chat`, `vision`, `embedding`, `rerank`, `asr`, `tts`, `ocr`, `doc_parse`. |
 | `thinking` | object | No | Extended-thinking configuration (see [Thinking Object](#thinking-object)). |
 | `tools` | object | No | Tool-use capability (see [Tools Object](#tools-object)). |
@@ -53,7 +53,7 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 
 ### Thinking Object
 
-```json
+```jsonc
 {
   "thinking": {
     "default_value": true,    // Whether thinking mode is enabled by default
@@ -64,7 +64,7 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 
 ### Tools Object
 
-```json
+```jsonc
 {
   "tools": {
     "support": true           // Whether the model supports function/tool calling
@@ -76,7 +76,7 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 
 ## Field Relationship Diagram
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │                  content_length                      │
 │  (total context window: input + output combined)    │
@@ -103,8 +103,11 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 
 Before PR #17807, a single `max_tokens` field served double duty — it was documented as the context window but often used as the output cap at runtime. The split into `content_length` + `max_output` removes this ambiguity:
 
-- **Old `max_tokens`** → `content_length` (context window, the original intent).
-- **New `max_output`** → the actual generation cap, verified against vendor docs.
+- **Old `max_tokens`** → used only as migration context; do not copy it blindly.
+- **New `content_length`** → set the vendor-documented context window.
+- **New `max_output`** → set the vendor-documented generation cap.
+
+Every migrated model **must define both `content_length` and `max_output`**, each taken from the official vendor model specification.
 
 ---
 
