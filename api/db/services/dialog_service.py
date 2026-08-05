@@ -50,7 +50,7 @@ from rag.app.tag import label_question
 from rag.nlp.search import index_name
 from rag.prompts.generator import chunks_format, citation_prompt, cross_languages, full_question, kb_prompt, keyword_extraction, message_fit_in, PROMPT_JINJA_ENV, ASK_SUMMARY
 from common.token_utils import num_tokens_from_string
-from rag.utils.tavily_conn import Tavily
+from rag.utils.web_search_conn import create_web_search_provider, has_web_search_provider
 from rag.utils.tts_cache import synthesize_with_cache
 from common.string_utils import remove_redundant_spaces
 from common import settings
@@ -124,7 +124,7 @@ def _normalize_internet_flag(value):
 
 
 def _should_use_web_search(prompt_config, internet=None):
-    if not prompt_config.get("tavily_api_key"):
+    if not has_web_search_provider(prompt_config):
         return False
     normalized = _normalize_internet_flag(internet)
     return normalized is True
@@ -577,7 +577,7 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
     assert messages[-1]["role"] == "user", "The last content of this conversation is not from user."
     session_id = kwargs.get("session_id")
     use_web_search = _should_use_web_search(dialog.prompt_config, kwargs.get("internet"))
-    logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(dialog.prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
+    logging.debug("web_search kb=%s configured=%s internet=%r enabled=%s", bool(dialog.kb_ids), has_web_search_provider(dialog.prompt_config), kwargs.get("internet"), use_web_search)
     if not dialog.kb_ids and not use_web_search:
         async for ans in async_chat_solo(dialog, messages, stream, session_id=session_id):
             yield ans
@@ -782,10 +782,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                         kbinfos["chunks"] = cks
                 kbinfos["chunks"] = retriever.retrieval_by_children(kbinfos["chunks"], tenant_ids)
             if use_web_search:
-                tav = Tavily(prompt_config["tavily_api_key"])
-                tav_res = tav.retrieve_chunks(" ".join(questions))
-                kbinfos["chunks"].extend(tav_res["chunks"])
-                kbinfos["doc_aggs"].extend(tav_res["doc_aggs"])
+                web_search = create_web_search_provider(prompt_config)
+                web_res = web_search.retrieve_chunks(" ".join(questions))
+                kbinfos["chunks"].extend(web_res["chunks"])
+                kbinfos["doc_aggs"].extend(web_res["doc_aggs"])
             if prompt_config.get("use_kg"):
                 default_chat_model = get_tenant_default_model_by_type(dialog.tenant_id, LLMType.CHAT)
                 ck = await settings.kg_retriever.retrieval(
@@ -1879,7 +1879,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         return
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
     use_web_search = _should_use_web_search(prompt_config, kwargs.get("internet"))
-    logging.debug("web_search kb=%s tavily=%s internet=%r enabled=%s", bool(dialog.kb_ids), bool(prompt_config.get("tavily_api_key")), kwargs.get("internet"), use_web_search)
+    logging.debug("web_search kb=%s configured=%s internet=%r enabled=%s", bool(dialog.kb_ids), has_web_search_provider(prompt_config), kwargs.get("internet"), use_web_search)
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
     # "reasoning" arrives as "1".."4" mapping to the ordered THINKING_MODES
     # (low, medium, high, ultra); fall back to "medium" on anything else.
@@ -1917,7 +1917,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         chat_mdl,
         embed_mdl=embd_mdl,
         kb_ids=dialog.kb_ids,
-        tav=Tavily(prompt_config.get("tavily_api_key")) if use_web_search else None,
+        web_search=create_web_search_provider(prompt_config) if use_web_search else None,
         meta_data_filter=dialog.meta_data_filter,
         doc_scope=doc_scope,
         do_refer=False,

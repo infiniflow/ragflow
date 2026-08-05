@@ -115,7 +115,9 @@ const ChatContainer = () => {
                 showUploadIcon={false}
                 stopOutputMessage={stopOutputMessage}
                 showReasoning
-                showInternet={chatInfo?.has_tavily_key}
+                showInternet={
+                  chatInfo?.has_web_search_provider ?? chatInfo?.has_tavily_key
+                }
               ></NextMessageInput>
             </div>
           </div>
