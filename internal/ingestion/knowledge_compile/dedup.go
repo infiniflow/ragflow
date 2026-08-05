@@ -79,7 +79,7 @@ func NewLLMDeduper(chat kccommon.ChatInvoker, embed kccommon.Embedder, llmID str
 	// never blocks on a single job, so a stopped pool returns an error instead of
 	// hanging DecideBatch.
 	decider.SetSubmitter(func(ctx context.Context, fn func() error) error {
-		return SubmitCompilerJobs(ctx, []compilerJob{fn})
+		return SubmitCompilerJobs(ctx, []CompilerJob{fn})
 	})
 	return &llmDeduper{group: structure.NewGroupedDeduper(decider), decider: decider, embed: embed}
 }

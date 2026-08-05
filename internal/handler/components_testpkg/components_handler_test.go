@@ -134,8 +134,8 @@ func TestComponentsHandler_NoFilter(t *testing.T) {
 
 // TestComponentsHandler_FilterIngestion verifies the
 // ?category=ingestion filter returns the ingestion components
-// (Extractor, File, Parser, Tokenizer + 9 chunker variants). Names
-// must be sorted ascending (plan §4 task 1 stable output).
+// (Compiler, Extractor, File, Parser, Tokenizer + 9 chunker variants).
+// Names must be sorted ascending (plan §4 task 1 stable output).
 func TestComponentsHandler_FilterIngestion(t *testing.T) {
 	eng := newComponentsTestRig(t)
 	w := doRequest(t, eng, "/api/v1/components?category=ingestion")
@@ -146,7 +146,7 @@ func TestComponentsHandler_FilterIngestion(t *testing.T) {
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
 
 	wantNames := []string{
-		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
+		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
 		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker",
 		"titlechunker", "tokenchunker", "tokenizer",
 	}
@@ -172,7 +172,7 @@ func TestComponentsHandler_FilterMultiple(t *testing.T) {
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
 
 	wantNames := []string{
-		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
+		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
 		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker",
 		"titlechunker", "tokenchunker", "tokenizer",
 	}
@@ -273,7 +273,7 @@ func TestComponentsHandler_CaseInsensitive(t *testing.T) {
 	}
 	_, _, data := decodeEnvelope(t, w.Body.Bytes())
 	wantNames := []string{
-		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
+		"compiler", "extractor", "file", "grouptitlechunker", "hierarchytitlechunker",
 		"onechunker", "parser", "presentationchunker", "qachunker", "tablechunker", "tagchunker",
 		"titlechunker", "tokenchunker", "tokenizer",
 	}

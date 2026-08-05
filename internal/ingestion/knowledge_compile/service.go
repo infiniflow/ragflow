@@ -101,7 +101,7 @@ func defaultDeduperFactory(tenant string) (Deduper, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewLLMDeduper(deps.Chat, deps.Embed, defaultLLMID, 0.99, deps.LLMMaxLength), nil
+	return NewLLMDeduper(deps.Chat, deps.Embed, defaultLLMID, 0.99, deps.ModelContextLen), nil
 }
 
 func generateHolder() string {

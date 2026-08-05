@@ -128,7 +128,7 @@ export const AssistantGroupButton = ({
             </Tooltip>
           </ToggleGroupItem>
         )}
-        {!!attachment?.doc_id && (
+        {!!attachment?.doc_id && !isShare && (
           <ToggleGroupItem
             value="g"
             onClick={async () => {

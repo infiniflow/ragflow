@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -29,6 +30,8 @@ import (
 	"path/filepath"
 	"ragflow/internal/common"
 	"strings"
+
+	"go.uber.org/zap"
 )
 
 // ZhipuAIModel implements ModelDriver for Zhipu AI
@@ -55,7 +58,43 @@ func (z *ZhipuAIModel) Name() string {
 	return "zhipu"
 }
 
-// ChatWithMessages sends multiple messages with roles and returns response
+type ZhipuChatResponse struct {
+	Choices []struct {
+		FinishReason string `json:"finish_reason"`
+		Index        int    `json:"index"`
+		Message      struct {
+			Content          string           `json:"content"`
+			ReasoningContent string           `json:"reasoning_content"`
+			Role             string           `json:"role"`
+			ToolCalls        []map[string]any `json:"tool_calls"`
+		} `json:"message"`
+	} `json:"choices"`
+	Created   int    `json:"created"`
+	Id        string `json:"id"`
+	Model     string `json:"model"`
+	Object    string `json:"object"`
+	RequestId string `json:"request_id"`
+	Usage     struct {
+		CompletionTokens    int `json:"completion_tokens"`
+		PromptTokens        int `json:"prompt_tokens"`
+		PromptTokensDetails struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+		TotalTokens int `json:"total_tokens"`
+	} `json:"usage"`
+}
+
+// zhipuRetryable wraps errors that should be retried by the provider with
+// exponential backoff: transient network failures, request timeouts, rate
+// limiting (429) and server-side (5xx) errors. Request-level (4xx) and
+// parse-level errors are not retried.
+var zhipuRetryable = errors.New("zhipu: retryable transient error")
+
+// ChatWithMessages sends multiple messages with roles and returns response.
+// The provider owns failure retry with exponential backoff so transient LLM
+// outages (network blips, 429 rate limiting, 5xx, timeouts) do not fail the
+// whole knowledge-compilation pipeline; the caller is still told about every
+// failed attempt at error level.
 func (z *ZhipuAIModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -73,26 +112,115 @@ func (z *ZhipuAIModel) ChatWithMessages(ctx context.Context, modelName string, m
 	url := fmt.Sprintf("%s/%s", baseURL, z.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
-	if chatModelConfig != nil {
-		if chatModelConfig.Thinking != nil {
-			if *chatModelConfig.Thinking {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "enabled",
-				}
-			} else {
-				reqBody["thinking"] = map[string]interface{}{
-					"type": "disabled",
-				}
+	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
+		if *chatModelConfig.Thinking {
+			reqBody["thinking"] = map[string]interface{}{
+				"type": "enabled",
+			}
+		} else {
+			reqBody["thinking"] = map[string]interface{}{
+				"type": "disabled",
 			}
 		}
 	}
 
-	body, err := z.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	var resp *ChatResponse
+	err = common.RetryWithBackoff(ctx, common.DefaultRetryMax, common.DefaultRetryDelay, func() error {
+		r, err := z.doChatWithMessages(ctx, url, jsonData, apiConfig, chatModelConfig, modelUsage)
+		if err != nil {
+			// The caller wants every failed attempt surfaced at error level so
+			// slow/transient provider failures are observable, not silent.
+			common.Error("zhipu chat attempt failed", err,
+				zap.String("model", modelName),
+				zap.Any("max_tokens", reqBody["max_tokens"]),
+				zap.Any("thinking", reqBody["thinking"]),
+			)
+			return err
+		}
+		resp = r
+		return nil
+	}, zhipuChatShouldRetry)
 	if err != nil {
 		return nil, err
 	}
+	return resp, nil
+}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+// zhipuChatShouldRetry reports whether a chat attempt error is transient and
+// worth another backoff round.
+func zhipuChatShouldRetry(err error) bool {
+	if errors.Is(err, zhipuRetryable) || errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	return false
+}
+
+// doChatWithMessages performs a single non-streaming chat round-trip under a
+// fresh nonStreamCallTimeout window, returning a retryable-marker error for
+// transient failures.
+func (z *ZhipuAIModel) doChatWithMessages(ctx context.Context, url string, jsonData []byte, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+
+	resp, err := z.baseModel.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to send request: %v", zhipuRetryable, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("%w: failed to read response: %v", zhipuRetryable, err)
+	}
+
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError {
+		return nil, fmt.Errorf("%w: API request failed with status %d: %s", zhipuRetryable, resp.StatusCode, string(body))
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
+		var result ZhipuChatResponse
+		if err := json.Unmarshal(body, &result); err != nil {
+			return chatResponseParts{}, fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		if len(result.Choices) == 0 {
+			return chatResponseParts{}, fmt.Errorf("empty response")
+		}
+
+		choice := &result.Choices[0]
+		var reasonContent *string
+		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
+			reasonContent = &choice.Message.ReasoningContent
+		}
+
+		return chatResponseParts{
+			RequestID:     result.RequestId,
+			Content:       &choice.Message.Content,
+			ReasonContent: reasonContent,
+			ToolCalls:     choice.Message.ToolCalls,
+			Usage: &TokenUsage{
+				PromptTokens:     result.Usage.PromptTokens,
+				CompletionTokens: result.Usage.CompletionTokens,
+				TotalTokens:      result.Usage.TotalTokens,
+			},
+		}, nil
+	})
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)

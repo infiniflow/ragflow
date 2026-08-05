@@ -173,6 +173,9 @@ func TestGPUStackChatForwardsDocumentedFields(t *testing.T) {
 				t.Errorf("documented field %q missing from request body", k)
 			}
 		}
+		if _, present := body["max_tokens"]; present {
+			t.Errorf("max_tokens should be omitted, got %v", body["max_tokens"])
+		}
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"choices": []map[string]interface{}{{
 				"message": map[string]interface{}{"content": "ok"},

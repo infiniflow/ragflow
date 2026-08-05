@@ -184,7 +184,6 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
             tbls=tbls,
             sections=sections,
             callback=callback,
-            lang=lang,
             **kwargs,
         )
         paper["tables"] = tbls

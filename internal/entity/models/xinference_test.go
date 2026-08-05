@@ -95,6 +95,9 @@ func TestXinferenceChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 	if seen["stream"] != false {
 		t.Errorf("stream=%v, want false", seen["stream"])
 	}
+	if _, ok := seen["max_tokens"]; ok {
+		t.Errorf("max_tokens should be omitted, got %v", seen["max_tokens"])
+	}
 	if seen["temperature"] != 0.2 {
 		t.Errorf("temperature=%v, want 0.2", seen["temperature"])
 	}

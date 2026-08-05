@@ -101,6 +101,9 @@ func TestAstraflowChatHappyPath(t *testing.T) {
 		if body["stream"] != false {
 			t.Errorf("stream=%v, want false", body["stream"])
 		}
+		if _, ok := body["max_tokens"]; ok {
+			t.Errorf("max_tokens should be omitted, got %v", body["max_tokens"])
+		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v, want 0.3", body["temperature"])
 		}
