@@ -188,6 +188,17 @@ async def _stop_channel(running: dict, account_id: str) -> None:
         LOGGER.error("failed to stop chat channel %s: %s", account_id, ex)
 
 
+async def _cleanup_failed_start(ch, account_id: str) -> None:
+    try:
+        await ch.stop()
+    except Exception as cleanup_ex:
+        LOGGER.error(
+            "failed to clean up chat channel %s after start failure: %s",
+            account_id,
+            cleanup_ex,
+        )
+
+
 async def _start_channel(running: dict, account_id: str, channel: str, credential: dict, fp: str) -> bool:
     """Build, wire and start one channel. Returns True on success.
 
@@ -210,16 +221,12 @@ async def _start_channel(running: dict, account_id: str, channel: str, credentia
     ch.set_message_handler(_make_chat_handler(ch))
     try:
         await ch.start()
+    except asyncio.CancelledError:
+        await _cleanup_failed_start(ch, account_id)
+        raise
     except Exception as ex:
         LOGGER.error("failed to start chat channel %s (%s): %s", account_id, channel, ex)
-        try:
-            await ch.stop()
-        except Exception as cleanup_ex:
-            LOGGER.error(
-                "failed to clean up chat channel %s after start failure: %s",
-                account_id,
-                cleanup_ex,
-            )
+        await _cleanup_failed_start(ch, account_id)
         return False
 
     running[account_id] = {"ch": ch, "fp": fp}
