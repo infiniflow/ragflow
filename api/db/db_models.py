@@ -87,7 +87,7 @@ class JSONField(LongTextField):
 
     def python_value(self, value):
         if not value:
-            return self.default_value
+            return json_loads(json_dumps(self.default_value))
         return json_loads(value, object_hook=self._object_hook, object_pairs_hook=self._object_pairs_hook)
 
 
