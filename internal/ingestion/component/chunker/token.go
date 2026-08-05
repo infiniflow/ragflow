@@ -544,10 +544,13 @@ func newChunkText(prevText, incoming string, target int, overlapPct float64, inc
 // mergeByTokenSize implements exact token-based chunk merging that mirrors
 // Python's naive_merge (rag/nlp/__init__.py) after the strict chunk_token_num
 // hard-cap fix. It uses tokenizeStr for precise token counting, treats the
-// payload as a single section, splits oversized sections on production sentence
-// delimiters, hard-caps atomic oversize units via splitOversizedUnit, and merges
-// only when the projected total stays within chunk_token_size. Overlap is
-// applied only when the resulting chunk still fits the budget.
+// payload as a single section, and splits oversized sections on production
+// sentence delimiters. An oversize unit (a single paragraph larger than the
+// token budget) is kept whole as a standalone chunk — matching Python OVER_CAP,
+// where the model layer truncates it later — instead of being atom-split.
+// Sections are merged only when the projected total stays within
+// chunk_token_size. Overlap is applied only when the resulting chunk still
+// fits the budget.
 func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *regexp.Regexp) map[string]any {
 	target := c.param.ChunkTokenSize
 	overlapPct := c.param.OverlappedPercent
@@ -605,23 +608,6 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 		}
 	}
 
-	addUnit := func(unit string) {
-		if tokenizeStr(unit) <= target {
-			addChunk(unit)
-			return
-		}
-		// An oversize unit (a single paragraph larger than the token budget)
-		// is kept whole as a standalone chunk. Python's naive_merge
-		// (rag/nlp/__init__.py:_merge_paragraph_groups, both OVER_CAP and
-		// UNDER_CAP) never atom-splits an oversize unit: it "becomes its own
-		// chunk" and the model layer truncates it later. Splitting it here
-		// produced Go-only sub-chunks that diverged from the Python reference
-		// (parity cases token__text_long_paragraph and token__markdown_long).
-		// mergeDecision already forces an oversize incoming unit to
-		// startNewChunk, so passing it through addChunk is sufficient.
-		addChunk(unit)
-	}
-
 	for _, sec := range sections {
 		sec = strings.TrimSpace(sec)
 		if sec == "" {
@@ -633,8 +619,10 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 			continue
 		}
 		// Oversized section: split on production sentence delimiters into
-		// units. A unit that still exceeds the budget is kept whole (see
-		// addUnit) — no atom-split, matching Python naive_merge.
+		// units. An oversize unit (still exceeds the budget) is passed through
+		// addChunk and kept whole — no atom-split, matching Python
+		// naive_merge. mergeDecision forces an oversize incoming unit to
+		// startNewChunk, so it stands alone as its own chunk.
 		parts := sentenceDelimiter.Split(sec, -1)
 		hadPart := false
 		for _, part := range parts {
@@ -654,10 +642,10 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 				continue
 			}
 			hadPart = true
-			addUnit("\n" + part)
+			addChunk("\n" + part)
 		}
 		if !hadPart {
-			addUnit(t)
+			addChunk(t)
 		}
 	}
 

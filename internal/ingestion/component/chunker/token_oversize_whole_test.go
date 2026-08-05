@@ -72,3 +72,67 @@ func TestTokenChunker_OversizeUnitKeptWhole(t *testing.T) {
 		})
 	}
 }
+
+// TestTokenChunker_OversizeUnitStandsAloneAfterInBudgetUnit exercises the
+// mergeDecision oversize branch (incomingTokens > target -> startNewChunk),
+// which TestTokenChunker_OversizeUnitKeptWhole never reaches because its lone
+// oversize unit goes through the len(cks)==0 path of addChunk. A short
+// in-budget sentence precedes the oversize paragraph; after the sentence
+// delimiter split the oversize unit must stand alone as its own chunk
+// (matching Python OVER_CAP), not be merged into or atom-split across the
+// previous chunk.
+func TestTokenChunker_OversizeUnitStandsAloneAfterInBudgetUnit(t *testing.T) {
+	var longLine = strings.Repeat("word ", 400) // ~400 tokens, far above the 32 budget
+	inBudget := "Hello world."                  // ASCII period is not a sentence delimiter; fits 32
+
+	cases := []struct {
+		name  string
+		conf  map[string]any
+		input map[string]any
+	}{
+		{
+			name: "text path",
+			conf: map[string]any{"chunk_token_size": 32, "delimiters": []string{"\n"}},
+			input: map[string]any{
+				"name": "t", "output_format": "text",
+				"text": inBudget + "\n" + longLine,
+			},
+		},
+		{
+			name: "markdown path",
+			conf: map[string]any{"chunk_token_size": 32, "delimiters": []string{"\n"}},
+			input: map[string]any{
+				"name": "t", "output_format": "markdown",
+				"markdown": inBudget + "\n" + longLine,
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := NewTokenChunker(tc.conf)
+			if err != nil {
+				t.Fatalf("NewTokenChunker: %v", err)
+			}
+			out, err := c.Invoke(context.Background(), nil, tc.input)
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			chunks, ok := out["chunks"].([]map[string]any)
+			if !ok {
+				t.Fatalf("chunks missing or wrong type: %T", out["chunks"])
+			}
+			if len(chunks) != 2 {
+				t.Fatalf("oversize after in-budget: want 2 chunks (in-budget + standalone oversize), got %d", len(chunks))
+			}
+			first, _ := chunks[0]["text"].(string)
+			if !strings.Contains(first, inBudget) {
+				t.Fatalf("first chunk should contain in-budget sentence %q, got %q", inBudget, first)
+			}
+			second, _ := chunks[1]["text"].(string)
+			if second != strings.TrimSpace(longLine) {
+				t.Fatalf("oversize chunk should be the whole long line kept whole, got %q", second)
+			}
+		})
+	}
+}
