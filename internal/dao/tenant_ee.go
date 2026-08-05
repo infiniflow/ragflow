@@ -15,9 +15,3 @@
 //
 
 package dao
-
-type EnterpriseTenantDAO struct{}
-
-func NewEnterpriseTenantDAO() *EnterpriseTenantDAO {
-	return &EnterpriseTenantDAO{}
-}

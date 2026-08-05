@@ -44,6 +44,7 @@ from rag.prompts.template import load_prompt
 from rag.prompts.generator import cross_languages, keyword_extraction
 from common.constants import RetCode, LLMType, StatusEnum
 from common import settings
+from rag.utils.web_search_conn import has_web_search_provider
 from api.utils.reference_metadata_utils import (
     enrich_chunks_with_document_metadata,
     resolve_reference_metadata_preferences,
@@ -141,12 +142,14 @@ async def chatbots_inputs(dialog_id, tenant_id=None):
             request_session_id,
         )
         return get_error_data_result(message="Authentication error: no access to this chatbot!")
+    has_web_search = has_web_search_provider(dialog.prompt_config)
     return get_result(
         data={
             "title": dialog.name,
             "avatar": dialog.icon,
             "prologue": dialog.prompt_config.get("prologue", ""),
-            "has_tavily_key": bool(dialog.prompt_config.get("tavily_api_key", "").strip()),
+            "has_tavily_key": has_web_search,
+            "has_web_search_provider": has_web_search,
             "llm_id": dialog.llm_id or "",
         }
     )

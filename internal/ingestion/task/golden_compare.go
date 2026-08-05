@@ -34,7 +34,6 @@ type GoldenCompareResult struct {
 func ProcessPipelineOutputForGolden(
 	pipelineOutput map[string]any,
 	docID string,
-	kbID string,
 	docName string,
 ) (GoldenCompareResult, error) {
 	normalized := indexdoc.NormalizeChunks(pipelineOutput)
@@ -43,7 +42,7 @@ func ProcessPipelineOutputForGolden(
 	}
 
 	processed := indexdoc.DeepCopyChunks(normalized)
-	metadata, err := indexdoc.ProcessChunksForPipeline(processed, docID, kbID, docName, time.Now())
+	metadata, err := indexdoc.ProcessChunksForPipeline(processed, docID, docName, time.Now())
 	if err != nil {
 		return GoldenCompareResult{}, err
 	}

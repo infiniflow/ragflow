@@ -3375,16 +3375,25 @@ async def _wiki_persist_draft(
     tenant_id: str,
     kb_id: str,
     plan_input_hash: str = "",
+    embd_mdl=None,
 ) -> None:
-    """Upsert one non-searchable wiki_page_draft row (resume cache).
+    """Upsert one wiki_page_draft row (resume cache + searchable page).
 
     ``plan_input_hash`` is the PLAN's ``input_hash_kwd`` at the time this
     draft was produced. The next REFINE re-entry compares it against the
     current PLAN hash to decide whether the cached draft is still
     valid; a mismatch forces a rewrite for that slug.
+
+    When ``embd_mdl`` is provided the row is made searchable: the title/body are
+    tokenized (``title_tks`` / ``content_ltks`` / ``content_sm_ltks``) and a
+    ``q_<dim>_vec`` page embedding is attached, with ``available_int=1`` so the
+    agent's ``wiki_query`` tool can retrieve it. Without an embedder the row stays
+    a non-searchable resume cache. ``content_with_weight`` is left as the page
+    JSON either way, so ``_wiki_load_refine_resume`` still restores the draft.
     """
     from common import settings
     from rag.nlp import search as _rag_search
+    from rag.nlp import rag_tokenizer
 
     slug = page.get("slug") or ""
     if not slug:
@@ -3401,8 +3410,37 @@ async def _wiki_persist_draft(
         "source_doc_ids": draft_doc_ids,
         "input_hash_kwd": plan_input_hash,
         "content_with_weight": content_with_weight,
-        "available_int": 0,  # non-searchable
+        "available_int": 0,  # non-searchable unless made searchable below
     }
+
+    # Make the draft searchable when an embedder is available. content_with_weight
+    # is deliberately left untouched (the page JSON) — the tokenized fields drive
+    # BM25 and q_<dim>_vec drives dense retrieval.
+    if embd_mdl is not None:
+        title = str(page.get("title") or slug)
+        body = str(page.get("content_md_rendered") or page.get("content_md") or page.get("content_md_raw") or "")
+        summary = str(page.get("summary") or "")
+        content_ltks = rag_tokenizer.tokenize(body)
+        row.update(
+            {
+                "docnm_kwd": title,
+                "title_kwd": title,
+                "title_tks": rag_tokenizer.tokenize(title),
+                "content_ltks": content_ltks,
+                "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(content_ltks),
+            }
+        )
+        try:
+            emb_text = (summary or f"{title}\n{body}").strip()[:2048] or title
+            vectors, _ = await thread_pool_exec(embd_mdl.encode, [emb_text])
+            vec = vectors[0]
+            vec_list = vec.tolist() if hasattr(vec, "tolist") else list(vec)
+            if vec_list:
+                row[f"q_{len(vec_list)}_vec"] = vec_list
+                row["available_int"] = 1
+        except Exception:
+            logging.exception("wiki_refine: draft embedding failed slug=%s; row stays non-searchable", slug)
+
     try:
         try:
             await thread_pool_exec(
@@ -3750,6 +3788,7 @@ async def wiki_refine_from_plan(
                     tenant_id,
                     kb_id,
                     plan_input_hash=plan_input_hash,
+                    embd_mdl=embd_mdl,
                 )
             except Exception:
                 logging.exception("wiki_refine: persist_draft failed for slug=%s", slug)
@@ -3820,6 +3859,7 @@ async def wiki_refine_from_plan(
                 tenant_id,
                 kb_id,
                 plan_input_hash=plan_input_hash,
+                embd_mdl=embd_mdl,
             )
         except Exception:
             logging.exception("wiki_refine: persist cleaned draft failed for slug=%s", page.get("slug"))

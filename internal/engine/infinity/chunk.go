@@ -353,6 +353,10 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 	insertChunks := make([]map[string]interface{}, len(chunks))
 	for i, chunk := range chunks {
 		insertChunks[i] = transformChunkFields(chunk, embeddingCols)
+		// kb_id is owned by the engine at the write boundary (mirrors ES
+		// chunk.go InsertChunks). The ingestion producer no longer stamps it,
+		// so the producer value (if any) is intentionally overridden here.
+		insertChunks[i]["kb_id"] = datasetID
 	}
 
 	// Delete existing rows with matching IDs
