@@ -108,6 +108,9 @@ func (p *tokenChunkerParam) Update(conf map[string]any) {
 	if v, ok := schema.NumericFromAny(conf["image_context_size"]); ok {
 		p.TokenChunkerParam.ImageContextSize = int(v)
 	}
+	if v, ok := conf["respect_cap"].(bool); ok {
+		p.TokenChunkerParam.RespectCap = v
+	}
 }
 
 func defaultsToken(p tokenChunkerParam) tokenChunkerParam {
@@ -331,7 +334,7 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 	// Split-then-merge: split on delimiters, then greedily merge to
 	// chunk_token_size with optional overlap.
 	perItem := [][]schema.ChunkDoc{docs}
-	merged := mergeByTokenSizeFromJSON(perItem, c.param.ChunkTokenSize, c.param.OverlappedPercent, true)
+	merged := mergeByTokenSizeFromJSON(perItem, c.param.ChunkTokenSize, c.param.OverlappedPercent, true, !c.param.RespectCap)
 	return chunkOutputs(flatten(merged))
 }
 
@@ -590,7 +593,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 			tkns = append(tkns, tokenizeStr(out))
 			return
 		}
-		out, act := mergeDecision(cks[len(cks)-1], segment, "", target, overlapPct, true)
+		out, act := mergeDecision(cks[len(cks)-1], segment, "", target, overlapPct, !c.param.RespectCap)
 		switch act {
 		case mergeIntoPrev, mergeThenClose:
 			cks[len(cks)-1] = out
@@ -719,7 +722,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// chunks across JSON items into one global token budget. Flatten the
 		// per-item structure into a single sequence first so the merge is
 		// global; non-text chunks still break the merge via their CKType.
-		attached = mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flatten(attached)}, c.param.ChunkTokenSize, c.param.OverlappedPercent, false)
+		attached = mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flatten(attached)}, c.param.ChunkTokenSize, c.param.OverlappedPercent, false, !c.param.RespectCap)
 	}
 
 	flat := flatten(attached)
@@ -958,7 +961,12 @@ func takeFromStart(text string, tokens int) string {
 // hard cap (rag/nlp/__init__.py after the strict chunk_token_num fix).
 // Oversized text units are sub-split via splitOversizedUnit before merge;
 // overlap is applied only when overlap+segment still fits the budget.
-func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64, subSplitOversize bool) [][]schema.ChunkDoc {
+//
+// allowBoundaryOverflow selects the merge strategy: true = OVER_CAP (Python's
+// canonical default, a chunk may exceed the target by at most one incoming
+// unit), false = RESPECT_CAP (never exceed the target; a projected overflow
+// starts a fresh chunk). The TokenChunker threads its RespectCap param here.
+func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64, subSplitOversize bool, allowBoundaryOverflow bool) [][]schema.ChunkDoc {
 	// overlappedPct is a [0,100] percentage. Clamp defensively because this
 	// helper is also exercised directly by tests.
 	if overlappedPct < 0 {
@@ -1014,7 +1022,7 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 				return
 			}
 			// Proactive projected-total merge (joined with "\n").
-			out, act := mergeDecision(prev.Text, ck.Text, "\n", chunkTokens, overlappedPct, true)
+			out, act := mergeDecision(prev.Text, ck.Text, "\n", chunkTokens, overlappedPct, allowBoundaryOverflow)
 			switch act {
 			case mergeIntoPrev, mergeThenClose:
 				prev.Text = out
