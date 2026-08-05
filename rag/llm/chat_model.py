@@ -1999,7 +1999,7 @@ class LiteLLMBase(ABC):
                 content = json.dumps(result, ensure_ascii=False)
             else:
                 content = str(result)
-            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
+            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content.replace("</think>", "")})
         return hist
 
     def bind_tools(self, toolcall_session=None, tools=None):
