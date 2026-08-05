@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import logging
 from typing import Any, TypedDict
 
@@ -85,45 +86,71 @@ def _partial_tag_tail(s: str, tag: str) -> int:
     return 0
 
 
-async def _strip_think_stream(stream):
-    """Strip <think>...</think> spans from a token stream."""
+async def _split_think_stream(stream):
+    """Split model deltas into ``think`` and ``answer`` text.
+
+    Besides ordinary ``<think>...</think>`` streams, some providers emit the
+    opening tag only on the first reasoning delta and append ``</think>`` to
+    every subsequent delta. An unmatched closing tag therefore still marks
+    the text before it as reasoning.
+    """
     buf = ""
     in_think = False
+
     async for token in stream:
         if not isinstance(token, str):
-            yield token
             continue
         buf += token
-        out = []
+
         while buf:
-            if not in_think:
-                idx = buf.find(_THINK_OPEN)
-                if idx == -1:
-                    hold = _partial_tag_tail(buf, _THINK_OPEN)
-                    if hold:
-                        out.append(buf[: len(buf) - hold])
-                        buf = buf[len(buf) - hold :]
-                    else:
-                        out.append(buf)
-                        buf = ""
-                    break
-                out.append(buf[:idx])
-                buf = buf[idx + len(_THINK_OPEN) :]
-                in_think = True
-            else:
-                idx = buf.find(_THINK_CLOSE)
-                if idx != -1:
-                    buf = buf[idx + len(_THINK_CLOSE) :]
+            if in_think:
+                close_idx = buf.find(_THINK_CLOSE)
+                if close_idx >= 0:
+                    if close_idx:
+                        yield "think", buf[:close_idx]
+                    buf = buf[close_idx + len(_THINK_CLOSE) :]
                     in_think = False
                     continue
+
                 hold = _partial_tag_tail(buf, _THINK_CLOSE)
+                safe = buf[: len(buf) - hold] if hold else buf
+                if safe:
+                    yield "think", safe
                 buf = buf[len(buf) - hold :] if hold else ""
                 break
-        piece = "".join(out)
-        if piece:
-            yield piece
-    if buf and not in_think:
-        yield buf
+
+            open_idx = buf.find(_THINK_OPEN)
+            close_idx = buf.find(_THINK_CLOSE)
+
+            if close_idx >= 0 and (open_idx < 0 or close_idx < open_idx):
+                if close_idx:
+                    yield "think", buf[:close_idx]
+                buf = buf[close_idx + len(_THINK_CLOSE) :]
+                continue
+
+            if open_idx >= 0:
+                if open_idx:
+                    yield "answer", buf[:open_idx]
+                buf = buf[open_idx + len(_THINK_OPEN) :]
+                in_think = True
+                continue
+
+            hold = max(_partial_tag_tail(buf, _THINK_OPEN), _partial_tag_tail(buf, _THINK_CLOSE))
+            safe = buf[: len(buf) - hold] if hold else buf
+            if safe:
+                yield "answer", safe
+            buf = buf[len(buf) - hold :] if hold else ""
+            break
+
+    if buf:
+        yield ("think" if in_think else "answer"), re.sub(r"</?think>", "", buf)
+
+
+async def _strip_think_stream(stream):
+    """Yield only visible answer deltas from a model stream."""
+    async for kind, text in _split_think_stream(stream):
+        if kind == "answer" and text:
+            yield text
 
 
 # ── Graph construction ──

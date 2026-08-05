@@ -112,6 +112,11 @@ class RAGTools:
         self.user_defined_prompts = user_defined_prompts or {}
         self.kbinfos = {"chunks": [], "doc_aggs": []}
         self.do_refer = do_refer
+        # Optional sink used by the outer agent stream to preserve the final
+        # answer deltas produced by the inner research graph.  The tool API
+        # still returns the complete string to the caller, but the stream
+        # endpoint can forward the original deltas instead of that aggregate.
+        self.answer_sink = None
         # Citation pool shared with the final-answer node: the graph publishes
         # the chunks it actually used here (in the SAME order the answer's
         # ``[ID:n]`` markers index), so the caller can resolve references.
@@ -567,6 +572,12 @@ class RAGTools:
         async for delta in _strip_think_stream(run_agentic_rag(self, messages)):
             if isinstance(delta, str):
                 final += delta
+                if self.answer_sink is not None:
+                    # Some chat providers attach a closing think tag to each
+                    # reasoning delta even though the opening tag was emitted
+                    # in an earlier delta. Preserve that classification for
+                    # the outer stream instead of treating it as final text.
+                    self.answer_sink(delta, "</think>" in delta)
         for p, r in [(r"\(\**(ID:\d)\**\)", "[\1]")]:
             final = re.sub(p, r, final)
         return final
