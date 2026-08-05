@@ -56,16 +56,19 @@ def release_reparse_counters(doc_id):
         )
         if num == 0:
             raise LookupError("Document not found which is supposed to be there")
-        num = (
+        # Fetch and lock the knowledgebase row so existence is checked reliably.
+        # A bare UPDATE's num == 0 is ambiguous in MySQL (missing row vs. an
+        # unchanged update both report 0), so rely on the locked fetch instead.
+        kb = Knowledgebase.select().where(Knowledgebase.id == fresh.kb_id).for_update().first()
+        if kb is None:
+            raise LookupError("Knowledgebase not found which is supposed to be there")
+        # Only touch the knowledgebase aggregate when a token/chunk delta exists;
+        # otherwise the update would be a no-op that still reports num == 0.
+        if fresh.token_num or fresh.chunk_num:
             Knowledgebase.update(
                 token_num=Knowledgebase.token_num - fresh.token_num,
                 chunk_num=Knowledgebase.chunk_num - fresh.chunk_num,
-            )
-            .where(Knowledgebase.id == fresh.kb_id)
-            .execute()
-        )
-        if num == 0:
-            raise LookupError("Knowledgebase not found which is supposed to be there")
+            ).where(Knowledgebase.id == fresh.kb_id).execute()
         logging.debug(
             "release_reparse_counters: released document %s (token=%s chunk=%s duration=%s)",
             doc_id,
