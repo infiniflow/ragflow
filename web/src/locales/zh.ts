@@ -717,7 +717,7 @@ export default {
       permissionsTip:
         '如果把知识库权限设为“团队”，则所有团队成员都可以操作该知识库。',
       chunkTokenNumberTip:
-        '建议的生成文本块的 token 数阈值。如果切分得到的小文本段 token 数达不到这一阈值就会不断与之后的文本段合并，直至再合并下一个文本段会超过这一阈值为止，此时产生一个最终文本块。如果系统在切分文本段时始终没有遇到文本分段标识符，即便文本段 token 数已经超过这一阈值，系统也不会生成新文本块。',
+        '每个 chunk 的最大 token 数。分隔符始终被视为硬性边界：分块器不会在分隔符处断开。低于上限的相邻片段会被贪心合并，直到下一片会使块超过上限时才开始新块；单个已超限的片段将保持完整而不被拆分。',
       chunkMethod: '切片方法',
       chunkMethodTip: '说明位于右侧。',
       upload: '上传',
@@ -2213,9 +2213,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       space: '空格',
       delimiters: '分隔符',
       one: 'One',
+      chunkingStrategy: '分块策略',
+      tokenDelimiter: 'Token - 分隔符',
+      tokenDelimiterTip:
+        '文本会先按每个分隔符（换行符及自定义分隔符）切分，分隔符始终作为硬性分块边界。相邻片段会被贪心合并，直到加入下一片会超过建议块大小为止，此时开始新块；单个片段若已超过该大小则保持完整、不再拆分。选择“One”可将整个输入作为单个块。',
       oneChunkTitle: 'Note',
       oneChunkDescription:
-        '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
+        '所有解析后的内容会按原始顺序合并，作为单个 chunk 返回。',
       flattenMediaToText: '禁用视觉模型',
       flattenMediaToTextTip: '将图片和表格区块按普通文本处理，并跳过视觉增强。',
       merge: '合并',

@@ -37,7 +37,7 @@ export const FormSchema = z.object({
     }),
   ),
   overlapped_percent: z.number(),
-  delimiter_mode: z.enum(['token_size', 'delimiter', 'one']).optional(),
+  delimiter_mode: z.enum(['token_delimiter', 'one']).optional(),
 });
 
 export type TokenChunkerFormSchemaType = z.infer<typeof FormSchema>;
@@ -52,7 +52,7 @@ const TokenChunkerForm = ({
 
   const formDefaultValues = {
     ...defaultValues,
-    delimiter_mode: defaultValues.delimiter_mode || 'token_size',
+    delimiter_mode: defaultValues.delimiter_mode || 'token_delimiter',
   };
 
   const form = useForm<TokenChunkerFormSchemaType>({
@@ -83,21 +83,22 @@ const TokenChunkerForm = ({
           field={{
             name: 'delimiter_mode',
             type: FormFieldType.Segmented,
-            label: '',
+            label: t('flow.chunkingStrategy'),
+            tooltip: t('flow.tokenDelimiterTip'),
             options: [
-              { label: 'Token Size', value: 'token_size' },
-              { label: t('flow.delimiters'), value: 'delimiter' },
+              { label: t('flow.tokenDelimiter'), value: 'token_delimiter' },
               { label: t('flow.one'), value: 'one' },
             ],
           }}
         />
 
-        {delimiterMode === 'token_size' && (
+        {delimiterMode !== 'one' && (
           <>
             <SliderInputFormField
               name="chunk_token_size"
               max={2048}
               label={t('knowledgeConfiguration.chunkTokenNumber')}
+              tooltip={t('knowledgeConfiguration.chunkTokenNumberTip')}
             />
             <SliderInputFormField
               name="overlapped_percent"
@@ -112,11 +113,6 @@ const TokenChunkerForm = ({
               label={t('knowledgeConfiguration.imageTableContextWindow')}
               tooltip={t('knowledgeConfiguration.imageTableContextWindowTip')}
             />
-          </>
-        )}
-
-        {delimiterMode === 'delimiter' && (
-          <>
             <section>
               <span className="mb-2 inline-block">{t('flow.delimiters')}</span>
               <div className="space-y-4">

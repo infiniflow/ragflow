@@ -784,7 +784,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       permissionsTip:
         "If it is set to 'Team', all your team members will be able to manage the dataset.",
       chunkTokenNumberTip:
-        'It kind of sets the token threshold for a creating a chunk. A segment with fewer tokens than this threshold will be combined with the following segments until the token count exceeds the threshold, at which point a chunk is created. No new chunk is created unless a delimiter is encountered, even if the threshold is exceeded.',
+        'Maximum number of tokens per chunk. Delimiters are always respected as hard boundaries: the chunker never breaks a delimiter. Adjacent pieces below the limit are merged greedily until the next piece would exceed the limit, at which point a new chunk begins. A single piece that already exceeds the limit is kept intact rather than split.',
       chunkMethod: 'Chunking method',
       chunkMethodTip: 'View the tips on the right.',
       upload: 'Upload',
@@ -2567,9 +2567,13 @@ Best for: Documents with flowing, contextually connected content — such as boo
       space: 'Space',
       delimiters: 'Delimiters',
       one: 'One',
+      chunkingStrategy: 'Chunking strategy',
+      tokenDelimiter: 'Token - Delimiter',
+      tokenDelimiterTip:
+        'Text is first split at every delimiter (newlines and any custom delimiters), which are always treated as hard chunk boundaries. Adjacent pieces are then grouped up to the recommended chunk size; a piece larger than that size is kept whole and never split. Choose "One" to keep the entire input as a single chunk.',
       oneChunkTitle: 'Note',
       oneChunkDescription:
-        'All parsed sections will be merged in order into a single chunk.',
+        'All parsed content is merged in order and returned as a single chunk.',
       flattenMediaToText: 'Disable vision model',
       flattenMediaToTextTip:
         'Treat image and table sections as plain text and skip vision enhancement.',

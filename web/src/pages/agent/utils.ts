@@ -347,16 +347,24 @@ export function transformTokenChunkerParams(
 ) {
   const { image_table_context_window, ...rest } = params;
   const imageTableContextWindow = Number(image_table_context_window || 0);
+  const isOne = params.delimiter_mode === 'one';
+  const delimiters = isOne
+    ? []
+    : transformObjectArrayToPureArray(params.delimiters, 'value');
+  // The form exposes a single "Token - Delimiter" tab that covers both legacy
+  // strategies. Derive the backend delimiter_mode: when the user supplies
+  // delimiters they act as hard boundaries ("delimiter"); otherwise the chunker
+  // falls back to token-size merging ("token_size").
+  const delimiterMode = isOne
+    ? 'one'
+    : delimiters.length > 0
+      ? 'delimiter'
+      : 'token_size';
   return {
     ...rest,
-    overlapped_percent:
-      params.delimiter_mode === 'one'
-        ? 0
-        : Number(params.overlapped_percent) / 100,
-    delimiters:
-      params.delimiter_mode === 'delimiter'
-        ? transformObjectArrayToPureArray(params.delimiters, 'value')
-        : [],
+    delimiter_mode: delimiterMode,
+    overlapped_percent: isOne ? 0 : Number(params.overlapped_percent) / 100,
+    delimiters,
     table_context_size: imageTableContextWindow,
     image_context_size: imageTableContextWindow,
 

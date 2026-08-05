@@ -114,11 +114,11 @@ function transformTokenChunkerConfigToForm(
   const imageSize = Number(config.image_context_size ?? 0);
   result.image_table_context_window = Math.max(tableSize, imageSize);
 
-  // Derive delimiter_mode from data
-  if (config.delimiter_mode === undefined) {
-    const hasDelimiters =
-      Array.isArray(config.delimiters) && config.delimiters.length > 0;
-    result.delimiter_mode = hasDelimiters ? 'delimiter' : 'token_size';
+  // Normalize delimiter_mode to the merged form contract.
+  // The form exposes two tabs ("Token - Delimiter" and "One"); the legacy
+  // "token_size" / "delimiter" values are collapsed into "token_delimiter".
+  if (config.delimiter_mode !== 'one') {
+    result.delimiter_mode = 'token_delimiter';
   }
 
   // Derive enable_children from presence of children_delimiters
