@@ -366,9 +366,10 @@ async def run_corpus2skill(
         llm_model=chat_mdl,
         embd_model=embedding_model,
         prompt="Please write a concise summary of the following texts:\n{cluster_content}",
-        max_token=256,
-        threshold=0.1,
+        max_token=512,
         max_errors=3,
+        clustering_threshold=0.3,
+        clustering_ratio=0.5,
     )
 
     # ---- Phase 1: per-doc summaries.

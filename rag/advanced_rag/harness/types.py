@@ -153,6 +153,16 @@ class OrchestratorContext:
     def last_entity(self) -> str | None:
         return self._last_entity
 
+    def note_entity(self, name: str | None) -> None:
+        """Record the most recently discovered entity/document name.
+
+        Gates ``graph_explore`` in ``tool_fits_context``: the tool is only
+        offered once research has surfaced something to expand from. Ignores
+        empty values so a fruitless round can't clear a prior discovery.
+        """
+        if isinstance(name, str) and name.strip():
+            self._last_entity = name.strip()
+
     @property
     def current_claim(self) -> str | None:
         unverified = [c for c in self.claims if not c.is_verified]

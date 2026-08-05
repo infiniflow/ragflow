@@ -92,10 +92,12 @@ def test_token_chunker_token_size_mode_does_not_split_sentences():
     )
 
 
-def test_naive_merge_empty_delimiter_ignores_newline_break():
-    """Root-cause check: naive_merge('') can cut mid-sentence; naive_merge('\\n') cannot.
+def test_naive_merge_empty_delimiter_keeps_unit_whole():
+    """Empty delimiter -> no split; the whole payload is one chunk (no
+    atom-split). A '\\n' delimiter still honours the newline boundary.
 
-    Documents why forwarding the configured delimiters fixes the TokenChunker bug.
+    Documents the new contract: without a delimiter there is nothing to split
+    on, so the unit is kept whole and the model layer truncates it.
     """
     if num_tokens_from_string("alive tokenizer probe sentence") <= 0:
         import pytest
@@ -108,10 +110,7 @@ def test_naive_merge_empty_delimiter_ignores_newline_break():
     chunks_empty = naive_merge(payload, 128, "")
     chunks_nl = naive_merge(payload, 128, "\n")
 
-    split_empty = [s for s in sentences if not any(s in t for t in chunks_empty)]
+    # Empty delimiter no longer cuts (no atom-split): everything stays in one chunk.
+    assert len(chunks_empty) == 1
     split_nl = [s for s in sentences if not any(s in t for t in chunks_nl)]
-
-    # The empty-delimiter call is the one that cuts sentences; the '\\n' call
-    # pre-splits on newline and keeps each sentence whole.
-    assert split_empty, "expected naive_merge('') to cut at least one sentence mid-stream"
     assert not split_nl, "naive_merge('\\n') should preserve every sentence boundary"

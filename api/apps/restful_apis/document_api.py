@@ -40,6 +40,7 @@ from api.db import VALID_FILE_TYPES, FileType
 from api.db.db_models import API4Conversation, DB
 from api.db.services import duplicate_name
 from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.document_counter_service import release_reparse_counters
 from api.db.db_models import Task
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
@@ -1734,13 +1735,22 @@ async def stop_parse_documents(tenant_id, dataset_id):
                     continue
 
                 cancel_all_task_of(doc_id)
+                # Release the document's partial chunk/token counts from the
+                # knowledgebase aggregate under the row lock (see
+                # release_reparse_counters). This is the sole counter adjustment,
+                # so the status update below must not touch chunk_num.
+                try:
+                    release_reparse_counters(doc_id)
+                except LookupError:
+                    logging.exception("Failed to release counters for document %s during stop-parse", doc_id)
+                    errors.append(f"Document not found: {doc_id}")
+                    continue
                 cancel_doc_msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task stopped by user."
                 DocumentService.update_by_id(
                     doc_id,
                     {
                         "run": str(TaskStatus.CANCEL.value),
                         "progress": 0,
-                        "chunk_num": 0,
                         "progress_msg": (doc.progress_msg or "") + cancel_doc_msg,
                     },
                 )

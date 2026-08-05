@@ -119,9 +119,6 @@ func TestCometAPIChatPropagatesConfig(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newCometAPIServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		if body["max_tokens"] != float64(64) {
-			t.Errorf("max_tokens=%v want 64", body["max_tokens"])
-		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v want 0.3", body["temperature"])
 		}

@@ -184,6 +184,9 @@ func TestChatbotInfo_HasTavilyKey(t *testing.T) {
 	if resp.Data["has_tavily_key"] != true {
 		t.Errorf("has_tavily_key = %v, want true", resp.Data["has_tavily_key"])
 	}
+	if resp.Data["has_web_search_provider"] != true {
+		t.Errorf("has_web_search_provider = %v, want true", resp.Data["has_web_search_provider"])
+	}
 }
 
 // TestChatbotInfo_ForeignTenant covers criterion 15.

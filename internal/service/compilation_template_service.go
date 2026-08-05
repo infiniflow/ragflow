@@ -118,15 +118,15 @@ func NewCompilationTemplateService() *CompilationTemplateService {
 // LLM id lazily filled in, mirroring the Python list_builtins blueprint flow
 // (list from DB; if empty, seed from files and retry; then fill default LLM).
 func (s *CompilationTemplateService) ListBuiltins(ctx context.Context, tenantID string) ([]*BuiltinTemplate, error) {
-	templates, err := s.templateDAO.ListBuiltins(ctx)
+	templates, err := s.templateDAO.ListBuiltins(ctx, dao.DB)
 	if err != nil {
 		return nil, err
 	}
 	if len(templates) == 0 {
-		if err := s.seedBuiltins(ctx); err != nil {
+		if err = s.seedBuiltins(ctx); err != nil {
 			return nil, err
 		}
-		templates, err = s.templateDAO.ListBuiltins(ctx)
+		templates, err = s.templateDAO.ListBuiltins(ctx, dao.DB)
 		if err != nil {
 			return nil, err
 		}
@@ -347,7 +347,7 @@ func (s *CompilationTemplateService) seedBuiltins(ctx context.Context) error {
 }
 
 func (s *CompilationTemplateService) upsertBuiltin(ctx context.Context, t *entity.CompilationTemplate) error {
-	existing, err := s.templateDAO.GetByID(ctx, t.ID)
+	existing, err := s.templateDAO.GetByID(ctx, dao.DB, t.ID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return s.templateDAO.Save(ctx, dao.DB, t)
 	}

@@ -521,7 +521,7 @@ def test_agents_crud_unit_branches(monkeypatch):
 
     captured = {}
 
-    def fake_get_by_tenant_ids(owner_ids, tenant_id, page, page_size, orderby, desc, keywords, canvas_category, tags):
+    def fake_get_by_tenant_ids(owner_ids, tenant_id, page, page_size, orderby, desc, keywords, canvas_category_list, tags, canvas_type=None):
         captured["owner_ids"] = owner_ids
         captured["tenant_id"] = tenant_id
         captured["page"] = page
@@ -529,7 +529,7 @@ def test_agents_crud_unit_branches(monkeypatch):
         captured["orderby"] = orderby
         captured["desc"] = desc
         captured["keywords"] = keywords
-        captured["canvas_category"] = canvas_category
+        captured["canvas_category_list"] = canvas_category_list
         captured["tags"] = tags
         return [{"id": "agent-1"}], 1
 

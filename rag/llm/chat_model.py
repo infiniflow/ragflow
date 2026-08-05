@@ -27,7 +27,6 @@ from urllib.parse import urljoin
 import json_repair
 from json.decoder import JSONDecodeError
 import litellm
-import openai
 from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
@@ -994,9 +993,9 @@ class MistralChat(Base):
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
-        from mistralai.client import MistralClient
+        from mistralai.client import Mistral
 
-        self.client = MistralClient(api_key=key)
+        self.client = Mistral(api_key=key)
         self.model_name = model_name
 
     def _clean_conf(self, gen_conf):
@@ -1008,7 +1007,7 @@ class MistralChat(Base):
     def _chat(self, history, gen_conf=None, **kwargs):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
-        response = self.client.chat(model=self.model_name, messages=history, **gen_conf)
+        response = self.client.chat.complete(model=self.model_name, messages=history, **gen_conf)
         if not response.choices:
             raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         ans = response.choices[0].message.content
@@ -1020,6 +1019,8 @@ class MistralChat(Base):
         return ans, total_token_count_from_response(response)
 
     def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        from mistralai.client.errors import MistralError
+
         gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -1027,8 +1028,9 @@ class MistralChat(Base):
         ans = ""
         total_tokens = 0
         try:
-            response = self.client.chat_stream(model=self.model_name, messages=history, **gen_conf, **kwargs)
-            for resp in response:
+            response = self.client.chat.stream(model=self.model_name, messages=history, **gen_conf, **kwargs)
+            for event in response:
+                resp = event.data
                 if not resp.choices or not resp.choices[0].delta.content:
                     continue
                 ans = resp.choices[0].delta.content
@@ -1040,7 +1042,7 @@ class MistralChat(Base):
                         ans += LENGTH_NOTIFICATION_EN
                 yield ans
 
-        except openai.APIError as e:
+        except MistralError as e:
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
@@ -1997,7 +1999,7 @@ class LiteLLMBase(ABC):
                 content = json.dumps(result, ensure_ascii=False)
             else:
                 content = str(result)
-            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
+            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content.replace("</think>", "") + ("</think>" if content.find("<think>") >= 0 else "")})
         return hist
 
     def bind_tools(self, toolcall_session=None, tools=None):
