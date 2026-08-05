@@ -82,10 +82,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 
 	"go.uber.org/zap"
@@ -100,19 +98,6 @@ import (
 )
 
 const ComponentNameTokenizer = "Tokenizer"
-
-// embeddingBatchSize returns the embedding batch size, matching Python's
-// settings.EMBEDDING_BATCH_SIZE. Reads TOKENIZER_EMBEDDING_BATCH_SIZE env
-// var; defaults to 16. Invalid / non-positive values fall back to the
-// default (diff Tokenizer Omission-3).
-func embeddingBatchSize() int {
-	if v := os.Getenv("TOKENIZER_EMBEDDING_BATCH_SIZE"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
-	}
-	return 16
-}
 
 // titleExtRE strips a trailing file-extension (e.g. ".pdf") from the
 // upstream document name before tokenizing it. Mirrors the python
@@ -135,6 +120,7 @@ type EmbeddingResult struct {
 // Embedder is the testability seam for the embedding branch.
 type Embedder interface {
 	MaxTokens() int
+	BatchSize() int
 	Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error)
 }
 
@@ -448,8 +434,12 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, em
 	}
 
 	contentResults := make([]EmbeddingResult, 0, len(texts))
-	for start := 0; start < len(texts); start += embeddingBatchSize() {
-		end := start + embeddingBatchSize()
+	batchSize := embedder.BatchSize()
+	if batchSize <= 0 {
+		return nil, 0, fmt.Errorf("tokenizer: embedder reported non-positive batch size %d", batchSize)
+	}
+	for start := 0; start < len(texts); start += batchSize {
+		end := start + batchSize
 		if end > len(texts) {
 			end = len(texts)
 		}

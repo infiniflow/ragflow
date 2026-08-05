@@ -215,6 +215,9 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
   traceIndex: (datasetId: string, indexType: string) =>
     `${restAPIv1}/datasets/${datasetId}/index?type=${indexType.toLowerCase()}`,
+  // Go scheduler compile-status contract (API_PROXY_SCHEME=go/hybrid).
+  compilationStatus: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/compilation/status`,
   unbindPipelineTask: (datasetId: string, indexType: string, wipe?: boolean) =>
     `${restAPIv1}/datasets/${datasetId}/${indexType.toLowerCase()}${wipe === false ? '?wipe=false' : ''}`,
   pipelineRerun: `${restAPIv1}/agents/rerun`,

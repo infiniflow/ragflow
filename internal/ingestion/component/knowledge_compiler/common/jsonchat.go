@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 )
@@ -34,6 +35,13 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest) (map[string
 			return m, nil
 		}
 	}
+	// Diagnostic: surface how far parsing got so a formatting failure is not
+	// opaque. Each candidate is reported with its own unmarshal error so we can
+	// tell an unfenced/truncated payload from a genuine syntax error.
+	for i, candidate := range jsonCandidates(resp.Content) {
+		_, err := tryUnmarshalJSONErr(candidate)
+		log.Printf("knowledge_compiler: GenJSON candidate[%d] len=%d parse_err=%v body=%q", i, len(candidate), err, truncate(candidate, 300))
+	}
 	return nil, fmt.Errorf("knowledge_compiler: LLM response is not parseable JSON: %q", truncate(resp.Content, 200))
 }
 
@@ -54,15 +62,20 @@ func jsonCandidates(s string) []string {
 }
 
 func tryUnmarshalJSON(s string) (map[string]any, bool) {
+	m, err := tryUnmarshalJSONErr(s)
+	return m, err == nil
+}
+
+func tryUnmarshalJSONErr(s string) (map[string]any, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return nil, false
+		return nil, fmt.Errorf("empty candidate")
 	}
 	var m map[string]any
 	if err := json.Unmarshal([]byte(s), &m); err != nil {
-		return nil, false
+		return nil, err
 	}
-	return m, true
+	return m, nil
 }
 
 func truncate(s string, n int) string {

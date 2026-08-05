@@ -39,9 +39,15 @@ export const LargeModelFilterFormSchema = {
   llm_filter: z.string().optional(),
 };
 
-type LargeModelFormFieldProps = Pick<NextInnerLLMSelectProps, 'ownerTenantId'>;
+type LargeModelFormFieldProps = Pick<
+  NextInnerLLMSelectProps,
+  'ownerTenantId'
+> & {
+  name?: string;
+};
 export function LargeModelFormField({
   ownerTenantId,
+  name = 'llm_id',
 }: LargeModelFormFieldProps) {
   const form = useFormContext();
   const { t } = useTranslation();
@@ -51,7 +57,7 @@ export function LargeModelFormField({
     <>
       <FormField
         control={form.control}
-        name="llm_id"
+        name={name}
         render={({ field }) => (
           <FormItem>
             <FormLabel tooltip={t('chat.modelTip')}>
