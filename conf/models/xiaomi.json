@@ -9,7 +9,8 @@
   "models": [
     {
       "name": "mimo-v2.5-pro",
-      "max_tokens": 1048576,
+      "content_length": 128000,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
@@ -19,7 +20,8 @@
     },
     {
       "name": "mimo-v2.5",
-      "max_tokens": 1048576,
+      "content_length": 128000,
+      "max_output": 8192,
       "model_types": [
         "chat"
       ],
