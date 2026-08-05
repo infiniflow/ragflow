@@ -146,13 +146,17 @@ async def agentic_research(state: dict, tools) -> dict:
             tools.kbinfos["chunks"] = []
             return {"verdict": verdict.__dict__, "abstain": True}
         if action == "REPLAN":
-            # Ultra: re-plan on low score
+            # Ultra: re-plan on low score. Ground the new plan on the evidence
+            # gathered so far, and carry still-valid verified claims over so a
+            # replan doesn't re-research (and re-bill) work already done.
             from rag.advanced_rag.harness.planner import planner_node
 
             state["feedback"] = verdict.feedback
             state["route"] = route
+            state["seed_chunks"] = list(tools.kbinfos.get("chunks", []) or [])
             new_plan = await planner_node(state, tools)
-            ctx.claims = new_plan.get("claims", ctx.claims)
+            verified_by_desc = {c.description: c for c in ctx.claims if c.is_verified}
+            ctx.claims = [verified_by_desc.get(c.description, c) for c in new_plan.get("claims", ctx.claims)]
         if action == "FALLBACK_LLM":
             return _finalize(ctx, tools, partial=True, fallback=True)
 

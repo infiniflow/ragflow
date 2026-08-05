@@ -59,17 +59,31 @@ def cross_check_claim(agent_result: AgentResult, all_chunks: dict) -> ClaimCross
         text_lower = text.lower()
 
         for num in numbers:
-            if str(num) not in text_lower:
-                mismatches.append(f"number {num} not found in chunk {eid}")
-            else:
+            # Numbers are extracted as floats ("1976" -> 1976.0) while chunk
+            # text spells them "1976" — match both the raw and integral forms.
+            forms = {str(num), str(int(num))} if float(num).is_integer() else {str(num)}
+            if any(f in text_lower for f in forms):
                 matches.append(f"number {num} found in chunk {eid}")
+            else:
+                mismatches.append(f"number {num} not found in chunk {eid}")
 
         for ent in entities:
-            if ent.lower() not in text_lower:
+            if ent.lower() in text_lower:
+                matches.append(f"entity '{ent}' found in chunk {eid}")
+            else:
                 mismatches.append(f"entity '{ent}' not found in chunk {eid}")
 
     total = len(matches) + len(mismatches)
-    cross_score = len(matches) / max(total, 1) if total > 0 else 0.0
+    if total == 0:
+        # Nothing extractable to verify against (e.g. Chinese reports yield no
+        # capitalized entities and no digits) — the cross-check cannot falsify
+        # the claim, so pass neutrally instead of penalizing it.
+        return ClaimCrossCheckResult(
+            claim_id=agent_result.claim_id,
+            cross_check_passed=True,
+            cross_check_score=1.0,
+        )
+    cross_score = len(matches) / total
     cross_passed = len(mismatches) < len(matches) * 0.5
 
     return ClaimCrossCheckResult(
@@ -171,7 +185,10 @@ def route_sufficiency_verdict(verdict: SufficiencyVerdict, mode_label: str, cycl
         return ("CONTINUE", False)
 
     if verdict.status == "INSUFFICIENT":
-        if cycle >= max_cycles * 0.8:
+        # ``cycle`` is 0-based, so the last cycle is ``max_cycles - 1`` — the
+        # old ``max_cycles * 0.8`` threshold was never reached for the 3/3/4
+        # cycle budgets, making this branch dead code.
+        if cycle >= max_cycles - 1:
             return ("ANSWER_PARTIAL", False)
         return ("CONTINUE", True)
 
