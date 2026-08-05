@@ -62,8 +62,8 @@
     },
     {
       "name": "Pro/zai-org/GLM-5.1",
-      "content_length": 204800,
-      "max_output": 131072,
+      "content_length": 200000,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],

@@ -28,7 +28,7 @@
     {
       "name": "minimax-m2.7",
       "content_length": 204800,
-      "max_output": 131072,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -52,7 +52,7 @@
     {
       "name": "minimax-m2.5",
       "content_length": 204800,
-      "max_output": 131100,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -76,7 +76,7 @@
     {
       "name": "minimax-m2.1",
       "content_length": 204800,
-      "max_output": 131072,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
@@ -100,7 +100,7 @@
     {
       "name": "minimax-m2",
       "content_length": 204800,
-      "max_output": 131072,
+      "max_output": 128000,
       "model_types": [
         "chat"
       ],
