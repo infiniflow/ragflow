@@ -4,6 +4,7 @@ import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Textarea } from '@/components/ui/textarea';
 import { useFetchWikiPresets } from '@/hooks/use-compilation-template-request';
+import { ICompilationTemplateBuiltin } from '@/interfaces/database/compilation-template';
 import { UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
@@ -13,11 +14,13 @@ import { FormSchemaType } from '../schema';
 type BlueprintSectionProps = {
   form: UseFormReturn<FormSchemaType>;
   selectedTemplateIndex: number;
+  builtins: ICompilationTemplateBuiltin[];
 };
 
 export function BlueprintSection({
   form,
   selectedTemplateIndex,
+  builtins,
 }: BlueprintSectionProps) {
   const { t } = useTranslation();
   const { data: presets } = useFetchWikiPresets();
@@ -28,7 +31,7 @@ export function BlueprintSection({
     instructionPath,
     pageExample,
     handlePageExampleChange,
-  } = useBlueprintSelection({ form, selectedTemplateIndex, presets });
+  } = useBlueprintSelection({ form, selectedTemplateIndex, presets, builtins });
 
   if (presets.length === 0) {
     return null;

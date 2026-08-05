@@ -203,6 +203,17 @@ type TokenChunkerParam struct {
 	// ImageContextSize is the number of surrounding tokens to attach
 	// to image chunks. 0 disables.
 	ImageContextSize int `json:"image_context_size"`
+
+	// UnderCap selects the merge strategy when greedily accumulating
+	// adjacent units (token_chunker UNDER_CAP vs OVER_CAP).
+	//   - false (default): OVER_CAP — mirrors Python's canonical default.
+	//     A chunk may exceed the token target by at most one incoming unit
+	//     (a boundary overflow then closes the chunk).
+	//   - true: UNDER_CAP — strictly never exceed the target; when the
+	//     projected join would overflow, start a fresh chunk instead.
+	// This is the seam that lets Go follow Python's no-overflow strategy
+	// without changing the default behavior.
+	UnderCap bool `json:"under_cap"`
 }
 
 // Defaults returns the Python default TokenChunkerParam.
