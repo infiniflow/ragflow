@@ -23,8 +23,10 @@ scripts that have no whitespace word boundaries (e.g. Chinese).
 """
 
 import importlib.util
+import json
 import os
 import sys
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -176,30 +178,16 @@ def test_parser_txt_keeps_loose_text_between_and_after_blocks():
 
 
 # Unified HTML semantics: the browser-faithful rules that BOTH the Python and
-# Go parsers must converge on. This is the RED phase — every case currently
-# FAILS on at least one engine, exposing the divergences (Python inserts an
-# inline space and strips <pre>; Go drops <br> and keeps raw whitespace).
+# Go parsers must converge on. The cases are the single source of truth shared
+# with the Go engine, loaded from the JSON fixture below (so the two engines
+# can no longer drift). They must all currently PASS on both engines.
 #
-# MUST stay in sync with the Go table in
-# internal/parser/parser/html_parser_unified_test.go (unifiedHTMLCases).
-_UNIFIED_HTML_CASES = [
-    # <br> is a hard line break; surrounding whitespace is collapsed away.
-    ("br_basic", "<p>line1<br>line2</p>", "line1\nline2"),
-    ("br_surrounding_space", "<p>Hello <br> World</p>", "Hello\nWorld"),
-    ("br_double", "<p>A<br><br>B</p>", "A\n\nB"),
-    ("br_before_inline", "<p>Line1<br><span>Line2</span></p>", "Line1\nLine2"),
-    # Inline boundaries are joined verbatim: no separator is inserted, even
-    # when the source has no whitespace (Latin or CJK).
-    ("inline_no_space_latin", "<p>Hello<b>World</b></p>", "HelloWorld"),
-    ("inline_no_space_cjk", "<p>你好<b>世界</b></p>", "你好世界"),
-    ("inline_with_space", "<p>Hello <b>World</b></p>", "Hello World"),
-    ("inline_three", "<p>First<b>Second</b>Third</p>", "FirstSecondThird"),
-    # Source whitespace sequences collapse to a single space and are trimmed
-    # at block edges (CSS whitespace folding).
-    ("whitespace_collapse", "<p>\n  Hello\n  <b>World</b>\n</p>", "Hello World"),
-    # <pre> preserves its whitespace verbatim, including leading/trailing.
-    ("pre_preserved", "<pre>  code\n  block</pre>", "  code\n  block"),
-]
+# The fixture lives in the Go package's testdata because //go:embed requires
+# the file to sit inside the package directory tree; the Python mirror reads
+# the same file by absolute repo-root path.
+_REPO_ROOT = Path(__file__).resolve().parents[4]
+_UNIFIED_HTML_FIXTURE = _REPO_ROOT / "internal/parser/parser/testdata/unified_html_cases.json"
+_UNIFIED_HTML_CASES = [(c["name"], c["html"], c["want"]) for c in json.loads(_UNIFIED_HTML_FIXTURE.read_text())]
 
 
 def _merge_one_block(html):
