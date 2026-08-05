@@ -512,7 +512,8 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 		for _, item := range items {
 			canvasIDs = append(canvasIDs, item.ID)
 		}
-		releaseTimes, err := s.versionDAO.GetLatestReleaseTimes(canvasIDs)
+		var releaseTimes map[string]int64
+		releaseTimes, err = s.versionDAO.GetLatestReleaseTimes(ctx, dao.DB, canvasIDs)
 		if err != nil {
 			return nil, common.CodeServerError, fmt.Errorf("failed to get release times: %w", err)
 		}
@@ -675,7 +676,7 @@ func (s *AgentService) GetAgent(ctx context.Context, userID, canvasID string) (*
 // released version, or nil when the canvas has never been published.
 // Mirrors the last_publish_time computation in Python's get_agent handler.
 func (s *AgentService) GetLastPublishTime(ctx context.Context, canvasID string) (*int64, error) {
-	version, err := s.versionDAO.GetLatestReleased(canvasID)
+	version, err := s.versionDAO.GetLatestReleased(ctx, dao.DB, canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
 			return nil, nil
