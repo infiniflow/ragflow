@@ -6,6 +6,7 @@ from types import ModuleType, SimpleNamespace
 
 
 def _stub(monkeypatch, name, **attrs):
+    """Install a minimal dependency module for the isolated Canvas import."""
     module = ModuleType(name)
     for key, value in attrs.items():
         setattr(module, key, value)
@@ -13,6 +14,7 @@ def _stub(monkeypatch, name, **attrs):
 
 
 def _load_canvas_module(monkeypatch):
+    """Load agent.canvas while replacing its runtime service dependencies."""
     _stub(monkeypatch, "agent.component", component_class=lambda _name: None)
     _stub(monkeypatch, "agent.component.base", ComponentBase=object)
     _stub(monkeypatch, "agent.dsl_migration", normalize_chunker_dsl=lambda dsl: dsl)
@@ -47,6 +49,7 @@ def _load_canvas_module(monkeypatch):
 
 
 def test_clear_history_resets_inherited_execution_path(monkeypatch):
+    """A new session must not inherit the previous replica's workflow path."""
     module = _load_canvas_module(monkeypatch)
     canvas = module.Canvas.__new__(module.Canvas)
     canvas.history = [{"role": "user", "content": "previous session"}]
