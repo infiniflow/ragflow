@@ -212,6 +212,9 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	if err != nil {
 		return nil, err
 	}
+	if len(datasets.tenantIDs) != 1 {
+		return nil, fmt.Errorf("retrieval: datasets span multiple tenants")
+	}
 	if err := validateEmbeddingModels(datasets.kbs); err != nil {
 		return nil, err
 	}

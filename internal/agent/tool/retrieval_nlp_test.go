@@ -34,6 +34,7 @@ import (
 
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/service/nlp"
 
 	"gorm.io/gorm"
 )
@@ -288,13 +289,39 @@ func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
 }
 
 func TestNLPRetrievalAdapter_ResolveDatasetsRequiresEveryDataset(t *testing.T) {
-	a := &NLPRetrievalAdapter{}
+	a := &NLPRetrievalAdapter{
+		kbDAO: fakeKnowledgebaseLookup{
+			kbs: []*entity.Knowledgebase{
+				{ID: "kb-1", TenantID: "tenant-a"},
+				{ID: "kb-2", TenantID: "tenant-a"},
+			},
+		},
+	}
 	_, err := a.resolveDatasets(nil, nil, RetrievalRequest{
 		TenantID:   "tenant-a",
 		DatasetIDs: []string{"kb-1", "kb-2", "kb-missing"},
 	})
 	if err == nil {
 		t.Fatal("resolveDatasets: expected missing dataset error")
+	}
+}
+
+func TestNLPRetrievalAdapter_SearchRejectsDatasetsFromMultipleTenants(t *testing.T) {
+	a := &NLPRetrievalAdapter{
+		svc: &nlp.RetrievalService{},
+		kbDAO: fakeKnowledgebaseLookup{
+			kbs: []*entity.Knowledgebase{
+				{ID: "kb-1", TenantID: "tenant-a", EmbdID: "embedding@provider"},
+				{ID: "kb-2", TenantID: "tenant-b", EmbdID: "embedding@provider"},
+			},
+		},
+	}
+	_, err := a.Search(t.Context(), nil, RetrievalRequest{
+		Query:      "hi",
+		DatasetIDs: []string{"kb-1", "kb-2"},
+	})
+	if err == nil || err.Error() != "retrieval: datasets span multiple tenants" {
+		t.Fatalf("Search error = %v, want multiple-tenant rejection", err)
 	}
 }
 
@@ -446,7 +473,20 @@ func (f *fakeModelResolver) GetTenantDefaultModelByType(
 }
 
 func (f fakeKnowledgebaseLookup) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Knowledgebase, error) {
-	return f.kbs, f.err
+	requested := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		requested[id] = struct{}{}
+	}
+	kbs := make([]*entity.Knowledgebase, 0, len(f.kbs))
+	for _, kb := range f.kbs {
+		if kb == nil {
+			continue
+		}
+		if _, ok := requested[kb.ID]; ok {
+			kbs = append(kbs, kb)
+		}
+	}
+	return kbs, f.err
 }
 
 func (f fakeKnowledgebaseLookup) GetByName(_ context.Context, _ *gorm.DB, name, tenantID string) (*entity.Knowledgebase, error) {
