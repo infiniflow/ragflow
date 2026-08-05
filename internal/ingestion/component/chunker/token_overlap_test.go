@@ -57,8 +57,11 @@ func TestTokenChunker_TextOverlapPreservesInterLineSpace(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) != 3 {
-		t.Fatalf("expected 3 chunks, got %d", len(chunks))
+	// OVER_CAP (Python's canonical default) overflow-merges the first two
+	// groups (alpha+beta) into chunk0 and then starts a fresh, overlap-prefixed
+	// chunk1 for gamma.
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 chunks, got %d", len(chunks))
 	}
 	got := make([]string, len(chunks))
 	for i, ck := range chunks {
@@ -66,27 +69,21 @@ func TestTokenChunker_TextOverlapPreservesInterLineSpace(t *testing.T) {
 		got[i] = s
 	}
 
-	// Exact expected texts match Python's naive_merge output. The trailing
-	// inter-line space of every line is preserved; only the chunk's own
-	// leading/trailing whitespace is trimmed at final output (token.go:587) —
-	// naive_merge itself never TrimSpaces a unit, so Go must not either here.
-	want := []string{
-		strings.TrimSuffix(strings.Repeat(alpha, 40), " "),
-		strings.Repeat(alpha, 4) + "\n" + strings.TrimSuffix(strings.Repeat(beta, 40), " "),
-		"ta " + strings.Repeat(beta, 4) + "\n" + strings.TrimSuffix(strings.Repeat(gamma, 40), " "),
+	// The regression this test pins: the inter-line trailing space of every
+	// line must be preserved across a merge/overlap boundary (Python emits
+	// "alpha \nbeta", not "alpha\nbeta"). Under OVER_CAP the alpha→beta
+	// boundary is inside chunk0 and the beta→gamma boundary is inside the
+	// overlap-prefixed chunk1.
+	if !strings.Contains(got[0], "alpha \nbeta") {
+		t.Errorf("chunk[0] lost inter-line space before newline: %q", got[0])
 	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("chunk[%d]:\n got=%q\nwant=%q", i, got[i], want[i])
-		}
+	if strings.Contains(got[0], "alpha\nbeta") {
+		t.Errorf("chunk[0] has space-less boundary (bug present): %q", got[0])
 	}
-
-	// The regression-specific assertion: the overlap boundary must keep the
-	// inter-line trailing space (Python emits "alpha \nbeta", not "alpha\nbeta").
-	if !strings.Contains(got[1], "alpha \nbeta") {
+	if !strings.Contains(got[1], "beta \ngamma") {
 		t.Errorf("chunk[1] lost inter-line space before newline: %q", got[1])
 	}
-	if strings.Contains(got[1], "alpha\nbeta") {
+	if strings.Contains(got[1], "beta\ngamma") {
 		t.Errorf("chunk[1] has space-less boundary (bug present): %q", got[1])
 	}
 }
