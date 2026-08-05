@@ -300,8 +300,7 @@ export const useSendMessageWithSse = () => {
                 if (typeof d !== 'boolean') {
                   setAnswer((prev) => {
                     const prevAnswer = prev.answer || '';
-                    const currentAnswer =
-                      d.final && prevAnswer ? '' : d.answer || '';
+                    const currentAnswer = d.answer || '';
 
                     let newAnswer: string;
                     if (prevAnswer && currentAnswer.startsWith(prevAnswer)) {
