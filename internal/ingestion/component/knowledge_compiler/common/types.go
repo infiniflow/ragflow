@@ -11,7 +11,6 @@ package common
 import (
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 )
 
@@ -19,11 +18,10 @@ import (
 type Variant string
 
 const (
-	VariantStructure  Variant = "structure"
-	VariantWiki       Variant = "wiki"
-	VariantRaptor     Variant = "raptor"
-	VariantMindmap    Variant = "mindmap"
-	VariantDatasetnav Variant = "datasetnav"
+	VariantStructure Variant = "structure"
+	VariantWiki      Variant = "wiki"
+	VariantTree      Variant = "tree"
+	VariantMindmap   Variant = "mindmap"
 )
 
 // Sentinel errors.
@@ -32,19 +30,42 @@ var (
 	ErrNotImplemented = errors.New("knowledge_compiler: variant not yet implemented")
 )
 
-// Param is built from the DSL params map. Missing keys fall back to
-// Defaults(); variant-name aliases are normalised (see ParseParam).
+// Param is built from the DSL params map. The component is driven by a
+// compilation template (or template group); the variant is NOT taken from the
+// DSL — it is derived from the resolved template's kind at Invoke time (see
+// KindToVariant).
 type Param struct {
-	Variant               Variant
-	LLMID                 string
-	EmbeddingModel        string
-	Language              string
-	TemplateIDs           []string
-	GroupIDs              []string
+	// CompilationTemplateID selects a single compilation template directly.
+	// CompilationTemplateGroupID selects a compilation-template group, which
+	// resolves to one or more templates. When both are non-empty,
+	// CompilationTemplateID wins (priority: id > group_id).
+	CompilationTemplateID      string
+	CompilationTemplateGroupID string
+
+	LLMID          string
+	EmbeddingModel string
+	Language       string
+	// SimilarityThreshold defaults to 0.99 when not provided (see Defaults).
 	SimilarityThreshold   float64
 	MaxWorkers            int
 	EnableHistoricalDedup bool
-	Extra                 map[string]any
+	// Extra carries arbitrary caller-provided overrides merged into the
+	// resolved template config.
+	Extra map[string]any
+
+	// The following fields are resolved at runtime (not part of the DSL
+	// surface) and are set by the component before dispatching to a variant:
+	//
+	// Variant is derived from the resolved template's kind (see KindToVariant),
+	// not from the DSL.
+	Variant Variant
+	// TemplateID is the resolved compilation template id for the current spec
+	// (the id path uses it directly; the group path resolves each child). It is
+	// plumbed to the variant for stamping compilation_template_ids.
+	TemplateID string
+	// TemplateConfig is the resolved template's config blob (the template
+	// "content"), plumbed to the variant for prompt/structure extraction.
+	TemplateConfig map[string]any
 }
 
 // Defaults returns a Param populated with safe production fallbacks.
@@ -83,21 +104,28 @@ type Inputs struct {
 	HistoricalCandidates []Candidate // optional override path (test/offline)
 }
 
-// LogDeprecated emits a one-line deprecation notice for legacy param names.
-func LogDeprecated(old, replacement string) {
-	log.Printf("[knowledge_compiler] deprecated variant name %q; use %q", old, replacement)
-}
-
 // Product is one compiled output row (schema_version=1).
 type Product struct {
 	ID       string
 	DocID    string
 	TenantID string
 	Variant  Variant
-	Content  string
-	Vector   []float32
-	ParentID string
-	Meta     map[string]any
+	// Kind is the original compilation_template.kind (e.g. "page_index"),
+	// distinct from Variant (the collapsed Go strategy, e.g. "structure"). It
+	// is stamped onto compilation_template_kind_kwd so the document-structure
+	// endpoint can group rows by the true template kind.
+	Kind string
+	// TemplateID is the compilation template that produced this row.
+	TemplateID string
+	Content    string
+	Vector     []float32
+	ParentID   string
+	Meta       map[string]any
+	// Merged marks rows that already went through dataset-level dedup
+	// (kc_merged=1, doc_id=kb). The consumer distinguishes these from the
+	// per-document compiled rows (doc_id=<source doc>, no kc_merged) so it can
+	// KNN against only the merged set instead of re-deduping the whole KB.
+	Merged bool
 }
 
 // Outputs is the result of a variant Run. All compiled products are buffered
@@ -107,15 +135,23 @@ type Outputs struct {
 	DuplicatesDropped int
 }
 
-// ParseParam builds a Param from the DSL params map, applying variant-name
-// aliases (mind_map=>mindmap, dataset_nav=>datasetnav) and deprecation logs.
+// ParseParam builds a Param from the DSL params map. The variant is NOT taken
+// from the DSL — it is derived from the resolved template's kind at Invoke time
+// via KindToVariant. At least one of compilation_template_id /
+// compilation_template_group_id is required.
 func ParseParam(m map[string]any) (Param, error) {
 	p := Param{}.Defaults()
 	if m == nil {
-		return p, fmt.Errorf("knowledge_compiler: params required (variant missing)")
+		return p, fmt.Errorf("knowledge_compiler: params required (compilation_template_id missing)")
 	}
-	if v, ok := m["variant"].(string); ok && v != "" {
-		p.Variant = normalizeVariant(v)
+	if v, ok := m["compilation_template_id"].(string); ok && strings.TrimSpace(v) != "" {
+		p.CompilationTemplateID = strings.TrimSpace(v)
+	}
+	if v, ok := m["compilation_template_group_id"].(string); ok && strings.TrimSpace(v) != "" {
+		p.CompilationTemplateGroupID = strings.TrimSpace(v)
+	}
+	if p.CompilationTemplateID == "" && p.CompilationTemplateGroupID == "" {
+		return p, fmt.Errorf("knowledge_compiler: one of 'compilation_template_id' or 'compilation_template_group_id' is required")
 	}
 	if v, ok := m["llm_id"].(string); ok {
 		p.LLMID = v
@@ -132,46 +168,46 @@ func ParseParam(m map[string]any) (Param, error) {
 	if v, ok := m["enable_historical_dedup"].(bool); ok {
 		p.EnableHistoricalDedup = v
 	}
-	// compilation_template_ids / compilation_template_group_ids mirror the
-	// Python parser_config keys (see api/utils/validation_utils.py). Template
-	// ids are stamped onto every compiled row so the document-structure
-	// endpoint can group rows by template and the UI renders one tab per
-	// template. Group ids are resolved to concrete template ids by the caller
-	// (production wiring resolves them via the compilation-template-group
-	// service); when passed through raw they are carried as-is on GroupIDs.
-	p.TemplateIDs = parseStringList(m, "compilation_template_ids", "template_ids")
-	p.GroupIDs = parseStringList(m, "compilation_template_group_ids", "template_group_ids", "group_ids")
 	if raw, ok := m["extra"].(map[string]any); ok {
 		p.Extra = raw
-	}
-	if p.Variant == "" {
-		return p, fmt.Errorf("knowledge_compiler: 'variant' is required")
 	}
 	return p, nil
 }
 
-// normalizeVariant maps a DSL variant name to the canonical Variant,
-// logging a deprecation note for the legacy underscore forms.
-func normalizeVariant(s string) Variant {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "structure":
-		return VariantStructure
+// KindToVariant maps a compilation_template.kind to the Go compiler Variant.
+//
+// The Python model uses richer kind values (mind_map, page_index,
+// session_essence, session_graph, timeline, knowledge_graph, tree, wiki); the
+// Go port collapses them onto its variants. Per the agreed mapping:
+//
+//	tree                            -> tree
+//	mind_map                        -> mindmap
+//	wiki                            -> wiki
+//	page_index / session_essence /  -> structure (the graph/knowledge-graph path)
+//	session_graph / timeline /      ->
+//	knowledge_graph                 ->
+//
+// The canonical variant names are also accepted as identity (so a template kind
+// may equal the variant). Unknown kinds return ErrUnknownVariant; the caller
+// turns that into a hard failure rather than silently emitting uncompiled rows.
+//
+// Note: "datasetnav"/"dataset_nav" intentionally has NO mapping here — dataset
+// navigation is not an independent compile kind in Python; it is a by-product
+// written after tree/page_index compilation via internal/service datasetnav
+// (see tasks/agentic_search_port_plan.md).
+func KindToVariant(kind string) (Variant, error) {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "tree":
+		return VariantTree, nil
+	case "mind_map", "mindmap":
+		return VariantMindmap, nil
 	case "wiki":
-		return VariantWiki
-	case "raptor":
-		return VariantRaptor
-	case "mindmap", "mind_map":
-		if strings.Contains(s, "_") {
-			LogDeprecated("mind_map", "mindmap")
-		}
-		return VariantMindmap
-	case "datasetnav", "dataset_nav":
-		if strings.Contains(s, "_") {
-			LogDeprecated("dataset_nav", "datasetnav")
-		}
-		return VariantDatasetnav
+		return VariantWiki, nil
+	case "page_index", "session_essence", "session_graph", "timeline",
+		"knowledge_graph", "structure", "knowledgegraph", "graph":
+		return VariantStructure, nil
 	default:
-		return Variant(s)
+		return "", fmt.Errorf("%w: %q", ErrUnknownVariant, kind)
 	}
 }
 
@@ -183,55 +219,6 @@ func FirstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
-}
-
-// parseStringList reads a []string from the params map under any of the given
-// keys (first hit wins). Accepts []string, []any (of strings), or a single
-// whitespace/comma-separated string. Returns nil when no key is present.
-func parseStringList(m map[string]any, keys ...string) []string {
-	for _, k := range keys {
-		raw, ok := m[k]
-		if !ok {
-			continue
-		}
-		switch v := raw.(type) {
-		case []string:
-			if len(v) > 0 {
-				return v
-			}
-		case []any:
-			out := make([]string, 0, len(v))
-			for _, e := range v {
-				if s, ok := e.(string); ok {
-					s = strings.TrimSpace(s)
-					if s != "" {
-						out = append(out, s)
-					}
-				}
-			}
-			if len(out) > 0 {
-				return out
-			}
-		case string:
-			s := strings.TrimSpace(v)
-			if s == "" {
-				continue
-			}
-			// Tolerate comma- or whitespace-separated lists.
-			parts := strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' })
-			var out []string
-			for _, p := range parts {
-				p = strings.TrimSpace(p)
-				if p != "" {
-					out = append(out, p)
-				}
-			}
-			if len(out) > 0 {
-				return out
-			}
-		}
-	}
-	return nil
 }
 
 // VectorFromChunkMap extracts a pre-computed embedding from a chunk map. The

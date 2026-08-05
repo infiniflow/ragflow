@@ -881,6 +881,7 @@ func TestListAgentSessionsServiceSuccess(t *testing.T) {
 	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
 	createAgentSessionTestConversation(t, "session-old", "canvas-1", "user-1", 1000)
 	createAgentSessionTestConversation(t, "session-new", "canvas-1", "user-1", 3000)
+	createAgentSessionTestConversation(t, "session-team", "canvas-1", "team-user", 2000)
 	createAgentSessionTestConversation(t, "session-other-agent", "canvas-other", "user-1", 9999)
 
 	ctx := t.Context()
@@ -897,11 +898,11 @@ func TestListAgentSessionsServiceSuccess(t *testing.T) {
 	if code != common.CodeSuccess {
 		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
 	}
-	if resp.Total != 2 {
-		t.Fatalf("expected total 2, got %d", resp.Total)
+	if resp.Total != 3 {
+		t.Fatalf("expected total 3, got %d", resp.Total)
 	}
-	if len(resp.Data) != 2 {
-		t.Fatalf("expected 2 sessions, got %d", len(resp.Data))
+	if len(resp.Data) != 3 {
+		t.Fatalf("expected 3 sessions, got %d", len(resp.Data))
 	}
 	if resp.Data[0]["id"] != "session-new" {
 		t.Fatalf("expected newest session first, got %v", resp.Data[0]["id"])
@@ -1180,12 +1181,12 @@ func TestUpdateAgentTagsServiceSuccess(t *testing.T) {
 		t.Fatal("expected update to succeed")
 	}
 
-	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
+	canvasInstance, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to get canvas: %v", err)
 	}
-	if canvas.Tags != "alpha,beta,with comma" {
-		t.Fatalf("expected normalized tags, got %q", canvas.Tags)
+	if canvasInstance.Tags != "alpha,beta,with comma" {
+		t.Fatalf("expected normalized tags, got %q", canvasInstance.Tags)
 	}
 }
 
@@ -1206,12 +1207,12 @@ func TestUpdateAgentTagsServiceInvalidPayload(t *testing.T) {
 		t.Fatal("expected update to fail")
 	}
 
-	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
+	canvasInstance, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to get canvas: %v", err)
 	}
-	if canvas.Tags != "" {
-		t.Fatalf("expected tags to remain unchanged, got %q", canvas.Tags)
+	if canvasInstance.Tags != "" {
+		t.Fatalf("expected tags to remain unchanged, got %q", canvasInstance.Tags)
 	}
 }
 
@@ -1232,12 +1233,12 @@ func TestUpdateAgentTagsServiceNoPermission(t *testing.T) {
 		t.Fatal("expected update to fail")
 	}
 
-	canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
+	canvasInstance, err := dao.NewUserCanvasDAO().GetByID(ctx, dao.DB, "canvas-1")
 	if err != nil {
 		t.Fatalf("failed to get canvas: %v", err)
 	}
-	if canvas.Tags != "" {
-		t.Fatalf("expected tags to remain unchanged, got %q", canvas.Tags)
+	if canvasInstance.Tags != "" {
+		t.Fatalf("expected tags to remain unchanged, got %q", canvasInstance.Tags)
 	}
 }
 
@@ -1305,7 +1306,7 @@ func TestTestDBConnectionUnsupportedDatabaseType(t *testing.T) {
 	if code != common.CodeExceptionError {
 		t.Fatalf("expected code %d, got %d", common.CodeExceptionError, code)
 	}
-	if err.Error() != "Unsupported database type." {
+	if err.Error() != "unsupported database type" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -1515,6 +1516,66 @@ func TestUpdateAgentAllowsExistingTitleForSameCanvas(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("UpdateAgent failed for unchanged title: %v", err)
+	}
+}
+
+func TestUpdateAgentTeamMemberPermissionAndOwnerTitleChecks(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	ctx := t.Context()
+
+	status := "1"
+	for _, row := range []*entity.UserCanvas{
+		{
+			ID:             "canvas-team-edit",
+			UserID:         "owner-1",
+			Title:          sptr("Editable Title"),
+			Permission:     string(entity.TenantPermissionTeam),
+			CanvasCategory: "agent_canvas",
+			DSL:            entity.JSONMap{},
+		},
+		{
+			ID:             "canvas-owner-duplicate",
+			UserID:         "owner-1",
+			Title:          sptr("Owner Duplicate"),
+			Permission:     string(entity.TenantPermissionMe),
+			CanvasCategory: "agent_canvas",
+			DSL:            entity.JSONMap{},
+		},
+	} {
+		if err := dao.DB.WithContext(ctx).Create(row).Error; err != nil {
+			t.Fatalf("failed to seed canvas %s: %v", row.ID, err)
+		}
+	}
+	if err := dao.DB.WithContext(ctx).Create(&entity.UserTenant{
+		ID:        "ut-agent-team",
+		UserID:    "member-1",
+		TenantID:  "owner-1",
+		Role:      "normal",
+		InvitedBy: "owner-1",
+		Status:    &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to seed user tenant: %v", err)
+	}
+
+	samePermission := " TEAM "
+	if err := NewAgentService().UpdateAgent(ctx, "member-1", "canvas-team-edit", map[string]interface{}{
+		"description": "member edit",
+		"permission":  samePermission,
+	}); err != nil {
+		t.Fatalf("UpdateAgent with same permission failed: %v", err)
+	}
+
+	nextPermission := "me"
+	if err := NewAgentService().UpdateAgent(ctx, "member-1", "canvas-team-edit", map[string]interface{}{
+		"permission": nextPermission,
+	}); err == nil {
+		t.Fatal("UpdateAgent permission change error = nil, want error")
+	}
+
+	if err := NewAgentService().UpdateAgent(ctx, "member-1", "canvas-team-edit", map[string]interface{}{
+		"title": "Owner Duplicate",
+	}); err == nil || err.Error() != "Owner Duplicate already exists." {
+		t.Fatalf("UpdateAgent duplicate title error = %v, want Owner Duplicate already exists.", err)
 	}
 }
 

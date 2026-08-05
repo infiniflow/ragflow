@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 	"regexp"
 	"strconv"
 	"strings"
@@ -105,7 +106,7 @@ type UserResponse struct {
 // Register user registration
 func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*entity.User, common.ErrorCode, error) {
 	cfg := server.GetConfig()
-	if !cfg.Authentication.RegisterEnabled {
+	if !cfg.EnableRegister() {
 		return nil, common.CodeOperatingError, fmt.Errorf("user registration is disabled")
 	}
 
@@ -163,31 +164,31 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 
 	tenantName := req.Nickname + "'s Kingdom"
 
-	llmID := cfg.UserDefaultLLM.DefaultModels.ChatModel.Name
+	llmID := cfg.GetDefaultChatModel().Name
 	if llmID == "" {
 		llmID = ""
 	}
-	embdID := cfg.UserDefaultLLM.DefaultModels.EmbeddingModel.Name
+	embdID := cfg.GetDefaultEmbeddingModel().Name
 	if embdID == "" {
 		embdID = ""
 	}
-	asrID := cfg.UserDefaultLLM.DefaultModels.ASRModel.Name
+	asrID := cfg.GetDefaultASRModel().Name
 	if asrID == "" {
 		asrID = ""
 	}
-	img2txtID := cfg.UserDefaultLLM.DefaultModels.Image2TextModel.Name
+	img2txtID := cfg.GetDefaultVisionModel().Name
 	if img2txtID == "" {
 		img2txtID = ""
 	}
-	rerankID := cfg.UserDefaultLLM.DefaultModels.RerankModel.Name
+	rerankID := cfg.GetDefaultRerankModel().Name
 	if rerankID == "" {
 		rerankID = ""
 	}
-	ttsID := cfg.UserDefaultLLM.DefaultModels.TTSModel.Name
+	ttsID := cfg.GetDefaultTTSModel().Name
 	if ttsID == "" {
 		ttsID = ""
 	}
-	ocrID := cfg.UserDefaultLLM.DefaultModels.OCRModel.Name
+	ocrID := cfg.GetDefaultOCRModel().Name
 	if ocrID == "" {
 		ocrID = ""
 	}
@@ -269,22 +270,26 @@ func (s *UserService) getInitTenantLLM(ctx context.Context, userID string) ([]*e
 		return nil, fmt.Errorf("config not initialized")
 	}
 
-	modelConfigs := map[string]server.ModelConfig{
-		entity.ModelTypeChat.String():        cfg.UserDefaultLLM.DefaultModels.ChatModel,
-		entity.ModelTypeEmbedding.String():   cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
-		entity.ModelTypeSpeech2Text.String(): cfg.UserDefaultLLM.DefaultModels.ASRModel,
-		entity.ModelTypeImage2Text.String():  cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
-		entity.ModelTypeRerank.String():      cfg.UserDefaultLLM.DefaultModels.RerankModel,
+	modelConfigs := map[string]config.ModelConfig{
+		entity.ModelTypeChat.String():        cfg.GetDefaultChatModel(),
+		entity.ModelTypeEmbedding.String():   cfg.GetDefaultEmbeddingModel(),
+		entity.ModelTypeSpeech2Text.String(): cfg.GetDefaultASRModel(),
+		entity.ModelTypeImage2Text.String():  cfg.GetDefaultVisionModel(),
+		entity.ModelTypeRerank.String():      cfg.GetDefaultRerankModel(),
+		entity.ModelTypeTTS.String():         cfg.GetDefaultTTSModel(),
+		entity.ModelTypeOCR.String():         cfg.GetDefaultOCRModel(),
 	}
 
 	seenFactories := make(map[string]bool)
-	factoryConfigs := make([]server.ModelConfig, 0, len(modelConfigs))
-	for _, modelConfig := range []server.ModelConfig{
-		cfg.UserDefaultLLM.DefaultModels.ChatModel,
-		cfg.UserDefaultLLM.DefaultModels.EmbeddingModel,
-		cfg.UserDefaultLLM.DefaultModels.ASRModel,
-		cfg.UserDefaultLLM.DefaultModels.Image2TextModel,
-		cfg.UserDefaultLLM.DefaultModels.RerankModel,
+	factoryConfigs := make([]config.ModelConfig, 0, len(modelConfigs))
+	for _, modelConfig := range []config.ModelConfig{
+		cfg.GetDefaultChatModel(),
+		cfg.GetDefaultEmbeddingModel(),
+		cfg.GetDefaultASRModel(),
+		cfg.GetDefaultVisionModel(),
+		cfg.GetDefaultRerankModel(),
+		cfg.GetDefaultTTSModel(),
+		cfg.GetDefaultOCRModel(),
 	} {
 		if modelConfig.Factory == "" || seenFactories[modelConfig.Factory] {
 			continue
@@ -590,7 +595,7 @@ func defaultUserLanguage() string {
 // using itsdangerous URLSafeTimedSerializer to get the actual access_token
 func (s *UserService) GetUserByToken(ctx context.Context, authorization string) (*entity.User, common.ErrorCode, error) {
 	// Get secret key from config
-	secretKey, err := server.GetSecretKey(redis.Get())
+	secretKey, err := server.GetSecretKey(ctx, redis.Get())
 	if err != nil {
 		return nil, common.CodeUnauthorized, err
 	}
@@ -831,39 +836,6 @@ func (s *UserService) ChangePassword(ctx context.Context, user *entity.User, req
 	return common.CodeSuccess, nil
 }
 
-// LoginChannel represents a login channel response
-type LoginChannel struct {
-	Channel     string `json:"channel"`
-	DisplayName string `json:"display_name"`
-	Icon        string `json:"icon"`
-}
-
-// GetLoginChannels gets all supported authentication channels
-func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, error) {
-	cfg := server.GetConfig()
-	channels := make([]*LoginChannel, 0)
-
-	for channel, oauthCfg := range cfg.OAuth {
-		displayName := oauthCfg.DisplayName
-		if displayName == "" {
-			displayName = strings.Title(channel)
-		}
-
-		icon := oauthCfg.Icon
-		if icon == "" {
-			icon = "sso"
-		}
-
-		channels = append(channels, &LoginChannel{
-			Channel:     channel,
-			DisplayName: displayName,
-			Icon:        icon,
-		})
-	}
-
-	return channels, common.CodeSuccess, nil
-}
-
 // SetTenantInfoRequest represents the request for setting tenant info
 type SetTenantInfoRequest struct {
 	TenantID  *string                `json:"tenant_id"`
@@ -986,8 +958,8 @@ func (s *UserService) GetUserByAPIToken(ctx context.Context, authorization strin
 
 	// Query API token from database
 	apiTokenDAO := dao.NewAPITokenDAO()
-	userToken, err := apiTokenDAO.GetUserByAPIToken(ctx, dao.DB, token)
-	if err != nil {
+	userToken, err := apiTokenDAO.GetByAPIToken(ctx, dao.DB, token)
+	if err != nil || userToken == nil {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid access token")
 	}
 
@@ -1109,7 +1081,7 @@ func (s *UserService) ForgotIssueCaptcha(ctx context.Context, email string) (cap
 		return "", "", common.CodeServerError, err
 	}
 	captchaID = utility.GenerateToken()
-	if ok := redis.Get().Set(utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
+	if ok := redis.Get().Set(ctx, utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
 		return "", "", common.CodeServerError, fmt.Errorf("failed to store captcha")
 	}
 	imageDataURL = utility.RenderCaptchaPNGDataURL(text)
@@ -1131,7 +1103,7 @@ func (s *UserService) ForgotSendOTP(ctx context.Context, email, captchaID, captc
 
 	rc := redis.Get()
 	captchaKey := utility.CaptchaIDRedisKey(captchaID)
-	stored, _ := rc.Get(captchaKey)
+	stored, _ := rc.Get(ctx, captchaKey)
 	if stored == "" {
 		return common.CodeNotEffective, fmt.Errorf("invalid or expired captcha")
 	}
@@ -1140,7 +1112,7 @@ func (s *UserService) ForgotSendOTP(ctx context.Context, email, captchaID, captc
 	}
 	// One-shot: consume the captcha so a leaked captcha_id cannot be
 	// reused for a stream of OTP requests.
-	rc.Delete(captchaKey)
+	rc.Delete(ctx, captchaKey)
 
 	codeKey, attemptsKey, lastSentKey, lockKey := utility.OTPRedisKeys(email)
 
@@ -1148,12 +1120,12 @@ func (s *UserService) ForgotSendOTP(ctx context.Context, email, captchaID, captc
 	// let a request for a new OTP wipe the lock (deliberate divergence
 	// from the Python implementation, which deletes the lock here and so
 	// allows a locked attacker to clear their own lockout by re-requesting).
-	if locked, _ := rc.Get(lockKey); locked != "" {
+	if locked, _ := rc.Get(ctx, lockKey); locked != "" {
 		return common.CodeNotEffective, fmt.Errorf("too many attempts, try later")
 	}
 
 	// Resend cooldown — refuse if we already sent within the window.
-	if lastSent, _ := rc.Get(lastSentKey); lastSent != "" {
+	if lastSent, _ := rc.Get(ctx, lastSentKey); lastSent != "" {
 		ts, parseErr := strconv.ParseInt(lastSent, 10, 64)
 		if parseErr == nil {
 			elapsed := time.Since(time.Unix(ts, 0))
@@ -1178,39 +1150,39 @@ func (s *UserService) ForgotSendOTP(ctx context.Context, email, captchaID, captc
 	// Snapshot the previous OTP-flow state so we can restore it if email
 	// delivery fails — otherwise the user is throttled by lastSentKey
 	// even though they never received the code.
-	prevCode, _ := rc.Get(codeKey)
-	prevAttempts, _ := rc.Get(attemptsKey)
-	prevLastSent, _ := rc.Get(lastSentKey)
+	prevCode, _ := rc.Get(ctx, codeKey)
+	prevAttempts, _ := rc.Get(ctx, attemptsKey)
+	prevLastSent, _ := rc.Get(ctx, lastSentKey)
 
-	if !rc.Set(codeKey, utility.EncodeOTPStorageValue(codeHash, salt), utility.OTPTTL) {
+	if !rc.Set(ctx, codeKey, utility.EncodeOTPStorageValue(codeHash, salt), utility.OTPTTL) {
 		return common.CodeServerError, fmt.Errorf("failed to store otp")
 	}
-	rc.Set(attemptsKey, "0", utility.OTPTTL)
-	rc.Set(lastSentKey, now, utility.OTPTTL)
+	rc.Set(ctx, attemptsKey, "0", utility.OTPTTL)
+	rc.Set(ctx, lastSentKey, now, utility.OTPTTL)
 	// Note: lockKey is intentionally not cleared here. If the user has
 	// been locked out by a previous verify burst, requesting a new OTP
 	// does not lift the lock — we already refused above.
 
 	ttlMin := int(utility.OTPTTL.Minutes())
 	cfg := server.GetConfig()
-	if err := utility.SendResetCodeEmail(cfg.SMTP, email, otp, ttlMin); err != nil {
+	if err = utility.SendResetCodeEmail(cfg.GetSMTPConfig(), email, otp, ttlMin); err != nil {
 		// Roll back: restore prior code/attempts/last-sent or remove the
 		// keys we just wrote so the next attempt isn't blocked by the
 		// resend cooldown a failed send just installed.
 		if prevCode != "" {
-			rc.Set(codeKey, prevCode, utility.OTPTTL)
+			rc.Set(ctx, codeKey, prevCode, utility.OTPTTL)
 		} else {
-			rc.Delete(codeKey)
+			rc.Delete(ctx, codeKey)
 		}
 		if prevAttempts != "" {
-			rc.Set(attemptsKey, prevAttempts, utility.OTPTTL)
+			rc.Set(ctx, attemptsKey, prevAttempts, utility.OTPTTL)
 		} else {
-			rc.Delete(attemptsKey)
+			rc.Delete(ctx, attemptsKey)
 		}
 		if prevLastSent != "" {
-			rc.Set(lastSentKey, prevLastSent, utility.OTPTTL)
+			rc.Set(ctx, lastSentKey, prevLastSent, utility.OTPTTL)
 		} else {
-			rc.Delete(lastSentKey)
+			rc.Delete(ctx, lastSentKey)
 		}
 		return common.CodeServerError, fmt.Errorf("failed to send email")
 	}
@@ -1231,11 +1203,11 @@ func (s *UserService) ForgotVerifyOTP(ctx context.Context, email, otp string) (c
 	rc := redis.Get()
 	codeKey, attemptsKey, lastSentKey, lockKey := utility.OTPRedisKeys(email)
 
-	if locked, _ := rc.Get(lockKey); locked != "" {
+	if locked, _ := rc.Get(ctx, lockKey); locked != "" {
 		return common.CodeNotEffective, fmt.Errorf("too many attempts, try later")
 	}
 
-	stored, _ := rc.Get(codeKey)
+	stored, _ := rc.Get(ctx, codeKey)
 	if stored == "" {
 		return common.CodeNotEffective, fmt.Errorf("expired otp")
 	}
@@ -1247,25 +1219,25 @@ func (s *UserService) ForgotVerifyOTP(ctx context.Context, email, otp string) (c
 	if utility.HashOTPCode(strings.ToUpper(strings.TrimSpace(otp)), salt) != storedHash {
 		// bump attempts; lock on >= limit
 		attempts := 0
-		if cur, _ := rc.Get(attemptsKey); cur != "" {
+		if cur, _ := rc.Get(ctx, attemptsKey); cur != "" {
 			if n, perr := strconv.Atoi(cur); perr == nil {
 				attempts = n
 			}
 		}
 		attempts++
-		rc.Set(attemptsKey, strconv.Itoa(attempts), utility.OTPTTL)
+		rc.Set(ctx, attemptsKey, strconv.Itoa(attempts), utility.OTPTTL)
 		if attempts >= utility.OTPAttemptLimit {
-			rc.Set(lockKey, strconv.FormatInt(time.Now().Unix(), 10), utility.OTPAttemptLockDuration)
+			rc.Set(ctx, lockKey, strconv.FormatInt(time.Now().Unix(), 10), utility.OTPAttemptLockDuration)
 		}
 		return common.CodeAuthenticationError, fmt.Errorf("expired otp")
 	}
 
 	// Success: clear OTP state, mark email verified.
-	rc.Delete(codeKey)
-	rc.Delete(attemptsKey)
-	rc.Delete(lastSentKey)
-	rc.Delete(lockKey)
-	if !rc.Set(utility.OTPVerifiedRedisKey(email), "1", utility.OTPTTL) {
+	rc.Delete(ctx, codeKey)
+	rc.Delete(ctx, attemptsKey)
+	rc.Delete(ctx, lastSentKey)
+	rc.Delete(ctx, lockKey)
+	if !rc.Set(ctx, utility.OTPVerifiedRedisKey(email), "1", utility.OTPTTL) {
 		return common.CodeServerError, fmt.Errorf("failed to set verification state")
 	}
 	return common.CodeSuccess, nil
@@ -1300,7 +1272,7 @@ func (s *UserService) ForgotResetPassword(ctx context.Context, req *ForgotResetP
 
 	rc := redis.Get()
 	verifiedKey := utility.OTPVerifiedRedisKey(req.Email)
-	if v, _ := rc.Get(verifiedKey); v != "1" {
+	if v, _ := rc.Get(ctx, verifiedKey); v != "1" {
 		return nil, common.CodeAuthenticationError, fmt.Errorf("email not verified")
 	}
 
@@ -1338,6 +1310,6 @@ func (s *UserService) ForgotResetPassword(ctx context.Context, req *ForgotResetP
 		return nil, common.CodeServerError, fmt.Errorf("failed to reset password: %w", err)
 	}
 
-	rc.Delete(verifiedKey)
+	rc.Delete(ctx, verifiedKey)
 	return user, common.CodeSuccess, nil
 }

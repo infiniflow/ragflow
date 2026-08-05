@@ -83,7 +83,7 @@ export const buildModelInfo = (items: IProviderModelItem[]): IModelInfo[] =>
     model_name: m.name,
     model_type: m.model_types ?? [],
     max_tokens: m.max_tokens ?? 0,
-    extra: { is_tools: hasToolFeature(m.features) },
+    extra: { is_tools: hasToolFeature(m.features), ...(m.extra ?? {}) },
   }));
 
 /** Resolved credentials for catalog / verify / batch calls. */
@@ -140,8 +140,58 @@ export function useModelsCatalog({
 }: UseModelsCatalogArgs) {
   const { listProviderModels } = useListProviderModels();
   const [catalog, setCatalog] = useState<IProviderModelItem[]>([]);
+  const [catalogOverrides, setCatalogOverrides] = useState<
+    Record<string, IProviderModelItem>
+  >({});
+  const catalogOverridesRef = useRef(catalogOverrides);
   const [manualListLoading, setManualListLoading] = useState(false);
   const [hasFetched, setHasFetched] = useState(false);
+
+  const applyCatalogOverrides = useCallback((items: IProviderModelItem[]) => {
+    const overrides = catalogOverridesRef.current;
+    const names = new Set<string>();
+    const merged = items.map((item) => {
+      names.add(item.name);
+      const override = overrides[item.name];
+      return override ? { ...item, ...override, name: item.name } : item;
+    });
+    Object.entries(overrides).forEach(([name, override]) => {
+      if (!names.has(name)) {
+        merged.push(override);
+      }
+    });
+    return merged;
+  }, []);
+
+  const updateCatalogModel = useCallback(
+    (name: string, item: IProviderModelItem) => {
+      setCatalogOverrides((prev) => {
+        const next = {
+          ...prev,
+          [name]: { ...(prev[name] ?? {}), ...item, name },
+        };
+        catalogOverridesRef.current = next;
+        return next;
+      });
+      setCatalog((prev) => {
+        if (!prev.some((m) => m.name === name)) {
+          return [...prev, { ...item, name }];
+        }
+        return prev.map((m) => (m.name === name ? { ...m, ...item, name } : m));
+      });
+    },
+    [],
+  );
+
+  const clearCatalogOverride = useCallback((name: string) => {
+    setCatalogOverrides((prev) => {
+      if (!prev[name]) return prev;
+      const next = { ...prev };
+      delete next[name];
+      catalogOverridesRef.current = next;
+      return next;
+    });
+  }, []);
 
   // Manual "List models" handler — hits the upstream catalog endpoint.
   // The result is merged into `catalog`; the displayed list then becomes
@@ -160,7 +210,9 @@ export function useModelsCatalog({
         base_url: baseUrl,
       });
       if (ret?.code === 0) {
-        setCatalog((ret.data as IProviderModelItem[]) ?? []);
+        setCatalog(
+          applyCatalogOverrides((ret.data as IProviderModelItem[]) ?? []),
+        );
       }
       setHasFetched(true);
     } catch {
@@ -203,6 +255,8 @@ export function useModelsCatalog({
   return {
     catalog,
     setCatalog,
+    updateCatalogModel,
+    clearCatalogOverride,
     manualListLoading,
     hasFetched,
     handleListModels,
@@ -279,6 +333,7 @@ export function useModelsDerived({
         max_tokens: im.max_tokens ?? 0,
         model_types,
         features,
+        extra: im.extra,
       };
     });
   }, [sourceItems, catalogFeatures]);
@@ -598,6 +653,7 @@ interface UseModelMutationsArgs {
   filteredModels: IProviderModelItem[];
   addedSet: Set<string>;
   setCatalog: Dispatch<SetStateAction<IProviderModelItem[]>>;
+  clearCatalogOverride: (name: string) => void;
   /**
    * Local mutators for the draft instance's model list. Required when
    * `isDraftInstance` is true so per-model add / remove / batch updates
@@ -620,6 +676,7 @@ export function useModelMutations({
   filteredModels,
   addedSet,
   setCatalog,
+  clearCatalogOverride,
   addDraftModel,
   removeDraftModel,
   setDraftModelsList,
@@ -643,6 +700,7 @@ export function useModelMutations({
     // rides along with the instance save (model_info in the add body).
     if (isDraftInstance) {
       addDraftModel?.(model);
+      clearCatalogOverride(model.name);
       return;
     }
     await addInstanceModel({
@@ -651,8 +709,12 @@ export function useModelMutations({
       model_name: model.name,
       model_type: model.model_types ?? [],
       max_tokens: model.max_tokens ?? 0,
-      extra: { is_tools: hasToolFeature(model.features) },
+      extra: {
+        is_tools: hasToolFeature(model.features),
+        ...(model.extra ?? {}),
+      },
     });
+    clearCatalogOverride(model.name);
   };
 
   const handleRemoveModel = async (model: IProviderModelItem) => {
@@ -682,6 +744,7 @@ export function useModelMutations({
       // dropped on save.
       if (isDraftInstance) {
         addDraftModel?.(item);
+        clearCatalogOverride(item.name);
       }
       return;
     }
@@ -691,8 +754,9 @@ export function useModelMutations({
       model_name: item.name,
       model_type: item.model_types ?? [],
       max_tokens: item.max_tokens ?? 0,
-      extra: { is_tools: hasToolFeature(item.features) },
+      extra: { is_tools: hasToolFeature(item.features), ...(item.extra ?? {}) },
     });
+    clearCatalogOverride(item.name);
   };
 
   // Batch attach/detach the currently visible (filtered) models.
@@ -717,6 +781,11 @@ export function useModelMutations({
 
     if (isDraftInstance) {
       setDraftModelsList?.(nextModels);
+      filteredModels.forEach((m) => {
+        if (!addedSet.has(m.name)) {
+          clearCatalogOverride(m.name);
+        }
+      });
       return;
     }
 
@@ -729,6 +798,11 @@ export function useModelMutations({
       base_url: baseUrl,
       region: instance?.region ?? 'default',
       model_info: buildModelInfo(nextModels),
+    });
+    filteredModels.forEach((m) => {
+      if (!addedSet.has(m.name)) {
+        clearCatalogOverride(m.name);
+      }
     });
   };
 
@@ -749,11 +823,24 @@ export function useModelMutations({
 interface UseModelEditArgs {
   providerName: string;
   instanceName: string;
+  addedSet: Set<string>;
+  isDraftInstance?: boolean;
+  updateCatalogModel: (name: string, item: IProviderModelItem) => void;
+  clearCatalogOverride: (name: string) => void;
+  updateDraftModel?: (item: IProviderModelItem) => void;
 }
 
-export function useModelEdit({ providerName, instanceName }: UseModelEditArgs) {
+export function useModelEdit({
+  providerName,
+  instanceName,
+  addedSet,
+  isDraftInstance,
+  updateCatalogModel,
+  clearCatalogOverride,
+  updateDraftModel,
+}: UseModelEditArgs) {
   const queryClient = useQueryClient();
-  const customModelDialogFields = useCustomModelFields();
+  const customModelDialogFields = useCustomModelFields(providerName);
   const { patchInstanceModel, loading: editLoading } = usePatchInstanceModel();
   // Model currently being edited via AddCustomModelDialog (with `name`
   // pinned/disabled and the dialog initial values pre-populated from the
@@ -773,29 +860,76 @@ export function useModelEdit({ providerName, instanceName }: UseModelEditArgs) {
     [customModelDialogFields],
   );
 
-  // Initial form values for the edit dialog, derived from the model
-  // currently being edited.
+  // Whitelist of provider-specific feature keys derived from the
+  // `features` switch-group options. Any option value that is not
+  // `is_tools` is treated as provider-specific: on submit it is moved
+  // from `features` to `extra` as a boolean; on echo it is converted
+  // back from an `extra` boolean to a features array entry.
+  const providerFeatureKeys = useMemo(() => {
+    const featuresField = customModelDialogFields.find(
+      (f) => f.name === 'features',
+    );
+    return (featuresField?.options ?? [])
+      .filter((o) => o.value !== 'is_tools')
+      .map((o) => o.value);
+  }, [customModelDialogFields]);
+
+  // Initial form values for the edit dialog, derived from the model's
+  // persisted `extra` state. The `features` switch-group shows
+  // enabled/disabled state, so it must be built from `extra` booleans
+  // rather than from `editingModel.features` which merges in
+  // catalog-supported features and would incorrectly pre-select
+  // features the user has disabled.
   const editDefaultValues = useMemo(() => {
     if (!editingModel) return undefined;
+    const extra = editingModel.extra ?? {};
+    // Build the features array from `extra` booleans whose keys match
+    // the standard feature (`is_tools`) or the provider-specific
+    // whitelist. Only `true` values become selected switch-group entries.
+    const featureKeySet = new Set<string>(['is_tools', ...providerFeatureKeys]);
+    const features: string[] = [];
+    const featureBooleans = new Set<string>();
+    for (const [key, value] of Object.entries(extra)) {
+      if (featureKeySet.has(key) && typeof value === 'boolean') {
+        featureBooleans.add(key);
+        if (value === true) {
+          features.push(key);
+        }
+      }
+    }
+    // Remaining extra fields (non-feature: element-format selects, etc.).
+    const remainingExtra = Object.fromEntries(
+      Object.entries(extra).filter(([k]) => !featureBooleans.has(k)),
+    );
     return {
       name: editingModel.name,
       model_types: editingModel.model_types ?? [],
       max_tokens: editingModel.max_tokens ?? 0,
-      features: editingModel.features ?? [],
+      features,
+      ...remainingExtra,
     };
-  }, [editingModel]);
+  }, [editingModel, providerFeatureKeys]);
 
-  // Persist edits to an existing model. The instance-models cache
-  // (the source of truth for already-added models) is patched so the
-  // UI reflects the new `max_tokens` / `model_types` / `is_tools`
-  // values immediately, before the PATCH's invalidation refetches.
-  // Updating `catalog` instead would be a no-op here: the union in
-  // `useModelsDerived` lets `instanceItems` win on name conflicts, so
-  // a catalog-only patch is invisible for any model already attached
-  // to the instance.
+  // Persist edits to an existing model. For drafts the backend has no
+  // instance yet, so we update the local `draftModels` list instead of
+  // calling PATCH. For saved cards the instance-models cache is patched
+  // so the UI reflects the new values immediately, before the PATCH's
+  // invalidation refetches.
   const handleEditSubmit = async (item: IProviderModelItem) => {
     if (!editingModel) return;
     const targetName = editingModel.name;
+
+    if (isDraftInstance && updateDraftModel && addedSet.has(targetName)) {
+      updateDraftModel(item);
+      setEditingModel(null);
+      return;
+    }
+
+    if (!addedSet.has(targetName)) {
+      updateCatalogModel(targetName, item);
+      setEditingModel(null);
+      return;
+    }
 
     queryClient.setQueryData<IInstanceModel[]>(
       LlmKeys.instanceModels(providerName, instanceName),
@@ -810,6 +944,10 @@ export function useModelEdit({ providerName, instanceName }: UseModelEditArgs) {
           max_tokens: item.max_tokens ?? 0,
           model_type: item.model_types ?? [],
           is_tools: hasToolFeature(item.features),
+          extra: {
+            is_tools: hasToolFeature(item.features),
+            ...(item.extra ?? {}),
+          },
         };
         return next;
       },
@@ -821,8 +959,9 @@ export function useModelEdit({ providerName, instanceName }: UseModelEditArgs) {
       model_name: targetName,
       max_tokens: item.max_tokens ?? 0,
       model_type: item.model_types ?? [],
-      extra: { is_tools: hasToolFeature(item.features) },
+      extra: { is_tools: hasToolFeature(item.features), ...(item.extra ?? {}) },
     });
+    clearCatalogOverride(targetName);
     setEditingModel(null);
   };
 
@@ -834,5 +973,6 @@ export function useModelEdit({ providerName, instanceName }: UseModelEditArgs) {
     handleEditSubmit,
     editLoading,
     customModelDialogFields,
+    providerFeatureKeys,
   };
 }

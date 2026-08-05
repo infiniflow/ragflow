@@ -482,6 +482,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 	if err != nil {
 		return nil, fmt.Errorf("memory '%s' not found", memoryID)
 	}
+	ownerTenantID := currentMemory.TenantID
 
 	if req.Name != nil {
 		memoryName := strings.TrimSpace(*req.Name)
@@ -492,7 +493,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 			memoryName, err = common.DuplicateName(func(name string, tid string) bool {
 				existing, _ := s.memoryDAO.GetByNameAndTenant(ctx, dao.DB, name, tid)
 				return len(existing) > 0
-			}, memoryName, tenantID)
+			}, memoryName, ownerTenantID)
 			if err != nil {
 				return nil, err
 			}
@@ -501,7 +502,10 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 	}
 
 	if req.Permissions != nil {
-		perm := TenantPermission(strings.ToLower(*req.Permissions))
+		perm := TenantPermission(strings.ToLower(strings.TrimSpace(*req.Permissions)))
+		if currentMemory.TenantID != tenantID && strings.ToLower(strings.TrimSpace(currentMemory.Permissions)) != string(perm) {
+			return nil, fmt.Errorf("tenant '%s' is not allowed to modify the memory's permission", tenantID)
+		}
 		if !validPermissions[perm] {
 			return nil, fmt.Errorf("unknown permission '%s'", *req.Permissions)
 		}
@@ -518,9 +522,9 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 	if req.LLMID != nil {
 		updateDict["llm_id"] = *req.LLMID
 		if req.TenantLLMID == nil && *req.LLMID != "" {
-			resolved, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeChat, *req.LLMID)
+			resolved, err := modelProvider.ResolveModelID(ctx, ownerTenantID, entity.ModelTypeChat, *req.LLMID)
 			if err != nil {
-				slog.Warn("UpdateMemory: failed to resolve tenant LLM id", "tenant_id", tenantID, "llm_id", *req.LLMID, "err", err)
+				slog.Warn("UpdateMemory: failed to resolve tenant LLM id", "tenant_id", ownerTenantID, "llm_id", *req.LLMID, "err", err)
 			} else if resolved != "" {
 				updateDict["tenant_llm_id"] = resolved
 			}
@@ -530,9 +534,9 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 	if req.EmbdID != nil {
 		updateDict["embd_id"] = *req.EmbdID
 		if req.TenantEmbdID == nil && *req.EmbdID != "" {
-			resolved, err := modelProvider.ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, *req.EmbdID)
+			resolved, err := modelProvider.ResolveModelID(ctx, ownerTenantID, entity.ModelTypeEmbedding, *req.EmbdID)
 			if err != nil {
-				slog.Warn("UpdateMemory: failed to resolve tenant embedding id", "tenant_id", tenantID, "embd_id", *req.EmbdID, "err", err)
+				slog.Warn("UpdateMemory: failed to resolve tenant embedding id", "tenant_id", ownerTenantID, "embd_id", *req.EmbdID, "err", err)
 			} else if resolved != "" {
 				updateDict["tenant_embd_id"] = resolved
 			}
@@ -1286,7 +1290,7 @@ func memorySearchIndexNames(memories []*entity.Memory) []string {
 			continue
 		}
 		indexName := memoryIndexName(memory.TenantID)
-		if engine.GetEngineType() == engine.EngineInfinity {
+		if engine.GetEngineType() == "infinity" {
 			indexName = fmt.Sprintf("%s_%s", indexName, memory.ID)
 		}
 		if _, ok := seen[indexName]; ok {

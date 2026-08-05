@@ -23,7 +23,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 )
 
 func newModelScopeForTest(baseURL string) *ModelScopeModel {
@@ -34,15 +33,6 @@ func newModelScopeForTest(baseURL string) *ModelScopeModel {
 			Models: "v1/models",
 		},
 	)
-}
-
-func withModelScopeIdleTimeout(t *testing.T, d time.Duration) {
-	t.Helper()
-	original := modelscopeStreamIdleTimeout
-	modelscopeStreamIdleTimeout = d
-	t.Cleanup(func() {
-		modelscopeStreamIdleTimeout = original
-	})
 }
 
 func TestModelScopeName(t *testing.T) {
@@ -94,6 +84,7 @@ func TestModelScopeNewModelWithCustomDefaultTransport(t *testing.T) {
 }
 
 func TestModelScopeChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	var seen map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -146,6 +137,7 @@ func TestModelScopeChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 }
 
 func TestModelScopeChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer ms-test" {
@@ -166,6 +158,7 @@ func TestModelScopeChatSendsAuthHeaderWhenKeyProvided(t *testing.T) {
 }
 
 func TestModelScopeChatExtractsReasoningFields(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `{"choices":[{"message":{
@@ -188,6 +181,7 @@ func TestModelScopeChatExtractsReasoningFields(t *testing.T) {
 }
 
 func TestModelScopeStreamHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
@@ -252,6 +246,7 @@ func TestModelScopeStreamHappyPath(t *testing.T) {
 }
 
 func TestModelScopeStreamRejectsFalseStreamConfig(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newModelScopeForTest("http://unused")
 	stream := false
@@ -266,37 +261,8 @@ func TestModelScopeStreamRejectsFalseStreamConfig(t *testing.T) {
 	}
 }
 
-func TestModelScopeStreamCancelsOnIdle(t *testing.T) {
-	ctx := t.Context()
-	withModelScopeIdleTimeout(t, 200*time.Millisecond)
-
-	hold := make(chan struct{})
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		if f, ok := w.(http.Flusher); ok {
-			_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"content":"hi"}}]}`+"\n")
-			f.Flush()
-		}
-		select {
-		case <-hold:
-		case <-r.Context().Done():
-		}
-	}))
-	t.Cleanup(srv.Close)
-	t.Cleanup(func() { close(hold) })
-
-	m := newModelScopeForTest(srv.URL)
-	err := m.ChatStreamlyWithSender(ctx, "Qwen/Qwen2.5-7B-Instruct",
-		[]Message{{Role: "user", Content: "x"}},
-		&APIConfig{}, nil, nil,
-		func(*string, *string) error { return nil })
-	if err == nil || !strings.Contains(err.Error(), "stream idle") {
-		t.Errorf("expected stream-idle error, got %v", err)
-	}
-}
-
 func TestModelScopeListModelsAndCheckConnection(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
@@ -325,6 +291,7 @@ func TestModelScopeListModelsAndCheckConnection(t *testing.T) {
 }
 
 func TestModelScopeMissingBaseURLFailsClearly(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := NewModelScopeModel(map[string]string{}, URLSuffix{Chat: "v1/chat/completions"})
 	_, err := m.ChatWithMessages(ctx, "Qwen/Qwen2.5-7B-Instruct",
@@ -336,6 +303,7 @@ func TestModelScopeMissingBaseURLFailsClearly(t *testing.T) {
 }
 
 func TestModelScopeUnsupportedMethodsReturnNoSuchMethod(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	m := newModelScopeForTest("http://unused")
 	model := "Qwen/Qwen2.5-7B-Instruct"

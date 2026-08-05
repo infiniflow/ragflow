@@ -28,7 +28,7 @@ import (
 // IndexDocument indexes a single document
 // For skill index (tableName starts with "skill_"), uses InsertSkill
 // For regular document index, returns not implemented error
-func (e *infinityEngine) IndexDocument(ctx context.Context, tableName, docID string, doc interface{}) error {
+func (e *Engine) IndexDocument(ctx context.Context, tableName, docID string, doc interface{}) error {
 	// Check if this is a skill index
 	if strings.HasPrefix(tableName, "skill_") {
 		return e.InsertSkill(ctx, tableName, docID, doc)
@@ -38,7 +38,7 @@ func (e *infinityEngine) IndexDocument(ctx context.Context, tableName, docID str
 
 // InsertSkill inserts a skill document into skill index
 // Auto-creates the table if it doesn't exist
-func (e *infinityEngine) InsertSkill(ctx context.Context, tableName, docID string, doc interface{}) error {
+func (e *Engine) InsertSkill(ctx context.Context, tableName, docID string, doc interface{}) error {
 	db, release, err := e.client.checkoutDatabase(ctx, "document.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
@@ -94,7 +94,7 @@ func (e *infinityEngine) InsertSkill(ctx context.Context, tableName, docID strin
 // BulkIndex indexes documents in bulk
 // For skill index (tableName starts with "skill_"), uses BulkInsertSkill
 // For regular document index, returns not implemented error
-func (e *infinityEngine) BulkIndex(ctx context.Context, tableName string, docs []interface{}) (interface{}, error) {
+func (e *Engine) BulkIndex(ctx context.Context, tableName string, docs []interface{}) (interface{}, error) {
 	// Check if this is a skill index
 	if strings.HasPrefix(tableName, "skill_") {
 		inserted, err := e.BulkInsertSkill(ctx, tableName, docs)
@@ -107,7 +107,7 @@ func (e *infinityEngine) BulkIndex(ctx context.Context, tableName string, docs [
 // For each document, deletes existing rows with the same skill_id before inserting,
 // matching the behavior of InsertSkill. Creates shallow copies of input maps to
 // avoid mutating caller data.
-func (e *infinityEngine) BulkInsertSkill(ctx context.Context, tableName string, docs []interface{}) (int, error) {
+func (e *Engine) BulkInsertSkill(ctx context.Context, tableName string, docs []interface{}) (int, error) {
 	db, release, err := e.client.checkoutDatabase(ctx, "document.go")
 	if err != nil {
 		return 0, fmt.Errorf("failed to get database: %w", err)
@@ -194,12 +194,12 @@ type BulkResponse struct {
 }
 
 // GetDocument gets a document
-func (e *infinityEngine) GetDocument(ctx context.Context, tableName, docID string) (interface{}, error) {
+func (e *Engine) GetDocument(ctx context.Context, tableName, docID string) (interface{}, error) {
 	return nil, fmt.Errorf("infinity get document not implemented: waiting for official Go SDK")
 }
 
 // DeleteDocument deletes a document by ID
-func (e *infinityEngine) DeleteDocument(ctx context.Context, tableName, docID string) error {
+func (e *Engine) DeleteDocument(ctx context.Context, tableName, docID string) error {
 	if tableName == "" {
 		return fmt.Errorf("table name cannot be empty")
 	}

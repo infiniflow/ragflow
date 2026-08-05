@@ -841,9 +841,14 @@ export default {
         'RAPTOR 常应用于复杂的多跳问答任务。如需打开，请跳转至知识库的文件页面，点击生成 > RAPTOR 开启。详见: https://ragflow.io/docs/dev/enable_raptor。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
-      promptText: `请总结以下段落。 小心数字，不要编造。 段落如下：
-      {cluster_content}
-以上就是你需要总结的内容。`,
+      promptText: `请在不编造事实、不改变数字的前提下总结以下段落。
+请用与原文相同的语言严格输出两部分：
+1. 第一行：仅输出简洁标题。
+2. 后续行：输出内容的简洁摘要。
+不要输出标签、Markdown 标题、项目符号或其他说明。
+
+段落：
+{cluster_content}`,
       maxToken: '最大token数',
       maxTokenMessage: '最大token数是必填项',
       threshold: '阈值',
@@ -865,6 +870,7 @@ export default {
       maxClusterTip: '最多可创建的聚类数。',
       entityTypes: '实体类型',
       compilationTemplate: '算子',
+      createTemplate: '创建模板',
       scopeFile: '文件',
       pageRank: '页面排名',
       pageRankTip: `知识库检索时，你可以为特定知识库设置较高的 PageRank 分数，该知识库中匹配文本块的混合相似度得分会自动叠加 PageRank 分数，从而提升排序权重。详见 https://ragflow.io/docs/dev/set_page_rank。`,
@@ -974,7 +980,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       language: '语言',
       emptyResponse: '空回复',
       emptyResponsePlaceholder: '在知识库中未找到您要寻找的答案！',
-      emptyResponseTip: `如果在知识库中没有检索到用户的问题，它将使用它作为答案。 如果您希望 LLM 在未检索到任何内容时提出自己的意见，请将此留空。`,
+      emptyResponseTip: `如果在知识库中没有检索到用户的问题，它将使用它作为答案。 如果您希望 LLM 在未检索到任何内容时提出自己的意见，请将此留空。仅在思考模式是简单模式时候生效。`,
       emptyResponseMessage: `当知识库中未检索到任何相关信息时，将触发空响应。由于未选择任何知识库，因此请清除“空响应”。`,
       setAnOpener: '设置开场白',
       setAnOpenerInitial: `你好！ 我是你的助理，有什么可以帮到你的吗？`,
@@ -1007,6 +1013,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       “系统提示词”中的所有变量都必须用大括号{}括起来。详见 https://ragflow.io/docs/dev/set_chat_variables。`,
       add: '新增',
       key: '关键字',
+      variableKeyMessage: '请输入变量 key',
       optional: '可选的',
       operation: '操作',
       model: '模型',
@@ -1042,7 +1049,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       maxTokensTip: `模型的最大上下文大小；无效或不正确的值会导致错误。默认值为 512。`,
       maxTokensInvalidMessage: '请输入有效的最大令牌数。',
       maxTokensMinMessage: '最大令牌数不能小于 0。',
-      thinking: '思考',
+      thinking: '思考中...',
+      thought: '思考完成',
       thinkingDefault: '系统默认',
       thinkingEnabled: '开启',
       thinkingDisabled: '关闭',
@@ -1123,6 +1131,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       tavilyApiKeyTip:
         '如果 API 密钥设置正确，它将利用 Tavily 进行网络搜索作为知识库的补充。',
       tavilyApiKeyMessage: '请输入你的 Tavily API Key',
+      webSearchProvider: '网络搜索服务',
+      webSearchProviderTip: '选择启用联网搜索时使用的搜索服务。',
+      webSearchProviderPlaceholder: '请选择网络搜索服务',
+      queritApiKeyTip:
+        '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
+      queritApiKeyMessage: '请输入你的 Querit API Key',
       tavilyApiKeyHelp: '如何获取？',
       crossLanguage: '跨语言搜索',
       crossLanguagePlaceholder: '请选择',
@@ -1581,14 +1595,26 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       instruction: 'Instruction',
       globalRules: '全局规则',
       globalRulesPlaceholder: '请输入全局编译规则',
+      plan: 'Plan (LLM 分组合并 wiki 页面)',
       raptorTreeSettings: 'RAPTOR 树设置',
       summarizationPrompt: '摘要提示词',
       maxToken: '最大 token 数',
       maxTokenRequired: '请输入最大 token 数',
       threshold: '阈值',
+      clusteringThreshold: '聚类阈值',
+      clusteringThresholdTip:
+        '按相邻数据块相似度分布的百分位决定聚类边界。数值越高，产生的聚类边界越多。',
+      clusteringRatio: '聚类比例',
+      clusteringRatioTip:
+        '设置聚类数量相对于输入数据块数量的最大比例。数值越低，聚类数量越少。',
       rechunkByTreeLeaves: '按树叶重新分块',
       rechunkByTreeLeavesTip:
         '将每个叶簇的源数据块合并为单个替换数据块。原始数据块保留但标记为不可检索。每个分组最多只能有一个树模板启用此功能。',
+      rechunkInput: '重新切分 Parser 输出',
+      rechunkInputTip: '根据知识编译任务，由 LLM 决定 chunk 边界。',
+      rechunkRules: 'Rechunk 规则',
+      rechunkRulesPlaceholder:
+        '描述此知识编译任务下，LLM 应如何合并和划分源 chunk。',
       jsonPreview: 'JSON 预览',
       processFlow: '流程视图',
       processFlowComingSoon: '流程视图预览即将到来',
@@ -1927,6 +1953,17 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
         formulaFormat: '公式格式',
         tableFormat: '表格格式',
         csFormat: '化学结构式格式',
+        formatOptions: {
+          url: 'URL',
+          base64: 'Base64',
+          none: 'None',
+          latex: 'LaTeX',
+          mathml: 'MathML',
+          ascii: 'ASCII',
+          html: 'HTML',
+          markdown: 'Markdown',
+          image: 'Image',
+        },
         sectionFeatureConfig: '特色功能配置',
         enableInlineImage: '返回文中图',
         enableTableImage: '返回表中图',
@@ -2017,6 +2054,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       modified: '更新成功',
       created: '创建成功',
       deleted: '删除成功',
+      noLangfuseConfigToDelete: '没有可删除的 Langfuse 配置',
       renamed: '重命名成功',
       operated: '操作成功',
       updated: '更新成功',
@@ -2901,7 +2939,6 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       keywords: '关键词',
       questions: '问题',
       metadata: '元数据',
-      toc: 'PageIndex',
       fieldName: '结果目的地',
       prompts: {
         system: {
@@ -3117,6 +3154,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       bulgarian: '保加利亚语',
       arabic: '阿拉伯语',
       turkish: '土耳其语',
+      dutch: '荷兰语',
     },
     pagination: {
       total: '总共 {{total}} 条',

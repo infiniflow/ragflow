@@ -26,11 +26,10 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/clickhouse"
+	"ragflow/internal/utility"
 	"sort"
 	"strings"
 	"time"
-
-	"github.com/mitchellh/mapstructure"
 )
 
 type BaseModel struct {
@@ -38,6 +37,11 @@ type BaseModel struct {
 	URLSuffix        URLSuffix
 	httpClient       *http.Client
 	AllowEmptyAPIKey bool
+	// authHeader, when non-nil, supplies the (name, value) pair used for
+	// authentication instead of the default "Authorization: Bearer <key>".
+	// Drivers with non-standard auth (e.g. Xiaomi's api-key header, Xunfei's
+	// spark_api_password bundle) set it in their constructor.
+	authHeader func(*APIConfig) (string, string)
 }
 
 // chatResponseParts is the provider-normalized result of a non-streaming chat
@@ -75,9 +79,22 @@ func parseChatCompletionResponse(body []byte, chatConfig *ChatConfig, modelUsage
 
 // recordResponseUsage records the request ID and token usage returned by a
 // completed model response.
+//
+// When modelUsage is nil (caller did not pass a usage context) but
+// usage is non-nil, we still surface a single CollectModelUsage call
+// against a synthetic empty ModelUsage so the analytics path can
+// observe the provider's reported token counts. Without this, drivers
+// whose upstream service layer passes nil — common in the current
+// model_chat / generator code paths — would never reach the stats
+// driver and the token usage would be invisible. The synthetic record
+// carries zero UserID/TenantID; production callers should pass a
+// populated *common.ModelUsage to attribute usage to a tenant.
 func recordResponseUsage(modelUsage *common.ModelUsage, requestID string, usage *TokenUsage, modelType string) {
-	if modelUsage == nil {
+	if usage == nil {
 		return
+	}
+	if modelUsage == nil {
+		modelUsage = &common.ModelUsage{}
 	}
 	if modelUsage.Type == "" {
 		modelUsage.Type = modelType
@@ -100,27 +117,25 @@ func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
 		modelUsage.OutputTokens = usage.CompletionTokens
 		modelUsage.TotalTokens = usage.TotalTokens
 	}
-	modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
+	// StartAt may be zero when the synthetic ModelUsage came from
+	// recordResponseUsage's nil-caller path. In that case we cannot
+	// compute a meaningful response time; leave it at zero instead
+	// of reporting a 50-year epoch delta.
+	if !modelUsage.StartAt.IsZero() {
+		modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
+	}
 	return clickhouse.GetDriver().CollectModelUsage(modelUsage)
-}
-
-// decodeOpenAICompatibleStreamUsage extracts aggregate token usage from one
-// OpenAI-compatible streaming event. A missing usage field is not an error.
-func decodeOpenAICompatibleStreamUsage(event map[string]any) (*TokenUsage, bool, error) {
-	rawUsage, ok := event["usage"].(map[string]any)
-	if !ok {
-		return nil, false, nil
-	}
-	usage := &TokenUsage{}
-	if err := mapstructure.Decode(rawUsage, usage); err != nil {
-		return nil, false, err
-	}
-	return usage, true, nil
 }
 
 // applyStreamUsage exposes streamed token usage to the caller and records it
 // for model-usage analytics when a usage event is received. Analytics failures
 // are logged but do not interrupt the stream.
+//
+// Like recordResponseUsage, a nil modelUsage (the common case from the
+// model_chat / generator service layer) still surfaces a synthetic
+// CollectModelUsage call so streaming usage is not silently dropped. The
+// synthetic record carries zero UserID/TenantID; production callers should
+// pass a populated *common.ModelUsage to attribute usage to a tenant.
 func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usage *TokenUsage) {
 	if usage == nil {
 		return
@@ -129,7 +144,10 @@ func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usa
 		chatConfig.UsageResult = usage
 	}
 	if modelUsage == nil {
-		return
+		modelUsage = &common.ModelUsage{}
+	}
+	if modelUsage.Type == "" {
+		modelUsage.Type = "chat"
 	}
 	if err := collectModelUsage(modelUsage, usage); err != nil {
 		common.Error("Failed to collect model usage", err)
@@ -146,6 +164,130 @@ func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
 	}
 
 	return nil
+}
+
+// applyAuth sets the authentication header on req. Drivers with a custom
+// authHeader hook (e.g. Xiaomi's api-key header, Xunfei's spark_api_password
+// bundle) use it; the default is "Authorization: Bearer <key>".
+func (b *BaseModel) applyAuth(req *http.Request, apiConfig *APIConfig) {
+	if b.authHeader != nil {
+		name, value := b.authHeader(apiConfig)
+		req.Header.Set(name, value)
+		return
+	}
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
+}
+
+func (b *BaseModel) newJSONPostRequest(ctx context.Context, url string, apiConfig *APIConfig, reqBody map[string]any) (*http.Request, error) {
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	b.applyAuth(req, apiConfig)
+
+	return req, nil
+}
+
+// doRequest sends a JSON POST request and returns the response body.
+func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APIConfig, reqBody map[string]any, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := b.newJSONPostRequest(ctx, url, apiConfig, reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return body, nil
+}
+
+// doGetRequest sends a GET request and returns the response body.
+func (b *BaseModel) doGetRequest(ctx context.Context, url string, apiConfig *APIConfig, timeout time.Duration) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	b.applyAuth(req, apiConfig)
+
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return body, nil
+}
+
+// mustMarshal marshals v to JSON, panicking on error.
+func mustMarshal(v any) []byte {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(fmt.Sprintf("failed to marshal: %v", err))
+	}
+	return b
+}
+
+// doStreamRequest sends a JSON POST request and calls handler with the response body.
+func (b *BaseModel) doStreamRequest(ctx context.Context, url string, apiConfig *APIConfig, reqBody map[string]any, timeout time.Duration, handler func(io.ReadCloser) error) error {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	req, err := b.newJSONPostRequest(ctx, url, apiConfig, reqBody)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	return handler(resp.Body)
 }
 
 // BearerAuth returns the Bearer token for Authorization header,
@@ -263,14 +405,12 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 		if pm != nil {
 			modelEntity = pm.GetModelByNameOrAlias(modelName)
 		}
-		if model.OwnedBy != "" {
-			modelName = modelName + "@" + model.OwnedBy
-		}
+
 		modelResponse.Name = modelName
 		if modelEntity != nil {
 			modelResponse.MaxDimension = modelEntity.MaxDimension
 			modelResponse.Dimensions = modelEntity.Dimensions
-			modelResponse.MaxTokens = modelEntity.MaxTokens
+			modelResponse.MaxOutput = modelEntity.MaxOutput
 			modelResponse.ModelTypes = modelEntity.ModelTypes
 			modelResponse.Thinking = modelEntity.Thinking
 			modelResponse.Dimensions = modelEntity.Dimensions
@@ -282,7 +422,17 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 }
 
 // NewDriverHTTPClient returns an *http.Client with the standard connection-pool
-func NewDriverHTTPClient() *http.Client {
+// settings and an SSRF guard wired into its Transport.
+//
+// allowPrivate selects the guard strictness:
+//   - false (cloud-hosted drivers): every request is validated with
+//     utility.AssertURLSafe — scheme + host must be present and every resolved
+//     IP must be globally routable (private/loopback/link-local/metadata are
+//     rejected). This is the default and closes the go/request-forgery sink.
+//   - true (local-inference drivers): requests are validated with
+//     utility.AssertURLSchemeSafe — only the scheme and a non-empty host are
+//     enforced, so self-hosted backends on private networks or loopback work.
+func NewDriverHTTPClient(allowPrivate bool) *http.Client {
 	var t *http.Transport
 	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
 		t = dt.Clone()
@@ -295,7 +445,41 @@ func NewDriverHTTPClient() *http.Client {
 	t.DisableCompression = false
 	t.ResponseHeaderTimeout = 2 * 60 * time.Second
 	t.TLSHandshakeTimeout = 30 * time.Second
-	return &http.Client{Transport: t}
+
+	var rt http.RoundTripper = t
+	if allowPrivate {
+		rt = &schemeSafeTransport{base: rt}
+	} else {
+		rt = &strictSSRFTransport{base: rt}
+	}
+	return &http.Client{Transport: rt}
+}
+
+// schemeSafeTransport wraps an http.RoundTripper so every outgoing request is
+// validated by the lenient SSRF guard (http/https scheme + non-empty host).
+// Private and loopback hosts are permitted. Used only by local-inference
+// drivers that may target a user's own network.
+type schemeSafeTransport struct{ base http.RoundTripper }
+
+func (t *schemeSafeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if err := utility.AssertURLSchemeSafe(req.URL.String()); err != nil {
+		return nil, err
+	}
+	return t.base.RoundTrip(req)
+}
+
+// strictSSRFTransport wraps an http.RoundTripper so every outgoing request is
+// validated by the strict SSRF guard (scheme + host + globally routable IP).
+// This is the default for cloud-hosted model drivers and closes the
+// go/request-forgery data flow: the user-controllable BaseURL cannot be made to
+// point at private hosts, loopback, link-local, or cloud metadata endpoints.
+type strictSSRFTransport struct{ base http.RoundTripper }
+
+func (t *strictSSRFTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if _, _, err := utility.AssertURLSafe(req.URL.String()); err != nil {
+		return nil, err
+	}
+	return t.base.RoundTrip(req)
 }
 
 // PostJSONRequest marshals body to JSON, creates a POST request to url

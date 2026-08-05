@@ -56,6 +56,7 @@ func TestVolcEngineConfigDeclaresModelsSuffix(t *testing.T) {
 }
 
 func TestVolcEngineListModelsHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVolcEngineServer(t, func(t *testing.T, r *http.Request, w http.ResponseWriter) {
 		if r.Method != http.MethodGet {
@@ -83,12 +84,13 @@ func TestVolcEngineListModelsHappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
-	if joinModelNames(models, ",") != "doubao-seed-2-0-pro-260215@volcengine,doubao-embedding-vision-251215" {
+	if joinModelNames(models, ",") != "doubao-seed-2-0-pro-260215,doubao-embedding-vision-251215" {
 		t.Errorf("models=%v", models)
 	}
 }
 
 func TestVolcEngineListModelsRejectsProviderError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVolcEngineServer(t, func(t *testing.T, r *http.Request, w http.ResponseWriter) {
 		http.Error(w, "bad key", http.StatusUnauthorized)
@@ -103,6 +105,7 @@ func TestVolcEngineListModelsRejectsProviderError(t *testing.T) {
 }
 
 func TestVolcEngineListModelsRequiresModelsSuffix(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	apiKey := "test-key"
 	model := NewVolcEngine(map[string]string{"default": "http://unused"}, URLSuffix{})
@@ -114,8 +117,14 @@ func TestVolcEngineListModelsRequiresModelsSuffix(t *testing.T) {
 }
 
 func TestVolcEngineChatStreamSupportsMaxEffortAndUsage(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVolcEngineServer(t, func(t *testing.T, r *http.Request, w http.ResponseWriter) {
+		// The streaming endpoint must honor URLSuffix.Chat, not a hardcoded
+		// "chat/completions" path.
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("path=%s, want /v1/chat/completions", r.URL.Path)
+		}
 		var body map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatalf("decode request: %v", err)
@@ -138,7 +147,11 @@ func TestVolcEngineChatStreamSupportsMaxEffortAndUsage(t *testing.T) {
 	thinking := true
 	effort := "max"
 	config := &ChatConfig{Thinking: &thinking, Effort: &effort}
-	if err := newVolcEngineForTest(srv.URL).ChatStreamlyWithSender(
+	driver := NewVolcEngine(
+		map[string]string{"default": srv.URL},
+		URLSuffix{Chat: "v1/chat/completions", Models: "models"},
+	)
+	if err := driver.ChatStreamlyWithSender(
 		ctx,
 		"doubao-seed-2-0-pro-260215",
 		[]Message{{Role: "user", Content: "hello"}},
@@ -155,6 +168,7 @@ func TestVolcEngineChatStreamSupportsMaxEffortAndUsage(t *testing.T) {
 }
 
 func TestVolcEngineChatStreamRejectsTruncatedResponse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVolcEngineServer(t, func(t *testing.T, _ *http.Request, w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "text/event-stream")

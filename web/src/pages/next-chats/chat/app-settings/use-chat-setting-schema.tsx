@@ -9,6 +9,7 @@ import {
   vectorSimilarityWeightSchema,
 } from '@/components/similarity-slider';
 import { topnSchema } from '@/components/top-n-item';
+import { WebSearchProvider } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
 import { z } from 'zod';
 
@@ -23,19 +24,21 @@ export function useChatSettingSchema() {
     prologue: z.string().optional(),
     system: z.string().min(1, { message: t('systemMessage') }),
     refine_multiturn: z.boolean(),
-    use_kg: z.boolean(),
     parameters: z
       .array(
         z.object({
-          key: z.string(),
+          key: z.string().min(1, { message: t('variableKeyMessage') }),
           optional: z.boolean(),
         }),
       )
       .optional(),
     tavily_api_key: z.string().optional(),
+    querit_api_key: z.string().optional(),
+    web_search_provider: z
+      .enum([WebSearchProvider.Tavily, WebSearchProvider.Querit])
+      .optional(),
     reasoning: z.boolean().optional(),
     cross_languages: z.array(z.string()).optional(),
-    toc_enhance: z.boolean().optional(),
     reference_metadata: z
       .object({
         include: z.boolean().optional(),

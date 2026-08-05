@@ -35,9 +35,9 @@ type Variables struct {
 
 // VariableStore interface for persistent storage (e.g., Redis)
 type VariableStore interface {
-	Get(key string) (string, error)
-	Set(key string, value string, exp time.Duration) bool
-	SetNX(key string, value string, exp time.Duration) bool
+	Get(ctx context.Context, key string) (string, error)
+	Set(ctx context.Context, key string, value string, exp time.Duration) bool
+	SetNX(ctx context.Context, key string, value string, exp time.Duration) bool
 }
 
 var (
@@ -90,9 +90,9 @@ func InitVariables(store VariableStore) error {
 //}
 
 // GetSecretKey returns the current secret key
-func GetSecretKey(store VariableStore) (string, error) {
-	if globalConfig.General.SecretKey != nil {
-		return *globalConfig.General.SecretKey, nil
+func GetSecretKey(ctx context.Context, store VariableStore) (string, error) {
+	if globalConfig.GetSecretKey() != "" {
+		return globalConfig.GetSecretKey(), nil
 	}
 
 	generatedKey, err := utility.GenerateSecretKey()
@@ -100,7 +100,7 @@ func GetSecretKey(store VariableStore) (string, error) {
 		return "", fmt.Errorf("failed to generate secret key: %w", err)
 	}
 
-	secretKey, err := GetOrCreateKey(store, SecretKeyRedisKey, generatedKey)
+	secretKey, err := GetOrCreateKey(ctx, store, SecretKeyRedisKey, generatedKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to get secret key: %w", err)
 	}
@@ -121,7 +121,7 @@ func GetSecretKey(store VariableStore) (string, error) {
 // - If key exists in store, returns the stored value
 // - If key doesn't exist, calls createFn to generate value, stores it, and returns it
 // - Uses SetNX to ensure atomic creation (only one caller succeeds when key doesn't exist)
-func GetOrCreateKey(store VariableStore, key string, newValue string) (string, error) {
+func GetOrCreateKey(ctx context.Context, store VariableStore, key string, newValue string) (string, error) {
 	if store == nil {
 		err := fmt.Errorf("store is nil")
 		common.Warn("VariableStore is nil, cannot get or create key", zap.String("key", key))
@@ -129,7 +129,7 @@ func GetOrCreateKey(store VariableStore, key string, newValue string) (string, e
 	}
 
 	// Try to get existing value
-	value, err := store.Get(key)
+	value, err := store.Get(ctx, key)
 	if err != nil {
 		common.Warn("Failed to get key from store", zap.String("key", key), zap.Error(err))
 		return "", err
@@ -145,13 +145,13 @@ func GetOrCreateKey(store VariableStore, key string, newValue string) (string, e
 	common.Info("Generating new value for key", zap.String("key", key))
 
 	// Try to set with NX (only if not exists) - ensures atomicity
-	if store.SetNX(key, newValue, SecretKeyTTL) {
+	if store.SetNX(ctx, key, newValue, SecretKeyTTL) {
 		common.Info("New value stored successfully", zap.String("key", key))
 		return newValue, nil
 	}
 
 	// Another process might have set it, try to get again
-	value, err = store.Get(key)
+	value, err = store.Get(ctx, key)
 	if err != nil {
 		common.Warn("Failed to get key after SetNX", zap.String("key", key), zap.Error(err))
 		return newValue, nil // Return our generated value as fallback
@@ -168,7 +168,7 @@ func GetOrCreateKey(store VariableStore, key string, newValue string) (string, e
 
 // RefreshVariables refreshes all variables from storage
 // Call this when you want to reload variables from persistent storage
-func RefreshVariables(store VariableStore) error {
+func RefreshVariables(ctx context.Context, store VariableStore) error {
 	if store == nil {
 		return fmt.Errorf("store is nil")
 	}
@@ -181,7 +181,7 @@ func RefreshVariables(store VariableStore) error {
 	}
 
 	// Refresh SecretKey
-	secretKey, err := store.Get(SecretKeyRedisKey)
+	secretKey, err := store.Get(ctx, SecretKeyRedisKey)
 	if err != nil {
 		common.Warn("Failed to refresh secret key from store", zap.Error(err))
 		return err
@@ -215,11 +215,11 @@ func (w *VariableWatcher) Start(interval time.Duration) {
 	w.wg.Go(func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
-
+		ctx := context.Background()
 		for {
 			select {
 			case <-ticker.C:
-				if err := RefreshVariables(w.store); err != nil {
+				if err := RefreshVariables(ctx, w.store); err != nil {
 					common.Debug("Failed to refresh variables", zap.Error(err))
 				}
 			case <-w.stopChan:

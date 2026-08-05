@@ -1,6 +1,7 @@
 import { combineRefs } from '@/lib/utils';
 import { transformFile2Base64 } from '@/utils/file-util';
 import { LucidePencil, LucidePlus, LucideX } from 'lucide-react';
+import message from './ui/message';
 import {
   ChangeEventHandler,
   forwardRef,
@@ -13,6 +14,9 @@ import { useTranslation } from 'react-i18next';
 import { Avatar, AvatarFallback, AvatarImage } from './ui/avatar';
 import { Button } from './ui/button';
 import { Modal } from './ui/modal/modal';
+
+// Maximum size of the image file selected for an avatar, in bytes (4 MB).
+const MaxAvatarFileSize = 4 * 1024 * 1024;
 
 type AvatarUploadProps = {
   value?: string;
@@ -55,13 +59,18 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
       async (ev) => {
         const file = ev.target?.files?.[0];
         if (/\.(jpg|jpeg|png|webp|bmp)$/i.test(file?.name ?? '')) {
+          if (file!.size > MaxAvatarFileSize) {
+            message.error(t('knowledgeConfiguration.photoTip'));
+            ev.target.value = '';
+            return;
+          }
           const str = await transformFile2Base64(file!, 1000);
           setImageToCrop(str);
           setIsCropModalOpen(true);
         }
         ev.target.value = '';
       },
-      [],
+      [t],
     );
 
     const handleRemove = useCallback(() => {

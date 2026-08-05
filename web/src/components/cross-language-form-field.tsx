@@ -6,12 +6,12 @@ import {
 } from '@/components/ui/form';
 import { MultiSelect } from '@/components/ui/multi-select';
 import { cn } from '@/lib/utils';
-import { t } from 'i18next';
 import { toLower } from 'lodash';
+import { useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
-const Languages = [
+export const Languages = [
   'English',
   'Chinese',
   'Spanish',
@@ -25,10 +25,18 @@ const Languages = [
   'Dutch',
 ];
 
-export const crossLanguageOptions = Languages.map((x) => ({
-  label: t('language.' + toLower(x)),
-  value: x,
-}));
+export function useCrossLanguageOptions() {
+  const { t } = useTranslation();
+
+  return useMemo(
+    () =>
+      Languages.map((x) => ({
+        label: t('language.' + toLower(x)),
+        value: x,
+      })),
+    [t],
+  );
+}
 
 type CrossLanguageItemProps = {
   name?: string;
@@ -43,6 +51,7 @@ export const CrossLanguageFormField = ({
 }: CrossLanguageItemProps) => {
   const { t } = useTranslation();
   const form = useFormContext();
+  const crossLanguageOptions = useCrossLanguageOptions();
 
   return (
     <FormField

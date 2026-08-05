@@ -17,6 +17,7 @@
 package models
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/hex"
@@ -39,7 +40,7 @@ func NewMinimaxModel(baseURL map[string]string, urlSuffix URLSuffix) *MinimaxMod
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -50,53 +51,6 @@ func (m *MinimaxModel) NewInstance(baseURL map[string]string) ModelDriver {
 
 func (m *MinimaxModel) Name() string {
 	return "minimax"
-}
-
-type MinimaxChatResponse struct {
-	ID      string `json:"id"`
-	Object  string `json:"object"`
-	Created int64  `json:"created"`
-	Model   string `json:"model"`
-	Choices []struct {
-		Index   int `json:"index"`
-		Message struct {
-			Role             string           `json:"role"`
-			Content          *string          `json:"content"`
-			ToolCalls        []map[string]any `json:"tool_calls"`
-			ReasoningContent *string          `json:"reasoning_content"`
-		} `json:"message"`
-		FinishReason string `json:"finish_reason"`
-	} `json:"choices"`
-	Usage struct {
-		PromptTokens        int `json:"prompt_tokens"`
-		PromptTokensDetails struct {
-			CachedTokens int `json:"cached_tokens"`
-		} `json:"prompt_tokens_details"`
-		CompletionTokens int `json:"completion_tokens"`
-		TotalTokens      int `json:"total_tokens"`
-		TotalCharacters  int `json:"total_characters"`
-	} `json:"usage"`
-	BaseResp struct {
-		StatusCode int    `json:"status_code"`
-		StatusMsg  string `json:"status_msg"`
-	} `json:"base_resp"`
-	Error struct {
-		Message string `json:"message"`
-		Type    string `json:"type"`
-	} `json:"error"`
-}
-
-func extractMinimaxChatResponseError(result *MinimaxChatResponse) string {
-	if result == nil {
-		return ""
-	}
-	if result.BaseResp.StatusCode != 0 {
-		if result.BaseResp.StatusMsg != "" {
-			return result.BaseResp.StatusMsg
-		}
-		return fmt.Sprintf("status_code %d", result.BaseResp.StatusCode)
-	}
-	return result.Error.Message
 }
 
 func validateMinimaxModelName(modelName string) (string, error) {
@@ -155,7 +109,6 @@ func (m *MinimaxModel) ChatWithMessages(ctx context.Context, modelName string, m
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	modelName, err := validateMinimaxModelName(modelName)
 	if err != nil {
 		return nil, err
@@ -189,87 +142,23 @@ func (m *MinimaxModel) ChatWithMessages(ctx context.Context, modelName string, m
 
 	}
 
-	jsonData, err := json.Marshal(reqBody)
+	body, err := m.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
+	// MiniMax can embed errors in a base_resp block with HTTP 200.
+	// Check for these before using the shared handler so the caller
+	// sees the real error message instead of "no choices in response".
+	var result map[string]any
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if errMsg := extractMinimaxAPIError(result); errMsg != "" {
+		return nil, fmt.Errorf("minimax API error: %s", errMsg)
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-
-	resp, err := m.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("minimax API error: status %d: %s", resp.StatusCode, extractMinimaxErrorBody(body))
-	}
-
-	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, func(body []byte, chatConfig *ChatConfig) (chatResponseParts, error) {
-		var result MinimaxChatResponse
-		if err := json.Unmarshal(body, &result); err != nil {
-			return chatResponseParts{}, fmt.Errorf("failed to unmarshal response: %w", err)
-		}
-
-		if errMsg := extractMinimaxChatResponseError(&result); errMsg != "" {
-			return chatResponseParts{}, fmt.Errorf("minimax API error: %s", errMsg)
-		}
-		if len(result.Choices) == 0 {
-			return chatResponseParts{}, fmt.Errorf("no choices in response")
-		}
-
-		choice := &result.Choices[0]
-		content := ""
-		if choice.Message.Content != nil {
-			content = *choice.Message.Content
-		}
-
-		reasonContent := ""
-		if chatConfig != nil && chatConfig.Thinking != nil && *chatConfig.Thinking {
-			if choice.Message.ReasoningContent != nil {
-				reasonContent = *choice.Message.ReasoningContent
-			}
-			if reasonContent != "" && reasonContent[0] == '\n' {
-				reasonContent = reasonContent[1:]
-			}
-		}
-
-		totalTokens := result.Usage.TotalTokens
-		if totalTokens == 0 {
-			totalTokens = result.Usage.PromptTokens + result.Usage.CompletionTokens
-		}
-		var usage *TokenUsage
-		if totalTokens > 0 {
-			usage = &TokenUsage{
-				PromptTokens:     result.Usage.PromptTokens,
-				CompletionTokens: result.Usage.CompletionTokens,
-				TotalTokens:      totalTokens,
-			}
-		}
-
-		return chatResponseParts{
-			RequestID:     result.ID,
-			Content:       &content,
-			ReasonContent: &reasonContent,
-			ToolCalls:     choice.Message.ToolCalls,
-			Usage:         usage,
-		}, nil
-	})
+	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender function (best performance, no channel)
@@ -277,7 +166,6 @@ func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
-	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	modelName, err := validateMinimaxModelName(modelName)
 	if err != nil {
 		return err
@@ -314,103 +202,59 @@ func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 
 	}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
+	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
+	return m.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		// Pipe the response through a base_resp checker. MiniMax can send
+		// error events (e.g. rate limits) without a choices array, and the
+		// shared handler skips those silently. We surface them so the retry
+		// predicates can match and the caller sees the real reason.
+		pr, pw := io.Pipe()
+		defer pr.Close()
+		streamErr := make(chan error, 1)
+		go func() {
+			defer pw.Close()
+			// resp.Body is owned by doStreamRequest — do NOT close it here.
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
+			var scanErr error
+			// Ensure streamErr always receives a result, on every exit
+			// path, so the final receive below can never block.
+			defer func() {
+				select {
+				case streamErr <- scanErr:
+				default:
+				}
+			}()
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-	req.Header.Set("Accept", "text/event-stream")
-
-	resp, err := m.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("minimax API error: status %d: %s", resp.StatusCode, extractMinimaxErrorBody(body))
-	}
-
-	// SSE parsing: read line by line
-	sawTerminal := false
-	accumulatedToolCalls := make(map[int]map[string]any)
-	done, err := ParseSSEStream[map[string]interface{}](resp.Body, func(event map[string]interface{}) error {
-		tokenUsage, found, usageErr := decodeOpenAICompatibleStreamUsage(event)
-		if usageErr != nil {
-			return usageErr
-		}
-		if found {
-			applyStreamUsage(modelConfig, modelUsage, tokenUsage)
-		}
-
-		choices, ok := event["choices"].([]interface{})
-		if !ok || len(choices) == 0 {
-			// MiniMax can send an error event (rate limit, etc.)
-			// without a choices array. Surface it so the retry
-			// predicates can match and the caller sees the real
-			// reason instead of a generic "stream ended" error.
-			if errMsg := extractMinimaxAPIError(event); errMsg != "" {
-				return fmt.Errorf("minimax API error: %s", errMsg)
+			scanner := bufio.NewScanner(body)
+			scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if strings.HasPrefix(line, "data:") {
+					data := strings.TrimSpace(line[5:])
+					if data != "" && data != "[DONE]" {
+						var event map[string]any
+						if json.Unmarshal([]byte(data), &event) == nil {
+							if errMsg := extractMinimaxAPIError(event); errMsg != "" {
+								pw.CloseWithError(fmt.Errorf("minimax API error: %s", errMsg))
+								return
+							}
+						}
+					}
+				}
+				if _, err := pw.Write([]byte(line + "\n")); err != nil {
+					scanErr = err
+					return
+				}
 			}
-			return nil
+			scanErr = scanner.Err()
+		}()
+
+		if err := HandleStreamingResponse(pr, modelUsage, modelConfig, OpenAIParserConfig, sender); err != nil {
+			return err
 		}
-
-		firstChoice, ok := choices[0].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		delta, ok := firstChoice["delta"].(map[string]interface{})
-		if !ok {
-			return nil
-		}
-
-		accumulateToolCallDeltas(delta, accumulatedToolCalls)
-
-		content, ok := delta["content"].(string)
-		if ok && content != "" {
-			if err := sender(&content, nil); err != nil {
-				return err
-			}
-		}
-
-		reasoningContent, ok := delta["reasoning_content"].(string)
-		if ok && reasoningContent != "" {
-			if err := sender(nil, &reasoningContent); err != nil {
-				return err
-			}
-		}
-
-		finishReason, ok := firstChoice["finish_reason"].(string)
-		if ok && finishReason != "" {
-			sawTerminal = true
-		}
-
-		return nil
+		return <-streamErr
 	})
-	if err != nil {
-		return fmt.Errorf("failed to scan response body: %w", err)
-	}
-	if !done && !sawTerminal {
-		return fmt.Errorf("minimax: stream ended before [DONE] or finish_reason")
-	}
-
-	setSortedToolCallsResult(modelConfig, accumulatedToolCalls)
-
-	// Send [DONE] marker for OpenAI compatibility
-	endOfStream := "[DONE]"
-	return sender(&endOfStream, nil)
 }
 
 // Embed embeds a list of texts into embeddings

@@ -41,7 +41,7 @@ func parsePDFWithOpenDataLoader(ctx context.Context, filename string, data []byt
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
-	resp, err := models.NewDriverHTTPClient().Do(req)
+	resp, err := models.NewDriverHTTPClient(false).Do(req)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("parser: OpenDataLoader submit: %w", err)}
 	}

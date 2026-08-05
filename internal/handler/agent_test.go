@@ -112,7 +112,8 @@ func TestListAgentVersionsHandler_Success(t *testing.T) {
 		},
 	})
 
-	h := NewAgentHandler(service.NewAgentService(), nil)
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
 	h.ListVersions(c)
 
 	if w.Code != http.StatusOK {
@@ -162,7 +163,8 @@ func TestListAgentVersionsHandler_NoPermission(t *testing.T) {
 	// Canvas owned by user-b
 	db.Create(&entity.UserCanvas{ID: "canvas-b", UserID: "user-b", Title: sptr("Not Yours")})
 
-	h := NewAgentHandler(service.NewAgentService(), nil)
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
 	h.ListVersions(c)
 
 	var resp map[string]interface{}
@@ -192,7 +194,8 @@ func TestListAgentVersionsHandler_CanvasNotFound(t *testing.T) {
 	c.Set("user_id", "user-1")
 	c.Params = gin.Params{{Key: "canvas_id", Value: "non-existent"}}
 
-	h := NewAgentHandler(service.NewAgentService(), nil)
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
 	h.ListVersions(c)
 
 	var resp map[string]interface{}
@@ -244,7 +247,8 @@ func TestGetAgentVersionHandler_Success(t *testing.T) {
 		},
 	})
 
-	h := NewAgentHandler(service.NewAgentService(), nil)
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
 	h.GetVersion(c)
 
 	if w.Code != http.StatusOK {
@@ -291,7 +295,8 @@ func TestGetAgentVersionHandler_VersionNotFound(t *testing.T) {
 		Title:  sptr("Test Agent"),
 	})
 
-	h := NewAgentHandler(service.NewAgentService(), nil)
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
 	h.GetVersion(c)
 
 	var resp map[string]interface{}
@@ -658,7 +663,8 @@ func TestAgentChatCompletions_RequiresAgentID(t *testing.T) {
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	h := NewAgentHandler(service.NewAgentService(), nil)
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
 	h.AgentChatCompletions(c)
 
 	if w.Code != http.StatusOK {
@@ -686,7 +692,8 @@ func TestAgentChatCompletions_OpenAICompat_EmptyMessages(t *testing.T) {
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	h := NewAgentHandler(service.NewAgentService(), nil)
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
 	h.AgentChatCompletions(c)
 
 	var resp map[string]interface{}
@@ -998,7 +1005,8 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsChoices(t *testing.T)
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	h := NewAgentHandler(service.NewAgentService(), nil)
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
 	h.AgentChatCompletions(c)
 
 	var resp map[string]interface{}
@@ -1035,7 +1043,8 @@ func TestRerunAgent_RequiresAllFields(t *testing.T) {
 			c.Set("user", &entity.User{ID: "u1"})
 			c.Set("user_id", "u1")
 
-			h := NewAgentHandler(service.NewAgentService(), nil)
+			ctx := t.Context()
+			h := NewAgentHandler(ctx, service.NewAgentService(), nil)
 			h.RerunAgent(c)
 
 			var resp map[string]interface{}
@@ -1068,7 +1077,8 @@ func TestRerunAgent_AcceptsCompleteRequest(t *testing.T) {
 	c.Set("user_id", "u1")
 
 	stub := &stubDocService{accessible: true}
-	h := NewAgentHandler(service.NewAgentService(), nil).
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithDocumentService(stub)
 	h.RerunAgent(c)
 
@@ -1089,7 +1099,8 @@ func TestPromptsReturnsHardcodedFields(t *testing.T) {
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	h := NewAgentHandler(service.NewAgentService(), nil)
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
 	h.Prompts(c)
 
 	var resp map[string]interface{}
@@ -1126,7 +1137,8 @@ func TestGetAgentWebhookLogsReturnsEmptyPoll(t *testing.T) {
 	c.Set("user_id", "u1")
 	c.Params = gin.Params{{Key: "canvas_id", Value: "c1"}}
 
-	h := NewAgentHandler(service.NewAgentService(), nil)
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
 	h.GetAgentWebhookLogs(c)
 
 	var resp map[string]interface{}
@@ -1169,7 +1181,8 @@ func TestRerunAgent_RejectsInaccessibleDocument(t *testing.T) {
 	// round 5), so the deny-all stub injects cleanly without standing
 	// up the real DocumentService (DB, storage, ...).
 	stub := &stubDocService{accessible: false}
-	h := NewAgentHandler(service.NewAgentService(), nil).
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
 		WithDocumentService(stub)
 	h.RerunAgent(c)
 
@@ -1201,7 +1214,8 @@ func TestRerunAgent_NoDocumentServiceFailsClosed(t *testing.T) {
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 
-	h := NewAgentHandler(service.NewAgentService(), nil)
+	ctx := t.Context()
+	h := NewAgentHandler(ctx, service.NewAgentService(), nil)
 	// Note: no WithDocumentService call → documentService is nil.
 	// Production wiring (cmd/server_main.go) always calls
 	// WithDocumentService; a nil here means the handler was
@@ -1228,9 +1242,11 @@ func (s *stubDocService) Accessible(_, _ string) bool {
 }
 
 // TestAgentChatCompletions_FilesDeserialized verifies that when the
-// JSON request body contains a `files` field, the
-// agentChatCompletionsRequest struct deserializes it correctly.
-// Mirrors Python's req.get("files", []) at agent_api.py:1313.
+// JSON request body contains the web-contract 2D `files` field
+// (`[[{...}]]`), the agentChatCompletionsRequest struct deserializes it
+// and the inner file list reaches RunAgent. Mirrors Python's
+// agent_api.py:1611 `queue_dataflow(..., files[0], 0)`, where the first
+// inner list is the set of files for the run.
 func TestAgentChatCompletions_FilesDeserialized(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
@@ -1238,9 +1254,9 @@ func TestAgentChatCompletions_FilesDeserialized(t *testing.T) {
 	body := `{
 		"agent_id": "a1",
 		"query": "hi",
-		"files": [
+		"files": [[
 			{"id": "file-1", "name": "resume.txt", "mime_type": "text/plain", "created_by": "u1"}
-		]
+		]]
 	}`
 	c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions",
 		strings.NewReader(body))

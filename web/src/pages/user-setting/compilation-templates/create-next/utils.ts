@@ -13,8 +13,12 @@ import { ICompilationTemplateConfigRequest } from '@/interfaces/request/compilat
 import { CompilationTemplateKind } from '@/constants/compilation';
 
 import { FormSchemaType, TemplateSchemaType } from './schema';
-
-export const DefaultFieldKeys = ['type', 'description', 'rule'];
+import {
+  DefaultFieldKeys,
+  DefaultTemplateValues,
+  FieldKeyOrders,
+  SectionPriority,
+} from './constant';
 
 export const splitExampleToBlueprintFields = (
   example: string,
@@ -30,12 +34,6 @@ export const splitExampleToBlueprintFields = (
   };
 };
 
-export const FieldKeyOrders = [
-  DefaultFieldKeys,
-  ['statement', 'subject'],
-  ['definition_excerpt', 'term'],
-];
-
 export const getFieldKeyOrder = (keys: string[]): string[] => {
   const sortedKeys = [...keys].sort();
   return (
@@ -47,30 +45,6 @@ export const getFieldKeyOrder = (keys: string[]): string[] => {
 export const generateTemplateName = () =>
   humanId({ separator: ' ', capitalize: true });
 
-export const DefaultTemplateValues: TemplateSchemaType = {
-  id: undefined,
-  name: '',
-  description: '',
-  llm_id: '',
-  kind: '',
-  config: {
-    kind: '',
-    llm_id: '',
-    global_rules: '',
-    example: '',
-    instruction: '',
-    page_example: '',
-    use_blueprint: false,
-  },
-};
-
-export const DefaultValues: FormSchemaType = {
-  name: '',
-  description: '',
-  avatar: '',
-  templates: [DefaultTemplateValues],
-};
-
 export const isConfigMetaKey = (key: string) =>
   [
     'kind',
@@ -81,6 +55,9 @@ export const isConfigMetaKey = (key: string) =>
     'page_example',
     'synthesis',
     'use_blueprint',
+    'plan',
+    'rechunk',
+    'rechunk_rules',
   ].includes(key);
 
 export const createEmptyField = (keys: string[]) =>
@@ -132,6 +109,19 @@ export const buildConfigFromBuiltin = (
       : {}),
     use_blueprint:
       kind === CompilationTemplateKind.Artifacts && example.length > 0,
+    plan:
+      typeof builtinTemplate.config?.plan === 'boolean'
+        ? builtinTemplate.config.plan
+        : true,
+    ...(kind !== CompilationTemplateKind.Tree
+      ? {
+          rechunk: builtinTemplate.config?.rechunk === true,
+          rechunk_rules:
+            typeof builtinTemplate.config?.rechunk_rules === 'string'
+              ? builtinTemplate.config.rechunk_rules
+              : '',
+        }
+      : {}),
   };
 
   if (kind === CompilationTemplateKind.Artifacts && example.length > 0) {
@@ -149,7 +139,8 @@ export const buildConfigFromBuiltin = (
       raptor: {
         prompt: builtinRaptor.prompt ?? '',
         max_token: builtinRaptor.max_token ?? 512,
-        threshold: builtinRaptor.threshold ?? 0.1,
+        clustering_threshold: builtinRaptor.clustering_threshold ?? 0.3,
+        clustering_ratio: builtinRaptor.clustering_ratio ?? 0.5,
         rechunk: builtinRaptor.rechunk ?? false,
       },
     };
@@ -183,6 +174,16 @@ export const transformDetailToForm = (
       : {}),
     use_blueprint:
       detail.kind === CompilationTemplateKind.Artifacts && example.length > 0,
+    plan: typeof config.plan === 'boolean' ? config.plan : true,
+    ...(detail.kind !== CompilationTemplateKind.Tree
+      ? {
+          rechunk: config.rechunk === true,
+          rechunk_rules:
+            typeof config.rechunk_rules === 'string'
+              ? config.rechunk_rules
+              : '',
+        }
+      : {}),
   };
 
   if (detail.kind === CompilationTemplateKind.Artifacts && example.length > 0) {
@@ -205,7 +206,8 @@ export const transformDetailToForm = (
         raptor: {
           prompt: raptor.prompt ?? '',
           max_token: raptor.max_token ?? 512,
-          threshold: raptor.threshold ?? 0.1,
+          clustering_threshold: raptor.clustering_threshold ?? 0.3,
+          clustering_ratio: raptor.clustering_ratio ?? 0.5,
           rechunk: raptor.rechunk ?? false,
         },
       },
@@ -257,8 +259,13 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
       config[key] = value as ICompilationTemplateConfigRequest[string];
       return;
     }
+    if (key === 'plan') {
+      config[key] = value as ICompilationTemplateConfigRequest[string];
+      return;
+    }
     if (isConfigMetaKey(key)) {
-      if (typeof value === 'string') config[key] = value;
+      if (typeof value === 'string' || typeof value === 'boolean')
+        config[key] = value;
     } else {
       config[key] = value as ICompilationTemplateConfigRequest[string];
     }
@@ -294,25 +301,10 @@ export const transformFormToPayload = (values: FormSchemaType) => {
   };
 };
 
-export const SectionTitleKeyMap: Record<string, string> = {
-  entity: 'setting.entitySpecification',
-  relation: 'setting.relationSpecification',
-  concept: 'setting.conceptSpecification',
-  claim: 'setting.claimSpecification',
-};
-
-export const SectionPriority = ['entity', 'relation'];
-
 export const sortSectionNames = (names: string[]): string[] => {
   const priority = SectionPriority.filter((name) => names.includes(name));
   const rest = names.filter((name) => !SectionPriority.includes(name));
   return [...priority, ...rest];
-};
-
-export const FieldLabelKeyMap: Record<string, string> = {
-  type: 'setting.fieldType',
-  description: 'setting.fieldDescription',
-  rule: 'setting.fieldRule',
 };
 
 export const getTypeOptionsFromBuiltinSection = (

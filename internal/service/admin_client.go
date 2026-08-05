@@ -59,20 +59,21 @@ func NewAdminClient(logger *zap.Logger, serverType common.ServerType, serverName
 
 // InitHTTPClient initializes the HTTP client with admin server configuration
 func (h *AdminClient) InitHTTPClient() error {
-	adminConfig := server.GetAdminConfig()
-	if adminConfig == nil {
+	config := server.GetConfig()
+	adminConfig := config.GetAdminServerConfig()
+	if adminConfig.Host == "" || adminConfig.HTTPPort == 0 {
 		return fmt.Errorf("admin configuration not found")
 	}
 
 	h.client = utility.NewHTTPClientBuilder().
 		WithHost(adminConfig.Host).
-		WithPort(adminConfig.Port).
+		WithPort(adminConfig.HTTPPort).
 		WithTimeout(10 * time.Second).
 		Build()
 
 	h.logger.Info("Heartbeat HTTP client initialized",
 		zap.String("admin_host", adminConfig.Host),
-		zap.Int("admin_port", adminConfig.Port),
+		zap.Int("admin_port", adminConfig.HTTPPort),
 	)
 
 	return nil

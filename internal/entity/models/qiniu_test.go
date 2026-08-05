@@ -24,6 +24,7 @@ import (
 )
 
 func TestQiniuToolCalls(t *testing.T) {
+	withSSRFBypass(t)
 	newDriver := func(baseURL string) ModelDriver {
 		return NewQiniuModel(map[string]string{"default": baseURL}, URLSuffix{Chat: "chat/completions"})
 	}
@@ -36,6 +37,7 @@ func TestQiniuToolCalls(t *testing.T) {
 }
 
 func TestQiniuChatStreamRejectsTruncatedResponse(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -52,6 +54,7 @@ func TestQiniuChatStreamRejectsTruncatedResponse(t *testing.T) {
 }
 
 func TestQiniuCheckConnectionUsesListModels(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
@@ -75,6 +78,7 @@ func TestQiniuCheckConnectionUsesListModels(t *testing.T) {
 }
 
 func TestQiniuCheckConnectionPropagatesListModelsError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, `{"message":"invalid api key"}`, http.StatusUnauthorized)

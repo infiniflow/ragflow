@@ -14,13 +14,10 @@
 #  limitations under the License.
 #
 import asyncio
-from dataclasses import dataclass, field
 import logging
 import re
 
 import numpy as np
-
-from sklearn.mixture import GaussianMixture
 
 from api.db.services.task_service import has_canceled
 from common.connection_utils import timeout
@@ -34,132 +31,8 @@ from rag.graphrag.utils import (
     set_llm_cache,
 )
 from common.misc_utils import thread_pool_exec
-from rag.utils.raptor_utils import (
-    AHC_CLUSTERING_METHOD,
-    GMM_CLUSTERING_METHOD,
-    PSI_TREE_BUILDER,
-    RAPTOR_TREE_BUILDER,
-    SUPPORTED_CLUSTERING_METHODS,
-    SUPPORTED_TREE_BUILDERS,
-)
 
-# Regularization added to GMM covariance diagonals; keeps components
-# from collapsing on singleton/near-identical reduced points.
-_GMM_REG_COVAR = 1e-4
-
-
-@dataclass
-class _PsiTreeNode:
-    """Node used to represent the in-memory Psi merge tree."""
-
-    index: int
-    text: str = ""
-    embedding: np.ndarray | None = None
-    children: list["_PsiTreeNode"] = field(default_factory=list)
-    parent: "_PsiTreeNode | None" = None
-    # Original (leaf-level) chunk ids that contributed to this node. On
-    # a leaf this is a single-element list with the leaf's own id; on an
-    # internal node it's the order-preserving deduped union of its
-    # children's lists. Carried up through the merge tree so each
-    # produced summary knows which source chunks it covers.
-    source_chunk_ids: list[str] = field(default_factory=list)
-
-
-class _PsiUnionFind:
-    """Build parent links for the Psi merge tree from ranked leaf pairs."""
-
-    def __init__(self, n: int):
-        """Initialize the union-find state for n leaf nodes."""
-        self._rank = [0 for _ in range(n)]
-        self._parent_chains = [[] for _ in range(n)]
-        self._node_ids = [[i] for i in range(n)]
-        self._tree = [-1 for _ in range(max(1, 2 * n - 1))]
-        self._next_id = n
-
-    @staticmethod
-    def _ordered_extend(target: list[int], values: list[int]):
-        """Append unseen values while preserving their original order."""
-        for value in values:
-            if value not in target:
-                target.append(value)
-
-    def _find(self, i: int) -> list[int]:
-        """Return the parent chain for a leaf, extending it lazily."""
-        chain = self._parent_chains[i]
-        if not chain or (len(chain) == 1 and chain[0] == i):
-            return [i]
-        if chain[0] == i:
-            self._ordered_extend(chain, self._find(chain[1]))
-        else:
-            self._ordered_extend(chain, self._find(chain[0]))
-        return chain
-
-    def _rank_bisect_right(self, chain: list[int], rank: int) -> int:
-        """Return the first chain index whose rank is greater than rank."""
-        idx = 0
-        while idx < len(chain) and self._rank[chain[idx]] <= rank:
-            idx += 1
-        return idx
-
-    def _build(self, i: int, j: int, insert_point: int | None = None):
-        """Record a merge edge in the compact parent array."""
-        if insert_point is not None:
-            parent_ids = self._node_ids[insert_point]
-            parent_rank_idx = self._rank[i] + 1
-            if parent_rank_idx >= len(parent_ids):
-                logging.warning(
-                    "RAPTOR Psi union fallback: rank index %d is out of bounds for node %d with %d parent ids",
-                    parent_rank_idx,
-                    insert_point,
-                    len(parent_ids),
-                )
-                parent_rank_idx = len(parent_ids) - 1
-            self._tree[self._node_ids[i][-1]] = parent_ids[parent_rank_idx]
-            return
-        self._tree[self._node_ids[i][-1]] = self._next_id
-        self._tree[self._node_ids[j][-1]] = self._next_id
-        self._node_ids[i].append(self._next_id)
-        self._next_id += 1
-
-    def union(self, i: int, j: int) -> bool:
-        """Merge two ranked leaves and return whether a new edge was added."""
-        root_i = self._find(i)[-1]
-        root_j = self._find(j)[-1]
-        if root_i == root_j:
-            return False
-
-        if self._rank[root_i] < self._rank[root_j]:
-            if not self._parent_chains[root_j]:
-                self._parent_chains[root_j].append(root_j)
-            chain = self._parent_chains[j]
-            higher_rank_idx = self._rank_bisect_right(chain, self._rank[root_i])
-            if higher_rank_idx >= len(chain):
-                higher_rank_idx = len(chain) - 1
-            insert_point = chain[higher_rank_idx]
-            self._ordered_extend(self._parent_chains[root_i], chain[higher_rank_idx:])
-            self._build(root_i, root_j, insert_point=insert_point)
-        elif self._rank[root_i] > self._rank[root_j]:
-            if not self._parent_chains[root_i]:
-                self._parent_chains[root_i].append(root_i)
-            chain = self._parent_chains[i]
-            higher_rank_idx = self._rank_bisect_right(chain, self._rank[root_j])
-            if higher_rank_idx >= len(chain):
-                higher_rank_idx = len(chain) - 1
-            insert_point = chain[higher_rank_idx]
-            self._ordered_extend(self._parent_chains[root_j], chain[higher_rank_idx:])
-            self._build(root_j, root_i, insert_point=insert_point)
-        else:
-            if not self._parent_chains[root_i]:
-                self._parent_chains[root_i].append(root_i)
-            self._ordered_extend(self._parent_chains[root_j], self._parent_chains[i][-1:])
-            self._rank[root_i] += 1
-            self._build(root_i, root_j)
-        return True
-
-    @property
-    def tree(self) -> list[int]:
-        """Return the compact child-to-parent array for constructed nodes."""
-        return self._tree[: self._next_id]
+from ._common import knowledge_compile_gen_conf
 
 
 class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
@@ -172,42 +45,33 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         embd_model,
         prompt,
         max_token=512,
-        threshold=0.1,
         small_layer_collapse=8,
         max_errors=3,
-        tree_builder=RAPTOR_TREE_BUILDER,
-        clustering_method=GMM_CLUSTERING_METHOD,
-        psi_exact_max_leaves=4096,
-        psi_bucket_size=1024,
-        cluster_percentile=30,
+        clustering_threshold=0.3,
+        clustering_ratio=0.5,
     ):
-        """Configure RAPTOR summarization, clustering, and Psi limits.
+        """Configure RAPTOR summarization and clustering.
 
         Args:
-            cluster_percentile: AHC distance threshold is set to this
-                percentile of all pairwise cosine distances in each
-                layer.  A lower value produces finer (more) clusters.
-                Default 30 means the threshold excludes the top 70%
-                most dissimilar pairs.
+            clustering_threshold: Adjacent chunks with cosine similarity
+                below this value become cluster boundaries.  Default 0.3.
+            clustering_ratio: Maximum number of clusters as a fraction of
+                chunk count (e.g. 0.5 means at most 50% of chunks become
+                cluster representatives).  If the threshold-based watershed
+                produces more clusters than this cap, the threshold is
+                lowered using the distribution of recorded adjacent
+                similarities.
         """
         self._max_cluster = max_cluster
         self._small_layer_collapse = small_layer_collapse
-        self._cluster_percentile = cluster_percentile
+        self._clustering_threshold = clustering_threshold
+        self._clustering_ratio = clustering_ratio
         self._llm_model = llm_model
         self._embd_model = embd_model
-        self._threshold = threshold
         self._prompt = prompt
-        self._max_token = max_token
+        self._max_token = min(max(int(max_token or 512), 512), 2048)
         self._max_errors = max(1, max_errors)
         self._error_count = 0
-        self._tree_builder = tree_builder or RAPTOR_TREE_BUILDER
-        if self._tree_builder not in SUPPORTED_TREE_BUILDERS:
-            raise ValueError(f"Unsupported RAPTOR tree builder: {self._tree_builder}")
-        self._clustering_method = clustering_method or GMM_CLUSTERING_METHOD
-        if self._clustering_method not in SUPPORTED_CLUSTERING_METHODS:
-            raise ValueError(f"Unsupported RAPTOR clustering method: {self._clustering_method}")
-        self._psi_exact_max_leaves = max(2, int(psi_exact_max_leaves or 4096))
-        self._psi_bucket_size = min(max(2, int(psi_bucket_size or 1024)), self._psi_exact_max_leaves)
 
     def _check_task_canceled(self, task_id: str, message: str = ""):
         """Raise if the current document task was canceled."""
@@ -253,118 +117,80 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         await thread_pool_exec(set_embed_cache, self._embd_model.llm_name, txt, embds)
         return embds
 
-    def _get_optimal_clusters(self, embeddings: np.ndarray, random_state: int, task_id: str = ""):
-        """Choose the GMM cluster count with the lowest BIC score."""
-        max_clusters = min(self._max_cluster, len(embeddings))
-        if max_clusters <= 1:
-            logging.info(
-                "RAPTOR GMM: _get_optimal_clusters returning 1 (max_clusters=%s, embeddings=%d)",
-                max_clusters,
-                len(embeddings),
-            )
-            return 1
-        n_clusters = np.arange(1, max_clusters + 1)
-        bics = []
-        for n in n_clusters:
-            self._check_task_canceled(task_id, "get optimal clusters")
-
-            gm = GaussianMixture(n_components=n, random_state=random_state, covariance_type="diag", reg_covar=_GMM_REG_COVAR)
-            gm.fit(embeddings)
-            bics.append(gm.bic(embeddings))
-        optimal_clusters = n_clusters[np.argmin(bics)]
-        return int(optimal_clusters)
-
     def _get_clusters_ahc(self, embeddings: np.ndarray, task_id: str = "") -> np.ndarray:
-        """Sequential clustering of adjacent embeddings (cosine similarity).
+        """1D-watershed segmentation over adjacent cosine similarities.
 
-        Only compares **adjacent** pairs (chunk i vs chunk i+1), not all
-        pairwise — ``O(N)`` complexity per layer instead of ``O(N²)``.
+        Only adjacent embeddings are compared (O(N) instead of O(N²)).
 
-        The similarity threshold is the ``p``-th percentile of all
-        adjacent-pair similarities in the current layer, so it adapts
-        to each layer's data distribution automatically.
-
-        Returns an array of cluster labels (contiguous 0..K-1).
+        The split threshold is taken from the ``clustering_threshold``
+        percentile of the adjacent-similarity distribution.  If the resulting
+        cluster count exceeds the ``clustering_ratio`` cap, the threshold is
+        further lowered.
         """
         n = len(embeddings)
         if n <= 1:
             return np.zeros(n, dtype=int)
-        if n == 2:
-            return np.arange(n)
 
         self._check_task_canceled(task_id, "_get_clusters_ahc")
 
-        # L2-normalize embeddings so dot product = cosine similarity
+        # L2-normalize
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
         norms = np.where(norms == 0, 1.0, norms)
         normalized = embeddings / norms
 
         # Adjacent cosine similarities (n-1 pairs)
         adj_sims = np.sum(normalized[:-1] * normalized[1:], axis=1)
-        if len(adj_sims) == 0:
-            return np.zeros(n, dtype=int)
+        sorted_sims = np.sort(adj_sims)  # ascending
 
-        # Adaptive threshold from adjacent distribution
-        threshold = float(np.percentile(adj_sims, self._cluster_percentile))
-        labels = np.zeros(n, dtype=int)
-        cluster_id = 0
-        for i in range(1, n):
-            if adj_sims[i - 1] >= threshold:
-                labels[i] = cluster_id
-            else:
-                cluster_id += 1
-                labels[i] = cluster_id
+        # Max clusters allowed by the ratio cap
+        max_clusters = max(1, int(round(n * self._clustering_ratio)))
+
+        def _watershed(th: float) -> np.ndarray:
+            lbl = np.zeros(n, dtype=int)
+            cid = 0
+            for i in range(1, n):
+                if adj_sims[i - 1] >= th:
+                    lbl[i] = cid
+                else:
+                    cid += 1
+                    lbl[i] = cid
+            return lbl
+
+        # ---- Phase 1: watershed at percentile-based threshold ----
+        # clustering_threshold (e.g. 0.3) denotes the percentile of the
+        # adjacent-similarity distribution to use as the split threshold.
+        # This adapts to each layer's similarity range automatically.
+        pct = max(1, min(99, int(round(self._clustering_threshold * 100))))
+        threshold = float(np.percentile(adj_sims, pct))
+        labels = _watershed(threshold)
+        n_clusters = int(np.unique(labels).size)
+
+        # ---- Phase 2: adjust threshold if we still exceed the cap ----
+        if n_clusters > max_clusters and len(sorted_sims) >= max_clusters:
+            adjusted = float(sorted_sims[min(max_clusters - 1, len(sorted_sims) - 1)])
+            if adjusted < threshold:
+                threshold = adjusted
+                labels = _watershed(threshold)
+                n_clusters = int(np.unique(labels).size)
 
         logging.info(
-            "RAPTOR seq-clus: p=%d threshold=%.4f n_clusters=%d for %d embeddings (adj pairs=%d)",
-            self._cluster_percentile,
+            "RAPTOR seq-clus: pct=%d threshold=%.4f n_clusters=%d/%d (%d chunks) cluster_ratio=%.2f",
+            pct,
             threshold,
-            int(np.unique(labels).size),
+            n_clusters,
+            max_clusters,
             n,
-            len(adj_sims),
+            self._clustering_ratio,
         )
         return labels
 
     def clustering(self, embeddings, random_state: int, task_id: str = "") -> tuple[int, list[int]]:
-        """Cluster one RAPTOR layer and return contiguous labels."""
+        """Cluster one RAPTOR layer using 1D-watershed and return contiguous labels."""
         if len(embeddings) == 0:
             return 0, []
 
-        if self._clustering_method == AHC_CLUSTERING_METHOD:
-            # AHC: cluster on raw embeddings with cosine distance.
-            # UMAP is skipped because it discards semantic information
-            # that average-linkage + cosine can leverage directly.
-            logging.info("RAPTOR: using clustering_method=%s on raw embeddings (dim=%d)", self._clustering_method, len(embeddings[0]) if hasattr(embeddings[0], "__len__") else "?")
-            asarray = np.asarray(embeddings, dtype=np.float64)
-            raw_labels = self._get_clusters_ahc(asarray, task_id=task_id)
-            raw_cluster_count = np.unique(raw_labels).size
-            logging.info("RAPTOR AHC: _get_clusters_ahc produced n_clusters=%d", raw_cluster_count)
-            labels = raw_labels
-        else:
-            # GMM: reduce dimensionality first (UMAP, 12D) so the
-            # Gaussian mixture can find meaningful clusters.
-            if len(embeddings) == 0:
-                return 0, []
-            reduced = np.asarray(embeddings, dtype=np.float64)
-            n_neighbors = min(int((len(embeddings) - 1) ** 0.8), 100)
-            import umap
-
-            reduced = umap.UMAP(
-                n_neighbors=max(2, n_neighbors),
-                n_components=min(12, len(embeddings) - 2),
-                metric="cosine",
-            ).fit_transform(embeddings)
-            n_clusters = int(self._get_optimal_clusters(reduced, random_state, task_id=task_id))
-            if n_clusters <= 1:
-                labels = [0 for _ in range(len(reduced))]
-            else:
-                gm = GaussianMixture(n_components=n_clusters, random_state=random_state, covariance_type="diag", reg_covar=_GMM_REG_COVAR)
-                gm.fit(reduced)
-                probs = gm.predict_proba(reduced)
-                labels = []
-                for prob in probs:
-                    candidates = np.where(prob > self._threshold)[0]
-                    labels.append(int(candidates[0]) if len(candidates) else int(np.argmax(prob)))
+        asarray = np.asarray(embeddings, dtype=np.float64)
+        labels = self._get_clusters_ahc(asarray, task_id=task_id)
 
         normalized_labels: list[int] = []
         for label in labels:
@@ -397,22 +223,32 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
                     [
                         {
                             "role": "user",
-                            "content": "Beside the summarization, give a title at the first line of your summarization. Must be in the same language as the paragraphs.",
+                            "content": (
+                                "Beside the summarization, give a title at the first line of your summarization. "
+                                "Must be in the same language as the paragraphs. "
+                                f"Keep the summary concise and target approximately {self._max_token} tokens."
+                            ),
                         }
                     ],
-                    {"max_tokens": max(self._max_token, 512)},  # fix issue:  #10235
+                    # ``max_token`` is the target size of the generated node,
+                    # not the provider's per-request output ceiling. Keep the
+                    # provider budget independent so reasoning tokens cannot
+                    # consume the node-size setting and truncate the summary.
+                    knowledge_compile_gen_conf(self._llm_model),
                 )
                 cnt = re.sub(
                     "(······\n由于长度的原因，回答被截断了，要继续吗？|For the content length reason, it stopped, continue?)",
                     "",
                     cnt,
                 )
+                cnt = str(cnt or "").strip()
                 logging.debug(f"SUM: {cnt}")
 
                 self._check_task_canceled(task_id, "before embedding")
 
                 embds = await self._embedding_encode(cnt)
-                return cnt.split("\n")[0], cnt, embds
+                title = cnt.splitlines()[0].strip() if cnt else ""
+                return title, cnt, embds
         except TaskCanceledException:
             raise
         except Exception as exc:
@@ -424,328 +260,6 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
             if self._error_count >= self._max_errors:
                 raise RuntimeError(f"RAPTOR aborted after {self._error_count} errors. Last error: {exc}") from exc
             return None
-
-    @staticmethod
-    def _root(node: _PsiTreeNode) -> _PsiTreeNode:
-        """Return the current root for a Psi tree node."""
-        while node.parent is not None:
-            node = node.parent
-        return node
-
-    def _rank_leaf_pairs(self, leaves: list[_PsiTreeNode]) -> np.ndarray:
-        """Rank all leaf pairs by original embedding-space cosine similarity."""
-        node_embeddings = np.asarray([leaf.embedding for leaf in leaves], dtype=np.float64)
-        node_embeddings = self._normalize_embeddings(node_embeddings)
-        similarities = node_embeddings @ node_embeddings.T
-        lower = np.tril_indices(len(leaves), -1)
-        ordered = np.argsort(similarities[lower], axis=0)[::-1]
-        return np.stack([lower[0][ordered], lower[1][ordered]], axis=-1)
-
-    @staticmethod
-    def _normalize_embeddings(node_embeddings: np.ndarray) -> np.ndarray:
-        """Normalize embeddings for cosine operations while tolerating zero vectors."""
-        node_embeddings = np.asarray(node_embeddings, dtype=np.float64)
-        norms = np.linalg.norm(node_embeddings, axis=1, keepdims=True)
-        return node_embeddings / np.maximum(norms, 1e-12)
-
-    def _split_psi_buckets(self, nodes: list[_PsiTreeNode]) -> list[list[_PsiTreeNode]]:
-        """Split large Psi inputs so exact pair ranking is bounded per bucket."""
-        if len(nodes) <= self._psi_bucket_size:
-            return [nodes]
-
-        node_embeddings = self._normalize_embeddings(np.asarray([node.embedding for node in nodes], dtype=np.float64))
-        groups = [np.arange(len(nodes), dtype=int)]
-        buckets = []
-
-        while groups:
-            group = np.asarray(groups.pop(), dtype=int)
-            if len(group) <= self._psi_bucket_size:
-                buckets.append(group.tolist())
-                continue
-
-            fanout = min(max(2, int(np.ceil(len(group) / self._psi_bucket_size))), len(group), 32)
-            group_embeddings = node_embeddings[group]
-            center_idx = np.linspace(0, len(group_embeddings) - 1, num=fanout, dtype=int)
-            centers = group_embeddings[center_idx].copy()
-
-            for _ in range(5):
-                labels = np.argmax(group_embeddings @ centers.T, axis=1)
-                for center_id in range(fanout):
-                    mask = labels == center_id
-                    if not np.any(mask):
-                        continue
-                    center = group_embeddings[mask].mean(axis=0)
-                    norm = np.linalg.norm(center)
-                    centers[center_id] = center / norm if norm > 0 else center
-
-            labels = np.argmax(group_embeddings @ centers.T, axis=1)
-            split_groups = [group[labels == center_id].tolist() for center_id in range(fanout)]
-            split_groups = [bucket for bucket in split_groups if bucket]
-            if len(split_groups) <= 1:
-                split_groups = [group[start : start + self._psi_bucket_size].tolist() for start in range(0, len(group), self._psi_bucket_size)]
-            groups.extend(split_groups)
-
-        buckets = [bucket for bucket in buckets if bucket]
-        buckets.sort(key=lambda bucket: (len(bucket), bucket[0]))
-        return [[nodes[idx] for idx in bucket] for bucket in buckets]
-
-    def _assign_prototype_embeddings(self, node: _PsiTreeNode) -> np.ndarray:
-        """Assign mean child embeddings to internal Psi nodes for bucket-level ranking."""
-        if not node.children:
-            return np.asarray(node.embedding, dtype=np.float64)
-        embeddings = np.asarray([self._assign_prototype_embeddings(child) for child in node.children], dtype=np.float64)
-        node.embedding = embeddings.mean(axis=0)
-        return node.embedding
-
-    @staticmethod
-    def _iter_nodes(root: _PsiTreeNode):
-        """Yield nodes in a Psi tree using a stack traversal."""
-        stack = [root]
-        while stack:
-            node = stack.pop()
-            yield node
-            stack.extend(node.children)
-
-    def _create_psi_parent(self, index: int, children: list[_PsiTreeNode]) -> _PsiTreeNode:
-        """Create a parent node and attach the provided children to it."""
-        parent = _PsiTreeNode(index=index, children=children)
-        for child in children:
-            child.parent = parent
-        return parent
-
-    def _rebalance_psi_tree(self, root: _PsiTreeNode, next_index: int) -> tuple[_PsiTreeNode, int]:
-        """Group oversized Psi tree nodes so fanout stays within max_cluster."""
-        max_children = max(2, int(self._max_cluster or 2))
-
-        def rebalance(node: _PsiTreeNode):
-            """Recursively group children when a Psi node exceeds fanout."""
-            nonlocal next_index
-
-            for child in list(node.children):
-                rebalance(child)
-
-            while len(node.children) > max_children:
-                original_children = len(node.children)
-                grouped_children = []
-                for start in range(0, len(node.children), max_children):
-                    batch = node.children[start : start + max_children]
-                    if len(batch) == 1:
-                        grouped_children.append(batch[0])
-                        batch[0].parent = node
-                    else:
-                        grouped_children.append(self._create_psi_parent(next_index, batch))
-                        grouped_children[-1].parent = node
-                        next_index += 1
-                node.children = grouped_children
-                logging.info(
-                    "RAPTOR Psi rebalance: node=%s children=%d grouped_to=%d max_cluster=%d",
-                    node.index,
-                    original_children,
-                    len(grouped_children),
-                    max_children,
-                )
-
-        rebalance(root)
-        return self._root(root), next_index
-
-    def _build_exact_psi_structure(
-        self,
-        nodes: list[_PsiTreeNode],
-        next_index: int,
-        task_id: str = "",
-    ) -> tuple[_PsiTreeNode, int, int]:
-        """Build an exact Psi subtree for a bounded node set."""
-        if len(nodes) == 1:
-            return nodes[0], next_index, 0
-
-        ranked_pairs = self._rank_leaf_pairs(nodes)
-        union_find = _PsiUnionFind(len(nodes))
-        merges = 0
-        for left_idx, right_idx in ranked_pairs:
-            self._check_task_canceled(task_id, "Psi tree construction")
-            if union_find.union(int(left_idx), int(right_idx)):
-                merges += 1
-            if merges == len(nodes) - 1:
-                break
-
-        local_nodes = {idx: node for idx, node in enumerate(nodes)}
-        tree = union_find.tree
-        children_by_parent = {}
-        for child_idx, parent_idx in enumerate(tree):
-            if child_idx not in local_nodes:
-                local_nodes[child_idx] = _PsiTreeNode(index=next_index)
-                next_index += 1
-            if parent_idx == -1:
-                continue
-            children_by_parent.setdefault(parent_idx, []).append(child_idx)
-            if parent_idx not in local_nodes:
-                local_nodes[parent_idx] = _PsiTreeNode(index=next_index)
-                next_index += 1
-
-        for parent_idx, child_indices in children_by_parent.items():
-            parent = local_nodes[parent_idx]
-            parent.children = [local_nodes[child_idx] for child_idx in child_indices]
-            for child in parent.children:
-                child.parent = parent
-
-        roots = [local_nodes[idx] for idx, parent_idx in enumerate(tree) if parent_idx == -1 and idx in local_nodes]
-        root = max(roots, key=lambda node: node.index)
-        return root, next_index, merges
-
-    def _build_bucketed_psi_structure(
-        self,
-        nodes: list[_PsiTreeNode],
-        next_index: int,
-        task_id: str = "",
-    ) -> tuple[_PsiTreeNode, int, int]:
-        """Build large Psi trees by exact-ranking bounded buckets, then bucket roots."""
-        buckets = self._split_psi_buckets(nodes)
-        logging.info(
-            "RAPTOR Psi bucketed build: nodes=%d buckets=%d bucket_size=%d exact_max_leaves=%d",
-            len(nodes),
-            len(buckets),
-            self._psi_bucket_size,
-            self._psi_exact_max_leaves,
-        )
-
-        bucket_roots = []
-        merges = 0
-        for bucket in buckets:
-            bucket_root, next_index, bucket_merges = self._build_psi_structure_from_nodes(bucket, next_index, task_id)
-            self._assign_prototype_embeddings(bucket_root)
-            bucket_roots.append(bucket_root)
-            merges += bucket_merges
-
-        if len(bucket_roots) == 1:
-            return bucket_roots[0], next_index, merges
-
-        root, next_index, root_merges = self._build_psi_structure_from_nodes(bucket_roots, next_index, task_id)
-        return root, next_index, merges + root_merges
-
-    def _build_psi_structure_from_nodes(
-        self,
-        nodes: list[_PsiTreeNode],
-        next_index: int,
-        task_id: str = "",
-    ) -> tuple[_PsiTreeNode, int, int]:
-        """Build Psi structure exactly for small sets and bucket large sets."""
-        if len(nodes) <= self._psi_exact_max_leaves:
-            return self._build_exact_psi_structure(nodes, next_index, task_id)
-        return self._build_bucketed_psi_structure(nodes, next_index, task_id)
-
-    def _build_psi_structure(self, chunks, task_id: str = "") -> tuple[_PsiTreeNode, list[_PsiTreeNode]]:
-        """Build the Psi merge tree from original chunk embeddings.
-
-        ``chunks`` is expected in the normalized 3-tuple shape
-        ``(text, vec, source_chunk_ids)`` — leaves are seeded with
-        their own source ids, internal nodes get their ids set during
-        layer materialization in ``_build_psi_layers``.
-        """
-        leaves = [
-            _PsiTreeNode(
-                index=i,
-                text=item[0],
-                embedding=np.asarray(item[1]),
-                source_chunk_ids=list(item[2] if len(item) > 2 else []),
-            )
-            for i, item in enumerate(chunks)
-        ]
-        if len(leaves) == 1:
-            return leaves[0], leaves
-
-        root, next_index, merges = self._build_psi_structure_from_nodes(leaves, len(leaves), task_id)
-        root, _ = self._rebalance_psi_tree(root, next_index)
-        logging.info(
-            "RAPTOR Psi tree built: leaves=%d merges=%d root_fanout=%d",
-            len(leaves),
-            merges,
-            len(root.children),
-        )
-        return root, leaves
-
-    @staticmethod
-    def _psi_layers(root: _PsiTreeNode) -> dict[int, list[_PsiTreeNode]]:
-        """Collect non-leaf Psi nodes by height for bottom-up summarization."""
-        layers = {}
-
-        def height(node: _PsiTreeNode) -> int:
-            """Return node height while collecting internal nodes by layer."""
-            if not node.children:
-                return 0
-            node_height = max(height(child) for child in node.children) + 1
-            layers.setdefault(node_height, []).append(node)
-            return node_height
-
-        height(root)
-        return layers
-
-    async def _build_psi_layers(self, chunks, callback=None, task_id: str = ""):
-        """Materialize Psi tree layers as summary chunks."""
-        layers = [(0, len(chunks))]
-        root, _ = self._build_psi_structure(chunks, task_id=task_id)
-
-        for layer_idx, (_, nodes) in enumerate(sorted(self._psi_layers(root).items()), start=1):
-            layer_start = len(chunks)
-
-            async def summarize_node(node: _PsiTreeNode):
-                """Summarize one Psi internal node if its children have text.
-
-                Also propagates leaf provenance: the node's
-                ``source_chunk_ids`` becomes the order-preserving deduped
-                union of every child's ``source_chunk_ids``. Because
-                children at this layer have already been processed (leaves
-                first, then bottom-up), each child carries the full set
-                of leaf ids underneath it — so the union here is the
-                complete leaf set this summary covers.
-                """
-                texts = [child.text for child in node.children if child.text]
-                if not texts:
-                    logging.warning("RAPTOR Psi node %s skipped because it has no child text to summarize", node.index)
-                    return None
-                result = await self._summarize_texts(texts, callback, task_id)
-                if result is None:
-                    logging.warning("RAPTOR Psi node %s skipped because summarization failed", node.index)
-                    return None
-                _, node.text, node.embedding = result
-                merged_ids: list[str] = []
-                seen: set[str] = set()
-                for child in node.children:
-                    for src in child.source_chunk_ids:
-                        if src and src not in seen:
-                            seen.add(src)
-                            merged_ids.append(src)
-                node.source_chunk_ids = merged_ids
-                return node
-
-            tasks = [asyncio.create_task(summarize_node(node)) for node in nodes]
-            try:
-                summarized_nodes = await asyncio.gather(*tasks, return_exceptions=False)
-            except Exception as e:
-                logging.error(f"Error in RAPTOR Psi tree processing: {e}")
-                for task in tasks:
-                    task.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
-                raise
-
-            summarized_nodes = [node for node in summarized_nodes if node is not None]
-            for node in summarized_nodes:
-                chunks.append((node.text, node.embedding, list(node.source_chunk_ids)))
-
-            if len(chunks) > layer_start:
-                layers.append((layer_start, len(chunks)))
-                logging.info(
-                    "RAPTOR Psi layer materialized: layer=%d nodes=%d summaries=%d",
-                    layer_idx,
-                    len(nodes),
-                    len(chunks) - layer_start,
-                )
-                if callback:
-                    callback(msg="Build one Psi-RAG layer: {} -> {}".format(len(nodes), len(chunks) - layer_start))
-            else:
-                logging.warning("RAPTOR Psi layer %d produced no summaries; stopping materialization", layer_idx)
-                break
-
-        return chunks, layers
 
     async def __call__(
         self,
@@ -802,14 +316,6 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
         if len(normalized) <= 1:
             return (None, None) if is_tree else (normalized, [(0, len(normalized))])
         chunks = normalized
-
-        if self._tree_builder == PSI_TREE_BUILDER:
-            if is_tree:
-                raise NotImplementedError(
-                    "is_tree=True is not supported for PSI_TREE_BUILDER",
-                )
-            logging.info("RAPTOR: using %s tree builder for %d chunks", self._tree_builder, len(chunks))
-            return await self._build_psi_layers(chunks, callback, task_id)
 
         # ``parent_child_map`` records each summary's immediate
         # children so ``_materialize_tree`` can walk back into a tree
@@ -972,18 +478,17 @@ class RecursiveAbstractiveProcessing4TreeOrganizedRetrieval:
 
         def _build_node(idx: int) -> dict:
             children_idx = parent_child_map.get(idx, [])
-            # If every immediate child is a layer-0 original, this
-            # node is a "leaf" in the tree contract — collapse to
-            # source_chunk_ids.
+            # If every immediate child is a layer-0 original, collapse the
+            # cluster into one leaf node and retain all source chunk IDs.
             if children_idx and all(c < n_originals for c in children_idx):
-                ids: list[str] = []
+                source_chunk_ids: list[str] = []
                 seen: set[str] = set()
                 for c in children_idx:
                     for s in chunks[c][2]:
                         if s and s not in seen:
                             seen.add(s)
-                            ids.append(s)
-                return {"title": _title_at(idx), "source_chunk_ids": ids, "description": _desc_at(idx)}
+                            source_chunk_ids.append(s)
+                return {"title": _title_at(idx), "source_chunk_ids": source_chunk_ids, "description": _desc_at(idx)}
             return {"children": [_build_node(c) for c in children_idx], "title": _title_at(idx), "description": _desc_at(idx)}
 
         top_nodes = [_build_node(i) for i in range(top_start, top_end)]

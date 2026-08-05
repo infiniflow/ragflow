@@ -25,6 +25,9 @@ func SetupEERouter(engine *gin.Engine) {
 
 func RegisterEENoAuthRouter(apiNoAuth *gin.RouterGroup, r *Router) {
 	// For EE
+	apiNoAuth.GET("/auth/login/channels", r.userHandler.GetLoginChannels)
+	apiNoAuth.GET("/auth/login/:channel", r.userHandler.OAuthLogin)
+	apiNoAuth.GET("/auth/oauth/:channel/callback", r.userHandler.OAuthChannelCallback)
 	apiNoAuth.GET("/auth/oauth/callback", r.userHandler.OAuthCallback)
 	apiNoAuth.GET("/auth/oauth/github/callback", r.userHandler.GitHubAuthCallback)
 	apiNoAuth.GET("/auth/oauth/lark/callback", r.userHandler.LarkAuthCallback)

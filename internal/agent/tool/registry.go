@@ -31,43 +31,56 @@ import (
 type Factory func(params map[string]any) (einotool.BaseTool, error)
 
 var registry = map[string]Factory{
-	"akshare":               buildAkShareTool,
-	"arxiv":                 buildArxivTool,
-	"bgpt":                  buildBGPTTool,
-	"code_exec":             noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
-	"crawler":               noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
-	"deepl":                 noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),
-	"duckduckgo":            buildDuckDuckGoTool,
-	"email":                 buildEmailTool,
-	"execute_sql":           buildExeSQLTool,
-	"exesql":                buildExeSQLTool,
-	"github":                buildGitHubTool,
-	"google":                buildGoogleTool,
-	"google_scholar":        buildGoogleScholarTool,
-	"google_scholar_search": buildGoogleScholarTool,
-	"jin10":                 noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
-	"keenable":              buildKeenableTool,
-	"pubmed":                buildPubMedTool,
-	"qweather":              noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
-	"querit":                buildQueritTool,
-	"querit_search":         buildQueritTool,
-	"queritsearch":          buildQueritTool,
-	"retrieval":             buildRetrievalTool,
-	"search_my_dataset":     buildRetrievalTool,
-	"search_my_dateset":     buildRetrievalTool,
-	"searxng":               buildSearXNGTool,
-	"tavily":                buildTavilyTool,
-	// Agent DSL tool lists carry the Python Canvas component_name verbatim.
-	// BuildByName lower-cases names, so register those component names too.
-	"tavilysearch":     buildTavilyTool,
-	"tavily_extract":   buildTavilyExtractTool,
-	"tavilyextract":    buildTavilyExtractTool,
-	"tushare":          noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
-	"wencai":           buildWencaiTool,
-	"web_crawler":      noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
-	"wikipedia":        buildWikipediaTool,
-	"wikipedia_search": buildWikipediaTool,
-	"yahoo_finance":    buildYahooFinanceTool,
+	"akshare":                    buildAkShareTool,
+	"arxiv":                      buildArxivTool,
+	"bgpt":                       buildBGPTTool,
+	"code_exec":                  noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
+	"crawler":                    noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
+	"dataset_navigation_by_tree": noConfig("dataset_navigation_by_tree", func() einotool.BaseTool { return NewDatasetNavigationByTree() }),
+	"hybrid_search":              noConfig("hybrid_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolHybridSearch) }),
+	"vector_search":              noConfig("vector_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolVectorSearch) }),
+	"bm25_search":                noConfig("bm25_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolBM25Search) }),
+	"deepl":                      noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),
+	"duckduckgo":                 buildDuckDuckGoTool,
+	"email":                      buildEmailTool,
+	"execute_sql":                buildExeSQLTool,
+	"exesql":                     buildExeSQLTool,
+	"github":                     buildGitHubTool,
+	"google":                     buildGoogleTool,
+	"google_scholar":             buildGoogleScholarTool,
+	"google_scholar_search":      buildGoogleScholarTool,
+	"jin10":                      noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
+	"keenable":                   buildKeenableTool,
+	"pubmed":                     buildPubMedTool,
+	"qweather":                   noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
+	"querit":                     buildQueritTool,
+	"querit_search":              buildQueritTool,
+	"retrieval":                  buildRetrievalTool,
+	"search_my_dataset":          buildRetrievalTool,
+	"search_my_dateset":          buildRetrievalTool,
+	"searxng":                    buildSearXNGTool,
+	"tavily":                     buildTavilyTool,
+	"tavily_extract":             buildTavilyExtractTool,
+	"tushare":                    noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
+	"wencai":                     buildWencaiTool,
+	"web_crawler":                noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
+	"wikipedia":                  buildWikipediaTool,
+	"wikipedia_search":           buildWikipediaTool,
+	"yahoo_finance":              buildYahooFinanceTool,
+}
+
+// canvasToolNames maps lower-cased Canvas component names to the canonical
+// registry keys used by the Go Agent tool layer. Canvas preserves component
+// names such as "CodeExec" and "GoogleScholar", while the tool registry uses
+// snake_case names for several tools.
+var canvasToolNames = map[string]string{
+	"codeexec":       "code_exec",
+	"googlescholar":  "google_scholar",
+	"keenablesearch": "keenable",
+	"queritsearch":   "querit_search",
+	"tavilyextract":  "tavily_extract",
+	"tavilysearch":   "tavily",
+	"yahoofinance":   "yahoo_finance",
 }
 
 func noConfig(name string, fn func() einotool.BaseTool) Factory {
@@ -81,7 +94,7 @@ func noConfig(name string, fn func() einotool.BaseTool) Factory {
 
 // BuildByName resolves a tool name into an Eino BaseTool.
 func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) {
-	key := strings.ToLower(strings.TrimSpace(name))
+	key := normalizeToolName(name)
 	if key == "" {
 		return nil, fmt.Errorf("agent tool: empty tool name")
 	}
@@ -105,7 +118,14 @@ func BuildAll(names []string, perToolParams map[string]map[string]any) ([]einoto
 	for _, name := range names {
 		var params map[string]any
 		if perToolParams != nil {
-			params = perToolParams[strings.ToLower(strings.TrimSpace(name))]
+			// Prefer the canonical key so callers can provide params using the
+			// Go registry name even when the tool list uses a Canvas name.
+			params = perToolParams[normalizeToolName(name)]
+			if params == nil {
+				// Canvas DSL extraction currently keys object params by the
+				// lower-cased component name, so retain that lookup as a fallback.
+				params = perToolParams[strings.ToLower(strings.TrimSpace(name))]
+			}
 			if params == nil {
 				params = perToolParams[name]
 			}
@@ -117,6 +137,17 @@ func BuildAll(names []string, perToolParams map[string]map[string]any) ([]einoto
 		tools = append(tools, t)
 	}
 	return tools, nil
+}
+
+// normalizeToolName returns the canonical registry key for a DSL or Agent
+// tool name. It lower-cases ordinary names and translates Canvas component
+// names whose spelling differs from the Go registry key.
+func normalizeToolName(name string) string {
+	key := strings.ToLower(strings.TrimSpace(name))
+	if canonical, ok := canvasToolNames[key]; ok {
+		return canonical
+	}
+	return key
 }
 
 func buildAkShareTool(params map[string]any) (einotool.BaseTool, error) {

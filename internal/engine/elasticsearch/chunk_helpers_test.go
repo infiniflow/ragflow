@@ -62,8 +62,8 @@ func TestUpdateSingleMemoryMessageWaitsForRefresh(t *testing.T) {
 		t.Fatalf("new elasticsearch client: %v", err)
 	}
 
-	engine := &elasticsearchEngine{client: client}
-	if err := engine.updateSingleMemoryMessage(context.Background(), "memory_tenant", "memory-1_42", map[string]interface{}{"forget_at": "2026-07-27 10:00:00"}); err != nil {
+	engine := &Engine{client: client}
+	if err = engine.updateSingleMemoryMessage(context.Background(), "memory_tenant", "memory-1_42", map[string]interface{}{"forget_at": "2026-07-27 10:00:00"}); err != nil {
 		t.Fatalf("updateSingleMemoryMessage: %v", err)
 	}
 	if gotRefresh != "wait_for" {
@@ -72,7 +72,7 @@ func TestUpdateSingleMemoryMessageWaitsForRefresh(t *testing.T) {
 }
 
 func TestElasticsearchGetFieldsFiltersAndUsesIDFallback(t *testing.T) {
-	engine := &elasticsearchEngine{}
+	engine := &Engine{}
 	chunks := []map[string]interface{}{
 		{
 			"_id":                 "fallback-chunk",
@@ -100,7 +100,7 @@ func TestElasticsearchGetFieldsFiltersAndUsesIDFallback(t *testing.T) {
 }
 
 func TestElasticsearchGetFieldsEmptyAndSkippedIDs(t *testing.T) {
-	engine := &elasticsearchEngine{}
+	engine := &Engine{}
 
 	if got := engine.GetFields(nil, nil); got == nil || len(got) != 0 {
 		t.Fatalf("GetFields(nil)=%#v, want empty non-nil map", got)
@@ -122,16 +122,17 @@ func TestElasticsearchGetFieldsEmptyAndSkippedIDs(t *testing.T) {
 	if _, ok := got["missing-id.md"]; ok {
 		t.Fatalf("chunk without id should be skipped: %#v", got)
 	}
-	if fallbackMap, ok := got["fallback-chunk"]; !ok {
+	fallbackMap, ok := got["fallback-chunk"]
+	if !ok {
 		t.Fatalf("GetFields keys=%v, want fallback-chunk", got)
-	} else {
-		assertEqual(t, fallbackMap["id"], "fallback-chunk")
-		assertEqual(t, fallbackMap["docnm_kwd"], "fallback.md")
 	}
+
+	assertEqual(t, fallbackMap["id"], "fallback-chunk")
+	assertEqual(t, fallbackMap["docnm_kwd"], "fallback.md")
 }
 
 func TestElasticsearchGetAggregationSplitsCountsAndSorts(t *testing.T) {
-	engine := &elasticsearchEngine{}
+	engine := &Engine{}
 	chunks := []map[string]interface{}{
 		{"tag_kwd": "red###blue###"},
 		{"tag_kwd": []interface{}{"blue", " green ", ""}},
@@ -161,7 +162,7 @@ func TestElasticsearchGetAggregationSplitsCountsAndSorts(t *testing.T) {
 }
 
 func TestElasticsearchGetChunkIDsPreservesOrderWithFallback(t *testing.T) {
-	engine := &elasticsearchEngine{}
+	engine := &Engine{}
 	chunks := []map[string]interface{}{
 		{"id": "source-id", "_id": "hit-id"},
 		{"_id": "fallback-id"},
@@ -179,7 +180,7 @@ func TestElasticsearchGetChunkIDsPreservesOrderWithFallback(t *testing.T) {
 }
 
 func TestElasticsearchGetHighlightFallbackAndBoundaries(t *testing.T) {
-	engine := &elasticsearchEngine{}
+	engine := &Engine{}
 	chunks := []map[string]interface{}{
 		{
 			"_id":     "fallback-id",
@@ -228,7 +229,7 @@ func TestElasticsearchGetHighlightFallbackAndBoundaries(t *testing.T) {
 }
 
 func TestElasticsearchGetHighlightPreservesExistingAndNonEnglish(t *testing.T) {
-	engine := &elasticsearchEngine{}
+	engine := &Engine{}
 
 	gotExisting := engine.GetHighlight([]map[string]interface{}{
 		{"id": "existing", "content_with_weight": "already <em>marked</em> text"},

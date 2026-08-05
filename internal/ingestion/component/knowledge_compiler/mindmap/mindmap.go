@@ -12,12 +12,43 @@ package mindmap
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/utility"
 )
+
+// batchSubmitter fans out the batch extraction jobs on the process-wide
+// knowledge-compilation pool. It is injected by the knowledge_compiler wiring
+// (component.go) so every stage shares one vCPU-sized concurrency bound; when
+// nil the batches run sequentially (the historic default).
+var batchSubmitter func(ctx context.Context, jobs []func() error) error
+
+// SetBatchSubmitter installs the shared-pool fan-out used by Run's extraction
+// stage. Pass nil to revert to serial execution.
+func SetBatchSubmitter(submit func(ctx context.Context, jobs []func() error) error) {
+	batchSubmitter = submit
+}
+
+// runBatches mirrors structure.runBatches: concurrent under the wired global
+// compiler pool, or serial when no submitter is set. The first error is
+// returned after all jobs settle; the global pool is never StopWait'd.
+func runBatches(ctx context.Context, jobs []func() error) error {
+	if len(jobs) == 0 {
+		return nil
+	}
+	if batchSubmitter != nil {
+		return batchSubmitter(ctx, jobs)
+	}
+	for _, j := range jobs {
+		if err := j(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // Run executes the mindmap variant.
 func Run(ctx context.Context, deps common.Deps, param common.Param, inputs common.Inputs) (common.Outputs, error) {
@@ -33,24 +64,14 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 
 	sections := chunkTexts(inputs.Chunks)
-	if len(sections) == 0 {
-		return common.Outputs{}, nil
-	}
 
 	// One LLM task per token-budget batch (mirrors __call__'s task fan-out).
 	batches := packSections(sections, deps.Tokenizer)
 	results := make([]utility.OMap, len(batches))
-	// One LLM task per token-budget batch (mirrors __call__'s task fan-out).
-	n := param.MaxWorkers
-	if n <= 0 {
-		n = 1
-	}
-	wp := utility.NewWorkerPool[func() error, struct{}](n, n,
-		func(_ context.Context, fn func() error) (struct{}, error) { return struct{}{}, fn() })
-	var futs []utility.WorkerPoolFuture[func() error, struct{}]
+	jobs := make([]func() error, 0, len(batches))
 	for i, text := range batches {
 		i, text := i, text
-		f, err := wp.Submit(ctx, func() error {
+		jobs = append(jobs, func() error {
 			resp, err := deps.Chat.Chat(ctx, common.ChatRequest{
 				LLMID:        llmID,
 				SystemPrompt: renderPrompt(text),
@@ -59,20 +80,16 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			if err != nil {
 				return err
 			}
+			// Distinct slice index per batch → no cross-goroutine contention.
 			results[i] = utility.Todict(utility.Dictify(utility.StripFences(resp.Content)))
 			return nil
 		})
-		if err != nil {
-			wp.StopWait()
-			return common.Outputs{}, err
-		}
-		futs = append(futs, f)
 	}
-	wp.StopWait()
-	for _, f := range futs {
-		if res, _ := f.Wait(ctx); res.Err != nil {
-			return common.Outputs{}, res.Err
-		}
+	// The extraction batches are LLM-bounded, not CPU-bounded: run them on the
+	// shared global compiler pool (vCPU-sized) when a submitter is wired in,
+	// otherwise fall back to serial execution (historic default).
+	if err := runBatches(ctx, jobs); err != nil {
+		return common.Outputs{}, err
 	}
 
 	// Merge batch dicts in batch order (mirrors reduce(self._merge, res)) and
@@ -119,6 +136,12 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 // becomes a "root" product whose content is the serialized {"id","children"}
 // tree (Python's MindMapResult.output shape); each inner node becomes a
 // "node" product linked via parent_id.
+//
+// NOTE: the per-node "node" products (content = the node title, plus a
+// meta["children"] list of immediate child titles) are a Go component-layer
+// contract for streaming the tree into the upstream chunk list. They go
+// beyond Python's nested dict output and exist so downstream code can index
+// each node independently with parent links.
 func treeToProducts(tenantID, docID string, root *utility.Node) []common.Product {
 	var out []common.Product
 	rootID := common.StableRowID(tenantID, docID, string(common.VariantMindmap), "root")
@@ -179,42 +202,31 @@ func treeToProducts(tenantID, docID string, root *utility.Node) []common.Product
 	return out
 }
 
-// serializeNode renders the tree in Python's MindMapResult.output shape:
-// {"id": ..., "children": [...]}.
-func serializeNode(node *utility.Node) string {
-	var b strings.Builder
-	b.WriteString(`{"id":`)
-	b.WriteString(quoteJSON(node.ID))
-	b.WriteString(`,"children":[`)
-	for i, c := range node.Children {
-		if i > 0 {
-			b.WriteString(",")
-		}
-		b.WriteString(serializeNode(c))
-	}
-	b.WriteString("]}")
-	return b.String()
+// jsonNode mirrors the {"id","children"} mind-map node shape (Python's
+// MindMapResult.output) for JSON serialization.
+type jsonNode struct {
+	ID       string      `json:"id"`
+	Children []*jsonNode `json:"children"`
 }
 
-func quoteJSON(s string) string {
-	var b strings.Builder
-	b.WriteByte('"')
-	for _, r := range s {
-		switch r {
-		case '"':
-			b.WriteString("\\\"")
-		case '\\':
-			b.WriteString("\\\\")
-		case '\n':
-			b.WriteString("\\n")
-		case '\t':
-			b.WriteString("\\t")
-		default:
-			b.WriteRune(r)
-		}
+func toJSONNode(n *utility.Node) *jsonNode {
+	jn := &jsonNode{ID: n.ID}
+	for _, c := range n.Children {
+		jn.Children = append(jn.Children, toJSONNode(c))
 	}
-	b.WriteByte('"')
-	return b.String()
+	return jn
+}
+
+// serializeNode renders the tree in Python's MindMapResult.output shape:
+// {"id": ..., "children": [...]}. Uses encoding/json so every control
+// character (including \r, \b, \f, etc.) is escaped correctly; the previous
+// hand-rolled serializer only escaped ", \, \n and \t.
+func serializeNode(node *utility.Node) string {
+	b, err := json.Marshal(toJSONNode(node))
+	if err != nil {
+		return `{"id":"` + node.ID + `","children":[]}`
+	}
+	return string(b)
 }
 
 func chunkTexts(chunks []common.Chunk) []string {

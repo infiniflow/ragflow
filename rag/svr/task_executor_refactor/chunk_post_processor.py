@@ -378,8 +378,6 @@ from rag.advanced_rag.knowlege_compile.runner import (  # noqa: E402
     load_active_templates,
     run_structure_compile_over_batches,
 )
-
-
 # ----- parser_config helpers -----------------------------------------
 
 
@@ -946,8 +944,6 @@ async def run_tree_templates(
                 raptor_config=raptor_config,
                 chat_mdl=chat_mdl_by_tid[template_id],
                 embd_mdl=embedding_model,
-                tree_builder="raptor",
-                clustering_method="ahc",
                 max_errors=3,
             )
         except Exception:

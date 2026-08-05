@@ -22,13 +22,16 @@
 //	api/db/joint_services/memory_message_service.py:
 //	    handle_save_to_memory_task / save_extracted_to_memory_only / extract_by_llm
 //
-// QueueSaveToMemoryTask persists the raw message and enqueues a
-// task_type="memory" message on the Redis stream te.<priority>.common.
-// StartTaskConsumer drains that stream (consumer group
-// "rag_flow_svr_task_broker", same as the Python executor), runs LLM
-// extraction for the non-raw memory types configured on the memory, and
-// persists the extracted messages with source_id pointing at the raw
-// message so listMemoryMessages can aggregate them under `extract`.
+// QueueSaveToMemoryTask persists the raw message and publishes a
+// task_type="memory" TaskMessage on the NATS tasks.RAGFLOW subject. The
+// Ingestor's shared consumer + worker pool dispatches it by TaskType to
+// HandleSaveToMemoryTask (see internal/ingestion/service/processMessage and
+// executeMemoryTask), which runs LLM extraction for the non-raw memory types
+// configured on the memory and persists the extracted messages with source_id
+// pointing at the raw message so listMemoryMessages can aggregate them under
+// `extract`. Publishing over NATS (instead of the Python te.*.common Redis
+// stream) keeps Go out of the Python executor's queue and removes the
+// cross-consumer contention that previously stole Python dataflow tasks.
 package service
 
 import (
@@ -41,21 +44,23 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	redisengine "ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	models "ragflow/internal/entity/models"
-	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
-
-// memoryTaskConsumerGroup matches Python common.constants.SVR_CONSUMER_GROUP_NAME
-// so Go and Python executors never double-process the same stream entry.
-const memoryTaskConsumerGroup = "rag_flow_svr_task_broker"
 
 // memoryTimeLayout is the storage format for valid_at / invalid_at,
 // matching timestamp_to_date on the Python side.
 const memoryTimeLayout = "2006-01-02 15:04:05"
+
+// ErrMemoryTaskTerminal marks a memory-task failure that already has a durable
+// terminal outcome (task row absent, or progress already persisted as failed),
+// so the caller must Ack rather than Nack/redeliver. Transient failures (DB
+// read hiccup, LLM/network errors before any durable marker) return plain
+// errors so executeMemoryTask can Nack and let the message be redelivered.
+var ErrMemoryTaskTerminal = errors.New("memory: terminal task failure, do not redeliver")
 
 // extractedMemory is one LLM-extracted memory item ready for persistence.
 type extractedMemory struct {
@@ -65,54 +70,19 @@ type extractedMemory struct {
 	InvalidAt   string // empty means still valid
 }
 
-// StartTaskConsumer is the long-running loop that drains memory
-// extraction tasks from the Redis stream. It returns when ctx is
-// cancelled. Per-message failures are logged and acked so one bad
-// message cannot stall the stream.
-func (s *MemoryMessageService) StartTaskConsumer(ctx context.Context) {
-	redisClient := redisengine.Get()
-	if redisClient == nil {
-		common.Error("memory task consumer: Redis is not available", nil)
-		return
-	}
-	consumerName := fmt.Sprintf("go_memory_extractor_%s", utility.GenerateUUID())
-	queueName := memoryTaskQueueName(0)
-	common.Info(fmt.Sprintf("Memory task consumer %s started on queue %s", consumerName, queueName))
-
-	for {
-		if ctx.Err() != nil {
-			return
-		}
-		msg, err := redisClient.QueueConsumer(queueName, memoryTaskConsumerGroup, consumerName, ">")
-		if err != nil {
-			common.Error("memory task consumer: consume error", err)
-			select {
-			case <-time.After(time.Second):
-			case <-ctx.Done():
-				return
-			}
-			continue
-		}
-		if msg == nil {
-			continue
-		}
-		payload := msg.GetMessage()
-		if taskType, _ := payload["task_type"].(string); taskType != "memory" {
-			common.Warn(fmt.Sprintf("memory task consumer: skip task_type %q", taskType))
-			msg.Ack()
-			continue
-		}
-		if err := s.HandleSaveToMemoryTask(ctx, payload); err != nil {
-			common.Error("memory task consumer: handle task failed", err)
-		}
-		msg.Ack()
-	}
-}
-
 // HandleSaveToMemoryTask processes one queued memory task. Mirrors
 // Python handle_save_to_memory_task: validate the task row, then
 // extract + persist, settling task progress on the way out.
+//
+// The returned error is wrapped in ErrMemoryTaskTerminal when the failure has
+// already produced a durable terminal outcome (dependency/config error, task
+// row absent, task already failed, or extraction failed after progress=-1 was
+// persisted). Transient failures (a task-load DB error before any marker was
+// written) return an unwrapped error so the caller can Nack and redeliver.
 func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, payload map[string]any) error {
+	if s == nil || s.taskDAO == nil || s.memories == nil {
+		return fmt.Errorf("%w: memory: nil MemoryMessageService or memory dependency", ErrMemoryTaskTerminal)
+	}
 	taskID, _ := payload["id"].(string)
 	if taskID == "" {
 		taskID, _ = payload["task_id"].(string)
@@ -130,15 +100,21 @@ func (s *MemoryMessageService) HandleSaveToMemoryTask(ctx context.Context, paylo
 
 	task, err := s.taskDAO.GetByID(ctx, dao.DB, taskID)
 	if err != nil {
-		return fmt.Errorf("memory: task %s is not found", taskID)
+		// Record-not-found is terminal: no row to retry against. Any other
+		// task-load error is transient and must be redelivered (no progress=-1
+		// marker was written).
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("%w: memory: task %s is not found", ErrMemoryTaskTerminal, taskID)
+		}
+		return fmt.Errorf("memory: load task %s: %w", taskID, err)
 	}
 	if task.Progress == -1 {
-		return fmt.Errorf("memory: task %s is already failed", taskID)
+		return fmt.Errorf("%w: memory: task %s is already failed", ErrMemoryTaskTerminal, taskID)
 	}
 
 	if err := s.saveExtractedToMemory(ctx, memoryID, msg, sourceID, taskID); err != nil {
 		s.updateTaskProgress(taskID, -1, err.Error())
-		return err
+		return fmt.Errorf("%w: %v", ErrMemoryTaskTerminal, err)
 	}
 	return nil
 }
@@ -174,7 +150,7 @@ func (s *MemoryMessageService) saveExtractedToMemory(ctx context.Context, memory
 	now := time.Now().UTC()
 	messages := make([]map[string]any, 0, len(extracted))
 	for _, item := range extracted {
-		messages = append(messages, buildExtractedMessage(generateRawMessageID(), sourceID, memoryID, msg, item, now))
+		messages = append(messages, buildExtractedMessage(generateRawMessageID(ctx), sourceID, memoryID, msg, item, now))
 	}
 	if err := s.embedAndSaveMessages(ctx, mem, messages); err != nil {
 		return err

@@ -50,6 +50,7 @@ func newVllmModelForTest(baseURL string) *VllmModel {
 }
 
 func TestVllmRerankHappyPath(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVllmRerankServer(t, "Bearer test-key", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "BAAI/bge-reranker-v2-m3" {
@@ -109,6 +110,7 @@ func TestVllmRerankHappyPath(t *testing.T) {
 }
 
 func TestVllmRerankTopNClamp(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVllmRerankServer(t, "Bearer test-key", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["top_n"] != float64(2) {
@@ -134,6 +136,7 @@ func TestVllmRerankTopNClamp(t *testing.T) {
 }
 
 func TestVllmRerankEmptyDocuments(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := newVllmModelForTest("http://unused")
 	apiKey := "test-key"
@@ -151,6 +154,7 @@ func TestVllmRerankEmptyDocuments(t *testing.T) {
 // no APIConfig.ApiKey is configured. This diverges from the NVIDIA driver
 // which requires an API key.
 func TestVllmRerankWithoutAPIKey(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVllmRerankServer(t, "", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
@@ -173,6 +177,7 @@ func TestVllmRerankWithoutAPIKey(t *testing.T) {
 }
 
 func TestVllmRerankRequiresModelName(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	model := newVllmModelForTest("http://unused")
 	apiKey := "test-key"
@@ -183,6 +188,7 @@ func TestVllmRerankRequiresModelName(t *testing.T) {
 }
 
 func TestVllmRerankRejectsHTTPError(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVllmRerankServer(t, "Bearer test-key", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -200,6 +206,7 @@ func TestVllmRerankRejectsHTTPError(t *testing.T) {
 }
 
 func TestVllmRerankRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newVllmRerankServer(t, "Bearer test-key", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{

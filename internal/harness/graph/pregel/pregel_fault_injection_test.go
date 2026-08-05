@@ -7,6 +7,7 @@ package pregel
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -271,7 +272,7 @@ func TestFaultInjection_ContextCancel(t *testing.T) {
 	for range outputCh {
 	}
 	err := <-errCh
-	if err != nil && err != context.Canceled {
+	if err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled or nil, got: %v", err)
 	}
 }

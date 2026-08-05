@@ -171,7 +171,7 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 	}
 	pc := &ParserComponent{Setups: s, Param: p}
 	if err := pc.Check(); err != nil {
-		return nil, fmt.Errorf("Parser: %w", err)
+		return nil, fmt.Errorf("parser: %w", err)
 	}
 	return pc, nil
 }
@@ -195,7 +195,7 @@ func (c *ParserComponent) Check() error {
 	if pdf, ok := c.Setups["pdf"]; ok {
 		pm, _ := pdf["parse_method"].(string)
 		if pm == "" {
-			return errors.New("Parse method abnormal. does not support empty value.")
+			return errors.New("parse method abnormal. does not support empty value")
 		}
 		pmLower := strings.ToLower(pm)
 		pdfWhitelist := []string{
@@ -206,7 +206,7 @@ func (c *ParserComponent) Check() error {
 			// Non-whitelist parse_method is treated as a VLM method,
 			// which requires lang (Python parser.py:257-258).
 			if lang, _ := pdf["lang"].(string); lang == "" {
-				return errors.New("PDF VLM language does not support empty value.")
+				return errors.New("PDF VLM language does not support empty value")
 			}
 		}
 	}
@@ -216,7 +216,7 @@ func (c *ParserComponent) Check() error {
 		// OCR mode does not need a VLM language; any other value does.
 		if pm != "ocr" {
 			if lang, _ := img["lang"].(string); lang == "" {
-				return errors.New("Image VLM language does not support empty value.")
+				return errors.New("image VLM language does not support empty value")
 			}
 		}
 	}
@@ -534,6 +534,12 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 			pages = [][]byte{nil}
 		}
 	}
+
+	// 3b. (pages-based page selection is handled upstream via the
+	//     component setup: ParserConfig[cpnID][filetype]["pages"] is a
+	//     list of page ranges delivered through override_params and
+	//     consumed by the deepdoc/pdf parser. No inputs-level handling
+	//     here.)
 
 	// 4. Build the page slice sequentially. Per-page parallelism now
 	//    lives in the parser backends (e.g. internal/deepdoc/parser/pdf

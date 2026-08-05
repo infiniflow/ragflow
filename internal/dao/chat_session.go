@@ -39,6 +39,7 @@ type ListAgentSessionsParams struct {
 	Desc       bool
 	SessionID  string
 	UserID     string
+	TenantID   string
 	IncludeDSL bool
 	Keywords   string
 	FromDate   *time.Time

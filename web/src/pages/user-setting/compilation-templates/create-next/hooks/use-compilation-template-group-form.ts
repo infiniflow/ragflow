@@ -6,11 +6,8 @@ import { useTranslation } from 'react-i18next';
 import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-template';
 
 import { buildFormSchema, FormSchemaType } from '../schema';
-import {
-  DefaultValues,
-  generateTemplateName,
-  transformGroupDetailToForm,
-} from '../utils';
+import { DefaultValues } from '../constant';
+import { generateTemplateName, transformGroupDetailToForm } from '../utils';
 
 type UseCompilationTemplateGroupFormOptions = {
   detail?: ICompilationTemplateGroup;

@@ -13,7 +13,7 @@ _LOG = logging.getLogger(__name__)
 # (``dataset_navigation_by_tree``) has produced a relevant-document set, these
 # inherit it as their ``doc_scope`` unless the caller passed one explicitly, so
 # a follow-up search stays within the routed docs instead of re-scanning the KB.
-_DOC_SCOPE_CONSUMERS = {"ontology_navigate", "mindmap_navigate", "graph_explore", "hybrid_search"}
+_DOC_SCOPE_CONSUMERS = {"ontology_navigate", "mindmap_navigate", "graph_explore", "hybrid_search", "vector_search", "bm25_search", "structured_query", "dataset_navigation_by_tree"}
 
 
 class Pipeline:
@@ -30,7 +30,7 @@ class Pipeline:
         self.compilation_map = compilation_map or {}
         self.trace: list[dict] = []
         # Latest relevant-document set produced by a routing tool this run.
-        self._routed_docs: list[str] = []
+        self._routed_docs: list[str] = list(getattr(rag_tools, "doc_scope", None) or [])
 
     async def execute(self, tool_name: str, **kwargs) -> ToolResult:
         """Execute a registered tool by name."""
@@ -58,7 +58,10 @@ class Pipeline:
             # document IDs; remember them so the scope-consuming tools above can
             # inherit them on later turns.
             if result.docs:
-                self._routed_docs = list(result.docs)
+                if hasattr(self.tools, "scoped_doc_ids"):
+                    self._routed_docs = self.tools.scoped_doc_ids(list(result.docs)) or []
+                else:
+                    self._routed_docs = list(result.docs)
             # Feed the shared citation pool: agent searches go through the
             # pipeline, so without this their evidence never reaches kbinfos and
             # the final answer has nothing to cite.

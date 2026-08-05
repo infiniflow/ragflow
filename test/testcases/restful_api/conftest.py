@@ -53,7 +53,6 @@ GO_ONLY_SKIPS = {
         "test_dataset_create_parser_config_bugfix_contract",
         "test_dataset_create_parser_config_invalid_contract",
         "test_dataset_create_parser_config_defaults_and_extra_fields_contract",
-        "test_dataset_create_embedding_model_contract",
         # Empty path (e.g. /chats//sessions) triggers a 405/404 framework
         # response in Go rather than the Python contract's code-100 envelope.
         "test_session_create_validation_and_deleted_chat_contract",

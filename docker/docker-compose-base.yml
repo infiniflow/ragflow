@@ -100,6 +100,27 @@ services:
       retries: 120
     restart: unless-stopped
 
+  serenedb:
+    profiles:
+      - serenedb
+    image: serenedb/serenedb:26.07.5
+    env_file: .env
+    environment:
+      - POSTGRES_PASSWORD=${SERENEDB_PASSWORD}
+    ports:
+      - ${SERENEDB_PORT}:7890
+    volumes:
+      - serenedb_data:/var/lib/serenedb
+    mem_limit: ${MEM_LIMIT}
+    networks:
+      - ragflow
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-p", "7890", "-U", "postgres"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+    restart: unless-stopped
+
   oceanbase:
     profiles:
       - oceanbase
@@ -235,7 +256,7 @@ services:
   redis:
     # swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/valkey/valkey:8
     image: valkey/valkey:8
-    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--maxmemory", "128mb", "--maxmemory-policy", "volatile-lru"]
     env_file: .env
     ports:
       - ${REDIS_PORT}:6379
@@ -379,6 +400,8 @@ volumes:
   osdata01:
     driver: local
   infinity_data:
+    driver: local
+  serenedb_data:
     driver: local
   ob_data:
     driver: local

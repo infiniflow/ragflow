@@ -335,7 +335,7 @@ class TestDocumentMetadataUnit:
     def test_get_route_not_found_success_and_exception_unit(self, document_app_module, monkeypatch):
         module = document_app_module
 
-        # Cross-tenant access is denied -> "Document not found!" (no ID enumeration).
+        # Cross-tenant access is denied -> "document not found" (no ID enumeration).
         # Stub get_by_id to a valid document so the test can only pass via the
         # accessible() early return; if that check ever regresses, the route would
         # proceed and the assertions below would no longer match.
@@ -353,7 +353,7 @@ class TestDocumentMetadataUnit:
         )
         res = _run(module.get("doc1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
+        assert "document not found" in res["message"]
         assert accessible_calls == [("doc1", "user-1")]
 
         # From here on the user is authorized; exercise the original branches.
@@ -362,7 +362,7 @@ class TestDocumentMetadataUnit:
         monkeypatch.setattr(module.DocumentService, "get_by_id", lambda _doc_id: (False, None))
         res = _run(module.get("doc1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
+        assert "document not found" in res["message"]
 
         async def fake_thread_pool_exec(*_args, **_kwargs):
             return b"blob-data"
@@ -396,7 +396,7 @@ class TestDocumentMetadataUnit:
         module = document_app_module
         monkeypatch.setattr(module, "request", _DummyRequest(args={"ext": "abc"}))
 
-        # Cross-tenant access is denied -> "Document not found!" (no ID enumeration).
+        # Cross-tenant access is denied -> "document not found" (no ID enumeration).
         accessible_calls = []
 
         def fake_accessible_denied(doc_id, user_id):
@@ -406,7 +406,7 @@ class TestDocumentMetadataUnit:
         monkeypatch.setattr(module.DocumentService, "accessible", fake_accessible_denied)
         res = _run(module.download_attachment(attachment_id="att1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
+        assert "document not found" in res["message"]
         assert accessible_calls == [("att1", "user-1")]
 
         # From here on the user is authorized; exercise the original branches.
@@ -447,7 +447,7 @@ class TestDocumentMetadataUnit:
 
         res = _run(module.download_document("doc1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
+        assert "document not found" in res["message"]
 
     def test_dataset_document_download_rejects_other_tenant_unit(self, document_rest_api_module, monkeypatch):
         module = document_rest_api_module
@@ -456,7 +456,7 @@ class TestDocumentMetadataUnit:
 
         res = _run(module.download("kb1", "doc1"))
         assert res["code"] == RetCode.DATA_ERROR
-        assert "Document not found!" in res["message"]
+        assert "document not found" in res["message"]
 
     @pytest.mark.p2
     def test_get_document_image_content_type_from_object_extension_unit(self, document_app_module, monkeypatch):

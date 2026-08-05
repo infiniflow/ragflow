@@ -52,6 +52,7 @@ import {
   useDefaultParserValues,
   useFillDefaultValueOnMount,
 } from './use-default-parser-values';
+import { FormLayout } from '@/constants/form';
 
 const FormId = 'ChunkMethodDialogForm';
 
@@ -380,8 +381,12 @@ export function ChunkMethodDialog({
                         type={MetadataType.SingleFileSetting}
                         otherData={{ documentId }}
                       />
-                      <AutoKeywordsFormField></AutoKeywordsFormField>
-                      <AutoQuestionsFormField></AutoQuestionsFormField>
+                      <AutoKeywordsFormField
+                        layout={FormLayout.Horizontal}
+                      ></AutoKeywordsFormField>
+                      <AutoQuestionsFormField
+                        layout={FormLayout.Horizontal}
+                      ></AutoQuestionsFormField>
                     </>
                   )}
 

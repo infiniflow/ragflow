@@ -24,16 +24,17 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"strings"
 	"sync"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/dsl"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 )
 
@@ -81,7 +82,7 @@ func NewBotService(agentSvc *AgentService, llmSvc *LLMService) *BotService {
 // it (TenantID match), and Status must equal common.StatusDialogValid
 // (the python StatusEnum.VALID.value).
 func (s *BotService) ChatbotInfo(ctx context.Context, tenantID, dialogID string) (
-	title, avatar, prologue, llmID string, hasTavilyKey bool, ec common.ErrorCode, err error,
+	title, avatar, prologue, llmID string, hasWebSearch bool, ec common.ErrorCode, err error,
 ) {
 	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
 	if err != nil {
@@ -90,19 +91,18 @@ func (s *BotService) ChatbotInfo(ctx context.Context, tenantID, dialogID string)
 	if dialog == nil || dialog.TenantID != tenantID ||
 		dialog.Status == nil || *dialog.Status != common.StatusDialogValid {
 		return "", "", "", "", false, common.CodeDataError,
-			errors.New("Authentication error: no access to this chatbot!")
+			errors.New("authentication error: no access to this chatbot")
 	}
 	pc := dialog.PromptConfig
 	// Defensive lookups mirroring python's
 	// dialog.prompt_config.get("prologue", "") and
-	// dialog.prompt_config.get("tavily_api_key", "").strip()
+	// resolveWebSearchProvider(dialog.prompt_config) != nil
 	// semantics. A hard type assertion here would panic on a missing
 	// or non-string prologue field — this endpoint is public over
 	// persisted JSON config and the schema is not guaranteed.
 	prologue = stringFromMap(pc, "prologue")
-	tk := stringFromMap(pc, "tavily_api_key")
 	return botDerefStr(dialog.Name), botDerefStr(dialog.Icon), prologue,
-		dialog.LLMID, strings.TrimSpace(tk) != "", common.CodeSuccess, nil
+		dialog.LLMID, resolveWebSearchProvider(pc) != nil, common.CodeSuccess, nil
 }
 
 // AgentbotInputs returns the public metadata of an agentbot canvas.
@@ -178,6 +178,27 @@ func (s *BotService) AgentbotCompletion(
 	return ch, common.CodeSuccess, nil
 }
 
+// AgentbotLogs returns the stored execution timeline for an agentbot run.
+// Access is scoped to the caller's accessible tenants, matching the Python
+// agent_bot_logs endpoint.
+func (s *BotService) AgentbotLogs(ctx context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
+	if _, err := s.loadCanvas(ctx, tenantID, agentID); err != nil {
+		return nil, common.CodeDataError, err
+	}
+	payload, err := redis.Get().Get(ctx, fmt.Sprintf("%s-%s-logs", agentID, messageID))
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("failed to read agent logs")
+	}
+	data := map[string]any{}
+	if payload == "" {
+		return data, common.CodeSuccess, nil
+	}
+	if err := json.Unmarshal([]byte(payload), &data); err != nil {
+		return nil, common.CodeServerError, errors.New("failed to decode agent logs")
+	}
+	return data, common.CodeSuccess, nil
+}
+
 // AgentbotCompletionRequest is the request body for
 // /api/v1/agentbots/<agent_id>/completions. We intentionally accept
 // the same fields the production /agents/chat/completions handler
@@ -228,7 +249,7 @@ func (s *BotService) persistLock(sessionID string) *sync.Mutex {
 
 // loadCanvas is the IDOR guard for agentbot reads. It mirrors the
 // private loadCanvasForUser helper on AgentService without taking a
-// dependency on the agentService pointer (so BotService can be unit-
+// dependency on the agentService pointer (so BotService can be
 // tested with a nil agentService).
 func (s *BotService) loadCanvas(ctx context.Context, tenantID, agentID string) (*entity.UserCanvas, error) {
 	if agentID == "" {
