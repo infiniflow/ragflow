@@ -204,16 +204,16 @@ type TokenChunkerParam struct {
 	// to image chunks. 0 disables.
 	ImageContextSize int `json:"image_context_size"`
 
-	// RespectCap selects the merge strategy when greedily accumulating
-	// adjacent units (token_chunker RESPECT_CAP vs OVER_CAP).
+	// UnderCap selects the merge strategy when greedily accumulating
+	// adjacent units (token_chunker UNDER_CAP vs OVER_CAP).
 	//   - false (default): OVER_CAP — mirrors Python's canonical default.
 	//     A chunk may exceed the token target by at most one incoming unit
 	//     (a boundary overflow then closes the chunk).
-	//   - true: RESPECT_CAP — strictly never exceed the target; when the
+	//   - true: UNDER_CAP — strictly never exceed the target; when the
 	//     projected join would overflow, start a fresh chunk instead.
-	// This is the seam that lets Go follow Python's MergeStrategy without
-	// changing the default behavior.
-	RespectCap bool `json:"respect_cap"`
+	// This is the seam that lets Go follow Python's no-overflow strategy
+	// without changing the default behavior.
+	UnderCap bool `json:"under_cap"`
 }
 
 // Defaults returns the Python default TokenChunkerParam.

@@ -108,8 +108,8 @@ func (p *tokenChunkerParam) Update(conf map[string]any) {
 	if v, ok := schema.NumericFromAny(conf["image_context_size"]); ok {
 		p.TokenChunkerParam.ImageContextSize = int(v)
 	}
-	if v, ok := conf["respect_cap"].(bool); ok {
-		p.TokenChunkerParam.RespectCap = v
+	if v, ok := conf["under_cap"].(bool); ok {
+		p.TokenChunkerParam.UnderCap = v
 	}
 }
 
@@ -334,7 +334,7 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 	// Split-then-merge: split on delimiters, then greedily merge to
 	// chunk_token_size with optional overlap.
 	perItem := [][]schema.ChunkDoc{docs}
-	merged := mergeByTokenSizeFromJSON(perItem, c.param.ChunkTokenSize, c.param.OverlappedPercent, true, !c.param.RespectCap)
+	merged := mergeByTokenSizeFromJSON(perItem, c.param.ChunkTokenSize, c.param.OverlappedPercent, true, !c.param.UnderCap)
 	return chunkOutputs(flatten(merged))
 }
 
@@ -593,7 +593,7 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 			tkns = append(tkns, tokenizeStr(out))
 			return
 		}
-		out, act := mergeDecision(cks[len(cks)-1], segment, "", target, overlapPct, !c.param.RespectCap)
+		out, act := mergeDecision(cks[len(cks)-1], segment, "", target, overlapPct, !c.param.UnderCap)
 		switch act {
 		case mergeIntoPrev, mergeThenClose:
 			cks[len(cks)-1] = out
@@ -722,7 +722,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// chunks across JSON items into one global token budget. Flatten the
 		// per-item structure into a single sequence first so the merge is
 		// global; non-text chunks still break the merge via their CKType.
-		attached = mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flatten(attached)}, c.param.ChunkTokenSize, c.param.OverlappedPercent, false, !c.param.RespectCap)
+		attached = mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flatten(attached)}, c.param.ChunkTokenSize, c.param.OverlappedPercent, false, !c.param.UnderCap)
 	}
 
 	flat := flatten(attached)
@@ -964,8 +964,8 @@ func takeFromStart(text string, tokens int) string {
 //
 // allowBoundaryOverflow selects the merge strategy: true = OVER_CAP (Python's
 // canonical default, a chunk may exceed the target by at most one incoming
-// unit), false = RESPECT_CAP (never exceed the target; a projected overflow
-// starts a fresh chunk). The TokenChunker threads its RespectCap param here.
+// unit), false = UNDER_CAP (never exceed the target; a projected overflow
+// starts a fresh chunk). The TokenChunker threads its UnderCap param here.
 func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64, subSplitOversize bool, allowBoundaryOverflow bool) [][]schema.ChunkDoc {
 	// overlappedPct is a [0,100] percentage. Clamp defensively because this
 	// helper is also exercised directly by tests.
@@ -1004,6 +1004,16 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 			// Empty previous text: assign incoming text directly
 			// (diff Chunker-2.11 / token_chunker.py:236-239).
 			if prev.Text == "" {
+				// Invariant: every path that emits a chunk WITHOUT consuming
+				// the OVER_CAP boundary-overflow flag (prevClosed) must clear
+				// it, so a stale flag can never leak into a later chunk. The
+				// early-return above already does this for the first-text /
+				// after-non-text case; do the same here. (Today this branch is
+				// only reached with an empty prev, and mergeThenClose always
+				// leaves a non-empty prev, so prevClosed cannot actually be
+				// true here — the reset is defensive and keeps the invariant
+				// explicit against future refactors.)
+				prevClosed = false
 				prev.Text = ck.Text
 				prev.TKNums = intPtr(tk)
 				prev.PDFPositions = extendRawJSONArray(prev.PDFPositions, ck.PDFPositions)

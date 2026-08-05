@@ -182,13 +182,13 @@ func TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsPrevClosed(t *testing.T) 
 	}
 }
 
-// TestMergeByTokenSizeFromJSON_RespectCapNoOverflow exercises the RESPECT_CAP
+// TestMergeByTokenSizeFromJSON_UnderCapNoOverflow exercises the UNDER_CAP
 // strategy (allowBoundaryOverflow=false): a projected join that would exceed
 // the target must start a fresh chunk instead of merging-then-closing. This is
-// the seam that lets Go follow Python's MergeStrategy.RESPECT_CAP. Under
+// the seam that lets Go follow Python's no-overflow (UNDER_CAP) strategy. Under
 // OVER_CAP the same input merges a+b and overflows chunk0; here a, b, c must
 // stay as three separate chunks, each within budget.
-func TestMergeByTokenSizeFromJSON_RespectCapNoOverflow(t *testing.T) {
+func TestMergeByTokenSizeFromJSON_UnderCapNoOverflow(t *testing.T) {
 	aText := strings.Repeat("word ", 18)
 	bText := strings.Repeat("word ", 18)
 	cText := strings.Repeat("word ", 18)
@@ -216,11 +216,11 @@ func TestMergeByTokenSizeFromJSON_RespectCapNoOverflow(t *testing.T) {
 	got := mergeByTokenSizeFromJSON(items, budget, 0.0, true, false)
 	merged := got[0]
 	if len(merged) != 3 {
-		t.Fatalf("RESPECT_CAP want 3 chunks (a, b, c separate), got %d", len(merged))
+		t.Fatalf("UNDER_CAP want 3 chunks (a, b, c separate), got %d", len(merged))
 	}
 	for i, ck := range merged {
 		if n := tokenizeStr(ck.Text); n > budget {
-			t.Errorf("RESPECT_CAP chunk %d exceeds target: tokens=%d (cap=%d)", i, n, budget)
+			t.Errorf("UNDER_CAP chunk %d exceeds target: tokens=%d (cap=%d)", i, n, budget)
 		}
 	}
 }
