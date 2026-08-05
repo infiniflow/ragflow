@@ -1274,6 +1274,21 @@ def merge_paragraphs(paragraphs, token_size, strategy=MergeStrategy.OVER_CAP, si
     ``size`` defaults to ``num_tokens_from_string`` and is resolved at call
     time (not captured at definition) so tests can monkeypatch the tokenizer
     deterministically via ``rag.nlp.num_tokens_from_string``.
+
+    Chunking contract (refs #17799)
+    --------------------------------
+    * **Delimiter is a chunk boundary.** The delimiter text specified by the
+      user never enters a chunk. ``naive_merge`` / ``naive_merge_with_images``
+      split every section on the delimiter (except the empty-delimiter
+      size-only mode) so boundary text cannot leak into a chunk.
+    * **``token_size`` is a soft target + merge strategy.** There is no
+      atom-split: a paragraph larger than ``token_size`` stands alone as its own
+      chunk and is truncated later by the model layer.
+    * **Default strategy is ``OVER_CAP``.** A migration that needs the old
+      strict behaviour can opt into ``UNDER_CAP``.
+    * **``OVER_CAP`` has no hard cap** (the model layer truncates oversize
+      units); **``UNDER_CAP`` enforces a strict cap** and never overflows
+      ``token_size``.
     """
     if size is None:
         size = num_tokens_from_string
@@ -1333,6 +1348,7 @@ def _apply_overlap_to_chunks(chunks, overlapped_percent, chunk_token_num):
 
 
 def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
+    """Split sections into chunks. Chunking contract: see ``merge_paragraphs`` (refs #17799)."""
     if not sections:
         return []
     if isinstance(sections, str):
@@ -1395,6 +1411,7 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter="\n。；�
 
 
 def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter="\n。；！？", overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
+    """Split texts (with images) into chunks. Chunking contract: see ``merge_paragraphs`` (refs #17799)."""
     if not texts or len(texts) != len(images):
         return [], []
 
