@@ -69,7 +69,7 @@ dependencies = [
     "mcp>=1.28.1,<2.0.0",
     "mini-racer>=0.12.4,<0.13.0",
     "minio==7.2.4",
-    "mistralai==0.4.2",
+    "mistralai>=2.7.2,<3.0.0",
     "mysql-connector-python>=9.0.0,<10.0.0",
     "moodlepy>=0.23.0",
     "mypy-boto3-s3==1.40.26",
@@ -236,6 +236,10 @@ constraint-dependencies = [
     # CVE-2026-59939: httplib2 < 0.32.0 vulnerable; pulled in transitively via
     # google-api-python-client, google-auth-httplib2
     "httplib2>=0.32.0",
+    # CVE-2025-67221: orjson < 3.11.6 vulnerable; pulled in transitively via
+    # langgraph-sdk, langsmith, ranx. Previously blocked by mistralai==0.4.2
+    # pinning orjson<3.11
+    "orjson>=3.11.6",
 ]
 exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same
