@@ -91,7 +91,7 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 			{Text: cText, DocType: "text", CKType: "text", TKNums: intPtr(cN)},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, budget, 30.0, true, schema.MergeOverCap)
+	got := mergeByTokenSizeFromJSON(items, budget, 30.0, schema.MergeOverCap)
 	merged := got[0]
 	if len(merged) != 2 {
 		t.Fatalf("want 2 chunks (overflow-closed + overlap chunk), got %d (a=%d b=%d c=%d budget=%d)", len(merged), aN, bN, cN, budget)
@@ -157,7 +157,7 @@ func TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsPrevClosed(t *testing.T) 
 			{Text: t4, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(t4))},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, budget, 0.0, true, schema.MergeOverCap)
+	got := mergeByTokenSizeFromJSON(items, budget, 0.0, schema.MergeOverCap)
 	merged := got[0]
 	// Expect: chunk0 (T1+T2, overflow-closed), N (non-text), chunk1 (T3+T4 merged).
 	if len(merged) != 3 {
@@ -213,7 +213,7 @@ func TestMergeByTokenSizeFromJSON_UnderCapNoOverflow(t *testing.T) {
 			{Text: cText, DocType: "text", CKType: "text", TKNums: intPtr(cN)},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, budget, 0.0, true, schema.MergeUnderCap)
+	got := mergeByTokenSizeFromJSON(items, budget, 0.0, schema.MergeUnderCap)
 	merged := got[0]
 	if len(merged) != 3 {
 		t.Fatalf("UNDER_CAP want 3 chunks (a, b, c separate), got %d", len(merged))
@@ -255,12 +255,12 @@ func clampOverlapFixture() [][]schema.ChunkDoc {
 }
 
 func TestMergeByTokenSizeFromJSON_ClampsOverlappedPct(t *testing.T) {
-	at100 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 100, true, schema.MergeOverCap)
+	at100 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 100, schema.MergeOverCap)
 	if at100 == nil || len(at100) == 0 {
 		t.Fatalf("overlappedPct=100: nil/empty result")
 	}
-	at150 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 150, true, schema.MergeOverCap)
-	atHuge := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 1e300, true, schema.MergeOverCap)
+	at150 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 150, schema.MergeOverCap)
+	atHuge := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 1e300, schema.MergeOverCap)
 	if !reflect.DeepEqual(at100, at150) {
 		t.Errorf("overlappedPct=150 should clamp to 100; output differs from 100")
 	}
@@ -268,12 +268,12 @@ func TestMergeByTokenSizeFromJSON_ClampsOverlappedPct(t *testing.T) {
 		t.Errorf("overlappedPct=1e300 should clamp to 100; output differs from 100")
 	}
 
-	at0 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 0, true, schema.MergeOverCap)
+	at0 := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, 0, schema.MergeOverCap)
 	if at0 == nil || len(at0) == 0 {
 		t.Fatalf("overlappedPct=0: nil/empty result")
 	}
-	atNeg := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -5, true, schema.MergeOverCap)
-	atNegHuge := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -1e300, true, schema.MergeOverCap)
+	atNeg := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -5, schema.MergeOverCap)
+	atNegHuge := mergeByTokenSizeFromJSON(clampOverlapFixture(), 128, -1e300, schema.MergeOverCap)
 	if !reflect.DeepEqual(at0, atNeg) {
 		t.Errorf("overlappedPct=-5 should clamp to 0; output differs from 0")
 	}
@@ -294,7 +294,7 @@ func TestMergeByTokenSizeFromJSON_EmptyPrevKeepsChunk(t *testing.T) {
 			{Text: "keepme", DocType: "text", CKType: "text", TKNums: intPtr(5)},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 128, 0, true, schema.MergeOverCap)
+	got := mergeByTokenSizeFromJSON(items, 128, 0, schema.MergeOverCap)
 	merged := got[0]
 	if len(merged) != 1 {
 		t.Fatalf("want 1 merged chunk, got %d", len(merged))

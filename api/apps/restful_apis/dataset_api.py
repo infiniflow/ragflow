@@ -602,7 +602,7 @@ async def has_any_wiki(tenant_id, dataset_id):
 async def list_wiki_pages(tenant_id, dataset_id):
     """List artifact pages for the dataset Artifact tab.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts?page=1&page_size=200&page_type=entity&topic=topic
+    GET /api/v1/datasets/<dataset_id>/artifacts?page=1&page_size=200&page_type=entity&topic=topic&keywords=query
     Success: {"code": 0, "data": {"total": int, "items": [{slug, title, page_type}]}}
     """
     try:
@@ -612,6 +612,7 @@ async def list_wiki_pages(tenant_id, dataset_id):
         return get_error_argument_result(str(e))
     page_type = (request.args.get("page_type") or "").strip() or None
     topic = (request.args.get("topic") or "").strip() or None
+    keywords = (request.args.get("keywords") or "").strip()
 
     try:
         success, result = await dataset_api_service.list_wiki_pages(
@@ -621,6 +622,7 @@ async def list_wiki_pages(tenant_id, dataset_id):
             page_size=page_size,
             page_type=page_type,
             topic=topic,
+            keywords=keywords,
         )
         if success:
             return get_result(data=result)
@@ -636,7 +638,7 @@ async def list_wiki_pages(tenant_id, dataset_id):
 async def list_wiki_topics(tenant_id, dataset_id):
     """List wiki topics for the dataset Artifact tab.
 
-    GET /api/v1/datasets/<dataset_id>/artifacts/topics?page=1&page_size=200
+    GET /api/v1/datasets/<dataset_id>/artifacts/topics?page=1&page_size=200&keywords=query
     Success: {"code": 0, "data": {"total": int, "items": [{topic, title, slug}]}}
     """
     try:
@@ -644,6 +646,7 @@ async def list_wiki_topics(tenant_id, dataset_id):
         page_size = validate_rest_api_page_size(request.args.get("page_size", DEFAULT_PAGE_SIZE))
     except ValueError as e:
         return get_error_argument_result(str(e))
+    keywords = (request.args.get("keywords") or "").strip()
 
     try:
         success, result = await dataset_api_service.list_wiki_topics(
@@ -651,6 +654,7 @@ async def list_wiki_topics(tenant_id, dataset_id):
             tenant_id,
             page=page,
             page_size=page_size,
+            keywords=keywords,
         )
         if success:
             return get_result(data=result)

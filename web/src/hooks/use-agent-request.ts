@@ -102,14 +102,14 @@ const buildAgentListParams = ({
   page,
   pageSize,
   keywords,
-  canvasCategory,
+  canvasCategoryIds,
   ownerIds,
   tags,
 }: {
   page: number;
   pageSize: number;
   keywords?: string;
-  canvasCategory?: string;
+  canvasCategoryIds?: string[];
   ownerIds?: string[];
   tags?: string[];
 }) => {
@@ -121,8 +121,8 @@ const buildAgentListParams = ({
   if (keywords) {
     params.keywords = keywords;
   }
-  if (canvasCategory) {
-    params.canvas_category = canvasCategory;
+  if (Array.isArray(canvasCategoryIds) && canvasCategoryIds.length > 0) {
+    params.canvas_category = canvasCategoryIds.join(',');
   }
   if (Array.isArray(ownerIds) && ownerIds.length > 0) {
     params.owner_ids = ownerIds.join(',');
@@ -139,8 +139,8 @@ export const useFetchAgentListByPage = () => {
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const { filterValue, handleFilterSubmit } = useHandleFilterSubmit();
-  const canvasCategory = Array.isArray(filterValue.canvasCategory)
-    ? (filterValue.canvasCategory[0] as string | undefined)
+  const canvasCategoryIds = Array.isArray(filterValue.canvasCategory)
+    ? (filterValue.canvasCategory as string[])
     : undefined;
   const owner = filterValue.owner;
   const tags = Array.isArray(filterValue.tags) ? filterValue.tags : undefined;
@@ -149,7 +149,7 @@ export const useFetchAgentListByPage = () => {
     page: pagination.current,
     pageSize: pagination.pageSize,
     keywords: debouncedSearchString,
-    canvasCategory,
+    canvasCategoryIds,
     ownerIds: Array.isArray(owner) ? owner : undefined,
     tags,
   });
