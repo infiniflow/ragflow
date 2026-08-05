@@ -30,8 +30,8 @@
 //     parsing lives in ragflow/internal/parser/chunk (ParseDelimiterField).
 //
 //   - CHILDREN DELIMITERS (the secondary split) is implemented via the
-//     shared splitKeepingDelim helper; emitted chunks carry the parent
-//     ("mom") and the split child ("text") keys.
+//     splitDroppingDelim helper; emitted chunks carry the parent
+//     ("mom") and the split child ("text") keys, with the delimiter dropped.
 //
 //   - MODE "delimiter" uses the regex-aware delimiter pattern to split
 //     text into segments; unlike token_size, these segments are NOT
@@ -768,7 +768,7 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.Chu
 	if !hasActiveDelimiter(delimPattern) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
-	parts := splitKeepingDelim(txt, delimPattern)
+	parts := splitDroppingDelim(txt, delimPattern)
 	if !delimPattern.MatchString(txt) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
@@ -1172,7 +1172,7 @@ func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.
 			continue
 		}
 		mom := ck.Text
-		parts := splitKeepingDelim(mom, pattern)
+		parts := splitDroppingDelim(mom, pattern)
 		for _, p := range parts {
 			if strings.TrimSpace(p) == "" {
 				continue
@@ -1223,7 +1223,7 @@ func applyChildrenDelim(segs []string, pattern *regexp.Regexp) []schema.ChunkDoc
 		if strings.TrimSpace(seg) == "" {
 			continue
 		}
-		for _, child := range splitKeepingDelim(seg, pattern) {
+		for _, child := range splitDroppingDelim(seg, pattern) {
 			if strings.TrimSpace(child) == "" {
 				continue
 			}
@@ -1243,7 +1243,7 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 		if strings.TrimSpace(t) == "" {
 			continue
 		}
-		for _, child := range splitKeepingDelim(t, pattern) {
+		for _, child := range splitDroppingDelim(t, pattern) {
 			if strings.TrimSpace(child) == "" {
 				continue
 			}
