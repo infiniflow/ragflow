@@ -78,8 +78,44 @@ A quick test: if `n & (n-1) == 0`, the value is a power of 2 (binary). Otherwise
 | **MiniMax** | Decimal (1M, 204K, 196K) | Decimal (131K, 16K) | [MiniMax Docs](https://platform.minimaxi.com/docs/guides/text-generation) |
 | **Cohere** | Decimal (128K, 256K) | Decimal (4K, 8K, 32K, 64K) | [Cohere Docs](https://docs.cohere.com/docs/models) |
 | **Baichuan** | Decimal (32K, 128K, 192K) | Decimal (8K) | [Baichuan Docs](https://platform.baichuan-ai.com/docs) |
-| **Amazon Nova** | Decimal (128K, 300K) | Decimal (5K) | [AWS Bedrock Docs](https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html) |
+| **Amazon (Bedrock / Nova)** | Decimal (128K, 300K) | Decimal (5K) | [AWS Bedrock Docs](https://docs.aws.amazon.com/bedrock/latest/userguide/models-supported.html) |
 | **Perplexity** | Decimal (128K, 200K) | Binary (128K) | [Perplexity Docs](https://docs.perplexity.ai/docs/sonar/models) |
+| **Tencent (Hunyuan)** | Decimal (32K, 131K, 262K) | Decimal (8K, 64K) | [Tencent Cloud Docs](https://cloud.tencent.com/document/product/1759) |
+| **Xiaomi (MiMo)** | Binary (1M) | Binary (8K) | [MiMo Docs](https://huggingface.co/XiaomiMiMo) |
+| **HuggingFace** | Varies (hosted models) | Varies | [HuggingFace Model Cards](https://huggingface.co/docs/hub/model-cards) |
+
+### Aggregators & Platforms
+
+The following providers are **aggregators** — they host models from multiple upstream creators. Their `content_length` / `max_output` values inherit from the underlying model, not from a native convention of their own. When updating an aggregator's model entry, refer to the upstream creator's documentation (see table above).
+
+| Aggregator | Notes |
+|---|---|
+| **302ai** | Hosts OpenAI, Anthropic, Google, etc. |
+| **Alibaba Cloud (Bailian)** | Hosts Qwen and third-party models |
+| **Aliyun** | Chinese cloud platform |
+| **AstraFlow** | Multi-provider aggregator |
+| **Avian** | Multi-provider aggregator |
+| **Baidu (Qianwen)** | Ernie + third-party models |
+| **CometAPI** | Multi-provider aggregator |
+| **DeepInfra** | Open-source model hosting |
+| **FuturMix** | Multi-provider aggregator |
+| **GiteeAI** | Chinese aggregator |
+| **GreenPT** | GLM-based models |
+| **Huawei Cloud** | Hosts GLM, Kimi, etc. |
+| **JieKouAI** | Multi-provider aggregator |
+| **LongCat** | Meituan's model platform |
+| **N1N** | Multi-provider aggregator |
+| **Novita** | Open-source model hosting |
+| **OpenRouter** | Multi-provider router |
+| **OrcaRouter** | Auto-routing layer |
+| **PPIO** | Edge AI platform |
+| **Qiniu** | Chinese cloud platform |
+| **Replicate** | Open-source model hosting |
+| **SiliconFlow** | Chinese aggregator |
+| **TogetherAI** | Open-source model hosting |
+| **TokenHub** | Multi-provider aggregator |
+| **TokenPony** | Multi-provider aggregator |
+| **Volcengine (Doubao)** | ByteDance's cloud (hosts Doubao + third-party) |
 
 ### Key Takeaways
 
