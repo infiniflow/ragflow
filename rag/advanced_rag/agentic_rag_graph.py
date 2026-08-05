@@ -146,13 +146,6 @@ async def _split_think_stream(stream):
         yield ("think" if in_think else "answer"), re.sub(r"</?think>", "", buf)
 
 
-async def _strip_think_stream(stream):
-    """Yield only visible answer deltas from a model stream."""
-    async for kind, text in _split_think_stream(stream):
-        if kind == "answer" and text:
-            yield text
-
-
 # ── Graph construction ──
 
 
@@ -262,21 +255,17 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
 
         tools.kbinfos = kbinfos
 
-        # Abstain
-        if abstain:
-            msg = "I cannot answer this question based on the available information."
-            token_queue.put_nowait(msg)
-            return {"final_answer": msg}
-
-        # Empty result
-        if empty_result or not kbinfos["chunks"]:
-            msg = "I don't have enough information based on the available sources."
-            token_queue.put_nowait(msg)
-            return {"final_answer": msg}
+        no_evidence = abstain or empty_result or not kbinfos["chunks"]
+        if no_evidence and tools.empty_response:
+            token_queue.put_nowait(tools.empty_response)
+            return {"final_answer": tools.empty_response}
 
         # Build evidence
         evidence = kb_prompt(kbinfos, tools.chat_mdl.max_length)
         parts = [f"Question:\n{question}\n"]
+
+        if no_evidence:
+            parts.append("No supporting evidence was retrieved. State clearly that the available sources are insufficient, and do not answer from general knowledge.\n")
 
         # Include pre_summary from agent results if available
         pre_summary = kbinfos.get("pre_summary")

@@ -1920,6 +1920,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         web_search=create_web_search_provider(prompt_config) if use_web_search else None,
         meta_data_filter=dialog.meta_data_filter,
         doc_scope=doc_scope,
+        empty_response=prompt_config.get("empty_response", ""),
         do_refer=False,
         thinking_mode=thinking_mode,
     )
@@ -1983,9 +1984,9 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     if getattr(chat_mdl, "mdl", None) is not None:
         chat_mdl.mdl.terminal_tools = {"rag"}
     if stream:
-        # Surface only the agentic pipeline's progress logs as one think block.
-        # The outer model's tool-selection thoughts are implementation details;
-        # the final answer is emitted from the inner graph's own deltas below.
+        # Surface the outer model's reasoning, agent progress logs, and the
+        # final-answer model's reasoning as one continuous think block. The
+        # final answer itself is emitted from the inner graph's own deltas.
         from rag.advanced_rag.think_log import install_think_log_handler, set_think_log_sink, reset_think_log_sink
 
         install_think_log_handler()
