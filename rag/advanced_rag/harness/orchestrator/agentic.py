@@ -155,8 +155,16 @@ async def agentic_research(state: dict, tools) -> dict:
             state["route"] = route
             state["seed_chunks"] = list(tools.kbinfos.get("chunks", []) or [])
             new_plan = await planner_node(state, tools)
-            verified_by_desc = {c.description: c for c in ctx.claims if c.is_verified}
-            ctx.claims = [verified_by_desc.get(c.description, c) for c in new_plan.get("claims", ctx.claims)]
+            # Keep EVERY verified claim (even ones the new plan omitted — their
+            # evidence is still valid and shouldn't be re-researched), then
+            # append only the new plan's unverified claims.
+            verified = [c for c in ctx.claims if c.is_verified]
+            new_by_desc = {}
+            for c in new_plan.get("claims", ctx.claims):
+                if isinstance(c, ClaimTarget):
+                    new_by_desc.setdefault(c.description, c)
+            seen = {c.description for c in verified}
+            ctx.claims = verified + [c for c in new_by_desc.values() if c.description not in seen]
         if action == "FALLBACK_LLM":
             return _finalize(ctx, tools, partial=True, fallback=True)
 

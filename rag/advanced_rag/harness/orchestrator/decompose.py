@@ -81,10 +81,14 @@ async def decompose_and_search(state: dict, tools) -> dict:
             tools.kbinfos["chunks"] = []
             return {"verdict": verdict.__dict__, "abstain": True}
 
-    # Max cycles reached with claims still unverified — flag the answer as
-    # partial so the final-answer node prepends the partial-answer preamble
-    # instead of presenting an incomplete answer as complete.
-    partial = any(not c.is_verified for c in ctx.claims) and bool(tools.kbinfos.get("chunks"))
+    # Cycle exhaustion: flag the answer as partial so the final-answer node
+    # prepends the partial-answer preamble instead of presenting an incomplete
+    # answer as complete. Partial when (a) some claim is still unverified, or
+    # (b) every claim is verified but the final verdict is not SUFFICIENT (e.g.
+    # cross-check flagged conflicts/mismatches) — in both cases an exhaustive
+    # answer was not reached.
+    verdict_status = getattr(verdict, "status", None)
+    partial = (any(not c.is_verified for c in ctx.claims) or (verdict_status is not None and verdict_status != "SUFFICIENT")) and bool(tools.kbinfos.get("chunks"))
     return {"kbinfos": tools.kbinfos, "partial_answer": partial}
 
 
