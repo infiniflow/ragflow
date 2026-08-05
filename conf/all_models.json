@@ -17595,7 +17595,7 @@
       },
       "max_completion_tokens": 131072,
       "content_length": 204800,
-      "max_output": 16384
+      "max_output": 131072
     },
     {
       "name": "minimaxai/MiniMax-M2.5",
@@ -17632,7 +17632,7 @@
       },
       "max_completion_tokens": 131072,
       "content_length": 204800,
-      "max_output": 16384
+      "max_output": 131072
     },
     {
       "name": "minimaxai/MiniMax-Text-01",
@@ -39365,8 +39365,8 @@
         "clear_thinking": true
       },
       "max_completion_tokens": 131072,
-      "content_length": 204800,
-      "max_output": 131072
+      "content_length": 200000,
+      "max_output": 128000
     },
     {
       "name": "zai-org/GLM-5.1-FP8",
@@ -41541,6 +41541,1038 @@
       ],
       "content_length": 32768,
       "max_output": 32768
+    },
+    {
+      "name": "gpt-4.5-preview",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 128000,
+      "max_output": 16384
+    },
+    {
+      "name": "gpt-3.5-turbo-16k-0613",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 16385,
+      "max_output": 4096
+    },
+    {
+      "name": "Qwen/Qwen3-Max",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 8192
+    },
+    {
+      "name": "Qwen/Qwen3-Coder",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 65536
+    },
+    {
+      "name": "Qwen/Qwen3-32B",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 32768
+    },
+    {
+      "name": "Qwen/Qwen3-VL-235B-A22B-Instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 8192
+    },
+    {
+      "name": "glm-5.1",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 200000,
+      "max_output": 128000
+    },
+    {
+      "name": "MiniMax-M2.7",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 204800,
+      "max_output": 131072
+    },
+    {
+      "name": "MiniMax-M2",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 204800,
+      "max_output": 131072
+    },
+    {
+      "name": "moonshotai/kimi-k2.5",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 131072
+    },
+    {
+      "name": "Baichuan-M3-plus",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 8192
+    },
+    {
+      "name": "Baichuan-M2-plus",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 8192
+    },
+    {
+      "name": "ernie-5.0",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 121856,
+      "max_output": 8192
+    },
+    {
+      "name": "anthropic.claude-3-opus-20240229-v1:0",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 200000,
+      "max_output": 4096
+    },
+    {
+      "name": "anthropic.claude-3-sonnet-20240229-v1:0",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 200000,
+      "max_output": 4096
+    },
+    {
+      "name": "anthropic.claude-3-haiku-20240307-v1:0",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 200000,
+      "max_output": 4096
+    },
+    {
+      "name": "meta.llama3-1-405b-instruct-v1:0",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "meta.llama3-1-70b-instruct-v1:0",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "meta.llama3-1-8b-instruct-v1:0",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "mistral.mistral-large-2407-v1:0",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 128000,
+      "max_output": 4096
+    },
+    {
+      "name": "mistral.mixtral-8x7b-instruct-v0:1",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32000,
+      "max_output": 4096
+    },
+    {
+      "name": "cohere.command-r-plus-v1:0",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 4096
+    },
+    {
+      "name": "cohere.command-r-v1:0",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 4096
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V3.2",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "glm-4.7-flash",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 200000,
+      "max_output": 128000
+    },
+    {
+      "name": "DeepSeek-V3",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "longcat-flash-chat",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "glm-5",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 200000,
+      "max_output": 128000
+    },
+    {
+      "name": "qwen2.5-vl-72b",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 4096
+    },
+    {
+      "name": "openai/gpt-oss-120b:fastest",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 131072
+    },
+    {
+      "name": "hy3",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "hy3-preview",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 8192
+    },
+    {
+      "name": "kimi-k3",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 1000000,
+      "max_output": 131072
+    },
+    {
+      "name": "kimi-k2.7-code-highspeed",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 131072
+    },
+    {
+      "name": "deepseek-v4-flash-202605",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 1048576,
+      "max_output": 393216
+    },
+    {
+      "name": "deepseek-v4-pro-202606",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 1048576,
+      "max_output": 393216
+    },
+    {
+      "name": "hy-mt2-pro",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 8192,
+      "max_output": 8192
+    },
+    {
+      "name": "hy-mt2-plus",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 8192,
+      "max_output": 8192
+    },
+    {
+      "name": "hy-mt2-lite",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 8192,
+      "max_output": 8192
+    },
+    {
+      "name": "hy-role",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 8192
+    },
+    {
+      "name": "hunyuan-role-latest",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 8192
+    },
+    {
+      "name": "hy-vision-2.0-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 8192
+    },
+    {
+      "name": "youtu-vita",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 8192
+    },
+    {
+      "name": "hunyuan-t1-vision-20250916",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 8192
+    },
+    {
+      "name": "hunyuan-turbos-vision-video-20250728",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 8192
+    },
+    {
+      "name": "zai-org/glm-4.5",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 128000,
+      "max_output": 96000
+    },
+    {
+      "name": "zai-org/glm-4.5v",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 65536,
+      "max_output": 16384
+    },
+    {
+      "name": "zai-org/glm-4.7",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 200000,
+      "max_output": 128000
+    },
+    {
+      "name": "zai-org/glm-4.7-flash",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 200000,
+      "max_output": 128000
+    },
+    {
+      "name": "zai-org/glm-5",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 200000,
+      "max_output": 128000
+    },
+    {
+      "name": "LongCat-2.0",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 1048576,
+      "max_output": 131072
+    },
+    {
+      "name": "MiniMax-M3",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 1024000,
+      "max_output": 131072
+    },
+    {
+      "name": "minimax-m2.7-highspeed",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 204800,
+      "max_output": 131072
+    },
+    {
+      "name": "minimax-m2.5-highspeed",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 204800,
+      "max_output": 131072
+    },
+    {
+      "name": "minimax-m2.1-highspeed",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 204800,
+      "max_output": 131072
+    },
+    {
+      "name": "minimax-m2-her",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 65536,
+      "max_output": 16384
+    },
+    {
+      "name": "meta-llama/llama-3.3-70b-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 120000
+    },
+    {
+      "name": "moonshotai/kimi-k2-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 131072
+    },
+    {
+      "name": "google/diffusiongemma-26b-a4b-it",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 8192
+    },
+    {
+      "name": "google/gemma-4-31b-it",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 262144
+    },
+    {
+      "name": "meta/llama-3.1-70b-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "meta/llama-3.1-8b-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "meta/llama-3.2-11b-vision-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "meta/llama-3.2-1b-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "meta/llama-3.2-3b-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "meta/llama-3.2-90b-vision-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "meta/llama-3.3-70b-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "meta/llama-guard-4-12b",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "minimaxai/minimax-m3",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 1048576,
+      "max_output": 16384
+    },
+    {
+      "name": "mistralai/mistral-medium-3.5-128b",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 262144
+    },
+    {
+      "name": "mistralai/mistral-nemotron",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 131072
+    },
+    {
+      "name": "moonshotai/kimi-k2.6",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 131072
+    },
+    {
+      "name": "nvidia/ising-calibration-1.5-31b",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 8192,
+      "max_output": 8192
+    },
+    {
+      "name": "nvidia/llama-3.1-nemotron-nano-8b-v1",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "nvidia/llama-3.3-nemotron-super-49b-v1",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "nvidia/nemotron-3-nano-30b-a3b",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "nvidia/nemotron-3.5-content-safety",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 8192,
+      "max_output": 8192
+    },
+    {
+      "name": "nvidia/nemotron-mini-4b-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 8192,
+      "max_output": 4096
+    },
+    {
+      "name": "nvidia/nemotron-nano-12b-v2-vl",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 8192,
+      "max_output": 8192
+    },
+    {
+      "name": "nvidia/nvidia-nemotron-nano-9b-v2",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "nvidia/riva-translate-4b-instruct-v2",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 8192,
+      "max_output": 8192
+    },
+    {
+      "name": "poolside/laguna-xs-2.1",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 8192
+    },
+    {
+      "name": "stepfun-ai/step-3.7-flash",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 8192
+    },
+    {
+      "name": "thinkingmachines/inkling",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 8192,
+      "max_output": 8192
+    },
+    {
+      "name": "z-ai/glm-5.2",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 1000000,
+      "max_output": 128000
+    },
+    {
+      "name": "tencent/hy3-preview",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 262144
+    },
+    {
+      "name": "meta-llama/llama-3.2-3b-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "baichuan/baichuan2-13b-chat",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 196608,
+      "max_output": 8192
+    },
+    {
+      "name": "meta-llama/llama-3.1-70b-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "meta-llama/llama-3.1-8b-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "01-ai/yi-1.5-34b-chat",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 16384,
+      "max_output": 8192
+    },
+    {
+      "name": "01-ai/yi-1.5-9b-chat",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 16384,
+      "max_output": 8192
+    },
+    {
+      "name": "thudm/glm-4-9b-chat",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 128000,
+      "max_output": 16384
+    },
+    {
+      "name": "doubao-seed-1.6-flash",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 256000,
+      "max_output": 16384
+    },
+    {
+      "name": "doubao-1.5-pro-32k",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 4096
+    },
+    {
+      "name": "doubao-seed-1.6",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 256000,
+      "max_output": 16384
+    },
+    {
+      "name": "doubao-seed-2.0-pro",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 256000,
+      "max_output": 16384
+    },
+    {
+      "name": "doubao-seed-2.0-lite",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 256000,
+      "max_output": 16384
+    },
+    {
+      "name": "doubao-seed-2.0-mini",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 256000,
+      "max_output": 16384
+    },
+    {
+      "name": "doubao-seed-2.0-code",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 256000,
+      "max_output": 16384
+    },
+    {
+      "name": "qwen2.5-max-2025-01-25",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 8192
+    },
+    {
+      "name": "minimax-m1",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 1000000,
+      "max_output": 131072
+    },
+    {
+      "name": "glm-4.5",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 128000,
+      "max_output": 96000
+    },
+    {
+      "name": "glm-4.5-air",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 128000,
+      "max_output": 96000
+    },
+    {
+      "name": "Pro/deepseek-ai/DeepSeek-V4-Pro",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 1048576,
+      "max_output": 393216
+    },
+    {
+      "name": "Pro/deepseek-ai/DeepSeek-V4-Flash",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 1048576,
+      "max_output": 393216
+    },
+    {
+      "name": "Pro/moonshotai/Kimi-K2.6",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 65536
+    },
+    {
+      "name": "tencent/hunyuan-mt-7b",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 8192
+    },
+    {
+      "name": "step-3.5-flash",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 32768
+    },
+    {
+      "name": "step-3.5-flash-paid",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 32768
+    },
+    {
+      "name": "step-1-256k",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 8192
+    },
+    {
+      "name": "step-1-128k",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 8192
+    },
+    {
+      "name": "step-1-32k",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 8192
+    },
+    {
+      "name": "step-1-8k",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 8192,
+      "max_output": 4096
+    },
+    {
+      "name": "step-1-flash",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 8192,
+      "max_output": 4096
+    },
+    {
+      "name": "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 65536
+    },
+    {
+      "name": "claude-3-5-sonnet",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 200000,
+      "max_output": 8192
+    },
+    {
+      "name": "gemini-1.5-pro",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 2097152,
+      "max_output": 8192
+    },
+    {
+      "name": "gemini-1.5-flash",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 1048576,
+      "max_output": 8192
+    },
+    {
+      "name": "hunyuan-a13b-instruct",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 262144,
+      "max_output": 8192
+    },
+    {
+      "name": "glm-4.6",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 200000,
+      "max_output": 128000
+    },
+    {
+      "name": "solar-pro",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 32768,
+      "max_output": 4096
+    },
+    {
+      "name": "grok-3-mini-mini-fast",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 131072,
+      "max_output": 131072
+    },
+    {
+      "name": "spark-x",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 128000,
+      "max_output": 8192
+    },
+    {
+      "name": "glm-4.7",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 200000,
+      "max_output": 128000
+    },
+    {
+      "name": "glm-4.6v-Flash",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 128000,
+      "max_output": 32768
+    },
+    {
+      "name": "glm-4.5v",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 65536,
+      "max_output": 16384
+    },
+    {
+      "name": "glm-4-flashx",
+      "model_types": [
+        "chat"
+      ],
+      "content_length": 128000,
+      "max_output": 16384
     }
   ]
 }
