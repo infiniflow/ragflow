@@ -124,7 +124,7 @@ def _load_figure_parser(monkeypatch):
             "",
             "",
             "vision_llm_figure_describe_prompt",
-            {"language": "Chinese"},
+            {},
         ),
         (
             "Above ",
@@ -133,9 +133,15 @@ def _load_figure_parser(monkeypatch):
             {
                 "context_above": "Above Caption",
                 "context_below": "Below",
-                "language": "Chinese",
             },
         ),
+    ],
+)
+@pytest.mark.parametrize(
+    ("language", "expected_language"),
+    [
+        ("Chinese", "Chinese"),
+        ("", "English"),
     ],
 )
 def test_docx_wrapper_passes_dataset_language_to_vision_model_and_prompt(
@@ -144,6 +150,8 @@ def test_docx_wrapper_passes_dataset_language_to_vision_model_and_prompt(
     context_below,
     prompt_name,
     expected_arguments,
+    language,
+    expected_language,
 ):
     module, FakeImage = _load_figure_parser(monkeypatch)
     model_config = {"llm_name": "vision-model"}
@@ -172,22 +180,36 @@ def test_docx_wrapper_passes_dataset_language_to_vision_model_and_prompt(
         idx_lst=[0],
         callback=lambda *_args, **_kwargs: None,
         tenant_id="tenant-id",
-        lang="Chinese",
+        lang=language,
     )
 
     module.LLMBundle.assert_called_once_with(
         "tenant-id",
         model_config,
-        lang="Chinese",
+        lang=expected_language,
     )
 
     selected_prompt = getattr(module, prompt_name)
-    selected_prompt.assert_called_once_with(**expected_arguments)
+    selected_prompt.assert_called_once_with(
+        **expected_arguments,
+        language=expected_language,
+    )
     assert chunks[0]["text"].endswith("description")
 
 
 @pytest.mark.p1
-def test_vision_figure_parser_passes_dataset_language_to_prompt(monkeypatch):
+@pytest.mark.parametrize(
+    ("language", "expected_language"),
+    [
+        ("Chinese", "Chinese"),
+        ("", "English"),
+    ],
+)
+def test_vision_figure_parser_passes_dataset_language_to_prompt(
+    monkeypatch,
+    language,
+    expected_language,
+):
     module, FakeImage = _load_figure_parser(monkeypatch)
     prompt = Mock(return_value="prompt")
     module.vision_llm_figure_describe_prompt = prompt
@@ -196,12 +218,12 @@ def test_vision_figure_parser_passes_dataset_language_to_prompt(monkeypatch):
     parser = module.VisionFigureParser(
         vision_model=object(),
         figures_data=[(FakeImage(), ["caption"])],
-        lang="Chinese",
+        lang=language,
     )
 
     parser(callback=lambda *_args, **_kwargs: None)
 
-    prompt.assert_called_once_with(language="Chinese")
+    prompt.assert_called_once_with(language=expected_language)
 
 
 @pytest.mark.p1
@@ -213,9 +235,18 @@ def test_vision_figure_parser_passes_dataset_language_to_prompt(monkeypatch):
         "vision_figure_parser_pdf_wrapper",
     ],
 )
+@pytest.mark.parametrize(
+    ("language", "expected_language"),
+    [
+        ("Chinese", "Chinese"),
+        ("", "English"),
+    ],
+)
 def test_figure_wrappers_pass_dataset_language_to_model_and_parser(
     monkeypatch,
     wrapper_name,
+    language,
+    expected_language,
 ):
     module, FakeImage = _load_figure_parser(monkeypatch)
     model_config = {"llm_name": "vision-model"}
@@ -255,13 +286,13 @@ def test_figure_wrappers_pass_dataset_language_to_model_and_parser(
         **arguments,
         callback=lambda *_args, **_kwargs: None,
         tenant_id="tenant-id",
-        lang="Chinese",
+        lang=language,
     )
 
     module.LLMBundle.assert_called_once_with(
         "tenant-id",
         model_config,
-        lang="Chinese",
+        lang=expected_language,
     )
-    assert module.VisionFigureParser.call_args.kwargs["lang"] == "Chinese"
+    assert module.VisionFigureParser.call_args.kwargs["lang"] == expected_language
     parser_instance.assert_called_once()

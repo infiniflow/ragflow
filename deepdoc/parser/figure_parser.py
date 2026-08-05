@@ -45,7 +45,12 @@ def vision_figure_parser_figure_data_wrapper(figures_data_without_positions):
     return res
 
 
+def _normalize_vision_language(lang):
+    return lang or "English"
+
+
 def vision_figure_parser_docx_wrapper(sections, tbls, callback=None, lang="English", **kwargs):
+    lang = _normalize_vision_language(lang)
     if not sections:
         return tbls
     try:
@@ -71,6 +76,7 @@ def vision_figure_parser_docx_wrapper(sections, tbls, callback=None, lang="Engli
 
 
 def vision_figure_parser_figure_xlsx_wrapper(images, callback=None, lang="English", **kwargs):
+    lang = _normalize_vision_language(lang)
     tbls = []
     if not images:
         return []
@@ -109,6 +115,7 @@ def vision_figure_parser_figure_xlsx_wrapper(images, callback=None, lang="Englis
 
 
 def vision_figure_parser_pdf_wrapper(tbls, callback=None, lang="English", **kwargs):
+    lang = _normalize_vision_language(lang)
     if not tbls:
         return []
     sections = kwargs.get("sections")
@@ -152,6 +159,7 @@ def vision_figure_parser_pdf_wrapper(tbls, callback=None, lang="English", **kwar
 
 
 def vision_figure_parser_docx_wrapper_naive(chunks, idx_lst, callback=None, lang="English", **kwargs):
+    lang = _normalize_vision_language(lang)
     if not chunks:
         return []
     try:
