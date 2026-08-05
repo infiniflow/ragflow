@@ -161,6 +161,36 @@ func TestRetrieval_KbIDsTranslatedToDatasetIDs(t *testing.T) {
 	}
 }
 
+func TestRetrieval_NodeQueryResolvedFromCanvasState(t *testing.T) {
+	previous := agenttool.GetRetrievalService()
+	agenttool.SetSimpleRetrievalService()
+	t.Cleanup(func() { agenttool.SetRetrievalService(previous) })
+
+	c, err := newRetrievalComponent(map[string]any{
+		"query":  "{sys.query}",
+		"kb_ids": []any{"kb-1"},
+	})
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.Sys["query"] = "AirPure X200 vs AirPure X300"
+	ctx := runtime.WithState(context.Background(), state)
+	out, err := c.Invoke(ctx, nil, map[string]any{
+		"category":      "Product Feature Comparison",
+		"category_name": "Product Feature Comparison",
+		"_next":         []string{"Retrieval:EightyDaysHappen"},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	formalizedContent, _ := out["formalized_content"].(string)
+	if !strings.Contains(formalizedContent, "AirPure X200 vs AirPure X300") {
+		t.Fatalf("formalized_content = %q, want resolved canvas query", formalizedContent)
+	}
+}
+
 func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
 	if err != nil {

@@ -65,6 +65,7 @@ func anySlice(v any) []any {
 // defaults to the per-invocation RetrievalRequest. The fields are
 // the same the Python agent/component/retrieval.py exposes.
 type retrievalParams struct {
+	Query                    string
 	KbIDs                    []string
 	TopN                     int
 	TopK                     int
@@ -83,6 +84,9 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 	out := retrievalParams{}
 	if params == nil {
 		return out
+	}
+	if v, ok := params["query"].(string); ok {
+		out.Query = v
 	}
 	if v, ok := params["kb_ids"].([]any); ok {
 		for _, x := range v {
@@ -212,6 +216,9 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 	out := make(map[string]any, len(inputs)+8)
 	for k, v := range inputs {
 		out[k] = v
+	}
+	if _, ok := out["query"]; !ok && c.params.Query != "" {
+		out["query"] = c.params.Query
 	}
 	if _, ok := out["kb_ids"]; !ok && len(c.params.KbIDs) > 0 {
 		ids := make([]any, len(c.params.KbIDs))
