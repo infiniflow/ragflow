@@ -350,3 +350,76 @@ func TestInvokeTextPayload_StrictCapEndToEnd(t *testing.T) {
 		}
 	}
 }
+
+// TestInvokeJSONPayload_UnderCapEndToEnd exercises the UNDER_CAP strategy on
+// the JSON path end-to-end (invokeJSONPayload). Many single-line JSON items
+// are flattened into one global merge sequence, and under_cap=true must keep
+// every chunk within chunk_token_size. The OVER_CAP control is asserted to
+// pack fewer chunks than UNDER_CAP, proving the toggle is live on the JSON
+// path — not just the text path covered by TestInvokeTextPayload_StrictCapEndToEnd.
+func TestInvokeJSONPayload_UnderCapEndToEnd(t *testing.T) {
+	const budget = 32
+	unit := tokenizeStr(strings.TrimSpace(strings.Repeat("alpha ", 12)))
+
+	// Each item is one ~unit-sized token block; 24 items give the global
+	// merge plenty to accumulate.
+	var items []map[string]any
+	for i := 0; i < 24; i++ {
+		items = append(items, map[string]any{
+			"text":         strings.TrimSpace(strings.Repeat("alpha ", 12)),
+			"doc_type_kwd": "text",
+		})
+	}
+
+	run := func(underCap bool) []map[string]any {
+		comp, err := NewTokenChunker(map[string]any{
+			"delimiter_mode":   "delimiter",
+			"delimiters":       []string{"\n"},
+			"chunk_token_size": budget,
+			"under_cap":        underCap,
+		})
+		if err != nil {
+			t.Fatalf("NewTokenChunker: %v", err)
+		}
+		out, err := comp.Invoke(context.Background(), nil, map[string]any{
+			"name":          "doc.json",
+			"output_format": "json",
+			"json":          items,
+		})
+		if err != nil {
+			t.Fatalf("Invoke: %v", err)
+		}
+		if errMsg, _ := out["_ERROR"].(string); errMsg != "" {
+			t.Fatalf("Invoke error payload: %s", errMsg)
+		}
+		chunks, _ := out["chunks"].([]map[string]any)
+		return chunks
+	}
+
+	// UNDER_CAP: no chunk may exceed the token target.
+	under := run(true)
+	if len(under) < 2 {
+		t.Fatalf("UNDER_CAP: want multiple chunks, got %d", len(under))
+	}
+	for i, ck := range under {
+		text, _ := ck["text"].(string)
+		if n := tokenizeStr(text); n > budget {
+			t.Errorf("UNDER_CAP chunk %d exceeds target: tokens=%d (cap=%d)", i, n, budget)
+		}
+	}
+
+	// OVER_CAP control: the same input packs fewer chunks (it allows one
+	// boundary overflow per chunk), proving the toggle is live on the JSON
+	// path. Equal lengths would mean under_cap is a no-op here.
+	over := run(false)
+	if len(over) >= len(under) {
+		t.Errorf("OVER_CAP should pack fewer chunks than UNDER_CAP (over=%d under=%d); toggle may be a no-op on the JSON path", len(over), len(under))
+	}
+	for i, ck := range over {
+		text, _ := ck["text"].(string)
+		// OVER_CAP may overflow by at most one unit.
+		if n := tokenizeStr(text); n > budget+unit {
+			t.Errorf("OVER_CAP chunk %d overflows by more than one unit: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
+		}
+	}
+}
