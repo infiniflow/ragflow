@@ -86,45 +86,13 @@ func compileDelimPattern(delims []string) *regexp.Regexp {
 	return chunk.CompileDelimiterListPattern(delims)
 }
 
-// splitKeepingDelim mirrors Python token_chunker._split_text_by_pattern
-// (token_chunker.py:79-94): re.split with a captured delimiter group yields
-// [text, delim, text, delim, ...]; each delimiter is glued to the END of the
-// preceding text segment, so it never surfaces as a standalone chunk. A
-// delimiter with no preceding text (a leading delimiter or one adjacent to
-// another) is dropped together with the empty segment, matching Python's
-// `if not chunk: continue`.
-func splitKeepingDelim(text string, pattern *regexp.Regexp) []string {
-	if pattern == nil {
-		return []string{text}
-	}
-	idxs := pattern.FindAllStringIndex(text, -1)
-	if len(idxs) == 0 {
-		return []string{text}
-	}
-	var out []string
-	cursor := 0
-	for _, idx := range idxs {
-		start, end := idx[0], idx[1]
-		if start == cursor {
-			cursor = end
-			continue
-		}
-		out = append(out, text[cursor:end])
-		cursor = end
-	}
-	if cursor < len(text) {
-		out = append(out, text[cursor:])
-	}
-	return out
-}
-
 // splitDroppingDelim mirrors Python's _split_text_by_pattern
-// (token_chunker.py:79-90). Unlike splitKeepingDelim, the captured delimiter
-// is DISCARDED rather than glued to the preceding segment: re.split with a
-// captured group keeps delimiters at odd indices, and only the even-index
-// (text) parts are kept. This is the behaviour the text/markdown/html path
-// must reproduce so a split chunk reads "first sentence here" without the
-// trailing delimiter.
+// (token_chunker.py:79-90). The captured delimiter is DISCARDED rather than
+// glued to a segment: re.split with a captured group keeps delimiters at odd
+// indices, and only the even-index (text) parts are kept. This is the
+// behaviour every delimiter path (primary and children, text/markdown/html
+// and json) must reproduce so a split chunk reads "first sentence here"
+// without the trailing delimiter.
 func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 	if pattern == nil {
 		return []string{text}
