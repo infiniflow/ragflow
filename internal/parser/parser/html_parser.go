@@ -108,7 +108,7 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 // don't pollute the downstream chunker input.
 func walkHTMLBlocks(root *html.Node, out *[]map[string]any) {
 	for child := root.FirstChild; child != nil; child = child.NextSibling {
-			if child.Type == html.TextNode {
+		if child.Type == html.TextNode {
 			if emitsLooseHTMLText(root) {
 				appendHTMLTextItem(out, child.Data, "text", true)
 			}
