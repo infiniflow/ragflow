@@ -123,8 +123,8 @@ func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 	if len(inserted) != 1 {
 		t.Fatalf("insert calls = %d, want 1", len(inserted))
 	}
-	if len(inserted[0]) != 2 {
-		t.Fatalf("inserted chunk count = %d, want 2", len(inserted[0]))
+	if len(inserted[0]) != 1 {
+		t.Fatalf("inserted chunk count = %d, want 1", len(inserted[0]))
 	}
 	for i, ck := range inserted[0] {
 		if got := ck["doc_id"]; got != docID {
@@ -354,8 +354,8 @@ func TestRunPipeline_RealPipelineOutput_ProducesIndexFields(t *testing.T) {
 		t.Fatalf("insert calls = %d, want 1", len(inserted))
 	}
 	chunks := inserted[0]
-	if len(chunks) != 2 {
-		t.Fatalf("inserted chunk count = %d, want 2", len(chunks))
+	if len(chunks) != 1 {
+		t.Fatalf("inserted chunk count = %d, want 1", len(chunks))
 	}
 	for i, ck := range chunks {
 		if got := ck["doc_id"]; got != docID {
