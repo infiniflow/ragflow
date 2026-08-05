@@ -127,8 +127,8 @@ func TestTokenChunker_OversizeUnitStandsAloneAfterInBudgetUnit(t *testing.T) {
 				t.Fatalf("oversize after in-budget: want 2 chunks (in-budget + standalone oversize), got %d", len(chunks))
 			}
 			first, _ := chunks[0]["text"].(string)
-			if !strings.Contains(first, inBudget) {
-				t.Fatalf("first chunk should contain in-budget sentence %q, got %q", inBudget, first)
+			if first != inBudget {
+				t.Fatalf("first chunk should be only the in-budget sentence %q, got %q", inBudget, first)
 			}
 			second, _ := chunks[1]["text"].(string)
 			if second != strings.TrimSpace(longLine) {
