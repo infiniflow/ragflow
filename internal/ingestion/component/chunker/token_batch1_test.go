@@ -167,6 +167,12 @@ func TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsPrevClosed(t *testing.T) 
 		}
 		t.Fatalf("want 3 chunks (overflow-closed + non-text + merged), got %d: %v", len(merged), texts)
 	}
+	// Lock the overflow-closed precondition: T1+T2 must have merged into
+	// chunk0 with prevClosed set, otherwise the later assertions could pass
+	// without exercising the boundary-overflow path at all.
+	if merged[0].Text != t1+"\n"+t2 {
+		t.Errorf("chunk[0] should be the overflow-closed T1+T2 chunk: got %q", merged[0].Text)
+	}
 	if merged[1].CKType != "image" {
 		t.Errorf("chunk[1] should be the non-text image chunk, got CKType=%q text=%q", merged[1].CKType, merged[1].Text)
 	}
