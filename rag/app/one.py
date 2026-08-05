@@ -29,6 +29,9 @@ from common.constants import MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
 from common.parser_config_utils import normalize_layout_recognizer
 
 
+logger = logging.getLogger(__name__)
+
+
 class Pdf(PdfParser):
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, zoomin=3, callback=None):
         from timeit import default_timer as timer
@@ -83,7 +86,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
             cks.append({"text": text, "image": image, "ck_type": ck_type})
 
-        vision_figure_parser_docx_wrapper_naive(cks, image_idxs, callback, **kwargs)
+        logger.info(
+            "DOCX figure vision enhancement: language=%s image_count=%d",
+            lang or "English",
+            len(image_idxs),
+        )
+        vision_figure_parser_docx_wrapper_naive(cks, image_idxs, callback, lang=lang, **kwargs)
         sections = [ck["text"] for ck in cks if ck.get("text")]
         callback(0.8, "Finish parsing.")
 
