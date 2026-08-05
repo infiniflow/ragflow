@@ -30,6 +30,8 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 | `thinking` | object | No | Extended-thinking configuration (see [Thinking Object](#thinking-object)). |
 | `tools` | object | No | Tool-use capability (see [Tools Object](#tools-object)). |
 | `class` | string | No | Provider-specific model class used to select the correct driver (e.g. `glm`, `kimi`). |
+| `max_dimension` | integer | No | Maximum supported embedding dimension. Used by `embedding`-type models (e.g. `1536`). |
+| `dimensions` | integer[] | No | Supported embedding dimensions (e.g. `[256, 512, 1024, 1536]`). Empty array `[]` (or omitted) when the model exposes a single dimension via `max_dimension`. |
 | `alias` | string[] | No | Alternative names for the same model. Used for model lookup when a tenant refers to the model by an alias. **Must be unique across all models.** |
 | `rank` | integer | No | Sort priority (lower = higher rank). Used when ordering model lists in the UI. |
 
