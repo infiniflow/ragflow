@@ -82,6 +82,7 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
     _stub(
         monkeypatch,
         "api.db.joint_services.tenant_model_service",
+        get_composite_model_name_by_ids=MagicMock(),
         resolve_model_config=MagicMock(),
         resolve_model_id=MagicMock(),
     )
