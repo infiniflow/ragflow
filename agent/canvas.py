@@ -382,6 +382,7 @@ class Canvas(Graph):
         self.history = []
         if isinstance(self.globals.get("sys.history"), list):
             self.globals["sys.history"] = []
+        self.path = []
 
     def reset(self, mem=False):
         super().reset()
