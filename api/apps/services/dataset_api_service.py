@@ -18,7 +18,7 @@ import json
 import os
 import re
 
-from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_id
+from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_id, get_composite_model_name_by_ids
 from common.constants import PAGERANK_FLD, LLMType
 from common import settings
 from api.db.db_models import File
@@ -478,6 +478,10 @@ def list_datasets(tenant_id: str, args: dict):
         if status_by_kb:
             kb["parsing_status"] = status_by_kb.get(kb["id"], {})
         response_data_list.append(remap_dictionary_keys(kb))
+
+    embed_model_names = get_composite_model_name_by_ids([m["embedding_model"] for m in response_data_list])
+    for response_data in response_data_list:
+        response_data["embedding_model_name"] = embed_model_names.get(response_data["embedding_model"], "")
     return True, {"data": response_data_list, "total": total}
 
 
