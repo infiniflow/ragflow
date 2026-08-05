@@ -51,8 +51,9 @@ export default function Compilation() {
               className="size-10 rounded-lg"
             />
             <h2 className="text-xl font-medium text-text-primary">
-              {knowledgeBase?.name}
-              {t('knowledgeDetails.compilationTitleSuffix')}
+              {t('knowledgeDetails.compilationTitle', {
+                name: knowledgeBase?.name,
+              })}
             </h2>
           </div>
 

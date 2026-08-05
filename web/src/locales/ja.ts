@@ -397,7 +397,7 @@ export default {
       directoryRulePlaceholder: '入力してください',
       selectArtifact: 'ナビゲーションから項目を選択すると詳細が表示されます',
       sourceDocuments: 'ソースドキュメント',
-      compilationTitleSuffix: 'のデータセット',
+      compilationTitle: '{{name}}のコンパイル',
       noTestResultsForRuned:
         '関連する結果が見つかりませんでした。クエリまたはパラメータを調整してください。',
       noTestResultsForNotRuned:

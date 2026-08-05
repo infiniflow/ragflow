@@ -500,7 +500,7 @@ export default {
       selectArtifact: '从目录中选择一个条目以查看详情',
       searchEntity: '搜索实体',
       sourceDocuments: '来源文档',
-      compilationTitleSuffix: '的数据集',
+      compilationTitle: '{{name}} 编译',
       files: '个文件',
       name: '名称',
       namePlaceholder: '请输入名称',
