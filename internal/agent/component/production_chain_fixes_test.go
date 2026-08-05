@@ -159,6 +159,32 @@ func TestRetrieval_KbIDsTranslatedToDatasetIDs(t *testing.T) {
 	if !ok || len(ds3) != 1 || ds3[0] != "kb-new" {
 		t.Errorf("dataset_ids should keep call-time value %v, got %v", "kb-new", merged3["dataset_ids"])
 	}
+
+	// Case 4: canonical node-level dataset_ids override stale kb_ids.
+	canonical, err := newRetrievalComponent(map[string]any{
+		"dataset_ids": []any{"kb-current"},
+		"kb_ids":      []any{"kb-stale"},
+	})
+	if err != nil {
+		t.Fatalf("newRetrievalComponent with canonical dataset_ids: %v", err)
+	}
+	merged4 := canonical.(*retrievalComponent).applyDefaults(nil)
+	if ds, ok := merged4["dataset_ids"].([]any); !ok || len(ds) != 1 || ds[0] != "kb-current" {
+		t.Errorf("node dataset_ids should override stale kb_ids, got %v", merged4["dataset_ids"])
+	}
+
+	// Case 5: an explicitly empty canonical list clears stale kb_ids.
+	cleared, err := newRetrievalComponent(map[string]any{
+		"dataset_ids": []any{},
+		"kb_ids":      []any{"kb-stale"},
+	})
+	if err != nil {
+		t.Fatalf("newRetrievalComponent with empty dataset_ids: %v", err)
+	}
+	merged5 := cleared.(*retrievalComponent).applyDefaults(nil)
+	if _, ok := merged5["dataset_ids"]; ok {
+		t.Errorf("empty dataset_ids should clear stale kb_ids, got %v", merged5["dataset_ids"])
+	}
 }
 
 func TestRetrieval_NodeQueryResolvedFromCanvasState(t *testing.T) {

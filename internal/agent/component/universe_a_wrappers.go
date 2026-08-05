@@ -85,6 +85,9 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 	if params == nil {
 		return out
 	}
+	if ids, ok := params["dataset_ids"]; ok {
+		params["kb_ids"] = ids
+	}
 	if v, ok := params["query"].(string); ok {
 		out.Query = v
 	}
