@@ -217,9 +217,21 @@ const AgentLogPage: React.FC = () => {
   };
 
   const handleReset = () => {
+    const alreadyReset =
+      searchParams.keywords === init.keywords &&
+      searchParams.from_date?.valueOf() === init.from_date.valueOf() &&
+      searchParams.to_date?.valueOf() === init.to_date.valueOf() &&
+      searchParams.orderby === init.orderby &&
+      searchParams.desc === init.desc &&
+      searchParams.page === init.page &&
+      searchParams.page_size === init.page_size;
+
     setSearchParams(init);
     setKeywords(init.keywords);
     setCurrentDate({ from: init.from_date, to: init.to_date });
+    if (alreadyReset) {
+      refetch();
+    }
   };
 
   const [openModal, setOpenModal] = useState(false);
