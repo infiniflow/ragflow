@@ -96,6 +96,15 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 	if len(merged) != 2 {
 		t.Fatalf("want 2 chunks (overflow-closed + overlap chunk), got %d (a=%d b=%d c=%d budget=%d)", len(merged), aN, bN, cN, budget)
 	}
+	// The overlap prefix must actually be prepended to chunk 1; otherwise the
+	// test would pass even if prevClosed started c without any overlap.
+	overlap, _ := computeOverlapPrefix(merged[0].Text, 30.0)
+	if overlap == "" {
+		t.Fatal("expected a non-empty overlap prefix")
+	}
+	if !strings.HasPrefix(merged[1].Text, overlap) {
+		t.Errorf("chunk 1 missing overlap prefix %q: %q", overlap, merged[1].Text)
+	}
 	// The overlap prefix is prepended to the SECOND chunk. The first chunk
 	// legitimately keeps its own parser tag; only the overlap region
 	// (merged[1]) must be tag-free.
@@ -104,6 +113,66 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 	}
 	if n := tokenizeStr(merged[1].Text); n > budget {
 		t.Errorf("overlap pushed second chunk over budget: tokens=%d (cap=%d)", n, budget)
+	}
+}
+
+// TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsPrevClosed is a TDD
+// regression test for the OVER_CAP boundary-overflow flag (prevClosed) leaking
+// across a non-text chunk. mergeByTokenSizeFromJSON must reset prevClosed when
+// the previous merged chunk is non-text; otherwise the first text chunk after a
+// non-text chunk carries the stale flag and forces the NEXT text chunk to start
+// a fresh chunk even though it should merge with its predecessor.
+//
+// Sequence: T1, T2 (overflow-merge-close into chunk0), N (non-text), T3, T4.
+// With a correct reset, T3 is the first text after N (new chunk) and T4 merges
+// back into T3 -> 3 chunks total. With the bug, prevClosed survives the N
+// boundary and T4 is wrongly forced into its own chunk -> 4 chunks.
+func TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsPrevClosed(t *testing.T) {
+	t1 := strings.Repeat("word ", 18)
+	t2 := strings.Repeat("word ", 18)
+	t3 := strings.Repeat("word ", 9)
+	t4 := strings.Repeat("word ", 9)
+	t1N, t2N := tokenizeStr(t1), tokenizeStr(t2)
+	joined12 := tokenizeStr(t1 + "\n" + t2)
+	// Budget just below the T1+T2 join so T1 and T2 cannot merge without
+	// overflowing, forcing mergeThenClose on chunk0 (prevClosed=true).
+	budget := joined12 - 1
+	if budget < t1N {
+		budget = t1N
+	}
+	t34 := tokenizeStr(t3 + "\n" + t4)
+	if t34 > budget {
+		t.Fatalf("T3+T4 must fit budget to exercise the merge; t34=%d budget=%d", t34, budget)
+	}
+	if joined12 <= budget {
+		t.Fatalf("could not derive tight budget (t1=%d t2=%d joined=%d budget=%d)", t1N, t2N, joined12, budget)
+	}
+
+	items := [][]schema.ChunkDoc{
+		{
+			{Text: t1, DocType: "text", CKType: "text", TKNums: intPtr(t1N)},
+			{Text: t2, DocType: "text", CKType: "text", TKNums: intPtr(t2N)},
+			{Text: "[image]", DocType: "image", CKType: "image", TKNums: intPtr(1)},
+			{Text: t3, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(t3))},
+			{Text: t4, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(t4))},
+		},
+	}
+	got := mergeByTokenSizeFromJSON(items, budget, 0.0, true)
+	merged := got[0]
+	// Expect: chunk0 (T1+T2, overflow-closed), N (non-text), chunk1 (T3+T4 merged).
+	if len(merged) != 3 {
+		var texts []string
+		for _, c := range merged {
+			texts = append(texts, c.CKType+":"+c.Text)
+		}
+		t.Fatalf("want 3 chunks (overflow-closed + non-text + merged), got %d: %v", len(merged), texts)
+	}
+	if merged[1].CKType != "image" {
+		t.Errorf("chunk[1] should be the non-text image chunk, got CKType=%q text=%q", merged[1].CKType, merged[1].Text)
+	}
+	wantMerged := t3 + "\n" + t4
+	if merged[2].Text != wantMerged {
+		t.Errorf("chunk[2] should merge T3+T4: want %q got %q", wantMerged, merged[2].Text)
 	}
 }
 

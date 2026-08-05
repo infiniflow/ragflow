@@ -638,9 +638,9 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 			// overlap prefix carved from the previous chunk (which runs over the
 			// untrimmed segment) loses a character and diverges from Python.
 			// Only genuinely empty fragments are skipped, mirroring naive_merge's
-			// `if not sub_sec` guard. (The final-output TrimSpace at token.go:587
-			// only removes a chunk's own leading/trailing whitespace, not the
-			// inter-line space preserved here.)
+			// `if not sub_sec` guard. (The final-output TrimSpace only strips a
+			// chunk's own leading/trailing whitespace, not the inter-line space
+			// preserved here.)
 			if part == "" {
 				continue
 			}
@@ -984,7 +984,11 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 			}
 			if len(merged) == 0 || merged[len(merged)-1].CKType != "text" {
 				// First text chunk, or first text after a non-text chunk:
-				// no prior text to overlap with.
+				// no prior text to overlap with. A stale OVER_CAP boundary
+				// overflow (prevClosed) from a previous text chunk must be
+				// cleared here, otherwise the next text chunk would be wrongly
+				// forced into a fresh chunk instead of merging with this one.
+				prevClosed = false
 				merged = append(merged, cloneChunkDoc(ck))
 				return
 			}

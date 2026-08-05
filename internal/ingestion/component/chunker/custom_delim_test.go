@@ -2,7 +2,6 @@ package chunker
 
 import (
 	"context"
-	"strings"
 	"testing"
 )
 
@@ -121,15 +120,19 @@ func TestCustomDelimMarkdownDropsDelimiter(t *testing.T) {
 		"markdown": "# Title\n\nParagraph one.\n\nParagraph two.",
 	}
 	chunks := invokeTokenChunks(t, params, input)
-	if len(chunks) == 0 {
-		t.Fatal("want >=1 chunk, got 0")
+	// The upstream decode normalizes markdown block boundaries into the
+	// backtick-newline delimiter, so the text path must split into exactly
+	// three trimmed chunks with the delimiter dropped (no trailing newline).
+	want := []string{"# Title", "Paragraph one.", "Paragraph two."}
+	if len(chunks) != len(want) {
+		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))
 	}
-	for i, c := range chunks {
-		got := c["text"].(string)
-		if strings.HasSuffix(got, "\n") {
-			t.Errorf("chunk[%d] text ends with delimiter newline: %q", i, got)
+	for i, w := range want {
+		got := chunks[i]["text"].(string)
+		if got != w {
+			t.Errorf("chunk[%d] text: want %q got %q", i, w, got)
 		}
-		if kd, _ := c["doc_type_kwd"].(string); kd != "text" {
+		if kd, _ := chunks[i]["doc_type_kwd"].(string); kd != "text" {
 			t.Errorf("chunk[%d] doc_type_kwd: Go must keep it, want %q got %q", i, "text", kd)
 		}
 	}
