@@ -394,7 +394,7 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetModelByName GLM-5.1: %v", err)
 	}
-	if *glm51.MaxOutput != 131072 || *glm51.ContentLength != 204800 {
+	if *glm51.MaxOutput != 128000 || *glm51.ContentLength != 200000 {
 		t.Errorf("GLM-5.1 max_output=%d content_length=%d", *glm51.MaxOutput, *glm51.ContentLength)
 	}
 }
