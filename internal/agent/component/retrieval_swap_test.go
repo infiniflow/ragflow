@@ -76,7 +76,9 @@ func TestSearchMyDataset_AliasDelegatesToRealWrapper(t *testing.T) {
 	agenttool.SetSimpleRetrievalService()
 	t.Cleanup(func() { agenttool.SetRetrievalService(prev) })
 
-	c, err := New("SearchMyDataset", nil)
+	c, err := New("SearchMyDataset", map[string]any{
+		"kb_ids": []any{"kb-1"},
+	})
 	if err != nil {
 		t.Fatalf("New(SearchMyDataset) errored: %v", err)
 	}

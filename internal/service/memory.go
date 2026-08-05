@@ -1042,8 +1042,28 @@ func (s *MemoryService) SearchMessage(ctx context.Context, userID string, filter
 	if len(memories) == 0 {
 		return []map[string]interface{}{}, common.CodeSuccess, nil
 	}
+	if err := validateMemorySearchModels(memories); err != nil {
+		return nil, common.CodeArgumentError, err
+	}
 
 	return s.queryMessage(ctx, memories, filterDict, params)
+}
+
+func validateMemorySearchModels(memories []*entity.Memory) error {
+	if len(memories) == 0 {
+		return nil
+	}
+	firstKey := memorySearchEmbeddingKey(memories[0])
+	for _, memory := range memories[1:] {
+		if memorySearchEmbeddingKey(memory) != firstKey {
+			return fmt.Errorf("memories use different embedding models")
+		}
+	}
+	return nil
+}
+
+func memorySearchEmbeddingKey(memory *entity.Memory) string {
+	return "embedding:" + strings.TrimSpace(memory.EmbdID)
 }
 
 func (s *MemoryService) queryMessage(ctx context.Context, memories []*entity.Memory, filterDict, params map[string]interface{}) ([]map[string]interface{}, common.ErrorCode, error) {
