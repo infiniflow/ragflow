@@ -46,11 +46,7 @@ def _call_name(call):
 )
 def test_all_figure_wrapper_callers_forward_language(relative_path, expected_call_count):
     tree = ast.parse((REPO_ROOT / relative_path).read_text())
-    calls = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call) and (_call_name(node) or "").startswith("vision_figure_parser_")
-    ]
+    calls = [node for node in ast.walk(tree) if isinstance(node, ast.Call) and (_call_name(node) or "").startswith("vision_figure_parser_")]
 
     assert len(calls) == expected_call_count
     for call in calls:
