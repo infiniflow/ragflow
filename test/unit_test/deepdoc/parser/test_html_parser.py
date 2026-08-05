@@ -217,3 +217,29 @@ def _merge_one_block(html):
 @pytest.mark.parametrize("name,html,want", _UNIFIED_HTML_CASES)
 def test_unified_html_semantics_parity(name, html, want):
     assert _merge_one_block(html) == [want]
+
+
+def test_merge_block_text_loose_text_newline_join():
+    # The block_id is None branch (loose text, e.g. text directly under
+    # <body>) must join fragments with hard breaks, not silently
+    # concatenate. Regression guard for the inline-verbatim / <br> rewrite in
+    # merge_block_text (this branch is not exercised by the block_id cases
+    # above, which all carry a block_id).
+    # Single hard break between two loose fragments.
+    blocks, _ = RAGFlowHtmlParser.merge_block_text(
+        [
+            {"content": "Loose one", "tag_name": "inner_text", "metadata": {}},
+            {"content": "Loose two", "tag_name": "inner_text", "metadata": {"newline_before": 1}},
+        ]
+    )
+    assert blocks == ["Loose one\nLoose two"]
+
+    # Consecutive breaks between loose fragments are preserved (1:1 with the
+    # <br><br> rule for blocks).
+    blocks2, _ = RAGFlowHtmlParser.merge_block_text(
+        [
+            {"content": "A", "tag_name": "inner_text", "metadata": {}},
+            {"content": "B", "tag_name": "inner_text", "metadata": {"newline_before": 2}},
+        ]
+    )
+    assert blocks2 == ["A\n\nB"]
