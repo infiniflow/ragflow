@@ -23,11 +23,9 @@ import (
 // TestTokenChunker_OversizeUnitKeptWhole pins the Python OVER_CAP contract for
 // the text/markdown path: a single paragraph that exceeds chunk_token_size is
 // kept as one standalone chunk. Python's naive_merge (_merge_paragraph_groups,
-// rag/nlp/__init__.py) never atom-splits an oversize unit; the previous Go
-// behaviour called splitOversizedUnit and emitted Go-only sub-chunks, which
-// diverged from the Python reference (parity cases token__text_long_paragraph
-// and token__markdown_long). An unbroken input line with no delimiter forces
-// the oversize path while isolating it from the delimiter-splitting logic.
+// rag/nlp/__init__.py) never atom-splits an oversize unit; it is kept whole and
+// the model layer truncates it later. An unbroken input line with no delimiter
+// forces the oversize path while isolating it from the delimiter-splitting logic.
 func TestTokenChunker_OversizeUnitKeptWhole(t *testing.T) {
 	var longLine = strings.Repeat("word ", 400) // ~400 tokens, far above the 32 budget
 
@@ -68,6 +66,9 @@ func TestTokenChunker_OversizeUnitKeptWhole(t *testing.T) {
 			}
 			if len(chunks) != 1 {
 				t.Fatalf("oversize unit: want 1 standalone chunk, got %d", len(chunks))
+			}
+			if got, _ := chunks[0]["text"].(string); strings.TrimSpace(got) != strings.TrimSpace(longLine) {
+				t.Fatalf("oversize unit content not preserved: got %q", got)
 			}
 		})
 	}
