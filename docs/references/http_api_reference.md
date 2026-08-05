@@ -2952,7 +2952,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "`datasets` is required."
+    "message": "`dataset_ids` is required."
 }
 ```
 
