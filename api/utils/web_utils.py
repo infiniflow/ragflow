@@ -195,9 +195,11 @@ async def send_email_html(to_email: str, subject: str, template_key: str, **cont
     )
 
     await smtp.connect()
-    await smtp.login(settings.MAIL_USERNAME, settings.MAIL_PASSWORD)
-    await smtp.send_message(msg)
-    await smtp.quit()
+    try:
+        await smtp.login(settings.MAIL_USERNAME, settings.MAIL_PASSWORD)
+        await smtp.send_message(msg)
+    finally:
+        await smtp.quit()
 
 
 async def send_invite_email(to_email, invite_url, tenant_id, inviter):
