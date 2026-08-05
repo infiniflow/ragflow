@@ -15,8 +15,7 @@
 #
 import logging
 
-from api.db.db_models import DB, Document
-from api.db.services.document_service import DocumentService
+from api.db.db_models import DB, Document, Knowledgebase
 
 
 def release_reparse_counters(doc_id):
@@ -41,7 +40,32 @@ def release_reparse_counters(doc_id):
         if not (fresh.token_num or fresh.chunk_num or fresh.process_duration):
             logging.debug("release_reparse_counters: nothing to release for document %s", doc_id)
             return
-        DocumentService.increment_chunk_num(fresh.id, fresh.kb_id, -fresh.token_num, -fresh.chunk_num, -fresh.process_duration)
+        # Decrement directly inside the outer transaction. Do NOT call
+        # DocumentService.increment_chunk_num here: it is decorated with
+        # @DB.connection_context(), which closes the shared connection on exit.
+        # That would raise "Attempting to close database while transaction is
+        # open." because the outer DB.atomic() block is still open.
+        num = (
+            Document.update(
+                token_num=Document.token_num - fresh.token_num,
+                chunk_num=Document.chunk_num - fresh.chunk_num,
+                process_duration=Document.process_duration - fresh.process_duration,
+            )
+            .where((Document.id == fresh.id) & (Document.kb_id == fresh.kb_id))
+            .execute()
+        )
+        if num == 0:
+            raise LookupError("Document not found which is supposed to be there")
+        num = (
+            Knowledgebase.update(
+                token_num=Knowledgebase.token_num - fresh.token_num,
+                chunk_num=Knowledgebase.chunk_num - fresh.chunk_num,
+            )
+            .where(Knowledgebase.id == fresh.kb_id)
+            .execute()
+        )
+        if num == 0:
+            raise LookupError("Knowledgebase not found which is supposed to be there")
         logging.debug(
             "release_reparse_counters: released document %s (token=%s chunk=%s duration=%s)",
             doc_id,
