@@ -2,7 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import AgentLogPage from './agent-log-page';
 
 (globalThis as any).React = require('react');
-const mockRefetch = jest.fn();
+const MockRefetch = jest.fn();
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -29,7 +29,7 @@ jest.mock('@/hooks/use-agent-request', () => ({
   useFetchAgentLog: () => ({
     data: { sessions: [], total: 0 },
     loading: false,
-    refetch: mockRefetch,
+    refetch: MockRefetch,
   }),
 }));
 
@@ -64,7 +64,13 @@ jest.mock('@/components/ui/input', () => ({
 }));
 
 jest.mock('@/components/ui/ragflow-pagination', () => ({
-  RAGFlowPagination: () => null,
+  RAGFlowPagination: ({ current, pageSize, onChange }: any) => (
+    <div>
+      <span data-testid="pagination-state">{`${current}:${pageSize}`}</span>
+      <button onClick={() => onChange(1, 25)}>change page size</button>
+      <button onClick={() => onChange(3, 25)}>change page</button>
+    </div>
+  ),
 }));
 
 jest.mock('@/components/ui/range-picker', () => ({
@@ -90,7 +96,7 @@ jest.mock('./agent-log-detail-modal', () => ({
 
 describe('AgentLogPage', () => {
   beforeEach(() => {
-    mockRefetch.mockClear();
+    MockRefetch.mockClear();
   });
 
   it('refetches when reset is clicked with the default filters', () => {
@@ -98,6 +104,28 @@ describe('AgentLogPage', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'common.reset' }));
 
-    expect(mockRefetch).toHaveBeenCalledTimes(1);
+    expect(MockRefetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('resets pagination and sorting with the query filters', () => {
+    render(<AgentLogPage />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'change page size' }));
+    fireEvent.click(screen.getByRole('button', { name: 'change page' }));
+    fireEvent.click(
+      screen.getByRole('columnheader', { name: 'flow.latestDate' }),
+    );
+
+    expect(screen.getByTestId('pagination-state')).toHaveTextContent('3:25');
+    expect(
+      screen.getByRole('columnheader', { name: /flow.latestDate/ }),
+    ).toHaveTextContent('↑');
+
+    fireEvent.click(screen.getByRole('button', { name: 'common.reset' }));
+
+    expect(screen.getByTestId('pagination-state')).toHaveTextContent('1:10');
+    expect(
+      screen.getByRole('columnheader', { name: /flow.latestDate/ }),
+    ).not.toHaveTextContent('↑');
   });
 });

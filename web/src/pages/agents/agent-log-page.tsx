@@ -229,6 +229,12 @@ const AgentLogPage: React.FC = () => {
     setSearchParams(init);
     setKeywords(init.keywords);
     setCurrentDate({ from: init.from_date, to: init.to_date });
+    setPagination((pre) => ({
+      ...pre,
+      current: init.page,
+      pageSize: init.page_size,
+    }));
+    setSortConfig({ orderby: init.orderby, desc: init.desc });
     if (alreadyReset) {
       refetch();
     }
