@@ -55,7 +55,7 @@ type RetrievalRequest struct {
 	TopK                     int
 	KeywordsSimilarityWeight *float64
 	UseKG                    bool
-	SimilarityThreshold      float64
+	SimilarityThreshold      *float64
 	RerankID                 string
 	CrossLanguages           []string
 	TOCEnhance               bool

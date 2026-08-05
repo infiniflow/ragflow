@@ -64,7 +64,7 @@ type retrievalArgs struct {
 	TopK                     int            `json:"top_k,omitempty"`
 	KeywordsSimilarityWeight *float64       `json:"keywords_similarity_weight,omitempty"`
 	UseKG                    bool           `json:"use_kg,omitempty"`
-	SimilarityThreshold      float64        `json:"similarity_threshold,omitempty"`
+	SimilarityThreshold      *float64       `json:"similarity_threshold,omitempty"`
 	RerankID                 string         `json:"rerank_id,omitempty"`
 	CrossLanguages           []string       `json:"cross_languages,omitempty"`
 	TOCEnhance               bool           `json:"toc_enhance,omitempty"`
@@ -280,7 +280,7 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 	if args.KeywordsSimilarityWeight == nil {
 		args.KeywordsSimilarityWeight = r.defaults.KeywordsSimilarityWeight
 	}
-	if args.SimilarityThreshold <= 0 {
+	if args.SimilarityThreshold == nil {
 		args.SimilarityThreshold = r.defaults.SimilarityThreshold
 	}
 	if args.EmptyResponse == "" {

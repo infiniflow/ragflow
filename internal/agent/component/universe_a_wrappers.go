@@ -70,8 +70,8 @@ type retrievalParams struct {
 	MemoryIDs                []string
 	TopN                     int
 	TopK                     int
-	SimilarityThreshold      float64
-	KeywordsSimilarityWeight float64
+	SimilarityThreshold      *float64
+	KeywordsSimilarityWeight *float64
 	RerankID                 string
 	EmptyResponse            string
 	CrossLanguages           []string
@@ -115,10 +115,12 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 		out.TopK = toIntParam(v)
 	}
 	if v, ok := params["similarity_threshold"]; ok {
-		out.SimilarityThreshold = toFloatParam(v)
+		value := toFloatParam(v)
+		out.SimilarityThreshold = &value
 	}
 	if v, ok := params["keywords_similarity_weight"]; ok {
-		out.KeywordsSimilarityWeight = toFloatParam(v)
+		value := toFloatParam(v)
+		out.KeywordsSimilarityWeight = &value
 	}
 	if v, ok := params["rerank_id"].(string); ok {
 		out.RerankID = v
@@ -254,11 +256,11 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 	if _, ok := out["top_k"]; !ok && c.params.TopK > 0 {
 		out["top_k"] = c.params.TopK
 	}
-	if _, ok := out["similarity_threshold"]; !ok && c.params.SimilarityThreshold > 0 {
-		out["similarity_threshold"] = c.params.SimilarityThreshold
+	if _, ok := out["similarity_threshold"]; !ok && c.params.SimilarityThreshold != nil {
+		out["similarity_threshold"] = *c.params.SimilarityThreshold
 	}
-	if _, ok := out["keywords_similarity_weight"]; !ok && c.params.KeywordsSimilarityWeight > 0 {
-		out["keywords_similarity_weight"] = c.params.KeywordsSimilarityWeight
+	if _, ok := out["keywords_similarity_weight"]; !ok && c.params.KeywordsSimilarityWeight != nil {
+		out["keywords_similarity_weight"] = *c.params.KeywordsSimilarityWeight
 	}
 	if _, ok := out["rerank_id"]; !ok && c.params.RerankID != "" {
 		out["rerank_id"] = c.params.RerankID

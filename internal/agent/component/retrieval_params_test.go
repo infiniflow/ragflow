@@ -113,3 +113,37 @@ func TestRetrievalComponentForwardsAdvancedNodeParams(t *testing.T) {
 		t.Errorf("RetrievalFrom = %q", request.RetrievalFrom)
 	}
 }
+
+func TestRetrievalComponentForwardsExplicitZeroSimilarityParams(t *testing.T) {
+	previous := agenttool.GetRetrievalService()
+	recorder := &retrievalRequestRecorder{}
+	agenttool.SetRetrievalService(recorder)
+	t.Cleanup(func() { agenttool.SetRetrievalService(previous) })
+
+	component, err := newRetrievalComponent(map[string]any{
+		"dataset_ids":                []any{"dataset-1"},
+		"similarity_threshold":       0,
+		"keywords_similarity_weight": 0,
+	})
+	if err != nil {
+		t.Fatalf("newRetrievalComponent: %v", err)
+	}
+
+	merged := component.(*retrievalComponent).applyDefaults(nil)
+	if value, ok := merged["similarity_threshold"]; !ok || value != float64(0) {
+		t.Fatalf("similarity_threshold = %#v, present = %v; want explicit zero", value, ok)
+	}
+	if value, ok := merged["keywords_similarity_weight"]; !ok || value != float64(0) {
+		t.Fatalf("keywords_similarity_weight = %#v, present = %v; want explicit zero", value, ok)
+	}
+
+	if _, err := component.Invoke(context.Background(), nil, map[string]any{"query": "zero"}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if recorder.request.SimilarityThreshold == nil || *recorder.request.SimilarityThreshold != 0 {
+		t.Fatalf("SimilarityThreshold = %v; want explicit zero", recorder.request.SimilarityThreshold)
+	}
+	if recorder.request.KeywordsSimilarityWeight == nil || *recorder.request.KeywordsSimilarityWeight != 0 {
+		t.Fatalf("KeywordsSimilarityWeight = %v; want explicit zero", recorder.request.KeywordsSimilarityWeight)
+	}
+}

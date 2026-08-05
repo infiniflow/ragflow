@@ -331,8 +331,8 @@ func nlpRequestFromRetrieval(
 		rerankBudget := topN * 4
 		nlpReq.Top = &rerankBudget
 	}
-	if req.SimilarityThreshold > 0 {
-		nlpReq.SimilarityThreshold = &req.SimilarityThreshold
+	if req.SimilarityThreshold != nil {
+		nlpReq.SimilarityThreshold = req.SimilarityThreshold
 	}
 	if req.KeywordsSimilarityWeight != nil {
 		vectorSimilarityWeight := 1 - *req.KeywordsSimilarityWeight

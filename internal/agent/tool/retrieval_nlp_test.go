@@ -237,6 +237,7 @@ func TestNewNLPRetrievalAdapter_NilService(t *testing.T) {
 
 func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 	keywordWeight := 0.25
+	similarityThreshold := 0.42
 	embeddingModel := &modelModule.EmbeddingModel{}
 	got := nlpRequestFromRetrieval(RetrievalRequest{
 		Query:                    "hi",
@@ -244,7 +245,7 @@ func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 		TopN:                     3,
 		TopK:                     99,
 		KeywordsSimilarityWeight: &keywordWeight,
-		SimilarityThreshold:      0.42,
+		SimilarityThreshold:      &similarityThreshold,
 	}, []string{"tenant-a"}, 3, embeddingModel)
 
 	if got.Question != "hi" {
@@ -285,6 +286,19 @@ func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
 	}
 	if got.VectorSimilarityWeight != nil {
 		t.Fatalf("VectorSimilarityWeight=%v want nil", got.VectorSimilarityWeight)
+	}
+}
+
+func TestNLPRequestFromRetrieval_PreservesExplicitZeroSimilarityThreshold(t *testing.T) {
+	similarityThreshold := 0.0
+	got := nlpRequestFromRetrieval(RetrievalRequest{
+		Query:               "hi",
+		DatasetIDs:          []string{"kb-1"},
+		SimilarityThreshold: &similarityThreshold,
+	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{})
+
+	if got.SimilarityThreshold == nil || *got.SimilarityThreshold != 0 {
+		t.Fatalf("SimilarityThreshold = %v; want explicit zero", got.SimilarityThreshold)
 	}
 }
 

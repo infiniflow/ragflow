@@ -118,12 +118,13 @@ func (a *AgenticSearchTool) InvokableRun(ctx context.Context, argumentsInJSON st
 	}
 
 	weight := a.weight
+	similarityThreshold := 0.2
 	req := RetrievalRequest{
 		Query:                    strings.TrimSpace(args.Query + " " + args.Keywords),
 		DatasetIDs:               datasetIDs,
 		TopN:                     args.TopN,
 		TopK:                     args.TopN * 4,
-		SimilarityThreshold:      0.2,
+		SimilarityThreshold:      &similarityThreshold,
 		KeywordsSimilarityWeight: &weight,
 		DocScope:                 args.DocScope,
 	}

@@ -199,7 +199,7 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 	if svc.req.KeywordsSimilarityWeight == nil || *svc.req.KeywordsSimilarityWeight != 0.7 {
 		t.Fatalf("KeywordsSimilarityWeight=%v want 0.7", svc.req.KeywordsSimilarityWeight)
 	}
-	if svc.req.SimilarityThreshold != 0.42 {
+	if svc.req.SimilarityThreshold == nil || *svc.req.SimilarityThreshold != 0.42 {
 		t.Fatalf("SimilarityThreshold=%v want 0.42", svc.req.SimilarityThreshold)
 	}
 	if svc.req.RerankID != "rerank@provider" {
@@ -210,6 +210,31 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 	}
 	if !svc.req.TOCEnhance || svc.req.MetaDataFilter["method"] != "manual" {
 		t.Fatalf("enhancement request=%#v", svc.req)
+	}
+}
+
+func TestRetrieval_ExplicitZeroSimilarityArgsOverrideDefaults(t *testing.T) {
+	previous := GetRetrievalService()
+	service := &capturingRetrievalService{}
+	SetRetrievalService(service)
+	t.Cleanup(func() { SetRetrievalService(previous) })
+
+	similarityThreshold := 0.42
+	keywordsSimilarityWeight := 0.7
+	retrievalTool := NewRetrievalToolWithDefaults(retrievalArgs{
+		DatasetIDs:               []string{"kb-1"},
+		SimilarityThreshold:      &similarityThreshold,
+		KeywordsSimilarityWeight: &keywordsSimilarityWeight,
+	})
+	_, err := retrievalTool.InvokableRun(context.Background(), `{"query":"hello","similarity_threshold":0,"keywords_similarity_weight":0}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if service.req.SimilarityThreshold == nil || *service.req.SimilarityThreshold != 0 {
+		t.Fatalf("SimilarityThreshold = %v; want explicit zero", service.req.SimilarityThreshold)
+	}
+	if service.req.KeywordsSimilarityWeight == nil || *service.req.KeywordsSimilarityWeight != 0 {
+		t.Fatalf("KeywordsSimilarityWeight = %v; want explicit zero", service.req.KeywordsSimilarityWeight)
 	}
 }
 

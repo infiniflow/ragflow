@@ -437,7 +437,7 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		defaults.TOCEnhance = v
 	}
 	if v, ok := floatParam(params, "similarity_threshold"); ok {
-		defaults.SimilarityThreshold = v
+		defaults.SimilarityThreshold = &v
 	}
 	if v, ok := floatParam(params, "keywords_similarity_weight"); ok {
 		if v < 0 || v > 1 {
