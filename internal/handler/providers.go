@@ -181,7 +181,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 						remoteModels = append(remoteModels, map[string]interface{}{
 							"name":        m.Name,
 							"model_types": m.ModelTypes,
-							"max_tokens":  m.MaxTokens,
+							"max_output":  m.MaxOutput,
 						})
 					}
 				}

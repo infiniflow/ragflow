@@ -768,8 +768,8 @@ async def web_search(tools, query: str, keywords: str = "") -> dict:
         from common.misc_utils import thread_pool_exec
 
         effective_query = f"{query} {keywords}".strip() if keywords else query
-        tav_res = await thread_pool_exec(tools.tav.retrieve_chunks, effective_query)
-        return {"chunks": tav_res.get("chunks", []), "doc_aggs": tav_res.get("doc_aggs", [])}
+        web_res = await thread_pool_exec(tools.web_search.retrieve_chunks, effective_query)
+        return {"chunks": web_res.get("chunks", []), "doc_aggs": web_res.get("doc_aggs", [])}
     except Exception:
         _LOG.exception("web_search failed")
         return {"chunks": [], "doc_aggs": []}

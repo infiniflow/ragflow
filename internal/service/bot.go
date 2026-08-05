@@ -28,7 +28,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/fnv"
-	"strings"
 	"sync"
 
 	"ragflow/internal/agent/canvas"
@@ -83,7 +82,7 @@ func NewBotService(agentSvc *AgentService, llmSvc *LLMService) *BotService {
 // it (TenantID match), and Status must equal common.StatusDialogValid
 // (the python StatusEnum.VALID.value).
 func (s *BotService) ChatbotInfo(ctx context.Context, tenantID, dialogID string) (
-	title, avatar, prologue, llmID string, hasTavilyKey bool, ec common.ErrorCode, err error,
+	title, avatar, prologue, llmID string, hasWebSearch bool, ec common.ErrorCode, err error,
 ) {
 	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
 	if err != nil {
@@ -97,14 +96,13 @@ func (s *BotService) ChatbotInfo(ctx context.Context, tenantID, dialogID string)
 	pc := dialog.PromptConfig
 	// Defensive lookups mirroring python's
 	// dialog.prompt_config.get("prologue", "") and
-	// dialog.prompt_config.get("tavily_api_key", "").strip()
+	// resolveWebSearchProvider(dialog.prompt_config) != nil
 	// semantics. A hard type assertion here would panic on a missing
 	// or non-string prologue field — this endpoint is public over
 	// persisted JSON config and the schema is not guaranteed.
 	prologue = stringFromMap(pc, "prologue")
-	tk := stringFromMap(pc, "tavily_api_key")
 	return botDerefStr(dialog.Name), botDerefStr(dialog.Icon), prologue,
-		dialog.LLMID, strings.TrimSpace(tk) != "", common.CodeSuccess, nil
+		dialog.LLMID, resolveWebSearchProvider(pc) != nil, common.CodeSuccess, nil
 }
 
 // AgentbotInputs returns the public metadata of an agentbot canvas.
