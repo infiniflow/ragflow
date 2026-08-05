@@ -1878,6 +1878,12 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
             yield ans
         return
     kbs, embd_mdl, rerank_mdl, chat_mdl, tts_mdl = get_models(dialog)
+    model_type = chat_mdl.model_config["model_type"]
+    factory = chat_mdl.model_config.get("llm_factory", "") if chat_mdl.model_config else ""
+    text_attachments_content, image_attachments, image_files = get_files_content(messages[-1], model_type)
+    agent_messages = deepcopy(messages)
+    if model_type == "chat" and image_attachments:
+        convert_last_user_msg_to_multimodal(agent_messages, image_attachments, factory)
     use_web_search = _should_use_web_search(prompt_config, kwargs.get("internet"))
     logging.debug("web_search kb=%s configured=%s internet=%r enabled=%s", bool(dialog.kb_ids), has_web_search_provider(prompt_config), kwargs.get("internet"), use_web_search)
     tenant_ids = list(set([kb.tenant_id for kb in kbs]))
@@ -1923,6 +1929,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         empty_response=prompt_config.get("empty_response", ""),
         do_refer=False,
         thinking_mode=thinking_mode,
+        text_attachments_content=text_attachments_content,
     )
 
     async def decorate_answer(answer):
@@ -2011,7 +2018,10 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
 
         async def _drive_stream():
             try:
-                stream_iter = chat_mdl.async_chat_streamly_delta(rag_tools.sys_prompt(), messages, gen_conf)
+                if model_type == "chat":
+                    stream_iter = chat_mdl.async_chat_streamly_delta(rag_tools.sys_prompt(), agent_messages, gen_conf)
+                else:
+                    stream_iter = chat_mdl.async_chat_streamly_delta(rag_tools.sys_prompt(), agent_messages, gen_conf, images=image_files)
                 async for kind, value, state in _stream_with_think_delta(stream_iter):
                     event_queue.put_nowait(("stream", kind, value, state))
             except Exception:
@@ -2111,8 +2121,11 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         final["audio_binary"] = None
         yield final
     else:
-        answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), messages, gen_conf)
-        user_content = messages[-1].get("content", "[content not available]")
+        if model_type == "chat":
+            answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), agent_messages, gen_conf)
+        else:
+            answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), agent_messages, gen_conf, images=image_files)
+        user_content = agent_messages[-1].get("content", "[content not available]")
         logging.debug("User: {}|Assistant: {}".format(user_content, answer))
         res = await decorate_answer(answer)
         res["audio_binary"] = tts(tts_mdl, answer)
