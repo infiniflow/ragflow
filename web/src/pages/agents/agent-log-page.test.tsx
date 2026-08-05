@@ -3,6 +3,7 @@ import AgentLogPage from './agent-log-page';
 
 (globalThis as any).React = require('react');
 const MockRefetch = jest.fn();
+const MockSearchParams: any[] = [];
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -26,11 +27,14 @@ jest.mock('../agent/hooks/use-fetch-data', () => ({
 }));
 
 jest.mock('@/hooks/use-agent-request', () => ({
-  useFetchAgentLog: () => ({
-    data: { sessions: [], total: 0 },
-    loading: false,
-    refetch: MockRefetch,
-  }),
+  useFetchAgentLog: (searchParams: any) => {
+    MockSearchParams.push(searchParams);
+    return {
+      data: { sessions: [], total: 0 },
+      loading: false,
+      refetch: MockRefetch,
+    };
+  },
 }));
 
 jest.mock('./hooks/use-export-agent-log', () => ({
@@ -64,13 +68,17 @@ jest.mock('@/components/ui/input', () => ({
 }));
 
 jest.mock('@/components/ui/ragflow-pagination', () => ({
-  RAGFlowPagination: ({ current, pageSize, onChange }: any) => (
-    <div>
-      <span data-testid="pagination-state">{`${current}:${pageSize}`}</span>
-      <button onClick={() => onChange(1, 25)}>change page size</button>
-      <button onClick={() => onChange(3, 25)}>change page</button>
-    </div>
-  ),
+  RAGFlowPagination: ({ current, pageSize, onChange }: any) => {
+    const handlePageSizeChange = () => onChange(1, 25);
+    const handlePageChange = () => onChange(3, 25);
+    return (
+      <div>
+        <span data-testid="pagination-state">{`${current}:${pageSize}`}</span>
+        <button onClick={handlePageSizeChange}>change page size</button>
+        <button onClick={handlePageChange}>change page</button>
+      </div>
+    );
+  },
 }));
 
 jest.mock('@/components/ui/range-picker', () => ({
@@ -97,6 +105,7 @@ jest.mock('./agent-log-detail-modal', () => ({
 describe('AgentLogPage', () => {
   beforeEach(() => {
     MockRefetch.mockClear();
+    MockSearchParams.length = 0;
   });
 
   it('refetches when reset is clicked with the default filters', () => {
@@ -115,17 +124,27 @@ describe('AgentLogPage', () => {
     fireEvent.click(
       screen.getByRole('columnheader', { name: 'flow.latestDate' }),
     );
+    fireEvent.click(
+      screen.getByRole('columnheader', { name: /flow.latestDate/ }),
+    );
 
     expect(screen.getByTestId('pagination-state')).toHaveTextContent('3:25');
     expect(
       screen.getByRole('columnheader', { name: /flow.latestDate/ }),
-    ).toHaveTextContent('↑');
+    ).toHaveTextContent('↓');
 
     fireEvent.click(screen.getByRole('button', { name: 'common.reset' }));
 
     expect(screen.getByTestId('pagination-state')).toHaveTextContent('1:10');
     expect(
       screen.getByRole('columnheader', { name: /flow.latestDate/ }),
-    ).not.toHaveTextContent('↑');
+    ).not.toHaveTextContent(/[↑↓]/);
+    expect(MockSearchParams[MockSearchParams.length - 1]).toMatchObject({
+      page: 1,
+      page_size: 10,
+      orderby: 'create_time',
+      desc: false,
+    });
+    expect(MockRefetch).not.toHaveBeenCalled();
   });
 });
