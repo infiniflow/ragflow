@@ -27,6 +27,9 @@ import os
 import sys
 from unittest import mock
 
+import pytest
+from bs4 import BeautifulSoup
+
 # Load html_parser by file path so we don't trigger deepdoc/parser/__init__.py
 # (which pulls in heavy parsers) or the real rag.nlp tokenizer. The heavy
 # optional modules are stubbed; rag.nlp is stubbed so the module imports, and
@@ -170,3 +173,47 @@ def test_parser_txt_keeps_loose_text_between_and_after_blocks():
     assert "loose" in between
     trailing = "\n".join(RAGFlowHtmlParser.parser_txt("<p>Only.</p>tail", chunk_token_num=512))
     assert "tail" in trailing
+
+
+# Unified HTML semantics: the browser-faithful rules that BOTH the Python and
+# Go parsers must converge on. This is the RED phase — every case currently
+# FAILS on at least one engine, exposing the divergences (Python inserts an
+# inline space and strips <pre>; Go drops <br> and keeps raw whitespace).
+#
+# MUST stay in sync with the Go table in
+# internal/parser/parser/html_parser_unified_test.go (unifiedHTMLCases).
+_UNIFIED_HTML_CASES = [
+    # <br> is a hard line break; surrounding whitespace is collapsed away.
+    ("br_basic", "<p>line1<br>line2</p>", "line1\nline2"),
+    ("br_surrounding_space", "<p>Hello <br> World</p>", "Hello\nWorld"),
+    ("br_double", "<p>A<br><br>B</p>", "A\n\nB"),
+    ("br_before_inline", "<p>Line1<br><span>Line2</span></p>", "Line1\nLine2"),
+    # Inline boundaries are joined verbatim: no separator is inserted, even
+    # when the source has no whitespace (Latin or CJK).
+    ("inline_no_space_latin", "<p>Hello<b>World</b></p>", "HelloWorld"),
+    ("inline_no_space_cjk", "<p>你好<b>世界</b></p>", "你好世界"),
+    ("inline_with_space", "<p>Hello <b>World</b></p>", "Hello World"),
+    ("inline_three", "<p>First<b>Second</b>Third</p>", "FirstSecondThird"),
+    # Source whitespace sequences collapse to a single space and are trimmed
+    # at block edges (CSS whitespace folding).
+    ("whitespace_collapse", "<p>\n  Hello\n  <b>World</b>\n</p>", "Hello World"),
+    # <pre> preserves its whitespace verbatim, including leading/trailing.
+    ("pre_preserved", "<pre>  code\n  block</pre>", "  code\n  block"),
+]
+
+
+def _merge_one_block(html):
+    # Use read_text_recursively + merge_block_text (not parser_txt) so block
+    # boundaries survive as separate list entries and no "#" heading prefix or
+    # chunk-merge join is applied — enabling a 1:1 comparison with the Go
+    # per-block output.
+    soup = BeautifulSoup(html, "html.parser")
+    temp = []
+    RAGFlowHtmlParser.read_text_recursively(soup, temp)
+    blocks, _ = RAGFlowHtmlParser.merge_block_text(temp)
+    return blocks
+
+
+@pytest.mark.parametrize("name,html,want", _UNIFIED_HTML_CASES)
+def test_unified_html_semantics_parity(name, html, want):
+    assert _merge_one_block(html) == [want]
