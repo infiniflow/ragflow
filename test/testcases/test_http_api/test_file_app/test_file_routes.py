@@ -178,6 +178,7 @@ def _load_file_api_service(monkeypatch):
         return func(*args, **kwargs)
 
     misc_utils_mod.thread_pool_exec = thread_pool_exec
+    misc_utils_mod.thread_pool_exec_long_time = thread_pool_exec
     monkeypatch.setitem(sys.modules, "common.misc_utils", misc_utils_mod)
 
     module_path = repo_root / "api" / "apps" / "services" / "file_api_service.py"
@@ -263,6 +264,28 @@ def test_delete_files_checks_team_permission(monkeypatch):
     ok, message = _run(module.delete_files("tenant1", ["file1"]))
     assert ok is False
     assert message == {"success_count": 0, "errors": ["No authorization for file file1"]}
+
+
+@pytest.mark.p2
+def test_delete_files_uses_long_time_thread_pool(monkeypatch):
+    module = _load_file_api_service(monkeypatch)
+    calls = []
+
+    async def run_long_time(func, *args, **kwargs):
+        calls.append(func.__name__)
+        return func(*args, **kwargs)
+
+    async def fail_short_pool(*_args, **_kwargs):
+        raise AssertionError("recursive deletion must not use the short-lived executor")
+
+    monkeypatch.setattr(module, "thread_pool_exec", fail_short_pool)
+    monkeypatch.setattr(module, "thread_pool_exec_long_time", run_long_time)
+
+    ok, data = _run(module.delete_files("tenant1", ["file1"]))
+
+    assert ok is True
+    assert data == {"success_count": 1}
+    assert calls == ["_rm_sync"]
 
 
 @pytest.mark.p2
