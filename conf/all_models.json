@@ -38878,22 +38878,6 @@
         "xai/grok-4.3",
         "grok-4.3-latest",
         "grok-latest",
-        "grok-3",
-        "grok-3-latest",
-        "grok-3-beta",
-        "grok-3-fast",
-        "grok-3-fast-latest",
-        "grok-3-fast-beta",
-        "grok-3-mini",
-        "grok-3-mini-latest",
-        "grok-3-mini-beta",
-        "grok-3-mini-fast",
-        "grok-3-mini-fast-latest",
-        "grok-3-mini-fast-beta",
-        "grok-3-mini-high",
-        "grok-3-mini-high-beta",
-        "grok-3-mini-fast-high",
-        "grok-3-mini-fast-high-beta",
         "grok-4-0709",
         "grok-4",
         "grok-4-latest",
@@ -38990,7 +38974,7 @@
         "vision",
         "image2text"
       ],
-      "content_length": 262144,
+      "content_length": 131072,
       "max_output": 131072
     },
     {
@@ -39005,7 +38989,7 @@
         "default_value": true,
         "clear_thinking": true
       },
-      "content_length": 262144,
+      "content_length": 131072,
       "max_output": 131072
     },
     {
