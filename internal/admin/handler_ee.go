@@ -854,6 +854,16 @@ func (h *Handler) ShowSoftFingerprint(c *gin.Context) {
 	common.SuccessWithData(c, softFingerprint, "")
 }
 
+func (h *Handler) DeleteSoftFingerprint(c *gin.Context) {
+	err := h.service.DeleteSoftFingerprint()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessNoData(c, "SUCCESS")
+}
+
 type ShowUserActivityRequest struct {
 	Days  int    `json:"days"`
 	Email string `json:"email"`

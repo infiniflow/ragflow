@@ -2863,6 +2863,23 @@ func (c *CLI) AdminDeleteModelsCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, fmt.Sprintf("remove model %s", modelNames))
 }
 
+// AdminDeleteSoftFingerprintCommand delete soft fingerprint
+func (c *CLI) AdminDeleteSoftFingerprintCommand(cmd *Command) (ResponseIf, error) {
+
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	apiURL := fmt.Sprintf("/admin/system/soft-fingerprint")
+
+	resp, err := c.AdminServerClient.Request("DELETE", apiURL, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to remove soft fingerprint: %w", err)
+	}
+
+	return HandleSimpleResponse(resp, fmt.Sprintf("remove soft fingerprint"))
+}
+
 func (c *CLI) AdminShowLogLevelCommand(cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode != AdminMode {

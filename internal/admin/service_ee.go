@@ -415,6 +415,10 @@ func (s *Service) GetSoftFingerprint() (map[string]interface{}, error) {
 	return result, nil
 }
 
+func (s *Service) DeleteSoftFingerprint() error {
+	return errors.New("delete soft fingerprint is not supported")
+}
+
 // ShowUserActivity show user activity for enterprise edition
 func (s *Service) ShowUserActivity(email string, days int) (map[string]interface{}, error) {
 	// Query user by email

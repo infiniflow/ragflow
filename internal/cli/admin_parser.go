@@ -2325,6 +2325,8 @@ func (p *Parser) parseAdminDeleteCommands() (*Command, error) {
 		return p.parseAPIDeleteAdminServer()
 	case TokenProvider:
 		return p.parseAdminDeleteProvider()
+	case TokenSoft:
+		return p.parseAdminDeleteSoftFingerprint()
 	default:
 		return nil, fmt.Errorf("unknown ADD target: %s", p.curToken.Value)
 	}
@@ -2401,6 +2403,25 @@ func (p *Parser) parseAdminDeleteModel(providerName, instanceName string) (*Comm
 	if p.curToken.Type == TokenSemicolon {
 		p.nextToken()
 	}
+	return cmd, nil
+}
+
+// syntax: delete soft fingerprint;
+func (p *Parser) parseAdminDeleteSoftFingerprint() (*Command, error) {
+	p.nextToken() // consume SOFT
+
+	if p.curToken.Type != TokenFingerprint {
+		return nil, fmt.Errorf("expected FINGERPRINT after SOFT")
+	}
+	p.nextToken()
+
+	cmd := NewCommand("admin_delete_soft_fingerprint")
+
+	// Semicolon is optional
+	if p.curToken.Type == TokenSemicolon {
+		p.nextToken()
+	}
+
 	return cmd, nil
 }
 

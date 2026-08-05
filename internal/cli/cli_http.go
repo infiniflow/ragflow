@@ -281,6 +281,8 @@ func (c *CLI) ExecuteAdminCommand(cmd *Command) (ResponseIf, error) {
 		return c.AdminDeleteInstancesCommand(cmd)
 	case "admin_delete_model":
 		return c.AdminDeleteModelsCommand(cmd)
+	case "admin_delete_soft_fingerprint":
+		return c.AdminDeleteSoftFingerprintCommand(cmd)
 	case "admin_enable_model":
 		return c.CommonEnableOrDisableModelCommand(cmd, "enable")
 	case "admin_disable_model":
