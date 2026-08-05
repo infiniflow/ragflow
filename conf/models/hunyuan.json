@@ -268,7 +268,7 @@
     },
     {
       "name": "minimax-m2.7",
-      "content_length": 1000000,
+      "content_length": 204800,
       "max_output": 131072,
       "model_types": [
         "chat"
@@ -279,7 +279,7 @@
     },
     {
       "name": "minimax-m2.5",
-      "content_length": 1000000,
+      "content_length": 204800,
       "max_output": 131100,
       "model_types": [
         "chat"
