@@ -33,6 +33,9 @@ concurrency:
 jobs:
   ragflow_preflight:
     name: ragflow_preflight
+    permissions:
+      actions: write
+      contents: read
     # https://docs.github.com/en/actions/using-jobs/using-conditions-to-control-job-execution
     # https://github.com/orgs/community/discussions/26261
     if: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
