@@ -35,7 +35,6 @@ var AdminServiceClient *AdminClient
 // AdminClient is responsible for sending heartbeat reports to the admin server
 type AdminClient struct {
 	client       *utility.HTTPClient
-	logger       *zap.Logger
 	serverType   common.ServerType
 	serverName   string
 	host         string
@@ -47,10 +46,9 @@ type AdminClient struct {
 }
 
 // NewAdminClient creates a new heartbeat service instance
-func NewAdminClient(logger *zap.Logger, serverType common.ServerType, serverName, host string, port int) *AdminClient {
+func NewAdminClient(serverType common.ServerType, serverName, host string, port int) *AdminClient {
 	licenseStatusCode = common.CodeSuccess
 	return &AdminClient{
-		logger:       logger,
 		serverType:   serverType,
 		serverName:   serverName,
 		host:         host,
@@ -75,14 +73,14 @@ func (h *AdminClient) InitHTTPClient() error {
 		WithTimeout(10 * time.Second).
 		Build()
 
-	h.logger.Info("Heartbeat HTTP client initialized",
+	common.Info("Heartbeat HTTP client initialized",
 		zap.String("admin_host", adminConfig.Host),
 		zap.Int("admin_port", adminConfig.HTTPPort),
 	)
 
 	err := h.InitHTTPClientEE()
 	if err != nil {
-		h.logger.Fatal(fmt.Sprintf("Fail to init enterprise service: %v", err))
+		common.Fatal(fmt.Sprintf("Fail to init enterprise service: %v", err))
 	}
 
 	return nil
@@ -102,7 +100,7 @@ func (h *AdminClient) SendHeartbeat() error {
 
 	if h.client == nil {
 		if err := h.InitHTTPClient(); err != nil {
-			h.logger.Error("Failed to initialize HTTP client", zap.Error(err))
+			common.Error("Failed to initialize HTTP client", err)
 			return err
 		}
 	}
@@ -123,7 +121,7 @@ func (h *AdminClient) SendHeartbeat() error {
 
 	jsonData, err := json.Marshal(message)
 	if err != nil {
-		h.logger.Error("Failed to marshal heartbeat message", zap.Error(err))
+		common.Error("Failed to marshal heartbeat message", err)
 		return err
 	}
 
@@ -152,14 +150,14 @@ func (h *AdminClient) SendHeartbeat() error {
 	if responseCode != common.CodeLicenseValid {
 		if responseCode != licenseStatusCode {
 			licenseStatusCode = responseCode
-			h.logger.Warn(fmt.Sprintf("Heartbeat response error: %s, code: %d", responseCode.Message(), responseCode))
+			common.Warn(fmt.Sprintf("Heartbeat response error: %s, code: %d", responseCode.Message(), responseCode))
 		}
 
 		return errors.New(responseCode.Message())
 	}
 	licenseStatusCode = responseCode
 
-	h.logger.Debug("Heartbeat sent successfully",
+	common.Debug("Heartbeat sent successfully",
 		zap.String("server_id", h.serverName),
 		zap.String("server_type", string(h.serverType)),
 	)
