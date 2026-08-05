@@ -108,7 +108,7 @@ func TestMergeByTokenSizeFromJSON_StrictCapNoOvershoot(t *testing.T) {
 			Text: text, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(text)),
 		})
 	}
-	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 0, true, schema.MergeOverCap)
+	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 0, schema.MergeOverCap)
 	merged := got[0]
 	if len(merged) < 3 {
 		t.Fatalf("want >=3 chunks, got %d", len(merged))
@@ -135,7 +135,7 @@ func TestMergeByTokenSizeFromJSON_OverlapDroppedAtOverflow(t *testing.T) {
 			Text: text, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(text)),
 		})
 	}
-	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 20, true, schema.MergeOverCap)
+	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 20, schema.MergeOverCap)
 	unit := tokenizeStr(sections[0].Text)
 	for i, ck := range got[0] {
 		// OVER_CAP allows one boundary overflow (prev + one unit). The JSON
@@ -150,31 +150,20 @@ func TestMergeByTokenSizeFromJSON_OverlapDroppedAtOverflow(t *testing.T) {
 	}
 }
 
-func TestMergeByTokenSizeFromJSON_OversizedUnitIsSubSplit(t *testing.T) {
-	// A single unit larger than the budget must be atom-split before merge.
+func TestMergeByTokenSizeFromJSON_OversizedUnitStaysWhole(t *testing.T) {
+	// Per the #17808 contract an over-budget unit is never atom-split: it
+	// stands alone as one chunk and the model layer truncates it later.
 	const budget = 30
 	long := strings.TrimSpace(strings.Repeat("word ", 100))
 	items := [][]schema.ChunkDoc{{
 		{Text: long, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(long))},
 	}}
-	got := mergeByTokenSizeFromJSON(items, budget, 0, true, schema.MergeOverCap)
-	if len(got[0]) < 2 {
-		t.Fatalf("oversized unit must yield multiple chunks, got %d", len(got[0]))
+	got := mergeByTokenSizeFromJSON(items, budget, 0, schema.MergeOverCap)
+	if len(got) != 1 || len(got[0]) != 1 {
+		t.Fatalf("over-budget unit must stay whole, got %d chunk(s)", len(got[0]))
 	}
-	// cl100k is not additive across whitespace joins: token(a)+token(b) can be
-	// one less than token(a+b), so the running-sum flush used by both Python's
-	// _split_oversized_unit and the aligned Go port can leave a piece exactly
-	// one token over the nominal budget (each sub-split piece <= budget+1).
-	// OVER_CAP then merges at most two such pieces into one chunk before
-	// closing it, so the invariant we defend is that no chunk exceeds
-	// 2*(budget+1): the oversized unit is sub-split (not collapsed into one
-	// chunk) and at most one boundary overflow is allowed — matching the
-	// Python reference.
-	const slack = 2 * (budget + 1)
-	for i, ck := range got[0] {
-		if n := tokenizeStr(ck.Text); n > slack {
-			t.Errorf("chunk %d exceeds 2*(budget+1): tokens=%d (cap=%d)", i, n, budget)
-		}
+	if got[0][0].Text != long {
+		t.Errorf("over-budget chunk text changed: got %q", got[0][0].Text)
 	}
 }
 
