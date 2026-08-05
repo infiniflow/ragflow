@@ -100,10 +100,6 @@ dependencies = [
     "qianfan==0.4.6",
     "quart-auth==0.11.0",
     "quart-cors==0.8.0",
-    # Werkzeug 3.1.5 can prepend \r\n to multipart file bodies when TCP chunks
-    # split at part headers (https://github.com/pallets/werkzeug/issues/3088);
-    # fixed in >=3.1.7. Pin so uv.lock cannot resolve back to the buggy release.
-    "werkzeug>=3.1.7,<4",
     "ranx==0.3.20",
     "readability-lxml>=0.8.4,<1.0.0",
     "replicate==0.31.0",

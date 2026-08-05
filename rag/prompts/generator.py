@@ -360,18 +360,14 @@ def vision_llm_describe_prompt(page=None) -> str:
     return template.render(page=page)
 
 
-def vision_llm_figure_describe_prompt(language: str = "English") -> str:
+def vision_llm_figure_describe_prompt() -> str:
     template = PROMPT_JINJA_ENV.from_string(VISION_LLM_FIGURE_DESCRIBE_PROMPT)
-    return template.render(language=language)
+    return template.render()
 
 
-def vision_llm_figure_describe_prompt_with_context(context_above: str, context_below: str, language: str = "English") -> str:
+def vision_llm_figure_describe_prompt_with_context(context_above: str, context_below: str) -> str:
     template = PROMPT_JINJA_ENV.from_string(VISION_LLM_FIGURE_DESCRIBE_PROMPT_WITH_CONTEXT)
-    return template.render(
-        context_above=context_above,
-        context_below=context_below,
-        language=language,
-    )
+    return template.render(context_above=context_above, context_below=context_below)
 
 
 def tool_schema(tools_description: list[dict], complete_task=False):

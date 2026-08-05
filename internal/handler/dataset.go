@@ -1008,114 +1008,28 @@ func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
 	common.SuccessWithData(c, result, "success")
 }
 
-// RunIndex Run an indexing task (graph/raptor/mindmap) for a dataset.
-func (h *DatasetsHandler) RunIndex(c *gin.Context) {
+// GetCompilationStatus returns the dataset-level knowledge-compile lifecycle
+// state (scheduler contract for API_PROXY_SCHEME=go/hybrid). It replaces the
+// Python-era TraceIndex task-progress endpoint for the Go backend.
+func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
-
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
 		return
 	}
-
 	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "user_id is required")
-		return
-	}
-
 	ctx := c.Request.Context()
-	indexType := strings.ToLower(strings.TrimSpace(c.Query("type")))
-	data, code, err := h.datasetsService.RunIndex(ctx, userID, datasetID, indexType)
+	st, code, err := h.datasetsService.GetDatasetCompilationStatus(ctx, userID, datasetID)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
-
-	common.SuccessWithData(c, data, "success")
-}
-
-// TraceIndex Trace an indexing task (graph/raptor/mindmap) for a dataset.
-func (h *DatasetsHandler) TraceIndex(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	datasetID := strings.TrimSpace(c.Param("dataset_id"))
-	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "user_id is required")
-		return
-	}
-
-	ctx := c.Request.Context()
-
-	indexType := strings.ToLower(strings.TrimSpace(c.Query("type")))
-	result, code, err := h.datasetsService.TraceIndex(ctx, datasetID, userID, indexType)
-	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
-		return
-	}
-	if result == nil {
-		common.SuccessWithData(c, map[string]interface{}{}, "success")
-		return
-	}
-
-	common.SuccessWithData(c, result, "success")
-}
-
-// DeleteIndex Delete an indexing task (graph/raptor/mindmap) for a dataset.
-func (h *DatasetsHandler) DeleteIndex(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	datasetID := strings.TrimSpace(c.Param("dataset_id"))
-	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
-		return
-	}
-
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "user_id is required")
-		return
-	}
-
-	indexType := strings.ToLower(strings.TrimSpace(c.Param("index_type")))
-	if indexType == "" {
-		indexType = strings.ToLower(strings.TrimSpace(c.Query("type")))
-	}
-
-	wipeArg := strings.ToLower(strings.TrimSpace(c.DefaultQuery("wipe", "true")))
-	wipe := true
-	switch wipeArg {
-	case "false", "0", "no", "off":
-		wipe = false
-	}
-
-	ctx := c.Request.Context()
-
-	code, err := h.datasetsService.DeleteIndex(ctx, userID, datasetID, indexType, wipe)
-	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, map[string]interface{}{}, "success")
+	common.SuccessWithData(c, st, "success")
 }
 
 // ListMetadataFlattened handles GET /api/v1/datasets/metadata/flattened.

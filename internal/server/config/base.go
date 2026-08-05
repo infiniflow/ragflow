@@ -30,7 +30,6 @@ type Config struct {
 
 	admin     AdminConfig
 	apiServer APIServerConfig
-	ingestor  IngestorConfig
 	syncer    SyncerConfig
 
 	log  LogConfig

@@ -131,11 +131,10 @@ func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *C
 	if chatModelConfig == nil {
 		return
 	}
-	if chatModelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-	} else {
-		reqBody["max_tokens"] = 1024 // default when not configured
-	}
+	// Deliberately do NOT set max_tokens: response length is controlled through
+	// the prompt, not a driver parameter. This matches the Python contract
+	// (rag/llm/chat_model.py strips max_tokens for claude models) and the
+	// "stop forwarding max token overrides" intent.
 	if chatModelConfig.Temperature != nil {
 		reqBody["temperature"] = *chatModelConfig.Temperature
 	}

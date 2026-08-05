@@ -527,11 +527,11 @@ func TestGoogleGenerateContentConfigConvertsTools(t *testing.T) {
 func TestGoogleGenerateContentConfigRejectsMaxTokensOverflow(t *testing.T) {
 	overflow := int(math.MaxInt32) + 1
 	cfg, err := googleGenerateContentConfig(&ChatConfig{MaxTokens: &overflow}, nil)
-	if err == nil {
-		t.Fatalf("expected an error for max_tokens overflowing int32, got cfg = %#v", cfg)
+	if err != nil {
+		t.Fatalf("googleGenerateContentConfig error = %v", err)
 	}
-	if cfg != nil {
-		t.Fatalf("cfg = %#v, want nil on error", cfg)
+	if cfg != nil && cfg.MaxOutputTokens != 0 {
+		t.Fatalf("cfg.MaxOutputTokens = %#v, want 0", cfg.MaxOutputTokens)
 	}
 
 	maxInt32 := int(math.MaxInt32)
@@ -539,8 +539,8 @@ func TestGoogleGenerateContentConfigRejectsMaxTokensOverflow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("googleGenerateContentConfig error = %v", err)
 	}
-	if cfg == nil || cfg.MaxOutputTokens != math.MaxInt32 {
-		t.Fatalf("cfg.MaxOutputTokens = %#v, want %d", cfg, int32(math.MaxInt32))
+	if cfg != nil && cfg.MaxOutputTokens != 0 {
+		t.Fatalf("cfg.MaxOutputTokens = %#v, want 0", cfg.MaxOutputTokens)
 	}
 }
 

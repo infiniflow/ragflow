@@ -77,6 +77,7 @@ Rules:
 
 ## Working Rules
 - Before editing, inspect the nearest code path that actually owns the behavior.
+- When handling review comments, independently verify each substantive claim against the current code or tests before accepting, rejecting, or acting on it.
 - Keep changes small and local unless the task is explicitly a broader refactor.
 - Prefer one implementation path instead of preserving old and new versions side by side.
 - Preserve behavior with focused tests when the behavior is still valid; do not keep tests that protect obsolete behavior.

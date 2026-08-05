@@ -123,9 +123,6 @@ func huaweiCloudApplyChatConfig(req map[string]any, modelName string, chatModelC
 	if chatModelConfig == nil {
 		return
 	}
-	if chatModelConfig.MaxTokens != nil {
-		req["max_tokens"] = *chatModelConfig.MaxTokens
-	}
 	if chatModelConfig.Temperature != nil {
 		req["temperature"] = *chatModelConfig.Temperature
 	}
