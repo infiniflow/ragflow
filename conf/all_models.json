@@ -17595,7 +17595,7 @@
       },
       "max_completion_tokens": 131072,
       "content_length": 204800,
-      "max_output": 16384
+      "max_output": 128000
     },
     {
       "name": "minimaxai/MiniMax-M2.5",
@@ -17613,7 +17613,7 @@
       },
       "max_completion_tokens": 131100,
       "content_length": 204800,
-      "max_output": 196608
+      "max_output": 128000
     },
     {
       "name": "minimaxai/MiniMax-M2.7",
@@ -17632,7 +17632,7 @@
       },
       "max_completion_tokens": 131072,
       "content_length": 204800,
-      "max_output": 16384
+      "max_output": 128000
     },
     {
       "name": "minimaxai/MiniMax-Text-01",
@@ -39349,8 +39349,8 @@
         "clear_thinking": true
       },
       "max_completion_tokens": 131072,
-      "content_length": 204800,
-      "max_output": 131072
+      "content_length": 200000,
+      "max_output": 128000
     },
     {
       "name": "zai-org/GLM-5.1-FP8",
