@@ -102,7 +102,9 @@ export function VersionDialog({
                   <section className="flex justify-between pb-2">
                     <div className="min-w-0">
                       <div className="flex items-center">
-                        <span className="pb-1 truncate">{agent?.title}</span>
+                        <span className="pb-1 truncate min-w-0">
+                          {agent?.title}
+                        </span>
                         {agent?.release && (
                           <RAGFlowTooltip tooltip={t('flow.productionTooltip')}>
                             <Button className="bg-accent-primary-5 ml-3 flex-shrink-0">
