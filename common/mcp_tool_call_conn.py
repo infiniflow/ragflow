@@ -36,6 +36,13 @@ MCPTaskType = Literal["list_tools", "tool_call"]
 MCPTask = tuple[MCPTaskType, dict[str, Any], asyncio.Queue[Any]]
 
 
+def _header_value_is_set(name: str, value: str) -> bool:
+    value = value.strip()
+    if not value:
+        return False
+    return name.strip().lower() != "authorization" or value.lower() != "bearer"
+
+
 class ToolCallSession(Protocol):
     def tool_call(self, name: str, arguments: dict[str, Any], timeout: float | int = 10) -> str: ...
 
@@ -73,7 +80,7 @@ class MCPToolCallSession(ToolCallSession):
         for h, v in raw_headers.items():
             nh = Template(h).safe_substitute(self._server_variables)
             nv = Template(v).safe_substitute(self._server_variables)
-            if nh.strip() and nv.strip().strip("Bearer"):
+            if nh.strip() and _header_value_is_set(nh, nv):
                 headers[nh] = nv
 
         for h, v in custom_header.items():
