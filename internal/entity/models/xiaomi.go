@@ -77,9 +77,12 @@ func (x *XiaomiModel) ChatWithMessages(ctx context.Context, modelName string, me
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
-	delete(reqBody, "max_tokens")
 
 	if chatModelConfig != nil {
+		if chatModelConfig.MaxTokens != nil {
+			reqBody["max_completion_tokens"] = *chatModelConfig.MaxTokens
+		}
+
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
 				reqBody["thinking"] = map[string]interface{}{
@@ -121,12 +124,15 @@ func (x *XiaomiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
-	delete(reqBody, "max_tokens")
 	reqBody["stream_options"] = map[string]interface{}{
 		"include_usage": true,
 	}
 
 	if modelConfig != nil {
+		if modelConfig.MaxTokens != nil {
+			reqBody["max_completion_tokens"] = *modelConfig.MaxTokens
+		}
+
 		if modelConfig.Thinking != nil {
 			if *modelConfig.Thinking {
 				reqBody["thinking"] = map[string]interface{}{

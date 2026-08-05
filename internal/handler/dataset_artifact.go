@@ -119,9 +119,7 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
-	// Python's list_wiki_pages returns {total, items}; align the Go port so the
-	// shared frontend (which reads data.items) stays compatible.
-	common.SuccessWithData(c, gin.H{"total": total, "items": items}, "success")
+	common.SuccessWithData(c, gin.H{"total": total, "pages": items}, "success")
 }
 
 // UpdateArtifact handles PUT /artifacts/<page_type>/<slug> — edit a wiki page.
@@ -241,9 +239,7 @@ func (h *DatasetArtifactHandler) ListArtifactTopics(c *gin.Context) {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
-	// Python's list_wiki_topics returns {total, items}; align the Go port so the
-	// shared frontend (which reads data.items) stays compatible.
-	common.SuccessWithData(c, gin.H{"total": total, "items": items}, "success")
+	common.SuccessWithData(c, gin.H{"total": total, "topics": items}, "success")
 }
 
 // GetArtifactAlteration handles GET /artifacts/alteration — wiki alteration summary.

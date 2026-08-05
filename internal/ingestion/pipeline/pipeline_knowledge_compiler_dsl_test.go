@@ -95,12 +95,10 @@ func TestKnowledgeCompilerDSL_FixtureDecodesAndBindsParams(t *testing.T) {
 		t.Errorf("fixture unexpectedly sets variant; frontend Compiler DSL omits it")
 	}
 
-	// Authored as a single string group id in the frontend form. The shipped
-	// template leaves it empty by design (the user selects the template group at
-	// runtime), so we only assert the DSL shape is a plain string (and that the
-	// node carries no variant).
-	if _, ok := params["compilation_template_group_id"].(string); !ok {
-		t.Fatalf("compilation_template_group_id = %v, want a single string id", params["compilation_template_group_id"])
+	// Authored as a single string group id in the frontend form.
+	gid, ok := params["compilation_template_group_id"].(string)
+	if !ok || gid != "c3aa748c8b2111f191f3047c16ec874f" {
+		t.Fatalf("compilation_template_group_id = %v, want single string id", params["compilation_template_group_id"])
 	}
 }
 
@@ -139,11 +137,8 @@ func TestKnowledgeCompilerDSL_FrontendDSLDecodesAndConstructs(t *testing.T) {
 		t.Fatal("default runtime factory not installed")
 	}
 
-	// The fixture params carry no variant and a string group id. The shipped
-	// template leaves the group id empty (selected at runtime), so give it a
-	// concrete id here to verify the DSL constructs once configured.
-	params["compilation_template_group_id"] = "tpl-group"
-	comp, err := f("Compiler", params)
+	// The fixture params (single group id, no variant) construct fine.
+	comp, err := f("KnowledgeCompiler", params)
 	if err != nil {
 		t.Fatalf("construct from fixture params: %v", err)
 	}
@@ -159,15 +154,16 @@ func TestKnowledgeCompilerDSL_FrontendDSLDecodesAndConstructs(t *testing.T) {
 }
 
 // TestKnowledgeCompilerDSL_RegisteredAndConstructible confirms the Go runtime
-// registers the knowledge-compiler component under the unified name "Compiler"
-// (matching the Python side rag/flow/compiler/compiler.py) and that the runtime
-// factory can build a component instance from a DSL params map that carries
-// either compilation_template_id or compilation_template_group_id (the variant
-// is no longer part of the DSL surface).
+// registers the component under the canonical name "KnowledgeCompiler" and that
+// the runtime factory can build a component instance from a DSL params map that
+// carries either compilation_template_id or compilation_template_group_id (the
+// variant is no longer part of the DSL surface). The frontend label "Compiler"
+// (see the fixture tests) maps to this runtime name at the API/canvas layer,
+// not inside the pipeline DSL decoder.
 func TestKnowledgeCompilerDSL_RegisteredAndConstructible(t *testing.T) {
 	runtime.InstallDefaultRegistryFactory()
-	if _, _, _, ok := runtime.DefaultRegistry.Lookup("Compiler"); !ok {
-		t.Fatal("Compiler not registered in the runtime factory")
+	if _, _, _, ok := runtime.DefaultRegistry.Lookup("KnowledgeCompiler"); !ok {
+		t.Fatal("KnowledgeCompiler not registered in the runtime factory")
 	}
 	f := runtime.DefaultFactory()
 	if f == nil {
@@ -181,7 +177,7 @@ func TestKnowledgeCompilerDSL_RegisteredAndConstructible(t *testing.T) {
 		{"compilation_template_id": "t1", "compilation_template_group_id": "g1"},
 	}
 	for i, params := range cases {
-		comp, err := f("Compiler", params)
+		comp, err := f("KnowledgeCompiler", params)
 		if err != nil {
 			t.Fatalf("case %d construct: %v", i, err)
 		}
@@ -191,7 +187,7 @@ func TestKnowledgeCompilerDSL_RegisteredAndConstructible(t *testing.T) {
 	}
 
 	// Param map with neither id resolves to a parse error.
-	if _, err := f("Compiler", map[string]any{}); err == nil {
+	if _, err := f("KnowledgeCompiler", map[string]any{}); err == nil {
 		t.Fatal("construct with no template spec: expected error")
 	}
 }
@@ -207,8 +203,6 @@ func TestKnowledgeCompilerDSL_ParamBinding(t *testing.T) {
 		"compilation_template_group_id": "g1",
 		"llm_id":                        "llm-1",
 		"embedding_model":               "emb-1",
-		"tenant_id":                     "tenant-1",
-		"dataset_id":                    "kb-1",
 		"language":                      "Chinese",
 		"extra":                         map[string]any{"prompt": "summarize"},
 	})
@@ -224,8 +218,6 @@ func TestKnowledgeCompilerDSL_ParamBinding(t *testing.T) {
 	if p.Variant != "" {
 		t.Errorf("Variant should be empty after ParseParam (derived from kind later), got %q", p.Variant)
 	}
-	// TenantID/DatasetID are injected at runtime by the component (not via the
-	// DSL/ParseParam), so they are not asserted here.
 	if p.LLMID != "llm-1" || p.EmbeddingModel != "emb-1" || p.Language != "Chinese" {
 		t.Errorf("scalar fields = %+v", p)
 	}

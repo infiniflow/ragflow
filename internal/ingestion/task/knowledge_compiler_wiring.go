@@ -28,9 +28,7 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	_ "ragflow/internal/ingestion/component/knowledge_compiler"
 	kc "ragflow/internal/ingestion/component/knowledge_compiler/common"
-	"ragflow/internal/ingestion/knowledge_compile"
 	"ragflow/internal/service"
 
 	"gorm.io/gorm"
@@ -99,15 +97,12 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		}
 		// Resolve the chat model's context window so RAPTOR can truncate each
 		// cluster's texts to fit the LLM context (mirrors Python self._llm_model.max_length).
-		// This uses content_length (PR #17839) — the total context window — not
-		// max_output. max_output is only the generation cap; using it as the
-		// budget source would collapse per-chunk input quotas.
 		llmMax := kc.DefaultLLMContextLength
 		// Bound the model-config lookup so a stalled provider/instance DB read
 		// cannot block document ingestion indefinitely.
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if ml, merr := svc.ResolveModelContextLength(ctx, tenantID, llmID); merr == nil && ml > 0 {
+		if _, _, _, ml, merr := svc.ResolveModelConfig(ctx, tenantID, entity.ModelTypeChat, llmID); merr == nil && ml > 0 {
 			llmMax = ml
 		}
 
@@ -118,7 +113,7 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 			// HistoricalKNN / Redis are optional (wiki historical dedup,
 			// datasetnav lock). They are wired separately when the
 			// surrounding pipeline supplies the backing services.
-			ModelContextLen: llmMax,
+			LLMMaxLength: llmMax,
 		}, nil
 	}
 }
@@ -179,114 +174,31 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 	if len(texts) == 0 {
 		return nil, nil
 	}
-	mdl, err := e.resolveModel(ctx)
+	embdID := strings.TrimSpace(e.embdID)
+	if embdID == "" {
+		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required for production embedding")
+	}
+	mdl, err := e.svc.GetEmbeddingModel(ctx, e.tenantID, embdID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("knowledge_compiler: resolve embedding model: %w", err)
+	}
+	if mdl == nil || mdl.ModelDriver == nil {
+		return nil, fmt.Errorf("knowledge_compiler: embedding model %q is unavailable", embdID)
 	}
 	config := &models.EmbeddingConfig{}
-	// Slice inputs into per-provider batches: providers cap the per-request input
-	// count (siliconflow allows at most 32, siliconflow.go:143) and reject larger
-	// batches rather than chunking internally. The batch size is derived from the
-	// resolved driver (see embeddingBatchSize). Batches are fanned out on the shared
-	// compiler pool and concatenated back in input order.
-	batchSize := embeddingBatchSize(mdl)
-	numBatches := (len(texts) + batchSize - 1) / batchSize
-	slots := make([][][]float32, numBatches) // per-batch vector lists, distinct indices => no race
-	jobs := make([]knowledge_compile.CompilerJob, 0, numBatches)
-	for b := 0; b < numBatches; b++ {
-		b := b
-		start := b * batchSize
-		end := start + batchSize
-		if end > len(texts) {
-			end = len(texts)
-		}
-		batchTexts := texts[start:end]
-		jobs = append(jobs, func() error {
-			if err := ctx.Err(); err != nil {
-				return err
-			}
-			embeds, err := mdl.ModelDriver.Embed(ctx, mdl.ModelName, batchTexts, mdl.APIConfig, config, nil)
-			if err != nil {
-				return fmt.Errorf("knowledge_compiler: embed: %w", err)
-			}
-			vecs := make([][]float32, len(embeds))
-			for i, v := range embeds {
-				vecs[i] = float64sToFloat32(v.Embedding)
-			}
-			slots[b] = vecs
-			return nil
-		})
+	// Embed expects *string for the model name; nil ModelUsage (not tracked here).
+	embeds, err := mdl.ModelDriver.Embed(ctx, mdl.ModelName, texts, mdl.APIConfig, config, nil)
+	if err != nil {
+		return nil, fmt.Errorf("knowledge_compiler: embed: %w", err)
 	}
-	if err := knowledge_compile.SubmitCompilerJobs(ctx, jobs); err != nil {
-		return nil, err
+	out := make([][]float32, len(embeds))
+	for i, v := range embeds {
+		out[i] = float64sToFloat32(v.Embedding)
 	}
-	// Flatten in input order and derive the vector dimension from the first
-	// batch's first vector.
-	out := make([][]float32, 0, len(texts))
-	var batchDim int
-	for _, slot := range slots {
-		for _, vec := range slot {
-			out = append(out, vec)
-			if batchDim == 0 {
-				batchDim = len(vec)
-			}
-		}
-	}
-	if batchDim > 0 {
-		e.dim.CompareAndSwap(0, int64(batchDim))
+	if len(out) > 0 {
+		e.dim.CompareAndSwap(0, int64(len(out[0])))
 	}
 	return out, nil
-}
-
-// embeddingBatchSize returns the max texts per Embed request for the resolved
-// model's driver.
-//
-// The ModelDriver interface exposes no embedding batch/input-limit capability
-// (ListModels only reports MaxDimension/content-length; providers do not return
-// a batch limit), so the limit cannot be queried at runtime. We therefore keep a
-// provider-aware table keyed by the driver name: known strict providers get their
-// documented cap, and unknown providers use a conservative default that is safe
-// across OpenAI-compatible backends. See siliconflow.go:143 for the 32-input cap.
-func embeddingBatchSize(mdl *models.EmbeddingModel) int {
-	// Driver Name() returns the provider's canonical (often upper-cased) name,
-	// e.g. SiliconflowModel.Name() == "SILICONFLOW"; compare case-insensitively.
-	name := strings.ToUpper(mdl.ModelDriver.Name())
-	switch name {
-	case "SILICONFLOW":
-		return 32
-	default:
-		// OpenAI-compatible providers generally accept large batches (often
-		// hundreds+); 64 is a safe conservative bound that still keeps a single
-		// embed round-trip small.
-		return 64
-	}
-}
-
-// resolveModel returns the embedding model to embed with. It prefers the
-// explicitly configured embedding_model; when the caller left it unset, it falls
-// back to the tenant's default embedding model (mirrors Python, which uses the
-// KB/tenant's configured embedding model for wiki compilation). A clear error is
-// returned only when neither is available, so a KB with no embedding model fails
-// loudly instead of silently producing empty vectors.
-func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, error) {
-	if embdID := strings.TrimSpace(e.embdID); embdID != "" {
-		mdl, err := e.svc.GetEmbeddingModel(ctx, e.tenantID, embdID)
-		if err != nil {
-			return nil, fmt.Errorf("knowledge_compiler: resolve embedding model: %w", err)
-		}
-		if mdl == nil || mdl.ModelDriver == nil {
-			return nil, fmt.Errorf("knowledge_compiler: embedding model %q is unavailable", embdID)
-		}
-		return mdl, nil
-	}
-	driver, name, apiConfig, _, err := e.svc.GetTenantDefaultModelByType(ctx, e.tenantID, entity.ModelTypeEmbedding)
-	if err != nil {
-		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required and no tenant default embedding model is set: %w", err)
-	}
-	if driver == nil || name == "" {
-		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required (tenant default embedding model unavailable)")
-	}
-	return &models.EmbeddingModel{ModelDriver: driver, ModelName: &name, APIConfig: apiConfig}, nil
 }
 
 func (e *kcEmbedder) Dimensions() int { return int(e.dim.Load()) }
@@ -318,12 +230,9 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 		KbIDs:        []string{datasetID},
 		Limit:        k,
 		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "kc_content_md_raw", "_score"},
-		// compile_kwd="wiki_page" is the schema-backed discriminator for wiki
-		// pages (sections carry compile_kwd="wiki_section"); there is no
-		// "kc_kind" column in the chunk schema, so filtering on it would return
-		// empty on Infinity.
 		Filter: map[string]interface{}{
-			"compile_kwd": "wiki_page",
+			"compile_kwd": "artifact_page",
+			"kc_kind":     "page",
 		},
 		MatchExprs: []interface{}{&enginetypes.MatchDenseExpr{
 			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(vec)),
@@ -355,8 +264,9 @@ func (s *kcWikiPageStore) GetPageBySlug(ctx context.Context, tenantID, datasetID
 		Limit:        1,
 		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "kc_content_md_raw", "_score"},
 		Filter: map[string]interface{}{
-			"compile_kwd": "wiki_page",
+			"compile_kwd": "artifact_page",
 			"slug_kwd":    slug,
+			"kc_kind":     "page",
 		},
 	}
 	res, err := s.docEngine.Search(ctx, req)

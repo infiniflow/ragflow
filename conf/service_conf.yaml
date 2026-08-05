@@ -68,6 +68,7 @@ otel:
   enable: false
 ingestor:
   mq_type: 'nats'
+  max_concurrent_workers: 1
 file_syncer:
   max_concurrent_syncs: 1
   sync_interval: 3

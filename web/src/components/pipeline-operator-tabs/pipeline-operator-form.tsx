@@ -1,6 +1,5 @@
 import { Operator } from '@/constants/agent';
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
-import CompilationForm from '@/pages/agent/form/compilation-form';
 import ExtractorForm from '@/pages/agent/form/extractor-form';
 import ParserForm from '@/pages/agent/form/parser-form';
 import TitleChunkerForm from '@/pages/agent/form/title-chunker-form';
@@ -57,14 +56,6 @@ const PipelineOperatorForm = ({
     case Operator.Extractor:
       return (
         <ExtractorForm
-          node={node}
-          onValuesChange={handleValuesChange}
-          hideOutputs
-        />
-      );
-    case Operator.Compiler:
-      return (
-        <CompilationForm
           node={node}
           onValuesChange={handleValuesChange}
           hideOutputs

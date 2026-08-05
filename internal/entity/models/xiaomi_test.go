@@ -91,8 +91,8 @@ func TestXiaomiChatHappyPath(t *testing.T) {
 		if body["max_tokens"] != nil {
 			t.Errorf("max_tokens must not be sent: %v", body["max_tokens"])
 		}
-		if _, ok := body["max_completion_tokens"]; ok {
-			t.Errorf("max_completion_tokens should be omitted, got %v", body["max_completion_tokens"])
+		if body["max_completion_tokens"] != float64(1024) {
+			t.Errorf("max_completion_tokens=%v", body["max_completion_tokens"])
 		}
 		thinking, ok := body["thinking"].(map[string]interface{})
 		if !ok || thinking["type"] != "disabled" {

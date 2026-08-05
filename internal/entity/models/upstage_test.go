@@ -218,9 +218,6 @@ func TestUpstageRequestBodyMatchesSolarAPIShape(t *testing.T) {
 	if stopArr, ok := seen["stop"].([]interface{}); !ok || len(stopArr) != 1 || stopArr[0] != "END" {
 		t.Errorf("body[stop]=%v want [END]", seen["stop"])
 	}
-	if _, ok := seen["max_tokens"]; ok {
-		t.Errorf("max_tokens should be omitted, got %v", seen["max_tokens"])
-	}
 	if _, ok := seen["messages"].([]interface{}); !ok {
 		t.Errorf("body[messages] missing or wrong type")
 	}

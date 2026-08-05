@@ -207,8 +207,8 @@ func TestMapChatConfigToInferenceForwardsAllFields(t *testing.T) {
 	if inf == nil {
 		t.Fatal("expected non-nil inferenceConfig")
 	}
-	if inf.MaxTokens != nil {
-		t.Errorf("maxTokens should be omitted, got %v", inf.MaxTokens)
+	if inf.MaxTokens == nil || *inf.MaxTokens != 4096 {
+		t.Errorf("maxTokens=%v", inf.MaxTokens)
 	}
 	if inf.Temperature == nil || *inf.Temperature != 0.5 {
 		t.Errorf("temperature=%v", inf.Temperature)

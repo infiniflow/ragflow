@@ -821,10 +821,9 @@ async def _wiki_extract_one_batch(
     language: str,
     llm_timeout: int,
     parser_config: Optional[dict] = None,
-) -> Optional[dict]:
+) -> dict:
     """Single LLM call for one packed batch. Returns the raw (label-tagged)
-    extract dict, or ``None`` on a transient LLM timeout/error so the caller
-    can avoid persisting a poisoned empty result.
+    extract dict.
 
     The entity / relation schemas and the extra rules sections of the
     prompt are rendered from ``parser_config`` when supplied (mirroring
@@ -852,10 +851,10 @@ async def _wiki_extract_one_batch(
         )
     except asyncio.TimeoutError:
         logging.warning("wiki_map: batch extraction timed out after %ds (%d chunks)", llm_timeout, len(packed))
-        return None
+        return _wiki_empty_extract()
     except Exception:
         logging.exception("wiki_map: batch extraction failed (%d chunks)", len(packed))
-        return None
+        return _wiki_empty_extract()
     _ = language  # reserved for future localization
     return _wiki_unwrap_extract(res)
 
@@ -882,12 +881,6 @@ async def _wiki_process_batch(
     the top of ``wiki_map_from_chunks``; threaded through so the
     persisted resume rows record the right hash and the next
     incremental run can compare cleanly.
-
-    On a transient LLM failure/timeout (``_wiki_extract_one_batch`` returns
-    ``None``) the batch is NOT persisted with a resume hash. The next
-    incremental run then sees those chunks as ``new`` and retries, instead of
-    replaying a permanently cached empty extract. Only a genuine LLM response
-    (even one with zero items) is persisted.
     """
     if not packed:
         return _wiki_empty_extract()
@@ -903,10 +896,6 @@ async def _wiki_process_batch(
             llm_timeout,
             parser_config=parser_config,
         )
-        if raw_extract is None:
-            # LLM call failed/timed out: leave no resume hash so the next run
-            # re-extracts these chunks instead of locking in an empty result.
-            return _wiki_empty_extract()
         merged, per_chunk = _wiki_resolve_chunk_ids(raw_extract, label_to_id)
         await _wiki_persist_extracts(
             per_chunk,

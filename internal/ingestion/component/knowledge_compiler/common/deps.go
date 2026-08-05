@@ -106,11 +106,10 @@ type Deps struct {
 	Redis         RedisClient   // optional (datasetnav)
 	TenantID      string
 	DatasetID     string
-	// ModelContextLen is the chat model's context window in tokens
-	// (content_length). The prompt-budget helpers (wikiMapMaxTokens,
-	// deriveWikiPlanBudget, buildClusterContent) use it to size the input/output
-	// quotas (mirrors Python self._llm_model.max_length).
-	ModelContextLen int
+	// LLMMaxLength is the chat model's context window in tokens. RAPTOR uses it
+	// to truncate each cluster's texts so the summary prompt fits the window
+	// (mirrors Python self._llm_model.max_length).
+	LLMMaxLength int
 }
 
 // DepsResolver resolves the per-run Deps from a tenant/llm/embedding triple.

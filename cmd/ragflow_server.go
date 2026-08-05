@@ -41,7 +41,6 @@ import (
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/nav"
 	"ragflow/internal/service/nlp"
-	"ragflow/internal/service/wikisearch"
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
 	"ragflow/internal/tokenizer"
@@ -851,14 +850,6 @@ func startServer(ctx context.Context) {
 	// internal/service/nlp). The embedder resolves the tenant's embedding model
 	// on demand so Search/UpsertDoc can embed queries/summaries automatically.
 	nav.SetNavService(nlp.NewNavService(service.NewNavEmbedder(modelProviderService, "")))
-
-	// Install the compiled-wiki search service. It is backed directly by the
-	// document engine: QueryPages filters the tenant-scoped index to
-	// compile_kwd="wiki_page" (+ supported kinds) so ordinary source chunks are
-	// never relabeled as wiki pages, and BackfillChunks fetches original chunks
-	// by id. When the engine is unavailable the service degrades to empty so the
-	// agent falls back to hybrid search (no failing call).
-	wikisearch.SetService(wikisearch.NewEngineService(engine.Get()))
 
 	// Initialize router
 	r := router.NewRouter(authHandler,

@@ -50,10 +50,9 @@ Output format (JSON):
 `
 
 type routeResult struct {
-	QuestionType        string `json:"question_type"`
-	RequiresDecomp      *bool  `json:"requires_decomposition"`
-	SuggestsCompilation string `json:"suggests_compilation"`
-	Reasoning           string `json:"reasoning"`
+	QuestionType   string `json:"question_type"`
+	RequiresDecomp *bool  `json:"requires_decomposition"`
+	Reasoning      string `json:"reasoning"`
 }
 
 // RouteNode mirrors Python route_node. It classifies the question into a
@@ -105,25 +104,7 @@ func decide(question, modeLabel string, res routeResult) RouteDecision {
 		QuestionType:          qType,
 		RequiresDecomposition: mode.RequiresDecomposition && needDecomp,
 		ExecutionStrategy:     mode.Strategy,
-		SuggestsCompilation:   normalizeCompilationSuggestion(res.SuggestsCompilation),
 		Reasoning:             res.Reasoning,
-	}
-}
-
-// normalizeCompilationSuggestion maps the LLM's free-text suggestion to a
-// canonical compiled-artifact key: "", "toc", "graph", or "wiki". Anything else
-// (including "null") collapses to "" so the production runner never routes on an
-// unknown artifact name.
-func normalizeCompilationSuggestion(s string) string {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "toc":
-		return "toc"
-	case "graph", "knowledge_graph", "kg":
-		return "graph"
-	case "wiki", "compiled":
-		return "wiki"
-	default:
-		return ""
 	}
 }
 

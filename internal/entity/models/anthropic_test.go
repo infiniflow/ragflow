@@ -66,10 +66,8 @@ func TestAnthropicChatHappyPath(t *testing.T) {
 		if body["model"] != "claude-sonnet-4-5-20250929" {
 			t.Errorf("model=%v", body["model"])
 		}
-		// max_tokens is deliberately NOT sent: response length is prompt-driven
-		// (matches the Python chat_model which strips it for claude models).
-		if _, ok := body["max_tokens"]; ok {
-			t.Errorf("max_tokens=%v, want absent", body["max_tokens"])
+		if body["max_tokens"] != float64(1024) {
+			t.Errorf("max_tokens=%v want 1024", body["max_tokens"])
 		}
 		msgs, ok := body["messages"].([]interface{})
 		if !ok || len(msgs) != 1 {
@@ -117,9 +115,8 @@ func TestAnthropicChatMapsSystemConfigAndImages(t *testing.T) {
 		if body["system"] != "be concise" {
 			t.Errorf("system=%v, want be concise", body["system"])
 		}
-		// max_tokens is deliberately NOT sent (prompt-driven length control).
-		if _, ok := body["max_tokens"]; ok {
-			t.Errorf("max_tokens=%v, want absent", body["max_tokens"])
+		if body["max_tokens"] != float64(64) {
+			t.Errorf("max_tokens=%v want 64", body["max_tokens"])
 		}
 		if body["temperature"] != 0.25 {
 			t.Errorf("temperature=%v want 0.25", body["temperature"])

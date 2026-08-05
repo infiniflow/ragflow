@@ -201,63 +201,6 @@ func TestModelProviderServiceGetModelConfigByID(t *testing.T) {
 	}
 }
 
-func TestModelProviderServiceResolveModelContextLength(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	useModelProviderServiceTestDB(t, db)
-	// Seed a tenant chat model that maps to a real factory-catalog model
-	// (Anthropic / claude-opus-4-8 has content_length=1000000, max_output=128000).
-	activeStatus := "1"
-	rows := []interface{}{
-		&entity.UserTenant{ID: "user-tenant-cl", UserID: "user-1", TenantID: "tenant-cl", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-anthropic", TenantID: "tenant-cl", ProviderName: "Anthropic"},
-		&entity.TenantModelInstance{ID: "instance-anthropic", ProviderID: "provider-anthropic", InstanceName: "default", APIKey: "sk-anthropic", Status: "active", Extra: "{}"},
-		&entity.TenantModel{ID: "model-claude", ProviderID: "provider-anthropic", InstanceID: "instance-anthropic", ModelName: "claude-opus-4-8", ModelType: int(entity.ModelTypeChat), Status: "active"},
-	}
-	for _, row := range rows {
-		if err := db.Create(row).Error; err != nil {
-			t.Fatalf("failed to seed %T: %v", row, err)
-		}
-	}
-
-	svc := NewModelProviderService()
-	ctx := t.Context()
-
-	// UUID path: resolves content_length (context window) from the factory
-	// catalog, NOT max_output.
-	got, err := svc.ResolveModelContextLength(ctx, "user-1", "model-claude")
-	if err != nil {
-		t.Fatalf("ResolveModelContextLength(uuid) error = %v", err)
-	}
-	if got != 1000000 {
-		t.Fatalf("uuid content_length = %d, want 1000000 (must be the context window, not max_output=128000)", got)
-	}
-
-	// Composite "model@instance@provider" path resolves the same value.
-	got2, err := svc.ResolveModelContextLength(ctx, "user-1", "claude-opus-4-8@default@Anthropic")
-	if err != nil {
-		t.Fatalf("ResolveModelContextLength(composite) error = %v", err)
-	}
-	if got2 != 1000000 {
-		t.Fatalf("composite content_length = %d, want 1000000", got2)
-	}
-}
-
-func TestModelProviderServiceResolveModelContextLengthUnknownModel(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	useModelProviderServiceTestDB(t, db)
-
-	// A model that does not exist in the factory catalog resolves to 0 so the
-	// caller falls back to its default context length instead of failing.
-	got, err := NewModelProviderService().ResolveModelContextLength(
-		t.Context(), "user-1", "gpt-no-such-model@default@OpenAI")
-	if err != nil {
-		t.Fatalf("ResolveModelContextLength(unknown) error = %v", err)
-	}
-	if got != 0 {
-		t.Fatalf("unknown model content_length = %d, want 0", got)
-	}
-}
-
 func TestModelProviderServiceAlterModelRejectsInvalidStatus(t *testing.T) {
 	ctx := t.Context()
 	code, err := NewModelProviderService().AlterModel(ctx, "OpenAI", "default", "", "user-1", "model-1", map[string]interface{}{"status": "disabled"})
