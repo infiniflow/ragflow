@@ -108,7 +108,7 @@ func TestMergeByTokenSizeFromJSON_StrictCapNoOvershoot(t *testing.T) {
 			Text: text, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(text)),
 		})
 	}
-	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 0, true, true)
+	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 0, true, schema.MergeOverCap)
 	merged := got[0]
 	if len(merged) < 3 {
 		t.Fatalf("want >=3 chunks, got %d", len(merged))
@@ -135,7 +135,7 @@ func TestMergeByTokenSizeFromJSON_OverlapDroppedAtOverflow(t *testing.T) {
 			Text: text, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(text)),
 		})
 	}
-	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 20, true, true)
+	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 20, true, schema.MergeOverCap)
 	unit := tokenizeStr(sections[0].Text)
 	for i, ck := range got[0] {
 		// OVER_CAP allows one boundary overflow (prev + one unit). The JSON
@@ -157,7 +157,7 @@ func TestMergeByTokenSizeFromJSON_OversizedUnitIsSubSplit(t *testing.T) {
 	items := [][]schema.ChunkDoc{{
 		{Text: long, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(long))},
 	}}
-	got := mergeByTokenSizeFromJSON(items, budget, 0, true, true)
+	got := mergeByTokenSizeFromJSON(items, budget, 0, true, schema.MergeOverCap)
 	if len(got[0]) < 2 {
 		t.Fatalf("oversized unit must yield multiple chunks, got %d", len(got[0]))
 	}
