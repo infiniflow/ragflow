@@ -61,10 +61,14 @@ func GetEmbeddingTokenConsumption(output map[string]any) int {
 // collapse every such chunk onto the same empty-text ChunkID, silently
 // overwriting each other in the index. The caller fails the task so the
 // violation surfaces instead of corrupting the index.
+//
+// Note: kb_id is intentionally NOT stamped here. It is an index-physical
+// concern owned by the search engine at the write boundary (ES chunk.go
+// InsertChunks and Infinity chunk.go InsertChunks both set kb_id = datasetID),
+// so ingestion never carries the index schema for it. See issue #17371.
 func ProcessChunksForPipeline(
 	chunks []map[string]any,
 	docID string,
-	kbID string,
 	docName string,
 	now time.Time,
 ) (map[string]any, error) {
@@ -77,7 +81,6 @@ func ProcessChunksForPipeline(
 
 	for _, ck := range chunks {
 		ck["doc_id"] = docID
-		ck["kb_id"] = kbID
 		ck["docnm_kwd"] = docName
 		ck["create_time"] = timeStr
 		ck["create_timestamp_flt"] = timestamp

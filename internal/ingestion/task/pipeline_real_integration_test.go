@@ -251,9 +251,6 @@ func TestPipelineExecutor_Run_RealPDF_ProducesIndexedChunks(t *testing.T) {
 		if got := chunk["doc_id"]; got != docID {
 			t.Fatalf("chunk[%d].doc_id = %v, want %q", i, got, docID)
 		}
-		if !taskChunkFieldEqualsStr(chunk["kb_id"], kbID) {
-			t.Fatalf("chunk[%d].kb_id = %v, want %q", i, chunk["kb_id"], kbID)
-		}
 		if got := chunk["docnm_kwd"]; got != docName {
 			t.Fatalf("chunk[%d].docnm_kwd = %v, want %q", i, got, docName)
 		}
@@ -717,19 +714,4 @@ func taskS3SafeBucketName(s string) string {
 	s = strings.ToLower(s)
 	s = strings.ReplaceAll(s, "_", "-")
 	return s
-}
-
-// taskChunkFieldEqualsStr compares a chunk field to a plain string, tolerating
-// either form a producer may emit: a plain string (e.g. kb_id is "kb-1" after
-// T1) or a single-element slice that survives a JSON round-trip as []any{"kb-1"}.
-func taskChunkFieldEqualsStr(v any, want string) bool {
-	switch val := v.(type) {
-	case string:
-		return val == want
-	case []string:
-		return len(val) == 1 && val[0] == want
-	case []any:
-		return len(val) == 1 && fmt.Sprint(val[0]) == want
-	}
-	return false
 }

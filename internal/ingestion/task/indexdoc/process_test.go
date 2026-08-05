@@ -43,9 +43,9 @@ func TestRenameTextToContentWithWeight_NoTextKey(t *testing.T) {
 // ProcessChunksForPipeline - Python: processChunks()
 // =============================================================================
 
-func TestProcessChunksForPipeline_SetsDocIDAndKBID(t *testing.T) {
+func TestProcessChunksForPipeline_SetsDocID(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello world"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -53,14 +53,16 @@ func TestProcessChunksForPipeline_SetsDocIDAndKBID(t *testing.T) {
 	if chunks[0]["doc_id"] != "doc-1" {
 		t.Errorf("doc_id = %q, want \"doc-1\"", chunks[0]["doc_id"])
 	}
-	if kbID, ok := chunks[0]["kb_id"].(string); !ok || kbID != "kb-1" {
-		t.Errorf("kb_id = %v, want \"kb-1\" (string)", chunks[0]["kb_id"])
+	// kb_id is intentionally NOT set here: it is owned by the search engine at
+	// the write boundary (ES/Infinity InsertChunks), not by ingestion. See #17371.
+	if _, exists := chunks[0]["kb_id"]; exists {
+		t.Errorf("kb_id should not be set by ProcessChunksForPipeline, got %v", chunks[0]["kb_id"])
 	}
 }
 
 func TestProcessChunksForPipeline_SetsDocNameKwd(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -72,7 +74,7 @@ func TestProcessChunksForPipeline_SetsDocNameKwd(t *testing.T) {
 func TestProcessChunksForPipeline_SetsTimeFields(t *testing.T) {
 	now := time.Now()
 	chunks := []map[string]any{{"text": "hello"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", now)
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", now)
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -96,7 +98,7 @@ func TestProcessChunksForPipeline_SetsTimeFields(t *testing.T) {
 
 func TestProcessChunksForPipeline_GeneratesID(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -112,7 +114,7 @@ func TestProcessChunksForPipeline_GeneratesID(t *testing.T) {
 // component.ChunkID computes a valid id from empty text, rather than erroring.
 func TestProcessChunksForPipeline_GeneratesIDOnNonStringText(t *testing.T) {
 	chunks := []map[string]any{{"text": []any{"bad-shape"}}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -134,7 +136,7 @@ func TestProcessChunksForPipeline_RemovesInternalPipelineFields(t *testing.T) {
 		"_pdf_positions": []any{[]any{0, 1, 2, 3, 4}},
 	}}
 
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -145,7 +147,7 @@ func TestProcessChunksForPipeline_RemovesInternalPipelineFields(t *testing.T) {
 
 func TestProcessChunksForPipeline_PreservesExistingID(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello", "id": "existing-id"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -156,7 +158,7 @@ func TestProcessChunksForPipeline_PreservesExistingID(t *testing.T) {
 
 func TestProcessChunksForPipeline_QuestionsProcessing(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello", "questions": "Q1\nQ2\nQ3"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -178,7 +180,7 @@ func TestProcessChunksForPipeline_QuestionsProcessing(t *testing.T) {
 
 func TestProcessChunksForPipeline_KeywordsProcessing(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello", "keywords": "kw1,kw2;kw3"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -197,7 +199,7 @@ func TestProcessChunksForPipeline_KeywordsProcessing(t *testing.T) {
 
 func TestProcessChunksForPipeline_SummaryProcessing(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello", "summary": "This is a summary."}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -231,7 +233,7 @@ func TestProcessChunksForPipeline_PreservesTokenizerProducedFields(t *testing.T)
 		"content_ltks":    "tokenizer-output-ltks",
 		"content_sm_ltks": "tokenizer-output-smltks",
 	}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -266,7 +268,7 @@ func TestProcessChunksForPipeline_PreservesTokenizerProducedFields(t *testing.T)
 
 func TestProcessChunksForPipeline_TextRenamed(t *testing.T) {
 	chunks := []map[string]any{{"text": "hello world"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
@@ -281,7 +283,7 @@ func TestProcessChunksForPipeline_TextRenamed(t *testing.T) {
 
 func TestProcessChunksForPipeline_PreservesContentWithWeight(t *testing.T) {
 	chunks := []map[string]any{{"content_with_weight": "already set", "text": "hello"}}
-	_, err := ProcessChunksForPipeline(chunks, "doc-1", "kb-1", "test-doc.pdf", time.Now())
+	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
 	if err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)
 	}
