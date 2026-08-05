@@ -610,11 +610,16 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 			addChunk(unit)
 			return
 		}
-		slog.Debug("TokenChunker: splitting oversized unit via splitOversizedUnit",
-			"len", len(unit), "tokens", tokenizeStr(unit), "chunk_token_size", target)
-		for _, piece := range splitOversizedUnit(unit, target) {
-			addChunk(piece)
-		}
+		// An oversize unit (a single paragraph larger than the token budget)
+		// is kept whole as a standalone chunk. Python's naive_merge
+		// (rag/nlp/__init__.py:_merge_paragraph_groups, both OVER_CAP and
+		// UNDER_CAP) never atom-splits an oversize unit: it "becomes its own
+		// chunk" and the model layer truncates it later. Splitting it here
+		// produced Go-only sub-chunks that diverged from the Python reference
+		// (parity cases token__text_long_paragraph and token__markdown_long).
+		// mergeDecision already forces an oversize incoming unit to
+		// startNewChunk, so passing it through addChunk is sufficient.
+		addChunk(unit)
 	}
 
 	for _, sec := range sections {
@@ -627,8 +632,9 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 			addChunk(t)
 			continue
 		}
-		// Oversized section: split on production sentence delimiters, then
-		// hard-cap any unit that still exceeds the budget (unbroken atoms).
+		// Oversized section: split on production sentence delimiters into
+		// units. A unit that still exceeds the budget is kept whole (see
+		// addUnit) — no atom-split, matching Python naive_merge.
 		parts := sentenceDelimiter.Split(sec, -1)
 		hadPart := false
 		for _, part := range parts {
