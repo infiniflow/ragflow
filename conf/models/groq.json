@@ -89,28 +89,6 @@
       }
     },
     {
-      "name": "meta-llama/llama-4-scout-17b-16e-instruct",
-      "content_length": 10485760,
-      "max_output": 8192,
-      "model_types": [
-        "chat"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
-      "name": "qwen/qwen3-32b",
-      "content_length": 131072,
-      "max_output": 32768,
-      "model_types": [
-        "chat"
-      ],
-      "tools": {
-        "support": true
-      }
-    },
-    {
       "name": "canopylabs/orpheus-v1-english",
       "model_types": [
         "tts"
