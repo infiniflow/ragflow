@@ -403,6 +403,14 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		// injected in place below without a nil-map assignment panic.
 		parserConfig = map[string]interface{}{}
 	}
+	common.InjectExtractorLLMID(parserConfig, s.taskCtx.Tenant.LLMID)
+	// When the dataset enables auto-metadata, ensure the Extractor node(s)
+	// carry the enable_metadata mode + field schema so the LLM extraction fires
+	// (mirrors Python task_executor.py:519 enabling gen_metadata_task). The
+	// dataset flag is authoritative: a node that already has enable_metadata
+	// turned on keeps its own config, but a shipped DSL defaulting it to 0 is
+	// still overridden so auto-metadata can activate.
+	common.InjectExtractorEnableMetadata(parserConfig)
 
 	// Surface component params whose cpnID is absent from the DSL. The
 	// runtime merge (override_params) silently drops such entries;

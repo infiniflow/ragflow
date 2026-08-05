@@ -362,7 +362,6 @@ export const initialExtractorValues = {
 
 export const initialCompilationValues = {
   compilation_template_group_id: '',
-  llm_id: '',
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },

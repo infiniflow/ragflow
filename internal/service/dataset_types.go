@@ -1,5 +1,10 @@
 package service
 
+// TraceIndexRequest is the request structure for tracing an index task.
+type TraceIndexRequest struct {
+	Type string `json:"type" binding:"required"`
+}
+
 // CheckEmbeddingRequest is the request structure for checking embedding compatibility.
 type CheckEmbeddingRequest struct {
 	EmbeddingID string `json:"embd_id" binding:"required"`

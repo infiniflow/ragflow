@@ -121,11 +121,6 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	// unique within the tenant.
 	name = d.dedupeDatasetName(ctx, name, tenantID)
 
-	parserConfig = service.ApplyComponentScopedParserConfig(
-		parserConfig,
-		tenant.LLMID,
-	)
-
 	kb := &entity.Knowledgebase{
 		ID:           kbID,
 		Name:         name,
@@ -526,21 +521,6 @@ func stringPtrIfNotEmpty(s string) *string {
 }
 
 // extractDocIDs returns the document IDs from a slice of documents.
-// datasetIndexTaskIDs returns the deduplicated set of dataset-level index task
-// ids recorded on the KB (graphrag/raptor/mindmap legacy task fields). It is
-// used by deleteDataset to clear residual entity.Task rows when a KB is deleted.
-// Kept here because it belongs to the dataset delete lifecycle, not the retired
-// RunIndex scheduling path.
-func datasetIndexTaskIDs(kb *entity.Knowledgebase) []string {
-	taskIDs := make([]string, 0, 3)
-	for _, taskID := range []*string{kb.GraphragTaskID, kb.RaptorTaskID, kb.MindmapTaskID} {
-		if taskID != nil && *taskID != "" {
-			taskIDs = append(taskIDs, *taskID)
-		}
-	}
-	return common.Deduplicate(taskIDs)
-}
-
 func extractDocIDs(docs []entity.Document) []string {
 	ids := make([]string, 0, len(docs))
 	for _, doc := range docs {

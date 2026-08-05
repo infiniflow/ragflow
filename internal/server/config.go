@@ -121,6 +121,11 @@ func Init(configPath string) error {
 		return fmt.Errorf("parse API server config error: %w", err)
 	}
 
+	err = globalConfig.ParseIngestorConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse ingestor config error: %w", err)
+	}
+
 	err = globalConfig.ParseSyncerConfig(v)
 	if err != nil {
 		return fmt.Errorf("parse syncer config error: %w", err)

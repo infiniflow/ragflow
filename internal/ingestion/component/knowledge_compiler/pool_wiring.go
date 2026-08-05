@@ -20,7 +20,6 @@ import (
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/mindmap"
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
-	"ragflow/internal/ingestion/component/knowledge_compiler/wiki"
 	"ragflow/internal/ingestion/knowledge_compile"
 )
 
@@ -36,5 +35,4 @@ func init() {
 	}
 	structure.SetBatchSubmitter(submit)
 	mindmap.SetBatchSubmitter(submit)
-	wiki.SetBatchSubmitter(submit)
 }

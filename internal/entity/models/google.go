@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"strings"
@@ -323,6 +324,12 @@ func googleGenerateContentConfig(chatModelConfig *ChatConfig, systemInstruction 
 		if chatModelConfig.TopP != nil {
 			value := float32(*chatModelConfig.TopP)
 			cfg.TopP = &value
+		}
+		if chatModelConfig.MaxTokens != nil {
+			if *chatModelConfig.MaxTokens < 0 || *chatModelConfig.MaxTokens > math.MaxInt32 {
+				return nil, fmt.Errorf("gemini: max_tokens %d is out of range for int32", *chatModelConfig.MaxTokens)
+			}
+			cfg.MaxOutputTokens = int32(*chatModelConfig.MaxTokens)
 		}
 		if chatModelConfig.Stop != nil {
 			cfg.StopSequences = *chatModelConfig.Stop

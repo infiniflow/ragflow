@@ -9,11 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"sort"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
-	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/mindmap"
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
@@ -39,12 +37,7 @@ var chunkerOutputs = map[string]string{
 	"_ERROR":        "Set only on validation failure.",
 }
 
-// componentNameCompiler is the canonical, unified component name for the
-// knowledge-compilation flow. It matches the Python side
-// (rag/flow/compiler/compiler.py registers component_name = "Compiler"), so a
-// canvas saved by the Python frontend and Go's built-in ingestion templates
-// both reference the node as "Compiler" and resolve to the same component.
-const componentNameCompiler = "Compiler"
+const componentNameKnowledgeCompiler = "KnowledgeCompiler"
 
 // KnowledgeCompilerComponent is the runtime.Component surface. Param is set at
 // construction from the DSL; per-call overrides flow through the inputs map.
@@ -67,6 +60,10 @@ func NewKnowledgeCompilerComponent(name string, params map[string]any) (runtime.
 func (c *KnowledgeCompilerComponent) Inputs() map[string]string {
 	return map[string]string{
 		"chunks":                "List of map[string]any from upstream chunker/parser; each must carry id + text/content_with_weight.",
+		"llm_id":                "Optional per-call LLM id override.",
+		"embedding_model":       "Optional per-call embedding model override.",
+		"tenant_id":             "Optional tenant scope (defaults to resolver context).",
+		"dataset_id":            "Optional dataset scope (wiki historical dedup).",
 		"historical_candidates": "Optional []common.Candidate override for historical dedup (test/offline).",
 	}
 }
@@ -88,13 +85,14 @@ func (c *KnowledgeCompilerComponent) Outputs() map[string]string {
 func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	_ = db
 	param := c.Param
-	// Resolve the run-level tenant scope from the shared CanvasState.Globals
-	// bag first (seeded by the pipeline at run start), falling back to the
-	// component's own input map. Mirrors parser.go: it keeps the tenant id from
-	// being lost when the upstream output map narrows it, which would otherwise
-	// leave the template-group lookup with an empty tenant and fail loudly.
-	tenantID := globals.GlobalOrInput(ctx, inputs, "tenant_id", "")
-	datasetID := globals.GlobalOrInput(ctx, inputs, "dataset_id", "")
+	if v, ok := inputs["llm_id"].(string); ok && v != "" {
+		param.LLMID = v
+	}
+	if v, ok := inputs["embedding_model"].(string); ok && v != "" {
+		param.EmbeddingModel = v
+	}
+	tenantID, _ := inputs["tenant_id"].(string)
+	datasetID, _ := inputs["dataset_id"].(string)
 
 	// Resolve the compilation template spec(s). Priority:
 	// compilation_template_id > compilation_template_group_id. The variant is
@@ -417,13 +415,10 @@ func kindOrVariant(p common.Product) string {
 // variantCompileKWD maps each Go variant to the compile_kwd discriminator value
 // Python writes into ES (rag/advanced_rag/knowlege_compile). It is the primary
 // key that distinguishes compiled knowledge units from ordinary chunks and
-// routes retrieval-side filters. The wiki value MUST be "wiki_page" (Python's
-// canonical WIKI_PAGE_COMPILE_KWD in wiki.py:1661 / wiki_incremental.py:44 /
-// dataset_wiki_generator.py:108) so Go-produced wiki pages are visible to the
-// artifact API (dataset_artifact_service.go reads compile_kwd="wiki_page").
+// routes retrieval-side filters (e.g. "compile_kwd": ["artifact_page"]).
 var variantCompileKWD = map[common.Variant]string{
 	common.VariantStructure: "structure",
-	common.VariantWiki:      "wiki_page",
+	common.VariantWiki:      "artifact_page",
 	common.VariantTree:      "tree",
 	common.VariantMindmap:   "mindmap",
 }
@@ -474,14 +469,6 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 		// mirroring Python's per-row autotype stamp).
 		if v := metaString(p.Meta, "compile_kwd"); v != "" {
 			compileKWD = v
-		}
-		// Wiki sub-parts: sections get their own compile_kwd so that a page
-		// search on compile_kwd="wiki_page" returns pages only (page.go emits
-		// both kind:"page" and kind:"section" rows under VariantWiki). This is
-		// the schema-backed page/section discriminator: "wiki_page" == page,
-		// "wiki_section" == a page sub-section.
-		if p.Variant == common.VariantWiki && metaString(p.Meta, "kind") == "section" && compileKWD == "wiki_page" {
-			compileKWD = "wiki_section"
 		}
 		if compileKWD == "" {
 			compileKWD = string(p.Variant)
@@ -587,25 +574,12 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 	case common.VariantWiki:
 		// One artifact_page row per wiki page; section rows reuse the same
 		// page-level columns so retrieval-side filters work uniformly.
-		// Match the Python writer contract (api/db/db_models.py slug_kwd):
-		// slug_kwd stores the full "<page_type>/<slug>" form, so retrieval
-		// filters (GetWikiPage) can reconstruct it directly. page_type is also
-		// stored separately for topic grouping.
-		if pageType := metaString(p.Meta, "page_type"); pageType != "" {
-			if slug := metaString(p.Meta, "slug"); slug != "" {
-				// Normalize to the full "<page_type>/<slug>" form (Python writer
-				// contract). Idempotent: a slug that already carries the prefix
-				// (some producers emit pageType/slug directly) is left as-is.
-				fullSlug := slug
-				if !strings.Contains(slug, "/") {
-					fullSlug = pageType + "/" + slug
-				}
-				if err := doc.SetExtraValue("slug_kwd", fullSlug); err != nil {
-					return err
-				}
-				if err := doc.SetExtraValue("artifact_slug_kwd", fullSlug); err != nil {
-					return err
-				}
+		if v := metaString(p.Meta, "slug"); v != "" {
+			if err := doc.SetExtraValue("slug_kwd", v); err != nil {
+				return err
+			}
+			if err := doc.SetExtraValue("artifact_slug_kwd", v); err != nil {
+				return err
 			}
 		}
 		if v := metaString(p.Meta, "title"); v != "" {
@@ -767,21 +741,7 @@ func metaStringSlice(m map[string]any, key string) []string {
 // headless / manual chaining reads them from the component output map, so they
 // must be forwarded when present.
 func mergeChunks(inputs map[string]any, compiled []schema.ChunkDoc) map[string]any {
-	// Accept both the []any and []map[string]any chunk carriers (the chunker
-	// emits the latter; buildInputs already handles both). Without this, the
-	// original source chunks would be dropped when the carrier is []map[string]any.
-	var raw []any
-	switch v := inputs["chunks"].(type) {
-	case []any:
-		raw = v
-	case []map[string]any:
-		raw = make([]any, 0, len(v))
-		for _, m := range v {
-			raw = append(raw, m)
-		}
-	default:
-		log.Printf("knowledge_compiler: mergeChunks: unexpected chunks type %T", inputs["chunks"])
-	}
+	raw, _ := inputs["chunks"].([]any)
 	merged := make([]any, 0, len(raw)+len(compiled))
 	for _, r := range raw {
 		merged = append(merged, r)
@@ -812,16 +772,6 @@ func mergeChunks(inputs map[string]any, compiled []schema.ChunkDoc) map[string]a
 // serialization shape, and the one place where inputs are validated, defaulted,
 // and enriched (e.g. extracting each chunk's pre-computed embedding) before any
 // LLM/embedding work begins.
-// mapKeys returns the sorted keys of m, for diagnostics logging.
-func mapKeys(m map[string]any) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
 func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, error) {
 	in := common.Inputs{
 		LLMID:           param.LLMID,
@@ -831,45 +781,32 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 	if d, ok := inputs["doc_id"].(string); ok && d != "" {
 		in.DocID = d
 	}
-	// The upstream pipeline hands chunks over as a []any of map[string]any in
-	// some paths and as a []map[string]any in others (the chunker emits the
-	// latter). Accept both so the knowledge compiler never silently drops the
-	// whole upstream output on a type mismatch.
-	var raw []map[string]any
-	switch v := inputs["chunks"].(type) {
-	case []any:
-		raw = make([]map[string]any, 0, len(v))
-		for _, item := range v {
-			m, ok := item.(map[string]any)
+	if raw, ok := inputs["chunks"].([]any); ok {
+		for _, r := range raw {
+			m, ok := r.(map[string]any)
 			if !ok {
 				continue
 			}
-			raw = append(raw, m)
-		}
-	case []map[string]any:
-		raw = v
-	default:
-		log.Printf("knowledge_compiler: buildInputs: unexpected chunks type %T", inputs["chunks"])
-	}
-	log.Printf("knowledge_compiler: buildInputs: accepted %d chunk(s) from inputs[chunks]", len(raw))
-	for _, m := range raw {
-		ch := common.Chunk{Meta: m}
-		if id, ok := m["id"].(string); ok {
-			ch.ID = id
-		}
-		if t, ok := m["text"].(string); ok {
-			ch.Text = t
-		}
-		if cw, ok := m["content_with_weight"].(string); ok {
-			ch.Content = cw
-		}
-		// Reuse the embedding the upstream pipeline already computed on the
-		// chunk (stored under q_<dim>_vec); variants fall back to embedding
-		// on demand when it is absent. A chunk must carry exactly one vector.
-		if vec, err := common.VectorFromChunkMap(m, 0); err == nil {
+			ch := common.Chunk{Meta: m}
+			if id, ok := m["id"].(string); ok {
+				ch.ID = id
+			}
+			if t, ok := m["text"].(string); ok {
+				ch.Text = t
+			}
+			if cw, ok := m["content_with_weight"].(string); ok {
+				ch.Content = cw
+			}
+			// Reuse the embedding the upstream pipeline already computed on the
+			// chunk (stored under q_<dim>_vec); variants fall back to embedding
+			// on demand when it is absent. A chunk must carry exactly one vector.
+			vec, err := common.VectorFromChunkMap(m, 0)
+			if err != nil {
+				return in, err
+			}
 			ch.Vector = vec
+			in.Chunks = append(in.Chunks, ch)
 		}
-		in.Chunks = append(in.Chunks, ch)
 	}
 	if hc, ok := inputs["historical_candidates"].([]common.Candidate); ok {
 		in.HistoricalCandidates = hc
@@ -887,17 +824,16 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 }
 
 func init() {
-	// Register under the single unified name "Compiler" (matching the Python
-	// side) so both Python-saved canvases and Go's built-in ingestion templates
-	// resolve to the same component without name translation.
-	meta := runtime.Metadata{
-		Version: "0.1.0",
-		Inputs: map[string]string{
-			"chunks":                "Upstream chunker/parser output chunks (id + text/content_with_weight).",
-			"historical_candidates": "Optional historical dedup candidates for offline/test runs.",
-		},
-		Outputs: chunkerOutputs,
-	}
-	runtime.MustRegister(componentNameCompiler, runtime.CategoryIngestion,
-		NewKnowledgeCompilerComponent, meta)
+	runtime.MustRegister(componentNameKnowledgeCompiler, runtime.CategoryIngestion,
+		NewKnowledgeCompilerComponent, runtime.Metadata{
+			Version: "0.1.0",
+			Inputs: map[string]string{
+				"chunks":          "Upstream chunker/parser output chunks (id + text/content_with_weight).",
+				"llm_id":          "Optional LLM id override.",
+				"embedding_model": "Optional embedding model override.",
+				"tenant_id":       "Optional tenant scope.",
+				"dataset_id":      "Optional dataset scope (wiki historical dedup).",
+			},
+			Outputs: chunkerOutputs,
+		})
 }

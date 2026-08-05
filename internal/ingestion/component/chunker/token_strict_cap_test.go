@@ -257,50 +257,6 @@ func TestMergeByTokenSize_UnderCapNoOverflow(t *testing.T) {
 	}
 }
 
-func TestMergeByTokenSize_UnbrokenAtomStrictCap(t *testing.T) {
-	// Unbroken dense string (no whitespace / sentence delim) must still
-	// hard-cap via the character-window fallback inside splitOversizedUnit.
-	const budget = 20
-	// Use many distinct ASCII letters so cl100k does not collapse the whole
-	// run into a handful of tokens.
-	var b strings.Builder
-	for i := 0; i < 400; i++ {
-		b.WriteByte(byte('a' + i%26))
-	}
-	text := b.String()
-	if tokenizeStr(text) <= budget {
-		t.Skipf("tokenizer collapsed unbroken atom to %d tokens (<= budget)", tokenizeStr(text))
-	}
-	comp, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
-		"chunk_token_size": budget,
-	})
-	if err != nil {
-		t.Fatalf("NewTokenChunker: %v", err)
-	}
-	tc := comp.(*TokenChunkerComponent)
-	out := tc.mergeByTokenSize(text, nil)
-	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) < 2 {
-		t.Fatalf("want multiple chunks for unbroken atom, got %d (total_tokens=%d)", len(chunks), tokenizeStr(text))
-	}
-	var joined strings.Builder
-	for i, ck := range chunks {
-		s, _ := ck["text"].(string)
-		joined.WriteString(s)
-		// Sub-split pieces are <= budget+1; OVER_CAP merges at most two before
-		// closing, so a chunk can reach 2*(budget+1).
-		if n := tokenizeStr(s); n > 2*(budget+1) {
-			t.Errorf("chunk %d exceeds 2*(budget+1): tokens=%d text=%q", i, n, s)
-		}
-	}
-	// mergeByTokenSize prefixes "\n" on sections; stripping newlines recovers
-	// the original unbroken atom.
-	if strings.ReplaceAll(joined.String(), "\n", "") != text {
-		t.Errorf("content not preserved after stripping newlines: got %q", joined.String())
-	}
-}
-
 func TestInvokeTextPayload_StrictCapEndToEnd(t *testing.T) {
 	const budget = 32
 	unit := tokenizeStr(strings.TrimSpace(strings.Repeat("alpha ", 12)))

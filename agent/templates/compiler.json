@@ -5,8 +5,7 @@
       "obj": {
         "component_name": "Compiler",
         "params": {
-          "compilation_template_group_id": "",
-          "llm_id": "",
+          "compilation_template_group_id": "c3aa748c8b2111f191f3047c16ec874f",
           "outputs": {
             "chunks": {
               "type": "Array<Object>",
@@ -409,8 +408,7 @@
       {
         "data": {
           "form": {
-            "compilation_template_group_id": "",
-            "llm_id": "",
+            "compilation_template_group_id": "c3aa748c8b2111f191f3047c16ec874f",
             "outputs": {
               "chunks": {
                 "type": "Array<Object>",
