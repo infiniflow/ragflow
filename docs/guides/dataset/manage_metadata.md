@@ -23,7 +23,7 @@ From v0.23.0 onwards, RAGFlow allows you to manage metadata both at the dataset 
 ![Click metadata](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/click_metadata.png)
 
 
-2. On the **Manage Metadata** page, you can do either of the following: 
+2. On the **Manage Metadata** page, you can do either of the following:
    - Edit Values: You can modify existing values. If you rename two values to be identical, they will be automatically merged.
    - Delete: You can delete specific values or entire fields. These changes will apply to all associated files.
 

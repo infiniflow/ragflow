@@ -20,7 +20,7 @@ This document provides step-by-step instructions for integrating Google Drive as
 
 You can either create a dedicated project for RAGFlow or use an existing Google Cloud external project. In this case, we create a Google Cloud project from scratch:
 
-1. Open the project creation page `https://console.cloud.google.com/projectcreate`:  
+1. Open the project creation page `https://console.cloud.google.com/projectcreate`:
 ![Google Drive image 1](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image1.jpeg)
 2. Under **App Information**, provide an App name and your Gmail account as user support email:
 ![Google Drive image 2](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image2.png)
@@ -34,7 +34,7 @@ You can either create a dedicated project for RAGFlow or use an existing Google 
 You need to configure the OAuth Consent Screen because it is the step where you define how your app asks for permission and what specific data it wants to access on behalf of a user. It's a mandatory part of setting up OAuth 2.0 authentication with Google. Think of it as creating a standardized permission slip for your app. Without it, Google will not allow your app to request access to user data.
 
 1. Go to **APIs & Services** → **OAuth consent screen**.
-2. Ensure **User Type** is set to **External**:  
+2. Ensure **User Type** is set to **External**:
 ![Google Drive image 4](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image4.jpeg)
 3. Under **Test Users**, click **+ Add users** to add test users:
 ![Google Drive image 5](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image5.jpeg)
@@ -43,12 +43,12 @@ You need to configure the OAuth Consent Screen because it is the step where you 
 ## 3. Create OAuth Client Credentials
 
 1. Navigate to `https://console.cloud.google.com/auth/clients`.
-2. Select **Web Application** as **Application type** for the created project:  
+2. Select **Web Application** as **Application type** for the created project:
 ![Google Drive image 7](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image7.png)
 3. Enter a client name.
 4. Add `http://localhost:9380/api/v1/connectors/google-drive/oauth/web/callback` as **Authorized redirect URIs**:
 5. Add **Authorized JavaScript origins**:
-   - If deploying RAGFlow from Docker, use `http://localhost:80`:  
+   - If deploying RAGFlow from Docker, use `http://localhost:80`:
      ![Google Drive image 8](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image8.png)
    - If building RAGFlow from source, use `http://localhost:9222`
      ![Google Drive image 9](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image9.png)
@@ -81,15 +81,15 @@ https://www.googleapis.com/auth/admin.directory.user.readonly
 
 You need to enable the required APIs (such as the Google Drive API) to formally grant your Google Cloud project permission to communicate with Google's services on behalf of your application. These APIs act as a gateway; even if you have valid OAuth credentials, Google will block requests to a disabled API. Enabling them ensures that when RAGFlow attempts to list or retrieve files, Google's servers recognize and authorize the request.
 
-1. Navigate to the Google API Library `https://console.cloud.google.com/apis/library`:  
+1. Navigate to the Google API Library `https://console.cloud.google.com/apis/library`:
 ![Google Drive image 14](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image14.png)
 
-2. Enable the following APIs:  
-   - Google Drive API 
-   - Admin SDK API 
-   - Google Sheets API 
+2. Enable the following APIs:
+   - Google Drive API
+   - Admin SDK API
+   - Google Sheets API
    - Google Docs API
-  
+
 ![Google Drive image 15](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image15.png)
 ![Google Drive image 16](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image16.png)
 ![Google Drive image 17](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image17.png)
@@ -104,8 +104,8 @@ You need to enable the required APIs (such as the Google Drive API) to formally 
 ![Google Drive image 22](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image22.jpeg)
 3. Enter the url of the shared Google Drive folder link:
 ![Google Drive image 23](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image23.png)
-4. Click **Authorize with Google**  
-   _A browser window appears showing that Google hasn't verified this app._  
+4. Click **Authorize with Google**
+   _A browser window appears showing that Google hasn't verified this app._
 ![Google Drive image 25](https://raw.githubusercontent.com/infiniflow/ragflow-docs/040e4acd4c1eac6dc73dc44e934a6518de78d097/images/google_drive/image25.jpeg)
 5. Click **Continue** → **Select All** → **Continue**.
 6. When the authorization succeeds, select **OK** to add the data source.
