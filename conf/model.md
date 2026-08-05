@@ -10,7 +10,7 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 |---|---|---|---|
 | `name` | string | Yes | Canonical model identifier (e.g. `gpt-4o`, `claude-opus-4-8`). Must be unique within a provider file. |
 | `content_length` | integer | No | Maximum **context window** in tokens — the total number of tokens (input + output) the model can process in a single request. Previously named `max_tokens` (until PR #17807). |
-| `max_output` | integer | No | Maximum **output generation** in tokens — the upper bound for tokens the model will generate in a response. Previously encoded in the same `max_tokens` field. |
+| `max_output` | integer | No | Maximum **output generation** in tokens — the upper bound for tokens the model will generate in a response. This may be a fixed vendor limit, or dynamic (equal to `content_length - input_tokens`). See vendor table below. |
 | `model_types` | string[] | Yes | Capabilities of the model. Common values: `chat`, `vision`, `embedding`, `rerank`, `asr`, `tts`, `ocr`, `doc_parse`. |
 | `thinking` | object | No | Extended-thinking configuration. `default_value` (bool) sets whether thinking is on by default; `clear_thinking` (bool) enables the API to disable thinking per-request. |
 | `tools` | object | No | Tool-use capability. `support` (bool) indicates whether the model supports function/tool calling. |
@@ -31,6 +31,7 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 │                                                     │
 │  ┌─────────────────────────────────────────────┐    │
 │  │        max_output (generated tokens)         │    │
+│  │  May be fixed OR dynamic (context - input)   │    │
 │  └─────────────────────────────────────────────┘    │
 └─────────────────────────────────────────────────────┘
 ```
@@ -38,6 +39,7 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 - `content_length` is the **total** budget (input + output).
 - `max_output` is the **generation** budget alone.
 - For most models, `max_output <= content_length`. Some vendors set them equal (output can fill the entire window).
+- **Dynamic max_output**: Some models (e.g. Kimi K2.6) define max_output as `content_length - input_tokens`. In these cases, the configured `max_output` represents the upper bound; the actual available output decreases as the prompt grows.
 
 ### Migration Note
 
@@ -68,13 +70,13 @@ A quick test: if `n & (n-1) == 0`, the value is a power of 2 (binary). Otherwise
 | **Google (Gemini)** | Binary (1M, 2M) | Binary (8K, 64K) | [Google AI Docs](https://ai.google.dev/gemini-api/docs/models/gemini) |
 | **Google (Gemma)** | Binary | Binary | [Gemma Docs](https://ai.google.dev/gemma/docs) |
 | **Meta (Llama)** | Binary | Binary | [Llama Model Cards](https://github.com/meta-llama/llama-models) |
-| **DeepSeek** | Binary (128K, 1M) | Binary (8K, 32K, 64K, 384K) | [DeepSeek API Docs](https://api-docs.deepseek.com/) |
+| **DeepSeek** | Varies by model — binary (128K, 1M) | Varies by model — binary (8K, 32K, 64K, 384K) | [DeepSeek API Docs](https://api-docs.deepseek.com/) |
 | **Alibaba (Qwen)** | Binary (32K, 128K, 256K, 1M) | Binary (8K, 16K, 32K, 64K) | [Alibaba Bailian Docs](https://help.aliyun.com/zh/model-studio/) |
-| **Moonshot (Kimi)** | Binary (256K, 1M) | Binary (128K) | [Kimi API Docs](https://platform.kimi.com/docs/api/models-overview) |
+| **Moonshot (Kimi)** | Binary (256K = 262144, 1M = 1048576) | Dynamic — up to `content_length - input_tokens` (API default 32768) | [Kimi API Docs](https://platform.kimi.com/docs/api/models-overview) |
 | **Mistral** | Binary | Binary (= content_length) | [Mistral Docs](https://docs.mistral.ai/getting-started/models/models_overview/) |
 | **NVIDIA** | Binary | Binary | [NVIDIA NIM Docs](https://build.nvidia.com/nemotron) |
 | **xAI (Grok)** | Decimal (131K, 262K) | Decimal (128K, 131K) | [xAI Docs](https://docs.x.ai/docs/models) |
-| **GLM (Zhipu)** | Decimal (128K, 200K, 204K, 1M) | Decimal (4K, 16K, 96K, 128K) | [Zhipu AI Docs](https://docs.bigmodel.cn/cn/guide/start/model-overview) |
+| **GLM (Zhipu)** | Decimal (128000, 200000, 204800, 1000000) | Decimal (4096, 16384, 96000, 128000) | [Zhipu AI Docs](https://docs.bigmodel.cn/cn/guide/start/model-overview) |
 | **MiniMax** | Decimal (1M, 204K, 196K) | Decimal (131K, 16K) | [MiniMax Docs](https://platform.minimaxi.com/docs/guides/text-generation) |
 | **Cohere** | Decimal (128K, 256K) | Decimal (4K, 8K, 32K, 64K) | [Cohere Docs](https://docs.cohere.com/docs/models) |
 | **Baichuan** | Decimal (32K, 128K, 192K) | Decimal (8K) | [Baichuan Docs](https://platform.baichuan-ai.com/docs) |
