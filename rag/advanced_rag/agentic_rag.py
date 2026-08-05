@@ -32,6 +32,7 @@ the fast non-tool-calling path.
 
 import logging
 import re
+from collections.abc import Callable
 from typing import Any, List
 
 import json_repair
@@ -42,7 +43,7 @@ from api.db.services.llm_service import LLMBundle
 from common import settings
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
-from rag.advanced_rag.agentic_rag_graph import _strip_think_stream
+from rag.advanced_rag.agentic_rag_graph import _split_think_stream
 from rag.app.tag import label_question
 from rag.llm.tool_decorator import tool
 from rag.prompts.generator import (
@@ -79,6 +80,7 @@ class RAGTools:
         meta_data_filter: dict | None = None,
         doc_scope: List[str] | None = None,
         user_defined_prompts: dict | None = None,
+        empty_response: str = "",
         do_refer: bool | None = True,
         thinking_mode: str = "medium",
     ):
@@ -110,8 +112,14 @@ class RAGTools:
         self.meta_data_filter = meta_data_filter
         self.doc_scope = list(dict.fromkeys(doc_scope)) if doc_scope is not None else None
         self.user_defined_prompts = user_defined_prompts or {}
-        self.kbinfos = {"chunks": [], "doc_aggs": []}
+        self.empty_response = empty_response
         self.do_refer = do_refer
+        # Optional sink used by the outer agent stream to preserve the final
+        # answer deltas produced by the inner research graph.  The tool API
+        # still returns the complete string to the caller, but the stream
+        # endpoint can forward the original deltas instead of that aggregate.
+        self.answer_sink: Callable[[str, bool], None] | None = None
+        self.tool_started_sink: Callable[[], None] | None = None
         # Citation pool shared with the final-answer node: the graph publishes
         # the chunks it actually used here (in the SAME order the answer's
         # ``[ID:n]`` markers index), so the caller can resolve references.
@@ -562,11 +570,15 @@ class RAGTools:
         """
         from rag.advanced_rag.agentic_rag_graph import run_agentic_rag
 
+        if self.tool_started_sink is not None:
+            self.tool_started_sink()
         messages = [{"role": "user", "content": question}] if question else []
         final = ""
-        async for delta in _strip_think_stream(run_agentic_rag(self, messages)):
-            if isinstance(delta, str):
+        async for kind, delta in _split_think_stream(run_agentic_rag(self, messages)):
+            if kind == "answer":
                 final += delta
+            if self.answer_sink is not None:
+                self.answer_sink(delta, kind == "think")
         for p, r in [(r"\(\**(ID:\d)\**\)", "[\1]")]:
             final = re.sub(p, r, final)
         return final
