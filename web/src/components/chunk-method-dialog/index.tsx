@@ -219,7 +219,9 @@ export function ChunkMethodDialog({
 
   const showMaxTokenNumber =
     selectedTag === DocumentParserType.Naive ||
-    selectedTag === DocumentParserType.KnowledgeGraph;
+    selectedTag === DocumentParserType.KnowledgeGraph ||
+    selectedTag === DocumentParserType.Book ||
+    selectedTag === DocumentParserType.Paper;
 
   const showEntityTypes = selectedTag === DocumentParserType.KnowledgeGraph;
 

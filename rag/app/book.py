@@ -61,6 +61,24 @@ class Pdf(PdfParser):
         return [(b["text"] + self._line_tag(b, zoomin), b.get("layoutno", "")) for b in self.boxes], tbls
 
 
+def _sections_with_positions(sections):
+    """Separate each section's text from its trailing DeepDoc position tag.
+
+    The tag is ``@@page\tx0\tx1\ttop\tbottom##`` appended to the section text.
+    Detach only the last ``@@...##`` suffix so ``naive_merge`` can re-attach it and
+    page + bbox survive; a ``@@`` occurring naturally in the text (no ``##``
+    terminator) is left as content and the position is empty.
+    """
+    out = []
+    for s, _ in sections:
+        head, sep, tag = s.rpartition("@@")
+        if sep and tag.endswith("##"):
+            out.append((head, "@@" + tag))
+        else:
+            out.append((s, ""))
+    return out
+
+
 def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Supported file formats are docx, pdf, txt.
@@ -166,13 +184,25 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         raise NotImplementedError("file type not supported yet(doc, docx, pdf, txt supported)")
 
     make_colon_as_title(sections)
-    bull = bullets_category([t for t in random_choices([t for t, _ in sections], k=100)])
-    if bull >= 0:
-        chunks = ["\n".join(ck) for ck in hierarchical_merge(bull, sections, 5)]
+
+    # chunk_token_num is honoured on both paths: hierarchical_merge keeps the
+    # heading hierarchy but splits subtrees over the budget, and naive_merge honours
+    # it on the no-bullet path. chunk_token_num == 0 marks sections a parser already
+    # chunked (tcadp/docling/mineru/paddleocr), so those are kept as-is. Both paths
+    # preserve the @@...## page tag that tokenize_chunks -> pdf_parser.crop() maps
+    # back to page + bbox.
+    bull = bullets_category(random_choices([t for t, _ in sections], k=100))
+    raw_ctn = parser_config.get("chunk_token_num", 256)
+    chunk_token_num = int(raw_ctn) if raw_ctn is not None else 256
+    if chunk_token_num <= 0:
+        logging.debug("book chunk policy: sections kept as-is (chunk_token_num=0)")
+        chunks = [s for s, _ in sections]
+    elif bull >= 0:
+        logging.debug("book chunk policy: hierarchical_merge (chunk_token_num=%s)", chunk_token_num)
+        chunks = ["\n".join(ck) for ck in hierarchical_merge(bull, sections, 5, chunk_token_num)]
     else:
-        sections = [s.split("@") for s, _ in sections]
-        sections = [(pr[0], "@" + pr[1]) if len(pr) == 2 else (pr[0], "") for pr in sections]
-        chunks = naive_merge(sections, parser_config.get("chunk_token_num", 256), parser_config.get("delimiter", "\n。；！？"))
+        logging.debug("book chunk policy: naive_merge (chunk_token_num=%s)", chunk_token_num)
+        chunks = naive_merge(_sections_with_positions(sections), chunk_token_num, parser_config.get("delimiter", "\n。；！？"))
 
     # is it English
     # is_english(random_choices([t for t, _ in sections], k=218))
