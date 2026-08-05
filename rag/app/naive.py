@@ -1085,7 +1085,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
 
         try:
             vision_model_config = get_tenant_default_model_by_type(kwargs["tenant_id"], LLMType.VISION)
-            vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config)
+            vision_model = LLMBundle(kwargs["tenant_id"], vision_model_config, lang=lang)
             callback(0.2, "Visual model detected. Attempting to enhance figure extraction...")
         except Exception as e:
             logging.warning(f"Failed to detect figure extraction: {e}")
@@ -1106,7 +1106,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                     else:
                         section_images = [None] * len(sections)
                         section_images[idx] = combined_image
-                    markdown_vision_parser = VisionFigureParser(vision_model=vision_model, figures_data=[((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])], **kwargs)
+                    markdown_vision_parser = VisionFigureParser(
+                        vision_model=vision_model,
+                        figures_data=[((combined_image, ["markdown image"]), [(0, 0, 0, 0, 0)])],
+                        lang=lang,
+                        **kwargs,
+                    )
                     boosted_figures = markdown_vision_parser(callback=callback)
                     sections[idx] = (section_text + "\n\n" + "\n\n".join([fig[0][1] for fig in boosted_figures]), sections[idx][1])
 

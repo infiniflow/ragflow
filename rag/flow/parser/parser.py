@@ -710,6 +710,7 @@ class Parser(ProcessBase):
             self._canvas._tenant_id,
             conf.get("vlm"),
             callback=self.callback,
+            lang=getattr(self._canvas, "_language", None) or conf.get("lang") or "English",
         )
 
         # Emit the requested final PDF output format.
@@ -913,6 +914,7 @@ class Parser(ProcessBase):
                 self._canvas._tenant_id,
                 conf.get("vlm"),
                 callback=self.callback,
+                lang=getattr(self._canvas, "_language", None) or conf.get("lang") or "English",
             )
 
             self.set_output("json", sections)
@@ -1049,6 +1051,7 @@ class Parser(ProcessBase):
                 self._canvas._tenant_id,
                 conf.get("vlm"),
                 callback=self.callback,
+                lang=getattr(self._canvas, "_language", None) or conf.get("lang") or "English",
             )
             self.set_output("json", json_results)
         else:
