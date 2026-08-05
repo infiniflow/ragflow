@@ -128,9 +128,6 @@ func TestModelScopeChatHappyPathNormalizesBaseURLAndOmitsEmptyAuth(t *testing.T)
 	if seen["stream"] != false {
 		t.Errorf("stream=%v, want false", seen["stream"])
 	}
-	if seen["max_tokens"] != float64(32) {
-		t.Errorf("max_tokens=%v, want 32", seen["max_tokens"])
-	}
 	if seen["temperature"] != 0.2 {
 		t.Errorf("temperature=%v, want 0.2", seen["temperature"])
 	}

@@ -513,10 +513,6 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 	}
 
 	if cfg != nil {
-		if cfg.MaxTokens != nil {
-			reqBody["max_tokens"] = *cfg.MaxTokens
-		}
-
 		if cfg.Temperature != nil {
 			reqBody["temperature"] = *cfg.Temperature
 		}

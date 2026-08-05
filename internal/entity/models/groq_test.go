@@ -127,9 +127,6 @@ func TestGroqChatHappyPath(t *testing.T) {
 		if body["stream"] != false {
 			t.Errorf("stream=%v want false", body["stream"])
 		}
-		if body["max_tokens"] != float64(32) {
-			t.Errorf("max_tokens=%v", body["max_tokens"])
-		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v", body["temperature"])
 		}
