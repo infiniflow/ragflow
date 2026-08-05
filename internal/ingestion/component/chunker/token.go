@@ -334,7 +334,7 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 	// Split-then-merge: split on delimiters, then greedily merge to
 	// chunk_token_size with optional overlap.
 	perItem := [][]schema.ChunkDoc{docs}
-	merged := mergeByTokenSizeFromJSON(perItem, c.param.ChunkTokenSize, c.param.OverlappedPercent, true, c.param.MergeStrategy())
+	merged := mergeByTokenSizeFromJSON(perItem, c.param.ChunkTokenSize, c.param.OverlappedPercent, c.param.MergeStrategy())
 	return chunkOutputs(flatten(merged))
 }
 
@@ -719,7 +719,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// chunks across JSON items into one global token budget. Flatten the
 		// per-item structure into a single sequence first so the merge is
 		// global; non-text chunks still break the merge via their CKType.
-		attached = mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flatten(attached)}, c.param.ChunkTokenSize, c.param.OverlappedPercent, false, c.param.MergeStrategy())
+		attached = mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flatten(attached)}, c.param.ChunkTokenSize, c.param.OverlappedPercent, c.param.MergeStrategy())
 	}
 
 	flat := flatten(attached)
@@ -956,15 +956,16 @@ func takeFromStart(text string, tokens int) string {
 
 // mergeByTokenSizeFromJSON mirrors Python naive_merge's projected-total
 // hard cap (rag/nlp/__init__.py after the strict chunk_token_num fix).
-// Oversized text units are sub-split via splitOversizedUnit before merge;
-// overlap is applied only when overlap+segment still fits the budget.
+// Over-budget units are never atom-split: each one stands alone as its own
+// chunk (Python naive_merge behavior, #17808 OVER_CAP contract). Overlap is
+// applied only when overlap+segment still fits the budget.
 //
 // strategy selects the merge strategy (schema.MergeStrategy): MergeOverCap =
 // OVER_CAP (Python's canonical default, a chunk may exceed the target by at
 // most one incoming unit), MergeUnderCap = UNDER_CAP (never exceed the target;
 // a projected overflow starts a fresh chunk). The TokenChunker threads its
 // MergeStrategy() here.
-func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64, subSplitOversize bool, strategy schema.MergeStrategy) [][]schema.ChunkDoc {
+func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64, strategy schema.MergeStrategy) [][]schema.ChunkDoc {
 	// overlappedPct is a [0,100] percentage. Clamp defensively because this
 	// helper is also exercised directly by tests.
 	if overlappedPct < 0 {
@@ -1059,30 +1060,10 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 				addTextChunk(ck)
 				continue
 			}
-			// Over-budget unit.
-			if !subSplitOversize {
-				// JSON path: Python keeps each over-budget item whole — it does
-				// not sub-split a single item, so emit it as one chunk.
-				addTextChunk(ck)
-				continue
-			}
-			// Text path: hard-cap atomic oversize units before merge, matching
-			// Python's _split_oversized_unit.
-			slog.Debug("TokenChunker: splitting oversized JSON unit via splitOversizedUnit",
-				"len", len(ck.Text), "tokens", tk, "chunk_token_size", chunkTokens)
-			for _, piece := range splitOversizedUnit(ck.Text, chunkTokens) {
-				if strings.TrimSpace(piece) == "" {
-					continue
-				}
-				cp := cloneChunkDoc(ck)
-				cp.Text = piece
-				cp.TKNums = intPtr(tokenizeStr(piece))
-				// Coordinates stay on the first piece only to avoid duplicating
-				// PDF bboxes across atom slices.
-				addTextChunk(cp)
-				ck.PDFPositions = nil
-				ck.Positions = nil
-			}
+			// Over-budget unit: keep it whole. Python's naive_merge never
+			// sub-splits a single item, so emit it as one chunk and let the
+			// model layer truncate it later.
+			addTextChunk(ck)
 		}
 		perItem[idx] = merged
 	}
