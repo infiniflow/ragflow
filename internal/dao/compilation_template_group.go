@@ -36,8 +36,8 @@ func NewCompilationTemplateGroupDAO() *CompilationTemplateGroupDAO {
 // ListSaved returns the tenant's valid groups with optional keyword/scope
 // filtering and ordering, mirroring Python list_saved(). Built-in groups
 // (empty tenant) are included so every tenant sees the catalogue.
-func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, tenantID, keywords, scope, orderby string, desc bool) ([]*entity.CompilationTemplateGroup, error) {
-	q := DB.WithContext(ctx).
+func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, db *gorm.DB, tenantID, keywords, scope, orderby string, desc bool) ([]*entity.CompilationTemplateGroup, error) {
+	q := db.WithContext(ctx).
 		Where("(tenant_id = ? OR tenant_id = '') AND status = ?", tenantID, string(entity.StatusValid))
 	if keywords != "" {
 		q = q.Where("name LIKE ?", "%"+keywords+"%")
@@ -60,9 +60,9 @@ func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, tenantID,
 }
 
 // GetSaved returns a single valid group for the tenant (or built-in), or nil.
-func (dao *CompilationTemplateGroupDAO) GetSaved(ctx context.Context, tenantID, groupID string) (*entity.CompilationTemplateGroup, error) {
+func (dao *CompilationTemplateGroupDAO) GetSaved(ctx context.Context, db *gorm.DB, tenantID, groupID string) (*entity.CompilationTemplateGroup, error) {
 	var g entity.CompilationTemplateGroup
-	err := DB.WithContext(ctx).
+	err := db.WithContext(ctx).
 		Where("(tenant_id = ? OR tenant_id = '') AND id = ? AND status = ?",
 			tenantID, groupID, string(entity.StatusValid)).
 		First(&g).Error
@@ -77,8 +77,8 @@ func (dao *CompilationTemplateGroupDAO) GetSaved(ctx context.Context, tenantID, 
 
 // NameExists reports whether a valid group with the given name exists for the
 // tenant, excluding excludeID. Mirrors Python name_exists().
-func (dao *CompilationTemplateGroupDAO) NameExists(ctx context.Context, tenantID, name, excludeID string) (bool, error) {
-	q := DB.WithContext(ctx).Model(&entity.CompilationTemplateGroup{}).
+func (dao *CompilationTemplateGroupDAO) NameExists(ctx context.Context, db *gorm.DB, tenantID, name, excludeID string) (bool, error) {
+	q := db.WithContext(ctx).Model(&entity.CompilationTemplateGroup{}).
 		Where("tenant_id = ? AND name = ? AND status = ?", tenantID, name, string(entity.StatusValid))
 	if excludeID != "" {
 		q = q.Where("id <> ?", excludeID)
