@@ -64,13 +64,13 @@ export function VersionDialog({
 
   return (
     <Dialog open onOpenChange={hideModal}>
-      <DialogContent className="max-w-[900px]">
+      <DialogContent className="max-w-[900px] overflow-hidden">
         <DialogHeader>
           <DialogTitle className="text-base">
             {t('flow.historyVersion')}
           </DialogTitle>
         </DialogHeader>
-        <section className="flex gap-8 relative">
+        <section className="flex gap-8 relative min-w-0">
           <div className="w-72 max-h-[60vh] overflow-auto min-h-[40vh]">
             {loading ? (
               <Spin className="top-1/2"></Spin>
@@ -93,19 +93,19 @@ export function VersionDialog({
               </ul>
             )}
           </div>
-          <div className="relative flex-1 ">
+          <div className="relative flex-1 min-w-0">
             {versionLoading ? (
               <Spin className="top-1/2" />
             ) : (
               <Card className="h-full">
                 <CardContent className="h-full p-5 flex flex-col">
                   <section className="flex justify-between pb-2">
-                    <div>
-                      <div className="flex">
+                    <div className="min-w-0">
+                      <div className="flex items-center">
                         <span className="pb-1 truncate">{agent?.title}</span>
                         {agent?.release && (
                           <RAGFlowTooltip tooltip={t('flow.productionTooltip')}>
-                            <Button className="bg-accent-primary-5 ml-3">
+                            <Button className="bg-accent-primary-5 ml-3 flex-shrink-0">
                               <Dot></Dot>
                               <span className="text-accent-primary pl-2 rounded">
                                 {t('flow.production')}
