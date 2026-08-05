@@ -15,9 +15,9 @@
 #  limitations under the License.
 #
 
-"""Regression tests for ``RAGFlowTxtParser.parser_txt`` under the new contract.
+"""Regression tests for ``RAGFlowTxtParser.parser_txt`` under the chunking contract.
 
-The contract (see the TokenChunker handoff):
+The contract (see ``rag.nlp.merge_paragraphs``, refs #17799):
 
 * delimiter = chunk boundary: delimiter text never enters a chunk;
 * ``token_size`` = soft target + merge strategy (``OVER_CAP`` default); no

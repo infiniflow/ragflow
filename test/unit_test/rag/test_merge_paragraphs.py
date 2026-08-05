@@ -19,7 +19,7 @@
 
 ``merge_paragraphs`` is the single pure function that groups delimiter-split
 paragraphs (no delimiter text) into chunks. It implements the two merge
-strategies from the TokenChunker handoff:
+strategies (see ``rag.nlp.merge_paragraphs`` for the full contract, refs #17799):
 
 * ``UNDER_CAP``: only merge the next paragraph when the projected total still
   fits the soft ``token_size`` target.
@@ -47,7 +47,7 @@ def _flatten(groups):
 
 
 # --------------------------------------------------------------------------- #
-# Handoff §8 acceptance examples
+# Contract acceptance examples (refs #17799)
 # --------------------------------------------------------------------------- #
 
 
