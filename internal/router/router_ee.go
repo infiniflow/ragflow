@@ -17,10 +17,15 @@
 package router
 
 import (
+	"ragflow/internal/server"
+
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
 func SetupEERouter(engine *gin.Engine) {
+	serverName := server.GetServerName()
+	engine.Use(otelgin.Middleware(serverName))
 }
 
 func RegisterEENoAuthRouter(apiNoAuth *gin.RouterGroup, r *Router) {
