@@ -32,15 +32,18 @@ from mcp.client.sse import sse_client
 from mcp.client.streamable_http import streamablehttp_client
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
+LOGGER = logging.getLogger(__name__)
+
 MCPTaskType = Literal["list_tools", "tool_call"]
 MCPTask = tuple[MCPTaskType, dict[str, Any], asyncio.Queue[Any]]
 
 
 def _header_value_is_set(name: str, value: str) -> bool:
     value = value.strip()
-    if not value:
+    if not value or (name.strip().lower() == "authorization" and value.lower() == "bearer"):
+        LOGGER.debug("Rejected MCP header during validation")
         return False
-    return name.strip().lower() != "authorization" or value.lower() != "bearer"
+    return True
 
 
 class ToolCallSession(Protocol):
