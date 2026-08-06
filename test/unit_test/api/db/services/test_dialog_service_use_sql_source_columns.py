@@ -274,6 +274,65 @@ def test_use_sql_source_repair_is_bounded_to_single_retry(monkeypatch, force_es_
 
 
 @pytest.mark.p2
+def test_use_sql_repairs_citation_columns_with_quoted_identifiers(monkeypatch, force_es_engine):
+    retriever = _StubRetriever(
+        [
+            {
+                "columns": [{"name": "test items_tks"}, {"name": "123_priority_kwd"}],
+                "rows": [["wstc hw 758", "high"]],
+            },
+            {
+                "columns": [
+                    {"name": "doc_id"},
+                    {"name": "docnm_kwd"},
+                    {"name": "test items_tks"},
+                    {"name": "123_priority_kwd"},
+                ],
+                "rows": [["doc-1", "tests.xlsx", "wstc hw 758", "high"]],
+            },
+        ]
+    )
+    chat_model = _StubChatModel(
+        [
+            'SELECT "test items_tks", "123_priority_kwd" FROM ragflow_tenant',
+            'SELECT doc_id, docnm_kwd, "test items_tks", "123_priority_kwd" FROM ragflow_tenant',
+        ]
+    )
+    monkeypatch.setattr(dialog_service.settings, "retriever", retriever, raising=False)
+
+    result = asyncio.run(
+        dialog_service.use_sql(
+            question="show me the test items",
+            field_map={
+                "test items_tks": "test items",
+                "123_priority_kwd": "priority",
+            },
+            tenant_id="tenant-id",
+            chat_mdl=chat_model,
+            quota=True,
+            kb_ids=None,
+        )
+    )
+
+    assert result is not None
+    assert len(chat_model.calls) == 2
+    repair_prompt = chat_model.calls[1]["message"]
+    assert "missing required source columns for citations" in repair_prompt
+    assert "include doc_id and docnm_kwd in the SELECT list" in repair_prompt
+    assert '  - "test items_tks" (test items)' in repair_prompt
+    assert '  - "123_priority_kwd" (priority)' in repair_prompt
+    assert '"test items_tks"' in repair_prompt
+    assert '"123_priority_kwd"' in repair_prompt
+    assert retriever.sql_calls == [
+        'SELECT "test items_tks", "123_priority_kwd" FROM ragflow_tenant',
+        'SELECT doc_id, docnm_kwd, "test items_tks", "123_priority_kwd" FROM ragflow_tenant',
+    ]
+    answer_lines = [line.strip() for line in result["answer"].splitlines() if line.strip().startswith("|")]
+    assert answer_lines[0] == "|test items|priority|Source|"
+    assert answer_lines[1] == "|wstc hw 758|high|tests.xlsx|"
+
+
+@pytest.mark.p2
 def test_use_sql_quotes_unsafe_es_identifiers_in_initial_and_retry_prompts(monkeypatch, force_es_engine):
     retriever = _StubRetriever(
         [
