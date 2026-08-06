@@ -32,7 +32,7 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 | `class` | string | No | Provider-specific model class used to select the correct driver (e.g. `glm`, `kimi`). |
 | `max_dimension` | integer | No | Maximum supported embedding dimension. Used by `embedding`-type models (e.g. `1536`). |
 | `dimensions` | integer[] | No | Supported embedding dimensions (e.g. `[256, 512, 1024, 1536]`). When non-empty, a requested dimension must match one of these values. When empty `[]` (or omitted), any dimension up to `max_dimension` is accepted. |
-| `batch_size` | integer | No | Maximum number of text inputs that can be submitted to the embedding API in a single request. Used by `embedding`-type models. Values come from each provider's official documentation; models with no documented batch limit use a safe high cap. When omitted, no explicit cap is declared. |
+| `batch_size` | integer | No | Maximum number of text inputs that can be submitted to the embedding API in a single request. Used by `embedding`-type models. Values come from each provider's official documentation; models with no documented provider limit default to `1` as a conservative fallback. When omitted, no explicit cap is declared. |
 | `alias` | string[] | No | Alternative names for the same model. Used for model lookup when a tenant refers to the model by an alias. **Must be unique across all models.** |
 | `rank` | integer | No | Sort priority (lower = higher rank). Used when ordering model lists in the UI. |
 
