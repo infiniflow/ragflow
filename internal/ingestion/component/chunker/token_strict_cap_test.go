@@ -145,8 +145,6 @@ func TestMergeByTokenSize_TextPathStrictCap(t *testing.T) {
 // sentence delimiter must be emitted as ONE whole chunk — never atom-split.
 // This pins the #17799 contract invariant on the text path (the JSON path
 // is already covered by TestMergeByTokenSizeFromJSON_OversizedUnitStaysWhole).
-// It replaces the orphaned split_oversized_guard_test.go, which guarded the
-// now-removed atom-split instead of the contract behaviour.
 func TestMergeByTokenSize_OversizedUnitStaysWhole(t *testing.T) {
 	const budget = 30
 	// One long run with no '\n' / '!?' / '。；！？' delimiter: the text path

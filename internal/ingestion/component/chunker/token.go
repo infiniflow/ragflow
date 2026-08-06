@@ -53,6 +53,19 @@
 //     generated on demand for text chunks that carry PDF positions:
 //     cropImageChunks crops the text region and writes a preview image,
 //     then imageUploadDecorator uploads it to img_id. See pdfcrop_cgo.go.
+//
+//   - OVER-BUDGET UNITS (contract #17799): a single item that exceeds
+//     chunk_token_size is KEPT WHOLE as its own chunk and is NOT
+//     atom-split; the embedding/rerank layer truncates it later. The
+//     TokenChunker must never sub-split a single item (the naive_merge
+//     invariant). If oversized-unit handling is ever needed to avoid a
+//     single mega-chunk, it belongs at the CHUNKER side (or a dedicated
+//     PreSplitter stage between Parser and Chunker), fed by an EXPLICIT
+//     token budget + tokenizer — NOT in the parser, and NOT as a
+//     char-window atom-split. The earlier splitOversizedUnit /
+//     splitAtomByTokenBudget helpers were a misplaced (parser-layer logic
+//     wrongly living in the chunker) and unwired vestige; they were
+//     removed to align with this contract.
 package chunker
 
 import (
