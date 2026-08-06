@@ -31,6 +31,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/tokenizer"
 )
 
 // stubEmbedder records every call and returns canned vectors.
@@ -533,5 +534,57 @@ func TestChunksFromTokenizerUpstream_FiltersPhantomChunks(t *testing.T) {
 	}
 	if chunks[1]["text"] != "another valid" {
 		t.Errorf("chunk 1 text = %q, want %q", chunks[1]["text"], "another valid")
+	}
+}
+
+// TestTokenizerComponent_ImportantKwd_CommaOnly is the no-tag parity test for
+// A2: important_kwd must be split on the ENGLISH COMMA ONLY, matching the DSL
+// tokenizer (rag/flow/tokenizer/tokenizer.py:153 `keywords.split(",")`). It
+// runs without the C++ analyzer pool by switching the tokenizer engine to
+// "infinity" (identity: Tokenize returns its input unchanged), so it executes
+// in the default `go test ./...` CI tier and gives real regression protection.
+func TestTokenizerComponent_ImportantKwd_CommaOnly(t *testing.T) {
+	// Switch to identity tokenizer so tokenizeChunks needs no CGo pool, then
+	// restore the default engine type afterwards.
+	tokenizer.SetEngineType("infinity")
+	defer tokenizer.SetEngineType("")
+
+	c, err := NewTokenizerComponent(map[string]any{
+		"search_method": []any{"full_text"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenizerComponent: %v", err)
+	}
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"output_format": "chunks",
+		"chunks": []map[string]any{
+			{"text": "doc body", "keywords": "kw1,kw2;kw3，kw4"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, ok := out["chunks"].([]map[string]any)
+	if !ok || len(got) != 1 {
+		t.Fatalf("chunks = %v, want 1 chunk", out["chunks"])
+	}
+	kwd, ok := got[0]["important_kwd"].([]string)
+	if !ok {
+		t.Fatalf("important_kwd should be []string, got %T", got[0]["important_kwd"])
+	}
+	// Only the English comma splits; CJK comma and semicolon stay attached.
+	want := []string{"kw1", "kw2;kw3，kw4"}
+	if len(kwd) != len(want) {
+		t.Fatalf("important_kwd = %v, want %v", kwd, want)
+	}
+	for i := range want {
+		if kwd[i] != want[i] {
+			t.Errorf("important_kwd = %v, want %v (only comma splits)", kwd, want)
+		}
+	}
+	// important_tks still tokenizes the full keyword string (identity mode
+	// returns it unchanged).
+	if tks, ok := got[0]["important_tks"].(string); !ok || tks != "kw1,kw2;kw3，kw4" {
+		t.Errorf("important_tks = %v, want full keyword string", got[0]["important_tks"])
 	}
 }

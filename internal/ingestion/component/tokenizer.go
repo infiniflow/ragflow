@@ -96,7 +96,6 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
-	"ragflow/internal/utility"
 )
 
 const ComponentNameTokenizer = "Tokenizer"
@@ -698,7 +697,14 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			}
 		}
 		if kw := ck.Keywords; kw != "" {
-			if err = ck.SetExtraValue("important_kwd", utility.SplitKeywords(kw)); err != nil {
+			// A2: split on the ENGLISH COMMA only, matching the DSL tokenizer
+			// (rag/flow/tokenizer/tokenizer.py:153 `keywords.split(",")`) and
+			// the keyword_prompt contract ("delimited by ENGLISH COMMA"). CJK
+			// commas/semicolons and newlines stay part of the keyword so the
+			// Go index is byte-compatible with the Python-DSL-built index.
+			// strings.Split preserves empty elements, matching Python's
+			// "a,,b".split(",") == ["a","","b"].
+			if err = ck.SetExtraValue("important_kwd", strings.Split(kw, ",")); err != nil {
 				return fmt.Errorf("tokenizer: keyword list marshal: %w", err)
 			}
 			it, err := tok.Tokenize(kw)
