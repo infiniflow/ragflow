@@ -1637,7 +1637,7 @@ export default {
       description: '説明',
       descriptionPlaceholder: '説明を入力してください',
       addField: 'フィールドを追加',
-      example: 'ページ構成の例',
+      example: '例',
       examplePlaceholder: '入力例',
       instruction: '指示',
       globalRules: 'グローバルルール',
