@@ -227,6 +227,73 @@ func TestTokenChunker_InvokeJSONPayload(t *testing.T) {
 	}
 }
 
+// TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone is the
+// regression lock for #17889: when merging adjacent segments, only
+// "text" segments may be merged; "table"/"image" (any non-text type)
+// must each stay a standalone chunk and must not be merged with a
+// neighbouring segment.
+//
+// Go already enforces this via itemDocType (common.go:138, derives the
+// type from doc_type_kwd), chunkFromItem (token.go:756, emits a non-text
+// item as a single standalone chunk) and mergeByTokenSizeFromJSON
+// (token.go:1050 forces non-text standalone; token.go:991 starts a fresh
+// text chunk after a non-text chunk so text on either side of a
+// table/image is never merged across it). This test pins the behaviour
+// so a future refactor cannot silently start folding tables/images into
+// text chunks.
+func TestTokenChunker_InvokeJSONPayload_KeepsNonTextStandalone(t *testing.T) {
+	c, err := NewTokenChunker(map[string]any{
+		"delimiter_mode": "delimiter",
+		"delimiters":     []string{"\n"},
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	// text, table, text, image, text — in document order.
+	items := []map[string]any{
+		{"text": "Alpha section text content", "doc_type_kwd": "text"},
+		{"text": "<table>caption</table>", "doc_type_kwd": "table"},
+		{"text": "Beta section text content", "doc_type_kwd": "text"},
+		{"text": "[image]", "doc_type_kwd": "image"},
+		{"text": "Gamma section text content", "doc_type_kwd": "text"},
+	}
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
+		"name":          "doc.md",
+		"output_format": "json",
+		"json":          items,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("chunks: want []map[string]any, got %T", out["chunks"])
+	}
+	// Each segment must remain its own chunk: 5 in, 5 out. If a table or
+	// image were merged into an adjacent text chunk this count would drop.
+	if len(chunks) != 5 {
+		t.Fatalf("chunks: want 5 (every segment standalone), got %d: %+v", len(chunks), chunks)
+	}
+	wantTypes := []string{"text", "table", "text", "image", "text"}
+	for i, ch := range chunks {
+		got, _ := ch["doc_type_kwd"].(string)
+		if got != wantTypes[i] {
+			t.Errorf("chunk %d: doc_type_kwd = %q, want %q (full chunk: %+v)", i, got, wantTypes[i], ch)
+		}
+	}
+	// The two text segments on either side of the table/image must remain
+	// distinct — they must NOT be merged across the non-text segments.
+	if got, _ := chunks[0]["text"].(string); !strings.Contains(got, "Alpha") {
+		t.Errorf("chunk 0 text = %q, want it to contain Alpha", got)
+	}
+	if got, _ := chunks[2]["text"].(string); !strings.Contains(got, "Beta") {
+		t.Errorf("chunk 2 text = %q, want it to contain Beta", got)
+	}
+	if got, _ := chunks[4]["text"].(string); !strings.Contains(got, "Gamma") {
+		t.Errorf("chunk 4 text = %q, want it to contain Gamma", got)
+	}
+}
+
 // TestTokenChunker_InvokeDeterministic runs a 20-item structured
 // payload 10 times under the race detector and asserts the chunk
 // list is identical every time.
