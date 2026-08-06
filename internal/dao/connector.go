@@ -343,13 +343,201 @@ const (
 	connectorTaskTypePrune = "prune"
 )
 
+// DueSyncTask is the joined projection of one due sync_logs row with its
+// connector, connector2kb link and knowledgebase, mirroring the task dicts
+// produced by Python SyncLogsService._list_due_tasks_for_freq.
+type DueSyncTask struct {
+	ID               string         `gorm:"column:id"`
+	ConnectorID      string         `gorm:"column:connector_id"`
+	TaskType         string         `gorm:"column:task_type"`
+	KbID             string         `gorm:"column:kb_id"`
+	PollRangeStart   *time.Time     `gorm:"column:poll_range_start"`
+	PollRangeEnd     *time.Time     `gorm:"column:poll_range_end"`
+	NewDocsIndexed   int64          `gorm:"column:new_docs_indexed"`
+	TotalDocsIndexed int64          `gorm:"column:total_docs_indexed"`
+	FromBeginning    *string        `gorm:"column:from_beginning"`
+	ConnectorName    string         `gorm:"column:connector_name"`
+	Source           string         `gorm:"column:source"`
+	TenantID         string         `gorm:"column:tenant_id"`
+	TimeoutSecs      int64          `gorm:"column:timeout_secs"`
+	Config           entity.JSONMap `gorm:"column:config"`
+	RefreshFreq      int64          `gorm:"column:refresh_freq"`
+	PruneFreq        int64          `gorm:"column:prune_freq"`
+	KbName           string         `gorm:"column:kb_name"`
+	AutoParse        string         `gorm:"column:auto_parse"`
+}
+
+// ListDueTasks returns scheduled sync/prune tasks whose connector is scheduled
+// and whose last update is older than the given frequency (minutes), mirroring
+// Python SyncLogsService._list_due_tasks_for_freq (MySQL dialect).
+func (dao *ConnectorDAO) ListDueTasks(ctx context.Context, db *gorm.DB, taskType, freqField string) ([]*DueSyncTask, error) {
+	var tasks []*DueSyncTask
+	err := db.WithContext(ctx).Model(&entity.SyncLogs{}).
+		Select(
+			"sync_logs.id",
+			"sync_logs.connector_id",
+			"sync_logs.task_type",
+			"sync_logs.kb_id",
+			"sync_logs.poll_range_start",
+			"sync_logs.poll_range_end",
+			"sync_logs.new_docs_indexed",
+			"sync_logs.total_docs_indexed",
+			"sync_logs.from_beginning",
+			"connector.name AS connector_name",
+			"connector.source",
+			"connector.tenant_id",
+			"connector.timeout_secs",
+			"connector.config",
+			"connector.refresh_freq",
+			"connector.prune_freq",
+			"knowledgebase.name AS kb_name",
+			"connector2kb.auto_parse",
+		).
+		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
+		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
+		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
+		Where("connector.input_type = ?", "poll").
+		Where("connector.status = ?", string(entity.TaskStatusSchedule)).
+		Where("sync_logs.status = ?", string(entity.TaskStatusSchedule)).
+		Where("sync_logs.task_type = ?", taskType).
+		Where("sync_logs.update_date < NOW() - INTERVAL connector." + freqField + " MINUTE").
+		Distinct().
+		Order("sync_logs.update_time DESC").
+		Scan(&tasks).Error
+	if err != nil {
+		return nil, err
+	}
+	return tasks, nil
+}
+
+// ClaimTask atomically transitions a scheduled task to running and mirrors the
+// status onto the connector, mirroring Python SyncLogsService.start. It
+// returns false when another worker claimed the task first.
+func (dao *ConnectorDAO) ClaimTask(ctx context.Context, db *gorm.DB, taskID, connectorID string) (bool, error) {
+	now := time.Now().Local()
+	result := db.WithContext(ctx).Model(&entity.SyncLogs{}).
+		Where("id = ? AND status = ?", taskID, string(entity.TaskStatusSchedule)).
+		Updates(map[string]interface{}{
+			"status":       string(entity.TaskStatusRunning),
+			"time_started": now,
+		})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return false, nil
+	}
+	if err := db.WithContext(ctx).Model(&entity.Connector{}).
+		Where("id = ?", connectorID).
+		Update("status", string(entity.TaskStatusRunning)).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// IncreaseDocs accumulates per-batch sync progress, keeping the poll window
+// monotonic, mirroring Python SyncLogsService.increase_docs.
+func (dao *ConnectorDAO) IncreaseDocs(ctx context.Context, db *gorm.DB, taskID string, maxUpdate time.Time, docNum int64, errMsg string, errCount int64) error {
+	return db.WithContext(ctx).Model(&entity.SyncLogs{}).
+		Where("id = ?", taskID).
+		Updates(map[string]interface{}{
+			"new_docs_indexed":   gorm.Expr("new_docs_indexed + ?", docNum),
+			"total_docs_indexed": gorm.Expr("total_docs_indexed + ?", docNum),
+			"poll_range_start":   gorm.Expr("COALESCE(GREATEST(poll_range_start, ?), ?)", maxUpdate, maxUpdate),
+			"poll_range_end":     gorm.Expr("COALESCE(GREATEST(poll_range_end, ?), ?)", maxUpdate, maxUpdate),
+			"error_msg":          gorm.Expr("CONCAT(error_msg, ?)", errMsg),
+			"error_count":        gorm.Expr("error_count + ?", errCount),
+		}).Error
+}
+
+// IncreaseRemovedDocs accumulates per-task prune progress, mirroring Python
+// SyncLogsService.increase_removed_docs.
+func (dao *ConnectorDAO) IncreaseRemovedDocs(ctx context.Context, db *gorm.DB, taskID string, removedCount int64, errMsg string, errCount int64) error {
+	return db.WithContext(ctx).Model(&entity.SyncLogs{}).
+		Where("id = ?", taskID).
+		Updates(map[string]interface{}{
+			"docs_removed_from_index": gorm.Expr("docs_removed_from_index + ?", removedCount),
+			"error_msg":               gorm.Expr("CONCAT(error_msg, ?)", errMsg),
+			"error_count":             gorm.Expr("error_count + ?", errCount),
+		}).Error
+}
+
+// FinishTask marks a task (and, on success, the connector) with a terminal
+// status, mirroring Python SyncLogsService.done / the failure updates in
+// rag/svr/sync_data_source.py.
+func (dao *ConnectorDAO) FinishTask(ctx context.Context, db *gorm.DB, taskID, connectorID string, status entity.TaskStatus, errMsg, trace string) error {
+	updates := map[string]interface{}{
+		"status": string(status),
+	}
+	if errMsg != "" {
+		updates["error_msg"] = errMsg
+	}
+	if trace != "" {
+		updates["full_exception_trace"] = trace
+	}
+	if err := db.WithContext(ctx).Model(&entity.SyncLogs{}).
+		Where("id = ?", taskID).
+		Updates(updates).Error; err != nil {
+		return err
+	}
+	if status == entity.TaskStatusDone {
+		return db.WithContext(ctx).Model(&entity.Connector{}).
+			Where("id = ?", connectorID).
+			Update("status", string(entity.TaskStatusDone)).Error
+	}
+	return nil
+}
+
+// RescheduleTask inserts the next scheduled task for a connector/kb pair
+// (carrying over the poll window from the latest done task) and marks the
+// connector scheduled, mirroring Python SyncLogsService.schedule.
+func (dao *ConnectorDAO) RescheduleTask(ctx context.Context, db *gorm.DB, connectorID, kbID, taskType string) error {
+	if err := dao.pruneOldSyncLogs(ctx, db, connectorID, kbID); err != nil {
+		return err
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := scheduleConnectorTask(ctx, tx, connectorID, kbID, taskType, false); err != nil {
+			return err
+		}
+		return tx.WithContext(ctx).Model(&entity.Connector{}).
+			Where("id = ?", connectorID).
+			Update("status", string(entity.TaskStatusSchedule)).Error
+	})
+}
+
+// pruneOldSyncLogs caps the log history per connector/kb pair at 100 rows by
+// deleting the oldest 70, mirroring Python SyncLogsService.schedule.
+func (dao *ConnectorDAO) pruneOldSyncLogs(ctx context.Context, db *gorm.DB, connectorID, kbID string) error {
+	var total int64
+	if err := db.WithContext(ctx).Model(&entity.SyncLogs{}).
+		Where("connector_id = ? AND kb_id = ?", connectorID, kbID).
+		Count(&total).Error; err != nil {
+		return err
+	}
+	if total <= 100 {
+		return nil
+	}
+	var ids []string
+	if err := db.WithContext(ctx).Model(&entity.SyncLogs{}).
+		Where("connector_id = ? AND kb_id = ?", connectorID, kbID).
+		Order("update_time ASC").
+		Limit(70).
+		Pluck("id", &ids).Error; err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	return db.WithContext(ctx).Where("id IN ?", ids).Delete(&entity.SyncLogs{}).Error
+}
+
 func createRebuildSyncLog(ctx context.Context, tx *gorm.DB, connectorID, kbID, taskType string, reindex bool) error {
 	fromBeginning := "0"
 	if reindex {
 		fromBeginning = "1"
 	}
 	now := time.Now().Local()
-	return tx.WithContext(ctx).Create(&entity.SyncLogs{
+	row := &entity.SyncLogs{
 		ID:               utility.GenerateToken(),
 		ConnectorID:      connectorID,
 		KbID:             kbID,
@@ -359,7 +547,14 @@ func createRebuildSyncLog(ctx context.Context, tx *gorm.DB, connectorID, kbID, t
 		TimeStarted:      &now,
 		ErrorMsg:         "",
 		TotalDocsIndexed: 0,
-	}).Error
+	}
+	if reindex {
+		// A from-beginning sync is due immediately (Python run_immediately=True).
+		row.UpdateTime = new(int64)
+		epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.Local)
+		row.UpdateDate = &epoch
+	}
+	return tx.WithContext(ctx).Create(row).Error
 }
 
 func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, taskType string, reindex bool) error {
@@ -394,7 +589,7 @@ func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, 
 		fromBeginning = "1"
 	}
 	now := time.Now().Local()
-	return tx.WithContext(ctx).Create(&entity.SyncLogs{
+	row := &entity.SyncLogs{
 		ID:               utility.GenerateToken(),
 		ConnectorID:      connectorID,
 		KbID:             kbID,
@@ -405,7 +600,14 @@ func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, 
 		TimeStarted:      &now,
 		ErrorMsg:         "",
 		TotalDocsIndexed: totalDocsIndexed,
-	}).Error
+	}
+	if reindex {
+		// A from-beginning sync is due immediately (Python run_immediately=True).
+		row.UpdateTime = new(int64)
+		epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.Local)
+		row.UpdateDate = &epoch
+	}
+	return tx.WithContext(ctx).Create(row).Error
 }
 
 func connectorConfigBool(config map[string]interface{}, key string) bool {

@@ -122,6 +122,142 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 	return results, errMsgs
 }
 
+// ConnectorDocumentInput is one connector-produced document to import,
+// mirroring the dicts built in Python SyncBase._run_sync_task_logic.
+type ConnectorDocumentInput struct {
+	// ID is the deterministic document row id (hash128 of
+	// kb_id:connector_id:source_doc_id, or its legacy form).
+	ID                 string
+	SemanticIdentifier string
+	Extension          string // e.g. ".txt"
+	Blob               []byte
+	Metadata           map[string]interface{}
+}
+
+// ConnectorUploadResult describes an imported document whose content changed
+// (newly inserted, or an existing row re-uploaded with a new content hash).
+type ConnectorUploadResult struct {
+	Doc      *entity.Document
+	Metadata map[string]interface{}
+	Existed  bool // true when the row already existed (content update)
+}
+
+// UploadConnectorDocuments imports connector-produced documents into a dataset,
+// mirroring the connector path of Python FileService.upload_document: a row id
+// that already exists gets its blob re-uploaded and its size/content_hash
+// refreshed (only a changed hash counts as an update); a new id is inserted
+// with a deduped name and linked into the file manager. src is the document
+// source_type ("<source>/<connector_id>").
+func (s *DocumentService) UploadConnectorDocuments(ctx context.Context, kb *entity.Knowledgebase, tenantID, src string, docs []ConnectorDocumentInput) ([]*ConnectorUploadResult, []string) {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return nil, []string{"storage not initialized"}
+	}
+
+	kbFolder, err := s.ensureKBFolder(ctx, kb, tenantID)
+	if err != nil {
+		return nil, []string{err.Error()}
+	}
+
+	names, err := s.documentDAO.ListNamesByKbID(ctx, dao.DB, kb.ID)
+	if err != nil {
+		return nil, []string{err.Error()}
+	}
+	taken := map[string]bool{}
+	for _, n := range names {
+		taken[n] = true
+	}
+
+	var results []*ConnectorUploadResult
+	var errMsgs []string
+
+	for _, input := range docs {
+		docID := input.ID
+		if docID == "" {
+			docID = utility.GenerateToken()
+		}
+
+		existing, getErr := s.documentDAO.GetByID(ctx, dao.DB, docID)
+		if getErr != nil && !dao.IsNotFoundErr(getErr) {
+			errMsgs = append(errMsgs, input.SemanticIdentifier+": "+getErr.Error())
+			continue
+		}
+
+		if existing != nil {
+			if existing.KbID != kb.ID {
+				errMsgs = append(errMsgs, input.SemanticIdentifier+": Existing document id collision with another knowledge base; skipping update.")
+				continue
+			}
+			newHash := contentHashHex(input.Blob)
+			oldHash := ""
+			if existing.ContentHash != nil {
+				oldHash = *existing.ContentHash
+			}
+			location := ""
+			if existing.Location != nil {
+				location = *existing.Location
+			}
+			if err = storageImpl.Put(kb.ID, location, input.Blob); err != nil {
+				errMsgs = append(errMsgs, input.SemanticIdentifier+": "+err.Error())
+				continue
+			}
+			if err = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{
+				"size":         int64(len(input.Blob)),
+				"content_hash": newHash,
+			}); err != nil {
+				errMsgs = append(errMsgs, input.SemanticIdentifier+": "+err.Error())
+				continue
+			}
+			if newHash == oldHash {
+				continue // unchanged content — no re-parse
+			}
+			existing.Size = int64(len(input.Blob))
+			existing.ContentHash = &newHash
+			results = append(results, &ConnectorUploadResult{Doc: existing, Metadata: input.Metadata, Existed: true})
+			continue
+		}
+
+		filename := input.SemanticIdentifier
+		if input.Extension != "" && !strings.HasSuffix(filename, input.Extension) {
+			filename += input.Extension
+		}
+		filename = uniqueUploadName(filename, taken)
+
+		filetype := utility.FilenameType(filename)
+		if filetype == utility.FileTypeOTHER {
+			errMsgs = append(errMsgs, filename+": This type of file has not been supported yet!")
+			continue
+		}
+
+		location := filename
+		for storageImpl.ObjExist(kb.ID, location) {
+			location += "_"
+		}
+		if err = storageImpl.Put(kb.ID, location, input.Blob); err != nil {
+			errMsgs = append(errMsgs, filename+": "+err.Error())
+			continue
+		}
+
+		doc := s.newDatasetDocument(kb, tenantID, filename, location, string(filetype), kb.ParserConfig, src, int64(len(input.Blob)), input.Blob)
+		doc.ID = docID
+		if err = s.InsertDocument(doc); err != nil {
+			_ = storageImpl.Remove(kb.ID, location)
+			errMsgs = append(errMsgs, filename+": "+err.Error())
+			continue
+		}
+		if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID); err != nil {
+			err = s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
+			_ = storageImpl.Remove(kb.ID, location)
+			errMsgs = append(errMsgs, filename+": "+err.Error())
+			continue
+		}
+		taken[filename] = true
+		results = append(results, &ConnectorUploadResult{Doc: doc, Metadata: input.Metadata})
+	}
+
+	return results, errMsgs
+}
+
 // UploadEmptyDocument inserts a zero-byte "virtual" document into the dataset.
 func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
 	// A transient lookup failure means the existing-name set is unknown; fail
