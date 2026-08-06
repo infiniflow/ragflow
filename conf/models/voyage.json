@@ -15,7 +15,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage-4",
@@ -23,7 +23,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage-4-lite",
@@ -31,7 +31,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage-3.5",
@@ -39,7 +39,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage-3.5-lite",
@@ -47,7 +47,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage-3-large",
@@ -55,7 +55,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage-code-3",
@@ -63,7 +63,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage-law-2",
@@ -71,7 +71,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage-finance-2",
@@ -79,7 +79,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "rerank-2.5",
