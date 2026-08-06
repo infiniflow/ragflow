@@ -19,6 +19,7 @@ package oceanbase
 import (
 	"context"
 	"regexp"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -46,6 +47,46 @@ func TestUpdateMetadataReplacesCompleteLegacyJSON(t *testing.T) {
 
 	if err := engine.UpdateMetadata(context.Background(), "doc-1", "kb-1", map[string]interface{}{"author": "Alice"}, "tenant-1"); err != nil {
 		t.Fatal(err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestMetadataWritesRejectInvalidTenantIdentifier(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB("oceanbase", "legacy_doc", db)
+
+	err = engine.UpdateMetadata(context.Background(), "doc-1", "kb-1",
+		map[string]interface{}{"author": "Alice"}, "tenant`injected")
+	if err == nil || !strings.Contains(err.Error(), "invalid SQL identifier") {
+		t.Fatalf("UpdateMetadata() error = %v, want invalid identifier error", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDeleteMetadataKeysPreservesInvalidJSONRow(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB("oceanbase", "legacy_doc", db)
+
+	query := "SELECT meta_fields FROM `ragflow_doc_meta_tenant-1` WHERE id = ? AND kb_id = ? LIMIT 1"
+	mock.ExpectQuery(regexp.QuoteMeta(query)).
+		WithArgs("doc-1", "kb-1").
+		WillReturnRows(sqlmock.NewRows([]string{"meta_fields"}).AddRow("{"))
+
+	err = engine.DeleteMetadataKeys(context.Background(), "doc-1", "kb-1", []string{"author"}, "tenant-1")
+	if err == nil || !strings.Contains(err.Error(), "decode metadata") {
+		t.Fatalf("DeleteMetadataKeys() error = %v, want JSON decode error", err)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

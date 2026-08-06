@@ -58,8 +58,8 @@ func (c *Config) ParseDatabaseConfig(v *viper.Viper) error {
 
 func (c *Config) parseOceanBaseDatabaseConfig(v *viper.Viper) {
 	// OceanBase uses the MySQL wire protocol, so the existing DAO can keep
-	// consuming MySQLConfig. Accept both the historical flat DB_TYPE=oceanbase
-	// section and the document-engine nested config.
+	// consuming MySQLConfig. Support both the flat DB_TYPE=oceanbase section and
+	// the document-engine nested config.
 	c.parseMySQLConfig(v)
 	sub := v.Sub("oceanbase")
 	if sub == nil {

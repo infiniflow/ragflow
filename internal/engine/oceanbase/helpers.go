@@ -91,6 +91,9 @@ func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string
 	marker := newHighlightMarker(keywords)
 	for _, chunk := range chunks {
 		id := stringValue(chunk["id"])
+		if id == "" {
+			id = stringValue(chunk["skill_id"])
+		}
 		text := stringValue(chunk[fieldName])
 		if id == "" || text == "" {
 			continue

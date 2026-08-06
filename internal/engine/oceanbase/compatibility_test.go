@@ -111,8 +111,8 @@ func TestPythonPhysicalTableNameContract(t *testing.T) {
 	if got := metadataTableName("tenant-1"); got != "ragflow_doc_meta_tenant-1" {
 		t.Fatalf("metadata table = %q", got)
 	}
-	if tableKind("ragflow_tenant-1") != "chunk" || tableKind("memory_tenant-1") != "memory" {
-		t.Fatal("legacy table prefixes are not recognized")
+	if tableKind("ragflow_tenant-1") != "chunk" || tableKind("memory_tenant-1") != "memory" || tableKind("custom_table", "skill") != "skill" {
+		t.Fatal("physical table kinds are not recognized")
 	}
 
 	contracts := map[string][]string{
@@ -182,6 +182,24 @@ func TestLegacyMemoryAliasesAndVectorEncoding(t *testing.T) {
 	}, "memory")
 	if decoded["message_type"] != "raw" || decoded["status"] != false || !reflect.DeepEqual(decoded["content_embed"], []interface{}{0.25, 0.5}) {
 		t.Fatalf("memory read aliases changed: %#v", decoded)
+	}
+}
+
+func TestSkillRowsKeepStringStatusAndSkillRowID(t *testing.T) {
+	decoded := decodeLogicalRow(map[string]interface{}{
+		"skill_id": "skill-1",
+		"status":   "draft",
+	}, "skill")
+	if decoded["status"] != "draft" {
+		t.Fatalf("skill status = %#v, want draft", decoded["status"])
+	}
+
+	expression, alias, err := selectExpression("row_id()", "skill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if expression != "`skill_id` AS `row_id`" || alias != "row_id" {
+		t.Fatalf("skill row ID projection = (%q, %q)", expression, alias)
 	}
 }
 

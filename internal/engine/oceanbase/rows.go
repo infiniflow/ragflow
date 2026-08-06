@@ -74,7 +74,7 @@ func decodeLogicalRow(row map[string]interface{}, kind string) map[string]interf
 		if kind == "chunk" && column == "_order_id" {
 			column = "chunk_order_int"
 		}
-		if column == "status" {
+		if kind == "memory" && column == "status" {
 			switch status := value.(type) {
 			case int64:
 				value = status != 0
@@ -111,7 +111,7 @@ func selectExpression(field, kind string) (string, string, error) {
 		return "", "", nil
 	}
 	if field == "row_id()" || field == "row_id" {
-		return quoteIdentifier("id") + " AS " + quoteIdentifier("row_id"), "row_id", nil
+		return quoteIdentifier(identifierField(kind)) + " AS " + quoteIdentifier("row_id"), "row_id", nil
 	}
 	column := field
 	alias := field

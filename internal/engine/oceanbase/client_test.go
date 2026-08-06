@@ -19,7 +19,6 @@ package oceanbase
 import (
 	"context"
 	"regexp"
-	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -83,8 +82,9 @@ func TestInitializeConfiguresIndexRefresh(t *testing.T) {
 	}
 }
 
-func TestInitializeRejectsUnrecognizedSeekDBVersion(t *testing.T) {
+func TestInitializeDisablesRefreshForUnrecognizedSeekDBVersion(t *testing.T) {
 	t.Setenv("ENABLE_HYBRID_SEARCH", "false")
+	t.Setenv("OB_QUERY_TIMEOUT", "100000000")
 	db, mock, err := sqlmock.New()
 	if err != nil {
 		t.Fatal(err)
@@ -96,10 +96,14 @@ func TestInitializeRejectsUnrecognizedSeekDBVersion(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"OB_VERSION()"}).AddRow("4.3.5.3"))
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT VERSION()")).
 		WillReturnRows(sqlmock.NewRows([]string{"VERSION()"}).AddRow("5.7.25-OceanBase"))
+	mock.ExpectQuery(regexp.QuoteMeta("SHOW VARIABLES LIKE 'ob_query_timeout'")).
+		WillReturnRows(sqlmock.NewRows([]string{"Variable_name", "Value"}).AddRow("ob_query_timeout", 100000000))
 
-	err = engine.initialize(context.Background())
-	if err == nil || !strings.Contains(err.Error(), "parse SeekDB version") {
-		t.Fatalf("initialize() error = %v, want SeekDB version parse error", err)
+	if err := engine.initialize(context.Background()); err != nil {
+		t.Fatalf("initialize() error = %v", err)
+	}
+	if engine.indexRefreshEnabled {
+		t.Fatal("indexRefreshEnabled = true, want false")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

@@ -19,7 +19,6 @@ package oceanbase
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -34,7 +33,13 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 	if err := validateIdentifier(baseName); err != nil {
 		return nil, err
 	}
-	vectorSize := vectorDimension(chunks[0])
+	vectorSize := 0
+	for _, chunk := range chunks {
+		vectorSize = vectorDimension(chunk)
+		if vectorSize > 0 {
+			break
+		}
+	}
 	exists, err := e.ChunkStoreExists(ctx, baseName, datasetID)
 	if err != nil {
 		return nil, err
@@ -62,6 +67,9 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		switch {
 		case strings.HasPrefix(baseName, "memory_"):
 			normalized, err = normalizeMemory(chunk)
+			if err != nil {
+				return nil, err
+			}
 			if normalized["memory_id"] == nil {
 				normalized["memory_id"] = datasetID
 			}
@@ -71,14 +79,17 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 				documentID = stringValue(chunk["id"])
 			}
 			normalized, err = normalizeSkill(chunk, documentID)
+			if err != nil {
+				return nil, err
+			}
 		default:
 			normalized, err = normalizeChunk(chunk)
+			if err != nil {
+				return nil, err
+			}
 			if normalized["kb_id"] == nil || normalized["kb_id"] == "" {
 				normalized["kb_id"] = datasetID
 			}
-		}
-		if err != nil {
-			return nil, err
 		}
 		if err := replaceRow(ctx, tx, baseName, normalized); err != nil {
 			return nil, err
@@ -131,7 +142,7 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 	if err := validateIdentifier(baseName); err != nil {
 		return nil, err
 	}
-	kind := tableKind(baseName)
+	kind := tableKind(baseName, datasetIDs...)
 	exists, err := e.tableExists(ctx, baseName)
 	if err != nil {
 		return nil, err
@@ -175,7 +186,7 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 	if err := validateIdentifier(baseName); err != nil {
 		return err
 	}
-	kind := tableKind(baseName)
+	kind := tableKind(baseName, datasetID)
 	condition = copyMap(condition)
 	_, scopedByDocument := condition["doc_id"]
 	if kind == "memory" {
@@ -225,6 +236,8 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition, newValue map[strin
 					setParts = append(setParts, fmt.Sprintf("%s = ARRAY_REMOVE(%s, ?)", quoteIdentifier(column), quoteIdentifier(column)))
 					setArgs = append(setArgs, item)
 				}
+			default:
+				return fmt.Errorf("remove must be a field name or object")
 			}
 		case "add":
 			items, ok := value.(map[string]interface{})
@@ -278,7 +291,7 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	if err := validateIdentifier(baseName); err != nil {
 		return 0, err
 	}
-	kind := tableKind(baseName)
+	kind := tableKind(baseName, datasetID)
 	condition = copyMap(condition)
 	if kind == "memory" {
 		condition["memory_id"] = datasetID
@@ -303,7 +316,12 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	return result.RowsAffected()
 }
 
-func tableKind(tableName string) string {
+func tableKind(tableName string, datasetIDs ...string) string {
+	for _, datasetID := range datasetIDs {
+		if datasetID == "skill" {
+			return "skill"
+		}
+	}
 	switch {
 	case strings.HasPrefix(tableName, "memory_"):
 		return "memory"
@@ -329,8 +347,4 @@ func copyMap(source map[string]interface{}) map[string]interface{} {
 		result[key] = value
 	}
 	return result
-}
-
-func isNotFoundError(err error) bool {
-	return errors.Is(err, sql.ErrNoRows) || strings.Contains(strings.ToLower(err.Error()), "doesn't exist")
 }

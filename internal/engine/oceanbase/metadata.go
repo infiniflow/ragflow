@@ -36,10 +36,18 @@ const metadataPushdownMaxSize = 10000
 
 func metadataTableName(tenantID string) string { return "ragflow_doc_meta_" + tenantID }
 
-// CreateMetadataStore creates the legacy per-tenant metadata table.
-func (e *Engine) CreateMetadataStore(ctx context.Context, tenantID string) error {
+func validatedMetadataTableName(tenantID string) (string, error) {
 	tableName := metadataTableName(tenantID)
 	if err := validateIdentifier(tableName); err != nil {
+		return "", err
+	}
+	return tableName, nil
+}
+
+// CreateMetadataStore creates the legacy per-tenant metadata table.
+func (e *Engine) CreateMetadataStore(ctx context.Context, tenantID string) error {
+	tableName, err := validatedMetadataTableName(tenantID)
+	if err != nil {
 		return err
 	}
 	if err := e.ensureTableWithLock(ctx, tableName, metadataColumns, "ob_create_doc_meta_table_"+tableName); err != nil {
@@ -53,7 +61,10 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 	if len(metadata) == 0 {
 		return []string{}, nil
 	}
-	tableName := metadataTableName(tenantID)
+	tableName, err := validatedMetadataTableName(tenantID)
+	if err != nil {
+		return nil, err
+	}
 	exists, err := e.tableExists(ctx, tableName)
 	if err != nil {
 		return nil, err
@@ -97,7 +108,10 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 // UpdateMetadata replaces the complete JSON object, inserting the row if it
 // does not yet exist. This matches the service's replace_meta_fields contract.
 func (e *Engine) UpdateMetadata(ctx context.Context, docID, datasetID string, metaFields map[string]interface{}, tenantID string) error {
-	tableName := metadataTableName(tenantID)
+	tableName, err := validatedMetadataTableName(tenantID)
+	if err != nil {
+		return err
+	}
 	encoded, err := json.Marshal(metaFields)
 	if err != nil {
 		return err
@@ -108,7 +122,10 @@ func (e *Engine) UpdateMetadata(ctx context.Context, docID, datasetID string, me
 
 // DeleteMetadata deletes matching metadata rows.
 func (e *Engine) DeleteMetadata(ctx context.Context, condition map[string]interface{}, tenantID string) (int64, error) {
-	tableName := metadataTableName(tenantID)
+	tableName, err := validatedMetadataTableName(tenantID)
+	if err != nil {
+		return 0, err
+	}
 	exists, err := e.tableExists(ctx, tableName)
 	if err != nil || !exists {
 		return 0, err
@@ -127,7 +144,10 @@ func (e *Engine) DeleteMetadata(ctx context.Context, condition map[string]interf
 // DeleteMetadataKeys removes selected JSON keys and deletes the row if no
 // metadata remains.
 func (e *Engine) DeleteMetadataKeys(ctx context.Context, docID, datasetID string, keys []string, tenantID string) error {
-	tableName := metadataTableName(tenantID)
+	tableName, err := validatedMetadataTableName(tenantID)
+	if err != nil {
+		return err
+	}
 	var raw string
 	if err := e.db.QueryRowContext(ctx, "SELECT meta_fields FROM "+quoteIdentifier(tableName)+" WHERE id = ? AND kb_id = ? LIMIT 1", docID, datasetID).Scan(&raw); err != nil {
 		if err == sql.ErrNoRows {
@@ -136,7 +156,9 @@ func (e *Engine) DeleteMetadataKeys(ctx context.Context, docID, datasetID string
 		return err
 	}
 	fields := make(map[string]interface{})
-	_ = json.Unmarshal([]byte(raw), &fields)
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+		return fmt.Errorf("decode metadata for document %s: %w", docID, err)
+	}
 	for _, key := range keys {
 		delete(fields, key)
 	}
@@ -153,17 +175,17 @@ func (e *Engine) DeleteMetadataKeys(ctx context.Context, docID, datasetID string
 }
 
 func (e *Engine) DropMetadataStore(ctx context.Context, tenantID string) error {
-	tableName := metadataTableName(tenantID)
-	if err := validateIdentifier(tableName); err != nil {
+	tableName, err := validatedMetadataTableName(tenantID)
+	if err != nil {
 		return err
 	}
-	_, err := e.db.ExecContext(ctx, "DROP TABLE IF EXISTS "+quoteIdentifier(tableName))
+	_, err = e.db.ExecContext(ctx, "DROP TABLE IF EXISTS "+quoteIdentifier(tableName))
 	return err
 }
 
 func (e *Engine) MetadataStoreExists(ctx context.Context, tenantID string) (bool, error) {
-	tableName := metadataTableName(tenantID)
-	if err := validateIdentifier(tableName); err != nil {
+	tableName, err := validatedMetadataTableName(tenantID)
+	if err != nil {
 		return false, err
 	}
 	return e.tableExists(ctx, tableName)
@@ -174,7 +196,10 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 	if req == nil || req.TenantID == "" {
 		return nil, fmt.Errorf("tenantID cannot be empty")
 	}
-	tableName := metadataTableName(req.TenantID)
+	tableName, err := validatedMetadataTableName(req.TenantID)
+	if err != nil {
+		return nil, err
+	}
 	exists, err := e.tableExists(ctx, tableName)
 	if err != nil {
 		return nil, err
@@ -222,7 +247,11 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 	if err != nil {
 		return nil
 	}
-	tableName := metadataTableName(tenantID)
+	tableName, err := validatedMetadataTableName(tenantID)
+	if err != nil {
+		common.Debug("OceanBase metadata table name is invalid", zap.Error(err))
+		return nil
+	}
 	exists, err := e.tableExists(ctx, tableName)
 	if err != nil || !exists {
 		return nil

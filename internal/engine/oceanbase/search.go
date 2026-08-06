@@ -70,11 +70,15 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		if !exists {
 			continue
 		}
-		kind := tableKind(tableName)
+		kind := tableKind(tableName, req.KbIDs...)
 		effectiveReq := *req
 		effectiveReq.SelectFields = append([]string(nil), req.SelectFields...)
 		if kind == "memory" && containsString(effectiveReq.SelectFields, "content_embed") {
-			vectorColumn, vectorErr := e.findVectorColumn(ctx, tableName)
+			expectedVectorColumn := ""
+			if plan.dense != nil {
+				expectedVectorColumn = plan.dense.VectorColumnName
+			}
+			vectorColumn, vectorErr := e.findVectorColumn(ctx, tableName, expectedVectorColumn)
 			if vectorErr != nil {
 				return nil, vectorErr
 			}

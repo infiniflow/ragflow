@@ -171,7 +171,9 @@ func (e *Engine) initializeIndexRefresh(ctx context.Context) error {
 	}
 	seekDBVersion, ok := extractSeekDBVersion(serverVersion)
 	if !ok {
-		return fmt.Errorf("parse SeekDB version from %q", serverVersion)
+		common.Warn("Could not parse SeekDB version; index refresh is disabled",
+			zap.String("version", serverVersion))
+		return nil
 	}
 	e.indexRefreshEnabled = compareVersions(seekDBVersion, minimumSeekDBIndexRefreshVersion) >= 0
 	return nil

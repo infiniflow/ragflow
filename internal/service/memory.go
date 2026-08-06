@@ -819,6 +819,7 @@ func (s *MemoryService) DeleteMemory(ctx context.Context, userID, memoryID strin
 		return err
 	}
 
+	// TODO: Delete associated message index - Implementation pending MessageService
 	if s.docEngine != nil && engine.IsOceanBaseFamily(s.docEngine.GetType()) {
 		if err := s.docEngine.DropChunkStore(ctx, memoryIndexName(memory.TenantID), memoryID); err != nil {
 			return fmt.Errorf("delete memory messages: %w", err)
@@ -852,9 +853,9 @@ func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memory
 	updates := map[string]interface{}{
 		"forget_at": forgetTime,
 	}
-	// Only Infinity stores the numeric companion field. OceanBase/SeekDB use
-	// the legacy memory schema, which has forget_at but no forget_at_flt.
-	if s.docEngine.GetType() == "infinity" {
+	// OceanBase/SeekDB memory tables contain forget_at but no forget_at_flt.
+	// Keep the existing companion-field update for other engines.
+	if !engine.IsOceanBaseFamily(s.docEngine.GetType()) {
 		updates["forget_at_flt"] = now.UnixMilli()
 	}
 	condition := map[string]interface{}{

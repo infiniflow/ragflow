@@ -69,3 +69,15 @@ func TestGetHighlightUsesBoundariesAndTokens(t *testing.T) {
 		t.Fatalf("GetHighlight() = %#v, want %#v", got, want)
 	}
 }
+
+func TestGetHighlightUsesSkillID(t *testing.T) {
+	engine := &Engine{}
+	chunks := []map[string]interface{}{{
+		"skill_id": "skill-1",
+		"content":  "OceanBase search",
+	}}
+	want := map[string]string{"skill-1": "<em>OceanBase</em> search"}
+	if got := engine.GetHighlight(chunks, []string{"oceanbase"}, "content"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("GetHighlight() = %#v, want %#v", got, want)
+	}
+}

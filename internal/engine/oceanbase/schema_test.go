@@ -19,6 +19,7 @@ package oceanbase
 import (
 	"context"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -78,5 +79,54 @@ func TestDropChunkStoreDeletesOnlyScopedRows(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+func TestRegularIndexNamePreservesShortNamesAndCapsLongNames(t *testing.T) {
+	if got, want := regularIndexName("memory_tenant_1", "memory_id"), "ix_memory_tenant_1_memory_id"; got != want {
+		t.Fatalf("regularIndexName() = %q, want %q", got, want)
+	}
+
+	tableName := strings.Repeat("tenant", 10)
+	first := regularIndexName(tableName, "kb_id")
+	second := regularIndexName(tableName, "doc_id")
+	if len(first) > maxIndexNameLength {
+		t.Fatalf("index name length = %d, want <= %d: %q", len(first), maxIndexNameLength, first)
+	}
+	if first == second {
+		t.Fatalf("different index inputs produced the same name: %q", first)
+	}
+	if !identifierPattern.MatchString(first) || first != regularIndexName(tableName, "kb_id") {
+		t.Fatalf("index name is invalid or nondeterministic: %q", first)
+	}
+
+	pythonTableName := "ragflow_12345678-1234-1234-1234-123456789012"
+	if got, want := regularIndexName(pythonTableName, "create_timestamp_flt"), "ix_ragflow_12345678-1234-1234-1234-123456789012_create_t_69b6"; got != want {
+		t.Fatalf("SQLAlchemy-compatible index name = %q, want %q", got, want)
+	}
+}
+
+func TestFindVectorColumnUsesExpectedColumn(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB("seekdb", "legacy_doc", db)
+
+	query := "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME REGEXP '^q_[0-9]+_vec$' AND COLUMN_NAME = ? ORDER BY COLUMN_NAME LIMIT 1"
+	mock.ExpectQuery(regexp.QuoteMeta(query)).
+		WithArgs("legacy_doc", "memory_tenant_1", "q_1024_vec").
+		WillReturnRows(sqlmock.NewRows([]string{"COLUMN_NAME"}).AddRow("q_1024_vec"))
+
+	column, err := engine.findVectorColumn(context.Background(), "memory_tenant_1", "q_1024_vec")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if column != "q_1024_vec" {
+		t.Fatalf("findVectorColumn() = %q, want q_1024_vec", column)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
 	}
 }

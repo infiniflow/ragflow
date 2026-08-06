@@ -24,6 +24,9 @@ import (
 
 // IndexDocument indexes a skill document. Regular chunks use InsertChunks.
 func (e *Engine) IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error {
+	if err := validateIdentifier(indexName); err != nil {
+		return err
+	}
 	if !strings.HasPrefix(indexName, "skill_") {
 		return fmt.Errorf("IndexDocument is supported only for skill tables")
 	}
@@ -62,15 +65,24 @@ func (e *Engine) IndexDocument(ctx context.Context, indexName, docID string, doc
 
 // BulkIndex indexes skill documents in a single transaction.
 func (e *Engine) BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error) {
+	if err := validateIdentifier(indexName); err != nil {
+		return nil, err
+	}
 	if !strings.HasPrefix(indexName, "skill_") {
 		return nil, fmt.Errorf("BulkIndex is supported only for skill tables")
 	}
 	vectorSize := 0
 	for _, raw := range docs {
 		if document, ok := raw.(map[string]interface{}); ok {
-			vectorSize = vectorDimension(document)
-			if vectorSize > 0 {
-				break
+			docID := stringValue(document["skill_id"])
+			if docID == "" {
+				docID = stringValue(document["id"])
+			}
+			if docID == "" {
+				return nil, fmt.Errorf("document identifier cannot be empty")
+			}
+			if vectorSize == 0 {
+				vectorSize = vectorDimension(document)
 			}
 		}
 	}

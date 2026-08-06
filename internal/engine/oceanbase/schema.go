@@ -18,6 +18,7 @@ package oceanbase
 
 import (
 	"context"
+	"crypto/md5" // #nosec G501 -- SQLAlchemy uses MD5 to shorten generated identifiers.
 	"database/sql"
 	"fmt"
 	"os"
@@ -28,6 +29,12 @@ import (
 	"time"
 
 	"ragflow/internal/engine/redis"
+)
+
+const (
+	maxIndexNameLength       = 64
+	indexNameHashLength      = 4
+	indexNameTruncationSpace = 8
 )
 
 type columnDefinition struct {
@@ -241,7 +248,7 @@ func (e *Engine) ensureColumn(ctx context.Context, tableName string, column colu
 }
 
 func (e *Engine) ensureRegularIndex(ctx context.Context, tableName, columnName, prefix string) error {
-	indexName := fmt.Sprintf("ix_%s_%s", tableName, columnName)
+	indexName := regularIndexName(tableName, columnName)
 	return e.withDDLLock(ctx, prefix+"add_idx_"+tableName+"_"+columnName, func() (bool, error) {
 		return e.indexExists(ctx, tableName, indexName)
 	}, func() error {
@@ -249,6 +256,16 @@ func (e *Engine) ensureRegularIndex(ctx context.Context, tableName, columnName, 
 			quoteIdentifier(indexName), quoteIdentifier(tableName), quoteIdentifier(columnName)))
 		return err
 	})
+}
+
+func regularIndexName(tableName, columnName string) string {
+	indexName := fmt.Sprintf("ix_%s_%s", tableName, columnName)
+	if len(indexName) <= maxIndexNameLength {
+		return indexName
+	}
+	digest := fmt.Sprintf("%x", md5.Sum([]byte(indexName))) // #nosec G401 -- This is a non-security identifier checksum.
+	suffix := "_" + digest[len(digest)-indexNameHashLength:]
+	return indexName[:maxIndexNameLength-indexNameTruncationSpace] + suffix
 }
 
 func (e *Engine) ensureFullTextIndex(ctx context.Context, tableName, columnName, prefix string) error {
@@ -313,6 +330,7 @@ func (e *Engine) withDDLLock(ctx context.Context, lockName string, check func() 
 		defer deadline.Stop()
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
+	waitForLock:
 		for {
 			select {
 			case <-ctx.Done():
@@ -327,11 +345,21 @@ func (e *Engine) withDDLLock(ctx context.Context, lockName string, check func() 
 				if exists {
 					return nil
 				}
+				if distributed.Acquire(ctx) {
+					break waitForLock
+				}
 			}
 		}
 	}
 	if distributed != nil {
 		defer distributed.Release(ctx)
+		exists, err = check()
+		if err != nil {
+			return err
+		}
+		if exists {
+			return nil
+		}
 	}
 	if err := action(); err != nil && !isDuplicateDDLError(err) {
 		return fmt.Errorf("DDL %s: %w", lockName, err)
@@ -370,11 +398,19 @@ func (e *Engine) indexExists(ctx context.Context, tableName, indexName string) (
 	return count > 0, err
 }
 
-func (e *Engine) findVectorColumn(ctx context.Context, tableName string) (string, error) {
+func (e *Engine) findVectorColumn(ctx context.Context, tableName, expectedColumn string) (string, error) {
+	query := "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME REGEXP '^q_[0-9]+_vec$'"
+	args := []interface{}{e.dbName, tableName}
+	if expectedColumn != "" {
+		if !vectorColumnPattern.MatchString(expectedColumn) {
+			return "", fmt.Errorf("invalid vector column: %s", expectedColumn)
+		}
+		query += " AND COLUMN_NAME = ?"
+		args = append(args, expectedColumn)
+	}
+	query += " ORDER BY COLUMN_NAME LIMIT 1"
 	var columnName string
-	err := e.db.QueryRowContext(ctx,
-		"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME REGEXP '^q_[0-9]+_vec$' LIMIT 1",
-		e.dbName, tableName).Scan(&columnName)
+	err := e.db.QueryRowContext(ctx, query, args...).Scan(&columnName)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
@@ -391,7 +427,7 @@ func (e *Engine) ChunkStoreExists(ctx context.Context, baseName, datasetID strin
 	if err != nil || !exists {
 		return exists, err
 	}
-	kind := tableKind(baseName)
+	kind := tableKind(baseName, datasetID)
 	var indexColumns, fullTextColumns []string
 	switch kind {
 	case "memory":
@@ -417,7 +453,7 @@ func (e *Engine) ChunkStoreExists(ctx context.Context, baseName, datasetID strin
 		}
 	}
 	for _, column := range indexColumns {
-		exists, err = e.indexExists(ctx, baseName, fmt.Sprintf("ix_%s_%s", baseName, column))
+		exists, err = e.indexExists(ctx, baseName, regularIndexName(baseName, column))
 		if err != nil || !exists {
 			return exists, err
 		}
