@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -58,8 +59,17 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		}
 	}
 
+	tableNames := uniqueStrings(req.IndexNames)
+	mergeTables := len(tableNames) > 1
+	candidateLimit := globalSearchCandidateLimit(req)
+	effectivePlan := plan
+	if mergeTables {
+		effectivePlan = expandSearchPlan(plan, candidateLimit)
+	}
+	hiddenSortFields := searchHiddenSortFields(req, mergeTables)
+
 	result := &types.SearchResult{Chunks: []map[string]interface{}{}}
-	for _, tableName := range uniqueStrings(req.IndexNames) {
+	for _, tableName := range tableNames {
 		if err := validateIdentifier(tableName); err != nil {
 			return nil, err
 		}
@@ -73,6 +83,13 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		kind := tableKind(tableName, req.KbIDs...)
 		effectiveReq := *req
 		effectiveReq.SelectFields = append([]string(nil), req.SelectFields...)
+		if mergeTables {
+			effectiveReq.Offset = 0
+			effectiveReq.Limit = candidateLimit
+			for _, field := range hiddenSortFields {
+				effectiveReq.SelectFields = append(effectiveReq.SelectFields, field)
+			}
+		}
 		if kind == "memory" && containsString(effectiveReq.SelectFields, "content_embed") {
 			expectedVectorColumn := ""
 			if plan.dense != nil {
@@ -107,7 +124,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		}
 
 		if e.hybridAvailable.Load() && isDBMSHybridPlan(plan) {
-			chunks, used, hybridErr := e.searchWithDBMS(ctx, tableName, kind, condition, &effectiveReq, plan)
+			chunks, used, hybridErr := e.searchWithDBMS(ctx, tableName, kind, condition, &effectiveReq, effectivePlan)
 			if hybridErr != nil {
 				if !isHybridUnavailableError(hybridErr) {
 					return nil, hybridErr
@@ -121,7 +138,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			}
 		}
 
-		chunks, total, err := e.searchTableWithSQL(ctx, tableName, kind, condition, &effectiveReq, plan)
+		chunks, total, err := e.searchTableWithSQL(ctx, tableName, kind, condition, &effectiveReq, effectivePlan)
 		if err != nil {
 			return nil, err
 		}
@@ -130,6 +147,14 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	}
 	if result.Total == 0 {
 		result.Total = int64(len(result.Chunks))
+	}
+	if mergeTables {
+		result.Chunks = mergeSearchChunks(result.Chunks, req, plan)
+		for _, chunk := range result.Chunks {
+			for _, field := range hiddenSortFields {
+				delete(chunk, field)
+			}
+		}
 	}
 	return result, nil
 }
@@ -151,7 +176,11 @@ func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string,
 
 	switch {
 	case plan.text != nil && plan.dense != nil:
-		return e.searchFusionSQL(ctx, tableName, kind, fieldsSQL, filterSQL, filterArgs, offset, limit, plan)
+		qualifiedFieldsSQL, _, err := buildQualifiedSelectFields(req.SelectFields, kind, "t")
+		if err != nil {
+			return nil, 0, err
+		}
+		return e.searchFusionSQL(ctx, tableName, kind, fieldsSQL, qualifiedFieldsSQL, filterSQL, filterArgs, offset, limit, plan)
 	case plan.dense != nil:
 		return e.searchVectorSQL(ctx, tableName, kind, fieldsSQL, filterSQL, filterArgs, offset, limit, plan.dense)
 	case plan.text != nil:
@@ -214,7 +243,7 @@ func (e *Engine) searchVectorSQL(ctx context.Context, tableName, kind, fieldsSQL
 	return decodeRows(rows, kind), count, err
 }
 
-func (e *Engine) searchFusionSQL(ctx context.Context, tableName, kind, fieldsSQL, filterSQL string, filterArgs []interface{}, offset, limit int, plan searchPlan) ([]map[string]interface{}, int64, error) {
+func (e *Engine) searchFusionSQL(ctx context.Context, tableName, kind, fieldsSQL, qualifiedFieldsSQL, filterSQL string, filterArgs []interface{}, offset, limit int, plan searchPlan) ([]map[string]interface{}, int64, error) {
 	if err := validateVectorExpr(plan.dense); err != nil {
 		return nil, 0, err
 	}
@@ -232,7 +261,7 @@ func (e *Engine) searchFusionSQL(ctx context.Context, tableName, kind, fieldsSQL
 	hint := e.fullTextHint(tableName, kind)
 
 	if !e.flags.useFullTextFirstFusionSearch {
-		return e.searchSymmetricFusionSQL(ctx, tableName, kind, fieldsSQL, filterSQL, filterArgs, offset, limit, candidates, hint,
+		return e.searchSymmetricFusionSQL(ctx, tableName, kind, qualifiedFieldsSQL, filterSQL, filterArgs, offset, limit, candidates, hint,
 			textFilter, textFilterArgs, textScore, textScoreArgs, vector, vectorColumn, vectorScore, threshold, textWeight, vectorWeight, plan)
 	}
 
@@ -287,9 +316,8 @@ func (e *Engine) searchSymmetricFusionSQL(ctx context.Context, tableName, kind, 
 	if kind == "chunk" {
 		score = strings.TrimSuffix(score, ")") + " + (CAST(IFNULL(f.pagerank_fea, 0) AS DECIMAL(10, 2)) / 100))"
 	}
-	qualifiedFields := qualifySelectFields(fieldsSQL, "t")
 	query := cte + fmt.Sprintf(" SELECT %s, %s AS _score FROM (SELECT COALESCE(f.id, v.id) AS id, %s AS score%s) c JOIN %s t ON c.id = t.%s ORDER BY c.score DESC LIMIT %d, %d",
-		qualifiedFields, "c.score", score, join, quoteIdentifier(tableName), identifier, offset, limit)
+		fieldsSQL, "c.score", score, join, quoteIdentifier(tableName), identifier, offset, limit)
 	rows, err := e.queryRows(ctx, query, countArgs...)
 	return decodeRows(rows, kind), count, err
 }
@@ -519,17 +547,117 @@ func uniqueStrings(values []string) []string {
 	return result
 }
 
-func qualifySelectFields(fieldsSQL, alias string) string {
-	parts := strings.Split(fieldsSQL, ", ")
-	for i, part := range parts {
-		if strings.Contains(part, " AS ") {
-			pieces := strings.SplitN(part, " AS ", 2)
-			parts[i] = alias + "." + pieces[0] + " AS " + pieces[1]
-		} else {
-			parts[i] = alias + "." + part
+func globalSearchCandidateLimit(req *types.SearchRequest) int {
+	return max(req.Offset, 0) + positiveOr(req.Limit, 30)
+}
+
+func expandSearchPlan(plan searchPlan, candidateLimit int) searchPlan {
+	expanded := plan
+	if plan.text != nil {
+		text := *plan.text
+		text.TopN = max(text.TopN, candidateLimit)
+		expanded.text = &text
+	}
+	if plan.dense != nil {
+		dense := *plan.dense
+		dense.TopN = max(dense.TopN, candidateLimit)
+		expanded.dense = &dense
+	}
+	return expanded
+}
+
+func searchHiddenSortFields(req *types.SearchRequest, mergeTables bool) []string {
+	if !mergeTables || req.OrderBy == nil || len(req.OrderBy.Fields) == 0 || len(req.SelectFields) == 0 || containsString(req.SelectFields, "*") {
+		return nil
+	}
+	fields := make([]string, 0, len(req.OrderBy.Fields))
+	for _, order := range req.OrderBy.Fields {
+		if order.Field == "_score" || containsString(req.SelectFields, order.Field) || containsString(fields, order.Field) {
+			continue
+		}
+		fields = append(fields, order.Field)
+	}
+	return fields
+}
+
+func mergeSearchChunks(chunks []map[string]interface{}, req *types.SearchRequest, plan searchPlan) []map[string]interface{} {
+	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
+		sort.SliceStable(chunks, func(i, j int) bool {
+			for _, order := range req.OrderBy.Fields {
+				comparison := compareSearchValues(chunks[i][order.Field], chunks[j][order.Field], order.Field)
+				if comparison == 0 {
+					continue
+				}
+				if order.Type == types.SortDesc {
+					return comparison > 0
+				}
+				return comparison < 0
+			}
+			return false
+		})
+	} else if plan.text != nil || plan.dense != nil {
+		sort.SliceStable(chunks, func(i, j int) bool {
+			return compareSearchValues(chunks[i]["_score"], chunks[j]["_score"], "_score") > 0
+		})
+	}
+	offset := min(max(req.Offset, 0), len(chunks))
+	limit := positiveOr(req.Limit, 30)
+	end := min(offset+limit, len(chunks))
+	return chunks[offset:end]
+}
+
+func compareSearchValues(left, right interface{}, field string) int {
+	if left == nil {
+		if right == nil {
+			return 0
+		}
+		return -1
+	}
+	if right == nil {
+		return 1
+	}
+	leftNumber, leftNumeric := searchSortNumber(left, field)
+	rightNumber, rightNumeric := searchSortNumber(right, field)
+	if leftNumeric && rightNumeric {
+		switch {
+		case leftNumber < rightNumber:
+			return -1
+		case leftNumber > rightNumber:
+			return 1
+		default:
+			return 0
 		}
 	}
-	return strings.Join(parts, ", ")
+	return strings.Compare(fmt.Sprint(left), fmt.Sprint(right))
+}
+
+func searchSortNumber(value interface{}, field string) (float64, bool) {
+	if values, ok := interfaceSlice(value); ok {
+		if len(values) == 0 {
+			return 0, false
+		}
+		var total float64
+		for _, item := range values {
+			number, ok := searchSortNumber(item, field)
+			if !ok {
+				return 0, false
+			}
+			total += number
+		}
+		return total / float64(len(values)), true
+	}
+	if number, ok := numberToFloat(value); ok {
+		return number, true
+	}
+	if number, ok := value.(json.Number); ok {
+		parsed, err := number.Float64()
+		return parsed, err == nil
+	}
+	if strings.HasSuffix(field, "_int") || strings.HasSuffix(field, "_flt") || field == "_score" {
+		parsed, err := strconv.ParseFloat(fmt.Sprint(value), 64)
+		return parsed, err == nil
+	}
+	return 0, false
 }
 
 func isDBMSHybridPlan(plan searchPlan) bool {

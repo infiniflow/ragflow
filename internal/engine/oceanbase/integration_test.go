@@ -56,7 +56,7 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 	suffix := strconv.FormatInt(time.Now().UnixNano(), 10)
 	tableName := "ragflow_go_compat_" + suffix
 	datasetID := "kb-" + suffix
-	defer engine.DropChunkStore(context.Background(), tableName, "")
+	defer cleanupChunkStore(t, engine, tableName, "")
 
 	if err := engine.CreateChunkStore(ctx, tableName, datasetID, 2, "naive"); err != nil {
 		t.Fatal(err)
@@ -126,7 +126,7 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 	memoryTable := "memory_go_compat_" + suffix
 	memoryA := "memory-a-" + suffix
 	memoryB := "memory-b-" + suffix
-	defer engine.DropChunkStore(context.Background(), memoryTable, "")
+	defer cleanupChunkStore(t, engine, memoryTable, "")
 	if err := engine.CreateChunkStore(ctx, memoryTable, memoryA, 2, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 
 	tenantID := "go_compat_" + suffix
 	metadataTable := metadataTableName(tenantID)
-	defer engine.DropMetadataStore(context.Background(), tenantID)
+	defer cleanupMetadataStore(t, engine, tenantID)
 	if err := engine.CreateMetadataStore(ctx, tenantID); err != nil {
 		t.Fatal(err)
 	}
@@ -210,8 +210,20 @@ func envOr(name, fallback string) string {
 	return fallback
 }
 
-func TestIntegrationTableNamesAreIsolated(t *testing.T) {
-	if got := fmt.Sprintf("ragflow_go_compat_%d", time.Now().UnixNano()); !identifierPattern.MatchString(got) {
-		t.Fatalf("temporary integration table name is invalid: %s", got)
+func cleanupChunkStore(t *testing.T, engine *Engine, tableName, datasetID string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := engine.DropChunkStore(ctx, tableName, datasetID); err != nil {
+		t.Errorf("clean up chunk store %s: %v", tableName, err)
+	}
+}
+
+func cleanupMetadataStore(t *testing.T, engine *Engine, tenantID string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := engine.DropMetadataStore(ctx, tenantID); err != nil {
+		t.Errorf("clean up metadata store for tenant %s: %v", tenantID, err)
 	}
 }

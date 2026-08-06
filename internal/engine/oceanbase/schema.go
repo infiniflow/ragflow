@@ -95,15 +95,15 @@ var chunkColumns = []columnDefinition{
 	{"mom_id", "VARCHAR(256) NULL"},
 }
 
-var chunkExtraColumns = []columnDefinition{
-	{"_order_id", "INTEGER NULL"},
-	{"group_id", "VARCHAR(256) NULL"},
-	{"mom_id", "VARCHAR(256) NULL"},
-	{"chunk_data", "JSON NULL"},
-	{"raptor_kwd", "VARCHAR(256) NULL"},
-	{"raptor_layer_int", "INTEGER NULL"},
-	{"n_hop_with_weight", "LONGTEXT NULL"},
-}
+var chunkExtraColumns = selectColumnDefinitions(chunkColumns,
+	"_order_id",
+	"group_id",
+	"mom_id",
+	"chunk_data",
+	"raptor_kwd",
+	"raptor_layer_int",
+	"n_hop_with_weight",
+)
 
 var memoryColumns = []columnDefinition{
 	{"id", "VARCHAR(256) NOT NULL PRIMARY KEY"},
@@ -498,6 +498,22 @@ func lockPrefix(tableName string) string {
 		return "ob_memory_"
 	}
 	return "ob_"
+}
+
+func selectColumnDefinitions(columns []columnDefinition, names ...string) []columnDefinition {
+	byName := make(map[string]columnDefinition, len(columns))
+	for _, column := range columns {
+		byName[column.name] = column
+	}
+	selected := make([]columnDefinition, 0, len(names))
+	for _, name := range names {
+		column, ok := byName[name]
+		if !ok {
+			panic("missing column definition: " + name)
+		}
+		selected = append(selected, column)
+	}
+	return selected
 }
 
 func quoteIdentifier(identifier string) string { return "`" + identifier + "`" }

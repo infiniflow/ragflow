@@ -106,15 +106,31 @@ func scanCount(row *sql.Row) (int64, error) {
 	return count, nil
 }
 
-func selectExpression(field, kind string) (string, string, error) {
+type selectField struct {
+	column string
+	alias  string
+}
+
+func (field selectField) expression(tableAlias string) string {
+	prefix := ""
+	if tableAlias != "" {
+		prefix = quoteIdentifier(tableAlias) + "."
+	}
+	expression := prefix + quoteIdentifier(field.column)
+	if field.alias != field.column {
+		expression += " AS " + quoteIdentifier(field.alias)
+	}
+	return expression
+}
+
+func parseSelectField(field, kind string) (*selectField, error) {
 	if field == "_score" {
-		return "", "", nil
+		return nil, nil
 	}
 	if field == "row_id()" || field == "row_id" {
-		return quoteIdentifier(identifierField(kind)) + " AS " + quoteIdentifier("row_id"), "row_id", nil
+		return &selectField{column: identifierField(kind), alias: "row_id"}, nil
 	}
 	column := field
-	alias := field
 	if kind == "memory" {
 		column = mapMemoryField(field)
 	}
@@ -122,22 +138,31 @@ func selectExpression(field, kind string) (string, string, error) {
 		column = "_order_id"
 	}
 	if field == "content_embed" && kind == "memory" {
-		return "", "", nil
+		return nil, nil
 	}
-	if vectorColumnPattern.MatchString(column) {
-		return quoteIdentifier(column), alias, nil
+	if !vectorColumnPattern.MatchString(column) && !validColumns(kind)[column] {
+		return nil, fmt.Errorf("unknown %s field: %s", kind, field)
 	}
-	if !validColumns(kind)[column] {
-		return "", "", fmt.Errorf("unknown %s field: %s", kind, field)
+	return &selectField{column: column, alias: field}, nil
+}
+
+func selectExpression(field, kind string) (string, string, error) {
+	parsed, err := parseSelectField(field, kind)
+	if err != nil || parsed == nil {
+		return "", "", err
 	}
-	expression := quoteIdentifier(column)
-	if alias != column {
-		expression += " AS " + quoteIdentifier(alias)
-	}
-	return expression, alias, nil
+	return parsed.expression(""), parsed.alias, nil
 }
 
 func buildSelectFields(fields []string, kind string) (string, []string, error) {
+	return buildSelectFieldsWithAlias(fields, kind, "")
+}
+
+func buildQualifiedSelectFields(fields []string, kind, tableAlias string) (string, []string, error) {
+	return buildSelectFieldsWithAlias(fields, kind, tableAlias)
+}
+
+func buildSelectFieldsWithAlias(fields []string, kind, tableAlias string) (string, []string, error) {
 	if len(fields) == 0 || containsString(fields, "*") {
 		fields = defaultFields(kind)
 	}
@@ -148,16 +173,16 @@ func buildSelectFields(fields []string, kind string) (string, []string, error) {
 	aliases := make([]string, 0, len(fields))
 	seen := make(map[string]bool)
 	for _, field := range fields {
-		expression, alias, err := selectExpression(field, kind)
+		parsed, err := parseSelectField(field, kind)
 		if err != nil {
 			return "", nil, err
 		}
-		if expression == "" || seen[alias] {
+		if parsed == nil || seen[parsed.alias] {
 			continue
 		}
-		seen[alias] = true
-		expressions = append(expressions, expression)
-		aliases = append(aliases, alias)
+		seen[parsed.alias] = true
+		expressions = append(expressions, parsed.expression(tableAlias))
+		aliases = append(aliases, parsed.alias)
 	}
 	return strings.Join(expressions, ", "), aliases, nil
 }

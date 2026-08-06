@@ -134,11 +134,11 @@ func (e *Engine) DeleteDocument(ctx context.Context, indexName, docID string) er
 	if err := validateIdentifier(indexName); err != nil {
 		return err
 	}
-	primaryKey := "id"
 	if strings.HasPrefix(indexName, "skill_") {
 		_, err := e.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE skill_id = ? OR REPLACE(skill_id, '/', '_') = ?", quoteIdentifier(indexName)), docID, docID)
 		return err
 	}
+	primaryKey := "id"
 	_, err := e.db.ExecContext(ctx, fmt.Sprintf("DELETE FROM %s WHERE %s = ?", quoteIdentifier(indexName), quoteIdentifier(primaryKey)), docID)
 	return err
 }
