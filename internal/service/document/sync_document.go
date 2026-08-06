@@ -76,20 +76,32 @@ func (s *DocumentService) Upsert(ctx context.Context, input service.DocumentUpse
 	}
 
 	// store location
-	location := syncDocumentLocation(input.SourceType, input.DocumentID, filename)
-	if existing != nil && existing.Location != nil && *existing.Location != "" {
-		location = *existing.Location
-	}
+	location := syncDocumentStagedLocation(input.SourceType, input.DocumentID, filename)
+	cleanupLocation := true
+	defer func() {
+		if cleanupLocation {
+			_ = storageImpl.Remove(context.WithoutCancel(ctx), kb.ID, location)
+		}
+	}()
 	if err = storageImpl.Put(ctx, kb.ID, location, input.SourceDocument.Blob); err != nil {
+		cleanupLocation = false
 		return service.DocumentUpsertResult{}, err
 	}
 
 	// not existing, insert a new 'file'
 	if existing == nil {
-		return s.insertSyncDocument(ctx, input, filename, location, string(filetype), contentHash, tenantID)
+		result, insertErr := s.insertSyncDocument(ctx, input, filename, location, string(filetype), contentHash, tenantID)
+		if insertErr == nil {
+			cleanupLocation = false
+		}
+		return result, insertErr
 	}
 	// just update the file
-	return s.updateSyncDocument(ctx, input, existing, filename, location, string(filetype), contentHash)
+	result, updateErr := s.updateSyncDocument(ctx, input, existing, filename, location, string(filetype), contentHash)
+	if updateErr == nil {
+		cleanupLocation = false
+	}
+	return result, updateErr
 }
 
 // insertSyncDocument inserts a new synced document and file-manager link.
@@ -102,13 +114,15 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 	}
 
 	// create the 'doc'
-	doc := s.newDatasetDocument(kb, tenantID, filename, location, filetype, copyJSONMap(kb.ParserConfig), input.SourceType, int64(len(input.SourceDocument.Blob)), input.SourceDocument.Blob)
+	doc := s.newDatasetDocument(kb, tenantID, filename, "", filetype, copyJSONMap(kb.ParserConfig), input.SourceType, int64(len(input.SourceDocument.Blob)), input.SourceDocument.Blob)
 	doc.ID = input.DocumentID
-	doc.ContentHash = &contentHash
 
 	// put 'file' in mysql `document`
 	if err = s.InsertDocument(doc); err != nil {
 		return service.DocumentUpsertResult{}, err
+	}
+	if err = s.publishSyncDocument(ctx, doc, location, contentHash); err != nil {
+		return service.DocumentUpsertResult{}, s.rollbackAddFileFromKBError(ctx, doc, kb.ID, err)
 	}
 	// link 'file' 2 'file_system'
 	if err = s.addFileFromKB(ctx, doc, kbFolder.ID, kb.TenantID); err != nil {
@@ -126,26 +140,25 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 func (s *DocumentService) updateSyncDocument(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document, filename, location, filetype, contentHash string) (service.DocumentUpsertResult, error) {
 	suffix := strings.TrimPrefix(strings.ToLower(filepath.Ext(filename)), ".")
 	updates := map[string]any{
-		"name":         filename,
-		"location":     location,
-		"size":         int64(len(input.SourceDocument.Blob)),
-		"type":         filetype,
-		"suffix":       suffix,
-		"content_hash": contentHash,
-		"source_type":  input.SourceType,
+		"name":        filename,
+		"size":        int64(len(input.SourceDocument.Blob)),
+		"type":        filetype,
+		"suffix":      suffix,
+		"source_type": input.SourceType,
 	}
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, updates); err != nil {
 		return service.DocumentUpsertResult{}, err
 	}
 
 	doc.Name = &filename
-	doc.Location = &location
 	doc.Size = int64(len(input.SourceDocument.Blob))
 	doc.Type = filetype
 	doc.Suffix = suffix
-	doc.ContentHash = &contentHash
 	doc.SourceType = input.SourceType
 
+	if err := s.publishSyncDocument(ctx, doc, location, contentHash); err != nil {
+		return service.DocumentUpsertResult{}, err
+	}
 	// update new updated file
 	if err := s.updateSyncDocumentFile(ctx, input, doc); err != nil {
 		return service.DocumentUpsertResult{}, err
@@ -155,6 +168,19 @@ func (s *DocumentService) updateSyncDocument(ctx context.Context, input service.
 		return service.DocumentUpsertResult{}, err
 	}
 	return service.DocumentUpsertResult{DocID: doc.ID, Action: service.DocumentActionUpdated}, nil
+}
+
+// publishSyncDocument publishes the staged object key after the document row exists.
+func (s *DocumentService) publishSyncDocument(ctx context.Context, doc *entity.Document, location, contentHash string) error {
+	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+		"location":     location,
+		"content_hash": contentHash,
+	}); err != nil {
+		return err
+	}
+	doc.Location = &location
+	doc.ContentHash = &contentHash
+	return nil
 }
 
 // afterSyncDocumentUpsert writes metadata and optionally enqueues parsing.
@@ -264,14 +290,14 @@ func syncDocumentFilename(name, extension, fallback string) string {
 	return name[:baseLimit] + ext
 }
 
-// syncDocumentLocation returns a deterministic object-storage key.
-func syncDocumentLocation(sourceType, docID, filename string) string {
+// syncDocumentStagedLocation returns a unique object-storage key for unpublished synced content.
+func syncDocumentStagedLocation(sourceType, docID, filename string) string {
 	ext := filepath.Ext(filename)
 	sourceType = strings.Trim(strings.ReplaceAll(sourceType, "/", "_"), "_")
 	if sourceType == "" {
 		sourceType = "sync"
 	}
-	return fmt.Sprintf("sync/%s/%s%s", sourceType, docID, ext)
+	return fmt.Sprintf("sync/%s/.staged/%s/%s%s", sourceType, utility.GenerateToken(), docID, ext)
 }
 
 // copyJSONMap returns a shallow copy of a JSON map.
