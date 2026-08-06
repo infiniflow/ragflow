@@ -29,8 +29,8 @@ export function BlueprintSection({
     options,
     handleSelect,
     instructionPath,
-    pageExample,
-    handlePageExampleChange,
+    example,
+    handleExampleChange,
   } = useBlueprintSelection({ form, selectedTemplateIndex, presets, builtins });
 
   if (presets.length === 0) {
@@ -63,8 +63,8 @@ export function BlueprintSection({
 
             <div className="flex h-[50vh] min-h-0 flex-col">
               <MarkdownEditor
-                content={String(pageExample ?? '')}
-                onChange={handlePageExampleChange}
+                content={String(example ?? '')}
+                onChange={handleExampleChange}
               />
             </div>
           </div>

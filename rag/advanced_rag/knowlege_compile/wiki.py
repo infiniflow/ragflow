@@ -2628,7 +2628,9 @@ WIKI_REFINE_WRITER_SYSTEM_TEMPLATE = (
     "- Prose that just rephrases what was already said.\n\n"
     "# Language\n"
     "Write in the SAME LANGUAGE as the source text. Never translate content.\n\n"
-    "# Page structure — CRITICAL\n"
+    "# Additional writing instructions — CRITICAL\n"
+    "{template_instruction}\n\n"
+    "# Page structure example — CRITICAL\n"
     "{template_example}\n\n"
     "# What NOT to do\n"
     "- Do NOT dump raw bullet points from the source as the entire content.\n"
@@ -2646,18 +2648,20 @@ WIKI_REFINE_WRITER_SYSTEM_TEMPLATE = (
 )
 
 
-def _build_refine_writer_system(example: str | None) -> str:
-    """Return the writer system prompt with the configured page-structure
-    example (or ``WIKI_TEMPLATE_EXAMPLE`` when ``example`` is empty /
-    whitespace-only). Used by the REFINE phase to let each compilation
-    template override just the page-structure section.
+def _build_refine_writer_system(instruction: str | None = None, page_example: str | None = None) -> str:
+    """Return the writer system prompt with separate instruction and page
+    example overrides. Empty values use the built-in defaults.
 
     The default-filled form is also exposed as
     ``WIKI_REFINE_WRITER_SYSTEM`` for callers that don't have an
     override to apply.
     """
-    body = (example or "").strip() or WIKI_TEMPLATE_EXAMPLE
-    return WIKI_REFINE_WRITER_SYSTEM_TEMPLATE.format(template_example=body)
+    instruction_body = (instruction or "").strip() or "Follow the page structure and writing requirements below."
+    example_body = (page_example or "").strip() or WIKI_TEMPLATE_EXAMPLE
+    return WIKI_REFINE_WRITER_SYSTEM_TEMPLATE.format(
+        template_instruction=instruction_body,
+        template_example=example_body,
+    )
 
 
 WIKI_REFINE_WRITER_SYSTEM = _build_refine_writer_system(None)
@@ -3261,13 +3265,15 @@ async def _wiki_write_page_simple(
     all_plan_slugs: list[str],
     chat_mdl,
     llm_timeout: int,
+    instruction: Optional[str] = None,
+    page_example: Optional[str] = None,
     example: Optional[str] = None,
 ) -> str:
     """Single LLM call → markdown content.
 
-    ``example`` is the per-template ``parser_config.example`` override
-    for the writer's page-structure section. Falsy / whitespace-only
-    values fall through to ``WIKI_TEMPLATE_EXAMPLE``.
+    ``instruction`` and ``page_example`` are the separate per-template
+    writer overrides. ``example`` is retained as a fallback for callers
+    using the older combined configuration field.
     """
     own_slug = plan_item.get("slug") or ""
     available = [s for s in all_plan_slugs if s and s != own_slug]
@@ -3292,7 +3298,10 @@ async def _wiki_write_page_simple(
 
     content = await _wiki_chat_text(
         chat_mdl,
-        _build_refine_writer_system(example),
+        _build_refine_writer_system(
+            instruction=instruction,
+            page_example=page_example or example,
+        ),
         user_prompt,
         temperature=0.15,
         llm_timeout=llm_timeout,
@@ -3532,6 +3541,8 @@ async def wiki_refine_from_plan(
     merge_shrink_threshold: float = WIKI_MERGE_BODY_SHRINK_THRESHOLD,
     force_rerun: bool = False,
     callback: Optional[Callable] = None,
+    instruction: Optional[str] = None,
+    page_example: Optional[str] = None,
     example: Optional[str] = None,
 ) -> list[dict]:
     """Phase 4 (REFINE) — KB-scoped.
@@ -3726,6 +3737,8 @@ async def wiki_refine_from_plan(
                     all_plan_slugs,
                     chat_mdl,
                     llm_timeout,
+                    instruction=instruction,
+                    page_example=page_example,
                     example=example,
                 )
                 if not content_md_raw:
