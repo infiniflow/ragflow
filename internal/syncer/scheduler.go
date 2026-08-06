@@ -18,6 +18,8 @@ package syncer
 
 import (
 	"context"
+	"errors"
+	"ragflow/internal/common"
 	"ragflow/internal/service"
 	"time"
 )
@@ -42,7 +44,7 @@ func NewScheduler(pollInterval time.Duration, queue chan<- TaskEnvelope, taskSer
 // Run starts recovery and periodic task discovery.
 func (s *Scheduler) Run(ctx context.Context) error {
 	if err := s.scan(ctx); err != nil && ctx.Err() == nil {
-		log.Errorf("syncer scheduler scan failed: %v", err)
+		common.Error("syncer scheduler scan failed", err)
 	}
 	ticker := time.NewTicker(s.pollInterval)
 	defer ticker.Stop()
@@ -52,7 +54,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			if err := s.scan(ctx); err != nil && ctx.Err() == nil {
-				log.Errorf("syncer scheduler scan failed: %v", err)
+				common.Error("syncer scheduler scan failed", err)
 			}
 		}
 	}
@@ -68,10 +70,12 @@ func (s *Scheduler) scan(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	var claimErr error
 	for _, task := range tasks {
 		claimed, err := s.taskService.Claim(ctx, task.ID)
 		if err != nil {
-			return err
+			claimErr = errors.Join(claimErr, err)
+			continue
 		}
 		if !claimed {
 			continue
@@ -82,5 +86,5 @@ func (s *Scheduler) scan(ctx context.Context) error {
 		case s.queue <- TaskEnvelope{TaskID: task.ID}:
 		}
 	}
-	return nil
+	return claimErr
 }

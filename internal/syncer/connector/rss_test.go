@@ -82,10 +82,12 @@ func TestRSSConnectorOpenPrune(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 2 {
-		t.Fatalf("prune snapshot len = %d, want 2", len(batch.Documents))
+	if len(batch.Documents) != 3 {
+		t.Fatalf("prune snapshot len = %d, want 3", len(batch.Documents))
 	}
-	if batch.Documents[0].SourceID != expectedRSSSourceID("entry-old") || batch.Documents[1].SourceID != expectedRSSSourceID("entry-new") {
+	if batch.Documents[0].SourceID != expectedRSSSourceID("entry-old") ||
+		batch.Documents[1].SourceID != expectedRSSSourceID("entry-new") ||
+		batch.Documents[2].SourceID != expectedRSSSourceID("entry-future") {
 		t.Fatalf("unexpected prune ids: %+v", batch.Documents)
 	}
 }
@@ -110,6 +112,13 @@ func staticRSSFeed(ctx context.Context, feedURL string) ([]byte, error) {
       <pubDate>Sat, 03 Jan 2026 00:00:00 +0000</pubDate>
       <description><![CDATA[<p>New body</p>]]></description>
       <category>news</category>
+    </item>
+    <item>
+      <guid>entry-future</guid>
+      <title>Future title</title>
+      <link>https://example.com/future</link>
+      <pubDate>Tue, 06 Jan 2026 00:00:00 +0000</pubDate>
+      <description><![CDATA[<p>Future body</p>]]></description>
     </item>
   </channel>
 </rss>`), nil

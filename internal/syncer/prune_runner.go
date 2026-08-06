@@ -53,24 +53,27 @@ func (r *PruneRunner) Run(ctx context.Context, taskContext service.SyncTaskConte
 	if err = r.pruneService.ClearSnapshot(ctx, taskContext.Task.ID); err != nil {
 		return err
 	}
+	clearSnapshot := func() {
+		_ = r.pruneService.ClearSnapshot(context.WithoutCancel(ctx), taskContext.Task.ID)
+	}
 	for {
 		batch, nextErr := session.NextBatch(ctx)
 		if errors.Is(nextErr, io.EOF) {
 			break
 		}
 		if nextErr != nil {
-			_ = r.pruneService.ClearSnapshot(ctx, taskContext.Task.ID)
+			clearSnapshot()
 			return nextErr
 		}
 		if err = r.pruneService.AddSnapshotBatch(ctx, taskContext.Task.ID, batch.Documents); err != nil {
-			_ = r.pruneService.ClearSnapshot(ctx, taskContext.Task.ID)
+			clearSnapshot()
 			return err
 		}
 	}
 
 	removed, err := r.pruneService.DeleteStale(ctx, taskContext)
 	if err != nil {
-		_ = r.pruneService.ClearSnapshot(ctx, taskContext.Task.ID)
+		clearSnapshot()
 		return err
 	}
 	return r.taskService.CompletePrune(ctx, taskContext, removed)

@@ -69,6 +69,9 @@ func (s *DocumentService) Upsert(ctx context.Context, input service.DocumentUpse
 		return service.DocumentUpsertResult{}, err
 	}
 	if existing != nil && existing.ContentHash != nil && *existing.ContentHash == contentHash {
+		if err := s.ensureSyncDocumentPostWrite(ctx, input, existing); err != nil {
+			return service.DocumentUpsertResult{}, err
+		}
 		return service.DocumentUpsertResult{DocID: input.DocumentID, Action: service.DocumentActionSkipped}, nil
 	}
 
@@ -167,6 +170,29 @@ func (s *DocumentService) afterSyncDocumentUpsert(ctx context.Context, input ser
 		return nil
 	}
 	return s.StartParseDocuments(ctx, doc, &input.TaskContext.Knowledgebase, input.TaskContext.Connector.TenantID, StartParseOptions{RerunWithDelete: rerun})
+}
+
+// ensureSyncDocumentPostWrite retries dependent work before an unchanged document is skipped.
+func (s *DocumentService) ensureSyncDocumentPostWrite(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document) error {
+	if err := s.updateSyncDocumentFile(ctx, input, doc); err != nil {
+		return err
+	}
+	if len(input.SourceDocument.Metadata) > 0 && s.docEngine != nil {
+		if err := s.SetDocumentMetadata(ctx, doc.ID, input.SourceDocument.Metadata); err != nil {
+			return err
+		}
+	}
+	if !input.AutoParse {
+		return nil
+	}
+	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
+	if err != nil {
+		return err
+	}
+	if task != nil {
+		return nil
+	}
+	return s.StartParseDocuments(ctx, doc, &input.TaskContext.Knowledgebase, input.TaskContext.Connector.TenantID, StartParseOptions{})
 }
 
 // updateSyncDocumentFile updates the file-manager row linked to a synced document.

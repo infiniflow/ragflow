@@ -38,6 +38,7 @@ type Syncer struct {
 	worker      *TaskWorker
 	cancel      context.CancelFunc
 	workerGroup sync.WaitGroup
+	stopOnce    sync.Once
 	ShutdownCh  chan struct{}
 }
 
@@ -121,13 +122,17 @@ func (s *Syncer) StartContext(ctx context.Context) error {
 
 // Stop cancels the scheduler and waits for workers to exit.
 func (s *Syncer) Stop() {
-	if s == nil || s.cancel == nil {
+	if s == nil {
 		return
 	}
-	s.cancel()
-	s.workerGroup.Wait()
-	close(s.ShutdownCh)
-} // Potential
+	s.stopOnce.Do(func() {
+		if s.cancel != nil {
+			s.cancel()
+		}
+		s.workerGroup.Wait()
+		close(s.ShutdownCh)
+	})
+}
 
 // registerBuiltInConnectors registers datasource connectors available in the server binary.
 func registerBuiltInConnectors(registry *syncerconnector.Registry) {

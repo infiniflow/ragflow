@@ -94,50 +94,20 @@ func (c *GitHubConnector) Validate(ctx context.Context) error {
 
 // OpenSync opens one GitHub sync session.
 func (c *GitHubConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncSession, error) {
-	documents, err := c.loadDocuments(ctx, request.WindowStart, request.WindowEnd)
-	if err != nil {
-		return nil, err
-	}
-	return &githubSyncSession{documents: documents, batchSize: c.batchSize}, nil
-}
-
-// OpenPrune opens one complete GitHub prune snapshot session.
-func (c *GitHubConnector) OpenPrune(ctx context.Context, request PruneRequest) (PruneSession, error) {
-	documents, err := c.loadDocuments(ctx, nil, time.Time{})
-	if err != nil {
-		return nil, err
-	}
-	slim := make([]SlimDocument, 0, len(documents))
-	for _, doc := range documents {
-		slim = append(slim, SlimDocument{SourceID: doc.SourceID})
-	}
-	return &githubPruneSession{documents: slim, batchSize: c.batchSize}, nil
-}
-
-// loadDocuments reads GitHub PRs and issues for the configured repos.
-func (c *GitHubConnector) loadDocuments(ctx context.Context, windowStart *time.Time, windowEnd time.Time) ([]SourceDocument, error) {
 	repos, err := c.listRepos(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var documents []SourceDocument
-	for _, repo := range repos {
-		if c.includePRs {
-			prs, err := c.listPullRequests(ctx, repo.FullName, windowStart, windowEnd)
-			if err != nil {
-				return nil, err
-			}
-			documents = append(documents, prs...)
-		}
-		if c.includeIssues {
-			issues, err := c.listIssues(ctx, repo.FullName, windowStart, windowEnd)
-			if err != nil {
-				return nil, err
-			}
-			documents = append(documents, issues...)
-		}
+	return &githubSyncSession{connector: c, repos: repos, batchSize: c.batchSize, stage: githubStagePRs, page: 1, windowStart: request.WindowStart, windowEnd: request.WindowEnd}, nil
+}
+
+// OpenPrune opens one complete GitHub prune snapshot session.
+func (c *GitHubConnector) OpenPrune(ctx context.Context, request PruneRequest) (PruneSession, error) {
+	repos, err := c.listRepos(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return documents, nil
+	return &githubPruneSession{connector: c, repos: repos, batchSize: c.batchSize, stage: githubStagePRs, page: 1}, nil
 }
 
 // listRepos returns configured repositories or all owner repositories.
@@ -179,75 +149,98 @@ func (c *GitHubConnector) listRepoEndpoint(ctx context.Context, path string) ([]
 	return repos, nil
 }
 
-// listPullRequests returns GitHub pull requests as source documents.
-func (c *GitHubConnector) listPullRequests(ctx context.Context, fullName string, windowStart *time.Time, windowEnd time.Time) ([]SourceDocument, error) {
-	documents := []SourceDocument{}
-	for page := 1; ; page++ {
-		query := url.Values{
-			"state":     {"all"},
-			"sort":      {"updated"},
-			"direction": {"desc"},
-			"per_page":  {strconv.Itoa(githubItemsPerPage)},
-			"page":      {strconv.Itoa(page)},
-		}
-		var batch []githubPullRequest
-		headers, err := c.getJSON(ctx, c.apiURL("/repos/"+fullName+"/pulls", query), &batch)
-		if err != nil {
-			return nil, err
-		}
-		stop := false
-		for _, pr := range batch {
-			if beforeOrAtWindowStart(pr.UpdatedAt, windowStart) {
-				stop = true
-				break
-			}
-			if afterWindowEnd(pr.UpdatedAt, windowEnd) {
-				continue
-			}
-			documents = append(documents, pr.toSourceDocument(fullName))
-		}
-		if stop || !hasNextPage(headers) || len(batch) == 0 {
+// listPullRequestPage returns one page of GitHub pull requests.
+func (c *GitHubConnector) listPullRequestPage(ctx context.Context, fullName string, page, pageSize int, windowStart *time.Time, windowEnd time.Time) ([]SourceDocument, bool, error) {
+	var batch []githubPullRequest
+	headers, err := c.getJSON(ctx, c.apiURL("/repos/"+fullName+"/pulls", githubListQuery(page, pageSize)), &batch)
+	if err != nil {
+		return nil, false, err
+	}
+	documents := make([]SourceDocument, 0, len(batch))
+	doneByWindow := false
+	for _, pr := range batch {
+		if beforeOrAtWindowStart(pr.UpdatedAt, windowStart) {
+			doneByWindow = true
 			break
 		}
+		if afterWindowEnd(pr.UpdatedAt, windowEnd) {
+			continue
+		}
+		documents = append(documents, pr.toSourceDocument(fullName))
 	}
-	return documents, nil
+	done := doneByWindow || !hasNextPage(headers) || len(batch) == 0
+	return documents, done, nil
 }
 
-// listIssues returns GitHub issues as source documents.
-func (c *GitHubConnector) listIssues(ctx context.Context, fullName string, windowStart *time.Time, windowEnd time.Time) ([]SourceDocument, error) {
-	documents := []SourceDocument{}
-	for page := 1; ; page++ {
-		query := url.Values{
-			"state":     {"all"},
-			"sort":      {"updated"},
-			"direction": {"desc"},
-			"per_page":  {strconv.Itoa(githubItemsPerPage)},
-			"page":      {strconv.Itoa(page)},
+// listIssuePage returns one page of GitHub issues.
+func (c *GitHubConnector) listIssuePage(ctx context.Context, fullName string, page, pageSize int, windowStart *time.Time, windowEnd time.Time) ([]SourceDocument, bool, error) {
+	var batch []githubIssue
+	headers, err := c.getJSON(ctx, c.apiURL("/repos/"+fullName+"/issues", githubListQuery(page, pageSize)), &batch)
+	if err != nil {
+		return nil, false, err
+	}
+	documents := make([]SourceDocument, 0, len(batch))
+	doneByWindow := false
+	for _, issue := range batch {
+		if issue.PullRequest != nil {
+			continue
 		}
-		var batch []githubIssue
-		headers, err := c.getJSON(ctx, c.apiURL("/repos/"+fullName+"/issues", query), &batch)
-		if err != nil {
-			return nil, err
-		}
-		stop := false
-		for _, issue := range batch {
-			if issue.PullRequest != nil {
-				continue
-			}
-			if beforeOrAtWindowStart(issue.UpdatedAt, windowStart) {
-				stop = true
-				break
-			}
-			if afterWindowEnd(issue.UpdatedAt, windowEnd) {
-				continue
-			}
-			documents = append(documents, issue.toSourceDocument(fullName))
-		}
-		if stop || !hasNextPage(headers) || len(batch) == 0 {
+		if beforeOrAtWindowStart(issue.UpdatedAt, windowStart) {
+			doneByWindow = true
 			break
 		}
+		if afterWindowEnd(issue.UpdatedAt, windowEnd) {
+			continue
+		}
+		documents = append(documents, issue.toSourceDocument(fullName))
 	}
-	return documents, nil
+	done := doneByWindow || !hasNextPage(headers) || len(batch) == 0
+	return documents, done, nil
+}
+
+// listPullRequestSlimPage returns one page of GitHub pull request IDs.
+func (c *GitHubConnector) listPullRequestSlimPage(ctx context.Context, fullName string, page, pageSize int) ([]SlimDocument, bool, error) {
+	var batch []githubPullRequest
+	headers, err := c.getJSON(ctx, c.apiURL("/repos/"+fullName+"/pulls", githubListQuery(page, pageSize)), &batch)
+	if err != nil {
+		return nil, false, err
+	}
+	documents := make([]SlimDocument, 0, len(batch))
+	for _, pr := range batch {
+		documents = append(documents, SlimDocument{SourceID: pr.HTMLURL})
+	}
+	return documents, !hasNextPage(headers) || len(batch) == 0, nil
+}
+
+// listIssueSlimPage returns one page of GitHub issue IDs.
+func (c *GitHubConnector) listIssueSlimPage(ctx context.Context, fullName string, page, pageSize int) ([]SlimDocument, bool, error) {
+	var batch []githubIssue
+	headers, err := c.getJSON(ctx, c.apiURL("/repos/"+fullName+"/issues", githubListQuery(page, pageSize)), &batch)
+	if err != nil {
+		return nil, false, err
+	}
+	documents := make([]SlimDocument, 0, len(batch))
+	for _, issue := range batch {
+		if issue.PullRequest != nil {
+			continue
+		}
+		documents = append(documents, SlimDocument{SourceID: issue.HTMLURL})
+	}
+	return documents, !hasNextPage(headers) || len(batch) == 0, nil
+}
+
+// githubListQuery builds standard GitHub list query parameters.
+func githubListQuery(page, pageSize int) url.Values {
+	if pageSize <= 0 {
+		pageSize = defaultGitHubBatchSize
+	}
+	return url.Values{
+		"state":     {"all"},
+		"sort":      {"updated"},
+		"direction": {"desc"},
+		"per_page":  {strconv.Itoa(pageSize)},
+		"page":      {strconv.Itoa(page)},
+	}
 }
 
 // getJSON fetches a GitHub API response into out.
@@ -293,23 +286,48 @@ func (c *GitHubConnector) apiURL(path string, query url.Values) string {
 }
 
 type githubSyncSession struct {
-	documents []SourceDocument
-	batchSize int
-	index     int
+	connector   *GitHubConnector
+	repos       []githubRepo
+	repoIndex   int
+	stage       string
+	page        int
+	batchSize   int
+	windowStart *time.Time
+	windowEnd   time.Time
+	buffer      []SourceDocument
 }
 
 // NextBatch returns the next GitHub document batch.
 func (s *githubSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
-	if s.index >= len(s.documents) {
-		return SyncBatch{}, io.EOF
+	documents := make([]SourceDocument, 0, s.batchSize)
+	if len(s.buffer) > 0 {
+		n := s.batchSize
+		if n > len(s.buffer) {
+			n = len(s.buffer)
+		}
+		documents = append(documents, s.buffer[:n]...)
+		s.buffer = s.buffer[n:]
 	}
-	end := s.index + s.batchSize
-	if end > len(s.documents) {
-		end = len(s.documents)
+	for len(documents) < s.batchSize {
+		if s.repoIndex >= len(s.repos) {
+			if len(documents) == 0 {
+				return SyncBatch{}, io.EOF
+			}
+			break
+		}
+		batch, err := s.nextDocumentPage(ctx)
+		if err != nil {
+			return SyncBatch{}, err
+		}
+		remaining := s.batchSize - len(documents)
+		if len(batch) > remaining {
+			documents = append(documents, batch[:remaining]...)
+			s.buffer = append(s.buffer, batch[remaining:]...)
+			break
+		}
+		documents = append(documents, batch...)
 	}
-	batch := SyncBatch{Documents: s.documents[s.index:end]}
-	s.index = end
-	return batch, nil
+	return SyncBatch{Documents: documents}, nil
 }
 
 // Close closes the GitHub sync session.
@@ -318,28 +336,162 @@ func (s *githubSyncSession) Close() error {
 }
 
 type githubPruneSession struct {
-	documents []SlimDocument
+	connector *GitHubConnector
+	repos     []githubRepo
+	repoIndex int
+	stage     string
+	page      int
 	batchSize int
-	index     int
+	buffer    []SlimDocument
 }
 
 // NextBatch returns the next GitHub prune snapshot batch.
 func (s *githubPruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
-	if s.index >= len(s.documents) {
-		return PruneBatch{}, io.EOF
+	documents := make([]SlimDocument, 0, s.batchSize)
+	if len(s.buffer) > 0 {
+		n := s.batchSize
+		if n > len(s.buffer) {
+			n = len(s.buffer)
+		}
+		documents = append(documents, s.buffer[:n]...)
+		s.buffer = s.buffer[n:]
 	}
-	end := s.index + s.batchSize
-	if end > len(s.documents) {
-		end = len(s.documents)
+	for len(documents) < s.batchSize {
+		if s.repoIndex >= len(s.repos) {
+			if len(documents) == 0 {
+				return PruneBatch{}, io.EOF
+			}
+			break
+		}
+		batch, err := s.nextSlimPage(ctx)
+		if err != nil {
+			return PruneBatch{}, err
+		}
+		remaining := s.batchSize - len(documents)
+		if len(batch) > remaining {
+			documents = append(documents, batch[:remaining]...)
+			s.buffer = append(s.buffer, batch[remaining:]...)
+			break
+		}
+		documents = append(documents, batch...)
 	}
-	batch := PruneBatch{Documents: s.documents[s.index:end]}
-	s.index = end
-	return batch, nil
+	return PruneBatch{Documents: documents}, nil
 }
 
 // Close closes the GitHub prune session.
 func (s *githubPruneSession) Close() error {
 	return nil
+}
+
+const (
+	githubStagePRs    = "prs"
+	githubStageIssues = "issues"
+)
+
+// nextDocumentPage fetches one GitHub API page for sync.
+func (s *githubSyncSession) nextDocumentPage(ctx context.Context) ([]SourceDocument, error) {
+	repo := s.repos[s.repoIndex]
+	switch s.stage {
+	case githubStagePRs:
+		if !s.connector.includePRs {
+			s.advanceStage()
+			return nil, nil
+		}
+		docs, done, err := s.connector.listPullRequestPage(ctx, repo.FullName, s.page, s.batchSize, s.windowStart, s.windowEnd)
+		if err != nil {
+			return nil, err
+		}
+		if done {
+			s.advanceStage()
+		} else {
+			s.page++
+		}
+		return docs, nil
+	case githubStageIssues:
+		if !s.connector.includeIssues {
+			s.advanceRepo()
+			return nil, nil
+		}
+		docs, done, err := s.connector.listIssuePage(ctx, repo.FullName, s.page, s.batchSize, s.windowStart, s.windowEnd)
+		if err != nil {
+			return nil, err
+		}
+		if done {
+			s.advanceRepo()
+		} else {
+			s.page++
+		}
+		return docs, nil
+	default:
+		s.advanceRepo()
+		return nil, nil
+	}
+}
+
+// nextSlimPage fetches one GitHub API page for prune.
+func (s *githubPruneSession) nextSlimPage(ctx context.Context) ([]SlimDocument, error) {
+	repo := s.repos[s.repoIndex]
+	switch s.stage {
+	case githubStagePRs:
+		if !s.connector.includePRs {
+			s.advanceStage()
+			return nil, nil
+		}
+		docs, done, err := s.connector.listPullRequestSlimPage(ctx, repo.FullName, s.page, s.batchSize)
+		if err != nil {
+			return nil, err
+		}
+		if done {
+			s.advanceStage()
+		} else {
+			s.page++
+		}
+		return docs, nil
+	case githubStageIssues:
+		if !s.connector.includeIssues {
+			s.advanceRepo()
+			return nil, nil
+		}
+		docs, done, err := s.connector.listIssueSlimPage(ctx, repo.FullName, s.page, s.batchSize)
+		if err != nil {
+			return nil, err
+		}
+		if done {
+			s.advanceRepo()
+		} else {
+			s.page++
+		}
+		return docs, nil
+	default:
+		s.advanceRepo()
+		return nil, nil
+	}
+}
+
+// advanceStage moves a GitHub session from PRs to issues.
+func (s *githubSyncSession) advanceStage() {
+	s.stage = githubStageIssues
+	s.page = 1
+}
+
+// advanceRepo moves a GitHub session to the next repository.
+func (s *githubSyncSession) advanceRepo() {
+	s.repoIndex++
+	s.stage = githubStagePRs
+	s.page = 1
+}
+
+// advanceStage moves a GitHub prune session from PRs to issues.
+func (s *githubPruneSession) advanceStage() {
+	s.stage = githubStageIssues
+	s.page = 1
+}
+
+// advanceRepo moves a GitHub prune session to the next repository.
+func (s *githubPruneSession) advanceRepo() {
+	s.repoIndex++
+	s.stage = githubStagePRs
+	s.page = 1
 }
 
 type githubRepo struct {

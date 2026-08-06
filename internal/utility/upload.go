@@ -59,7 +59,11 @@ func FetchRemoteFileSafelyWithTimeout(ctx context.Context, rawURL string, maxSiz
 		}
 
 		// codeql[go/request-forgery] False positive: the loop above
-		resp, err := client.Get(currentURL) // #nosec G107
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, currentURL, nil)
+		if err != nil {
+			return nil, nil, "", fmt.Errorf("failed to create request: %w", err)
+		}
+		resp, err := client.Do(req) // `#nosec` G107
 		if err != nil {
 			return nil, nil, "", fmt.Errorf("failed to fetch URL: %w", err)
 		}

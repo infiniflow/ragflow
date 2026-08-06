@@ -33,6 +33,8 @@ import (
 	"time"
 
 	"ragflow/internal/utility"
+
+	"github.com/zeebo/xxh3"
 )
 
 const (
@@ -105,8 +107,11 @@ func (c *RSSConnector) OpenSync(ctx context.Context, request SyncRequest) (SyncS
 
 	documents := make([]SourceDocument, 0, len(entries))
 	for _, entry := range entries {
+		if !request.WindowEnd.IsZero() && entry.updatedAt.After(request.WindowEnd) {
+			continue
+		}
 		if !request.FromBeginning && request.WindowStart != nil { // not reindex
-			if !entry.updatedAt.After(*request.WindowStart) || entry.updatedAt.After(request.WindowEnd) {
+			if !entry.updatedAt.After(*request.WindowStart) {
 				continue
 			}
 		}
@@ -248,6 +253,7 @@ func (e rssEntry) semanticIdentifier() string {
 // toSourceDocument converts one feed entry into the syncer model.
 func (e rssEntry) toSourceDocument(feedURL string) SourceDocument {
 	body := e.renderText()
+	fingerprint := rssFingerprint(body)
 	metadata := map[string]any{"feed_url": feedURL}
 	if e.link != "" {
 		metadata["link"] = e.link
@@ -266,6 +272,7 @@ func (e rssEntry) toSourceDocument(feedURL string) SourceDocument {
 		UpdatedAt:          e.updatedAt,
 		SizeBytes:          int64(len(body)),
 		Metadata:           metadata,
+		Fingerprint:        fingerprint,
 	}
 }
 
@@ -412,10 +419,13 @@ func parseAtomXML(data []byte) ([]rssEntry, error) {
 
 // withDefaults fills missing stable fields with deterministic fallbacks.
 func (e rssEntry) withDefaults() rssEntry {
-	if e.updatedAt.IsZero() {
-		e.updatedAt = time.Now().UTC()
-	}
 	return e
+}
+
+// rssFingerprint returns a deterministic body fingerprint.
+func rssFingerprint(body string) string {
+	sum := xxh3.Hash128([]byte(body)).Bytes()
+	return hex.EncodeToString(sum[:])
 }
 
 // rssCategories returns RSS category labels.

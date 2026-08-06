@@ -66,6 +66,10 @@ func (w *TaskWorker) loop(ctx context.Context) {
 func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 	taskContext, err := w.taskService.GetContext(ctx, envelope.TaskID)
 	if err != nil {
+		if ctx.Err() != nil {
+			_ = w.taskService.RescheduleClaimed(context.WithoutCancel(ctx), envelope.TaskID)
+			return
+		}
 		_ = w.taskService.Fail(ctx, envelope.TaskID, "", err)
 		return
 	}
@@ -76,6 +80,10 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 	defer w.locker.Unlock(taskContext.Connector.ID)
 
 	if err = w.coordinator.Execute(ctx, taskContext); err != nil {
+		if ctx.Err() != nil {
+			_ = w.taskService.RescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID)
+			return
+		}
 		_ = w.taskService.Fail(ctx, taskContext.Task.ID, taskContext.Connector.ID, fmt.Errorf("sync task failed: %w", err))
 	}
 }

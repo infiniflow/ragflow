@@ -291,8 +291,11 @@ func TestConnectorLockSerializesSameConnector(t *testing.T) {
 	if scheduled == 0 {
 		t.Fatalf("expected one same-connector task to be rescheduled")
 	}
-	if sink.maxConcurrent > 1 {
-		t.Fatalf("same connector ran concurrently: %d", sink.maxConcurrent)
+	sink.mu.Lock()
+	maxConcurrent := sink.maxConcurrent
+	sink.mu.Unlock()
+	if maxConcurrent > 1 {
+		t.Fatalf("same connector ran concurrently: %d", maxConcurrent)
 	}
 }
 

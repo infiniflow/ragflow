@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 const (
@@ -84,13 +85,19 @@ func (d *SyncTaskDAO) DB() *gorm.DB {
 	return d.db
 }
 
+type dueSyncTaskRow struct {
+	entity.SyncLogs
+	ConnectorRefreshFreq int64          `gorm:"column:connector_refresh_freq"`
+	ConnectorPruneFreq   int64          `gorm:"column:connector_prune_freq"`
+	ConnectorConfig      entity.JSONMap `gorm:"column:connector_config"`
+}
+
 // ListDueTasks returns due schedule tasks across SYNC and PRUNE.
 func (d *SyncTaskDAO) ListDueTasks(ctx context.Context, now time.Time, limit int) ([]entity.SyncLogs, error) {
-	var rows []entity.SyncLogs
-	// TODO
+	var rows []dueSyncTaskRow
 	if err := d.db.WithContext(ctx).
 		Model(&entity.SyncLogs{}).
-		Select("sync_logs.*").
+		Select("sync_logs.*, connector.refresh_freq AS connector_refresh_freq, connector.prune_freq AS connector_prune_freq, connector.config AS connector_config").
 		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
 		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
 		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
@@ -103,14 +110,13 @@ func (d *SyncTaskDAO) ListDueTasks(ctx context.Context, now time.Time, limit int
 
 	tasks := make([]entity.SyncLogs, 0, limit)
 	for _, row := range rows {
-		taskContext, err := d.GetTaskContext(ctx, row.ID)
-		if err != nil {
-			return nil, err
-		}
-		if !isDue(taskContext, now) {
+		if !isDue(row.SyncLogs, row.ConnectorRefreshFreq, row.ConnectorPruneFreq, row.ConnectorConfig, now) {
 			continue
 		}
-		tasks = append(tasks, row)
+		if _, err := d.GetTaskContext(ctx, row.ID); err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, row.SyncLogs)
 		if len(tasks) >= limit {
 			break
 		}
@@ -161,9 +167,21 @@ func (d *SyncTaskDAO) MarkConnectorRunning(ctx context.Context, connectorID stri
 
 // RescheduleClaimed puts a claimed task back into schedule state.
 func (d *SyncTaskDAO) RescheduleClaimed(ctx context.Context, taskID string) error {
-	return d.db.WithContext(ctx).Model(&entity.SyncLogs{}).
-		Where("id = ? AND status = ?", taskID, SyncStatusRunning).
-		Update("status", SyncStatusSchedule).Error
+	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var task entity.SyncLogs
+		if err := tx.WithContext(ctx).Where("id = ? AND status = ?", taskID, SyncStatusRunning).First(&task).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		if err := tx.Model(&entity.SyncLogs{}).
+			Where("id = ? AND status = ?", taskID, SyncStatusRunning).
+			Update("status", SyncStatusSchedule).Error; err != nil {
+			return err
+		}
+		return tx.Model(&entity.Connector{}).Where("id = ? AND status = ?", task.ConnectorID, SyncStatusRunning).Update("status", SyncStatusSchedule).Error
+	})
 }
 
 // FailTask marks a task failed without advancing its poll waterline.
@@ -225,10 +243,16 @@ func (d *SyncTaskDAO) CompletePruneTask(ctx context.Context, taskContext SyncTas
 
 // RecoverStaleRunning restores timed-out running tasks to schedule.
 func (d *SyncTaskDAO) RecoverStaleRunning(ctx context.Context, now time.Time) (int64, error) {
-	var rows []entity.SyncLogs
+	type staleRunningTaskRow struct {
+		ID                   string     `gorm:"column:id"`
+		ConnectorID          string     `gorm:"column:connector_id"`
+		TimeStarted          *time.Time `gorm:"column:time_started"`
+		ConnectorTimeoutSecs int64      `gorm:"column:connector_timeout_secs"`
+	}
+	var rows []staleRunningTaskRow
 	if err := d.db.WithContext(ctx).
 		Model(&entity.SyncLogs{}).
-		Select("sync_logs.*").
+		Select("sync_logs.id, sync_logs.connector_id, sync_logs.time_started, connector.timeout_secs AS connector_timeout_secs").
 		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
 		Where("sync_logs.status = ?", SyncStatusRunning).
 		Scan(&rows).Error; err != nil {
@@ -238,25 +262,21 @@ func (d *SyncTaskDAO) RecoverStaleRunning(ctx context.Context, now time.Time) (i
 	connectorIDs := map[string]struct{}{}
 
 	for _, row := range rows {
-		taskContext, err := d.GetTaskContext(ctx, row.ID)
-		if err != nil {
-			return recovered, err
-		}
-		if taskContext.Task.TimeStarted == nil {
+		if row.TimeStarted == nil {
 			continue
 		}
-		timeout := time.Duration(taskContext.Connector.TimeoutSecs) * time.Second
+		timeout := time.Duration(row.ConnectorTimeoutSecs) * time.Second
 		if timeout <= 0 {
 			timeout = time.Hour
 		}
-		if taskContext.Task.TimeStarted.Add(timeout).After(now) {
+		if row.TimeStarted.Add(timeout).After(now) {
 			continue
 		}
-		if err := d.RescheduleClaimed(ctx, taskContext.Task.ID); err != nil {
+		if err := d.RescheduleClaimed(ctx, row.ID); err != nil {
 			return recovered, err
 		}
 		recovered++
-		connectorIDs[taskContext.Connector.ID] = struct{}{}
+		connectorIDs[row.ConnectorID] = struct{}{}
 	}
 
 	if recovered == 0 {
@@ -273,6 +293,14 @@ func (d *SyncTaskDAO) RecoverStaleRunning(ctx context.Context, now time.Time) (i
 
 // createScheduledTask creates the next Python-compatible scheduled task.
 func createScheduledTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, taskType string, fromBeginning bool, pollRangeStart *time.Time, totalDocsIndexed int64) error {
+	var lockRow entity.Connector2Kb
+	if err := tx.WithContext(ctx).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("connector_id = ? AND kb_id = ?", connectorID, kbID).
+		First(&lockRow).Error; err != nil {
+		return err
+	}
+
 	var existing int64
 	if err := tx.WithContext(ctx).Model(&entity.SyncLogs{}).
 		Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, kbID, taskType, SyncStatusSchedule).
@@ -303,27 +331,27 @@ func createScheduledTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, ta
 	}).Error
 }
 
-// isDue refresh_freq and prune_freq scheduling semantics.
-func isDue(row SyncTaskContext, now time.Time) bool {
-	if row.Task.UpdateDate == nil {
+// isDue applies refresh_freq and prune_freq scheduling semantics.
+func isDue(task entity.SyncLogs, refreshFreq, pruneFreq int64, config map[string]any, now time.Time) bool {
+	if task.UpdateDate == nil {
 		return true
 	}
 	var freqMinutes int64
-	switch row.Task.TaskType {
+	switch task.TaskType {
 	case TaskTypeSync:
-		freqMinutes = row.Connector.RefreshFreq
+		freqMinutes = refreshFreq
 	case TaskTypePrune:
-		if !syncConnectorConfigBool(row.Connector.Config, "sync_deleted_files") {
+		if !syncConnectorConfigBool(config, "sync_deleted_files") {
 			return false
 		}
-		freqMinutes = row.Connector.PruneFreq
+		freqMinutes = pruneFreq
 	default:
 		return false
 	}
 	if freqMinutes <= 0 {
 		return true
 	}
-	return row.Task.UpdateDate.Before(now.Add(-time.Duration(freqMinutes) * time.Minute))
+	return task.UpdateDate.Before(now.Add(-time.Duration(freqMinutes) * time.Minute))
 }
 
 // syncConnectorConfigBool reads a Python JSON bool/string flag.

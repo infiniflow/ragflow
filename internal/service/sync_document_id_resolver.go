@@ -45,6 +45,10 @@ type DocumentStore interface {
 	ListFingerprints(ctx context.Context, kbID, sourceType string) (map[string]string, error)
 }
 
+type pairDocumentStore interface {
+	GetFingerprintsByIDs(ctx context.Context, kbID, sourceType string, ids []string) (map[string]string, error)
+}
+
 // DocumentIDResolver applies Python-compatible legacy/new ID rules.
 type DocumentIDResolver struct {
 	store DocumentStore
@@ -59,6 +63,22 @@ func NewDocumentIDResolver(store DocumentStore) *DocumentIDResolver {
 func (r *DocumentIDResolver) Resolve(ctx context.Context, kbID, connectorID, sourceType, sourceID string) (ResolvedDocumentID, error) {
 	legacyID := Hash128(connectorID + ":" + sourceID)
 	newID := Hash128(kbID + ":" + connectorID + ":" + sourceID)
+
+	if store, ok := r.store.(pairDocumentStore); ok {
+		fingerprints, err := store.GetFingerprintsByIDs(ctx, kbID, sourceType, []string{legacyID, newID})
+		if err != nil {
+			return ResolvedDocumentID{}, err
+		}
+		docID := newID
+		if _, ok := fingerprints[legacyID]; ok {
+			docID = legacyID
+		}
+		stored := fingerprints[legacyID]
+		if stored == "" {
+			stored = fingerprints[newID]
+		}
+		return ResolvedDocumentID{DocID: docID, LegacyID: legacyID, NewID: newID, StoredFingerprint: stored}, nil
+	}
 
 	existing, err := r.store.ListIDs(ctx, kbID, sourceType)
 	if err != nil {
@@ -103,6 +123,26 @@ func (s *GormDocumentStore) ListIDs(ctx context.Context, kbID, sourceType string
 		result[doc.ID] = struct{}{}
 	}
 
+	return result, nil
+}
+
+// GetFingerprintsByIDs returns fingerprints for the requested candidate IDs.
+func (s *GormDocumentStore) GetFingerprintsByIDs(ctx context.Context, kbID, sourceType string, ids []string) (map[string]string, error) {
+	var docs []entity.Document
+	if err := dao.GetDB().WithContext(ctx).
+		Select("id", "content_hash").
+		Where("kb_id = ? AND source_type = ? AND id IN ?", kbID, sourceType, ids).
+		Find(&docs).Error; err != nil {
+		return nil, err
+	}
+	result := make(map[string]string, len(docs))
+	for _, doc := range docs {
+		if doc.ContentHash == nil {
+			result[doc.ID] = ""
+			continue
+		}
+		result[doc.ID] = *doc.ContentHash
+	}
 	return result, nil
 }
 

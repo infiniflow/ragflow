@@ -150,8 +150,17 @@ func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext s
 			break
 		}
 
-		delay := r.config.ItemRetryBaseDelay * time.Duration(1<<(attempt-1))
-		delay += time.Duration(rand.Int63n(int64(r.config.ItemRetryBaseDelay / 2)))
+		shift := attempt - 1
+		if shift > 30 {
+			shift = 30
+		}
+		delay := r.config.ItemRetryBaseDelay * time.Duration(1<<shift)
+		if delay < 0 {
+			delay = time.Hour
+		}
+		if jitterMax := r.config.ItemRetryBaseDelay / 2; jitterMax > 0 {
+			delay += time.Duration(rand.Int63n(int64(jitterMax)))
+		}
 
 		select {
 		case <-ctx.Done():
