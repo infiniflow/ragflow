@@ -70,6 +70,7 @@ class AgenticState(TypedDict, total=False):
     empty_result: bool
     final_answer: str
     loop: int
+    max_loops: int
     feedback: str  # replanning feedback
 
 
@@ -335,7 +336,7 @@ async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: d
     async def _drive():
         try:
             holder["state"] = await graph.ainvoke(
-                {"messages": messages},
+                {"messages": messages, "max_loops": max_loops},
                 {"recursion_limit": max(25, max_loops * 8)},
             )
         except Exception:
