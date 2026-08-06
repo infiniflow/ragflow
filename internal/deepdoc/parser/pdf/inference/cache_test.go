@@ -48,7 +48,7 @@ func newFakeStore() *fakeStore {
 
 func (s *fakeStore) Enabled() bool { return s.enabled }
 
-func (s *fakeStore) GetObj(key string, dest any) bool {
+func (s *fakeStore) GetObj(ctx context.Context, key string, dest any) bool {
 	atomic.AddInt32(&s.gets, 1)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -59,7 +59,7 @@ func (s *fakeStore) GetObj(key string, dest any) bool {
 	return json.Unmarshal(raw, dest) == nil
 }
 
-func (s *fakeStore) SetObj(key string, value any, _ time.Duration) bool {
+func (s *fakeStore) SetObj(ctx context.Context, key string, value any, _ time.Duration) bool {
 	atomic.AddInt32(&s.sets, 1)
 	raw, err := json.Marshal(value)
 	if err != nil {

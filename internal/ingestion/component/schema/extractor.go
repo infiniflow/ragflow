@@ -16,6 +16,23 @@
 
 package schema
 
+import "ragflow/internal/common"
+
+// TagLabel is a single labeled record from the tag definition file:
+// a piece of content and the tags associated with it.
+type TagLabel struct {
+	Content string   `json:"content"`
+	Tags    []string `json:"tags"`
+}
+
+// TaggedChunk is the result of tagging a chunk: the chunk content, the
+// matched tags, and their computed relevance weights.
+type TaggedChunk struct {
+	Content    string         `json:"content"`
+	Tags       []string       `json:"tags"`
+	TagWeights map[string]int `json:"tag_weights,omitempty"`
+}
+
 // ExtractorFromUpstream is the upstream payload consumed by the
 // Extractor component.
 //
@@ -88,17 +105,45 @@ type ExtractorParam struct {
 	// AutoQuestions enables automatic question generation with a fixed
 	// prompt. The value determines the top-N count.
 	AutoQuestions int `json:"auto_questions,omitempty"`
+
+	// AutoTags enables tag assignment on chunks. When > 0, the
+	// component runs a two-phase tagger: Phase 1 uses Jaccard
+	// matching against tag source examples; Phase 2 uses the LLM
+	// for unmatched chunks. The value determines the top-N tags.
+	AutoTags int `json:"auto_tags,omitempty"`
+
+	// TagFileID references a tag-definition file stored in object
+	// storage. Used only when AutoTags > 0 and no inline tag
+	// source text is wired in.
+	TagFileID string `json:"tag_file_id"`
+
+	// EnableMetadata enables automatic structured metadata extraction
+	// with a fixed prompt. When > 0, runEnableMetadata asks the LLM to
+	// fill the fields listed in Metadata as a JSON object and
+	// merges the result into chunk["metadata"] (mirrors Python's
+	// gen_metadata_task path; see doc_metadata_go_port_research.md).
+	EnableMetadata int `json:"enable_metadata,omitempty"`
+
+	// Metadata lists the target field definitions for
+	// EnableMetadata (mirrors parser_config.metadata / built_in_metadata:
+	// {key, type, description, enum}). When empty, EnableMetadata is a
+	// no-op (nothing to extract).
+	Metadata []common.MetadataFieldDef `json:"metadata,omitempty"`
 }
 
 // Defaults returns the default ExtractorParam.
 func (ExtractorParam) Defaults() ExtractorParam {
 	return ExtractorParam{
-		FieldName:     "",
-		LLMID:         "",
-		SystemPrompt:  "",
-		Prompt:        "",
-		AutoKeywords:  0,
-		AutoQuestions: 0,
+		FieldName:      "",
+		LLMID:          "",
+		SystemPrompt:   "",
+		Prompt:         "",
+		AutoKeywords:   0,
+		AutoQuestions:  0,
+		AutoTags:       0,
+		TagFileID:      "",
+		EnableMetadata: 0,
+		Metadata:       nil,
 	}
 }
 

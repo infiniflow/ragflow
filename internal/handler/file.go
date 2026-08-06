@@ -108,7 +108,8 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 		desc = descStr != "false"
 	}
 
-	result, err := h.fileService.ListFiles(userID, parentID, page, pageSize, orderby, desc, keywords)
+	ctx := c.Request.Context()
+	result, err := h.fileService.ListFiles(ctx, userID, parentID, page, pageSize, orderby, desc, keywords)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -133,8 +134,9 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 	}
 	userID := user.ID
 
+	ctx := c.Request.Context()
 	// Get root folder
-	rootFolder, err := h.fileService.GetRootFolder(userID)
+	rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -167,8 +169,9 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Get parent folder with permission check
-	parentFolder, err := h.fileService.GetParentFolder(userID, fileID)
+	parentFolder, err := h.fileService.GetParentFolder(ctx, userID, fileID)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -201,8 +204,9 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Get all parent folders with permission check
-	parentFolders, err := h.fileService.GetAllParentFolders(userID, fileID)
+	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -234,8 +238,9 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Get all parent folders with permission check
-	parentFolders, err := h.fileService.GetAllParentFolders(userID, fileID)
+	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
 	if err != nil {
 		jsonInternalError(c, err)
 		return
@@ -271,8 +276,15 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 	userID := user.ID
 
 	contentType := c.ContentType()
+	ctx := c.Request.Context()
 
 	if strings.Contains(contentType, "multipart/form-data") {
+		uploadLimit := file.DeploymentUploadMaxBytes()
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, uploadLimit)
+		if cl := c.Request.ContentLength; cl > uploadLimit {
+			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "request body exceeds deployment upload limit")
+			return
+		}
 		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
 			common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "Failed to parse multipart form: "+err.Error())
 			return
@@ -285,7 +297,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		}
 		parentID := c.PostForm("parent_id")
 		if parentID == "" {
-			rootFolder, err := h.fileService.GetRootFolder(userID)
+			rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
 			if err != nil {
 				jsonInternalError(c, err)
 				return
@@ -306,7 +318,8 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 			}
 		}
 
-		result, err := h.fileService.UploadFile(userID, parentID, files)
+		ctx := c.Request.Context()
+		result, err := h.fileService.UploadFile(ctx, userID, parentID, files, uploadLimit)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
@@ -325,7 +338,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 		parentID := req.ParentID
 		if parentID == "" {
-			rootFolder, err := h.fileService.GetRootFolder(userID)
+			rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
 			if err != nil {
 				jsonInternalError(c, err)
 				return
@@ -333,7 +346,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 			parentID = rootFolder["id"].(string)
 		}
 
-		result, err := h.fileService.CreateFolder(userID, req.Name, parentID, req.Type)
+		result, err := h.fileService.CreateFolder(ctx, userID, req.Name, parentID, req.Type)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
@@ -427,7 +440,8 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 		return
 	}
 
-	success, message := h.fileService.MoveFiles(user.ID, req.SrcFileIDs, req.DestFileID, req.NewName)
+	ctx := c.Request.Context()
+	success, message := h.fileService.MoveFiles(ctx, user.ID, req.SrcFileIDs, req.DestFileID, req.NewName)
 	if !success {
 		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, message)
 		return
@@ -459,8 +473,9 @@ func (h *FileHandler) Download(c *gin.Context) {
 		return
 	}
 
+	ctx := c.Request.Context()
 	// Get file metadata and check permission
-	file, err := h.fileService.GetFileContent(userID, fileID)
+	file, err := h.fileService.GetFileContent(ctx, userID, fileID)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, err.Error())
 		return
@@ -477,17 +492,18 @@ func (h *FileHandler) Download(c *gin.Context) {
 	var blob []byte
 	var getErr error
 	if file.Location != nil && *file.Location != "" {
-		blob, getErr = storageImpl.Get(file.ParentID, *file.Location)
+		blob, getErr = storageImpl.Get(ctx, file.ParentID, *file.Location)
 	}
 
 	// If blob is empty, try fallback via file2document
 	if len(blob) == 0 {
-		storageAddr, err := h.fileService.GetStorageAddress(fileID)
+		ctx := c.Request.Context()
+		storageAddr, err := h.fileService.GetStorageAddress(ctx, fileID)
 		if err != nil {
 			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to get file storage address: "+err.Error())
 			return
 		}
-		blob, getErr = storageImpl.Get(storageAddr.Bucket, storageAddr.Name)
+		blob, getErr = storageImpl.Get(ctx, storageAddr.Bucket, storageAddr.Name)
 	}
 
 	// Check if we got valid data
@@ -541,17 +557,19 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 
 	var req document.LinkToDatasetsRequest
 	// Tolerate bind errors: a malformed or empty body simply leaves the fields
-	// empty, which the validate_request-style check below reports as missing
+	// nil, which the validate_request-style check below reports as missing
 	// arguments — matching Python's @validate_request behaviour and code.
 	_ = c.ShouldBindJSON(&req)
 
-	// Mirror Python @validate_request("file_ids", "kb_ids"): missing arguments
-	// return ARGUMENT_ERROR (101) with data=null and the aggregated message.
+	// Mirror Python @validate_request("file_ids", "kb_ids"): a key absent from
+	// the body returns ARGUMENT_ERROR (101) with data=null and the aggregated
+	// message. Python's check is key-presence based, so an explicit empty list
+	// is valid — e.g. kb_ids: [] in replace mode unlinks all datasets.
 	var missing []string
-	if len(req.FileIDs) == 0 {
+	if req.FileIDs == nil {
 		missing = append(missing, "file_ids")
 	}
-	if len(req.KbIDs) == 0 {
+	if req.KbIDs == nil {
 		missing = append(missing, "kb_ids")
 	}
 	if len(missing) > 0 {
@@ -559,7 +577,13 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 		return
 	}
 
-	if err := h.file2DocumentService.LinkToDatasets(user.ID, &req); err != nil {
+	mode := strings.ToLower(c.DefaultQuery("mode", "replace"))
+	if mode != "add" && mode != "replace" {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "mode must be 'add' or 'replace'")
+		return
+	}
+	ctx := c.Request.Context()
+	if err := h.file2DocumentService.LinkToDatasets(ctx, user.ID, &req, mode); err != nil {
 		common.ResponseWithCodeData(c, linkToDatasetsErrorCode(err), nil, err.Error())
 		return
 	}

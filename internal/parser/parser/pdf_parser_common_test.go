@@ -85,18 +85,54 @@ func TestPDFParseResultToJSON_NormalizesCoreFields(t *testing.T) {
 	if got, want := res.JSON[1]["doc_type_kwd"], "image"; got != want {
 		t.Fatalf("JSON[1].doc_type_kwd = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[1]["page_number"], 1; got != want {
+	if got, want := res.JSON[1]["page_number"], 2; got != want {
 		t.Fatalf("JSON[1].page_number = %v, want %v", got, want)
 	}
 	secondPDFPositions, ok := res.JSON[1]["_pdf_positions"].([][]any)
 	if !ok {
 		t.Fatalf("JSON[1]._pdf_positions type = %T, want [][]any", res.JSON[1]["_pdf_positions"])
 	}
-	if len(secondPDFPositions) != 1 || secondPDFPositions[0][0] != 1 {
-		t.Fatalf("JSON[1]._pdf_positions = %+v, want canonical 1-based positions", secondPDFPositions)
+	if len(secondPDFPositions) != 1 || secondPDFPositions[0][0] != 2 {
+		t.Fatalf("JSON[1]._pdf_positions = %+v, want canonical 1-based positions (DeepDoc page 1 → 2)", secondPDFPositions)
 	}
 	if got, want := res.JSON[1]["image"], "data:image/png;base64,aGVsbG8="; got != want {
 		t.Fatalf("JSON[1].image = %v, want %v", got, want)
+	}
+}
+
+// TestNormalizePDFPageNumber_UnconditionalIncrement pins the contract that
+// DeepDoc emits 0-indexed page numbers and normalizePDFPageNumber is the
+// SINGLE conversion point to 1-indexed. It must add +1 unconditionally —
+// not just for v<=0 — so that downstream AddPositions (a passthrough) and
+// PositionsFromMatrix (which subtracts 1 for the 0-indexed PDFium engine)
+// each see a consistent 1-indexed value.
+func TestNormalizePDFPageNumber_UnconditionalIncrement(t *testing.T) {
+	cases := []struct {
+		name string
+		in   any
+		want int
+		ok   bool
+	}{
+		{"zero (first page, 0-indexed)", 0, 1, true},
+		{"one (second page, 0-indexed)", 1, 2, true},
+		{"five", 5, 6, true},
+		{"int64", int64(2), 3, true},
+		{"float64", float64(3), 4, true},
+		{"page list takes last element", []any{float64(0), float64(1)}, 2, true},
+		{"int list takes last element", []int{0, 1, 2}, 3, true},
+		{"empty list", []any{}, 0, false},
+		{"non-numeric", "x", 0, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := normalizePDFPageNumber(tc.in)
+			if ok != tc.ok {
+				t.Fatalf("ok = %v, want %v", ok, tc.ok)
+			}
+			if ok && got != tc.want {
+				t.Errorf("got = %d, want %d (unconditional +1)", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -120,8 +156,10 @@ func TestPDFParseResultToJSON_PreservesPositivePageNumbers(t *testing.T) {
 	}
 
 	res := pdfParseResultToJSON("one-based.pdf", parsed)
-	if got, want := res.JSON[0]["page_number"], 3; got != want {
-		t.Fatalf("JSON[1].page_number = %v, want %v", got, want)
+	// DeepDoc page 3 is 0-indexed (the 4th page); normalizePDFPageNumber
+	// converts it to 1-indexed page 4.
+	if got, want := res.JSON[0]["page_number"], 4; got != want {
+		t.Fatalf("JSON[0].page_number = %v, want %v", got, want)
 	}
 	if got, want := res.JSON[0]["doc_type_kwd"], "table"; got != want {
 		t.Fatalf("JSON[0].doc_type_kwd = %v, want %v", got, want)
@@ -167,11 +205,17 @@ func TestPDFParseResultToJSON_DefaultKeepsHeaderFooterLikePython(t *testing.T) {
 	if len(res.JSON) != 3 {
 		t.Fatalf("JSON len = %d, want 3", len(res.JSON))
 	}
+	// Sections are now sorted by (page, top, left). Header and Footer have
+	// no position data (page=0, top=0), Body has top=30, so the sorted order
+	// is Header/Footer (tied top=0, stable) then Body (top=30).
 	if got, want := res.JSON[0]["text"], "Header"; got != want {
 		t.Fatalf("JSON[0].text = %v, want %v", got, want)
 	}
-	if got, want := res.JSON[1]["text"], "Body"; got != want {
+	if got, want := res.JSON[1]["text"], "Footer"; got != want {
 		t.Fatalf("JSON[1].text = %v, want %v", got, want)
+	}
+	if got, want := res.JSON[2]["text"], "Body"; got != want {
+		t.Fatalf("JSON[2].text = %v, want %v", got, want)
 	}
 }
 

@@ -133,7 +133,7 @@ func TestTrackProgress_PassesThroughReturnValue(t *testing.T) {
 	// err path — exact identity preserved
 	want := errors.New("exact")
 	got := TrackProgress("Foo", rec.callback, func() error { return want })
-	if got != want {
+	if !errors.Is(got, want) {
 		t.Fatalf("err not propagated by identity: got %v (%T), want %v (%T)", got, got, want, want)
 	}
 

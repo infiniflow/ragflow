@@ -15,12 +15,20 @@
  */
 
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { SearchInput } from '@/components/ui/input';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useFetchInstanceModels } from '@/hooks/use-llm-request';
 import { IProviderModelItem } from '@/interfaces/request/llm';
-import { ListMinus, ListPlus, Loader2, Plus, Search } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import {
+  ListMinus,
+  ListPlus,
+  Loader2,
+  Plus,
+  Search,
+  ShieldCheck,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AddCustomModelDialog } from '../add-custom-model-dialog';
 import { mapModelKey } from '../available-models';
@@ -50,6 +58,8 @@ export function ModelsSection(props: ModelsSectionProps) {
     hideActions = false,
     hideIfEmpty = false,
     getFormValues,
+    verifyTransform,
+    instanceDetailsLoaded,
     onBlurSuppressChange,
     onInstanceModelsChange,
     onInstanceModelsEdited,
@@ -77,6 +87,8 @@ export function ModelsSection(props: ModelsSectionProps) {
   const {
     catalog,
     setCatalog,
+    updateCatalogModel,
+    clearCatalogOverride,
     manualListLoading,
     hasFetched,
     handleListModels,
@@ -87,6 +99,8 @@ export function ModelsSection(props: ModelsSectionProps) {
     resolveCreds,
     instanceModels,
     apiKeyValue: currentCreds.apiKey,
+    baseUrlValue: currentCreds.baseUrl,
+    instanceDetailsLoaded,
   });
 
   // 3a. Draft-only: locally-tracked "added models" list.
@@ -97,9 +111,33 @@ export function ModelsSection(props: ModelsSectionProps) {
   // or instance changes (rare in practice since the host remounts
   // the section on draft switch, but kept as a safety net).
   const [draftModels, setDraftModels] = useState<IProviderModelItem[]>([]);
+  // Tracks whether we've auto-populated the draft from the catalog for
+  // the current draft session. Prevents re-adding models the user has
+  // manually removed when the catalog refetches.
+  const hasAutoPopulatedDraftRef = useRef(false);
   useEffect(() => {
     setDraftModels([]);
+    hasAutoPopulatedDraftRef.current = false;
   }, [providerName, instanceName]);
+
+  // Auto-populate the draft's model list from the catalog on first
+  // fetch so the user doesn't have to click `+` on every row when
+  // creating a new instance. The user can still remove any auto-added
+  // model via the per-row `-` button - the flag above ensures we don't
+  // re-add removed models if the catalog is refetched (e.g. via the
+  // "List models" button). Pre-existing manual additions (e.g. a
+  // custom model added before the catalog resolved) are preserved by
+  // the merge-by-name setter below.
+  useEffect(() => {
+    if (!isDraftInstance) return;
+    if (hasAutoPopulatedDraftRef.current) return;
+    if (catalog.length === 0) return;
+    hasAutoPopulatedDraftRef.current = true;
+    setDraftModels((prev) => {
+      const existing = new Set(prev.map((m) => m.name));
+      return [...prev, ...catalog.filter((m) => !existing.has(m.name))];
+    });
+  }, [isDraftInstance, catalog]);
 
   const addDraftModel = useCallback((model: IProviderModelItem) => {
     setDraftModels((prev) =>
@@ -108,6 +146,11 @@ export function ModelsSection(props: ModelsSectionProps) {
   }, []);
   const removeDraftModel = useCallback((name: string) => {
     setDraftModels((prev) => prev.filter((m) => m.name !== name));
+  }, []);
+  const updateDraftModel = useCallback((item: IProviderModelItem) => {
+    setDraftModels((prev) =>
+      prev.map((m) => (m.name === item.name ? { ...m, ...item } : m)),
+    );
   }, []);
 
   // 4. Derived union list (instance ∪ catalog) + push to host.
@@ -124,12 +167,61 @@ export function ModelsSection(props: ModelsSectionProps) {
   const { search, tag, setSearch, setTag, filteredModels, allTags } =
     useModelsFilter(models);
 
-  // 6. Per-model verify state.
-  const { verify, handleVerify } = useModelVerify({
-    providerName,
-    resolveCreds,
-    instanceModels,
-  });
+  // 6. Per-model verify state + batch verify.
+  const { verify, handleVerify, batchVerifying, handleBatchVerify } =
+    useModelVerify({
+      providerName,
+      resolveCreds,
+      instanceModels,
+      instance,
+      getFormValues,
+      verifyTransform,
+    });
+
+  // 6a. Model selection for batch verify.
+  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
+
+  const toggleModel = useCallback((name: string) => {
+    setSelectedModels((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleAllFiltered = useCallback(() => {
+    setSelectedModels((prev) => {
+      const allSelected = filteredModels.every((m) => prev.has(m.name));
+      const next = new Set(prev);
+      if (allSelected) {
+        filteredModels.forEach((m) => next.delete(m.name));
+      } else {
+        filteredModels.forEach((m) => next.add(m.name));
+      }
+      return next;
+    });
+  }, [filteredModels]);
+
+  const filteredSelectedCount = useMemo(
+    () => filteredModels.filter((m) => selectedModels.has(m.name)).length,
+    [filteredModels, selectedModels],
+  );
+
+  const selectAllChecked: boolean | 'indeterminate' =
+    filteredSelectedCount === 0
+      ? false
+      : filteredSelectedCount === filteredModels.length
+        ? true
+        : 'indeterminate';
+
+  const handleBatchVerifyClick = useCallback(() => {
+    const selected = filteredModels.filter((m) => selectedModels.has(m.name));
+    handleBatchVerify(selected);
+  }, [filteredModels, selectedModels, handleBatchVerify]);
 
   // 7. Add / remove / batch toggle / custom add.
   const {
@@ -150,6 +242,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     filteredModels,
     addedSet,
     setCatalog,
+    clearCatalogOverride,
     addDraftModel,
     removeDraftModel,
     setDraftModelsList: setDraftModels,
@@ -164,10 +257,15 @@ export function ModelsSection(props: ModelsSectionProps) {
     handleEditSubmit,
     editLoading,
     customModelDialogFields,
+    providerFeatureKeys,
   } = useModelEdit({
     providerName,
     instanceName,
-    setCatalog,
+    addedSet,
+    isDraftInstance,
+    updateCatalogModel,
+    clearCatalogOverride,
+    updateDraftModel,
   });
 
   // Add-custom-model dialog open state (local UI state).
@@ -278,6 +376,33 @@ export function ModelsSection(props: ModelsSectionProps) {
           </div>
         </div>
 
+        <div className="flex items-center gap-2">
+          <Checkbox
+            checked={selectAllChecked}
+            onCheckedChange={toggleAllFiltered}
+            disabled={batchVerifying || filteredModels.length === 0}
+            aria-label={tSetting('selectAllFiltered')}
+          />
+          <span className="text-sm text-text-secondary">
+            {tSetting('selectAllFiltered')}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleBatchVerifyClick}
+            disabled={selectedModels.size === 0 || batchVerifying}
+            data-testid="models-batch-verify"
+            className="ml-auto"
+          >
+            {batchVerifying ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <ShieldCheck className="size-3" />
+            )}
+            {tSetting('batchVerifySelected', { count: selectedModels.size })}
+          </Button>
+        </div>
+
         <div className="bg-bg-card rounded-lg max-h-80 overflow-auto scrollbar-auto border border-border-button">
           {filteredModels.length === 0 ? (
             <div className="flex items-center justify-center text-text-secondary text-sm py-6 gap-2">
@@ -293,6 +418,8 @@ export function ModelsSection(props: ModelsSectionProps) {
                   isAdded={addedSet.has(model.name)}
                   verifyStatus={verify[model.name] ?? 'idle'}
                   hideActions={hideActions}
+                  isSelected={selectedModels.has(model.name)}
+                  onToggleSelect={() => toggleModel(model.name)}
                   onVerify={() => handleVerify(model)}
                   onAdd={() => handleAddModel(model)}
                   onRemove={() => handleRemoveModel(model)}
@@ -311,6 +438,7 @@ export function ModelsSection(props: ModelsSectionProps) {
         title={tSetting('addCustomModelTitle')}
         fields={customModelDialogFields}
         existingNames={models.map((m) => m.name)}
+        providerFeatureKeys={providerFeatureKeys}
         onSubmit={async (item) => {
           await handleAddCustom(item);
           setDialogOpen(false);
@@ -329,6 +457,7 @@ export function ModelsSection(props: ModelsSectionProps) {
         existingNames={models
           .filter((m) => m.name !== editingModel?.name)
           .map((m) => m.name)}
+        providerFeatureKeys={providerFeatureKeys}
         defaultValues={editDefaultValues}
         loading={editLoading}
         onSubmit={async (item) => {

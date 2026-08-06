@@ -1,4 +1,7 @@
+import { BuiltinPipelineItem } from '@/components/builtin-pipeline-form-field';
 import { DataFlowSelect } from '@/components/data-pipeline-select';
+import { ParseTypeItem } from '@/components/parse-type-form-field';
+import PipelineOperatorTabs from '@/components/pipeline-operator-tabs';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import {
   Card,
@@ -12,29 +15,27 @@ import { Form } from '@/components/ui/form';
 import { FormLayout } from '@/constants/form';
 import { ParseType } from '@/constants/knowledge';
 import {
-  BuiltinPipelineItem,
-  ParseTypeItem,
-} from '@/pages/dataset/dataset-setting/configuration/common-item';
+  useActiveTab,
+  usePipelineOperatorNodes,
+  useResetParserConfigOnPipelineChange,
+} from '@/hooks/use-pipeline-operator';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback, useEffect, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import ChunkMethodLearnMore from '../dataset-setting/chunk-method-learn-more';
 import LinkDataSource, {
   IDataSourceNodeProps,
 } from './components/link-data-source';
 import { formSchema } from './form-schema';
 import { GeneralForm } from './general-form';
 import {
-  useActiveTab,
   useConnectorHandlers,
   useFetchDatasetSettingOnMount,
   usePipelineDataList,
-  usePipelineOperatorNodes,
-  useResetParserConfigOnPipelineChange,
   useSaveDatasetSetting,
 } from './hooks';
-import PipelineOperatorTabs from './pipeline-operator-tabs';
 
 export default function DatasetSetting() {
   const { t } = useTranslation();
@@ -52,6 +53,7 @@ export default function DatasetSetting() {
       description: '',
       avatar: null,
       permission: '',
+      language: 'English',
       embedding_model: '',
       pagerank: 0,
       connectors: [],
@@ -176,7 +178,7 @@ export default function DatasetSetting() {
           </header>
         </CardHeader>
 
-        <CardContent className="p-0 flex-1 h-0 flex">
+        <CardContent className="p-0 flex-1 h-0 flex divide-x-0.5">
           <Form {...form}>
             <form
               onSubmit={form.handleSubmit(handleSubmit)}
@@ -248,6 +250,12 @@ export default function DatasetSetting() {
               </div>
             </form>
           </Form>
+
+          <div className="flex-1 p-5 overflow-auto">
+            {parseType === ParseType.BuiltIn && builtinPipelineId && (
+              <ChunkMethodLearnMore parserId={builtinPipelineId} />
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

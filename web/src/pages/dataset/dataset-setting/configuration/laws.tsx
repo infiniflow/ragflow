@@ -9,19 +9,26 @@ import {
 } from '../configuration-form-container';
 import { useKnowledgeBaseContext } from '../../contexts/knowledge-base-context';
 import { AutoMetadata } from './common-item';
+import { FormLayout } from '@/constants/form';
 
 export function LawsConfiguration() {
   const ownerTenantId = useKnowledgeBaseContext().knowledgeBase?.tenant_id;
   return (
     <MainContainer>
       <ConfigurationFormContainer>
-        <LayoutRecognizeFormField ownerTenantId={ownerTenantId}></LayoutRecognizeFormField>
+        <LayoutRecognizeFormField
+          ownerTenantId={ownerTenantId}
+        ></LayoutRecognizeFormField>
       </ConfigurationFormContainer>
 
       <ConfigurationFormContainer>
         <AutoMetadata />
-        <AutoKeywordsFormField></AutoKeywordsFormField>
-        <AutoQuestionsFormField></AutoQuestionsFormField>
+        <AutoKeywordsFormField
+          layout={FormLayout.Horizontal}
+        ></AutoKeywordsFormField>
+        <AutoQuestionsFormField
+          layout={FormLayout.Horizontal}
+        ></AutoQuestionsFormField>
       </ConfigurationFormContainer>
 
       {/* <ConfigurationFormContainer>

@@ -30,6 +30,8 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+
+	"gorm.io/gorm"
 )
 
 // MustRegisterChunker registers a single chunker component under
@@ -60,8 +62,8 @@ type imageUploadDecorator struct {
 	inner runtime.Component
 }
 
-func (d *imageUploadDecorator) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
-	out, err := d.inner.Invoke(ctx, inputs)
+func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	out, err := d.inner.Invoke(ctx, db, inputs)
 	if err != nil {
 		return nil, err
 	}
@@ -80,8 +82,19 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, inputs map[string]any
 		ck["id"] = common.ChunkID(docID, text)
 	}
 
-	if err := uploadChunkImages(ctx, chunks, ChunkImageUploader, kbID); err != nil {
-		return nil, err
+	// kb_id is empty only in canvas debug (dry-run) mode; production ingestion
+	// always supplies a KB, so kb_id == "" never occurs in normal operation.
+	// Image bytes are uploaded to MinIO only when a KB is present (i.e. a
+	// persist run); in debug we drop the raw bytes so they are not held in
+	// memory until a persist stage that will never run.
+	if kbID != "" {
+		if err := uploadChunkImages(ctx, chunks, ChunkImageUploader, kbID); err != nil {
+			return nil, err
+		}
+	} else {
+		for _, ck := range chunks {
+			delete(ck, "image")
+		}
 	}
 	return out, nil
 }

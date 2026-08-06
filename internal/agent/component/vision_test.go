@@ -288,7 +288,7 @@ func TestLLM_Invoke_ForwardsImagesToInvoker(t *testing.T) {
 
 	uri := "data:image/png;base64,iVBORw0KGgo="
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(context.Background(), nil, map[string]any{
 		"user_prompt":  "what is this?",
 		"visual_files": []string{uri},
 	})
@@ -320,7 +320,7 @@ func TestLLM_Invoke_NoVisualFiles_BackwardCompat(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(context.Background(), nil, map[string]any{
 		"user_prompt": "hi",
 	})
 	if err != nil {
@@ -350,7 +350,7 @@ func TestLLM_Invoke_VisualFilesAsString(t *testing.T) {
 
 	uri := "data:image/jpeg;base64,/9j/4AAQ"
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(context.Background(), nil, map[string]any{
 		"user_prompt":  "describe",
 		"visual_files": "see " + uri,
 	})

@@ -31,36 +31,56 @@ import (
 type Factory func(params map[string]any) (einotool.BaseTool, error)
 
 var registry = map[string]Factory{
-	"akshare":               buildAkShareTool,
-	"arxiv":                 buildArxivTool,
-	"bgpt":                  buildBGPTTool,
-	"code_exec":             noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
-	"crawler":               noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
-	"deepl":                 noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),
-	"duckduckgo":            buildDuckDuckGoTool,
-	"email":                 buildEmailTool,
-	"execute_sql":           buildExeSQLTool,
-	"exesql":                buildExeSQLTool,
-	"github":                buildGitHubTool,
-	"google":                buildGoogleTool,
-	"google_scholar":        buildGoogleScholarTool,
-	"google_scholar_search": buildGoogleScholarTool,
-	"jin10":                 noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
-	"keenable":              buildKeenableTool,
-	"pubmed":                buildPubMedTool,
-	"qweather":              noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
-	"retrieval":             buildRetrievalTool,
-	"search_my_dataset":     buildRetrievalTool,
-	"search_my_dateset":     buildRetrievalTool,
-	"searxng":               buildSearXNGTool,
-	"tavily":                buildTavilyTool,
-	"tavily_extract":        buildTavilyExtractTool,
-	"tushare":               noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
-	"wencai":                buildWencaiTool,
-	"web_crawler":           noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
-	"wikipedia":             buildWikipediaTool,
-	"wikipedia_search":      buildWikipediaTool,
-	"yahoo_finance":         buildYahooFinanceTool,
+	"akshare":                    buildAkShareTool,
+	"arxiv":                      buildArxivTool,
+	"bgpt":                       buildBGPTTool,
+	"code_exec":                  noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
+	"crawler":                    noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
+	"dataset_navigation_by_tree": noConfig("dataset_navigation_by_tree", func() einotool.BaseTool { return NewDatasetNavigationByTree() }),
+	"hybrid_search":              noConfig("hybrid_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolHybridSearch) }),
+	"vector_search":              noConfig("vector_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolVectorSearch) }),
+	"bm25_search":                noConfig("bm25_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolBM25Search) }),
+	"deepl":                      noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),
+	"duckduckgo":                 buildDuckDuckGoTool,
+	"email":                      buildEmailTool,
+	"execute_sql":                buildExeSQLTool,
+	"exesql":                     buildExeSQLTool,
+	"github":                     buildGitHubTool,
+	"google":                     buildGoogleTool,
+	"google_scholar":             buildGoogleScholarTool,
+	"google_scholar_search":      buildGoogleScholarTool,
+	"jin10":                      noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
+	"keenable":                   buildKeenableTool,
+	"pubmed":                     buildPubMedTool,
+	"qweather":                   noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
+	"querit":                     buildQueritTool,
+	"querit_search":              buildQueritTool,
+	"retrieval":                  buildRetrievalTool,
+	"search_my_dataset":          buildRetrievalTool,
+	"search_my_dateset":          buildRetrievalTool,
+	"searxng":                    buildSearXNGTool,
+	"tavily":                     buildTavilyTool,
+	"tavily_extract":             buildTavilyExtractTool,
+	"tushare":                    noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
+	"wencai":                     buildWencaiTool,
+	"web_crawler":                noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
+	"wikipedia":                  buildWikipediaTool,
+	"wikipedia_search":           buildWikipediaTool,
+	"yahoo_finance":              buildYahooFinanceTool,
+}
+
+// canvasToolNames maps lower-cased Canvas component names to the canonical
+// registry keys used by the Go Agent tool layer. Canvas preserves component
+// names such as "CodeExec" and "GoogleScholar", while the tool registry uses
+// snake_case names for several tools.
+var canvasToolNames = map[string]string{
+	"codeexec":       "code_exec",
+	"googlescholar":  "google_scholar",
+	"keenablesearch": "keenable",
+	"queritsearch":   "querit_search",
+	"tavilyextract":  "tavily_extract",
+	"tavilysearch":   "tavily",
+	"yahoofinance":   "yahoo_finance",
 }
 
 func noConfig(name string, fn func() einotool.BaseTool) Factory {
@@ -74,7 +94,7 @@ func noConfig(name string, fn func() einotool.BaseTool) Factory {
 
 // BuildByName resolves a tool name into an Eino BaseTool.
 func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) {
-	key := strings.ToLower(strings.TrimSpace(name))
+	key := normalizeToolName(name)
 	if key == "" {
 		return nil, fmt.Errorf("agent tool: empty tool name")
 	}
@@ -98,7 +118,14 @@ func BuildAll(names []string, perToolParams map[string]map[string]any) ([]einoto
 	for _, name := range names {
 		var params map[string]any
 		if perToolParams != nil {
-			params = perToolParams[strings.ToLower(strings.TrimSpace(name))]
+			// Prefer the canonical key so callers can provide params using the
+			// Go registry name even when the tool list uses a Canvas name.
+			params = perToolParams[normalizeToolName(name)]
+			if params == nil {
+				// Canvas DSL extraction currently keys object params by the
+				// lower-cased component name, so retain that lookup as a fallback.
+				params = perToolParams[strings.ToLower(strings.TrimSpace(name))]
+			}
 			if params == nil {
 				params = perToolParams[name]
 			}
@@ -110,6 +137,17 @@ func BuildAll(names []string, perToolParams map[string]map[string]any) ([]einoto
 		tools = append(tools, t)
 	}
 	return tools, nil
+}
+
+// normalizeToolName returns the canonical registry key for a DSL or Agent
+// tool name. It lower-cases ordinary names and translates Canvas component
+// names whose spelling differs from the Go registry key.
+func normalizeToolName(name string) string {
+	key := strings.ToLower(strings.TrimSpace(name))
+	if canonical, ok := canvasToolNames[key]; ok {
+		return canonical
+	}
+	return key
 }
 
 func buildAkShareTool(params map[string]any) (einotool.BaseTool, error) {
@@ -377,6 +415,11 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 			defaults.DatasetIDs = ids
 		}
 	}
+	if ids, ok, err := stringSliceParam(params, "memory_ids"); err != nil {
+		return nil, fmt.Errorf("agent tool: retrieval config: %w", err)
+	} else if ok {
+		defaults.MemoryIDs = ids
+	}
 	if v, ok := intParam(params, "top_n"); ok {
 		defaults.TopN = v
 	}
@@ -390,14 +433,50 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 	if v, ok := boolParam(params, "use_kg"); ok {
 		defaults.UseKG = v
 	}
+	if v, ok := boolParam(params, "toc_enhance"); ok {
+		defaults.TOCEnhance = v
+	}
 	if v, ok := floatParam(params, "similarity_threshold"); ok {
-		defaults.SimilarityThreshold = v
+		defaults.SimilarityThreshold = &v
 	}
 	if v, ok := floatParam(params, "keywords_similarity_weight"); ok {
 		if v < 0 || v > 1 {
 			return nil, fmt.Errorf("agent tool: retrieval tool requires node-level param keywords_similarity_weight in [0,1]")
 		}
 		defaults.KeywordsSimilarityWeight = &v
+	}
+	if value, ok := params["empty_response"]; ok {
+		emptyResponse, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires string node-level param empty_response")
+		}
+		defaults.EmptyResponse = emptyResponse
+	}
+	if value, ok := params["rerank_id"]; ok {
+		rerankID, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires string node-level param rerank_id")
+		}
+		defaults.RerankID = rerankID
+	}
+	if languages, ok, err := stringSliceParam(params, "cross_languages"); err != nil {
+		return nil, fmt.Errorf("agent tool: retrieval config: %w", err)
+	} else if ok {
+		defaults.CrossLanguages = languages
+	}
+	if value, ok := params["meta_data_filter"]; ok {
+		filter, ok := value.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires object node-level param meta_data_filter")
+		}
+		defaults.MetaDataFilter = cloneStringAnyMap(filter)
+	}
+	if value, ok := params["retrieval_from"]; ok {
+		retrievalFrom, ok := value.(string)
+		if !ok || (retrievalFrom != "dataset" && retrievalFrom != "memory") {
+			return nil, fmt.Errorf("agent tool: retrieval tool requires retrieval_from to be dataset or memory")
+		}
+		defaults.RetrievalFrom = retrievalFrom
 	}
 	return NewRetrievalToolWithDefaults(defaults), nil
 }
@@ -520,6 +599,61 @@ func buildTavilyTool(params map[string]any) (einotool.BaseTool, error) {
 		}
 	}
 	return newTavilyTool(nil, nil, defaults), nil
+}
+
+func buildQueritTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := queritParams{}
+	stringFields := map[string]*string{
+		"api_key":    &defaults.APIKey,
+		"query":      &defaults.Query,
+		"time_range": &defaults.TimeRange,
+	}
+	for key, destination := range stringFields {
+		value, exists := params[key]
+		if !exists {
+			continue
+		}
+		text, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param %s", "querit_search", key)
+		}
+		*destination = text
+	}
+	if value, exists := params["count"]; exists {
+		count, valid := strictInt(value)
+		if !valid || count < 1 {
+			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param count of at least 1", "querit_search")
+		}
+		defaults.Count = count
+	}
+	if value, exists := params["chunks_per_doc"]; exists {
+		chunksPerDoc, valid := strictInt(value)
+		if !valid || chunksPerDoc < 1 || chunksPerDoc > 3 {
+			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param chunks_per_doc within [1, 3]", "querit_search")
+		}
+		defaults.ChunksPerDoc = queritInt(chunksPerDoc)
+	}
+	listFields := map[string]*[]string{
+		"site_include":     &defaults.SiteInclude,
+		"site_exclude":     &defaults.SiteExclude,
+		"country_include":  &defaults.CountryInclude,
+		"language_include": &defaults.LanguageInclude,
+	}
+	for key, destination := range listFields {
+		value, exists := params[key]
+		if !exists {
+			continue
+		}
+		items, valid := queritStringSlice(value)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string array node-level param %s", "querit_search", key)
+		}
+		*destination = items
+	}
+	if !isValidQueritTimeRange(strings.TrimSpace(defaults.TimeRange)) {
+		return nil, fmt.Errorf("agent tool: tool %q has invalid node-level param time_range", "querit_search")
+	}
+	return newQueritTool(nil, nil, defaults, nil), nil
 }
 
 func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {

@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// Cross-cutting helpers that replace Python's `rag/flow/base.py:ProcessBase`
+// Package runtime implements Cross-cutting helpers that replace Python's `rag/flow/base.py:ProcessBase`
 // wrapper (lines 33-63). Three call-site concerns are extracted into plain
 // higher-order functions:
 //

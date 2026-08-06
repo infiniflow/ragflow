@@ -14,6 +14,8 @@
 //  limitations under the License.
 //
 
+//go:build integration
+
 package storage
 
 import (
@@ -630,12 +632,4 @@ func TestMinioStorage_TenantID(t *testing.T) {
 
 	// Cleanup
 	storage.Remove(bucket, key, tenantID)
-}
-
-// min is a helper function to get the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

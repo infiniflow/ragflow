@@ -33,6 +33,8 @@ func writeZhipuAITestAudio(t *testing.T) string {
 }
 
 func TestZhipuAITranscribeAudio(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s", r.Method)
@@ -92,6 +94,7 @@ func TestZhipuAITranscribeAudio(t *testing.T) {
 	modelName := "glm-asr-2512"
 	file := writeZhipuAITestAudio(t)
 	resp, err := newZhipuAIForTest(srv.URL).TranscribeAudio(
+		ctx,
 		&modelName,
 		&file,
 		&APIConfig{ApiKey: &apiKey},
@@ -115,6 +118,8 @@ func TestZhipuAITranscribeAudio(t *testing.T) {
 }
 
 func TestZhipuAITranscribeAudioValidation(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	apiKey := "test-key"
 	modelName := "glm-asr-2512"
 	file := "speech.mp3"
@@ -133,7 +138,7 @@ func TestZhipuAITranscribeAudioValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := newZhipuAIForTest("http://unused").TranscribeAudio(tt.modelName, tt.file, tt.apiConfig, nil, nil)
+			_, err := newZhipuAIForTest("http://unused").TranscribeAudio(ctx, tt.modelName, tt.file, tt.apiConfig, nil, nil)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error=%v, want %q", err, tt.want)
 			}
@@ -142,10 +147,13 @@ func TestZhipuAITranscribeAudioValidation(t *testing.T) {
 }
 
 func TestZhipuAITranscribeAudioRequiresASRSuffix(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	apiKey := "test-key"
 	modelName := "glm-asr-2512"
 	file := writeZhipuAITestAudio(t)
 	_, err := NewZhipuAIModel(map[string]string{"default": "http://unused"}, URLSuffix{}).TranscribeAudio(
+		ctx,
 		&modelName,
 		&file,
 		&APIConfig{ApiKey: &apiKey},
@@ -158,6 +166,8 @@ func TestZhipuAITranscribeAudioRequiresASRSuffix(t *testing.T) {
 }
 
 func TestZhipuAITranscribeAudioHTTPError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = io.WriteString(w, `{"error":"bad request"}`)
@@ -167,13 +177,15 @@ func TestZhipuAITranscribeAudioHTTPError(t *testing.T) {
 	apiKey := "test-key"
 	modelName := "glm-asr-2512"
 	file := writeZhipuAITestAudio(t)
-	_, err := newZhipuAIForTest(srv.URL).TranscribeAudio(&modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newZhipuAIForTest(srv.URL).TranscribeAudio(ctx, &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "ZhipuAI ASR API error: 400 Bad Request") {
 		t.Fatalf("error=%v", err)
 	}
 }
 
 func TestZhipuAIAudioSpeech(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s", r.Method)
@@ -221,6 +233,7 @@ func TestZhipuAIAudioSpeech(t *testing.T) {
 	modelName := "glm-tts"
 	content := "hello"
 	resp, err := newZhipuAIForTest(srv.URL).AudioSpeech(
+		ctx,
 		&modelName,
 		&content,
 		&APIConfig{ApiKey: &apiKey},
@@ -242,6 +255,8 @@ func TestZhipuAIAudioSpeech(t *testing.T) {
 }
 
 func TestZhipuAIAudioSpeechWithSender(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]interface{}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -261,6 +276,7 @@ func TestZhipuAIAudioSpeechWithSender(t *testing.T) {
 	content := "hello"
 	var chunks []string
 	err := newZhipuAIForTest(srv.URL).AudioSpeechWithSender(
+		ctx,
 		&modelName,
 		&content,
 		&APIConfig{ApiKey: &apiKey},
@@ -285,6 +301,8 @@ func TestZhipuAIAudioSpeechWithSender(t *testing.T) {
 }
 
 func TestZhipuAIAudioSpeechValidation(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	apiKey := "test-key"
 	modelName := "glm-tts"
 	content := "hello"
@@ -303,7 +321,7 @@ func TestZhipuAIAudioSpeechValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := newZhipuAIForTest("http://unused").AudioSpeech(tt.modelName, tt.audioContent, tt.apiConfig, nil, nil)
+			_, err := newZhipuAIForTest("http://unused").AudioSpeech(ctx, tt.modelName, tt.audioContent, tt.apiConfig, nil, nil)
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error=%v, want %q", err, tt.want)
 			}
@@ -312,10 +330,13 @@ func TestZhipuAIAudioSpeechValidation(t *testing.T) {
 }
 
 func TestZhipuAIAudioSpeechRequiresTTSSuffix(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	apiKey := "test-key"
 	modelName := "glm-tts"
 	content := "hello"
 	_, err := NewZhipuAIModel(map[string]string{"default": "http://unused"}, URLSuffix{}).AudioSpeech(
+		ctx,
 		&modelName,
 		&content,
 		&APIConfig{ApiKey: &apiKey},
@@ -328,6 +349,8 @@ func TestZhipuAIAudioSpeechRequiresTTSSuffix(t *testing.T) {
 }
 
 func TestZhipuAIAudioSpeechHTTPError(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = io.WriteString(w, `{"error":"bad request"}`)
@@ -337,13 +360,15 @@ func TestZhipuAIAudioSpeechHTTPError(t *testing.T) {
 	apiKey := "test-key"
 	modelName := "glm-tts"
 	content := "hello"
-	_, err := newZhipuAIForTest(srv.URL).AudioSpeech(&modelName, &content, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	_, err := newZhipuAIForTest(srv.URL).AudioSpeech(ctx, &modelName, &content, &APIConfig{ApiKey: &apiKey}, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "ZhipuAI TTS API error: 400 Bad Request") {
 		t.Fatalf("error=%v", err)
 	}
 }
 
 func TestZhipuAIChatStreamlyWithSenderCollectsToolCalls(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method=%s", r.Method)
@@ -402,6 +427,7 @@ func TestZhipuAIChatStreamlyWithSenderCollectsToolCalls(t *testing.T) {
 		map[string]string{"default": srv.URL},
 		URLSuffix{Chat: "chat/completions"},
 	).ChatStreamlyWithSender(
+		ctx,
 		"glm-4",
 		[]Message{{Role: "user", Content: "what is marigold"}},
 		&APIConfig{ApiKey: &apiKey},

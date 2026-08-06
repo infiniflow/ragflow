@@ -44,31 +44,23 @@ const filterNestedList = (
 
   const term = searchTerm.toLowerCase();
 
-  return list
-    .filter((item) => {
-      if (
-        item.label.toString().toLowerCase().includes(term) ||
-        item.id.toLowerCase().includes(term)
-      ) {
-        return true;
-      }
+  return list.reduce<FilterType[]>((acc, item) => {
+    const selfMatch =
+      item.label.toString().toLowerCase().includes(term) ||
+      item.id.toLowerCase().includes(term);
 
-      if (item.list && item.list.length > 0) {
-        const filteredSubList = filterNestedList(item.list, searchTerm);
-        return filteredSubList.length > 0;
+    if (selfMatch) {
+      // Parent matches itself - keep all original children
+      acc.push(item);
+    } else if (item.list && item.list.length > 0) {
+      // Parent doesn't match - keep only matching children
+      const filteredSubList = filterNestedList(item.list, searchTerm);
+      if (filteredSubList.length > 0) {
+        acc.push({ ...item, list: filteredSubList });
       }
-
-      return false;
-    })
-    .map((item) => {
-      // if (item.list && item.list.length > 0) {
-      //   return {
-      //     ...item,
-      //     list: filterNestedList(item.list, searchTerm),
-      //   };
-      // }
-      return item;
-    });
+    }
+    return acc;
+  }, []);
 };
 
 function CheckboxFormMultiple({

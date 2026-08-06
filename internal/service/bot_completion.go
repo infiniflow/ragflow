@@ -38,6 +38,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"ragflow/internal/dao"
 	"ragflow/internal/utility"
 	"strings"
 	"time"
@@ -180,8 +181,8 @@ func WriteDoneFrame(w http.ResponseWriter) error {
 // WriteChatbotRunEvent translates one canvas.RunEvent into the flat
 // Python agent-canvas SSE envelope:
 //
-//	data: {"event":"message","message_id":"...","task_id":"...",
-//	  "session_id":"...","created_at":123,"data":{"content":"..."}}\n\n
+//	data: {"event":"message","message_id":"...","task_id":"session-id",
+//	  "session_id":"session-id","created_at":123,"data":{"content":"..."}}\n\n
 //
 // This is intentionally different from WriteChatbotFrame's legacy
 // chatbot `{code,data:{answer:"..."}}` shape. The agent React page's
@@ -227,6 +228,13 @@ func WriteChatbotRunEvent(w http.ResponseWriter, ev canvas.RunEvent) error {
 			"message": msg,
 			"data":    false,
 		}
+		// Keep the error envelope wire-compatible while still correlating the
+		// failed run. task_id is only the legacy alias; both values are the
+		// same session identity used by the Go runtime and cancel endpoint.
+		if ev.SessionID != "" {
+			payload["task_id"] = ev.SessionID
+			payload["session_id"] = ev.SessionID
+		}
 		return writeSSEJSON(w, payload)
 	}
 
@@ -240,10 +248,11 @@ func WriteChatbotRunEvent(w http.ResponseWriter, ev canvas.RunEvent) error {
 	if ev.MessageID != "" {
 		payload["message_id"] = ev.MessageID
 	}
-	if ev.TaskID != "" {
-		payload["task_id"] = ev.TaskID
-	}
 	if ev.SessionID != "" {
+		// task_id is retained only as a wire-compatible alias for existing Go
+		// Agent clients. It carries session_id and has no independent runtime,
+		// Redis, or cancellation identity.
+		payload["task_id"] = ev.SessionID
 		payload["session_id"] = ev.SessionID
 	}
 	return writeSSEJSON(w, payload)
@@ -269,18 +278,6 @@ func writeSSEJSON(w http.ResponseWriter, payload map[string]any) error {
 	return nil
 }
 
-// AgentbotSSEFrame mirrors ChatbotSSEFrame for the agentbot
-// completion path. The envelope shape is the same; the only
-// difference is that the LLM call goes through the canvas runner
-// (AgentService.RunAgent) instead of the legacy dialog async_chat.
-type AgentbotSSEFrame = ChatbotSSEFrame
-
-// WriteAgentbotFrame is an alias for WriteChatbotFrame — both bot
-// completion paths emit the same python wire shape.
-func WriteAgentbotFrame(w http.ResponseWriter, f ChatbotSSEFrame) error {
-	return WriteChatbotFrame(w, f)
-}
-
 // ChatbotCompletion streams an SSE response for
 // /api/v1/chatbots/<dialog_id>/completions.
 //
@@ -302,7 +299,7 @@ func (s *BotService) ChatbotCompletion(
 	// ChatSessionDAO.GetDialogByID already filters by status = "1"
 	// so a returned row is valid; we still nil-check defensively
 	// before dereferencing for symmetry with the session path.
-	dialog, err := s.chatDAO.GetDialogByID(dialogID)
+	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
 	if err != nil || dialog == nil ||
 		dialog.TenantID != tenantID ||
 		dialog.Status == nil || *dialog.Status != common.StatusDialogValid {
@@ -351,7 +348,7 @@ func (s *BotService) ChatbotCompletion(
 			UserID:   tenantID,
 			Message:  seedMsg,
 		}
-		if err = s.api4ConversationDAO.Create(session); err != nil {
+		if err = s.api4ConversationDAO.Create(ctx, dao.DB, session); err != nil {
 			return nil, common.CodeServerError, err
 		}
 
@@ -375,7 +372,7 @@ func (s *BotService) ChatbotCompletion(
 		return out, common.CodeSuccess, nil
 	}
 
-	session, err := s.api4ConversationDAO.GetBySessionID(req.SessionID, dialogID)
+	session, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, req.SessionID, dialogID)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -429,11 +426,14 @@ func (s *BotService) ChatbotCompletion(
 	}
 
 	// 5. Translate pipeline results into chatbot frames. The
-	// pipeline streams deltas; the python iframe contract sends the
-	// full accumulated answer in every frame, so we accumulate here
-	// (the front-end accepts both shapes, but full-text frames are
-	// byte-parity with python). The final pipeline result carries
-	// the decorated full answer plus the retrieval reference.
+	// pipeline streams deltas; the python iframe contract also yields
+	// deltas (async_chat yields the value from _stream_with_think_delta).
+	// We accumulate the full answer locally for persistence and for the
+	// final frame, but forward each result's own delta in the SSE frame
+	// so the front-end can build the <think>-wrapped answer correctly.
+	// Sending accumulated full text on every frame interacts badly with
+	// the front-end's start_to_think/end_to_think marker append, causing
+	// reasoning content to leak into the visible answer.
 	out := make(chan ChatbotSSEFrame, 16)
 	go func() {
 		defer close(out)
@@ -468,8 +468,10 @@ func (s *BotService) ChatbotCompletion(
 				continue
 			}
 			if res.StartToThink || res.EndToThink {
+				// Marker frames carry no text; the front-end appends
+				// <think> / </think> to the accumulated answer.
 				out <- ChatbotSSEFrame{
-					Data:         fullAnswer,
+					Data:         "",
 					Reference:    map[string]any{},
 					SessionID:    session.ID,
 					StartToThink: res.StartToThink,
@@ -489,7 +491,7 @@ func (s *BotService) ChatbotCompletion(
 				finalRef = res.Reference
 			}
 			out <- ChatbotSSEFrame{
-				Data:      fullAnswer,
+				Data:      res.Answer,
 				Reference: map[string]any{},
 				SessionID: session.ID,
 			}
@@ -503,7 +505,7 @@ func (s *BotService) ChatbotCompletion(
 		// pipeline-level error ("**ERROR**" answer) nothing is
 		// persisted, matching the python exception path.
 		if !errored {
-			if pErr := s.persistChatbotTurn(session, req.Question, fullAnswer, messageID, finalRef); pErr != nil {
+			if pErr := s.persistChatbotTurn(ctx, session, req.Question, fullAnswer, messageID, finalRef); pErr != nil {
 				common.Error("bot: ChatbotCompletion session update failed",
 					pErr,
 					zap.String("dialog_id", dialogID),
@@ -565,7 +567,7 @@ func parseChatbotTurns(raw json.RawMessage) []map[string]any {
 // turn in its history. Mirrors python
 // API4ConversationService.append_message.
 func (s *BotService) persistChatbotTurn(
-	session *entity.API4Conversation, question, answer, messageID string, reference map[string]any,
+	ctx context.Context, session *entity.API4Conversation, question, answer, messageID string, reference map[string]any,
 ) error {
 	// Serialise the read-modify-write per session and re-read the row
 	// inside the lock: the caller's session was loaded before the
@@ -575,7 +577,7 @@ func (s *BotService) persistChatbotTurn(
 	lock := s.persistLock(session.ID)
 	lock.Lock()
 	defer lock.Unlock()
-	fresh, err := s.api4ConversationDAO.GetBySessionID(session.ID, session.DialogID)
+	fresh, err := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, session.ID, session.DialogID)
 	if err != nil {
 		return err
 	}
@@ -627,7 +629,7 @@ func (s *BotService) persistChatbotTurn(
 	}
 	session.Reference = rawRef
 
-	return s.api4ConversationDAO.Update(session)
+	return s.api4ConversationDAO.Update(ctx, dao.DB, session)
 }
 
 // normalizeBotBoolFlag coerces the JSON-encoded reasoning / internet

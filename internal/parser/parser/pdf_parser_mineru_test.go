@@ -11,6 +11,7 @@ import (
 )
 
 func TestPDFParser_ParseWithResult_MinerUMarkdownIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	var submitCalled atomic.Bool
 	var resultCalled atomic.Bool
 
@@ -80,7 +81,8 @@ func TestPDFParser_ParseWithResult_MinerUMarkdownIntegration(t *testing.T) {
 		"mineru_backend":   "pipeline",
 	})
 
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -99,6 +101,7 @@ func TestPDFParser_ParseWithResult_MinerUMarkdownIntegration(t *testing.T) {
 }
 
 func TestPDFParser_ParseWithResult_MinerUJSONIntegration(t *testing.T) {
+	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/file_parse":
@@ -120,7 +123,8 @@ func TestPDFParser_ParseWithResult_MinerUJSONIntegration(t *testing.T) {
 		"mineru_apiserver": server.URL,
 	})
 
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
@@ -139,7 +143,8 @@ func TestPDFParser_ParseWithResult_MinerURequiresAPIServer(t *testing.T) {
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{"parse_method": "MinerU"})
 
-	res := pdf.ParseWithResult("sample.pdf", []byte("%PDF-1.4\nmock"))
+	ctx := t.Context()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
 	if res.Err == nil {
 		t.Fatal("ParseWithResult: want error when mineru_apiserver is missing, got nil")
 	}

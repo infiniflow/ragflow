@@ -77,10 +77,12 @@ def _identity_remap(source_data, key_aliases=None):
 def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
     parsing_status_mock = MagicMock(return_value=parsing_status_by_kb)
     get_list_mock = MagicMock(return_value=(list(kbs), len(kbs)))
+    get_accessible_ids_mock = MagicMock(return_value={kb["id"] for kb in kbs})
 
     _stub(
         monkeypatch,
         "api.db.joint_services.tenant_model_service",
+        get_composite_model_name_by_ids=MagicMock(),
         resolve_model_config=MagicMock(),
         resolve_model_id=MagicMock(),
     )
@@ -127,6 +129,7 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         "api.db.services.knowledgebase_service",
         KnowledgebaseService=SimpleNamespace(
             get_list=get_list_mock,
+            get_accessible_ids=get_accessible_ids_mock,
         ),
         validate_dataset_embedding_models=lambda kbs: None,
     )
@@ -167,6 +170,12 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
         monkeypatch,
         "common.misc_utils",
         thread_pool_exec=MagicMock(),
+        thread_pool_exec_long_time=MagicMock(),
+    )
+    _stub(
+        monkeypatch,
+        "rag.advanced_rag.knowlege_compile.wiki",
+        WIKI_PAGE_COMPILE_KWD="wiki",
     )
 
     repo_root = Path(__file__).resolve().parents[5]
@@ -180,8 +189,8 @@ def _load_list_datasets_module(monkeypatch, *, kbs, parsing_status_by_kb):
 
 def _stub_kbs():
     return [
-        {"id": "kb-a", "tenant_id": "tenant-1", "name": "Alpha"},
-        {"id": "kb-b", "tenant_id": "tenant-1", "name": "Beta"},
+        {"id": "kb-a", "tenant_id": "tenant-1", "name": "Alpha", "embedding_model": "emb-a"},
+        {"id": "kb-b", "tenant_id": "tenant-1", "name": "Beta", "embedding_model": "emb-b"},
     ]
 
 
@@ -235,6 +244,7 @@ def test_list_datasets_with_include_parsing_status_true_attaches_counts(monkeypa
 
     assert ok is True
     parsing_status_mock.assert_called_once_with(["kb-a", "kb-b"])
+    assert "parsing_status" in payload["data"][0]
     by_id = {r["id"]: r for r in payload["data"]}
     assert by_id["kb-a"]["parsing_status"] == status_by_kb["kb-a"]
     assert by_id["kb-b"]["parsing_status"] == status_by_kb["kb-b"]
@@ -258,7 +268,25 @@ def test_list_datasets_with_include_parsing_status_string_true(monkeypatch):
 
     assert ok is True
     parsing_status_mock.assert_called_once_with(["kb-a", "kb-b"])
-    assert "parsing_status" in payload["data"][0]
+
+
+def test_list_datasets_with_ids_filters_query_once(monkeypatch):
+    """ids filter is checked once and pushed into the list query."""
+    module, _, get_list_mock = _load_list_datasets_module(
+        monkeypatch,
+        kbs=_stub_kbs(),
+        parsing_status_by_kb={},
+    )
+
+    ok, payload = module.list_datasets(
+        "tenant-1",
+        {"page": 1, "page_size": 30, "ids": ["kb-a", "kb-b"]},
+    )
+
+    assert ok is True
+    assert payload["total"] == 2
+    module.KnowledgebaseService.get_accessible_ids.assert_called_once_with(["tenant-1"], "tenant-1", ["kb-a", "kb-b"])
+    get_list_mock.assert_called_once_with(["tenant-1"], "tenant-1", 1, 30, "create_time", True, None, None, "", None, ["kb-a", "kb-b"])
 
 
 def test_list_datasets_with_include_parsing_status_false_skips_helper(monkeypatch):

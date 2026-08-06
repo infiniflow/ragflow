@@ -39,12 +39,8 @@ export const LargeModelFilterFormSchema = {
   llm_filter: z.string().optional(),
 };
 
-type LargeModelFormFieldProps = Pick<
-  NextInnerLLMSelectProps,
-  'showSpeech2TextModel' | 'ownerTenantId'
->;
+type LargeModelFormFieldProps = Pick<NextInnerLLMSelectProps, 'ownerTenantId'>;
 export function LargeModelFormField({
-  showSpeech2TextModel: showTTSModel,
   ownerTenantId,
 }: LargeModelFormFieldProps) {
   const form = useFormContext();
@@ -96,7 +92,6 @@ export function LargeModelFormField({
                 <NextLLMSelect
                   {...field}
                   filter={filter}
-                  showSpeech2TextModel={showTTSModel}
                   ownerTenantId={ownerTenantId}
                 />
               </FormControl>

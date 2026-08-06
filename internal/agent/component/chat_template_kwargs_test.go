@@ -76,7 +76,7 @@ func TestLLM_Invoke_ChatTemplateKwargsDoesNotBreak(t *testing.T) {
 		ModelID:            "echo",
 		ChatTemplateKwargs: map[string]any{"seed": 1},
 	})
-	_, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "hi"})
+	_, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "hi"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}

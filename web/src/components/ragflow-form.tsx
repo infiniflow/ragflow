@@ -6,6 +6,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { cn } from '@/lib/utils';
+import { ArrowUpRight } from 'lucide-react';
 import { ReactNode, cloneElement, isValidElement } from 'react';
 import {
   ControllerRenderProps,
@@ -23,6 +24,10 @@ type RAGFlowFormItemProps = {
   labelClassName?: string;
   valueClassName?: string;
   className?: string;
+  labelLink?: {
+    text: ReactNode;
+    onClick: () => void;
+  };
 } & Pick<UseControllerProps<any>, 'rules'>;
 
 export function RAGFlowFormItem({
@@ -36,6 +41,7 @@ export function RAGFlowFormItem({
   valueClassName,
   className,
   rules,
+  labelLink,
 }: RAGFlowFormItemProps) {
   const form = useFormContext();
   return (
@@ -47,19 +53,30 @@ export function RAGFlowFormItem({
         <FormItem
           className={cn(
             {
-              'flex items-center w-full space-y-0': horizontal,
+              'flex items-center w-full space-y-0 justify-between': horizontal,
             },
             className,
           )}
         >
           {label && (
-            <FormLabel
-              required={required}
-              tooltip={tooltip}
-              className={cn({ 'w-1/4': horizontal }, labelClassName)}
-            >
-              {label}
-            </FormLabel>
+            <div className={cn('flex items-center gap-2 justify-between')}>
+              <FormLabel
+                required={required}
+                tooltip={tooltip}
+                className={cn(labelClassName)}
+              >
+                {label}
+              </FormLabel>
+              {labelLink && (
+                <div
+                  className="text-sm flex text-text-primary cursor-pointer items-center shrink-0"
+                  onClick={labelLink.onClick}
+                >
+                  {labelLink.text}
+                  <ArrowUpRight size={14} />
+                </div>
+              )}
+            </div>
           )}
           <div
             className={cn(

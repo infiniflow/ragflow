@@ -17,13 +17,13 @@
 package common
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -48,6 +48,7 @@ var (
 // applied by callers (see resolveCompress) so that "not set" can be distinguished
 // from "explicitly false" via the *bool LogConfig.Compress field.
 type FileOutput struct {
+	Filename   string
 	Path       string
 	MaxSize    int
 	MaxBackups int
@@ -87,7 +88,7 @@ func logLevelName(level zapcore.Level) string {
 	return strings.ToUpper(level.String())
 }
 
-// Init initializes the global logger. stdout is always written. If file.Path
+// InitLogger initializes the global logger. stdout is always written. If file.Path
 // is non-empty, a rotated file is also written via lumberjack.
 //
 // Callers should pass a non-empty Path so that file logging is preserved
@@ -96,7 +97,7 @@ func logLevelName(level zapcore.Level) string {
 //
 // Numeric fields (MaxSize, MaxBackups, MaxAge) are defaulted to 100/10/30
 // when zero. Compress is taken as supplied.
-func Init(level string, file FileOutput, serviceName string) error {
+func InitLogger(level string, file FileOutput, serviceName string) error {
 	zapLevel, err := parseZapLevel(level)
 	if err != nil {
 		zapLevel = zapcore.InfoLevel
@@ -108,7 +109,7 @@ func Init(level string, file FileOutput, serviceName string) error {
 		TimeKey:       "timestamp",
 		LevelKey:      "level",
 		NameKey:       "service",
-		CallerKey:     "",
+		CallerKey:     "caller",
 		FunctionKey:   "",
 		MessageKey:    "msg",
 		StacktraceKey: "stacktrace",
@@ -139,17 +140,15 @@ func Init(level string, file FileOutput, serviceName string) error {
 	}
 
 	syncers := []zapcore.WriteSyncer{zapcore.AddSync(os.Stdout)}
-	if file.Path != "" {
-		ljLogger := &lumberjack.Logger{
-			Filename:   filepath.Join("logs", file.Path),
-			MaxSize:    maxSize,
-			MaxBackups: maxBackups,
-			MaxAge:     maxAge,
-			Compress:   file.Compress,
-			LocalTime:  true,
-		}
-		syncers = append(syncers, zapcore.AddSync(ljLogger))
+	ljLogger := &lumberjack.Logger{
+		Filename:   filepath.Join(file.Path, file.Filename),
+		MaxSize:    maxSize,
+		MaxBackups: maxBackups,
+		MaxAge:     maxAge,
+		Compress:   file.Compress,
+		LocalTime:  true,
 	}
+	syncers = append(syncers, zapcore.AddSync(ljLogger))
 
 	core := zapcore.NewCore(
 		zapcore.NewConsoleEncoder(encoderConfig),
@@ -167,26 +166,20 @@ func Init(level string, file FileOutput, serviceName string) error {
 	return nil
 }
 
-// Sync flushes any buffered log entries.
-func Sync() {
+// SyncLog flushes any buffered log entries.
+func SyncLog() {
 	if Logger != nil {
 		_ = Logger.Sync()
 	}
 }
 
-// Fatal logs a fatal message using zap with caller info, then calls os.Exit(1).
 func Fatal(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		panic("logger not initialized")
 	}
-	_, file, line, ok := runtime.Caller(1)
-	if ok {
-		fields = append(fields, zap.String("caller", fmt.Sprintf("%s:%d", file, line)))
-	}
 	Logger.Fatal(msg, fields...)
 }
 
-// Info logs an info message.
 func Info(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -194,19 +187,18 @@ func Info(msg string, fields ...zap.Field) {
 	Logger.Info(msg, fields...)
 }
 
-// Error logs an error message. err may be nil; if non-nil it is appended as
-// a zap.Error field. Additional fields follow.
 func Error(msg string, err error, fields ...zap.Field) {
 	if Logger == nil {
 		return
 	}
-	if err != nil {
-		fields = append(fields, zap.Error(err))
+
+	if IsDebugEnabled() {
+		Logger.Error(fmt.Sprintf("%s, %+v", msg, err), fields...)
+	} else {
+		Logger.Error(fmt.Sprintf("%s, %v", msg, err), fields...)
 	}
-	Logger.Error(msg, fields...)
 }
 
-// Debug logs a debug message.
 func Debug(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -214,7 +206,6 @@ func Debug(msg string, fields ...zap.Field) {
 	Logger.Debug(msg, fields...)
 }
 
-// Warn logs a warning message.
 func Warn(msg string, fields ...zap.Field) {
 	if Logger == nil {
 		return
@@ -227,35 +218,19 @@ func IsDebugEnabled() bool {
 	return atomicLevel.Enabled(zapcore.DebugLevel)
 }
 
-// GetLevel returns the current log level.
-func GetLevel() string {
+// GetLogLevel returns the current log level.
+func GetLogLevel() string {
 	return atomicLevel.String()
 }
 
-// SetLevel sets the log level at runtime.
-func SetLevel(level string) error {
+// SetLogLevel sets the log level at runtime.
+func SetLogLevel(level string) error {
 	zapLevel, err := parseZapLevel(level)
 	if err != nil {
 		return err
 	}
 	atomicLevel.SetLevel(zapLevel)
 	return nil
-}
-
-// ResolveCompress applies the project default (true) when the config-level
-// Compress is nil. When non-nil, the operator's choice is used as-is.
-//
-// The project default is compression on; operators can opt out by setting
-// log.compress: false in service_conf.yaml. Because Go's bool zero value is
-// false and would otherwise be indistinguishable from "not set", the YAML
-// struct uses *bool and this helper resolves the defaulting at the cmd/
-// boundary. The *bool does not live in this file because FileOutput itself
-// takes a plain bool (the caller has already resolved the default by then).
-func ResolveCompress(c *bool) bool {
-	if c == nil {
-		return true
-	}
-	return *c
 }
 
 // GinLogger returns a gin middleware that emits one log line per request
@@ -319,7 +294,7 @@ func GinLogger() gin.HandlerFunc {
 				// Likely a panic recovered by gin.Recovery() with no c.Error attached.
 				// Use a sentinel so the err field is non-empty; operators can
 				// grep for this string in logs.
-				ginErr = errors.New("5xx response with no handler error attached")
+				ginErr = err5xxNoError
 			}
 			Error(msg, ginErr, fields...)
 		case status >= 400:
@@ -329,3 +304,5 @@ func GinLogger() gin.HandlerFunc {
 		}
 	}
 }
+
+var err5xxNoError = errors.New("5xx response with no handler error attached")

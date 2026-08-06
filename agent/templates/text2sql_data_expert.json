@@ -117,6 +117,7 @@
                             "cross_languages": [],
                             "empty_response": "",
                             "kb_ids": [],
+                            "retrieval_from": "dataset",
                             "keywords_similarity_weight": 0.7,
                             "outputs": {
                                 "formalized_content": {
@@ -146,6 +147,7 @@
                             "cross_languages": [],
                             "empty_response": "",
                             "kb_ids": [],
+                            "retrieval_from": "dataset",
                             "keywords_similarity_weight": 0.7,
                             "outputs": {
                                 "formalized_content": {
@@ -175,6 +177,7 @@
                             "cross_languages": [],
                             "empty_response": "",
                             "kb_ids": [],
+                            "retrieval_from": "dataset",
                             "keywords_similarity_weight": 0.7,
                             "outputs": {
                                 "formalized_content": {
@@ -344,6 +347,7 @@
                                 "cross_languages": [],
                                 "empty_response": "",
                                 "kb_ids": [],
+                                "retrieval_from": "dataset",
                                 "keywords_similarity_weight": 0.7,
                                 "outputs": {
                                     "formalized_content": {
@@ -382,6 +386,7 @@
                                 "cross_languages": [],
                                 "empty_response": "",
                                 "kb_ids": [],
+                                "retrieval_from": "dataset",
                                 "keywords_similarity_weight": 0.7,
                                 "outputs": {
                                     "formalized_content": {
@@ -420,6 +425,7 @@
                                 "cross_languages": [],
                                 "empty_response": "",
                                 "kb_ids": [],
+                                "retrieval_from": "dataset",
                                 "keywords_similarity_weight": 0.7,
                                 "outputs": {
                                     "formalized_content": {

@@ -285,6 +285,50 @@ def load_configurations(config_path: str) -> list[BaseConfig]:
                 config = MinioConfig(id=id_count, name=name, host=host, port=port, user=user, password=password, service_type="file_store", store_type="minio", detail_func_name="check_minio_alive")
                 configurations.append(config)
                 id_count += 1
+            case "s3":
+                # AWS S3 (or any S3-compatible service: MinIO, R2, ...).
+                # The config block uses `endpoint_url` instead of `host:port`,
+                # so parse the URL to derive host/port for the status page.
+                name: str = "s3"
+                endpoint_url = v.get("endpoint_url") or ""
+                if endpoint_url:
+                    try:
+                        parsed = urlparse(endpoint_url)
+                        # `parsed.port` raises ValueError on non-numeric or
+                        # out-of-range ports; `urlparse` itself raises
+                        # ValueError on malformed IPv6 URLs. Fall back to
+                        # the raw endpoint as host and the scheme's
+                        # default port so config loading completes.
+                        host: str = parsed.hostname or endpoint_url
+                        port: int = parsed.port or (443 if parsed.scheme == "https" else 80)
+                        logging.debug(
+                            "Selected S3 host=%s port=%d for endpoint %r.",
+                            host,
+                            port,
+                            endpoint_url,
+                        )
+                    except ValueError:
+                        logging.warning(
+                            "Could not parse S3 endpoint_url %r; using raw value as host with default port.",
+                            endpoint_url,
+                        )
+                        host = endpoint_url
+                        port = 443 if endpoint_url.startswith("https://") else 80
+                else:
+                    host: str = "s3.amazonaws.com"
+                    port: int = 443
+                    logging.debug("No S3 endpoint_url configured; defaulting to AWS S3 at %s:%d.", host, port)
+                config = FileStoreConfig(
+                    id=id_count,
+                    name=name,
+                    host=host,
+                    port=port,
+                    service_type="file_store",
+                    store_type="s3",
+                    detail_func_name="check_s3_alive",
+                )
+                configurations.append(config)
+                id_count += 1
             case "redis":
                 name: str = "redis"
                 url = v["host"]

@@ -20,6 +20,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"gorm.io/gorm"
 )
 
 // TestMatchOutputStructure_ValidJSON_AllKeysPresent: response has all
@@ -105,7 +107,7 @@ func TestLLM_Invoke_OutputStructure_ValidFirstTry(t *testing.T) {
 		ModelID:         "echo",
 		OutputStructure: map[string]any{"name": "", "age": 0},
 	})
-	out, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "who?"})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "who?"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -139,7 +141,7 @@ func TestLLM_Invoke_OutputStructure_RetryOnInvalid(t *testing.T) {
 		ModelID:         "echo",
 		OutputStructure: map[string]any{"name": ""},
 	})
-	out, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "who?"})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "who?"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -176,7 +178,7 @@ func TestLLM_Invoke_OutputStructure_RetryStillFails(t *testing.T) {
 		ModelID:         "echo",
 		OutputStructure: map[string]any{"x": 0},
 	})
-	out, err := c.Invoke(context.Background(), map[string]any{"user_prompt": "go"})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{"user_prompt": "go"})
 	if err != nil {
 		t.Fatalf("Invoke should not error on parse failure: %v", err)
 	}
@@ -200,7 +202,7 @@ type callCountingInvoker struct {
 	calls     int
 }
 
-func (c *callCountingInvoker) Invoke(_ context.Context, _ ChatInvokeRequest) (*ChatInvokeResponse, error) {
+func (c *callCountingInvoker) Invoke(_ context.Context, _ *gorm.DB, _ ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	if c.onCall != nil {
 		c.onCall()
 	}

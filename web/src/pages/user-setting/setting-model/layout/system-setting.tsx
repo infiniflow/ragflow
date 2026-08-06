@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { LinkifyText } from '@/components/linkify-text';
 import { ModelTreeSelect, ModelTypeMap } from '@/components/model-tree-select';
 import {
   Tooltip,
@@ -56,7 +57,9 @@ function ModelFieldItem({
         {label}
         {tooltip && (
           <Tooltip>
-            <TooltipContent>{tooltip}</TooltipContent>
+            <TooltipContent>
+              <LinkifyText>{tooltip}</LinkifyText>
+            </TooltipContent>
             <TooltipTrigger>
               <CircleQuestionMark
                 size={12}
@@ -89,7 +92,6 @@ function SystemSetting() {
     async (field: string, value: string) => {
       const modelType = FieldToModelType[field];
       if (!modelType) return;
-      if (!value) return;
       const parsed = parseModelValue(value);
       if (parsed) {
         await setDefaultModel({ ...parsed, model_type: modelType });

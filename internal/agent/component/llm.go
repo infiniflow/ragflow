@@ -18,11 +18,12 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
+	"gorm.io/gorm"
 
+	"ragflow/internal/agent/chat"
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -129,84 +130,68 @@ type LLMOutput struct {
 	Tokens  int
 }
 
-// ChatInvoker is the abstraction the LLM component uses to talk to a
-// chat model. The default implementation lives in this file; tests can
-// override the package-level defaultChatInvoker to inject a stub.
-type ChatInvoker interface {
-	Invoke(ctx context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error)
-}
+// ChatInvoker is an alias for the shared chat.Invoker seam. The production
+// eino-based implementation lives in this file; the package-level singleton is
+// owned by internal/agent/chat so agent tools and the harness can also call the
+// LLM without an import cycle.
+type ChatInvoker = chat.Invoker
 
-// ChatInvokeRequest is the minimal surface the LLM component needs to
-// dispatch a chat call. Driver / APIKey / ModelName are kept here so the
-// invoker can wire the right provider without the component caring.
-type ChatInvokeRequest struct {
-	Driver           string
-	ModelName        string
-	APIKey           string
-	BaseURL          string
-	Messages         []schema.Message
-	Temperature      *float64
-	TopP             *float64
-	PresencePenalty  *float64
-	FrequencyPenalty *float64
-	MaxTokens        *int
-	// Thinking mirrors the agent-level `thinking` setting
-	// ("enabled" | "disabled" | ""). The default invoker is
-	// responsible for translating this into the provider-specific
-	// request body (e.g. Qwen `enable_thinking`, Kimi/GLM
-	// `thinking.type`). Empty string means "use provider default"
-	// and the invoker should leave the provider's reasoning mode
-	// untouched.
-	Thinking string
-}
+// ChatInvokeRequest is an alias for chat.Request.
+type ChatInvokeRequest = chat.Request
 
-// ChatInvokeResponse mirrors what the LLM component writes to its outputs.
-type ChatInvokeResponse struct {
-	Content  string
-	Thinking string
-	Model    string
-	Stopped  bool
-	Tokens   int
-}
+// ChatInvokeResponse is an alias for chat.Response.
+type ChatInvokeResponse = chat.Response
 
-// defaultChatInvokerMu guards defaultChatInvoker swaps during tests.
-var defaultChatInvokerMu sync.RWMutex
-
-// defaultChatInvoker is the production ChatInvoker. Replaced in tests.
-var defaultChatInvoker ChatInvoker = &einoChatInvoker{}
-
-// SetDefaultChatInvoker swaps the package-level ChatInvoker (test helper).
-// Pass nil to restore the default. Concurrent-safe.
+// SetDefaultChatInvoker delegates to the shared chat package singleton (test
+// helper). Pass nil to restore the "not configured" state. The production
+// einoChatInvoker is registered at boot in cmd/server_main.go.
 func SetDefaultChatInvoker(inv ChatInvoker) {
-	defaultChatInvokerMu.Lock()
-	defer defaultChatInvokerMu.Unlock()
-	defaultChatInvoker = inv
-}
-
-// getDefaultChatInvoker returns the current default ChatInvoker.
-func getDefaultChatInvoker() ChatInvoker {
-	defaultChatInvokerMu.RLock()
-	defer defaultChatInvokerMu.RUnlock()
-	if defaultChatInvoker == nil {
-		return &einoChatInvoker{}
+	if inv == nil {
+		chat.SetDefaultInvoker(nil)
+		return
 	}
-	return defaultChatInvoker
+	chat.SetDefaultInvoker(inv)
 }
 
-// GetDefaultChatInvokerForTest exposes the current package-level invoker so
+// GetDefaultChatInvokerForTest exposes the current shared chat invoker so
 // cross-package tests can swap it and restore it safely.
 func GetDefaultChatInvokerForTest() ChatInvoker {
-	return getDefaultChatInvoker()
+	return chat.GetDefaultInvoker()
+}
+
+// getDefaultChatInvoker returns the shared chat invoker, falling back to the
+// production eino invoker when none has been installed.
+func getDefaultChatInvoker() ChatInvoker {
+	if inv := chat.GetDefaultInvoker(); inv != nil {
+		return inv
+	}
+	return &einoChatInvoker{}
+}
+
+// InstallDefaultChatInvoker registers the production eino-based invoker as the
+// shared chat default. Called at server bootstrap so harness/agentic-search LLM
+// calls work in production; without it, chat.GetDefaultInvoker() stays nil and
+// harness falls back gracefully.
+func InstallDefaultChatInvoker() {
+	chat.SetDefaultInvoker(&einoChatInvoker{})
 }
 
 // einoChatInvoker is the production ChatInvoker — it constructs a fresh
-// models.EinoChatModel per call from the request and dispatches.
+// models.EinoChatModel per call from the request and dispatches. It is NOT
+// registered as the shared chat default at init (so chat.GetDefaultInvoker()
+// stays nil until bootstrap); cmd registers it via SetDefaultChatInvoker.
 type einoChatInvoker struct{}
 
 // Invoke satisfies ChatInvoker.
-func (e *einoChatInvoker) Invoke(ctx context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	if req.ModelName == "" {
-		return nil, fmt.Errorf("component: LLM: model_id is required")
+		// Harness/agentic-search nodes may omit the model; fall back to the
+		// bootstrap-registered tenant default so those calls work in production.
+		if def := chat.GetDefaultModelName(); def != "" {
+			req.ModelName = def
+		} else {
+			return nil, fmt.Errorf("component: LLM: model_id is required and no default model is configured")
+		}
 	}
 	driver := req.Driver
 	modelName := req.ModelName
@@ -312,8 +297,19 @@ func NewLLMComponent(p LLMParam) *LLMComponent {
 func (c *LLMComponent) Name() string { return "LLM" }
 
 // Invoke runs the LLM and returns the output map.
-func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	p := mergeLLMParam(c.param, inputs)
+
+	// Resolve tenant-scoped custom models (and fill missing driver/credentials)
+	// before invoking. Without this, a tenant_model.id or a composite model
+	// reference selected in the agent canvas is passed verbatim to the LLM
+	// driver, causing 400s for custom-added models.
+	var err error
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
+	}
+
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
 	}
@@ -482,7 +478,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		// MaxRetries is an absolute count, not a stacked one.
 		inv = newRetryInvoker(unwrapChatInvoker(inv), maxRetries, delay)
 	}
-	resp, err := inv.Invoke(ctx, ChatInvokeRequest{
+	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
 		Driver:           p.Driver,
 		ModelName:        p.ModelID,
 		APIKey:           p.APIKey,
@@ -533,7 +529,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 		// deferred to a future phase.
 		parsed, ok := matchOutputStructure(resp.Content, p.OutputStructure)
 		if !ok {
-			retryResp, err := inv.Invoke(ctx, ChatInvokeRequest{
+			retryResp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
 				Driver:           p.Driver,
 				ModelName:        p.ModelID,
 				APIKey:           p.APIKey,
@@ -588,7 +584,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, inputs map[string]any) (map[s
 // is deferred — the public surface here is correct, only the data
 // source needs to be swapped to a real StreamReader consumer in a
 // follow-up.
-func (c *LLMComponent) Stream(ctx context.Context, inputs map[string]any) (<-chan map[string]any, error) {
+func (c *LLMComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
 	out := make(chan map[string]any, 16)
 	go func() {
 		defer close(out)
@@ -599,7 +595,7 @@ func (c *LLMComponent) Stream(ctx context.Context, inputs map[string]any) (<-cha
 		if err := ctx.Err(); err != nil {
 			return
 		}
-		result, err := c.Invoke(ctx, inputs)
+		result, err := c.Invoke(ctx, db, inputs)
 		if err != nil {
 			select {
 			case out <- map[string]any{"error": err.Error()}:

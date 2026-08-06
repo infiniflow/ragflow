@@ -17,6 +17,7 @@
 package utility
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"io"
@@ -37,7 +38,7 @@ var (
 // FetchRemoteFileSafely downloads rawURL with SSRF protection, connect/overall
 // timeouts, and a hard size cap that rejects (rather than truncates) oversized
 // bodies.
-func FetchRemoteFileSafely(rawURL string, maxSize int64) ([]byte, http.Header, string, error) {
+func FetchRemoteFileSafely(ctx context.Context, rawURL string, maxSize int64) ([]byte, http.Header, string, error) {
 	currentURL := rawURL
 	for redirects := 0; redirects < 10; redirects++ {
 		hostname, resolvedIP, err := AssertURLSafe(currentURL)

@@ -82,7 +82,8 @@ func TestChatServiceListChatsDefaultReturnsAllWithCorrectTotal(t *testing.T) {
 	createChatListTestChat(t, db, "chat-3", "user-1", "list_test_2")
 
 	svc := NewChatService()
-	result, err := svc.ListChats("user-1", "1", "", 0, 0, "create_time", true)
+	ctx := t.Context()
+	result, err := svc.ListChats(ctx, "user-1", "1", "", 0, 0, "create_time", true, nil)
 	if err != nil {
 		t.Fatalf("ListChats failed: %v", err)
 	}
@@ -91,6 +92,51 @@ func TestChatServiceListChatsDefaultReturnsAllWithCorrectTotal(t *testing.T) {
 	}
 	if len(result.Chats) != 3 {
 		t.Fatalf("expected 3 chats, got %d", len(result.Chats))
+	}
+	if result.Chats[0].Nickname != "tester" {
+		t.Fatalf("expected nickname tester, got %q", result.Chats[0].Nickname)
+	}
+}
+
+func TestChatServiceListChatsFiltersByOwnerIDs(t *testing.T) {
+	db := setupChatListTestDB(t)
+
+	if err := db.Create(&entity.User{
+		ID:       "tenant-2",
+		Nickname: "team owner",
+		Email:    "tenant-2@test.com",
+		Status:   sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant user: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID:        "rel-1",
+		UserID:    "user-1",
+		TenantID:  "tenant-2",
+		Role:      "normal",
+		InvitedBy: "tenant-2",
+		Status:    sptr("1"),
+	}).Error; err != nil {
+		t.Fatalf("failed to create user tenant relation: %v", err)
+	}
+
+	createChatListTestChat(t, db, "chat-own", "user-1", "own_chat")
+	createChatListTestChat(t, db, "chat-team", "tenant-2", "team_chat")
+
+	svc := NewChatService()
+	ctx := t.Context()
+	result, err := svc.ListChats(ctx, "user-1", "1", "", 0, 0, "create_time", true, []string{"tenant-2"})
+	if err != nil {
+		t.Fatalf("ListChats failed: %v", err)
+	}
+	if result.Total != 1 || len(result.Chats) != 1 {
+		t.Fatalf("expected one filtered chat, got total=%d len=%d", result.Total, len(result.Chats))
+	}
+	if result.Chats[0].TenantID != "tenant-2" {
+		t.Fatalf("expected tenant-2 chat, got tenant %q", result.Chats[0].TenantID)
+	}
+	if result.Chats[0].Nickname != "team owner" {
+		t.Fatalf("expected nickname team owner, got %q", result.Chats[0].Nickname)
 	}
 }
 
@@ -102,7 +148,8 @@ func TestChatServiceListChatsKeywordFiltersCorrectly(t *testing.T) {
 
 	svc := NewChatService()
 
-	exactResult, err := svc.ListChats("user-1", "1", "list_keyword_1", 0, 0, "create_time", true)
+	ctx := t.Context()
+	exactResult, err := svc.ListChats(ctx, "user-1", "1", "list_keyword_1", 0, 0, "create_time", true, nil)
 	if err != nil {
 		t.Fatalf("ListChats keyword exact failed: %v", err)
 	}
@@ -113,7 +160,7 @@ func TestChatServiceListChatsKeywordFiltersCorrectly(t *testing.T) {
 		t.Fatalf("expected chat name 'list_keyword_1', got %+v", exactResult.Chats[0].Name)
 	}
 
-	unknownResult, err := svc.ListChats("user-1", "1", "unknown_keyword", 0, 0, "create_time", true)
+	unknownResult, err := svc.ListChats(ctx, "user-1", "1", "unknown_keyword", 0, 0, "create_time", true, nil)
 	if err != nil {
 		t.Fatalf("ListChats unknown keyword failed: %v", err)
 	}
@@ -121,7 +168,7 @@ func TestChatServiceListChatsKeywordFiltersCorrectly(t *testing.T) {
 		t.Fatalf("expected 0 chats for unknown keyword, got %d", len(unknownResult.Chats))
 	}
 
-	partialResult, err := svc.ListChats("user-1", "1", "list_keyword", 0, 0, "create_time", true)
+	partialResult, err := svc.ListChats(ctx, "user-1", "1", "list_keyword", 0, 0, "create_time", true, nil)
 	if err != nil {
 		t.Fatalf("ListChats partial keyword failed: %v", err)
 	}
@@ -138,7 +185,8 @@ func TestChatServiceListChatsPagination(t *testing.T) {
 
 	svc := NewChatService()
 
-	page1, err := svc.ListChats("user-1", "1", "", 1, 2, "create_time", true)
+	ctx := t.Context()
+	page1, err := svc.ListChats(ctx, "user-1", "1", "", 1, 2, "create_time", true, nil)
 	if err != nil {
 		t.Fatalf("ListChats page 1 failed: %v", err)
 	}
@@ -149,7 +197,7 @@ func TestChatServiceListChatsPagination(t *testing.T) {
 		t.Fatalf("expected total=5, got %d", page1.Total)
 	}
 
-	page3, err := svc.ListChats("user-1", "1", "", 3, 2, "create_time", true)
+	page3, err := svc.ListChats(ctx, "user-1", "1", "", 3, 2, "create_time", true, nil)
 	if err != nil {
 		t.Fatalf("ListChats page 3 failed: %v", err)
 	}
@@ -167,7 +215,8 @@ func TestChatServiceListChatsExcludesDeletedChats(t *testing.T) {
 	db.Model(&entity.Chat{}).Where("id = ?", "chat-2").Update("status", invalidStatus)
 
 	svc := NewChatService()
-	result, err := svc.ListChats("user-1", "1", "", 0, 0, "create_time", true)
+	ctx := t.Context()
+	result, err := svc.ListChats(ctx, "user-1", "1", "", 0, 0, "create_time", true, nil)
 	if err != nil {
 		t.Fatalf("ListChats failed: %v", err)
 	}

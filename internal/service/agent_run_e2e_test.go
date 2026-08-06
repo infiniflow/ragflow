@@ -56,6 +56,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 // makeCanvasWithDSL inserts a canvas + tenant + user + a published
@@ -1689,7 +1690,7 @@ func TestRunAgent_AllFixture_CategorizeResume(t *testing.T) {
 
 type categorizeResumeInvoker struct{}
 
-func (i *categorizeResumeInvoker) Invoke(_ context.Context, req component.ChatInvokeRequest) (*component.ChatInvokeResponse, error) {
+func (i *categorizeResumeInvoker) Invoke(_ context.Context, _ *gorm.DB, req component.ChatInvokeRequest) (*component.ChatInvokeResponse, error) {
 	return &component.ChatInvokeResponse{
 		Content: "Retrieval",
 		Model:   req.ModelName,
@@ -1936,6 +1937,7 @@ func TestRunAgent_RunTracker_AttachCheckpoint_CallSequence(t *testing.T) {
 // TestRunAgent_FilesPopulateIteration verifies the full upload object ->
 // sys.files -> Parallel/Iteration item path.
 func TestRunAgent_FilesPopulateIteration(t *testing.T) {
+	ctx := t.Context()
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
 		&entity.UserCanvas{},
@@ -1957,7 +1959,7 @@ func TestRunAgent_FilesPopulateIteration(t *testing.T) {
 	sessionID := "session-files-e2e"
 	versionID := "v-files-e2e"
 	memory := storage.NewMemoryStorage()
-	if err := memory.Put("user-1-downloads", "upload-1", []byte("iteration payload")); err != nil {
+	if err := memory.Put(ctx, "user-1-downloads", "upload-1", []byte("iteration payload")); err != nil {
 		t.Fatalf("put upload: %v", err)
 	}
 	factory := storage.GetStorageFactory()
@@ -2041,7 +2043,7 @@ func TestRunAgent_FilesPopulateIteration(t *testing.T) {
 
 	svc := NewAgentService()
 	events, err := svc.RunAgent(
-		context.Background(),
+		ctx,
 		"user-1",
 		canvasID,
 		sessionID,

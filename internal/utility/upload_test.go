@@ -55,7 +55,8 @@ func TestFetchRemoteFileSafely_PDFAddsExtension(t *testing.T) {
 		PinnedHTTPClient = origPinned
 	})
 
-	data, headers, _, err := FetchRemoteFileSafely(server.URL+"/report", 100<<20)
+	ctx := t.Context()
+	data, headers, _, err := FetchRemoteFileSafely(ctx, server.URL+"/report", 100<<20)
 	if err != nil {
 		t.Fatalf("FetchRemoteFileSafely failed: %v", err)
 	}
@@ -87,7 +88,8 @@ func TestFetchRemoteFileSafely_ReturnsContentAndHeaders(t *testing.T) {
 		PinnedHTTPClient = origPinned
 	})
 
-	data, headers, finalURL, err := FetchRemoteFileSafely(server.URL+"/page", 100<<20)
+	ctx := t.Context()
+	data, headers, finalURL, err := FetchRemoteFileSafely(ctx, server.URL+"/page", 100<<20)
 	if err != nil {
 		t.Fatalf("FetchRemoteFileSafely failed: %v", err)
 	}

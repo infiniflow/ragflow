@@ -10,7 +10,7 @@ import (
 // TestValidateParserID_AcceptsRegistryRefs verifies that every
 // canonical builtin pipeline id passes validation.
 func TestValidateParserID_AcceptsRegistryRefs(t *testing.T) {
-	for _, id := range []string{"general", "book", "audio", "qa", "table", "tag"} {
+	for _, id := range []string{"general", "book", "audio", "qa", "table"} {
 		if err := validateParserID(id); err != nil {
 			t.Errorf("validateParserID(%q) = %v, want nil", id, err)
 		}

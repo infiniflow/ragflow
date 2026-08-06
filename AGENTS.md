@@ -2,7 +2,7 @@
 
 Use this file as the local operating guide for the current codebase. Prefer the code and the current CLAUDE.md over any older convention or remembered project shape.
 
-## Core stance
+## Core Stance
 - Treat legacy code as liability, not as a compatibility target.
 - Prefer deletion over shims, deprecated branches, wrapper APIs, and dual-track migration notes.
 - If old and new implementations coexist, converge to one path unless an external contract forces compatibility.
@@ -16,7 +16,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - Go: the repository also has a substantial Go module for servers, ingestion, parser/runtime, CLI, and supporting services.
 - Runtime services commonly include MySQL/PostgreSQL, Redis, MinIO, and Elasticsearch/Infinity/OpenSearch depending on configuration.
 
-## Code layout to expect
+## Code Layout to Expect
 - `api/`: Python API server entrypoints, blueprints, services, and database code.
 - `rag/`: ingestion, retrieval, LLM integration, and graph RAG logic.
 - `deepdoc/`: parsing and OCR.
@@ -45,13 +45,37 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - `docker/`: local and production compose files.
 - `sdk/` and `test/`: SDK and automated tests.
 
-## Go-specific rules
+## Go-Specific Rules
 - Treat `internal/ingestion`, `internal/parser`, and `internal/deepdoc` as actively refactored code. Prefer collapsing duplicate paths over preserving transitional wrappers.
 - Do not add or preserve deprecated Go APIs just to ease migration inside the repo.
 - Remove commented-out Go code instead of leaving recovery notes in place.
 - Keep package comments and doc comments aligned with the current runtime path, not with migration history.
 
-## Working rules
+## Go Test Tiers
+Go tests are classified by build tag so the default `go test ./...` run stays self-contained. Tag a test file with `//go:build <tier>` placed before the `package` clause.
+
+| Tier | Build tag | Runs by default? | Needs |
+|---|---|---|---|
+| Unit | (none) | Yes (`go test ./...`) | Native CGO static libs (wired by `build.sh --test`); no external services — uses in-memory SQLite, miniredis, or `httptest` stubs. |
+| Integration | `integration` | No (`-tags integration`) | A real service: MySQL/MinIO/Elasticsearch/Infinity/LLM. Single component, reasonably fast. |
+| E2E | `e2e` | No (`-tags e2e`) | Full cross-component pipeline (ingest → index → retrieve) against real services; heavy/slow. |
+| Manual | `manual` | No (`-tags manual`) | Very slow/expensive (deepdoc render/parity/snapshot/bench). **Local opt-in ONLY — never run in CI.** |
+| Native (orthogonal) | `cgo` / `!cgo` | `cgo` auto-satisfies under CGO_ENABLED=1 | Native static libs (`office_oxide`/`pdfium`/`pdf_oxide`). Combine with tiers, e.g. `//go:build cgo && integration`. |
+
+Run tiers locally via `build.sh`:
+```bash
+bash build.sh --test                      # unit tier (no tags)
+bash build.sh --test-integration ./...    # integration tier
+bash build.sh --test-e2e                  # e2e tier
+bash build.sh --test-manual               # manual tier (very slow)
+bash build.sh --test-all                  # integration + e2e (never includes manual)
+```
+Rules:
+- New tests that touch a real external service MUST carry `integration`/`e2e`/`manual` — do not rely on `t.Skip` + env vars to soft-isolate them in the default unit run. Keep an env guard as a harmless secondary safety net if desired.
+- `manual` is never wired into CI or any automated pipeline.
+- `unit` (no tag) must stay free of external-service dependencies so `go test ./...` passes without MySQL/MinIO/ES/Infinity/LLM. The native CGO static libraries (`office_oxide`/`pdfium`/`pdf_oxide`) are still required at build time and are wired automatically by `build.sh --test`; that is expected, not an external service.
+
+## Working Rules
 - Before editing, inspect the nearest code path that actually owns the behavior.
 - Keep changes small and local unless the task is explicitly a broader refactor.
 - Prefer one implementation path instead of preserving old and new versions side by side.
@@ -94,7 +118,7 @@ bash build.sh --go
 bash build.sh --all
 ```
 
-## Validation preference
+## Validation Preference
 - Run the narrowest relevant test, lint, or build command after a change.
 - For backend changes, prefer targeted pytest or ruff checks over full-suite runs.
 - For frontend changes, prefer the touched-package lint, type-check, or test command.

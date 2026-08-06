@@ -80,8 +80,9 @@ func (h *MCPHandler) CreateMCPServer(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
+	ctx := c.Request.Context()
 
-	result, code, err := h.mcpService.CreateMCPServer(user.ID, req)
+	result, code, err := h.mcpService.CreateMCPServer(ctx, user.ID, req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -108,13 +109,13 @@ func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
-
+	ctx := c.Request.Context()
 	orderby := c.DefaultQuery("orderby", "create_time")
 	desc := strings.ToLower(c.DefaultQuery("desc", "true")) != "false"
 	keywords := c.Query("keywords")
 	mcpIDs := getMCPIDsFromQuery(c)
 
-	result, code, err := h.mcpService.ListMCPServers(user.ID, mcpIDs, keywords, page, pageSize, orderby, desc)
+	result, code, err := h.mcpService.ListMCPServers(ctx, user.ID, mcpIDs, keywords, page, pageSize, orderby, desc)
 	if err != nil {
 		if code == common.CodeServerError {
 			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, code, nil, err.Error())
@@ -133,10 +134,10 @@ func (h *MCPHandler) GetMCPServer(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
-
+	ctx := c.Request.Context()
 	mcpID := c.Param("mcp_id")
 	if c.Query("mode") == "download" {
-		result, code, err := h.mcpService.ExportMCPServer(user.ID, mcpID)
+		result, code, err := h.mcpService.ExportMCPServer(ctx, user.ID, mcpID)
 		if err != nil {
 			mcpDetailError(c, code, err)
 			return
@@ -145,7 +146,7 @@ func (h *MCPHandler) GetMCPServer(c *gin.Context) {
 		return
 	}
 
-	result, code, err := h.mcpService.GetMCPServer(user.ID, mcpID)
+	result, code, err := h.mcpService.GetMCPServer(ctx, user.ID, mcpID)
 	if err != nil {
 		mcpDetailError(c, code, err)
 		return
@@ -175,8 +176,8 @@ func (h *MCPHandler) UpdateMCPServer(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
-
-	result, code, err := h.mcpService.UpdateMCPServer(user.ID, mcpID, req)
+	ctx := c.Request.Context()
+	result, code, err := h.mcpService.UpdateMCPServer(ctx, user.ID, mcpID, req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -192,8 +193,8 @@ func (h *MCPHandler) DeleteMCPServer(c *gin.Context) {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
 	}
-
-	result, code, err := h.mcpService.DeleteMCPServer(user.ID, c.Param("mcp_id"))
+	ctx := c.Request.Context()
+	result, code, err := h.mcpService.DeleteMCPServer(ctx, user.ID, c.Param("mcp_id"))
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -320,8 +321,8 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 		// 10 s fallback when timeout <= 0.
 		_ = json.Unmarshal(rawTimeout, &timeout)
 	}
-
-	results, err := h.mcpService.ImportServers(user.ID, servers, timeout)
+	ctx := c.Request.Context()
+	results, err := h.mcpService.ImportServers(ctx, user.ID, servers, timeout)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, err.Error())
 		return

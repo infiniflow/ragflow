@@ -132,7 +132,7 @@ func TestLLM_Invoke_AppendsCitationPrompt(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo", SystemPrompt: "You are a bot.", Cite: true})
-	if _, err := c.Invoke(context.Background(), map[string]any{
+	if _, err := c.Invoke(context.Background(), nil, map[string]any{
 		"user_prompt": "hi",
 	}); err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -159,7 +159,7 @@ func TestLLM_Invoke_CiteFalseDisablesInjection(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo", SystemPrompt: "sys"})
-	_, _ = c.Invoke(context.Background(), map[string]any{
+	_, _ = c.Invoke(context.Background(), nil, map[string]any{
 		"user_prompt": "hi",
 		"cite":        false,
 	})

@@ -208,7 +208,7 @@ def test_user_list_auth_success_exception_matrix_unit(monkeypatch):
     module.current_user.id = "other-user"
     res = module.user_list("tenant-1")
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
-    assert res["message"] == "No authorization.", res
+    assert res["message"] == "no authorization", res
 
     module.current_user.id = "tenant-1"
     monkeypatch.setattr(
@@ -235,7 +235,7 @@ def test_create_invite_role_and_email_failure_matrix_unit(monkeypatch):
     _set_request_json(monkeypatch, module, {"email": "invitee@example.com"})
     res = _run(module.create("tenant-1"))
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
-    assert res["message"] == "No authorization.", res
+    assert res["message"] == "no authorization", res
 
     module.current_user.id = "tenant-1"
     monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [])
@@ -283,7 +283,7 @@ def test_rm_and_tenant_list_matrix_unit(monkeypatch):
     _set_request_json(monkeypatch, module, {"user_id": "user-2"})
     res = _run(module.rm("tenant-1"))
     assert res["code"] == module.RetCode.AUTHENTICATION_ERROR, res
-    assert res["message"] == "No authorization.", res
+    assert res["message"] == "no authorization", res
 
     module.current_user.id = "tenant-1"
     deleted = []
@@ -1503,6 +1503,15 @@ def _load_chat_routes_unit_module(monkeypatch):
 
     tenant_model_provider_mod = ModuleType("api.db.joint_services.tenant_model_service")
     tenant_model_provider_mod.get_model_config_from_provider_instance = lambda *_args, **_kwargs: {}
+
+    def _get_model_config_by_id(_tenant_id, _model_type, model_ref):
+        if model_ref == "tenant-llm-id":
+            return {}
+        raise LookupError(f"unknown tenant model id: {model_ref}")
+
+    tenant_model_provider_mod.get_model_config_by_id = _get_model_config_by_id
+    tenant_model_provider_mod.resolve_model_id = lambda _tenant_id, _model_type, model_name: model_name
+    tenant_model_provider_mod.get_composite_model_name_by_id = lambda model_id: model_id
     tenant_model_provider_mod.resolve_model_config = lambda *_args, **_kwargs: {}
     tenant_model_provider_mod.get_tenant_default_model_by_type = lambda *_args, **_kwargs: {}
 
