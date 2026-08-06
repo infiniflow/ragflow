@@ -34,6 +34,17 @@ import (
 // instructions; the Go planner selects by question_type.
 const decomposePrompt = `Break down the research question into %d atomic claims (facts or sub-questions).
 
+CRITICAL — Enumeration questions:
+These questions ask for a complete set of items. The grounding context may mention some candidate names as partial evidence — never turn every name you see into a verification claim. Each decomposed claim must be a discovery query that searches for the full collection, NOT a yes/no verification of individual candidates.
+
+EXAMPLE of WRONG decomposition for "Which cities have hosted the Olympic Games?":
+  ❌ "London hosted the Olympic Games"  (verification form, presupposes the answer)
+  ❌ "Tokyo hosted the Olympic Games"
+
+EXAMPLE of CORRECT decomposition:
+  ✅ "Complete list of all host cities of the Olympic Games"
+  ✅ "Olympic Games host cities across all editions"
+
 Question: %s
 
 Detail level: %s

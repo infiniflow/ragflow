@@ -1,9 +1,11 @@
 """Search tools: hybrid, vector, BM25, web, structured."""
 
+import hashlib
 import logging
 import re
-import hashlib
+
 from common import settings
+
 from .navigation import _kg_scopes
 
 _LOG = logging.getLogger(__name__)
@@ -127,12 +129,15 @@ def _narrow_by_keywords(chunks: list[dict], keywords: str) -> list[dict]:
     kwds = [k.strip().lower() for k in (keywords or "").split(",") if k.strip()]
     if not kwds or not chunks:
         return chunks
-    if len(kwds) < 3:
-        kwds = [k.strip().lower() for k in (keywords or "").split(" ") if k.strip()]
-        _kwds = []
-        for i in range(len(kwds) - 1):
-            _kwds.append(kwds[i] + " " + kwds[i + 1])
-        kwds = _kwds
+    if 1 < len(kwds) < 3:
+        space_kwds = [k.strip().lower() for k in (keywords or "").split(" ") if k.strip()]
+        if len(space_kwds) > len(kwds):
+            kwds = space_kwds
+        else:
+            _kwds = []
+            for i in range(len(kwds) - 1):
+                _kwds.append(kwds[i] + " " + kwds[i + 1])
+            kwds = _kwds
 
     scored = [(ck, _narrow_content(ck.get("content_with_weight") or ck.get("content") or "", kwds)) for ck in chunks]
     out: list[dict] = []

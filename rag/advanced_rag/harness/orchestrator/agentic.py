@@ -3,18 +3,18 @@
 import asyncio
 import logging
 
-from rag.advanced_rag.harness.types import (
-    ClaimTarget,
-    AgentResult,
-    OrchestratorContext,
-)
+from rag.advanced_rag.harness.agent import research_agent_loop
 from rag.advanced_rag.harness.config import get_mode
 from rag.advanced_rag.harness.pipeline import Pipeline
-from rag.advanced_rag.harness.agent import research_agent_loop
 from rag.advanced_rag.harness.sufficiency import (
-    cross_check_claim,
     compute_fusion_score,
+    cross_check_claim,
     route_sufficiency_verdict,
+)
+from rag.advanced_rag.harness.types import (
+    AgentResult,
+    ClaimTarget,
+    OrchestratorContext,
 )
 
 _LOG = logging.getLogger(__name__)
@@ -143,10 +143,11 @@ async def agentic_research(state: dict, tools) -> dict:
         if action == "ANSWER_PARTIAL":
             return _finalize(ctx, tools, partial=True)
         if action == "ABSTAIN":
-            if getattr(tools, "text_attachments_content", ""):
-                return {"verdict": verdict.__dict__, "kbinfos": tools.kbinfos}
-            tools.kbinfos["chunks"] = []
-            return {"verdict": verdict.__dict__, "abstain": True}
+            # ABSTAIN means the model does not know the answer and should not
+            # fabricate one. Evidence is preserved in kbinfos but the
+            # formalize_answer node will surface "I cannot answer" instead of
+            # generating from unreliable evidence.
+            return _finalize(ctx, tools, partial=True, fallback=True, abstain=True)
         if action == "REPLAN":
             # Ultra: re-plan on low score
             from rag.advanced_rag.harness.planner import planner_node
@@ -178,7 +179,7 @@ async def _run_claim_research(
         )
     except asyncio.CancelledError:
         raise
-    except asyncio.TimeoutError:
+    except TimeoutError:
         _LOG.warning(
             '[Agentic research] Gave up on "%s" — it took longer than %ss.',
             _snip(claim.description),
@@ -214,12 +215,13 @@ async def _run_claim_research(
     return result
 
 
-def _finalize(ctx: OrchestratorContext, tools, partial: bool = False, fallback: bool = False) -> dict:
+def _finalize(ctx: OrchestratorContext, tools, partial: bool = False, fallback: bool = False, abstain: bool = False) -> dict:
     """Merge agent results into kbinfos and return."""
     _merge_agent_results(ctx, tools)
     return {
         "verdict": ctx.verdict.__dict__ if ctx.verdict else None,
         "partial_answer": partial or fallback,
+        "abstain": abstain,
         "kbinfos": tools.kbinfos,
     }
 
@@ -306,8 +308,8 @@ async def _add_template_group_compilations(comps: set[str], parser_config: dict,
     if not tenant_id:
         return
     try:
-        from common.misc_utils import thread_pool_exec
         from api.db.services.compilation_template_group_service import CompilationTemplateGroupService
+        from common.misc_utils import thread_pool_exec
         from rag.svr.task_executor_refactor.chunk_post_processor import (
             _parser_config_compilation_template_group_ids,
         )
