@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from dataclasses import replace
 
 from rag.advanced_rag.harness.types import ClaimTarget, AgentResult, OrchestratorContext
 from rag.advanced_rag.harness.config import get_mode
@@ -10,6 +11,7 @@ from rag.advanced_rag.harness.sufficiency import (
     compute_fusion_score,
     route_sufficiency_verdict,
 )
+from rag.advanced_rag.harness.orchestrator.sufficiency_llm import llm_sufficiency_boost
 from rag.advanced_rag.harness.tools.search import hybrid_search
 
 _LOG = logging.getLogger(__name__)
@@ -29,25 +31,47 @@ async def decompose_and_search(state: dict, tools) -> dict:
     for cycle in range(mode.max_orchestrator_cycles):
         ctx.iteration = cycle
         unverified = [c for c in ctx.claims if not c.is_verified]
-        if not unverified:
+
+        # Consume Phase-2 follow-up queries (missing-pieces feedback): run
+        # targeted searches for the flagged gaps in addition to the claim
+        # descriptions, so the next round closes the actual evidence gap
+        # instead of re-searching the same broad claims.
+        followup_queries: list[str] = []
+        if ctx.pending_followups:
+            followup_queries = [str(q.get("query") or q.get("question") or "") for q in ctx.pending_followups if q]
+            followup_queries = [q for q in followup_queries if q.strip()]
+            ctx.pending_followups = []
+            if followup_queries:
+                _LOG.info("[Decompose] Round %d: searching %d follow-up gap query(ies): %s", cycle + 1, len(followup_queries), followup_queries)
+
+        if not unverified and not followup_queries:
             break
 
-        # Parallel search on unverified claims
-        tasks = []
-        for c in unverified:
-            tasks.append(hybrid_search(tools, query=c.description, keywords=keywords))
+        # Parallel search on unverified claims + follow-up gap queries.
+        search_items = [c.description for c in unverified] + followup_queries
+        tasks = [hybrid_search(tools, query=q, keywords=keywords) for q in search_items]
         results = await asyncio.gather(*tasks)
 
-        for c, result in zip(unverified, results):
+        # Follow-up search results are merged into kbinfos (extra evidence) but
+        # don't create fake claim verifications.
+        n_claims = len(unverified)
+        for c, result in zip(unverified, results[:n_claims]):
             if result.get("chunks"):
                 _merge_kbinfos(tools, result)
                 c.is_verified = True
-                c.confidence = 0.8
+                # Signal A: retrieval-confidence (mean similarity of top-3 hits),
+                # not a hard-coded 0.8 — reflects how strongly the search actually
+                # matched the claim. Zero LLM cost (medium has no agent loop).
+                c.confidence = _retrieval_confidence(result)
                 c.agent_result = AgentResult(
                     claim_id=c.claim_id,
-                    report=_summarize(result),
+                    # Signal B: verify the *claim's* required facts (numbers /
+                    # entities from its description) against the retrieved
+                    # chunks, instead of the old self-consistent truncated
+                    # summary (which trivially matched its own source text).
+                    report=c.description or "",
                     is_verified=True,
-                    confidence=0.8,
+                    confidence=c.confidence,
                     evidence_ids=_global_evidence_ids(tools, result),
                 )
             else:
@@ -57,12 +81,31 @@ async def decompose_and_search(state: dict, tools) -> dict:
                     is_verified=False,
                     confidence=0.0,
                 )
+        # Merge follow-up gap-search evidence (extra evidence for the answer),
+        # without fabricating a claim verification for it.
+        for result in results[n_claims:]:
+            if result.get("chunks"):
+                _merge_kbinfos(tools, result)
 
         all_chunks = {i: c for i, c in enumerate(tools.kbinfos.get("chunks", []))}
         agent_results = [c.agent_result for c in ctx.claims if c.agent_result]
         cross_results = [cross_check_claim(r, all_chunks) for r in agent_results]
 
         verdict = compute_fusion_score(agent_results, cross_results, mode)
+
+        # Phase-2: LLM Sufficient Context AutoRater fallback on ambiguous
+        # verdicts — confirm sufficiency when the code signals are unclear.
+        if verdict.status in ("USEFUL_BUT_INCOMPLETE", "INSUFFICIENT", "CONFLICTING"):
+            cited_ids: list[str] = []
+            for r in agent_results:
+                cited_ids.extend(r.evidence_ids or [])
+            boost = await llm_sufficiency_boost(tools, ctx.question, verdict, evidence_ids=cited_ids)
+            if boost and boost.get("is_sufficient"):
+                verdict = replace(verdict, status="SUFFICIENT", score=max(verdict.score, mode.sufficiency_threshold))
+                _LOG.info("[Decompose] Round %d: LLM AutoRater confirms SUFFICIENT → upgraded", cycle + 1)
+            elif boost and boost.get("followups"):
+                ctx.pending_followups = boost.get("followups", [])
+                _LOG.info("[Decompose] Stored %d follow-up query(ies) for next round.", len(ctx.pending_followups))
 
         action, should_continue = route_sufficiency_verdict(
             verdict,
@@ -134,7 +177,19 @@ def _global_evidence_ids(tools, result: dict) -> list[int]:
     return ids
 
 
-def _summarize(result: dict) -> str:
+def _retrieval_confidence(result: dict) -> float:
+    """Signal A for medium: retrieval-confidence from top-3 chunk similarity.
+
+    There is no LLM agent in medium, so we substitute the self-assessed
+    confidence with how strongly the vector/BM25 search matched the claim.
+    Returns 0.0 when nothing was retrieved; otherwise the mean similarity of
+    the top-3 hits (clamped to [0, 1]).
+    """
     chunks = result.get("chunks", [])
-    texts = [c.get("content_with_weight", "")[:200] for c in chunks[:3]]
-    return " | ".join(texts)
+    if not chunks:
+        return 0.0
+    scores = [c.get("similarity", 0.0) for c in chunks[:3]]
+    if not scores:
+        return 0.0
+    mean = sum(scores) / len(scores)
+    return max(0.0, min(1.0, mean))

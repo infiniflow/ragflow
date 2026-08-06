@@ -44,6 +44,13 @@ class ExecutionStrategy:
     sufficiency_threshold: float
     partial_threshold: float
     fallback_to_direct_llm: bool
+    # Fusion of Signal A (agent/retrieval confidence) and Signal B (cross-check).
+    # "geometric" (default): weighted geometric mean, any signal ~0 vetoes.
+    # "agreement": trust when A/B agree, conservative when they diverge.
+    # "weighted": convex combination minus a disagreement penalty.
+    fusion_strategy: str = "geometric"
+    # Cross-check (Signal B) weight for geometric/weighted strategies.
+    fusion_w_b: float = 0.6
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -146,6 +153,11 @@ class OrchestratorContext:
     current_phase: str = "locate"
     verdict: SufficiencyVerdict | None = None
     history: list[dict] = field(default_factory=list)
+    # Follow-up search queries produced by the Phase-2 LLM Sufficient Context
+    # AutoRater when evidence was deemed insufficient. They are consumed by the
+    # next research round to guide targeted follow-up search (Google's
+    # missing-pieces feedback), then cleared.
+    pending_followups: list[dict] = field(default_factory=list)
     _last_entity: str | None = None
 
     @property

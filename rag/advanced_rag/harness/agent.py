@@ -158,13 +158,25 @@ async def research_agent_loop(
         web_enabled=bool(getattr(tools, "has_web", lambda: False)()),
     )
 
+    # Consume follow-up search queries from the previous sufficiency round
+    # (Phase-2 LLM missing-pieces feedback) so the agent searches for the
+    # specific gaps instead of re-searching the whole question. Clear after use.
+    followups: list[str] = []
+    pending = getattr(context, "pending_followups", None)
+    if pending:
+        followups = [str(q.get("query") or q.get("question") or "") for q in pending if q]
+        followups = [q for q in followups if q.strip()]
+        context.pending_followups = []
+        if followups:
+            _LOG.info("research_agent: injecting %d follow-up query(ies) for missing pieces: %s", len(followups), followups)
+
     # Clone so binding tools never leaks onto the shared chat model.
     agent_mdl = tools.chat_mdl.clone()
     if getattr(agent_mdl, "is_tools", False):
-        return await _research_native(claim, agent_mdl, pipeline, phase, phase_config, gated_defs, mode)
+        return await _research_native(claim, agent_mdl, pipeline, phase, phase_config, gated_defs, mode, followups)
 
     _LOG.info("research_agent: model lacks native tool support; falling back to text-based tool selection")
-    return await _research_text(claim, tools, pipeline, phase, phase_config, gated_defs, mode)
+    return await _research_text(claim, tools, pipeline, phase, phase_config, gated_defs, mode, followups)
 
 
 async def _research_native(
@@ -175,6 +187,7 @@ async def _research_native(
     phase_config: dict,
     gated_defs: list[dict],
     mode: ExecutionStrategy,
+    followups: list[str] | None = None,
 ) -> dict:
     """Bind tools onto ``agent_mdl`` and let its native tool loop drive research."""
     schemas = _build_tool_schemas(gated_defs)
@@ -191,6 +204,15 @@ async def _research_native(
         max_cycles=mode.max_agent_cycles,
     )
     history = [{"role": "user", "content": f"Research task: {claim.description}\nBegin."}]
+    # Phase-2 missing-pieces guidance: focus this round on the specific gaps the
+    # Sufficient Context AutoRater flagged, rather than re-searching broadly.
+    if followups:
+        history.append(
+            {
+                "role": "user",
+                "content": "Previous evidence was incomplete. Run targeted searches specifically for the following missing pieces:\n- " + "\n- ".join(followups),
+            }
+        )
 
     final_text = ""
     try:
@@ -224,6 +246,7 @@ async def _research_text(
     phase_config: dict,
     gated_defs: list[dict],
     mode: ExecutionStrategy,
+    followups: list[str] | None = None,
 ) -> dict:
     """Fallback: prompt-based tool selection for models without native tools."""
     system = RESEARCH_AGENT_TEXT_PROMPT.format(
@@ -235,6 +258,13 @@ async def _research_text(
     )
 
     history: list[dict] = []
+    if followups:
+        history.append(
+            {
+                "role": "user",
+                "content": "Previous evidence was incomplete. Run targeted searches specifically for the following missing pieces:\n- " + "\n- ".join(followups),
+            }
+        )
 
     for cycle in range(mode.max_agent_cycles):
         try:
@@ -377,7 +407,17 @@ def _fmt_tool_result(result: ToolResult) -> str:
     answer = (result.metadata or {}).get("answer") if isinstance(result.metadata, dict) else ""
     if answer:
         parts.append(f"Answer: {answer}")
-    parts.extend(c.get("content_with_weight", c.get("text", ""))[:300] for c in result.chunks[:3])
+    # Show more chunks (6 vs the old 3) and order them by retrieval similarity,
+    # so the agent actually sees the passages that best match its query. The old
+    # "first 3 chunks, 300 chars each" made the agent miss the key evidence when
+    # it sat in chunk 4+ (5.log/6.log: it retrieved 48m/27m but reported
+    # "unrelated (Barack Obama)" and re-searched endlessly).
+    chunks = list(result.chunks)
+    chunks.sort(key=lambda c: float(c.get("similarity", 0.0) or 0.0), reverse=True)
+    for c in chunks[:6]:
+        text = c.get("content_with_weight") or c.get("text") or ""
+        if text:
+            parts.append(text[:300])
     if not parts:
         return "[no results found]"
     return "\n\n".join(parts)

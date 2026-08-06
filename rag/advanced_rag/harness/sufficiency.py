@@ -19,24 +19,151 @@ _LOG = logging.getLogger(__name__)
 
 import re
 
+# Capitals/words that the naive regex picks up but carry no *evidence* signal.
+# These are report connective tissue ("Therefore", "However", "The", "As") or
+# generic nouns ("Evidence", "Wikipedia") that, when treated as required facts,
+# generate a flood of meaningless mismatches and drag every score down.
+_STOP_ENTITIES = {
+    "The",
+    "A",
+    "An",
+    "And",
+    "Or",
+    "But",
+    "So",
+    "As",
+    "It",
+    "Its",
+    "This",
+    "That",
+    "These",
+    "Those",
+    "There",
+    "Their",
+    "Then",
+    "Than",
+    "They",
+    "However",
+    "Therefore",
+    "Thus",
+    "Hence",
+    "Moreover",
+    "Furthermore",
+    "Additionally",
+    "Meanwhile",
+    "Although",
+    "Though",
+    "While",
+    "Because",
+    "Since",
+    "After",
+    "Before",
+    "During",
+    "Within",
+    "Without",
+    "With",
+    "Where",
+    "When",
+    "Why",
+    "How",
+    "What",
+    "Which",
+    "Who",
+    "Whom",
+    "No",
+    "Yes",
+    "Not",
+    "None",
+    "Nothing",
+    "Each",
+    "Every",
+    "Both",
+    "Either",
+    "Neither",
+    "Some",
+    "Any",
+    "All",
+    "Also",
+    "Only",
+    "Even",
+    "Still",
+    "Another",
+    "Other",
+    "One",
+    "Two",
+    "Three",
+    "First",
+    "Second",
+    "Third",
+    "Last",
+    "Next",
+    "E.g.",
+    "I.e.",
+    "Etc.",
+    "Evidence",
+    "Answer",
+    "Question",
+    "Conclusion",
+    "Result",
+    "Results",
+    "Report",
+    "Source",
+    "Sources",
+    "Example",
+    "Note",
+    "Notes",
+    "Context",
+}
+
 
 def extract_numbers(text: str) -> list[float]:
     """Extract numeric values from text."""
     return [float(m) for m in re.findall(r"\d+\.?\d*", text)]
 
 
+def _filter_relevant_numbers(numbers: list[float]) -> list[float]:
+    """Drop numbers that carry no factual-claim signal.
+
+    - Values in ``[0, 1]`` are overwhelmingly ratios / probabilities /
+      confidence scores the agent sprinkled into its prose, not facts to
+      verify against the evidence.
+    - Drop duplicates: "48 m" appearing three times should be checked once.
+    """
+    kept: list[float] = []
+    for n in numbers:
+        if 0.0 < n < 1.0:
+            continue
+        if n in kept:
+            continue
+        kept.append(n)
+    return kept
+
+
 def extract_named_entities(text: str) -> list[str]:
-    """Simple entity extraction — looks for capitalized multi-word sequences."""
+    """Simple entity extraction — capitalized words/phrases minus noise.
+
+    Filters out connective tissue / generic nouns (see ``_STOP_ENTITIES``) so
+    the cross-check verifies real named entities (e.g. "Istiklal Mosque",
+    "Sarajevo") instead of failing on "Therefore"/"However".
+    """
     entities = re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b", text)
-    return list(set(entities))
+    return [e for e in dict.fromkeys(entities) if e not in _STOP_ENTITIES]
 
 
 def cross_check_claim(agent_result: AgentResult, all_chunks: dict) -> ClaimCrossCheckResult:
     """Code-level cross-check: number matching + entity presence."""
     report = agent_result.report
     claimed = agent_result.is_verified
+    _LOG.info(
+        "[Cross-check] claim=%s entering — self_verified=%s, report_len=%d, evidence_ids=%s",
+        agent_result.claim_id,
+        claimed,
+        len(report or ""),
+        agent_result.evidence_ids,
+    )
 
     if not claimed:
+        _LOG.info("[Cross-check] claim=%s → FAILED (agent self-reported as unverified, score=0.0)", agent_result.claim_id)
         return ClaimCrossCheckResult(
             claim_id=agent_result.claim_id,
             cross_check_passed=False,
@@ -44,44 +171,75 @@ def cross_check_claim(agent_result: AgentResult, all_chunks: dict) -> ClaimCross
             mismatches=["agent self-reported as unverified"],
         )
 
-    numbers = extract_numbers(report)
+    raw_numbers = extract_numbers(report)
+    numbers = _filter_relevant_numbers(raw_numbers)
     entities = extract_named_entities(report)
+    _LOG.info(
+        "[Cross-check] claim=%s extracted %d raw number(s) → %d relevant (noise filtered/deduped): %s, %d entity(ies)=%s from report",
+        agent_result.claim_id,
+        len(raw_numbers),
+        len(numbers),
+        numbers[:8],
+        len(entities),
+        entities[:8],
+    )
 
-    mismatches = []
-    matches = []
-
+    # Existence check across the *union* of evidence chunks, not per-chunk.
+    # Verifying "does this fact appear anywhere in the cited evidence" is the
+    # right semantic — a number/entity supported by one chunk is verified.
+    # The old per-chunk loop demanded a fact appear in EVERY evidence chunk,
+    # so a fact confirmed in chunk A was recorded as a mismatch in chunks B..N
+    # and the score was diluted to near-zero even when the answer was correct
+    # (see benchmark/3.log: c4's 48/157/27/89 all matched chunk 0 yet scored
+    # 0.286; c5's 21/27/48/89 matched chunk 3 yet scored 0.168).
+    chunk_texts: list[str] = []
+    missing_ids: list[str] = []
     for eid in agent_result.evidence_ids or []:
         chunk = all_chunks.get(eid)
         if not chunk:
-            mismatches.append(f"evidence_id={eid}: chunk not found")
+            missing_ids.append(str(eid))
             continue
-        text = chunk.get("content_with_weight", chunk.get("text", ""))
-        text_lower = text.lower()
+        chunk_texts.append((chunk.get("content_with_weight") or chunk.get("text") or "").lower())
+    if missing_ids:
+        _LOG.info("[Cross-check] claim=%s %d evidence_id(s) MISSING from pool (index drift?): %s", agent_result.claim_id, len(missing_ids), missing_ids[:5])
 
-        for num in numbers:
-            # Numbers are extracted as floats ("1976" -> 1976.0) while chunk
-            # text spells them "1976" — match both the raw and integral forms.
-            # Bounded match: a number must not sit adjacent to other digit
-            # characters, so 1976 does not match inside 19760.
-            forms = {str(num), str(int(num))} if float(num).is_integer() else {str(num)}
-            if any(re.search(rf"(?<![\w]){re.escape(f)}(?![\w])", text_lower) for f in forms):
-                matches.append(f"number {num} found in chunk {eid}")
-            else:
-                mismatches.append(f"number {num} not found in chunk {eid}")
+    _LOG.info(
+        "[Cross-check] claim=%s %d evidence chunk(s) gathered (%d expected); verifying %d fact(s) against their union",
+        agent_result.claim_id,
+        len(chunk_texts),
+        len(agent_result.evidence_ids or []),
+        len(numbers) + len(entities),
+    )
 
-        for ent in entities:
-            # Bounded word/phrase match: Ann must not match Annual (no adjacent
-            # word characters on either side).
-            if re.search(rf"(?<![\w]){re.escape(ent.lower())}(?![\w])", text_lower):
-                matches.append(f"entity '{ent}' found in chunk {eid}")
-            else:
-                mismatches.append(f"entity '{ent}' not found in chunk {eid}")
+    def _anywhere(needle: str) -> bool:
+        return any(re.search(needle, t) for t in chunk_texts)
+
+    matches: list[str] = []
+    mismatches: list[str] = []
+    for num in numbers:
+        # Numbers are extracted as floats ("1976" -> 1976.0) while chunk text
+        # spells them "1976" — match both raw and integral forms. Bounded so a
+        # number does not match inside a longer digit run (1976 vs 19760).
+        forms = {str(num), str(int(num))} if float(num).is_integer() else {str(num)}
+        found = any(_anywhere(rf"(?<![\w]){re.escape(f)}(?![\w])") for f in forms)
+        if found:
+            matches.append(f"number {num} found in evidence")
+        else:
+            mismatches.append(f"number {num} not found in any evidence chunk")
+
+    for ent in entities:
+        # Bounded word/phrase match: Ann must not match Annual.
+        if _anywhere(rf"(?<![\w]){re.escape(ent.lower())}(?![\w])"):
+            matches.append(f"entity '{ent}' found in evidence")
+        else:
+            mismatches.append(f"entity '{ent}' not found in any evidence chunk")
 
     total = len(matches) + len(mismatches)
     if total == 0:
         # No evidence was actually examined — fail rather than pass neutrally:
         # a claim with zero evidence IDs cannot be cross-checked at all.
         if not agent_result.evidence_ids:
+            _LOG.info("[Cross-check] claim=%s → FAILED (no evidence ids, score=0.0)", agent_result.claim_id)
             return ClaimCrossCheckResult(
                 claim_id=agent_result.claim_id,
                 cross_check_passed=False,
@@ -89,15 +247,37 @@ def cross_check_claim(agent_result: AgentResult, all_chunks: dict) -> ClaimCross
                 mismatches=["no evidence"],
             )
         # Evidence IDs exist but nothing extractable to verify against (e.g.
-        # Chinese reports yield no capitalized entities and no digits) — the
-        # cross-check cannot falsify the claim, so pass neutrally.
+        # Chinese reports yield no capitalized entities and no digits). We
+        # cannot confirm OR falsify — score it neutral (0.5) and do NOT mark it
+        # passed. The old "pass neutrally with score=1.0" treated unverifiable
+        # claims as fully verified, which let any entity-free, digit-free report
+        # sail through as SUFFICIENT.
+        _LOG.info(
+            "[Cross-check] claim=%s → NEUTRAL (evidence ids exist but nothing extractable to verify, score=0.5, not passed)",
+            agent_result.claim_id,
+        )
         return ClaimCrossCheckResult(
             claim_id=agent_result.claim_id,
-            cross_check_passed=True,
-            cross_check_score=1.0,
+            cross_check_passed=False,
+            cross_check_score=0.5,
+            mismatches=["nothing extractable to cross-check"],
         )
     cross_score = len(matches) / total
-    cross_passed = len(mismatches) < len(matches) * 0.5
+    # Pass when at least half the checked facts (numbers + entities) are
+    # confirmed in the evidence. The old ``mismatch < match*0.5`` required a
+    # 2/3 match rate and treated a single spurious number as fatal, which
+    # systematically failed otherwise-correct claims (see benchmark/2.log).
+    cross_passed = cross_score >= 0.5
+    _LOG.info(
+        "[Cross-check] claim=%s → %s (%d/%d matched, score=%.3f, pass>=0.50). matches=%s mismatches=%s",
+        agent_result.claim_id,
+        "PASSED" if cross_passed else "FAILED",
+        len(matches),
+        total,
+        cross_score,
+        matches[:5],
+        mismatches[:5],
+    )
 
     return ClaimCrossCheckResult(
         claim_id=agent_result.claim_id,
@@ -119,25 +299,100 @@ def compute_fusion_score(
     mode: ExecutionStrategy,
 ) -> SufficiencyVerdict:
     """Dual-signal fusion: agent confidence + cross-check pass rate."""
-    # Signal A: agent self-assessment
-    verified_count = sum(1 for r in agent_results if r.is_verified)
-    agent_score = verified_count / max(len(agent_results), 1)
+    # Signal A: agent self-assessed confidence (continuous, per design doc).
+    # Only self-verified claims count toward "agent is confident" — an
+    # unverified claim's confidence is not trustworthy. This replaces the old
+    # boolean pass-rate (verified_count / n) which inflated the score to 1.0
+    # whenever the agent merely said "verified" (benchmark/2.log showed
+    # confidence 0.5-0.7 being reported as agent_score=1.0).
+    verified = [r for r in agent_results if r.is_verified]
+    verified_count = len(verified)
+    agent_score = sum(r.confidence for r in verified) / verified_count if verified_count else 0.0
+    _LOG.info(
+        "[Sufficiency] Signal A (self): %d/%d claims self-verified, mean confidence → agent_score=%.3f (raw confidence values=%s)",
+        verified_count,
+        len(agent_results),
+        agent_score,
+        [round(r.confidence, 3) for r in agent_results],
+    )
 
-    # Signal B: cross-check
-    passed_count = sum(1 for r in cross_check_results if r.cross_check_passed)
-    cross_score = passed_count / max(len(cross_check_results), 1)
+    # Signal B: cross-check score (continuous match rate), per design doc.
+    # Uses each claim's actual cross_check_score rather than a boolean
+    # pass/fail count, so partial-but-real evidence (e.g. 0.6) contributes
+    # proportionally instead of being zeroed.
+    #
+    # Unrelated-claim pollution (see 6.log/7.log): the planner occasionally
+    # invents a claim with no bearing on the question (e.g. "Suharto was born
+    # in Kemusuk" while the question asks about a mosque's heights). The agent
+    # finds no evidence for it (cross_check_score≈0), fails the cross-check,
+    # AND self-reports it as unverified. Such a claim drags Signal B down and
+    # pushes an otherwise sufficient fusion into the critical band that
+    # needlessly triggers the LLM fallback. We exclude "unanswerable + agent
+    # self-unverified" claims from the mean — they neither help nor should
+    # punish the verdict. We key on the agent's is_verified flag (not the
+    # confidence threshold) because a claim the agent itself calls unverified
+    # is the strongest unrelated/ungrounded signal (7.log's c2 reported
+    # confidence 0.35 but self-flagged unverified, which a confidence<0.2
+    # threshold would have missed).
+    cross_results = list(cross_check_results)
+    noise_threshold = 0.2
+    agent_verified = {r.claim_id: r.is_verified for r in agent_results}
+    noise_ids = [r.claim_id for r in cross_results if r.cross_check_score < noise_threshold and not r.cross_check_passed and not agent_verified.get(r.claim_id, False)]
+    kept = [r for r in cross_results if r.claim_id not in noise_ids]
+    if noise_ids and kept:
+        _LOG.info(
+            "[Sufficiency] Excluding %d unrelated/unverifiable claim(s) from Signal B: %s (cross<%.2f AND agent self-unverified)",
+            len(noise_ids),
+            noise_ids,
+            noise_threshold,
+        )
+        cross_results = kept
 
-    # Fusion strategy by mode
-    fusion = {
-        "ultra": lambda a, c: min(a, c),
-        "high": lambda a, c: (a + c) / 2,
-        "medium": lambda a, c: max(a, c),
-        "low": lambda a, c: max(a, c),
-    }.get(mode.label, lambda a, c: max(a, c))
-    fusion_score = fusion(agent_score, cross_score)
+    cross_score = sum(r.cross_check_score for r in cross_results) / len(cross_results) if cross_results else 0.0
+    _LOG.info(
+        "[Sufficiency] Signal B (cross): mean cross_check_score → cross_score=%.3f (per-claim cross scores=%s, %d passed)",
+        cross_score,
+        [round(r.cross_check_score, 3) for r in cross_results],
+        sum(1 for r in cross_results if r.cross_check_passed),
+    )
 
-    # Conflict detection
-    has_conflicts = any(len(r.mismatches) > 0 for r in cross_check_results)
+    # Fusion of Signal A and Signal B — configurable per mode instead of the
+    # old hard-coded max/avg/min (which are arbitrary and ill-calibrated):
+    #   - geometric (default): weighted geometric mean; any signal near 0 vetoes
+    #     the answer, preventing "confident but unsupported" hallucinations
+    #     (A=1.0/B=0.0 previously fused to 0.5-1.0 under max/avg).
+    #   - agreement: trust both signals only when they agree; conservative when
+    #     they diverge (agent confident but evidence weak).
+    #   - weighted: convex combination minus a disagreement penalty.
+    strategy = getattr(mode, "fusion_strategy", "geometric") or "geometric"
+    w_b = getattr(mode, "fusion_w_b", 0.6) or 0.6  # cross-check (B) reliability weight
+    if strategy == "agreement":
+        d = abs(agent_score - cross_score)
+        if d < 0.2:
+            fusion_score = (agent_score + cross_score) / 2
+        else:
+            fusion_score = min(agent_score, cross_score) * 0.7 + (agent_score + cross_score) / 2 * 0.3
+    elif strategy == "weighted":
+        base = (1 - w_b) * agent_score + w_b * cross_score
+        fusion_score = max(0.0, min(1.0, base - 0.3 * abs(agent_score - cross_score)))
+    else:  # geometric (default)
+        if agent_score <= 0.05 or cross_score <= 0.05:
+            fusion_score = 0.0
+        else:
+            fusion_score = (agent_score ** (1 - w_b)) * (cross_score**w_b)
+    _LOG.info(
+        "[Sufficiency] Fusion strategy=%s (w_b=%.2f) → fusion_score=%.3f (A=%.3f, B=%.3f)",
+        strategy,
+        w_b,
+        fusion_score,
+        agent_score,
+        cross_score,
+    )
+
+    # Conflict detection — based on the kept (non-noisy) claims so an
+    # unrelated claim's mismatches don't manufacture a conflict.
+    has_conflicts = any(len(r.mismatches) > 0 for r in cross_results)
+    _LOG.info("[Sufficiency] Conflict detection: has_conflicts=%s", has_conflicts)
 
     # 5-way verdict
     if has_conflicts and fusion_score < mode.partial_threshold:
@@ -146,22 +401,31 @@ def compute_fusion_score(
         status = "SUFFICIENT"
     elif fusion_score >= mode.partial_threshold:
         status = "USEFUL_BUT_INCOMPLETE"
-    elif not any(r.cross_check_passed for r in cross_check_results):
+    elif not any(r.cross_check_passed for r in cross_results):
         status = "UNANSWERABLE"
     else:
         status = "INSUFFICIENT"
+    _LOG.info(
+        "[Sufficiency] Thresholds: sufficient>=%.2f partial>=%.2f → verdict=%s",
+        mode.sufficiency_threshold,
+        mode.partial_threshold,
+        status,
+    )
 
-    missing = [r.claim_id for r in cross_check_results if not r.cross_check_passed]
+    missing = [r.claim_id for r in cross_results if not r.cross_check_passed]
+    # Excluded unrelated claims are surfaced (not silently dropped) so the
+    # caller knows the planner invented unanswerable claims.
+    missing += noise_ids
 
     return SufficiencyVerdict(
         status=status,
         score=fusion_score,
         agent_score=agent_score,
         cross_score=cross_score,
-        claim_assessments=[{"claim_id": r.claim_id, "is_verified": r.cross_check_passed, "score": r.cross_check_score, "mismatches": r.mismatches} for r in cross_check_results],
+        claim_assessments=[{"claim_id": r.claim_id, "is_verified": r.cross_check_passed, "score": r.cross_check_score, "mismatches": r.mismatches} for r in cross_results],
         has_conflicts=has_conflicts,
         missing_claims=missing,
-        feedback=_build_feedback(missing, cross_check_results),
+        feedback=_build_feedback(missing, cross_results),
         overall_reason=_format_reason(status, fusion_score, missing),
     )
 
@@ -188,13 +452,27 @@ def _format_reason(status: str, score: float, missing: list[str]) -> str:
 def route_sufficiency_verdict(verdict: SufficiencyVerdict, mode_label: str, cycle: int, max_cycles: int) -> tuple:
     """Return (action, should_continue)."""
     mode = get_mode(mode_label)
+    _LOG.info(
+        "[Sufficiency routing] verdict=%s score=%.3f, cycle=%d/%d, mode=%s (replan_allowed=%s selective_gen=%s fallback_llm=%s)",
+        verdict.status,
+        verdict.score,
+        cycle,
+        max_cycles,
+        mode_label,
+        mode.allows_replan,
+        mode.requires_selective_gen,
+        mode.fallback_to_direct_llm,
+    )
 
     if verdict.status == "SUFFICIENT":
+        _LOG.info("[Sufficiency routing] → ANSWER (enough evidence)")
         return ("ANSWER", False)
 
     if verdict.status == "USEFUL_BUT_INCOMPLETE":
         if mode.requires_selective_gen:
+            _LOG.info("[Sufficiency routing] → ANSWER_PARTIAL (partial evidence, selective gen enabled)")
             return ("ANSWER_PARTIAL", False)
+        _LOG.info("[Sufficiency routing] → CONTINUE (partial evidence, no selective gen)")
         return ("CONTINUE", False)
 
     if verdict.status == "INSUFFICIENT":
@@ -202,17 +480,24 @@ def route_sufficiency_verdict(verdict: SufficiencyVerdict, mode_label: str, cycl
         # old ``max_cycles * 0.8`` threshold was never reached for the 3/3/4
         # cycle budgets, making this branch dead code.
         if cycle >= max_cycles - 1:
+            _LOG.info("[Sufficiency routing] → ANSWER_PARTIAL (last cycle reached, insufficient)")
             return ("ANSWER_PARTIAL", False)
+        _LOG.info("[Sufficiency routing] → CONTINUE (insufficient, cycles remain)")
         return ("CONTINUE", True)
 
     if verdict.status == "CONFLICTING":
         if mode.allows_replan and cycle < max_cycles * 0.5:
+            _LOG.info("[Sufficiency routing] → REPLAN (conflicting evidence)")
             return ("REPLAN", True)
+        _LOG.info("[Sufficiency routing] → ANSWER_PARTIAL (conflicting, no replan available)")
         return ("ANSWER_PARTIAL", False)
 
     if verdict.status == "UNANSWERABLE":
         if mode.fallback_to_direct_llm:
+            _LOG.info("[Sufficiency routing] → FALLBACK_LLM (unanswerable)")
             return ("FALLBACK_LLM", False)
+        _LOG.info("[Sufficiency routing] → ABSTAIN (unanswerable)")
         return ("ABSTAIN", False)
 
+    _LOG.info("[Sufficiency routing] → CONTINUE (default)")
     return ("CONTINUE", True)

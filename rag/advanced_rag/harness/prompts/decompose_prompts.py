@@ -9,6 +9,15 @@ DECOMPOSE_FACTUAL = """This is a factual question. List all atomic facts that ne
 If there are multiple facts, list them one by one. If there is only one fact, output exactly one item.
 Base the decomposition on BOTH the question and the preliminary retrieved context below.
 
+Relevance rules (strict):
+- Every claim MUST be directly necessary to answer the question. Do NOT add
+  background, biographical, or tangential facts about entities merely mentioned
+  in the corpus (e.g. an unrelated person's birthplace) unless the question
+  explicitly asks for them.
+- Prefer fewer, atomic claims over many overlapping ones: merge facts about the
+  same entity/measure into one claim when they can be researched together.
+- Each claim must be verifiable from the corpus; do not invent facts.
+
 Question: {question}
 Maximum number of claims: {max_claims}
 Detail level: {detail_level}
@@ -34,6 +43,12 @@ DECOMPOSE_COMPARATIVE = """This is a comparative question. It needs to be decomp
 2. Information about entity B for the comparison dimension.
 3. Optional information that directly compares the two entities.
 Base the decomposition on BOTH the question and the preliminary retrieved context below.
+
+Relevance rules (strict):
+- Every claim MUST be directly needed to answer the comparison. Do NOT add
+  tangential background about the entities (e.g. a third party's unrelated
+  details) unless the question explicitly asks for them.
+- Merge overlapping facts about the same entity into one claim.
 
 Question: {question}
 Maximum number of claims: {max_claims}
@@ -68,6 +83,10 @@ Output format (JSON):
 DECOMPOSE_PROCEDURAL = """This is a procedural question. Decompose it into the information needed for each step required to complete the operation.
 Base the decomposition on BOTH the question and the preliminary retrieved context below.
 
+Relevance rules (strict):
+- Every claim MUST be information directly needed by one of the procedure's
+  steps. Skip any fact that is not required to carry out the operation.
+
 Question: {question}
 Maximum number of claims: {max_claims}
 Detail level: {detail_level}
@@ -95,6 +114,11 @@ Output format (JSON):
 
 DECOMPOSE_EXPLORATORY = """This is an analytical or exploratory question. Decompose it into the main aspects or dimensions that need to be researched.
 Base the decomposition on BOTH the question and the preliminary retrieved context below.
+
+Relevance rules (strict):
+- Every aspect/claim MUST be directly relevant to the question's core. Do NOT
+  list tangential or background aspects just because the corpus mentions them.
+- Prefer fewer, well-scoped aspects over many overlapping ones.
 
 Question: {question}
 Maximum number of claims: {max_claims}
