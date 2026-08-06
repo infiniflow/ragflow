@@ -193,7 +193,7 @@ func TestModelInfoWithTenantExtraAppliesEmbeddingConstraints(t *testing.T) {
 		ModelTypeMap: map[string]bool{"embedding": true},
 	}
 	modelEntity := &entity.TenantModel{
-		Extra: `{"max_dimension":768,"batch_size":16,"dimensions":[384,768],"model_types":["embedding"]}`,
+		Extra: `{"max_dimension":768,"max_batch_size":16,"dimensions":[384,768],"model_types":["embedding"]}`,
 	}
 
 	merged, err := modelInfoWithTenantExtra(modelInfo, modelEntity)

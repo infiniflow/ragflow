@@ -398,7 +398,7 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 		result = append(result, map[string]interface{}{
 			"name":           model.Name,
 			"max_dimension":  model.MaxDimension,
-			"batch_size":     model.MaxBatchSize,
+			"max_batch_size": model.MaxBatchSize,
 			"dimensions":     model.Dimensions,
 			"content_length": model.ContentLength,
 			"max_output":     model.MaxOutput,
@@ -517,7 +517,7 @@ func setDiscoveredModelMetadata(extra map[string]interface{}, model modelModule.
 		extra["max_dimension"] = *model.MaxDimension
 	}
 	if model.MaxBatchSize != nil {
-		extra["batch_size"] = *model.MaxBatchSize
+		extra["max_batch_size"] = *model.MaxBatchSize
 	}
 	if len(model.Dimensions) > 0 {
 		extra["dimensions"] = model.Dimensions
@@ -2528,7 +2528,7 @@ type tenantModelExtra struct {
 	MaxTokens    *int     `json:"max_tokens"`
 	ModelTypes   []string `json:"model_types"`
 	MaxDimension *int     `json:"max_dimension"`
-	MaxBatchSize *int     `json:"batch_size"`
+	MaxBatchSize *int     `json:"max_batch_size"`
 	Dimensions   []int    `json:"dimensions"`
 	Thinking     *bool    `json:"thinking"`
 }
