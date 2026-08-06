@@ -389,6 +389,8 @@ class Base(ABC):
         return msg
 
     def _verbose_tool_use(self, name, args, res):
+        if isinstance(res, BaseException):
+            res = str(res)
         return "<tool_call>" + json.dumps({"name": name, "args": args, "result": res}, ensure_ascii=False, indent=2) + "</tool_call>"
 
     def _append_history(self, hist, tool_call, tool_res):
