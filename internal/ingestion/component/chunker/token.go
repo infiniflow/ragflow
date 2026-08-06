@@ -1134,32 +1134,14 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 
 // compileChildrenPattern is the children_delimiters version of
 // compileDelimPattern. Returns nil when no delimiters exist.
+// compileChildrenPattern builds the children-split regex from a
+// `children_delimiters` list. Every non-empty entry is active (including bare
+// ones), and backtick-wrapped entries contribute their inner content — see
+// chunk.CompileDelimiterPatternList. Delegating keeps children splitting
+// consistent with the main delimiter list (backtick stripping + rune-descending
+// order) instead of re-implementing a divergent copy.
 func compileChildrenPattern(delims []string) *regexp.Regexp {
-	if len(delims) == 0 {
-		return nil
-	}
-	escaped := make([]string, 0, len(delims))
-	for _, d := range delims {
-		if d == "" {
-			continue
-		}
-		escaped = append(escaped, regexp.QuoteMeta(d))
-	}
-	if len(escaped) == 0 {
-		return nil
-	}
-	sortSlice(escaped)
-	return regexp.MustCompile(strings.Join(escaped, "|"))
-}
-
-// sortSlice sorts in place by descending length (longest pattern
-// first, mirroring python's `sorted(set, key=len, reverse=True)`).
-func sortSlice(in []string) {
-	for i := 1; i < len(in); i++ {
-		for j := i; j > 0 && len(in[j-1]) < len(in[j]); j-- {
-			in[j-1], in[j] = in[j], in[j-1]
-		}
-	}
+	return chunk.CompileDelimiterPatternList(delims, true)
 }
 
 // stringFromInputs returns the string value at the first matching key
