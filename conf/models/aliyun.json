@@ -30,7 +30,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 10
     },
     {
       "name": "qwen3-vl-plus",
@@ -67,7 +68,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 10
     },
     {
       "name": "qwen3-rerank",

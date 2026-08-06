@@ -32,6 +32,7 @@ Each model entry in a provider JSON file (`conf/models/<provider>.json`) or in t
 | `class` | string | No | Provider-specific model class used to select the correct driver (e.g. `glm`, `kimi`). |
 | `max_dimension` | integer | No | Maximum supported embedding dimension. Used by `embedding`-type models (e.g. `1536`). |
 | `dimensions` | integer[] | No | Supported embedding dimensions (e.g. `[256, 512, 1024, 1536]`). When non-empty, a requested dimension must match one of these values. When empty `[]` (or omitted), any dimension up to `max_dimension` is accepted. |
+| `batch_size` | integer | No | Maximum number of text inputs that can be submitted to the embedding API in a single request. Used by `embedding`-type models. Values come from each provider's official documentation; models with no documented provider limit use a conservative high cap. When omitted, no explicit cap is declared. |
 | `alias` | string[] | No | Alternative names for the same model. Used for model lookup when a tenant refers to the model by an alias. **Must be unique across all models.** |
 | `rank` | integer | No | Sort priority (lower = higher rank). Used when ordering model lists in the UI. |
 
@@ -202,9 +203,10 @@ The following providers are **aggregators** — they host models from multiple u
 
 1. Determine the model's `content_length` (context window) and `max_output` (generation cap) from the **official API documentation**.
 2. Use the exact number stated — do not convert between decimal and binary.
-3. Add the entry to the appropriate `conf/models/<provider>.json` file.
-4. If the model is also listed in `conf/all_models.json`, update that entry too (or add it).
-5. Run `go test ./internal/entity/models/...` to verify the config loads correctly.
+3. For `embedding`-type models, also determine `batch_size` — the provider's documented maximum number of inputs per request — and add it to the entry.
+4. Add the entry to the appropriate `conf/models/<provider>.json` file.
+5. If the model is also listed in `conf/all_models.json`, update that entry too (or add it).
+6. Run `go test ./internal/entity/models/...` to verify the config loads correctly.
 
 ---
 
@@ -212,9 +214,10 @@ The following providers are **aggregators** — they host models from multiple u
 
 1. Find the latest official spec from the vendor's documentation.
 2. Update `content_length` and/or `max_output` to match.
-3. If the model appears in multiple provider files (e.g. DeepSeek models appear in `deepseek.json`, `ppio.json`, `qiniu.json`), update all copies.
-4. Update `conf/all_models.json` if the model has an entry there.
-5. Run `go test ./internal/entity/models/...` to verify.
+3. If the model is an embedding model, update `batch_size` to the provider's documented per-request input limit.
+4. If the model appears in multiple provider files (e.g. DeepSeek models appear in `deepseek.json`, `ppio.json`, `qiniu.json`), update all copies.
+5. Update `conf/all_models.json` if the model has an entry there.
+6. Run `go test ./internal/entity/models/...` to verify.
 
 ---
 

@@ -56,56 +56,64 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 16384
     },
     {
       "name": "jina-embeddings-v4",
       "max_tokens": 32768,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 16384
     },
     {
       "name": "jina-embeddings-v5-text-small",
       "max_tokens": 32768,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 16384
     },
     {
       "name": "jina-embeddings-v5-text-nano",
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 16384
     },
     {
       "name": "jina-embeddings-v5-omni-small",
       "max_tokens": 32768,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 16384
     },
     {
       "name": "jina-embeddings-v5-omni-nano",
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 16384
     },
     {
       "name": "jina-clip-v2",
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 16384
     },
     {
       "name": "jina-embeddings-v2-base-en",
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 16384
     }
   ]
 }

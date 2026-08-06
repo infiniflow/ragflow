@@ -255,21 +255,24 @@
       "max_tokens": 8191,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 2048
     },
     {
       "name": "text-embedding-3-small",
       "max_tokens": 8191,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 2048
     },
     {
       "name": "text-embedding-3-large",
       "max_tokens": 8191,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 2048
     },
     {
       "name": "whisper-1",

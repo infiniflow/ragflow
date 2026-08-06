@@ -88,7 +88,8 @@
       "max_tokens": 384,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 16
     },
     {
       "name": "qwen3-reranker-4b",

@@ -132,35 +132,40 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 1
     },
     {
       "name": "amazon.titan-embed-text-v1",
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 1
     },
     {
       "name": "cohere.embed-english-v3",
       "max_tokens": 512,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 96
     },
     {
       "name": "cohere.embed-multilingual-v3",
       "max_tokens": 512,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 96
     },
     {
       "name": "cohere.embed-v4:0",
       "max_tokens": 128000,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 96
     }
   ]
 }

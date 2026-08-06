@@ -47,14 +47,16 @@
       "max_tokens": 384,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 16
     },
     {
       "name": "ibm-granite/granite-embedding-278m-multilingual:1f76d42a05f120e12272746d5a2d86b525c13420773f795a4cbef9117d8685f1",
       "max_tokens": 512,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 16
     }
   ]
 }

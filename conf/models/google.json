@@ -29,7 +29,8 @@
       "max_tokens": 2048,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 100
     }
   ],
   "features": {
