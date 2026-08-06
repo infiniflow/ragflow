@@ -410,7 +410,7 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 		if modelEntity != nil {
 			modelResponse.MaxDimension = modelEntity.MaxDimension
 			modelResponse.Dimensions = modelEntity.Dimensions
-			modelResponse.MaxTokens = modelEntity.MaxTokens
+			modelResponse.MaxOutput = modelEntity.MaxOutput
 			modelResponse.ModelTypes = modelEntity.ModelTypes
 			modelResponse.Thinking = modelEntity.Thinking
 			modelResponse.Dimensions = modelEntity.Dimensions
@@ -513,10 +513,6 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 	}
 
 	if cfg != nil {
-		if cfg.MaxTokens != nil {
-			reqBody["max_tokens"] = *cfg.MaxTokens
-		}
-
 		if cfg.Temperature != nil {
 			reqBody["temperature"] = *cfg.Temperature
 		}

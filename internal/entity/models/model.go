@@ -160,17 +160,18 @@ type ModelTools struct {
 
 // Model represents a single LLM model
 type Model struct {
-	Name         string         `json:"name"`
-	MaxTokens    *int           `json:"max_tokens"`
-	ModelTypes   []string       `json:"model_types"`
-	Thinking     *ModelThinking `json:"thinking"`
-	Tools        *ModelTools    `json:"tools"`
-	Class        *string        `json:"class"`
-	MaxDimension *int           `json:"max_dimension"` // used by embedding models
-	Dimensions   []int          `json:"dimensions"`
-	Alias        []string       `json:"alias"`
-	Rank         *int           `json:"rank"`
-	ModelTypeMap map[string]bool
+	Name          string         `json:"name"`
+	ContentLength *int           `json:"content_length"`
+	MaxOutput     *int           `json:"max_output"`
+	ModelTypes    []string       `json:"model_types"`
+	Thinking      *ModelThinking `json:"thinking"`
+	Tools         *ModelTools    `json:"tools"`
+	Class         *string        `json:"class"`
+	MaxDimension  *int           `json:"max_dimension"` // used by embedding models
+	Dimensions    []int          `json:"dimensions"`
+	Alias         []string       `json:"alias"`
+	Rank          *int           `json:"rank"`
+	ModelTypeMap  map[string]bool
 }
 
 // Provider represents an LLM provider
@@ -411,8 +412,8 @@ func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
 		if model.Thinking != nil {
 			modelData["thinking"] = model.Thinking
 		}
-		if model.MaxTokens != nil {
-			modelData["max_tokens"] = *model.MaxTokens
+		if model.MaxOutput != nil {
+			modelData["max_output"] = *model.MaxOutput
 		}
 		if model.MaxDimension != nil {
 			modelData["max_dimension"] = *model.MaxDimension
@@ -488,7 +489,7 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 		// the object.
 		modelData := map[string]interface{}{
 			"name":          model.Name,
-			"max_tokens":    model.MaxTokens,
+			"max_output":    model.MaxOutput,
 			"model_types":   model.ModelTypes,
 			"max_dimension": model.MaxDimension,
 			"dimensions":    model.Dimensions,
@@ -554,7 +555,7 @@ func (pm *ProviderManager) GetModelUrl(providerName, modelName, modelType string
 	}
 }
 
-// 4. Search specific model information with filtering by max_tokens or type
+// SearchModelInfo search specific model information with filtering by type or other conditions
 func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filterBy string, filterValue interface{}) ModelResponse {
 	resp := ModelResponse{
 		Code:    0,
@@ -580,13 +581,13 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 	matchFilter := true
 	if filterBy != "" && filterValue != nil {
 		switch filterBy {
-		case "max_tokens":
+		case "max_output":
 			if maxVal, ok := filterValue.(int); ok {
-				if *model.MaxTokens < maxVal {
+				if *model.MaxOutput < maxVal {
 					matchFilter = false
 					resp.Code = 400
-					resp.Message = fmt.Sprintf("Model does not meet filter criteria: max_tokens (%d) < %d",
-						model.MaxTokens, maxVal)
+					resp.Message = fmt.Sprintf("Model does not meet filter criteria: max_output (%d) < %d",
+						model.MaxOutput, maxVal)
 				}
 			}
 		case "type":
@@ -603,7 +604,7 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 	if matchFilter {
 		modelData := map[string]interface{}{
 			"name":        model.Name,
-			"max_tokens":  model.MaxTokens,
+			"max_output":  model.MaxOutput,
 			"model_types": model.ModelTypes,
 			//"features":    getFeaturesMap(model.Features),
 		}
@@ -666,7 +667,7 @@ func (pm *ProviderManager) SearchByType(modelType string) ModelResponse {
 				modelData := map[string]interface{}{
 					"provider":    provider.Name,
 					"name":        model.Name,
-					"max_tokens":  model.MaxTokens,
+					"max_output":  model.MaxOutput,
 					"model_types": model.ModelTypes,
 					//"features":    getFeaturesMap(model.Features),
 				}

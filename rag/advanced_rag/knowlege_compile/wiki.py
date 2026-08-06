@@ -2628,7 +2628,9 @@ WIKI_REFINE_WRITER_SYSTEM_TEMPLATE = (
     "- Prose that just rephrases what was already said.\n\n"
     "# Language\n"
     "Write in the SAME LANGUAGE as the source text. Never translate content.\n\n"
-    "# Page structure — CRITICAL\n"
+    "# Additional writing instructions — CRITICAL\n"
+    "{template_instruction}\n\n"
+    "# Page structure example — CRITICAL\n"
     "{template_example}\n\n"
     "# What NOT to do\n"
     "- Do NOT dump raw bullet points from the source as the entire content.\n"
@@ -2646,18 +2648,20 @@ WIKI_REFINE_WRITER_SYSTEM_TEMPLATE = (
 )
 
 
-def _build_refine_writer_system(example: str | None) -> str:
-    """Return the writer system prompt with the configured page-structure
-    example (or ``WIKI_TEMPLATE_EXAMPLE`` when ``example`` is empty /
-    whitespace-only). Used by the REFINE phase to let each compilation
-    template override just the page-structure section.
+def _build_refine_writer_system(instruction: str | None = None, page_example: str | None = None) -> str:
+    """Return the writer system prompt with separate instruction and page
+    example overrides. Empty values use the built-in defaults.
 
     The default-filled form is also exposed as
     ``WIKI_REFINE_WRITER_SYSTEM`` for callers that don't have an
     override to apply.
     """
-    body = (example or "").strip() or WIKI_TEMPLATE_EXAMPLE
-    return WIKI_REFINE_WRITER_SYSTEM_TEMPLATE.format(template_example=body)
+    instruction_body = (instruction or "").strip() or "Follow the page structure and writing requirements below."
+    example_body = (page_example or "").strip() or WIKI_TEMPLATE_EXAMPLE
+    return WIKI_REFINE_WRITER_SYSTEM_TEMPLATE.format(
+        template_instruction=instruction_body,
+        template_example=example_body,
+    )
 
 
 WIKI_REFINE_WRITER_SYSTEM = _build_refine_writer_system(None)
@@ -3261,13 +3265,15 @@ async def _wiki_write_page_simple(
     all_plan_slugs: list[str],
     chat_mdl,
     llm_timeout: int,
+    instruction: Optional[str] = None,
+    page_example: Optional[str] = None,
     example: Optional[str] = None,
 ) -> str:
     """Single LLM call → markdown content.
 
-    ``example`` is the per-template ``parser_config.example`` override
-    for the writer's page-structure section. Falsy / whitespace-only
-    values fall through to ``WIKI_TEMPLATE_EXAMPLE``.
+    ``instruction`` and ``page_example`` are the separate per-template
+    writer overrides. ``example`` is retained as a fallback for callers
+    using the older combined configuration field.
     """
     own_slug = plan_item.get("slug") or ""
     available = [s for s in all_plan_slugs if s and s != own_slug]
@@ -3292,7 +3298,10 @@ async def _wiki_write_page_simple(
 
     content = await _wiki_chat_text(
         chat_mdl,
-        _build_refine_writer_system(example),
+        _build_refine_writer_system(
+            instruction=instruction,
+            page_example=page_example or example,
+        ),
         user_prompt,
         temperature=0.15,
         llm_timeout=llm_timeout,
@@ -3375,16 +3384,25 @@ async def _wiki_persist_draft(
     tenant_id: str,
     kb_id: str,
     plan_input_hash: str = "",
+    embd_mdl=None,
 ) -> None:
-    """Upsert one non-searchable wiki_page_draft row (resume cache).
+    """Upsert one wiki_page_draft row (resume cache + searchable page).
 
     ``plan_input_hash`` is the PLAN's ``input_hash_kwd`` at the time this
     draft was produced. The next REFINE re-entry compares it against the
     current PLAN hash to decide whether the cached draft is still
     valid; a mismatch forces a rewrite for that slug.
+
+    When ``embd_mdl`` is provided the row is made searchable: the title/body are
+    tokenized (``title_tks`` / ``content_ltks`` / ``content_sm_ltks``) and a
+    ``q_<dim>_vec`` page embedding is attached, with ``available_int=1`` so the
+    agent's ``wiki_query`` tool can retrieve it. Without an embedder the row stays
+    a non-searchable resume cache. ``content_with_weight`` is left as the page
+    JSON either way, so ``_wiki_load_refine_resume`` still restores the draft.
     """
     from common import settings
     from rag.nlp import search as _rag_search
+    from rag.nlp import rag_tokenizer
 
     slug = page.get("slug") or ""
     if not slug:
@@ -3401,8 +3419,37 @@ async def _wiki_persist_draft(
         "source_doc_ids": draft_doc_ids,
         "input_hash_kwd": plan_input_hash,
         "content_with_weight": content_with_weight,
-        "available_int": 0,  # non-searchable
+        "available_int": 0,  # non-searchable unless made searchable below
     }
+
+    # Make the draft searchable when an embedder is available. content_with_weight
+    # is deliberately left untouched (the page JSON) — the tokenized fields drive
+    # BM25 and q_<dim>_vec drives dense retrieval.
+    if embd_mdl is not None:
+        title = str(page.get("title") or slug)
+        body = str(page.get("content_md_rendered") or page.get("content_md") or page.get("content_md_raw") or "")
+        summary = str(page.get("summary") or "")
+        content_ltks = rag_tokenizer.tokenize(body)
+        row.update(
+            {
+                "docnm_kwd": title,
+                "title_kwd": title,
+                "title_tks": rag_tokenizer.tokenize(title),
+                "content_ltks": content_ltks,
+                "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(content_ltks),
+            }
+        )
+        try:
+            emb_text = (summary or f"{title}\n{body}").strip()[:2048] or title
+            vectors, _ = await thread_pool_exec(embd_mdl.encode, [emb_text])
+            vec = vectors[0]
+            vec_list = vec.tolist() if hasattr(vec, "tolist") else list(vec)
+            if vec_list:
+                row[f"q_{len(vec_list)}_vec"] = vec_list
+                row["available_int"] = 1
+        except Exception:
+            logging.exception("wiki_refine: draft embedding failed slug=%s; row stays non-searchable", slug)
+
     try:
         try:
             await thread_pool_exec(
@@ -3494,6 +3541,8 @@ async def wiki_refine_from_plan(
     merge_shrink_threshold: float = WIKI_MERGE_BODY_SHRINK_THRESHOLD,
     force_rerun: bool = False,
     callback: Optional[Callable] = None,
+    instruction: Optional[str] = None,
+    page_example: Optional[str] = None,
     example: Optional[str] = None,
 ) -> list[dict]:
     """Phase 4 (REFINE) — KB-scoped.
@@ -3688,6 +3737,8 @@ async def wiki_refine_from_plan(
                     all_plan_slugs,
                     chat_mdl,
                     llm_timeout,
+                    instruction=instruction,
+                    page_example=page_example,
                     example=example,
                 )
                 if not content_md_raw:
@@ -3750,6 +3801,7 @@ async def wiki_refine_from_plan(
                     tenant_id,
                     kb_id,
                     plan_input_hash=plan_input_hash,
+                    embd_mdl=embd_mdl,
                 )
             except Exception:
                 logging.exception("wiki_refine: persist_draft failed for slug=%s", slug)
@@ -3820,6 +3872,7 @@ async def wiki_refine_from_plan(
                 tenant_id,
                 kb_id,
                 plan_input_hash=plan_input_hash,
+                embd_mdl=embd_mdl,
             )
         except Exception:
             logging.exception("wiki_refine: persist cleaned draft failed for slug=%s", page.get("slug"))

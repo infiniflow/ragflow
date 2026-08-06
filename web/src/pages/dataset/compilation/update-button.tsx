@@ -10,10 +10,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { GenerateStatus, GenerateType } from '@/constants/knowledge';
-import {
-  ITraceInfo,
-  useGenerateStatus,
-} from '@/hooks/use-dataset-generate';
+import { ITraceInfo, useGenerateStatus } from '@/hooks/use-dataset-generate';
 
 import { UpdateRunProgress } from './update-run-progress';
 

@@ -26,6 +26,30 @@ def _snip(text: str, limit: int = 160) -> str:
     return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
+def _discovered_entity(tools) -> str | None:
+    """Pick a salient discovered name from the gathered evidence.
+
+    Prefers an explicit entity/keyword tag on a chunk, falling back to a source
+    document name. Used only to gate ``graph_explore`` eligibility (its context
+    check needs ``context.last_entity``), so a coarse signal is enough.
+    """
+    chunks = (getattr(tools, "kbinfos", {}) or {}).get("chunks", []) or []
+    for c in chunks:
+        for key in ("entities_kwd", "important_kwd"):
+            val = c.get(key)
+            if isinstance(val, list) and val:
+                first = str(val[0]).strip()
+                if first:
+                    return first
+            if isinstance(val, str) and val.strip():
+                return val.strip().split()[0]
+    for c in chunks:
+        name = str(c.get("docnm_kwd") or "").strip()
+        if name:
+            return name
+    return None
+
+
 async def agentic_research(state: dict, tools) -> dict:
     """Two-level loop for high/ultra modes."""
     question = state.get("question", "")
@@ -93,6 +117,10 @@ async def agentic_research(state: dict, tools) -> dict:
                                 )
                                 _LOG.info('[Agentic research] Found a new angle worth researching: "%s"', dc)
 
+        # ── Step A.5: note a discovered entity so graph_explore becomes eligible
+        # in the next round (its context gate requires context.last_entity). ──
+        ctx.note_entity(_discovered_entity(tools))
+
         # ── Step B: Sufficiency Check ──
         all_chunks = {i: c for i, c in enumerate(tools.kbinfos.get("chunks", []))}
         agent_results_list = [c.agent_result for c in ctx.claims if c.agent_result]
@@ -115,6 +143,8 @@ async def agentic_research(state: dict, tools) -> dict:
         if action == "ANSWER_PARTIAL":
             return _finalize(ctx, tools, partial=True)
         if action == "ABSTAIN":
+            if getattr(tools, "text_attachments_content", ""):
+                return {"verdict": verdict.__dict__, "kbinfos": tools.kbinfos}
             tools.kbinfos["chunks"] = []
             return {"verdict": verdict.__dict__, "abstain": True}
         if action == "REPLAN":

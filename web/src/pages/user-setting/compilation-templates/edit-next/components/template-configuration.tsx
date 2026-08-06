@@ -1,7 +1,6 @@
 import { ModelTreeSelectFormField } from '@/components/model-tree-select';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { Checkbox } from '@/components/ui/checkbox';
 import { SwitchFormField } from '@/components/switch-fom-field';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -195,17 +194,11 @@ export function TemplateConfiguration({
           </RAGFlowFormItem>
 
           {kind === CompilationTemplateKind.Artifacts && (
-            <RAGFlowFormItem
+            <SwitchFormField
               name={`templates.${selectedTemplateIndex}.config.plan`}
               label={t('setting.plan')}
-            >
-              {(field) => (
-                <Checkbox
-                  checked={!!field.value}
-                  onCheckedChange={(v: boolean) => field.onChange(v)}
-                />
-              )}
-            </RAGFlowFormItem>
+              vertical={false}
+            />
           )}
 
           {kind === CompilationTemplateKind.Tree ? (

@@ -537,7 +537,7 @@ The component returns generated file information and downloadable output variabl
 ![Document Generator](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/document_generator.jpg)
 
 
-### Browser 
+### Browser
 
 Browser performs browser-based automation tasks. It is suitable for opening pages, collecting page information and executing browser workflows that require visual interaction.
 

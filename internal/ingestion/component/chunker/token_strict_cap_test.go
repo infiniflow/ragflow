@@ -108,15 +108,19 @@ func TestMergeByTokenSizeFromJSON_StrictCapNoOvershoot(t *testing.T) {
 			Text: text, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(text)),
 		})
 	}
-	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 0, true)
+	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 0, schema.MergeOverCap)
 	merged := got[0]
 	if len(merged) < 3 {
 		t.Fatalf("want >=3 chunks, got %d", len(merged))
 	}
+	// OVER_CAP (Python's canonical default) permits a chunk to exceed budget
+	// by at most one incoming unit: a chunk is closed right after the
+	// overflowing merge, so it can hold prev (<= budget) + one unit (<= budget).
+	unit := tokenizeStr(sections[0].Text)
 	for i, ck := range merged {
 		n := tokenizeStr(ck.Text)
-		if n > budget {
-			t.Errorf("chunk %d exceeds budget: tokens=%d text_len=%d", i, n, len(ck.Text))
+		if n > budget+unit {
+			t.Errorf("chunk %d exceeds budget by more than one unit: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
 		}
 	}
 }
@@ -131,42 +135,42 @@ func TestMergeByTokenSizeFromJSON_OverlapDroppedAtOverflow(t *testing.T) {
 			Text: text, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(text)),
 		})
 	}
-	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 20, true)
+	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 20, schema.MergeOverCap)
+	unit := tokenizeStr(sections[0].Text)
 	for i, ck := range got[0] {
-		if n := tokenizeStr(ck.Text); n > budget {
-			t.Errorf("chunk %d exceeds budget with overlap: tokens=%d", i, n)
+		// OVER_CAP allows one boundary overflow (prev + one unit). The JSON
+		// path joins units with "\n" and cl100k is not additive across joins,
+		// so an overflow-closed chunk can land a little above budget+unit;
+		// allow one extra unit of slack for the separators + cl100k delta.
+		// Overlap is only ever prepended when it still fits budget, so the
+		// only chunks that exceed budget are the overflow-closed ones.
+		if n := tokenizeStr(ck.Text); n > budget+2*unit {
+			t.Errorf("chunk %d exceeds budget+two-units with overlap: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
 		}
 	}
 }
 
-func TestMergeByTokenSizeFromJSON_OversizedUnitIsSubSplit(t *testing.T) {
-	// A single unit larger than the budget must be atom-split before merge.
+func TestMergeByTokenSizeFromJSON_OversizedUnitStaysWhole(t *testing.T) {
+	// Per the #17808 contract an over-budget unit is never atom-split: it
+	// stands alone as one chunk and the model layer truncates it later.
 	const budget = 30
 	long := strings.TrimSpace(strings.Repeat("word ", 100))
 	items := [][]schema.ChunkDoc{{
 		{Text: long, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(long))},
 	}}
-	got := mergeByTokenSizeFromJSON(items, budget, 0, true)
-	if len(got[0]) < 2 {
-		t.Fatalf("oversized unit must yield multiple chunks, got %d", len(got[0]))
+	got := mergeByTokenSizeFromJSON(items, budget, 0, schema.MergeOverCap)
+	if len(got) != 1 || len(got[0]) != 1 {
+		t.Fatalf("over-budget unit must stay whole, got %d chunk(s)", len(got[0]))
 	}
-	// cl100k is not additive across whitespace joins: token(a)+token(b) can be
-	// one less than token(a+b), so the running-sum flush used by both Python's
-	// _split_oversized_unit and the aligned Go port can leave a piece exactly
-	// one token over the nominal budget. The invariant we defend here is that
-	// the oversized unit is sub-split (not collapsed into one chunk), not a
-	// byte-exact cap — matching the Python reference.
-	const slack = 1
-	for i, ck := range got[0] {
-		if n := tokenizeStr(ck.Text); n > budget+slack {
-			t.Errorf("chunk %d exceeds budget by more than cl100k slack: tokens=%d (cap=%d)", i, n, budget)
-		}
+	if got[0][0].Text != long {
+		t.Errorf("over-budget chunk text changed: got %q", got[0][0].Text)
 	}
 }
 
 func TestMergeByTokenSize_TextPathStrictCap(t *testing.T) {
 	// End-to-end text path: long multi-paragraph input under a tight budget.
 	const budget = 40
+	unit := tokenizeStr(strings.TrimSpace(strings.Repeat("word ", 15)))
 	var b strings.Builder
 	for i := 0; i < 30; i++ {
 		b.WriteString(strings.TrimSpace(strings.Repeat("word ", 15)))
@@ -187,56 +191,75 @@ func TestMergeByTokenSize_TextPathStrictCap(t *testing.T) {
 	}
 	for i, ck := range chunks {
 		text, _ := ck["text"].(string)
-		if n := tokenizeStr(text); n > budget {
-			t.Errorf("chunk %d exceeds budget: tokens=%d", i, n)
+		// OVER_CAP allows one boundary overflow (prev + one unit).
+		if n := tokenizeStr(text); n > budget+unit {
+			t.Errorf("chunk %d exceeds budget+one-unit: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
 		}
 	}
 }
 
-func TestMergeByTokenSize_UnbrokenAtomStrictCap(t *testing.T) {
-	// Unbroken dense string (no whitespace / sentence delim) must still
-	// hard-cap via the character-window fallback inside splitOversizedUnit.
-	const budget = 20
-	// Use many distinct ASCII letters so cl100k does not collapse the whole
-	// run into a handful of tokens.
+func TestMergeByTokenSize_UnderCapNoOverflow(t *testing.T) {
+	// UNDER_CAP (under_cap=true) must never let a chunk exceed the token
+	// target: a projected join that would overflow starts a fresh chunk
+	// instead of merge-then-close (OVER_CAP). This exercises the seam that
+	// lets Go follow Python's no-overflow (UNDER_CAP) strategy without
+	// changing the default (OVER_CAP) behavior.
+	const sentence = "word word word word word word word word word word word word word " // 12 words
+	sentenceN := tokenizeStr(sentence)
+	budget := sentenceN*4 + 2 // four sentences fit, five overflow.
+	if budget < sentenceN*2 {
+		budget = sentenceN * 2
+	}
 	var b strings.Builder
-	for i := 0; i < 400; i++ {
-		b.WriteByte(byte('a' + i%26))
+	for i := 0; i < 12; i++ {
+		b.WriteString(sentence)
+		b.WriteString("! ")
 	}
-	text := b.String()
-	if tokenizeStr(text) <= budget {
-		t.Skipf("tokenizer collapsed unbroken atom to %d tokens (<= budget)", tokenizeStr(text))
+
+	run := func(underCap bool) []map[string]any {
+		comp, err := NewTokenChunker(map[string]any{
+			"delimiter_mode":   "token_size",
+			"chunk_token_size": budget,
+			"under_cap":        underCap,
+		})
+		if err != nil {
+			t.Fatalf("NewTokenChunker: %v", err)
+		}
+		out := comp.(*TokenChunkerComponent).mergeByTokenSize(b.String(), nil)
+		chunks, _ := out["chunks"].([]map[string]any)
+		return chunks
 	}
-	comp, err := NewTokenChunker(map[string]any{
-		"delimiter_mode":   "token_size",
-		"chunk_token_size": budget,
-	})
-	if err != nil {
-		t.Fatalf("NewTokenChunker: %v", err)
+
+	respect := run(true)
+	if len(respect) < 2 {
+		t.Fatalf("UNDER_CAP: want multiple chunks, got %d", len(respect))
 	}
-	tc := comp.(*TokenChunkerComponent)
-	out := tc.mergeByTokenSize(text, nil)
-	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) < 2 {
-		t.Fatalf("want multiple chunks for unbroken atom, got %d (total_tokens=%d)", len(chunks), tokenizeStr(text))
-	}
-	var joined strings.Builder
-	for i, ck := range chunks {
-		s, _ := ck["text"].(string)
-		joined.WriteString(s)
-		if n := tokenizeStr(s); n > budget {
-			t.Errorf("chunk %d exceeds budget: tokens=%d text=%q", i, n, s)
+	for i, ck := range respect {
+		text, _ := ck["text"].(string)
+		if n := tokenizeStr(text); n > budget {
+			t.Errorf("UNDER_CAP chunk %d exceeds target: tokens=%d (cap=%d)", i, n, budget)
 		}
 	}
-	// mergeByTokenSize prefixes "\n" on sections; stripping newlines recovers
-	// the original unbroken atom.
-	if strings.ReplaceAll(joined.String(), "\n", "") != text {
-		t.Errorf("content not preserved after stripping newlines: got %q", joined.String())
+
+	// Control: OVER_CAP (default) must overflow on the same input, proving the
+	// toggle changes behavior rather than being a no-op.
+	over := run(false)
+	overflowed := false
+	for _, ck := range over {
+		text, _ := ck["text"].(string)
+		if tokenizeStr(text) > budget {
+			overflowed = true
+			break
+		}
+	}
+	if !overflowed {
+		t.Errorf("OVER_CAP control produced no overflow on input that UNDER_CAP keeps within budget; toggle may be a no-op")
 	}
 }
 
 func TestInvokeTextPayload_StrictCapEndToEnd(t *testing.T) {
 	const budget = 32
+	unit := tokenizeStr(strings.TrimSpace(strings.Repeat("alpha ", 12)))
 	var b strings.Builder
 	for i := 0; i < 20; i++ {
 		b.WriteString(strings.TrimSpace(strings.Repeat("alpha ", 12)))
@@ -266,8 +289,82 @@ func TestInvokeTextPayload_StrictCapEndToEnd(t *testing.T) {
 	}
 	for i, ck := range chunks {
 		text, _ := ck["text"].(string)
+		// OVER_CAP allows one boundary overflow (prev + one unit).
+		if n := tokenizeStr(text); n > budget+unit {
+			t.Errorf("chunk %d exceeds budget+one-unit: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
+		}
+	}
+}
+
+// TestInvokeJSONPayload_UnderCapEndToEnd exercises the UNDER_CAP strategy on
+// the JSON path end-to-end (invokeJSONPayload). Many single-line JSON items
+// are flattened into one global merge sequence, and under_cap=true must keep
+// every chunk within chunk_token_size. The OVER_CAP control is asserted to
+// pack fewer chunks than UNDER_CAP, proving the toggle is live on the JSON
+// path — not just the text path covered by TestInvokeTextPayload_StrictCapEndToEnd.
+func TestInvokeJSONPayload_UnderCapEndToEnd(t *testing.T) {
+	const budget = 32
+	unit := tokenizeStr(strings.TrimSpace(strings.Repeat("alpha ", 12)))
+
+	// Each item is one ~unit-sized token block; 24 items give the global
+	// merge plenty to accumulate.
+	var items []map[string]any
+	for i := 0; i < 24; i++ {
+		items = append(items, map[string]any{
+			"text":         strings.TrimSpace(strings.Repeat("alpha ", 12)),
+			"doc_type_kwd": "text",
+		})
+	}
+
+	run := func(underCap bool) []map[string]any {
+		comp, err := NewTokenChunker(map[string]any{
+			"delimiter_mode":   "delimiter",
+			"delimiters":       []string{"\n"},
+			"chunk_token_size": budget,
+			"under_cap":        underCap,
+		})
+		if err != nil {
+			t.Fatalf("NewTokenChunker: %v", err)
+		}
+		out, err := comp.Invoke(context.Background(), nil, map[string]any{
+			"name":          "doc.json",
+			"output_format": "json",
+			"json":          items,
+		})
+		if err != nil {
+			t.Fatalf("Invoke: %v", err)
+		}
+		if errMsg, _ := out["_ERROR"].(string); errMsg != "" {
+			t.Fatalf("Invoke error payload: %s", errMsg)
+		}
+		chunks, _ := out["chunks"].([]map[string]any)
+		return chunks
+	}
+
+	// UNDER_CAP: no chunk may exceed the token target.
+	under := run(true)
+	if len(under) < 2 {
+		t.Fatalf("UNDER_CAP: want multiple chunks, got %d", len(under))
+	}
+	for i, ck := range under {
+		text, _ := ck["text"].(string)
 		if n := tokenizeStr(text); n > budget {
-			t.Errorf("chunk %d exceeds budget: tokens=%d", i, n)
+			t.Errorf("UNDER_CAP chunk %d exceeds target: tokens=%d (cap=%d)", i, n, budget)
+		}
+	}
+
+	// OVER_CAP control: the same input packs fewer chunks (it allows one
+	// boundary overflow per chunk), proving the toggle is live on the JSON
+	// path. Equal lengths would mean under_cap is a no-op here.
+	over := run(false)
+	if len(over) >= len(under) {
+		t.Errorf("OVER_CAP should pack fewer chunks than UNDER_CAP (over=%d under=%d); toggle may be a no-op on the JSON path", len(over), len(under))
+	}
+	for i, ck := range over {
+		text, _ := ck["text"].(string)
+		// OVER_CAP may overflow by at most one unit.
+		if n := tokenizeStr(text); n > budget+unit {
+			t.Errorf("OVER_CAP chunk %d overflows by more than one unit: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
 		}
 	}
 }

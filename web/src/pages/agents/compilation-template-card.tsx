@@ -33,7 +33,7 @@ export function CompilationTemplateCard({
 
   return (
     <Card className="group cursor-pointer h-full" onClick={onClick}>
-      <CardContent className="p-4 flex gap-3">
+      <CardContent className="py-4 px-2.5 flex gap-3">
         <RAGFlowAvatar
           avatar={data.avatar}
           name={data.name}

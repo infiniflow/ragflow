@@ -14,6 +14,8 @@ import (
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/nav"
+
+	"gorm.io/gorm"
 )
 
 // mockChat answers the structure variant's three LLM call shapes under the
@@ -1082,7 +1084,7 @@ func TestKnowledgeCompiler_PassThroughEnvelope(t *testing.T) {
 
 // groupResolverStub maps every requested group id to a fixed pair of template
 // ids, standing in for the production DB-backed group service.
-func groupResolverStub(_ context.Context, _ string, groupIDs []string) ([]string, error) {
+func groupResolverStub(_ context.Context, _ *gorm.DB, _ string, groupIDs []string) ([]string, error) {
 	var out []string
 	for _, g := range groupIDs {
 		out = append(out, "tpl-"+g+"-a", "tpl-"+g+"-b")
@@ -1099,8 +1101,8 @@ func TestKnowledgeCompiler_GroupIDsResolvedToTemplateIDs(t *testing.T) {
 	installMockDeps(t)
 	// The group resolves to two concrete template ids; each is compiled as its
 	// own spec, so the TemplateResolver must return a valid kind for them.
-	// Override the package stub and restore it afterwards.
-	common.SetTemplateResolver(func(ctx context.Context, tenantID, templateID string) (common.TemplateInfo, error) {
+	// Override the package stub and restore it afterward.
+	common.SetTemplateResolver(func(ctx context.Context, db *gorm.DB, tenantID, templateID string) (common.TemplateInfo, error) {
 		kind := templateID
 		if strings.HasPrefix(templateID, "tpl-grp1") {
 			kind = "structure"
@@ -1204,7 +1206,7 @@ func TestKnowledgeCompiler_GroupIDsWithoutResolverFailsLoud(t *testing.T) {
 // register a synthetic "tpl-<variant>" id that maps to the desired kind.
 // Production wiring installs the real DB-backed resolvers (see
 // internal/ingestion/task/knowledge_compiler_wiring.go).
-var testTemplateResolver common.TemplateResolver = func(ctx context.Context, tenantID, templateID string) (common.TemplateInfo, error) {
+var testTemplateResolver common.TemplateResolver = func(ctx context.Context, db *gorm.DB, tenantID, templateID string) (common.TemplateInfo, error) {
 	return common.TemplateInfo{ID: templateID, Kind: templateID, Config: map[string]any{}}, nil
 }
 
@@ -1217,16 +1219,16 @@ var testTemplateResolver common.TemplateResolver = func(ctx context.Context, ten
 func installVariantTemplateResolver(t *testing.T, variant string) {
 	t.Helper()
 	prev := testTemplateResolver
-	common.SetTemplateResolver(func(ctx context.Context, tenantID, templateID string) (common.TemplateInfo, error) {
+	common.SetTemplateResolver(func(ctx context.Context, db *gorm.DB, tenantID, templateID string) (common.TemplateInfo, error) {
 		if templateID == "tpl-"+variant {
 			return common.TemplateInfo{ID: templateID, Kind: variant, Config: map[string]any{}}, nil
 		}
-		return prev(ctx, tenantID, templateID)
+		return prev(ctx, db, tenantID, templateID)
 	})
 	t.Cleanup(func() { common.SetTemplateResolver(testTemplateResolver) })
 }
 
-var testGroupResolver common.GroupResolver = func(ctx context.Context, tenantID string, groupIDs []string) ([]string, error) {
+var testGroupResolver common.GroupResolver = func(ctx context.Context, db *gorm.DB, tenantID string, groupIDs []string) ([]string, error) {
 	return groupIDs, nil
 }
 

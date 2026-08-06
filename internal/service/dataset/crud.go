@@ -484,7 +484,7 @@ func (d *DatasetService) ListDatasetFilters(ctx context.Context, userID string) 
 		tenantIDs = append(tenantIDs, joinedTenant.TenantID)
 	}
 
-	owners, err := d.kbDAO.GetOwnerFilter(tenantIDs, userID)
+	owners, err := d.kbDAO.GetOwnerFilter(ctx, dao.DB, tenantIDs, userID)
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}

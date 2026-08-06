@@ -13,13 +13,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
-import asyncio
 import logging
 import json
 import os
 import re
 
-from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_id
+from api.db.joint_services.tenant_model_service import resolve_model_config, resolve_model_id, get_composite_model_name_by_ids
 from common.constants import PAGERANK_FLD, LLMType
 from common import settings
 from api.db.db_models import File
@@ -33,7 +32,7 @@ from api.db.services.tenant_model_service import TenantModelService
 from api.db.services.user_service import TenantService, UserService, UserTenantService
 from common.constants import FileSource, StatusEnum
 from api.utils.api_utils import deep_merge, get_parser_config, remap_dictionary_keys, verify_embedding_availability
-from common.misc_utils import thread_pool_exec
+from common.misc_utils import thread_pool_exec, thread_pool_exec_long_time
 from rag.advanced_rag.knowlege_compile.wiki import WIKI_PAGE_COMPILE_KWD
 
 # KB-wide structure-graph merge index types. Each (re)builds the ``dataset_graph``
@@ -222,7 +221,7 @@ def _delete_datasets_sync(tenant_id: str, ids: list = None, delete_all: bool = F
 
 
 async def delete_datasets(tenant_id: str, ids: list = None, delete_all: bool = False):
-    return await asyncio.to_thread(_delete_datasets_sync, tenant_id, ids, delete_all)
+    return await thread_pool_exec_long_time(_delete_datasets_sync, tenant_id, ids, delete_all)
 
 
 def get_dataset(dataset_id: str, tenant_id: str):
@@ -479,6 +478,10 @@ def list_datasets(tenant_id: str, args: dict):
         if status_by_kb:
             kb["parsing_status"] = status_by_kb.get(kb["id"], {})
         response_data_list.append(remap_dictionary_keys(kb))
+
+    embed_model_names = get_composite_model_name_by_ids([m["embedding_model"] for m in response_data_list])
+    for response_data in response_data_list:
+        response_data["embedding_model_name"] = embed_model_names.get(response_data["embedding_model"], "")
     return True, {"data": response_data_list, "total": total}
 
 
@@ -2298,6 +2301,7 @@ async def list_wiki_pages(
     page_size: int = 200,
     page_type: str | None = None,
     topic: str | None = None,
+    keywords: str = "",
 ):
     """List artifact pages for the left-hand 2-column list.
 
@@ -2321,6 +2325,7 @@ async def list_wiki_pages(
     offset = (page - 1) * page_size
     page_type = page_type.strip() if isinstance(page_type, str) else page_type
     topic = topic.strip() if isinstance(topic, str) else topic
+    keywords = (keywords or "").strip().casefold()
 
     condition: dict = {"compile_kwd": [WIKI_PAGE_COMPILE_KWD]}
     if page_type:
@@ -2347,38 +2352,71 @@ async def list_wiki_pages(
         "outlinks_int",
         "summary_with_weight",
     ]
+
+    def _to_item(row):
+        slug = _scalar(row.get("slug_kwd"))
+        if not slug:
+            return None
+        return {
+            "slug": slug,
+            "title": _scalar(row.get("title_kwd")) or slug,
+            "page_type": _scalar(row.get("page_type_kwd")) or "concept",
+            "topic": _scalar(row.get("topic_kwd")) or "",
+            "summary": row.get("summary_with_weight") or "",
+        }
+
     try:
-        res = settings.docStoreConn.search(
-            select_fields=select_fields,
-            highlight_fields=[],
-            condition=condition,
-            match_expressions=[],
-            order_by=order_by,
-            offset=offset,
-            limit=page_size,
-            index_names=index_nm,
-            knowledgebase_ids=[dataset_id],
-        )
-        field_map = settings.docStoreConn.get_fields(res, select_fields)
+        if not keywords:
+            res = settings.docStoreConn.search(
+                select_fields=select_fields,
+                highlight_fields=[],
+                condition=condition,
+                match_expressions=[],
+                order_by=order_by,
+                offset=offset,
+                limit=page_size,
+                index_names=index_nm,
+                knowledgebase_ids=[dataset_id],
+            )
+            field_map = settings.docStoreConn.get_fields(res, select_fields)
+            items = [item for row in (field_map or {}).values() if (item := _to_item(row)) is not None]
+            total = settings.docStoreConn.get_total(res)
+        else:
+            # Wiki list search is intentionally metadata-based. These fields
+            # are available on existing rows and behave consistently across
+            # every document-store backend, unlike a full-text query over
+            # backend-specific token fields.
+            matched_items = []
+            batch_size = 1000
+            search_offset = 0
+            while True:
+                res = settings.docStoreConn.search(
+                    select_fields=select_fields,
+                    highlight_fields=[],
+                    condition=condition,
+                    match_expressions=[],
+                    order_by=order_by,
+                    offset=search_offset,
+                    limit=batch_size,
+                    index_names=index_nm,
+                    knowledgebase_ids=[dataset_id],
+                )
+                field_map = settings.docStoreConn.get_fields(res, select_fields)
+                rows = list((field_map or {}).values())
+                if not rows:
+                    break
+                for row in rows:
+                    item = _to_item(row)
+                    if item is not None and any(keywords in str(item[field]).casefold() for field in ("title", "slug", "summary")):
+                        matched_items.append(item)
+                if len(rows) < batch_size:
+                    break
+                search_offset += batch_size
+            total = len(matched_items)
+            items = matched_items[offset : offset + page_size]
     except Exception:
         logging.exception("list_wiki_pages: docStore search failed for kb=%s", dataset_id)
         return True, {"total": 0, "items": []}
-
-    total = settings.docStoreConn.get_total(res)
-    items = []
-    for row in (field_map or {}).values():
-        slug = _scalar(row.get("slug_kwd"))
-        if not slug:
-            continue
-        items.append(
-            {
-                "slug": slug,
-                "title": _scalar(row.get("title_kwd")) or slug,
-                "page_type": _scalar(row.get("page_type_kwd")) or "concept",
-                "topic": _scalar(row.get("topic_kwd")) or "",
-                "summary": row.get("summary_with_weight") or "",
-            }
-        )
 
     return True, {"total": int(total or 0), "items": items}
 
@@ -2388,6 +2426,7 @@ async def list_wiki_topics(
     tenant_id: str,
     page: int = 1,
     page_size: int = 200,
+    keywords: str = "",
 ):
     """List wiki topics for the dataset Artifact tab."""
     if not KnowledgebaseService.accessible(dataset_id, tenant_id):
@@ -2404,6 +2443,7 @@ async def list_wiki_topics(
     page = max(1, int(page or 1))
     page_size = max(1, min(int(page_size or 200), 1000))
     offset = (page - 1) * page_size
+    keywords = (keywords or "").strip().casefold()
 
     try:
         agg_res = settings.docStoreConn.search(
@@ -2473,6 +2513,41 @@ async def list_wiki_topics(
         ),
         key=lambda x: (-x["page_count"], x["title"].lower()),
     )
+
+    if keywords:
+        matching_topics = {item["topic"] for item in ranked if any(keywords in str(item[field]).casefold() for field in ("topic", "title", "slug"))}
+
+        child_fields = ["topic_kwd", "title_kwd", "slug_kwd", "summary_with_weight"]
+        batch_size = 1000
+        child_offset = 0
+        try:
+            while True:
+                child_res = settings.docStoreConn.search(
+                    select_fields=child_fields,
+                    highlight_fields=[],
+                    condition={"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "page_type_kwd": ["concept", "entity"]},
+                    match_expressions=[],
+                    order_by=OrderByExpr(),
+                    offset=child_offset,
+                    limit=batch_size,
+                    index_names=index_nm,
+                    knowledgebase_ids=[dataset_id],
+                )
+                child_map = settings.docStoreConn.get_fields(child_res, child_fields)
+                child_rows = list((child_map or {}).values())
+                if not child_rows:
+                    break
+                for row in child_rows:
+                    topic_name = _scalar(row.get("topic_kwd"))
+                    if topic_name and any(keywords in str(_scalar(row.get(field)) or "").casefold() for field in ("title_kwd", "slug_kwd", "summary_with_weight")):
+                        matching_topics.add(topic_name)
+                if len(child_rows) < batch_size:
+                    break
+                child_offset += batch_size
+        except Exception:
+            logging.exception("list_wiki_topics: child-page keyword lookup failed for kb=%s", dataset_id)
+
+        ranked = [item for item in ranked if item["topic"] in matching_topics]
 
     total = len(ranked)
     items = ranked[offset : offset + page_size]

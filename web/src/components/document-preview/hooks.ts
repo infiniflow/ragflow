@@ -4,8 +4,9 @@ import { useGetPipelineResultSearchParams } from '@/pages/dataflow-result/hooks'
 import api, { restAPIv1 } from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import jsPreviewExcel from '@js-preview/excel';
-import { useSize } from 'ahooks';
+import { useDebounceFn, useSize } from 'ahooks';
 import axios from 'axios';
+import JSZip from 'jszip';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // ZIP file header bytes "PK"
@@ -114,36 +115,152 @@ export const useFetchDocument = () => {
   return { fetchDocument };
 };
 
+/**
+ * WPS spreadsheets embed images in cells via the proprietary DISPIMG formula
+ * (stored in xl/cellimages.xml). @js-preview/excel cannot evaluate this
+ * formula and crashes with "Cannot read properties of undefined (reading
+ * 'render')". This function strips DISPIMG formulas from worksheet XML,
+ * replacing them with a text placeholder so the rest of the sheet renders.
+ */
+async function stripWpsDispImg(data: ArrayBuffer): Promise<ArrayBuffer> {
+  const zip = await JSZip.loadAsync(data);
+
+  const worksheetPaths = Object.keys(zip.files).filter((path) =>
+    /^xl\/worksheets\/sheet\d+\.xml$/.test(path),
+  );
+
+  let modified = false;
+  for (const path of worksheetPaths) {
+    const file = zip.file(path);
+    if (!file) continue;
+    const xml = await file.async('string');
+    if (!xml.includes('DISPIMG')) continue;
+
+    modified = true;
+    let cleaned = xml;
+    // Remove <f> formula tags that reference DISPIMG
+    cleaned = cleaned.replace(
+      /<f\b[^>]*>[\s\S]*?DISPIMG[\s\S]*?<\/f>/g,
+      '',
+    );
+    // Replace cached <v> values that reference DISPIMG with a placeholder
+    cleaned = cleaned.replace(
+      /<v>[^<]*DISPIMG[^<]*<\/v>/g,
+      '<v>[图片]</v>',
+    );
+    zip.file(path, cleaned);
+  }
+
+  if (!modified) return data;
+  return zip.generateAsync({
+    type: 'arraybuffer',
+    compression: 'DEFLATE',
+  });
+}
+
 export const useFetchExcel = (filePath: string) => {
   const [status, setStatus] = useState(true);
   const { fetchDocument } = useFetchDocument();
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
+  const size = useSize(containerEl);
   const { error } = useCatchError(filePath);
 
-  const fetchDocumentAsync = useCallback(async () => {
-    let myExcelPreviewer;
-    if (containerRef.current) {
-      myExcelPreviewer = jsPreviewExcel.init(containerRef.current);
+  const previewerRef = useRef<ReturnType<typeof jsPreviewExcel.init> | null>(
+    null,
+  );
+  // Cache the fetched ArrayBuffer so we don't re-fetch on every resize.
+  const dataRef = useRef<ArrayBuffer | null>(null);
+  const [dataReady, setDataReady] = useState(false);
+
+  // @js-preview/excel reads the container's width/height at init time and
+  // exposes no public resize method, so the only way to make the spreadsheet
+  // track container size changes is to destroy + re-init the previewer.
+  const renderPreview = useCallback(async () => {
+    if (!containerEl || !dataRef.current) return;
+
+    if (previewerRef.current) {
+      previewerRef.current.destroy();
+      previewerRef.current = null;
     }
-    const jsonFile = await fetchDocument(filePath);
-    myExcelPreviewer
-      ?.preview(jsonFile.data)
-      .then(() => {
-        setStatus(true);
-      })
-      .catch((e) => {
-        // oxlint-disable-next-line no-console
-        console.warn('failed', e);
-        myExcelPreviewer.destroy();
-        setStatus(false);
-      });
+
+    const previewer = jsPreviewExcel.init(containerEl);
+    previewerRef.current = previewer;
+
+    try {
+      await previewer.preview(dataRef.current);
+      setStatus(true);
+    } catch (e) {
+      // oxlint-disable-next-line no-console
+      console.warn('failed', e);
+      previewer.destroy();
+      previewerRef.current = null;
+      setStatus(false);
+    }
+  }, [containerEl]);
+
+  // Leading edge renders immediately on first data/size, trailing edge
+  // collapses rapid resize bursts into a single re-render.
+  const { run: debouncedRender } = useDebounceFn(renderPreview, {
+    wait: 150,
+    leading: true,
+    trailing: true,
+  });
+
+  // Fetch the file once per url. On url change, drop cached data and the
+  // existing previewer so the next render starts from a clean state.
+  useEffect(() => {
+    if (!filePath) return;
+
+    setDataReady(false);
+    setStatus(true);
+    if (previewerRef.current) {
+      previewerRef.current.destroy();
+      previewerRef.current = null;
+    }
+    dataRef.current = null;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const jsonFile = await fetchDocument(filePath);
+        if (cancelled) return;
+        try {
+          dataRef.current = await stripWpsDispImg(jsonFile.data);
+        } catch {
+          // Not a valid ZIP or preprocessing failed — use original data
+          dataRef.current = jsonFile.data;
+        }
+        setDataReady(true);
+      } catch (e) {
+        if (!cancelled) {
+          // oxlint-disable-next-line no-console
+          console.warn('failed to fetch', e);
+          setStatus(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [filePath, fetchDocument]);
 
+  // Initial render + debounced re-render on container resize.
   useEffect(() => {
-    fetchDocumentAsync();
-  }, [fetchDocumentAsync]);
+    if (!dataReady || !containerEl) return;
+    debouncedRender();
+  }, [dataReady, containerEl, size?.width, size?.height, debouncedRender]);
 
-  return { status, containerRef, error };
+  // Tear down the previewer on unmount.
+  useEffect(() => {
+    return () => {
+      if (previewerRef.current) {
+        previewerRef.current.destroy();
+        previewerRef.current = null;
+      }
+    };
+  }, []);
+
+  return { status, containerRef: setContainerEl, error };
 };
 
 export const useCatchDocumentError = (url: string) => {

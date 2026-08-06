@@ -59,6 +59,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     hideIfEmpty = false,
     getFormValues,
     verifyTransform,
+    instanceDetailsLoaded,
     onBlurSuppressChange,
     onInstanceModelsChange,
     onInstanceModelsEdited,
@@ -98,6 +99,8 @@ export function ModelsSection(props: ModelsSectionProps) {
     resolveCreds,
     instanceModels,
     apiKeyValue: currentCreds.apiKey,
+    baseUrlValue: currentCreds.baseUrl,
+    instanceDetailsLoaded,
   });
 
   // 3a. Draft-only: locally-tracked "added models" list.

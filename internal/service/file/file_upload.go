@@ -11,12 +11,27 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
+	"strconv"
 	"strings"
 	"time"
 )
 
+const defaultDeploymentUploadMaxBytes int64 = 1 << 30
+
+func DeploymentUploadMaxBytes() int64 {
+	raw := common.GetEnv(common.EnvMaxContentLength)
+	if raw == "" {
+		return defaultDeploymentUploadMaxBytes
+	}
+	n, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || n <= 0 {
+		return defaultDeploymentUploadMaxBytes
+	}
+	return n
+}
+
 // UploadFile uploads files to a folder
-func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
+func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string, files []*multipart.FileHeader, maxBytes int64) ([]map[string]interface{}, error) {
 	if parentID == "" {
 		rootFolder, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
 		if err != nil {
@@ -56,6 +71,10 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 		filename := fileHeader.Filename
 		if filename == "" {
 			return nil, fmt.Errorf("no file selected")
+		}
+
+		if maxBytes > 0 && fileHeader.Size > maxBytes {
+			return nil, fmt.Errorf("file %s exceeds deployment upload limit of %d bytes", filename, maxBytes)
 		}
 
 		fileType := utility.FilenameType(filename)
@@ -101,7 +120,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 		}
 
 		var data []byte
-		data, err = io.ReadAll(src)
+		data, err = readDeploymentUploadData(src, maxBytes)
 		src.Close()
 		if err != nil {
 			return nil, fmt.Errorf("failed to read file data: %w", err)
@@ -137,6 +156,21 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 	}
 
 	return result, nil
+}
+
+func readDeploymentUploadData(r io.Reader, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		return io.ReadAll(r)
+	}
+	limited := &io.LimitedReader{R: r, N: maxBytes + 1}
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("file size exceeds deployment upload limit of %d bytes", maxBytes)
+	}
+	return data, nil
 }
 
 // UploadInfos mirrors Python's upload_info file branch: store raw bytes in the

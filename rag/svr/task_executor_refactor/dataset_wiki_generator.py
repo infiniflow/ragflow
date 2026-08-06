@@ -1283,12 +1283,15 @@ async def run_wiki(
 
     # ``kb_chat_llm_id`` is captured from the first eligible template and
     # used as the canonical chat model for KB-wide REDUCE/PLAN/REFINE.
-    # ``kb_writer_example`` follows the same first-template-wins rule.
+    # Writer instructions and page examples follow the same first-template-
+    # wins rule.
     first_parser_cfg = resolved_eligible[0][2]
     first_parser_cfg = first_parser_cfg if isinstance(first_parser_cfg, dict) else {}
     kb_chat_llm_id: Optional[str] = (first_parser_cfg.get("llm_id") or "").strip() or None
-    first_example = first_parser_cfg.get("example")
-    kb_writer_example: Optional[str] = first_example if isinstance(first_example, str) and first_example.strip() else None
+    first_instruction = first_parser_cfg.get("instruction")
+    first_page_example = first_parser_cfg.get("example")
+    kb_writer_instruction: Optional[str] = first_instruction if isinstance(first_instruction, str) and first_instruction.strip() else None
+    kb_writer_page_example: Optional[str] = first_page_example if isinstance(first_page_example, str) and first_page_example.strip() else None
     map_llm_pool = LLMCallPool(WIKI_MAP_LLM_POOL_SIZE, max_pending=WIKI_MAP_MAX_PENDING)
     n_docs = len(resolved_eligible)
     map_queue: asyncio.Queue = asyncio.Queue(maxsize=WIKI_MAP_QUEUE_SIZE)
@@ -1456,7 +1459,8 @@ async def run_wiki(
             kb_id=ctx.kb_id,
             max_workers=WIKI_REFINE_WORKERS,
             callback=_stage_cb("[wiki REFINE]"),
-            example=kb_writer_example,
+            instruction=kb_writer_instruction,
+            page_example=kb_writer_page_example,
         )
     except Exception:
         logging.exception("wiki: REDUCE/PLAN/REFINE failed for kb %s", ctx.kb_id)

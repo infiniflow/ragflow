@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"ragflow/internal/dao"
 	"testing"
 
 	// Named import so this file can drive the runtime factory directly.
@@ -30,20 +31,22 @@ import (
 	_ "ragflow/internal/ingestion/component/knowledge_compiler"
 
 	kc "ragflow/internal/ingestion/component/knowledge_compiler/common"
+
+	"gorm.io/gorm"
 )
 
 // installStubResolvers wires in-memory GroupResolver / TemplateResolver stubs so
 // the DSL tests can exercise the template-resolution path without MySQL.
 func installStubResolvers(t *testing.T, groupToTemplates map[string][]string, templates map[string]kc.TemplateInfo) {
 	t.Helper()
-	kc.SetGroupResolver(func(ctx context.Context, tenantID string, groupIDs []string) ([]string, error) {
+	kc.SetGroupResolver(func(ctx context.Context, db *gorm.DB, tenantID string, groupIDs []string) ([]string, error) {
 		var out []string
 		for _, g := range groupIDs {
 			out = append(out, groupToTemplates[g]...)
 		}
 		return out, nil
 	})
-	kc.SetTemplateResolver(func(ctx context.Context, tenantID, templateID string) (kc.TemplateInfo, error) {
+	kc.SetTemplateResolver(func(ctx context.Context, db *gorm.DB, tenantID, templateID string) (kc.TemplateInfo, error) {
 		info, ok := templates[templateID]
 		if !ok {
 			return kc.TemplateInfo{}, fmt.Errorf("no stub template %q", templateID)
@@ -107,6 +110,7 @@ func TestKnowledgeCompilerDSL_FixtureDecodesAndBindsParams(t *testing.T) {
 // TemplateResolver seam — without it, resolving the template fails loudly
 // rather than compiling with no template config.
 func TestKnowledgeCompilerDSL_FrontendDSLDecodesAndConstructs(t *testing.T) {
+	ctx := t.Context()
 	raw, err := os.ReadFile(filepath.Join(repoRootFromPipelineTest(t), "agent", "templates", "compiler.json"))
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
@@ -144,7 +148,7 @@ func TestKnowledgeCompilerDSL_FrontendDSLDecodesAndConstructs(t *testing.T) {
 
 	// Without an installed TemplateResolver, the resolution seam fails loud.
 	kc.SetTemplateResolver(nil)
-	if _, err := kc.ResolveTemplate(context.Background(), "tenant", "t1"); err == nil {
+	if _, err = kc.ResolveTemplate(ctx, dao.DB, "tenant", "t1"); err == nil {
 		t.Fatal("ResolveTemplate without resolver: expected error")
 	}
 }
@@ -295,7 +299,9 @@ func TestKnowledgeCompilerDSL_ResolveTemplateSeam(t *testing.T) {
 		"t2": {ID: "t2", Kind: "tree", Config: map[string]any{}},
 	})
 
-	ids, err := kc.ResolveGroupTemplateIDs(context.Background(), "tenant", []string{"g1"})
+	ctx := t.Context()
+
+	ids, err := kc.ResolveGroupTemplateIDs(ctx, dao.DB, "tenant", []string{"g1"})
 	if err != nil {
 		t.Fatalf("ResolveGroupTemplateIDs: %v", err)
 	}
@@ -303,7 +309,7 @@ func TestKnowledgeCompilerDSL_ResolveTemplateSeam(t *testing.T) {
 		t.Fatalf("group resolved to %v, want [t1 t2]", ids)
 	}
 
-	info, err := kc.ResolveTemplate(context.Background(), "tenant", "t1")
+	info, err := kc.ResolveTemplate(ctx, dao.DB, "tenant", "t1")
 	if err != nil {
 		t.Fatalf("ResolveTemplate t1: %v", err)
 	}

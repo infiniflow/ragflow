@@ -86,14 +86,14 @@ func compileDelimPattern(delims []string) *regexp.Regexp {
 	return chunk.CompileDelimiterListPattern(delims)
 }
 
-// splitKeepingDelim mirrors Python token_chunker._split_text_by_pattern
-// (token_chunker.py:79-94): re.split with a captured delimiter group yields
-// [text, delim, text, delim, ...]; each delimiter is glued to the END of the
-// preceding text segment, so it never surfaces as a standalone chunk. A
-// delimiter with no preceding text (a leading delimiter or one adjacent to
-// another) is dropped together with the empty segment, matching Python's
-// `if not chunk: continue`.
-func splitKeepingDelim(text string, pattern *regexp.Regexp) []string {
+// splitDroppingDelim mirrors Python's _split_text_by_pattern
+// (token_chunker.py:79-90). The captured delimiter is DISCARDED rather than
+// glued to a segment: re.split with a captured group keeps delimiters at odd
+// indices, and only the even-index (text) parts are kept. This is the
+// behaviour every delimiter path (primary and children, text/markdown/html
+// and json) must reproduce so a split chunk reads "first sentence here"
+// without the trailing delimiter.
+func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 	if pattern == nil {
 		return []string{text}
 	}
@@ -109,7 +109,7 @@ func splitKeepingDelim(text string, pattern *regexp.Regexp) []string {
 			cursor = end
 			continue
 		}
-		out = append(out, text[cursor:end])
+		out = append(out, text[cursor:start])
 		cursor = end
 	}
 	if cursor < len(text) {

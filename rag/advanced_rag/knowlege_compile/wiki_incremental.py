@@ -1669,12 +1669,14 @@ async def _wiki_refine_page(
 
     # Embed for search
     from common.misc_utils import thread_pool_exec
+    from rag.nlp import rag_tokenizer
 
     embeddings, _ = await thread_pool_exec(embd_mdl.encode, [summary or content[:200]])
 
     # Derive vector dimension from the embedding shape
     emb_arr = np.asarray(embeddings[0])
     vec_dim = int(emb_arr.shape[0]) if emb_arr.ndim >= 1 and emb_arr.shape[0] else 768
+    content_ltks = rag_tokenizer.tokenize(content)
 
     page = {
         "id": _stable_row_id(WIKI_PAGE_COMPILE_KWD, kb_id, page_id),
@@ -1691,6 +1693,9 @@ async def _wiki_refine_page(
         "page_type_kwd": page_type_kwd,
         "compile_kwd": WIKI_PAGE_COMPILE_KWD,
         "knowledge_graph_kwd": WIKI_PAGE_COMPILE_KWD,
+        "title_tks": rag_tokenizer.tokenize(page_title),
+        "content_ltks": content_ltks,
+        "content_sm_ltks": rag_tokenizer.fine_grained_tokenize(content_ltks),
     }
     # Insert vector (adds q_{dim}_vec field)
     vec_col = f"q_{vec_dim}_vec"

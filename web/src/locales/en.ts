@@ -1244,6 +1244,13 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tavilyApiKeyTip:
         'If an API Key is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
       tavilyApiKeyMessage: 'Please enter your Tavily API Key',
+      webSearchProvider: 'Web search provider',
+      webSearchProviderTip:
+        'Select the service used when Internet search is enabled.',
+      webSearchProviderPlaceholder: 'Select a web search provider',
+      queritApiKeyTip:
+        'When Querit is selected, its web search results supplement dataset retrieval.',
+      queritApiKeyMessage: 'Please enter your Querit API Key',
       tavilyApiKeyHelp: 'How to get it?',
       crossLanguage: 'Cross-language search',
       crossLanguagePlaceholder: 'Select value',
@@ -3114,7 +3121,6 @@ This delimiter is used to split the input text into several text pieces echo of 
       variableSettings: 'Variable settings',
       systemPrompt: 'System prompt',
       userPrompt: 'User prompt',
-      tocDataSource: 'Data source',
       tagFile: 'Tag file',
       addCategory: 'Add category',
       categoryName: 'Category name',
@@ -3351,7 +3357,6 @@ The Indexer will store the content in the corresponding data structures for the 
       keywords: 'Keywords',
       questions: 'Questions',
       metadata: 'Metadata',
-      toc: 'PageIndex',
       fieldName: 'Result destination',
       prompts: {
         system: {
@@ -3389,7 +3394,6 @@ Key Instructions:
           metadata: `Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.
 
 Important structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.`,
-          toc: '',
         },
         user: {
           keywords: `Text Content
@@ -3399,7 +3403,6 @@ Important structured information may include: names, dates, locations, events, k
           summary: `Text to Summarize:
 [Insert text here]`,
           metadata: `Content: [INSERT CONTENT HERE]`,
-          toc: '[Insert text here]',
         },
       },
       cancel: 'Cancel',
