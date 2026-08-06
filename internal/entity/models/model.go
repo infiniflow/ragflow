@@ -555,7 +555,7 @@ func (pm *ProviderManager) GetModelUrl(providerName, modelName, modelType string
 	}
 }
 
-// 4. Search specific model information with filtering by max_tokens or type
+// SearchModelInfo search specific model information with filtering by type or other conditions
 func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filterBy string, filterValue interface{}) ModelResponse {
 	resp := ModelResponse{
 		Code:    0,
