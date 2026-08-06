@@ -62,7 +62,7 @@ export function useDisableDifferenceEmbeddingMemory(name: string) {
             name={item.name}
           />
         ),
-        suffix: <MemoryLabel text={item.embd_id} />,
+        suffix: <MemoryLabel text={item.embd_name || item.embd_id} />,
         value: item.id,
         disabled: item.embd_id !== selectedEmbedId && selectedEmbedId !== '',
       };
