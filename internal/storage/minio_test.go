@@ -27,8 +27,8 @@ import (
 	"testing"
 	"time"
 
-	configpkg "ragflow/internal/server/config"
 	"ragflow/internal/server"
+	configpkg "ragflow/internal/server/config"
 )
 
 // getMinioConfig returns MinIO configuration for testing
@@ -130,13 +130,13 @@ func TestMinioStorage_PutAndGet(t *testing.T) {
 	content := []byte("Hello, MinIO Test!")
 
 	// Test Put
-	err := storage.Put(context.Background(),bucket, key, content)
+	err := storage.Put(context.Background(), bucket, key, content)
 	if err != nil {
 		t.Fatalf("Failed to put object: %v", err)
 	}
 
 	// Test Get
-	retrieved, err := storage.Get(context.Background(),bucket, key)
+	retrieved, err := storage.Get(context.Background(), bucket, key)
 	if err != nil {
 		t.Fatalf("Failed to get object: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestMinioStorage_PutAndGet(t *testing.T) {
 	}
 
 	// Cleanup
-	err = storage.Remove(context.Background(),bucket, key)
+	err = storage.Remove(context.Background(), bucket, key)
 	if err != nil {
 		t.Logf("Warning: failed to cleanup test object: %v", err)
 	}
@@ -159,13 +159,13 @@ func TestMinioStorage_Put_EmptyData(t *testing.T) {
 	key := "empty-file.txt"
 	content := []byte{}
 
-	err := storage.Put(context.Background(),bucket, key, content)
+	err := storage.Put(context.Background(), bucket, key, content)
 	if err != nil {
 		t.Fatalf("Failed to put empty object: %v", err)
 	}
 
 	// Verify object exists
-	exists := storage.ObjExist(context.Background(),bucket, key)
+	exists := storage.ObjExist(context.Background(), bucket, key)
 	if !exists {
 		t.Error("Expected empty object to exist")
 	}
@@ -185,12 +185,12 @@ func TestMinioStorage_Put_LargeData(t *testing.T) {
 		content[i] = byte(i % 256)
 	}
 
-	err := storage.Put(context.Background(),bucket, key, content)
+	err := storage.Put(context.Background(), bucket, key, content)
 	if err != nil {
 		t.Fatalf("Failed to put large object: %v", err)
 	}
 
-	retrieved, err := storage.Get(context.Background(),bucket, key)
+	retrieved, err := storage.Get(context.Background(), bucket, key)
 	if err != nil {
 		t.Fatalf("Failed to get large object: %v", err)
 	}
@@ -223,19 +223,19 @@ func TestMinioStorage_Remove(t *testing.T) {
 	content := []byte("Delete me")
 
 	// First, put an object
-	err := storage.Put(context.Background(),bucket, key, content)
+	err := storage.Put(context.Background(), bucket, key, content)
 	if err != nil {
 		t.Fatalf("Failed to put object: %v", err)
 	}
 
 	// Verify it exists
-	exists := storage.ObjExist(context.Background(),bucket, key)
+	exists := storage.ObjExist(context.Background(), bucket, key)
 	if !exists {
 		t.Fatal("Expected object to exist before removal")
 	}
 
 	// Remove it
-	err = storage.Remove(context.Background(),bucket, key)
+	err = storage.Remove(context.Background(), bucket, key)
 	if err != nil {
 		t.Fatalf("Failed to remove object: %v", err)
 	}
@@ -268,13 +268,13 @@ func TestMinioStorage_ObjExist(t *testing.T) {
 	content := []byte("Test content")
 
 	// Check non-existent object
-	exists := storage.ObjExist(context.Background(),bucket, key)
+	exists := storage.ObjExist(context.Background(), bucket, key)
 	if exists {
 		t.Error("Expected non-existent object to return false")
 	}
 
 	// Create object
-	err := storage.Put(context.Background(),bucket, key, content)
+	err := storage.Put(context.Background(), bucket, key, content)
 	if err != nil {
 		t.Fatalf("Failed to put object: %v", err)
 	}
@@ -297,7 +297,7 @@ func TestMinioStorage_GetPresignedURL(t *testing.T) {
 	content := []byte("Presigned URL test content")
 
 	// Create object first
-	err := storage.Put(context.Background(),bucket, key, content)
+	err := storage.Put(context.Background(), bucket, key, content)
 	if err != nil {
 		t.Fatalf("Failed to put object: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestMinioStorage_BucketExists(t *testing.T) {
 	}
 
 	// Create bucket by putting an object
-	err := storage.Put(context.Background(),bucket, "test.txt", []byte("test"))
+	err := storage.Put(context.Background(), bucket, "test.txt", []byte("test"))
 	if err != nil {
 		t.Fatalf("Failed to create bucket: %v", err)
 	}
@@ -366,7 +366,7 @@ func TestMinioStorage_RemoveBucket(t *testing.T) {
 	bucket := fmt.Sprintf("test-bucket-remove-%d", time.Now().Unix())
 
 	// Create bucket with some objects
-	err := storage.Put(context.Background(),bucket, "file1.txt", []byte("content1"))
+	err := storage.Put(context.Background(), bucket, "file1.txt", []byte("content1"))
 	if err != nil {
 		t.Fatalf("Failed to put object: %v", err)
 	}
@@ -405,7 +405,7 @@ func TestMinioStorage_Copy(t *testing.T) {
 	content := []byte("Content to copy")
 
 	// Create source object
-	err := storage.Put(context.Background(),srcBucket, srcKey, content)
+	err := storage.Put(context.Background(), srcBucket, srcKey, content)
 	if err != nil {
 		t.Fatalf("Failed to put source object: %v", err)
 	}
@@ -417,13 +417,13 @@ func TestMinioStorage_Copy(t *testing.T) {
 	}
 
 	// Verify destination exists
-	exists := storage.ObjExist(context.Background(),destBucket, destKey)
+	exists := storage.ObjExist(context.Background(), destBucket, destKey)
 	if !exists {
 		t.Error("Expected copied object to exist")
 	}
 
 	// Verify content matches
-	retrieved, err := storage.Get(context.Background(),destBucket, destKey)
+	retrieved, err := storage.Get(context.Background(), destBucket, destKey)
 	if err != nil {
 		t.Fatalf("Failed to get copied object: %v", err)
 	}
@@ -451,7 +451,7 @@ func TestMinioStorage_Copy_NonExistentSource(t *testing.T) {
 	}
 
 	// Verify destination does not exist
-	exists := storage.ObjExist(context.Background(),destBucket, destKey)
+	exists := storage.ObjExist(context.Background(), destBucket, destKey)
 	if exists {
 		t.Error("Expected destination object to not exist after failed copy")
 		storage.Remove(context.Background(), destBucket, destKey)
@@ -468,7 +468,7 @@ func TestMinioStorage_Move(t *testing.T) {
 	content := []byte("Content to move")
 
 	// Create source object
-	err := storage.Put(context.Background(),srcBucket, srcKey, content)
+	err := storage.Put(context.Background(), srcBucket, srcKey, content)
 	if err != nil {
 		t.Fatalf("Failed to put source object: %v", err)
 	}
@@ -480,7 +480,7 @@ func TestMinioStorage_Move(t *testing.T) {
 	}
 
 	// Verify source is gone
-	exists := storage.ObjExist(context.Background(),srcBucket, srcKey)
+	exists := storage.ObjExist(context.Background(), srcBucket, srcKey)
 	if exists {
 		t.Error("Expected source object to not exist after move")
 	}
@@ -492,7 +492,7 @@ func TestMinioStorage_Move(t *testing.T) {
 	}
 
 	// Verify content matches
-	retrieved, err := storage.Get(context.Background(),destBucket, destKey)
+	retrieved, err := storage.Get(context.Background(), destBucket, destKey)
 	if err != nil {
 		t.Fatalf("Failed to get moved object: %v", err)
 	}
@@ -529,7 +529,7 @@ func TestMinioStorage_MultipleObjectsInBucket(t *testing.T) {
 	for i := 0; i < numObjects; i++ {
 		key := fmt.Sprintf("file-%d.txt", i)
 		content := []byte(fmt.Sprintf("Content %d", i))
-		err := storage.Put(context.Background(),bucket, key, content)
+		err := storage.Put(context.Background(), bucket, key, content)
 		if err != nil {
 			t.Fatalf("Failed to put object %d: %v", i, err)
 		}
@@ -538,7 +538,7 @@ func TestMinioStorage_MultipleObjectsInBucket(t *testing.T) {
 	// Verify all objects exist
 	for i := 0; i < numObjects; i++ {
 		key := fmt.Sprintf("file-%d.txt", i)
-		exists := storage.ObjExist(context.Background(),bucket, key)
+		exists := storage.ObjExist(context.Background(), bucket, key)
 		if !exists {
 			t.Errorf("Expected object %s to exist", key)
 		}
@@ -548,7 +548,7 @@ func TestMinioStorage_MultipleObjectsInBucket(t *testing.T) {
 	for i := 0; i < numObjects; i++ {
 		key := fmt.Sprintf("file-%d.txt", i)
 		expectedContent := []byte(fmt.Sprintf("Content %d", i))
-		retrieved, err := storage.Get(context.Background(),bucket, key)
+		retrieved, err := storage.Get(context.Background(), bucket, key)
 		if err != nil {
 			t.Errorf("Failed to get object %s: %v", key, err)
 			continue
@@ -581,13 +581,13 @@ func TestMinioStorage_SpecialCharactersInKey(t *testing.T) {
 	for _, key := range specialKeys {
 		content := []byte(fmt.Sprintf("Content for %s", key))
 
-		err := storage.Put(context.Background(),bucket, key, content)
+		err := storage.Put(context.Background(), bucket, key, content)
 		if err != nil {
 			t.Errorf("Failed to put object with key '%s': %v", key, err)
 			continue
 		}
 
-		retrieved, err := storage.Get(context.Background(),bucket, key)
+		retrieved, err := storage.Get(context.Background(), bucket, key)
 		if err != nil {
 			t.Errorf("Failed to get object with key '%s': %v", key, err)
 			continue
@@ -611,13 +611,13 @@ func TestMinioStorage_TenantID(t *testing.T) {
 	tenantID := "tenant-123"
 
 	// Put with tenant ID
-	err := storage.Put(context.Background(),bucket, key, content, tenantID)
+	err := storage.Put(context.Background(), bucket, key, content, tenantID)
 	if err != nil {
 		t.Fatalf("Failed to put object with tenant ID: %v", err)
 	}
 
 	// Get with tenant ID
-	retrieved, err := storage.Get(context.Background(),bucket, key, tenantID)
+	retrieved, err := storage.Get(context.Background(), bucket, key, tenantID)
 	if err != nil {
 		t.Fatalf("Failed to get object with tenant ID: %v", err)
 	}
@@ -627,7 +627,7 @@ func TestMinioStorage_TenantID(t *testing.T) {
 	}
 
 	// Check existence with tenant ID
-	exists := storage.ObjExist(context.Background(),bucket, key, tenantID)
+	exists := storage.ObjExist(context.Background(), bucket, key, tenantID)
 	if !exists {
 		t.Error("Expected object to exist with tenant ID")
 	}
