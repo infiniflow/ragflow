@@ -336,19 +336,18 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 	if len(cleaned) == 0 {
 		return emptyOutputs()
 	}
-	docs := applyChildrenDelim(cleaned, childrenPattern)
-
-	// Python's naive_merge: custom (backtick) delimiters produce one
-	// chunk per segment — no token-size merge (naive_merge:1194-1213).
-	if hasCustomDelim(c.param.Delimiters) {
-		return chunkOutputs(docs)
+	textDocs := make([]schema.ChunkDoc, 0, len(cleaned))
+	for _, s := range cleaned {
+		textDocs = append(textDocs, schema.ChunkDoc{Text: s, DocType: "text", CKType: "text"})
 	}
+	docs := applyChildrenDelimText(textDocs, childrenPattern)
 
-	// Split-then-merge: split on delimiters, then greedily merge to
-	// chunk_token_size with optional overlap.
-	perItem := [][]schema.ChunkDoc{docs}
-	merged := mergeByTokenSizeFromJSON(perItem, c.param.ChunkTokenSize, c.param.OverlappedPercent, c.param.MergeStrategy())
-	return chunkOutputs(flatten(merged))
+	// Python's naive_merge: a custom (backtick) delimiter yields one chunk
+	// per segment and no token-size merge (naive_merge:1194-1213). A
+	// non-custom active delimiter cannot reach here — delimPattern is
+	// non-nil only when a backtick delimiter exists, so the split-then-
+	// merge branch was unreachable and has been removed.
+	return chunkOutputs(docs)
 }
 
 // sentenceDelimiter is the sentence/clause-boundary regex used to split
@@ -1108,12 +1107,11 @@ func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.
 // shared text-payload helpers (used by TitleChunker et al.)
 // ---------------------------------------------------------------------------
 
-// hasActiveDelimiter reports whether a regex compiled by
-// compileDelimPattern contains any non-placeholder pattern. The "match
-// nothing" sentinel regexp makes a quick `pattern.MatchString("")`
-// viable as a check without re-walking the source slice.
+// hasActiveDelimiter reports whether a compiled delimiter pattern is
+// present (non-nil). compileDelimPattern returns nil when no active
+// pattern exists, so a nil check is sufficient.
 func hasActiveDelimiter(p *regexp.Regexp) bool {
-	return p != nil && p.String() != `\A(?!)`
+	return p != nil
 }
 
 // hasCustomDelim reports whether any delimiter uses backtick syntax
@@ -1121,34 +1119,6 @@ func hasActiveDelimiter(p *regexp.Regexp) bool {
 // custom delimiters are present. Delegates to the canonical helper.
 func hasCustomDelim(delims []string) bool {
 	return chunk.HasCustomDelimiterList(delims)
-}
-
-// applyChildrenDelim mirrors token_chunker.py:325-334.
-func applyChildrenDelim(segs []string, pattern *regexp.Regexp) []schema.ChunkDoc {
-	if pattern == nil {
-		out := make([]schema.ChunkDoc, 0, len(segs))
-		for _, s := range segs {
-			out = append(out, schema.ChunkDoc{
-				Text:    s,
-				DocType: "text",
-				CKType:  "text",
-			})
-		}
-		return out
-	}
-	var docs []schema.ChunkDoc
-	for _, seg := range segs {
-		if strings.TrimSpace(seg) == "" {
-			continue
-		}
-		for _, child := range splitDroppingDelim(seg, pattern) {
-			if strings.TrimSpace(child) == "" {
-				continue
-			}
-			docs = append(docs, schema.ChunkDoc{Text: child, Mom: seg})
-		}
-	}
-	return docs
 }
 
 func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []schema.ChunkDoc {
