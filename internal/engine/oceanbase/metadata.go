@@ -20,6 +20,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -44,7 +45,7 @@ func validatedMetadataTableName(tenantID string) (string, error) {
 	return tableName, nil
 }
 
-// CreateMetadataStore creates the legacy per-tenant metadata table.
+// CreateMetadataStore creates the per-tenant metadata table.
 func (e *Engine) CreateMetadataStore(ctx context.Context, tenantID string) error {
 	tableName, err := validatedMetadataTableName(tenantID)
 	if err != nil {
@@ -150,7 +151,7 @@ func (e *Engine) DeleteMetadataKeys(ctx context.Context, docID, datasetID string
 	}
 	var raw string
 	if err := e.db.QueryRowContext(ctx, "SELECT meta_fields FROM "+quoteIdentifier(tableName)+" WHERE id = ? AND kb_id = ? LIMIT 1", docID, datasetID).Scan(&raw); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, docID)
 		}
 		return err

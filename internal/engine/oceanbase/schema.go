@@ -18,7 +18,7 @@ package oceanbase
 
 import (
 	"context"
-	"crypto/md5" // #nosec G501 -- SQLAlchemy uses MD5 to shorten generated identifiers.
+	"crypto/md5" // #nosec G501 -- MD5 provides a deterministic identifier checksum, not security.
 	"database/sql"
 	"fmt"
 	"os"

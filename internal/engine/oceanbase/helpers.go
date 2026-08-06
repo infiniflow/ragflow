@@ -18,6 +18,7 @@ package oceanbase
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"sort"
@@ -186,8 +187,13 @@ func numberToFloat(value interface{}) (float64, bool) {
 		return float64(number), true
 	case int:
 		return float64(number), true
+	case int32:
+		return float64(number), true
 	case int64:
 		return float64(number), true
+	case json.Number:
+		parsed, err := number.Float64()
+		return parsed, err == nil
 	default:
 		return 0, false
 	}

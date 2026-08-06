@@ -215,12 +215,33 @@ func TestDBMSHybridBodyMatchesPythonSemantics(t *testing.T) {
 	if !ok {
 		t.Fatal("hybrid body unexpectedly required SQL fallback")
 	}
-	query := body["query"].(map[string]interface{})["bool"].(map[string]interface{})
-	must := query["must"].([]interface{})[0].(map[string]interface{})["query_string"].(map[string]interface{})
+	root, ok := body["query"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("hybrid body query leg = %#v", body["query"])
+	}
+	query, ok := root["bool"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("hybrid body bool leg = %#v", root)
+	}
+	mustClauses, ok := query["must"].([]interface{})
+	if !ok || len(mustClauses) == 0 {
+		t.Fatalf("hybrid body must leg = %#v", query["must"])
+	}
+	firstClause, ok := mustClauses[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("hybrid body must clause = %#v", mustClauses[0])
+	}
+	must, ok := firstClause["query_string"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("hybrid body query_string leg = %#v", firstClause)
+	}
 	if must["minimum_should_match"] != "30%" || query["boost"] != 0.25 {
 		t.Fatalf("hybrid text leg = %#v", query)
 	}
-	knn := body["knn"].(map[string]interface{})
+	knn, ok := body["knn"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("hybrid knn leg = %#v", body["knn"])
+	}
 	if knn["k"] != 8 || knn["num_candidates"] != 16 || knn["similarity"] != 0.42 {
 		t.Fatalf("hybrid vector leg = %#v", knn)
 	}

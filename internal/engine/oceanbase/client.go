@@ -147,8 +147,9 @@ func (e *Engine) initialize(ctx context.Context) error {
 
 	e.ensureQueryTimeout(ctx)
 	if e.flags.enableHybridSearch {
-		e.hybridAvailable.Store(e.engineType == "seekdb" || compareVersions(version, minimumHybridVersion) >= 0)
-		if e.hybridAvailable.Load() {
+		available := e.engineType == "seekdb" || compareVersions(version, minimumHybridVersion) >= 0
+		e.hybridAvailable.Store(available)
+		if available {
 			// The DBMS hybrid-search DSL uses the tokenized FTS fields. This
 			// is the same switch made by the Python HybridSearch client path.
 			e.flags.searchOriginalContent = false

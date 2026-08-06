@@ -118,10 +118,10 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 		t.Fatalf("Python VECTOR decoding failed: %#v", pythonChunk["q_2_vec"])
 	}
 
-	assertStoredJSON(t, engine, ctx, tableName, "important_kwd", "chunk-1", []interface{}{"hello"})
-	assertStoredJSON(t, engine, ctx, tableName, "metadata", "chunk-1", map[string]interface{}{"_group_id": "group-1", "custom": "json-value"})
-	assertStoredJSON(t, engine, ctx, tableName, "extra", "chunk-1", map[string]interface{}{"custom_field": "kept-in-extra"})
-	assertStoredJSON(t, engine, ctx, tableName, "q_2_vec", "chunk-1", []interface{}{0.25, 0.5})
+	assertStoredJSON(ctx, t, engine, tableName, "important_kwd", "chunk-1", []interface{}{"hello"})
+	assertStoredJSON(ctx, t, engine, tableName, "metadata", "chunk-1", map[string]interface{}{"_group_id": "group-1", "custom": "json-value"})
+	assertStoredJSON(ctx, t, engine, tableName, "extra", "chunk-1", map[string]interface{}{"custom_field": "kept-in-extra"})
+	assertStoredJSON(ctx, t, engine, tableName, "q_2_vec", "chunk-1", []interface{}{0.25, 0.5})
 
 	memoryTable := "memory_go_compat_" + suffix
 	memoryA := "memory-a-" + suffix
@@ -175,10 +175,10 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 	if err := engine.UpdateMetadata(ctx, "go-meta-1", datasetID, map[string]interface{}{"source": "go", "tags": []string{"c"}}, tenantID); err != nil {
 		t.Fatal(err)
 	}
-	assertStoredJSON(t, engine, ctx, metadataTable, "meta_fields", "go-meta-1", map[string]interface{}{"source": "go", "tags": []interface{}{"c"}})
+	assertStoredJSON(ctx, t, engine, metadataTable, "meta_fields", "go-meta-1", map[string]interface{}{"source": "go", "tags": []interface{}{"c"}})
 }
 
-func assertStoredJSON(t *testing.T, engine *Engine, ctx context.Context, tableName, columnName, rowID string, want interface{}) {
+func assertStoredJSON(ctx context.Context, t *testing.T, engine *Engine, tableName, columnName, rowID string, want interface{}) {
 	t.Helper()
 	var raw interface{}
 	query := fmt.Sprintf("SELECT %s FROM %s WHERE id = ?", quoteIdentifier(columnName), quoteIdentifier(tableName))

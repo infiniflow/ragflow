@@ -41,6 +41,14 @@ var jsonColumns = map[string]bool{
 	"tag_feas": true, "chunk_data": true, "metadata": true, "extra": true, "meta_fields": true,
 }
 
+var knownChunkColumns = func() map[string]bool {
+	known := make(map[string]bool, len(chunkColumns))
+	for _, column := range chunkColumns {
+		known[column.name] = true
+	}
+	return known
+}()
+
 var memoryFieldToColumn = map[string]string{
 	"message_type": "message_type_kwd",
 	"status":       "status_int",
@@ -54,10 +62,6 @@ var memoryColumnToField = map[string]string{
 }
 
 func normalizeChunk(document map[string]interface{}) (map[string]interface{}, error) {
-	known := make(map[string]bool, len(chunkColumns))
-	for _, column := range chunkColumns {
-		known[column.name] = true
-	}
 	result := make(map[string]interface{}, len(chunkColumns)+1)
 	extra := make(map[string]interface{})
 	if existing, ok := document["extra"].(map[string]interface{}); ok {
@@ -75,7 +79,7 @@ func normalizeChunk(document map[string]interface{}) (map[string]interface{}, er
 			result[key] = encoded
 			continue
 		}
-		if !known[key] {
+		if !knownChunkColumns[key] {
 			extra[key] = value
 			continue
 		}
@@ -359,26 +363,11 @@ func floatSlice(value interface{}) ([]float64, bool) {
 	}
 	result := make([]float64, len(values))
 	for i, item := range values {
-		switch number := item.(type) {
-		case float64:
-			result[i] = number
-		case float32:
-			result[i] = float64(number)
-		case int:
-			result[i] = float64(number)
-		case int32:
-			result[i] = float64(number)
-		case int64:
-			result[i] = float64(number)
-		case json.Number:
-			parsed, err := number.Float64()
-			if err != nil {
-				return nil, false
-			}
-			result[i] = parsed
-		default:
+		number, ok := numberToFloat(item)
+		if !ok {
 			return nil, false
 		}
+		result[i] = number
 		if math.IsNaN(result[i]) || math.IsInf(result[i], 0) {
 			return nil, false
 		}

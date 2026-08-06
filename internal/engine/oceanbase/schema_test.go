@@ -82,6 +82,36 @@ func TestDropChunkStoreDeletesOnlyScopedRows(t *testing.T) {
 	}
 }
 
+func TestDropChunkStoreDropsTableForUnscopedDataset(t *testing.T) {
+	tests := []struct {
+		name      string
+		datasetID string
+	}{
+		{name: "empty dataset", datasetID: ""},
+		{name: "skill dataset", datasetID: "skill"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			engine := newEngineWithDB("oceanbase", "legacy_doc", db)
+
+			mock.ExpectExec(regexp.QuoteMeta("DROP TABLE IF EXISTS `ragflow_tenant_1`")).
+				WillReturnResult(sqlmock.NewResult(0, 0))
+
+			if err := engine.DropChunkStore(context.Background(), "ragflow_tenant_1", test.datasetID); err != nil {
+				t.Fatalf("DropChunkStore() error = %v", err)
+			}
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestRegularIndexNamePreservesShortNamesAndCapsLongNames(t *testing.T) {
 	if got, want := regularIndexName("memory_tenant_1", "memory_id"), "ix_memory_tenant_1_memory_id"; got != want {
 		t.Fatalf("regularIndexName() = %q, want %q", got, want)

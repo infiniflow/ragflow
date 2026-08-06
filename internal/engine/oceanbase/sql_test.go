@@ -100,6 +100,7 @@ func TestSkillFilterSearchCountsPhysicalPrimaryKey(t *testing.T) {
 	}
 	defer db.Close()
 	engine := newEngineWithDB("seekdb", "legacy_doc", db)
+	engine.flags = featureFlags{}
 
 	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(`skill_id`) FROM `skill_tenant-1_default` WHERE 1=1")).
 		WillReturnRows(sqlmock.NewRows([]string{"COUNT(skill_id)"}).AddRow(0))
@@ -126,5 +127,18 @@ func TestMemorySourceIDUsesScalarSQL(t *testing.T) {
 	}
 	if len(args) != 1 || args[0] != "source-1" {
 		t.Fatalf("memory source_id args = %#v", args)
+	}
+}
+
+func TestChunkSourceIDUsesArraySQL(t *testing.T) {
+	where, args, err := buildFilter(map[string]interface{}{"source_id": "source-1"}, "chunk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if where != "ARRAY_CONTAINS(`source_id`, ?)" {
+		t.Fatalf("chunk source_id filter = %q", where)
+	}
+	if len(args) != 1 || args[0] != "source-1" {
+		t.Fatalf("chunk source_id args = %#v", args)
 	}
 }
