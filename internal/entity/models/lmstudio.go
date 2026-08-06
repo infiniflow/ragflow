@@ -32,7 +32,6 @@ type LmStudioModel struct {
 	baseModel BaseModel
 }
 
-// NewLmStudioModel
 func NewLmStudioModel(baseURL map[string]string, urlSuffix URLSuffix) *LmStudioModel {
 	return &LmStudioModel{
 		baseModel: BaseModel{

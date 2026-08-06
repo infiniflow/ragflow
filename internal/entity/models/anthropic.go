@@ -396,9 +396,8 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 
 	baseURLRegion := a.region(apiConfig)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := a.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
@@ -469,9 +468,8 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 
 	baseURLRegion := a.region(apiConfig)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := a.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return err

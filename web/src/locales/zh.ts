@@ -1590,7 +1590,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取实体和关系
       description: '描述',
       descriptionPlaceholder: '请输入描述',
       addField: '添加字段',
-      example: '页面结构示例',
+      example: '示例',
       examplePlaceholder: '请输入示例',
       instruction: 'Instruction',
       globalRules: '全局规则',

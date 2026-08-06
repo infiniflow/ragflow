@@ -130,7 +130,7 @@ func TestDocumentGetByKBIDOrdersByCreateTime(t *testing.T) {
 	dao := NewDocumentDAO()
 	docs, total, err := dao.GetByKBID(ctx, db, "kb1")
 	if err != nil {
-		t.Fatalf("GetByKBID failed: %v", err)
+		t.Fatalf("fail to get document by dataset id: %v", err)
 	}
 	if total != 2 {
 		t.Fatalf("expected total=2, got %d", total)

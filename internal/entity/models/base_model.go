@@ -256,15 +256,6 @@ func (b *BaseModel) doGetRequest(ctx context.Context, url string, apiConfig *API
 	return body, nil
 }
 
-// mustMarshal marshals v to JSON, panicking on error.
-func mustMarshal(v any) []byte {
-	b, err := json.Marshal(v)
-	if err != nil {
-		panic(fmt.Sprintf("failed to marshal: %v", err))
-	}
-	return b
-}
-
 // doStreamRequest sends a JSON POST request and calls handler with the response body.
 func (b *BaseModel) doStreamRequest(ctx context.Context, url string, apiConfig *APIConfig, reqBody map[string]any, timeout time.Duration, handler func(io.ReadCloser) error) error {
 	ctx, cancel := context.WithTimeout(ctx, timeout)

@@ -173,12 +173,16 @@ export function BlueprintsStep({
                 <Textarea rows={6} />
               </RAGFlowFormItem>
 
-              <div className="flex-1 min-h-0 flex flex-col">
+              <RAGFlowFormItem
+                name={examplePath}
+                label={t('setting.example')}
+                className="flex-1 min-h-0"
+              >
                 <MarkdownEditor
                   content={String(example ?? '')}
                   onChange={handleExampleChange}
                 />
-              </div>
+              </RAGFlowFormItem>
             </div>
           ) : (
             <BlueprintsEmptyState />
