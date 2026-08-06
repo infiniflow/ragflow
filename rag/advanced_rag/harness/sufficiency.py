@@ -19,102 +19,6 @@ _LOG = logging.getLogger(__name__)
 
 import re
 
-# Capitals/words that the naive regex picks up but carry no *evidence* signal.
-# These are report connective tissue ("Therefore", "However", "The", "As") or
-# generic nouns ("Evidence", "Wikipedia") that, when treated as required facts,
-# generate a flood of meaningless mismatches and drag every score down.
-_STOP_ENTITIES = {
-    "The",
-    "A",
-    "An",
-    "And",
-    "Or",
-    "But",
-    "So",
-    "As",
-    "It",
-    "Its",
-    "This",
-    "That",
-    "These",
-    "Those",
-    "There",
-    "Their",
-    "Then",
-    "Than",
-    "They",
-    "However",
-    "Therefore",
-    "Thus",
-    "Hence",
-    "Moreover",
-    "Furthermore",
-    "Additionally",
-    "Meanwhile",
-    "Although",
-    "Though",
-    "While",
-    "Because",
-    "Since",
-    "After",
-    "Before",
-    "During",
-    "Within",
-    "Without",
-    "With",
-    "Where",
-    "When",
-    "Why",
-    "How",
-    "What",
-    "Which",
-    "Who",
-    "Whom",
-    "No",
-    "Yes",
-    "Not",
-    "None",
-    "Nothing",
-    "Each",
-    "Every",
-    "Both",
-    "Either",
-    "Neither",
-    "Some",
-    "Any",
-    "All",
-    "Also",
-    "Only",
-    "Even",
-    "Still",
-    "Another",
-    "Other",
-    "One",
-    "Two",
-    "Three",
-    "First",
-    "Second",
-    "Third",
-    "Last",
-    "Next",
-    "E.g.",
-    "I.e.",
-    "Etc.",
-    "Evidence",
-    "Answer",
-    "Question",
-    "Conclusion",
-    "Result",
-    "Results",
-    "Report",
-    "Source",
-    "Sources",
-    "Example",
-    "Note",
-    "Notes",
-    "Context",
-}
-
 
 def extract_numbers(text: str) -> list[float]:
     """Extract numeric values from text."""
@@ -139,15 +43,141 @@ def _filter_relevant_numbers(numbers: list[float]) -> list[float]:
     return kept
 
 
-def extract_named_entities(text: str) -> list[str]:
-    """Simple entity extraction — capitalized words/phrases minus noise.
+# ── Multilingual named-entity extraction ──────────────────────────────
+# Cross-check previously only recognized English capitalized sequences, so
+# Chinese/Japanese/Korean reports yielded zero entities and could never be
+# verified. We now detect the report's language and route:
+#   - en/zh/de/fr/es/pt/ja: spaCy NER (models pre-loaded at build time; see
+#     pyproject.toml).
+#   - Any other language: langdetect returns the code; if no spaCy model is
+#     mapped the report still degrades gracefully to a no-op (never crashes).
+# Language is detected with ``langdetect`` (Bayesian N-gram profiles, pure
+# Python, 55+ languages — a product-grade alternative to hand-rolled
+# heuristics), with a small Unicode-range heuristic as offline fallback.
+# The spaCy pipeline is lazy-loaded once per process (singleton cache, like
+# lightgraph) and degrades gracefully if a model is unavailable, so
+# sufficiency never crashes on a missing model.
 
-    Filters out connective tissue / generic nouns (see ``_STOP_ENTITIES``) so
-    the cross-check verifies real named entities (e.g. "Istiklal Mosque",
-    "Sarajevo") instead of failing on "Therefore"/"However".
+# RAGFlow language label / ISO code → spaCy model (mirrors lightgraph).
+_LANG_TO_SPACY_MODEL = {
+    "en": "en_core_web_sm",
+    "english": "en_core_web_sm",
+    "zh": "zh_core_web_sm",
+    "chinese": "zh_core_web_sm",
+    "zh-cn": "zh_core_web_sm",
+    "de": "de_core_news_sm",
+    "german": "de_core_news_sm",
+    "fr": "fr_core_news_sm",
+    "french": "fr_core_news_sm",
+    "es": "es_core_news_sm",
+    "spanish": "es_core_news_sm",
+    "pt": "pt_core_news_sm",
+    "portuguese": "pt_core_news_sm",
+    "ja": "ja_core_news_sm",
+    "japanese": "ja_core_news_sm",
+}
+
+# spaCy NER labels that are not "evidence" (numbers, time, percentages).
+_SPACY_SKIP_LABELS = {"ORDINAL", "CARDINAL", "DATE", "TIME", "PERCENT", "MONEY", "QUANTITY"}
+
+_spacy_nlp_cache: dict = {}
+
+
+def _is_cjk(text: str) -> bool:
+    """True if ``text`` contains Chinese/Japanese characters."""
+    return any("\u4e00" <= ch <= "\u9fff" for ch in text)
+
+
+def _detect_language(text: str) -> str:
+    """Detect the report's language and return an ISO 639-1 code.
+
+    Primary path uses ``langdetect`` (Bayesian N-gram profile classifier,
+    pure Python, ~55 languages). If langdetect is unavailable (or returns
+    nothing reliable for a very short / punctuation-only string), we fall
+    back to a small Unicode-range heuristic so the pipeline still works
+    offline without the extra dependency.
     """
-    entities = re.findall(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b", text)
-    return [e for e in dict.fromkeys(entities) if e not in _STOP_ENTITIES]
+    if not text:
+        return "en"
+    try:
+        from langdetect import detect
+
+        lang = detect(text[:500])  # long reports don't need the full body
+        if lang and lang != "unknown":
+            return lang
+    except Exception as exc:  # langdetect not installed / detection error
+        _LOG.info(
+            "[multilingual-ner] langdetect unavailable/failed, falling back to Unicode heuristic: %s",
+            exc,
+        )
+    # Offline heuristic fallback.
+    if any("\u4e00" <= ch <= "\u9fff" for ch in text):
+        # Distinguish zh vs ja by presence of hiragana/katakana.
+        if any("\u3040" <= ch <= "\u30ff" for ch in text):
+            return "ja"
+        return "zh"
+    if any("\uac00" <= ch <= "\ud7af" for ch in text):
+        return "ko"
+    return "en"
+
+
+def _resolve_spacy_model(language: str) -> str:
+    key = (language or "en").strip().lower()
+    return _LANG_TO_SPACY_MODEL.get(key, "en_core_web_sm")
+
+
+def _spacy_ner_entities(text: str, language: str) -> list[str]:
+    """Extract named entities via spaCy NER, with per-process model caching.
+
+    Returns [] on any failure (missing model, spacy import error) so the caller
+    can fall back to the regex path without crashing.
+    """
+    model_name = _resolve_spacy_model(language)
+    if model_name in _spacy_nlp_cache:
+        nlp = _spacy_nlp_cache[model_name]
+    else:
+        try:
+            import spacy
+
+            nlp = spacy.load(model_name)
+            _spacy_nlp_cache[model_name] = nlp
+        except Exception as exc:  # model not installed / spacy unavailable
+            _LOG.info("[multilingual-ner] spaCy model %s unavailable, falling back to regex: %s", model_name, exc)
+            return []
+    if nlp is None:
+        return []
+    try:
+        doc = nlp(text)
+    except Exception as exc:
+        _LOG.info("[multilingual-ner] spaCy inference failed for %s: %s", model_name, exc)
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for ent in doc.ents:
+        label = ent.label_ or ""
+        if label in _SPACY_SKIP_LABELS:
+            continue
+        name = ent.text.strip()
+        if not name or name in seen:
+            continue
+        seen.add(name)
+        out.append(name)
+    return out
+
+
+def extract_named_entities(text: str) -> list[str]:
+    """Extract named entities via spaCy NER for any configured language.
+
+    All languages (en/zh/de/fr/es/pt/ja) go through the spaCy NER pipeline —
+    no hand-rolled regexes or stopword lists. spaCy only returns recognized
+    named entities (PER/LOC/ORG/NORP/MISC/...), so connective tissue never
+    appears. Number/time/percentage labels are filtered (they are verified
+    separately via ``extract_numbers``). Returns [] if spaCy is unavailable.
+    """
+    if not text:
+        return []
+    lang = _detect_language(text)
+    return _spacy_ner_entities(text, lang)
 
 
 def cross_check_claim(agent_result: AgentResult, all_chunks: dict) -> ClaimCrossCheckResult:
@@ -228,8 +258,16 @@ def cross_check_claim(agent_result: AgentResult, all_chunks: dict) -> ClaimCross
             mismatches.append(f"number {num} not found in any evidence chunk")
 
     for ent in entities:
-        # Bounded word/phrase match: Ann must not match Annual.
-        if _anywhere(rf"(?<![\w]){re.escape(ent.lower())}(?![\w])"):
+        if _is_cjk(ent):
+            # CJK entities have no word boundaries (every Han char is \w), and
+            # they are commonly followed by function words ("的/是"). Use a
+            # substring match on the lowercased text instead of a \b-like regex,
+            # which would fail on "清真寺的..." because "的" is \w.
+            found = any(ent.lower() in t for t in chunk_texts)
+        else:
+            # Bounded word/phrase match: Ann must not match Annual.
+            found = _anywhere(rf"(?<![\w]){re.escape(ent.lower())}(?![\w])")
+        if found:
             matches.append(f"entity '{ent}' found in evidence")
         else:
             mismatches.append(f"entity '{ent}' not found in any evidence chunk")

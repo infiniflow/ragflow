@@ -475,7 +475,7 @@ def _nav_cluster_names(clusters: list[dict]) -> str:
     return ", ".join(n for n in names if n) or "none"
 
 
-async def _content_recall_docs(tools, query: str) -> list[str]:
+async def _content_recall_docs(tools, query: str, doc_scope: list[str] | None = None) -> list[str]:
     """Fallback doc discovery: recall by chunk *content*, aggregated to docs.
 
     Runs a plain hybrid retrieval over the bound KBs' chunk index and returns the
@@ -483,6 +483,10 @@ async def _content_recall_docs(tools, query: str) -> list[str]:
     nav-tree router: a question that matches detail living only in a document's
     body (not its cluster summary) never appears in the tree, so this retrieval —
     which reads real chunk text — is what catches it.
+
+    ``doc_scope`` (the already-effective routed doc scope) is forwarded as
+    ``doc_ids`` to the retrieval so content recall stays restricted to the same
+    documents the tree routed to, instead of re-opening the whole KB.
 
     Returns ``[]`` on failure or when nothing hits.
     """
@@ -507,6 +511,7 @@ async def _content_recall_docs(tools, query: str) -> list[str]:
             _NAV_RECALL_TOP_N,
             0.2,
             vector_similarity_weight=vector_weight,
+            doc_ids=doc_scope,
             aggs=True,
             highlight=False,
         )
@@ -569,26 +574,26 @@ async def dataset_navigation_by_tree(tools, topic: str, keywords: str = "", doc_
 
     if not clusters:
         _LOG.info("[Dataset navigation] no cluster there — falling back to content recall.")
-        return (await _content_recall_docs(tools, query))[:_NAV_MAX_DOCS]
+        return (await _content_recall_docs(tools, query, doc_scope))[:_NAV_MAX_DOCS]
 
     # 2. Ask the model which clusters are relevant. Nothing relevant → [].
     selected_clusters = await _ask_nav_select(tools, query, clusters, "clusters", _NAV_MAX_CLUSTERS)
     if not selected_clusters:
         _LOG.info("[Dataset navigation] no cluster found — falling back to content recall.")
-        return (await _content_recall_docs(tools, query))[:_NAV_MAX_DOCS]
+        return (await _content_recall_docs(tools, query, doc_scope))[:_NAV_MAX_DOCS]
     _LOG.info("[Dataset navigation] %d/%d cluster(s) selected.", len(selected_clusters), len(clusters))
 
     # 3. Descend the selected clusters to their document leaves.
     leaves = await _collect_nav_leaves(dataset_api_service, selected_clusters, doc_scope)
     if not leaves:
         _LOG.info("[Dataset navigation] no leaf under selected cluster %s — falling back to content recall.", _nav_cluster_names(selected_clusters))
-        return (await _content_recall_docs(tools, query))[:_NAV_MAX_DOCS]
+        return (await _content_recall_docs(tools, query, doc_scope))[:_NAV_MAX_DOCS]
 
     # 4. Ask the model which documents to look into. Nothing relevant → [].
     selected_docs = await _ask_nav_select(tools, query, leaves, "documents", _NAV_TREE_MAX_LEAVES)
     if not selected_docs:
         _LOG.info("[Dataset navigation] no doc selected under cluster %s — falling back to content recall.", _nav_cluster_names(selected_clusters))
-        return (await _content_recall_docs(tools, query))[:_NAV_MAX_DOCS]
+        return (await _content_recall_docs(tools, query, doc_scope))[:_NAV_MAX_DOCS]
 
     routed: list[str] = []
     seen_docs: set[str] = set()
@@ -606,7 +611,7 @@ async def dataset_navigation_by_tree(tools, topic: str, keywords: str = "", doc_
     #    a missed document still reaches the caller.  Skip the extra retrieval
     #    when the tree already filled the whole cap — nothing would be added.
     if len(routed) < _NAV_MAX_DOCS:
-        fallback = await _content_recall_docs(tools, query)
+        fallback = await _content_recall_docs(tools, query, doc_scope)
         added = [d for d in fallback if d not in seen_docs]
         if added:
             routed.extend(added[:_NAV_RECALL_MAX_DOCS])

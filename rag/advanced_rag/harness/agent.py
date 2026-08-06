@@ -145,8 +145,18 @@ async def research_agent_loop(
     context,
     mode: ExecutionStrategy,
     compilation_map: dict,
+    followups: list[str] | None = None,
 ) -> dict:
-    """Inner loop for a single claim — native tool-calling with a text fallback."""
+    """Inner loop for a single claim — native tool-calling with a text fallback.
+
+    ``followups`` (Phase-2 LLM missing-pieces feedback from the previous
+    sufficiency round) is passed in explicitly by the orchestrator rather than
+    read from the shared ``context`` here.  The orchestrator consumes and clears
+    ``context.pending_followups`` ONCE per round so every claim researched in a
+    parallel batch receives the SAME follow-up guidance (reading the shared list
+    per-claim would race: the first claim to execute would clear it, starving
+    the rest).
+    """
     phase = determine_current_phase(context)
     phase_config = SEARCH_PHASES.get(phase, {})
     gated_defs = get_gated_tools(
@@ -157,18 +167,6 @@ async def research_agent_loop(
         has_routed_scope=bool(getattr(pipeline, "_routed_docs", None)),
         web_enabled=bool(getattr(tools, "has_web", lambda: False)()),
     )
-
-    # Consume follow-up search queries from the previous sufficiency round
-    # (Phase-2 LLM missing-pieces feedback) so the agent searches for the
-    # specific gaps instead of re-searching the whole question. Clear after use.
-    followups: list[str] = []
-    pending = getattr(context, "pending_followups", None)
-    if pending:
-        followups = [str(q.get("query") or q.get("question") or "") for q in pending if q]
-        followups = [q for q in followups if q.strip()]
-        context.pending_followups = []
-        if followups:
-            _LOG.info("research_agent: injecting %d follow-up query(ies) for missing pieces: %s", len(followups), followups)
 
     # Clone so binding tools never leaks onto the shared chat model.
     agent_mdl = tools.chat_mdl.clone()
