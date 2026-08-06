@@ -78,8 +78,21 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		return
 	}
 
+	writeAudioHeaders := func(mediaType string) {
+		c.Header("Content-Type", mediaType)
+		c.Header("Cache-Control", "no-cache")
+		c.Header("Connection", "keep-alive")
+		c.Header("X-Accel-Buffering", "no")
+		c.Writer.WriteHeader(http.StatusOK)
+	}
+
 	segments := ttsSegmentSplitRegex.Split(req.Text, -1)
 	headerWritten := false
+	// WAV segments cannot be concatenated byte-wise (each carries its own
+	// RIFF header), so they are accumulated as raw PCM and re-wrapped into
+	// a single WAV before being written.
+	var wavFmt *wavFormat
+	var wavPCM []byte
 	for i, seg := range segments {
 		seg = strings.TrimSpace(seg)
 		if seg == "" {
@@ -96,17 +109,39 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		if resp == nil || len(resp.Audio) == 0 {
 			continue
 		}
+		if resp.MediaType == "audio/wav" {
+			format, pcm, werr := splitWAV(resp.Audio)
+			if werr != nil {
+				common.Warn("chat TTS wav segment unparsable",
+					zap.Int("segmentIndex", i),
+					zap.Error(werr))
+				continue
+			}
+			if wavFmt == nil {
+				wavFmt = format
+			}
+			wavPCM = append(wavPCM, pcm...)
+			continue
+		}
 		if !headerWritten {
 			// Commit the audio headers only once the first chunk is available,
 			// so a fully failed synthesis can still return a JSON error status.
-			c.Header("Content-Type", "audio/mpeg")
-			c.Header("Cache-Control", "no-cache")
-			c.Header("Connection", "keep-alive")
-			c.Header("X-Accel-Buffering", "no")
-			c.Writer.WriteHeader(http.StatusOK)
+			mediaType := resp.MediaType
+			if mediaType == "" {
+				mediaType = "audio/mpeg"
+			}
+			writeAudioHeaders(mediaType)
 			headerWritten = true
 		}
 		if _, werr := c.Writer.Write(resp.Audio); werr != nil {
+			return
+		}
+		c.Writer.Flush()
+	}
+	if wavFmt != nil && !headerWritten {
+		writeAudioHeaders("audio/wav")
+		headerWritten = true
+		if _, werr := c.Writer.Write(buildWAV(wavFmt, wavPCM)); werr != nil {
 			return
 		}
 		c.Writer.Flush()

@@ -11,7 +11,7 @@
     "embedding": "compatible-mode/v1/embeddings",
     "rerank": "compatible-api/v1/reranks",
     "models": "compatible-mode/v1/models",
-    "tts": "compatible-mode/v1/audio/speech"
+    "tts": "api/v1/services/aigc/multimodal-generation/generation"
   },
   "models": [
     {

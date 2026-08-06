@@ -98,6 +98,9 @@ type ASRResponse struct {
 
 type TTSResponse struct {
 	Audio []byte `json:"audio"`
+	// MediaType is the MIME type of Audio (e.g. "audio/mpeg", "audio/wav").
+	// Empty means the caller's default (audio/mpeg).
+	MediaType string `json:"media_type,omitempty"`
 }
 
 type OCRFileResponse struct {
