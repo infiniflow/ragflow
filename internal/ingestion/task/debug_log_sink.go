@@ -271,7 +271,7 @@ func (s *DebugLogSink) Flush(ctx context.Context, finalErr error) {
 // `json.dumps(self.get_component_obj(self.path[-1]).output())`
 // (rag/flow/pipeline.py:171). The last executed component is the sink's final
 // entry (path[-1] always emits its exit progress last). Raw embedding vectors
-// are stripped (deepCopyStrip) so the Redis log stays at Python-scale size.
+// are stripped (deepCopy(out, true)) so the Redis log stays at Python-scale size.
 // Returns "" when no output is available; the caller then keeps the
 // plain-text fallback and the front-end export button stays disabled (empty
 // output, matching Python's isEmpty check).
@@ -284,7 +284,7 @@ func endOutputMessage(entries []debugLogEntry, runOutput map[string]any) string 
 	if !ok || len(out) == 0 {
 		return ""
 	}
-	b, err := json.Marshal(deepCopyStrip(out))
+	b, err := json.Marshal(deepCopy(out, true))
 	if err != nil {
 		return ""
 	}
