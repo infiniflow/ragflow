@@ -27,6 +27,9 @@ import (
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
@@ -163,6 +166,15 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 		}
 	}
 
+	// Capture warnings during the runs so we assert the envelope-unwrap fix
+	// did not regress into noisy warnings: with a well-formed template the
+	// parserConfig cpnID matches the DSL, so warnUnknownComponentParams must
+	// NOT emit its "not present in the pipeline DSL" warning.
+	core, recorded := observer.New(zap.NewAtomicLevelAt(zap.DebugLevel))
+	oldLogger := common.Logger
+	common.Logger = zap.New(core)
+	defer func() { common.Logger = oldLogger }()
+
 	// Uncapped baseline: explicit pages=all → executor respects override.
 	uncappedExec, err := NewPipelineExecutor(newDebugCtx(allPages), canvasID, 0)
 	if err != nil {
@@ -181,6 +193,15 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	capped, err := cappedExec.Execute(context.Background())
 	if err != nil {
 		t.Fatalf("Execute (capped): %v", err)
+	}
+
+	// A well-formed template's parserConfig cpnID matches the DSL, so the
+	// unknown-cpnID guard must stay silent. If it warned here, the envelope
+	// was not unwrapped (the pre-fix no-op regression).
+	for _, e := range recorded.All() {
+		if strings.Contains(e.Message, "not present in the pipeline DSL") {
+			t.Errorf("warnUnknownComponentParams emitted an unknown-cpnID warning during a well-formed debug run (envelope-unwrap regression?): %s", e.Message)
+		}
 	}
 
 	uncappedLen := len(joinedChunks(uncapped.Chunks))
