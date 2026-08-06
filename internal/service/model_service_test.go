@@ -15,6 +15,21 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
+type remoteModelProbeDriver struct {
+	*modelModule.DummyModel
+	remoteModels []modelModule.ListModelResponse
+	embedCalls   int
+}
+
+func (d *remoteModelProbeDriver) ListModels(context.Context, *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
+	return d.remoteModels, nil
+}
+
+func (d *remoteModelProbeDriver) Embed(context.Context, *string, []string, *modelModule.APIConfig, *modelModule.EmbeddingConfig, *common.ModelUsage) ([]modelModule.EmbeddingData, error) {
+	d.embedCalls++
+	return nil, nil
+}
+
 func TestValidateEmbeddingModel(t *testing.T) {
 	maxDimension := 2048
 	maxBatchSize := 128
@@ -138,6 +153,31 @@ func TestValidateEmbeddingModel(t *testing.T) {
 				t.Fatalf("validateEmbeddingModel() error = %v, want substring %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestVerifyProviderModelValidatesRemoteEmbeddingMetadata(t *testing.T) {
+	maxDimension := 1024
+	maxBatchSize := 0
+	driver := &remoteModelProbeDriver{
+		DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{}),
+		remoteModels: []modelModule.ListModelResponse{{
+			Name:         "remote-embedding",
+			ModelTypes:   []string{"embedding"},
+			MaxDimension: &maxDimension,
+			MaxBatchSize: &maxBatchSize,
+		}},
+	}
+
+	result, err := verifyProviderModel(context.Background(), driver, nil, &modelModule.APIConfig{}, nil)
+	if err == nil {
+		t.Fatal("verifyProviderModel() error = nil, want validation error")
+	}
+	if result["remote-embedding"] != entity.ModelVerifyFail {
+		t.Fatalf("verification result = %#v, want remote model failure", result)
+	}
+	if driver.embedCalls != 0 {
+		t.Fatalf("Embed calls = %d, want 0 after metadata validation failure", driver.embedCalls)
 	}
 }
 

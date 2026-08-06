@@ -1144,8 +1144,11 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 					modelTypes = modelModule.InferModelTypes(modelName)
 				}
 				modelsToVerify = append(modelsToVerify, &modelModule.Model{
-					Name:       modelName,
-					ModelTypes: modelTypes,
+					Name:         modelName,
+					ModelTypes:   modelTypes,
+					MaxDimension: rm.MaxDimension,
+					MaxBatchSize: rm.MaxBatchSize,
+					Dimensions:   append([]int(nil), rm.Dimensions...),
 				})
 			}
 		} else {
