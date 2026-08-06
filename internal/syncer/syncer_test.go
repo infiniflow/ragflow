@@ -95,12 +95,18 @@ func (s fakeStore) ListIDs(ctx context.Context, kbID, sourceType string) (map[st
 	return s.ids, nil
 }
 
-// ListFingerprints returns configured fingerprints.
-func (s fakeStore) ListFingerprints(ctx context.Context, kbID, sourceType string) (map[string]string, error) {
+// GetFingerprintsByIDs returns configured fingerprints for requested IDs.
+func (s fakeStore) GetFingerprintsByIDs(ctx context.Context, kbID, sourceType string, ids []string) (map[string]string, error) {
+	result := make(map[string]string, len(ids))
 	if s.fingerprints == nil {
-		return map[string]string{}, nil
+		return result, nil
 	}
-	return s.fingerprints, nil
+	for _, id := range ids {
+		if fingerprint, ok := s.fingerprints[id]; ok {
+			result[id] = fingerprint
+		}
+	}
+	return result, nil
 }
 
 // fakeDeleter records document deletes.

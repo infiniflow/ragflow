@@ -42,10 +42,6 @@ type ResolvedDocumentID struct {
 // DocumentStore reads existing connector documents.
 type DocumentStore interface {
 	ListIDs(ctx context.Context, kbID, sourceType string) (map[string]struct{}, error)
-	ListFingerprints(ctx context.Context, kbID, sourceType string) (map[string]string, error)
-}
-
-type pairDocumentStore interface {
 	GetFingerprintsByIDs(ctx context.Context, kbID, sourceType string, ids []string) (map[string]string, error)
 }
 
@@ -64,37 +60,15 @@ func (r *DocumentIDResolver) Resolve(ctx context.Context, kbID, connectorID, sou
 	legacyID := Hash128(connectorID + ":" + sourceID)
 	newID := Hash128(kbID + ":" + connectorID + ":" + sourceID)
 
-	if store, ok := r.store.(pairDocumentStore); ok {
-		fingerprints, err := store.GetFingerprintsByIDs(ctx, kbID, sourceType, []string{legacyID, newID})
-		if err != nil {
-			return ResolvedDocumentID{}, err
-		}
-		docID := newID
-		if _, ok := fingerprints[legacyID]; ok {
-			docID = legacyID
-		}
-		stored := fingerprints[legacyID]
-		if stored == "" {
-			stored = fingerprints[newID]
-		}
-		return ResolvedDocumentID{DocID: docID, LegacyID: legacyID, NewID: newID, StoredFingerprint: stored}, nil
-	}
-
-	existing, err := r.store.ListIDs(ctx, kbID, sourceType)
+	fingerprints, err := r.store.GetFingerprintsByIDs(ctx, kbID, sourceType, []string{legacyID, newID})
 	if err != nil {
 		return ResolvedDocumentID{}, err
 	}
 
 	docID := newID
-	if _, ok := existing[legacyID]; ok {
+	if _, ok := fingerprints[legacyID]; ok {
 		docID = legacyID
 	}
-
-	fingerprints, err := r.store.ListFingerprints(ctx, kbID, sourceType)
-	if err != nil {
-		return ResolvedDocumentID{}, err
-	}
-
 	stored := fingerprints[legacyID]
 	if stored == "" {
 		stored = fingerprints[newID]
@@ -143,23 +117,5 @@ func (s *GormDocumentStore) GetFingerprintsByIDs(ctx context.Context, kbID, sour
 		}
 		result[doc.ID] = *doc.ContentHash
 	}
-	return result, nil
-}
-
-// ListFingerprints returns existing connector document fingerprints in a KB.
-func (s *GormDocumentStore) ListFingerprints(ctx context.Context, kbID, sourceType string) (map[string]string, error) {
-	var docs []entity.Document
-	if err := dao.GetDB().WithContext(ctx).Select("id", "content_hash").Where("kb_id = ? AND source_type = ?", kbID, sourceType).Find(&docs).Error; err != nil {
-		return nil, err
-	}
-
-	result := make(map[string]string, len(docs))
-	for _, doc := range docs {
-		if doc.ContentHash == nil {
-			continue
-		}
-		result[doc.ID] = *doc.ContentHash
-	}
-
 	return result, nil
 }

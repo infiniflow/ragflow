@@ -113,9 +113,6 @@ func (d *SyncTaskDAO) ListDueTasks(ctx context.Context, now time.Time, limit int
 		if !isDue(row.SyncLogs, row.ConnectorRefreshFreq, row.ConnectorPruneFreq, row.ConnectorConfig, now) {
 			continue
 		}
-		if _, err := d.GetTaskContext(ctx, row.ID); err != nil {
-			return nil, err
-		}
 		tasks = append(tasks, row.SyncLogs)
 		if len(tasks) >= limit {
 			break
@@ -294,8 +291,11 @@ func (d *SyncTaskDAO) RecoverStaleRunning(ctx context.Context, now time.Time) (i
 // createScheduledTask creates the next Python-compatible scheduled task.
 func createScheduledTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, taskType string, fromBeginning bool, pollRangeStart *time.Time, totalDocsIndexed int64) error {
 	var lockRow entity.Connector2Kb
-	if err := tx.WithContext(ctx).
-		Clauses(clause.Locking{Strength: "UPDATE"}).
+	query := tx.WithContext(ctx)
+	if tx.Dialector.Name() != "sqlite" {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	if err := query.
 		Where("connector_id = ? AND kb_id = ?", connectorID, kbID).
 		First(&lockRow).Error; err != nil {
 		return err
