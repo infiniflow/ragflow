@@ -113,6 +113,7 @@ const columns = ({
     {
       accessorKey: 'update_date',
       header: t('setting.timeStarted'),
+      meta: { headerClassName: 'w-44' },
       cell: ({ row }) => (
         <div className="flex items-center gap-2 text-text-primary">
           {row.original.update_date
@@ -124,6 +125,7 @@ const columns = ({
     {
       accessorKey: 'status',
       header: t('knowledgeDetails.status'),
+      meta: { headerClassName: 'w-28' },
       cell: ({ row }) => (
         <FileStatusBadge
           status={row.original.status as RunningStatus}
@@ -135,6 +137,7 @@ const columns = ({
     {
       accessorKey: 'kb_name',
       header: t('knowledgeDetails.dataset'),
+      meta: { headerClassName: 'w-1/4' },
       cell: ({ row }) => {
         return (
           <div
@@ -148,7 +151,7 @@ const columns = ({
               name={row.original.kb_name}
               className="size-4"
             />
-            {row.original.kb_name}
+            <span className="truncate">{row.original.kb_name}</span>
           </div>
         );
       },
@@ -156,6 +159,7 @@ const columns = ({
     {
       accessorKey: 'task_type',
       header: 'Task Type',
+      meta: { headerClassName: 'w-28' },
       cell: ({ row }) => row.original.task_type || 'sync',
     },
     {
@@ -234,12 +238,15 @@ export const DataSourceLogsTable = ({
     // <div className="w-full h-[calc(100vh-360px)]">
     //   <Table rootClassName="max-h-[calc(100vh-380px)]">
     <div className="w-full">
-      <Table>
+      <Table className="table-fixed">
         <TableHeader>
           {table.getHeaderGroups().map((headerGroup) => (
             <TableRow key={headerGroup.id}>
               {headerGroup.headers.map((header) => (
-                <TableHead key={header.id}>
+                <TableHead
+                  key={header.id}
+                  className={header.column.columnDef.meta?.headerClassName}
+                >
                   {flexRender(
                     header.column.columnDef.header,
                     header.getContext(),
