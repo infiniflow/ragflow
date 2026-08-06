@@ -402,9 +402,10 @@ async def _wiki_delete_deleted_doc_state(
 
     deleted = set(deleted_doc_ids)
     derived_kwds = list(WIKI_DERIVED_COMPILE_KWDS)
-    select_fields = ["id", "source_doc_ids"]
+    select_fields = ["id", "source_doc_ids", "compile_kwd", "slug_kwd", "page_type_kwd"]
     to_delete: list[str] = []
     to_shrink: list[tuple[str, list[str]]] = []
+    page_history_to_delete: list[tuple[str, str]] = []
     offset = 0
     page_size = 1000
     while True:
@@ -440,6 +441,10 @@ async def _wiki_delete_deleted_doc_state(
                 to_shrink.append((row_id, remaining))
             else:
                 to_delete.append(row_id)
+                if row.get("compile_kwd") == WIKI_PAGE_COMPILE_KWD:
+                    slug = row.get("slug_kwd")
+                    if isinstance(slug, str) and slug:
+                        page_history_to_delete.append((slug, row.get("page_type_kwd") or "concept"))
         if len(field_map) < page_size:
             break
         offset += page_size
@@ -455,6 +460,19 @@ async def _wiki_delete_deleted_doc_state(
             )
         except Exception:
             logging.exception("wiki: failed to drop orphaned derived rows in kb=%s", kb_id)
+
+    if page_history_to_delete:
+        from api.db.services.file_commit_service import FileCommitService
+
+        for slug, page_type in page_history_to_delete:
+            try:
+                FileCommitService.delete_page_history(kb_id, page_type, slug)
+            except Exception:
+                logging.exception(
+                    "wiki: failed to delete version history for removed page=%s kb=%s",
+                    slug,
+                    kb_id,
+                )
 
     # Shrink rows still owned by surviving docs to just those docs.
     for row_id, remaining in to_shrink:
@@ -733,15 +751,17 @@ async def persist_wiki_pages(
 
     # Capture the prior rendered content for every slug we're about to
     # overwrite, so the per-page commit row downstream has a real diff
-    # baseline. Single batch read by slug_kwd IN [...] — one round-trip
-    # regardless of page count. Failures here degrade gracefully.
+    # baseline. Prefer md_with_weight because that is the canonical field
+    # consumed by the Wiki page API, with content_with_weight as fallback.
+    # Single batch read by slug_kwd IN [...] — one round-trip regardless of
+    # page count. Failures here degrade gracefully.
     target_slugs: list[str] = [(p.get("slug") or "").strip() for p in pages if isinstance(p.get("slug"), str) and p.get("slug")]
     prior_by_slug: dict[str, str] = {}
     if target_slugs:
         try:
             res = await thread_pool_exec(
                 settings.docStoreConn.search,
-                ["id", "slug_kwd", "content_with_weight"],
+                ["id", "slug_kwd", "md_with_weight", "content_with_weight"],
                 [],
                 {"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "slug_kwd": list(target_slugs)},
                 [],
@@ -753,11 +773,11 @@ async def persist_wiki_pages(
             )
             field_map = settings.docStoreConn.get_fields(
                 res,
-                ["id", "slug_kwd", "content_with_weight"],
+                ["id", "slug_kwd", "md_with_weight", "content_with_weight"],
             )
             for row in (field_map or {}).values():
                 s = row.get("slug_kwd")
-                c = row.get("content_with_weight")
+                c = row.get("md_with_weight") or row.get("content_with_weight")
                 if isinstance(s, str) and isinstance(c, str):
                     prior_by_slug[s] = c
         except Exception:
@@ -838,6 +858,7 @@ async def persist_wiki_pages(
                 "related_kb_pages_kwd": list(page.get("related_kb_pages") or []),
                 "source_chunk_ids": list(page.get("source_chunk_ids") or []),
                 "source_doc_ids": list(page.get("source_doc_ids") or []),
+                "md_with_weight": content_md,
                 "content_with_weight": content_md,
                 # Summary kept verbatim alongside the rendered body so the
                 # viewer can render it as a distinct (smaller) block above
@@ -887,8 +908,6 @@ async def persist_wiki_pages(
     for page in pages:
         slug = (page.get("slug") or "").strip()
         if not slug:
-            continue
-        if not prior_by_slug.get(slug, ""):
             continue
         content_md = page.get("content_md_rendered") or page.get("content_md") or page.get("content_md_raw") or ""
         action = (page.get("action") or "CREATE").upper()

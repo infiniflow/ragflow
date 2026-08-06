@@ -120,7 +120,7 @@ export enum ParseType {
 export enum ProcessingType {
   knowledgeGraph = 'Graph',
   raptor = 'RAPTOR',
-  artifact = 'Artifact',
+  artifact = 'wiki',
   skill = 'Skill',
   mindmap = 'Mindmap',
   timeline = 'Timeline',
