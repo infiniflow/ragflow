@@ -55,7 +55,7 @@ func (z *ZhipuAIModel) Name() string {
 	return "zhipu"
 }
 
-// ChatWithMessages sends multiple messages with roles and returns response
+// ChatWithMessages sends multiple messages with roles and returns response.
 func (z *ZhipuAIModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := z.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err

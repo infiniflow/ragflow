@@ -64,7 +64,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "GOT-OCR2_0",
@@ -89,7 +89,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "HunyuanOCR",

@@ -57,7 +57,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jina-embeddings-v4",
@@ -65,7 +65,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jina-embeddings-v5-text-small",
@@ -73,7 +73,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jina-embeddings-v5-text-nano",
@@ -81,7 +81,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jina-embeddings-v5-omni-small",
@@ -89,7 +89,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jina-embeddings-v5-omni-nano",
@@ -97,7 +97,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jina-clip-v2",
@@ -105,7 +105,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jina-embeddings-v2-base-en",
@@ -113,7 +113,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16384
+      "max_batch_size": 16384
     }
   ]
 }

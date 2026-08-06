@@ -31,7 +31,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 10
+      "max_batch_size": 10
     },
     {
       "name": "qwen3-vl-plus",
@@ -69,7 +69,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 10
+      "max_batch_size": 10
     },
     {
       "name": "qwen3-rerank",

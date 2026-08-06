@@ -21,6 +21,55 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
 )
 
+// batchSubmitter fans out the MAP-stage extraction jobs on the process-wide
+// knowledge-compilation pool. It is injected by the knowledge_compiler wiring
+// so every variant shares one vCPU-sized concurrency bound; when nil the
+// batches run sequentially (the historic default).
+var batchSubmitter func(ctx context.Context, jobs []func() error) error
+
+// SetBatchSubmitter installs the shared-pool fan-out used by Run's MAP stage.
+// Pass nil to revert to serial execution.
+func SetBatchSubmitter(submit func(ctx context.Context, jobs []func() error) error) {
+	batchSubmitter = submit
+}
+
+// runBatches mirrors the other compiler variants: concurrent under the wired
+// global compiler pool, or serial when no submitter is set. The first error is
+// returned after all jobs settle; the global pool is never StopWait'd.
+func runBatches(ctx context.Context, jobs []func() error) error {
+	if len(jobs) == 0 {
+		return nil
+	}
+	if batchSubmitter != nil {
+		return batchSubmitter(ctx, jobs)
+	}
+	for _, j := range jobs {
+		if err := j(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// wikiMapTokenBudget is the input-token budget per MAP extraction batch. It is
+// intentionally well below the chat model's context window so the LLM has
+// generous room to emit the entity/concept/claim/relation/topic JSON without
+// hitting the output-token limit and truncating the payload.
+const wikiMapTokenBudget = 2048
+
+// wikiMapMaxTokens derives the extraction output budget from the model's
+// context length and the per-batch input budget: once the batch has consumed
+// wikiMapTokenBudget input tokens, the rest of the window is handed to the
+// output — but never below the input budget itself, so a small-input batch can
+// still get a proportionally large extraction payload. modelContextLen is the
+// model's total context window in tokens (0 means unknown).
+func wikiMapMaxTokens(modelContextLen int) int {
+	if modelContextLen <= 0 {
+		modelContextLen = common.DefaultLLMContextLength
+	}
+	return max(modelContextLen-wikiMapTokenBudget, wikiMapTokenBudget)
+}
+
 type wikiPipeline struct {
 	ctx       context.Context
 	deps      common.Deps
@@ -35,6 +84,12 @@ type wikiPipeline struct {
 	reduced     wikiExtract
 	plan        wikiPlan
 	pages       []wikiPageResult
+	// planBudget is the resolved global page budget for the current planning
+	// run (target approx + hard cap).
+	planBudget wikiPlanBudget
+	// planCapacityExcluded counts the planned pages dropped to fit the global
+	// hard cap; testable and reported for observability.
+	planCapacityExcluded int
 }
 
 type wikiExtract struct {
@@ -100,8 +155,33 @@ type wikiPlanPage struct {
 	Priority    int               `json:"priority"`
 	Lead        string            `json:"lead"`
 	Sections    []wikiPlanSection `json:"sections"`
+	// MentionCount is an internal (non-serialized) signal used for the
+	// deterministic page selection when the merged plan exceeds the global hard
+	// cap. It is computed from the reduced extract, not read from JSON.
+	MentionCount int `json:"-"`
 }
 
+// Reconciliation thresholds. These are a deliberate Go-specific refinement of
+// the Python wiki.py contract, NOT a byte-for-byte alignment:
+//
+// Python `_wiki_reconcile_with_kb` (wiki.py:1900-1957) queries KNN with
+// `extra_options={"similarity": update_threshold}` (update_threshold=0.95), so
+// candidates below that threshold are normally filtered out at retrieval and
+// the item becomes CREATE directly. Its MAYBE band ([maybe=0.60, update=0.95))
+// is only reachable when a backend still returns low-score candidates despite
+// the similarity filter.
+//
+// Go's `FindSimilarPages` returns top-K candidates without a similarity floor,
+// so it genuinely sees low-score candidates Python never does. To exploit that
+// richer signal we keep a real two-band decision:
+//
+//   - Score >= update_threshold (0.92)           -> direct UPDATE
+//   - Score <  maybe_threshold (0.78)            -> CREATE (no match)
+//   - Score in [maybe, update)                   -> title/topic/entity overlap
+//     heuristic first (direct UPDATE), else MAYBE resolved by the LLM.
+//
+// The title/topic/entity overlap straight-to-UPDATE shortcut is a Go-only
+// enhancement; it is NOT a Python-aligned behavior. Keep it documented as such.
 const (
 	wikiPlanUpdateThreshold = 0.92
 	wikiPlanMaybeThreshold  = 0.78
@@ -199,6 +279,10 @@ func (p *wikiPipeline) run() error {
 		return err
 	}
 	p.reduced = reduceExtracts(p.mapExtracts)
+	// Layer embedding + LLM disambiguation onto the exact-merged entities
+	// (REDUCE enhancement; concepts keep exact dedup). Degrades to a no-op when
+	// the embedder/chat seams are unavailable.
+	p.reduced.Entities = p.dedupeEntities(p.reduced.Entities)
 	plan, err := p.runPlan()
 	if err != nil {
 		return err
@@ -213,27 +297,66 @@ func (p *wikiPipeline) run() error {
 }
 
 func (p *wikiPipeline) runMap() error {
-	batches := common.PackBatches(p.inputs.Chunks, 4096, p.deps.Tokenizer)
-	for _, batch := range batches {
-		if err := p.ctx.Err(); err != nil {
-			return err
-		}
-		extract, err := p.mapBatch(batch)
-		if err != nil {
-			return err
-		}
-		p.mapExtracts = append(p.mapExtracts, extract)
+	// Keep each batch small enough that the LLM's entity/relation JSON output
+	// for the batch stays well under the model's output-token limit. 2048 input
+	// tokens per batch (was a hard-coded 4096) leaves generous headroom for the
+	// extraction payload; oversize batches caused truncated, unparseable JSON
+	// (unexpected end of JSON input) on the real pipeline.
+	batches := common.PackBatches(p.inputs.Chunks, wikiMapTokenBudget, p.deps.Tokenizer)
+	extracts, err := runMapBatches(p.ctx, batches, p.mapBatch)
+	if err != nil {
+		return err
 	}
+	p.mapExtracts = append(p.mapExtracts, extracts...)
 	return nil
+}
+
+func runMapBatches(
+	ctx context.Context,
+	batches [][]common.Chunk,
+	mapBatch func([]common.Chunk) (wikiExtract, error),
+) ([]wikiExtract, error) {
+	if len(batches) == 0 {
+		return nil, nil
+	}
+	extracts := make([]wikiExtract, len(batches))
+	jobs := make([]func() error, 0, len(batches))
+	for i, batch := range batches {
+		i, batch := i, batch
+		jobs = append(jobs, func() error {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			extract, err := mapBatch(batch)
+			if err != nil {
+				return err
+			}
+			// Distinct slice index per batch keeps results stable without locks.
+			extracts[i] = extract
+			return nil
+		})
+	}
+	if err := runBatches(ctx, jobs); err != nil {
+		return nil, err
+	}
+	return extracts, nil
 }
 
 func (p *wikiPipeline) mapBatch(batch []common.Chunk) (wikiExtract, error) {
 	parserConfig, _ := p.inputs.VariantSpecific["parser_config"].(map[string]any)
 	user, _ := buildWikiMapPrompt(p.docID, batch, parserConfig, p.param.Language)
+	// Give the extraction step a generous output budget so the entity/relation
+	// JSON is not silently truncated by the model's default output cap (that
+	// produced "unexpected end of JSON input" from GenJSON). The output budget is
+	// tied to the per-batch input budget: once the batch consumes
+	// wikiMapTokenBudget tokens of the model's context, the remainder is left
+	// for the extraction payload (and never less than the input budget itself).
+	mt := wikiMapMaxTokens(p.deps.ModelContextLen)
 	raw, err := common.GenJSON(p.ctx, p.deps.Chat, common.ChatRequest{
 		LLMID:        p.llmID,
 		SystemPrompt: wikiMapSystem,
 		UserPrompt:   user,
+		MaxTokens:    &mt,
 	})
 	if err != nil {
 		return wikiExtract{}, err
@@ -246,31 +369,85 @@ func (p *wikiPipeline) runPlan() (wikiPlan, error) {
 	if len(batches) == 0 {
 		batches = []wikiExtract{p.reduced}
 	}
-	plans := make([]wikiPlan, 0, len(batches))
+	totalItems := 0
+	for _, b := range batches {
+		totalItems += wikiExtractItemCount(b)
+	}
+	p.planBudget = deriveWikiPlanBudget(p.deps.ModelContextLen, totalItems)
+	// Quota allocation must use the achievable cap (min(Target, Max)): when the
+	// model's output capacity is smaller than the item-count-derived target, the
+	// planner must be asked for at most Max pages so the sum of per-batch
+	// max_pages never exceeds the capacity that can actually be emitted. Using
+	// Target here would re-introduce the truncated-JSON risk the budget exists
+	// to eliminate.
+	quotas := allocatePlanQuotas(batches, p.planBudget.Cap())
+
+	// approvedReduced is the set of items that actually got a non-zero quota.
+	// It is what the fallback/normalization may reference so zero-quota items
+	// can never leak back into the plan via buildWikiFallbackPages.
+	approved := wikiExtract{}
+	plans := make([]wikiPlan, len(batches))
+	jobs := make([]func() error, 0, len(batches))
 	for i, batch := range batches {
-		plan, err := p.runPlanBatch(batch, i+1, len(batches))
-		if err != nil {
-			return wikiPlan{}, err
+		i, batch := i, batch
+		quota := quotas[i]
+		if quota <= 0 {
+			// Zero-quota batch: no planner call and no fallback page. It is
+			// intentionally left as the zero wikiPlan{} so the merge sees no
+			// pages from it.
+			continue
 		}
-		plans = append(plans, plan)
+		approved.Entities = append(approved.Entities, batch.Entities...)
+		approved.Concepts = append(approved.Concepts, batch.Concepts...)
+		approved.Claims = append(approved.Claims, batch.Claims...)
+		approved.Relations = append(approved.Relations, batch.Relations...)
+		approved.Topics = append(approved.Topics, batch.Topics...)
+		jobs = append(jobs, func() error {
+			if err := p.ctx.Err(); err != nil {
+				return err
+			}
+			plan, err := p.runPlanBatch(batch, i+1, len(batches), quota)
+			if err != nil {
+				return err
+			}
+			// Distinct slice index keeps results stable without locks.
+			plans[i] = plan
+			return nil
+		})
 	}
-	if len(plans) == 1 {
-		plan := normalizeWikiPlan(plans[0], p.docID, p.reduced)
-		return p.reconcilePlan(plan)
+	if err := runBatches(p.ctx, jobs); err != nil {
+		return wikiPlan{}, err
 	}
-	plan, err := p.mergePlanCandidates(plans)
+
+	merged := p.mergePlanCandidates(plans, approved)
+	var excluded int
+	merged.Pages, excluded = truncatePlanPagesByCap(merged.Pages, p.planBudget.Max, approved)
+	p.planCapacityExcluded += excluded
+	merged.Pages = normalizeWikiPlanPageLinks(merged.Pages)
+	reconciled, err := p.reconcilePlan(merged)
 	if err != nil {
 		return wikiPlan{}, err
 	}
-	return p.reconcilePlan(plan)
+	// reconcilePlan rewrites page.Slug to the matched existing page's slug, which
+	// can re-introduce self-referential or plan-absent related links; normalize
+	// once more so stale links don't reach the stored pages.
+	reconciled.Pages = normalizeWikiPlanPageLinks(reconciled.Pages)
+	return reconciled, nil
 }
 
+// runRefine fans the REFINE stage out to page-level jobs on the shared compiler
+// pool, mirroring the P1 error model: all jobs are submitted, awaited, and the
+// first error is returned; each job checks ctx before starting. Results are
+// written to pre-allocated per-index slots so the output is in normalized-plan
+// order regardless of completion order (no concurrent append to a shared slice).
+// When no submitter is wired, jobs run serially (historic default).
 func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
 	pages := normalizeWikiPlanPages(p.plan.Pages, p.reduced)
 	if len(pages) == 0 {
 		return nil, nil
 	}
 	pageTitles := map[string]string{}
+	slugToPageType := map[string]string{}
 	allPlanSlugs := make([]string, 0, len(pages))
 	for _, page := range pages {
 		if page.Slug == "" {
@@ -278,108 +455,155 @@ func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
 		}
 		allPlanSlugs = append(allPlanSlugs, page.Slug)
 		pageTitles[page.Slug] = page.Title
+		// Every planned page carries its type (entity/concept/...); the link
+		// renderer needs it so artifact/<kb>/<page_type>/<slug> links are
+		// clickable (frontend parseWikiLinkHref only matches entity|concept).
+		if pt := strings.TrimSpace(page.PageType); pt != "" {
+			slugToPageType[page.Slug] = pt
+		}
 	}
 	entityLookup := buildWikiEntityLookup(p.reduced.Entities)
 	conceptLookup := buildWikiConceptLookup(p.reduced.Concepts)
-	results := make([]wikiPageResult, 0, len(pages))
-	for _, planItem := range pages {
-		if p.ctx.Err() != nil {
-			return nil, p.ctx.Err()
-		}
-		evidence := assembleWikiPageEvidence(planItem, p.reduced.Claims, entityLookup, conceptLookup)
-		sourceChunkIDs := collectWikiEvidenceChunkIDs(evidence)
-		sourceContext := buildSourceContext(p.inputs.Chunks, sourceChunkIDs)
-		if strings.TrimSpace(sourceContext) == "" {
-			sourceContext = buildSourceContext(p.inputs.Chunks, p.reduced.sourceChunkIDs())
-		}
-		available := make([]string, 0, len(allPlanSlugs))
-		for _, slug := range allPlanSlugs {
-			if slug != planItem.Slug {
-				available = append(available, "- [["+slug+"]]")
+
+	results := make([]wikiPageResult, len(pages))
+	jobs := make([]func() error, 0, len(pages))
+	for i, planItem := range pages {
+		i, planItem := i, planItem
+		jobs = append(jobs, func() error {
+			if err := p.ctx.Err(); err != nil {
+				return err
 			}
-		}
-		if len(available) == 0 {
-			available = []string{"(none — this is the only page)"}
-		}
-		var existing *common.WikiPageCandidate
-		var err error
-		if strings.EqualFold(planItem.Action, "UPDATE") && p.deps.WikiPages != nil {
-			existing, err = p.deps.WikiPages.GetPageBySlug(p.ctx, p.tenantID, p.datasetID, planItem.Slug)
+			res, err := p.runRefinePage(planItem, allPlanSlugs, pageTitles, slugToPageType, entityLookup, conceptLookup)
 			if err != nil {
-				return nil, err
+				return err
 			}
-		}
-		existingSection := ""
-		existingRaw := ""
-		if existing != nil {
-			existingRaw = firstNonEmpty(existing.ContentMDRaw, existing.ContentMD)
-			if strings.TrimSpace(existingRaw) != "" {
-				existingSection = "## Existing page content (UPDATE — integrate new evidence into this)\n\n" + existingRaw + "\n"
-			}
-		}
-		user := renderWikiTemplate(wikiRefineWriterUserTemplate, map[string]string{
-			"action":           firstNonEmpty(planItem.Action, "CREATE"),
-			"slug":             planItem.Slug,
-			"title":            firstNonEmpty(planItem.Title, planItem.Slug),
-			"page_type":        firstNonEmpty(planItem.PageType, "concept"),
-			"all_plan_slugs":   strings.Join(available, "\n"),
-			"existing_section": existingSection,
-			"source_context":   sourceContext,
-			"evidence_count":   fmt.Sprintf("%d", len(evidence)),
-			"evidence_blocks":  formatWikiEvidenceBlocks(evidence),
+			results[i] = res
+			return nil
 		})
-		resp, err := p.deps.Chat.Chat(p.ctx, common.ChatRequest{
-			LLMID:        p.llmID,
-			SystemPrompt: buildWikiRefineWriterSystem(""),
-			UserPrompt:   user,
-		})
-		if err != nil {
-			return nil, err
-		}
-		if resp == nil {
-			return nil, fmt.Errorf("knowledge_compiler: wiki refine returned no response")
-		}
-		contentRaw := strings.TrimSpace(firstNonEmpty(resp.Content))
-		if contentRaw == "" {
-			contentRaw = "# " + firstNonEmpty(planItem.Title, planItem.Slug) + "\n\n(Page generation produced no content.)"
-		}
-		if strings.TrimSpace(existingRaw) != "" {
-			contentRaw, err = p.mergeWikiPageContent(existingRaw, contentRaw, planItem.Slug)
-			if err != nil {
-				return nil, err
-			}
-		}
-		contentRendered, outlinks := transformWikiLinks(contentRaw, firstNonEmpty(p.datasetID, p.docID), pageTitles)
-		sourceDocIDs := collectWikiSourceDocIDs(p.inputs.Chunks, sourceChunkIDs, p.docID)
-		summary := firstParagraph(contentRendered)
-		if summary == "" {
-			summary = firstNonEmpty(planItem.Title, planItem.Slug)
-		}
-		topic := firstNonEmpty(planItem.Topic, planItem.Title, planItem.Slug)
-		results = append(results, wikiPageResult{
-			Slug:           planItem.Slug,
-			Title:          firstNonEmpty(planItem.Title, planItem.Slug),
-			PageType:       firstNonEmpty(planItem.PageType, "concept"),
-			Topic:          topic,
-			Action:         firstNonEmpty(planItem.Action, "CREATE"),
-			EntityNames:    uniqueStrings(planItem.EntityNames),
-			RelatedKBPages: uniqueStrings(planItem.RelatedKB),
-			ContentRaw:     contentRaw,
-			Content:        contentRendered,
-			Summary:        summary,
-			Outlinks:       outlinks,
-			SourceChunkIDs: sourceChunkIDs,
-			SourceDocIDs:   sourceDocIDs,
-		})
+	}
+	if err := runBatches(p.ctx, jobs); err != nil {
+		return nil, err
 	}
 	return results, nil
 }
 
-func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal int) (wikiPlan, error) {
+// runRefinePage generates one page result from a normalized plan page. UPDATE
+// merge, evidence assembly, and source-context building are unchanged; this is
+// the per-page unit that runRefine fans out.
+func (p *wikiPipeline) runRefinePage(
+	planItem wikiPlanPage,
+	allPlanSlugs []string,
+	pageTitles map[string]string,
+	slugToPageType map[string]string,
+	entityLookup map[string]wikiExtractItem,
+	conceptLookup map[string]wikiExtractItem,
+) (wikiPageResult, error) {
+	evidence := assembleWikiPageEvidence(planItem, p.reduced.Claims, entityLookup, conceptLookup)
+	sourceChunkIDs := collectWikiEvidenceChunkIDs(evidence)
+	sourceContext := buildSourceContext(p.inputs.Chunks, sourceChunkIDs)
+	if strings.TrimSpace(sourceContext) == "" {
+		sourceContext = buildSourceContext(p.inputs.Chunks, p.reduced.sourceChunkIDs())
+	}
+	available := make([]string, 0, len(allPlanSlugs))
+	for _, slug := range allPlanSlugs {
+		if slug != planItem.Slug {
+			available = append(available, "- [["+slug+"]]")
+		}
+	}
+	if len(available) == 0 {
+		available = []string{"(none — this is the only page)"}
+	}
+	var existing *common.WikiPageCandidate
+	var err error
+	if strings.EqualFold(planItem.Action, "UPDATE") && p.deps.WikiPages != nil {
+		existing, err = p.deps.WikiPages.GetPageBySlug(p.ctx, p.tenantID, p.datasetID, planItem.Slug)
+		if err != nil {
+			return wikiPageResult{}, err
+		}
+	}
+	existingSection := ""
+	existingRaw := ""
+	if existing != nil {
+		existingRaw = firstNonEmpty(existing.ContentMDRaw, existing.ContentMD)
+		if strings.TrimSpace(existingRaw) != "" {
+			existingSection = "## Existing page content (UPDATE — integrate new evidence into this)\n\n" + existingRaw + "\n"
+		}
+	}
+	user := renderWikiTemplate(wikiRefineWriterUserTemplate, map[string]string{
+		"action":           firstNonEmpty(planItem.Action, "CREATE"),
+		"slug":             planItem.Slug,
+		"title":            firstNonEmpty(planItem.Title, planItem.Slug),
+		"page_type":        firstNonEmpty(planItem.PageType, "concept"),
+		"all_plan_slugs":   strings.Join(available, "\n"),
+		"existing_section": existingSection,
+		"source_context":   sourceContext,
+		"evidence_count":   fmt.Sprintf("%d", len(evidence)),
+		"evidence_blocks":  formatWikiEvidenceBlocks(evidence),
+	})
+	resp, err := p.deps.Chat.Chat(p.ctx, common.ChatRequest{
+		LLMID:        p.llmID,
+		SystemPrompt: buildWikiRefineWriterSystem(""),
+		UserPrompt:   user,
+	})
+	if err != nil {
+		return wikiPageResult{}, err
+	}
+	if resp == nil {
+		return wikiPageResult{}, fmt.Errorf("knowledge_compiler: wiki refine returned no response")
+	}
+	contentRaw := strings.TrimSpace(firstNonEmpty(resp.Content))
+	if contentRaw == "" {
+		contentRaw = "# " + firstNonEmpty(planItem.Title, planItem.Slug) + "\n\n(Page generation produced no content.)"
+	}
+	if strings.TrimSpace(existingRaw) != "" {
+		contentRaw, err = p.mergeWikiPageContent(existingRaw, contentRaw, planItem.Slug)
+		if err != nil {
+			return wikiPageResult{}, err
+		}
+	}
+	contentRendered, outlinks := transformWikiLinks(contentRaw, firstNonEmpty(p.datasetID, p.docID), pageTitles, slugToPageType)
+	sourceDocIDs := collectWikiSourceDocIDs(p.inputs.Chunks, sourceChunkIDs, p.docID)
+	summary := firstParagraph(contentRendered)
+	if summary == "" {
+		summary = firstNonEmpty(planItem.Title, planItem.Slug)
+	}
+	topic := firstNonEmpty(planItem.Topic, planItem.Title, planItem.Slug)
+	return wikiPageResult{
+		Slug:           planItem.Slug,
+		Title:          firstNonEmpty(planItem.Title, planItem.Slug),
+		PageType:       firstNonEmpty(planItem.PageType, "concept"),
+		Topic:          topic,
+		Action:         firstNonEmpty(planItem.Action, "CREATE"),
+		EntityNames:    uniqueStrings(planItem.EntityNames),
+		RelatedKBPages: uniqueStrings(planItem.RelatedKB),
+		ContentRaw:     contentRaw,
+		Content:        contentRendered,
+		Summary:        summary,
+		Outlinks:       outlinks,
+		SourceChunkIDs: sourceChunkIDs,
+		SourceDocIDs:   sourceDocIDs,
+	}, nil
+}
+
+// maxPagesForBatch is the per-batch planner ceiling. It is the allocated quota
+// (a fraction of the global target) directly: the quota is already bounded by
+// target <= max <= output-token capacity, so no separate static cap is needed.
+// A zero/negative quota yields 1 so runPlanBatch is never told "0 pages". The
+// old static wikiPlanMaxPagesPerBatch cap is gone: capping a large quota at 8
+// would make the P0 target unreachable for a single high-quota batch.
+func maxPagesForBatch(quota int) int {
+	if quota < 1 {
+		return 1
+	}
+	return quota
+}
+
+func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal, quota int) (wikiPlan, error) {
 	user := renderWikiTemplate(wikiPlanBatchUserTemplate, map[string]string{
 		"doc_id":      p.docID,
 		"batch_index": fmt.Sprintf("%d", batchIndex),
 		"batch_total": fmt.Sprintf("%d", batchTotal),
+		"max_pages":   fmt.Sprintf("%d", maxPagesForBatch(quota)),
 		"entities":    mustJSON(batch.Entities),
 		"concepts":    mustJSON(batch.Concepts),
 		"claims":      mustJSON(batch.Claims),
@@ -397,20 +621,52 @@ func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal in
 	return parseWikiPlan(raw, p.docID, batch), nil
 }
 
-func (p *wikiPipeline) mergePlanCandidates(plans []wikiPlan) (wikiPlan, error) {
-	user := renderWikiTemplate(wikiPlanMergeUserTemplate, map[string]string{
-		"doc_id":     p.docID,
-		"candidates": mustPrettyJSON(plans),
-	})
-	raw, err := common.GenJSON(p.ctx, p.deps.Chat, common.ChatRequest{
-		LLMID:        p.llmID,
-		SystemPrompt: wikiPlanSystem,
-		UserPrompt:   user,
-	})
-	if err != nil {
-		return wikiPlan{}, err
+// mergePlanCandidates merges per-batch plans into one plan. reduced is the item
+// set the merged plan is allowed to reference (fallback/normalization); in the
+// quota-filtered PLAN path this is the approved (non-zero-quota) set so items
+// from skipped batches can never leak back in via fallback pages.
+func (p *wikiPipeline) mergePlanCandidates(plans []wikiPlan, reduced wikiExtract) wikiPlan {
+	merged := wikiPlan{}
+	mergedEntities := map[string]bool{}
+	mergedRelated := map[string]bool{}
+	for _, plan := range plans {
+		if merged.Title == "" {
+			merged.Title = strings.TrimSpace(plan.Title)
+		}
+		if merged.Slug == "" {
+			merged.Slug = strings.TrimSpace(plan.Slug)
+		}
+		if merged.Lead == "" {
+			merged.Lead = strings.TrimSpace(plan.Lead)
+		}
+		if merged.PageType == "" {
+			merged.PageType = strings.TrimSpace(plan.PageType)
+		}
+		if merged.Topic == "" {
+			merged.Topic = strings.TrimSpace(plan.Topic)
+		}
+		if len(merged.Sections) == 0 && len(plan.Sections) > 0 {
+			merged.Sections = append([]wikiPlanSection(nil), plan.Sections...)
+		}
+		merged.Pages = append(merged.Pages, plan.Pages...)
+		for _, name := range plan.Entities {
+			name = strings.TrimSpace(name)
+			if name != "" && !mergedEntities[name] {
+				mergedEntities[name] = true
+				merged.Entities = append(merged.Entities, name)
+			}
+		}
+		for _, slug := range plan.Related {
+			slug = strings.TrimSpace(slug)
+			if slug != "" && !mergedRelated[slug] {
+				mergedRelated[slug] = true
+				merged.Related = append(merged.Related, slug)
+			}
+		}
 	}
-	return normalizeWikiPlan(parseWikiPlan(raw, p.docID, p.reduced), p.docID, p.reduced), nil
+	merged = normalizeWikiPlan(merged, p.docID, reduced)
+	merged.Pages = normalizeWikiPlanPageLinks(merged.Pages)
+	return merged
 }
 
 func (p *wikiPipeline) reconcilePlan(plan wikiPlan) (wikiPlan, error) {
@@ -461,6 +717,9 @@ func (p *wikiPipeline) reconcilePlan(plan wikiPlan) (wikiPlan, error) {
 	return plan, nil
 }
 
+// reconcilePlanPage decides UPDATE / CREATE for one planned page against the
+// existing wiki-page store. See the threshold block above for how the band and
+// the overlap heuristic relate to Python's wiki.py contract.
 func (p *wikiPipeline) reconcilePlanPage(page wikiPlanPage, queryVec []float32) (*common.WikiPageCandidate, error) {
 	if p.deps.WikiPages == nil {
 		return nil, nil
@@ -939,6 +1198,34 @@ func normalizeWikiPlanPages(pages []wikiPlanPage, reduced wikiExtract) []wikiPla
 		if out[i].Priority <= 0 {
 			out[i].Priority = i + 1
 		}
+	}
+	return out
+}
+
+func normalizeWikiPlanPageLinks(pages []wikiPlanPage) []wikiPlanPage {
+	if len(pages) == 0 {
+		return nil
+	}
+	valid := make(map[string]bool, len(pages))
+	for _, page := range pages {
+		if slug := strings.TrimSpace(page.Slug); slug != "" {
+			valid[slug] = true
+		}
+	}
+	out := make([]wikiPlanPage, 0, len(pages))
+	for _, page := range pages {
+		related := make([]string, 0, len(page.RelatedKB))
+		seen := map[string]bool{}
+		for _, slug := range page.RelatedKB {
+			slug = strings.TrimSpace(slug)
+			if slug == "" || slug == page.Slug || !valid[slug] || seen[slug] {
+				continue
+			}
+			seen[slug] = true
+			related = append(related, slug)
+		}
+		page.RelatedKB = related
+		out = append(out, page)
 	}
 	return out
 }
@@ -1589,7 +1876,24 @@ var (
 	wikiArtifactMarkdownLink = regexp.MustCompile(`\[([^\]]+)\]\(([^)]+)\)`)
 )
 
-func transformWikiLinks(content, kbID string, pageTitles map[string]string) (string, []string) {
+// pageTypeOf resolves the page_type for a slug so rendered internal links use
+// the artifact/<kb>/<page_type>/<slug> form the frontend wiki-link parser
+// requires (it only matches entity|concept). Unknown links fall back to "page".
+func pageTypeOf(slug string, slugToPageType map[string]string) string {
+	if pt := strings.TrimSpace(slugToPageType[slug]); pt != "" {
+		return pt
+	}
+	if strings.Contains(slug, "/") {
+		// Slugs may already carry a <page_type>/<name> prefix; reuse it.
+		first := strings.SplitN(slug, "/", 2)[0]
+		if first == "entity" || first == "concept" || first == "topic" {
+			return first
+		}
+	}
+	return "page"
+}
+
+func transformWikiLinks(content, kbID string, pageTitles, slugToPageType map[string]string) (string, []string) {
 	kbID = strings.TrimSpace(kbID)
 	seen := map[string]bool{}
 	var outlinks []string
@@ -1635,13 +1939,29 @@ func transformWikiLinks(content, kbID string, pageTitles map[string]string) (str
 		}
 		return ""
 	}
+	// link renders artifact/<kb>/<page_type>/<slug> so the frontend wiki-link
+	// parser (artifact/<kb>/<page_type>/<slug>, page_type in {entity,concept})
+	// can resolve and navigate to the target page. Slugs may already carry a
+	// <page_type>/<name> prefix, in which case that prefix is reused as the
+	// page_type and the name is emitted as the bare slug.
+	link := func(label, slug string) string {
+		bareSlug := slug
+		pageType := pageTypeOf(slug, slugToPageType)
+		if idx := strings.Index(slug, "/"); idx >= 0 && slug[:idx] == pageType {
+			bareSlug = slug[idx+1:]
+		}
+		if pageType == "" {
+			pageType = "page"
+		}
+		return "[" + label + "](artifact/" + kbID + "/" + pageType + "/" + bareSlug + ")"
+	}
 	rewriteMD := func(label, href string) string {
 		slug := artifactSlug(href)
 		if slug == "" {
 			return "[" + label + "](" + href + ")"
 		}
 		track(slug)
-		return "[" + displayText(label, slug) + "](artifact/" + kbID + "/" + slug + ")"
+		return link(displayText(label, slug), slug)
 	}
 	out := wikiArtifactMarkdownLink.ReplaceAllStringFunc(content, func(match string) string {
 		sub := wikiArtifactMarkdownLink.FindStringSubmatch(match)
@@ -1657,7 +1977,7 @@ func transformWikiLinks(content, kbID string, pageTitles map[string]string) (str
 		}
 		slug := strings.TrimSpace(sub[1])
 		track(slug)
-		return "[" + sub[2] + "](artifact/" + kbID + "/" + slug + ")"
+		return link(sub[2], slug)
 	})
 	out = wikiWikilinkSimpleRe.ReplaceAllStringFunc(out, func(match string) string {
 		sub := wikiWikilinkSimpleRe.FindStringSubmatch(match)
@@ -1666,7 +1986,7 @@ func transformWikiLinks(content, kbID string, pageTitles map[string]string) (str
 		}
 		slug := strings.TrimSpace(sub[1])
 		track(slug)
-		return "[" + displayText(slug, slug) + "](artifact/" + kbID + "/" + slug + ")"
+		return link(displayText(slug, slug), slug)
 	})
 	return out, outlinks
 }
@@ -1872,15 +2192,6 @@ func (p *wikiPipeline) maybeSourceIDs() []string {
 		out = append(out, id)
 	}
 	return out
-}
-
-func (p *wikiPipeline) runMapBatch(batch []common.Chunk) error {
-	extract, err := p.mapBatch(batch)
-	if err != nil {
-		return err
-	}
-	p.mapExtracts = append(p.mapExtracts, extract)
-	return nil
 }
 
 // dedupHistorical drops products that are near-duplicates of existing historical

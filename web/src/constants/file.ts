@@ -19,4 +19,5 @@ export const FileIconMap = {
   rmvb: 'rmvb',
   wav: 'wav',
   html: 'html',
+  json: 'json',
 };

@@ -400,6 +400,7 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 		modelResponse.Name = modelName
 		if modelEntity != nil {
 			modelResponse.MaxDimension = modelEntity.MaxDimension
+			modelResponse.MaxBatchSize = modelEntity.MaxBatchSize
 			modelResponse.Dimensions = modelEntity.Dimensions
 			modelResponse.MaxOutput = modelEntity.MaxOutput
 			modelResponse.ModelTypes = modelEntity.ModelTypes

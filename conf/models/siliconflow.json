@@ -121,7 +121,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "BAAI/bge-m3",
@@ -131,7 +131,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "fnlp/MOSS-TTSD-v0.5",

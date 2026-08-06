@@ -164,9 +164,6 @@ func replicateInputFromMessages(messages []Message, chatModelConfig *ChatConfig)
 		input["system_prompt"] = systemPrompt
 	}
 	if chatModelConfig != nil {
-		if chatModelConfig.MaxTokens != nil {
-			input["max_new_tokens"] = *chatModelConfig.MaxTokens
-		}
 		if chatModelConfig.Temperature != nil {
 			input["temperature"] = *chatModelConfig.Temperature
 		}

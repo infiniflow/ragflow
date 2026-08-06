@@ -23,6 +23,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -165,8 +166,10 @@ type Model struct {
 	Thinking      *ModelThinking `json:"thinking"`
 	Tools         *ModelTools    `json:"tools"`
 	Class         *string        `json:"class"`
-	MaxDimension  *int           `json:"max_dimension"` // used by embedding models
+	MaxDimension  *int           `json:"max_dimension"`  // used by embedding models
+	MaxBatchSize  *int           `json:"max_batch_size"` // used by embedding models
 	Dimensions    []int          `json:"dimensions"`
+	BatchSize     *int           `json:"batch_size"` // max texts per Embed request; used by embedding models
 	Alias         []string       `json:"alias"`
 	Rank          *int           `json:"rank"`
 	ModelTypeMap  map[string]bool
@@ -415,8 +418,14 @@ func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
 		if model.MaxDimension != nil {
 			modelData["max_dimension"] = *model.MaxDimension
 		}
+		if model.MaxBatchSize != nil {
+			modelData["max_batch_size"] = *model.MaxBatchSize
+		}
 		if len(model.Dimensions) > 0 {
 			modelData["dimensions"] = model.Dimensions
+		}
+		if model.BatchSize != nil {
+			modelData["batch_size"] = *model.BatchSize
 		}
 		if model.Thinking != nil {
 			modelData["thinking"] = "supported"
@@ -444,6 +453,34 @@ func (pm *ProviderManager) GetModelByNameOrAlias(modelName string) *Model {
 	return nil
 }
 
+// DefaultEmbeddingBatchSize is the fallback per-request embedding input count
+// when a model reports no batch_size capability (mirrors Python's
+// settings.EMBEDDING_BATCH_SIZE).
+const DefaultEmbeddingBatchSize = 16
+
+// GetEmbeddingBatchSize returns the max texts per Embed request for the named
+// model. It consults the model provider capability (batch_size, added to
+// all_models.json by #17877/#17878) and falls back to
+// DefaultEmbeddingBatchSize when unset or unknown. The
+// TOKENIZER_EMBEDDING_BATCH_SIZE env var, when valid, overrides everything for
+// local tuning.
+func GetEmbeddingBatchSize(modelName string) int {
+	if v := os.Getenv("TOKENIZER_EMBEDDING_BATCH_SIZE"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	if modelName != "" {
+		if pm := GetProviderManager(); pm != nil {
+			if m := pm.GetModelByNameOrAlias(modelName); m != nil && m.BatchSize != nil && *m.BatchSize > 0 {
+				return *m.BatchSize
+			}
+		}
+	}
+	return DefaultEmbeddingBatchSize
+}
+
+// 2. Show specific provider information (including base_url)
 func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]interface{}, error) {
 
 	provider := pm.FindProvider(providerName)
@@ -483,11 +520,15 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 		// keep the response shape stable for clients that destructure
 		// the object.
 		modelData := map[string]interface{}{
-			"name":          model.Name,
-			"max_output":    model.MaxOutput,
-			"model_types":   model.ModelTypes,
-			"max_dimension": model.MaxDimension,
-			"dimensions":    model.Dimensions,
+			"name":           model.Name,
+			"max_output":     model.MaxOutput,
+			"model_types":    model.ModelTypes,
+			"max_dimension":  model.MaxDimension,
+			"max_batch_size": model.MaxBatchSize,
+			"dimensions":     model.Dimensions,
+		}
+		if model.BatchSize != nil {
+			modelData["batch_size"] = *model.BatchSize
 		}
 		if model.Thinking != nil {
 			modelData["thinking"] = "supported"
@@ -598,9 +639,10 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 
 	if matchFilter {
 		modelData := map[string]interface{}{
-			"name":        model.Name,
-			"max_output":  model.MaxOutput,
-			"model_types": model.ModelTypes,
+			"name":           model.Name,
+			"max_output":     model.MaxOutput,
+			"model_types":    model.ModelTypes,
+			"max_batch_size": model.MaxBatchSize,
 			//"features":    getFeaturesMap(model.Features),
 		}
 
@@ -658,10 +700,11 @@ func (pm *ProviderManager) SearchByType(modelType string) ModelResponse {
 		for _, model := range provider.Models {
 			if containsModelType(model.ModelTypes, modelType) {
 				modelData := map[string]interface{}{
-					"provider":    provider.Name,
-					"name":        model.Name,
-					"max_output":  model.MaxOutput,
-					"model_types": model.ModelTypes,
+					"provider":       provider.Name,
+					"name":           model.Name,
+					"max_output":     model.MaxOutput,
+					"model_types":    model.ModelTypes,
+					"max_batch_size": model.MaxBatchSize,
 					//"features":    getFeaturesMap(model.Features),
 				}
 				resp.Data = append(resp.Data, modelData)

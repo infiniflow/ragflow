@@ -294,7 +294,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jina-reranker-v2-base-multilingual",

@@ -53,6 +53,19 @@
 //     generated on demand for text chunks that carry PDF positions:
 //     cropImageChunks crops the text region and writes a preview image,
 //     then imageUploadDecorator uploads it to img_id. See pdfcrop_cgo.go.
+//
+//   - OVER-BUDGET UNITS (contract #17799): a single item that exceeds
+//     chunk_token_size is KEPT WHOLE as its own chunk and is NOT
+//     atom-split; the embedding/rerank layer truncates it later. The
+//     TokenChunker must never sub-split a single item (the naive_merge
+//     invariant). If oversized-unit handling is ever needed to avoid a
+//     single mega-chunk, it belongs at the CHUNKER side (or a dedicated
+//     PreSplitter stage between Parser and Chunker), fed by an EXPLICIT
+//     token budget + tokenizer — NOT in the parser, and NOT as a
+//     char-window atom-split. The earlier splitOversizedUnit /
+//     splitAtomByTokenBudget helpers were a misplaced (parser-layer logic
+//     wrongly living in the chunker) and unwired vestige; they were
+//     removed to align with this contract.
 package chunker
 
 import (
@@ -346,115 +359,6 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 // ". " fallback: Python's production delimiter has no "\.\s", so adding
 // it would diverge from Python's chunk boundaries.
 var sentenceDelimiter = regexp.MustCompile(`(\n|[!?。；！？])`)
-
-// atomRE matches whitespace runs or non-whitespace runs. Mirrors Python
-// `_split_oversized_unit`'s `re.findall(r"\s+|\S+", text)`.
-var atomRE = regexp.MustCompile(`\s+|\S+`)
-
-// splitAtomByTokenBudget splits a single non-whitespace atom into
-// substrings that each have <= chunkTokenNum tokens. Mirrors Python
-// rag/nlp._split_atom_by_token_budget (binary search on rune prefixes).
-func splitAtomByTokenBudget(atom string, chunkTokenNum int, countFn func(string) int) []string {
-	if atom == "" {
-		return nil
-	}
-	if countFn == nil {
-		countFn = tokenizeStr
-	}
-	if countFn(atom) <= chunkTokenNum {
-		return []string{atom}
-	}
-	runes := []rune(atom)
-	var pieces []string
-	start := 0
-	n := len(runes)
-	for start < n {
-		low := start + 1
-		high := n
-		bestEnd := start + 1
-		for low <= high {
-			mid := (low + high) / 2
-			if countFn(string(runes[start:mid])) <= chunkTokenNum {
-				bestEnd = mid
-				low = mid + 1
-			} else {
-				high = mid - 1
-			}
-		}
-		pieces = append(pieces, string(runes[start:bestEnd]))
-		start = bestEnd
-	}
-	return pieces
-}
-
-// splitOversizedUnit splits a unit that exceeds chunkTokenNum tokens into
-// pieces that each fit the budget. Whitespace is the primary break (mirrors
-// Python rag/nlp._split_oversized_unit / HtmlParser._split_oversized_block);
-// a single non-whitespace run longer than the budget falls back to
-// token-budget-based character windows.
-func splitOversizedUnit(text string, chunkTokenNum int) []string {
-	return splitOversizedUnitWith(text, chunkTokenNum, tokenizeStr)
-}
-
-func splitOversizedUnitWith(text string, chunkTokenNum int, countFn func(string) int) []string {
-	if countFn == nil {
-		countFn = tokenizeStr
-	}
-	if countFn(text) <= chunkTokenNum {
-		return []string{text}
-	}
-	var pieces []string
-	current := ""
-	// Running sum of per-atom token counts for the current piece. Mirrors
-	// Python rag/nlp._split_oversized_unit's `current_tokens`. We flush when
-	// this running sum (not the exact count of the joined string) would
-	// exceed the budget, because cl100k token counting is not additive across
-	// whitespace joins: token(a)+token(b) can differ from token(a+b), so the
-	// joined-string fit check drifts one atom off Python's boundary.
-	currentTokens := 0
-	tokenCache := map[string]int{}
-
-	atomTokens := func(atom string) int {
-		// Whitespace-only atoms contribute 0 in isolation (mirrors Python
-		// atom.isspace()), matching the packing heuristic used by
-		// rag/nlp._split_oversized_unit.
-		if strings.TrimSpace(atom) == "" {
-			return 0
-		}
-		if n, ok := tokenCache[atom]; ok {
-			return n
-		}
-		n := countFn(atom)
-		tokenCache[atom] = n
-		return n
-	}
-
-	for _, atom := range atomRE.FindAllString(text, -1) {
-		aTokens := atomTokens(atom)
-		if aTokens > chunkTokenNum && strings.TrimSpace(atom) != "" {
-			if current != "" {
-				pieces = append(pieces, current)
-				current = ""
-				currentTokens = 0
-			}
-			pieces = append(pieces, splitAtomByTokenBudget(atom, chunkTokenNum, countFn)...)
-			continue
-		}
-		// Running-sum fit check, identical to Python's
-		// `current_tokens + a_tokens > chunk_token_num`.
-		if current != "" && currentTokens+aTokens > chunkTokenNum {
-			pieces = append(pieces, current)
-			current = ""
-			currentTokens = 0
-		}
-		current += atom
-		currentTokens += aTokens
-	}
-	if current != "" {
-		pieces = append(pieces, current)
-	}
-	return pieces
-}
 
 // computeOverlapPrefix returns (overlapText, overlapTokenCount) carved from
 // the tail of prevText after stripping parser tags. overlappedPct is a
@@ -1230,32 +1134,14 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 
 // compileChildrenPattern is the children_delimiters version of
 // compileDelimPattern. Returns nil when no delimiters exist.
+// compileChildrenPattern builds the children-split regex from a
+// `children_delimiters` list. Every non-empty entry is active (including bare
+// ones), and backtick-wrapped entries contribute their inner content — see
+// chunk.CompileDelimiterPatternList. Delegating keeps children splitting
+// consistent with the main delimiter list (backtick stripping + rune-descending
+// order) instead of re-implementing a divergent copy.
 func compileChildrenPattern(delims []string) *regexp.Regexp {
-	if len(delims) == 0 {
-		return nil
-	}
-	escaped := make([]string, 0, len(delims))
-	for _, d := range delims {
-		if d == "" {
-			continue
-		}
-		escaped = append(escaped, regexp.QuoteMeta(d))
-	}
-	if len(escaped) == 0 {
-		return nil
-	}
-	sortSlice(escaped)
-	return regexp.MustCompile(strings.Join(escaped, "|"))
-}
-
-// sortSlice sorts in place by descending length (longest pattern
-// first, mirroring python's `sorted(set, key=len, reverse=True)`).
-func sortSlice(in []string) {
-	for i := 1; i < len(in); i++ {
-		for j := i; j > 0 && len(in[j-1]) < len(in[j]); j-- {
-			in[j-1], in[j] = in[j], in[j-1]
-		}
-	}
+	return chunk.CompileDelimiterPatternList(delims, true)
 }
 
 // stringFromInputs returns the string value at the first matching key
