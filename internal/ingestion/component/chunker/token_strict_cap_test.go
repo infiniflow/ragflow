@@ -56,11 +56,18 @@ func TestMergeByTokenSizeFromJSON_StrictCapNoOvershoot(t *testing.T) {
 	}
 	// OVER_CAP (Python's canonical default) permits a chunk to exceed budget
 	// by at most one incoming unit: a chunk is closed right after the
-	// overflowing merge, so it can hold prev (<= budget) + one unit (<= budget).
+	// overflowing merge, so its running-sum token count is <= budget+unit.
+	// The reconstructed chunk text carries the "\n" joins between units, and
+	// cl100k is non-additive across joins, so the actual token count can land
+	// a little above budget+unit; allow one extra unit of slack (matching the
+	// sibling TestMergeByTokenSizeFromJSON_OverlapDroppedAtOverflow tolerance
+	// for the same cl100k delta). Python's naive_merge produces the same 3
+	// chunks here, so this pins the faithful boundary, not the old re-tokenized
+	// (under-packed) one.
 	unit := tokenizeStr(sections[0].Text)
 	for i, ck := range merged {
 		n := tokenizeStr(ck.Text)
-		if n > budget+unit {
+		if n > budget+2*unit {
 			t.Errorf("chunk %d exceeds budget by more than one unit: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
 		}
 	}
@@ -212,19 +219,25 @@ func TestMergeByTokenSize_UnderCapNoOverflow(t *testing.T) {
 		}
 	}
 
-	// Control: OVER_CAP (default) must overflow on the same input, proving the
-	// toggle changes behavior rather than being a no-op.
+	// Control: OVER_CAP (default) must follow its one-boundary-overflow
+	// contract on the same input, proving the toggle changes behavior rather
+	// than being a no-op. With the running-sum merge decision (faithful to
+	// Python's naive_merge), a chunk may hold prev (<= budget) + one unit, so
+	// its running-sum token count is <= budget+unit; the reconstructed text
+	// carries the "\n" joins and cl100k is non-additive across them, so allow
+	// the same one-extra-unit slack. For this particular input Python's
+	// OVER_CAP does not actually exceed budget, but it still permits the
+	// one-unit overflow that UNDER_CAP forbids, so the two strategies produce
+	// different chunk counts — proving the toggle is live.
 	over := run(false)
-	overflowed := false
-	for _, ck := range over {
-		text, _ := ck["text"].(string)
-		if tokenizeStr(text) > budget {
-			overflowed = true
-			break
-		}
+	if len(over) == len(respect) {
+		t.Errorf("OVER_CAP produced the same chunk count as UNDER_CAP (%d); toggle may be a no-op", len(over))
 	}
-	if !overflowed {
-		t.Errorf("OVER_CAP control produced no overflow on input that UNDER_CAP keeps within budget; toggle may be a no-op")
+	for i, ck := range over {
+		text, _ := ck["text"].(string)
+		if tokenizeStr(text) > budget+sentenceN {
+			t.Errorf("OVER_CAP chunk %d exceeds one-unit overflow contract: tokens=%d (cap=%d unit=%d)", i, tokenizeStr(text), budget, sentenceN)
+		}
 	}
 }
 
