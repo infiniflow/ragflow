@@ -364,28 +364,32 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 50
     },
     {
       "name": "kinfra-text-embedding-4b",
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 50
     },
     {
       "name": "kinfra-vl-embedding-2b",
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 50
     },
     {
       "name": "kinfra-vl-embedding-8b",
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 50
     }
   ]
 }

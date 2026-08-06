@@ -51,14 +51,16 @@
       "max_tokens": 32000,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 512
     },
     {
       "name": "pplx-embed-v1-4b",
       "max_tokens": 32000,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 512
     }
   ]
 }

@@ -59,14 +59,16 @@
       "max_tokens": 2000,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 100
     },
     {
       "name": "solar-embedding-1-large-passage",
       "max_tokens": 2000,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 100
     }
   ]
 }

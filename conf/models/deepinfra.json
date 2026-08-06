@@ -34,7 +34,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 1024
     },
     {
       "name": "hexgrad/Kokoro-82M",

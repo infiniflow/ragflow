@@ -63,7 +63,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 32
     },
     {
       "name": "GOT-OCR2_0",
@@ -87,7 +88,8 @@
       "name": "jina-clip-v2",
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 16384
     },
     {
       "name": "HunyuanOCR",

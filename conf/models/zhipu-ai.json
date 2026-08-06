@@ -356,14 +356,16 @@
       "max_tokens": 512,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 512
     },
     {
       "name": "embedding-3",
       "max_tokens": 512,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 512
     },
     {
       "name": "glm-asr-2512",

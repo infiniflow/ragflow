@@ -234,7 +234,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 32
     },
     {
       "name": "nvidia/nemotron-3-nano-30b-a3b",
@@ -315,14 +316,16 @@
       "max_tokens": 32768,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 32
     },
     {
       "name": "nvidia/nv-embedcode-7b-v1",
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 32
     },
     {
       "name": "nvidia/nvidia-nemotron-nano-9b-v2",

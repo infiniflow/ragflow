@@ -293,7 +293,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 16384
     },
     {
       "name": "jina-reranker-v2-base-multilingual",

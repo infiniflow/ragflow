@@ -247,19 +247,22 @@
       "name": "qwen/qwen3-embedding-8b",
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 32
     },
     {
       "name": "baai/bge-m3",
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 32
     },
     {
       "name": "qwen/qwen3-embedding-0.6b",
       "model_types": [
         "embedding"
-      ]
+      ],
+      "batch_size": 32
     },
     {
       "name": "baai/bge-reranker-v2-m3",
