@@ -28,6 +28,22 @@ from rag.flow.parser.pdf_chunk_metadata import (
 )
 from rag.nlp import naive_merge
 
+# _TAG_RE matches parser-emitted coordinate tags of the form
+# ``@@<page>\t<left>\t<right>\t<top>\t<bottom>##``. Mirrors Go's
+# posTagRemove (internal/ingestion/component/chunker/group.go) so the two
+# languages strip tags identically.
+_TAG_RE = re.compile(r"@@[\t0-9.-]+?##")
+
+
+def remove_tag(text):
+    """Strip ``@@...##`` coordinate tags from text.
+
+    Used both when measuring the overlap prefix (so the cut lands on the
+    tag-free visible text, matching Go's computeOverlapPrefix) and on the
+    final chunk text (so coordinate tags never reach embedding/index).
+    """
+    return _TAG_RE.sub("", text or "")
+
 
 class TokenChunkerParam(ProcessParamBase):
     def __init__(self):
@@ -228,11 +244,27 @@ def _merge_text_chunks_by_token_size(chunks, chunk_token_size, overlapped_percen
 
         current = deepcopy(chunk)
         should_start_new = prev_text_idx < 0 or merged[prev_text_idx]["tk_nums"] > threshold
+        # #17799: an over-budget unit stands alone — never merged into the
+        # previous chunk. This matches Python naive_merge and the Go
+        # TokenChunker (all three paths stand the over-budget unit alone), so
+        # the Python JSON path, Python text path, and Go TokenChunker share one
+        # contract.
+        if current["tk_nums"] > chunk_token_size:
+            should_start_new = True
         if should_start_new:
             if prev_text_idx >= 0 and overlapped_percent > 0 and merged[prev_text_idx]["text"]:
-                overlapped = merged[prev_text_idx]["text"]
-                overlap_start = int(len(overlapped) * (100 - overlapped_percent) / 100.0)
-                current["text"] = overlapped[overlap_start:] + current["text"]
+                # Mirror Go computeOverlapPrefix: measure the overlap cut on the
+                # tag-free *visible* text, never on the raw text that still
+                # carries @@...## coordinate tags. This keeps the overlap prefix
+                # aligned with Go and prevents a partial tag from leaking into
+                # the next chunk when the cut would land inside a tag.
+                visible = remove_tag(merged[prev_text_idx]["text"])
+                overlap_start = int(len(visible) * (100 - overlapped_percent) / 100.0)
+                if 0 <= overlap_start < len(visible):
+                    overlap_text = visible[overlap_start:]
+                else:
+                    overlap_text = ""
+                current["text"] = overlap_text + current["text"]
                 current["tk_nums"] = num_tokens_from_string(current["text"])
             merged.append(current)
             prev_text_idx = len(merged) - 1
@@ -252,7 +284,11 @@ def _finalize_json_chunks(chunks):
     # Convert internal chunks into the final token chunker output format.
     docs = []
     for chunk in chunks:
-        text = (chunk.get("context_above") or "") + (chunk.get("text") or "") + (chunk.get("context_below") or "")
+        # Strip parser coordinate tags from the final text so they never
+        # reach embedding/index (coordinates already live in the structured
+        # PDF_POSITIONS_KEY field). Mirrors Go's removeTag at the chunker
+        # output boundary (token.go:544).
+        text = remove_tag((chunk.get("context_above") or "") + (chunk.get("text") or "") + (chunk.get("context_below") or ""))
         if not text.strip():
             continue
 
