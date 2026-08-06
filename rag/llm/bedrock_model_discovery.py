@@ -1,0 +1,155 @@
+#
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+#
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+#
+
+from typing import TypedDict
+
+from botocore import UNSIGNED
+from botocore.awsrequest import AWSRequest
+from botocore.client import BaseClient
+from botocore.config import Config
+from botocore.exceptions import BotoCoreError, ClientError
+
+from common.constants import LLMType
+from rag.utils.bedrock_endpoint import mantle_model_catalog_url, resolve_bedrock_endpoint, validate_bedrock_endpoint_target, validate_bedrock_region
+
+
+DEFAULT_BEDROCK_MAX_TOKENS = 8192
+BEDROCK_DISCOVERY_TIMEOUT_SECONDS = 10
+_MANTLE_NON_CHAT_PREFIXES = (
+    "amazon.nova-canvas-",
+    "amazon.nova-2-multimodal-embeddings-",
+    "amazon.nova-multimodal-embeddings-",
+    "amazon.nova-reel-",
+    "amazon.nova-2-sonic-",
+    "amazon.nova-sonic-",
+    "amazon.rerank-",
+    "amazon.titan-embed-",
+    "amazon.titan-image-",
+    "cohere.embed-",
+    "cohere.rerank-",
+    "luma.",
+    "stability.",
+    "twelvelabs.",
+)
+
+
+class BedrockModelDiscoveryError(RuntimeError):
+    pass
+
+
+class DiscoveredBedrockModel(TypedDict):
+    name: str
+    model_types: list[str]
+    max_tokens: int
+    features: list[str]
+
+
+def create_bedrock_bearer_client(service_name: str, api_key: str, region_name: str, endpoint_url: str = "") -> BaseClient:
+    import boto3
+
+    client_args: dict[str, object] = {
+        "service_name": service_name,
+        "region_name": region_name,
+        "config": Config(
+            signature_version=UNSIGNED,
+            connect_timeout=BEDROCK_DISCOVERY_TIMEOUT_SECONDS,
+            read_timeout=BEDROCK_DISCOVERY_TIMEOUT_SECONDS,
+            retries={"max_attempts": 0},
+        ),
+    }
+    if endpoint_url:
+        client_args["endpoint_url"] = endpoint_url.rstrip("/")
+    client = boto3.client(**client_args)
+
+    def add_bearer_token(request: AWSRequest, **_kwargs: object) -> None:
+        request.headers["Authorization"] = f"Bearer {api_key}"
+
+    client.meta.events.register(f"before-sign.{service_name}.*", add_bearer_token)
+    return client
+
+
+def _discover_runtime_models(api_key: str, region_name: str, catalog_endpoint_url: str = "") -> list[DiscoveredBedrockModel]:
+    try:
+        response = create_bedrock_bearer_client("bedrock", api_key, region_name, catalog_endpoint_url).list_foundation_models(byInferenceType="ON_DEMAND")
+    except (BotoCoreError, ClientError) as error:
+        raise BedrockModelDiscoveryError("Failed to list models from Amazon Bedrock") from error
+    models: list[DiscoveredBedrockModel] = []
+    for summary in response.get("modelSummaries", []):
+        model_id = summary.get("modelId")
+        input_modalities = summary.get("inputModalities", [])
+        output_modalities = summary.get("outputModalities", [])
+        inference_types = summary.get("inferenceTypesSupported", [])
+        lifecycle_status = (summary.get("modelLifecycle") or {}).get("status")
+        if not model_id or "TEXT" not in input_modalities or "rerank" in model_id.lower():
+            continue
+        if inference_types and "ON_DEMAND" not in inference_types:
+            continue
+        if lifecycle_status and lifecycle_status != "ACTIVE":
+            continue
+        if "EMBEDDING" in output_modalities and (model_id.startswith("amazon.titan-embed-text") or model_id.startswith("cohere.embed-")):
+            model_types = [LLMType.EMBEDDING.value]
+        elif "TEXT" in output_modalities:
+            model_types = [LLMType.CHAT.value]
+            if "IMAGE" in input_modalities:
+                model_types.append(LLMType.VISION.value)
+        else:
+            continue
+        models.append({"name": model_id, "model_types": model_types, "max_tokens": DEFAULT_BEDROCK_MAX_TOKENS, "features": []})
+    return models
+
+
+def _is_mantle_chat_model(model_id: str) -> bool:
+    return not model_id.lower().startswith(_MANTLE_NON_CHAT_PREFIXES)
+
+
+def _discover_mantle_models(api_key: str, endpoint_url: str, anthropic_only: bool) -> list[DiscoveredBedrockModel]:
+    from openai import OpenAI, OpenAIError
+
+    try:
+        response = OpenAI(
+            api_key=api_key,
+            base_url=mantle_model_catalog_url(endpoint_url),
+            timeout=BEDROCK_DISCOVERY_TIMEOUT_SECONDS,
+            max_retries=0,
+        ).models.list()
+    except OpenAIError as error:
+        raise BedrockModelDiscoveryError("Failed to list models from Bedrock Mantle") from error
+    return [
+        {"name": model.id, "model_types": [LLMType.CHAT.value], "max_tokens": DEFAULT_BEDROCK_MAX_TOKENS, "features": []}
+        for model in response.data
+        if _is_mantle_chat_model(model.id) and (not anthropic_only or model.id.startswith("anthropic."))
+    ]
+
+
+def discover_bedrock_models(config: dict[str, str]) -> list[DiscoveredBedrockModel]:
+    api_key = config.get("bedrock_api_key")
+    if not api_key:
+        raise ValueError("Bedrock API key must be provided")
+    region_name = config.get("bedrock_region")
+    if not region_name:
+        raise ValueError("Bedrock region must be provided in the key")
+    validate_bedrock_region(region_name)
+    endpoint_type, endpoint_url = resolve_bedrock_endpoint("bedrock_api_key", config.get("bedrock_endpoint_type"), config.get("bedrock_endpoint_url"))
+    catalog_endpoint_url = config.get("bedrock_discovery_endpoint_url") or ""
+    validate_bedrock_endpoint_target(catalog_endpoint_url)
+    if endpoint_type == "runtime":
+        models = _discover_runtime_models(api_key, region_name, catalog_endpoint_url)
+    else:
+        models = _discover_mantle_models(api_key, endpoint_url, endpoint_type == "mantle_anthropic")
+    unique_models = {model["name"]: model for model in models}
+    if not unique_models:
+        raise ValueError("No compatible Bedrock chat or embedding models were discovered")
+    return list(unique_models.values())

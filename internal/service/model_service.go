@@ -1020,6 +1020,12 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		Region:  &region,
 		BaseURL: &baseURL,
 	}
+	if shouldVerifyBedrockAPIKeyWithoutModels(providerName, apiKey, modelInfo) {
+		if err := driver.CheckConnection(ctx, apiConfig); err != nil {
+			return common.CodeServerError, err
+		}
+		return common.CodeSuccess, nil
+	}
 
 	// Mirror Python verify_api_key: verify each model by making a real
 	// lightweight API request.  Returns per-model verify results.
@@ -1039,6 +1045,16 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 	}
 
 	return common.CodeSuccess, nil
+}
+
+func shouldVerifyBedrockAPIKeyWithoutModels(providerName, apiKey string, modelInfo []CheckConnectionModelInfo) bool {
+	if providerName != "Bedrock" || len(modelInfo) > 0 {
+		return false
+	}
+	var keyConfig struct {
+		AuthMode string `json:"auth_mode"`
+	}
+	return json.Unmarshal([]byte(apiKey), &keyConfig) == nil && keyConfig.AuthMode == "bedrock_api_key"
 }
 
 // updateModelVerifyResults persists the per-model verification status to the

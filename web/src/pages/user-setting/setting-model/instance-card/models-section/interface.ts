@@ -31,6 +31,12 @@ export interface ModelsSectionProps {
    */
   hideActions?: boolean;
   /**
+   * Keep model mutations local until the host saves updated credentials.
+   * Unlike a new draft, the local set is seeded from the instance's
+   * persisted models and is not auto-populated from the full catalog.
+   */
+  deferModelMutations?: boolean;
+  /**
    * True once the lazy-loaded instance details (which carry `api_key` /
    * `base_url` - the list endpoint omits them) have resolved. Providers
    * whose upstream model-list endpoint requires an api_key (e.g.

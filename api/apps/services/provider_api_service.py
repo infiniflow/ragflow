@@ -58,6 +58,37 @@ def _normalize_provider_api_key(provider_name: str, api_key: str | dict | None):
     return api_key
 
 
+def _bedrock_model_list_api_key(api_key: str | None, region: str | None, extensions: dict[str, object] | None) -> str | None:
+    if not extensions:
+        return api_key
+    bedrock_key = dict(extensions)
+    for source, target in {
+        "endpoint_type": "bedrock_endpoint_type",
+        "endpoint_url": "bedrock_endpoint_url",
+        "discovery_endpoint_url": "bedrock_discovery_endpoint_url",
+    }.items():
+        if source in bedrock_key:
+            bedrock_key[target] = bedrock_key.pop(source)
+    if region:
+        bedrock_key["bedrock_region"] = region
+    if bedrock_key.get("auth_mode") == "bedrock_api_key":
+        bedrock_key["bedrock_api_key"] = api_key or ""
+    return json.dumps(bedrock_key)
+
+
+def _should_verify_bedrock_api_key_without_models(provider_name: str, api_key: str | dict | None, model_info: list[dict] | None) -> bool:
+    if provider_name != "Bedrock" or model_info:
+        return False
+    if isinstance(api_key, dict):
+        key_config = api_key
+    else:
+        try:
+            key_config = json.loads(api_key or "")
+        except (json.JSONDecodeError, TypeError):
+            return False
+    return isinstance(key_config, dict) and key_config.get("auth_mode") == "bedrock_api_key"
+
+
 def _factory_llm_name(llm: dict) -> str:
     return llm.get("name") or llm.get("llm_name", "")
 
@@ -182,13 +213,15 @@ def show_provider(provider_id_or_name: str):
     return True, {"base_url": {"default": factory_info.get("url", "")}, "name": factory_info["name"], "total_models": len(factory_info.get("llm", []))}
 
 
-async def list_provider_models(provider_id_or_name: str, api_key: str = None, base_url: str = None):
+async def list_provider_models(provider_id_or_name: str, api_key: str = None, base_url: str = None, region: str = None, extensions: dict[str, object] | None = None):
     """
     List all models for a provider from the LLM dictionary.
 
     :param provider_id_or_name: provider ID or provider/factory name
     :param api_key: api key
     :param base_url: base url
+    :param region: region
+    :param extensions: provider-specific extension parameters
     :return: (success, result_or_error_message)
     """
     provider_obj = None
@@ -199,20 +232,42 @@ async def list_provider_models(provider_id_or_name: str, api_key: str = None, ba
     if not factory_info:
         return False, f"Provider '{provider_id_or_name}' not found"
     api_key = _normalize_provider_api_key(provider_name, api_key)
-    static_llms = [
-        {
-            "name": _factory_llm_name(llm),
-            "max_tokens": llm.get("max_tokens", 8192),
-            "model_types": _factory_model_types(llm),
-            "features": (llm.get("features") if llm.get("features") is not None else ((["is_tools"] if llm.get("is_tools") else []) + (["thinking"] if llm.get("thinking") else []))),
-        }
-        for llm in factory_info[0]["llm"]
-    ]
+    if provider_name == "Bedrock":
+        api_key = _bedrock_model_list_api_key(api_key, region, extensions)
+    bedrock_remote_only = False
+    if provider_name == "Bedrock" and api_key:
+        try:
+            parsed_bedrock_key = json.loads(api_key) if isinstance(api_key, str) else api_key
+            bedrock_remote_only = parsed_bedrock_key.get("auth_mode") == "bedrock_api_key"
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            pass
+    static_llms = (
+        []
+        if bedrock_remote_only
+        else [
+            {
+                "name": _factory_llm_name(llm),
+                "max_tokens": llm.get("max_tokens", 8192),
+                "model_types": _factory_model_types(llm),
+                "features": (llm.get("features") if llm.get("features") is not None else ((["is_tools"] if llm.get("is_tools") else []) + (["thinking"] if llm.get("thinking") else []))),
+            }
+            for llm in factory_info[0]["llm"]
+        ]
+    )
 
     model_base_url = _normalize_provider_base_url(provider_name, base_url) or factory_info[0].get("url", "")
     remote_models = []
-    if provider_name in ModelMeta:
-        remote_models = await ModelMeta[provider_name](api_key, model_base_url).get_model_list()
+    should_fetch_remote = provider_name in ModelMeta and (provider_name != "Bedrock" or bedrock_remote_only)
+    if should_fetch_remote:
+        model_list_coro = ModelMeta[provider_name](api_key, model_base_url).get_model_list()
+        if provider_name == "Bedrock":
+            timeout_seconds = max(1, _to_int(os.environ.get("LLM_TIMEOUT_SECONDS"), 10))
+            try:
+                remote_models = await asyncio.wait_for(model_list_coro, timeout=timeout_seconds)
+            except TimeoutError:
+                return False, f"Timed out while listing models from {provider_name}"
+        else:
+            remote_models = await model_list_coro
 
     if not static_llms and not remote_models:
         return True, []
@@ -653,6 +708,18 @@ async def verify_api_key(provider_id_or_name: str, api_key: str | dict, base_url
     factory_info = [f for f in FACTORY_LLM_INFOS if f["name"] == target_factory_name]
     if not factory_info:
         return False, f"Provider '{provider_id_or_name}' not found", {}
+
+    if _should_verify_bedrock_api_key_without_models(provider_name, api_key, model_info):
+        api_key_str = api_key if isinstance(api_key, str) else json.dumps(api_key)
+        timeout_seconds = int(os.environ.get("LLM_TIMEOUT_SECONDS", 10))
+        ok, result = await _run_verification(
+            "Bedrock model discovery",
+            ModelMeta[provider_name](api_key_str, base_url).get_model_list(),
+            timeout_seconds,
+        )
+        if not ok:
+            return False, result, {}
+        return True, "success", {}
 
     if model_info:
         factory_llms = [

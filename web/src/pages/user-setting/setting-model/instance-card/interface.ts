@@ -76,11 +76,9 @@ export interface InstanceSavePayload {
   isDraft: boolean;
   /**
    * Which save endpoint the parent should dispatch to:
-   *  - `'add'`: call `addProviderInstance` (drafts of any provider, plus
-   *    Bedrock saved cards which carry an `id` inside the
-   *    `addProviderInstance` body).
-   *  - `'update'`: call `updateProviderInstance` (generic saved cards,
-   *    whose payload matches `IUpdateProviderInstanceRequestBody`).
+   *  - `'add'`: call `addProviderInstance` for draft instances.
+   *  - `'update'`: call `updateProviderInstance` for saved cards whose
+   *    payload matches `IUpdateProviderInstanceRequestBody`.
    */
   apiKind: 'add' | 'update';
 }

@@ -68,6 +68,14 @@ export function parseApiKeyAsObject(
   return obj && typeof obj === 'object' ? obj : undefined;
 }
 
+export function serializeProviderAPIKey(
+  apiKey: string | object | null | undefined,
+): string {
+  if (typeof apiKey === 'string') return apiKey;
+  if (apiKey == null) return '';
+  return JSON.stringify(apiKey);
+}
+
 /**
  * Build the IModelInfo[] payload for verify/submit from the form values.
  *

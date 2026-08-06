@@ -181,6 +181,22 @@ func TestVerifyProviderModelValidatesRemoteEmbeddingMetadata(t *testing.T) {
 	}
 }
 
+func TestShouldVerifyBedrockAPIKeyWithoutModels(t *testing.T) {
+	apiKey := `{"auth_mode":"bedrock_api_key","bedrock_api_key":"token"}`
+	if !shouldVerifyBedrockAPIKeyWithoutModels("Bedrock", apiKey, nil) {
+		t.Fatal("Bedrock API key without models did not use the connection check")
+	}
+	if shouldVerifyBedrockAPIKeyWithoutModels("Bedrock", apiKey, []CheckConnectionModelInfo{{ModelName: "model"}}) {
+		t.Fatal("Bedrock API key with a selected model bypassed model verification")
+	}
+	if shouldVerifyBedrockAPIKeyWithoutModels("OpenAI", apiKey, nil) {
+		t.Fatal("non-Bedrock provider used the Bedrock connection check")
+	}
+	if shouldVerifyBedrockAPIKeyWithoutModels("Bedrock", `{"auth_mode":"access_key_secret"}`, nil) {
+		t.Fatal("SigV4 credentials used the Bedrock API key connection check")
+	}
+}
+
 func TestModelInfoWithTenantExtraAppliesEmbeddingConstraints(t *testing.T) {
 	factoryMaxDimension := 2048
 	factoryBatchSize := 128

@@ -60,6 +60,12 @@ def _install_rag_llm_stub():
     class SupportedLiteLLMProvider(StrEnum):
         Tongyi_Qianwen = "Tongyi-Qianwen"
         Dashscope = "Dashscope"
+        Bedrock = "Bedrock"
+        Nvidia = "NVIDIA"
+        Ollama = "Ollama"
+        OpenRouter = "OpenRouter"
+        MiniMax = "MiniMax"
+        GPUStack = "GPUStack"
         Moonshot = "Moonshot"
         ZHIPU_AI = "ZHIPU-AI"
         OpenAI = "OpenAI"
@@ -68,7 +74,7 @@ def _install_rag_llm_stub():
 
     llm_pkg.SupportedLiteLLMProvider = SupportedLiteLLMProvider
     llm_pkg.FACTORY_DEFAULT_BASE_URL = {}
-    llm_pkg.LITELLM_PROVIDER_PREFIX = {}
+    llm_pkg.LITELLM_PROVIDER_PREFIX = {SupportedLiteLLMProvider.Bedrock: "bedrock/"}
     sys.modules["rag.llm"] = llm_pkg
 
 

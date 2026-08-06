@@ -664,6 +664,8 @@ class BedrockEmbed(Base):
 
     def __init__(self, key, model_name, **kwargs):
         import boto3
+        from rag.llm.bedrock_model_discovery import create_bedrock_bearer_client
+        from rag.utils.bedrock_endpoint import resolve_bedrock_endpoint, validate_bedrock_region
 
         # `key` protocol (backend stores as JSON string in `api_key`):
         # - Must decode into a dict.
@@ -679,12 +681,23 @@ class BedrockEmbed(Base):
             raise ValueError("Bedrock auth_mode must be provided in the key")
 
         self.bedrock_region = key.get("bedrock_region")
+        if not self.bedrock_region:
+            raise ValueError("Bedrock region must be provided in the key")
+        validate_bedrock_region(self.bedrock_region)
+        endpoint_type, endpoint_url = resolve_bedrock_endpoint(mode, key.get("bedrock_endpoint_type"), key.get("bedrock_endpoint_url") or "")
 
         self.model_name = model_name
         self.is_amazon = self.model_name.split(".")[0] == "amazon"
         self.is_cohere = self.model_name.split(".")[0] == "cohere"
 
-        if mode == "access_key_secret":
+        if mode == "bedrock_api_key":
+            bedrock_api_key = key.get("bedrock_api_key")
+            if not bedrock_api_key:
+                raise ValueError("Bedrock API key must be provided")
+            if endpoint_type != "runtime":
+                raise ValueError("Bedrock Mantle endpoints do not support embeddings")
+            self.client = create_bedrock_bearer_client("bedrock-runtime", bedrock_api_key, self.bedrock_region, endpoint_url)
+        elif mode == "access_key_secret":
             self.bedrock_ak = key.get("bedrock_ak")
             self.bedrock_sk = key.get("bedrock_sk")
             self.client = boto3.client(service_name="bedrock-runtime", region_name=self.bedrock_region, aws_access_key_id=self.bedrock_ak, aws_secret_access_key=self.bedrock_sk)
@@ -700,8 +713,10 @@ class BedrockEmbed(Base):
                 aws_secret_access_key=creds["SecretAccessKey"],
                 aws_session_token=creds["SessionToken"],
             )
-        else:  # assume_role
+        elif mode == "assume_role":
             self.client = boto3.client("bedrock-runtime", region_name=self.bedrock_region)
+        else:
+            raise ValueError(f"Unsupported Bedrock auth_mode: {mode}")
 
     def _extract_vector(self, model_response):
         # Titan returns {"embedding": [...]}; Cohere returns {"embeddings": [[...]]}.

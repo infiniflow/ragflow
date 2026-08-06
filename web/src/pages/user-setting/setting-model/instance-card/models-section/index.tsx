@@ -56,6 +56,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     instanceName,
     instance,
     hideActions = false,
+    deferModelMutations = false,
     hideIfEmpty = false,
     getFormValues,
     verifyTransform,
@@ -67,6 +68,7 @@ export function ModelsSection(props: ModelsSectionProps) {
 
   const isDraftInstance =
     !instanceName || instanceName === DRAFT_INSTANCE_SENTINEL;
+  const useLocalModels = isDraftInstance || deferModelMutations;
 
   // 1. Credentials for catalog / verify / batch calls.
   const { resolveCreds } = useResolveCreds(instance, getFormValues);
@@ -101,24 +103,32 @@ export function ModelsSection(props: ModelsSectionProps) {
     apiKeyValue: currentCreds.apiKey,
     baseUrlValue: currentCreds.baseUrl,
     instanceDetailsLoaded,
+    regionValue: currentCreds.region,
+    authMode: currentCreds.extensions.auth_mode,
   });
 
-  // 3a. Draft-only: locally-tracked "added models" list.
-  // The backend has no per-instance models yet, so per-model add /
-  // remove / batch-toggle on a draft mutates this array instead of
-  // firing a mutation. The host save handler then flushes the latest
-  // snapshot through `model_info` on save. Reset when the provider
-  // or instance changes (rare in practice since the host remounts
-  // the section on draft switch, but kept as a safety net).
+  // 3a. Locally tracked model selection. New instances start empty and
+  // auto-populate from the catalog. Saved instances whose credentials
+  // are being edited start from their persisted selection and defer all
+  // mutations until the host saves the credential and model changes.
   const [draftModels, setDraftModels] = useState<IProviderModelItem[]>([]);
   // Tracks whether we've auto-populated the draft from the catalog for
   // the current draft session. Prevents re-adding models the user has
   // manually removed when the catalog refetches.
   const hasAutoPopulatedDraftRef = useRef(false);
+  const hasSeededDeferredModelsRef = useRef(false);
   useEffect(() => {
     setDraftModels([]);
     hasAutoPopulatedDraftRef.current = false;
-  }, [providerName, instanceName]);
+    hasSeededDeferredModelsRef.current = false;
+  }, [providerName, instanceName, deferModelMutations]);
+
+  useEffect(() => {
+    if (!deferModelMutations || hasSeededDeferredModelsRef.current) return;
+    if (!instanceModels) return;
+    hasSeededDeferredModelsRef.current = true;
+    setDraftModels(instanceModels as unknown as IProviderModelItem[]);
+  }, [deferModelMutations, instanceModels]);
 
   // Auto-populate the draft's model list from the catalog on first
   // fetch so the user doesn't have to click `+` on every row when
@@ -158,7 +168,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     catalog,
     instanceModels,
     draftModels,
-    isDraftInstance,
+    isDraftInstance: useLocalModels,
     onInstanceModelsChange,
     onInstanceModelsEdited,
   });
@@ -173,7 +183,7 @@ export function ModelsSection(props: ModelsSectionProps) {
       providerName,
       resolveCreds,
       instanceModels,
-      instance,
+      instance: useLocalModels ? undefined : instance,
       getFormValues,
       verifyTransform,
     });
@@ -234,7 +244,7 @@ export function ModelsSection(props: ModelsSectionProps) {
   } = useModelMutations({
     providerName,
     instanceName,
-    isDraftInstance,
+    isDraftInstance: useLocalModels,
     hideActions,
     resolveCreds,
     instance,
@@ -262,7 +272,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     providerName,
     instanceName,
     addedSet,
-    isDraftInstance,
+    isDraftInstance: useLocalModels,
     updateCatalogModel,
     clearCatalogOverride,
     updateDraftModel,

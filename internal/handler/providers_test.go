@@ -14,8 +14,89 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
 )
+
+func TestListProviderModelsRequestAcceptsStringAPIKeyAndExtensions(t *testing.T) {
+	var request listProviderModelsRequest
+	err := json.Unmarshal([]byte(`{"api_key":"token","extensions":{"endpoint_type":"runtime"}}`), &request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if request.APIKey != "token" || request.Extensions["endpoint_type"] != "runtime" {
+		t.Fatalf("request=%+v", request)
+	}
+}
+
+func TestListProviderModelsRequestRejectsObjectAPIKey(t *testing.T) {
+	var request listProviderModelsRequest
+	if err := json.Unmarshal([]byte(`{"api_key":{"api_key":"token"}}`), &request); err == nil {
+		t.Fatal("object api_key was accepted")
+	}
+}
+
+func TestIsBedrockAPIKeyConfig(t *testing.T) {
+	if !isBedrockAPIKeyConfig("Bedrock", `{"auth_mode":"bedrock_api_key","bedrock_api_key":"token"}`) {
+		t.Fatal("Bedrock API key mode was not detected")
+	}
+	if isBedrockAPIKeyConfig("Bedrock", `{"auth_mode":"access_key_secret"}`) {
+		t.Fatal("SigV4 mode was misclassified as API key mode")
+	}
+}
+
+func TestShouldListRemoteModelsKeepsDefaultEndpointBedrockOnly(t *testing.T) {
+	if shouldListRemoteModels("token", "", false) {
+		t.Fatal("non-Bedrock provider without base URL triggered remote discovery")
+	}
+	if !shouldListRemoteModels("token", "https://example.com", false) {
+		t.Fatal("provider with API key and base URL did not trigger remote discovery")
+	}
+	if !shouldListRemoteModels("token", "", true) {
+		t.Fatal("Bedrock API key did not use the default endpoint")
+	}
+}
+
+func TestProviderListModelItemUsesFrontendContract(t *testing.T) {
+	item := providerListModelItem(modelModule.ListModelResponse{Name: "model", ModelTypes: []string{"chat"}})
+	if item["max_tokens"] != 8192 {
+		t.Fatalf("max_tokens=%v, want 8192", item["max_tokens"])
+	}
+	if _, exists := item["max_output"]; exists {
+		t.Fatal("legacy max_output field must not be emitted")
+	}
+}
+
+func TestBuildModelListAPIKeyMapsBedrockExtensions(t *testing.T) {
+	got, err := buildModelListAPIKey("Bedrock", "token", "ap-northeast-1", map[string]interface{}{
+		"auth_mode":              "bedrock_api_key",
+		"endpoint_type":          "runtime",
+		"discovery_endpoint_url": "https://bedrock.ap-northeast-1.amazonaws.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var key map[string]interface{}
+	if err = json.Unmarshal([]byte(got), &key); err != nil {
+		t.Fatal(err)
+	}
+	if key["bedrock_api_key"] != "token" || key["bedrock_region"] != "ap-northeast-1" || key["bedrock_endpoint_type"] != "runtime" {
+		t.Fatalf("key=%+v", key)
+	}
+	if key["bedrock_discovery_endpoint_url"] != "https://bedrock.ap-northeast-1.amazonaws.com" {
+		t.Fatalf("key=%+v", key)
+	}
+}
+
+func TestBuildModelListAPIKeyLeavesOtherProvidersUnchanged(t *testing.T) {
+	got, err := buildModelListAPIKey("OpenAI", "token", "", map[string]interface{}{"endpoint_type": "runtime"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "token" {
+		t.Fatalf("api key=%q, want token", got)
+	}
+}
 
 func setupProviderHandlerTestDB(t *testing.T) *gorm.DB {
 	t.Helper()

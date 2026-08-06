@@ -550,6 +550,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.GET("/:provider_id_or_name", r.providerHandler.ShowProvider)
 				provider.DELETE("/:provider_id_or_name", r.providerHandler.DeleteProvider)
 				provider.GET("/:provider_id_or_name/models", r.providerHandler.ListModels)
+				provider.POST("/:provider_id_or_name/models", r.providerHandler.ListModels)
 				provider.GET("/:provider_id_or_name/models/:model_name", r.providerHandler.ShowModel)
 				provider.POST("/:provider_id_or_name/instances", r.providerHandler.CreateProviderInstance)
 				provider.GET("/:provider_id_or_name/instances", r.providerHandler.ListProviderInstances)

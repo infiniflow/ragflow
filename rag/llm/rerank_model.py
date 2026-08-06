@@ -334,6 +334,8 @@ class BedrockRerank(Base):
             raise ValueError("Bedrock auth_mode must be provided in the key")
 
         self.bedrock_region = key.get("bedrock_region")
+        if mode == "bedrock_api_key":
+            raise ValueError("Bedrock API keys do not support the bedrock-agent-runtime rerank API")
         self.model_name = model_name
         # On-demand foundation-model ARN; works for amazon.rerank-v1:0 / cohere.rerank-*.
         self.model_arn = f"arn:aws:bedrock:{self.bedrock_region}::foundation-model/{self.model_name}"
@@ -362,8 +364,10 @@ class BedrockRerank(Base):
                 aws_secret_access_key=creds["SecretAccessKey"],
                 aws_session_token=creds["SessionToken"],
             )
-        else:  # assume_role: default AWS credential chain
+        elif mode == "assume_role":
             self.client = boto3.client("bedrock-agent-runtime", region_name=self.bedrock_region)
+        else:
+            raise ValueError(f"Unsupported Bedrock auth_mode: {mode}")
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
         # Truncate to the model token window, then enforce the API's hard 32k-char

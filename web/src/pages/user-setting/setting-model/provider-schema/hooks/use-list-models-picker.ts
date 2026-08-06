@@ -26,6 +26,7 @@ import {
   useState,
 } from 'react';
 import type { ProviderConfig } from '../types';
+import { serializeProviderAPIKey } from '../field-config/utils';
 
 // Derive is_tools from a model descriptor's `features` array. A model is
 // considered tool-capable if it advertises either `tool_call` or
@@ -187,9 +188,12 @@ export const useListModelsPicker = ({
               model_info: modelInfoList,
             })
           : { apiKey: values.api_key ?? '', baseUrl: values.base_url };
+        const apiKey = viewMode
+          ? ''
+          : serializeProviderAPIKey(verifyArgs.apiKey);
         const res = await listProviderModels({
           provider_name: llmFactory,
-          api_key: viewMode ? '' : ((verifyArgs as any).apiKey ?? ''),
+          api_key: apiKey,
           base_url: viewMode ? '' : ((verifyArgs as any).baseUrl ?? ''),
           region: (verifyArgs as any).region,
           model_info: (verifyArgs as any).modelInfo ?? modelInfoList,
