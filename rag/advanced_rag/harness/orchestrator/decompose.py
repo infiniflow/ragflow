@@ -40,6 +40,7 @@ async def decompose_and_search(state: dict, tools) -> dict:
 
         for c, result in zip(unverified, results):
             if result.get("chunks"):
+                _merge_kbinfos(tools, result)
                 c.is_verified = True
                 c.confidence = 0.8
                 c.agent_result = AgentResult(
@@ -47,9 +48,8 @@ async def decompose_and_search(state: dict, tools) -> dict:
                     report=_summarize(result),
                     is_verified=True,
                     confidence=0.8,
-                    evidence_ids=list(range(len(result.get("chunks", [])))),
+                    evidence_ids=_global_evidence_ids(tools, result),
                 )
-                _merge_kbinfos(tools, result)
             else:
                 c.agent_result = AgentResult(
                     claim_id=c.claim_id,
@@ -83,7 +83,15 @@ async def decompose_and_search(state: dict, tools) -> dict:
             tools.kbinfos["chunks"] = []
             return {"verdict": verdict.__dict__, "abstain": True}
 
-    return {"kbinfos": tools.kbinfos}
+    # Cycle exhaustion: flag the answer as partial so the final-answer node
+    # prepends the partial-answer preamble instead of presenting an incomplete
+    # answer as complete. Partial when (a) some claim is still unverified, or
+    # (b) every claim is verified but the final verdict is not SUFFICIENT (e.g.
+    # cross-check flagged conflicts/mismatches) — in both cases an exhaustive
+    # answer was not reached.
+    verdict_status = getattr(verdict, "status", None)
+    partial = (any(not c.is_verified for c in ctx.claims) or (verdict_status is not None and verdict_status != "SUFFICIENT")) and bool(tools.kbinfos.get("chunks"))
+    return {"kbinfos": tools.kbinfos, "partial_answer": partial}
 
 
 def _merge_kbinfos(tools, result: dict):
@@ -106,6 +114,24 @@ def _merge_kbinfos(tools, result: dict):
 
 def _chunk_key(ck: dict) -> str:
     return ck.get("chunk_id") or ck.get("id") or str(id(ck))
+
+
+def _global_evidence_ids(tools, result: dict) -> list[int]:
+    """Map a search result's chunks to their indices in ``tools.kbinfos``.
+
+    The cross-check resolves evidence IDs against the shared kbinfos pool, so
+    the IDs must be global indices there — not positions within this result.
+    Must be called AFTER ``_merge_kbinfos`` so fresh chunks have indices.
+    """
+    index_by_key: dict[str, int] = {}
+    for idx, ck in enumerate(tools.kbinfos.get("chunks", [])):
+        index_by_key.setdefault(_chunk_key(ck), idx)
+    ids: list[int] = []
+    for ck in result.get("chunks", []):
+        idx = index_by_key.get(_chunk_key(ck))
+        if idx is not None and idx not in ids:
+            ids.append(idx)
+    return ids
 
 
 def _summarize(result: dict) -> str:
