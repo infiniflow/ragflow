@@ -872,6 +872,66 @@ func TestFormatStructuredExtraction(t *testing.T) {
 	}
 }
 
+func TestBuildExtractorMessages_MultiplePrompts(t *testing.T) {
+	msgs := buildExtractorMessages(
+		"system {Source:Text@chunks}",
+		"ignored",
+		[]extractorPrompt{
+			{role: eschema.User, content: "first {Source:Text@chunks}"},
+			{role: eschema.Assistant, content: "previous answer"},
+			{role: eschema.User, content: "second"},
+		},
+		"chunk text",
+		[]map[string]any{{"text": "upstream"}},
+	)
+	if len(msgs) != 4 {
+		t.Fatalf("message count = %d, want 4", len(msgs))
+	}
+	want := []eschema.Message{
+		{Role: eschema.System, Content: "system upstream"},
+		{Role: eschema.User, Content: "first upstream"},
+		{Role: eschema.Assistant, Content: "previous answer"},
+		{Role: eschema.User, Content: "second\n\nchunk text"},
+	}
+	for i := range want {
+		if msgs[i].Role != want[i].Role || msgs[i].Content != want[i].Content {
+			t.Errorf("message[%d] = (%q, %q), want (%q, %q)", i, msgs[i].Role, msgs[i].Content, want[i].Role, want[i].Content)
+		}
+	}
+}
+
+func TestBuildExtractorMessages_LegacyPrompt(t *testing.T) {
+	msgs := buildExtractorMessages("system", "prompt", nil, "chunk", nil)
+	if len(msgs) != 2 || msgs[0].Role != eschema.System || msgs[1].Role != eschema.User || msgs[1].Content != "prompt\n\nchunk" {
+		t.Fatalf("legacy messages = %#v, want system + prompt with chunk", msgs)
+	}
+}
+
+func TestNewExtractorComponent_PreservesPromptRoles(t *testing.T) {
+	c, err := NewExtractorComponent(map[string]any{
+		"prompts": []map[string]any{
+			{"role": "system", "content": "system instruction"},
+			{"role": "user", "content": "user request"},
+			{"role": "assistant", "content": "previous response"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	extractor, ok := c.(*ExtractorComponent)
+	if !ok {
+		t.Fatalf("component type = %T, want *ExtractorComponent", c)
+	}
+	if len(extractor.Prompts) != 3 {
+		t.Fatalf("prompt count = %d, want 3", len(extractor.Prompts))
+	}
+	for i, want := range []eschema.RoleType{eschema.System, eschema.User, eschema.Assistant} {
+		if extractor.Prompts[i].role != want {
+			t.Errorf("prompt[%d].role = %q, want %q", i, extractor.Prompts[i].role, want)
+		}
+	}
+}
+
 // newMetadataExtractor returns an ExtractorComponent wired for doc-level
 // metadata extraction with the given field definitions.
 func newMetadataExtractor(fields ...common.MetadataFieldDef) *ExtractorComponent {

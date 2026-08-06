@@ -216,7 +216,13 @@ Propose questions about a given piece of text content.
 // package-level seam (extractorChatInvoker) is guarded by a
 // RWMutex; tests swap it via SetExtractorChatInvoker.
 type ExtractorComponent struct {
-	Param schema.ExtractorParam
+	Param   schema.ExtractorParam
+	Prompts []extractorPrompt
+}
+
+type extractorPrompt struct {
+	role    eschema.RoleType
+	content string
 }
 
 // NewExtractorComponent constructs an Extractor from a DSL param
@@ -256,12 +262,8 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			// (the graph.nodes form / dsl testdata) is not silently dropped
 			// by the .([]any) assertion on the list branch below.
 			p.Prompt = v
-		} else if promptsRaw, ok := params["prompts"].([]any); ok && len(promptsRaw) > 0 {
-			if first, ok := promptsRaw[0].(map[string]any); ok {
-				if content, ok := first["content"].(string); ok {
-					p.Prompt = content
-				}
-			}
+		} else if promptsRaw := parseExtractorPrompts(params["prompts"]); len(promptsRaw) > 0 {
+			p.Prompt = promptContent(promptsRaw)
 		}
 		if v, ok := params["auto_keywords"]; ok {
 			p.AutoKeywords = mapInt(v)
@@ -311,7 +313,7 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 	if err := p.Validate(); err != nil {
 		return nil, fmt.Errorf("extractor: param check: %w", err)
 	}
-	return &ExtractorComponent{Param: p}, nil
+	return &ExtractorComponent{Param: p, Prompts: parseExtractorPrompts(params["prompts"])}, nil
 }
 
 // Inputs returns the parameter metadata. Matches the python
@@ -534,6 +536,7 @@ type extractorInputs struct {
 	llmID        string
 	systemPrompt string
 	prompt       string
+	prompts      []extractorPrompt
 	lang         string
 	chunks       []map[string]any
 	// temperature overrides the LLM temperature for this call. A
@@ -557,6 +560,7 @@ func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInput
 		llmID:        c.Param.LLMID,
 		systemPrompt: c.Param.SystemPrompt,
 		prompt:       c.Param.Prompt,
+		prompts:      c.Prompts,
 	}
 	if inputs == nil {
 		return out
@@ -566,6 +570,9 @@ func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInput
 	}
 	if v, ok := inputs["prompt"].(string); ok && v != "" {
 		out.prompt = v
+	}
+	if prompts := parseExtractorPrompts(inputs["prompts"]); len(prompts) > 0 {
+		out.prompts = prompts
 	}
 	if v, ok := inputs["system_prompt"].(string); ok && v != "" {
 		out.systemPrompt = v
@@ -1137,7 +1144,7 @@ func (c *ExtractorComponent) call(ctx context.Context, db *gorm.DB, in extractor
 	if err != nil {
 		return nil, err
 	}
-	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, chunkText, in.chunks)
+	msgs := buildExtractorMessages(in.systemPrompt, in.prompt, in.prompts, chunkText, in.chunks)
 	inv := getExtractorChatInvoker()
 	req := extractorChatRequest{
 		Driver:    driver,
@@ -1350,8 +1357,32 @@ func isBareTenantModelID(s string) bool {
 // Substitution is opt-in: when chunks is nil/empty the placeholder
 // is left intact so a misconfigured template surfaces as a
 // clear pattern rather than silently disappearing.
-func buildExtractorMessages(system, prompt, chunkText string, chunks []map[string]any) []eschema.Message {
-	out := make([]eschema.Message, 0, 2)
+func buildExtractorMessages(system, prompt string, prompts []extractorPrompt, chunkText string, chunks []map[string]any) []eschema.Message {
+	out := make([]eschema.Message, 0, len(prompts)+1)
+	if len(prompts) > 0 {
+		if system != "" {
+			out = append(out, eschema.Message{Role: eschema.System, Content: substitutePromptPlaceholders(system, chunks)})
+		}
+		for _, p := range prompts {
+			role := p.role
+			if role == "" {
+				role = eschema.User
+			}
+			out = append(out, eschema.Message{Role: role, Content: substitutePromptPlaceholders(p.content, chunks)})
+		}
+		if chunkText != "" {
+			for i := len(out) - 1; i >= 0; i-- {
+				if out[i].Role == eschema.User {
+					if out[i].Content != "" {
+						out[i].Content += "\n\n"
+					}
+					out[i].Content += chunkText
+					break
+				}
+			}
+		}
+		return out
+	}
 	if system != "" {
 		out = append(out, eschema.Message{Role: eschema.System, Content: system})
 	}
@@ -1371,6 +1402,44 @@ func buildExtractorMessages(system, prompt, chunkText string, chunks []map[strin
 	user = substitutePromptPlaceholders(user, chunks)
 	out = append(out, eschema.Message{Role: eschema.User, Content: user})
 	return out
+}
+
+func parseExtractorPrompts(raw any) []extractorPrompt {
+	var values []any
+	switch v := raw.(type) {
+	case []any:
+		values = v
+	case []map[string]any:
+		values = make([]any, len(v))
+		for i := range v {
+			values[i] = v[i]
+		}
+	default:
+		return nil
+	}
+	out := make([]extractorPrompt, 0, len(values))
+	for _, value := range values {
+		message, ok := value.(map[string]any)
+		if !ok {
+			continue
+		}
+		content, ok := message["content"].(string)
+		if !ok {
+			continue
+		}
+		roleValue, _ := message["role"].(string)
+		out = append(out, extractorPrompt{role: eschema.RoleType(roleValue), content: content})
+	}
+	return out
+}
+
+func promptContent(prompts []extractorPrompt) string {
+	for _, prompt := range prompts {
+		if prompt.role == eschema.User || prompt.role == "" {
+			return prompt.content
+		}
+	}
+	return ""
 }
 
 // substitutePromptPlaceholders replaces `{ComponentName:ParamName@chunks}`
