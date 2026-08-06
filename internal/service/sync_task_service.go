@@ -145,7 +145,10 @@ func (s *SyncTaskService) RecoverStaleRunning(ctx context.Context, now time.Time
 
 // IsFromBeginning reports whether a task is a full sync.
 func IsFromBeginning(value *string) bool {
-	return value == nil || strings.TrimSpace(*value) == "1"
+	if value == nil {
+		return false
+	}
+	return strings.TrimSpace(*value) == "1"
 }
 
 // SourceType returns document source_type.
