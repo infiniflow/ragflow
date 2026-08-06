@@ -405,7 +405,8 @@ async def _wiki_delete_deleted_doc_state(
     select_fields = ["id", "source_doc_ids", "compile_kwd", "slug_kwd", "page_type_kwd"]
     to_delete: list[str] = []
     to_shrink: list[tuple[str, list[str]]] = []
-    page_history_to_delete: list[tuple[str, str]] = []
+    page_history_to_delete: list[tuple[str, str, str]] = []
+    failed_delete_row_ids: set[str] = set()
     offset = 0
     page_size = 1000
     while True:
@@ -444,27 +445,33 @@ async def _wiki_delete_deleted_doc_state(
                 if row.get("compile_kwd") == WIKI_PAGE_COMPILE_KWD:
                     slug = row.get("slug_kwd")
                     if isinstance(slug, str) and slug:
-                        page_history_to_delete.append((slug, row.get("page_type_kwd") or "concept"))
+                        page_history_to_delete.append((row_id, slug, row.get("page_type_kwd") or "concept"))
         if len(field_map) < page_size:
             break
         offset += page_size
 
     # Drop rows with no surviving owner (delete by id in batches).
     for i in range(0, len(to_delete), page_size):
+        batch_ids = to_delete[i : i + page_size]
         try:
-            await thread_pool_exec(
+            deleted_count = await thread_pool_exec(
                 settings.docStoreConn.delete,
-                {"id": to_delete[i : i + page_size]},
+                {"id": batch_ids},
                 index,
                 kb_id,
             )
+            if not isinstance(deleted_count, int) or deleted_count != len(batch_ids):
+                failed_delete_row_ids.update(batch_ids)
         except Exception:
             logging.exception("wiki: failed to drop orphaned derived rows in kb=%s", kb_id)
+            failed_delete_row_ids.update(batch_ids)
 
     if page_history_to_delete:
         from api.db.services.file_commit_service import FileCommitService
 
-        for slug, page_type in page_history_to_delete:
+        for row_id, slug, page_type in page_history_to_delete:
+            if row_id in failed_delete_row_ids:
+                continue
             try:
                 FileCommitService.delete_page_history(kb_id, page_type, slug)
             except Exception:
@@ -883,12 +890,44 @@ async def persist_wiki_pages(
         return
 
     try:
-        await thread_pool_exec(settings.docStoreConn.insert, rows, index, ctx.kb_id)
+        insert_errors = await thread_pool_exec(settings.docStoreConn.insert, rows, index, ctx.kb_id)
     except Exception:
         logging.exception(
             "wiki_persist: bulk insert failed for kb=%s (rows=%d)",
             kb_id_str,
             len(rows),
+        )
+        return
+
+    if insert_errors:
+        logging.warning(
+            "wiki_persist: page insert returned %d error(s) for kb=%s",
+            len(insert_errors),
+        )
+
+    # Verify the rows that are actually visible after the bulk operation. Some
+    # backends can report partial bulk failures without raising, so recording a
+    # version for every input page would create history for pages that were not
+    # persisted.
+    try:
+        persisted_res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["id", "slug_kwd"],
+            [],
+            {"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "id": [row["id"] for row in rows]},
+            [],
+            OrderByExpr(),
+            0,
+            len(rows),
+            index,
+            [ctx.kb_id],
+        )
+        persisted_fields = settings.docStoreConn.get_fields(persisted_res, ["id", "slug_kwd"])
+        persisted_page_slugs = {row.get("slug_kwd") for row in (persisted_fields or {}).values() if isinstance(row.get("slug_kwd"), str)}
+    except Exception:
+        logging.exception(
+            "wiki_persist: failed to verify persisted pages for kb=%s; skipping history records",
+            kb_id_str,
         )
         return
 
@@ -907,7 +946,7 @@ async def persist_wiki_pages(
     # compile.
     for page in pages:
         slug = (page.get("slug") or "").strip()
-        if not slug:
+        if not slug or slug not in persisted_page_slugs:
             continue
         content_md = page.get("content_md_rendered") or page.get("content_md") or page.get("content_md_raw") or ""
         action = (page.get("action") or "CREATE").upper()

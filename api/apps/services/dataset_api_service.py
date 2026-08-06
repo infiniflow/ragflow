@@ -3237,7 +3237,7 @@ async def update_wiki_page(
     refresh_idx = getattr(settings.docStoreConn, "refresh_idx", None)
     if callable(refresh_idx):
         try:
-            refresh_idx(index_nm)
+            await thread_pool_exec(refresh_idx, index_nm)
         except Exception:
             logging.exception(
                 "update_wiki_page: index refresh failed for kb=%s slug=%s",
@@ -3838,13 +3838,16 @@ async def clear_wiki(dataset_id: str, tenant_id: str):
 
     from api.db.services.file_commit_service import FileCommitService
 
-    try:
-        deleted["file_commit_history"] = FileCommitService.delete_all_page_history(dataset_id)
-    except Exception:
-        logging.exception(
-            "clear_wiki: failed to delete page version history for kb=%s",
-            dataset_id,
-        )
+    if all(result is not False for result in deleted.values()):
+        try:
+            deleted["file_commit_history"] = FileCommitService.delete_all_page_history(dataset_id)
+        except Exception:
+            logging.exception(
+                "clear_wiki: failed to delete page version history for kb=%s",
+                dataset_id,
+            )
+            deleted["file_commit_history"] = False
+    else:
         deleted["file_commit_history"] = False
 
     return True, {"deleted": deleted}

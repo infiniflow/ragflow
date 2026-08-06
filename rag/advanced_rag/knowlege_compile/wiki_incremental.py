@@ -1567,12 +1567,15 @@ async def _wiki_refine_page(
         return existing_page
 
     if mode == "delete":
-        await thread_pool_exec(
+        deleted_count = await thread_pool_exec(
             settings.docStoreConn.delete,
             {"compile_kwd": [WIKI_PAGE_COMPILE_KWD], "slug_kwd": [page_id]},
             search.index_name(tenant_id),
             kb_id,
         )
+        if not isinstance(deleted_count, int) or deleted_count <= 0:
+            logging.warning("wiki: page deletion did not remove page=%s", page_id)
+            return existing_page
         from api.db.services.file_commit_service import FileCommitService
 
         commit_slug = page_id if page_id.startswith(f"{page_type_kwd}/") else f"{page_type_kwd}/{page_id}"
