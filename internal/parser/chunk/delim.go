@@ -157,6 +157,7 @@ func CompileDelimiterPattern(delimiters []string) *regexp.Regexp {
 // dataflow list API.
 func CompileDelimiterPatternList(delims []string, keepBare bool) *regexp.Regexp {
 	var out []string
+	seen := make(map[string]struct{})
 	for _, d := range delims {
 		if d == "" {
 			continue
@@ -166,12 +167,20 @@ func CompileDelimiterPatternList(delims []string, keepBare bool) *regexp.Regexp 
 			if inner == "" {
 				continue
 			}
+			if _, ok := seen[inner]; ok {
+				continue
+			}
+			seen[inner] = struct{}{}
 			out = append(out, inner)
 			continue
 		}
 		if !keepBare {
 			continue
 		}
+		if _, ok := seen[d]; ok {
+			continue
+		}
+		seen[d] = struct{}{}
 		out = append(out, d)
 	}
 	if len(out) == 0 {

@@ -213,6 +213,50 @@ func TestCompileDelimiterPatternListKeepBareFalse(t *testing.T) {
 	}
 }
 
+func TestCompileDelimiterPatternListDedup(t *testing.T) {
+	// Equivalent quoted + bare delimiters must not produce a redundant
+	// alternation. ["`#`", "#"] with keepBare=true resolves to the single
+	// active value `#`, matching Python's sorted(set(...)) contract.
+	pat := CompileDelimiterPatternList([]string{"`#`", "#"}, true)
+	if pat == nil {
+		t.Fatal("expected a pattern from equivalent quoted + bare entries")
+	}
+	if got := pat.String(); got != "#" {
+		t.Errorf("dedup pattern = %q, want %q", got, "#")
+	}
+	// Repeated wrapped entries are also deduplicated.
+	pat = CompileDelimiterPatternList([]string{"`##`", "`##`", "`#`"}, false)
+	if pat == nil {
+		t.Fatal("expected a pattern from wrapped entries")
+	}
+	if got := pat.String(); got != `##|#` {
+		t.Errorf("dedup pattern = %q, want %q", got, `##|#`)
+	}
+}
+
+func TestCompileDelimiterPatternListChildrenPrefixOrder(t *testing.T) {
+	// keepBare=true (children_delimiters): a longer delimiter must win over a
+	// shorter prefix inside it. With byte-length sorting this could regress
+	// (the old compileChildrenPattern used len()); rune-count sorting fixes it.
+	pat := CompileDelimiterPatternList([]string{"##", "#"}, true)
+	if pat == nil {
+		t.Fatal("expected a pattern from bare prefix entries")
+	}
+	if got := pat.String(); got != `##|#` {
+		t.Errorf("pattern = %q, want %q", got, `##|#`)
+	}
+	// Longest-first ordering ensures "###" splits on "##", not "#".
+	if got := pat.FindString("a###b"); got != "##" {
+		t.Errorf("FindString(a###b) = %q, want %q", got, "##")
+	}
+	// Multi-byte delimiter ordering is by rune count, not byte length:
+	// "###" (3 runes) must be tried before "。" (1 rune).
+	pat = CompileDelimiterPatternList([]string{"。", "###"}, true)
+	if got := pat.String(); got != `###|。` {
+		t.Errorf("pattern = %q, want %q", got, `###|。`)
+	}
+}
+
 func TestHasCustomDelimiterList(t *testing.T) {
 	if HasCustomDelimiterList([]string{"\n", "!"}) {
 		t.Fatal("bare list should be false")
