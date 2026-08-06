@@ -40,7 +40,7 @@ export const TxtPreviewer = ({ className, url }: TxtPreviewerProps) => {
   return (
     <div
       className={classNames(
-        'relative w-full h-full p-4 bg-background-paper border border-border-normal rounded-md',
+        'relative w-full h-full p-4 overflow-auto bg-background-paper border border-border-normal rounded-md',
         className,
       )}
     >
