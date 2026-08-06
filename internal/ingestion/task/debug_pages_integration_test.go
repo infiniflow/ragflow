@@ -42,9 +42,9 @@ import (
 // real pdfium parser, in-memory sqlite + storage):
 //
 //   - Uncapped baseline: an explicit cpnID+family page cap of [[1, 1000000]]
-//     is supplied in ParserConfig. injectDebugPageCap must RESPECT it, so the
+//     is supplied in ParserConfig. pipeline.BuildParserPageCapOverride must RESPECT it, so the
 //     parser reads every page.
-//   - Capped: no page cap is supplied, so injectDebugPageCap injects the
+//   - Capped: no page cap is supplied, so pipeline.BuildParserPageCapOverride injects the
 //     debug default [[1, debugPageCapPages]], and the parser reads only the
 //     leading pages.
 //
@@ -79,7 +79,7 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 
 	// envelopeDSL is stored verbatim on the canvas (this is what production
 	// persists), so loadDSLFromCanvas marshals the envelope and Run receives
-	// it. injectDebugPageCap must unwrap it to find the Parser cpnID.
+	// it. pipeline.BuildParserPageCapOverride must unwrap it to find the Parser cpnID.
 	var envelope struct {
 		DSL json.RawMessage `json:"dsl"`
 	}
@@ -129,7 +129,7 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	t.Cleanup(func() { _ = realDB.Where("id = ?", canvasID).Delete(&entity.UserCanvas{}).Error })
 
 	// Explicit "parse all pages" cap (JSON-decoded []any form, the shape the
-	// parser actually consumes). injectDebugPageCap must respect it and leave
+	// parser actually consumes). pipeline.BuildParserPageCapOverride must respect it and leave
 	// it untouched, so the parser reads every page of the PDF.
 	allPages := map[string]any{
 		parserCpnID: map[string]any{
@@ -142,7 +142,7 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	newDebugCtx := func(parserConfig map[string]any) *TaskContext {
 		// A canvas-debug (dry-run) context carries no KB: KB.ID == "" is the
 		// single debug signal. The executor then skips the persist stage and
-		// injects the debug page cap (see injectDebugPageCap, gated on
+		// injects the debug page cap (see pipeline.BuildParserPageCapOverride, gated on
 		// KB.ID == "").
 		return &TaskContext{
 			Doc: entity.Document{
