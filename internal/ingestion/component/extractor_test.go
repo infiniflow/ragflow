@@ -848,6 +848,30 @@ func TestCleanExtractionResult(t *testing.T) {
 	}
 }
 
+func TestFormatStructuredExtraction(t *testing.T) {
+	tests := []struct {
+		name      string
+		result    any
+		field     string
+		separator string
+		want      string
+	}{
+		{name: "object field", result: map[string]any{"keywords": "k1,k2"}, field: "keywords", separator: ",", want: "k1,k2"},
+		{name: "keyword array", result: map[string]any{"keywords": []any{"k1", "k2"}}, field: "keywords", separator: ",", want: "k1,k2"},
+		{name: "question array", result: map[string]any{"questions": []any{"q1", "q2"}}, field: "questions", separator: "\n", want: "q1\nq2"},
+		{name: "null field", result: map[string]any{"keywords": nil}, field: "keywords", separator: ",", want: ""},
+		{name: "string response", result: "k1,k2", field: "keywords", separator: ",", want: ""},
+		{name: "object fallback", result: map[string]any{"other": "value"}, field: "keywords", separator: ",", want: `{"other":"value"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatStructuredExtraction(tt.result, tt.field, tt.separator); got != tt.want {
+				t.Errorf("formatStructuredExtraction() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // newMetadataExtractor returns an ExtractorComponent wired for doc-level
 // metadata extraction with the given field definitions.
 func newMetadataExtractor(fields ...common.MetadataFieldDef) *ExtractorComponent {

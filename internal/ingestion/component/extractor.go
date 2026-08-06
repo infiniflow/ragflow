@@ -753,14 +753,7 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	}
 	resultStr, ok := result.(string)
 	if !ok {
-		if m, isMap := result.(map[string]any); isMap {
-			if kw, exists := m["keywords"]; exists {
-				resultStr = fmt.Sprintf("%v", kw)
-			} else {
-				b, _ := json.Marshal(m)
-				resultStr = string(b)
-			}
-		}
+		resultStr = formatStructuredExtraction(result, "keywords", ",")
 	}
 	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
@@ -799,14 +792,7 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	}
 	resultStr, ok := result.(string)
 	if !ok {
-		if m, isMap := result.(map[string]any); isMap {
-			if q, exists := m["questions"]; exists {
-				resultStr = fmt.Sprintf("%v", q)
-			} else {
-				b, _ := json.Marshal(m)
-				resultStr = string(b)
-			}
-		}
+		resultStr = formatStructuredExtraction(result, "questions", "\n")
 	}
 	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
@@ -1058,6 +1044,31 @@ func cleanExtractionResult(s string) string {
 		return ""
 	}
 	return s
+}
+
+func formatStructuredExtraction(result any, field, separator string) string {
+	m, ok := result.(map[string]any)
+	if !ok {
+		return ""
+	}
+	value, exists := m[field]
+	if !exists {
+		b, _ := json.Marshal(m)
+		return string(b)
+	}
+	if value == nil {
+		return ""
+	}
+	if values, ok := value.([]any); ok {
+		parts := make([]string, 0, len(values))
+		for _, item := range values {
+			if item != nil {
+				parts = append(parts, fmt.Sprint(item))
+			}
+		}
+		return strings.Join(parts, separator)
+	}
+	return fmt.Sprint(value)
 }
 
 // splitKeywords splits a comma-delimited keyword string.
