@@ -120,7 +120,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "text-embedding-3-large",
@@ -128,7 +128,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "text-embedding-ada-002",
@@ -136,7 +136,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "BAAI/bge-reranker-v2-m3",

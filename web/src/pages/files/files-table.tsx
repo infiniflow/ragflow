@@ -114,8 +114,8 @@ export function FilesTable({
 
   // Sort files with skills folder first, then by time
   // Filter out skills folder if not in hybrid/go mode
-  const sortedFiles = useMemo(() => {
-    if (!files) return [];
+  const { sortedFiles, hiddenCount } = useMemo(() => {
+    if (!files) return { sortedFiles: [] as IFile[], hiddenCount: 0 };
 
     // Filter out skills folder if feature is disabled
     const filteredFiles = isSkillsEnabled
@@ -126,7 +126,7 @@ export function FilesTable({
           return !isSkills;
         });
 
-    return [...filteredFiles].sort((a, b) => {
+    const sorted = [...filteredFiles].sort((a, b) => {
       const aIsSkills =
         isFolderType(a.type) && a.name.toLowerCase() === 'skills';
       const bIsSkills =
@@ -139,7 +139,14 @@ export function FilesTable({
       // Then sort by create_time desc (newest first)
       return (b.create_time || 0) - (a.create_time || 0);
     });
+
+    return { sortedFiles: sorted, hiddenCount: files.length - filteredFiles.length };
   }, [files, isSkillsEnabled]);
+
+  // Keep the displayed total consistent with the rows actually shown:
+  // client-side filtered rows (e.g. the skills folder when the feature is
+  // disabled) are still included in the server-side total.
+  const displayTotal = Math.max((total ?? 0) - hiddenCount, 0);
 
   const columns: ColumnDef<IFile>[] = [
     {
@@ -329,7 +336,7 @@ export function FilesTable({
       rowSelection,
       pagination: currentPagination,
     },
-    rowCount: total ?? 0,
+    rowCount: displayTotal,
     debugTable: true,
   });
 
@@ -393,7 +400,7 @@ export function FilesTable({
       <footer className="flex items-center justify-end pb-5 mt-4">
         <RAGFlowPagination
           {...pick(pagination, 'current', 'pageSize')}
-          total={total}
+          total={displayTotal}
           onChange={(page, pageSize) => {
             setPagination({ page, pageSize });
           }}

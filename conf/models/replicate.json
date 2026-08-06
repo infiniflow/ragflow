@@ -48,7 +48,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16
+      "max_batch_size": 16
     },
     {
       "name": "ibm-granite/granite-embedding-278m-multilingual:1f76d42a05f120e12272746d5a2d86b525c13420773f795a4cbef9117d8685f1",
@@ -56,7 +56,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16
+      "max_batch_size": 16
     }
   ]
 }

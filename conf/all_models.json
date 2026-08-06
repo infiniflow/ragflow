@@ -339,7 +339,7 @@
       "dimensions": [],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "amazon/nova-2-Lite",
@@ -361,7 +361,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "animate-anyone-detect-gen2",
@@ -1114,7 +1114,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "BAAI/bge-large-en-v1.5",
@@ -1124,14 +1124,14 @@
       "max_dimension": 1024,
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "BAAI/bge-large-zh-v1.5",
       "model_types": [
         "embedding"
       ],
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "BAAI/bge-en-icl",
@@ -1144,7 +1144,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "BAAI/bge-m3",
@@ -1158,7 +1158,7 @@
       "dimensions": [],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "BAAI/bge-m3-multi",
@@ -1171,7 +1171,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "babbage-002",
@@ -1543,7 +1543,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16
+      "max_batch_size": 16
     },
     {
       "name": "Baichuan2-53B",
@@ -2168,14 +2168,14 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "bge-large-zh-v1.5",
       "model_types": [
         "embedding"
       ],
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "bigcode/starcoder2-15b-instruct-v0.1",
@@ -3755,7 +3755,7 @@
         1024,
         1536
       ],
-      "batch_size": 96
+      "max_batch_size": 96
     },
     {
       "name": "cohere/rerank-v4.0-fast",
@@ -3800,7 +3800,7 @@
       ],
       "max_dimension": 384,
       "dimensions": [],
-      "batch_size": 96
+      "max_batch_size": 96
     },
     {
       "name": "cohere/embed-english-v3.0",
@@ -3812,7 +3812,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 96
+      "max_batch_size": 96
     },
     {
       "name": "cohere/embed-multilingual-light-v3.0",
@@ -3824,7 +3824,7 @@
       ],
       "max_dimension": 384,
       "dimensions": [],
-      "batch_size": 96
+      "max_batch_size": 96
     },
     {
       "name": "cohere/embed-multilingual-v3.0",
@@ -3836,7 +3836,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 96
+      "max_batch_size": 96
     },
     {
       "name": "cohere/rerank-english-v3.0",
@@ -3870,7 +3870,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 96
+      "max_batch_size": 96
     },
     {
       "name": "cohere/embed-english-v2.0",
@@ -3882,7 +3882,7 @@
       ],
       "max_dimension": 4096,
       "dimensions": [],
-      "batch_size": 96
+      "max_batch_size": 96
     },
     {
       "name": "cohere/embed-multilingual-v2.0",
@@ -3894,7 +3894,7 @@
       ],
       "max_dimension": 768,
       "dimensions": [],
-      "batch_size": 96
+      "max_batch_size": 96
     },
     {
       "name": "cohere/cohere-transcribe-03-2026",
@@ -5990,7 +5990,7 @@
       ],
       "content_length": 4096,
       "max_output": 4096,
-      "batch_size": 10
+      "max_batch_size": 10
     },
     {
       "name": "doubao-embedding-text-240515",
@@ -6001,7 +6001,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 10
+      "max_batch_size": 10
     },
     {
       "name": "doubao-embedding-vision-241215",
@@ -6016,7 +6016,7 @@
       ],
       "content_length": 131072,
       "max_output": 131072,
-      "batch_size": 10
+      "max_batch_size": 10
     },
     {
       "name": "doubao-lite-128k-240428",
@@ -6605,7 +6605,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 16
+      "max_batch_size": 16
     },
     {
       "name": "emo-detect-v1",
@@ -6995,7 +6995,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 100
+      "max_batch_size": 100
     },
     {
       "name": "gemini-embedding-2",
@@ -7006,7 +7006,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 100
+      "max_batch_size": 100
     },
     {
       "name": "general_v2.0",
@@ -8048,7 +8048,7 @@
         512,
         768
       ],
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "google/embeddinggemma-300m-qat-q4_0-unquantized",
@@ -8063,7 +8063,7 @@
         512,
         768
       ],
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "google/embeddinggemma-300m-qat-q8_0-unquantized",
@@ -8078,7 +8078,7 @@
         512,
         768
       ],
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "google/functiongemma-270m-it",
@@ -8099,7 +8099,7 @@
         1536,
         3072
       ],
-      "batch_size": 100
+      "max_batch_size": 100
     },
     {
       "name": "google/gemini-embedding-2",
@@ -8113,7 +8113,7 @@
         1536,
         3072
       ],
-      "batch_size": 100
+      "max_batch_size": 100
     },
     {
       "name": "google/gemini-flash-latest",
@@ -12099,7 +12099,7 @@
       "dimensions": [],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 16
+      "max_batch_size": 16
     },
     {
       "name": "ideogram",
@@ -12290,7 +12290,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "intfloat/e5-large-v2",
@@ -12303,7 +12303,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "intfloat/multilingual-e5-large",
@@ -12316,7 +12316,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "intfloat/multilingual-e5-large-instruct",
@@ -12330,7 +12330,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "inworld-ai/inworld-tts-1.5-max",
@@ -12405,7 +12405,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-nano-classification",
@@ -12429,7 +12429,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-nano-classification-GGUF",
@@ -12453,7 +12453,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-nano-classification-mlx",
@@ -12477,7 +12477,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-nano-clustering",
@@ -12501,7 +12501,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-nano-clustering-GGUF",
@@ -12525,7 +12525,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-nano-clustering-mlx",
@@ -12549,7 +12549,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-nano-mlx",
@@ -12573,7 +12573,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-nano-retrieval",
@@ -12597,7 +12597,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-nano-retrieval-GGUF",
@@ -12621,7 +12621,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-nano-retrieval-mlx",
@@ -12645,7 +12645,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-nano-text-matching",
@@ -12669,7 +12669,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-nano-text-matching-GGUF",
@@ -12693,7 +12693,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-nano-text-matching-mlx",
@@ -12717,7 +12717,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-small",
@@ -12741,7 +12741,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-small-classification",
@@ -12765,7 +12765,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-small-classification-GGUF",
@@ -12789,7 +12789,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-small-classification-mlx",
@@ -12813,7 +12813,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-small-clustering",
@@ -12837,7 +12837,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-small-clustering-GGUF",
@@ -12861,7 +12861,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-small-clustering-mlx",
@@ -12885,7 +12885,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-small-mlx",
@@ -12909,7 +12909,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-small-retrieval",
@@ -12933,7 +12933,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-small-retrieval-GGUF",
@@ -12957,7 +12957,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-small-retrieval-mlx",
@@ -12981,7 +12981,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-small-text-matching",
@@ -13005,7 +13005,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-small-text-matching-GGUF",
@@ -13029,7 +13029,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-omni-small-text-matching-mlx",
@@ -13053,7 +13053,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-nano",
@@ -13075,7 +13075,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-nano-classification",
@@ -13097,7 +13097,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-nano-classification-GGUF",
@@ -13119,7 +13119,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-nano-classification-mlx",
@@ -13141,7 +13141,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-nano-clustering",
@@ -13163,7 +13163,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-nano-clustering-GGUF",
@@ -13185,7 +13185,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-nano-clustering-mlx",
@@ -13207,7 +13207,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-nano-mlx",
@@ -13229,7 +13229,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-nano-retrieval",
@@ -13251,7 +13251,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-nano-retrieval-GGUF",
@@ -13273,7 +13273,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-nano-retrieval-mlx",
@@ -13295,7 +13295,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-nano-text-matching",
@@ -13317,7 +13317,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-nano-text-matching-GGUF",
@@ -13339,7 +13339,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-nano-text-matching-mlx",
@@ -13361,7 +13361,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-small",
@@ -13383,7 +13383,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-small-classification",
@@ -13405,7 +13405,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-small-classification-GGUF",
@@ -13427,7 +13427,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-small-classification-mlx",
@@ -13449,7 +13449,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-small-clustering",
@@ -13471,7 +13471,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-small-clustering-GGUF",
@@ -13493,7 +13493,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-small-clustering-mlx",
@@ -13515,7 +13515,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-small-mlx",
@@ -13537,7 +13537,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-small-retrieval",
@@ -13559,7 +13559,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-small-retrieval-GGUF",
@@ -13581,7 +13581,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-small-retrieval-mlx",
@@ -13603,7 +13603,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-small-text-matching",
@@ -13625,7 +13625,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-small-text-matching-GGUF",
@@ -13647,7 +13647,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v5-text-small-text-matching-mlx",
@@ -13669,7 +13669,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v4",
@@ -13690,7 +13690,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v4-mlx-8bit",
@@ -13711,7 +13711,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v4-text-code-GGUF",
@@ -13731,7 +13731,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v4-text-matching-GGUF",
@@ -13751,7 +13751,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v4-text-retrieval-GGUF",
@@ -13771,7 +13771,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v4-vllm-code",
@@ -13792,7 +13792,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v4-vllm-retrieval",
@@ -13813,7 +13813,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v4-vllm-text-matching",
@@ -13834,7 +13834,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v3",
@@ -13856,7 +13856,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v3-hf",
@@ -13878,7 +13878,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v3-small-ci",
@@ -13900,7 +13900,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-reranker-v3",
@@ -13973,7 +13973,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-colbert-v2",
@@ -13989,7 +13989,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-colbert-v2-64",
@@ -14005,7 +14005,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v2-base-code",
@@ -14021,7 +14021,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v2-base-de",
@@ -14037,7 +14037,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v2-base-en",
@@ -14053,7 +14053,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v2-base-es",
@@ -14069,7 +14069,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v2-base-zh",
@@ -14085,7 +14085,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embeddings-v2-small-en",
@@ -14101,7 +14101,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-reranker-v2-base-multilingual",
@@ -14144,7 +14144,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-colbert-v1-en",
@@ -14160,7 +14160,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embedding-b-en-v1",
@@ -14176,7 +14176,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embedding-l-en-v1",
@@ -14192,7 +14192,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embedding-s-en-v1",
@@ -14208,7 +14208,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-embedding-t-en-v1",
@@ -14224,7 +14224,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-reranker-v1-tiny-en",
@@ -14346,7 +14346,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-code-embeddings-0.5b-GGUF",
@@ -14365,7 +14365,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-code-embeddings-0.5b-mlx",
@@ -14384,7 +14384,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-code-embeddings-1.5b",
@@ -14403,7 +14403,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-code-embeddings-1.5b-GGUF",
@@ -14422,7 +14422,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-code-embeddings-1.5b-mlx",
@@ -14441,7 +14441,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 16384
+      "max_batch_size": 16384
     },
     {
       "name": "jinaai/jina-reranker-m0",
@@ -17869,7 +17869,7 @@
       ],
       "content_length": 0,
       "max_output": 0,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "minimaxai/VTP-Large-f16d64",
@@ -17886,7 +17886,7 @@
       ],
       "content_length": 0,
       "max_output": 0,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "minimaxai/VTP-Small-f16d64",
@@ -17903,7 +17903,7 @@
       ],
       "content_length": 0,
       "max_output": 0,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "minimaxi-image-01",
@@ -18036,7 +18036,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 16
+      "max_batch_size": 16
     },
     {
       "name": "mistral/mistral-large-latest",
@@ -19159,7 +19159,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "netease-youdao/bce-reranker-base_v1",
@@ -19971,7 +19971,7 @@
       ],
       "max_dimension": 3072,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/llama-nemotron-embed-1b-v2",
@@ -19989,7 +19989,7 @@
         1024,
         2048
       ],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/llama-nemotron-embed-vl-1b-v2",
@@ -20004,7 +20004,7 @@
       "dimensions": [],
       "content_length": 10240,
       "max_output": 10240,
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/llama-nemotron-embed-vl-1b-v2-fp8",
@@ -20017,7 +20017,7 @@
       ],
       "max_dimension": 2048,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/llama-nemotron-rerank-1b-v2",
@@ -20050,7 +20050,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/nemotron-colembed-vl-8b-v2",
@@ -20063,7 +20063,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/nv-genmol-89m-v2",
@@ -20367,7 +20367,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/llama-nemoretriever-colembed-3b-v1",
@@ -20379,7 +20379,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/multitalker-parakeet-streaming-0.6b-v1",
@@ -20491,7 +20491,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/nv-genmol-89m-v1",
@@ -20785,7 +20785,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/C-RADIOv2-H",
@@ -20798,7 +20798,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/C-RADIOv2-L",
@@ -20811,7 +20811,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/C-RADIOv3-B",
@@ -20824,7 +20824,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/C-RADIOv3-g",
@@ -20837,7 +20837,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/C-RADIOv3-H",
@@ -20850,7 +20850,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/C-RADIOv3-L",
@@ -20863,7 +20863,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/C-RADIOv4-H",
@@ -20876,7 +20876,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/C-RADIOv4-SO400M",
@@ -20889,7 +20889,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/canary-1b",
@@ -20956,7 +20956,7 @@
       ],
       "max_dimension": 256,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/Cosmos-Embed1-336p",
@@ -20969,7 +20969,7 @@
       ],
       "max_dimension": 768,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/Cosmos-Embed1-448p",
@@ -20982,7 +20982,7 @@
       ],
       "max_dimension": 768,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/Cosmos-Embed1-448p-anomaly-detection",
@@ -20995,7 +20995,7 @@
       ],
       "max_dimension": 768,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/Cosmos-H-Surgical",
@@ -21737,7 +21737,7 @@
       ],
       "max_dimension": 3072,
       "dimensions": [],
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "nvidia/LocateAnything-3B",
@@ -24041,7 +24041,7 @@
       "dimensions": [
         512
       ],
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "openai/clip-vit-base-patch32",
@@ -24057,7 +24057,7 @@
       "dimensions": [
         512
       ],
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "openai/clip-vit-large-patch14",
@@ -24072,7 +24072,7 @@
       "dimensions": [
         768
       ],
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "openai/clip-vit-large-patch14-336",
@@ -24088,7 +24088,7 @@
       "dimensions": [
         768
       ],
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "openai/consistency-decoder",
@@ -24721,7 +24721,7 @@
       ],
       "max_dimension": 3072,
       "dimensions": [],
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "openai/text-embedding-3-small",
@@ -24731,7 +24731,7 @@
       ],
       "max_dimension": 1536,
       "dimensions": [],
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "openai/text-embedding-ada-002",
@@ -24741,7 +24741,7 @@
       ],
       "max_dimension": 1536,
       "dimensions": [],
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "openai/tts",
@@ -26126,7 +26126,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "Qwen/Qwen3-Embedding-4B-batch",
@@ -26139,7 +26139,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "Qwen/Qwen3-Embedding-8B-batch",
@@ -26152,7 +26152,7 @@
       ],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "Qwen/Qwen3-TTS",
@@ -28751,7 +28751,7 @@
       "dimensions": [],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "qwen/qwen3-embedding-0.6b-gguf",
@@ -28765,7 +28765,7 @@
       "dimensions": [],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "qwen/qwen3-embedding-4b",
@@ -28779,7 +28779,7 @@
       "dimensions": [],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 1024
+      "max_batch_size": 1024
     },
     {
       "name": "qwen/qwen3-embedding-4b-gguf",
@@ -28793,7 +28793,7 @@
       "dimensions": [],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "qwen/qwen3-embedding-8b",
@@ -28807,7 +28807,7 @@
       "dimensions": [],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 32
+      "max_batch_size": 32
     },
     {
       "name": "qwen/qwen3-embedding-8b-gguf",
@@ -28821,7 +28821,7 @@
       "dimensions": [],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "qwen/qwen3-forcedaligner-0.6b",
@@ -29834,7 +29834,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "qwen/qwen3-vl-embedding-2b",
@@ -29848,7 +29848,7 @@
       "dimensions": [],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "qwen/qwen3-vl-embedding-8b",
@@ -29862,7 +29862,7 @@
       "dimensions": [],
       "content_length": 32768,
       "max_output": 32768,
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "qwen/qwen3-vl-flash",
@@ -34236,7 +34236,7 @@
       "dimensions": [],
       "content_length": 384,
       "max_output": 384,
-      "batch_size": 16
+      "max_batch_size": 16
     },
     {
       "name": "rerank-2.5",
@@ -34821,7 +34821,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "sentence-transformers/all-MiniLM-L6-v2",
@@ -34834,7 +34834,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "sentence-transformers/all-mpnet-base-v2",
@@ -34847,7 +34847,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "sentence-transformers/paraphrase-MiniLM-L6-v2",
@@ -34860,7 +34860,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "sentence-transformers/clip-ViT-B-32-multilingual-v1",
@@ -34873,7 +34873,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "sentence-transformers/multi-qa-mpnet-base-dot-v1",
@@ -34886,7 +34886,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "sentence-transformers/clip-ViT-B-32",
@@ -34899,7 +34899,7 @@
       ],
       "content_length": 77,
       "max_output": 77,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "sesame/csm-1b",
@@ -34961,7 +34961,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "slides_glm_agent",
@@ -37580,7 +37580,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "tencent/MimicMotion",
@@ -37600,7 +37600,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "tencent/Penguin-VL-2B",
@@ -37866,7 +37866,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "tencent/Youtu-HiChunk",
@@ -37879,7 +37879,7 @@
       ],
       "max_dimension": null,
       "dimensions": [],
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "tencent/Youtu-LLM-2B",
@@ -37959,7 +37959,7 @@
         "chat"
       ],
       "alias": [],
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "text-embedding-3-small",
@@ -37968,7 +37968,7 @@
         "chat"
       ],
       "alias": [],
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "text-embedding-ada-002",
@@ -37977,7 +37977,7 @@
         "chat"
       ],
       "alias": [],
-      "batch_size": 2048
+      "max_batch_size": 2048
     },
     {
       "name": "text-moderation-latest",
@@ -38032,7 +38032,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "thenlper/gte-large",
@@ -38045,7 +38045,7 @@
       ],
       "content_length": 512,
       "max_output": 512,
-      "batch_size": 1
+      "max_batch_size": 1
     },
     {
       "name": "THUDM/GLM-4.1V-9B-Thinking",
@@ -38447,7 +38447,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-02",
@@ -38459,7 +38459,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-2",
@@ -38471,7 +38471,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-3",
@@ -38483,7 +38483,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-3-large",
@@ -38498,7 +38498,7 @@
         1024,
         2048
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-3-lite",
@@ -38510,7 +38510,7 @@
       ],
       "max_dimension": 512,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-3.5",
@@ -38525,7 +38525,7 @@
         1024,
         2048
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-3.5-lite",
@@ -38540,7 +38540,7 @@
         1024,
         2048
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-4",
@@ -38557,7 +38557,7 @@
         1024,
         2048
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-4-large",
@@ -38574,7 +38574,7 @@
         1024,
         2048
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-4-lite",
@@ -38591,7 +38591,7 @@
         1024,
         2048
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-4-nano",
@@ -38608,7 +38608,7 @@
         1024,
         2048
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-code-2",
@@ -38618,7 +38618,7 @@
       ],
       "max_dimension": 1536,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-code-3",
@@ -38633,7 +38633,7 @@
         1024,
         2048
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-finance-2",
@@ -38643,7 +38643,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-large-2",
@@ -38655,7 +38655,7 @@
       ],
       "max_dimension": 1536,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-large-2-instruct",
@@ -38667,7 +38667,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-law-2",
@@ -38677,7 +38677,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-lite-01",
@@ -38689,7 +38689,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-lite-01-instruct",
@@ -38701,7 +38701,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-lite-02-instruct",
@@ -38713,7 +38713,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-multilingual-2",
@@ -38725,7 +38725,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-multimodal-3",
@@ -38740,7 +38740,7 @@
       ],
       "max_dimension": 1024,
       "dimensions": [],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage/voyage-multimodal-3.5",
@@ -38760,7 +38760,7 @@
         1024,
         2048
       ],
-      "batch_size": 1000
+      "max_batch_size": 1000
     },
     {
       "name": "voyage-3-large",
@@ -40763,7 +40763,7 @@
       "dimensions": [],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 512
+      "max_batch_size": 512
     },
     {
       "name": "zai-org/embedding-3",
@@ -40782,7 +40782,7 @@
       ],
       "content_length": 8192,
       "max_output": 8192,
-      "batch_size": 512
+      "max_batch_size": 512
     },
     {
       "name": "zai-org/GLM-ASR-Nano-2512",
@@ -41423,7 +41423,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 512
+      "max_batch_size": 512
     },
     {
       "name": "Zyphra/Zonos-v0.1-hybrid",
