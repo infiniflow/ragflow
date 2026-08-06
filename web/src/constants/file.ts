@@ -18,4 +18,5 @@ export const FileIconMap = {
   mkv: 'mkv',
   rmvb: 'rmvb',
   wav: 'wav',
+  json: 'json',
 };
