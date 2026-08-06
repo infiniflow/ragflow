@@ -149,7 +149,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 1
+      "batch_size": 96
     },
     {
       "name": "cohere.embed-multilingual-v3",
@@ -157,7 +157,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 1
+      "batch_size": 96
     },
     {
       "name": "cohere.embed-v4:0",
@@ -165,7 +165,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 1
+      "batch_size": 96
     }
   ]
 }

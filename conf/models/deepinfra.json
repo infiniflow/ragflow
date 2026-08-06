@@ -35,7 +35,7 @@
       "model_types": [
         "embedding"
       ],
-      "batch_size": 2048
+      "batch_size": 1024
     },
     {
       "name": "hexgrad/Kokoro-82M",
