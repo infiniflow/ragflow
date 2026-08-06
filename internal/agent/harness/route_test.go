@@ -74,6 +74,48 @@ func TestRouteNode_EmptyQuestionFallsBack(t *testing.T) {
 	}
 }
 
+// TestRouteNode_SuggestsCompilation asserts the route preserves a normalized
+// compiled-artifact suggestion (P5) so the production runner can prefer the wiki
+// tool.
+func TestRouteNode_SuggestsCompilation(t *testing.T) {
+	installChat(t, `{"question_type":"analytical","requires_decomposition":true,"suggests_compilation":"wiki"}`)
+	r := RouteNode(context.Background(), nil, "What does the domain say about X?", "medium")
+	if r.SuggestsCompilation != "wiki" {
+		t.Errorf("suggests_compilation = %q, want wiki", r.SuggestsCompilation)
+	}
+}
+
+// TestNormalizeCompilationSuggestion asserts free-text suggestions map to the
+// canonical keys and unknown/null collapse to "".
+func TestNormalizeCompilationSuggestion(t *testing.T) {
+	cases := map[string]string{
+		"wiki":      "wiki",
+		"WIKI":      "wiki",
+		"compiled":  "wiki",
+		"graph":     "graph",
+		"kg":        "graph",
+		"toc":       "toc",
+		"null":      "",
+		"":          "",
+		"spaghetti": "",
+	}
+	for in, want := range cases {
+		if got := normalizeCompilationSuggestion(in); got != want {
+			t.Errorf("normalizeCompilationSuggestion(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestRouteNode_WikiSuggestionSurvivesFence asserts a fenced JSON route still
+// carries the wiki suggestion through decide().
+func TestRouteNode_WikiSuggestionSurvivesFence(t *testing.T) {
+	installChat(t, "```json\n{\"question_type\":\"procedural\",\"requires_decomposition\":false,\"suggests_compilation\":\"graph\"}\n```")
+	r := RouteNode(context.Background(), nil, "How is this structured?", "medium")
+	if r.SuggestsCompilation != "graph" {
+		t.Errorf("suggests_compilation = %q, want graph", r.SuggestsCompilation)
+	}
+}
+
 // TestPlannerNode_DirectMode asserts a non-decomposed route yields one coarse
 // claim without calling the LLM.
 func TestPlannerNode_DirectMode(t *testing.T) {

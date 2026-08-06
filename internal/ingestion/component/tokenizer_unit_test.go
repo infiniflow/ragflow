@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
@@ -54,6 +55,10 @@ type embeddingCallResult struct {
 
 func (s *stubEmbedder) MaxTokens() int {
 	return s.maxTokens
+}
+
+func (s *stubEmbedder) BatchSize() int {
+	return 16
 }
 
 func (s *stubEmbedder) Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error) {
@@ -436,20 +441,22 @@ func TestTruncateForEmbedding_UnconfiguredClampsToDefault(t *testing.T) {
 
 // TestEmbeddingBatchSizeEnvVar covers Tokenizer Omission-3: the batch size
 // must be configurable via TOKENIZER_EMBEDDING_BATCH_SIZE env var, matching
-// Python's configurable settings.EMBEDDING_BATCH_SIZE.
+// Python's configurable settings.EMBEDDING_BATCH_SIZE. The resolved batch size
+// is now provided by models.GetEmbeddingBatchSize (env override -> provider
+// capability -> default), surfaced through Embedder.BatchSize().
 func TestEmbeddingBatchSizeEnvVar(t *testing.T) {
-	if got := embeddingBatchSize(); got != 16 {
-		t.Errorf("embeddingBatchSize() default = %d, want 16", got)
+	if got := models.GetEmbeddingBatchSize(""); got != models.DefaultEmbeddingBatchSize {
+		t.Errorf("GetEmbeddingBatchSize() default = %d, want %d", got, models.DefaultEmbeddingBatchSize)
 	}
 	os.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "32")
 	t.Cleanup(func() { os.Unsetenv("TOKENIZER_EMBEDDING_BATCH_SIZE") })
-	if got := embeddingBatchSize(); got != 32 {
-		t.Errorf("embeddingBatchSize() after env = %d, want 32", got)
+	if got := models.GetEmbeddingBatchSize(""); got != 32 {
+		t.Errorf("GetEmbeddingBatchSize() after env = %d, want 32", got)
 	}
 	// Invalid value falls back to default.
 	os.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "bad")
-	if got := embeddingBatchSize(); got != 16 {
-		t.Errorf("embeddingBatchSize() invalid env = %d, want 16", got)
+	if got := models.GetEmbeddingBatchSize(""); got != models.DefaultEmbeddingBatchSize {
+		t.Errorf("GetEmbeddingBatchSize() invalid env = %d, want %d", got, models.DefaultEmbeddingBatchSize)
 	}
 }
 

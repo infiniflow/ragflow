@@ -30,6 +30,7 @@ import (
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/channels"
 	"ragflow/internal/handler"
+	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
 	"ragflow/internal/mcp"
 	"ragflow/internal/router"
@@ -41,6 +42,7 @@ import (
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/nav"
 	"ragflow/internal/service/nlp"
+	"ragflow/internal/service/wikisearch"
 	"ragflow/internal/storage"
 	"ragflow/internal/syncer"
 	"ragflow/internal/tokenizer"
@@ -554,7 +556,15 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, args *serverArg
 	// writes available_int=0 compiled chunks; they just won't be merged until
 	// the consumer is available.
 	globalConfig := server.GetConfig()
-	ingestor := ingestion.NewIngestor(*args.name, 2, []string{"pdf", "docx", "txt"})
+	ingestorCfg := globalConfig.GetIngestorConfig()
+	const maxIngestorConcurrency = int32(1<<30 - 1)
+	if ingestorCfg.MaxConcurrentWorkers > int(maxIngestorConcurrency) {
+		return fmt.Errorf("ingestor max_concurrent_workers %d exceeds maximum %d", ingestorCfg.MaxConcurrentWorkers, maxIngestorConcurrency)
+	}
+	// Apply the configured compiler pool size (no-op when 0; the pool keeps its
+	// vCPU default, overridable via KC_COMPILE_CONCURRENCY).
+	knowledge_compile.SetCompilerConcurrency(ingestorCfg.CompilerPoolSize)
+	ingestor := ingestion.NewIngestor(*args.name, int32(ingestorCfg.MaxConcurrentWorkers), []string{"pdf", "docx", "txt"})
 	ingestor.SetKnowledgeCompileModelConfig(
 		globalConfig.GetDefaultChatModel().Name,
 		globalConfig.GetDefaultEmbeddingModel().Name,
@@ -849,6 +859,14 @@ func startServer(ctx context.Context) {
 	// internal/service/nlp). The embedder resolves the tenant's embedding model
 	// on demand so Search/UpsertDoc can embed queries/summaries automatically.
 	nav.SetNavService(nlp.NewNavService(service.NewNavEmbedder(modelProviderService, "")))
+
+	// Install the compiled-wiki search service. It is backed directly by the
+	// document engine: QueryPages filters the tenant-scoped index to
+	// compile_kwd="wiki_page" (+ supported kinds) so ordinary source chunks are
+	// never relabeled as wiki pages, and BackfillChunks fetches original chunks
+	// by id. When the engine is unavailable the service degrades to empty so the
+	// agent falls back to hybrid search (no failing call).
+	wikisearch.SetService(wikisearch.NewEngineService(engine.Get()))
 
 	// Initialize router
 	r := router.NewRouter(authHandler,

@@ -21,8 +21,11 @@ import (
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+
+	"go.uber.org/zap"
 )
 
 // Consumer is the dataset-level post-processing worker (§11.5). Multiple
@@ -183,10 +186,19 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 	// must leave the claimed batch in the backlog for reclamation/retry rather
 	// than silently dropping it (C5: never ack what we failed to merge).
 	if batchErr != nil {
+		common.Error("knowledge_compile: batch processing failed, leaving batch for retry",
+			batchErr,
+			zap.String("dataset_id", datasetID),
+			zap.Int("entries", len(cr.Entries)))
+		if err := c.scheduler.SetError(ctx, datasetID, cr.Token, batchErr.Error()); err != nil {
+			common.Warn("knowledge_compile: failed to record error_msg",
+				zap.String("dataset_id", datasetID), zap.Error(err))
+		}
 		return
 	}
 	if _, err := c.scheduler.Ack(ctx, datasetID, cr.Token, cr.Entries); err != nil {
-		_ = err
+		common.Warn("knowledge_compile: ack failed",
+			zap.String("dataset_id", datasetID), zap.Error(err))
 	}
 }
 
@@ -195,6 +207,10 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 // returns an error if any reader/dedup/writer step fails so the caller can
 // leave the batch for reclamation instead of acking dropped work.
 func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries []BacklogEntry) error {
+	common.Info("knowledge_compile: processing claimed batch",
+		zap.String("dataset_id", kb),
+		zap.String("tenant_id", tenant),
+		zap.Int("entries", len(entries)))
 	c.mu.Lock()
 	if c.tombs == nil {
 		c.tombs = map[string]map[string]uint64{}
@@ -355,7 +371,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 	// fan it out across the shared global compilerPool (vCPU-sized). Output order
 	// is irrelevant: merged rows are upserted by their idempotent dataset-level
 	// id, and each candidate lands in exactly one group / the unmatched set.
-	jobs := make([]compilerJob, 0, len(candidates))
+	jobs := make([]CompilerJob, 0, len(candidates))
 	for _, cand := range candidates {
 		cand := cand
 		jobs = append(jobs, func() error {
@@ -437,5 +453,10 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb string, entries 
 		delete(c.tombs[kb], docID)
 	}
 	c.mu.Unlock()
+	common.Info("knowledge_compile: batch merge complete",
+		zap.String("dataset_id", kb),
+		zap.Int("completed_docs", len(completed)),
+		zap.Int("deleted_docs", len(deleted)),
+		zap.Int("merged_rows_written", len(mergedFinal)))
 	return nil
 }

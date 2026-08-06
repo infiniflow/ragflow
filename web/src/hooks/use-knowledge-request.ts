@@ -1,5 +1,6 @@
 import { useHandleFilterSubmit } from '@/components/list-filter-bar/use-handle-filter-submit';
 import message from '@/components/ui/message';
+import { isGoDatasetBackend } from '@/utils/api-proxy-scheme';
 import { GenerateType, ParseType } from '@/constants/knowledge';
 import { ResponsePostType, ResponseType } from '@/interfaces/database/base';
 import {
@@ -964,6 +965,13 @@ export const useRunArtifactIndex = (kind: string) => {
   } = useMutation({
     mutationKey: [KnowledgeApiAction.RunArtifactIndex],
     mutationFn: async () => {
+      // Go/hybrid: wiki compilation is auto-driven by the scheduler; there is no
+      // legacy RunIndex endpoint. Reject instead of reporting success so a wiki
+      // update can't be mistaken for a real re-merge (the UI hides/disables the
+      // update control — plan v4.1 §4.2).
+      if (isGoDatasetBackend()) {
+        throw new Error(i18n.t('message.compileNotSupported'));
+      }
       const { data } = await runIndex(knowledgeBaseId, 'artifact');
       if (data?.code === 0) {
         message.success(i18n.t('message.operated'));

@@ -38,6 +38,13 @@ func (e *embedder) MaxTokens() int {
 	return e.model.MaxTokens
 }
 
+func (e *embedder) BatchSize() int {
+	if e == nil || e.model == nil {
+		return models.DefaultEmbeddingBatchSize
+	}
+	return e.model.ResolveBatchSize()
+}
+
 func (e *embedder) Encode(ctx context.Context, texts []string) ([]componentpkg.EmbeddingResult, error) {
 	if e.model.ModelDriver == nil {
 		return nil, fmt.Errorf("embedder: embedding model driver is nil for model %v", e.model.ModelName)
