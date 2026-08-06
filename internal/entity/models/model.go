@@ -419,6 +419,9 @@ func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
 		if model.MaxDimension != nil {
 			modelData["max_dimension"] = *model.MaxDimension
 		}
+		if model.MaxBatchSize != nil {
+			modelData["batch_size"] = *model.MaxBatchSize
+		}
 		if len(model.Dimensions) > 0 {
 			modelData["dimensions"] = model.Dimensions
 		}
@@ -493,6 +496,7 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 			"max_output":    model.MaxOutput,
 			"model_types":   model.ModelTypes,
 			"max_dimension": model.MaxDimension,
+			"batch_size":    model.MaxBatchSize,
 			"dimensions":    model.Dimensions,
 		}
 		if model.Thinking != nil {
@@ -607,6 +611,7 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 			"name":        model.Name,
 			"max_output":  model.MaxOutput,
 			"model_types": model.ModelTypes,
+			"batch_size":  model.MaxBatchSize,
 			//"features":    getFeaturesMap(model.Features),
 		}
 
@@ -670,6 +675,7 @@ func (pm *ProviderManager) SearchByType(modelType string) ModelResponse {
 					"name":        model.Name,
 					"max_output":  model.MaxOutput,
 					"model_types": model.ModelTypes,
+					"batch_size":  model.MaxBatchSize,
 					//"features":    getFeaturesMap(model.Features),
 				}
 				resp.Data = append(resp.Data, modelData)

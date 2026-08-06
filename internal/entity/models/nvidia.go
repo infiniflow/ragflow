@@ -694,6 +694,7 @@ func parseNvidiaModelList(modelList ModelList, provider *Provider) []ListModelRe
 			response.ModelTypes = append([]string(nil), preset.ModelTypes...)
 			response.Thinking = preset.Thinking
 			response.MaxDimension = preset.MaxDimension
+			response.MaxBatchSize = preset.MaxBatchSize
 			response.Dimensions = append([]int(nil), preset.Dimensions...)
 		} else {
 			maxTokens := defaultMaxTokens

@@ -398,6 +398,7 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 		result = append(result, map[string]interface{}{
 			"name":           model.Name,
 			"max_dimension":  model.MaxDimension,
+			"batch_size":     model.MaxBatchSize,
 			"dimensions":     model.Dimensions,
 			"content_length": model.ContentLength,
 			"max_output":     model.MaxOutput,
@@ -514,6 +515,9 @@ func setDiscoveredModelMetadata(extra map[string]interface{}, model modelModule.
 	extra["max_tokens"] = maxTokens
 	if model.MaxDimension != nil {
 		extra["max_dimension"] = *model.MaxDimension
+	}
+	if model.MaxBatchSize != nil {
+		extra["batch_size"] = *model.MaxBatchSize
 	}
 	if len(model.Dimensions) > 0 {
 		extra["dimensions"] = model.Dimensions
@@ -1178,7 +1182,9 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 				msg := []modelModule.Message{{Role: "user", Content: "Hi"}}
 				_, err = driver.ChatWithMessages(ctx, modelName, msg, apiConfig, nil, nil)
 			case "embedding":
-				_, err = driver.Embed(ctx, &modelName, []string{"test"}, apiConfig, nil, nil)
+				if err = validateEmbeddingModel(model, 0, 1); err == nil {
+					_, err = driver.Embed(ctx, &modelName, []string{"test"}, apiConfig, nil, nil)
+				}
 			case "rerank":
 				_, err = driver.Rerank(ctx, &modelName, "test", []string{"test"}, apiConfig, &modelModule.RerankConfig{}, nil)
 			case "tts":
@@ -2509,6 +2515,7 @@ type tenantModelExtra struct {
 	MaxTokens    *int     `json:"max_tokens"`
 	ModelTypes   []string `json:"model_types"`
 	MaxDimension *int     `json:"max_dimension"`
+	MaxBatchSize *int     `json:"batch_size"`
 	Dimensions   []int    `json:"dimensions"`
 	Thinking     *bool    `json:"thinking"`
 }
@@ -2550,6 +2557,9 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 	}
 	if extra.MaxDimension != nil && *extra.MaxDimension > 0 {
 		model.MaxDimension = extra.MaxDimension
+	}
+	if extra.MaxBatchSize != nil && *extra.MaxBatchSize > 0 {
+		model.MaxBatchSize = extra.MaxBatchSize
 	}
 	if len(extra.Dimensions) > 0 {
 		model.Dimensions = append([]int(nil), extra.Dimensions...)
@@ -2864,30 +2874,21 @@ func validateEmbeddingModel(model *modelModule.Model, requestedDimension, reques
 	if model == nil {
 		return fmt.Errorf("embedding model is nil")
 	}
-
-	if requestedDimension <= 0 {
-		return fmt.Errorf("input dimension <= 0")
+	if requestedDimension < 0 {
+		return fmt.Errorf("input dimension < 0")
 	}
-
-	if requestedBatchSize <= 0 {
-		return fmt.Errorf("input batch size <= 0")
+	if requestedBatchSize < 0 {
+		return fmt.Errorf("input batch size < 0")
 	}
-
-	if model.MaxDimension == nil {
-		return fmt.Errorf("input embedding max dimension is nil, %s", model.Name)
-	}
-
-	if model.MaxBatchSize == nil {
-		return fmt.Errorf("input embedding max batch size is nil, %s", model.Name)
-	}
-
-	if *model.MaxBatchSize < requestedBatchSize {
+	if model.MaxBatchSize != nil && requestedBatchSize > *model.MaxBatchSize {
 		return fmt.Errorf("input embedding max batch size is more than limitation, %s", model.Name)
 	}
-
+	if requestedDimension == 0 {
+		return nil
+	}
 	if len(model.Dimensions) > 0 {
-		for _, dim := range model.Dimensions {
-			if dim == requestedDimension {
+		for _, dimension := range model.Dimensions {
+			if dimension == requestedDimension {
 				return nil
 			}
 		}
@@ -2906,7 +2907,6 @@ func validateEmbeddingModel(model *modelModule.Model, requestedDimension, reques
 			*model.MaxDimension,
 		)
 	}
-
 	return nil
 }
 

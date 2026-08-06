@@ -15,9 +15,9 @@ import (
 	modelModule "ragflow/internal/entity/models"
 )
 
-func TestValidateEmbeddingDimension(t *testing.T) {
+func TestValidateEmbeddingModel(t *testing.T) {
 	maxDimension := 2048
-	batchSize := 128
+	maxBatchSize := 128
 
 	tests := []struct {
 		name               string
@@ -27,44 +27,81 @@ func TestValidateEmbeddingDimension(t *testing.T) {
 		wantErr            string
 	}{
 		{
-			name:               "unset requested dimension",
-			model:              &modelModule.Model{MaxDimension: &maxDimension, Dimensions: []int{256, 512}, MaxBatchSize: &batchSize},
-			requestedDimension: 0,
-			requestedBatchSize: 0,
-			wantErr:            "zero request dimension",
-		},
-		{
-			name:               "allows missing model schema",
-			model:              nil,
-			requestedDimension: 256,
-			requestedBatchSize: 128,
+			name:               "rejects nil model",
+			requestedDimension: 1024,
+			requestedBatchSize: 16,
 			wantErr:            "embedding model is nil",
 		},
 		{
+			name:               "rejects negative dimension",
+			model:              &modelModule.Model{},
+			requestedDimension: -1,
+			requestedBatchSize: 1,
+			wantErr:            "input dimension < 0",
+		},
+		{
+			name:               "rejects negative batch size",
+			model:              &modelModule.Model{},
+			requestedDimension: 0,
+			requestedBatchSize: -1,
+			wantErr:            "input batch size < 0",
+		},
+		{
+			name:               "allows provider default dimension",
+			model:              &modelModule.Model{MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize},
+			requestedDimension: 0,
+			requestedBatchSize: 128,
+		},
+		{
 			name:               "allows dimension listed in explicit options",
-			model:              &modelModule.Model{Name: "embedding-3", MaxDimension: &maxDimension, Dimensions: []int{256, 512, 1024, 2048}},
+			model:              &modelModule.Model{Name: "embedding-3", MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize, Dimensions: []int{256, 512, 1024, 2048}},
 			requestedDimension: 1024,
 			requestedBatchSize: 128,
 		},
 		{
 			name:               "rejects dimension not listed in explicit options",
-			model:              &modelModule.Model{Name: "embedding-3", MaxDimension: &maxDimension, Dimensions: []int{256, 512, 1024, 2048}},
+			model:              &modelModule.Model{Name: "embedding-3", MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize, Dimensions: []int{256, 512, 1024, 2048}},
 			requestedDimension: 1536,
 			requestedBatchSize: 128,
 			wantErr:            "supported dimensions",
 		},
 		{
 			name:               "allows custom dimension within max dimension",
-			model:              &modelModule.Model{Name: "flex-embedding", MaxDimension: &maxDimension},
+			model:              &modelModule.Model{Name: "flex-embedding", MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize},
 			requestedDimension: 1536,
-			requestedBatchSize: 128,
+			requestedBatchSize: 1,
 		},
 		{
 			name:               "rejects custom dimension above max dimension",
-			model:              &modelModule.Model{Name: "flex-embedding", MaxDimension: &maxDimension},
+			model:              &modelModule.Model{Name: "flex-embedding", MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize},
 			requestedDimension: 4096,
-			requestedBatchSize: 128,
+			requestedBatchSize: 1,
 			wantErr:            "max dimension",
+		},
+		{
+			name:               "allows dimension when max dimension is unspecified",
+			model:              &modelModule.Model{Name: "fixed-embedding", MaxBatchSize: &maxBatchSize},
+			requestedDimension: 1024,
+			requestedBatchSize: 1,
+		},
+		{
+			name:               "allows batch at model limit",
+			model:              &modelModule.Model{Name: "embedding-3", MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize},
+			requestedDimension: 1024,
+			requestedBatchSize: 128,
+		},
+		{
+			name:               "rejects batch above model limit",
+			model:              &modelModule.Model{Name: "embedding-3", MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize},
+			requestedDimension: 1024,
+			requestedBatchSize: 129,
+			wantErr:            "max batch size",
+		},
+		{
+			name:               "allows batch when model limit is unspecified",
+			model:              &modelModule.Model{Name: "custom-embedding", MaxDimension: &maxDimension},
+			requestedDimension: 1024,
+			requestedBatchSize: 10000,
 		},
 	}
 
@@ -89,17 +126,17 @@ func TestValidateEmbeddingDimension(t *testing.T) {
 
 func TestModelInfoWithTenantExtraAppliesEmbeddingDimensions(t *testing.T) {
 	factoryMaxDimension := 2048
-	batchSize := 128
+	factoryBatchSize := 128
 	modelInfo := &modelModule.Model{
 		Name:         "embedding-3",
 		MaxDimension: &factoryMaxDimension,
+		MaxBatchSize: &factoryBatchSize,
 		Dimensions:   []int{1024, 2048},
-		MaxBatchSize: &batchSize,
 		ModelTypes:   []string{"embedding"},
 		ModelTypeMap: map[string]bool{"embedding": true},
 	}
 	modelEntity := &entity.TenantModel{
-		Extra: `{"max_dimension":768,"dimensions":[384,768],"model_types":["embedding"]}`,
+		Extra: `{"max_dimension":768,"batch_size":16,"dimensions":[384,768],"model_types":["embedding"]}`,
 	}
 
 	merged, err := modelInfoWithTenantExtra(modelInfo, modelEntity)
@@ -112,6 +149,9 @@ func TestModelInfoWithTenantExtraAppliesEmbeddingDimensions(t *testing.T) {
 	if merged.MaxDimension == nil || *merged.MaxDimension != 768 {
 		t.Fatalf("MaxDimension = %v, want 768", merged.MaxDimension)
 	}
+	if merged.MaxBatchSize == nil || *merged.MaxBatchSize != 16 {
+		t.Fatalf("MaxBatchSize = %v, want 16", merged.MaxBatchSize)
+	}
 	if len(merged.Dimensions) != 2 || merged.Dimensions[0] != 384 || merged.Dimensions[1] != 768 {
 		t.Fatalf("Dimensions = %v, want [384 768]", merged.Dimensions)
 	}
@@ -123,6 +163,9 @@ func TestModelInfoWithTenantExtraAppliesEmbeddingDimensions(t *testing.T) {
 	}
 	if modelInfo.MaxDimension == nil || *modelInfo.MaxDimension != factoryMaxDimension {
 		t.Fatalf("factory MaxDimension was mutated: %v", modelInfo.MaxDimension)
+	}
+	if modelInfo.MaxBatchSize == nil || *modelInfo.MaxBatchSize != factoryBatchSize {
+		t.Fatalf("factory MaxBatchSize was mutated: %v", modelInfo.MaxBatchSize)
 	}
 	if len(modelInfo.Dimensions) != 2 || modelInfo.Dimensions[0] != 1024 || modelInfo.Dimensions[1] != 2048 {
 		t.Fatalf("factory Dimensions were mutated: %v", modelInfo.Dimensions)
