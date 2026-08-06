@@ -23,7 +23,10 @@ _EVIDENCE_ANALYSIS_SYSTEM = """You are controlling a multi-hop RAG retrieval loo
 Judge whether the retrieved passages verify the claim using only the provided evidence.
 If the claim is not verified, produce targeted next search queries that use entities,
 dates, names, or relationships discovered in the evidence and move closer to the
-original question. Return JSON only."""
+original question.
+Distinguish final-answer entities from bridge entities. If the passages identify
+only a clue node in the chain, keep the claim incomplete and search for the
+remaining relation needed by the original question. Return JSON only."""
 
 _EVIDENCE_ANALYSIS_USER = """Original question:
 {question}
@@ -425,9 +428,9 @@ def _finalize(ctx: OrchestratorContext, tools, partial: bool, loop: int) -> dict
     for claim in ctx.claims:
         if claim.agent_result and claim.agent_result.report:
             status = "verified" if claim.is_verified else "incomplete"
-            combined.append(f"[{claim.claim_id}] {status}: {claim.agent_result.report[:500]}")
+            combined.append(f"[{claim.claim_id}] {status} ({claim.description}): {claim.agent_result.report[:500]}")
     if combined:
-        tools.kbinfos["pre_summary"] = "\n\n".join(combined)
+        tools.kbinfos["pre_summary"] = "Research findings. These may include bridge entities; the final answer must still satisfy the original question's requested role.\n\n" + "\n\n".join(combined)
 
     return {
         "verdict": ctx.verdict.__dict__ if ctx.verdict else None,
