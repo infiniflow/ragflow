@@ -168,7 +168,7 @@ func TestNvidiaFetchHostedCatalogPaginates(t *testing.T) {
 
 		start := query.Page * query.PageSize
 		end := min(start+query.PageSize, len(resources))
-		pageResources := []nvidiaCatalogResource{}
+		var pageResources []nvidiaCatalogResource
 		if start < len(resources) {
 			pageResources = resources[start:end]
 		}
