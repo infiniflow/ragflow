@@ -130,19 +130,11 @@ export function useBlueprintSelection({
     ],
   );
 
-  const handleExampleChange = useCallback(
-    (value: string) => {
-      form.setValue(examplePath, value, { shouldValidate: false });
-    },
-    [form, examplePath],
-  );
-
   return {
     selectedValue,
     options,
     handleSelect,
     instructionPath,
-    example,
-    handleExampleChange,
+    examplePath,
   };
 }

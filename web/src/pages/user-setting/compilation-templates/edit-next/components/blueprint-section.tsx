@@ -24,14 +24,8 @@ export function BlueprintSection({
 }: BlueprintSectionProps) {
   const { t } = useTranslation();
   const { data: presets } = useFetchWikiPresets();
-  const {
-    selectedValue,
-    options,
-    handleSelect,
-    instructionPath,
-    example,
-    handleExampleChange,
-  } = useBlueprintSelection({ form, selectedTemplateIndex, presets, builtins });
+  const { selectedValue, options, handleSelect, instructionPath, examplePath } =
+    useBlueprintSelection({ form, selectedTemplateIndex, presets, builtins });
 
   if (presets.length === 0) {
     return null;
@@ -61,12 +55,18 @@ export function BlueprintSection({
               <Textarea rows={8} resize={'vertical'} />
             </RAGFlowFormItem>
 
-            <div className="flex h-[50vh] min-h-0 flex-col">
-              <MarkdownEditor
-                content={String(example ?? '')}
-                onChange={handleExampleChange}
-              />
-            </div>
+            <RAGFlowFormItem
+              name={examplePath}
+              label={t('setting.example')}
+              className="flex h-[50vh] min-h-0 flex-col"
+            >
+              {(field) => (
+                <MarkdownEditor
+                  content={String(field.value ?? '')}
+                  onChange={field.onChange}
+                />
+              )}
+            </RAGFlowFormItem>
           </div>
         </div>
       </Collapse>

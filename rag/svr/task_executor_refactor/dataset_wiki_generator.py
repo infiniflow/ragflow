@@ -1289,9 +1289,9 @@ async def run_wiki(
     first_parser_cfg = first_parser_cfg if isinstance(first_parser_cfg, dict) else {}
     kb_chat_llm_id: Optional[str] = (first_parser_cfg.get("llm_id") or "").strip() or None
     first_instruction = first_parser_cfg.get("instruction")
-    first_page_example = first_parser_cfg.get("example")
+    first_example = first_parser_cfg.get("example")
     kb_writer_instruction: Optional[str] = first_instruction if isinstance(first_instruction, str) and first_instruction.strip() else None
-    kb_writer_page_example: Optional[str] = first_page_example if isinstance(first_page_example, str) and first_page_example.strip() else None
+    kb_writer_example: Optional[str] = first_example if isinstance(first_example, str) and first_example.strip() else None
     map_llm_pool = LLMCallPool(WIKI_MAP_LLM_POOL_SIZE, max_pending=WIKI_MAP_MAX_PENDING)
     n_docs = len(resolved_eligible)
     map_queue: asyncio.Queue = asyncio.Queue(maxsize=WIKI_MAP_QUEUE_SIZE)
@@ -1460,7 +1460,7 @@ async def run_wiki(
             max_workers=WIKI_REFINE_WORKERS,
             callback=_stage_cb("[wiki REFINE]"),
             instruction=kb_writer_instruction,
-            page_example=kb_writer_page_example,
+            example=kb_writer_example,
         )
     except Exception:
         logging.exception("wiki: REDUCE/PLAN/REFINE failed for kb %s", ctx.kb_id)
