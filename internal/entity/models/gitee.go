@@ -394,12 +394,12 @@ func (g *GiteeModel) OCRFile(ctx context.Context, modelName *string, content []b
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
 
-	if err := writer.WriteField("model", *modelName); err != nil {
+	if err = writer.WriteField("model", *modelName); err != nil {
 		return nil, fmt.Errorf("failed to write model field: %w", err)
 	}
 
 	if imageURL != nil {
-		if err := writer.WriteField("image", *imageURL); err != nil {
+		if err = writer.WriteField("image", *imageURL); err != nil {
 			return nil, fmt.Errorf("failed to write image URL: %w", err)
 		}
 	} else if content != nil && len(content) > 0 {
@@ -491,12 +491,12 @@ func (g *GiteeModel) ParseFile(ctx context.Context, modelName *string, content [
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
 
-	if err := writer.WriteField("model", *modelName); err != nil {
+	if err = writer.WriteField("model", *modelName); err != nil {
 		return nil, fmt.Errorf("failed to write model field: %w", err)
 	}
 
 	if documentURL != nil {
-		if err := writer.WriteField("file", *documentURL); err != nil {
+		if err = writer.WriteField("file", *documentURL); err != nil {
 			return nil, fmt.Errorf("failed to write file URL: %w", err)
 		}
 	} else if content != nil && len(content) > 0 {
@@ -853,7 +853,7 @@ func (g *GiteeModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Lis
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	taskListResp := []ListTaskStatus{}
+	var taskListResp []ListTaskStatus
 	for _, item := range giteeTaskList.Items {
 		taskListResp = append(taskListResp, ListTaskStatus{
 			TaskID: item.TaskID,
