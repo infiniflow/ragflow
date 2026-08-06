@@ -175,6 +175,44 @@ func TestCompileDelimiterListPattern(t *testing.T) {
 	}
 }
 
+func TestCompileDelimiterPatternListKeepBare(t *testing.T) {
+	// keepBare=true (children_delimiters): bare entries stay active and
+	// backtick entries contribute their inner content, all QuoteMeta'd and
+	// sorted longest-first by rune count.
+	pat := CompileDelimiterPatternList([]string{". ", "`###`", "#"}, true)
+	if pat == nil {
+		t.Fatal("expected a pattern from mixed bare + wrapped entries")
+	}
+	want := `###|\. |#`
+	if got := pat.String(); got != want {
+		t.Errorf("pattern = %q, want %q", got, want)
+	}
+	// Backtick is stripped: splitting on "###" matches the inner content, not
+	// the literal wrapped token.
+	if got := pat.FindString("a###b"); got != "###" {
+		t.Errorf("FindString(a###b) = %q, want %q", got, "###")
+	}
+	// Bare ". " stays active and is matched as the meta-escaped ". ".
+	if got := pat.FindString("alpha. beta"); got != ". " {
+		t.Errorf("FindString(alpha. beta) = %q, want %q", got, ". ")
+	}
+}
+
+func TestCompileDelimiterPatternListKeepBareFalse(t *testing.T) {
+	// keepBare=false must equal CompileDelimiterListPattern: bare entries
+	// ignored, only wrapped inner content participates.
+	if CompileDelimiterPatternList([]string{"\n", "!"}, false) != nil {
+		t.Fatal("bare entries should be ignored when keepBare=false")
+	}
+	pat := CompileDelimiterPatternList([]string{"`##`", "`#`"}, false)
+	if pat == nil {
+		t.Fatal("expected pattern from wrapped entries")
+	}
+	if got := pat.FindString("###"); got != "##" {
+		t.Errorf("got %q want ##", got)
+	}
+}
+
 func TestHasCustomDelimiterList(t *testing.T) {
 	if HasCustomDelimiterList([]string{"\n", "!"}) {
 		t.Fatal("bare list should be false")
