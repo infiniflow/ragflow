@@ -227,7 +227,6 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	metadata, err := indexdoc.ProcessChunksForPipeline(
 		chunks,
 		s.taskCtx.Doc.ID,
-		s.taskCtx.Doc.KbID,
 		*s.taskCtx.Doc.Name,
 		time.Now(),
 	)
@@ -495,7 +494,7 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 	// contract is unchanged, keeping the coupling one-directional.
 	if rs, ok := s.progressSink.(ResultSink); ok {
 		if resultDSL, e := BuildDebugResultDSL(dsl, output); e == nil {
-			rs.SetResult(resultDSL)
+			rs.SetResult(resultDSL, output)
 		}
 	}
 

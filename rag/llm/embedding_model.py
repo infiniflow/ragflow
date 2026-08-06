@@ -611,9 +611,9 @@ class MistralEmbed(Base):
     _FACTORY_NAME = "Mistral"
 
     def __init__(self, key, model_name="mistral-embed", base_url=None):
-        from mistralai.client import MistralClient
+        from mistralai.client import Mistral
 
-        self.client = MistralClient(api_key=key)
+        self.client = Mistral(api_key=key)
         self.model_name = model_name
 
     def encode(self, texts: list):
@@ -628,7 +628,7 @@ class MistralEmbed(Base):
             retry_max = 5
             while retry_max > 0:
                 try:
-                    res = self.client.embeddings(input=texts[i : i + batch_size], model=self.model_name)
+                    res = self.client.embeddings.create(inputs=texts[i : i + batch_size], model=self.model_name)
                     ress.extend([d.embedding for d in res.data])
                     token_count += total_token_count_from_response(res)
                     break
@@ -648,7 +648,7 @@ class MistralEmbed(Base):
         retry_max = 5
         while retry_max > 0:
             try:
-                res = self.client.embeddings(input=[truncate(text, DEFAULT_MAX_TOKENS)], model=self.model_name)
+                res = self.client.embeddings.create(inputs=[truncate(text, DEFAULT_MAX_TOKENS)], model=self.model_name)
                 return np.array(res.data[0].embedding), total_token_count_from_response(res)
             except Exception as _e:
                 if retry_max == 1:
@@ -973,7 +973,41 @@ class SILICONFLOWEmbed(Base):
     def _clean_batch(self, batch):
         if self.model_name in ["BAAI/bge-large-zh-v1.5", "BAAI/bge-large-en-v1.5"]:
             # limit 512, 340 is almost safe
-            return [" " if not text.strip() else truncate(text, 256) for text in batch]
+            limit = 256
+            cleaned = []
+            for index, text in enumerate(batch):
+                if not text.strip():
+                    cleaned.append(" ")
+                    continue
+                original_tokens = num_tokens_from_string(text)
+                if original_tokens > limit:
+                    logger.debug(
+                        "Embedding input truncated: model=%s input_index=%d original_tokens=%d target_tokens=%d",
+                        self.model_name,
+                        index,
+                        original_tokens,
+                        limit,
+                    )
+                cleaned.append(truncate(text, limit))
+            return cleaned
+        if self.model_name in ["BAAI/bge-m3", "Pro/BAAI/bge-m3"]:
+            limit = 4096
+            cleaned = []
+            for index, text in enumerate(batch):
+                if not text.strip():
+                    cleaned.append(" ")
+                    continue
+                original_tokens = num_tokens_from_string(text)
+                if original_tokens > limit:
+                    logger.debug(
+                        "Embedding input truncated: model=%s input_index=%d original_tokens=%d target_tokens=%d",
+                        self.model_name,
+                        index,
+                        original_tokens,
+                        limit,
+                    )
+                cleaned.append(truncate(text, limit))
+            return cleaned
         return [" " if not text.strip() else text for text in batch]
 
     def _call(self, batch):

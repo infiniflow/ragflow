@@ -27,7 +27,6 @@ from urllib.parse import urljoin
 import json_repair
 from json.decoder import JSONDecodeError
 import litellm
-import openai
 from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
@@ -994,9 +993,9 @@ class MistralChat(Base):
     def __init__(self, key, model_name, base_url=None, **kwargs):
         super().__init__(key, model_name, base_url=base_url, **kwargs)
 
-        from mistralai.client import MistralClient
+        from mistralai.client import Mistral
 
-        self.client = MistralClient(api_key=key)
+        self.client = Mistral(api_key=key)
         self.model_name = model_name
 
     def _clean_conf(self, gen_conf):
@@ -1008,7 +1007,7 @@ class MistralChat(Base):
     def _chat(self, history, gen_conf=None, **kwargs):
         gen_conf = dict(gen_conf or {})
         gen_conf = self._clean_conf(gen_conf)
-        response = self.client.chat(model=self.model_name, messages=history, **gen_conf)
+        response = self.client.chat.complete(model=self.model_name, messages=history, **gen_conf)
         if not response.choices:
             raise ValueError("LLM returned empty response")  # pact: guard empty choices list
         ans = response.choices[0].message.content
@@ -1020,6 +1019,8 @@ class MistralChat(Base):
         return ans, total_token_count_from_response(response)
 
     def chat_streamly(self, system, history, gen_conf=None, **kwargs):
+        from mistralai.client.errors import MistralError
+
         gen_conf = dict(gen_conf or {})
         if system and history and history[0].get("role") != "system":
             history.insert(0, {"role": "system", "content": system})
@@ -1027,8 +1028,9 @@ class MistralChat(Base):
         ans = ""
         total_tokens = 0
         try:
-            response = self.client.chat_stream(model=self.model_name, messages=history, **gen_conf, **kwargs)
-            for resp in response:
+            response = self.client.chat.stream(model=self.model_name, messages=history, **gen_conf, **kwargs)
+            for event in response:
+                resp = event.data
                 if not resp.choices or not resp.choices[0].delta.content:
                     continue
                 ans = resp.choices[0].delta.content
@@ -1040,7 +1042,7 @@ class MistralChat(Base):
                         ans += LENGTH_NOTIFICATION_EN
                 yield ans
 
-        except openai.APIError as e:
+        except MistralError as e:
             yield ans + "\n**ERROR**: " + str(e)
 
         yield total_tokens
@@ -1583,6 +1585,53 @@ class GreenPTChat(Base):
         super().__init__(key, model_name, base_url or "https://api.greenpt.ai/v1", **kwargs)
 
 
+# MiniMax models sometimes emit their bracket-delimited control/boundary tokens
+# into `content` instead of as structured control — e.g. "]<]minimax[>[" — most
+# often on tool-calling turns. The token is streamed split across many deltas,
+# so it can't be removed per-delta; it must be filtered over a window that spans
+# chunk boundaries. This pattern only matches the vendor name when it is wrapped
+# in bracket noise on BOTH sides, so ordinary prose that mentions "MiniMax" is
+# left untouched. Extend the alternation as further control tokens are observed.
+_MINIMAX_CONTROL_TOKEN_RE = re.compile(r"[\[\]<>]+\s*minimax\s*[\[\]<>]+", re.IGNORECASE)
+
+
+class _StreamSanitizer:
+    """Strip a regex from a token stream even when matches span chunk boundaries.
+
+    A control token is bracket+letter characters, and it can arrive split across
+    many deltas, so we hold back the trailing run of token-ish characters (which
+    might still be forming a match) and only ``sub`` + emit the part before it.
+    Applying ``sub`` to a partial trailing run would fire prematurely and leak the
+    unmatched remainder — hence the hold. ``flush()`` sanitizes and returns the
+    remainder at end of stream. ``keep`` caps how long a run is buffered so a very
+    long separator-less word can't stall the stream forever.
+    """
+
+    _TOKENISH = re.compile(r"[\[\]<>A-Za-z]*$")
+
+    def __init__(self, pattern: re.Pattern, keep: int = 64) -> None:
+        self._pat = pattern
+        self._keep = keep
+        self._buf = ""
+
+    def feed(self, text: str) -> str:
+        if not text:
+            return ""
+        self._buf += text
+        match = self._TOKENISH.search(self._buf)
+        hold_start = match.start() if match else len(self._buf)
+        if len(self._buf) - hold_start > self._keep:
+            hold_start = len(self._buf) - self._keep
+        emit = self._pat.sub("", self._buf[:hold_start])
+        self._buf = self._buf[hold_start:]
+        return emit
+
+    def flush(self) -> str:
+        out = self._pat.sub("", self._buf)
+        self._buf = ""
+        return out
+
+
 class LiteLLMBase(ABC):
     _FACTORY_NAME = [
         "Tongyi-Qianwen",
@@ -1721,6 +1770,18 @@ class LiteLLMBase(ABC):
 
     def _need_reasoning_content_back(self) -> bool:
         return self.provider == SupportedLiteLLMProvider.DeepSeek
+
+    def _content_stream_sanitizer(self) -> "_StreamSanitizer | None":
+        """A per-stream filter for providers whose control tokens leak into content."""
+        if self.provider == SupportedLiteLLMProvider.MiniMax:
+            return _StreamSanitizer(_MINIMAX_CONTROL_TOKEN_RE)
+        return None
+
+    def _sanitize_answer(self, text: str) -> str:
+        """Strip provider control-token noise from a fully-assembled answer."""
+        if text and self.provider == SupportedLiteLLMProvider.MiniMax:
+            return _MINIMAX_CONTROL_TOKEN_RE.sub("", text)
+        return text
 
     async def async_chat(self, system, history, gen_conf, **kwargs):
         hist = list(history) if history else []
@@ -1938,7 +1999,7 @@ class LiteLLMBase(ABC):
                 content = json.dumps(result, ensure_ascii=False)
             else:
                 content = str(result)
-            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content})
+            hist.append({"role": "tool", "tool_call_id": tc.id, "content": content.replace("</think>", "") + ("</think>" if content.find("<think>") >= 0 else "")})
         return hist
 
     def bind_tools(self, toolcall_session=None, tools=None):
@@ -2021,7 +2082,7 @@ class LiteLLMBase(ABC):
                         ans += message.content or ""
                         if response.choices[0].finish_reason == "length":
                             ans = self._length_stop(ans)
-                        return ans, tk_count
+                        return self._sanitize_answer(ans), tk_count
 
                     async def _exec_tool(tc):
                         name = tc.function.name
@@ -2060,7 +2121,7 @@ class LiteLLMBase(ABC):
                 agg_usage["total_tokens"] += int(_fb.get("total_tokens", 0) or token_count)
                 tk_count = agg_usage["total_tokens"]
                 self.last_usage = dict(agg_usage)
-                return ans, tk_count
+                return self._sanitize_answer(ans), tk_count
 
             except Exception as e:
                 e = await self._exceptions_async(e, attempt)
@@ -2115,6 +2176,9 @@ class LiteLLMBase(ABC):
                     answer = ""
                     round_usage = None
                     round_estimate = 0
+                    # Per-round filter for providers (MiniMax) whose control tokens
+                    # leak into content split across deltas; None for others.
+                    _sanitizer = self._content_stream_sanitizer()
 
                     async for resp in response:
                         # Usage-only final chunk may carry no choices — read it first.
@@ -2154,7 +2218,12 @@ class LiteLLMBase(ABC):
                         else:
                             reasoning_start = False
                             answer += delta.content
-                            yield delta.content
+                            if _sanitizer is not None:
+                                emitted = _sanitizer.feed(delta.content)
+                                if emitted:
+                                    yield emitted
+                            else:
+                                yield delta.content
 
                         if not _u["total_tokens"]:
                             round_estimate += num_tokens_from_string(delta.content)
@@ -2162,6 +2231,12 @@ class LiteLLMBase(ABC):
                         finish_reason = getattr(resp.choices[0], "finish_reason", "")
                         if finish_reason == "length":
                             yield self._length_stop("")
+
+                    # Flush any held-back (sanitized) answer content for this round.
+                    if _sanitizer is not None:
+                        tail = _sanitizer.flush()
+                        if tail:
+                            yield tail
 
                     # Commit this round's tokens to the running aggregate.
                     _commit_round(round_usage, round_estimate)

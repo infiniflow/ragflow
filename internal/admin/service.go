@@ -64,6 +64,11 @@ type Service struct {
 	ingestionTaskDAO    *dao.IngestionTaskDAO
 	ingestionTaskLogDao *dao.IngestionTaskLogDAO
 	ingestionTaskSvc    *servicepkg.IngestionTaskService
+
+	BillingProductDAO      *dao.BillingProductDAO
+	BillingSubscriptionDAO *dao.BillingSubscriptionDAO
+	MemoryDAO              *dao.MemoryDAO
+	SearchDAO              *dao.SearchDAO
 }
 
 // NewService create admin service
@@ -89,6 +94,11 @@ func NewService() *Service {
 		ingestionTaskDAO:    dao.NewIngestionTaskDAO(),
 		ingestionTaskLogDao: dao.NewIngestionTaskLogDAO(),
 		ingestionTaskSvc:    servicepkg.NewIngestionTaskService(),
+
+		BillingProductDAO:      dao.NewBillingProductDAO(),
+		BillingSubscriptionDAO: dao.NewBillingSubscriptionDAO(),
+		MemoryDAO:              dao.NewMemoryDAO(),
+		SearchDAO:              dao.NewSearchDAO(),
 	}
 }
 

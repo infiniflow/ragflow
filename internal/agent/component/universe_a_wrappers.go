@@ -65,13 +65,20 @@ func anySlice(v any) []any {
 // defaults to the per-invocation RetrievalRequest. The fields are
 // the same the Python agent/component/retrieval.py exposes.
 type retrievalParams struct {
+	Query                    string
 	KbIDs                    []string
+	MemoryIDs                []string
 	TopN                     int
 	TopK                     int
-	SimilarityThreshold      float64
-	KeywordsSimilarityWeight float64
+	SimilarityThreshold      *float64
+	KeywordsSimilarityWeight *float64
 	RerankID                 string
 	EmptyResponse            string
+	CrossLanguages           []string
+	TOCEnhance               bool
+	UseKG                    bool
+	MetaDataFilter           map[string]any
+	RetrievalFrom            string
 }
 
 // parseRetrievalParams reads the v1 DSL node params for Retrieval.
@@ -84,6 +91,12 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 	if params == nil {
 		return out
 	}
+	if ids, ok := params["dataset_ids"]; ok {
+		params["kb_ids"] = ids
+	}
+	if v, ok := params["query"].(string); ok {
+		out.Query = v
+	}
 	if v, ok := params["kb_ids"].([]any); ok {
 		for _, x := range v {
 			if s, ok := x.(string); ok {
@@ -94,6 +107,7 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 	if v, ok := params["kb_ids"].([]string); ok {
 		out.KbIDs = append(out.KbIDs, v...)
 	}
+	out.MemoryIDs = toStringSlice(params["memory_ids"])
 	if v, ok := params["top_n"]; ok {
 		out.TopN = toIntParam(v)
 	}
@@ -101,10 +115,12 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 		out.TopK = toIntParam(v)
 	}
 	if v, ok := params["similarity_threshold"]; ok {
-		out.SimilarityThreshold = toFloatParam(v)
+		value := toFloatParam(v)
+		out.SimilarityThreshold = &value
 	}
 	if v, ok := params["keywords_similarity_weight"]; ok {
-		out.KeywordsSimilarityWeight = toFloatParam(v)
+		value := toFloatParam(v)
+		out.KeywordsSimilarityWeight = &value
 	}
 	if v, ok := params["rerank_id"].(string); ok {
 		out.RerankID = v
@@ -112,14 +128,25 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 	if v, ok := params["empty_response"].(string); ok {
 		out.EmptyResponse = v
 	}
+	out.CrossLanguages = toStringSlice(params["cross_languages"])
+	if v, ok := params["toc_enhance"].(bool); ok {
+		out.TOCEnhance = v
+	}
+	if v, ok := params["use_kg"].(bool); ok {
+		out.UseKG = v
+	}
+	if v, ok := params["meta_data_filter"].(map[string]any); ok {
+		out.MetaDataFilter = cloneAnyMap(v)
+	}
+	if v, ok := params["retrieval_from"].(string); ok {
+		out.RetrievalFrom = v
+	}
 	return out
 }
 
 // retrievalComponent delegates to internal/agent/tool/RetrievalTool.
-// The wrapper captures the v1 DSL node params (kb_ids, top_n,
-// top_k, similarity_threshold, keywords_similarity_weight,
-// rerank_id, empty_response) at build time and applies them as
-// defaults to each invocation. Per-call inputs override the
+// The wrapper captures the Retrieval node's DSL params at build time and
+// applies them as defaults to each invocation. Per-call inputs override the
 // defaults.
 type retrievalComponent struct {
 	inner  *agenttool.RetrievalTool
@@ -213,6 +240,9 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 	for k, v := range inputs {
 		out[k] = v
 	}
+	if _, ok := out["query"]; !ok && c.params.Query != "" {
+		out["query"] = c.params.Query
+	}
 	if _, ok := out["kb_ids"]; !ok && len(c.params.KbIDs) > 0 {
 		ids := make([]any, len(c.params.KbIDs))
 		for i, s := range c.params.KbIDs {
@@ -226,17 +256,35 @@ func (c *retrievalComponent) applyDefaults(inputs map[string]any) map[string]any
 	if _, ok := out["top_k"]; !ok && c.params.TopK > 0 {
 		out["top_k"] = c.params.TopK
 	}
-	if _, ok := out["similarity_threshold"]; !ok && c.params.SimilarityThreshold > 0 {
-		out["similarity_threshold"] = c.params.SimilarityThreshold
+	if _, ok := out["similarity_threshold"]; !ok && c.params.SimilarityThreshold != nil {
+		out["similarity_threshold"] = *c.params.SimilarityThreshold
 	}
-	if _, ok := out["keywords_similarity_weight"]; !ok && c.params.KeywordsSimilarityWeight > 0 {
-		out["keywords_similarity_weight"] = c.params.KeywordsSimilarityWeight
+	if _, ok := out["keywords_similarity_weight"]; !ok && c.params.KeywordsSimilarityWeight != nil {
+		out["keywords_similarity_weight"] = *c.params.KeywordsSimilarityWeight
 	}
 	if _, ok := out["rerank_id"]; !ok && c.params.RerankID != "" {
 		out["rerank_id"] = c.params.RerankID
 	}
 	if _, ok := out["empty_response"]; !ok && c.params.EmptyResponse != "" {
 		out["empty_response"] = c.params.EmptyResponse
+	}
+	if _, ok := out["memory_ids"]; !ok && len(c.params.MemoryIDs) > 0 {
+		out["memory_ids"] = append([]string(nil), c.params.MemoryIDs...)
+	}
+	if _, ok := out["cross_languages"]; !ok && len(c.params.CrossLanguages) > 0 {
+		out["cross_languages"] = append([]string(nil), c.params.CrossLanguages...)
+	}
+	if _, ok := out["toc_enhance"]; !ok && c.params.TOCEnhance {
+		out["toc_enhance"] = true
+	}
+	if _, ok := out["use_kg"]; !ok && c.params.UseKG {
+		out["use_kg"] = true
+	}
+	if _, ok := out["meta_data_filter"]; !ok && c.params.MetaDataFilter != nil {
+		out["meta_data_filter"] = cloneAnyMap(c.params.MetaDataFilter)
+	}
+	if _, ok := out["retrieval_from"]; !ok && c.params.RetrievalFrom != "" {
+		out["retrieval_from"] = c.params.RetrievalFrom
 	}
 	// Translate v1 DSL name `kb_ids` to the tool's expected
 	// name `dataset_ids`. dataset_ids already-set wins; kb_ids

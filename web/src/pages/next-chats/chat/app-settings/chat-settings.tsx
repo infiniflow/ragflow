@@ -22,6 +22,7 @@ import ChatBasicSetting from './chat-basic-settings';
 import { ChatPromptEngine } from './chat-prompt-engine';
 import { SavingButton } from './saving-button';
 import { useChatSettingSchema } from './use-chat-setting-schema';
+import { getWebSearchProvider } from '../web-search-api-key';
 
 type ChatSettingsProps = { hasSingleChatBox: boolean };
 
@@ -135,6 +136,7 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       ...data,
       prompt_config: {
         ...data.prompt_config,
+        web_search_provider: getWebSearchProvider(data.prompt_config),
         reference_metadata: normalizedReferenceMetadata,
       },
       ...llmSettingEnabledValues,

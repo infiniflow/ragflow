@@ -33,6 +33,7 @@ from api.db.joint_services.tenant_model_service import (
 )
 from api.db.db_models import Document, Task
 from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.document_counter_service import release_reparse_counters
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -179,6 +180,22 @@ def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=No
     enrich_chunks_with_document_metadata(chunks, metadata_fields)
 
 
+def _release_doc_counters(doc):
+    """Roll back the document's and knowledgebase's chunk/token/duration counters
+    so a re-parse starts from zero. Callers that delete a document's chunks must
+    do this, otherwise the removed counts stay in the knowledgebase total. The
+    release re-reads the row under a lock (see release_reparse_counters) so it is
+    safe against a worker still parsing the document. Returns an error result if
+    the document is gone, else None.
+    """
+    try:
+        release_reparse_counters(doc.id)
+    except LookupError:
+        logging.exception("Failed to release counters for document %s in knowledgebase %s", doc.id, doc.kb_id)
+        return get_error_data_result(message=f"Document {doc.id} not found")
+    return None
+
+
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -211,7 +228,7 @@ async def parse(tenant_id, dataset_id):
             continue
         if not doc:
             return get_error_data_result(message=f"you don't own the document {id}")
-        info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
+        info = {"run": "1", "progress": 0, "progress_msg": ""}
         if (
             DocumentService.filter_update(
                 [
@@ -223,6 +240,8 @@ async def parse(tenant_id, dataset_id):
             == 0
         ):
             return get_error_data_result("Can't parse document that is currently being processed")
+        if err := _release_doc_counters(doc[0]):
+            return err
         index_name = search.index_name(dataset_tenant_id)
         if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
             settings.docStoreConn.delete({"doc_id": id}, index_name, doc[0].kb_id)
@@ -283,8 +302,10 @@ async def stop_parsing(tenant_id, dataset_id):
                 data={"error_code": DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE},
             )
         cancel_all_task_of(id)
-        info = {"run": "2", "progress": 0, "chunk_num": 0}
+        info = {"run": "2", "progress": 0}
         DocumentService.update_by_id(id, info)
+        if err := _release_doc_counters(doc[0]):
+            return err
         index_name = search.index_name(dataset_tenant_id)
         if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
             settings.docStoreConn.delete({"doc_id": doc[0].id}, index_name, doc[0].kb_id)

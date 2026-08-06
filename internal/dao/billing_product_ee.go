@@ -15,3 +15,9 @@
 //
 
 package dao
+
+type BillingProductDAO struct{}
+
+func NewBillingProductDAO() *BillingProductDAO {
+	return &BillingProductDAO{}
+}

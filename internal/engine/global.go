@@ -25,6 +25,7 @@ import (
 
 	"ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/infinity"
+	"ragflow/internal/engine/serenedb"
 
 	"ragflow/internal/tokenizer"
 
@@ -52,6 +53,8 @@ func InitDocEngine() error {
 			globalEngine, err = elasticsearch.NewEngine(globalConfig.GetElasticsearchConfig())
 		case "infinity":
 			globalEngine, err = infinity.NewEngine(globalConfig.GetInfinityConfig())
+		case "serenedb":
+			globalEngine, err = serenedb.NewEngine(globalConfig.GetSereneDBConfig())
 		default:
 			err = fmt.Errorf("unsupported doc engine type: %s", engineType)
 		}

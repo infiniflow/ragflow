@@ -20,6 +20,7 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
 import { getDirAttribute } from '@/utils/text-direction';
 import { InfoCircleOutlined } from '@ant-design/icons';
+import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 import classNames from 'classnames';
 import DOMPurify from 'dompurify';
 import 'katex/dist/katex.min.css';
@@ -281,7 +282,14 @@ const FloatingChatWidgetMarkdown = ({
             <HoverCardTrigger asChild>
               <InfoCircleOutlined className={styles.referenceIcon} />
             </HoverCardTrigger>
-            <HoverCardContent>{getPopoverContent(chunkIndex)}</HoverCardContent>
+            <HoverCardPrimitive.Portal>
+              <HoverCardContent
+                collisionPadding={8}
+                className="max-h-[var(--radix-hover-card-content-available-height)]"
+              >
+                {getPopoverContent(chunkIndex)}
+              </HoverCardContent>
+            </HoverCardPrimitive.Portal>
           </HoverCard>
         );
       });

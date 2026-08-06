@@ -32,6 +32,7 @@ the fast non-tool-calling path.
 
 import logging
 import re
+from collections.abc import Callable
 from typing import Any, List
 
 import json_repair
@@ -42,7 +43,7 @@ from api.db.services.llm_service import LLMBundle
 from common import settings
 from common.misc_utils import thread_pool_exec
 from common.token_utils import num_tokens_from_string
-from rag.advanced_rag.agentic_rag_graph import _strip_think_stream
+from rag.advanced_rag.agentic_rag_graph import _split_think_stream
 from rag.app.tag import label_question
 from rag.llm.tool_decorator import tool
 from rag.prompts.generator import (
@@ -55,7 +56,7 @@ from rag.prompts.generator import (
     sufficiency_select,
 )
 from api.db.db_models import Document, Knowledgebase
-from rag.utils.tavily_conn import Tavily
+from rag.utils.web_search_conn import WebSearchProvider
 
 
 # Tokens held back from the model's context when fitting retrieved evidence
@@ -75,11 +76,14 @@ class RAGTools:
         embed_mdl: LLMBundle | None = None,
         kb_ids: List[str] | None = None,
         kbs: list[Knowledgebase] | None = None,
-        tav: Tavily | None = None,
+        web_search: WebSearchProvider | None = None,
         meta_data_filter: dict | None = None,
+        doc_scope: List[str] | None = None,
         user_defined_prompts: dict | None = None,
+        empty_response: str = "",
         do_refer: bool | None = True,
         thinking_mode: str = "medium",
+        text_attachments_content: str = "",
     ):
         self.tenant_ids = tenant_ids
         self.chat_mdl = chat_mdl.clone()
@@ -105,11 +109,19 @@ class RAGTools:
             for kb in kbs:
                 _exclude_sql_kb(kb)
 
-        self.tav = tav
+        self.web_search = web_search
         self.meta_data_filter = meta_data_filter
+        self.doc_scope = list(dict.fromkeys(doc_scope)) if doc_scope is not None else None
         self.user_defined_prompts = user_defined_prompts or {}
-        self.kbinfos = {"chunks": [], "doc_aggs": []}
+        self.empty_response = empty_response
         self.do_refer = do_refer
+        self.text_attachments_content = text_attachments_content or ""
+        # Optional sink used by the outer agent stream to preserve the final
+        # answer deltas produced by the inner research graph.  The tool API
+        # still returns the complete string to the caller, but the stream
+        # endpoint can forward the original deltas instead of that aggregate.
+        self.answer_sink: Callable[[str, bool], None] | None = None
+        self.tool_started_sink: Callable[[], None] | None = None
         # Citation pool shared with the final-answer node: the graph publishes
         # the chunks it actually used here (in the SAME order the answer's
         # ``[ID:n]`` markers index), so the caller can resolve references.
@@ -135,10 +147,18 @@ class RAGTools:
         return bool(self.sql_kbs and self.field_map)
 
     def has_web(self) -> bool:
-        return self.tav is not None
+        return self.web_search is not None
 
     def has_llm(self) -> bool:
         return self.chat_mdl is not None
+
+    def scoped_doc_ids(self, doc_scope: List[str] | None = None) -> List[str] | None:
+        if self.doc_scope is None:
+            return doc_scope
+        if not doc_scope:
+            return list(self.doc_scope)
+        allowed = set(self.doc_scope)
+        return [doc_id for doc_id in doc_scope if doc_id in allowed]
 
     async def _fit_messages(self, system: str, user: str) -> list:
         """Fit system+user messages into the model's context window."""
@@ -369,6 +389,9 @@ class RAGTools:
             keywords = ",".join(keywords)
         logging.info(f"@retrieve: {question}@{keywords}")
 
+        doc_scope = self.scoped_doc_ids(doc_scope)
+        if doc_scope == ["-999"]:
+            return {"chunks": [], "doc_aggs": []}
         if doc_scope:
             candidates = [d for d in doc_scope if isinstance(d, str)]
             known = await thread_pool_exec(self._filter_known_doc_ids, candidates)
@@ -376,6 +399,8 @@ class RAGTools:
             if valid:
                 doc_scope = valid
             else:
+                if self.doc_scope is not None:
+                    return {"chunks": [], "doc_aggs": []}
                 if candidates:
                     logging.warning("retrieve: every supplied doc ID was unknown; falling back to unfiltered retrieval")
                 doc_scope = None
@@ -408,15 +433,15 @@ class RAGTools:
         return {"chunks": kbinfos.get("chunks", []), "doc_aggs": kbinfos.get("doc_aggs", [])}
 
     async def web_retrieve(self, query: str) -> dict[str, list]:
-        """Retrieve chunks from the public web (Tavily). Raw kbinfos shape."""
-        if self.tav is None:
+        """Retrieve chunks from the public web. Raw kbinfos shape."""
+        if self.web_search is None:
             return {"chunks": [], "doc_aggs": []}
         try:
-            tav_res = await thread_pool_exec(self.tav.retrieve_chunks, query)
+            web_res = await thread_pool_exec(self.web_search.retrieve_chunks, query)
         except Exception:
             logging.exception("web_retrieve failed")
             return {"chunks": [], "doc_aggs": []}
-        return {"chunks": tav_res.get("chunks", []), "doc_aggs": tav_res.get("doc_aggs", [])}
+        return {"chunks": web_res.get("chunks", []), "doc_aggs": web_res.get("doc_aggs", [])}
 
     async def structured_retrieve(self, question: str) -> dict[str, Any]:
         """Query the structured (tabular) KBs by translating to SQL.
@@ -434,7 +459,7 @@ class RAGTools:
         sql_kb_ids = [kb.id for kb in self.sql_kbs]
         tenant_id = self.sql_kbs[0].tenant_id
         try:
-            ans = await use_sql(question, self.field_map, tenant_id, self.chat_mdl, quota=True, kb_ids=sql_kb_ids)
+            ans = await use_sql(question, self.field_map, tenant_id, self.chat_mdl, quota=True, kb_ids=sql_kb_ids, doc_ids=self.scoped_doc_ids())
         except Exception as e:
             logging.exception(f"structured_retrieve: use_sql failed: {e}")
             return {"answer": "", "chunks": [], "doc_aggs": []}
@@ -491,6 +516,8 @@ class RAGTools:
         """Fetch a whole document's chunks in reading order (raw kbinfos)."""
         if not self.kb_ids:
             return {"chunks": [], "doc_aggs": []}
+        if self.doc_scope is not None and doc_id not in self.doc_scope:
+            return {"chunks": [], "doc_aggs": []}
         resolved = await thread_pool_exec(self._resolve_doc_tenant, doc_id)
         if resolved is None:
             logging.warning(f"fetch_full_document: doc_id {doc_id!r} not in any bound KB — refusing to fetch")
@@ -545,11 +572,28 @@ class RAGTools:
         """
         from rag.advanced_rag.agentic_rag_graph import run_agentic_rag
 
+        if self.tool_started_sink is not None:
+            self.tool_started_sink()
+        if self.text_attachments_content:
+            self.kbinfos = {
+                "chunks": [
+                    {
+                        "id": "chat_attachment",
+                        "chunk_id": "chat_attachment",
+                        "doc_id": "chat_attachment",
+                        "docnm_kwd": "Chat attachment",
+                        "content_with_weight": self.text_attachments_content,
+                    }
+                ],
+                "doc_aggs": [{"doc_id": "chat_attachment", "doc_name": "Chat attachment", "count": 1}],
+            }
         messages = [{"role": "user", "content": question}] if question else []
         final = ""
-        async for delta in _strip_think_stream(run_agentic_rag(self, messages)):
-            if isinstance(delta, str):
+        async for kind, delta in _split_think_stream(run_agentic_rag(self, messages)):
+            if kind == "answer":
                 final += delta
+            if self.answer_sink is not None:
+                self.answer_sink(delta, kind == "think")
         for p, r in [(r"\(\**(ID:\d)\**\)", "[\1]")]:
             final = re.sub(p, r, final)
         return final

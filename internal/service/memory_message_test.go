@@ -27,6 +27,24 @@ func TestIsMessageDocumentNotFound(t *testing.T) {
 	}
 }
 
+func TestValidateMemorySearchModels(t *testing.T) {
+	firstTenantEmbeddingID := "tenant-embedding-1"
+	secondTenantEmbeddingID := "tenant-embedding-2"
+	if err := validateMemorySearchModels([]*entity.Memory{
+		{ID: "memory-1", EmbdID: "embedding@provider", TenantEmbdID: &firstTenantEmbeddingID},
+		{ID: "memory-2", EmbdID: "embedding@provider", TenantEmbdID: &secondTenantEmbeddingID},
+	}); err != nil {
+		t.Fatalf("same memory embedding model rejected: %v", err)
+	}
+
+	if err := validateMemorySearchModels([]*entity.Memory{
+		{ID: "memory-1", EmbdID: "embedding-a@provider"},
+		{ID: "memory-2", EmbdID: "embedding-b@provider"},
+	}); err == nil {
+		t.Fatal("different memory embedding models were accepted")
+	}
+}
+
 func TestRequireMemoryAccessReturnsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

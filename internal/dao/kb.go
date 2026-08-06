@@ -234,10 +234,10 @@ func (dao *KnowledgebaseDAO) GetByTenantIDs(ctx context.Context, db *gorm.DB, te
 }
 
 // GetOwnerFilter returns owner counts for datasets visible to a user.
-func (dao *KnowledgebaseDAO) GetOwnerFilter(tenantIDs []string, userID string) ([]*entity.DatasetOwnerFilter, error) {
+func (dao *KnowledgebaseDAO) GetOwnerFilter(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string) ([]*entity.DatasetOwnerFilter, error) {
 	owners := make([]*entity.DatasetOwnerFilter, 0)
 
-	err := DB.Model(&entity.Knowledgebase{}).
+	err := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
 		Select("knowledgebase.tenant_id as id, user.nickname as label, COUNT(knowledgebase.id) as count").
 		Joins("LEFT JOIN user ON knowledgebase.tenant_id = user.id").
 		Where("((knowledgebase.tenant_id IN ? AND knowledgebase.permission = ?) OR knowledgebase.tenant_id = ?) AND knowledgebase.status = ?",

@@ -181,7 +181,7 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 						remoteModels = append(remoteModels, map[string]interface{}{
 							"name":        m.Name,
 							"model_types": m.ModelTypes,
-							"max_tokens":  m.MaxTokens,
+							"max_output":  m.MaxOutput,
 						})
 					}
 				}
@@ -724,11 +724,6 @@ func (h *ProviderHandler) AddModel(c *gin.Context) {
 
 	if req.ModelName == "" {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "model_name is required")
-		return
-	}
-
-	if len(req.ModelTypes) == 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "model_type is required")
 		return
 	}
 

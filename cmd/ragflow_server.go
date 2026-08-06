@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/admin"
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/agent/retrievalbridge"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/channels"
 	"ragflow/internal/handler"
@@ -515,7 +516,6 @@ func startHeartbeat(serverType common.ServerType, serverID string, port int, hea
 	}
 
 	service.AdminServiceClient = service.NewAdminClient(
-		common.Logger,
 		serverType,
 		serverID,
 		localIP,
@@ -728,7 +728,14 @@ func startServer(ctx context.Context) {
 	// Initialize doc engine for skill search
 	docEngine := engine.Get()
 	documentDAO := dao.NewDocumentDAO()
-	agenttool.SetRetrievalService(agenttool.NewNLPRetrievalAdapterFromDeps(docEngine, documentDAO))
+	retrievalEnhancer := retrievalbridge.NewEnhancer(docEngine, metadataService)
+	agenttool.SetRetrievalService(agenttool.NewNLPRetrievalAdapterFromDeps(
+		docEngine,
+		documentDAO,
+		modelProviderService,
+		retrievalEnhancer,
+	))
+	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService))
 	common.Info("agent: retrieval service adapter installed")
 
 	// Initialize handler layer

@@ -221,7 +221,7 @@ func novitaHandleStream(
 
 	done, err := ParseSSEStream[map[string]any](body, func(event map[string]any) error {
 		tokenUsage, found := extractOpenAIStreamUsage(event)
-		if found && chatConfig != nil {
+		if found {
 			applyStreamUsage(chatConfig, modelUsage, tokenUsage)
 		}
 

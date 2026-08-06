@@ -108,6 +108,7 @@ const (
 	TokenMemory
 	TokenRetrieve
 	TokenCurrent
+	TokenSoft
 	TokenFingerprint
 	TokenLicense
 	TokenVision

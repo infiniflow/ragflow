@@ -166,7 +166,6 @@ func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
-	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 	modelName, err := validateMinimaxModelName(modelName)
 	if err != nil {
 		return err
@@ -205,87 +204,57 @@ func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 
 	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal request: %w", err)
-	}
+	return m.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
+		// Pipe the response through a base_resp checker. MiniMax can send
+		// error events (e.g. rate limits) without a choices array, and the
+		// shared handler skips those silently. We surface them so the retry
+		// predicates can match and the caller sees the real reason.
+		pr, pw := io.Pipe()
+		defer pr.Close()
+		streamErr := make(chan error, 1)
+		go func() {
+			defer pw.Close()
+			// resp.Body is owned by doStreamRequest — do NOT close it here.
 
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
-	defer cancel()
+			var scanErr error
+			// Ensure streamErr always receives a result, on every exit
+			// path, so the final receive below can never block.
+			defer func() {
+				select {
+				case streamErr <- scanErr:
+				default:
+				}
+			}()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", apiKey))
-	req.Header.Set("Accept", "text/event-stream")
-
-	resp, err := m.baseModel.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("minimax API error: status %d: %s", resp.StatusCode, extractMinimaxErrorBody(body))
-	}
-
-	// Pipe the response through a base_resp checker. MiniMax can send
-	// error events (e.g. rate limits) without a choices array, and the
-	// shared handler skips those silently. We surface them so the retry
-	// predicates can match and the caller sees the real reason.
-	pr, pw := io.Pipe()
-	// Close pr when this function returns so an early exit from
-	// HandleStreamingResponse unblocks the producer goroutine below
-	// (its pw.Write fails) and releases resp.Body instead of leaving
-	// the reader blocked on a live pipe.
-	defer pr.Close()
-	streamErr := make(chan error, 1)
-	go func() {
-		defer pw.Close()
-		defer resp.Body.Close()
-
-		var scanErr error
-		// Ensure streamErr always receives a result, on every exit
-		// path, so the final receive below can never block.
-		defer func() {
-			select {
-			case streamErr <- scanErr:
-			default:
-			}
-		}()
-
-		scanner := bufio.NewScanner(resp.Body)
-		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if strings.HasPrefix(line, "data:") {
-				data := strings.TrimSpace(line[5:])
-				if data != "" && data != "[DONE]" {
-					var event map[string]any
-					if json.Unmarshal([]byte(data), &event) == nil {
-						if errMsg := extractMinimaxAPIError(event); errMsg != "" {
-							pw.CloseWithError(fmt.Errorf("minimax API error: %s", errMsg))
-							return
+			scanner := bufio.NewScanner(body)
+			scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if strings.HasPrefix(line, "data:") {
+					data := strings.TrimSpace(line[5:])
+					if data != "" && data != "[DONE]" {
+						var event map[string]any
+						if json.Unmarshal([]byte(data), &event) == nil {
+							if errMsg := extractMinimaxAPIError(event); errMsg != "" {
+								pw.CloseWithError(fmt.Errorf("minimax API error: %s", errMsg))
+								return
+							}
 						}
 					}
 				}
+				if _, err := pw.Write([]byte(line + "\n")); err != nil {
+					scanErr = err
+					return
+				}
 			}
-			if _, err := pw.Write([]byte(line + "\n")); err != nil {
-				scanErr = err
-				return
-			}
-		}
-		scanErr = scanner.Err()
-	}()
+			scanErr = scanner.Err()
+		}()
 
-	if err := HandleStreamingResponse(pr, modelUsage, modelConfig, OpenAIParserConfig, sender); err != nil {
-		return err
-	}
-	return <-streamErr
+		if err := HandleStreamingResponse(pr, modelUsage, modelConfig, OpenAIParserConfig, sender); err != nil {
+			return err
+		}
+		return <-streamErr
+	})
 }
 
 // Embed embeds a list of texts into embeddings
