@@ -6,6 +6,7 @@ import { getAuthorization } from '@/utils/authorization-util';
 import jsPreviewExcel from '@js-preview/excel';
 import { useDebounceFn, useSize } from 'ahooks';
 import axios from 'axios';
+import JSZip from 'jszip';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // ZIP file header bytes "PK"
@@ -114,6 +115,49 @@ export const useFetchDocument = () => {
   return { fetchDocument };
 };
 
+/**
+ * WPS spreadsheets embed images in cells via the proprietary DISPIMG formula
+ * (stored in xl/cellimages.xml). @js-preview/excel cannot evaluate this
+ * formula and crashes with "Cannot read properties of undefined (reading
+ * 'render')". This function strips DISPIMG formulas from worksheet XML,
+ * replacing them with a text placeholder so the rest of the sheet renders.
+ */
+async function stripWpsDispImg(data: ArrayBuffer): Promise<ArrayBuffer> {
+  const zip = await JSZip.loadAsync(data);
+
+  const worksheetPaths = Object.keys(zip.files).filter((path) =>
+    /^xl\/worksheets\/sheet\d+\.xml$/.test(path),
+  );
+
+  let modified = false;
+  for (const path of worksheetPaths) {
+    const file = zip.file(path);
+    if (!file) continue;
+    const xml = await file.async('string');
+    if (!xml.includes('DISPIMG')) continue;
+
+    modified = true;
+    let cleaned = xml;
+    // Remove <f> formula tags that reference DISPIMG
+    cleaned = cleaned.replace(
+      /<f\b[^>]*>[\s\S]*?DISPIMG[\s\S]*?<\/f>/g,
+      '',
+    );
+    // Replace cached <v> values that reference DISPIMG with a placeholder
+    cleaned = cleaned.replace(
+      /<v>[^<]*DISPIMG[^<]*<\/v>/g,
+      '<v>[图片]</v>',
+    );
+    zip.file(path, cleaned);
+  }
+
+  if (!modified) return data;
+  return zip.generateAsync({
+    type: 'arraybuffer',
+    compression: 'DEFLATE',
+  });
+}
+
 export const useFetchExcel = (filePath: string) => {
   const [status, setStatus] = useState(true);
   const { fetchDocument } = useFetchDocument();
@@ -180,7 +224,12 @@ export const useFetchExcel = (filePath: string) => {
       try {
         const jsonFile = await fetchDocument(filePath);
         if (cancelled) return;
-        dataRef.current = jsonFile.data;
+        try {
+          dataRef.current = await stripWpsDispImg(jsonFile.data);
+        } catch {
+          // Not a valid ZIP or preprocessing failed — use original data
+          dataRef.current = jsonFile.data;
+        }
         setDataReady(true);
       } catch (e) {
         if (!cancelled) {
