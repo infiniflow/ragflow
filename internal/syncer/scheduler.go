@@ -41,9 +41,6 @@ func NewScheduler(pollInterval time.Duration, queue chan<- TaskEnvelope, taskSer
 
 // Run starts recovery and periodic task discovery.
 func (s *Scheduler) Run(ctx context.Context) error {
-	if err := s.taskService.RecoverStaleRunning(ctx, time.Now()); err != nil {
-		return err
-	}
 	if err := s.scan(ctx); err != nil {
 		return err
 	}
@@ -63,7 +60,11 @@ func (s *Scheduler) Run(ctx context.Context) error {
 
 // scan claims due tasks and places their IDs on the bounded queue.
 func (s *Scheduler) scan(ctx context.Context) error {
-	tasks, err := s.taskService.ListDueTasks(ctx, time.Now())
+	now := time.Now()
+	if err := s.taskService.RecoverStaleRunning(ctx, now); err != nil {
+		return err
+	}
+	tasks, err := s.taskService.ListDueTasks(ctx, now)
 	if err != nil {
 		return err
 	}

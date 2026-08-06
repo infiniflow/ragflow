@@ -1,3 +1,19 @@
+//
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+
 package dao
 
 import (
@@ -45,7 +61,7 @@ type SyncTaskContext struct {
 	Knowledgebase entity.Knowledgebase
 }
 
-// ConnectorSource returns the Python connector source name.
+// ConnectorSource returns the connector source name.
 func (c SyncTaskContext) ConnectorSource() string {
 	return c.Connector.Source
 }
@@ -71,6 +87,7 @@ func (d *SyncTaskDAO) DB() *gorm.DB {
 // ListDueTasks returns due schedule tasks across SYNC and PRUNE.
 func (d *SyncTaskDAO) ListDueTasks(ctx context.Context, now time.Time, limit int) ([]entity.SyncLogs, error) {
 	var rows []entity.SyncLogs
+	// TODO
 	if err := d.db.WithContext(ctx).
 		Model(&entity.SyncLogs{}).
 		Select("sync_logs.*").
@@ -118,17 +135,17 @@ func (d *SyncTaskDAO) GetTaskContext(ctx context.Context, taskID string) (SyncTa
 	if err := d.db.WithContext(ctx).Where("id = ?", taskID).First(&task).Error; err != nil {
 		return SyncTaskContext{}, err
 	}
-
+	// get connector
 	var connector entity.Connector
 	if err := d.db.WithContext(ctx).Where("id = ?", task.ConnectorID).First(&connector).Error; err != nil {
 		return SyncTaskContext{}, err
 	}
-
+	// get relation
 	var connector2Kb entity.Connector2Kb
 	if err := d.db.WithContext(ctx).Where("connector_id = ? AND kb_id = ?", task.ConnectorID, task.KbID).First(&connector2Kb).Error; err != nil {
 		return SyncTaskContext{}, err
 	}
-
+	// get KB
 	var kb entity.Knowledgebase
 	if err := d.db.WithContext(ctx).Where("id = ?", task.KbID).First(&kb).Error; err != nil {
 		return SyncTaskContext{}, err
@@ -182,6 +199,7 @@ func (d *SyncTaskDAO) CompleteSyncTask(ctx context.Context, taskContext SyncTask
 		if err := tx.Model(&entity.Connector{}).Where("id = ?", taskContext.Connector.ID).Update("status", SyncStatusDone).Error; err != nil {
 			return err
 		}
+
 		return createScheduledTask(ctx, tx, taskContext.Connector.ID, taskContext.Knowledgebase.ID, TaskTypeSync, false, &pollRangeEnd, taskContext.Task.TotalDocsIndexed+totalDocs)
 	})
 }
@@ -217,6 +235,8 @@ func (d *SyncTaskDAO) RecoverStaleRunning(ctx context.Context, now time.Time) (i
 		return 0, err
 	}
 	var recovered int64
+	connectorIDs := map[string]struct{}{}
+
 	for _, row := range rows {
 		taskContext, err := d.GetTaskContext(ctx, row.ID)
 		if err != nil {
@@ -236,11 +256,19 @@ func (d *SyncTaskDAO) RecoverStaleRunning(ctx context.Context, now time.Time) (i
 			return recovered, err
 		}
 		recovered++
+		connectorIDs[taskContext.Connector.ID] = struct{}{}
 	}
+
 	if recovered == 0 {
 		return 0, nil
 	}
-	return recovered, d.db.WithContext(ctx).Model(&entity.Connector{}).Where("status = ?", SyncStatusRunning).Update("status", SyncStatusSchedule).Error
+	ids := make([]string, 0, len(connectorIDs))
+
+	for connectorID := range connectorIDs {
+		ids = append(ids, connectorID)
+	}
+
+	return recovered, d.db.WithContext(ctx).Model(&entity.Connector{}).Where("id IN ? AND status = ?", ids, SyncStatusRunning).Update("status", SyncStatusSchedule).Error
 }
 
 // createScheduledTask creates the next Python-compatible scheduled task.
@@ -254,10 +282,12 @@ func createScheduledTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, ta
 	if existing > 0 {
 		return nil
 	}
+
 	reindex := "0"
 	if fromBeginning {
 		reindex = "1"
 	}
+
 	now := time.Now().Local()
 	return tx.WithContext(ctx).Create(&entity.SyncLogs{
 		ID:               utility.GenerateToken(),
@@ -273,7 +303,7 @@ func createScheduledTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, ta
 	}).Error
 }
 
-// isDue applies Python refresh_freq and prune_freq scheduling semantics.
+// isDue refresh_freq and prune_freq scheduling semantics.
 func isDue(row SyncTaskContext, now time.Time) bool {
 	if row.Task.UpdateDate == nil {
 		return true

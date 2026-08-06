@@ -39,13 +39,21 @@ var (
 // timeouts, and a hard size cap that rejects (rather than truncates) oversized
 // bodies.
 func FetchRemoteFileSafely(ctx context.Context, rawURL string, maxSize int64) ([]byte, http.Header, string, error) {
+	return FetchRemoteFileSafelyWithTimeout(ctx, rawURL, maxSize, 10*time.Second)
+}
+
+// FetchRemoteFileSafelyWithTimeout downloads rawURL with a caller-selected timeout.
+func FetchRemoteFileSafelyWithTimeout(ctx context.Context, rawURL string, maxSize int64, timeout time.Duration) ([]byte, http.Header, string, error) {
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
 	currentURL := rawURL
 	for redirects := 0; redirects < 10; redirects++ {
 		hostname, resolvedIP, err := AssertURLSafe(currentURL)
 		if err != nil {
 			return nil, nil, "", err
 		}
-		client := PinnedHTTPClient(hostname, resolvedIP, 10*time.Second)
+		client := PinnedHTTPClient(hostname, resolvedIP, timeout)
 		client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 			return http.ErrUseLastResponse
 		}

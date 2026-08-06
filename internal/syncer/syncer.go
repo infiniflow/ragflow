@@ -43,13 +43,20 @@ type Syncer struct {
 
 // NewSyncer creates a server-compatible syncer with default dependencies.
 func NewSyncer(maxConcurrency int, pollInterval time.Duration) *Syncer {
+	// init the config
 	config := DefaultConfig()
 	config.TaskConcurrency = maxConcurrency
 	config.PollInterval = pollInterval
+
 	taskDAO := dao.NewSyncTaskDAO(nil)
 	registry := syncerconnector.NewRegistry()
-	pruneService := service.NewSyncPruneService(dao.NewSyncPruneSnapshotDAO(taskDAO.DB()), documentservice.NewDocumentService(), nil)
-	return New(config, taskDAO, registry, nil, pruneService)
+
+	registerBuiltInConnectors(registry)
+
+	documentService := documentservice.NewDocumentService()
+	pruneService := service.NewSyncPruneService(dao.NewSyncPruneSnapshotDAO(taskDAO.DB()), documentService, nil)
+
+	return New(config, taskDAO, registry, documentService, pruneService)
 }
 
 // New creates a datasource syncer from explicit dependencies.
@@ -120,4 +127,22 @@ func (s *Syncer) Stop() {
 	s.cancel()
 	s.workerGroup.Wait()
 	close(s.ShutdownCh)
+} // Potential
+
+// registerBuiltInConnectors registers datasource connectors available in the server binary.
+func registerBuiltInConnectors(registry *syncerconnector.Registry) {
+	registry.Register("rss", func(ctx context.Context, taskContext any) (syncerconnector.Connector, error) {
+		row, ok := taskContext.(dao.SyncTaskContext)
+		if !ok {
+			return nil, errors.New("rss connector received an invalid task context")
+		}
+		return syncerconnector.NewRSSConnector(map[string]any(row.Connector.Config))
+	})
+	registry.Register("github", func(ctx context.Context, taskContext any) (syncerconnector.Connector, error) {
+		row, ok := taskContext.(dao.SyncTaskContext)
+		if !ok {
+			return nil, errors.New("github connector received an invalid task context")
+		}
+		return syncerconnector.NewGitHubConnector(map[string]any(row.Connector.Config))
+	})
 }
