@@ -818,6 +818,16 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 					"terms": map[string]interface{}{"id": ids},
 				})
 			}
+		case []string:
+			// A typed []string must be handled here; the generic loop below
+			// skips the "id" key, so without this branch a caller passing
+			// map[string]interface{}{"id": []string{...}} would build a query
+			// with no id filter and DeleteChunks could match every document.
+			if len(v) > 0 {
+				mustClauses = append(mustClauses, map[string]interface{}{
+					"terms": map[string]interface{}{"id": v},
+				})
+			}
 		case string:
 			mustClauses = append(mustClauses, map[string]interface{}{
 				"term": map[string]interface{}{"id": v},
@@ -853,6 +863,10 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 			}
 		} else if v != nil {
 			if listVal, ok := v.([]interface{}); ok {
+				mustClauses = append(mustClauses, map[string]interface{}{
+					"terms": map[string]interface{}{k: listVal},
+				})
+			} else if listVal, ok := v.([]string); ok {
 				mustClauses = append(mustClauses, map[string]interface{}{
 					"terms": map[string]interface{}{k: listVal},
 				})
@@ -1274,8 +1288,6 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		allResults = calculateScores(allResults, scoreColumn, pagerankField)
 		allResults = sortByScore(allResults, limit)
 	}
-
-	common.Info("ES Search completed", zap.Int("returnedRows", len(allResults)), zap.Int64("totalHits", totalHits))
 
 	return &types.SearchResult{
 		Chunks: allResults,

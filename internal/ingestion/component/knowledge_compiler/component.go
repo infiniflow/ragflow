@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	clog "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/mindmap"
@@ -23,6 +24,7 @@ import (
 	"ragflow/internal/service/nav"
 	"ragflow/internal/tokenizer"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -94,7 +96,15 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	// being lost when the upstream output map narrows it, which would otherwise
 	// leave the template-group lookup with an empty tenant and fail loudly.
 	tenantID := globals.GlobalOrInput(ctx, inputs, "tenant_id", "")
+	// The ingestion pipeline seeds kb_id (not dataset_id) into the canvas
+	// globals/inputs. In RAGFlow the knowledge base id IS the dataset id, so
+	// fall back to kb_id when dataset_id is absent. This keeps the compiler's
+	// dataset-scoped writes (merged wiki_page rows, wiki graph) keyed to the
+	// correct dataset instead of an empty string.
 	datasetID := globals.GlobalOrInput(ctx, inputs, "dataset_id", "")
+	if datasetID == "" {
+		datasetID = globals.GlobalOrInput(ctx, inputs, "kb_id", "")
+	}
 
 	// Resolve the compilation template spec(s). Priority:
 	// compilation_template_id > compilation_template_group_id. The variant is
@@ -103,6 +113,17 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	specs, err := resolveTemplateSpecs(ctx, db, tenantID, param)
 	if err != nil {
 		return nil, err
+	}
+
+	// The eino wiring does not auto-merge run-level metadata into every
+	// component's input map, so doc_id may arrive only via CanvasState.Globals
+	// (seeded by the pipeline at run start) rather than inputs["doc_id"].
+	// Mirror the dataset_id/kb_id resolution above: fall back to globals so the
+	// compiler (and its wiki sub-logs) see the real doc_id instead of "unknown".
+	if d, ok := inputs["doc_id"].(string); !ok || d == "" {
+		if g := globals.GlobalOrInput(ctx, inputs, "doc_id", ""); g != "" {
+			inputs["doc_id"] = g
+		}
 	}
 
 	in, err := buildInputs(inputs, param)
@@ -202,6 +223,32 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	if err != nil {
 		return nil, err
 	}
+	// Per-doc telemetry: confirm how many compiled rows (and specifically
+	// wiki_page wiki sections vs pages) this single document produced, so a
+	// missing dataset-level wiki_page can be traced to "never generated" vs
+	// "generated then dropped".
+	var pageCount, sectionCount, entityCount, relationCount int
+	for _, p := range out.Products {
+		switch {
+		case p.Variant == common.VariantWiki && metaString(p.Meta, "kind") == "page":
+			pageCount++
+		case p.Variant == common.VariantWiki && metaString(p.Meta, "kind") == "section":
+			sectionCount++
+		case p.Variant == common.VariantWiki && metaString(p.Meta, "kind") == "entity":
+			entityCount++
+		case p.Variant == common.VariantWiki && metaString(p.Meta, "kind") == "relation":
+			relationCount++
+		}
+	}
+	clog.Info("knowledge_compiler: per-doc products generated",
+		zap.String("doc_id", in.DocID),
+		zap.Int("total_products", len(out.Products)),
+		zap.Int("wiki_page", pageCount),
+		zap.Int("wiki_section", sectionCount),
+		zap.Int("wiki_entity", entityCount),
+		zap.Int("wiki_relation", relationCount),
+		zap.Int("chunk_docs", len(compiled)),
+	)
 	return mergeChunks(inputs, compiled), nil
 }
 

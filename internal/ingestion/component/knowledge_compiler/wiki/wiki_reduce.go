@@ -135,6 +135,10 @@ func (p *wikiPipeline) dedupeEntities(in []wikiEntity) []wikiEntity {
 // llmMergeEntityDecision asks the chat seam whether two distinct-name entities
 // refer to the same real-world concept. Returns true to merge.
 func (p *wikiPipeline) llmMergeEntityDecision(a, b wikiEntity) (bool, error) {
+	// Pass retryMax=0: dedupeEntities budgets llmCalls itself and counts one
+	// decision per call; letting GenJSON retry a failing chat seam would multiply
+	// each decision by (1 + jsonRetryMax) and blow through the budget (a
+	// persistent failure would issue 64 calls instead of <=16).
 	raw, err := common.GenJSON(p.ctx, p.deps.Chat, common.ChatRequest{
 		LLMID:        p.llmID,
 		SystemPrompt: wikiReduceEntityDisambiguateSystem,
@@ -142,7 +146,7 @@ func (p *wikiPipeline) llmMergeEntityDecision(a, b wikiEntity) (bool, error) {
 			"entity_a": mustPrettyJSON(a),
 			"entity_b": mustPrettyJSON(b),
 		}),
-	})
+	}, 0)
 	if err != nil {
 		return false, err
 	}
