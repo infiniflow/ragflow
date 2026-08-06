@@ -352,3 +352,40 @@ func TestInvokeJSONPayload_UnderCapEndToEnd(t *testing.T) {
 		}
 	}
 }
+
+// TestMergeDecisionOverCapVsUnderCapBoundary pins the semantic difference
+// between the two merge strategies at the exact boundary
+// (prevTokens+incomingTokens > target while incomingTokens <= target),
+// independent of BPE text-token-count fluctuations. OVER_CAP must
+// merge-then-close (a chunk may exceed target by at most one unit); UNDER_CAP
+// must start a fresh chunk (strict no-overflow). This restores the strong
+// constraint that the under_cap toggle is live — the integration test in
+// TestMergeByTokenSize_UnderCapNoOverflow can only assert that the two
+// strategies produce a different chunk COUNT, because on repetitive text the
+// re-tokenized merged chunk can fall back under budget (cl100k is
+// non-additive across the join). A regression that turns OVER_CAP into a
+// no-op would not be caught there, but is caught here.
+func TestMergeDecisionOverCapVsUnderCapBoundary(t *testing.T) {
+	const prevT, incT = 10, 10
+	target := prevT + incT - 1 // boundary: running sum > target, unit fits
+	if incT > target {
+		t.Fatalf("bad fixture: incoming unit must fit target (incT=%d target=%d)", incT, target)
+	}
+
+	_, overAct := mergeDecision("prev text", "incoming text", "\n", target, 0, schema.MergeOverCap, prevT, incT)
+	if overAct != mergeThenClose {
+		t.Errorf("OVER_CAP at boundary: want mergeThenClose, got %v", overAct)
+	}
+
+	_, underAct := mergeDecision("prev text", "incoming text", "\n", target, 0, schema.MergeUnderCap, prevT, incT)
+	if underAct != startNewChunk {
+		t.Errorf("UNDER_CAP at boundary: want startNewChunk, got %v", underAct)
+	}
+
+	// Both strategies must still refuse to merge an incoming unit that
+	// already exceeds target — it stands alone as its own chunk.
+	_, overBig := mergeDecision("prev text", "incoming text", "\n", target, 0, schema.MergeOverCap, prevT, target+5)
+	if overBig != startNewChunk {
+		t.Errorf("OVER_CAP with oversized incoming: want startNewChunk, got %v", overBig)
+	}
+}

@@ -58,11 +58,25 @@ var mergeSourceLines = []string{
 	"Plugins extend parsing for proprietary formats.",
 }
 
-// pythonMergeGroups mirrors rag/nlp/__init__.py:_merge_paragraph_groups
-// (MergeStrategy.OVER_CAP) — the Python reference chunker merge. It
-// accumulates a RUNNING SUM of per-paragraph token counts (size(p)) and merges
-// the next paragraph when cur_t + size(p) <= cap. The chunker must reproduce
-// this grouping exactly; see the regression this guards against below.
+// pythonMergeGroups is a faithful transcription of the Python reference
+// chunker merge rag/nlp/__init__.py:_merge_paragraph_groups under
+// MergeStrategy.OVER_CAP. It is used here as the oracle for
+// TestTokenChunkerMergeMatchesPython. Because it is itself Go code, it only
+// proves that the Go TokenChunker reproduces THIS transcription; its fidelity
+// to the real Python algorithm is validated by hand against the source lines
+// noted below. Keep those line references in sync if the Python side moves.
+//
+// Mapping to rag/nlp/__init__.py:_merge_paragraph_groups (OVER_CAP):
+//   - each paragraph is built as "\n" + sub_sec (naive_merge ~:1405), so the
+//     per-paragraph token count INCLUDES the leading "\n"; we mirror that with
+//     pt := tokenizeStr("\n" + p).
+//   - cur_t is the running sum of per-paragraph size("\n" + sub_sec); a
+//     paragraph merges when cur_t + pt <= cap.
+//   - an oversized paragraph (pt > cap) is emitted alone as its own chunk
+//     (Python: never combined with the previous chunk).
+//   - when cur_t + pt > cap, OVER_CAP merges the overflowing paragraph into the
+//     current group and then CLOSES the group (merge-then-close), so the next
+//     paragraph starts a fresh group.
 func pythonMergeGroups(paragraphs []string, cap int) [][]string {
 	groups := [][]string{}
 	cur, curT := []string{}, 0
@@ -99,6 +113,61 @@ func pythonMergeGroups(paragraphs []string, cap int) [][]string {
 		groups = append(groups, cur)
 	}
 	return groups
+}
+
+// TestPythonMergeGroupsOracleSanity pins pythonMergeGroups itself, so the
+// oracle cannot silently drift in lock-step with the chunker under test
+// (which would make TestTokenChunkerMergeMatchesPython a no-op check). The
+// assertions are tokenizer-independent INVARIANTS of the naive_merge
+// (OVER_CAP) algorithm rather than hard-coded token magnitudes, so the test
+// is stable across tokenizer revisions:
+//  1. every input paragraph appears exactly once, in order (no loss/dup/reorder);
+//  2. every group is VALID: either its running sum is within cap (a normal
+//     group), or it is a maximal merge-then-close overflow (running sum >
+//     cap but dropping its last paragraph is within cap), or it is a single
+//     oversized paragraph that stands alone. The group's position in the slice
+//     (trailing or not) is irrelevant: an overflow group may be last when the
+//     input ends right after an overflow.
+func TestPythonMergeGroupsOracleSanity(t *testing.T) {
+	const cap = 8
+	inputs := [][]string{
+		{"word word word word word word word word word word"},                            // clearly oversized -> own group
+		{"word", "word", "word", "word", "word", "word", "word", "word", "word", "word"}, // overflow path
+		{"", "x", "y", "z"},                 // empty + small
+		{"alpha", "beta", "gamma", "delta"}, // plain small
+	}
+	for ci, in := range inputs {
+		groups := pythonMergeGroups(in, cap)
+		var flat []string
+		for _, g := range groups {
+			flat = append(flat, g...)
+		}
+		if len(flat) != len(in) {
+			t.Fatalf("case %d: paragraph count mismatch got=%d want=%d", ci, len(flat), len(in))
+		}
+		for i := range in {
+			if in[i] != flat[i] {
+				t.Fatalf("case %d elem %d: order/loss mismatch got=%q want=%q", ci, i, flat[i], in[i])
+			}
+		}
+		for gi, g := range groups {
+			if len(g) == 0 {
+				t.Fatalf("case %d group %d is empty", ci, gi)
+			}
+			sum := 0
+			for _, p := range g {
+				sum += tokenizeStr("\n" + p)
+			}
+			prefix := 0
+			for _, p := range g[:len(g)-1] {
+				prefix += tokenizeStr("\n" + p)
+			}
+			valid := sum <= cap || (sum > cap && prefix <= cap)
+			if !valid {
+				t.Errorf("case %d group %d invalid: sum=%d prefix=%d (cap=%d)", ci, gi, sum, prefix, cap)
+			}
+		}
+	}
 }
 
 // expectedPythonChunks returns the chunk texts Python's naive_merge produces

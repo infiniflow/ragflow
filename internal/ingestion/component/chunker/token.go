@@ -428,6 +428,14 @@ const (
 //
 // JSON-only metadata (PDFPositions/Positions/TKNums) is the caller's
 // responsibility; this helper only returns the merged/new text and the action.
+//
+// Note on the JSON path: this helper decides on the running sum, but it still
+// uses the OVER_CAP strategy (merge-then-close on overflow). The Python JSON
+// reference (rag/flow/chunker/token_chunker.py:_merge_text_chunks_by_token_size)
+// decides on prev_tk_nums > threshold instead, so JSON parity is only partially
+// addressed here: the join-string re-tokenization is gone but the merge
+// STRATEGY difference remains. The TKNums accounting contract is pinned by
+// TestMergeByTokenSizeFromJSON_TKNumsConsistency.
 func mergeDecision(prevText, incoming, joinSep string, target int, overlapPct float64, strategy schema.MergeStrategy, prevTokens, incomingTokens int) (string, mergeAction) {
 	// An incoming unit that already exceeds target can never be merged; it
 	// stands alone as its own chunk.
@@ -950,6 +958,12 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 				prevClosed = false
 				cp := cloneChunkDoc(ck)
 				cp.Text = newChunkText(prev.Text, ck.Text, chunkTokens, overlappedPct, tk)
+				// Boundary path: TKNums is the RE-TOKENIZED new chunk text (which
+				// may include an overlap prefix and the "\n" joins), NOT the
+				// running sum used on the merge path above. With overlap > 0 this
+				// mixes the actual text count into the otherwise-running-sum
+				// accounting, so it can diverge from Python; pinned by
+				// TestMergeByTokenSizeFromJSON_TKNumsConsistency.
 				cp.TKNums = intPtr(tokenizeStr(cp.Text))
 				merged = append(merged, cp)
 				return
@@ -968,6 +982,9 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 			case startNewChunk:
 				cp := cloneChunkDoc(ck)
 				cp.Text = out
+				// Boundary path: TKNums is the RE-TOKENIZED new chunk text, not the
+				// running sum (see the prevClosed branch above for why this is a
+				// deliberate, divergence-prone accounting choice).
 				cp.TKNums = intPtr(tokenizeStr(out))
 				merged = append(merged, cp)
 			}
