@@ -199,6 +199,9 @@ export const ExceptiveType = [
   'docx',
   'md',
   'mdx',
+  'txt',
+  'csv',
+  'pptx',
   ...Images,
 ];
 

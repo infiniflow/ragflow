@@ -193,6 +193,14 @@ export function TemplateConfiguration({
             />
           </RAGFlowFormItem>
 
+          {kind === CompilationTemplateKind.Artifacts && (
+            <SwitchFormField
+              name={`templates.${selectedTemplateIndex}.config.plan`}
+              label={t('setting.plan')}
+              vertical={false}
+            />
+          )}
+
           {kind === CompilationTemplateKind.Tree ? (
             <TreeTemplateFields index={selectedTemplateIndex} />
           ) : (

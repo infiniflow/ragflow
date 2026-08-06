@@ -40,6 +40,7 @@ from api.db import VALID_FILE_TYPES, FileType
 from api.db.db_models import API4Conversation, DB
 from api.db.services import duplicate_name
 from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.document_counter_service import release_reparse_counters
 from api.db.db_models import Task
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
@@ -71,12 +72,40 @@ from api.utils.validation_utils import (
 from common import settings
 from common.constants import ParserType, RetCode, TaskStatus, SANDBOX_ARTIFACT_BUCKET
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
-from common.misc_utils import get_uuid, thread_pool_exec
+from common.misc_utils import get_uuid, thread_pool_exec, thread_pool_exec_long_time
 from api.utils.file_utils import filename_type, thumbnail
 from api.utils.file_response import apply_preview_file_response_headers
 from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url, apply_safe_file_response_headers
 from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
+
+
+def _normalize_legacy_raptor_config(req: dict) -> None:
+    """Drop RAPTOR fields removed from the current parser-config schema."""
+    parser_config = req.get("parser_config")
+    if not isinstance(parser_config, dict):
+        return
+    raptor = parser_config.get("raptor")
+    if not isinstance(raptor, dict):
+        return
+
+    normalized_fields = []
+    legacy_ext = raptor.pop("ext", None)
+    if legacy_ext is not None:
+        normalized_fields.append("ext")
+        if isinstance(legacy_ext, dict) and "clustering_threshold" in legacy_ext and "clustering_threshold" not in raptor:
+            raptor["clustering_threshold"] = legacy_ext["clustering_threshold"]
+            normalized_fields.append("ext.clustering_threshold")
+    for field in ("threshold", "clustering_method", "tree_builder"):
+        if field in raptor:
+            raptor.pop(field)
+            normalized_fields.append(field)
+    max_token = raptor.get("max_token")
+    if isinstance(max_token, (int, float)) and not isinstance(max_token, bool) and max_token < 512:
+        raptor["max_token"] = 512
+        normalized_fields.append("max_token")
+    if normalized_fields:
+        logging.debug("Document RAPTOR config normalized legacy fields: %s", sorted(normalized_fields))
 
 
 def _normalize_parser_config_compilation_template_group_ids(parser_config) -> bool:
@@ -212,6 +241,7 @@ async def update_document(tenant_id, dataset_id, document_id):
           type: object
     """
     req = await get_request_json()
+    _normalize_legacy_raptor_config(req)
 
     # An explicit null name is a type error, not an unset field.
     if "name" in req and req["name"] is None:
@@ -1174,7 +1204,7 @@ async def delete_documents(tenant_id, dataset_id):
             doc_ids = unique_doc_ids
 
         # Delete documents using existing FileService.delete_docs
-        errors = await thread_pool_exec(FileService.delete_docs, doc_ids, tenant_id)
+        errors = await thread_pool_exec_long_time(FileService.delete_docs, doc_ids, tenant_id)
 
         if errors:
             return get_error_data_result(message=str(errors))
@@ -1253,7 +1283,7 @@ async def update_metadata_config(tenant_id, dataset_id, document_id):
     try:
         e, doc = DocumentService.get_by_id(doc.id)
         if not e:
-            return get_data_error_result(message="Document not found!")
+            return get_data_error_result(message="document not found")
     except Exception as e:
         return get_json_result(code=RetCode.EXCEPTION_ERROR, message=repr(e))
 
@@ -1462,7 +1492,7 @@ def _run_sync(user_id: str, req):
             return RetCode.DATA_ERROR, "Tenant not found!"
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
-            return RetCode.DATA_ERROR, "Document not found!"
+            return RetCode.DATA_ERROR, "document not found"
 
         if str(req["run"]) == TaskStatus.CANCEL.value:
             tasks = list(TaskService.query(doc_id=doc_id))
@@ -1705,13 +1735,22 @@ async def stop_parse_documents(tenant_id, dataset_id):
                     continue
 
                 cancel_all_task_of(doc_id)
+                # Release the document's partial chunk/token counts from the
+                # knowledgebase aggregate under the row lock (see
+                # release_reparse_counters). This is the sole counter adjustment,
+                # so the status update below must not touch chunk_num.
+                try:
+                    release_reparse_counters(doc_id)
+                except LookupError:
+                    logging.exception("Failed to release counters for document %s during stop-parse", doc_id)
+                    errors.append(f"Document not found: {doc_id}")
+                    continue
                 cancel_doc_msg = f"\n{datetime.now().strftime('%H:%M:%S')} Task stopped by user."
                 DocumentService.update_by_id(
                     doc_id,
                     {
                         "run": str(TaskStatus.CANCEL.value),
                         "progress": 0,
-                        "chunk_num": 0,
                         "progress_msg": (doc.progress_msg or "") + cancel_doc_msg,
                     },
                 )
@@ -1904,7 +1943,7 @@ async def get_artifact(filename):
             return get_data_error_result(message="Invalid filename.")
         ext = os.path.splitext(basename)[1].lower()
         if ext not in ARTIFACT_CONTENT_TYPES:
-            return get_data_error_result(message="Invalid file type.")
+            return get_data_error_result(message="invalid file type")
         session_id = request.args.get("session_id", "")
         if not await thread_pool_exec(_sandbox_artifact_accessible, basename, current_user.id) and not await thread_pool_exec(_sandbox_artifact_session_accessible, session_id, current_user.id):
             return get_data_error_result(message="Artifact not found.")
@@ -2054,11 +2093,11 @@ async def get(doc_id):
     """
     try:
         if not DocumentService.accessible(doc_id, current_user.id):
-            return get_data_error_result(message="Document not found!")
+            return get_data_error_result(message="document not found")
 
         e, doc = DocumentService.get_by_id(doc_id)
         if not e:
-            return get_data_error_result(message="Document not found!")
+            return get_data_error_result(message="document not found")
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
@@ -2128,9 +2167,9 @@ async def download(dataset_id, document_id):
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
     if not KnowledgebaseService.accessible(kb_id=dataset_id, user_id=current_user.id):
-        return get_data_error_result(message="Document not found!")
+        return get_data_error_result(message="document not found")
     if not DocumentService.accessible(document_id, current_user.id):
-        return get_data_error_result(message="Document not found!")
+        return get_data_error_result(message="document not found")
     doc = DocumentService.query(kb_id=dataset_id, id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")
@@ -2190,7 +2229,7 @@ async def download_document(document_id):
     if not document_id:
         return get_error_data_result(message="Specify document_id please.")
     if not DocumentService.accessible(document_id, current_user.id):
-        return get_data_error_result(message="Document not found!")
+        return get_data_error_result(message="document not found")
     doc = DocumentService.query(id=document_id)
     if not doc:
         return get_error_data_result(message=f"The dataset not own the document {document_id}.")

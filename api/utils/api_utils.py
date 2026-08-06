@@ -345,9 +345,10 @@ def get_parser_config(chunk_method, parser_config):
             "topn_tags": 3,
             "raptor": {
                 "use_raptor": True,
-                "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                "max_token": 256,
-                "threshold": 0.1,
+                "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
+                "max_token": 512,
+                "clustering_threshold": 0.3,
+                "clustering_ratio": 0.5,
                 "max_cluster": 64,
                 "random_seed": 0,
             },
@@ -389,7 +390,7 @@ def get_parser_config(chunk_method, parser_config):
         "one": None,
         "knowledge_graph": {
             "chunk_token_num": 8192,
-            "delimiter": r"\n",
+            "delimiter": "\n",
             "entity_types": ["organization", "person", "location", "event", "time"],
             "raptor": {"use_raptor": False},
             "graphrag": {"use_graphrag": False},

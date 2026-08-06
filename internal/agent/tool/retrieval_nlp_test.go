@@ -28,10 +28,13 @@ package tool
 
 import (
 	"context"
+	"errors"
 	"math"
 	"testing"
 
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/service/nlp"
 
 	"gorm.io/gorm"
 )
@@ -222,26 +225,28 @@ func TestTranslateChunk_MissingAllScores(t *testing.T) {
 // must produce an adapter whose Search returns the missing-service
 // error, not a panic.
 func TestNewNLPRetrievalAdapter_NilService(t *testing.T) {
-	a := NewNLPRetrievalAdapter(nil)
+	a := NewNLPRetrievalAdapter(nil, nil, nil)
 	_, err := a.Search(context.TODO(), nil, RetrievalRequest{Query: "hi"})
 	if err == nil {
 		t.Fatal("expected error from nil-service adapter")
 	}
-	if err != ErrRetrievalServiceMissing {
+	if !errors.Is(err, ErrRetrievalServiceMissing) {
 		t.Errorf("err = %v, want ErrRetrievalServiceMissing", err)
 	}
 }
 
 func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 	keywordWeight := 0.25
+	similarityThreshold := 0.42
+	embeddingModel := &modelModule.EmbeddingModel{}
 	got := nlpRequestFromRetrieval(RetrievalRequest{
 		Query:                    "hi",
 		DatasetIDs:               []string{"kb-1"},
 		TopN:                     3,
 		TopK:                     99,
 		KeywordsSimilarityWeight: &keywordWeight,
-		SimilarityThreshold:      0.42,
-	}, []string{"tenant-a"}, 3)
+		SimilarityThreshold:      &similarityThreshold,
+	}, []string{"tenant-a"}, 3, embeddingModel)
 
 	if got.Question != "hi" {
 		t.Fatalf("Question=%q want hi", got.Question)
@@ -264,6 +269,9 @@ func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 	if got.VectorSimilarityWeight == nil || !floatEqual(*got.VectorSimilarityWeight, 0.75) {
 		t.Fatalf("VectorSimilarityWeight=%v want 0.75", got.VectorSimilarityWeight)
 	}
+	if got.EmbeddingModel != embeddingModel {
+		t.Fatal("EmbeddingModel was not passed to nlp retrieval request")
+	}
 }
 
 func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
@@ -271,7 +279,7 @@ func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
 		Query:      "hi",
 		DatasetIDs: []string{"kb-1"},
 		TopN:       3,
-	}, []string{"tenant-a"}, 3)
+	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{})
 
 	if got.Top == nil || *got.Top != 12 {
 		t.Fatalf("Top=%v want 12", got.Top)
@@ -281,25 +289,57 @@ func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
 	}
 }
 
-func TestNLPRetrievalAdapter_ResolveTenantIDsStaysWithinRequestTenant(t *testing.T) {
-	a := &NLPRetrievalAdapter{}
-	got, err := a.resolveTenantIDs(nil, nil, RetrievalRequest{
-		TenantID:   "tenant-a",
-		DatasetIDs: []string{"kb-1", "kb-2", "kb-missing"},
-	})
-	if err != nil {
-		t.Fatalf("resolveTenantIDs: %v", err)
-	}
+func TestNLPRequestFromRetrieval_PreservesExplicitZeroSimilarityThreshold(t *testing.T) {
+	similarityThreshold := 0.0
+	got := nlpRequestFromRetrieval(RetrievalRequest{
+		Query:               "hi",
+		DatasetIDs:          []string{"kb-1"},
+		SimilarityThreshold: &similarityThreshold,
+	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{})
 
-	if len(got) != 1 {
-		t.Fatalf("tenantIDs len=%d want 1, got=%v", len(got), got)
-	}
-	if got[0] != "tenant-a" {
-		t.Fatalf("tenantIDs=%v want [tenant-a]", got)
+	if got.SimilarityThreshold == nil || *got.SimilarityThreshold != 0 {
+		t.Fatalf("SimilarityThreshold = %v; want explicit zero", got.SimilarityThreshold)
 	}
 }
 
-func TestNLPRetrievalAdapter_ResolveTenantIDsFromDatasetIDs(t *testing.T) {
+func TestNLPRetrievalAdapter_ResolveDatasetsRequiresEveryDataset(t *testing.T) {
+	a := &NLPRetrievalAdapter{
+		kbDAO: fakeKnowledgebaseLookup{
+			kbs: []*entity.Knowledgebase{
+				{ID: "kb-1", TenantID: "tenant-a"},
+				{ID: "kb-2", TenantID: "tenant-a"},
+			},
+		},
+	}
+	_, err := a.resolveDatasets(nil, nil, RetrievalRequest{
+		TenantID:   "tenant-a",
+		DatasetIDs: []string{"kb-1", "kb-2", "kb-missing"},
+	})
+	if err == nil {
+		t.Fatal("resolveDatasets: expected missing dataset error")
+	}
+}
+
+func TestNLPRetrievalAdapter_SearchRejectsDatasetsFromMultipleTenants(t *testing.T) {
+	a := &NLPRetrievalAdapter{
+		svc: &nlp.RetrievalService{},
+		kbDAO: fakeKnowledgebaseLookup{
+			kbs: []*entity.Knowledgebase{
+				{ID: "kb-1", TenantID: "tenant-a", EmbdID: "embedding@provider"},
+				{ID: "kb-2", TenantID: "tenant-b", EmbdID: "embedding@provider"},
+			},
+		},
+	}
+	_, err := a.Search(t.Context(), nil, RetrievalRequest{
+		Query:      "hi",
+		DatasetIDs: []string{"kb-1", "kb-2"},
+	})
+	if err == nil || err.Error() != "retrieval: datasets span multiple tenants" {
+		t.Fatalf("Search error = %v, want multiple-tenant rejection", err)
+	}
+}
+
+func TestNLPRetrievalAdapter_ResolveDatasetsFromDatasetIDs(t *testing.T) {
 	a := &NLPRetrievalAdapter{
 		kbDAO: fakeKnowledgebaseLookup{
 			kbs: []*entity.Knowledgebase{
@@ -309,18 +349,18 @@ func TestNLPRetrievalAdapter_ResolveTenantIDsFromDatasetIDs(t *testing.T) {
 			},
 		},
 	}
-	got, err := a.resolveTenantIDs(nil, nil, RetrievalRequest{
+	got, err := a.resolveDatasets(nil, nil, RetrievalRequest{
 		DatasetIDs: []string{"kb-1", "kb-2", "kb-3", " "},
 	})
 	if err != nil {
-		t.Fatalf("resolveTenantIDs: %v", err)
+		t.Fatalf("resolveDatasets: %v", err)
 	}
-	if len(got) != 2 || got[0] != "tenant-a" || got[1] != "tenant-b" {
-		t.Fatalf("tenantIDs=%v want [tenant-a tenant-b]", got)
+	if len(got.tenantIDs) != 2 || got.tenantIDs[0] != "tenant-a" || got.tenantIDs[1] != "tenant-b" {
+		t.Fatalf("tenantIDs=%v want [tenant-a tenant-b]", got.tenantIDs)
 	}
 }
 
-func TestNLPRetrievalAdapter_ResolveTenantIDsKeepsRequestTenantFirst(t *testing.T) {
+func TestNLPRetrievalAdapter_ResolveDatasetsUsesDatasetTenants(t *testing.T) {
 	a := &NLPRetrievalAdapter{
 		kbDAO: fakeKnowledgebaseLookup{
 			kbs: []*entity.Knowledgebase{
@@ -328,15 +368,81 @@ func TestNLPRetrievalAdapter_ResolveTenantIDsKeepsRequestTenantFirst(t *testing.
 			},
 		},
 	}
-	got, err := a.resolveTenantIDs(nil, nil, RetrievalRequest{
+	got, err := a.resolveDatasets(nil, nil, RetrievalRequest{
 		TenantID:   "tenant-a",
 		DatasetIDs: []string{"kb-1"},
 	})
 	if err != nil {
-		t.Fatalf("resolveTenantIDs: %v", err)
+		t.Fatalf("resolveDatasets: %v", err)
 	}
-	if len(got) != 2 || got[0] != "tenant-a" || got[1] != "tenant-b" {
-		t.Fatalf("tenantIDs=%v want [tenant-a tenant-b]", got)
+	if len(got.tenantIDs) != 1 || got.tenantIDs[0] != "tenant-b" {
+		t.Fatalf("tenantIDs=%v want [tenant-b]", got.tenantIDs)
+	}
+}
+
+func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
+	tenantEmbeddingID := "tenant-embedding-1"
+	tests := []struct {
+		name     string
+		kb       *entity.Knowledgebase
+		wantCall string
+	}{
+		{
+			name: "tenant embedding id",
+			kb: &entity.Knowledgebase{
+				ID:           "kb-1",
+				TenantID:     "tenant-1",
+				EmbdID:       "embedding@provider",
+				TenantEmbdID: &tenantEmbeddingID,
+			},
+			wantCall: "id:tenant-embedding-1",
+		},
+		{
+			name: "knowledge base embedding reference",
+			kb: &entity.Knowledgebase{
+				ID:       "kb-1",
+				TenantID: "tenant-1",
+				EmbdID:   "embedding@provider",
+			},
+			wantCall: "resolve:embedding@provider",
+		},
+		{
+			name: "tenant default only when knowledge base has no model",
+			kb: &entity.Knowledgebase{
+				ID:       "kb-1",
+				TenantID: "tenant-1",
+			},
+			wantCall: "default",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			resolver := &fakeModelResolver{modelName: "resolved-model"}
+			adapter := &NLPRetrievalAdapter{modelResolver: resolver}
+			model, err := adapter.resolveEmbeddingModel(t.Context(), test.kb)
+			if err != nil {
+				t.Fatalf("resolveEmbeddingModel: %v", err)
+			}
+			if resolver.call != test.wantCall {
+				t.Fatalf("resolver call = %q, want %q", resolver.call, test.wantCall)
+			}
+			if model == nil || model.ModelName == nil || *model.ModelName != "resolved-model" {
+				t.Fatalf("resolved model = %#v", model)
+			}
+		})
+	}
+}
+
+func TestValidateEmbeddingModelsRejectsDifferentTenantModels(t *testing.T) {
+	firstID := "tenant-embedding-1"
+	secondID := "tenant-embedding-2"
+	err := validateEmbeddingModels([]*entity.Knowledgebase{
+		{ID: "kb-1", TenantID: "tenant-1", TenantEmbdID: &firstID},
+		{ID: "kb-2", TenantID: "tenant-1", TenantEmbdID: &secondID},
+	})
+	if err == nil {
+		t.Fatal("expected different tenant embedding models to be rejected")
 	}
 }
 
@@ -345,6 +451,63 @@ type fakeKnowledgebaseLookup struct {
 	err error
 }
 
+type fakeModelResolver struct {
+	call      string
+	modelName string
+	err       error
+}
+
+func (f *fakeModelResolver) GetModelConfigByID(
+	_ context.Context,
+	_ string,
+	_ entity.ModelType,
+	modelID string,
+) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	f.call = "id:" + modelID
+	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
+}
+
+func (f *fakeModelResolver) ResolveModelConfig(
+	_ context.Context,
+	_ string,
+	_ entity.ModelType,
+	modelRef string,
+) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	f.call = "resolve:" + modelRef
+	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
+}
+
+func (f *fakeModelResolver) GetTenantDefaultModelByType(
+	_ context.Context,
+	_ string,
+	_ entity.ModelType,
+) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	f.call = "default"
+	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
+}
+
 func (f fakeKnowledgebaseLookup) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Knowledgebase, error) {
-	return f.kbs, f.err
+	requested := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		requested[id] = struct{}{}
+	}
+	kbs := make([]*entity.Knowledgebase, 0, len(f.kbs))
+	for _, kb := range f.kbs {
+		if kb == nil {
+			continue
+		}
+		if _, ok := requested[kb.ID]; ok {
+			kbs = append(kbs, kb)
+		}
+	}
+	return kbs, f.err
+}
+
+func (f fakeKnowledgebaseLookup) GetByName(_ context.Context, _ *gorm.DB, name, tenantID string) (*entity.Knowledgebase, error) {
+	for _, kb := range f.kbs {
+		if kb != nil && kb.Name == name && kb.TenantID == tenantID {
+			return kb, nil
+		}
+	}
+	return nil, gorm.ErrRecordNotFound
 }

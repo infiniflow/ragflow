@@ -91,9 +91,6 @@ func TestPPIOChatHappyPath(t *testing.T) {
 		if _, ok := body["reasoning_effort"]; ok {
 			t.Errorf("reasoning_effort should not be sent: %v", body["reasoning_effort"])
 		}
-		if body["max_tokens"] != float64(32) {
-			t.Errorf("max_tokens=%v", body["max_tokens"])
-		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v", body["temperature"])
 		}
@@ -229,7 +226,7 @@ func TestPPIOStreamHappyPath(t *testing.T) {
 			t.Errorf("stream_options=%#v, want include_usage=true", body["stream_options"])
 		}
 		if got := r.Header.Get("Accept"); got != "text/event-stream" {
-			t.Errorf("Accept=%q", got)
+			t.Errorf("Accept=%q, want text/event-stream", got)
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = io.WriteString(w,

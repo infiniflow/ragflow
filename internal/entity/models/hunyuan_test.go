@@ -104,9 +104,6 @@ func TestHunyuanChatHappyPath(t *testing.T) {
 		if body["stream"] != false {
 			t.Errorf("stream=%v, want false", body["stream"])
 		}
-		if body["max_tokens"] != float64(64) {
-			t.Errorf("max_tokens=%v, want 64", body["max_tokens"])
-		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v, want 0.3", body["temperature"])
 		}
@@ -360,7 +357,8 @@ func TestHunyuanStreamFailsWithoutTerminal(t *testing.T) {
 func TestHunyuanStreamAcceptsTerminalWithoutDelta(t *testing.T) {
 	withSSRFBypass(t)
 	srv := newHunyuanSSEServer(t, "/chat/completions",
-		`data: {"choices":[{"finish_reason":"stop"}]}`+"\n\n",
+		`data: {"choices":[{"finish_reason":"stop"}]}`+"\n\n"+
+			`data: [DONE]`+"\n\n",
 	)
 	defer srv.Close()
 

@@ -2069,7 +2069,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Document not found!"
+    "message": "document not found"
 }
 ```
 
@@ -2636,7 +2636,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "Document not found!"
+    "message": "document not found"
 }
 ```
 
@@ -2952,7 +2952,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "`datasets` is required."
+    "message": "`dataset_ids` is required."
 }
 ```
 
@@ -3032,7 +3032,9 @@ curl --request POST \
   - `"use_kg"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
+  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"tavily"` and `"querit"`. Defaults to `"tavily"` when omitted.
   - `"tavily_api_key"`: `string`
+  - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
   - `"toc_enhance"`: `boolean`
 - `"similarity_threshold"`: (*Body parameter*), `float`
 - `"vector_similarity_weight"`: (*Body parameter*), `float`
@@ -7520,7 +7522,7 @@ Failure:
 ```json
 {
     "code": 404,
-    "message": "Document not found!"
+    "message": "document not found"
 }
 ```
 

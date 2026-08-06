@@ -38,7 +38,7 @@ func TestMergeByTokenSizeFromJSON_ExtendsPDFPositions(t *testing.T) {
 			{Text: "beta", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posB},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 128, 0)
+	got := mergeByTokenSizeFromJSON(items, 128, 0, schema.MergeOverCap)
 	merged := got[0]
 	if len(merged) != 1 {
 		t.Fatalf("want 1 merged chunk, got %d", len(merged))
@@ -63,7 +63,7 @@ func TestMergeByTokenSizeFromJSON_ExtendsPositions(t *testing.T) {
 			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posB},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 128, 0)
+	got := mergeByTokenSizeFromJSON(items, 128, 0, schema.MergeOverCap)
 	combined := string(got[0][0].Positions)
 	if !strings.Contains(combined, "1,2,3") || !strings.Contains(combined, "4,5,6") {
 		t.Errorf("merged chunk dropped/omitted `positions`: %s", combined)
@@ -103,7 +103,7 @@ func TestMergeByTokenSizeFromJSON_PositionsDecodeToMatrix(t *testing.T) {
 			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posB},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 128, 0)
+	got := mergeByTokenSizeFromJSON(items, 128, 0, schema.MergeOverCap)
 	m := got[0][0].ToMap()
 	raw, ok := m["positions"]
 	if !ok {

@@ -690,12 +690,12 @@ def test_documents_update_invalid_field_and_guard_contract(rest_client, create_d
     first_document_id = uploaded_docs[0]["id"]
 
     strict_guard_cases = [
-        ({"chunk_count": 1}, 102, "Can't change `chunk_count`."),
-        ({"token_count": 1}, 102, "Can't change `token_count`."),
-        ({"chunk_count": 100}, 102, "Can't change `chunk_count`."),
-        ({"token_count": 100}, 102, "Can't change `token_count`."),
+        ({"chunk_count": 1}, 102, "can't change `chunk_count`"),
+        ({"token_count": 1}, 102, "can't change `token_count`"),
+        ({"chunk_count": 100}, 102, "can't change `chunk_count`"),
+        ({"token_count": 100}, 102, "can't change `token_count`"),
         ({"progress": 2.0}, 102, "Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <2.0>"),
-        ({"progress": 1.0}, 102, "Can't change `progress`."),
+        ({"progress": 1.0}, 102, "can't change `progress`"),
         ({"meta_fields": []}, 102, "Field: <meta_fields> - Message: <Input should be a valid dictionary> - Value: <[]>"),
     ]
     for payload, expected_code, expected_message in strict_guard_cases:
@@ -754,9 +754,10 @@ def test_documents_update_parser_config_contract(rest_client, create_dataset, tm
         "topn_tags": 3,
         "raptor": {
             "use_raptor": True,
-            "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-            "max_token": 256,
-            "threshold": 0.1,
+            "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
+            "max_token": 512,
+            "clustering_threshold": 0.3,
+            "clustering_ratio": 0.5,
             "max_cluster": 64,
             "random_seed": 0,
         },
@@ -1490,14 +1491,14 @@ def test_documents_download_requires_auth_and_invalid_id_contract(rest_client, c
     assert invalid_doc_res.status_code == 200
     invalid_doc_payload = invalid_doc_res.json()
     assert invalid_doc_payload["code"] == 102, invalid_doc_payload
-    assert invalid_doc_payload["message"] == "Document not found!", invalid_doc_payload
+    assert invalid_doc_payload["message"] == "document not found", invalid_doc_payload
 
     invalid_dataset_path = tmp_path / "invalid_dataset_download.txt"
     invalid_dataset_res = _download_document_to_file(rest_client, "invalid_dataset_id", document_id, invalid_dataset_path)
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_payload = invalid_dataset_res.json()
     assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
-    assert invalid_dataset_payload["message"] == "Document not found!", invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "document not found", invalid_dataset_payload
 
 
 @pytest.mark.p2

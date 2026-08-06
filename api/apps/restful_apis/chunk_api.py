@@ -33,6 +33,7 @@ from api.db.joint_services.tenant_model_service import (
 )
 from api.db.db_models import Document, Task
 from api.db.services.doc_metadata_service import DocMetadataService
+from api.db.services.document_counter_service import release_reparse_counters
 from api.db.services.document_service import DocumentService
 from api.db.services.file2document_service import File2DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
@@ -105,6 +106,7 @@ class Chunk(BaseModel):
     questions: list = Field(default_factory=list)
     question_tks: str = ""
     image_id: str = ""
+    doc_type_kwd: str = ""
     available: bool = True
     positions: list[list[int]] = Field(default_factory=list)
 
@@ -178,6 +180,22 @@ def _enrich_chunks_with_document_metadata(chunks: list[dict], metadata_fields=No
     enrich_chunks_with_document_metadata(chunks, metadata_fields)
 
 
+def _release_doc_counters(doc):
+    """Roll back the document's and knowledgebase's chunk/token/duration counters
+    so a re-parse starts from zero. Callers that delete a document's chunks must
+    do this, otherwise the removed counts stay in the knowledgebase total. The
+    release re-reads the row under a lock (see release_reparse_counters) so it is
+    safe against a worker still parsing the document. Returns an error result if
+    the document is gone, else None.
+    """
+    try:
+        release_reparse_counters(doc.id)
+    except LookupError:
+        logging.exception("Failed to release counters for document %s in knowledgebase %s", doc.id, doc.kb_id)
+        return get_error_data_result(message=f"Document {doc.id} not found")
+    return None
+
+
 @manager.route("/datasets/<dataset_id>/chunks", methods=["POST"])  # noqa: F821
 @login_required
 @add_tenant_id_to_kwargs
@@ -210,7 +228,7 @@ async def parse(tenant_id, dataset_id):
             continue
         if not doc:
             return get_error_data_result(message=f"you don't own the document {id}")
-        info = {"run": "1", "progress": 0, "progress_msg": "", "chunk_num": 0, "token_num": 0}
+        info = {"run": "1", "progress": 0, "progress_msg": ""}
         if (
             DocumentService.filter_update(
                 [
@@ -222,6 +240,8 @@ async def parse(tenant_id, dataset_id):
             == 0
         ):
             return get_error_data_result("Can't parse document that is currently being processed")
+        if err := _release_doc_counters(doc[0]):
+            return err
         index_name = search.index_name(dataset_tenant_id)
         if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
             settings.docStoreConn.delete({"doc_id": id}, index_name, doc[0].kb_id)
@@ -282,8 +302,10 @@ async def stop_parsing(tenant_id, dataset_id):
                 data={"error_code": DOC_STOP_PARSING_INVALID_STATE_ERROR_CODE},
             )
         cancel_all_task_of(id)
-        info = {"run": "2", "progress": 0, "chunk_num": 0}
+        info = {"run": "2", "progress": 0}
         DocumentService.update_by_id(id, info)
+        if err := _release_doc_counters(doc[0]):
+            return err
         index_name = search.index_name(dataset_tenant_id)
         if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
             settings.docStoreConn.delete({"doc_id": doc[0].id}, index_name, doc[0].kb_id)
@@ -489,6 +511,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
             "questions": chunk.get("question_kwd", []),
             "dataset_id": chunk.get("kb_id", chunk.get("dataset_id")),
             "image_id": chunk.get("img_id", ""),
+            "doc_type_kwd": chunk.get("doc_type_kwd") if isinstance(chunk.get("doc_type_kwd"), str) else "text",
             "available": bool(chunk.get("available_int", 1)),
             "positions": chunk.get("position_int", []),
             "tag_kwd": chunk.get("tag_kwd", []),
@@ -516,6 +539,7 @@ async def list_chunks(tenant_id, dataset_id, document_id):
                 "questions": sres.field[chunk_id].get("question_kwd", []),
                 "dataset_id": sres.field[chunk_id].get("kb_id", sres.field[chunk_id].get("dataset_id")),
                 "image_id": sres.field[chunk_id].get("img_id", ""),
+                "doc_type_kwd": sres.field[chunk_id].get("doc_type_kwd") if isinstance(sres.field[chunk_id].get("doc_type_kwd"), str) else "text",
                 "available": bool(int(sres.field[chunk_id].get("available_int", "1"))),
                 "positions": sres.field[chunk_id].get("position_int", []),
             }
@@ -969,6 +993,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         "id": chunk_id,
         "content_ltks": rag_tokenizer.tokenize(req["content"]),
         "content_with_weight": req["content"],
+        "doc_type_kwd": "text",
     }
     d["content_sm_ltks"] = rag_tokenizer.fine_grained_tokenize(d["content_ltks"])
     d["important_kwd"] = req.get("important_keywords", [])
@@ -1024,6 +1049,7 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         "create_time": "create_time",
         "document_keyword": "document",
         "img_id": "image_id",
+        "doc_type_kwd": "doc_type_kwd",
     }
     renamed_chunk = {new_key: d[key] for key, new_key in key_mapping.items() if key in d}
     _ = Chunk(**renamed_chunk)
@@ -1194,9 +1220,9 @@ async def switch_chunks(tenant_id, dataset_id, document_id):
         def _switch_sync():
             e, doc = DocumentService.get_by_id(document_id)
             if not e:
-                return get_error_data_result(message="Document not found!")
+                return get_error_data_result(message="document not found")
             if not doc or str(doc.kb_id) != str(dataset_id):
-                return get_error_data_result(message="Document not found!")
+                return get_error_data_result(message="document not found")
             for cid in req["chunk_ids"]:
                 if not settings.docStoreConn.update(
                     {"id": cid},

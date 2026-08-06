@@ -25,22 +25,25 @@ import (
 
 func TestParseExistingOceanBaseAndSeekDBConfig(t *testing.T) {
 	t.Setenv("DB_TYPE", "")
+	mysqlCredential := t.Name() + "-mysql"
+	oceanBaseCredential := t.Name() + "-oceanbase"
+	ignoredCredential := t.Name() + "-ignored"
 	v := viper.New()
 	v.Set("mysql", map[string]interface{}{
-		"name": "rag_flow", "user": "mysql-user", "password": "mysql-pass",
+		"name": "rag_flow", "user": "mysql-user", "password": mysqlCredential,
 		"host": "mysql-host", "port": 3307, "max_connections": 456,
 	})
 	v.Set("oceanbase", map[string]interface{}{
 		"scheme": "oceanbase",
 		"config": map[string]interface{}{
-			"db_name": "legacy_doc", "user": "root@ragflow", "password": "ob-pass",
+			"db_name": "legacy_doc", "user": "root@ragflow", "password": oceanBaseCredential,
 			"host": "ob-host", "port": 2881, "max_connections": 123,
 		},
 	})
 	v.Set("seekdb", map[string]interface{}{
 		"scheme": "mysql",
 		"config": map[string]interface{}{
-			"db_name": "legacy_seekdb", "user": "ignored-user", "password": "ignored-pass",
+			"db_name": "legacy_seekdb", "user": "ignored-user", "password": ignoredCredential,
 			"host": "ignored-host", "port": 2881, "max_connections": 12,
 		},
 	})
@@ -61,7 +64,7 @@ func TestParseExistingOceanBaseAndSeekDBConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantOceanBase := OceanBaseConnectionConfig{
-		DBName: "legacy_doc", User: "root@ragflow", Password: "ob-pass",
+		DBName: "legacy_doc", User: "root@ragflow", Password: oceanBaseCredential,
 		Host: "ob-host", Port: 2881, MaxConnections: 123,
 	}
 	if !reflect.DeepEqual(oceanBase, wantOceanBase) {
@@ -73,11 +76,34 @@ func TestParseExistingOceanBaseAndSeekDBConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantSeekDB := OceanBaseConnectionConfig{
-		DBName: "legacy_seekdb", User: "mysql-user", Password: "mysql-pass",
+		DBName: "legacy_seekdb", User: "mysql-user", Password: mysqlCredential,
 		Host: "mysql-host", Port: 3307, MaxConnections: 456,
 	}
 	if !reflect.DeepEqual(seekDB, wantSeekDB) {
 		t.Fatalf("seekdb config = %#v, want %#v", seekDB, wantSeekDB)
+	}
+}
+
+func TestOceanBaseDefaultCredentialMatchesMySQLWireConfig(t *testing.T) {
+	t.Setenv("DB_TYPE", "")
+	v := viper.New()
+	config := &Config{}
+	if err := config.ParseGeneralConfig(v); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.ParseDatabaseConfig(v); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.ParseDocEngineConfig(v); err != nil {
+		t.Fatal(err)
+	}
+
+	oceanBase, err := config.ResolveOceanBaseConnection("oceanbase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if oceanBase.Password != config.GetMySQLConfig().Password {
+		t.Fatal("OceanBase default credential diverged from the MySQL-wire default")
 	}
 }
 
@@ -98,11 +124,12 @@ func TestOceanBaseEnvironmentTypesAreAccepted(t *testing.T) {
 
 func TestParseOceanBaseAsMainDatabaseFromNestedConfig(t *testing.T) {
 	t.Setenv("DB_TYPE", "oceanbase")
+	oceanBaseCredential := t.Name() + "-oceanbase"
 	v := viper.New()
 	v.Set("oceanbase", map[string]interface{}{
 		"scheme": "oceanbase",
 		"config": map[string]interface{}{
-			"db_name": "rag_flow_ob", "user": "root@tenant", "password": "secret",
+			"db_name": "rag_flow_ob", "user": "root@tenant", "password": oceanBaseCredential,
 			"host": "ob-main", "port": 2881, "max_connections": 300,
 		},
 	})

@@ -110,14 +110,25 @@ def force_every_section_above_budget(monkeypatch):
 
 
 def test_naive_merge_bare_char_a_splits_only_at_lowercase_a():
-    """Bare-char ``a`` must split only at lowercase ``a``, not at ``A``."""
+    """Bare-char ``a`` must split only at lowercase ``a``, not at ``A``.
+
+    The delimiter produces two paragraphs ("B", "Ab") which the default
+    OVER_CAP merge pairs into one chunk (pairing may exceed cap). The
+    assertion therefore checks the *split point*: lowercase 'a' separates
+    "B" from "Ab" while the uppercase 'A' stays inline.
+    """
     chunks = naive_merge(["BaAb"], chunk_token_num=8, delimiter="a")
-    assert [c.strip() for c in chunks if c.strip()] == ["B", "Ab"]
+    joined = "".join(chunks)
+    assert joined == "\nB\nAb"
+    # Case-insensitive matching would have split at 'A' too -> "Ba\\nb".
+    assert "Ba\nb" not in joined
 
 
 def test_naive_merge_bare_char_A_splits_only_at_uppercase_A():
     chunks = naive_merge(["BaAb"], chunk_token_num=8, delimiter="A")
-    assert [c.strip() for c in chunks if c.strip()] == ["Ba", "b"]
+    joined = "".join(chunks)
+    assert joined == "\nBa\nb"
+    assert "B\nAb" not in joined
 
 
 def test_naive_merge_backtick_end_splits_only_at_lowercase_end():

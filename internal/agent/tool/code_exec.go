@@ -43,7 +43,9 @@ var ErrCodeExecSandboxMissing = errors.New(
 const codeExecToolName = "execute_code"
 
 const codeExecToolDescription = "This tool has a sandbox that can execute code written in 'Python'/'Javascript'. " +
-	"It receives a piece of code and returns a JSON string."
+	"It receives a piece of code and returns a JSON string. " +
+	"The code must define a main function (Python) or export main (JavaScript); " +
+	"the return value of main is returned as the tool result."
 
 // codeExecArgs is the JSON shape the model sends in. The Python
 // tool accepts "lang" + "script"; we also accept "code" as a
@@ -100,15 +102,15 @@ func (c *CodeExecTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		Name: codeExecToolName,
 		Desc: codeExecToolDescription,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"language": {
+			"lang": {
 				Type:     schema.String,
-				Desc:     "The programming language of the code. Allowed: 'python' (or 'python3'), 'javascript' (or 'nodejs').",
-				Enum:     []string{"python", "python3", "javascript", "nodejs"},
+				Desc:     "The programming language of this piece of code.",
+				Enum:     []string{"python", "javascript"},
 				Required: true,
 			},
-			"code": {
+			"script": {
 				Type:     schema.String,
-				Desc:     "The code to execute. Must define a `main` function (Python) or export `main` (JavaScript).",
+				Desc:     "A piece of code in the correct format. It must define main(...).",
 				Required: true,
 			},
 		}),

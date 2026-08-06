@@ -21,14 +21,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"ragflow/internal/common"
-	"ragflow/internal/engine/redis"
-	"ragflow/internal/entity"
 	"strings"
+	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/engine/redis"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 
@@ -223,7 +224,7 @@ func (s *ChunkService) cancelAllTasksOfDoc(ctx context.Context, docID string) er
 		if task == nil {
 			continue
 		}
-		redisClient.Set(ctx, fmt.Sprintf("%s-cancel", task.ID), "x", 0)
+		redisClient.Set(ctx, fmt.Sprintf("%s-cancel", task.ID), "x", time.Hour)
 	}
 
 	return nil

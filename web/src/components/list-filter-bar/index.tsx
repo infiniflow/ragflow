@@ -78,7 +78,7 @@ export default function ListFilterBar({
             return (
               pre +
               Object.values(cur).reduce((pre, cur) => {
-                return pre + cur.length;
+                return pre + (cur?.length || 0);
               }, 0)
             );
           }

@@ -97,7 +97,13 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
         suffix: (
           <section className="flex gap-2">
             <DatasetLabel text={item.nickname} />
-            <DatasetLabel text={item.embedding_model} />
+            <DatasetLabel
+              text={
+                item.embedding_model_name
+                  ? item.embedding_model_name
+                  : item.embedding_model
+              }
+            />
           </section>
         ),
         value: item.id,

@@ -34,6 +34,7 @@ const (
 	EngineInfinity      EngineType = "infinity"
 	EngineOceanBase     EngineType = "oceanbase"
 	EngineSeekDB        EngineType = "seekdb"
+	EngineSereneDB      EngineType = "serenedb"
 )
 
 // DocEngine document storage engine interface
