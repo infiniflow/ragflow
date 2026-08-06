@@ -298,3 +298,50 @@ func TestWarnUnknownComponentParamsDetectsUnknownCPNFromEnvelope(t *testing.T) {
 		t.Fatalf("expected a warning about unknown cpnID Parser:Unknown (envelope DSL must be unwrapped); got logs: %v", recorded.All())
 	}
 }
+
+// TestBuildDebugResultDSL_Envelope pins that BuildDebugResultDSL unwraps the
+// canvas envelope before reading "components" — the same shared
+// pipeline.UnwrapCanvasDSL the cap override and warnUnknownComponentParams
+// use. An enveloped DSL (production shape {"dsl": {...}}) must resolve the
+// components map exactly like the equivalent raw (non-enveloped) DSL.
+func TestBuildDebugResultDSL_Envelope(t *testing.T) {
+	const compID = "Parser:Abc"
+	rawDSL := `{"components": {"` + compID + `": {"obj": {"component_name": "Parser", "params": {"parse_method": "deepdoc"}}}}}`
+	output := map[string]any{
+		"state": map[string]any{
+			compID: map[string]any{"chunks": []any{map[string]any{"text": "hi"}}},
+		},
+	}
+
+	// Raw (non-enveloped) DSL.
+	rawRes, err := BuildDebugResultDSL(rawDSL, output)
+	if err != nil {
+		t.Fatalf("raw DSL: %v", err)
+	}
+	rawComps, ok := rawRes["components"].(map[string]any)
+	if !ok {
+		t.Fatalf("raw DSL: components missing: %#v", rawRes)
+	}
+	if _, ok := rawComps[compID]; !ok {
+		t.Fatalf("raw DSL: components missing %q: %#v", compID, rawComps)
+	}
+
+	// Enveloped DSL (production shape) must unwrap to the same result.
+	envDSL := `{"dsl": ` + rawDSL + `}`
+	envRes, err := BuildDebugResultDSL(envDSL, output)
+	if err != nil {
+		t.Fatalf("enveloped DSL: %v", err)
+	}
+	envComps, ok := envRes["components"].(map[string]any)
+	if !ok {
+		t.Fatalf("enveloped DSL: components missing (envelope not unwrapped?): %#v", envRes)
+	}
+	if _, ok := envComps[compID]; !ok {
+		t.Fatalf("enveloped DSL: components missing %q (envelope not unwrapped?): %#v", compID, envComps)
+	}
+
+	// The two shapes must yield an identical component output.
+	if !reflect.DeepEqual(rawComps[compID], envComps[compID]) {
+		t.Fatalf("enveloped and raw DSL produced different results:\nraw=%#v\nenv=%#v", rawComps[compID], envComps[compID])
+	}
+}

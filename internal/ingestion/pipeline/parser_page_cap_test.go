@@ -103,7 +103,7 @@ func TestUnwrapCanvasDSL(t *testing.T) {
 		t.Fatalf("raw DSL should pass through, got error: %v", err)
 	}
 
-	// an empty-but-valid object passes through (matches unwrapCanvasDSL: only
+	// an empty-but-valid object passes through (matches UnwrapCanvasDSL: only
 	// a truly nil/unparseable DSL errors).
 	empty, err := UnwrapCanvasDSL([]byte(`{}`))
 	if err != nil {
