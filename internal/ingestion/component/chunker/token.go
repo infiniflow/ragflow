@@ -26,8 +26,8 @@
 //   - DELIMITER PARSING for the TokenChunker list API mirrors Python
 //     token_chunker: only entries wrapped in backticks (e.g. "`\\n\\n`")
 //     produce an active split pattern. Plain list entries are not
-//     compiled into the pattern. Single-string parser_config.delimiter
-//     parsing lives in ragflow/internal/parser/chunk (ParseDelimiterField).
+//     compiled into the pattern. (The single-string parser_config.delimiter
+//     field is not parsed in Go; only the []string list API is consumed.)
 //
 //   - CHILDREN DELIMITERS (the secondary split) is implemented via the
 //     splitDroppingDelim helper; emitted chunks carry the parent

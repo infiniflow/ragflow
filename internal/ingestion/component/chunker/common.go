@@ -80,8 +80,7 @@ func stringListFromAny(in []any) []string {
 // Only backtick-wrapped entries produce an active pattern (Python
 // token_chunker / rag/nlp/delim list helper). Plain entries are ignored here
 // and used by mergeByTokenSize for sentence-level splitting when no active
-// pattern exists. Canonical single-string parser_config.delimiter parsing
-// lives in ragflow/internal/parser/chunk (ParseDelimiterField).
+// pattern exists.
 func compileDelimPattern(delims []string) *regexp.Regexp {
 	return chunk.CompileDelimiterListPattern(delims)
 }

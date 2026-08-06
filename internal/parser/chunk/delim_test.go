@@ -22,23 +22,6 @@ import (
 	"testing"
 )
 
-func TestNormalizeTextNewlines(t *testing.T) {
-	tests := []struct {
-		in, want string
-	}{
-		{"", ""},
-		{"a\nb", "a\nb"},
-		{"a\r\nb", "a\nb"},
-		{"a\rb", "a\nb"},
-		{"a\r\nb\rc", "a\nb\nc"},
-	}
-	for _, tc := range tests {
-		if got := NormalizeTextNewlines(tc.in); got != tc.want {
-			t.Errorf("NormalizeTextNewlines(%q) = %q, want %q", tc.in, got, tc.want)
-		}
-	}
-}
-
 func TestHasWrappedDelimiter(t *testing.T) {
 	if HasWrappedDelimiter("") {
 		t.Fatal("empty should be false")
@@ -54,42 +37,6 @@ func TestHasWrappedDelimiter(t *testing.T) {
 	}
 	if !HasWrappedDelimiter("`;`") {
 		t.Fatal("wrapped single char should be true")
-	}
-}
-
-func TestParseDelimiterField(t *testing.T) {
-	tests := []struct {
-		name  string
-		field string
-		want  []string
-	}{
-		{"empty", "", nil},
-		{"single bare", "!", []string{"!"}},
-		{"bare pair", "!?", []string{"!", "?"}},
-		{"space", " ", []string{" "}},
-		{"newline", "\n", []string{"\n"}},
-		{"crlf field", "\r\n", []string{"\n"}},
-		{"bare cr", "\r", []string{"\n"}},
-		{"wrapped end", "`end`", []string{"end"}},
-		{"wrapped hierarchy", "`###``##``#`", []string{"###", "##", "#"}},
-		{"tooltip example", "\n`##`;", []string{"##", "\n", ";"}},
-		{"dedupe", "`a`a`a`", []string{"a"}},
-		{"wrapped double newline", "`\n\n`", []string{"\n\n"}},
-		{"crlf wrapped", "`\r\n`", []string{"\n"}},
-		{"shipped default", "\n!?;。；！？", []string{"\n", "!", "?", ";", "。", "；", "！", "？"}},
-		{"chinese", "。；", []string{"。", "；"}},
-		{"mixed order equal length", "`##`#\n", []string{"##", "#", "\n"}},
-		{"empty backticks bare", "``", []string{"`"}},
-		{"double space bare dedupe", "  ", []string{" "}},
-		{"wrapped double space", "`  `", []string{"  "}},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := ParseDelimiterField(tc.field)
-			if !reflect.DeepEqual(got, tc.want) {
-				t.Errorf("ParseDelimiterField(%q) = %#v, want %#v", tc.field, got, tc.want)
-			}
-		})
 	}
 }
 
@@ -122,7 +69,7 @@ func TestCompileDelimiterPattern(t *testing.T) {
 }
 
 func TestCompileDelimiterPatternShippedDefault(t *testing.T) {
-	pat := CompileDelimiterPattern(ParseDelimiterField("\n!?;。；！？"))
+	pat := CompileDelimiterPattern([]string{"\n", "!", "?", ";", "。", "；", "！", "？"})
 	if pat == nil {
 		t.Fatal("expected pattern")
 	}
@@ -137,7 +84,7 @@ func TestCompileDelimiterPatternShippedDefault(t *testing.T) {
 }
 
 func TestCompileDelimiterPatternCaseSensitive(t *testing.T) {
-	pat := CompileDelimiterPattern(ParseDelimiterField("a"))
+	pat := CompileDelimiterPattern([]string{"a"})
 	parts := regexp.MustCompile("("+pat.String()+")").Split("AaBb", -1)
 	// Split removes matches; "A" + "Bb" with "a" consumed.
 	if len(parts) < 2 {
