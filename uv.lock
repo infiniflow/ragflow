@@ -9,6 +9,7 @@ resolution-markers = [
 
 [manifest]
 constraints = [
+    { name = "azure-core", specifier = ">=1.38.0" },
     { name = "cbor2", specifier = ">=5.9.0" },
     { name = "httplib2", specifier = ">=0.32.0" },
     { name = "inscriptis", specifier = ">=2.7.3" },
@@ -655,15 +656,15 @@ wheels = [
 
 [[package]]
 name = "azure-core"
-version = "1.37.0"
+version = "1.41.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "requests" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/ef/83/41c9371c8298999c67b007e308a0a3c4d6a59c6908fa9c62101f031f886f/azure_core-1.37.0.tar.gz", hash = "sha256:7064f2c11e4b97f340e8e8c6d923b822978be3016e46b7bc4aa4b337cfb48aee" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/a6/f3/b416179e408990df5db0d516283022dde0f5d0111d98c1a848e41853e81c/azure_core-1.41.0.tar.gz", hash = "sha256:f46ff5dfcd230f25cf1c19e8a34b8dc08a337b2503e268bb600a16c00db8ad5a" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/ee/34/a9914e676971a13d6cc671b1ed172f9804b50a3a80a143ff196e52f4c7ee/azure_core-1.37.0-py3-none-any.whl", hash = "sha256:b3abe2c59e7d6bb18b38c275a5029ff80f98990e7c90a5e646249a56630fcc19" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/5b/db/325c6d7312d2200251c52323878281045aaffcb5586612296484e4280eaa/azure_core-1.41.0-py3-none-any.whl", hash = "sha256:522b4011e8180b1a3dcd2024396a4e7fe9ac37fb8597db47163d230b5efe892d" },
 ]
 
 [[package]]
@@ -8167,6 +8168,7 @@ dependencies = [
     { name = "webdav4" },
     { name = "webdriver-manager" },
     { name = "wechatpy" },
+    { name = "werkzeug" },
     { name = "wikipedia" },
     { name = "word2number" },
     { name = "xgboost" },
@@ -8323,6 +8325,7 @@ requires-dist = [
     { name = "webdav4", specifier = ">=0.10.0,<0.11.0" },
     { name = "webdriver-manager", specifier = "==4.0.1" },
     { name = "wechatpy", specifier = ">=1.8.18" },
+    { name = "werkzeug", specifier = ">=3.1.7,<4" },
     { name = "wikipedia", specifier = "==1.4.0" },
     { name = "word2number", specifier = "==1.1" },
     { name = "xgboost", specifier = "==1.6.0" },
@@ -9920,14 +9923,14 @@ wheels = [
 
 [[package]]
 name = "werkzeug"
-version = "3.1.5"
+version = "3.1.8"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
 dependencies = [
     { name = "markupsafe" },
 ]
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/5a/70/1469ef1d3542ae7c2c7b72bd5e3a4e6ee69d7978fa8a3af05a38eca5becf/werkzeug-3.1.5.tar.gz", hash = "sha256:6a548b0e88955dd07ccb25539d7d0cc97417ee9e179677d22c7041c8f078ce67" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/dd/b2/381be8cfdee792dd117872481b6e378f85c957dd7c5bca38897b08f765fd/werkzeug-3.1.8.tar.gz", hash = "sha256:9bad61a4268dac112f1c5cd4630a56ede601b6ed420300677a869083d70a4c44" }
 wheels = [
-    { url = "https://mirrors.aliyun.com/pypi/packages/ad/e4/8d97cca767bcc1be76d16fb76951608305561c6e056811587f36cb1316a8/werkzeug-3.1.5-py3-none-any.whl", hash = "sha256:5111e36e91086ece91f93268bb39b4a35c1e6f1feac762c9c822ded0a4e322dc" },
+    { url = "https://mirrors.aliyun.com/pypi/packages/93/8c/2e650f2afeb7ee576912636c23ddb621c91ac6a98e66dc8d29c3c69446e1/werkzeug-3.1.8-py3-none-any.whl", hash = "sha256:63a77fb8892bf28ebc3178683445222aa500e48ebad5ec77b0ad80f8726b1f50" },
 ]
 
 [[package]]
