@@ -2860,28 +2860,48 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(ctx context.Context, 
 	return common.CodeSuccess, nil
 }
 
-func validateEmbeddingDimension(model *modelModule.Model, requested int) error {
-	if requested <= 0 || model == nil {
-		return nil
+func validateEmbeddingModel(model *modelModule.Model, requestedDimension, requestedBatchSize int) error {
+	if model == nil {
+		return fmt.Errorf("embedding model is nil")
+	}
+
+	if requestedDimension <= 0 {
+		return fmt.Errorf("input dimension <= 0")
+	}
+
+	if requestedBatchSize <= 0 {
+		return fmt.Errorf("input batch size <= 0")
+	}
+
+	if model.MaxDimension == nil {
+		return fmt.Errorf("input embedding max dimension is nil, %s", model.Name)
+	}
+
+	if model.MaxBatchSize == nil {
+		return fmt.Errorf("input embedding max batch size is nil, %s", model.Name)
+	}
+
+	if *model.MaxBatchSize < requestedBatchSize {
+		return fmt.Errorf("input embedding max batch size is more than limitation, %s", model.Name)
 	}
 
 	if len(model.Dimensions) > 0 {
 		for _, dim := range model.Dimensions {
-			if dim == requested {
+			if dim == requestedDimension {
 				return nil
 			}
 		}
 		return fmt.Errorf(
 			"dimension %d is not supported by model %s, supported dimensions: %v",
-			requested,
+			requestedDimension,
 			model.Name,
 			model.Dimensions,
 		)
 	}
-	if model.MaxDimension != nil && requested > *model.MaxDimension {
+	if model.MaxDimension != nil && requestedDimension > *model.MaxDimension {
 		return fmt.Errorf(
 			"dimension %d is not supported by model %s, max dimension: %d",
-			requested,
+			requestedDimension,
 			model.Name,
 			*model.MaxDimension,
 		)
@@ -2940,7 +2960,7 @@ func (m *ModelProviderService) EmbedText(ctx context.Context, providerName, inst
 		}
 	}
 
-	if err = validateEmbeddingDimension(info.ModelInfo, modelConfig.Dimension); err != nil {
+	if err = validateEmbeddingModel(info.ModelInfo, modelConfig.Dimension, len(texts)); err != nil {
 		return nil, common.CodeBadRequest, err
 	}
 

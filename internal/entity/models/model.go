@@ -168,6 +168,7 @@ type Model struct {
 	Tools         *ModelTools    `json:"tools"`
 	Class         *string        `json:"class"`
 	MaxDimension  *int           `json:"max_dimension"` // used by embedding models
+	MaxBatchSize  *int           `json:"batch_size"`    // used by embedding models
 	Dimensions    []int          `json:"dimensions"`
 	Alias         []string       `json:"alias"`
 	Rank          *int           `json:"rank"`
