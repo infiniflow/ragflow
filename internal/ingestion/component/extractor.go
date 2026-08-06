@@ -751,7 +751,17 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	if err != nil {
 		return err
 	}
-	resultStr, _ := result.(string)
+	resultStr, ok := result.(string)
+	if !ok {
+		if m, isMap := result.(map[string]any); isMap {
+			if kw, exists := m["keywords"]; exists {
+				resultStr = fmt.Sprintf("%v", kw)
+			} else {
+				b, _ := json.Marshal(m)
+				resultStr = string(b)
+			}
+		}
+	}
 	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
 		return nil
@@ -787,7 +797,17 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	if err != nil {
 		return err
 	}
-	resultStr, _ := result.(string)
+	resultStr, ok := result.(string)
+	if !ok {
+		if m, isMap := result.(map[string]any); isMap {
+			if q, exists := m["questions"]; exists {
+				resultStr = fmt.Sprintf("%v", q)
+			} else {
+				b, _ := json.Marshal(m)
+				resultStr = string(b)
+			}
+		}
+	}
 	resultStr = cleanExtractionResult(resultStr)
 	if resultStr == "" {
 		return nil
