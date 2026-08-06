@@ -24,7 +24,7 @@ type ToolCallSession interface {
 	ToolCall(name string, arguments map[string]interface{}) (string, error)
 }
 
-// EmbeddingModel interface for embedding models
+// ModelDriver interface for model functionality
 type ModelDriver interface {
 	NewInstance(baseURL map[string]string) ModelDriver
 

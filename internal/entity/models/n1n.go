@@ -407,7 +407,6 @@ func (n *N1NModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[strin
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-// TranscribeAudio: n1n.ai exposes /v1/audio/transcriptions
 func (n *N1NModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
@@ -416,7 +415,6 @@ func (n *N1NModel) TranscribeAudioWithSender(ctx context.Context, modelName *str
 	return fmt.Errorf("%s, no such method", n.Name())
 }
 
-// AudioSpeech: n1n.ai exposes /v1/audio/speech
 func (n *N1NModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
@@ -435,7 +433,6 @@ func (n *N1NModel) ParseFile(ctx context.Context, modelName *string, content []b
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }
 
-// ListTasks: n1n.ai has /v1/contents/generations/tasks
 func (n *N1NModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", n.Name())
 }

@@ -60,13 +60,11 @@ type Reasoning struct {
 	RawType string           `json:"type"`
 }
 
-// Reasoning represents the reasoning capability (can be one of three types)
 type ClearReasoningContent struct {
 	DefaultValue    bool     `json:"default_value"`
 	SupportedModels []string `json:"supported_models"`
 }
 
-// Reasoning represents the reasoning capability (can be one of three types)
 type Thinking struct {
 	DefaultValue    bool     `json:"default_value"`
 	SupportedModels []string `json:"supported_models"`
@@ -234,7 +232,7 @@ func GetProviderManager() *ProviderManager {
 
 // InitProviderManager creates a new ProviderManager by reading all JSON files from a directory
 func InitProviderManager(dirPath string) error {
-	providers := []Provider{}
+	var providers []Provider
 
 	// Read all files in the directory
 	files, err := os.ReadDir(dirPath)
@@ -352,7 +350,6 @@ func InitProviderManager(dirPath string) error {
 	return nil
 }
 
-// 1. List all providers
 func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 
 	var providers []map[string]interface{}
@@ -451,7 +448,6 @@ func (pm *ProviderManager) GetModelByNameOrAlias(modelName string) *Model {
 	return nil
 }
 
-// 2. Show specific provider information (including base_url)
 func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]interface{}, error) {
 
 	provider := pm.FindProvider(providerName)
@@ -468,14 +464,13 @@ func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]in
 	return providerInfo, nil
 }
 
-// 3. List models under a specific provider
 func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interface{}, error) {
 	provider := pm.FindProvider(providerName)
 	if provider == nil {
 		return nil, fmt.Errorf("provider '%s' not found", providerName)
 	}
 
-	modelList := []map[string]interface{}{}
+	var modelList []map[string]interface{}
 	for _, model := range provider.Models {
 		// Field name "model_type" (singular) matches the IInstanceModel
 		// contract in web/src/interfaces/database/llm.ts:75 and Python's
@@ -628,7 +623,6 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 	return resp
 }
 
-// 5. Display models with specific features
 func (pm *ProviderManager) SearchByFeature(featureType string) ModelResponse {
 	resp := ModelResponse{
 		Code:    0,
@@ -659,7 +653,6 @@ func (pm *ProviderManager) SearchByFeature(featureType string) ModelResponse {
 	return resp
 }
 
-// 6. Display models with specific type
 func (pm *ProviderManager) SearchByType(modelType string) ModelResponse {
 	resp := ModelResponse{
 		Code:    0,
@@ -757,24 +750,6 @@ func getFeaturesMap(features Features) map[string]interface{} {
 	return featuresMap
 }
 
-// Helper: Check if model has a specific feature
-func modelHasFeature(features Features, featureType string) bool {
-	switch strings.ToLower(featureType) {
-	case "multimodal":
-		return features.Multimodal != nil && features.Multimodal.Enabled
-	case "reasoning":
-		return features.Reasoning != nil
-	case "reasoning_simple":
-		return features.Reasoning != nil && features.Reasoning.RawType == "simple"
-	case "reasoning_budget":
-		return features.Reasoning != nil && features.Reasoning.RawType == "budget"
-	case "reasoning_effort":
-		return features.Reasoning != nil && features.Reasoning.RawType == "effort"
-	default:
-		return false
-	}
-}
-
 // findRepoRoot walks up from CWD until it finds the repo root (marked by
 // conf/all_models.json).  This makes tests work regardless of the Go test
 // binary's CWD (which is set to the package directory by go test).
@@ -792,7 +767,6 @@ func findRepoRoot() string {
 	return "."
 }
 
-// Helper: Find provider by name
 func (pm *ProviderManager) FindProvider(name string) *Provider {
 	for i := range pm.Providers {
 		if strings.EqualFold(pm.Providers[i].Name, name) {
@@ -802,7 +776,6 @@ func (pm *ProviderManager) FindProvider(name string) *Provider {
 	return nil
 }
 
-// Helper: Find model by name
 func (pm *ProviderManager) FindModel(provider *Provider, modelName string) *Model {
 	for i := range provider.Models {
 		if strings.EqualFold(provider.Models[i].Name, modelName) {

@@ -2648,7 +2648,7 @@ WIKI_REFINE_WRITER_SYSTEM_TEMPLATE = (
 )
 
 
-def _build_refine_writer_system(instruction: str | None = None, page_example: str | None = None) -> str:
+def _build_refine_writer_system(instruction: str | None = None, example: str | None = None) -> str:
     """Return the writer system prompt with separate instruction and page
     example overrides. Empty values use the built-in defaults.
 
@@ -2657,7 +2657,7 @@ def _build_refine_writer_system(instruction: str | None = None, page_example: st
     override to apply.
     """
     instruction_body = (instruction or "").strip() or "Follow the page structure and writing requirements below."
-    example_body = (page_example or "").strip() or WIKI_TEMPLATE_EXAMPLE
+    example_body = (example or "").strip() or WIKI_TEMPLATE_EXAMPLE
     return WIKI_REFINE_WRITER_SYSTEM_TEMPLATE.format(
         template_instruction=instruction_body,
         template_example=example_body,
@@ -3266,14 +3266,12 @@ async def _wiki_write_page_simple(
     chat_mdl,
     llm_timeout: int,
     instruction: Optional[str] = None,
-    page_example: Optional[str] = None,
     example: Optional[str] = None,
 ) -> str:
     """Single LLM call → markdown content.
 
-    ``instruction`` and ``page_example`` are the separate per-template
-    writer overrides. ``example`` is retained as a fallback for callers
-    using the older combined configuration field.
+    ``instruction`` and ``example`` are the separate per-template writer
+    overrides.
     """
     own_slug = plan_item.get("slug") or ""
     available = [s for s in all_plan_slugs if s and s != own_slug]
@@ -3300,7 +3298,7 @@ async def _wiki_write_page_simple(
         chat_mdl,
         _build_refine_writer_system(
             instruction=instruction,
-            page_example=page_example or example,
+            example=example,
         ),
         user_prompt,
         temperature=0.15,
@@ -3542,7 +3540,6 @@ async def wiki_refine_from_plan(
     force_rerun: bool = False,
     callback: Optional[Callable] = None,
     instruction: Optional[str] = None,
-    page_example: Optional[str] = None,
     example: Optional[str] = None,
 ) -> list[dict]:
     """Phase 4 (REFINE) — KB-scoped.
@@ -3738,7 +3735,6 @@ async def wiki_refine_from_plan(
                     chat_mdl,
                     llm_timeout,
                     instruction=instruction,
-                    page_example=page_example,
                     example=example,
                 )
                 if not content_md_raw:

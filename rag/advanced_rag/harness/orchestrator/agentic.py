@@ -143,6 +143,8 @@ async def agentic_research(state: dict, tools) -> dict:
         if action == "ANSWER_PARTIAL":
             return _finalize(ctx, tools, partial=True)
         if action == "ABSTAIN":
+            if getattr(tools, "text_attachments_content", ""):
+                return {"verdict": verdict.__dict__, "kbinfos": tools.kbinfos}
             tools.kbinfos["chunks"] = []
             return {"verdict": verdict.__dict__, "abstain": True}
         if action == "REPLAN":

@@ -50,11 +50,6 @@ func readProviderConfig(t *testing.T, fileName string) []byte {
 	return nil
 }
 
-func readPPIOProviderConfig(t *testing.T) []byte {
-	t.Helper()
-	return readProviderConfig(t, "ppio.json")
-}
-
 // setupProviderTestDir creates a temporary directory populated with provider
 // config files and conf/all_models.json, then changes the working directory to
 // it. InitProviderManager hardcodes a read of conf/all_models.json relative to
