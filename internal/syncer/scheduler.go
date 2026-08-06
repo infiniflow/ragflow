@@ -41,8 +41,8 @@ func NewScheduler(pollInterval time.Duration, queue chan<- TaskEnvelope, taskSer
 
 // Run starts recovery and periodic task discovery.
 func (s *Scheduler) Run(ctx context.Context) error {
-	if err := s.scan(ctx); err != nil {
-		return err
+	if err := s.scan(ctx); err != nil && ctx.Err() == nil {
+		log.Errorf("syncer scheduler scan failed: %v", err)
 	}
 	ticker := time.NewTicker(s.pollInterval)
 	defer ticker.Stop()
@@ -51,8 +51,8 @@ func (s *Scheduler) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			if err := s.scan(ctx); err != nil {
-				return err
+			if err := s.scan(ctx); err != nil && ctx.Err() == nil {
+				log.Errorf("syncer scheduler scan failed: %v", err)
 			}
 		}
 	}
