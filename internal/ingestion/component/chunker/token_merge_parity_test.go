@@ -77,10 +77,19 @@ var mergeSourceLines = []string{
 //   - when cur_t + pt > cap, OVER_CAP merges the overflowing paragraph into the
 //     current group and then CLOSES the group (merge-then-close), so the next
 //     paragraph starts a fresh group.
+//   - empty/whitespace-only paragraphs are DROPPED before merging, mirroring
+//     the Python caller's `if not sub_sec` filter (rag/nlp/__init__.py:1403)
+//     and the Go chunker's TrimSpace skip (token.go:703). The oracle must model
+//     this so it stays a faithful reference for mergeByTokenSize.
 func pythonMergeGroups(paragraphs []string, cap int) [][]string {
 	groups := [][]string{}
 	cur, curT := []string{}, 0
 	for _, p := range paragraphs {
+		// Empty fragments are dropped, exactly as the Python caller and the
+		// Go chunker do. Skipping here keeps the oracle faithful.
+		if strings.TrimSpace(p) == "" {
+			continue
+		}
 		// Python's naive_merge builds each paragraph as "\n" + sub_sec
 		// (rag/nlp/__init__.py:1405), so the per-paragraph token count
 		// INCLUDES the leading "\n". Count it the same way so the running
@@ -138,16 +147,38 @@ func TestPythonMergeGroupsOracleSanity(t *testing.T) {
 	}
 	for ci, in := range inputs {
 		groups := pythonMergeGroups(in, cap)
+		// Python (rag/nlp:1403) and the Go chunker (token.go:703) drop
+		// empty/whitespace-only fragments, so the oracle does too. Compare
+		// against the non-empty partition of the input rather than `in`.
+		var nonEmpty []string
+		for _, p := range in {
+			if strings.TrimSpace(p) == "" {
+				continue
+			}
+			nonEmpty = append(nonEmpty, p)
+		}
 		var flat []string
 		for _, g := range groups {
 			flat = append(flat, g...)
 		}
-		if len(flat) != len(in) {
-			t.Fatalf("case %d: paragraph count mismatch got=%d want=%d", ci, len(flat), len(in))
+		if len(flat) != len(nonEmpty) {
+			t.Fatalf("case %d: paragraph count mismatch got=%d want=%d", ci, len(flat), len(nonEmpty))
 		}
-		for i := range in {
-			if in[i] != flat[i] {
-				t.Fatalf("case %d elem %d: order/loss mismatch got=%q want=%q", ci, i, flat[i], in[i])
+		for i := range nonEmpty {
+			if nonEmpty[i] != flat[i] {
+				t.Fatalf("case %d elem %d: order/loss mismatch got=%q want=%q", ci, i, flat[i], nonEmpty[i])
+			}
+		}
+		// An oversized paragraph (its own token count > cap) must stand
+		// alone: the oracle emits it as a single-element group.
+		for gi, g := range groups {
+			for _, p := range g {
+				if tokenizeStr("\n"+p) > cap {
+					if len(g) != 1 {
+						t.Errorf("case %d group %d: oversized paragraph not isolated (len=%d)", ci, gi, len(g))
+					}
+					break
+				}
 			}
 		}
 		for gi, g := range groups {

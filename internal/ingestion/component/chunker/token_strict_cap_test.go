@@ -388,4 +388,8 @@ func TestMergeDecisionOverCapVsUnderCapBoundary(t *testing.T) {
 	if overBig != startNewChunk {
 		t.Errorf("OVER_CAP with oversized incoming: want startNewChunk, got %v", overBig)
 	}
+	_, underBig := mergeDecision("prev text", "incoming text", "\n", target, 0, schema.MergeUnderCap, prevT, target+5)
+	if underBig != startNewChunk {
+		t.Errorf("UNDER_CAP with oversized incoming: want startNewChunk, got %v", underBig)
+	}
 }
