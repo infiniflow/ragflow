@@ -24,7 +24,7 @@ type ToolCallSession interface {
 	ToolCall(name string, arguments map[string]interface{}) (string, error)
 }
 
-// EmbeddingModel interface for embedding models
+// ModelDriver interface for model functionality
 type ModelDriver interface {
 	NewInstance(baseURL map[string]string) ModelDriver
 
@@ -219,10 +219,11 @@ type ParseFileConfig struct {
 
 // EmbeddingModel wraps a ModelDriver with embedding-specific configuration
 type EmbeddingModel struct {
-	ModelDriver ModelDriver
-	ModelName   *string
-	APIConfig   *APIConfig
-	MaxTokens   int // Max input tokens for the embedding model, used for text truncation
+	ModelDriver  ModelDriver
+	ModelName    *string
+	APIConfig    *APIConfig
+	MaxTokens    int  // Max input tokens for the embedding model, used for text truncation
+	MaxBatchSize *int // Max texts per Embed request; nil means "resolve from provider capability at use site"
 }
 
 // NewEmbeddingModel creates a new EmbeddingModel
@@ -233,6 +234,22 @@ func NewEmbeddingModel(driver ModelDriver, modelName *string, apiConfig *APIConf
 		APIConfig:   apiConfig,
 		MaxTokens:   maxTokens,
 	}
+}
+
+// ResolveBatchSize returns the max texts per Embed request for this embedding
+// model. It prefers an explicit MaxBatchSize set at construction time and falls
+// back to the provider capability (all_models.json batch_size, added by
+// #17877/#17878) via GetEmbeddingBatchSize, which itself defaults to
+// DefaultEmbeddingBatchSize.
+func (m *EmbeddingModel) ResolveBatchSize() int {
+	if m != nil && m.MaxBatchSize != nil && *m.MaxBatchSize > 0 {
+		return *m.MaxBatchSize
+	}
+	var name string
+	if m != nil && m.ModelName != nil {
+		name = *m.ModelName
+	}
+	return GetEmbeddingBatchSize(name)
 }
 
 // RerankModel wraps a ModelDriver with rerank-specific configuration

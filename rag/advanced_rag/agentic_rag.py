@@ -83,6 +83,7 @@ class RAGTools:
         empty_response: str = "",
         do_refer: bool | None = True,
         thinking_mode: str = "medium",
+        text_attachments_content: str = "",
     ):
         self.tenant_ids = tenant_ids
         self.chat_mdl = chat_mdl.clone()
@@ -114,6 +115,7 @@ class RAGTools:
         self.user_defined_prompts = user_defined_prompts or {}
         self.empty_response = empty_response
         self.do_refer = do_refer
+        self.text_attachments_content = text_attachments_content or ""
         # Optional sink used by the outer agent stream to preserve the final
         # answer deltas produced by the inner research graph.  The tool API
         # still returns the complete string to the caller, but the stream
@@ -572,6 +574,19 @@ class RAGTools:
 
         if self.tool_started_sink is not None:
             self.tool_started_sink()
+        if self.text_attachments_content:
+            self.kbinfos = {
+                "chunks": [
+                    {
+                        "id": "chat_attachment",
+                        "chunk_id": "chat_attachment",
+                        "doc_id": "chat_attachment",
+                        "docnm_kwd": "Chat attachment",
+                        "content_with_weight": self.text_attachments_content,
+                    }
+                ],
+                "doc_aggs": [{"doc_id": "chat_attachment", "doc_name": "Chat attachment", "count": 1}],
+            }
         messages = [{"role": "user", "content": question}] if question else []
         final = ""
         async for kind, delta in _split_think_stream(run_agentic_rag(self, messages)):

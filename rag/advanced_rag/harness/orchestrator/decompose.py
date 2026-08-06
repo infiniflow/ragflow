@@ -78,6 +78,8 @@ async def decompose_and_search(state: dict, tools) -> dict:
                 "kbinfos": tools.kbinfos,
             }
         if action == "ABSTAIN":
+            if getattr(tools, "text_attachments_content", ""):
+                return {"verdict": verdict.__dict__, "kbinfos": tools.kbinfos}
             tools.kbinfos["chunks"] = []
             return {"verdict": verdict.__dict__, "abstain": True}
 

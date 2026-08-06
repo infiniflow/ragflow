@@ -12,7 +12,7 @@ import { z } from 'zod';
 import { formSchema } from './form-schema';
 
 // The value that does not need to be displayed in the analysis method Select
-const HiddenFields = ['email', 'picture', 'audio'];
+const HiddenFields = ['email', 'picture', 'audio', 'resume'];
 
 export function useSelectChunkMethodList() {
   const parserList = useSelectParserList();

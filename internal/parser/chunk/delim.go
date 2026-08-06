@@ -135,16 +135,28 @@ func CompileDelimiterPattern(delimiters []string) *regexp.Regexp {
 	return regexp.MustCompile(strings.Join(escaped, "|"))
 }
 
-// CompileDelimiterListPattern compiles a TokenChunker-style []string delimiter
-// list. Entries wrapped in backticks contribute their inner content as a
-// split pattern (Python token_chunker / historical Go compileDelimPattern).
-// Bare list entries are ignored for the active pattern — they are only used
-// by merge paths when no custom pattern exists.
+// CompileDelimiterPatternList builds an alternation regex from a
+// TokenChunker-style []string delimiter list, with a shared policy for how
+// backtick-wrapped and bare entries are treated. Every non-empty entry is
+// regexp.QuoteMeta'd and the result is sorted longest-first (stable by rune
+// count) so a longer delimiter always wins over a shorter prefix inside it.
 //
-// Prefer ParseDelimiterField for the single-string parser_config.delimiter
-// field. This helper exists for the dataflow list API.
-func CompileDelimiterListPattern(delims []string) *regexp.Regexp {
-	var custom []string
+//   - Backtick-wrapped entries (“ `abc` “) contribute their INNER content as
+//     the split pattern; the backticks are stripped. This is the Python
+//     token_chunker / historical Go compileDelimPattern convention.
+//   - Bare entries (e.g. ". ") behave according to keepBare:
+//     keepBare=false (the main `delimiters` list): a bare entry is IGNORED for
+//     the active pattern — it only influences merge paths when no custom
+//     pattern exists.
+//     keepBare=true (the `children_delimiters` list): a bare entry is KEPT
+//     active, because every non-empty children delimiter splits — including
+//     bare ones.
+//
+// Returns nil when no active entry remains. Prefer ParseDelimiterField for the
+// single-string parser_config.delimiter field; this helper exists for the
+// dataflow list API.
+func CompileDelimiterPatternList(delims []string, keepBare bool) *regexp.Regexp {
+	var out []string
 	for _, d := range delims {
 		if d == "" {
 			continue
@@ -154,20 +166,36 @@ func CompileDelimiterListPattern(delims []string) *regexp.Regexp {
 			if inner == "" {
 				continue
 			}
-			custom = append(custom, inner)
+			out = append(out, inner)
+			continue
 		}
+		if !keepBare {
+			continue
+		}
+		out = append(out, d)
 	}
-	if len(custom) == 0 {
+	if len(out) == 0 {
 		return nil
 	}
-	sort.SliceStable(custom, func(i, j int) bool {
-		return utf8.RuneCountInString(custom[i]) > utf8.RuneCountInString(custom[j])
+	sort.SliceStable(out, func(i, j int) bool {
+		return utf8.RuneCountInString(out[i]) > utf8.RuneCountInString(out[j])
 	})
-	escaped := make([]string, 0, len(custom))
-	for _, d := range custom {
+	escaped := make([]string, 0, len(out))
+	for _, d := range out {
 		escaped = append(escaped, regexp.QuoteMeta(d))
 	}
 	return regexp.MustCompile(strings.Join(escaped, "|"))
+}
+
+// CompileDelimiterListPattern compiles a TokenChunker-style []string delimiter
+// list. It is CompileDelimiterPatternList with keepBare=false: backtick entries
+// contribute their inner content and bare entries are ignored for the active
+// pattern (they only steer merge paths when no custom pattern exists).
+//
+// Prefer ParseDelimiterField for the single-string parser_config.delimiter
+// field. This helper exists for the dataflow list API.
+func CompileDelimiterListPattern(delims []string) *regexp.Regexp {
+	return CompileDelimiterPatternList(delims, false)
 }
 
 // HasCustomDelimiterList reports whether any entry in a TokenChunker-style

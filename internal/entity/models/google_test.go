@@ -534,7 +534,7 @@ func TestGoogleGenerateContentConfigRejectsMaxTokensOverflow(t *testing.T) {
 		t.Fatalf("cfg = %#v, want nil on error", cfg)
 	}
 
-	maxInt32 := int(math.MaxInt32)
+	maxInt32 := math.MaxInt32
 	cfg, err = googleGenerateContentConfig(&ChatConfig{MaxTokens: &maxInt32}, nil)
 	if err != nil {
 		t.Fatalf("googleGenerateContentConfig error = %v", err)

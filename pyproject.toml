@@ -244,6 +244,8 @@ constraint-dependencies = [
     # langgraph-sdk, langsmith, ranx. Previously blocked by mistralai==0.4.2
     # pinning orjson<3.11
     "orjson>=3.11.6",
+    # CVE-2026-26209: cbor2 < 5.9.0 vulnerable; pulled in transitively via ranx
+    "cbor2>=5.9.0",
 ]
 exclude-dependencies = [
     # crawl4ai>=0.8.6 depends on unclecode-litellm, which installs the same

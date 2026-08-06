@@ -105,8 +105,8 @@ func TestReplicateOfficialChatHappyPath(t *testing.T) {
 		if input["system_prompt"] != "be helpful" {
 			t.Errorf("system_prompt=%v", input["system_prompt"])
 		}
-		if input["max_new_tokens"] != float64(128) {
-			t.Errorf("max_new_tokens=%v", input["max_new_tokens"])
+		if _, ok := input["max_new_tokens"]; ok {
+			t.Errorf("max_new_tokens should be omitted, got %v", input["max_new_tokens"])
 		}
 		// Stop is deliberately filtered out because Replicate model
 		// inputs are model-specific and upstream support is undefined.

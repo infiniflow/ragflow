@@ -128,7 +128,8 @@
       "max_tokens": 8192,
       "model_types": [
         "embedding"
-      ]
+      ],
+      "max_batch_size": 2048
     }
   ]
 }

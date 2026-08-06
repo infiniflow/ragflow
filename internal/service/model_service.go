@@ -3533,6 +3533,66 @@ func (m *ModelProviderService) ResolveModelConfig(ctx context.Context, tenantID 
 	return m.GetModelConfigFromProviderInstance(ctx, tenantID, modelType, modelRef)
 }
 
+// ResolveModelContextLength returns the chat model's context window
+// (content_length) in tokens, or 0 when unknown. After the all_models.json
+// migration (PR #17839) content_length is the total context window and
+// max_output is the generation cap; the knowledge_compiler prompt-budget logic
+// needs the context window, not the output cap. modelRef accepts either a
+// tenant model UUID or a "model@instance@provider" composite name.
+func (m *ModelProviderService) ResolveModelContextLength(ctx context.Context, tenantID string, modelRef string) (int, error) {
+	if strings.TrimSpace(modelRef) == "" {
+		return 0, fmt.Errorf("model ref is required")
+	}
+	if modelObj, err := m.modelDAO.GetByID(ctx, dao.DB, modelRef); err == nil {
+		return m.modelContextLengthByID(ctx, modelObj)
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return 0, err
+	}
+	pureName, _, providerName, err := parseModelName(modelRef)
+	if err != nil {
+		return 0, err
+	}
+	return m.modelContextLengthByName(providerName, pureName)
+}
+
+// modelContextLengthByID reads content_length from the factory catalog for a
+// tenant model row (by id).
+func (m *ModelProviderService) modelContextLengthByID(ctx context.Context, modelObj *entity.TenantModel) (int, error) {
+	if modelObj.Status != "active" {
+		return 0, fmt.Errorf("tenant model id=%s is disabled", modelObj.ID)
+	}
+	provider, err := m.modelProviderDAO.GetByID(ctx, dao.DB, modelObj.ProviderID)
+	if err != nil {
+		return 0, err
+	}
+	if provider == nil {
+		return 0, fmt.Errorf("provider id=%s not found for model id=%s", modelObj.ProviderID, modelObj.ID)
+	}
+	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil && mi.ContentLength != nil {
+		return *mi.ContentLength, nil
+	}
+	return 0, nil
+}
+
+// modelContextLengthByName reads content_length from the factory catalog for a
+// "model@provider" style reference. It is best-effort: an unknown provider or
+// model returns 0 (caller falls back to a default context length).
+func (m *ModelProviderService) modelContextLengthByName(providerName, pureName string) (int, error) {
+	targetProvider := dao.GetModelProviderManager().FindProvider(providerName)
+	if targetProvider == nil {
+		return 0, fmt.Errorf("model provider config not found: %s", providerName)
+	}
+	for i := range targetProvider.Models {
+		if strings.EqualFold(targetProvider.Models[i].Name, pureName) {
+			if targetProvider.Models[i].ContentLength != nil {
+				return *targetProvider.Models[i].ContentLength, nil
+			}
+			return 0, nil
+		}
+	}
+	return 0, nil
+}
+
 func (m *ModelProviderService) ResolveModelID(ctx context.Context, tenantID string, modelType entity.ModelType, modelName string) (string, error) {
 	if modelObj, err := m.modelDAO.GetByID(ctx, dao.DB, modelName); err == nil {
 		if modelObj.Status != "active" {

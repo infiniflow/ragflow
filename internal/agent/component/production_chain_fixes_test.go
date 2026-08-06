@@ -227,17 +227,17 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 		t.Fatalf("failed to unwrap sql db: %v", err)
 	}
 	sqlDB.SetMaxOpenConns(1)
-	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+	if err = db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
 		t.Fatalf("failed to migrate knowledgebase: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+	if err = db.AutoMigrate(&entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate user_tenant: %v", err)
 	}
 	origDB := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = origDB })
 	activeStatus := "1"
-	if err := db.Create(&entity.UserTenant{
+	if err = db.Create(&entity.UserTenant{
 		ID:        "ut-1",
 		UserID:    "user-1",
 		TenantID:  "tenant-1",
@@ -248,7 +248,7 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 		t.Fatalf("failed to seed user_tenant: %v", err)
 	}
 
-	if err := db.Create(&entity.Knowledgebase{
+	if err = db.Create(&entity.Knowledgebase{
 		ID:         "kb-da1",
 		Name:       "da1",
 		TenantID:   "tenant-1",

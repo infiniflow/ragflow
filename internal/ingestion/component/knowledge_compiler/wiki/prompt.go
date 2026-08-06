@@ -15,6 +15,26 @@ const wikiPlanSystem = `You are a knowledge compilation planner. Given structure
 
 const wikiRefineSystem = `You are a technical writer. Write a complete wiki page from the plan, evidence checklist, and source text. Preserve factual density, keep the source language, and return only markdown.`
 
+const wikiReduceEntityDisambiguateSystem = `You are a knowledge canonicalization engine. Decide whether two named entities refer to the same real-world concept. Return ONLY valid JSON.`
+
+const wikiReduceEntityDisambiguateUserTemplate = `## Entity A
+{entity_a}
+
+## Entity B
+{entity_b}
+
+Return JSON:
+{
+  "merge": true,
+  "reason": "string"
+}
+
+Rules:
+- merge=true only when A and B are the same real-world entity (e.g. aliases, abbreviations, spelling variants of the same thing).
+- merge=false when they are distinct concepts that merely co-occur.
+- Prefer false when ambiguous.
+- Return ONLY the JSON object.`
+
 const wikiMapUserTemplate = `## Document context
 Document id: {doc_id}
 Batch contains {chunk_count} packed chunk(s). Each chunk is introduced by a
@@ -134,22 +154,15 @@ Return a JSON compilation plan with one or more page entries:
 }
 
 Rules:
+- Return at most {max_pages} page entries for this batch.
 - Prefer one page per high-signal entity or concept when the batch supports it.
+- Merge minor or weakly-supported facts into broader topic pages instead of emitting tiny standalone pages.
 - Use page_type=entity for entity pages, page_type=concept for concept pages, and page_type=topic for cross-cutting themes.
 - entity_names must name the entities and concepts that justify the page.
 - related_kb_pages should list other slugs from the same plan that the page should cross-link to.
+- Keep lead concise (one sentence) and keep sections compact (no more than 4 sections, no more than 3 short points per section).
 - Keep the page in the source language.
 - Return ONLY the JSON object.`
-
-const wikiPlanMergeUserTemplate = `## Knowledge base context
-Document id: {doc_id}
-
-## Partial plans
-{candidates}
-
-Merge the partial plans into one final compilation plan with the same JSON shape as above.
-Preserve distinct pages when they cover different entities or concepts; drop only near-duplicate slugs.
-Return ONLY the JSON object.`
 
 const wikiPlanReconcileSystem = `You are a wiki page reconciliation engine. Compare a planned wiki page with existing wiki pages and decide whether the planned page should UPDATE one of them or CREATE a new page. Return only valid JSON.`
 

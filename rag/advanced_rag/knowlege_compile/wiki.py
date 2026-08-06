@@ -821,9 +821,10 @@ async def _wiki_extract_one_batch(
     language: str,
     llm_timeout: int,
     parser_config: Optional[dict] = None,
-) -> dict:
+) -> Optional[dict]:
     """Single LLM call for one packed batch. Returns the raw (label-tagged)
-    extract dict.
+    extract dict, or ``None`` on a transient LLM timeout/error so the caller
+    can avoid persisting a poisoned empty result.
 
     The entity / relation schemas and the extra rules sections of the
     prompt are rendered from ``parser_config`` when supplied (mirroring
@@ -851,10 +852,10 @@ async def _wiki_extract_one_batch(
         )
     except asyncio.TimeoutError:
         logging.warning("wiki_map: batch extraction timed out after %ds (%d chunks)", llm_timeout, len(packed))
-        return _wiki_empty_extract()
+        return None
     except Exception:
         logging.exception("wiki_map: batch extraction failed (%d chunks)", len(packed))
-        return _wiki_empty_extract()
+        return None
     _ = language  # reserved for future localization
     return _wiki_unwrap_extract(res)
 
@@ -881,6 +882,12 @@ async def _wiki_process_batch(
     the top of ``wiki_map_from_chunks``; threaded through so the
     persisted resume rows record the right hash and the next
     incremental run can compare cleanly.
+
+    On a transient LLM failure/timeout (``_wiki_extract_one_batch`` returns
+    ``None``) the batch is NOT persisted with a resume hash. The next
+    incremental run then sees those chunks as ``new`` and retries, instead of
+    replaying a permanently cached empty extract. Only a genuine LLM response
+    (even one with zero items) is persisted.
     """
     if not packed:
         return _wiki_empty_extract()
@@ -896,6 +903,10 @@ async def _wiki_process_batch(
             llm_timeout,
             parser_config=parser_config,
         )
+        if raw_extract is None:
+            # LLM call failed/timed out: leave no resume hash so the next run
+            # re-extracts these chunks instead of locking in an empty result.
+            return _wiki_empty_extract()
         merged, per_chunk = _wiki_resolve_chunk_ids(raw_extract, label_to_id)
         await _wiki_persist_extracts(
             per_chunk,
@@ -2628,7 +2639,9 @@ WIKI_REFINE_WRITER_SYSTEM_TEMPLATE = (
     "- Prose that just rephrases what was already said.\n\n"
     "# Language\n"
     "Write in the SAME LANGUAGE as the source text. Never translate content.\n\n"
-    "# Page structure — CRITICAL\n"
+    "# Additional writing instructions — CRITICAL\n"
+    "{template_instruction}\n\n"
+    "# Page structure example — CRITICAL\n"
     "{template_example}\n\n"
     "# What NOT to do\n"
     "- Do NOT dump raw bullet points from the source as the entire content.\n"
@@ -2646,18 +2659,20 @@ WIKI_REFINE_WRITER_SYSTEM_TEMPLATE = (
 )
 
 
-def _build_refine_writer_system(example: str | None) -> str:
-    """Return the writer system prompt with the configured page-structure
-    example (or ``WIKI_TEMPLATE_EXAMPLE`` when ``example`` is empty /
-    whitespace-only). Used by the REFINE phase to let each compilation
-    template override just the page-structure section.
+def _build_refine_writer_system(instruction: str | None = None, example: str | None = None) -> str:
+    """Return the writer system prompt with separate instruction and page
+    example overrides. Empty values use the built-in defaults.
 
     The default-filled form is also exposed as
     ``WIKI_REFINE_WRITER_SYSTEM`` for callers that don't have an
     override to apply.
     """
-    body = (example or "").strip() or WIKI_TEMPLATE_EXAMPLE
-    return WIKI_REFINE_WRITER_SYSTEM_TEMPLATE.format(template_example=body)
+    instruction_body = (instruction or "").strip() or "Follow the page structure and writing requirements below."
+    example_body = (example or "").strip() or WIKI_TEMPLATE_EXAMPLE
+    return WIKI_REFINE_WRITER_SYSTEM_TEMPLATE.format(
+        template_instruction=instruction_body,
+        template_example=example_body,
+    )
 
 
 WIKI_REFINE_WRITER_SYSTEM = _build_refine_writer_system(None)
@@ -3261,13 +3276,13 @@ async def _wiki_write_page_simple(
     all_plan_slugs: list[str],
     chat_mdl,
     llm_timeout: int,
+    instruction: Optional[str] = None,
     example: Optional[str] = None,
 ) -> str:
     """Single LLM call → markdown content.
 
-    ``example`` is the per-template ``parser_config.example`` override
-    for the writer's page-structure section. Falsy / whitespace-only
-    values fall through to ``WIKI_TEMPLATE_EXAMPLE``.
+    ``instruction`` and ``example`` are the separate per-template writer
+    overrides.
     """
     own_slug = plan_item.get("slug") or ""
     available = [s for s in all_plan_slugs if s and s != own_slug]
@@ -3292,7 +3307,10 @@ async def _wiki_write_page_simple(
 
     content = await _wiki_chat_text(
         chat_mdl,
-        _build_refine_writer_system(example),
+        _build_refine_writer_system(
+            instruction=instruction,
+            example=example,
+        ),
         user_prompt,
         temperature=0.15,
         llm_timeout=llm_timeout,
@@ -3532,6 +3550,7 @@ async def wiki_refine_from_plan(
     merge_shrink_threshold: float = WIKI_MERGE_BODY_SHRINK_THRESHOLD,
     force_rerun: bool = False,
     callback: Optional[Callable] = None,
+    instruction: Optional[str] = None,
     example: Optional[str] = None,
 ) -> list[dict]:
     """Phase 4 (REFINE) — KB-scoped.
@@ -3726,6 +3745,7 @@ async def wiki_refine_from_plan(
                     all_plan_slugs,
                     chat_mdl,
                     llm_timeout,
+                    instruction=instruction,
                     example=example,
                 )
                 if not content_md_raw:
