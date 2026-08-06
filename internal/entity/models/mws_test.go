@@ -83,7 +83,7 @@ func TestMWSListModelsUsesOpenAIEndpointAndFiltersTypes(t *testing.T) {
 			t.Fatalf("GET models request must not have a body: %q", body)
 		}
 		response.Header().Set("Content-Type", "application/json")
-		_, _ = response.Write([]byte(`{"object":"list","data":[{"id":"bge-m3"},{"id":"bge-reranker-v2-m3"},{"id":"qwen3-32b"}]}`))
+		_, _ = response.Write([]byte(`{"object":"list","data":[{"id":"bge-m3"},{"id":"bge-reranker-v2-m3"},{"id":"qwen3-32b"},{"id":"qwen-vl"}]}`))
 	}))
 	defer server.Close()
 
@@ -95,9 +95,110 @@ func TestMWSListModelsUsesOpenAIEndpointAndFiltersTypes(t *testing.T) {
 	want := []ListModelResponse{
 		{Name: "bge-m3", ModelTypes: []string{"embedding"}},
 		{Name: "bge-reranker-v2-m3", ModelTypes: []string{"rerank"}},
+		{Name: "qwen3-32b", ModelTypes: []string{"chat"}},
 	}
 	if !reflect.DeepEqual(models, want) {
 		t.Fatalf("unexpected models: %#v", models)
+	}
+}
+
+func TestMWSChatSendsOnlyDocumentedFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/projects/test-project/openai/v1/chat/completions" {
+			t.Fatalf("unexpected path: %s", request.URL.Path)
+		}
+		payload := decodeMWSRequest(t, request)
+		want := map[string]any{
+			"model": "qwen3-32b",
+			"messages": []any{
+				map[string]any{"role": "system", "content": "Be concise."},
+				map[string]any{"role": "user", "content": "Hello"},
+			},
+			"temperature":           0.25,
+			"max_completion_tokens": float64(128),
+		}
+		if !reflect.DeepEqual(payload, want) {
+			t.Fatalf("unexpected chat payload: %#v", payload)
+		}
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write([]byte(`{"id":"chat-1","model":"qwen3-32b","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"Hi"}}],"usage":{"prompt_tokens":4,"completion_tokens":1,"total_tokens":5}}`))
+	}))
+	defer server.Close()
+
+	driver, apiConfig := newMWSTestDriver(server.URL)
+	temperature := 0.25
+	maxTokens := 128
+	topP := 0.9
+	stop := []string{"ignored"}
+	response, err := driver.ChatWithMessages(
+		context.Background(),
+		"qwen3-32b",
+		[]Message{
+			{Role: "system", Content: "Be concise."},
+			{Role: "user", Content: "Hello", ToolCallID: "ignored"},
+		},
+		apiConfig,
+		&ChatConfig{Temperature: &temperature, MaxTokens: &maxTokens, TopP: &topP, Stop: &stop, Tools: map[string]any{"ignored": true}},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+	if response.Answer == nil || *response.Answer != "Hi" || response.Usage == nil || response.Usage.TotalTokens != 5 {
+		t.Fatalf("unexpected chat response: %#v", response)
+	}
+}
+
+func TestMWSChatStreamingUsesDocumentedFields(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/projects/test-project/openai/v1/chat/completions" {
+			t.Fatalf("unexpected path: %s", request.URL.Path)
+		}
+		payload := decodeMWSRequest(t, request)
+		want := map[string]any{
+			"model":    "qwen3-32b",
+			"messages": []any{map[string]any{"role": "user", "content": "Hello"}},
+			"stream":   true,
+			"stream_options": map[string]any{
+				"include_usage": true,
+			},
+		}
+		if !reflect.DeepEqual(payload, want) {
+			t.Fatalf("unexpected streaming chat payload: %#v", payload)
+		}
+		response.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(response, "data: {\"model\":\"qwen3-32b\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hel\"}}]}\n\n")
+		_, _ = io.WriteString(response, "data: {\"model\":\"qwen3-32b\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"lo\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":1,\"total_tokens\":5}}\n\n")
+		_, _ = io.WriteString(response, "data: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	driver, apiConfig := newMWSTestDriver(server.URL)
+	stream := true
+	config := &ChatConfig{Stream: &stream}
+	var chunks []string
+	err := driver.ChatStreamlyWithSender(
+		context.Background(),
+		"qwen3-32b",
+		[]Message{{Role: "user", Content: "Hello"}},
+		apiConfig,
+		config,
+		nil,
+		func(content, _ *string) error {
+			if content != nil {
+				chunks = append(chunks, *content)
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("stream chat: %v", err)
+	}
+	if !reflect.DeepEqual(chunks, []string{"Hel", "lo", "[DONE]"}) {
+		t.Fatalf("unexpected stream chunks: %#v", chunks)
+	}
+	if config.UsageResult == nil || config.UsageResult.TotalTokens != 5 {
+		t.Fatalf("unexpected stream usage: %#v", config.UsageResult)
 	}
 }
 

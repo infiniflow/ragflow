@@ -473,11 +473,16 @@ class MWS(OpenAIAPICompatible):
         return mws_api_url(self.base_url, "openai/v1/models")
 
     def _format_model_list(self, raw_model_list):
-        supported_types = {LLMType.EMBEDDING.value, LLMType.RERANK.value}
+        supported_types = {
+            LLMType.CHAT.value,
+            LLMType.EMBEDDING.value,
+            LLMType.RERANK.value,
+        }
         return [
             model
             for model in super()._format_model_list(raw_model_list)
-            if set(model.get("model_types") or []) & supported_types
+            if len(model.get("model_types") or []) == 1
+            and model["model_types"][0] in supported_types
         ]
 
 

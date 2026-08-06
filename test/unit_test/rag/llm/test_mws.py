@@ -18,7 +18,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 
-from rag.llm import EmbeddingModel, ModelMeta, RerankModel
+from rag.llm import ChatModel, EmbeddingModel, ModelMeta, RerankModel
+from rag.llm.chat_model import MWSChat
 from rag.llm.embedding_model import MWSEmbed
 from rag.llm.model_meta import MWS
 from rag.llm.mws_utils import mws_api_url, normalize_mws_project_url
@@ -45,6 +46,7 @@ def _async_context(value):
 
 @pytest.mark.p1
 def test_mws_provider_registration():
+    assert ChatModel["MWS"] is MWSChat
     assert EmbeddingModel["MWS"] is MWSEmbed
     assert RerankModel["MWS"] is MWSRerank
     assert ModelMeta["MWS"] is MWS
@@ -53,6 +55,10 @@ def test_mws_provider_registration():
 @pytest.mark.p1
 def test_mws_project_url_validation_and_endpoints():
     assert normalize_mws_project_url(PROJECT_URL + "/") == PROJECT_URL
+    assert (
+        mws_api_url(PROJECT_URL, "openai/v1/chat/completions")
+        == PROJECT_URL + "/openai/v1/chat/completions"
+    )
     assert (
         mws_api_url(PROJECT_URL, "openai/v1/embeddings")
         == PROJECT_URL + "/openai/v1/embeddings"
@@ -72,7 +78,14 @@ def test_mws_project_url_validation_and_endpoints():
 async def test_mws_model_list_uses_exact_url_and_bearer_header():
     response = MagicMock(status=200)
     response.json = AsyncMock(
-        return_value={"data": [{"id": "bge-m3"}, {"id": "bge-reranker-v2-m3"}]}
+        return_value={
+            "data": [
+                {"id": "qwen3-32b"},
+                {"id": "qwen-vl"},
+                {"id": "bge-m3"},
+                {"id": "bge-reranker-v2-m3"},
+            ]
+        }
     )
     session = MagicMock()
     session.get.return_value = _async_context(response)
@@ -86,9 +99,131 @@ async def test_mws_model_list_uses_exact_url_and_bearer_header():
         headers={"Authorization": "Bearer token"},
     )
     assert [model["model_types"] for model in models] == [
+        ["chat"],
         ["embedding"],
         ["rerank"],
     ]
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_mws_chat_uses_exact_url_bearer_header_and_documented_fields():
+    chat = MWSChat("token", "qwen3-32b", PROJECT_URL + "/")
+    response = MagicMock(status=200)
+    response.json = AsyncMock(
+        return_value={
+            "id": "chat-1",
+            "model": "qwen3-32b",
+            "choices": [
+                {
+                    "index": 0,
+                    "finish_reason": "stop",
+                    "message": {"role": "assistant", "content": "Hello"},
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 4,
+                "completion_tokens": 1,
+                "total_tokens": 5,
+            },
+        }
+    )
+    session = MagicMock()
+    session.post.return_value = _async_context(response)
+
+    with patch(
+        "rag.llm.chat_model.aiohttp.ClientSession",
+        return_value=_async_context(session),
+    ):
+        answer, tokens = await chat._async_chat(
+            [
+                {"role": "system", "content": "Be concise."},
+                {
+                    "role": "user",
+                    "content": "Hi",
+                    "tool_call_id": "must-not-be-forwarded",
+                },
+            ],
+            {
+                "temperature": 0.25,
+                "max_tokens": 128,
+                "top_p": 0.9,
+                "tools": [{"must": "not be forwarded"}],
+            },
+        )
+
+    assert answer == "Hello"
+    assert tokens == 5
+    assert chat.last_usage == {
+        "prompt_tokens": 4,
+        "completion_tokens": 1,
+        "total_tokens": 5,
+    }
+    session.post.assert_called_once_with(
+        PROJECT_URL + "/openai/v1/chat/completions",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer token",
+        },
+        json={
+            "model": "qwen3-32b",
+            "messages": [
+                {"role": "system", "content": "Be concise."},
+                {"role": "user", "content": "Hi"},
+            ],
+            "temperature": 0.25,
+            "max_completion_tokens": 128,
+        },
+    )
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_mws_chat_streaming_uses_documented_fields_and_usage():
+    chat = MWSChat("token", "qwen3-32b", PROJECT_URL)
+    response = MagicMock(status=200)
+    response.content = MagicMock()
+    response.content.__aiter__.return_value = iter(
+        [
+            b'data: {"model":"qwen3-32b","choices":[{"index":0,"delta":{"content":"Hel"}}]}\n',
+            b'data: {"model":"qwen3-32b","choices":[{"index":0,"delta":{"content":"lo"},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":1,"total_tokens":5}}\n',
+            b"data: [DONE]\n",
+        ]
+    )
+    session = MagicMock()
+    session.post.return_value = _async_context(response)
+
+    with patch(
+        "rag.llm.chat_model.aiohttp.ClientSession",
+        return_value=_async_context(session),
+    ):
+        chunks = [
+            chunk
+            async for chunk in chat._async_chat_streamly(
+                [{"role": "user", "content": "Hi"}],
+                {"top_p": 0.9},
+            )
+        ]
+
+    assert chunks == [("Hel", 0), ("lo", 5)]
+    assert chat.last_usage == {
+        "prompt_tokens": 4,
+        "completion_tokens": 1,
+        "total_tokens": 5,
+    }
+    session.post.assert_called_once_with(
+        PROJECT_URL + "/openai/v1/chat/completions",
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer token",
+        },
+        json={
+            "model": "qwen3-32b",
+            "messages": [{"role": "user", "content": "Hi"}],
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        },
+    )
 
 
 @pytest.mark.p1
@@ -137,6 +272,22 @@ def test_mws_rerank_uses_cohere_path_and_exact_payload():
         }
     )
 
+    with patch("rag.llm.rerank_model.requests.post", return_value=response) as post:
+        scores, _ = reranker.similarity("query", ["first", "second"])
+
+    assert np.array_equal(scores, np.array([0.2, 0.9]))
+    post.assert_called_once_with(
+        PROJECT_URL + "/cohere/v2/rerank",
+        headers={"Content-Type": "application/json", "Authorization": "Bearer token"},
+        json={
+            "model": "bge-reranker-v2-m3",
+            "query": "query",
+            "documents": ["first", "second"],
+            "top_n": 2,
+        },
+        timeout=30,
+    )
+
 
 @pytest.mark.p1
 def test_mws_empty_inputs_do_not_send_requests():
@@ -177,25 +328,9 @@ def test_mws_rejects_incomplete_indexed_responses():
         with pytest.raises(ValueError, match="1 rerank results for 2 documents"):
             reranker.similarity("query", ["first", "second"])
 
-    with patch("rag.llm.rerank_model.requests.post", return_value=response) as post:
-        scores, _ = reranker.similarity("query", ["first", "second"])
-
-    assert np.array_equal(scores, np.array([0.2, 0.9]))
-    post.assert_called_once_with(
-        PROJECT_URL + "/cohere/v2/rerank",
-        headers={"Content-Type": "application/json", "Authorization": "Bearer token"},
-        json={
-            "model": "bge-reranker-v2-m3",
-            "query": "query",
-            "documents": ["first", "second"],
-            "top_n": 2,
-        },
-        timeout=30,
-    )
-
 
 @pytest.mark.p1
-def test_mws_model_list_keeps_only_embedding_and_rerank():
+def test_mws_model_list_keeps_chat_embedding_and_rerank():
     meta = MWS("token", PROJECT_URL)
     models = meta._format_model_list(
         {
@@ -203,6 +338,7 @@ def test_mws_model_list_keeps_only_embedding_and_rerank():
                 {"id": "bge-m3"},
                 {"id": "bge-reranker-v2-m3"},
                 {"id": "qwen3-32b"},
+                {"id": "qwen-vl"},
             ]
         }
     )
@@ -218,6 +354,12 @@ def test_mws_model_list_keeps_only_embedding_and_rerank():
         {
             "name": "bge-reranker-v2-m3",
             "model_types": ["rerank"],
+            "features": [],
+            "max_tokens": 8192,
+        },
+        {
+            "name": "qwen3-32b",
+            "model_types": ["chat"],
             "features": [],
             "max_tokens": 8192,
         },

@@ -20,13 +20,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 
 	"ragflow/internal/common"
 )
 
-// MWSModel implements the MWS GPT Model Hub embedding and reranking APIs.
+// MWSModel implements the MWS GPT Model Hub chat, embedding, and reranking APIs.
 type MWSModel struct {
 	*DummyModel
 }
@@ -106,12 +107,99 @@ func (m *MWSModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]List
 	models := make([]ListModelResponse, 0, len(modelList.Models))
 	for _, model := range modelList.Models {
 		modelTypes := InferModelTypes(model.ID)
-		if len(modelTypes) != 1 || (modelTypes[0] != "embedding" && modelTypes[0] != "rerank") {
+		if len(modelTypes) != 1 || (modelTypes[0] != "chat" && modelTypes[0] != "embedding" && modelTypes[0] != "rerank") {
 			continue
 		}
 		models = append(models, ListModelResponse{Name: model.ID, ModelTypes: modelTypes})
 	}
 	return models, nil
+}
+
+func buildMWSChatMessages(messages []Message) ([]map[string]any, error) {
+	if len(messages) == 0 {
+		return nil, fmt.Errorf("messages are required")
+	}
+	result := make([]map[string]any, 0, len(messages))
+	for _, message := range messages {
+		if message.Role != "system" && message.Role != "user" && message.Role != "assistant" {
+			return nil, fmt.Errorf("unsupported MWS chat message role %q", message.Role)
+		}
+		content, ok := message.Content.(string)
+		if !ok {
+			return nil, fmt.Errorf("MWS chat message content must be a string")
+		}
+		result = append(result, map[string]any{
+			"role":    message.Role,
+			"content": content,
+		})
+	}
+	return result, nil
+}
+
+func buildMWSChatRequest(modelName string, messages []Message, config *ChatConfig, stream bool) (map[string]any, error) {
+	modelName = strings.TrimSpace(modelName)
+	if modelName == "" {
+		return nil, fmt.Errorf("model name is required")
+	}
+	chatMessages, err := buildMWSChatMessages(messages)
+	if err != nil {
+		return nil, err
+	}
+	request := map[string]any{
+		"model":    modelName,
+		"messages": chatMessages,
+	}
+	if config != nil {
+		if config.Temperature != nil {
+			request["temperature"] = *config.Temperature
+		}
+		if config.MaxTokens != nil {
+			request["max_completion_tokens"] = *config.MaxTokens
+		}
+	}
+	if stream {
+		request["stream"] = true
+		request["stream_options"] = map[string]any{"include_usage": true}
+	}
+	return request, nil
+}
+
+// ChatWithMessages sends a non-streaming MWS Chat Completions request.
+func (m *MWSModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
+	endpoint, err := m.endpoint(apiConfig, "openai/v1/chat/completions")
+	if err != nil {
+		return nil, err
+	}
+	request, err := buildMWSChatRequest(modelName, messages, chatConfig, false)
+	if err != nil {
+		return nil, err
+	}
+	body, err := m.baseModel.doRequest(ctx, endpoint, apiConfig, request, nonStreamCallTimeout)
+	if err != nil {
+		return nil, err
+	}
+	return HandleNonStreamingResponse(body, modelUsage, chatConfig, OpenAIParserConfig)
+}
+
+// ChatStreamlyWithSender sends a streaming MWS Chat Completions request.
+func (m *MWSModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
+	if sender == nil {
+		return fmt.Errorf("sender is required")
+	}
+	if err := validateStreamConfig(chatConfig); err != nil {
+		return err
+	}
+	endpoint, err := m.endpoint(apiConfig, "openai/v1/chat/completions")
+	if err != nil {
+		return err
+	}
+	request, err := buildMWSChatRequest(modelName, messages, chatConfig, true)
+	if err != nil {
+		return err
+	}
+	return m.baseModel.doStreamRequest(ctx, endpoint, apiConfig, request, streamCallTimeout, func(body io.ReadCloser) error {
+		return HandleStreamingResponse(body, modelUsage, chatConfig, OpenAIParserConfig, sender)
+	})
 }
 
 type mwsEmbeddingResponse struct {

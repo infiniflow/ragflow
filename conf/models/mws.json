@@ -6,6 +6,7 @@
   },
   "url_suffix": {
     "models": "openai/v1/models",
+    "chat": "openai/v1/chat/completions",
     "embedding": "openai/v1/embeddings",
     "rerank": "cohere/v2/rerank"
   },
