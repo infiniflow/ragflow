@@ -601,7 +601,7 @@ def get_file_content(uid: str, file_id: str):
     """
     e, file = FileService.get_by_id(file_id)
     if not e:
-        return False, "Document not found!"
+        return False, "document not found"
     if not check_file_team_permission(file, uid):
         return False, "no authorization"
     return True, file

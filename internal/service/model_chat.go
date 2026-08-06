@@ -69,7 +69,7 @@ func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel
 					return ctx.Err()
 				}
 			}); err != nil {
-			if errors.Is(err, errStreamDone) || err == context.Canceled || err == context.DeadlineExceeded {
+			if errors.Is(err, errStreamDone) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 				return
 			}
 			common.Warn("ChatStreamlyWithSender returned error", zap.Error(err))

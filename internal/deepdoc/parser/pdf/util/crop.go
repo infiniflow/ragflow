@@ -240,7 +240,7 @@ func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 	return base64.StdEncoding.EncodeToString(data)
 }
 
-// cropSectionByDLA crops a section using the best-overlapping DLA region,
+// CropSectionByDLA crops a section using the best-overlapping DLA region,
 // mimicking Python's cropout() in deepdoc/parser/pdf_parser.py (around line
 // 1307). Unlike the original Go version (which only cropped the first page),
 // it now walks every position and every page the section spans, crops each
@@ -483,7 +483,7 @@ func rotateCoordCW(x, y float64, origW, origH int, angle int) (float64, float64)
 	}
 }
 
-// rotateImageCW rotates an image clockwise. Only 0/90/180/270 supported;
+// RotateImageCW rotates an image clockwise. Only 0/90/180/270 supported;
 // other values return nil. Matches Python PIL.Image.rotate(-angle, expand=True).
 func RotateImageCW(img image.Image, angle int) *image.RGBA {
 	b := img.Bounds()
@@ -509,7 +509,7 @@ func RotateImageCW(img image.Image, angle int) *image.RGBA {
 	return dst
 }
 
-// mapRotatedPointToOriginal maps a point from rotated image coords back to
+// MapRotatedPointToOriginal maps a point from rotated image coords back to
 // original coords. angle is the clockwise rotation applied. origW, origH
 // are the ORIGINAL (pre-rotation) image dimensions.
 //

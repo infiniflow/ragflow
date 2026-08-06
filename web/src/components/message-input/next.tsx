@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { CircleStop, Globe, Paperclip, Send, Upload, X } from 'lucide-react';
 import * as React from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import storage from '@/utils/authorization-util';
@@ -80,6 +80,56 @@ export function NextMessageInput({
     storage.getThinkingLevel(),
   );
   const [enableInternet, setEnableInternet] = useState(false);
+
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isManualMode, setIsManualMode] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const dragStartRef = useRef({ startY: 0, startHeight: 0 });
+
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent<HTMLButtonElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      dragStartRef.current = {
+        startY: e.clientY,
+        startHeight: textarea.getBoundingClientRect().height,
+      };
+      setIsManualMode(true);
+      setIsResizing(true);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      const { startY, startHeight } = dragStartRef.current;
+      const delta = startY - e.clientY;
+      const newHeight = Math.max(40, Math.min(startHeight + delta, 400));
+      textarea.style.height = `${newHeight}px`;
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
 
   const thinkingOptions = useMemo(
     () => [
@@ -152,10 +202,13 @@ export function NextMessageInput({
   }, []);
 
   const submit = React.useCallback(() => {
-    if (isUploading || sendLoading) return;
+    // Mirror the send button's disabled condition so pressing Enter with an
+    // empty message does nothing — previously it cleared the uploaded file
+    // list without sending anything.
+    if (sendDisabled || isUploading || sendLoading || !value.trim()) return;
     pressEnter();
     setFiles([]);
-  }, [isUploading, sendLoading, pressEnter]);
+  }, [sendDisabled, isUploading, sendLoading, value, pressEnter]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -213,6 +266,16 @@ export function NextMessageInput({
           has-[textarea:focus]:outline-accent-primary has-[textarea:focus]:outline-1 has-[textarea:focus]:outline-offset-2
         "
       >
+        {resize === 'vertical' && (
+          <button
+            type="button"
+            onMouseDown={handleResizeStart}
+            aria-label="Drag to resize height"
+            className="absolute -top-0.5 left-1/2 z-10 flex h-1 w-12 -translate-x-1/2 cursor-ns-resize items-center justify-center rounded-full border border-border-default bg-bg-card transition-colors hover:border-accent-primary"
+          >
+            <span className="h-0.5 w-full rounded-full bg-border-button" />
+          </button>
+        )}
         <FileUploadList
           orientation="horizontal"
           className="overflow-x-auto px-0 py-1"
@@ -236,20 +299,20 @@ export function NextMessageInput({
             </FileUploadItem>
           ))}
         </FileUploadList>
-
         <Textarea
+          ref={textareaRef}
           data-testid="chat-textarea"
           value={value}
           onChange={onInputChange}
           placeholder={t('chat.messagePlaceholder')}
           className="
-            min-h-10 max-h-40 w-full p-0 overflow-auto
+            min-h-10 max-h-[400px] w-full p-0 overflow-auto
             !outline-none !border-transparent !bg-transparent !shadow-none !ring-transparent !ring-offset-transparent
           "
           disabled={isUploading || disabled || sendLoading}
           onKeyDown={handleKeyDown}
-          resize={resize}
-          autoSize={{ minRows: 2, maxRows: 8 }}
+          resize={resize === 'vertical' ? 'none' : resize}
+          autoSize={isManualMode ? undefined : { minRows: 2, maxRows: 8 }}
         />
 
         <div className="flex items-center justify-between gap-2">

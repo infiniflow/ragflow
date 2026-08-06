@@ -396,12 +396,13 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 	var result []map[string]interface{}
 	for _, model := range modelList {
 		result = append(result, map[string]interface{}{
-			"name":          model.Name,
-			"max_dimension": model.MaxDimension,
-			"dimensions":    model.Dimensions,
-			"max_tokens":    model.MaxTokens,
-			"model_types":   model.ModelTypes,
-			"thinking":      model.Thinking,
+			"name":           model.Name,
+			"max_dimension":  model.MaxDimension,
+			"dimensions":     model.Dimensions,
+			"content_length": model.ContentLength,
+			"max_output":     model.MaxOutput,
+			"model_types":    model.ModelTypes,
+			"thinking":       model.Thinking,
 		})
 	}
 	return result, nil
@@ -450,8 +451,8 @@ func (m *ModelProviderService) reconcileNvidiaInstanceModels(
 
 		for _, remote := range normalized {
 			maxTokens := 8192
-			if remote.MaxTokens != nil && *remote.MaxTokens > 0 {
-				maxTokens = *remote.MaxTokens
+			if remote.MaxOutput != nil && *remote.MaxOutput > 0 {
+				maxTokens = *remote.MaxOutput
 			}
 			modelType := int(entity.ModelTypeFromStrings(remote.ModelTypes))
 
@@ -636,8 +637,8 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 					ModelName:  llm.Name,
 					ModelTypes: llm.ModelTypes,
 					MaxTokens: func() int {
-						if llm.MaxTokens != nil {
-							return *llm.MaxTokens
+						if llm.MaxOutput != nil {
+							return *llm.MaxOutput
 						}
 						return 8192
 					}(),
@@ -2538,7 +2539,7 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 	}
 
 	if extra.MaxTokens != nil && *extra.MaxTokens > 0 {
-		model.MaxTokens = extra.MaxTokens
+		model.MaxOutput = extra.MaxTokens
 	}
 	if len(extra.ModelTypes) > 0 {
 		model.ModelTypes = append([]string(nil), extra.ModelTypes...)
@@ -3483,8 +3484,8 @@ func (m *ModelProviderService) GetModelConfigByID(ctx context.Context, userID st
 
 	maxTokens := 0
 	if mi, _ := dao.GetModelProviderManager().GetModelByName(providerEntity.ProviderName, modelEntity.ModelName); mi != nil {
-		if mi.MaxTokens != nil {
-			maxTokens = *mi.MaxTokens
+		if mi.MaxOutput != nil {
+			maxTokens = *mi.MaxOutput
 		}
 	}
 	maxTokens, err = maxTokensFromTenantModelExtra(modelEntity, maxTokens)
@@ -3703,10 +3704,6 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 		return common.CodeBadRequest, errors.New("model_name is required")
 	}
 
-	if len(request.ModelTypes) == 0 {
-		return common.CodeBadRequest, errors.New("model_type is required")
-	}
-
 	tenants, err := m.userTenantDAO.GetByUserIDAndRole(ctx, dao.DB, userID, "owner")
 	if err != nil {
 		return common.CodeServerError, err
@@ -3741,18 +3738,15 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 		return common.CodeServerError, err
 	}
 
-	// Compute model type bitmask.
+	// Compute model type bitmask. Matches Python's calculate_model_type:
+	// empty and unrecognized type names are ignored, not rejected.
 	combinedType := entity.ModelType(0)
 	for _, rawType := range request.ModelTypes {
 		mt := strings.TrimSpace(rawType)
 		if mt == "" {
 			continue
 		}
-		t := entity.ModelTypeFromString(mt)
-		if t == 0 {
-			return common.CodeBadRequest, fmt.Errorf("invalid model type: %s", mt)
-		}
-		combinedType |= t
+		combinedType |= entity.ModelTypeFromString(mt)
 	}
 
 	maxTokens := request.MaxTokens
@@ -3886,10 +3880,10 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 			apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region}
 			maxTokens := 0
 			if mi, _ := dao.GetModelProviderManager().GetModelByName("Builtin", pureModelName); mi != nil {
-				if mi.MaxTokens == nil {
+				if mi.MaxOutput == nil {
 					maxTokens = 0
 				} else {
-					maxTokens = *mi.MaxTokens
+					maxTokens = *mi.MaxOutput
 				}
 			}
 			return builtinDriver, pureModelName, apiConfig, maxTokens, nil
@@ -3948,10 +3942,10 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 		}
 		maxTokens := 0
 		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil {
-			if mi.MaxTokens == nil {
+			if mi.MaxOutput == nil {
 				maxTokens = 0
 			} else {
-				maxTokens = *mi.MaxTokens
+				maxTokens = *mi.MaxOutput
 			}
 		}
 		maxTokens, driverErr = maxTokensFromTenantModelExtra(modelObj, maxTokens)
@@ -4006,8 +4000,8 @@ func (m *ModelProviderService) GetModelConfigFromProviderInstance(ctx context.Co
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 	maxTokens := 0
-	if llmInfo.MaxTokens != nil {
-		maxTokens = *llmInfo.MaxTokens
+	if llmInfo.MaxOutput != nil {
+		maxTokens = *llmInfo.MaxOutput
 	}
 	return driver, llmInfo.Name, apiConfig, maxTokens, nil
 }
@@ -4073,10 +4067,10 @@ func (m *ModelProviderService) getModelConfig(ctx context.Context, tenantID, com
 	modelInfo, err := dao.GetModelProviderManager().GetModelByName(providerName, modelName)
 	maxTokens := 0
 	if err == nil && modelInfo != nil {
-		if modelInfo.MaxTokens == nil {
+		if modelInfo.MaxOutput == nil {
 			maxTokens = 0
 		} else {
-			maxTokens = *modelInfo.MaxTokens
+			maxTokens = *modelInfo.MaxOutput
 		}
 	}
 

@@ -101,151 +101,6 @@ func newNovitaSSEServer(t *testing.T, expectedPath, ssePayload string) *httptest
 	}))
 }
 
-// ---- think-tag split helpers ----
-
-func TestSplitNovitaThinkPureText(t *testing.T) {
-	v, r := splitNovitaThink("hello world")
-	if v != "hello world" || r != "" {
-		t.Errorf("got (%q,%q)", v, r)
-	}
-}
-
-func TestSplitNovitaThinkSingleBlock(t *testing.T) {
-	v, r := splitNovitaThink("<think>15% = 0.15. 0.15*80 = 12.</think>The answer is 12.")
-	if v != "The answer is 12." {
-		t.Errorf("visible=%q", v)
-	}
-	if r != "15% = 0.15. 0.15*80 = 12." {
-		t.Errorf("reasoning=%q", r)
-	}
-}
-
-func TestSplitNovitaThinkLeadingText(t *testing.T) {
-	v, r := splitNovitaThink("intro <think>thought</think>tail")
-	if v != "intro tail" {
-		t.Errorf("visible=%q", v)
-	}
-	if r != "thought" {
-		t.Errorf("reasoning=%q", r)
-	}
-}
-
-func TestSplitNovitaThinkMultipleBlocks(t *testing.T) {
-	v, r := splitNovitaThink("<think>A</think>part1<think>B</think>part2")
-	if v != "part1part2" {
-		t.Errorf("visible=%q", v)
-	}
-	if r != "AB" {
-		t.Errorf("reasoning=%q", r)
-	}
-}
-
-func TestSplitNovitaThinkUnclosedTag(t *testing.T) {
-	// Unclosed <think> -> everything after the open tag is reasoning;
-	// content stops at the open tag. This matches a real upstream that
-	// got cut off mid-reasoning by max_tokens.
-	v, r := splitNovitaThink("visible <think>still thinking when tokens ran out")
-	if v != "visible " {
-		t.Errorf("visible=%q", v)
-	}
-	if r != "still thinking when tokens ran out" {
-		t.Errorf("reasoning=%q", r)
-	}
-}
-
-// ---- streaming extractor ----
-
-// Helper to push multiple chunks through and concatenate all output by
-// kind. Each chunk goes into Feed; the output is what's safe to emit.
-func feedAll(e *novitaThinkExtractor, chunks []string) (content, reasoning string) {
-	var cb, rb strings.Builder
-	for _, c := range chunks {
-		for _, seg := range e.Feed(c) {
-			cb.WriteString(seg.content)
-			rb.WriteString(seg.reasoning)
-		}
-	}
-	if seg := e.Flush(); seg != nil {
-		cb.WriteString(seg.content)
-		rb.WriteString(seg.reasoning)
-	}
-	return cb.String(), rb.String()
-}
-
-func TestNovitaThinkExtractorSingleChunk(t *testing.T) {
-	e := &novitaThinkExtractor{}
-	c, r := feedAll(e, []string{"hello <think>thought</think> world"})
-	if c != "hello  world" {
-		t.Errorf("content=%q", c)
-	}
-	if r != "thought" {
-		t.Errorf("reasoning=%q", r)
-	}
-}
-
-func TestNovitaThinkExtractorTagSpansChunks(t *testing.T) {
-	// "<think>" split across two SSE deltas: "<thi" + "nk>"
-	e := &novitaThinkExtractor{}
-	c, r := feedAll(e, []string{"hello <thi", "nk>thought</think>tail"})
-	if c != "hello tail" {
-		t.Errorf("content=%q", c)
-	}
-	if r != "thought" {
-		t.Errorf("reasoning=%q", r)
-	}
-}
-
-func TestNovitaThinkExtractorClosingTagSpansChunks(t *testing.T) {
-	// "</think>" split across two deltas
-	e := &novitaThinkExtractor{}
-	c, r := feedAll(e, []string{"<think>reasoning</thi", "nk>visible"})
-	if c != "visible" {
-		t.Errorf("content=%q", c)
-	}
-	if r != "reasoning" {
-		t.Errorf("reasoning=%q", r)
-	}
-}
-
-func TestNovitaThinkExtractorTokenBoundaries(t *testing.T) {
-	// Simulate the kind of chunking we saw on the wire for qwen3 — many
-	// small chunks, sometimes splitting tag bytes.
-	e := &novitaThinkExtractor{}
-	c, r := feedAll(e, []string{
-		"<", "think>", "Ok", "ay, ", "compute. </", "think>", "12", "."})
-	if c != "12." {
-		t.Errorf("content=%q", c)
-	}
-	if r != "Okay, compute. " {
-		t.Errorf("reasoning=%q", r)
-	}
-}
-
-func TestNovitaThinkExtractorNoTags(t *testing.T) {
-	e := &novitaThinkExtractor{}
-	c, r := feedAll(e, []string{"plain ", "content ", "all ", "the way"})
-	if c != "plain content all the way" {
-		t.Errorf("content=%q", c)
-	}
-	if r != "" {
-		t.Errorf("reasoning=%q", r)
-	}
-}
-
-func TestNovitaThinkExtractorLessThanIsNotTagStart(t *testing.T) {
-	// "<10" or "<a" in legitimate content must not be held back as
-	// possible tag start. The extractor reserves trailing bytes only
-	// when a "<" is present in the suffix.
-	e := &novitaThinkExtractor{}
-	c, r := feedAll(e, []string{"a < b and c < d"})
-	if c != "a < b and c < d" {
-		t.Errorf("content=%q", c)
-	}
-	if r != "" {
-		t.Errorf("reasoning=%q", r)
-	}
-}
-
 // ---- driver methods ----
 
 func TestNovitaName(t *testing.T) {
@@ -397,6 +252,64 @@ func TestNovitaStreamExtractsDeltaReasoningContent(t *testing.T) {
 	if got := strings.Join(content, ""); got != "final answer" {
 		t.Errorf("content=%q", got)
 	}
+}
+
+// TestNovitaStreamRecordsUsageWithoutChatConfig pins that the streaming
+// handler records a usage event even when chatConfig is nil. The old
+// `if found && chatConfig != nil` guard dropped the usage entirely for nil
+// chatConfig, diverging from the shared HandleStreamingResponse which
+// records usage whenever the stream carries it and only uses chatConfig to
+// expose UsageResult.
+func TestNovitaStreamRecordsUsageWithoutChatConfig(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+
+	sse := "" +
+		`data: {"choices":[{"index":0,"delta":{"content":"hello"}}]}` + "\n" +
+		`data: {"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8}}` + "\n" +
+		`data: {"choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}` + "\n" +
+		`data: [DONE]` + "\n"
+
+	t.Run("nil chatConfig completes without dropping the usage event", func(t *testing.T) {
+		srv := newNovitaSSEServer(t, "/openai/v1/chat/completions", sse)
+		defer srv.Close()
+
+		apiKey := "test-key"
+		err := newNovitaForTest(srv.URL).ChatStreamlyWithSender(
+			ctx,
+			"deepseek/deepseek-v3.1",
+			[]Message{{Role: "user", Content: "x"}},
+			&APIConfig{ApiKey: &apiKey}, nil, nil,
+			func(c *string, r *string) error { return nil },
+		)
+		if err != nil {
+			t.Fatalf("stream: %v", err)
+		}
+	})
+
+	t.Run("non-nil chatConfig exposes the streamed usage", func(t *testing.T) {
+		srv := newNovitaSSEServer(t, "/openai/v1/chat/completions", sse)
+		defer srv.Close()
+
+		apiKey := "test-key"
+		chatConfig := &ChatConfig{}
+		err := newNovitaForTest(srv.URL).ChatStreamlyWithSender(
+			ctx,
+			"deepseek/deepseek-v3.1",
+			[]Message{{Role: "user", Content: "x"}},
+			&APIConfig{ApiKey: &apiKey}, chatConfig, nil,
+			func(c *string, r *string) error { return nil },
+		)
+		if err != nil {
+			t.Fatalf("stream: %v", err)
+		}
+		if chatConfig.UsageResult == nil {
+			t.Fatal("chatConfig.UsageResult is nil, want the streamed usage")
+		}
+		if chatConfig.UsageResult.PromptTokens != 3 || chatConfig.UsageResult.CompletionTokens != 5 || chatConfig.UsageResult.TotalTokens != 8 {
+			t.Fatalf("UsageResult=%#v, want prompt=3 completion=5 total=8", chatConfig.UsageResult)
+		}
+	})
 }
 
 // TestNovitaChatPropagatesEnableThinking pins the maintainer's

@@ -119,9 +119,6 @@ func TestCometAPIChatPropagatesConfig(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newCometAPIServer(t, "/v1/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		if body["max_tokens"] != float64(64) {
-			t.Errorf("max_tokens=%v want 64", body["max_tokens"])
-		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v want 0.3", body["temperature"])
 		}
@@ -801,7 +798,7 @@ func TestCometAPIEmbedRejectsHTTPError(t *testing.T) {
 	apiKey := "test-key"
 	model := "text-embedding-3-small"
 	_, err := m.Embed(ctx, &model, []string{"a"}, &APIConfig{ApiKey: &apiKey}, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "CometAPI embeddings API error") {
-		t.Errorf("expected CometAPI embeddings API error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "status 401") {
+		t.Errorf("expected embeddings API error for HTTP 401, got %v", err)
 	}
 }

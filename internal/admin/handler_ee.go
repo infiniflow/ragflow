@@ -823,6 +823,47 @@ func (h *Handler) UpdateSystemLicenseConfig(c *gin.Context) {
 	common.SuccessWithData(c, result, "System license config updated successfully")
 }
 
+type SetSoftFingerprintRequest struct {
+	SoftFingerprint string `json:"fingerprint" binding:"required"`
+}
+
+func (h *Handler) SetSoftFingerprint(c *gin.Context) {
+	var req SetSoftFingerprintRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+
+	err := h.service.SetSoftFingerprint(req.SoftFingerprint)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessNoData(c, "SUCCESS")
+}
+
+func (h *Handler) ShowSoftFingerprint(c *gin.Context) {
+	softFingerprint, err := h.service.GetSoftFingerprint()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, softFingerprint, "")
+}
+
+func (h *Handler) DeleteSoftFingerprint(c *gin.Context) {
+	err := h.service.DeleteSoftFingerprint()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessNoData(c, "SUCCESS")
+}
+
 type ShowUserActivityRequest struct {
 	Days  int    `json:"days"`
 	Email string `json:"email"`

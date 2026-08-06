@@ -59,6 +59,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     hideIfEmpty = false,
     getFormValues,
     verifyTransform,
+    instanceDetailsLoaded,
     onBlurSuppressChange,
     onInstanceModelsChange,
     onInstanceModelsEdited,
@@ -86,6 +87,8 @@ export function ModelsSection(props: ModelsSectionProps) {
   const {
     catalog,
     setCatalog,
+    updateCatalogModel,
+    clearCatalogOverride,
     manualListLoading,
     hasFetched,
     handleListModels,
@@ -96,6 +99,8 @@ export function ModelsSection(props: ModelsSectionProps) {
     resolveCreds,
     instanceModels,
     apiKeyValue: currentCreds.apiKey,
+    baseUrlValue: currentCreds.baseUrl,
+    instanceDetailsLoaded,
   });
 
   // 3a. Draft-only: locally-tracked "added models" list.
@@ -237,6 +242,7 @@ export function ModelsSection(props: ModelsSectionProps) {
     filteredModels,
     addedSet,
     setCatalog,
+    clearCatalogOverride,
     addDraftModel,
     removeDraftModel,
     setDraftModelsList: setDraftModels,
@@ -255,7 +261,10 @@ export function ModelsSection(props: ModelsSectionProps) {
   } = useModelEdit({
     providerName,
     instanceName,
+    addedSet,
     isDraftInstance,
+    updateCatalogModel,
+    clearCatalogOverride,
     updateDraftModel,
   });
 

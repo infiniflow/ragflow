@@ -14,7 +14,8 @@
   "models": [
     {
       "name": "doubao-seed-2-0-pro-260215",
-      "max_tokens": 262144,
+      "content_length": 256000,
+      "max_output": 16384,
       "model_types": [
         "chat"
       ],

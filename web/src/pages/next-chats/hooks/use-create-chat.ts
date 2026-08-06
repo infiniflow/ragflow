@@ -39,6 +39,7 @@ export const useCreateChatDialog = () => {
         toc_enhance: false,
       },
       llm_id: defaultModelDictionary?.llm_id,
+      tenant_llm_id: defaultModelDictionary?.llm_id,
       llm_setting: {},
       similarity_threshold: 0.2,
       vector_similarity_weight: 0.3,

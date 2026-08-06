@@ -257,13 +257,34 @@ class TaskHandler:
                 ctx.progress_cb(1, "place holder")
             elif task_type == "wiki":
                 from rag.svr.task_executor_refactor.dataset_wiki_generator import (
-                    run_wiki,
+                    run_wiki_incremental,
                 )
 
-                await run_wiki(
+                # Parse plan: yes/no from the template config (default no-plan)
+                plan_enabled = False
+                try:
+                    from api.db.services.compilation_template_service import (
+                        CompilationTemplateService,
+                    )
+                    from rag.svr.task_executor_refactor.dataset_wiki_generator import (
+                        _parser_config_compilation_template_ids,
+                    )
+
+                    pc = self._task_context.parser_config or {}
+                    for tid in _parser_config_compilation_template_ids(pc, self._task_context.tenant_id):
+                        tpl = CompilationTemplateService.get_saved(tid, self._task_context.tenant_id)
+                        cfg = (tpl.get("config") or {}) if tpl else {}
+                        if isinstance(cfg, dict) and cfg.get("plan") in (True, "yes", "true"):
+                            plan_enabled = True
+                            break
+                except Exception:
+                    pass  # default to no-plan
+
+                await run_wiki_incremental(
                     self._task_context,
                     embedding_model,
                     self._load_chunks_for_doc,
+                    plan=plan_enabled,
                 )
             elif task_type == "skill":
                 from rag.svr.task_executor_refactor.dataset_skill_generator import (
@@ -374,14 +395,13 @@ class TaskHandler:
                 {
                     "raptor": {
                         "use_raptor": True,
-                        "prompt": "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize.",
-                        "max_token": 256,
-                        "threshold": 0.1,
+                        "prompt": "Summarize the paragraphs below without inventing facts or changing numbers.\nOutput exactly two parts in the same language as the source:\n1. First line: a concise title only.\n2. Following lines: a concise summary of the content.\nDo not output labels, Markdown headings, bullet points, or any other commentary.\n\nParagraphs:\n{cluster_content}",
+                        "max_token": 512,
+                        "clustering_threshold": 0.3,
+                        "clustering_ratio": 0.5,
                         "max_cluster": 64,
                         "random_seed": 0,
                         "scope": "file",
-                        "clustering_method": "gmm",
-                        "tree_builder": "raptor",
                     },
                 }
             )

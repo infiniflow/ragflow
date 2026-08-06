@@ -495,7 +495,11 @@ export const useDeleteLangfuseConfig = () => {
     mutationFn: async () => {
       const { data } = await userService.deleteLangfuseConfig();
       if (data.code === 0) {
-        message.success(t('message.deleted'));
+        if (data.data) {
+          message.success(t('message.deleted'));
+        } else {
+          message.warning(t('message.noLangfuseConfigToDelete'));
+        }
       }
       return data?.code;
     },

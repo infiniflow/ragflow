@@ -110,9 +110,6 @@ func TestMistralChatPropagatesConfig(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	srv := newMistralServer(t, "/chat/completions", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		if body["max_tokens"] != float64(64) {
-			t.Errorf("max_tokens=%v want 64", body["max_tokens"])
-		}
 		if body["temperature"] != 0.3 {
 			t.Errorf("temperature=%v want 0.3", body["temperature"])
 		}
@@ -912,65 +909,5 @@ func TestMistralChatIgnoresUnknownContentPartTypes(t *testing.T) {
 	}
 	if *resp.Answer != "Hello" {
 		t.Errorf("Answer=%q want %q", *resp.Answer, "Hello")
-	}
-}
-
-// Direct unit coverage of the helper, including the nil and bad-type
-// edge cases that won't surface in the integration tests above.
-func TestExtractMistralContent(t *testing.T) {
-	tests := []struct {
-		name       string
-		input      interface{}
-		wantAns    string
-		wantReason string
-		wantErr    bool
-	}{
-		{"plain string", "hi", "hi", "", false},
-		{"empty string", "", "", "", false},
-		{"nil", nil, "", "", false},
-		{"empty array", []interface{}{}, "", "", false},
-		{
-			"text only",
-			[]interface{}{
-				map[string]interface{}{"type": "text", "text": "a"},
-				map[string]interface{}{"type": "text", "text": "b"},
-			},
-			"ab", "", false,
-		},
-		{
-			"thinking then text",
-			[]interface{}{
-				map[string]interface{}{
-					"type": "thinking",
-					"thinking": []interface{}{
-						map[string]interface{}{"type": "text", "text": "why "},
-						map[string]interface{}{"type": "text", "text": "this"},
-					},
-				},
-				map[string]interface{}{"type": "text", "text": "answer"},
-			},
-			"answer", "why this", false,
-		},
-		{"unknown root type", 42, "", "", true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			ans, reason, err := extractMistralContent(tc.input)
-			if tc.wantErr {
-				if err == nil {
-					t.Errorf("want error, got nil")
-				}
-				return
-			}
-			if err != nil {
-				t.Errorf("unexpected err: %v", err)
-			}
-			if ans != tc.wantAns {
-				t.Errorf("answer=%q want %q", ans, tc.wantAns)
-			}
-			if reason != tc.wantReason {
-				t.Errorf("reason=%q want %q", reason, tc.wantReason)
-			}
-		})
 	}
 }

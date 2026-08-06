@@ -66,6 +66,7 @@ export default function EditNextCompilationTemplate() {
               <BlueprintSection
                 form={form}
                 selectedTemplateIndex={SelectedTemplateIndex}
+                builtins={builtins}
               />
             )}
           </TemplateConfiguration>

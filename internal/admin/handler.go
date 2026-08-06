@@ -1226,7 +1226,8 @@ func (h *Handler) PingStore(c *gin.Context) {
 		return
 	}
 
-	if storageImpl.Health() {
+	ctx := c.Request.Context()
+	if storageImpl.Health(ctx) {
 		common.SuccessNoMessage(c, "SUCCESS")
 	} else {
 		common.ErrorWithCode(c, common.CodeServerError, "storage health check failed")

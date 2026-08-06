@@ -22,6 +22,7 @@ export interface IDataset {
   description?: string;
   document_count: number;
   embedding_model: string;
+  embedding_model_name?: string;
   size?: number;
   graphrag_task_finish_at: string;
   graphrag_task_id: Nullable<string>;

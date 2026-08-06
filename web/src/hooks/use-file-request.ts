@@ -62,7 +62,10 @@ export const useUploadFile = () => {
       const formData = new FormData();
       formData.append('parent_id', params.parentId);
       fileList.forEach((file: any, index: number) => {
-        formData.append('file', file);
+        // Explicitly set filename to file.name (base name) to prevent the
+        // browser from using webkitRelativePath (e.g. "folder/file.txt")
+        // which would cause the backend to create an extra folder.
+        formData.append('file', file, file.name);
         formData.append('path', pathList[index]);
       });
       try {

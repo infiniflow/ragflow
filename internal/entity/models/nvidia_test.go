@@ -62,7 +62,7 @@ func TestParseNvidiaModelListPrefersPresetMetadata(t *testing.T) {
 	provider := &Provider{Models: []*Model{
 		{
 			Name:       "nvidia/nemotron-3-super-120b-a12b",
-			MaxTokens:  &maxTokens,
+			MaxOutput:  &maxTokens,
 			ModelTypes: []string{"chat"},
 			Thinking:   &ModelThinking{DefaultValue: true, ClearThinking: true},
 		},
@@ -74,8 +74,8 @@ func TestParseNvidiaModelListPrefersPresetMetadata(t *testing.T) {
 	if len(models) != 1 {
 		t.Fatalf("len(models) = %d, want 1", len(models))
 	}
-	if models[0].MaxTokens == nil || *models[0].MaxTokens != maxTokens {
-		t.Fatalf("MaxTokens = %v, want %d", models[0].MaxTokens, maxTokens)
+	if models[0].MaxOutput == nil || *models[0].MaxOutput != maxTokens {
+		t.Fatalf("MaxOutput = %v, want %d", models[0].MaxOutput, maxTokens)
 	}
 	if models[0].Thinking == nil || !models[0].Thinking.DefaultValue {
 		t.Fatalf("Thinking = %#v, want preset metadata", models[0].Thinking)

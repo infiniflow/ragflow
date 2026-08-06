@@ -27,8 +27,15 @@ from quart import Response, request
 from werkzeug.exceptions import BadRequest
 
 from api.apps import current_user, login_required
-from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config
-from api.db.joint_services.tenant_model_service import get_api_key, get_tenant_default_model_by_type, resolve_model_config
+from api.apps.restful_apis._generation_params import merge_generation_config, pop_generation_config, resolve_llm_setting
+from api.db.joint_services.tenant_model_service import (
+    get_api_key,
+    get_composite_model_name_by_id,
+    get_model_config_by_id,
+    get_tenant_default_model_by_type,
+    resolve_model_config,
+    resolve_model_id,
+)
 from api.db.services.chunk_feedback_service import ChunkFeedbackService
 from api.db.services.conversation_service import ConversationService, structure_answer
 from api.db.services.dialog_service import DialogService, gen_mindmap, rag_agent
@@ -268,48 +275,67 @@ def _normalize_completion_messages(req):
     return (messages, msg), None
 
 
-async def _validate_llm_id(llm_id, tenant_id, llm_setting=None):
-    if not llm_id:
+def _llm_model_type(llm_setting):
+    model_type = (llm_setting or {}).get("model_type")
+    if isinstance(model_type, list):
+        return "vision" if "vision" in model_type else "chat"
+    return model_type if isinstance(model_type, str) and model_type in {"chat", "vision"} else "chat"
+
+
+async def _normalize_model_pair(req, tenant_id, name_field, id_field, model_type):
+    """Validate and synchronize a model name with its tenant-model ID."""
+    if name_field not in req and id_field not in req:
         return None
 
-    conf_model_type = (llm_setting or {}).get("model_type")
-    if isinstance(conf_model_type, str):
-        model_type = conf_model_type if conf_model_type in {"chat", "vision"} else "chat"
-    elif isinstance(conf_model_type, list):
-        model_type = "vision" if "vision" in conf_model_type else "chat"
+    model_name = req.get(name_field)
+    model_id = req.get(id_field)
+    resolved_name_id = None
+
+    if model_name is not None and not isinstance(model_name, str):
+        return f"`{name_field}` must be a string"
+    if model_id is not None and not isinstance(model_id, str):
+        return f"`{id_field}` must be a tenant model id"
+
+    if model_id:
+        try:
+            await thread_pool_exec(get_model_config_by_id, tenant_id, model_type, model_id)
+        except LookupError as e:
+            logging.error("Fail to get %s config by tenant model id %s: %s", model_type, model_id, e)
+            return f"`{id_field}` must be a valid tenant model id"
+
+    if model_name:
+        if model_type == "rerank" and model_name.split("@")[0] in _DEFAULT_RERANK_MODELS:
+            if model_id:
+                return f"`{name_field}` and `{id_field}` must refer to the same model"
+        else:
+            try:
+                # A name field may already contain a tenant model ID. Resolve it
+                # strictly first, then fall back to the composite model name.
+                try:
+                    await thread_pool_exec(get_model_config_by_id, tenant_id, model_type, model_name)
+                    resolved_name_id = model_name
+                except LookupError:
+                    resolved_name_id = await thread_pool_exec(resolve_model_id, tenant_id, model_type, model_name)
+            except LookupError as e:
+                logging.error("Fail to resolve %s %s: %s", name_field, model_name, e)
+                return f"`{name_field}` {model_name} doesn't exist"
+
+    if model_id and model_name:
+        if resolved_name_id != model_id:
+            return f"`{name_field}` and `{id_field}` must refer to the same model"
+    elif model_name:
+        req[id_field] = resolved_name_id
+    elif model_id:
+        try:
+            req[name_field] = await thread_pool_exec(get_composite_model_name_by_id, model_id)
+        except LookupError as e:
+            logging.error("Fail to get composite name for %s %s: %s", id_field, model_id, e)
+            return f"`{id_field}` must be a valid tenant model id"
     else:
-        model_type = "chat"
-    try:
-        await thread_pool_exec(
-            resolve_model_config,
-            tenant_id=tenant_id,
-            model_type=model_type,
-            model_ref=llm_id,
-        )
-    except Exception as e:
-        logging.error(f"Fail to get model config for {llm_id}: {e}")
-        return f"`llm_id` {llm_id} doesn't exist"
+        # Clearing one side must not leave a stale ID/name on the other side.
+        req[id_field] = None
+        req[name_field] = ""
 
-    return None
-
-
-async def _validate_rerank_id(rerank_id, tenant_id):
-    if not rerank_id:
-        return None
-    parts = rerank_id.split("@")
-    llm_name = parts[0]
-    if llm_name in _DEFAULT_RERANK_MODELS:
-        return None
-    try:
-        await thread_pool_exec(
-            resolve_model_config,
-            tenant_id=tenant_id,
-            model_ref=rerank_id,
-            model_type="rerank",
-        )
-    except Exception as e:
-        logging.error(f"Fail to get model config for {rerank_id}: {e}")
-        return f"`rerank_id` {rerank_id} doesn't exist"
     return None
 
 
@@ -387,15 +413,17 @@ async def create():
             req["kb_ids"] = kb_ids
             req.pop("dataset_ids", None)
 
-        if "llm_id" in req:
-            err = await _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
-            if err:
-                return get_data_error_result(message=err)
+        if req.get("llm_id") is None and req.get("tenant_llm_id") is None:
+            req["llm_id"] = tenant.tenant_llm_id
+        if "rerank_id" not in req and "tenant_rerank_id" not in req:
+            req["rerank_id"] = ""
 
-        if "rerank_id" in req:
-            err = await _validate_rerank_id(req.get("rerank_id"), current_user.id)
-            if err:
-                return get_data_error_result(message=err)
+        err = await _normalize_model_pair(req, current_user.id, "llm_id", "tenant_llm_id", _llm_model_type(req.get("llm_setting")))
+        if err:
+            return get_data_error_result(message=err)
+        err = await _normalize_model_pair(req, current_user.id, "rerank_id", "tenant_rerank_id", "rerank")
+        if err:
+            return get_data_error_result(message=err)
 
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
@@ -563,15 +591,13 @@ async def update_chat(chat_id):
             req["kb_ids"] = kb_ids
             req.pop("dataset_ids", None)
 
-        if "llm_id" in req:
-            err = await _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
-            if err:
-                return get_data_error_result(message=err)
-
-        if "rerank_id" in req:
-            err = await _validate_rerank_id(req.get("rerank_id"), current_user.id)
-            if err:
-                return get_data_error_result(message=err)
+        effective_llm_setting = req.get("llm_setting", current_chat.get("llm_setting", {}))
+        err = await _normalize_model_pair(req, current_user.id, "llm_id", "tenant_llm_id", _llm_model_type(effective_llm_setting))
+        if err:
+            return get_data_error_result(message=err)
+        err = await _normalize_model_pair(req, current_user.id, "rerank_id", "tenant_rerank_id", "rerank")
+        if err:
+            return get_data_error_result(message=err)
 
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
@@ -643,15 +669,20 @@ async def patch_chat(chat_id):
             req["kb_ids"] = kb_ids
             req.pop("dataset_ids", None)
 
-        if "llm_id" in req:
-            err = await _validate_llm_id(req.get("llm_id"), current_user.id, req.get("llm_setting"))
-            if err:
-                return get_data_error_result(message=err)
+        if "llm_setting" in req:
+            if not isinstance(req["llm_setting"], dict):
+                return get_data_error_result(message="`llm_setting` should be an object.")
+            llm_setting = deepcopy(current_chat.get("llm_setting") or {})
+            llm_setting.update(req["llm_setting"])
+            req["llm_setting"] = llm_setting
 
-        if "rerank_id" in req:
-            err = await _validate_rerank_id(req.get("rerank_id"), current_user.id)
-            if err:
-                return get_data_error_result(message=err)
+        effective_llm_setting = req.get("llm_setting", current_chat.get("llm_setting", {}))
+        err = await _normalize_model_pair(req, current_user.id, "llm_id", "tenant_llm_id", _llm_model_type(effective_llm_setting))
+        if err:
+            return get_data_error_result(message=err)
+        err = await _normalize_model_pair(req, current_user.id, "rerank_id", "tenant_rerank_id", "rerank")
+        if err:
+            return get_data_error_result(message=err)
 
         if "prompt_config" in req:
             if not isinstance(req["prompt_config"], dict):
@@ -662,11 +693,6 @@ async def patch_chat(chat_id):
             # err = _validate_prompt_config(prompt_config)
             # if err:
             #     return get_data_error_result(message=err)
-
-        if "llm_setting" in req:
-            llm_setting = deepcopy(current_chat.get("llm_setting", {}))
-            llm_setting.update(req["llm_setting"])
-            req["llm_setting"] = llm_setting
 
         # if "prompt_config" in req or "kb_ids" in req:
         #     prompt_config = req.get("prompt_config", current_chat.get("prompt_config", {}))
@@ -1150,7 +1176,7 @@ async def recommendation():
         chat_model_config = get_tenant_default_model_by_type(current_user.id, LLMType.CHAT)
     chat_mdl = LLMBundle(current_user.id, chat_model_config)
 
-    gen_conf = search_config.get("llm_setting", {"temperature": 0.9})
+    gen_conf = resolve_llm_setting(search_config.get("llm_setting"))
     if "parameter" in gen_conf:
         del gen_conf["parameter"]
     prompt = load_prompt("related_question")

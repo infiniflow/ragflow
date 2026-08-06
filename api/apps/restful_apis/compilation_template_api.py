@@ -61,7 +61,7 @@ def list_wiki_presets() -> Response:
     ``api/db/init_data/compilation_templates/wiki/*.yaml``.
 
     Each entry carries ``id`` (filename stem) + ``topic`` +
-    ``instruction`` + ``page_example`` so the artifact-template editor
+    ``instruction`` + ``example`` so the artifact-template editor
     can pre-fill its "Page-structure example" / "Global rules" fields
     from a canned skeleton. Filesystem-fresh per request; no DB seed.
     """

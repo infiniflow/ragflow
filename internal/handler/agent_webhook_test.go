@@ -266,8 +266,8 @@ func TestWebhook_TokenAuthFails(t *testing.T) {
 	if code != int(common.CodeDataError) {
 		t.Errorf("code = %d, want %d", code, common.CodeDataError)
 	}
-	if msg != "Invalid token authentication" {
-		t.Errorf("message = %q, want %q", msg, "Invalid token authentication")
+	if msg != "invalid token authentication" {
+		t.Errorf("message = %q, want %q", msg, "invalid token authentication")
 	}
 }
 

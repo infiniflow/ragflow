@@ -233,7 +233,7 @@ class CompilationTemplateService(CommonService):
         ``api/db/init_data/compilation_templates/wiki/*.yaml``.
 
         Each file contributes one preset dict with ``topic`` /
-        ``instruction`` / ``page_example`` fields (plus ``id`` derived
+        ``instruction`` / ``example`` fields (plus ``id`` derived
         from the filename stem so the frontend can key list items
         even when several presets share the same ``topic`` — which is
         by design; the UI groups presets by topic).
@@ -278,7 +278,7 @@ class CompilationTemplateService(CommonService):
                     "id": os.path.splitext(filename)[0],
                     "topic": str(doc.get("topic") or "").strip(),
                     "instruction": str(doc.get("instruction") or ""),
-                    "page_example": str(doc.get("page_example") or ""),
+                    "example": str(doc.get("example") or ""),
                 }
             )
         return presets

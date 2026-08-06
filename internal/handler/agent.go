@@ -394,13 +394,13 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
-	canvas, err := h.agentService.GetAgent(c.Request.Context(), user.ID, canvasID)
-	if err != nil || canvas == nil {
+	canvasInstance, err := h.agentService.GetAgent(c.Request.Context(), user.ID, canvasID)
+	if err != nil || canvasInstance == nil {
 		common.SuccessWithData(c, map[string]interface{}{}, "success")
 		return
 	}
 	common.SuccessWithData(c, map[string]interface{}{
-		"update_time": canvas.UpdateTime,
+		"update_time": canvasInstance.UpdateTime,
 	}, "success")
 }
 
@@ -917,11 +917,14 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	keywords := c.Query("keywords")
 	fromDate := c.Query("from_date")
 	toDate := c.Query("to_date")
-	orderby := c.DefaultQuery("orderby", "create_time")
-	desc := c.DefaultQuery("desc", "true") != "false"
+	orderby := c.DefaultQuery("orderby", "update_time")
+	descParam := c.Query("desc")
+	desc := descParam != "false" && descParam != "False"
 	sessionID := c.Query("id")
-	expUserID := c.Query("user_id")
-	includeDSL := c.Query("dsl") == "true"
+	queryUserID := c.Query("user_id")
+	expUserID := c.Query("exp_user_id")
+	dslParam := c.Query("dsl")
+	includeDSL := dslParam != "false" && dslParam != "False"
 	ctx := c.Request.Context()
 	resp, code, err := h.agentService.ListAgentSessions(ctx, user.ID, user.ID, canvasID, service.ListAgentSessionsRequest{
 		Page:       page,
@@ -932,7 +935,7 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		OrderBy:    orderby,
 		Desc:       desc,
 		SessionID:  sessionID,
-		UserID:     user.ID,
+		UserID:     queryUserID,
 		ExpUserID:  expUserID,
 		IncludeDSL: includeDSL,
 	})
@@ -940,7 +943,7 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
-	common.SuccessWithData(c, resp.Data, "success")
+	common.SuccessWithDataAndTotal(c, resp.Data, resp.Total, "success")
 }
 
 // CreateAgentSession POST /api/v1/agents/:canvas_id/sessions

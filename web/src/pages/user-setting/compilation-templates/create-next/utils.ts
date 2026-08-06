@@ -20,20 +20,6 @@ import {
   SectionPriority,
 } from './constant';
 
-export const splitExampleToBlueprintFields = (
-  example: string,
-): { instruction: string; page_example: string } => {
-  const trimmed = example.trim();
-  const separatorIndex = trimmed.indexOf('\n\n');
-  if (separatorIndex === -1) {
-    return { instruction: trimmed, page_example: '' };
-  }
-  return {
-    instruction: trimmed.slice(0, separatorIndex).trim(),
-    page_example: trimmed.slice(separatorIndex + 2).trim(),
-  };
-};
-
 export const getFieldKeyOrder = (keys: string[]): string[] => {
   const sortedKeys = [...keys].sort();
   return (
@@ -52,9 +38,9 @@ export const isConfigMetaKey = (key: string) =>
     'global_rules',
     'example',
     'instruction',
-    'page_example',
     'synthesis',
     'use_blueprint',
+    'plan',
     'rechunk',
     'rechunk_rules',
   ].includes(key);
@@ -84,6 +70,10 @@ export const buildConfigFromBuiltin = (
   kind: string,
   llmId: string,
 ): TemplateSchemaType['config'] => {
+  const instruction =
+    typeof builtinTemplate.config?.instruction === 'string'
+      ? builtinTemplate.config.instruction
+      : '';
   const example =
     typeof builtinTemplate.config?.example === 'string'
       ? builtinTemplate.config.example
@@ -107,7 +97,12 @@ export const buildConfigFromBuiltin = (
         }
       : {}),
     use_blueprint:
-      kind === CompilationTemplateKind.Artifacts && example.length > 0,
+      kind === CompilationTemplateKind.Artifacts &&
+      (instruction.length > 0 || example.length > 0),
+    plan:
+      typeof builtinTemplate.config?.plan === 'boolean'
+        ? builtinTemplate.config.plan
+        : true,
     ...(kind !== CompilationTemplateKind.Tree
       ? {
           rechunk: builtinTemplate.config?.rechunk === true,
@@ -119,11 +114,12 @@ export const buildConfigFromBuiltin = (
       : {}),
   };
 
-  if (kind === CompilationTemplateKind.Artifacts && example.length > 0) {
-    const { instruction, page_example } =
-      splitExampleToBlueprintFields(example);
+  if (
+    kind === CompilationTemplateKind.Artifacts &&
+    (instruction.length > 0 || example.length > 0)
+  ) {
     sections.instruction = instruction;
-    sections.page_example = page_example;
+    sections.example = example;
   }
 
   if (kind === CompilationTemplateKind.Tree) {
@@ -134,7 +130,8 @@ export const buildConfigFromBuiltin = (
       raptor: {
         prompt: builtinRaptor.prompt ?? '',
         max_token: builtinRaptor.max_token ?? 512,
-        threshold: builtinRaptor.threshold ?? 0.1,
+        clustering_threshold: builtinRaptor.clustering_threshold ?? 0.3,
+        clustering_ratio: builtinRaptor.clustering_ratio ?? 0.5,
         rechunk: builtinRaptor.rechunk ?? false,
       },
     };
@@ -154,12 +151,18 @@ export const transformDetailToForm = (
   detail: ICompilationTemplate,
 ): TemplateSchemaType => {
   const config = detail.config ?? {};
-  const example = typeof config.example === 'string' ? config.example : '';
+  const storedInstruction =
+    typeof config.instruction === 'string' ? config.instruction : '';
+  const storedExample =
+    typeof config.example === 'string' ? config.example : '';
+  const hasBlueprintContent = Boolean(
+    storedInstruction.trim() || storedExample.trim(),
+  );
   const base: TemplateSchemaType['config'] = {
     kind: config.kind ?? '',
     llm_id: config.llm_id ?? '',
     global_rules: config.global_rules ?? '',
-    example: typeof config.example === 'string' ? config.example : '',
+    example: storedExample,
     ...(typeof config.synthesis === 'object' && config.synthesis !== null
       ? {
           synthesis:
@@ -167,7 +170,8 @@ export const transformDetailToForm = (
         }
       : {}),
     use_blueprint:
-      detail.kind === CompilationTemplateKind.Artifacts && example.length > 0,
+      detail.kind === CompilationTemplateKind.Artifacts && hasBlueprintContent,
+    plan: typeof config.plan === 'boolean' ? config.plan : true,
     ...(detail.kind !== CompilationTemplateKind.Tree
       ? {
           rechunk: config.rechunk === true,
@@ -179,11 +183,12 @@ export const transformDetailToForm = (
       : {}),
   };
 
-  if (detail.kind === CompilationTemplateKind.Artifacts && example.length > 0) {
-    const { instruction, page_example } =
-      splitExampleToBlueprintFields(example);
-    base.instruction = instruction;
-    base.page_example = page_example;
+  if (
+    detail.kind === CompilationTemplateKind.Artifacts &&
+    hasBlueprintContent
+  ) {
+    base.instruction = storedInstruction;
+    base.example = storedExample;
   }
 
   if (detail.kind === CompilationTemplateKind.Tree) {
@@ -199,7 +204,8 @@ export const transformDetailToForm = (
         raptor: {
           prompt: raptor.prompt ?? '',
           max_token: raptor.max_token ?? 512,
-          threshold: raptor.threshold ?? 0.1,
+          clustering_threshold: raptor.clustering_threshold ?? 0.3,
+          clustering_ratio: raptor.clustering_ratio ?? 0.5,
           rechunk: raptor.rechunk ?? false,
         },
       },
@@ -246,8 +252,12 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
 
   Object.entries(template.config).forEach(([key, value]) => {
     if (key === 'kind' || key === 'llm_id') return;
-    if (key === 'instruction' || key === 'page_example') return;
+    if (key === 'example' || key === 'instruction') return;
     if (key === 'synthesis') {
+      config[key] = value as ICompilationTemplateConfigRequest[string];
+      return;
+    }
+    if (key === 'plan') {
       config[key] = value as ICompilationTemplateConfigRequest[string];
       return;
     }
@@ -262,9 +272,11 @@ export const transformTemplateToPayload = (template: TemplateSchemaType) => {
   if (template.kind === CompilationTemplateKind.Artifacts) {
     if (template.config.use_blueprint) {
       const instruction = String(template.config.instruction ?? '').trim();
-      const pageExample = String(template.config.page_example ?? '').trim();
-      config.example = [instruction, pageExample].filter(Boolean).join('\n\n');
+      const example = String(template.config.example ?? '').trim();
+      config.instruction = instruction;
+      config.example = example;
     } else {
+      config.instruction = '';
       config.example = '';
     }
   }

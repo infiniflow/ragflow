@@ -85,6 +85,7 @@ OAUTH_CONFIG = None
 DOC_ENGINE = os.getenv("DOC_ENGINE", "elasticsearch")
 DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
 DOC_ENGINE_OCEANBASE = DOC_ENGINE.lower() == "oceanbase"
+DOC_ENGINE_SERENEDB = DOC_ENGINE.lower() == "serenedb"
 
 
 docStoreConn = None
@@ -123,9 +124,10 @@ OB = {}
 OSS = {}
 OS = {}
 GCS = {}
+SERENEDB = {}
 
 DOC_MAXIMUM_SIZE: int = 128 * 1024 * 1024
-DOC_BULK_SIZE: int = 4
+DOC_BULK_SIZE: int = 32
 EMBEDDING_BATCH_SIZE: int = 16
 
 PARALLEL_DEVICES: int = 0
@@ -175,7 +177,8 @@ def init_secret_key():
 def get_secret_key():
     global SECRET_KEY
     if SECRET_KEY is None:
-        return _get_or_create_secret_key()
+        # Why need cache it, if REDIS evict keys due to lack of memory, new secret key will be generated, cause all requests 401
+        SECRET_KEY = _get_or_create_secret_key()
     return SECRET_KEY
 
 
@@ -300,10 +303,11 @@ def init_settings():
     FEISHU_OAUTH = get_base_config("oauth", {}).get("feishu")
     OAUTH_CONFIG = get_base_config("oauth", {})
 
-    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, docStoreConn, ES, OB, OS, INFINITY
+    global DOC_ENGINE, DOC_ENGINE_INFINITY, DOC_ENGINE_OCEANBASE, DOC_ENGINE_SERENEDB, docStoreConn, ES, OB, OS, INFINITY, SERENEDB
     DOC_ENGINE = os.environ.get("DOC_ENGINE", "elasticsearch").strip()
     DOC_ENGINE_INFINITY = DOC_ENGINE.lower() == "infinity"
     DOC_ENGINE_OCEANBASE = DOC_ENGINE.lower() == "oceanbase"
+    DOC_ENGINE_SERENEDB = DOC_ENGINE.lower() == "serenedb"
     lower_case_doc_engine = DOC_ENGINE.lower()
     if lower_case_doc_engine == "elasticsearch":
         ES = get_base_config("es", {})
@@ -320,6 +324,12 @@ def init_settings():
     elif lower_case_doc_engine == "seekdb":
         OB = get_base_config("seekdb", {})
         docStoreConn = rag.utils.ob_conn.OBConnection()
+    elif lower_case_doc_engine == "serenedb":
+        SERENEDB = get_base_config("serenedb", {})
+        # Imported lazily so psycopg2/SereneDB is only touched when selected.
+        from rag.utils import serenedb_conn
+
+        docStoreConn = serenedb_conn.SereneDBConnection()
     else:
         raise Exception(f"Not supported doc engine: {DOC_ENGINE}")
 
@@ -394,7 +404,7 @@ def init_settings():
 
     global DOC_MAXIMUM_SIZE, DOC_BULK_SIZE, EMBEDDING_BATCH_SIZE
     DOC_MAXIMUM_SIZE = int(os.environ.get("MAX_CONTENT_LENGTH", 128 * 1024 * 1024))
-    DOC_BULK_SIZE = int(os.environ.get("DOC_BULK_SIZE", 4))
+    DOC_BULK_SIZE = int(os.environ.get("DOC_BULK_SIZE", 32))
     EMBEDDING_BATCH_SIZE = int(os.environ.get("EMBEDDING_BATCH_SIZE", 16))
 
     os.environ["DOTNET_SYSTEM_GLOBALIZATION_INVARIANT"] = "1"

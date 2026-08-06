@@ -240,17 +240,17 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 		return common.CodeDataError, errors.New("invalid request payload")
 	}
 	if present["chunk_count"] && req.ChunkCount != nil && *req.ChunkCount != 0 && *req.ChunkCount != doc.ChunkNum {
-		return common.CodeDataError, errors.New("Can't change `chunk_count`.")
+		return common.CodeDataError, errors.New("can't change `chunk_count`")
 	}
 	if present["token_count"] && req.TokenCount != nil && *req.TokenCount != 0 && *req.TokenCount != doc.TokenNum {
-		return common.CodeDataError, errors.New("Can't change `token_count`.")
+		return common.CodeDataError, errors.New("can't change `token_count`")
 	}
 	if present["progress"] && req.Progress != nil {
 		if *req.Progress > 1 {
 			return common.CodeDataError, fmt.Errorf("Field: <progress> - Message: <Input should be less than or equal to 1> - Value: <%s>", pythonFloatRepr(*req.Progress))
 		}
 		if *req.Progress != 0 && math.Abs(*req.Progress-doc.Progress) > 1e-9 {
-			return common.CodeDataError, errors.New("Can't change `progress`.")
+			return common.CodeDataError, errors.New("can't change `progress`")
 		}
 	}
 
@@ -319,7 +319,7 @@ func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.
 	}
 
 	if strings.ToLower(filepath.Ext(newName)) != strings.ToLower(filepath.Ext(oldName)) {
-		return common.CodeArgumentError, errors.New("The extension of file can't be changed")
+		return common.CodeArgumentError, errors.New("the extension of file can't be changed")
 	}
 
 	docs, err := s.documentDAO.GetByNameAndKBID(ctx, dao.DB, newName, doc.KbID)
@@ -328,7 +328,7 @@ func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.
 	}
 	for _, d := range docs {
 		if d.ID != doc.ID && d.Name != nil && *d.Name == newName {
-			return common.CodeDataError, errors.New("Duplicated document name in the same dataset.")
+			return common.CodeDataError, errors.New("duplicated document name in the same dataset")
 		}
 	}
 

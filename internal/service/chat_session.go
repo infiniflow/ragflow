@@ -275,7 +275,7 @@ func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatI
 	}
 
 	if !isOwner {
-		return nil, errors.New("No authorization.")
+		return nil, errors.New("no authorization")
 	}
 
 	// items_per_page == 0 returns an empty list (mirrors Python's list_sessions).
@@ -299,7 +299,7 @@ func (s *ChatSessionService) GetSession(ctx context.Context, userID, chatID, ses
 		return nil, common.CodeServerError, err
 	}
 	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+		return nil, common.CodeAuthenticationError, errors.New("no authorization")
 	}
 
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
@@ -328,7 +328,7 @@ func (s *ChatSessionService) CreateSession(ctx context.Context, userID, chatID s
 		return nil, common.CodeServerError, err
 	}
 	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+		return nil, common.CodeAuthenticationError, errors.New("no authorization")
 	}
 
 	dialog, err := s.chatSessionDAO.GetDialogByID(ctx, dao.DB, chatID)
@@ -394,7 +394,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 		return nil, "", common.CodeServerError, err
 	}
 	if !ok {
-		return false, "No authorization.", common.CodeAuthenticationError, errors.New("No authorization.")
+		return false, "no authorization", common.CodeAuthenticationError, errors.New("no authorization")
 	}
 
 	if len(req) == 0 {
@@ -432,7 +432,7 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 			continue
 		}
 
-		s.removeSessionUploadFiles(userID, session)
+		s.removeSessionUploadFiles(ctx, userID, session)
 
 		if err = s.chatSessionDAO.DeleteByID(ctx, dao.DB, sid); err != nil {
 			return nil, "", common.CodeServerError, err
@@ -485,7 +485,7 @@ func stringSliceFromValue(value interface{}) ([]string, bool) {
 	return ids, true
 }
 
-func (s *ChatSessionService) removeSessionUploadFiles(userID string, session *entity.ChatSession) {
+func (s *ChatSessionService) removeSessionUploadFiles(ctx context.Context, userID string, session *entity.ChatSession) {
 	messages := parseMessages(session.Message)
 	bucket := fmt.Sprintf("%s-downloads", userID)
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -511,7 +511,7 @@ func (s *ChatSessionService) removeSessionUploadFiles(userID string, session *en
 				continue
 			}
 
-			if err := storageImpl.Remove(bucket, fileID); err != nil {
+			if err := storageImpl.Remove(ctx, bucket, fileID); err != nil {
 				common.Warn("Failed to delete chat upload blob",
 					zap.String("bucket", bucket),
 					zap.String("file_id", fileID),
@@ -552,7 +552,7 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, 
 		return nil, common.CodeServerError, err
 	}
 	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+		return nil, common.CodeAuthenticationError, errors.New("no authorization")
 	}
 
 	if _, err = s.chatSessionDAO.GetBySessionIDAndChatID(ctx, dao.DB, sessionID, chatID); err != nil {
@@ -621,7 +621,7 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 		return nil, common.CodeServerError, err
 	}
 	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+		return nil, common.CodeAuthenticationError, errors.New("no authorization")
 	}
 
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
@@ -711,7 +711,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 	}
 	ok := ownerTenantID != ""
 	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("No authorization.")
+		return nil, common.CodeAuthenticationError, errors.New("no authorization")
 	}
 
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
@@ -1490,7 +1490,7 @@ func (s *ChatSessionService) ChatCompletions(
 	var session *entity.ChatSession
 	if chatID != "" {
 		if err = s.checkDialogOwnership(ctx, userID, chatID); err != nil {
-			return fail(common.NewCodedError(common.CodeAuthenticationError, "No authorization."))
+			return fail(common.NewCodedError(common.CodeAuthenticationError, "no authorization"))
 		}
 		dialog, err = s.chatSessionDAO.GetDialogByID(ctx, dao.DB, chatID)
 		if err != nil {
@@ -1811,7 +1811,7 @@ func (s *ChatSessionService) checkDialogOwnership(ctx context.Context, userID, c
 		return err
 	}
 	if !ok {
-		return errors.New("No authorization.")
+		return errors.New("no authorization")
 	}
 	return nil
 }

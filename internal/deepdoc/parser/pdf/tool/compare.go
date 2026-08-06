@@ -328,7 +328,7 @@ func cellName(col, row int) string {
 	return s
 }
 
-// including per-cell text comparison.
+// CompareTablesWithPython including per-cell text comparison.
 func CompareTablesWithPython(log TLogger, goTablesDir, pyTablesDir string) {
 	goEntries, err := os.ReadDir(goTablesDir)
 	if err != nil {
