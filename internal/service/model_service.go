@@ -1182,7 +1182,17 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 				msg := []modelModule.Message{{Role: "user", Content: "Hi"}}
 				_, err = driver.ChatWithMessages(ctx, modelName, msg, apiConfig, nil, nil)
 			case "embedding":
-				if err = validateEmbeddingModel(model, 0, 1); err == nil {
+				// Provider discovery can return models without catalog limits. Apply
+				// the strict validator whenever the model has the metadata required
+				// to construct a valid verification request.
+				if model.MaxDimension != nil && model.MaxBatchSize != nil {
+					requestedDimension := *model.MaxDimension
+					if len(model.Dimensions) > 0 {
+						requestedDimension = model.Dimensions[0]
+					}
+					err = validateEmbeddingModel(model, requestedDimension, 1)
+				}
+				if err == nil {
 					_, err = driver.Embed(ctx, &modelName, []string{"test"}, apiConfig, nil, nil)
 				}
 			case "rerank":
@@ -2874,21 +2884,30 @@ func validateEmbeddingModel(model *modelModule.Model, requestedDimension, reques
 	if model == nil {
 		return fmt.Errorf("embedding model is nil")
 	}
-	if requestedDimension < 0 {
-		return fmt.Errorf("input dimension < 0")
+
+	if requestedDimension <= 0 {
+		return fmt.Errorf("input dimension <= 0")
 	}
-	if requestedBatchSize < 0 {
-		return fmt.Errorf("input batch size < 0")
+
+	if requestedBatchSize <= 0 {
+		return fmt.Errorf("input batch size <= 0")
 	}
-	if model.MaxBatchSize != nil && requestedBatchSize > *model.MaxBatchSize {
+
+	if model.MaxDimension == nil {
+		return fmt.Errorf("input embedding max dimension is nil, %s", model.Name)
+	}
+
+	if model.MaxBatchSize == nil {
+		return fmt.Errorf("input embedding max batch size is nil, %s", model.Name)
+	}
+
+	if *model.MaxBatchSize < requestedBatchSize {
 		return fmt.Errorf("input embedding max batch size is more than limitation, %s", model.Name)
 	}
-	if requestedDimension == 0 {
-		return nil
-	}
+
 	if len(model.Dimensions) > 0 {
-		for _, dimension := range model.Dimensions {
-			if dimension == requestedDimension {
+		for _, dim := range model.Dimensions {
+			if dim == requestedDimension {
 				return nil
 			}
 		}
@@ -2907,6 +2926,7 @@ func validateEmbeddingModel(model *modelModule.Model, requestedDimension, reques
 			*model.MaxDimension,
 		)
 	}
+
 	return nil
 }
 

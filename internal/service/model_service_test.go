@@ -33,24 +33,46 @@ func TestValidateEmbeddingModel(t *testing.T) {
 			wantErr:            "embedding model is nil",
 		},
 		{
+			name:               "rejects zero dimension",
+			model:              &modelModule.Model{},
+			requestedDimension: 0,
+			requestedBatchSize: 1,
+			wantErr:            "input dimension <= 0",
+		},
+		{
 			name:               "rejects negative dimension",
 			model:              &modelModule.Model{},
 			requestedDimension: -1,
 			requestedBatchSize: 1,
-			wantErr:            "input dimension < 0",
+			wantErr:            "input dimension <= 0",
+		},
+		{
+			name:               "rejects zero batch size",
+			model:              &modelModule.Model{},
+			requestedDimension: 1024,
+			requestedBatchSize: 0,
+			wantErr:            "input batch size <= 0",
 		},
 		{
 			name:               "rejects negative batch size",
 			model:              &modelModule.Model{},
-			requestedDimension: 0,
+			requestedDimension: 1024,
 			requestedBatchSize: -1,
-			wantErr:            "input batch size < 0",
+			wantErr:            "input batch size <= 0",
 		},
 		{
-			name:               "allows provider default dimension",
-			model:              &modelModule.Model{MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize},
-			requestedDimension: 0,
-			requestedBatchSize: 128,
+			name:               "rejects missing max dimension",
+			model:              &modelModule.Model{MaxBatchSize: &maxBatchSize},
+			requestedDimension: 1024,
+			requestedBatchSize: 1,
+			wantErr:            "max dimension is nil",
+		},
+		{
+			name:               "rejects missing max batch size",
+			model:              &modelModule.Model{MaxDimension: &maxDimension},
+			requestedDimension: 1024,
+			requestedBatchSize: 1,
+			wantErr:            "max batch size is nil",
 		},
 		{
 			name:               "allows dimension listed in explicit options",
@@ -79,12 +101,6 @@ func TestValidateEmbeddingModel(t *testing.T) {
 			wantErr:            "max dimension",
 		},
 		{
-			name:               "allows dimension when max dimension is unspecified",
-			model:              &modelModule.Model{Name: "fixed-embedding", MaxBatchSize: &maxBatchSize},
-			requestedDimension: 1024,
-			requestedBatchSize: 1,
-		},
-		{
 			name:               "allows batch at model limit",
 			model:              &modelModule.Model{Name: "embedding-3", MaxDimension: &maxDimension, MaxBatchSize: &maxBatchSize},
 			requestedDimension: 1024,
@@ -98,10 +114,11 @@ func TestValidateEmbeddingModel(t *testing.T) {
 			wantErr:            "max batch size",
 		},
 		{
-			name:               "allows batch when model limit is unspecified",
+			name:               "rejects batch when model limit is unspecified",
 			model:              &modelModule.Model{Name: "custom-embedding", MaxDimension: &maxDimension},
 			requestedDimension: 1024,
 			requestedBatchSize: 10000,
+			wantErr:            "max batch size is nil",
 		},
 	}
 
@@ -124,7 +141,7 @@ func TestValidateEmbeddingModel(t *testing.T) {
 	}
 }
 
-func TestModelInfoWithTenantExtraAppliesEmbeddingDimensions(t *testing.T) {
+func TestModelInfoWithTenantExtraAppliesEmbeddingConstraints(t *testing.T) {
 	factoryMaxDimension := 2048
 	factoryBatchSize := 128
 	modelInfo := &modelModule.Model{
@@ -155,11 +172,14 @@ func TestModelInfoWithTenantExtraAppliesEmbeddingDimensions(t *testing.T) {
 	if len(merged.Dimensions) != 2 || merged.Dimensions[0] != 384 || merged.Dimensions[1] != 768 {
 		t.Fatalf("Dimensions = %v, want [384 768]", merged.Dimensions)
 	}
-	if err = validateEmbeddingModel(merged, 1024, 16); err == nil || !strings.Contains(err.Error(), "supported dimensions") {
-		t.Fatalf("validateEmbeddingModel() error = %v, want supported dimensions error", err)
+	if validationErr := validateEmbeddingModel(merged, 1024, 16); validationErr == nil || !strings.Contains(validationErr.Error(), "supported dimensions") {
+		t.Fatalf("validateEmbeddingModel() error = %v, want supported dimensions error", validationErr)
 	}
-	if err = validateEmbeddingModel(merged, 768, 16); err != nil {
-		t.Fatalf("validateEmbeddingModel() error = %v", err)
+	if validationErr := validateEmbeddingModel(merged, 768, 16); validationErr != nil {
+		t.Fatalf("validateEmbeddingModel() error = %v", validationErr)
+	}
+	if validationErr := validateEmbeddingModel(merged, 768, 17); validationErr == nil || !strings.Contains(validationErr.Error(), "max batch size") {
+		t.Fatalf("validateEmbeddingModel() error = %v, want max batch size error", validationErr)
 	}
 	if modelInfo.MaxDimension == nil || *modelInfo.MaxDimension != factoryMaxDimension {
 		t.Fatalf("factory MaxDimension was mutated: %v", modelInfo.MaxDimension)
