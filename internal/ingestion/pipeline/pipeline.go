@@ -140,11 +140,10 @@ func WithProgressSink(s ProgressSink) PipelineOption {
 // It accepts either the inner canvas DSL or the template wrapper whose
 // top-level `dsl` field carries that canvas.
 func NewPipelineFromDSL(dsl []byte, taskID string, opts ...PipelineOption) (*Pipeline, error) {
-	var raw map[string]any
-	if err := json.Unmarshal(dsl, &raw); err != nil {
-		return nil, fmt.Errorf("pipeline: decode DSL: %w", err)
-	}
-	canvasDSL, err := unwrapCanvasDSL(raw)
+	// UnwrapCanvasDSL is the single source of truth for stripping the
+	// optional {"dsl": {...}} canvas envelope; it also reports a nil/unparseable
+	// DSL.
+	canvasDSL, err := UnwrapCanvasDSL(dsl)
 	if err != nil {
 		return nil, err
 	}
@@ -179,20 +178,6 @@ func (p *Pipeline) WithComponentFactory(factory runtime.ComponentFactory) *Pipel
 		p.factory = factory
 	}
 	return p
-}
-
-func unwrapCanvasDSL(raw map[string]any) (map[string]any, error) {
-	if len(raw) == 0 {
-		return nil, errNilDSL
-	}
-	if rawDSL, ok := raw["dsl"]; ok {
-		canvasDSL, ok := rawDSL.(map[string]any)
-		if !ok || len(canvasDSL) == 0 {
-			return nil, errNilDSL
-		}
-		return canvasDSL, nil
-	}
-	return raw, nil
 }
 
 func mergeInto(dst, src map[string]any) map[string]any {

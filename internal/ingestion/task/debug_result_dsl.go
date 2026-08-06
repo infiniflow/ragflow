@@ -30,6 +30,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 )
 
 // ResultSink is an OPTIONAL capability a ProgressSink may implement to receive
@@ -80,9 +82,11 @@ func BuildDebugResultDSL(dsl string, output map[string]any) (map[string]any, err
 	if err := json.Unmarshal([]byte(dsl), &tpl); err != nil {
 		return nil, fmt.Errorf("BuildDebugResultDSL: unmarshal dsl: %w", err)
 	}
+	// Unwrap the canvas envelope via the shared helper so envelope handling
+	// lives in exactly one place (pipeline.UnwrapCanvasDSL).
 	root := tpl
-	if nested, ok := tpl["dsl"].(map[string]any); ok {
-		root = nested
+	if inner, err := pipelinepkg.UnwrapCanvasDSL([]byte(dsl)); err == nil && inner != nil {
+		root = inner
 	}
 
 	components, ok := root["components"].(map[string]any)
