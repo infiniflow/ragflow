@@ -2,13 +2,13 @@
 
 import logging
 
+from rag.advanced_rag.harness.config import get_mode
 from rag.advanced_rag.harness.types import (
     AgentResult,
     ClaimCrossCheckResult,
-    SufficiencyVerdict,
     ExecutionStrategy,
+    SufficiencyVerdict,
 )
-from rag.advanced_rag.harness.config import get_mode
 
 _LOG = logging.getLogger(__name__)
 
@@ -58,19 +58,41 @@ def cross_check_claim(agent_result: AgentResult, all_chunks: dict) -> ClaimCross
         text = chunk.get("content_with_weight", chunk.get("text", ""))
         text_lower = text.lower()
 
-        for num in numbers:
-            if str(num) not in text_lower:
-                mismatches.append(f"number {num} not found in chunk {eid}")
-            else:
-                matches.append(f"number {num} found in chunk {eid}")
+        # For Chinese (and other non-English) content: if the chunk itself
+        # contains no Arabic digits, skipping number-based cross-check is
+        # correct — the chunk is pure classical text and matching LLM-
+        # synthesized years/numbers against it would produce false negatives.
+        chunk_has_digits = bool(re.search(r"\d", text_lower))
+
+        if chunk_has_digits or entities:
+            for num in numbers:
+                if str(num) not in text_lower:
+                    mismatches.append(f"number {num} not found in chunk {eid}")
+                else:
+                    matches.append(f"number {num} found in chunk {eid}")
 
         for ent in entities:
             if ent.lower() not in text_lower:
                 mismatches.append(f"entity '{ent}' not found in chunk {eid}")
 
     total = len(matches) + len(mismatches)
-    cross_score = len(matches) / max(total, 1) if total > 0 else 0.0
-    cross_passed = len(mismatches) < len(matches) * 0.5
+    # When no extractable entities or numbers exist to cross-check against
+    # (common for Chinese text), treat as passed — nothing falsified the claim.
+    if total == 0:
+        cross_passed = True
+        cross_score = 1.0
+    else:
+        # When the report contains numbers but evidence chunks are primarily
+        # Chinese (no extractable English named-entities), the number-matching
+        # heuristic is unreliable — the LLM may synthesize dates or counts that
+        # the raw chunks do not contain verbatim.  Treat lightly: any match at
+        # all still passes; zero matches is a soft fail, not a hard one.
+        if entities:
+            cross_score = len(matches) / total
+            cross_passed = len(mismatches) < len(matches) * 0.5
+        else:
+            cross_passed = len(matches) > 0
+            cross_score = len(matches) / max(total, 1)
 
     return ClaimCrossCheckResult(
         claim_id=agent_result.claim_id,
@@ -113,14 +135,16 @@ def compute_fusion_score(
     has_conflicts = any(len(r.mismatches) > 0 for r in cross_check_results)
 
     # 5-way verdict
-    if has_conflicts and fusion_score < mode.partial_threshold:
+    # UNANSWERABLE first: when no claim passed cross-check at all,
+    # treat as truly unanswerable (not "conflicting").
+    if cross_check_results and not any(r.cross_check_passed for r in cross_check_results):
+        status = "UNANSWERABLE"
+    elif has_conflicts and fusion_score < mode.partial_threshold:
         status = "CONFLICTING"
     elif fusion_score >= mode.sufficiency_threshold:
         status = "SUFFICIENT"
     elif fusion_score >= mode.partial_threshold:
         status = "USEFUL_BUT_INCOMPLETE"
-    elif not any(r.cross_check_passed for r in cross_check_results):
-        status = "UNANSWERABLE"
     else:
         status = "INSUFFICIENT"
 

@@ -16,12 +16,27 @@ Detail level: {detail_level}
 Preliminary retrieved context for this question (use it to ground each claim in what the corpus actually contains; do not invent facts it cannot support):
 {retrieved}
 
+For enumeration questions, use discovery queries that search for the full set, not verification claims for individual candidates.
+
 Output format (JSON):
+
+Enumeration question — CORRECT example (discovery query, searches the full set):
 {{
     "claims": [
         {{
             "claim_id": "c1",
-            "description": "The year Apple acquired Beats",
+            "description": "Complete list of all Olympic host cities",
+            "priority": 1
+        }}
+    ]
+}}
+
+Non-enumeration factual question — decompose into atomic fact queries:
+{{
+    "claims": [
+        {{
+            "claim_id": "c1",
+            "description": "The year Apple acquired Beets",
             "priority": 1
         }}
     ]

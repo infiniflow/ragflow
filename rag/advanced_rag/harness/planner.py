@@ -5,14 +5,14 @@ import logging
 import re
 
 from rag.advanced_rag.agentic_rag_graph import _snip
-from rag.advanced_rag.harness.types import ClaimTarget, WorkflowPlan, RouteDecision
 from rag.advanced_rag.harness.config import get_mode
 from rag.advanced_rag.harness.prompts.decompose_prompts import (
-    DECOMPOSE_FACTUAL,
     DECOMPOSE_COMPARATIVE,
-    DECOMPOSE_PROCEDURAL,
     DECOMPOSE_EXPLORATORY,
+    DECOMPOSE_FACTUAL,
+    DECOMPOSE_PROCEDURAL,
 )
+from rag.advanced_rag.harness.types import ClaimTarget, RouteDecision, WorkflowPlan
 
 _LOG = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ async def planner_node(state: dict, tools) -> dict:
         _LOG.warning("planner: no route found, using defaults")
         return _default_plan(state.get("question", ""))
 
-    _LOG.info("[Planner] Working out how to research this %s question: \"%s\"", route.question_type, _snip(route.question))
+    _LOG.info('[Planner] Working out how to research this %s question: "%s"', route.question_type, _snip(route.question))
     if not route.requires_decomposition:
         # Direct mode: single coarse claim
         return _direct_plan(route.question)
@@ -68,6 +68,12 @@ async def planner_node(state: dict, tools) -> dict:
         )
         system, user = prompt.split("Output format", 1)
         system = system.strip()
+        system += (
+            "\n\nWrite every claim description in the SAME LANGUAGE as the user's "
+            "question. If the question is in Chinese, all descriptions MUST be in "
+            "Chinese, using native entity names. If the question is in English, use "
+            "English. Never mix languages in descriptions."
+        )
         user = "Output format" + user
         msg = await tools._fit_messages(system, user)
         ans = await tools.chat_mdl.async_chat(msg[0]["content"], msg[1:], {"temperature": 0.2})
