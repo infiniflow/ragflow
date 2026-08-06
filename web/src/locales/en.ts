@@ -2583,6 +2583,15 @@ Best for: Documents with flowing, contextually connected content — such as boo
       queritLanguageInclude: 'Languages to include',
       queritLanguageIncludeTip: 'Return results in the specified languages.',
       queritListPlaceholder: 'Enter a value',
+      queritContentsUrls: 'URLs',
+      queritContentsUrlsTip:
+        'Enter between one and ten absolute HTTP or HTTPS URLs, separated by commas.',
+      queritContentsTimeout: 'Crawl timeout',
+      queritContentsTimeoutTip:
+        'Set the per-page crawl timeout from 1 to 60 seconds.',
+      queritContentsMetadata: 'Include page metadata',
+      queritContentsMetadataTip:
+        'Return page title, publication time, site name, and site icon when available.',
       Days: 'Days',
       comma: 'Comma',
       semicolon: 'Semicolon',
@@ -3241,6 +3250,9 @@ This process aggregates variables from multiple branches into a single variable 
       queritSearch: 'Querit search',
       queritSearchDescription:
         'Search the web with Querit and return source-backed results for agents.',
+      queritContents: 'Querit contents',
+      queritContentsDescription:
+        'Crawl web pages with Querit and return their contents.',
       tavilyExtract: 'Tavily extract',
       tavilyExtractDescription: 'Tavily Extract',
       log: 'Log',
@@ -3274,6 +3286,7 @@ This process aggregates variables from multiple branches into a single variable 
         textProcessing: 'Tidying up text',
         tavilySearch: 'Searching the web',
         queritSearch: 'Searching the web with Querit',
+        queritContents: 'Reading web pages with Querit',
         tavilyExtract: 'Reading the page',
         exeSQL: 'Querying database',
         google: 'Searching the web',
