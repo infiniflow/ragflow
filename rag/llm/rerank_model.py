@@ -27,6 +27,7 @@ from yarl import URL
 
 from common.log_utils import log_exception
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
+from rag.llm.mws_utils import mws_api_url, require_mws_token
 
 
 class Base(ABC):
@@ -279,6 +280,54 @@ class OpenAI_APIRerank(Base):
         except Exception as _e:
             log_exception(_e, res)
         return rank, token_count
+
+
+class MWSRerank(OpenAI_APIRerank):
+    """MWS reranker using its Cohere-compatible v2 endpoint."""
+
+    _FACTORY_NAME = "MWS"
+
+    def __init__(self, key, model_name, base_url):
+        token = require_mws_token(key)
+        super().__init__(token, model_name, mws_api_url(base_url, "cohere/v2/rerank"))
+
+    def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
+        documents = [truncate(text, 500) for text in texts]
+        response = requests.post(
+            self.base_url,
+            headers=self.headers,
+            json={
+                "model": self.model_name,
+                "query": query,
+                "documents": documents,
+                "top_n": len(documents),
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        results = payload.get("results") if isinstance(payload, dict) else None
+        if not isinstance(results, list) or len(results) != len(documents):
+            count = len(results) if isinstance(results, list) else 0
+            raise ValueError(
+                f"MWS returned {count} rerank results for {len(documents)} documents"
+            )
+
+        rank = np.zeros(len(documents), dtype=float)
+        seen = set()
+        for item in results:
+            index = item.get("index") if isinstance(item, dict) else None
+            if (
+                not isinstance(index, int)
+                or isinstance(index, bool)
+                or index < 0
+                or index >= len(documents)
+                or index in seen
+            ):
+                raise ValueError(f"unexpected MWS rerank index: {index}")
+            seen.add(index)
+            rank[index] = item["relevance_score"]
+        return rank, sum(num_tokens_from_string(document) for document in documents)
 
 
 class CoHereRerank(Base):

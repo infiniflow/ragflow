@@ -24,6 +24,7 @@ from typing import ClassVar
 
 from common.aimlapi_utils import attribution_headers
 from common.constants import LLMType
+from rag.llm.mws_utils import mws_api_url, normalize_mws_project_url, require_mws_token
 
 
 class Base(ABC):
@@ -460,6 +461,24 @@ class OpenAIAPICompatible(Base):
             )
 
         return model_list
+
+
+class MWS(OpenAIAPICompatible):
+    _FACTORY_NAME = "MWS"
+
+    def __init__(self, api_key: str, base_url: str = None):
+        super().__init__(require_mws_token(api_key), normalize_mws_project_url(base_url))
+
+    def _get_model_list_url(self):
+        return mws_api_url(self.base_url, "openai/v1/models")
+
+    def _format_model_list(self, raw_model_list):
+        supported_types = {LLMType.EMBEDDING.value, LLMType.RERANK.value}
+        return [
+            model
+            for model in super()._format_model_list(raw_model_list)
+            if set(model.get("model_types") or []) & supported_types
+        ]
 
 
 class NVIDIA(OpenAIAPICompatible):
