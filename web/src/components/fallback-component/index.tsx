@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { isRouteErrorResponse, useRouteError } from 'react-router';
 
@@ -22,6 +22,15 @@ interface FallbackComponentProps {
   error?: Error;
   reset?: () => void;
 }
+
+// Chrome: "Failed to fetch dynamically imported module"
+// Firefox: "error loading dynamically imported module"
+// Safari: "Importing a module script failed"
+const DYNAMIC_IMPORT_ERROR_PATTERN =
+  /dynamically imported module|Importing a module script failed/i;
+
+const RELOAD_GUARD_KEY = 'ragflow:chunk-load-reload';
+const RELOAD_GUARD_INTERVAL = 10_000;
 
 const FallbackComponent: React.FC<FallbackComponentProps> = ({
   error: errorProp,
@@ -31,6 +40,19 @@ const FallbackComponent: React.FC<FallbackComponentProps> = ({
   const routeError = useRouteError();
   const error =
     errorProp ?? (routeError instanceof Error ? routeError : undefined);
+
+  // A failed lazy chunk usually means the app shell is stale (old index.html
+  // referencing chunk files that no longer exist). Reload once to self-heal.
+  useEffect(() => {
+    if (!error || !DYNAMIC_IMPORT_ERROR_PATTERN.test(error.message)) {
+      return;
+    }
+    const lastReload = Number(sessionStorage.getItem(RELOAD_GUARD_KEY) || 0);
+    if (Date.now() - lastReload > RELOAD_GUARD_INTERVAL) {
+      sessionStorage.setItem(RELOAD_GUARD_KEY, String(Date.now()));
+      window.location.reload();
+    }
+  }, [error]);
 
   let routeErrorDataStr = '';
   if (isRouteErrorResponse(routeError)) {
