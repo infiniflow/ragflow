@@ -216,7 +216,7 @@ func TestCompileDelimiterPatternListKeepBareFalse(t *testing.T) {
 func TestCompileDelimiterPatternListDedup(t *testing.T) {
 	// Equivalent quoted + bare delimiters must not produce a redundant
 	// alternation. ["`#`", "#"] with keepBare=true resolves to the single
-	// active value `#`, matching Python's sorted(set(...)) contract.
+	// active value `#`.
 	pat := CompileDelimiterPatternList([]string{"`#`", "#"}, true)
 	if pat == nil {
 		t.Fatal("expected a pattern from equivalent quoted + bare entries")
@@ -234,10 +234,52 @@ func TestCompileDelimiterPatternListDedup(t *testing.T) {
 	}
 }
 
+func TestCompileDelimiterPatternListDedupOrderIndependent(t *testing.T) {
+	// Dedup must hold regardless of input order: wrapped entries key on their
+	// inner content while bare entries key on themselves, so a wrapped/bare
+	// collision collapses no matter which appears first.
+	pat := CompileDelimiterPatternList([]string{"#", "`#`"}, true)
+	if pat == nil {
+		t.Fatal("expected a pattern from equivalent bare + quoted entries")
+	}
+	if got := pat.String(); got != "#" {
+		t.Errorf("dedup pattern = %q, want %q", got, "#")
+	}
+	// Multiple collisions across mixed order collapse to one alternation.
+	pat = CompileDelimiterPatternList([]string{"`#`", "#", "`#`", "#"}, true)
+	if got := pat.String(); got != "#" {
+		t.Errorf("dedup pattern = %q, want %q", got, "#")
+	}
+	// Wrapped duplicates deduplicate no matter where they appear.
+	pat = CompileDelimiterPatternList([]string{"`##`", "`#`", "`##`"}, false)
+	if got := pat.String(); got != `##|#` {
+		t.Errorf("dedup pattern = %q, want %q", got, `##|#`)
+	}
+}
+
+func TestCompileDelimiterListPatternDedup(t *testing.T) {
+	// CompileDelimiterListPattern is the main-delimiter live path
+	// (keepBare=false); it must propagate the same dedup so the main
+	// delimiters list cannot accumulate redundant alternations either.
+	pat := CompileDelimiterListPattern([]string{"`##`", "`##`", "`#`"})
+	if pat == nil {
+		t.Fatal("expected a pattern from wrapped entries")
+	}
+	if got := pat.String(); got != `##|#` {
+		t.Errorf("dedup pattern = %q, want %q", got, `##|#`)
+	}
+	// Bare entries are ignored on this path, so only the wrapped inner content
+	// participates and is deduplicated.
+	pat = CompileDelimiterListPattern([]string{"`#`", "#"})
+	if got := pat.String(); got != "#" {
+		t.Errorf("dedup pattern = %q, want %q", got, "#")
+	}
+}
+
 func TestCompileDelimiterPatternListChildrenPrefixOrder(t *testing.T) {
 	// keepBare=true (children_delimiters): a longer delimiter must win over a
-	// shorter prefix inside it. With byte-length sorting this could regress
-	// (the old compileChildrenPattern used len()); rune-count sorting fixes it.
+	// shorter prefix inside it because entries are sorted longest-first by
+	// rune count.
 	pat := CompileDelimiterPatternList([]string{"##", "#"}, true)
 	if pat == nil {
 		t.Fatal("expected a pattern from bare prefix entries")

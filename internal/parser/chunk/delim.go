@@ -142,8 +142,8 @@ func CompileDelimiterPattern(delimiters []string) *regexp.Regexp {
 // count) so a longer delimiter always wins over a shorter prefix inside it.
 //
 //   - Backtick-wrapped entries (“ `abc` “) contribute their INNER content as
-//     the split pattern; the backticks are stripped. This is the Python
-//     token_chunker / historical Go compileDelimPattern convention.
+//     the split pattern; the backticks are stripped. The wrapping is the
+//     delimiter-list quoting syntax that opts an entry into the active set.
 //   - Bare entries (e.g. ". ") behave according to keepBare:
 //     keepBare=false (the main `delimiters` list): a bare entry is IGNORED for
 //     the active pattern — it only influences merge paths when no custom
