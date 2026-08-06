@@ -47,7 +47,8 @@ import (
 
 type fixedEmbedder struct{}
 
-func (fixedEmbedder) MaxTokens() int { return 2048 }
+func (fixedEmbedder) MaxTokens() int     { return 2048 }
+func (fixedEmbedder) BatchSize() int     { return 16 }
 
 func (fixedEmbedder) Encode(ctx context.Context, texts []string) ([]componentpkg.EmbeddingResult, error) {
 	out := make([]componentpkg.EmbeddingResult, 0, len(texts))
@@ -911,7 +912,7 @@ func seedTemplateDocument(t *testing.T, stg storage.Storage, name, bucket, path,
 
 func seedTemplateDocumentBytes(t *testing.T, stg storage.Storage, name, bucket, path string, content []byte) string {
 	t.Helper()
-	if err := stg.Put(bucket, path, content); err != nil {
+	if err := stg.Put(context.Background(), bucket, path, content); err != nil {
 		t.Fatalf("seed storage: %v", err)
 	}
 	if registerTemplateDocumentRef == nil {
