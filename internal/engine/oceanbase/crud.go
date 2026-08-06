@@ -87,7 +87,22 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
+	if vectorSize > 0 {
+		if err := e.waitForIndexRefresh(ctx); err != nil {
+			return nil, err
+		}
+	}
 	return []string{}, nil
+}
+
+func (e *Engine) waitForIndexRefresh(ctx context.Context) error {
+	if !e.indexRefreshEnabled {
+		return nil
+	}
+	if _, err := e.db.ExecContext(ctx, "CALL DBMS_INDEX_MANAGER.REFRESH()"); err != nil {
+		return fmt.Errorf("wait for SeekDB index refresh: %w", err)
+	}
+	return nil
 }
 
 func replaceRow(ctx context.Context, tx *sql.Tx, tableName string, document map[string]interface{}) error {

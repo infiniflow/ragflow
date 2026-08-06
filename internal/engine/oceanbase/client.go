@@ -23,6 +23,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -36,12 +37,15 @@ import (
 )
 
 const (
-	connectionAttempts      = 2
-	connectionRetryInterval = 5 * time.Second
-	defaultOperationTimeout = 100 * time.Second
-	minimumOceanBaseVersion = "4.3.5.1"
-	minimumHybridVersion    = "4.4.1.0"
+	connectionAttempts               = 2
+	connectionRetryInterval          = 5 * time.Second
+	defaultOperationTimeout          = 100 * time.Second
+	minimumOceanBaseVersion          = "4.3.5.1"
+	minimumHybridVersion             = "4.4.1.0"
+	minimumSeekDBIndexRefreshVersion = "1.3.0.0"
 )
+
+var seekDBVersionPattern = regexp.MustCompile(`(?i)\bseekdb[-\s]v?(\d+\.\d+\.\d+(?:\.\d+)?)`)
 
 type featureFlags struct {
 	enableFullTextSearch         bool
@@ -53,12 +57,13 @@ type featureFlags struct {
 
 // Engine is an OceanBase-family document engine backed by database/sql.
 type Engine struct {
-	db              *sql.DB
-	dbName          string
-	engineType      string
-	flags           featureFlags
-	maxIdleConns    int
-	hybridAvailable atomic.Bool
+	db                  *sql.DB
+	dbName              string
+	engineType          string
+	flags               featureFlags
+	maxIdleConns        int
+	hybridAvailable     atomic.Bool
+	indexRefreshEnabled bool
 }
 
 // NewEngine creates an OceanBase or SeekDB document engine.
@@ -136,6 +141,9 @@ func (e *Engine) initialize(ctx context.Context) error {
 	if compareVersions(version, minimumOceanBaseVersion) < 0 {
 		return fmt.Errorf("OceanBase version must be at least %s, current version is %s", minimumOceanBaseVersion, version)
 	}
+	if err := e.initializeIndexRefresh(ctx); err != nil {
+		return err
+	}
 
 	e.ensureQueryTimeout(ctx)
 	if e.flags.enableHybridSearch {
@@ -150,6 +158,31 @@ func (e *Engine) initialize(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (e *Engine) initializeIndexRefresh(ctx context.Context) error {
+	if e.engineType != "seekdb" {
+		return nil
+	}
+
+	var serverVersion string
+	if err := e.db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&serverVersion); err != nil {
+		return fmt.Errorf("get SeekDB version: %w", err)
+	}
+	seekDBVersion, ok := extractSeekDBVersion(serverVersion)
+	if !ok {
+		return fmt.Errorf("parse SeekDB version from %q", serverVersion)
+	}
+	e.indexRefreshEnabled = compareVersions(seekDBVersion, minimumSeekDBIndexRefreshVersion) >= 0
+	return nil
+}
+
+func extractSeekDBVersion(serverVersion string) (string, bool) {
+	match := seekDBVersionPattern.FindStringSubmatch(serverVersion)
+	if len(match) != 2 {
+		return "", false
+	}
+	return match[1], true
 }
 
 func (e *Engine) ensureQueryTimeout(ctx context.Context) {

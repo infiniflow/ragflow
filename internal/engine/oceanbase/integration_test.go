@@ -41,7 +41,7 @@ func TestLegacyStorageRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine, err := NewEngine("oceanbase", config.OceanBaseConnectionConfig{
+	engine, err := NewEngine(envOr("RAGFLOW_TEST_OCEANBASE_ENGINE_TYPE", "oceanbase"), config.OceanBaseConnectionConfig{
 		DBName: envOr("RAGFLOW_TEST_OCEANBASE_DBNAME", "test"),
 		User:   envOr("RAGFLOW_TEST_OCEANBASE_USER", "root@test"), Password: os.Getenv("RAGFLOW_TEST_OCEANBASE_PASSWORD"),
 		Host: host, Port: port, MaxConnections: 4,
