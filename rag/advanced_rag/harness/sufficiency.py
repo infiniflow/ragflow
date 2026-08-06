@@ -100,8 +100,12 @@ def _detect_language(text: str) -> str:
     if not text:
         return "en"
     try:
-        from langdetect import detect
+        from langdetect import detect, DetectorFactory
 
+        # langdetect's global DetectorFactory is randomly seeded by default, so
+        # ambiguous/short inputs can flip between runs. Pin the seed once so
+        # detection (and therefore the spaCy NER model selected) is deterministic.
+        DetectorFactory.seed = 0
         lang = detect(text[:500])  # long reports don't need the full body
         if lang and lang != "unknown":
             return lang

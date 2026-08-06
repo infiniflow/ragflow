@@ -74,21 +74,24 @@ async def agentic_research(state: dict, tools) -> dict:
         # ── Step A: Research unverified claims (parallel if mode allows) ──
         unverified = [c for c in ctx.claims if not c.is_verified]
 
-        # Consume Phase-2 follow-up queries (missing-pieces feedback) ONCE for
-        # this round and hand the SAME list to every claim in the batch. Reading
-        # the shared ``ctx.pending_followups`` inside research_agent_loop would
-        # race under ``asyncio.gather``: the first claim to execute clears it,
-        # so the parallel siblings would get empty guidance. We normalize and
-        # clear here so all batch members receive identical follow-ups.
-        followups: list[str] = []
-        if ctx.pending_followups:
-            followups = [str(q.get("query") or q.get("question") or "") for q in ctx.pending_followups if q]
-            followups = [q for q in followups if q.strip()]
-            ctx.pending_followups = []
-            if followups:
-                _LOG.info("[Agentic research] Round %d: injecting %d follow-up query(ies) to all claims: %s", cycle + 1, len(followups), followups)
-
         if unverified:
+            # Consume Phase-2 follow-up queries (missing-pieces feedback) ONCE for
+            # this round and hand the SAME list to every claim in the batch.
+            # Reading the shared ``ctx.pending_followups`` inside
+            # research_agent_loop would race under ``asyncio.gather``: the first
+            # claim to execute would clear it, starving the parallel siblings.
+            # We only consume/clear here — inside ``if unverified`` — because a
+            # research task must actually dispatch to use them. When everything
+            # is already verified no task runs, so we retain the queries for the
+            # next cycle instead of discarding them.
+            followups: list[str] = []
+            if ctx.pending_followups:
+                followups = [str(q.get("query") or q.get("question") or "") for q in ctx.pending_followups if q]
+                followups = [q for q in followups if q.strip()]
+                ctx.pending_followups = []
+                if followups:
+                    _LOG.info("[Agentic research] Round %d: injecting %d follow-up query(ies) to all claims: %s", cycle + 1, len(followups), followups)
+
             # Process in batches of max_parallel_agents
             batch_size = mode.max_parallel_agents
             for i in range(0, len(unverified), batch_size):
