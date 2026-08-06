@@ -30,6 +30,8 @@ import (
 	"ragflow/internal/entity/models"
 	kc "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service"
+
+	"gorm.io/gorm"
 )
 
 // This file is the composition-root wiring for the KnowledgeCompiler ingestion
@@ -58,8 +60,8 @@ func init() {
 // on every compiled unit.
 func newKnowledgeCompilerGroupResolver() kc.GroupResolver {
 	tmplDAO := dao.NewCompilationTemplateDAO()
-	return func(ctx context.Context, tenantID string, groupIDs []string) ([]string, error) {
-		return tmplDAO.ResolveGroupTemplateIDs(ctx, tenantID, groupIDs)
+	return func(ctx context.Context, db *gorm.DB, tenantID string, groupIDs []string) ([]string, error) {
+		return tmplDAO.ResolveGroupTemplateIDs(ctx, db, tenantID, groupIDs)
 	}
 }
 
@@ -70,8 +72,8 @@ func newKnowledgeCompilerGroupResolver() kc.GroupResolver {
 // compilation_template_id would fail loudly at runtime.
 func newKnowledgeCompilerTemplateResolver() kc.TemplateResolver {
 	tmplDAO := dao.NewCompilationTemplateDAO()
-	return func(ctx context.Context, tenantID, templateID string) (kc.TemplateInfo, error) {
-		t, err := tmplDAO.GetTemplate(ctx, tenantID, templateID)
+	return func(ctx context.Context, db *gorm.DB, tenantID, templateID string) (kc.TemplateInfo, error) {
+		t, err := tmplDAO.GetTemplate(ctx, db, tenantID, templateID)
 		if err != nil {
 			return kc.TemplateInfo{}, err
 		}

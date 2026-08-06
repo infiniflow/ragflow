@@ -1920,6 +1920,7 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
         web_search=create_web_search_provider(prompt_config) if use_web_search else None,
         meta_data_filter=dialog.meta_data_filter,
         doc_scope=doc_scope,
+        empty_response=prompt_config.get("empty_response", ""),
         do_refer=False,
         thinking_mode=thinking_mode,
     )
@@ -1983,8 +1984,9 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
     if getattr(chat_mdl, "mdl", None) is not None:
         chat_mdl.mdl.terminal_tools = {"rag"}
     if stream:
-        # Surface the agentic pipeline's bracket-tagged progress logs to the
-        # client as <think> content, interleaved with the real token stream.
+        # Surface the outer model's reasoning, agent progress logs, and the
+        # final-answer model's reasoning as one continuous think block. The
+        # final answer itself is emitted from the inner graph's own deltas.
         from rag.advanced_rag.think_log import install_think_log_handler, set_think_log_sink, reset_think_log_sink
 
         install_think_log_handler()
@@ -1997,6 +1999,16 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
             except RuntimeError:
                 pass
 
+        def _answer_sink(delta, is_think=False):
+            if delta:
+                event_queue.put_nowait(("inner_think" if is_think else "answer", delta))
+
+        def _tool_started_sink():
+            event_queue.put_nowait(("tool_started",))
+
+        rag_tools.answer_sink = _answer_sink
+        rag_tools.tool_started_sink = _tool_started_sink
+
         async def _drive_stream():
             try:
                 stream_iter = chat_mdl.async_chat_streamly_delta(rag_tools.sys_prompt(), messages, gen_conf)
@@ -2005,38 +2017,82 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
             except Exception:
                 logging.exception("rag_agent: agentic stream failed")
             finally:
-                event_queue.put_nowait(("stream_done",))
+                loop.call_soon_threadsafe(event_queue.put_nowait, ("stream_done",))
 
         token = set_think_log_sink(_log_sink)
         drive = asyncio.create_task(_drive_stream())
-        last_state = None
-        log_think_open = False
+        answer_deltas = []
+        answer_started = False
+        think_closed = False
+        outer_tool_started = False
+
+        async def _close_think_and_flush_answer():
+            nonlocal answer_started, think_closed
+            if not think_closed:
+                yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "end_to_think": True}
+                think_closed = True
+            if not answer_started:
+                answer_started = True
+                for delta in answer_deltas:
+                    yield {"answer": delta, "reference": {}, "audio_binary": tts(tts_mdl, delta), "final": False}
+
         try:
+            # The outer model emits this as a synthetic <think> token while it
+            # invokes the terminal tool.  Make it part of the single progress
+            # block instead of forwarding its marker separately.
+            yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "start_to_think": True}
             while True:
                 item = await event_queue.get()
                 if item[0] == "log":
-                    if not log_think_open:
-                        yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "start_to_think": True}
-                        log_think_open = True
+                    if think_closed:
+                        continue
                     yield {"answer": item[1] + "\n", "reference": {}, "audio_binary": None, "final": False}
+                    continue
+                if item[0] == "tool_started":
+                    outer_tool_started = True
+                    continue
+                if item[0] == "answer":
+                    if not answer_started:
+                        async for output in _close_think_and_flush_answer():
+                            yield output
+                    answer_deltas.append(item[1])
+                    yield {"answer": item[1], "reference": {}, "audio_binary": tts(tts_mdl, item[1]), "final": False}
+                    continue
+                if item[0] == "inner_think":
+                    if think_closed:
+                        continue
+                    value = re.sub(r"</?think>", "", item[1])
+                    if value:
+                        yield {"answer": value, "reference": {}, "audio_binary": None, "final": False}
                     continue
                 if item[0] == "stream_done":
                     break
                 _, kind, value, state = item
-                if state is not None:
-                    last_state = state
-                # A real stream event follows the logs -> close the log think block.
-                if log_think_open:
-                    yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "end_to_think": True}
-                    log_think_open = False
-                if kind == "marker":
-                    flags = {"start_to_think": True} if value == "<think>" else {"end_to_think": True}
-                    yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, **flags}
+                if kind != "text" or not value:
+                    # The outer model's think markers are folded into the one
+                    # block opened above; they must not create extra markers.
                     continue
-                yield {"answer": value, "reference": {}, "audio_binary": tts(tts_mdl, value), "final": False}
-            if log_think_open:
-                yield {"answer": "", "reference": {}, "audio_binary": None, "final": False, "end_to_think": True}
-                log_think_open = False
+
+                # Forward outer-model thinking text, including any tail that
+                # arrives after the research-complete log.  The state tells us
+                # whether this is still inside the model's think section.
+                # Once that section is closed and the terminal tool has
+                # started, subsequent text is the aggregate tool result and is
+                # intentionally ignored.
+                if state is not None and state.in_think:
+                    value = re.sub(r"</?think>", "", value)
+                    if value:
+                        yield {"answer": value, "reference": {}, "audio_binary": None, "final": False}
+                elif not outer_tool_started:
+                    # Some providers omit explicit reasoning metadata and
+                    # emit plain text before the tool call. Preserve it as
+                    # outer thinking for compatibility with async_chat.
+                    value = re.sub(r"</?think>", "", value)
+                    if value:
+                        yield {"answer": value, "reference": {}, "audio_binary": None, "final": False}
+            if not think_closed:
+                async for output in _close_think_and_flush_answer():
+                    yield output
         finally:
             reset_think_log_sink(token)
             if not drive.done():
@@ -2048,12 +2104,12 @@ async def rag_agent(dialog, messages, stream=True, **kwargs):
             except Exception:
                 logging.exception("rag_agent: drive task error")
 
-        full_answer = last_state.full_text if last_state else ""
-        if full_answer:
-            final = await decorate_answer(_extract_visible_answer(full_answer))
-            final["final"] = True
-            final["audio_binary"] = None
-            yield final
+        answer_text = "".join(answer_deltas)
+        final = await decorate_answer(answer_text)
+        final["final"] = True
+        final["answer"] = ""
+        final["audio_binary"] = None
+        yield final
     else:
         answer = await chat_mdl.async_chat(rag_tools.sys_prompt(), messages, gen_conf)
         user_content = messages[-1].get("content", "[content not available]")

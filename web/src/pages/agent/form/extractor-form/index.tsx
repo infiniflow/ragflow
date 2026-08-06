@@ -81,7 +81,7 @@ const ExtractorForm = ({
 
   const ownerTenantId = useOwnerTenantId();
 
-  const { treeData, loadData } = useTagFileTree();
+  const { treeData, loadData } = useTagFileTree(form.watch('tag_file_id'));
 
   return (
     <Form {...form}>

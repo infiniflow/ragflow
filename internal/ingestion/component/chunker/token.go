@@ -30,8 +30,8 @@
 //     parsing lives in ragflow/internal/parser/chunk (ParseDelimiterField).
 //
 //   - CHILDREN DELIMITERS (the secondary split) is implemented via the
-//     shared splitKeepingDelim helper; emitted chunks carry the parent
-//     ("mom") and the split child ("text") keys.
+//     splitDroppingDelim helper; emitted chunks carry the parent
+//     ("mom") and the split child ("text") keys, with the delimiter dropped.
 //
 //   - MODE "delimiter" uses the regex-aware delimiter pattern to split
 //     text into segments; unlike token_size, these segments are NOT
@@ -334,7 +334,7 @@ func (c *TokenChunkerComponent) invokeTextPayload(_ context.Context, text string
 	// Split-then-merge: split on delimiters, then greedily merge to
 	// chunk_token_size with optional overlap.
 	perItem := [][]schema.ChunkDoc{docs}
-	merged := mergeByTokenSizeFromJSON(perItem, c.param.ChunkTokenSize, c.param.OverlappedPercent, true, c.param.MergeStrategy())
+	merged := mergeByTokenSizeFromJSON(perItem, c.param.ChunkTokenSize, c.param.OverlappedPercent, c.param.MergeStrategy())
 	return chunkOutputs(flatten(merged))
 }
 
@@ -547,10 +547,13 @@ func newChunkText(prevText, incoming string, target int, overlapPct float64, inc
 // mergeByTokenSize implements exact token-based chunk merging that mirrors
 // Python's naive_merge (rag/nlp/__init__.py) after the strict chunk_token_num
 // hard-cap fix. It uses tokenizeStr for precise token counting, treats the
-// payload as a single section, splits oversized sections on production sentence
-// delimiters, hard-caps atomic oversize units via splitOversizedUnit, and merges
-// only when the projected total stays within chunk_token_size. Overlap is
-// applied only when the resulting chunk still fits the budget.
+// payload as a single section, and splits oversized sections on production
+// sentence delimiters. An oversize unit (a single paragraph larger than the
+// token budget) is kept whole as a standalone chunk — matching Python OVER_CAP,
+// where the model layer truncates it later — instead of being atom-split.
+// Sections are merged only when the projected total stays within
+// chunk_token_size. Overlap is applied only when the resulting chunk still
+// fits the budget.
 func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *regexp.Regexp) map[string]any {
 	target := c.param.ChunkTokenSize
 	overlapPct := c.param.OverlappedPercent
@@ -608,18 +611,6 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 		}
 	}
 
-	addUnit := func(unit string) {
-		if tokenizeStr(unit) <= target {
-			addChunk(unit)
-			return
-		}
-		slog.Debug("TokenChunker: splitting oversized unit via splitOversizedUnit",
-			"len", len(unit), "tokens", tokenizeStr(unit), "chunk_token_size", target)
-		for _, piece := range splitOversizedUnit(unit, target) {
-			addChunk(piece)
-		}
-	}
-
 	for _, sec := range sections {
 		sec = strings.TrimSpace(sec)
 		if sec == "" {
@@ -630,8 +621,11 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 			addChunk(t)
 			continue
 		}
-		// Oversized section: split on production sentence delimiters, then
-		// hard-cap any unit that still exceeds the budget (unbroken atoms).
+		// Oversized section: split on production sentence delimiters into
+		// units. An oversize unit (still exceeds the budget) is passed through
+		// addChunk and kept whole — no atom-split, matching Python
+		// naive_merge. mergeDecision forces an oversize incoming unit to
+		// startNewChunk, so it stands alone as its own chunk.
 		parts := sentenceDelimiter.Split(sec, -1)
 		hadPart := false
 		for _, part := range parts {
@@ -651,10 +645,10 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 				continue
 			}
 			hadPart = true
-			addUnit("\n" + part)
+			addChunk("\n" + part)
 		}
 		if !hadPart {
-			addUnit(t)
+			addChunk(t)
 		}
 	}
 
@@ -725,7 +719,7 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		// chunks across JSON items into one global token budget. Flatten the
 		// per-item structure into a single sequence first so the merge is
 		// global; non-text chunks still break the merge via their CKType.
-		attached = mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flatten(attached)}, c.param.ChunkTokenSize, c.param.OverlappedPercent, false, c.param.MergeStrategy())
+		attached = mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flatten(attached)}, c.param.ChunkTokenSize, c.param.OverlappedPercent, c.param.MergeStrategy())
 	}
 
 	flat := flatten(attached)
@@ -768,7 +762,7 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp) []schema.Chu
 	if !hasActiveDelimiter(delimPattern) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
-	parts := splitKeepingDelim(txt, delimPattern)
+	parts := splitDroppingDelim(txt, delimPattern)
 	if !delimPattern.MatchString(txt) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
@@ -962,15 +956,16 @@ func takeFromStart(text string, tokens int) string {
 
 // mergeByTokenSizeFromJSON mirrors Python naive_merge's projected-total
 // hard cap (rag/nlp/__init__.py after the strict chunk_token_num fix).
-// Oversized text units are sub-split via splitOversizedUnit before merge;
-// overlap is applied only when overlap+segment still fits the budget.
+// Over-budget units are never atom-split: each one stands alone as its own
+// chunk (Python naive_merge behavior, #17808 OVER_CAP contract). Overlap is
+// applied only when overlap+segment still fits the budget.
 //
 // strategy selects the merge strategy (schema.MergeStrategy): MergeOverCap =
 // OVER_CAP (Python's canonical default, a chunk may exceed the target by at
 // most one incoming unit), MergeUnderCap = UNDER_CAP (never exceed the target;
 // a projected overflow starts a fresh chunk). The TokenChunker threads its
 // MergeStrategy() here.
-func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64, subSplitOversize bool, strategy schema.MergeStrategy) [][]schema.ChunkDoc {
+func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, overlappedPct float64, strategy schema.MergeStrategy) [][]schema.ChunkDoc {
 	// overlappedPct is a [0,100] percentage. Clamp defensively because this
 	// helper is also exercised directly by tests.
 	if overlappedPct < 0 {
@@ -1065,30 +1060,10 @@ func mergeByTokenSizeFromJSON(perItem [][]schema.ChunkDoc, chunkTokens int, over
 				addTextChunk(ck)
 				continue
 			}
-			// Over-budget unit.
-			if !subSplitOversize {
-				// JSON path: Python keeps each over-budget item whole — it does
-				// not sub-split a single item, so emit it as one chunk.
-				addTextChunk(ck)
-				continue
-			}
-			// Text path: hard-cap atomic oversize units before merge, matching
-			// Python's _split_oversized_unit.
-			slog.Debug("TokenChunker: splitting oversized JSON unit via splitOversizedUnit",
-				"len", len(ck.Text), "tokens", tk, "chunk_token_size", chunkTokens)
-			for _, piece := range splitOversizedUnit(ck.Text, chunkTokens) {
-				if strings.TrimSpace(piece) == "" {
-					continue
-				}
-				cp := cloneChunkDoc(ck)
-				cp.Text = piece
-				cp.TKNums = intPtr(tokenizeStr(piece))
-				// Coordinates stay on the first piece only to avoid duplicating
-				// PDF bboxes across atom slices.
-				addTextChunk(cp)
-				ck.PDFPositions = nil
-				ck.Positions = nil
-			}
+			// Over-budget unit: keep it whole. Python's naive_merge never
+			// sub-splits a single item, so emit it as one chunk and let the
+			// model layer truncate it later.
+			addTextChunk(ck)
 		}
 		perItem[idx] = merged
 	}
@@ -1172,7 +1147,7 @@ func splitByChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.
 			continue
 		}
 		mom := ck.Text
-		parts := splitKeepingDelim(mom, pattern)
+		parts := splitDroppingDelim(mom, pattern)
 		for _, p := range parts {
 			if strings.TrimSpace(p) == "" {
 				continue
@@ -1223,7 +1198,7 @@ func applyChildrenDelim(segs []string, pattern *regexp.Regexp) []schema.ChunkDoc
 		if strings.TrimSpace(seg) == "" {
 			continue
 		}
-		for _, child := range splitKeepingDelim(seg, pattern) {
+		for _, child := range splitDroppingDelim(seg, pattern) {
 			if strings.TrimSpace(child) == "" {
 				continue
 			}
@@ -1243,7 +1218,7 @@ func applyChildrenDelimText(docs []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 		if strings.TrimSpace(t) == "" {
 			continue
 		}
-		for _, child := range splitKeepingDelim(t, pattern) {
+		for _, child := range splitDroppingDelim(t, pattern) {
 			if strings.TrimSpace(child) == "" {
 				continue
 			}

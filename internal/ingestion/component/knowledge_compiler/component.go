@@ -98,7 +98,7 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	// compilation_template_id > compilation_template_group_id. The variant is
 	// derived from each template's kind (see common.KindToVariant), not from
 	// the DSL.
-	specs, err := resolveTemplateSpecs(ctx, tenantID, param)
+	specs, err := resolveTemplateSpecs(ctx, db, tenantID, param)
 	if err != nil {
 		return nil, err
 	}
@@ -343,22 +343,22 @@ func pageIndexSummary(graphJSON string) string {
 // their TemplateInfo rows. Priority: compilation_template_id >
 // compilation_template_group_id. The group path resolves the group to its
 // child template ids and then loads each template.
-func resolveTemplateSpecs(ctx context.Context, tenantID string, param common.Param) ([]common.TemplateInfo, error) {
+func resolveTemplateSpecs(ctx context.Context, db *gorm.DB, tenantID string, param common.Param) ([]common.TemplateInfo, error) {
 	if param.CompilationTemplateID != "" {
-		info, err := common.ResolveTemplate(ctx, tenantID, param.CompilationTemplateID)
+		info, err := common.ResolveTemplate(ctx, db, tenantID, param.CompilationTemplateID)
 		if err != nil {
 			return nil, err
 		}
 		return []common.TemplateInfo{info}, nil
 	}
 	if param.CompilationTemplateGroupID != "" {
-		ids, err := common.ResolveGroupTemplateIDs(ctx, tenantID, []string{param.CompilationTemplateGroupID})
+		ids, err := common.ResolveGroupTemplateIDs(ctx, db, tenantID, []string{param.CompilationTemplateGroupID})
 		if err != nil {
 			return nil, err
 		}
 		specs := make([]common.TemplateInfo, 0, len(ids))
 		for _, id := range ids {
-			info, err := common.ResolveTemplate(ctx, tenantID, id)
+			info, err := common.ResolveTemplate(ctx, db, tenantID, id)
 			if err != nil {
 				return nil, err
 			}

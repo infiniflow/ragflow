@@ -289,9 +289,9 @@ func TestLongCatChatAcceptsReasoningOnlyResponse(t *testing.T) {
 
 // TestLongCatChatDropsUndocumentedFields guards against re-introducing
 // stop / reasoning_effort / response_format / tools etc. The LongCat
-// docs only list model, messages, stream, max_tokens, temperature,
-// top_p — anything else is undocumented and must not be sent, since
-// the maintainer specifically flagged this on PR #14809.
+// docs only list model, messages, stream, temperature, top_p — anything
+// else is undocumented and must not be sent, since the maintainer
+// specifically flagged this on PR #14809.
 func TestLongCatChatDropsUndocumentedFields(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
@@ -302,7 +302,7 @@ func TestLongCatChatDropsUndocumentedFields(t *testing.T) {
 			}
 		}
 		// Documented fields, on the other hand, MUST be forwarded when set.
-		for _, k := range []string{"model", "messages", "stream", "max_tokens", "temperature", "top_p"} {
+		for _, k := range []string{"model", "messages", "stream", "temperature", "top_p"} {
 			if _, present := body[k]; !present {
 				t.Errorf("documented field %q missing from request body", k)
 			}

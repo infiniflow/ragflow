@@ -57,7 +57,7 @@ The switch is disabled by default. When enabled, RAGFlow performs the following 
 3. Find similar entities and their N-hop relationships from the graph using the embeddings of the extracted query entities.
 4. Retrieve similar relationships from the graph using the query embedding.
 5. Rank these retrieved entities and relationships by multiplying each one's PageRank value with its similarity score to the query, returning the top n as the final retrieval.
-6. Retrieve the report for the community involving the most entities in the final retrieval.  
+6. Retrieve the report for the community involving the most entities in the final retrieval.
    *The retrieved entity descriptions, relationship descriptions, and the top 1 community report are sent to the LLM for content generation.*
 
 :::danger IMPORTANT

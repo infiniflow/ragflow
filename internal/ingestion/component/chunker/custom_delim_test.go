@@ -8,20 +8,17 @@ import (
 // custom_delim_test pins the backtick-wrapped newline delimiter behaviour of
 // TokenChunker against Python's rag/flow/chunker/token_chunker.py.
 //
-// There are two distinct, path-specific divergences that this file locks down:
+// All delimiter paths (primary and children, text/markdown/html and json)
+// must DROP the captured delimiter from each chunk's text, matching Python's
+// _split_text_by_pattern (token_chunker.py:79-90, used by both _build_json_chunks
+// and _split_chunk_docs_by_children). Go's splitDroppingDelim reproduces this.
 //
-//  1. text/markdown/html path: Python's _split_text_by_pattern (token_chunker.py:79-90)
-//     uses re.split with a captured group and keeps only the even-index
-//     (text) parts, so the delimiter is DROPPED. Go's splitKeepingDelim glues
-//     the delimiter to the end of the preceding segment, so a chunk reads
-//     "first sentence here\n" instead of "first sentence here". The fix makes
-//     the text path drop the delimiter like Python.
-//
-//  2. json path: Python's _build_json_chunks + _finalize_json_chunks never
-//     strip the chunk text, so the delimiter's trailing newline survives
-//     ("first segment line one\n"). Go's invokeJSONPayload ran every chunk
-//     through strings.TrimSpace, which deleted that newline. The fix stops
-//     trimming, so the newline is kept like Python.
+// The json primary path is the one most prone to regress: Python's
+// _build_json_chunks (token_chunker.py:121) splits each item through
+// _split_text_by_pattern, which keeps only the even-index (text) parts and
+// DISCARDS the captured delimiter. So a "first segment line one\n" item yields
+// "first segment line one" with the newline dropped. Go's chunkFromItem does
+// the same via splitDroppingDelim, matching the Python reference.
 //
 // doc_type_kwd is intentionally asserted to remain present on every chunk.
 // It is a load-bearing Go field (index column + media dispatch) and is NOT
@@ -81,8 +78,10 @@ func TestCustomDelimTextDropsDelimiter(t *testing.T) {
 	}
 }
 
-// TestCustomDelimJSONKeepsNewline reproduces token__json_backtick.
-func TestCustomDelimJSONKeepsNewline(t *testing.T) {
+// TestCustomDelimJSONDropsDelimiter reproduces token__json_backtick: the
+// primary (custom backtick) delimiter is dropped from every chunk text,
+// matching Python's _split_text_by_pattern.
+func TestCustomDelimJSONDropsDelimiter(t *testing.T) {
 	params := map[string]any{"chunk_token_size": float64(128), "delimiters": []string{backtickNewline}}
 	input := map[string]any{
 		"name": "t", "output_format": "json",
@@ -94,8 +93,8 @@ func TestCustomDelimJSONKeepsNewline(t *testing.T) {
 	chunks := invokeTokenChunks(t, params, input)
 
 	want := []string{
-		"first segment line one\n", "first segment line two",
-		"second segment line one\n", "second segment line two",
+		"first segment line one", "first segment line two",
+		"second segment line one", "second segment line two",
 	}
 	if len(chunks) != len(want) {
 		t.Fatalf("chunk count: want %d got %d (%v)", len(want), len(chunks), chunkTexts(chunks))

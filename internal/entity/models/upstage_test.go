@@ -204,7 +204,6 @@ func TestUpstageRequestBodyMatchesSolarAPIShape(t *testing.T) {
 	want := map[string]interface{}{
 		"model":            "solar-pro2",
 		"stream":           false,
-		"max_tokens":       float64(256),
 		"temperature":      0.7,
 		"top_p":            0.9,
 		"reasoning_effort": "high",
