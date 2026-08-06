@@ -20,68 +20,9 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"unicode/utf8"
 
 	"ragflow/internal/ingestion/component/schema"
 )
-
-// wordCount is a deterministic tokenizer stand-in used only via
-// splitOversizedUnitWith in unit-level helper tests.
-func wordCount(s string) int {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0
-	}
-	return len(strings.Fields(s))
-}
-
-func charCount(s string) int { return utf8.RuneCountInString(s) }
-
-func TestSplitOversizedUnit_WhitespacePacksToBudget(t *testing.T) {
-	// 100 words, budget 30 → must yield multiple pieces, each ≤ 30 words.
-	text := strings.TrimSpace(strings.Repeat("word ", 100))
-	pieces := splitOversizedUnitWith(text, 30, wordCount)
-	if len(pieces) < 2 {
-		t.Fatalf("want multiple pieces, got %d: %#v", len(pieces), pieces)
-	}
-	total := 0
-	for _, p := range pieces {
-		n := wordCount(p)
-		if n > 30 {
-			t.Errorf("piece exceeds budget: tokens=%d text=%q", n, p)
-		}
-		total += n
-	}
-	if total != 100 {
-		t.Errorf("word count not preserved: got %d want 100", total)
-	}
-}
-
-func TestSplitOversizedUnit_UnbrokenAtomFallsBackToCharWindows(t *testing.T) {
-	// Unbroken run with char-as-token counting — must sub-split on runes.
-	atom := strings.Repeat("a", 80)
-	pieces := splitOversizedUnitWith(atom, 50, charCount)
-	if len(pieces) < 2 {
-		t.Fatalf("want >=2 pieces for unbroken atom, got %d", len(pieces))
-	}
-	joined := strings.Join(pieces, "")
-	if joined != atom {
-		t.Errorf("content not preserved: got %q", joined)
-	}
-	for _, p := range pieces {
-		if charCount(p) > 50 {
-			t.Errorf("piece exceeds budget: %d runes in %q", charCount(p), p)
-		}
-	}
-}
-
-func TestSplitOversizedUnit_WithinBudgetUnchanged(t *testing.T) {
-	text := "hello world"
-	pieces := splitOversizedUnitWith(text, 100, wordCount)
-	if len(pieces) != 1 || pieces[0] != text {
-		t.Fatalf("within-budget text must be returned as-is, got %#v", pieces)
-	}
-}
 
 func TestComputeOverlapPrefix_StripsTagsAndCounts(t *testing.T) {
 	prev := strings.Repeat("word ", 20) + "@@1\t2.3## tail"
@@ -195,6 +136,36 @@ func TestMergeByTokenSize_TextPathStrictCap(t *testing.T) {
 		if n := tokenizeStr(text); n > budget+unit {
 			t.Errorf("chunk %d exceeds budget+one-unit: tokens=%d (cap=%d unit=%d)", i, n, budget, unit)
 		}
+	}
+}
+
+// TestMergeByTokenSize_OversizedUnitStaysWhole mirrors
+// TestMergeByTokenSizeFromJSON_OversizedUnitStaysWhole on the text path: a
+// single block of text that exceeds chunk_token_size and contains no
+// sentence delimiter must be emitted as ONE whole chunk — never atom-split.
+// This pins the #17799 contract invariant on the text path (the JSON path
+// is already covered by TestMergeByTokenSizeFromJSON_OversizedUnitStaysWhole).
+func TestMergeByTokenSize_OversizedUnitStaysWhole(t *testing.T) {
+	const budget = 30
+	// One long run with no '\n' / '!?' / '。；！？' delimiter: the text path
+	// splits oversized sections only on sentenceDelimiter, so this whole
+	// run is one unit that still exceeds the budget and must stay whole.
+	long := strings.TrimSpace(strings.Repeat("word ", 100))
+	comp, err := NewTokenChunker(map[string]any{
+		"delimiter_mode":   "token_size",
+		"chunk_token_size": budget,
+	})
+	if err != nil {
+		t.Fatalf("NewTokenChunker: %v", err)
+	}
+	out := comp.(*TokenChunkerComponent).mergeByTokenSize(long, nil)
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 1 {
+		t.Fatalf("over-budget unit must stay whole, got %d chunk(s)", len(chunks))
+	}
+	text, _ := chunks[0]["text"].(string)
+	if text != long {
+		t.Errorf("over-budget chunk text changed: got %q", text)
 	}
 }
 
