@@ -108,11 +108,11 @@ class ChunkService:
             List of chunk dictionaries ready for embedding.
         """
         ctx = self._task_context
-        # Validate file size
-        if ctx.size > settings.DOC_MAXIMUM_SIZE:
-            self._progress(prog=-1, msg="File size exceeds( <= %dMb )" % (int(settings.DOC_MAXIMUM_SIZE / 1024 / 1024)))
-            self._task_context.recording_context.record("file_size_exceeded", True)
-            return []
+        # NOTE: The DOC_MAXIMUM_SIZE check has been removed from here.
+        # ctx.size is the FULL document size, not the page-range size. For
+        # large PDFs, queue_tasks() already splits the document into per-page-
+        # range sub-tasks, so the full-file size check blocks every sub-task
+        # for files >128MB even though the work is properly chunked.
         ctx.recording_context.record("file_size_exceeded", False)
         ctx.recording_context.record("parser_id", ctx.parser_id)
 

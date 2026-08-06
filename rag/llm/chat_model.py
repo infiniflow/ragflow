@@ -225,8 +225,14 @@ class Base(ABC):
     def __init__(self, key, model_name, base_url, **kwargs):
         timeout = int(os.environ.get("LLM_TIMEOUT_SECONDS", 600))
         self.base_url = ensure_v1(base_url)
-        self.client = OpenAI(api_key=key, base_url=self.base_url, timeout=timeout)
-        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url, timeout=timeout)
+        default_headers = {}
+        # When connecting to a non-OpenAI endpoint (custom base_url), Cloudflare
+        # bot protection may block requests with the OpenAI SDK User-Agent header.
+        # Override it to avoid triggering 502 errors.
+        if base_url and not base_url.startswith(("https://api.openai.com", "https://openai.com")):
+            default_headers["User-Agent"] = "RAGFlow"
+        self.client = OpenAI(api_key=key, base_url=self.base_url, timeout=timeout, default_headers=default_headers)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url, timeout=timeout, default_headers=default_headers)
         self.model_name = model_name
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
