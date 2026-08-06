@@ -173,9 +173,8 @@ func (h *HuaweiCloudModel) ChatWithMessages(ctx context.Context, modelName strin
 
 	baseURLRegion := huaweiCloudRegionForModel(apiConfig, modelName)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
@@ -213,9 +212,8 @@ func (h *HuaweiCloudModel) ChatStreamlyWithSender(ctx context.Context, modelName
 
 	baseURLRegion := huaweiCloudRegionForModel(apiConfig, modelName)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return err
@@ -276,9 +274,8 @@ func (h *HuaweiCloudModel) Embed(ctx context.Context, modelName *string, texts [
 
 	baseURLRegion := huaweiCloudRegion(apiConfig)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
@@ -381,9 +378,8 @@ func (h *HuaweiCloudModel) Rerank(ctx context.Context, modelName *string, query 
 
 	baseURLRegion := huaweiCloudRegion(apiConfig)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err
@@ -488,9 +484,8 @@ func (h *HuaweiCloudModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 
 	baseURLRegion := huaweiCloudRegion(apiConfig)
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
-	if apiConfig != nil {
-		baseURLConfig.BaseURL = apiConfig.BaseURL
-	}
+	baseURLConfig.BaseURL = apiConfig.BaseURL
+
 	baseURL, err := h.baseModel.GetBaseURL(baseURLConfig)
 	if err != nil {
 		return nil, err

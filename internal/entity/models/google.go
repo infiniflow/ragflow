@@ -172,9 +172,8 @@ func (g *GoogleModel) baseURL(apiConfig *APIConfig) string {
 	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
 	if err != nil {
 		defaultConfig := &APIConfig{}
-		if apiConfig != nil {
-			defaultConfig.BaseURL = apiConfig.BaseURL
-		}
+		defaultConfig.BaseURL = apiConfig.BaseURL
+
 		baseURL, err = g.baseModel.GetBaseURL(defaultConfig)
 		if err != nil {
 			return ""
