@@ -323,13 +323,12 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 
 	normalizeChunkTextFallback(chunks)
 
-	// Diff Tokenizer-8: chunk_order_int must be set on all paths
-	// (Python sets it unconditionally). tokenizeChunks also sets it
-	// for the full_text path; this covers the embedding-only path.
+	// chunk_order_int = 该块在（过滤后）阅读序列中的序号。无条件为每块设置，
+	// 使所有召回块都带稳定阅读顺序索引（用户价值：每条路径都能按阅读序排序，
+	// 而非仅 chunks+full_text）。偏离 Python（tokenizer.py:146 仅在 full_text 块内设）；
+	// 因在过滤后枚举，序号在 Go 内连续。
 	for i := range chunks {
-		if chunks[i].ChunkOrderInt == nil {
-			chunks[i].ChunkOrderInt = intPtr(i)
-		}
+		chunks[i].ChunkOrderInt = intPtr(i)
 	}
 
 	language := globals.GlobalOrInput(ctx, inputs, "lang", "English")
@@ -559,26 +558,19 @@ func chunksFromTokenizerUpstream(in schema.TokenizerFromUpstream) []schema.Chunk
 	default:
 		raw = cloneChunkDocs(in.JSONResult)
 	}
-	// Discard zero-value ChunkDocs (no text, no content_with_weight, no
-	// image, no summary) so they don't produce phantom embeddings
-	// downstream. Python's pipeline filters none-chunks before the
-	// tokenizer.
+	// 仅保留能返回检索内容的块：text 与 content_with_weight 皆空才丢——
+	// 不再把 image/summary/questions 当救命字段（它们不产生可返回内容）。
+	// 含 ContentWithWeight 以覆盖 Parser 路径（其块带 content_with_weight 不带 text），
+	// 避免 normalizeChunkTextFallback 回填前误杀合法块。
+	// 偏离 Python（tokenizer.py:131 只过滤 None）——用户价值优先。
 	filtered := raw[:0]
 	for _, ck := range raw {
-		if isPhantomChunk(ck) {
+		if ck.Text == "" && ck.ContentWithWeight == "" {
 			continue
 		}
 		filtered = append(filtered, ck)
 	}
 	return filtered
-}
-
-// isPhantomChunk returns true when a ChunkDoc has no usable content for
-// downstream tokenization or embedding. A chunk carrying only a Summary
-// (no Text/Image/ContentWithWeight) is kept — tokenizeChunks tokenizes the
-// Summary in that case. Mirrors Python's none-chunk filtering.
-func isPhantomChunk(ck schema.ChunkDoc) bool {
-	return ck.Text == "" && ck.Image == "" && ck.ContentWithWeight == "" && ck.Summary == ""
 }
 
 func textPayloadToChunks(payload *string) []schema.ChunkDoc {
@@ -660,7 +652,6 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 	tok := tokenizer.New(language)
 	for i := range chunks {
 		ck := &chunks[i]
-		ck.ChunkOrderInt = intPtr(i)
 		titleTk, err := tok.Tokenize(titleStem)
 		if err != nil {
 			return fmt.Errorf("tokenizer: title tokenize: %w", err)
