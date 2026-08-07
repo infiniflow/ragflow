@@ -121,11 +121,15 @@ async def test_mws_model_list_uses_exact_url_and_bearer_header():
     session_context = _async_context(session)
 
     with (
-        patch("rag.llm.model_meta.aiohttp.ClientSession", return_value=session_context),
+        patch(
+            "rag.llm.model_meta.aiohttp.ClientSession",
+            return_value=session_context,
+        ) as client_session,
         patch("rag.llm.model_meta.logging.info") as info,
     ):
         models = await MWS("token", PROJECT_URL + "/").get_model_list()
 
+    assert client_session.call_args.kwargs["timeout"].total == 30
     session.get.assert_called_once_with(
         PROJECT_URL + "/openai/v1/models",
         headers={"Authorization": "Bearer token"},

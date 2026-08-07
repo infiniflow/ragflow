@@ -201,6 +201,7 @@ class NvidiaRerank(Base):
     def __init__(self, key, model_name, base_url="https://ai.api.nvidia.com/v1/retrieval/nvidia/"):
         if not base_url:
             base_url = "https://ai.api.nvidia.com/v1/retrieval/nvidia/"
+        base_url = base_url.rstrip("/") + "/"
         self.model_name = model_name
 
         # Default to NVIDIA's generic reranking endpoint. base_url used to be
@@ -208,6 +209,14 @@ class NvidiaRerank(Base):
         # other model left the attribute unset and raised AttributeError on the
         # first _compute_rank() call.
         self.base_url = urljoin(base_url, "reranking")
+        logging.info(
+            "nvidia_rerank_fallback_endpoint_assigned",
+            extra={
+                "provider": self._FACTORY_NAME,
+                "model": self.model_name,
+                "endpoint": self.base_url,
+            },
+        )
 
         if self.model_name == "nvidia/nv-rerankqa-mistral-4b-v3":
             self.base_url = urljoin(base_url, "nv-rerankqa-mistral-4b-v3/reranking")

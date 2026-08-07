@@ -147,6 +147,35 @@ def test_nvidia_logits_are_normalized():
     assert rank.min() >= 0.0 and rank.max() <= 1.0
 
 
+@pytest.mark.parametrize(
+    "base_url",
+    [
+        "https://ai.example.com/v1/retrieval/nvidia",
+        "https://ai.example.com/v1/retrieval/nvidia/",
+    ],
+)
+def test_nvidia_fallback_preserves_path_and_logs_without_api_key(base_url):
+    """Preserve the base path and log fallback metadata without credentials."""
+    with patch("rag.llm.rerank_model.logging.info") as info:
+        reranker = NvidiaRerank(
+            "super-secret-key",
+            "nvidia/custom-reranker",
+            base_url,
+        )
+
+    expected_endpoint = "https://ai.example.com/v1/retrieval/nvidia/reranking"
+    assert reranker.base_url == expected_endpoint
+    info.assert_called_once_with(
+        "nvidia_rerank_fallback_endpoint_assigned",
+        extra={
+            "provider": "NVIDIA",
+            "model": "nvidia/custom-reranker",
+            "endpoint": expected_endpoint,
+        },
+    )
+    assert "super-secret-key" not in repr(info.call_args)
+
+
 def test_calibrated_relevance_scores_are_preserved():
     # A provider already returning [0,1] relevance scores keeps them verbatim;
     # min-max would have stretched these to [1.0, 0.0, 0.5].

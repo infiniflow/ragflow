@@ -542,7 +542,7 @@ class MWS(OpenAIAPICompatible):
         logging.info("mws_model_discovery_request", extra=log_context)
 
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
                 async with session.get(url, headers={"Authorization": f"Bearer {self._get_api_key()}"}) as response:
                     if response.status != 200:
                         logging.warning(
