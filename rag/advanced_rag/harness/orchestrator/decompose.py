@@ -467,6 +467,24 @@ def _chunk_key(ck: dict) -> str:
     return ck.get("chunk_id") or ck.get("id") or str(id(ck))
 
 
+def _global_evidence_ids(tools, result: dict) -> list[int]:
+    """Map a search result's chunks to their indices in ``tools.kbinfos``.
+
+    The cross-check resolves evidence IDs against the shared kbinfos pool, so
+    the IDs must be global indices there — not positions within this result.
+    Must be called AFTER ``_merge_kbinfos`` so fresh chunks have indices.
+    """
+    index_by_key: dict[str, int] = {}
+    for idx, ck in enumerate(tools.kbinfos.get("chunks", [])):
+        index_by_key.setdefault(_chunk_key(ck), idx)
+    ids: list[int] = []
+    for ck in result.get("chunks", []):
+        idx = index_by_key.get(_chunk_key(ck))
+        if idx is not None and idx not in ids:
+            ids.append(idx)
+    return ids
+
+
 def _summarize(result: dict) -> str:
     chunks = result.get("chunks", [])
     texts = [(c.get("content_with_weight") or c.get("content") or c.get("text") or "")[:200] for c in chunks[:3]]

@@ -727,13 +727,15 @@ export const useUpdateArtifactPage = () => {
       );
       if (data.code === 0) {
         message.success(i18n.t(`message.updated`));
-        queryClient.invalidateQueries({
-          queryKey: ArtifactKeys.detail(
-            knowledgeBaseId,
-            params.pageType,
-            params.slug,
-          ),
-        });
+        const detailKey = ArtifactKeys.detail(
+          knowledgeBaseId,
+          params.pageType,
+          params.slug,
+        );
+        if (data.data) {
+          queryClient.setQueryData(detailKey, data.data);
+        }
+        await queryClient.invalidateQueries({ queryKey: detailKey });
       }
       return data;
     },
@@ -972,7 +974,7 @@ export const useRunArtifactIndex = (kind: string) => {
       if (isGoDatasetBackend()) {
         throw new Error(i18n.t('message.compileNotSupported'));
       }
-      const { data } = await runIndex(knowledgeBaseId, 'artifact');
+      const { data } = await runIndex(knowledgeBaseId, 'wiki');
       if (data?.code === 0) {
         message.success(i18n.t('message.operated'));
         queryClient.invalidateQueries({
