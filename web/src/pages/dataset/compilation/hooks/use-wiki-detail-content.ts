@@ -103,7 +103,6 @@ export function useWikiDetailContent({
 
   const handleMarkdownLinkClick = useCallback(
     (pageType: WikiPageType, slug: string) => {
-      if (isVersionView) return;
       if (currentEntry?.slug === slug && currentEntry?.pageType === pageType)
         return;
 
@@ -125,7 +124,6 @@ export function useWikiDetailContent({
     [
       push,
       onSelectArtifact,
-      isVersionView,
       currentEntry,
       pageData,
       updateCurrentTitle,
