@@ -79,8 +79,8 @@ def format_document_soup(document: bs4.BeautifulSoup, table_cell_separator: str 
     last_added_newline = False
 
     # ``descendants`` yields opening tags only, so a flag set on <table>/<a> would
-    # never clear. Scope is therefore taken from each element's ancestors, resolved
-    # up-front in one pass: probing per element instead costs O(depth) each.
+    # never clear. Precompute scope by registering each <table>/<a> descendant;
+    # this avoids O(depth) ancestor walks while keeping lookups O(1).
     table_scope = {id(d) for table in document.find_all("table") for d in table.descendants}
     href_scope = {}
     for anchor in document.find_all("a"):  # document order, so a nested <a> wins over its parent
