@@ -200,15 +200,16 @@ function MarkdownContent({
     (
       documentId: string,
       chunk: IReferenceChunk,
-      isPdf: boolean,
+      fileExtension: string,
       documentUrl?: string,
     ) =>
       () => {
-        if (!isPdf) {
+        if (fileExtension !== 'pdf') {
           if (!documentUrl) {
             return;
           }
-          window.open(documentUrl, '_blank');
+          const nextLink = `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`;
+          window.open(nextLink, '_blank');
         } else {
           clickDocumentButton?.(documentId, chunk);
         }
@@ -318,7 +319,7 @@ function MarkdownContent({
                   onClick={handleDocumentButtonClick(
                     documentId,
                     chunkItem,
-                    fileExtension === 'pdf',
+                    fileExtension,
                     documentUrl,
                   )}
                   className="text-ellipsis text-wrap"
