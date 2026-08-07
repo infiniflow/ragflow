@@ -132,6 +132,7 @@ async def agentic_research(state: dict, tools) -> dict:
                         evidence_ids=result.get("evidence_ids", []),
                         gaps=result.get("gaps", []),
                         discovered_claims=result.get("discovered_claims", []),
+                        grounded=result.get("grounded", []),
                     )
 
                     # Ultra: dynamic claim expansion

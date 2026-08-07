@@ -306,6 +306,53 @@ def cross_check_claim(agent_result: AgentResult, all_chunks: dict) -> ClaimCross
         len(numbers) + len(entities),
     )
 
+    # ── Grounded-fact verification (answer↔evidence consistency) ──
+    # The agent explicitly lists the KEY assertions it claims are evidence-
+    # backed (schema field `grounded`). This is the ground truth to verify:
+    # the ratio-based number/entity check below can be gamed by padding facts
+    # (check1.log Q203: "hometown=Ithaca" scored 9/12=0.75 because Dustin Brown
+    # / Kings / Stanley Cup matched, while the answer-critical hometown fact
+    # was prior-injected and absent from evidence; Q665 likewise: "first solo
+    # album=1970" passed on Beatles padding). If any *grounded* fact is absent
+    # from the evidence, the claim is a prior-knowledge injection → hard-fail.
+    # A grounded fact is a natural-language assertion (e.g. "Dustin Brown
+    # captain of Los Angeles Kings"), which will never match evidence verbatim.
+    # Match on its *key content tokens* (entities + numbers) instead: the fact
+    # is considered grounded when at least half its key tokens appear in the
+    # evidence. "hometown is Ithaca" → key token [Ithaca] → absent → violation.
+    # "Dustin Brown captain of Los Angeles Kings" → [Dustin Brown, Los Angeles
+    # Kings] → both present → grounded. This is lenient against wording noise
+    # yet strict on the answer-critical named facts that prior-injection adds.
+    def _grounded_hit(fact: str) -> bool:
+        f = fact.lower()
+        if _is_cjk(f):
+            return any(f in t for t in chunk_texts)
+        # Key tokens = named entities + numbers mentioned in the fact.
+        key_tokens = [tok for tok in extract_named_entities(fact)]
+        key_tokens += [f"{int(n)}" for n in _filter_relevant_numbers(extract_numbers(fact))]
+        if not key_tokens:
+            # No extractable key content — fall back to whole-phrase match.
+            return any(re.search(rf"(?<![\w]){re.escape(f)}(?![\w])", t) for t in chunk_texts)
+        hits = sum(1 for tok in key_tokens if _entity_present(tok, chunk_texts))
+        return hits / len(key_tokens) >= 0.5
+
+    grounded_facts = [str(g) for g in (agent_result.grounded or []) if str(g).strip()]
+    if grounded_facts:
+        ungounded = [g for g in grounded_facts if not _grounded_hit(g)]
+        if ungounded:
+            _LOG.warning(
+                "[Cross-check] claim=%s → GROUNDED-FACT VIOLATION: %d key fact(s) agent marked as evidence-backed are ABSENT from evidence: %s — hard-failing claim",
+                agent_result.claim_id,
+                len(ungounded),
+                ungounded[:6],
+            )
+            return ClaimCrossCheckResult(
+                claim_id=agent_result.claim_id,
+                cross_check_passed=False,
+                cross_check_score=0.0,
+                mismatches=[f"grounded fact not in evidence: {g}" for g in ungounded],
+            )
+
     def _anywhere(needle: str) -> bool:
         return any(re.search(needle, t) for t in chunk_texts)
 

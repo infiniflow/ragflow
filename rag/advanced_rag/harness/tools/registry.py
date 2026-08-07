@@ -132,6 +132,11 @@ def _generate_report_schema() -> dict:
                         "items": {"type": "string"},
                         "description": "Information that was not found.",
                     },
+                    "grounded": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "The KEY factual assertions in the report that ARE directly supported by the cited evidence chunks (evidence_ids). List each atomic fact you saw in the evidence, verbatim enough to be matched. This must include the answer-critical facts — e.g. 'hometown is Ithaca', 'first solo album was 1970'. Facts you inferred from prior knowledge but did NOT see in the evidence must be omitted from this list (and instead placed in gaps). Leaving a key asserted fact out of grounded, or listing a fact not actually in the evidence, will be caught and the claim marked unverified.",
+                    },
                     "discovered_claims": {
                         "type": "array",
                         "items": {"type": "string"},

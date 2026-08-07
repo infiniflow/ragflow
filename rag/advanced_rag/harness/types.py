@@ -94,6 +94,12 @@ class AgentResult:
     evidence_ids: list[int] = field(default_factory=list)
     gaps: list[str] = field(default_factory=list)
     discovered_claims: list[str] = field(default_factory=list)
+    # Key factual assertions the agent claims are directly supported by the
+    # cited evidence. Used by cross-check as the *ground-truth* list to verify:
+    # if a grounded fact is absent from the evidence, the claim is a
+    # prior-knowledge-injection risk (see check1.log Q203 hometown=Ithaca,
+    # Q665 first-solo-album=1970) and must not count as sufficient.
+    grounded: list[str] = field(default_factory=list)
 
 
 # ═══════════════════════════════════════════════════════════════
