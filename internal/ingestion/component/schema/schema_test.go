@@ -278,8 +278,8 @@ func TestChunkerOutputsJSONRoundTrip(t *testing.T) {
 
 func TestTokenChunkerParamDefaults(t *testing.T) {
 	p := TokenChunkerParam{}.Defaults()
-	if p.DelimiterMode != "token_size" {
-		t.Errorf("default delimiter_mode = %q, want token_size", p.DelimiterMode)
+	if p.DelimiterMode != "delimiter" {
+		t.Errorf("default delimiter_mode = %q, want delimiter", p.DelimiterMode)
 	}
 	if p.ChunkTokenSize != 512 {
 		t.Errorf("default chunk_token_size = %d, want 512", p.ChunkTokenSize)
