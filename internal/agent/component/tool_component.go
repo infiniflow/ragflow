@@ -20,10 +20,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+
+	"gorm.io/gorm"
 )
 
 // ToolBackedComponent is the single Canvas adapter for tools that implement
@@ -60,14 +63,19 @@ func (c *ToolBackedComponent) Outputs() map[string]string { return c.spec.Output
 
 func (c *ToolBackedComponent) GetInputForm() map[string]any { return c.spec.InputForm }
 
-func (c *ToolBackedComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *ToolBackedComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	argsJSON, err := json.Marshal(inputs)
 	if err != nil {
 		return nil, fmt.Errorf("canvas: %s: encode inputs: %w", c.name, err)
 	}
 
 	raw, invokeErr := c.tool.InvokableRun(ctx, string(argsJSON))
-	decoded := parseToolEnvelope(raw)
+	var decoded map[string]any
+	if c.spec.PreserveJSONNumbers {
+		decoded = parseToolEnvelopeLossless(raw)
+	} else {
+		decoded = parseToolEnvelope(raw)
+	}
 	if rawValue, invalid := decoded["_raw"]; invalid {
 		if invokeErr != nil {
 			return nil, fmt.Errorf("canvas: %s: %w", c.name, invokeErr)
@@ -95,7 +103,20 @@ func (c *ToolBackedComponent) Invoke(ctx context.Context, inputs map[string]any)
 	return c.tool.BuildComponentOutputs(decoded), nil
 }
 
-func (c *ToolBackedComponent) Stream(_ context.Context, _ map[string]any) (<-chan map[string]any, error) {
+func parseToolEnvelopeLossless(jsonStr string) map[string]any {
+	var out map[string]any
+	decoder := json.NewDecoder(strings.NewReader(jsonStr))
+	decoder.UseNumber()
+	if err := decoder.Decode(&out); err != nil {
+		return map[string]any{"_raw": jsonStr}
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		return map[string]any{"_raw": jsonStr}
+	}
+	return out
+}
+
+func (c *ToolBackedComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
 	return nil, nil
 }
 
@@ -113,6 +134,7 @@ var toolComponentRegistrations = []struct {
 	{componentName: "GoogleScholar", toolName: "google_scholar"},
 	{componentName: "KeenableSearch", toolName: "keenable"},
 	{componentName: "PubMed", toolName: "pubmed"},
+	{componentName: "QueritSearch", toolName: "querit_search"},
 	{componentName: "SearXNG", toolName: "searxng"},
 	{componentName: "TavilySearch", toolName: "tavily"},
 	{componentName: "TavilyExtract", toolName: "tavily_extract"},

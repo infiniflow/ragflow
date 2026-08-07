@@ -33,6 +33,7 @@ import (
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
+	"ragflow/internal/utility"
 )
 
 // ErrPDFEngineUnavailable is returned by PDFParser.ParseWithResult
@@ -58,12 +59,16 @@ type PDFParser struct {
 	Model      string // DeepDoc@buildin@ragflow
 	LibType    string // pdf_oxide, used by DeepDoc
 
-	FlattenMediaToText                bool
-	RemoveTOC                         bool
-	RemoveHeaderFooter                bool
-	EnableMultiColumn                 bool
-	OutputFormat                      string
-	ParseMethod                       string
+	FlattenMediaToText bool
+	RemoveTOC          bool
+	RemoveHeaderFooter bool
+	EnableMultiColumn  bool
+	OutputFormat       string
+	ParseMethod        string
+	// Pages restricts parsing to these 1-indexed inclusive page ranges.
+	// nil/empty means parse all pages. Populated by ConfigureFromSetup from
+	// the filetype setup map and forwarded to the deepdoc ParserConfig.
+	Pages                             [][]int
 	MinerUAPIServer                   string
 	MinerUAPIKey                      string
 	MinerUBackend                     string
@@ -249,6 +254,18 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
 		p.TCADPMarkdownImageResponseType = v
+	}
+	if raw, ok := setup["pages"]; ok {
+		// Request-layer validation (NormalizeParserConfigPages) already
+		// rejects invalid ranges at the API boundary. At parse time the input
+		// should already be normalized; degrade to "parse all pages" rather
+		// than failing the parse if an unexpected shape slips through.
+		if pages, err := utility.NormalizePDFPages(raw); err != nil {
+			slog.Warn("ConfigureFromSetup: invalid pages range, falling back to all pages",
+				"raw", raw, "err", err)
+		} else {
+			p.Pages = pages
+		}
 	}
 }
 
@@ -582,13 +599,18 @@ func normalizePDFPositions(raw any) [][]any {
 	return normalized
 }
 
+// normalizePDFPageNumber converts a DeepDoc 0-indexed page number to the
+// 1-indexed form stored in _pdf_positions / positions. It is the SINGLE
+// 0→1 conversion point: DeepDoc (pdf_oxide/pdfium) emits 0-indexed pages,
+// and every downstream consumer (AddPositions for ES storage,
+// PositionsFromMatrix for the PDFium render path) expects 1-indexed input.
+// Adding +1 unconditionally — instead of only for v<=0 — keeps all pages
+// consistent; the old heuristic left page>=1 unconverted, which AddPositions
+// then double-incremented and PositionsFromMatrix mis-decremented.
 func normalizePDFPageNumber(raw any) (int, bool) {
 	switch v := raw.(type) {
 	case int:
-		if v <= 0 {
-			return v + 1, true
-		}
-		return v, true
+		return v + 1, true
 	case int64:
 		return normalizePDFPageNumber(int(v))
 	case float64:

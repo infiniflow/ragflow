@@ -65,6 +65,7 @@ export function SavedModeCard({
   draftName,
   open,
   setOpen,
+  verifyTransform,
 }: SavedModeCardProps) {
   const { t } = useTranslation();
   const { t: tSetting } = useTranslate('setting');
@@ -164,7 +165,7 @@ export function SavedModeCard({
                 className="text-sm font-medium truncate overflow-hidden flex-1 cursor-text"
                 onDoubleClick={(e) => {
                   e.stopPropagation();
-                  startRename();
+                  // startRename();
                 }}
                 title={tSetting('editInstanceName')}
                 data-testid="instance-name-static"
@@ -189,12 +190,13 @@ export function SavedModeCard({
       <CollapsibleContent forceMount className="data-[state=closed]:hidden">
         <div className="pb-4 flex flex-col gap-4">
           <DynamicForm.Root
-            key={`${providerName}-${instanceName}-false-${instanceDetailsLoaded ? 'loaded' : 'pending'}`}
+            key={`${providerName}-${instanceName}-false`}
             ref={formRef as RefObject<DynamicFormRef>}
             fields={formFields}
             onSubmit={() => undefined}
             defaultValues={formDefaultValues}
             labelClassName="font-normal"
+            resetOptions={{ keepDirtyValues: true }}
           />
 
           <div className="pt-3">
@@ -215,6 +217,7 @@ export function SavedModeCard({
                 hideIfEmpty={false}
                 instanceDetailsLoaded={instanceDetailsLoaded}
                 getFormValues={() => formRef.current?.getValues?.() ?? {}}
+                verifyTransform={verifyTransform}
                 onInstanceModelsChange={(info) => {
                   modelInfoRef.current = info;
                 }}

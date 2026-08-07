@@ -92,7 +92,7 @@ func TestTitleChunker_InvokeEmptyInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTitleChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{})
+	out, err := c.Invoke(context.Background(), nil, map[string]any{})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestTitleChunker_Headings_ASCII(t *testing.T) {
 	}
 
 	input := "# Top\nFirst body line under Top.\nSecond body.\n## Sub\nBody under Sub heading.\n# TopTwo\nBody under TopTwo."
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name": "doc.md",
 		"text": input,
 	})
@@ -159,7 +159,7 @@ func TestTitleChunker_NoHeadings_FallsBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTitleChunker: %v", err)
 	}
-	out, err := c.Invoke(context.Background(), map[string]any{
+	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name": "doc.txt",
 		"text": "alpha line one\nalpha line two",
 	})
@@ -186,7 +186,7 @@ func TestTitleChunker_DispatcherHierarchy(t *testing.T) {
 	if _, ok := c.(*TitleChunkerComponent); !ok {
 		t.Fatalf("NewTitleChunker returned %T", c)
 	}
-	_, err = c.Invoke(context.Background(), map[string]any{
+	_, err = c.Invoke(context.Background(), nil, map[string]any{
 		"name": "doc.md",
 		"text": "# Top\nFirst body.\n# TopTwo\nBody under TopTwo.",
 	})
@@ -215,7 +215,7 @@ func TestTitleChunker_InvokeDeterministic(t *testing.T) {
 	var firstLen int
 	var firstTexts []string
 	for run := 0; run < 10; run++ {
-		out, err := c.Invoke(context.Background(), inputs)
+		out, err := c.Invoke(context.Background(), nil, inputs)
 		if err != nil {
 			t.Fatalf("Invoke run %d: %v", run, err)
 		}
@@ -255,7 +255,7 @@ func TestNewLevelContext_MostLevelIsMode(t *testing.T) {
 		{text: "## c", docType: "text"},
 		{text: "### d", docType: "text"},
 	}
-	lc := newLevelContext(records, p)
+	lc := newLevelContext(records, nil, p)
 	// selectLevelGroup picks the single 3-pattern family; per-line
 	// levels are [1,2,2,3], so the mode (most frequent heading level)
 	// is level 2.
@@ -370,4 +370,196 @@ func TestResolveTitleLevels_LayoutFallback(t *testing.T) {
 	if levels[2] != bodyLevel {
 		t.Errorf("plain body level = %d, want bodyLevel", levels[2])
 	}
+}
+
+// TestResolveOutlineLevels covers Chunker-1.5: a text line that matches a
+// PDF outline entry by character-bigram similarity (>0.8) is assigned the
+// outline level+1; lines that do not match stay BODY_LEVEL. The non-text
+// record is pinned to BODY_LEVEL regardless.
+func TestResolveOutlineLevels(t *testing.T) {
+	outline := []outlineEntry{
+		{title: "第一章 概述", level: 0},
+		{title: "第二章 方法", level: 1},
+	}
+	records := []lineRecord{
+		{text: "第一章 概述", docType: "text"},
+		{text: "本章介绍背景。", docType: "text"},         // no outline match
+		{text: "figure caption", docType: "image"}, // non-text
+	}
+	levels, mostLevel, ok := resolveOutlineLevels(records, outline)
+	if !ok {
+		t.Fatalf("resolveOutlineLevels ok = false, want true")
+	}
+	if levels[0] != 1 { // outline level 0 + 1
+		t.Errorf("matched line level = %d, want 1", levels[0])
+	}
+	if levels[1] != bodyLevel {
+		t.Errorf("unmatched body level = %d, want bodyLevel", levels[1])
+	}
+	if levels[2] != bodyLevel {
+		t.Errorf("non-text level = %d, want bodyLevel", levels[2])
+	}
+	if mostLevel != 1 { // max(1, max outline level 1)
+		t.Errorf("mostLevel = %d, want 1", mostLevel)
+	}
+}
+
+// TestResolveOutlineLevels_SparseGuard ensures a too-sparse outline (ratio
+// <= 0.03) is rejected so detection falls back to frequency branch.
+func TestResolveOutlineLevels_SparseGuard(t *testing.T) {
+	outline := []outlineEntry{{title: "唯一的章节标题", level: 0}}
+	// 100 body records: 1/100 = 0.01 <= 0.03 -> rejected.
+	records := make([]lineRecord, 100)
+	for i := range records {
+		records[i] = lineRecord{text: "body paragraph", docType: "text"}
+	}
+	if _, _, ok := resolveOutlineLevels(records, outline); ok {
+		t.Errorf("sparse outline ok = true, want false")
+	}
+	if _, _, ok := resolveOutlineLevels(records, nil); ok {
+		t.Errorf("nil outline ok = true, want false")
+	}
+}
+
+// TestNewLevelContext_OutlineBranch pins Chunker-1.5 end-to-end: when an
+// outline is supplied, newLevelContext prefers the outline branch over the
+// regex/frequency branch.
+func TestNewLevelContext_OutlineBranch(t *testing.T) {
+	p := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{
+		Method: "group",
+		Levels: [][]string{{`^# `}},
+	}}
+	outline := []outlineEntry{{title: "前言", level: 0}}
+	records := []lineRecord{
+		{text: "前言", docType: "text"},      // matches outline -> level 1
+		{text: "普通正文段落。", docType: "text"}, // no outline -> BODY_LEVEL
+	}
+	lc := newLevelContext(records, outline, p)
+	if got := lc.Levels(); got[0] != 1 || got[1] != bodyLevel {
+		t.Errorf("outline levels = %v, want [1, bodyLevel]", got)
+	}
+}
+
+// TestOutlineFromInputs verifies the parser-supplied file.outline is parsed
+// into outlineEntry, tolerating float64-encoded levels (runtime JSON path).
+func TestOutlineFromInputs(t *testing.T) {
+	inputs := map[string]any{
+		"file": map[string]any{
+			"outline": []any{
+				map[string]any{"title": "第一章", "level": float64(0), "page_number": float64(1)},
+				map[string]any{"title": "第二章", "level": float64(1), "page_number": float64(3)},
+			},
+		},
+	}
+	out := outlineFromInputs(inputs)
+	if len(out) != 2 {
+		t.Fatalf("outline len = %d, want 2", len(out))
+	}
+	if out[0].title != "第一章" || out[0].level != 0 {
+		t.Errorf("entry 0 = %+v, want {第一章 0}", out[0])
+	}
+	if out[1].title != "第二章" || out[1].level != 1 {
+		t.Errorf("entry 1 = %+v, want {第二章 1}", out[1])
+	}
+
+	// No file / no outline -> nil (frequency fallback).
+	if got := outlineFromInputs(map[string]any{}); got != nil {
+		t.Errorf("empty inputs outline = %v, want nil", got)
+	}
+}
+
+// TestResolveTitleLevels_BulletFallback covers Chunker-1.7: when
+// frequency-based detection assigns bodyLevel to every record, the
+// BULLET_PATTERN bullet-fallback scans the text for numbered/bulleted
+// list entries and assigns structural levels, mirroring Python's
+// bullets_category + title_frequency.
+func TestResolveTitleLevels_BulletFallback(t *testing.T) {
+	// All subtests use empty Levels to ensure no regex group matches,
+	// so the bullet fallback is the only level signal.
+
+	t.Run("ChineseLegalGroups0", func(t *testing.T) {
+		p := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{
+			Method: "group",
+		}}
+		records := []lineRecord{
+			{text: "第一条 定义", docType: "text"},
+			{text: "第二条 适用范围", docType: "text"},
+			{text: "这是普通正文内容。", docType: "text"},
+		}
+		levels := resolveTitleLevels(records, p)
+		// "第一条" matches group-0 index-3 (r"第...条") -> level = 3+1 = 4.
+		if lvl := levels[0]; lvl >= bodyLevel || lvl <= 0 {
+			t.Errorf("bullet line '第一条' level = %d, want non-body positive", lvl)
+		}
+		if lvl := levels[1]; lvl >= bodyLevel || lvl <= 0 {
+			t.Errorf("bullet line '第二条' level = %d, want non-body positive", lvl)
+		}
+		if levels[2] != bodyLevel {
+			t.Errorf("plain body line level = %d, want bodyLevel", levels[2])
+		}
+	})
+
+	t.Run("NumberingGroup1", func(t *testing.T) {
+		p := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{
+			Method: "group",
+		}}
+		records := []lineRecord{
+			{text: "1. Introduction", docType: "text"},
+			{text: "2. Methods", docType: "text"},
+			{text: "3. Results", docType: "text"},
+			{text: "Plain body paragraph here.", docType: "text"},
+		}
+		levels := resolveTitleLevels(records, p)
+		for i := 0; i < 3; i++ {
+			if lvl := levels[i]; lvl >= bodyLevel || lvl <= 0 {
+				t.Errorf("numbered line index %d level = %d, want non-body positive", i, lvl)
+			}
+		}
+		if levels[3] != bodyLevel {
+			t.Errorf("plain body line level = %d, want bodyLevel", levels[3])
+		}
+	})
+
+	t.Run("NotBulletExcluded", func(t *testing.T) {
+		p := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{
+			Method: "group",
+		}}
+		records := []lineRecord{
+			{text: "0", docType: "text"},
+			{text: "1 2 3", docType: "text"},
+			{text: "第一条 定义", docType: "text"},
+		}
+		levels := resolveTitleLevels(records, p)
+		// "0" and "1 2 3" are not-bullet -> bodyLevel.
+		if levels[0] != bodyLevel {
+			t.Errorf("notBullet '0' level = %d, want bodyLevel", levels[0])
+		}
+		if levels[1] != bodyLevel {
+			t.Errorf("notBullet '1 2 3' level = %d, want bodyLevel", levels[1])
+		}
+		if lvl := levels[2]; lvl >= bodyLevel || lvl <= 0 {
+			t.Errorf("genuine bullet '第一条' level = %d, want non-body positive", lvl)
+		}
+	})
+
+	t.Run("RegexMatchGuardsBulletFallback", func(t *testing.T) {
+		p := &titleChunkerParam{TitleChunkerParam: schema.TitleChunkerParam{
+			Method: "group",
+			Levels: [][]string{{`^第[零一二三四五六七八九十百0-9]+章`}},
+		}}
+		records := []lineRecord{
+			{text: "第一章 概述", docType: "text"},
+			{text: "第一条 定义", docType: "text"},
+		}
+		levels := resolveTitleLevels(records, p)
+		// "第一章" matches the user-supplied regex -> level 1 from regex.
+		// Because regex matched, bullet fallback must NOT fire.
+		// "第一条" should still be bodyLevel (not promoted by bullet fallback).
+		if levels[0] >= bodyLevel {
+			t.Errorf("regex match '第一章' level = %d, want non-body (regex)", levels[0])
+		}
+		if levels[1] != bodyLevel {
+			t.Errorf("non-matching '第一条' level = %d, want bodyLevel (bullet fallback must not override regex path)", levels[1])
+		}
+	})
 }

@@ -92,7 +92,6 @@ export const formSchema = z
               path: ['entity_types'],
             },
           ),
-        compilation_template_group_id: z.array(z.string()).optional(),
         metadata: z.any().optional(),
         built_in_metadata: z
           .array(

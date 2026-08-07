@@ -4,7 +4,11 @@ import request from '@/utils/next-request';
 export const getDocumentStructureGraph = (
   datasetId: string,
   documentId: string,
-) => request.get(api.documentStructureGraph(datasetId, documentId));
+  keywords?: string,
+) =>
+  request.get(api.documentStructureGraph(datasetId, documentId), {
+    params: keywords ? { keywords } : undefined,
+  });
 
 export const deleteDocumentStructureGraph = (
   datasetId: string,

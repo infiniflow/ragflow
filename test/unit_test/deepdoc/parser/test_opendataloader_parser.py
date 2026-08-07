@@ -114,10 +114,22 @@ class TestCheckInstallation:
 
 
 class TestParsePdf:
-    def _mock_response(self, json_doc=None, md_text=None) -> mock.MagicMock:
+    def _mock_response(self, json_doc=None, md_text=None, docling=None) -> mock.MagicMock:
         resp = mock.MagicMock()
         resp.raise_for_status = mock.MagicMock()
-        resp.json.return_value = {"json_doc": json_doc, "md_text": md_text}
+        if docling is not None:
+            # Docling nested format: {"status": ..., "document": {"json_content": {DoclingDocument}}}
+            resp.json.return_value = {
+                "status": "success",
+                "document": {"json_content": docling},
+                "processing_time": 1.0,
+                "errors": [],
+                "failed_pages": [],
+                "timings": {},
+            }
+        else:
+            # Legacy flat format
+            resp.json.return_value = {"json_doc": json_doc, "md_text": md_text}
         return resp
 
     def test_raises_when_api_url_not_set(self, tmp_path):
@@ -128,7 +140,7 @@ class TestParsePdf:
         with pytest.raises(RuntimeError, match="OPENDATALOADER_APISERVER"):
             p.parse_pdf(filepath=str(pdf))
 
-    def test_posts_to_file_parse_endpoint(self, tmp_path):
+    def test_posts_to_v1_convert_file_endpoint(self, tmp_path):
         p = _make_parser()
         pdf = tmp_path / "doc.pdf"
         pdf.write_bytes(b"%PDF-dummy")
@@ -139,7 +151,7 @@ class TestParsePdf:
 
         mock_post.assert_called_once()
         call_kwargs = mock_post.call_args
-        assert "/file_parse" in call_kwargs.kwargs.get("url", call_kwargs.args[0] if call_kwargs.args else "")
+        assert "/v1/convert/file" in call_kwargs.kwargs.get("url", call_kwargs.args[0] if call_kwargs.args else "")
 
     def test_binary_bytes_sent_as_multipart(self, tmp_path):
         p = _make_parser()
@@ -150,8 +162,8 @@ class TestParsePdf:
             p.parse_pdf(filepath="file.pdf", binary=pdf_bytes)
 
         files_arg = mock_post.call_args.kwargs.get("files", {})
-        assert "file" in files_arg
-        _, sent_bytes, mime = files_arg["file"]
+        assert "files" in files_arg
+        _, sent_bytes, mime = files_arg["files"]
         assert sent_bytes == pdf_bytes
         assert mime == "application/pdf"
 
@@ -164,7 +176,7 @@ class TestParsePdf:
             p.parse_pdf(filepath="file.pdf", binary=io.BytesIO(pdf_bytes))
 
         files_arg = mock_post.call_args.kwargs.get("files", {})
-        _, sent_bytes, _ = files_arg["file"]
+        _, sent_bytes, _ = files_arg["files"]
         assert sent_bytes == pdf_bytes
 
     def test_json_doc_response_returns_sections(self, tmp_path):
@@ -181,6 +193,25 @@ class TestParsePdf:
             sections, tables = p.parse_pdf(filepath="doc.pdf", binary=b"%PDF", parse_method="pipeline")
 
         assert any("Hello from JSON" in s[0] for s in sections)
+
+    def test_docling_nested_response_returns_sections(self, tmp_path):
+        p = _make_parser()
+        docling = {
+            "texts": [
+                {"label": "paragraph", "text": "Hello from Docling", "prov": [{"page_no": 1, "bbox": {"l": 0, "t": 0, "r": 100, "b": 20, "coord_origin": "TOPLEFT"}}]},
+                {"label": "section_header", "text": "A Title", "prov": [{"page_no": 1, "bbox": {"l": 0, "t": 20, "r": 200, "b": 40, "coord_origin": "TOPLEFT"}}]},
+            ],
+            "tables": [],
+            "pictures": [],
+        }
+        resp = self._mock_response(docling=docling)
+
+        with mock.patch.object(p, "__images__"), mock.patch("requests.post", return_value=resp):
+            sections, tables = p.parse_pdf(filepath="doc.pdf", binary=b"%PDF", parse_method="pipeline")
+
+        assert len(sections) >= 2
+        assert any("Hello from Docling" in s[0] for s in sections)
+        assert any("A Title" in s[0] for s in sections)
 
     def test_md_text_fallback_when_no_json(self, tmp_path):
         p = _make_parser()
@@ -231,6 +262,8 @@ class TestParsePdf:
             p.parse_pdf(filepath="doc.pdf", binary=b"%PDF")
 
         data_arg = mock_post.call_args.kwargs.get("data", {})
+        # to_formats is always sent
+        assert "to_formats" in data_arg
         assert "hybrid" not in data_arg
         assert "image_output" not in data_arg
         assert "sanitize" not in data_arg
@@ -318,3 +351,112 @@ class TestCrop:
         p.page_images = []
         result = p.crop("@@1\t10.0\t100.0\t20.0\t80.0##", need_position=True)
         assert result == (None, None)
+
+
+# ---------------------------------------------------------------------------
+# _extract_docling_prov — coordinate conversion
+# ---------------------------------------------------------------------------
+
+
+class TestExtractDoclingProv:
+    """Unit tests for _extract_docling_prov's TOPLEFT → bottom-left conversion."""
+
+    def test_flips_y_with_page_height(self):
+        """When page_height is provided, Docling TOPLEFT coords are flipped."""
+        item = {
+            "prov": [{"page_no": 1, "bbox": {"l": 10, "t": 100, "r": 200, "b": 150, "coord_origin": "TOPLEFT"}}],
+        }
+        page_heights = {1: 842.0}  # A4 portrait in PDF points
+        page_no, bbox = _mod._extract_docling_prov(item, page_heights)
+        assert page_no == 1
+        # bottom = 842 - 150 = 692, top = 842 - 100 = 742
+        assert bbox == [10.0, 692.0, 200.0, 742.0]
+
+    def test_falls_back_to_raw_when_no_page_height(self):
+        """Without page_height, raw TOPLEFT values are returned as-is."""
+        item = {
+            "prov": [{"page_no": 1, "bbox": {"l": 10, "t": 100, "r": 200, "b": 150, "coord_origin": "TOPLEFT"}}],
+        }
+        page_no, bbox = _mod._extract_docling_prov(item, {})
+        assert page_no == 1
+        # no flip → raw t=100 as top, b=150 as bottom
+        assert bbox == [10.0, 150.0, 200.0, 100.0]
+
+    def test_returns_none_when_no_prov(self):
+        assert _mod._extract_docling_prov({}, {}) == (None, None)
+
+    def test_returns_none_when_missing_coords(self):
+        item = {"prov": [{"page_no": 1, "bbox": {"l": 10}}]}
+        assert _mod._extract_docling_prov(item, {1: 842.0}) == (None, None)
+
+
+# ---------------------------------------------------------------------------
+# _element_html — table HTML rebuild with row_span/col_span and escaping
+# ---------------------------------------------------------------------------
+
+
+class TestElementHtml:
+    """Unit tests for _element_html's Docling table HTML generation."""
+
+    def test_basic_table_without_spans(self):
+        el = {
+            "table_cells": [
+                {"start_row_offset_idx": 0, "start_col_offset_idx": 0, "text": "A", "row_span": 1, "col_span": 1},
+                {"start_row_offset_idx": 0, "start_col_offset_idx": 1, "text": "B", "row_span": 1, "col_span": 1},
+                {"start_row_offset_idx": 1, "start_col_offset_idx": 0, "text": "C", "row_span": 1, "col_span": 1},
+                {"start_row_offset_idx": 1, "start_col_offset_idx": 1, "text": "D", "row_span": 1, "col_span": 1},
+            ],
+            "num_rows": 2,
+            "num_cols": 2,
+        }
+        html = _mod._element_html(el)
+        assert "<td>A</td>" in html
+        assert "<td>D</td>" in html
+        assert "<table>" in html
+
+    def test_table_with_row_span(self):
+        el = {
+            "table_cells": [
+                {"start_row_offset_idx": 0, "start_col_offset_idx": 0, "text": "Merged", "row_span": 2, "col_span": 1},
+                {"start_row_offset_idx": 0, "start_col_offset_idx": 1, "text": "B", "row_span": 1, "col_span": 1},
+                {"start_row_offset_idx": 1, "start_col_offset_idx": 1, "text": "D", "row_span": 1, "col_span": 1},
+            ],
+            "num_rows": 2,
+            "num_cols": 2,
+        }
+        html = _mod._element_html(el)
+        assert 'rowspan="2"' in html
+        # Row 1 col 0 is spanned, should not have its own <td>
+        assert html.count("<td") == 3  # Merged, B, D
+
+    def test_table_with_col_span(self):
+        el = {
+            "table_cells": [
+                {"start_row_offset_idx": 0, "start_col_offset_idx": 0, "text": "Header", "row_span": 1, "col_span": 2},
+                {"start_row_offset_idx": 1, "start_col_offset_idx": 0, "text": "C", "row_span": 1, "col_span": 1},
+                {"start_row_offset_idx": 1, "start_col_offset_idx": 1, "text": "D", "row_span": 1, "col_span": 1},
+            ],
+            "num_rows": 2,
+            "num_cols": 2,
+        }
+        html = _mod._element_html(el)
+        assert 'colspan="2"' in html
+
+    def test_html_escapes_cell_text(self):
+        el = {
+            "table_cells": [
+                {"start_row_offset_idx": 0, "start_col_offset_idx": 0, "text": "<script>alert(1)</script>", "row_span": 1, "col_span": 1},
+            ],
+            "num_rows": 1,
+            "num_cols": 1,
+        }
+        html = _mod._element_html(el)
+        assert "&lt;script&gt;" in html
+        assert "<script>" not in html
+
+    def test_returns_empty_for_non_table(self):
+        assert _mod._element_html({"type": "paragraph", "text": "hello"}) == ""
+
+    def test_returns_existing_html_content(self):
+        el = {"html": "<table><tr><td>X</td></tr></table>"}
+        assert _mod._element_html(el) == "<table><tr><td>X</td></tr></table>"

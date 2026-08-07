@@ -35,7 +35,7 @@ func TestBegin_InjectsSys(t *testing.T) {
 	state := canvas.NewCanvasState("run-1", "task-1")
 	ctx := canvas.WithState(context.Background(), state)
 
-	out, err := c.Invoke(ctx, map[string]any{"query": "hello"})
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": "hello"})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -67,7 +67,7 @@ func TestBegin_PassesThroughInputs(t *testing.T) {
 		"inputs":  map[string]any{"k": "v"},
 		"extra":   42,
 	}
-	out, err := c.Invoke(ctx, inputs)
+	out, err := c.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestBegin_InjectsWebhookPayload(t *testing.T) {
 		"query":           "",
 		"webhook_payload": payload,
 	}
-	out, err := c.Invoke(ctx, inputs)
+	out, err := c.Invoke(ctx, nil, inputs)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestBegin_AbsentWebhookPayload(t *testing.T) {
 	state := canvas.NewCanvasState("run-4", "task-4")
 	ctx := canvas.WithState(context.Background(), state)
 
-	if _, err := c.Invoke(ctx, map[string]any{"query": "plain chat"}); err != nil {
+	if _, err := c.Invoke(ctx, nil, map[string]any{"query": "plain chat"}); err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if _, ok := state.Sys["webhook_payload"]; ok {
@@ -150,7 +150,7 @@ func TestBegin_EmptyWebhookPayload(t *testing.T) {
 	state := canvas.NewCanvasState("run-5", "task-5")
 	ctx := canvas.WithState(context.Background(), state)
 
-	if _, err := c.Invoke(ctx, map[string]any{
+	if _, err := c.Invoke(ctx, nil, map[string]any{
 		"query":           "",
 		"webhook_payload": map[string]any{},
 	}); err != nil {

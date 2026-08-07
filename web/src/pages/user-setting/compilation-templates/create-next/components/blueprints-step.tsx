@@ -72,14 +72,14 @@ export function BlueprintsStep({
 
   const instructionPath =
     `templates.${selectedTemplateIndex}.config.instruction` as const;
-  const pageExamplePath =
-    `templates.${selectedTemplateIndex}.config.page_example` as const;
+  const examplePath =
+    `templates.${selectedTemplateIndex}.config.example` as const;
   const useBlueprintPath =
     `templates.${selectedTemplateIndex}.config.use_blueprint` as const;
 
-  const pageExample = useWatch({
+  const example = useWatch({
     control: form.control,
-    name: pageExamplePath,
+    name: examplePath,
   });
 
   const instruction = useWatch({
@@ -100,7 +100,7 @@ export function BlueprintsStep({
     return selectedItem?.name ?? '';
   }, [treeData, selectedItemId]);
 
-  const hasTemplateData = Boolean(selectedItemId || instruction || pageExample);
+  const hasTemplateData = Boolean(selectedItemId || instruction || example);
 
   const handleSelect = useCallback(
     (item?: TreeDataItem) => {
@@ -113,11 +113,11 @@ export function BlueprintsStep({
       form.setValue(instructionPath, preset.instruction, {
         shouldValidate: false,
       });
-      form.setValue(pageExamplePath, preset.page_example, {
+      form.setValue(examplePath, preset.example, {
         shouldValidate: false,
       });
     },
-    [form, instructionPath, pageExamplePath],
+    [form, instructionPath, examplePath],
   );
 
   const handleToggleBlueprint = useCallback(
@@ -128,11 +128,11 @@ export function BlueprintsStep({
     [form, useBlueprintPath],
   );
 
-  const handlePageExampleChange = useCallback(
+  const handleExampleChange = useCallback(
     (value: string) => {
-      form.setValue(pageExamplePath, value, { shouldValidate: false });
+      form.setValue(examplePath, value, { shouldValidate: false });
     },
-    [form, pageExamplePath],
+    [form, examplePath],
   );
 
   return (
@@ -173,12 +173,16 @@ export function BlueprintsStep({
                 <Textarea rows={6} />
               </RAGFlowFormItem>
 
-              <div className="flex-1 min-h-0 flex flex-col">
+              <RAGFlowFormItem
+                name={examplePath}
+                label={t('setting.example')}
+                className="flex-1 min-h-0"
+              >
                 <MarkdownEditor
-                  content={String(pageExample ?? '')}
-                  onChange={handlePageExampleChange}
+                  content={String(example ?? '')}
+                  onChange={handleExampleChange}
                 />
-              </div>
+              </RAGFlowFormItem>
             </div>
           ) : (
             <BlueprintsEmptyState />

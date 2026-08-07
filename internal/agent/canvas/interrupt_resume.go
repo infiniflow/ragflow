@@ -53,6 +53,8 @@ import (
 	"strings"
 
 	"github.com/cloudwego/eino/compose"
+
+	"ragflow/internal/agent/runtime"
 )
 
 // BuildInputSpec turns the DSL's UserFillUp params into the user-visible
@@ -82,6 +84,27 @@ func BuildInputSpec(params map[string]any) map[string]any {
 	}
 	spec["kind"] = "user_fill_up" // tag so cancel-vs-wait can be distinguished in Driver
 	return spec
+}
+
+// buildUserFillUpInterruptInfo renders a fresh wait prompt from the current
+// canvas state so repeated pauses never reuse an earlier iteration's tips.
+func buildUserFillUpInterruptInfo(ctx context.Context, params map[string]any) map[string]any {
+	info := BuildInputSpec(params)
+	if enabled, ok := info["enable_tips"].(bool); ok && !enabled {
+		delete(info, "tips")
+		return info
+	}
+
+	tips, _ := info["tips"].(string)
+	if tips == "" {
+		return info
+	}
+	state, _, err := GetStateFromContext[*CanvasState](ctx)
+	if err != nil || state == nil {
+		return info
+	}
+	info["tips"] = runtime.ResolveTemplateForDisplay(tips, state)
+	return info
 }
 
 // UserFillUpNodeBody returns an eino node function implementing
@@ -121,7 +144,7 @@ func UserFillUpNodeBody(cpnID string, params map[string]any) func(ctx context.Co
 		// First-call branch: emit the interrupt signal. The returned
 		// error implements error; eino's runner catches it, persists a
 		// checkpoint, and bubbles it up.
-		if err := compose.Interrupt(ctx, inputSpec); err != nil {
+		if err := compose.Interrupt(ctx, buildUserFillUpInterruptInfo(ctx, params)); err != nil {
 			return nil, err
 		}
 

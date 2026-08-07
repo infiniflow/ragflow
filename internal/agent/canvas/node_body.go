@@ -34,6 +34,7 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"strconv"
 	"strings"
 	"time"
@@ -120,6 +121,10 @@ func applyOverrideParams(params, cpnOverride map[string]any) map[string]any {
 }
 
 func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]any) (nodeBodyFn, error) {
+	return buildNodeBodyWithOptions(ctx, cpnID, name, params, runtime.ComponentExecutionOptions{})
+}
+
+func buildNodeBodyWithOptions(ctx context.Context, cpnID, name string, params map[string]any, opts runtime.ComponentExecutionOptions) (nodeBodyFn, error) {
 	if overrides := overrideParamsFromContext(ctx); len(overrides) > 0 {
 		// overrides is keyed by cpnID; a component only sees its own
 		// entry. Components absent from the map are left untouched.
@@ -155,7 +160,7 @@ func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]an
 		// to expose Name(). The factory returns the class name as
 		// the DSL's `component_name` field, which is also what
 		// ComponentBase.Name() would have returned.
-		return realComponentBody(cpnID, name, comp), nil
+		return realComponentBodyWithOptions(cpnID, name, comp, opts), nil
 	}
 	// Fallback: no factory registered. This path is only exercised by
 	// canvas-only unit tests; production wiring always installs a
@@ -238,6 +243,10 @@ func componentTimeout() time.Duration {
 // key it is overwritten with the canvas-controlled value to keep
 // attribution authoritative.
 func realComponentBody(cpnID, componentClass string, comp runtime.Component) nodeBodyFn {
+	return realComponentBodyWithOptions(cpnID, componentClass, comp, runtime.ComponentExecutionOptions{})
+}
+
+func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Component, opts runtime.ComponentExecutionOptions) nodeBodyFn {
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
 		timeout := resolveTimeoutFromContext(ctx, componentClass)
 		cctx, cancel := context.WithTimeout(ctx, timeout)
@@ -247,7 +256,7 @@ func realComponentBody(cpnID, componentClass string, comp runtime.Component) nod
 		invokeErr := runtime.TrackProgress(cpnID, runtime.ProgressCallbackFromContext(ctx), func() error {
 			var e error
 			out, e = runtime.TrackElapsed(componentClass, func() (map[string]any, error) {
-				return comp.Invoke(cctx, in)
+				return comp.Invoke(runtime.WithComponentExecutionOptions(cctx, opts), dao.DB, in)
 			})
 			return e
 		})
@@ -300,10 +309,12 @@ func placeholderBody(cpnID string) nodeBodyFn {
 // the body directly), the wrapper degrades to a plain invocation:
 // the body still runs, its output is still tagged with __cpn_id__,
 // but no state snapshot is injected and no result is persisted.
-func withStateBracket(body nodeBodyFn) nodeBodyFn {
+func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
+		originalIn := in
 		state, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
 		if state != nil {
+			nodeStartedAt(ctx, state, cpnID, componentName, componentName, originalIn)
 			if in == nil {
 				in = map[string]any{}
 			}
@@ -317,20 +328,35 @@ func withStateBracket(body nodeBodyFn) nodeBodyFn {
 		}
 		out, err := body(ctx, in)
 		if err != nil {
+			if state != nil {
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, err)
+			}
 			return nil, err
 		}
-		if state == nil || out == nil {
+		if state == nil {
 			return out, nil
 		}
-		cpnID, _ := out["__cpn_id__"].(string)
-		if cpnID == "" {
+		if out == nil {
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+			return out, nil
+		}
+		outputCpnID, _ := out["__cpn_id__"].(string)
+		if outputCpnID == "" {
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
 			return out, nil
 		}
 		for k, v := range out {
 			if k == "__cpn_id__" || k == "state" || k == "__legacy_noop__" {
 				continue
 			}
-			state.SetVar(cpnID, k, v)
+			state.SetVar(outputCpnID, k, v)
+		}
+		if runtime.IsDeferredStream(out["content"]) {
+			runtime.RegisterDeferredNode(ctx, cpnID, func() {
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+			})
+		} else {
+			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
 		}
 		return out, nil
 	}

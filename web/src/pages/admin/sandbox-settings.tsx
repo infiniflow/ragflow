@@ -6,6 +6,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   LucideChevronDown,
   LucideCloud,
+  LucideCloudLightning,
   LucideLink,
   LucideLoader2,
   LucideMonitor,
@@ -62,6 +63,7 @@ const PROVIDER_ICONS: Record<string, React.ElementType> = {
   ssh: LucideTerminal,
   aliyun_codeinterpreter: LucideCloud,
   e2b: LucideZap,
+  tenki: LucideCloudLightning,
 };
 
 function AdminSandboxSettings() {

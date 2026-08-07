@@ -135,17 +135,17 @@ Wraps the existing executor_manager implementation. The implementation file is l
 
 **Configuration**: Docker API endpoint, pool size, resource limits:
 
-- `endpoint`: HTTP endpoint (default: "http://localhost:9385")
+- `endpoint`: HTTP endpoint (default: "http://sandbox-executor-manager:9385")
 - `timeout`: Request timeout in seconds (default: 30)
 - `max_retries`: Maximum retry attempts (default: 3)
 - `pool_size`: Container pool size (default: 10)
 
-**Languages**: 
+**Languages**:
 - Python
 - Node.js
 - JavaScript
 
-**Security**: 
+**Security**:
 - gVisor (runsc runtime)
 - seccomp
 - read-only filesystem
@@ -507,7 +507,7 @@ Each provider's configuration is stored as a **single JSON object** in the `valu
   "name": "sandbox.self_managed",
   "source": "variable",
   "data_type": "json",
-  "value": "{\"endpoint\": \"http://localhost:9385\", \"pool_size\": 10, \"max_memory\": \"256m\", \"timeout\": 30}"
+  "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"pool_size\": 10, \"max_memory\": \"256m\", \"timeout\": 30}"
 }
 ```
 
@@ -606,7 +606,7 @@ class SelfManagedProvider(SandboxProvider):
                 "type": "string",
                 "required": True,
                 "label": "API Endpoint",
-                "placeholder": "http://localhost:9385"
+                "placeholder": "http://sandbox-executor-manager:9385"
             },
             "pool_size": {
                 "type": "integer",
@@ -1316,7 +1316,7 @@ Structured logging for all provider operations:
 class TestSelfManagedProvider:
     def test_initialize_with_config():
         provider = SelfManagedProvider()
-        assert provider.initialize({"endpoint": "http://localhost:9385"})
+        assert provider.initialize({"endpoint": "http://sandbox-executor-manager:9385"})
 
     def test_create_python_instance():
         provider = SelfManagedProvider()
@@ -1538,7 +1538,7 @@ PROVIDER_CLASSES = {
       "name": "sandbox.self_managed",
       "source": "variable",
       "data_type": "json",
-      "value": "{\"endpoint\": \"http://sandbox-internal:9385\", \"pool_size\": 20, \"max_memory\": \"512m\", \"timeout\": 60, \"enable_seccomp\": true, \"enable_ast_analysis\": true}"
+      "value": "{\"endpoint\": \"http://sandbox-executor-manager:9385\", \"pool_size\": 20, \"max_memory\": \"512m\", \"timeout\": 60, \"enable_seccomp\": true, \"enable_ast_analysis\": true}"
     },
     {
       "name": "sandbox.aliyun_codeinterpreter",
@@ -1562,7 +1562,7 @@ PROVIDER_CLASSES = {
 {
   "provider_type": "self_managed",
   "config": {
-    "endpoint": "http://sandbox-internal:9385",
+    "endpoint": "http://sandbox-executor-manager:9385",
     "pool_size": 20,
     "max_memory": "512m",
     "timeout": 60,
@@ -1583,7 +1583,7 @@ PROVIDER_CLASSES = {
   "data": {
     "active": "self_managed",
     "self_managed": {
-      "endpoint": "http://sandbox-internal:9385",
+      "endpoint": "http://sandbox-executor-manager:9385",
       "pool_size": 20,
       "max_memory": "512m",
       "timeout": 60,

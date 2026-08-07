@@ -4,6 +4,7 @@ import sys
 from io import BytesIO
 from pathlib import Path
 from types import ModuleType
+import json
 
 
 def _load_mineru_parser(monkeypatch):
@@ -260,3 +261,213 @@ def test_end_page_minus_one_normalizes_for_mineru_api(monkeypatch, tmp_path):
     )
 
     assert captured["data"]["end_page_id"] == 12
+
+
+class _FakePageImage:
+    def __init__(self, width: int, height: int):
+        self.size = (width, height)
+
+
+def test_read_output_enriches_cross_page_table_positions_from_middle_json(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_images = [_FakePageImage(200, 400), _FakePageImage(200, 400)]
+
+    content_list = [
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "<table><tr><td>first page row</td></tr><tr><td>second page row</td></tr></table>",
+            "table_caption": [],
+            "table_footnote": [],
+            "bbox": [100, 100, 900, 900],
+            "page_idx": 0,
+        }
+    ]
+    middle_json = {
+        "pdf_info": [
+            {
+                "page_idx": 0,
+                "page_size": [200, 400],
+                "para_blocks": [
+                    {
+                        "type": "table",
+                        "bbox": [20, 40, 180, 360],
+                        "blocks": [
+                            {
+                                "type": "table_body",
+                                "lines": [
+                                    {
+                                        "spans": [
+                                            {"type": "table", "content": "first page row", "bbox": [20, 40, 180, 360]},
+                                        ]
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+            {
+                "page_idx": 1,
+                "page_size": [200, 400],
+                "para_blocks": [
+                    {
+                        "type": "table",
+                        "bbox": [20, 0, 180, 80],
+                        "blocks": [
+                            {
+                                "type": "table_body",
+                                "lines": [
+                                    {
+                                        "spans": [
+                                            {"type": "table", "content": "second page row", "bbox": [20, 0, 180, 80]},
+                                        ]
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+            },
+        ],
+    }
+    (tmp_path / "sample_content_list.json").write_text(json.dumps(content_list), encoding="utf-8")
+    (tmp_path / "sample_middle.json").write_text(json.dumps(middle_json), encoding="utf-8")
+
+    outputs = parser._read_output(tmp_path, "sample", method="auto", backend="pipeline")
+    sections = parser._transfer_to_sections(outputs, parse_method="raw", table_enable=True)
+
+    assert len(sections) == 1
+    _, line_tag = sections[0]
+    assert module.MinerUParser.extract_positions(line_tag) == [
+        ([0], 20.0, 180.0, 40.0, 360.0),
+        ([1], 20.0, 180.0, 0.0, 80.0),
+    ]
+
+
+def test_read_output_does_not_enrich_non_table_positions_from_middle_json(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_images = [_FakePageImage(200, 400), _FakePageImage(200, 400)]
+
+    content_list = [
+        {
+            "type": module.MinerUContentType.TEXT,
+            "text": "first page row second page row",
+            "bbox": [100, 100, 900, 900],
+            "page_idx": 0,
+        }
+    ]
+    middle_json = {
+        "pdf_info": [
+            {
+                "page_idx": 0,
+                "page_size": [200, 400],
+                "para_blocks": [
+                    {
+                        "type": "text",
+                        "bbox": [20, 40, 180, 360],
+                        "lines": [{"spans": [{"content": "first page row"}]}],
+                    }
+                ],
+            },
+            {
+                "page_idx": 1,
+                "page_size": [200, 400],
+                "para_blocks": [
+                    {
+                        "type": "text",
+                        "bbox": [20, 0, 180, 80],
+                        "lines": [{"spans": [{"content": "second page row"}]}],
+                    }
+                ],
+            },
+        ],
+    }
+    (tmp_path / "sample_content_list.json").write_text(json.dumps(content_list), encoding="utf-8")
+    (tmp_path / "sample_middle.json").write_text(json.dumps(middle_json), encoding="utf-8")
+
+    outputs = parser._read_output(tmp_path, "sample", method="auto", backend="pipeline")
+    sections = parser._transfer_to_sections(outputs, parse_method="raw", table_enable=True)
+
+    assert len(sections) == 1
+    _, line_tag = sections[0]
+    assert module.MinerUParser.extract_positions(line_tag) == [
+        ([0], 20.0, 180.0, 40.0, 360.0),
+    ]
+
+
+def test_middle_positions_ignore_malformed_output_bbox(monkeypatch):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_images = [_FakePageImage(200, 400)]
+
+    positions = parser._middle_positions_for_output(
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "<table><tr><td>row</td></tr></table>",
+            "table_caption": [],
+            "table_footnote": [],
+            "bbox": [100, 100, 900],
+            "page_idx": 0,
+        },
+        [
+            {
+                "type": "table",
+                "page_idx": 0,
+                "bbox": (20, 40, 180, 360),
+                "text": "row",
+            }
+        ],
+    )
+
+    assert positions == []
+
+
+def test_read_output_keeps_original_tag_when_middle_json_has_single_table_position(monkeypatch, tmp_path):
+    module = _load_mineru_parser(monkeypatch)
+    parser = module.MinerUParser()
+    parser.page_images = [_FakePageImage(200, 400)]
+
+    content_list = [
+        {
+            "type": module.MinerUContentType.TABLE,
+            "table_body": "<table><tr><td>only row</td></tr></table>",
+            "table_caption": [],
+            "table_footnote": [],
+            "bbox": [100, 100, 850, 850],
+            "page_idx": 0,
+        }
+    ]
+    middle_json = {
+        "pdf_info": [
+            {
+                "page_idx": 0,
+                "page_size": [200, 400],
+                "para_blocks": [
+                    {
+                        "type": "table",
+                        "bbox": [20, 40, 180, 360],
+                        "blocks": [
+                            {
+                                "type": "table_body",
+                                "lines": [{"spans": [{"type": "table", "content": "only row"}]}],
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+    (tmp_path / "sample_content_list.json").write_text(json.dumps(content_list), encoding="utf-8")
+    (tmp_path / "sample_middle.json").write_text(json.dumps(middle_json), encoding="utf-8")
+
+    outputs = parser._read_output(tmp_path, "sample", method="auto", backend="pipeline")
+    sections = parser._transfer_to_sections(outputs, parse_method="raw", table_enable=True)
+
+    assert "_mineru_positions" not in outputs[0]
+    assert len(sections) == 1
+    _, line_tag = sections[0]
+    assert module.MinerUParser.extract_positions(line_tag) == [
+        ([0], 20.0, 170.0, 40.0, 340.0),
+    ]

@@ -69,7 +69,8 @@ func TestXLSXParser_DeepDocParseMethod(t *testing.T) {
 			}
 			p.ConfigureFromSetup(map[string]any{"parse_method": tc.method})
 
-			res := p.ParseWithResult("test.xlsx", buf.Bytes())
+			ctx := t.Context()
+			res := p.ParseWithResult(ctx, "test.xlsx", buf.Bytes())
 			if res.Err != nil {
 				t.Fatalf("ParseWithResult(%s): %v", tc.method, res.Err)
 			}
@@ -89,7 +90,8 @@ func TestCSVParser_DeepDocParseMethod(t *testing.T) {
 	p := NewCSVParser()
 	p.ConfigureFromSetup(map[string]any{"parse_method": "deepdoc"})
 
-	res := p.ParseWithResult("test.csv", []byte("a,b\n1,2"))
+	ctx := t.Context()
+	res := p.ParseWithResult(ctx, "test.csv", []byte("a,b\n1,2"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult(deepdoc): %v", res.Err)
 	}
@@ -114,7 +116,8 @@ func TestXLSParser_DeepDocParseMethod_NoUnsupportedError(t *testing.T) {
 	}
 	p.ConfigureFromSetup(map[string]any{"parse_method": "deepdoc"})
 
-	res := p.ParseWithResult("test.xls", []byte("not a real xls"))
+	ctx := t.Context()
+	res := p.ParseWithResult(ctx, "test.xls", []byte("not a real xls"))
 	if res.Err != nil && strings.Contains(res.Err.Error(), "unsupported XLS parse method") {
 		t.Fatalf("deepdoc must not be rejected as unsupported: %v", res.Err)
 	}

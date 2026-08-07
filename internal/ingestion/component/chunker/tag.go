@@ -38,6 +38,7 @@ package chunker
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
 	"html"
 	"strings"
@@ -45,6 +46,8 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
+
+	"gorm.io/gorm"
 )
 
 const ComponentNameTagChunker = "TagChunker"
@@ -77,7 +80,7 @@ func (c *TagChunkerComponent) Inputs() map[string]string { return ChunkerInputs 
 
 func (c *TagChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
 
-func (c *TagChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *TagChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	return c.invoke(ctx, inputs)
 }
 
@@ -107,19 +110,22 @@ func (c *TagChunkerComponent) invoke(_ context.Context, inputs map[string]any) (
 	}
 
 	chunks := make([]schema.ChunkDoc, 0, len(pairs))
+	lang, _ := inputs["lang"].(string)
+	tok := tokenizer.New(lang)
 	for _, pair := range pairs {
 		content := strings.TrimSpace(pair.Content)
 		if content == "" {
 			continue
 		}
-		contentLTKS, _ := tokenizer.Tokenize(content)
-		contentSMLTKS, _ := tokenizer.FineGrainedTokenize(contentLTKS)
+		contentLTKS, _ := tok.Tokenize(content)
+		contentSMLTKS, _ := tok.FineGrainedTokenize(contentLTKS)
 		chunk := schema.ChunkDoc{
 			ContentWithWeight: content,
 			DocType:           "text",
 			ContentLtks:       contentLTKS,
 			ContentSmLtks:     contentSMLTKS,
 			TagKwd:            splitTagKwd(pair.Tags),
+			TopInt:            []int{pair.RowNum},
 		}
 		chunks = append(chunks, chunk)
 	}
@@ -128,16 +134,16 @@ func (c *TagChunkerComponent) invoke(_ context.Context, inputs map[string]any) (
 }
 
 // tagPair is a (content, tags) row extracted from the upstream payload.
+// RowNum is the 0-based record START line (the first physical source
+// line of the record), used by every extractor consistently and mapped
+// to Python's top_int in beAdoc(tag.py:33).
 type tagPair struct {
 	Content string
 	Tags    string
+	RowNum  int
 }
 
-// extractTagText ports tag.py:60-89 (txt) and tag.py:91-113 (csv):
-// every deformed line is accumulated into the running content; a line that
-// splits into exactly two fields is emitted as a (content+prefix, tags)
-// pair and the accumulator is reset. Delimiter selection (tab vs comma)
-// reuses the same detectDelimiter/splitQA helpers as QAChunker.
+// extractTagText ports tag.py:60-89 (txt) and tag.py:91-113 (csv).
 func extractTagText(text string) []tagPair {
 	if text == "" {
 		return nil
@@ -145,19 +151,80 @@ func extractTagText(text string) []tagPair {
 	lines := strings.Split(text, "\n")
 	delimiter := detectDelimiter(lines)
 
+	if delimiter == "\t" {
+		return extractTagTextTab(lines)
+	}
+	return extractTagTextCSV(text, lines)
+}
+
+// extractTagTextTab handles tab-delimited text where no CSV quoting rules
+// apply; one physical line always maps to one record.
+func extractTagTextTab(lines []string) []tagPair {
 	var pairs []tagPair
 	content := ""
-	for _, line := range lines {
+	contentStart := -1
+	for i, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		parts := splitQA(line, delimiter)
+		if contentStart < 0 {
+			contentStart = i
+		}
+		parts := strings.Split(line, "\t")
 		if len(parts) != 2 {
 			content += "\n" + line
 			continue
 		}
 		content += "\n" + parts[0]
-		pairs = append(pairs, tagPair{Content: content, Tags: parts[1]})
+		pairs = append(pairs, tagPair{Content: content, Tags: parts[1], RowNum: contentStart})
+		content = ""
+		contentStart = -1
+	}
+	return pairs
+}
+
+// extractTagTextCSV uses a full-text csv.Reader so that quoted fields
+// spanning multiple physical lines are parsed correctly (see #16881).
+func extractTagTextCSV(text string, lines []string) []tagPair {
+	lineStarts := make([]int, len(lines)+1)
+	off := 0
+	for i, l := range lines {
+		lineStarts[i] = off
+		off += len(l) + 1
+	}
+	lineStarts[len(lines)] = off
+
+	r := csv.NewReader(strings.NewReader(text))
+	r.LazyQuotes = true
+	r.FieldsPerRecord = -1
+
+	var pairs []tagPair
+	content := ""
+	prevLine := 0
+
+	for {
+		record, err := r.Read()
+		if err != nil {
+			break
+		}
+		endOff := int(r.InputOffset())
+		curLine := prevLine
+		for curLine < len(lineStarts) && lineStarts[curLine] < endOff {
+			curLine++
+		}
+		startLine := prevLine
+		raw := strings.Join(lines[prevLine:curLine], "\n")
+		prevLine = curLine
+
+		if len(record) != 2 {
+			content += "\n" + raw
+			continue
+		}
+		content += "\n" + record[0]
+		// RowNum is the 0-based record START line, kept consistent with
+		// extractTagTextTab (line i) and extractTagTable (<tr> i) so every
+		// tag-pair source uses the same row-index convention.
+		pairs = append(pairs, tagPair{Content: content, Tags: record[1], RowNum: startLine})
 		content = ""
 	}
 	return pairs
@@ -173,7 +240,7 @@ func extractTagTable(htmlStr string) []tagPair {
 	}
 	rows := htmlTR.FindAllStringSubmatch(htmlStr, -1)
 	pairs := make([]tagPair, 0, len(rows))
-	for _, row := range rows {
+	for i, row := range rows {
 		cells := htmlTD.FindAllStringSubmatch(row[1], -1)
 		var texts []string
 		for _, cell := range cells {
@@ -184,7 +251,7 @@ func extractTagTable(htmlStr string) []tagPair {
 			}
 		}
 		if len(texts) >= 2 {
-			pairs = append(pairs, tagPair{Content: texts[0], Tags: texts[1]})
+			pairs = append(pairs, tagPair{Content: texts[0], Tags: texts[1], RowNum: i})
 		}
 	}
 	return pairs

@@ -31,6 +31,7 @@
 package parser
 
 import (
+	"context"
 	"encoding/csv"
 	"fmt"
 	"html"
@@ -113,7 +114,7 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 // Python's RAGFlowExcelParser.html().
 // When TCADP parse_method is configured, the file is dispatched to
 // the Tencent Cloud Document Parsing API.
-func (p *CSVParser) ParseWithResult(filename string, data []byte) ParseResult {
+func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":

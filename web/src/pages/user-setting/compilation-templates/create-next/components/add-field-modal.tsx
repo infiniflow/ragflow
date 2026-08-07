@@ -9,7 +9,7 @@ import { startCase } from 'lodash';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldLabelKeyMap } from '@/pages/user-setting/compilation-templates/create-next/utils';
+import { FieldLabelKeyMap } from '@/pages/user-setting/compilation-templates/create-next/constant';
 
 import { useAddFieldForm } from '../hooks/use-add-field-form';
 
@@ -96,6 +96,7 @@ export function AddFieldModal({
                     handleTypeChange(value);
                   }}
                   placeholder={t('setting.selectFieldType')}
+                  allowCustomValue
                 />
               )}
             </RAGFlowFormItem>
@@ -105,7 +106,8 @@ export function AddFieldModal({
             <RAGFlowFormItem key={key} name={key} label={getFieldLabel(key)}>
               <Textarea
                 placeholder={t('setting.descriptionPlaceholder')}
-                rows={3}
+                rows={key === 'description' ? 4 : 10}
+                resize="vertical"
               />
             </RAGFlowFormItem>
           ))}

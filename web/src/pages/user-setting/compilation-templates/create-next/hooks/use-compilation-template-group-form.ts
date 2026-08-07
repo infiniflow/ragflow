@@ -6,7 +6,8 @@ import { useTranslation } from 'react-i18next';
 import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-template';
 
 import { buildFormSchema, FormSchemaType } from '../schema';
-import { DefaultValues, transformGroupDetailToForm } from '../utils';
+import { DefaultValues } from '../constant';
+import { generateTemplateName, transformGroupDetailToForm } from '../utils';
 
 type UseCompilationTemplateGroupFormOptions = {
   detail?: ICompilationTemplateGroup;
@@ -28,11 +29,11 @@ export const useCompilationTemplateGroupForm = ({
       templates: [
         {
           ...DefaultValues.templates[0],
-          name: `${t('setting.template')} #1`,
+          name: generateTemplateName(),
         },
       ],
     };
-  }, [isCreate, t]);
+  }, [isCreate]);
 
   const form = useForm<FormSchemaType>({
     resolver: zodResolver(buildFormSchema(t)),

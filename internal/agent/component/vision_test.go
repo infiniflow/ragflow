@@ -22,6 +22,8 @@ import (
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/agent/runtime"
 )
 
 // TestToEinoMessages_PreservesUserInputMultiContent guards against the
@@ -223,6 +225,20 @@ func TestBuildMessagesWithImages_EmptyImages_ReturnsTextMessage(t *testing.T) {
 	}
 }
 
+func TestCollectSysFiles_ReadsSysNamespaceAndStringSlices(t *testing.T) {
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["files"] = []string{"document text", "data:image/png;base64,cG5n"}
+	state.Globals["sys.files"] = []any{"stale global value"}
+
+	texts, images := collectSysFiles(state)
+	if !reflect.DeepEqual(texts, []string{"document text"}) {
+		t.Fatalf("texts = %#v, want sys.files text", texts)
+	}
+	if !reflect.DeepEqual(images, []string{"data:image/png;base64,cG5n"}) {
+		t.Fatalf("images = %#v, want sys.files image", images)
+	}
+}
+
 // TestBuildMessagesWithImages_WithImages_UsesUserInputMultiContent:
 // when images are present, the user message is built with a Text part
 // followed by an Image part per URI.
@@ -272,7 +288,7 @@ func TestLLM_Invoke_ForwardsImagesToInvoker(t *testing.T) {
 
 	uri := "data:image/png;base64,iVBORw0KGgo="
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(context.Background(), nil, map[string]any{
 		"user_prompt":  "what is this?",
 		"visual_files": []string{uri},
 	})
@@ -304,7 +320,7 @@ func TestLLM_Invoke_NoVisualFiles_BackwardCompat(t *testing.T) {
 	withStubInvoker(t, stub)
 
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(context.Background(), nil, map[string]any{
 		"user_prompt": "hi",
 	})
 	if err != nil {
@@ -334,7 +350,7 @@ func TestLLM_Invoke_VisualFilesAsString(t *testing.T) {
 
 	uri := "data:image/jpeg;base64,/9j/4AAQ"
 	c := NewLLMComponent(LLMParam{ModelID: "echo"})
-	_, err := c.Invoke(context.Background(), map[string]any{
+	_, err := c.Invoke(context.Background(), nil, map[string]any{
 		"user_prompt":  "describe",
 		"visual_files": "see " + uri,
 	})

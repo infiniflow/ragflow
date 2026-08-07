@@ -29,6 +29,8 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
+
 	awssdk "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
@@ -103,7 +105,7 @@ func NewBedrockModel(baseURL map[string]string, urlSuffix URLSuffix) *BedrockMod
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(),
+			httpClient: NewDriverHTTPClient(false),
 		},
 	}
 }
@@ -374,7 +376,6 @@ type bedrockConverseRequest struct {
 }
 
 // bedrockConverseResponse is the relevant subset of a Converse response.
-// Bedrock returns much more (usage, metrics) which we currently ignore.
 type bedrockConverseResponse struct {
 	Output struct {
 		Message struct {
@@ -382,7 +383,73 @@ type bedrockConverseResponse struct {
 			Content []bedrockContentBlock `json:"content"`
 		} `json:"message"`
 	} `json:"output"`
-	StopReason string `json:"stopReason"`
+	StopReason string        `json:"stopReason"`
+	Usage      *bedrockUsage `json:"usage,omitempty"`
+}
+
+// bedrockUsage mirrors Bedrock's Converse / Converse-Stream usage
+// shape. JSON keys are camelCase because that's the wire format. The
+// fields are plain ints because the AWS service always emits numbers
+// (not strings) for token counts; distinguishing absent from zero
+// happens at the JSON layer (omitempty on the parent) rather than via
+// pointer fields.
+type bedrockUsage struct {
+	InputTokens  int `json:"inputTokens"`
+	OutputTokens int `json:"outputTokens"`
+	TotalTokens  int `json:"totalTokens"`
+}
+
+// bedrockUsageFromMap converts a JSON-decoded Bedrock usage payload
+// into the package's TokenUsage. Returns nil when no token counts are
+// present so callers can pass the result directly to
+// recordResponseUsage without a separate presence check.
+func bedrockUsageFromMap(raw map[string]any) *TokenUsage {
+	if len(raw) == 0 {
+		return nil
+	}
+	get := func(key string) int {
+		v, ok := raw[key]
+		if !ok {
+			return 0
+		}
+		switch n := v.(type) {
+		case float64:
+			return int(n)
+		case int:
+			return n
+		case int64:
+			return int(n)
+		}
+		return 0
+	}
+	in, out := get("inputTokens"), get("outputTokens")
+	total := get("totalTokens")
+	if in == 0 && out == 0 && total == 0 {
+		return nil
+	}
+	if total == 0 {
+		total = in + out
+	}
+	return &TokenUsage{
+		PromptTokens:     in,
+		CompletionTokens: out,
+		TotalTokens:      total,
+	}
+}
+
+// bedrockUsageToMap is the inverse of bedrockUsageFromMap, used by the
+// non-streaming path that has a typed *bedrockUsage from JSON
+// unmarshaling. When the source is nil the result is the empty map,
+// which the helper treats as "no usage".
+func bedrockUsageToMap(u *bedrockUsage) map[string]any {
+	if u == nil {
+		return nil
+	}
+	return map[string]any{
+		"inputTokens":  u.InputTokens,
+		"outputTokens": u.OutputTokens,
+		"totalTokens":  u.TotalTokens,
+	}
 }
 
 // buildConverseRequest translates the driver's neutral Messages slice
@@ -432,10 +499,6 @@ func mapChatConfigToInference(cfg *ChatConfig) *bedrockInferenceConfig {
 	}
 	inf := &bedrockInferenceConfig{}
 	hasField := false
-	if cfg.MaxTokens != nil {
-		inf.MaxTokens = cfg.MaxTokens
-		hasField = true
-	}
 	if cfg.Temperature != nil {
 		inf.Temperature = cfg.Temperature
 		hasField = true
@@ -503,7 +566,7 @@ func signBedrockRequest(ctx context.Context, req *http.Request, body []byte, cre
 // the joined assistant answer. ReasonContent is always non-nil per the
 // driver contract; Bedrock surfaces no reasoning channel today, so it
 // is left empty rather than nil.
-func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig) (*ChatResponse, error) {
+func (b *BedrockModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -529,7 +592,7 @@ func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, ap
 		return nil, fmt.Errorf("bedrock: marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	creds, err := resolveBedrockCredentials(ctx, key, region)
@@ -572,6 +635,9 @@ func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, ap
 	}
 	answer := extractAnswer(&parsed)
 	reason := ""
+	if usage := bedrockUsageFromMap(bedrockUsageToMap(parsed.Usage)); usage != nil {
+		recordResponseUsage(modelUsage, "", usage, "chat")
+	}
 	return &ChatResponse{
 		Answer:        &answer,
 		ReasonContent: &reason,
@@ -587,7 +653,7 @@ func (b *BedrockModel) ChatWithMessages(modelName string, messages []Message, ap
 // payload. For chat we only need messageStart, contentBlockDelta,
 // messageStop, and (for error propagation) exception frames; other
 // events are ignored.
-func (b *BedrockModel) ChatStreamlyWithSender(modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, sender func(*string, *string) error) error {
+func (b *BedrockModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
@@ -623,7 +689,6 @@ func (b *BedrockModel) ChatStreamlyWithSender(modelName string, messages []Messa
 	// Background context: event streams are long-lived so we attach
 	// no overall deadline. ResponseHeaderTimeout (set in the
 	// constructor) still caps connection setup.
-	ctx := context.Background()
 	creds, err := resolveBedrockCredentials(ctx, key, region)
 	if err != nil {
 		return err
@@ -655,19 +720,42 @@ func (b *BedrockModel) ChatStreamlyWithSender(modelName string, messages []Messa
 		return fmt.Errorf("bedrock: API request failed with status %d: %s", resp.StatusCode, string(errBody))
 	}
 
-	if err := decodeBedrockEventStream(resp.Body, sender); err != nil {
+	// Bedrock sends final token usage inside a "metadata" event frame
+	// at end-of-stream. We capture the last seen usage via this closure
+	// and route it through applyStreamUsage so chatConfig.UsageResult
+	// and the clickhouse collection path are both populated, matching
+	// the unified streaming behaviour used by other drivers.
+	var streamUsage *TokenUsage
+	onMetadata := func(meta map[string]any) error {
+		if u, ok := meta["usage"].(map[string]any); ok {
+			streamUsage = bedrockUsageFromMap(u)
+		}
+		return nil
+	}
+	if err := decodeBedrockEventStream(resp.Body, sender, onMetadata); err != nil {
 		return err
 	}
+	applyStreamUsage(chatModelConfig, modelUsage, streamUsage)
 	done := "[DONE]"
 	return sender(&done, nil)
 }
 
 // decodeBedrockEventStream reads vnd.amazon.eventstream frames off the
 // supplied reader and dispatches each to the supplied sender. The
-// loop exits cleanly on a messageStop event or on EOF; an exception
-// frame is surfaced as a Go error so partial streams cannot be
-// mistaken for successful ones.
-func decodeBedrockEventStream(r io.Reader, sender func(*string, *string) error) error {
+// loop exits cleanly on EOF after a messageStop has been seen; an
+// exception frame is surfaced as a Go error so partial streams
+// cannot be mistaken for successful ones.
+//
+// messageStop is recorded as the terminal marker but does NOT return
+// from the loop, because the AWS Bedrock Converse-Stream protocol
+// sends a final "metadata" frame carrying token usage AFTER
+// messageStop. Returning early would drop that metadata and the
+// caller would never see the usage block.
+//
+// onMetadata is invoked with the JSON-decoded payload of each
+// "metadata" lifecycle frame. Bedrock sends final token usage inside
+// such a frame; pass nil when the caller does not need that data.
+func decodeBedrockEventStream(r io.Reader, sender func(*string, *string) error, onMetadata func(map[string]any) error) error {
 	dec := eventstream.NewDecoder()
 	payload := make([]byte, 0, 8*1024)
 	sawTerminal := false
@@ -700,9 +788,22 @@ func decodeBedrockEventStream(r io.Reader, sender func(*string, *string) error) 
 				return err
 			}
 		case "messageStop":
+			// Mark the stream terminal but keep decoding so the
+			// post-messageStop "metadata" frame (which carries
+			// final token usage) still reaches onMetadata.
 			sawTerminal = true
-			return nil
-		case "messageStart", "contentBlockStart", "contentBlockStop", "metadata":
+		case "metadata":
+			if onMetadata == nil {
+				continue
+			}
+			var meta map[string]any
+			if err := json.Unmarshal(msg.Payload, &meta); err != nil {
+				return fmt.Errorf("bedrock: invalid metadata payload: %w", err)
+			}
+			if err := onMetadata(meta); err != nil {
+				return err
+			}
+		case "messageStart", "contentBlockStart", "contentBlockStop":
 			// Lifecycle events with no caller-visible payload.
 		default:
 			// Ignore unknown events rather than hard-failing so new
@@ -765,7 +866,7 @@ type bedrockListModelsResponse struct {
 // configured credentials. The control plane lives at
 // bedrock.{region}.amazonaws.com (not bedrock-runtime), signs against
 // the "bedrock" service, and is GET-only.
-func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, error) {
+func (b *BedrockModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
@@ -779,7 +880,7 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	creds, err := resolveBedrockCredentials(ctx, key, region)
@@ -834,8 +935,8 @@ func (b *BedrockModel) ListModels(apiConfig *APIConfig) ([]ListModelResponse, er
 // CheckConnection delegates to ListModels: a successful catalog query
 // proves credentials, region, and network reachability in one round
 // trip without burning a chat completion.
-func (b *BedrockModel) CheckConnection(apiConfig *APIConfig) error {
-	_, err := b.ListModels(apiConfig)
+func (b *BedrockModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := b.ListModels(ctx, apiConfig)
 	return err
 }
 
@@ -862,7 +963,7 @@ type bedrockCohereEmbeddingResponse struct {
 // InvokeModel. Titan's embedding API accepts one inputText per call,
 // while Cohere accepts a texts batch and returns vectors in input
 // order.
-func (b *BedrockModel) Embed(modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (b *BedrockModel) Embed(ctx context.Context, modelName *string, texts []string, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	if len(texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
@@ -883,7 +984,7 @@ func (b *BedrockModel) Embed(modelName *string, texts []string, apiConfig *APICo
 		return nil, err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), nonStreamCallTimeout)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
 	creds, err := resolveBedrockCredentials(ctx, key, region)
@@ -892,10 +993,10 @@ func (b *BedrockModel) Embed(modelName *string, texts []string, apiConfig *APICo
 	}
 
 	if strings.HasPrefix(modelID, "amazon.titan-embed-text-") {
-		return b.embedTitan(ctx, modelID, texts, region, creds, embeddingConfig)
+		return b.embedTitan(ctx, modelID, texts, region, creds, embeddingConfig, modelUsage)
 	}
 	if strings.HasPrefix(modelID, "cohere.embed-") {
-		return b.embedCohere(ctx, modelID, texts, region, creds, embeddingConfig)
+		return b.embedCohere(ctx, modelID, texts, region, creds, embeddingConfig, modelUsage)
 	}
 	return nil, fmt.Errorf("bedrock: unsupported embedding model %q", modelID)
 }
@@ -936,7 +1037,7 @@ func (b *BedrockModel) invokeEmbeddingModel(ctx context.Context, modelID string,
 	return respBody, nil
 }
 
-func (b *BedrockModel) embedTitan(ctx context.Context, modelID string, texts []string, region string, creds awssdk.Credentials, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (b *BedrockModel) embedTitan(ctx context.Context, modelID string, texts []string, region string, creds awssdk.Credentials, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	embeddings := make([]EmbeddingData, 0, len(texts))
 	for i, text := range texts {
 		req := bedrockTitanEmbeddingRequest{
@@ -950,7 +1051,7 @@ func (b *BedrockModel) embedTitan(ctx context.Context, modelID string, texts []s
 			return nil, err
 		}
 		var parsed bedrockTitanEmbeddingResponse
-		if err := json.Unmarshal(respBody, &parsed); err != nil {
+		if err = json.Unmarshal(respBody, &parsed); err != nil {
 			return nil, fmt.Errorf("bedrock: parse Titan embedding response: %w", err)
 		}
 		if len(parsed.Embedding) == 0 {
@@ -964,7 +1065,7 @@ func (b *BedrockModel) embedTitan(ctx context.Context, modelID string, texts []s
 	return embeddings, nil
 }
 
-func (b *BedrockModel) embedCohere(ctx context.Context, modelID string, texts []string, region string, creds awssdk.Credentials, embeddingConfig *EmbeddingConfig) ([]EmbeddingData, error) {
+func (b *BedrockModel) embedCohere(ctx context.Context, modelID string, texts []string, region string, creds awssdk.Credentials, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
 	req := bedrockCohereEmbeddingRequest{
 		Texts:     texts,
 		InputType: "search_document",
@@ -1024,52 +1125,52 @@ func decodeCohereEmbeddingVectors(raw json.RawMessage) ([][]float64, error) {
 }
 
 // Rerank is not exposed by Bedrock.
-func (b *BedrockModel) Rerank(modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig) (*RerankResponse, error) {
+func (b *BedrockModel) Rerank(ctx context.Context, modelName *string, query string, documents []string, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // Balance is not exposed by Bedrock.
-func (b *BedrockModel) Balance(apiConfig *APIConfig) (map[string]interface{}, error) {
+func (b *BedrockModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // TranscribeAudio is not exposed by Bedrock. Speech-to-text on AWS
 // lives in Amazon Transcribe, a separate service.
-func (b *BedrockModel) TranscribeAudio(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig) (*ASRResponse, error) {
+func (b *BedrockModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (b *BedrockModel) TranscribeAudioWithSender(modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, sender func(*string, *string) error) error {
+func (b *BedrockModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", b.Name())
 }
 
 // AudioSpeech is not exposed by Bedrock. Text-to-speech on AWS lives
 // in Amazon Polly, a separate service.
-func (b *BedrockModel) AudioSpeech(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig) (*TTSResponse, error) {
+func (b *BedrockModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
-func (b *BedrockModel) AudioSpeechWithSender(modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, sender func(*string, *string) error) error {
+func (b *BedrockModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
 	return fmt.Errorf("%s, no such method", b.Name())
 }
 
 // OCRFile is not exposed by Bedrock. OCR on AWS lives in Amazon
 // Textract, a separate service.
-func (b *BedrockModel) OCRFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig) (*OCRFileResponse, error) {
+func (b *BedrockModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // ParseFile is not exposed by Bedrock.
-func (b *BedrockModel) ParseFile(modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig) (*ParseFileResponse, error) {
+func (b *BedrockModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // ListTasks is not exposed by Bedrock through the Converse API.
-func (b *BedrockModel) ListTasks(apiConfig *APIConfig) ([]ListTaskStatus, error) {
+func (b *BedrockModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }
 
 // ShowTask is not exposed by Bedrock through the Converse API.
-func (b *BedrockModel) ShowTask(taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+func (b *BedrockModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", b.Name())
 }

@@ -22,8 +22,10 @@
 // Unlike TokenChunker (which merges slides into a single chunk) or
 // OneChunker (which collapses many slides into one), PresentationChunker
 // keeps each slide as the unit of chunking. The upstream parser produces
-// one structured record per slide with text, image, page_number, and
-// position information; this chunker passes each through unchanged.
+// one record per slide with text and slide_number; this chunker passes
+// each through unchanged. Note that the PPTX/PPT path does not emit image
+// or position information (unlike the PDF path), so slide chunks carry no
+// image and no bbox-based preview positioning.
 package chunker
 
 import (
@@ -32,6 +34,8 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+
+	"gorm.io/gorm"
 )
 
 const ComponentNamePresentationChunker = "PresentationChunker"
@@ -66,7 +70,7 @@ func (c *PresentationChunkerComponent) Inputs() map[string]string { return Chunk
 
 func (c *PresentationChunkerComponent) Outputs() map[string]string { return ChunkerOutputs }
 
-func (c *PresentationChunkerComponent) Invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+func (c *PresentationChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	return c.invoke(ctx, inputs)
 }
 

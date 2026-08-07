@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 // blockingComponent is a runtime.Component whose Invoke blocks until ctx
@@ -32,7 +34,7 @@ type blockingComponent struct{}
 
 func (b *blockingComponent) Name() string { return "blocking" }
 
-func (b *blockingComponent) Invoke(ctx context.Context, _ map[string]any) (map[string]any, error) {
+func (b *blockingComponent) Invoke(ctx context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
 	<-ctx.Done()
 	return nil, ctx.Err()
 }
@@ -160,7 +162,7 @@ type echoComponent struct{}
 
 func (e *echoComponent) Name() string { return "echo" }
 
-func (e *echoComponent) Invoke(_ context.Context, in map[string]any) (map[string]any, error) {
+func (e *echoComponent) Invoke(_ context.Context, _ *gorm.DB, in map[string]any) (map[string]any, error) {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
 		out[k] = v

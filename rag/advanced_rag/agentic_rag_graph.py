@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import logging
 from typing import Any, TypedDict
 
@@ -85,45 +86,65 @@ def _partial_tag_tail(s: str, tag: str) -> int:
     return 0
 
 
-async def _strip_think_stream(stream):
-    """Strip <think>...</think> spans from a token stream."""
+async def _split_think_stream(stream):
+    """Split model deltas into ``think`` and ``answer`` text.
+
+    Besides ordinary ``<think>...</think>`` streams, some providers emit the
+    opening tag only on the first reasoning delta and append ``</think>`` to
+    every subsequent delta. An unmatched closing tag therefore still marks
+    the text before it as reasoning.
+    """
     buf = ""
     in_think = False
+
     async for token in stream:
         if not isinstance(token, str):
-            yield token
+            _LOG.warning("Ignoring non-string agentic RAG stream item of type %s", type(token).__name__)
             continue
         buf += token
-        out = []
+
         while buf:
-            if not in_think:
-                idx = buf.find(_THINK_OPEN)
-                if idx == -1:
-                    hold = _partial_tag_tail(buf, _THINK_OPEN)
-                    if hold:
-                        out.append(buf[: len(buf) - hold])
-                        buf = buf[len(buf) - hold :]
-                    else:
-                        out.append(buf)
-                        buf = ""
-                    break
-                out.append(buf[:idx])
-                buf = buf[idx + len(_THINK_OPEN) :]
-                in_think = True
-            else:
-                idx = buf.find(_THINK_CLOSE)
-                if idx != -1:
-                    buf = buf[idx + len(_THINK_CLOSE) :]
+            if in_think:
+                close_idx = buf.find(_THINK_CLOSE)
+                if close_idx >= 0:
+                    if close_idx:
+                        yield "think", buf[:close_idx]
+                    buf = buf[close_idx + len(_THINK_CLOSE) :]
                     in_think = False
                     continue
+
                 hold = _partial_tag_tail(buf, _THINK_CLOSE)
+                safe = buf[: len(buf) - hold] if hold else buf
+                if safe:
+                    yield "think", safe
                 buf = buf[len(buf) - hold :] if hold else ""
                 break
-        piece = "".join(out)
-        if piece:
-            yield piece
-    if buf and not in_think:
-        yield buf
+
+            open_idx = buf.find(_THINK_OPEN)
+            close_idx = buf.find(_THINK_CLOSE)
+
+            if close_idx >= 0 and (open_idx < 0 or close_idx < open_idx):
+                if close_idx:
+                    yield "think", buf[:close_idx]
+                buf = buf[close_idx + len(_THINK_CLOSE) :]
+                continue
+
+            if open_idx >= 0:
+                if open_idx:
+                    yield "answer", buf[:open_idx]
+                buf = buf[open_idx + len(_THINK_OPEN) :]
+                in_think = True
+                continue
+
+            hold = max(_partial_tag_tail(buf, _THINK_OPEN), _partial_tag_tail(buf, _THINK_CLOSE))
+            safe = buf[: len(buf) - hold] if hold else buf
+            if safe:
+                yield "answer", safe
+            buf = buf[len(buf) - hold :] if hold else ""
+            break
+
+    if buf:
+        yield ("think" if in_think else "answer"), re.sub(r"</?think>", "", buf)
 
 
 # ── Graph construction ──
@@ -164,7 +185,7 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
         q, kw = await tools.formalize(msgs)
         q = (q or "").strip()
         kw = (kw or "").strip()
-        _LOG.info("[Formalizing the question] Understood the question as: \"%s\" — searching with keywords: %s", _snip(q), _snip(kw))
+        _LOG.info('[Formalizing the question] Understood the question as: "%s" — searching with keywords: %s', _snip(q), _snip(kw))
         return {
             "question": q,
             "keywords": kw,
@@ -198,7 +219,7 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
 
         q = state.get("question", "")
         kw = state.get("keywords", "")
-        _LOG.info("[Preliminary search] Taking a first look in the knowledge base for: \"%s\" (keywords: %s)", _snip(q), _snip(kw))
+        _LOG.info('[Preliminary search] Taking a first look in the knowledge base for: "%s" (keywords: %s)', _snip(q), _snip(kw))
         try:
             result = await hybrid_search(tools, query=q, keywords=kw)
         except Exception:
@@ -231,25 +252,22 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
         empty_result = state.get("empty_result", False)
 
         _note = " — partial answer, some gaps remain" if partial else (" — not enough evidence to answer" if abstain else "")
-        _LOG.info("[Composing the answer] Writing the final answer to \"%s\" from %d gathered passage(s)%s.", _snip(question), len(kbinfos["chunks"]), _note)
+        _LOG.info('[Composing the answer] Writing the final answer to "%s" from %d gathered passage(s)%s.', _snip(question), len(kbinfos["chunks"]), _note)
 
         tools.kbinfos = kbinfos
 
-        # Abstain
-        if abstain:
-            msg = "I cannot answer this question based on the available information."
-            token_queue.put_nowait(msg)
-            return {"final_answer": msg}
-
-        # Empty result
-        if empty_result or not kbinfos["chunks"]:
-            msg = "I don't have enough information based on the available sources."
-            token_queue.put_nowait(msg)
-            return {"final_answer": msg}
+        no_evidence = abstain or empty_result or not kbinfos["chunks"]
+        if no_evidence and tools.empty_response:
+            _LOG.info("[Composing the answer] No supporting evidence was found; returning the configured empty response without calling the answer model.")
+            token_queue.put_nowait(tools.empty_response)
+            return {"final_answer": tools.empty_response}
 
         # Build evidence
         evidence = kb_prompt(kbinfos, tools.chat_mdl.max_length)
         parts = [f"Question:\n{question}\n"]
+
+        if no_evidence:
+            parts.append("No supporting evidence was retrieved. State clearly that the available sources are insufficient, and do not answer from general knowledge.\n")
 
         # Include pre_summary from agent results if available
         pre_summary = kbinfos.get("pre_summary")
@@ -302,7 +320,12 @@ def build_agentic_graph(tools, token_queue: asyncio.Queue, gen_conf: dict | None
 
 async def run_agentic_rag(tools, messages: list, max_loops: int = 3, gen_conf: dict | None = None):
     """Drive the agentic-search graph, yielding answer-token strings."""
-    _LOG.info("[Agentic RAG] Starting research to answer your question...")
+    _LOG.info(
+        "[Agentic RAG] Starting research — %d message(s), last role=%s, content_len=%d",
+        len(messages),
+        messages[-1].get("role", "") if messages else "?",
+        len(messages[-1].get("content", "")) if messages else 0,
+    )
 
     token_queue: asyncio.Queue = asyncio.Queue()
     graph = build_agentic_graph(tools, token_queue, gen_conf=gen_conf)

@@ -1,26 +1,25 @@
-import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useCallback, useRef } from 'react';
-import { UseFormReturn } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { z } from 'zod';
 
-export const FormSchema = z.object({
-  field_name: z.string(),
-  sys_prompt: z.string(),
-  prompts: z.string().optional(),
-  ...LlmSettingSchema,
-});
+type SwitchPromptField = 'field_name' | 'sys_prompt' | 'prompts';
 
-export type ExtractorFormSchemaType = z.infer<typeof FormSchema>;
+type SwitchPromptForm = {
+  getValues(name: 'field_name'): string;
+  setValue(
+    name: SwitchPromptField,
+    value: string,
+    options?: { shouldDirty?: boolean; shouldValidate?: boolean },
+  ): void;
+};
 
-export function useSwitchPrompt(form: UseFormReturn<ExtractorFormSchemaType>) {
+export function useSwitchPrompt(form: SwitchPromptForm) {
   const { visible, showModal, hideModal } = useSetModalState();
   const { t } = useTranslation();
   const previousFieldNames = useRef<string[]>([form.getValues('field_name')]);
 
   const setPromptValue = useCallback(
-    (field: keyof ExtractorFormSchemaType, key: string, value: string) => {
+    (field: SwitchPromptField, key: string, value: string) => {
       form.setValue(field, t(`flow.prompts.${key}.${value}`), {
         shouldDirty: true,
         shouldValidate: true,

@@ -24,6 +24,28 @@ import { buildModelInfoFromValues } from './utils';
  * Used for scenarios after OllamaModal merge
  */
 export const LocalLlmConfigs: Record<string, ProviderConfig> = {
+  // aimlapi.com is a cloud OpenAI-compatible aggregator (like OpenRouter): it
+  // uses the list picker, so it needs a config whose submitTransform forwards
+  // `model_info` (the picker selection). Falling back to GenericApiKeyConfig
+  // dropped that field, so selected models were never persisted.
+  [LLMFactory.AIMLAPI]: buildLocalConfig(
+    LLMFactory.AIMLAPI,
+    'aimlapi.com',
+    ['chat', 'embedding', 'image2text', 'tts', 'speech2text'],
+    undefined,
+    false,
+    [
+      {
+        name: 'base_url',
+        label: 'addLlmBaseUrl',
+        type: 'inputSelect',
+        required: false,
+        placeholder: 'baseUrlNameMessage',
+        shouldRender: 'hideWhenInstanceExists',
+      },
+    ],
+    'https://docs.aimlapi.com/quickstart/simple-model',
+  ),
   [LLMFactory.Ollama]: buildLocalConfig(
     LLMFactory.Ollama,
     'Ollama',
@@ -54,7 +76,8 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
         label: 'addLlmBaseUrl',
         type: 'inputSelect',
         required: true,
-        defaultValue: 'http://localhost:8000/v1',
+        defaultValue: '',
+        autoComplete: 'new-password',
         placeholder: 'baseUrlNameMessage',
         shouldRender: 'hideWhenInstanceExists',
       },
@@ -230,6 +253,7 @@ function buildLocalConfig(
       type: 'inputSelect',
       required: true,
       placeholder: 'baseUrlNameMessage',
+      autoComplete: 'new-password',
       shouldRender: 'hideWhenInstanceExists',
     },
     {
@@ -238,6 +262,7 @@ function buildLocalConfig(
       type: FormFieldType.Password,
       required: false,
       placeholder: 'apiKeyMessage',
+      autoComplete: 'new-password',
       shouldRender: 'hideWhenInstanceExists',
     },
     // {
@@ -295,15 +320,20 @@ function buildLocalConfig(
       baseUrl: values.base_url,
       modelInfo: buildModelInfoFromValues(values),
     }),
-    submitTransform: (values) => ({
-      instance_name: values.instance_name,
-      llm_factory: llmFactory,
-      model_info: buildModelInfoFromValues(values),
-      api_base: values.base_url,
-      api_key: values.api_key,
-      ...(values.provider_order
-        ? { provider_order: values.provider_order }
-        : {}),
-    }),
+    submitTransform: (values) => {
+      const apiKey = values.provider_order
+        ? {
+            api_key: values.api_key ?? '',
+            provider_order: values.provider_order,
+          }
+        : (values.api_key ?? '');
+      return {
+        instance_name: values.instance_name,
+        llm_factory: llmFactory,
+        model_info: buildModelInfoFromValues(values),
+        base_url: values.base_url,
+        api_key: apiKey,
+      };
+    },
   };
 }

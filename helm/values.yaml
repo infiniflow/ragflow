@@ -124,7 +124,7 @@ ragflow:
 infinity:
   image:
     repository: infiniflow/infinity
-    tag: v0.7.0
+    tag: v0.7.2-x64-v3
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:
@@ -210,7 +210,7 @@ mysql:
   enabled: true
   image:
     repository: mysql
-    tag: 8.0.39
+    tag: 8.0.40
     pullPolicy: IfNotPresent
     pullSecrets: []
   storage:

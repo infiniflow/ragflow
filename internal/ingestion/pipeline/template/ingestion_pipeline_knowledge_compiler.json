@@ -1,0 +1,311 @@
+{
+    "id": 47,
+    "title": {
+        "en": "Knowledge Compiler",
+        "de": "Wissens-Kompilierer",
+        "zh": "知识编译"
+    },
+    "description": {
+        "en": "Compiles parsed chunks into structured knowledge units (graph/wiki/raptor/mindmap/datasetnav) via the Compiler component, emitting them as chunks merged into the upstream chunk stream. Ideal for building a retrievable knowledge layer on top of chunked documents.",
+        "de": "Kompiliert geparste Chunks über die Compiler-Komponente in strukturierte Wissenseinheiten und gibt sie als Chunks im upstream-Chunk-Strom zurück.",
+        "zh": "通过 Compiler 组件将解析后的分块编译为结构化知识单元（图谱/百科/RAPTOR/思维导图/数据集导航），以 chunks 形式合并进上游分块流输出，适合在分块文档之上构建可检索的知识层。"
+    },
+    "canvas_type": "Ingestion Pipeline",
+    "canvas_category": "dataflow_canvas",
+    "dsl": {
+        "components": {
+            "File": {
+                "downstream": [
+                    "Parser:HipSignsRhyme"
+                ],
+                "obj": {
+                    "component_name": "File",
+                    "params": {}
+                },
+                "upstream": []
+            },
+            "Parser:HipSignsRhyme": {
+                "downstream": [
+                    "TokenChunker:SixApplesFall"
+                ],
+                "obj": {
+                    "component_name": "Parser",
+                    "params": {
+                        "outputs": {
+                            "html": {
+                                "type": "string",
+                                "value": ""
+                            },
+                            "json": {
+                                "type": "Array<object>",
+                                "value": []
+                            },
+                            "markdown": {
+                                "type": "string",
+                                "value": ""
+                            },
+                            "text": {
+                                "type": "string",
+                                "value": ""
+                            }
+                        },
+                        "setups": {
+                            "doc": {
+                                "output_format": "json",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "doc"
+                                ]
+                            },
+                            "docx": {
+                                "flatten_media_to_text": false,
+                                "output_format": "json",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "docx"
+                                ],
+                                "vlm": {}
+                            },
+                            "html": {
+                                "output_format": "json",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "htm",
+                                    "html"
+                                ]
+                            },
+                            "markdown": {
+                                "flatten_media_to_text": false,
+                                "output_format": "json",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "md",
+                                    "markdown",
+                                    "mdx"
+                                ],
+                                "vlm": {}
+                            },
+                            "pdf": {
+                                "flatten_media_to_text": false,
+                                "output_format": "json",
+                                "parse_method": "DeepDOC",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "pdf"
+                                ],
+                                "vlm": {}
+                            },
+                            "spreadsheet": {
+                                "flatten_media_to_text": false,
+                                "output_format": "html",
+                                "parse_method": "DeepDOC",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "xls",
+                                    "xlsx",
+                                    "csv"
+                                ],
+                                "vlm": {}
+                            },
+                            "text&code": {
+                                "output_format": "json",
+                                "preprocess": [
+                                    "main_content"
+                                ],
+                                "suffix": [
+                                    "txt",
+                                    "py",
+                                    "js",
+                                    "java",
+                                    "c",
+                                    "cpp",
+                                    "h",
+                                    "php",
+                                    "go",
+                                    "ts",
+                                    "sh",
+                                    "cs",
+                                    "kt",
+                                    "sql"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "upstream": [
+                    "File"
+                ]
+            },
+            "TokenChunker:SixApplesFall": {
+                "downstream": [
+                    "Compiler:KnownSwiftLions"
+                ],
+                "obj": {
+                    "component_name": "TokenChunker",
+                    "params": {
+                        "children_delimiters": [],
+                        "chunk_token_size": 512,
+                        "delimiter_mode": "token_size",
+                        "delimiters": [
+                            "\n",
+                            "!",
+                            "?",
+                            "。",
+                            "；",
+                            "！",
+                            "？"
+                        ],
+                        "image_context_size": 0,
+                        "outputs": {
+                            "chunks": {
+                                "type": "Array<Object>",
+                                "value": []
+                            }
+                        },
+                        "overlapped_percent": 0,
+                        "table_context_size": 0
+                    }
+                },
+                "upstream": [
+                    "Parser:HipSignsRhyme"
+                ]
+            },
+            "Compiler:KnownSwiftLions": {
+                "downstream": [],
+                "obj": {
+                    "component_name": "Compiler",
+                    "params": {
+                        "llm_id": "",
+                        "variant": "structure",
+                        "language": "English"
+                    }
+                },
+                "upstream": [
+                    "TokenChunker:SixApplesFall"
+                ]
+            }
+        },
+        "globals": {
+            "sys.history": []
+        },
+        "graph": {
+            "edges": [
+                {
+                    "id": "xy-edge__Filestart-Parser:HipSignsRhymeend",
+                    "source": "File",
+                    "sourceHandle": "start",
+                    "target": "Parser:HipSignsRhyme",
+                    "targetHandle": "end"
+                },
+                {
+                    "id": "xy-edge__Parser:HipSignsRhymestart-TokenChunker:SixApplesFallend",
+                    "source": "Parser:HipSignsRhyme",
+                    "sourceHandle": "start",
+                    "target": "TokenChunker:SixApplesFall",
+                    "targetHandle": "end"
+                },
+                {
+                    "id": "xy-edge__TokenChunker:SixApplesFallstart-Compiler:KnownSwiftLionsend",
+                    "source": "TokenChunker:SixApplesFall",
+                    "sourceHandle": "start",
+                    "target": "Compiler:KnownSwiftLions",
+                    "targetHandle": "end"
+                }
+            ],
+            "nodes": [
+                {
+                    "data": {
+                        "label": "File",
+                        "name": "File"
+                    },
+                    "id": "File",
+                    "measured": {
+                        "height": 50,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 50,
+                        "y": 200
+                    },
+                    "sourcePosition": "left",
+                    "targetPosition": "right",
+                    "type": "beginNode"
+                },
+                {
+                    "data": {
+                        "label": "Parser",
+                        "name": "Parser_0"
+                    },
+                    "id": "Parser:HipSignsRhyme",
+                    "measured": {
+                        "height": 57,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 316.99524094206413,
+                        "y": 195.39629819663406
+                    },
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "parserNode"
+                },
+                {
+                    "data": {
+                        "label": "TokenChunker",
+                        "name": "Token Chunker_0"
+                    },
+                    "id": "TokenChunker:SixApplesFall",
+                    "measured": {
+                        "height": 74,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 616.9952409420641,
+                        "y": 195.39629819663406
+                    },
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "chunkerNode"
+                },
+                {
+                    "data": {
+                        "label": "Compiler",
+                        "name": "Knowledge Compiler_0"
+                    },
+                    "id": "Compiler:KnownSwiftLions",
+                    "measured": {
+                        "height": 74,
+                        "width": 200
+                    },
+                    "position": {
+                        "x": 916.9952409420641,
+                        "y": 195.39629819663406
+                    },
+                    "sourcePosition": "right",
+                    "targetPosition": "left",
+                    "type": "componentNode"
+                }
+            ]
+        },
+        "history": [],
+        "messages": [],
+        "path": [],
+        "retrieval": [],
+        "variables": []
+    },
+    "parser_ids": [
+        "knowledge_compiler"
+    ]
+}

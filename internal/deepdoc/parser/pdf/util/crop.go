@@ -240,7 +240,7 @@ func CropSectionImage(posTag string, decodedImages map[int]image.Image, zoom flo
 	return base64.StdEncoding.EncodeToString(data)
 }
 
-// cropSectionByDLA crops a section using the best-overlapping DLA region,
+// CropSectionByDLA crops a section using the best-overlapping DLA region,
 // mimicking Python's cropout() in deepdoc/parser/pdf_parser.py (around line
 // 1307). Unlike the original Go version (which only cropped the first page),
 // it now walks every position and every page the section spans, crops each
@@ -483,7 +483,7 @@ func rotateCoordCW(x, y float64, origW, origH int, angle int) (float64, float64)
 	}
 }
 
-// rotateImageCW rotates an image clockwise. Only 0/90/180/270 supported;
+// RotateImageCW rotates an image clockwise. Only 0/90/180/270 supported;
 // other values return nil. Matches Python PIL.Image.rotate(-angle, expand=True).
 func RotateImageCW(img image.Image, angle int) *image.RGBA {
 	b := img.Bounds()
@@ -509,7 +509,7 @@ func RotateImageCW(img image.Image, angle int) *image.RGBA {
 	return dst
 }
 
-// mapRotatedPointToOriginal maps a point from rotated image coords back to
+// MapRotatedPointToOriginal maps a point from rotated image coords back to
 // original coords. angle is the clockwise rotation applied. origW, origH
 // are the ORIGINAL (pre-rotation) image dimensions.
 //
@@ -533,6 +533,29 @@ func MapRotatedPointToOriginal(x, y float64, angle int, origW, origH int) (float
 	default:
 		return x, y
 	}
+}
+
+// MapRotatedRectToOriginal maps a rotated-image rectangle back into original
+// image coordinates and normalizes the resulting bounds. For 90°/270° rotation,
+// mapping only two diagonal corners can invert X/Y bounds; mapping all four
+// corners preserves the enclosing rectangle.
+func MapRotatedRectToOriginal(x0, y0, x1, y1 float64, angle int, origW, origH int) (float64, float64, float64, float64) {
+	points := [][2]float64{
+		{x0, y0},
+		{x1, y0},
+		{x0, y1},
+		{x1, y1},
+	}
+	minX, minY := math.Inf(1), math.Inf(1)
+	maxX, maxY := math.Inf(-1), math.Inf(-1)
+	for _, p := range points {
+		x, y := MapRotatedPointToOriginal(p[0], p[1], angle, origW, origH)
+		minX = math.Min(minX, x)
+		minY = math.Min(minY, y)
+		maxX = math.Max(maxX, x)
+		maxY = math.Max(maxY, y)
+	}
+	return minX, minY, maxX, maxY
 }
 
 // CropImageRegion crops a pdf.DLARegion from an image with a 3% margin

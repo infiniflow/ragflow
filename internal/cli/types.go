@@ -108,6 +108,7 @@ const (
 	TokenMemory
 	TokenRetrieve
 	TokenCurrent
+	TokenSoft
 	TokenFingerprint
 	TokenLicense
 	TokenVision
@@ -187,10 +188,14 @@ const (
 	TokenNoACK
 	TokenAnalyze
 	TokenSummary
+	TokenStats
 	TokenStorage
 	TokenQuota
 	TokenTree
 	TokenOrphan
+	TokenHour
+	TokenDay
+	TokenMonth
 	TokenDays
 	TokenWindow
 	TokenActivity
@@ -200,6 +205,7 @@ const (
 	TokenPreview
 	TokenOpenaiChat
 	TokenLog
+	TokenLogs
 	TokenLevel
 	TokenDebug
 	TokenInfo

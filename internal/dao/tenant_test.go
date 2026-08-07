@@ -47,6 +47,7 @@ func useTenantDAOTestDB(t *testing.T, db *gorm.DB) {
 func TestTenantDAODeleteSoftDeletesTenant(t *testing.T) {
 	db := setupTenantDAOTestDB(t)
 	useTenantDAOTestDB(t, db)
+	ctx := t.Context()
 
 	active := "1"
 	tenant := &entity.Tenant{
@@ -59,22 +60,22 @@ func TestTenantDAODeleteSoftDeletesTenant(t *testing.T) {
 		ParserIDs: "naive",
 		Status:    &active,
 	}
-	if err := NewTenantDAO().Create(tenant); err != nil {
+	if err := NewTenantDAO().Create(ctx, db, tenant); err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	if err := NewTenantDAO().Delete(tenant.ID); err != nil {
+	if err := NewTenantDAO().Delete(ctx, db, tenant.ID); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
 
 	var got entity.Tenant
-	if err := db.Where("id = ?", tenant.ID).First(&got).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", tenant.ID).First(&got).Error; err != nil {
 		t.Fatalf("failed to reload tenant: %v", err)
 	}
 	if got.Status == nil || *got.Status != "0" {
 		t.Fatalf("status = %v, want 0", got.Status)
 	}
-	if _, err := NewTenantDAO().GetByID(tenant.ID); err == nil {
+	if _, err := NewTenantDAO().GetByID(ctx, db, tenant.ID); err == nil {
 		t.Fatalf("GetByID() after Delete() error = nil, want not found")
 	}
 }
@@ -82,6 +83,7 @@ func TestTenantDAODeleteSoftDeletesTenant(t *testing.T) {
 func TestTenantDAOUpdateStatus(t *testing.T) {
 	db := setupTenantDAOTestDB(t)
 	useTenantDAOTestDB(t, db)
+	ctx := t.Context()
 
 	active := "1"
 	tenant := &entity.Tenant{
@@ -94,16 +96,16 @@ func TestTenantDAOUpdateStatus(t *testing.T) {
 		ParserIDs: "naive",
 		Status:    &active,
 	}
-	if err := NewTenantDAO().Create(tenant); err != nil {
+	if err := NewTenantDAO().Create(ctx, db, tenant); err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	if err := NewTenantDAO().Update(tenant.ID, map[string]interface{}{"status": "0"}); err != nil {
+	if err := NewTenantDAO().Update(ctx, db, tenant.ID, map[string]interface{}{"status": "0"}); err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
 
 	var got entity.Tenant
-	if err := db.Where("id = ?", tenant.ID).First(&got).Error; err != nil {
+	if err := db.WithContext(ctx).Where("id = ?", tenant.ID).First(&got).Error; err != nil {
 		t.Fatalf("failed to reload tenant: %v", err)
 	}
 	if got.Status == nil || *got.Status != "0" {

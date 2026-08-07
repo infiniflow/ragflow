@@ -47,10 +47,7 @@ func layoutCleanup(cells []pdf.TSRCell, boxes []pdf.TextBox, far int, thr float6
 	i := 0
 	for i+1 < len(out) {
 		j := i + 1
-		limit := i + far
-		if limit > len(out) {
-			limit = len(out)
-		}
+		limit := min(i+far, len(out))
 		for j < limit && (out[i].Label != "" && out[i].Label != out[j].Label || notOverlapped(out[i], out[j])) {
 			j++
 		}

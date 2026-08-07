@@ -27,7 +27,7 @@ from google_auth_oauthlib.flow import Flow
 from api.db import InputType
 from api.db.services.connector_service import ConnectorService, SyncLogsService
 from api.utils.api_utils import get_data_error_result, get_json_result, get_request_json, validate_request
-from api.utils.pagination_utils import validate_rest_api_page_size
+from api.utils.pagination_utils import DEFAULT_PAGE, DEFAULT_PAGE_SIZE, validate_rest_api_page, validate_rest_api_page_size
 from common.constants import RetCode, TaskStatus
 from common.data_source.config import GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI, GMAIL_WEB_OAUTH_REDIRECT_URI, BOX_WEB_OAUTH_REDIRECT_URI, DocumentSource
 from common.data_source.google_util.constant import WEB_OAUTH_POPUP_TEMPLATE, GOOGLE_SCOPES
@@ -43,7 +43,7 @@ LOGGER = logging.getLogger(__name__)
 def _connector_auth_error(connector_id: str, user_id: str):
     """Return the connector authorization failure response and log the denial."""
     LOGGER.warning("connector access denied: connector_id=%s user_id=%s", connector_id, user_id)
-    return get_json_result(data=False, message="No authorization.", code=RetCode.AUTHENTICATION_ERROR)
+    return get_json_result(data=False, message="no authorization", code=RetCode.AUTHENTICATION_ERROR)
 
 
 @manager.route("/connectors/<connector_id>", methods=["PATCH"])  # noqa: F821
@@ -143,8 +143,8 @@ def list_logs(connector_id):
     req = request.args.to_dict(flat=True)
     arr, total = SyncLogsService.list_sync_tasks(
         connector_id,
-        int(req.get("page", 1)),
-        validate_rest_api_page_size(int(req.get("page_size", 15))),
+        validate_rest_api_page(req.get("page", DEFAULT_PAGE)),
+        validate_rest_api_page_size(req.get("page_size", DEFAULT_PAGE_SIZE)),
     )
     return get_json_result(data={"total": total, "logs": arr})
 

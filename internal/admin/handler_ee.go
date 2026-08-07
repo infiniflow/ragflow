@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/dao"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -822,6 +823,47 @@ func (h *Handler) UpdateSystemLicenseConfig(c *gin.Context) {
 	common.SuccessWithData(c, result, "System license config updated successfully")
 }
 
+type SetSoftFingerprintRequest struct {
+	SoftFingerprint string `json:"fingerprint" binding:"required"`
+}
+
+func (h *Handler) SetSoftFingerprint(c *gin.Context) {
+	var req SetSoftFingerprintRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		println("JSON bind error: %v (type: %T)", err, err)
+		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		return
+	}
+
+	err := h.service.SetSoftFingerprint(req.SoftFingerprint)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessNoData(c, "SUCCESS")
+}
+
+func (h *Handler) ShowSoftFingerprint(c *gin.Context) {
+	softFingerprint, err := h.service.GetSoftFingerprint()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, softFingerprint, "")
+}
+
+func (h *Handler) DeleteSoftFingerprint(c *gin.Context) {
+	err := h.service.DeleteSoftFingerprint()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+
+	common.SuccessNoData(c, "SUCCESS")
+}
+
 type ShowUserActivityRequest struct {
 	Days  int    `json:"days"`
 	Email string `json:"email"`
@@ -886,7 +928,9 @@ func (h *Handler) ShowUserSummary(c *gin.Context) {
 		return
 	}
 
-	userSummary, err := h.service.ShowUserSummary(username)
+	ctx := c.Request.Context()
+
+	userSummary, err := h.service.ShowUserSummary(ctx, username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
@@ -926,7 +970,9 @@ func (h *Handler) ShowUserQuota(c *gin.Context) {
 		return
 	}
 
-	userQuota, err := h.service.ShowUserQuota(username)
+	ctx := c.Request.Context()
+
+	userQuota, err := h.service.ShowUserQuota(ctx, username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
@@ -1634,7 +1680,9 @@ func (h *Handler) GenerateUserAPIKey(c *gin.Context) {
 		return
 	}
 
-	apiKey, err := h.service.GenerateUserAPIKey(username)
+	ctx := c.Request.Context()
+
+	apiKey, err := h.service.GenerateUserAPIKey(ctx, username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1657,7 +1705,9 @@ func (h *Handler) DeleteUserAPIKey(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.DeleteUserAPIKey(username, key)
+	ctx := c.Request.Context()
+
+	result, err := h.service.DeleteUserAPIKey(ctx, username, key)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1673,7 +1723,9 @@ func (h *Handler) ListUserAPIKeys(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.ListUserAPIKeys(username)
+	ctx := c.Request.Context()
+
+	result, err := h.service.ListUserAPIKeys(ctx, username)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
@@ -1892,4 +1944,138 @@ func (h *Handler) BatchDeleteWhiteList(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, result, "Batch delete white list successfully")
+}
+
+// GetTokenStats returns API token statistics for the current user's tenant.
+func (h *Handler) GetTokenStats(c *gin.Context) {
+
+	userName := c.Query("user_name")
+	if userName == "" {
+		common.ErrorWithCode(c, common.CodeBadRequest, "User name is required")
+		return
+	}
+
+	now := time.Now()
+	fromDate := c.DefaultQuery("from", now.AddDate(0, 0, -7).Format("2006-01-02 00:00:00"))
+	toDate := c.DefaultQuery("to", now.Format("2006-01-02 15:04:05"))
+	if len(toDate) == 10 {
+		toDate += " 23:59:59"
+	}
+
+	granularity := c.Query("granularity")
+	if granularity == "" {
+		granularity = "hour"
+	}
+	granularity = strings.ToLower(granularity)
+
+	ctx := c.Request.Context()
+
+	stats, err := h.service.GetTokenStats(ctx, userName, fromDate, toDate, granularity)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, stats, "success")
+}
+
+// GetTokenUsersStats returns API token statistics summary for the current user's tenant.
+func (h *Handler) GetTokenUsersStats(c *gin.Context) {
+	now := time.Now()
+	fromDate := c.DefaultQuery("from", now.AddDate(0, 0, -7).Format("2006-01-02 00:00:00"))
+	toDate := c.DefaultQuery("to", now.Format("2006-01-02 15:04:05"))
+	if len(toDate) == 10 {
+		toDate += " 23:59:59"
+	}
+
+	topStr := c.Query("top")
+	top, err := strconv.Atoi(topStr)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid top")
+		return
+	}
+
+	stats, err := h.service.GetTokenUsersStats(fromDate, toDate, top)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, stats, "success")
+}
+
+// GetTokenStatsSummary returns API token statistics summary for the current user's tenant.
+func (h *Handler) GetTokenStatsSummary(c *gin.Context) {
+	now := time.Now()
+	fromDate := c.DefaultQuery("from", now.AddDate(0, 0, -7).Format("2006-01-02 00:00:00"))
+	toDate := c.DefaultQuery("to", now.Format("2006-01-02 15:04:05"))
+	if len(toDate) == 10 {
+		toDate += " 23:59:59"
+	}
+
+	stats, err := h.service.GetTokenStatsSummary(fromDate, toDate)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, stats, "success")
+}
+
+func (h *Handler) ListLogs(c *gin.Context) {
+	userName := c.Query("user_name")
+	if userName == "" {
+		common.ErrorWithCode(c, common.CodeBadRequest, "User name is required")
+		return
+	}
+	days := c.Query("days")
+	if days == "" {
+		days = "7"
+	}
+	daysInt, err := strconv.Atoi(days)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeBadRequest, "Invalid days")
+		return
+	}
+	ctx := c.Request.Context()
+
+	stats, err := h.service.ListLogs(ctx, userName, daysInt)
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		return
+	}
+
+	common.SuccessWithData(c, stats, "success")
+}
+
+// GetFingerprint handle get system fingerprint
+func (h *Handler) GetFingerprint(c *gin.Context) {
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
+	return
+}
+
+type SetLicenseHTTPRequest struct {
+	License string `json:"license" binding:"required"`
+}
+
+// SetLicense to set system license
+func (h *Handler) SetLicense(c *gin.Context) {
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
+	return
+}
+
+type SetLicenseConfigHTTPRequest struct {
+	TimeRecordSaveInterval int64 `json:"value1" binding:"required"`
+	TimeRecordTaskDuration int64 `json:"value2" binding:"required"`
+}
+
+func (h *Handler) UpdateLicenseConfig(c *gin.Context) {
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
+	return
+}
+
+// ShowLicense to get system license
+func (h *Handler) ShowLicense(c *gin.Context) {
+	common.ResponseWithHttpCodeData(c, http.StatusNotImplemented, common.CodeBadRequest, nil, "method not implemented")
+	return
 }

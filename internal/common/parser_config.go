@@ -1,29 +1,5 @@
 package common
 
-import "strings"
-
-// InjectExtractorLLMID finds all Extractor component entries (keys prefixed
-// with "extractor:" or "extractor_") in parserConfig and sets their llm_id
-// to the given value. Returns whether any entry was updated.
-func InjectExtractorLLMID(parserConfig map[string]interface{}, llmID string) bool {
-	if parserConfig == nil || llmID == "" {
-		return false
-	}
-	updated := false
-	for cid, raw := range parserConfig {
-		compMap, ok := raw.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		cidLower := strings.ToLower(cid)
-		if strings.HasPrefix(cidLower, "extractor:") || strings.HasPrefix(cidLower, "extractor_") {
-			compMap["llm_id"] = llmID
-			updated = true
-		}
-	}
-	return updated
-}
-
 // deepCopyMap duplicates a JSON-like map so later merges do not mutate shared defaults.
 func deepCopyMap(source map[string]interface{}) map[string]interface{} {
 	if source == nil {

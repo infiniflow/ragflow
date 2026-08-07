@@ -38,6 +38,9 @@
 //	export OPENAI_MODEL=...
 //	rtk go test ./internal/agent/component/ -count=1 \
 //	  -run TestStagehandRuntime_Extract -v -timeout 3m
+
+//go:build integration
+
 package component
 
 import (
@@ -54,6 +57,8 @@ import (
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
+
+	"gorm.io/gorm"
 )
 
 // TestStagehandRuntime_Extract is the single happy-path integration
@@ -206,11 +211,11 @@ func TestBrowser_E2E_Extract(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	// Override tenant LLM lookup so the test doesn't need a real DB.
-	prevLookup := tenantLLMLookupForTest
-	tenantLLMLookupForTest = func(_, _, _ string) (string, string, error) {
-		return apiKey, baseURL, nil
+	prevLookup := browserLLMLookupForTest
+	browserLLMLookupForTest = func(_ context.Context, _ *gorm.DB, _, _ string) (string, string, string, string, error) {
+		return "OpenAI", model, apiKey, baseURL, nil
 	}
-	t.Cleanup(func() { tenantLLMLookupForTest = prevLookup })
+	t.Cleanup(func() { browserLLMLookupForTest = prevLookup })
 
 	// --- use production stagehand runtime ---
 	r := newStagehandRuntimeFromEnv()
@@ -242,7 +247,7 @@ func TestBrowser_E2E_Extract(t *testing.T) {
 	invokeCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 	defer cancel()
 	t.Logf("starting browser.Invoke (RunExtract) against %s (timeout 3m)", srv.URL)
-	out, err := c.Invoke(invokeCtx, nil)
+	out, err := c.Invoke(invokeCtx, nil, nil)
 	if err != nil {
 		t.Logf("extraction failed (best-effort): %v", err)
 		return

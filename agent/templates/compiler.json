@@ -1,0 +1,445 @@
+{
+  "components": {
+    "Compiler:CurvySunsLove": {
+      "downstream": [],
+      "obj": {
+        "component_name": "Compiler",
+        "params": {
+          "compilation_template_group_id": "",
+          "llm_id": "",
+          "outputs": {
+            "chunks": {
+              "type": "Array<Object>",
+              "value": []
+            }
+          }
+        }
+      },
+      "upstream": [
+        "TokenChunker:LovelyPillowsOpen"
+      ]
+    },
+    "File": {
+      "downstream": [
+        "Parser:HipSignsRhyme"
+      ],
+      "obj": {
+        "component_name": "File",
+        "params": {}
+      },
+      "upstream": []
+    },
+    "Parser:HipSignsRhyme": {
+      "downstream": [
+        "TokenChunker:LovelyPillowsOpen"
+      ],
+      "obj": {
+        "component_name": "Parser",
+        "params": {
+          "outputs": {
+            "html": {
+              "type": "string",
+              "value": ""
+            },
+            "json": {
+              "type": "Array<object>",
+              "value": []
+            },
+            "markdown": {
+              "type": "string",
+              "value": ""
+            },
+            "text": {
+              "type": "string",
+              "value": ""
+            }
+          },
+          "setups": {
+            "doc": {
+              "flatten_media_to_text": false,
+              "order_index": 7,
+              "output_format": "json",
+              "remove_header_footer": false,
+              "suffix": [
+                "doc"
+              ],
+              "vlm": {}
+            },
+            "docx": {
+              "flatten_media_to_text": false,
+              "order_index": 8,
+              "output_format": "json",
+              "remove_header_footer": false,
+              "suffix": [
+                "docx"
+              ],
+              "vlm": {}
+            },
+            "email": {
+              "fields": [
+                "from",
+                "to",
+                "cc",
+                "bcc",
+                "date",
+                "subject",
+                "body",
+                "attachments"
+              ],
+              "order_index": 3,
+              "output_format": "text",
+              "suffix": [
+                "eml",
+                "msg"
+              ]
+            },
+            "html": {
+              "order_index": 6,
+              "output_format": "json",
+              "remove_header_footer": false,
+              "suffix": [
+                "htm",
+                "html"
+              ]
+            },
+            "image": {
+              "order_index": 2,
+              "output_format": "text",
+              "parse_method": "ocr",
+              "suffix": [
+                "jpg",
+                "jpeg",
+                "png",
+                "gif"
+              ]
+            },
+            "markdown": {
+              "flatten_media_to_text": false,
+              "order_index": 4,
+              "output_format": "json",
+              "suffix": [
+                "md",
+                "markdown",
+                "mdx"
+              ],
+              "vlm": {}
+            },
+            "pdf": {
+              "flatten_media_to_text": false,
+              "order_index": 0,
+              "output_format": "json",
+              "parse_method": "DeepDOC",
+              "remove_header_footer": false,
+              "suffix": [
+                "pdf"
+              ],
+              "vlm": {}
+            },
+            "slides": {
+              "order_index": 9,
+              "output_format": "json",
+              "parse_method": "DeepDOC",
+              "suffix": [
+                "pptx",
+                "ppt"
+              ]
+            },
+            "spreadsheet": {
+              "flatten_media_to_text": false,
+              "order_index": 1,
+              "output_format": "html",
+              "parse_method": "DeepDOC",
+              "suffix": [
+                "xls",
+                "xlsx",
+                "csv"
+              ],
+              "vlm": {}
+            },
+            "text&code": {
+              "order_index": 5,
+              "output_format": "json",
+              "suffix": [
+                "txt",
+                "py",
+                "js",
+                "java",
+                "c",
+                "cpp",
+                "h",
+                "php",
+                "go",
+                "ts",
+                "sh",
+                "cs",
+                "kt",
+                "sql"
+              ]
+            }
+          }
+        }
+      },
+      "upstream": [
+        "File"
+      ]
+    },
+    "TokenChunker:LovelyPillowsOpen": {
+      "downstream": [
+        "Compiler:CurvySunsLove"
+      ],
+      "obj": {
+        "component_name": "TokenChunker",
+        "params": {
+          "children_delimiters": [],
+          "chunk_token_size": 512,
+          "delimiter_mode": "token_size",
+          "delimiters": [],
+          "image_context_size": 0,
+          "outputs": {
+            "chunks": {
+              "type": "Array<Object>",
+              "value": []
+            }
+          },
+          "overlapped_percent": 0,
+          "table_context_size": 0
+        }
+      },
+      "upstream": [
+        "Parser:HipSignsRhyme"
+      ]
+    }
+  },
+  "globals": {
+    "sys.history": []
+  },
+  "graph": {
+    "edges": [
+      {
+        "id": "xy-edge__Filestart-Parser:HipSignsRhymeend",
+        "source": "File",
+        "sourceHandle": "start",
+        "target": "Parser:HipSignsRhyme",
+        "targetHandle": "end"
+      },
+      {
+        "data": {
+          "isHovered": false
+        },
+        "id": "xy-edge__Parser:HipSignsRhymestart-TokenChunker:LovelyPillowsOpenend",
+        "source": "Parser:HipSignsRhyme",
+        "sourceHandle": "start",
+        "target": "TokenChunker:LovelyPillowsOpen",
+        "targetHandle": "end"
+      },
+      {
+        "id": "xy-edge__TokenChunker:LovelyPillowsOpenstart-Compiler:CurvySunsLoveend",
+        "source": "TokenChunker:LovelyPillowsOpen",
+        "sourceHandle": "start",
+        "target": "Compiler:CurvySunsLove",
+        "targetHandle": "end"
+      }
+    ],
+    "nodes": [
+      {
+        "data": {
+          "label": "File",
+          "name": "File"
+        },
+        "id": "File",
+        "measured": {
+          "height": 49,
+          "width": 200
+        },
+        "position": {
+          "x": 50,
+          "y": 200
+        },
+        "sourcePosition": "left",
+        "targetPosition": "right",
+        "type": "beginNode"
+      },
+      {
+        "data": {
+          "form": {
+            "outputs": {
+              "html": {
+                "type": "string",
+                "value": ""
+              },
+              "json": {
+                "type": "Array<object>",
+                "value": []
+              },
+              "markdown": {
+                "type": "string",
+                "value": ""
+              },
+              "text": {
+                "type": "string",
+                "value": ""
+              }
+            },
+            "setups": [
+              {
+                "fileFormat": "pdf",
+                "flatten_media_to_text": false,
+                "output_format": "json",
+                "parse_method": "DeepDOC",
+                "remove_header_footer": false,
+                "vlm": {}
+              },
+              {
+                "fileFormat": "spreadsheet",
+                "flatten_media_to_text": false,
+                "output_format": "html",
+                "parse_method": "DeepDOC",
+                "vlm": {}
+              },
+              {
+                "fileFormat": "image",
+                "output_format": "text",
+                "parse_method": "ocr"
+              },
+              {
+                "fields": [
+                  "from",
+                  "to",
+                  "cc",
+                  "bcc",
+                  "date",
+                  "subject",
+                  "body",
+                  "attachments"
+                ],
+                "fileFormat": "email",
+                "output_format": "text"
+              },
+              {
+                "fileFormat": "markdown",
+                "flatten_media_to_text": false,
+                "output_format": "json",
+                "vlm": {}
+              },
+              {
+                "fileFormat": "text&code",
+                "output_format": "json"
+              },
+              {
+                "fileFormat": "html",
+                "output_format": "json",
+                "remove_header_footer": false
+              },
+              {
+                "fileFormat": "doc",
+                "flatten_media_to_text": false,
+                "output_format": "json",
+                "remove_header_footer": false,
+                "vlm": {}
+              },
+              {
+                "fileFormat": "docx",
+                "flatten_media_to_text": false,
+                "output_format": "json",
+                "remove_header_footer": false,
+                "vlm": {}
+              },
+              {
+                "fileFormat": "slides",
+                "output_format": "json",
+                "parse_method": "DeepDOC"
+              }
+            ]
+          },
+          "label": "Parser",
+          "name": "Parser_0"
+        },
+        "dragging": false,
+        "id": "Parser:HipSignsRhyme",
+        "measured": {
+          "height": 197,
+          "width": 200
+        },
+        "position": {
+          "x": 316.99524094206413,
+          "y": 195.39629819663406
+        },
+        "selected": true,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "parserNode"
+      },
+      {
+        "data": {
+          "form": {
+            "children_delimiters": [],
+            "chunk_token_size": 512,
+            "delimiter_mode": "token_size",
+            "delimiters": [
+              {
+                "value": "\n"
+              }
+            ],
+            "image_table_context_window": 0,
+            "outputs": {
+              "chunks": {
+                "type": "Array<Object>",
+                "value": []
+              }
+            },
+            "overlapped_percent": 0
+          },
+          "label": "TokenChunker",
+          "name": "Token Chunker_0"
+        },
+        "id": "TokenChunker:LovelyPillowsOpen",
+        "measured": {
+          "height": 73,
+          "width": 200
+        },
+        "position": {
+          "x": 616.9952409420641,
+          "y": 195.39629819663406
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "chunkerNode"
+      },
+      {
+        "data": {
+          "form": {
+            "compilation_template_group_id": "",
+            "llm_id": "",
+            "outputs": {
+              "chunks": {
+                "type": "Array<Object>",
+                "value": []
+              }
+            }
+          },
+          "label": "Compiler",
+          "name": "Compiler_0"
+        },
+        "id": "Compiler:CurvySunsLove",
+        "measured": {
+          "height": 93,
+          "width": 200
+        },
+        "position": {
+          "x": 916.9952409420641,
+          "y": 195.39629819663406
+        },
+        "selected": false,
+        "sourcePosition": "right",
+        "targetPosition": "left",
+        "type": "compilationNode"
+      }
+    ]
+  },
+  "history": [],
+  "messages": [],
+  "path": [],
+  "retrieval": [],
+  "variables": []
+}

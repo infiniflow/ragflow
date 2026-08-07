@@ -25,7 +25,7 @@ from api.utils.api_utils import get_json_result, server_error_response
 _validate_template_payload = validate_template_payload
 
 
-@manager.route("/compilation_templates/builtins", methods=["GET"])  # noqa: F821
+@manager.route("/compilation-templates/builtins", methods=["GET"])  # noqa: F821
 @login_required
 def list_builtin_templates() -> Response:
     """Built-in template palette — used as the per-child pre-fill in the
@@ -54,14 +54,14 @@ def list_builtin_templates() -> Response:
         return server_error_response(exc)
 
 
-@manager.route("/compilation_templates/wiki_presets", methods=["GET"])  # noqa: F821
+@manager.route("/compilation-templates/wiki-presets", methods=["GET"])  # noqa: F821
 @login_required
 def list_wiki_presets() -> Response:
     """Wiki page-structure presets loaded from
     ``api/db/init_data/compilation_templates/wiki/*.yaml``.
 
     Each entry carries ``id`` (filename stem) + ``topic`` +
-    ``instruction`` + ``page_example`` so the artifact-template editor
+    ``instruction`` + ``example`` so the artifact-template editor
     can pre-fill its "Page-structure example" / "Global rules" fields
     from a canned skeleton. Filesystem-fresh per request; no DB seed.
     """

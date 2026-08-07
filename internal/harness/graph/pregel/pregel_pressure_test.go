@@ -1154,9 +1154,9 @@ func TestEngine_MaxIterationsVsConditionStable(t *testing.T) {
 		_, err := engine.RunSync(context.Background(), map[string]any{})
 		if err == nil {
 			t.Skip("engine completed without limit enforcement (timing)")
-		} else {
-			t.Logf("recursion limit correctly enforced for unstable loop: %v", err)
 		}
+
+		t.Logf("recursion limit correctly enforced for unstable loop: %v", err)
 	})
 
 	t.Run("condition_stable_terminates_normally", func(t *testing.T) {
@@ -1449,9 +1449,9 @@ func TestEngine_ExtremeConfigValues(t *testing.T) {
 		_, err := engine.RunSync(context.Background(), map[string]any{})
 		if err == nil {
 			t.Skip("engine didn't enforce recursion limit 0 (allowed step 0)")
-		} else {
-			t.Logf("recursion limit 0 correctly enforced: %v", err)
 		}
+
+		t.Logf("recursion limit 0 correctly enforced: %v", err)
 	})
 
 	t.Run("recursion_limit_one", func(t *testing.T) {

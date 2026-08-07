@@ -44,6 +44,8 @@ func DecodeFromDSL(dsl map[string]any) (*Canvas, error) {
 	if p, ok := dsl["globals"].(map[string]any); ok {
 		c.Globals = p
 	}
+	c.History = decodeHistory(dsl["history"])
+	c.Memory = decodeMemory(dsl["memory"])
 	if graph, ok := dsl["graph"].(map[string]any); ok {
 		if nodes, ok := graph["nodes"].([]any); ok {
 			for _, raw := range nodes {
@@ -81,6 +83,115 @@ func DecodeFromDSL(dsl map[string]any) (*Canvas, error) {
 		return nil, fmt.Errorf("canvas: no components")
 	}
 	return c, nil
+}
+
+func decodeHistory(raw any) []map[string]any {
+	items, ok := raw.([]any)
+	if !ok || len(items) == 0 {
+		return []map[string]any{}
+	}
+	history := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		var role string
+		var payload any
+		switch value := item.(type) {
+		case []any: // Persisted Canvas shape: [role, payload].
+			if len(value) < 2 {
+				continue
+			}
+			role, _ = value[0].(string)
+			payload = value[1]
+		case map[string]any: // Runtime shape: {role, content/payload}.
+			role, _ = value["role"].(string)
+			if preserved, exists := value["payload"]; exists {
+				payload = preserved
+			} else {
+				payload = value["content"]
+			}
+		default:
+			continue
+		}
+		if role == "" {
+			continue
+		}
+		history = append(history, map[string]any{
+			"role":    role,
+			"content": decodedHistoryContent(payload),
+			"payload": payload,
+		})
+	}
+	return history
+}
+
+// decodeMemory restores [user, assistant, tool summary] entries.
+func decodeMemory(raw any) []map[string]any {
+	items, ok := raw.([]any)
+	if !ok || len(items) == 0 {
+		return []map[string]any{}
+	}
+	memory := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		switch value := item.(type) {
+		case []any: // [[user_query, assistant_response, tool_summary], ...]
+			if len(value) < 3 {
+				continue
+			}
+			memory = append(memory, map[string]any{
+				"user":      value[0],
+				"assistant": value[1],
+				"summary":   value[2],
+			})
+		case map[string]any:
+			memory = append(memory, map[string]any{
+				"user":      value["user"],
+				"assistant": value["assistant"],
+				"summary":   value["summary"],
+			})
+		}
+	}
+	return memory
+}
+
+func decodedHistoryContent(payload any) string {
+	switch value := payload.(type) {
+	case nil:
+		return ""
+	case string:
+		return value
+	case map[string]any:
+		content, _ := value["content"].(string)
+		return content
+	default:
+		return fmt.Sprint(value)
+	}
+}
+
+// EncodeHistory converts runtime conversation entries back to the Python DSL
+// list-of-pairs shape: [[role, payload], ...].
+func EncodeHistory(history []map[string]any) []any {
+	out := make([]any, 0, len(history))
+	for _, entry := range history {
+		role, _ := entry["role"].(string)
+		if role == "" {
+			continue
+		}
+		payload, exists := entry["payload"]
+		if !exists {
+			payload = entry["content"]
+		}
+		out = append(out, []any{role, payload})
+	}
+	return out
+}
+
+// EncodeMemory converts runtime tool-call memory back to Python's
+// [[user, assistant, summary], ...] DSL shape.
+func EncodeMemory(memory []map[string]any) []any {
+	out := make([]any, 0, len(memory))
+	for _, entry := range memory {
+		out = append(out, []any{entry["user"], entry["assistant"], entry["summary"]})
+	}
+	return out
 }
 
 func decodeComponentFields(comp map[string]any) (name string, params map[string]any, downstream []string, upstream []string) {
