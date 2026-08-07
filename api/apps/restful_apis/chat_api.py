@@ -171,6 +171,8 @@ def _validate_prompt_parameters(prompt_config):
         if not isinstance(parameter, dict):
             continue
         key = parameter.get("key")
+        if key is None:
+            continue
         if key in keys:
             return f"`parameters` contains duplicate key: {key}"
         keys.append(key)
