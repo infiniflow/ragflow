@@ -2513,6 +2513,12 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'Remove the table of contents included in the original PDF, so it is not parsed as regular content or chunked for retrieval.',
       removeHeaderFooter: 'Remove header and footer',
       autoPlay: 'Auto play audio',
+      emitAll: 'Show all message blocks',
+      emitAllTip:
+        'When enabled, every message block in this component is emitted one after another as a separate message; when disabled, only one block is chosen randomly.',
+      thinking: 'Thinking status',
+      thinkingTip:
+        'When enabled, this message is shown as a live "thinking" indicator while the agent works and is replaced by the next message instead of being delivered as a final answer.',
       downloadFileTypeTip: 'The file type to download',
       downloadFileType: 'Download file type',
       formatTypeError: 'Format or type error',

@@ -54,6 +54,8 @@ class MessageParam(ComponentParamBase):
         self.stream = True
         self.output_format = None  # default output format
         self.auto_play = False
+        self.emit_all = False
+        self.thinking = False
         self.outputs = {"content": {"type": "str"}, "downloads": {"type": "list"}}
 
     def check(self):
@@ -185,7 +187,7 @@ class Message(ComponentBase):
             buf += t
         return buf
 
-    async def _stream(self, rand_cnt: str):
+    async def _stream(self, rand_cnt: str, area_idx: int = None):
         s = 0
         all_content = ""
         cache = {}
@@ -242,8 +244,12 @@ class Message(ComponentBase):
             all_content += rand_cnt[s:]
             yield rand_cnt[s:]
 
-        self.set_output("downloads", downloads)
-        self.set_output("content", all_content)
+        if area_idx is None:
+            self.set_output("content", all_content)
+            self.set_output("downloads", downloads)
+        else:
+            self._record_area_downloads(area_idx, downloads)
+            self.set_output("downloads", self._flatten_downloads())
         self._convert_content(all_content)
         await self._save_to_memory(all_content)
 
@@ -256,12 +262,32 @@ class Message(ComponentBase):
         if self.check_if_canceled("Message processing"):
             return
 
-        rand_cnt = random.choice(self._param.content)
-        if self._param.stream and not self._is_jinjia2(rand_cnt):
-            self.set_output("content", partial(self._stream, rand_cnt))
-            return
+        self._area_downloads = []
+        multi = self._param.emit_all and len(self._param.content) > 1
+        areas = list(self._param.content) if multi else [random.choice(self._param.content)]
+        contents = []
+        for area_idx, cnt in enumerate(areas):
+            if self.check_if_canceled("Message processing"):
+                return
+            if self._param.stream and not self._is_jinjia2(cnt):
+                contents.append(partial(self._stream, cnt, area_idx if multi else None))
+            else:
+                downloads = []
+                rendered = self._render_area(cnt, kwargs, downloads)
+                contents.append(rendered)
+                self._record_area_downloads(area_idx, downloads)
+                self._convert_content(rendered)
+                self._schedule_save(rendered)
 
-        downloads = []
+        if not multi:
+            self.set_output("content", contents[0])
+            if not isinstance(contents[0], partial):
+                self.set_output("downloads", self._area_downloads[0] if self._area_downloads else [])
+        else:
+            self.set_output("content", contents)
+            self.set_output("downloads", self._flatten_downloads())
+
+    def _render_area(self, rand_cnt: str, kwargs: dict, downloads: list) -> str:
         rand_cnt, kwargs = self.get_kwargs(rand_cnt, kwargs, downloads=downloads)
         template = _jinja2_sandbox.from_string(rand_cnt)
         try:
@@ -270,16 +296,25 @@ class Message(ComponentBase):
             logging.warning(f"Jinja2 template rendering failed: {e}")
             content = rand_cnt  # fallback to unrendered content
 
-        if self.check_if_canceled("Message processing"):
-            return
-
         for n, v in kwargs.items():
             if v is not None:
                 content = re.sub(n, str(v), content)
+        return content
 
-        self.set_output("downloads", downloads)
-        self.set_output("content", content)
-        self._convert_content(content)
+    def _record_area_downloads(self, area_idx: int, downloads: list):
+        if not hasattr(self, "_area_downloads"):
+            self._area_downloads = []
+        while len(self._area_downloads) <= area_idx:
+            self._area_downloads.append([])
+        self._area_downloads[area_idx] = list(downloads)
+
+    def _flatten_downloads(self) -> list:
+        dl = getattr(self, "_area_downloads", None)
+        if not isinstance(dl, list):
+            return []
+        return [d for area in dl for d in area]
+
+    def _schedule_save(self, content: str):
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:

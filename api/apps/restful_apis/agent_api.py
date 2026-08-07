@@ -276,6 +276,8 @@ async def _run_workflow_session(
     turn_id = workflow_conv["message"][-1].get("id") if workflow_conv["message"] else get_uuid()
     full_content = ""
     reference = {}
+    segments = []
+    segment_content = ""
     final_ans = {}
     trace_items = []
     structured_output = {}
@@ -288,18 +290,33 @@ async def _run_workflow_session(
     if chat_template_kwargs is not None:
         run_kwargs["chat_template_kwargs"] = chat_template_kwargs
 
+    def flush_segment(seg_reference=None):
+        nonlocal segment_content
+        if segment_content or seg_reference is not None:
+            segments.append(
+                {
+                    "content": segment_content,
+                    "reference": seg_reference if seg_reference is not None else reference,
+                }
+            )
+        segment_content = ""
+
     async def persist_workflow_session():
         if not final_ans:
             return
-        workflow_conv["message"].append(
-            {
-                "role": "assistant",
-                "content": full_content,
-                "created_at": time.time(),
-                "id": turn_id,
-            }
-        )
-        workflow_conv["reference"].append(_normalize_agent_reference_entry(reference))
+        persisted = [seg for seg in segments if seg.get("content")]
+        if not persisted:
+            persisted = [{"content": full_content, "reference": reference}]
+        for i, seg in enumerate(persisted):
+            workflow_conv["message"].append(
+                {
+                    "role": "assistant",
+                    "content": seg["content"],
+                    "created_at": time.time(),
+                    "id": turn_id if len(persisted) == 1 else f"{turn_id}-{i}",
+                }
+            )
+            workflow_conv["reference"].append(_normalize_agent_reference_entry(seg.get("reference") or reference))
         workflow_conv["dsl"] = json.loads(str(canvas))
         workflow_conv["source"] = workflow_conv.get("source") or "workflow"
         await thread_pool_exec(API4ConversationService.append_message, session_id, workflow_conv)
@@ -308,17 +325,23 @@ async def _run_workflow_session(
     if stream:
 
         async def sse():
-            nonlocal full_content, reference, final_ans, trace_items, structured_output
+            nonlocal full_content, reference, final_ans, trace_items, structured_output, segment_content
             done_sent = False
             try:
                 async for ans in canvas.run(**run_kwargs):
                     ans["session_id"] = session_id
                     if ans.get("event") == "message":
-                        full_content += ans.get("data", {}).get("content", "")
+                        content = ans.get("data", {}).get("content", "")
+                        full_content += content
+                        segment_content += content
                         if ans.get("data", {}).get("start_to_think", False):
                             full_content += "<think>"
+                            segment_content += "<think>"
                         elif ans.get("data", {}).get("end_to_think", False):
                             full_content += "</think>"
+                            segment_content += "</think>"
+                    if ans.get("event") == "message_end":
+                        flush_segment(ans.get("data", {}).get("reference") or reference)
                     if ans.get("data", {}).get("reference", None):
                         reference.update(ans["data"]["reference"])
                     if ans.get("event") == "node_finished":
@@ -358,6 +381,7 @@ async def _run_workflow_session(
                         True,
                     )
                     yield ("data:" + json.dumps({"session_id": session_id, "data": {}}, ensure_ascii=False) + "\n\n")
+                flush_segment()
                 await persist_workflow_session()
             except Exception as exc:
                 logging.exception(exc)
@@ -374,11 +398,17 @@ async def _run_workflow_session(
         async for ans in canvas.run(**run_kwargs):
             ans["session_id"] = session_id
             if ans.get("event") == "message":
-                full_content += ans.get("data", {}).get("content", "")
+                content = ans.get("data", {}).get("content", "")
+                full_content += content
+                segment_content += content
                 if ans.get("data", {}).get("start_to_think", False):
                     full_content += "<think>"
+                    segment_content += "<think>"
                 elif ans.get("data", {}).get("end_to_think", False):
                     full_content += "</think>"
+                    segment_content += "</think>"
+            if ans.get("event") == "message_end":
+                flush_segment(ans.get("data", {}).get("reference") or reference)
             if ans.get("data", {}).get("reference", None):
                 reference.update(ans["data"]["reference"])
             if ans.get("event") == "node_finished":
@@ -423,6 +453,7 @@ async def _run_workflow_session(
     if trace_items:
         final_ans["data"]["trace"] = trace_items
 
+    flush_segment()
     await persist_workflow_session()
     return get_result(data=final_ans)
 
