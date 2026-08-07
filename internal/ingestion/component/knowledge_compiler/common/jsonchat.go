@@ -9,8 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"go.uber.org/zap"
 	appcommon "ragflow/internal/common"
+
+	"go.uber.org/zap"
 )
 
 // jsonRetryMax is how many times a non-JSON (or otherwise transiently failed)
@@ -18,7 +19,7 @@ import (
 // integration must not drop a knowledge unit on a single formatting hiccup, so
 // a one-off malformed reply triggers a fresh LLM call instead of an immediate
 // failure.
-const jsonRetryMax = 3
+const jsonRetryMax = 5
 
 // jsonRetryDelay is the initial exponential-backoff delay between retries.
 const jsonRetryDelay = 2 * time.Second
