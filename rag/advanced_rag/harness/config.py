@@ -36,6 +36,10 @@ THINKING_MODES: dict[str, ExecutionStrategy] = {
         sufficiency_threshold=0.75,
         partial_threshold=0.40,
         fallback_to_direct_llm=False,
+        c_high=0.75,
+        c_low=0.45,
+        llm_floor=0.55,
+        allows_reconcile=False,
     ),
     "high": ExecutionStrategy(
         label="high",
@@ -62,6 +66,10 @@ THINKING_MODES: dict[str, ExecutionStrategy] = {
         sufficiency_threshold=0.65,
         partial_threshold=0.30,
         fallback_to_direct_llm=False,
+        c_high=0.70,
+        c_low=0.40,
+        llm_floor=0.50,
+        allows_reconcile=True,
     ),
     "ultra": ExecutionStrategy(
         label="ultra",
@@ -93,6 +101,10 @@ THINKING_MODES: dict[str, ExecutionStrategy] = {
         sufficiency_threshold=0.55,
         partial_threshold=0.20,
         fallback_to_direct_llm=True,
+        c_high=0.65,
+        c_low=0.35,
+        llm_floor=0.45,
+        allows_reconcile=True,
     ),
 }
 

@@ -2,7 +2,6 @@
 
 import asyncio
 import logging
-from dataclasses import replace
 
 from rag.advanced_rag.harness.types import (
     ClaimTarget,
@@ -191,32 +190,31 @@ async def agentic_research(state: dict, tools) -> dict:
         )
         ctx.verdict = verdict
 
-        # Phase-2: when the code-level verdict is ambiguous (evidence looks
-        # incomplete/insufficient), ask the LLM Sufficient Context AutoRater
-        # whether the retrieved evidence actually answers the question. If the
-        # LLM confirms sufficiency, upgrade the verdict so we don't prematurely
-        # emit a partial answer. Its missing-pieces feedback is saved for the
-        # next round (or for the caller) rather than dropped.
-        if verdict.status in ("USEFUL_BUT_INCOMPLETE", "INSUFFICIENT", "CONFLICTING"):
-            cited_ids: list[str] = []
-            for r in agent_results_list:
-                cited_ids.extend(r.evidence_ids or [])
-            boost = await llm_sufficiency_boost(tools, ctx.question, verdict, evidence_ids=cited_ids)
-            if boost and boost.get("is_sufficient"):
-                _LOG.info("[Agentic research] Round %d: LLM AutoRater confirms SUFFICIENT → upgrading verdict", cycle + 1)
-                verdict = replace(verdict, status="SUFFICIENT", score=max(verdict.score, mode.sufficiency_threshold))
-                ctx.verdict = verdict
-            elif boost and boost.get("followups"):
-                # Missing pieces → targeted follow-up searches for the next round.
-                ctx.pending_followups = boost.get("followups", [])
-                _LOG.info("[Agentic research] Stored %d follow-up query(ies) for next round.", len(ctx.pending_followups))
+        # Decision ladder: the LLM Sufficient Context AutoRater is the primary
+        # sufficiency judge (invoked every round in high/ultra). Its verdict is
+        # combined with the code-level signals (hard vetoes + agent confidence)
+        # inside ``route_sufficiency_verdict`` → ``sufficiency_ladder``. The
+        # AutoRater's missing-pieces feedback is saved for the next round.
+        cited_ids: list[str] = []
+        for r in agent_results_list:
+            cited_ids.extend(r.evidence_ids or [])
+        boost = await llm_sufficiency_boost(tools, ctx.question, verdict, evidence_ids=cited_ids)
+        if boost and boost.get("followups"):
+            # Missing pieces → targeted follow-up searches for the next round.
+            ctx.pending_followups = boost.get("followups", [])
+            _LOG.info("[Agentic research] Stored %d follow-up query(ies) for next round.", len(ctx.pending_followups))
+        if boost:
+            _LOG.info("[Agentic research] Round %d: AutoRater is_sufficient=%s confidence=%.2f", cycle + 1, boost.get("is_sufficient"), boost.get("confidence", 1.0))
 
-        action, should_continue = route_sufficiency_verdict(
+        action, should_continue, caveat = route_sufficiency_verdict(
             verdict,
             mode_label,
             cycle,
             mode.max_orchestrator_cycles,
+            auto=boost,
         )
+        if caveat:
+            _LOG.info("[Agentic research] Round %d: caveat=%s", cycle + 1, caveat)
 
         # Stagnation guard: when the verdict is not (yet) sufficient and the
         # fusion score has not meaningfully improved for a couple of rounds,

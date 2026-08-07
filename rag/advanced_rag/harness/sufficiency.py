@@ -9,6 +9,11 @@ from rag.advanced_rag.harness.types import (
     ExecutionStrategy,
 )
 from rag.advanced_rag.harness.config import get_mode
+from rag.advanced_rag.harness.sufficiency_ladder import (
+    ANSWER_WITH_CAVEAT,
+    RECONCILE,
+    UNANSWERABLE,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -590,7 +595,17 @@ def compute_fusion_score(
     claims: list | None = None,
     all_chunks: dict | None = None,
 ) -> SufficiencyVerdict:
-    """Dual-signal fusion: agent confidence + cross-check pass rate.
+    """Extract sufficiency *signals* — hard vetoes, agent confidence, conflicts.
+
+    This is no longer a weighted fusion. The LLM AutoRater (invoked by the
+    orchestrator via ``llm_sufficiency_boost``) is the primary sufficiency
+    judge; this function only produces the *code-level* inputs the decision
+    ladder consumes:
+      - hard_violations: claims with a proven evidence gap (required entity
+        missing / grounded absent / numeric conflict) that must veto "good
+        enough" even if the AutoRater says sufficient;
+      - agent_confidence: mean self-confidence over the trusted subset;
+      - has_conflicts / missing_claims: surfaced for the ladder / caveat.
 
     ``question`` / ``claims`` / ``all_chunks`` are optional; when provided they
     drive the *required-entity* AND-semantics veto from the Sufficient Context
@@ -685,111 +700,80 @@ def compute_fusion_score(
         sum(1 for r in cross_results if r.cross_check_passed),
     )
 
-    # ── Min-score veto: the mean hides a *localized* evidence gap ──
+    # ── Hard-veto floor: a *localized* evidence gap must veto "good enough" ──
     # Multi-claim questions (e.g. "Mike Tyson AND Tyson Fury") can average a
-    # genuinely weak claim up to the SUFFICIENT band. Q2 (check.log): c4/c5's
+    # genuinely weak claim up to the sufficient band. Q2 (check.log): c4/c5's
     # "Tyson Fury" / "Usyk" entities matched 0 chunks, yet the 5-claim mean
-    # cross_score=0.822 crossed the threshold and produced an answer that
-    # could not back the Fury half. Fix: when any SELF-VERIFIED claim scores
-    # below a floor (its own evidence is thin even though it passed), we cap
-    # the verdict at partial — never SUFFICIENT. We key on self-verified claims
-    # only (an unrelated claim is already excluded as noise above).
+    # cross_check_score=0.822 crossed the threshold and produced an answer that
+    # could not back the Fury half. These claims become ``hard_violations`` that
+    # force the decision ladder to a caveated answer even if the LLM AutoRater
+    # says sufficient (code-proven evidence gap beats "roughly good enough").
     min_cross_floor = getattr(mode, "fusion_min_cross", 0.5) or 0.5
     self_verified_ids = {r.claim_id for r in agent_results if r.is_verified}
     weak = [r.claim_id for r in cross_results if r.claim_id in self_verified_ids and r.cross_check_score < min_cross_floor]
     # AND-semantics required-entity veto: a claim missing a required entity
     # (even if its report-based cross-check passed — the numbers matched on
-    # unrelated padding) must cap the verdict below SUFFICIENT. This catches
-    # the Q2 case that min-cross alone missed: c2/c3 self-verified with score
-    # 0.83/0.80 (padded by Mike Tyson's digits) yet Tyson Fury's entities were
-    # absent from every evidence chunk.
+    # unrelated padding) must veto. This catches the Q2 case that min-cross
+    # alone missed: c2/c3 self-verified with score 0.83/0.80 (padded by Mike
+    # Tyson's digits) yet Tyson Fury's entities were absent from every chunk.
     weak += [cid for cid in gapped_ids if cid not in weak]
     if weak:
         _LOG.info(
-            "[Sufficiency] Min-score + required-entity veto: %d self-verified claim(s) below floor %.2f OR missing a required entity → capping below SUFFICIENT: %s",
+            "[Sufficiency] Hard-veto: %d self-verified claim(s) below floor %.2f OR missing a required entity: %s",
             len(weak),
             min_cross_floor,
             weak,
         )
-
-    # Fusion of Signal A and Signal B — configurable per mode instead of the
-    # old hard-coded max/avg/min (which are arbitrary and ill-calibrated):
-    #   - geometric (default): weighted geometric mean; any signal near 0 vetoes
-    #     the answer, preventing "confident but unsupported" hallucinations
-    #     (A=1.0/B=0.0 previously fused to 0.5-1.0 under max/avg).
-    #   - agreement: trust both signals only when they agree; conservative when
-    #     they diverge (agent confident but evidence weak).
-    #   - weighted: convex combination minus a disagreement penalty.
-    strategy = getattr(mode, "fusion_strategy", "geometric") or "geometric"
-    w_b = getattr(mode, "fusion_w_b", 0.6) or 0.6  # cross-check (B) reliability weight
-    if strategy == "agreement":
-        d = abs(agent_score - cross_score)
-        if d < 0.2:
-            fusion_score = (agent_score + cross_score) / 2
-        else:
-            fusion_score = min(agent_score, cross_score) * 0.7 + (agent_score + cross_score) / 2 * 0.3
-    elif strategy == "weighted":
-        base = (1 - w_b) * agent_score + w_b * cross_score
-        fusion_score = max(0.0, min(1.0, base - 0.3 * abs(agent_score - cross_score)))
-    else:  # geometric (default)
-        if agent_score <= 0.05 or cross_score <= 0.05:
-            fusion_score = 0.0
-        else:
-            fusion_score = (agent_score ** (1 - w_b)) * (cross_score**w_b)
-    _LOG.info(
-        "[Sufficiency] Fusion strategy=%s (w_b=%.2f) → fusion_score=%.3f (A=%.3f, B=%.3f)",
-        strategy,
-        w_b,
-        fusion_score,
-        agent_score,
-        cross_score,
-    )
 
     # Conflict detection — based on the kept (non-noisy) claims so an
     # unrelated claim's mismatches don't manufacture a conflict.
     has_conflicts = any(len(r.mismatches) > 0 for r in cross_results)
     _LOG.info("[Sufficiency] Conflict detection: has_conflicts=%s", has_conflicts)
 
-    # 5-way verdict
-    if has_conflicts and fusion_score < mode.partial_threshold:
-        status = "CONFLICTING"
-    elif fusion_score >= mode.sufficiency_threshold and not weak:
-        # A self-verified claim with a thin cross-check score means part of the
-        # question's evidence is missing even though the MEAN passed. Never
-        # claim full sufficiency while a localized gap remains — degrade to
-        # partial so the caller either fills the gap or emits a partial answer.
-        status = "SUFFICIENT"
-    elif fusion_score >= mode.partial_threshold:
-        status = "USEFUL_BUT_INCOMPLETE"
-    elif not any(r.cross_check_passed for r in cross_results):
+    # Cross-check status (code-only view, no AutoRater). This is a *preliminary*
+    # label used by the orchestrator to decide whether to call the LLM AutoRater
+    # (medium triggers it only in the borderline band); the final decision comes
+    # from the decision ladder with the AutoRater's verdict.
+    if not any(r.cross_check_passed for r in cross_results):
         status = "UNANSWERABLE"
-    else:
+    elif has_conflicts:
+        status = "CONFLICTING"
+    elif weak:
         status = "INSUFFICIENT"
+    elif agent_score >= mode.sufficiency_threshold:
+        status = "SUFFICIENT"
+    else:
+        status = "USEFUL_BUT_INCOMPLETE"
     _LOG.info(
-        "[Sufficiency] Thresholds: sufficient>=%.2f partial>=%.2f → verdict=%s",
-        mode.sufficiency_threshold,
-        mode.partial_threshold,
+        "[Sufficiency] Code-level status=%s (agent_conf=%.3f, conflicts=%s, hard_veto=%s)",
         status,
+        agent_score,
+        has_conflicts,
+        bool(weak),
     )
 
     missing = [r.claim_id for r in cross_results if not r.cross_check_passed]
     # Excluded unrelated claims are surfaced (not silently dropped) so the
     # caller knows the planner invented unanswerable claims.
     missing += noise_ids
-    # Thin-evidence claims that vetoed SUFFICIENT are surfaced too, so the
-    # caller sees exactly which part of the question still lacks support.
+    # Thin-evidence claims that vetoed are surfaced too, so the caller sees
+    # exactly which part of the question still lacks support.
     missing += [c for c in weak if c not in missing]
 
     return SufficiencyVerdict(
         status=status,
-        score=fusion_score,
+        # Reference score for logging/monitoring only — the final decision comes
+        # from the decision ladder, not from this scalar.
+        score=agent_score,
         agent_score=agent_score,
         cross_score=cross_score,
         claim_assessments=[{"claim_id": r.claim_id, "is_verified": r.cross_check_passed, "score": r.cross_check_score, "mismatches": r.mismatches} for r in cross_results],
         has_conflicts=has_conflicts,
         missing_claims=missing,
         feedback=_build_feedback(missing, cross_results),
-        overall_reason=_format_reason(status, fusion_score, missing),
+        overall_reason=_format_reason(status, agent_score, missing),
+        hard_violations=weak,
+        agent_confidence=agent_score,
     )
 
 
@@ -812,55 +796,71 @@ def _format_reason(status: str, score: float, missing: list[str]) -> str:
     return f"{status} score={score:.2f} missing={missing}"
 
 
-def route_sufficiency_verdict(verdict: SufficiencyVerdict, mode_label: str, cycle: int, max_cycles: int) -> tuple:
-    """Return (action, should_continue)."""
+def route_sufficiency_verdict(
+    verdict: SufficiencyVerdict,
+    mode_label: str,
+    cycle: int,
+    max_cycles: int,
+    auto: dict | None = None,
+) -> tuple:
+    """Decision-ladder routing → (action, should_continue, caveat).
+
+    The LLM AutoRater (``auto``) is the primary sufficiency judge; the agent
+    confidence (``verdict.agent_confidence``) is the risk gate. ``auto`` is the
+    dict returned by ``llm_sufficiency_boost`` (``is_sufficient`` /
+    ``confidence`` / ``missing`` / ``contradictions``). When absent (e.g. the
+    medium mode did not trigger the AutoRater, or the tools lack an LLM judge),
+    we fall back to a code-only decision so the loop still terminates sensibly.
+    """
     mode = get_mode(mode_label)
+    hard_violations = getattr(verdict, "hard_violations", []) or []
+    agent_confidence = getattr(verdict, "agent_confidence", verdict.agent_score)
+
+    # AutoRater signals, with sane defaults when it was not invoked.
+    auto_sufficient = bool(auto.get("is_sufficient")) if auto else (verdict.status == "SUFFICIENT")
+    auto_confidence = float(auto.get("confidence") or 1.0) if auto else 1.0
+    missing = list(auto.get("missing") or []) if auto else verdict.missing_claims
+    contradictions = list(auto.get("contradictions") or []) if auto else ([verdict.feedback] if verdict.has_conflicts else [])
+
+    from rag.advanced_rag.harness.sufficiency_ladder import sufficiency_ladder
+
+    out = sufficiency_ladder(
+        auto_sufficient=auto_sufficient,
+        auto_confidence=auto_confidence,
+        missing=missing,
+        contradictions=contradictions,
+        agent_confidence=agent_confidence,
+        c_high=mode.c_high,
+        c_low=mode.c_low,
+        llm_floor=mode.llm_floor,
+        allows_reconcile=mode.allows_reconcile,
+        cycle=cycle,
+        max_cycles=max_cycles,
+        hard_violations=hard_violations,
+    )
     _LOG.info(
-        "[Sufficiency routing] verdict=%s score=%.3f, cycle=%d/%d, mode=%s (replan_allowed=%s selective_gen=%s fallback_llm=%s)",
-        verdict.status,
-        verdict.score,
-        cycle,
-        max_cycles,
-        mode_label,
-        mode.allows_replan,
-        mode.requires_selective_gen,
-        mode.fallback_to_direct_llm,
+        "[Sufficiency ladder] auto_sufficient=%s auto_conf=%.2f agent_conf=%.2f hard_violations=%s → %s",
+        auto_sufficient,
+        auto_confidence,
+        agent_confidence,
+        hard_violations,
+        out.action,
     )
 
-    if verdict.status == "SUFFICIENT":
-        _LOG.info("[Sufficiency routing] → ANSWER (enough evidence)")
-        return ("ANSWER", False)
-
-    if verdict.status == "USEFUL_BUT_INCOMPLETE":
-        if mode.requires_selective_gen:
-            _LOG.info("[Sufficiency routing] → ANSWER_PARTIAL (partial evidence, selective gen enabled)")
-            return ("ANSWER_PARTIAL", False)
-        _LOG.info("[Sufficiency routing] → CONTINUE (partial evidence, no selective gen)")
-        return ("CONTINUE", False)
-
-    if verdict.status == "INSUFFICIENT":
-        # ``cycle`` is 0-based, so the last cycle is ``max_cycles - 1`` — the
-        # old ``max_cycles * 0.8`` threshold was never reached for the 3/3/4
-        # cycle budgets, making this branch dead code.
-        if cycle >= max_cycles - 1:
-            _LOG.info("[Sufficiency routing] → ANSWER_PARTIAL (last cycle reached, insufficient)")
-            return ("ANSWER_PARTIAL", False)
-        _LOG.info("[Sufficiency routing] → CONTINUE (insufficient, cycles remain)")
-        return ("CONTINUE", True)
-
-    if verdict.status == "CONFLICTING":
-        if mode.allows_replan and cycle < max_cycles * 0.5:
-            _LOG.info("[Sufficiency routing] → REPLAN (conflicting evidence)")
-            return ("REPLAN", True)
-        _LOG.info("[Sufficiency routing] → ANSWER_PARTIAL (conflicting, no replan available)")
-        return ("ANSWER_PARTIAL", False)
-
-    if verdict.status == "UNANSWERABLE":
+    # Map ladder action onto orchestrator actions.
+    action = out.action
+    if action == ANSWER_WITH_CAVEAT:
+        action = "ANSWER_PARTIAL"
+    elif action == RECONCILE:
+        # medium has no reconcile loop → degrade to CONTINUE (keep searching).
+        if mode.allows_reconcile:
+            return ("CONTINUE", True, out.caveat)
+        return ("CONTINUE", True, out.caveat)
+    elif action == UNANSWERABLE:
         if mode.fallback_to_direct_llm:
-            _LOG.info("[Sufficiency routing] → FALLBACK_LLM (unanswerable)")
-            return ("FALLBACK_LLM", False)
-        _LOG.info("[Sufficiency routing] → ABSTAIN (unanswerable)")
-        return ("ABSTAIN", False)
-
-    _LOG.info("[Sufficiency routing] → CONTINUE (default)")
-    return ("CONTINUE", True)
+            action = "FALLBACK_LLM"
+        else:
+            action = "ABSTAIN"
+        return (action, False, out.caveat)
+    # ANSWER / GAP
+    return (action, out.should_continue, out.caveat)

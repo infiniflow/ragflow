@@ -44,17 +44,20 @@ class ExecutionStrategy:
     sufficiency_threshold: float
     partial_threshold: float
     fallback_to_direct_llm: bool
-    # Fusion of Signal A (agent/retrieval confidence) and Signal B (cross-check).
-    # "geometric" (default): weighted geometric mean, any signal ~0 vetoes.
-    # "agreement": trust when A/B agree, conservative when they diverge.
-    # "weighted": convex combination minus a disagreement penalty.
-    fusion_strategy: str = "geometric"
-    # Cross-check (Signal B) weight for geometric/weighted strategies.
-    fusion_w_b: float = 0.6
     # Min cross-check floor for a self-verified claim. Any claim scoring below
-    # this vetoes SUFFICIENT (its localized evidence gap must not be averaged
+    # this becomes a hard veto (its localized evidence gap must not be averaged
     # away by stronger sibling claims). Default 0.5 == the cross-check pass bar.
     fusion_min_cross: float = 0.5
+    # ── Decision-ladder operating points (Sufficient Context redesign) ──
+    # These are monotonic product-policy thresholds — NOT trained weights. They
+    # express "how conservative to be" (higher = investigate more before
+    # answering), replacing the old weighted fusion.
+    c_high: float = 0.75  # agent confidence >= this and AutoRater sufficient → ANSWER
+    c_low: float = 0.45  # agent confidence >= this → ANSWER_WITH_CAVEAT; below → reconcile
+    llm_floor: float = 0.55  # AutoRater confidence < this → re-investigate regardless of verdict
+    # Whether the mode can force a re-investigation (RECONCILE). medium=False so
+    # RECONCILE degrades to CONTINUE; high/ultra=True.
+    allows_reconcile: bool = False
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -128,7 +131,7 @@ class ClaimCrossCheckResult:
 
 @dataclass
 class SufficiencyVerdict:
-    status: str  # SUFFICIENT | USEFUL_BUT_INCOMPLETE | INSUFFICIENT | CONFLICTING | UNANSWERABLE
+    status: str  # code-level preliminary label (decision ladder decides final action)
     score: float
     agent_score: float
     cross_score: float
@@ -137,6 +140,13 @@ class SufficiencyVerdict:
     missing_claims: list[str]
     feedback: str
     overall_reason: str
+    # Decision-ladder inputs (Sufficient Context redesign):
+    #   - hard_violations: claim IDs with a code-proven evidence gap (required
+    #     entity missing / grounded absent / numeric conflict) that must veto a
+    #     full answer even if the LLM AutoRater says sufficient.
+    #   - agent_confidence: mean self-confidence over the trusted subset.
+    hard_violations: list[str] = field(default_factory=list)
+    agent_confidence: float = 0.0
 
 
 # ═══════════════════════════════════════════════════════════════

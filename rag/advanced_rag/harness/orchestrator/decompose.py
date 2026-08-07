@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import re
-from dataclasses import replace
 
 from rag.advanced_rag.harness.types import ClaimTarget, AgentResult, OrchestratorContext
 from rag.advanced_rag.harness.config import get_mode
@@ -201,27 +200,30 @@ async def decompose_and_search(state: dict, tools) -> dict:
         )
         ctx.verdict = verdict
 
-        # Phase-2 LLM Sufficient Context AutoRater: only in the borderline band
-        # (USEFUL_BUT_INCOMPLETE / INSUFFICIENT / CONFLICTING) upgrade the verdict
-        # to SUFFICIENT if the LLM judges the evidence sufficient, and harvest its
-        # missing-piece follow-ups for the next hop. Keeps medium consistent with
-        # high/ultra (agentic.py) which applies the same boost.
+        # LLM Sufficient Context AutoRater (primary sufficiency judge). Medium
+        # keeps it gated to the borderline band for cost control; its verdict
+        # (`auto=boost`) is fed to the decision ladder inside
+        # ``route_sufficiency_verdict``, which replaces the old manual
+        # SUFFICIENT upgrade. Missing-piece follow-ups feed the next hop.
+        boost: dict = {}
         if verdict.status in ("USEFUL_BUT_INCOMPLETE", "INSUFFICIENT", "CONFLICTING"):
             boost = await llm_sufficiency_boost(tools, ctx.question, verdict, evidence_ids=_global_evidence_ids(tools, {"chunks": tools.kbinfos.get("chunks", [])}))
-            if boost.get("is_sufficient"):
-                verdict = replace(verdict, status="SUFFICIENT", score=max(verdict.score, mode.sufficiency_threshold))
-                ctx.verdict = verdict
             followups = boost.get("followups") or []
             if followups:
                 ctx.pending_followups = followups
                 _LOG.info("[Decompose] Stored %d follow-up query(ies) for next round.", len(ctx.pending_followups))
+            if boost:
+                _LOG.info("[Decompose] AutoRater is_sufficient=%s confidence=%.2f", boost.get("is_sufficient"), boost.get("confidence", 1.0))
 
-        action, should_continue = route_sufficiency_verdict(
+        action, should_continue, caveat = route_sufficiency_verdict(
             verdict,
             mode_label,
             cycle,
             max_cycles,
+            auto=boost,
         )
+        if caveat:
+            _LOG.info("[Decompose] caveat=%s", caveat)
 
         # Stagnation guard: if the verdict is not (yet) sufficient and the score
         # has not meaningfully improved across consecutive rounds, stop instead
@@ -350,7 +352,10 @@ def _normalize_analysis(
     if is_verified:
         gaps = []
         next_queries = []
-        confidence = max(confidence, 0.65)
+        # NOTE: no optimistic floor here. The old ``max(confidence, 0.65)``
+        # inflated medium's agent confidence and distorted the decision-ladder
+        # gate (agent_confidence >= c_high/c_low). Keep the LLM's raw confidence
+        # so the ladder's thresholds behave as designed.
     elif not next_queries and cycle + 1 < max_cycles:
         next_queries = _fallback_queries(question, claim)
 

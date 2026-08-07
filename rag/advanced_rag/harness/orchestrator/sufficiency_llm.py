@@ -1,20 +1,19 @@
-"""Phase-2 LLM Sufficient Context AutoRater fallback for the orchestrator.
+"""LLM Sufficient Context AutoRater for the orchestrator.
 
-When the code-level fusion verdict lands in the *critical band* (evidence
-looks "usable but incomplete" or "insufficient" — i.e. the code signals are
-ambiguous), we delegate to the LLM Sufficient Context AutoRater
-(``tools.judge_sufficiency``, backing prompt ``sufficiency_select``) to
-decide whether the retrieved evidence actually answers the question.
+This is the *primary* sufficiency judge in the decision-ladder design
+(Sufficient Context paper, arXiv 2411.06037). We delegate to the LLM
+AutoRater (``tools.judge_sufficiency``, backing prompt ``sufficiency_select``)
+to decide whether the retrieved evidence actually supports a plausible answer.
 
-This aligns with the Sufficient Context paper (arXiv 2411.06037) and Google's
-Sufficient Context Agent:
-  - LLM AutoRater judges query + evidence, not just keyword/entity matching.
-  - On "insufficient" it returns concrete ``missing_information`` and we turn
-    those into follow-up search queries (missing-pieces feedback) that are fed
-    into the next orchestrator round.
+  - AutoRater judges query + evidence semantically, not just keyword matching.
+  - On "insufficient" it returns concrete ``missing_information`` which we turn
+    into follow-up search queries (missing-pieces feedback) for the next round.
+  - It also returns ``confidence`` / ``contradictions`` / ``required_entities``
+    consumed by the decision ladder (``sufficiency_ladder``).
 
-It is deliberately gated to the critical band so the LLM is NOT called on
-every round of every claim (token cost stays bounded).
+Call frequency: high/ultra invoke it every round; medium keeps it gated to the
+critical band (token cost stays bounded for the default mode). The
+``verdict.status in (...)"`` check below implements that medium gate.
 """
 
 from __future__ import annotations
@@ -32,6 +31,14 @@ _LOG = logging.getLogger(__name__)
 _MAX_EVIDENCE_CHUNKS = 24
 _MAX_CHUNK_CHARS = 800
 _MAX_EVIDENCE_CHARS = 24_000
+
+
+def _clamp(value) -> float:
+    """Clamp the AutoRater's confidence field to [0, 1], defaulting to 1.0."""
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return 1.0
 
 
 def _evidence_md(tools, evidence_ids=None) -> str:
@@ -112,14 +119,21 @@ async def llm_sufficiency_boost(
         _LOG.info("[LLM-sufficiency] judge_sufficiency failed: %s", exc)
         return {}
 
-    is_suff = bool(llm_result.get("is_sufficient"))
-    missing = [str(m) for m in (llm_result.get("missing_information") or []) if str(m).strip()]
+    is_suff = bool(llm_result.get("is_sufficient") or llm_result.get("Sufficient Context"))
+    missing = [str(m) for m in (llm_result.get("missing_information") or llm_result.get("missing") or []) if str(m).strip()]
     reasoning = (llm_result.get("reasoning") or "").strip()
+    # New Sufficient Context paper fields consumed by the decision ladder.
+    auto_confidence = _clamp(llm_result.get("confidence"))
+    contradictions = [str(c) for c in (llm_result.get("contradictions") or []) if str(c).strip()]
+    required_entities = [str(e) for e in (llm_result.get("required_entities") or []) if str(e).strip()]
+    coverage = llm_result.get("coverage") or {}
     _LOG.info(
-        "[LLM-sufficiency] is_sufficient=%s, reasoning=%s, missing=%s",
+        "[LLM-sufficiency] is_sufficient=%s confidence=%.2f contradictions=%s missing=%s reasoning=%s",
         is_suff,
-        reasoning[:200],
+        auto_confidence,
+        contradictions,
         missing,
+        reasoning[:200],
     )
 
     followups: list[dict] = []
@@ -130,11 +144,15 @@ async def llm_sufficiency_boost(
             _LOG.info("[LLM-sufficiency] gen_followups failed: %s", exc)
 
     if followups:
-        _LOG.info("[LLM-sufficiency] %d follow-up query(ies) generated for next round: %s", len(followups), [q.get("question", "") for q in followups])
+        _LOG.info("[LLM-sufficiency] %d follow-up query(ie)s generated for next round: %s", len(followups), [q.get("question", "") for q in followups])
 
     return {
         "is_sufficient": is_suff,
+        "confidence": auto_confidence,
         "missing": missing,
+        "contradictions": contradictions,
+        "required_entities": required_entities,
+        "coverage": coverage,
         "reasoning": reasoning,
         "followups": followups,
     }
