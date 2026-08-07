@@ -214,6 +214,23 @@ async def decompose_and_search(state: dict, tools) -> dict:
             if boost:
                 _LOG.info("[Decompose] AutoRater is_sufficient=%s confidence=%.2f", boost.get("is_sufficient"), boost.get("confidence", 1.0))
 
+            # LLM groundedness review (Google "draft review"): medium runs it only in
+            # the critical band (alongside the AutoRater) to bound cost. Ungrounded
+            # claim drafts are merged into hard_violations → decision ladder caveat.
+            from rag.advanced_rag.harness.orchestrator.grounded_llm import llm_grounded_verify
+
+            grounded = await llm_grounded_verify(
+                tools,
+                ctx.question,
+                [(r.claim_id, r.report or "") for r in agent_results if r.report],
+                None,
+            )
+            ungrounded_ids = [cid for cid, g in grounded.items() if g.get("ungrounded")]
+            if ungrounded_ids:
+                existing = set(verdict.hard_violations or [])
+                verdict.hard_violations = list(existing | set(ungrounded_ids))
+                _LOG.info("[Decompose] %d claim(s) have ungrounded (draft-review) assertions: %s", len(ungrounded_ids), ungrounded_ids)
+
         action, should_continue, caveat = route_sufficiency_verdict(
             verdict,
             mode_label,
