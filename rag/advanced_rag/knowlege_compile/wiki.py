@@ -1763,10 +1763,19 @@ Examples of BAD slugs (do NOT produce):
   - ``concept/example-name``           (just duplicate the sample)
 
 # Other rules
-- Group closely related small entities onto the same page (max 3-4 per page).
-  BUT if a primary entity is described through several distinct thematic
-  sections that appear as concepts above, prefer a separate ``concept`` page
-  for EACH such section instead of collapsing them onto the entity page.
+- Entity/concept identity is one-to-one with pages: every extracted entity and
+  concept must be represented by exactly one canonical page, and each identity
+  may appear in only one page's ``entity_names``. Never split an identity into
+  multiple pages, page types, thematic sections, aliases, language
+  transliterations, or alternate slug spellings. Put all supported sections
+  for that identity on its single canonical page.
+- A page may represent several closely related low-signal entities/concepts
+  (max 3-4 per page), but list every represented identity in ``entity_names``
+  and do not repeat any identity on another page. If the page budget is tight,
+  group identities rather than omitting one or emitting a second page for it.
+- Identity ownership does not limit linking: ``related_kb_pages`` should list
+  every directly related canonical page supported by the input (within the
+  available-page budget). Never link duplicate or non-canonical slug variants.
 - priority 1 = highest importance (process first).
 - entity_names must match the names in the entities / concepts lists above.
 - Target approximately {target_page_count} total pages (feel free to deviate
