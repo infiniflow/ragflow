@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+"""Tests for MWS provider registration, discovery, and inference adapters."""
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -30,6 +32,7 @@ PROJECT_URL = "https://gpt.mwsapis.ru/projects/test-project"
 
 
 def _response(payload, status_code=200):
+    """Create a mocked synchronous HTTP response for MWS adapter tests."""
     response = MagicMock()
     response.status_code = status_code
     response.json.return_value = payload
@@ -38,6 +41,7 @@ def _response(payload, status_code=200):
 
 
 def _async_context(value):
+    """Wrap a mocked value in an asynchronous context manager."""
     context = MagicMock()
     context.__aenter__ = AsyncMock(return_value=value)
     context.__aexit__ = AsyncMock(return_value=None)
@@ -46,6 +50,7 @@ def _async_context(value):
 
 @pytest.mark.p1
 def test_mws_provider_registration():
+    """Register every supported MWS adapter under the public provider name."""
     assert ChatModel["MWS"] is MWSChat
     assert EmbeddingModel["MWS"] is MWSEmbed
     assert RerankModel["MWS"] is MWSRerank
@@ -54,6 +59,7 @@ def test_mws_provider_registration():
 
 @pytest.mark.p1
 def test_mws_project_url_validation_and_endpoints():
+    """Normalize project roots and construct each supported MWS endpoint."""
     assert normalize_mws_project_url(PROJECT_URL + "/") == PROJECT_URL
     assert (
         mws_api_url(PROJECT_URL, "openai/v1/chat/completions")
@@ -76,6 +82,7 @@ def test_mws_project_url_validation_and_endpoints():
 @pytest.mark.p1
 @pytest.mark.asyncio
 async def test_mws_model_list_uses_exact_url_and_bearer_header():
+    """Load and classify models with the required URL and bearer token."""
     response = MagicMock(status=200)
     response.json = AsyncMock(
         return_value={
@@ -108,6 +115,7 @@ async def test_mws_model_list_uses_exact_url_and_bearer_header():
 @pytest.mark.p1
 @pytest.mark.asyncio
 async def test_mws_chat_uses_exact_url_bearer_header_and_documented_fields():
+    """Send only documented fields in a non-streaming MWS chat request."""
     chat = MWSChat("token", "qwen3-32b", PROJECT_URL + "/")
     response = MagicMock(status=200)
     response.json = AsyncMock(
@@ -180,6 +188,7 @@ async def test_mws_chat_uses_exact_url_bearer_header_and_documented_fields():
 @pytest.mark.p1
 @pytest.mark.asyncio
 async def test_mws_chat_streaming_uses_documented_fields_and_usage():
+    """Parse streaming MWS chat chunks and report final token usage."""
     chat = MWSChat("token", "qwen3-32b", PROJECT_URL)
     response = MagicMock(status=200)
     response.content = MagicMock()
@@ -228,6 +237,7 @@ async def test_mws_chat_streaming_uses_documented_fields_and_usage():
 
 @pytest.mark.p1
 def test_mws_embedding_sends_only_documented_fields_and_orders_results():
+    """Send a strict embedding request and restore response index order."""
     embed = MWSEmbed("token", "bge-m3", PROJECT_URL + "/")
     response = _response(
         {
@@ -254,6 +264,7 @@ def test_mws_embedding_sends_only_documented_fields_and_orders_results():
 
 @pytest.mark.p1
 def test_mws_embedding_rejects_empty_token_without_request():
+    """Reject an empty MWS token before attempting an embedding request."""
     with patch("rag.llm.embedding_model.requests.post") as post:
         with pytest.raises(ValueError, match="Token is required"):
             MWSEmbed(" ", "bge-m3", PROJECT_URL)
@@ -262,6 +273,7 @@ def test_mws_embedding_rejects_empty_token_without_request():
 
 @pytest.mark.p1
 def test_mws_rerank_uses_cohere_path_and_exact_payload():
+    """Use the MWS Cohere endpoint with the exact reranking payload."""
     reranker = MWSRerank("token", "bge-reranker-v2-m3", PROJECT_URL)
     response = _response(
         {
@@ -291,6 +303,7 @@ def test_mws_rerank_uses_cohere_path_and_exact_payload():
 
 @pytest.mark.p1
 def test_mws_empty_inputs_do_not_send_requests():
+    """Return empty results without calling MWS for empty input lists."""
     embed = MWSEmbed("token", "bge-m3", PROJECT_URL)
     reranker = MWSRerank("token", "bge-reranker-v2-m3", PROJECT_URL)
 
@@ -311,6 +324,7 @@ def test_mws_empty_inputs_do_not_send_requests():
 
 @pytest.mark.p1
 def test_mws_rejects_incomplete_indexed_responses():
+    """Reject incomplete embedding and reranking response collections."""
     embed = MWSEmbed("token", "bge-m3", PROJECT_URL)
     reranker = MWSRerank("token", "bge-reranker-v2-m3", PROJECT_URL)
 
@@ -331,6 +345,7 @@ def test_mws_rejects_incomplete_indexed_responses():
 
 @pytest.mark.p1
 def test_mws_model_list_keeps_chat_embedding_and_rerank():
+    """Expose only the three model types implemented by the MWS provider."""
     meta = MWS("token", PROJECT_URL)
     models = meta._format_model_list(
         {

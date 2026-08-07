@@ -288,10 +288,12 @@ class MWSRerank(OpenAI_APIRerank):
     _FACTORY_NAME = "MWS"
 
     def __init__(self, key, model_name, base_url):
+        """Initialize reranking access for an MWS project and deployment."""
         token = require_mws_token(key)
         super().__init__(token, model_name, mws_api_url(base_url, "cohere/v2/rerank"))
 
     def _compute_rank(self, query: str, texts: List) -> Tuple[np.ndarray, int]:
+        """Score candidate texts and restore scores to document input order."""
         documents = [truncate(text, 500) for text in texts]
         response = requests.post(
             self.base_url,

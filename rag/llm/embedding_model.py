@@ -887,11 +887,13 @@ class MWSEmbed(OpenAIEmbed):
     _FACTORY_NAME = "MWS"
 
     def __init__(self, key, model_name, base_url):
+        """Initialize embedding access for an MWS project and deployment."""
         self.api_key = require_mws_token(key)
         self.base_url = mws_api_url(base_url, "openai/v1/embeddings")
         self.model_name = model_name.split("___")[0]
 
     def _call(self, batch):
+        """Embed a batch and restore vectors to their original input order."""
         response = requests.post(
             self.base_url,
             headers={"Content-Type": "application/json", "Authorization": f"Bearer {self.api_key}"},

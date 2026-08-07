@@ -13,6 +13,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+"""Validation and URL helpers for the MWS GPT Model Hub provider."""
+
 from urllib.parse import urlparse, urlunparse
 
 
@@ -41,10 +43,12 @@ def normalize_mws_project_url(base_url: str | None) -> str:
 
 
 def mws_api_url(base_url: str | None, endpoint: str) -> str:
+    """Build an MWS API endpoint relative to a validated project root."""
     return f"{normalize_mws_project_url(base_url)}/{endpoint.strip('/')}"
 
 
 def require_mws_token(token: str | None) -> str:
+    """Return a normalized MWS bearer token or reject an empty value."""
     value = (token or "").strip()
     if not value:
         raise ValueError("MWS Token is required")

@@ -464,15 +464,20 @@ class OpenAIAPICompatible(Base):
 
 
 class MWS(OpenAIAPICompatible):
+    """Discover supported MWS deployments through the project models API."""
+
     _FACTORY_NAME = "MWS"
 
     def __init__(self, api_key: str, base_url: str = None):
+        """Initialize dynamic model discovery for an MWS project."""
         super().__init__(require_mws_token(api_key), normalize_mws_project_url(base_url))
 
     def _get_model_list_url(self):
+        """Return the OpenAI-compatible models endpoint for the MWS project."""
         return mws_api_url(self.base_url, "openai/v1/models")
 
     def _format_model_list(self, raw_model_list):
+        """Keep only chat, embedding, and reranking MWS deployments."""
         supported_types = {
             LLMType.CHAT.value,
             LLMType.EMBEDDING.value,

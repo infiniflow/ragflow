@@ -1078,6 +1078,7 @@ class MWSChat(Base):
     _ROLES = {"system", "user", "assistant"}
 
     def __init__(self, key, model_name, base_url, **kwargs):
+        """Initialize chat access for an MWS project and model deployment."""
         token = require_mws_token(key)
         self.chat_url = mws_api_url(base_url, "openai/v1/chat/completions")
         self.headers = {
@@ -1092,6 +1093,7 @@ class MWSChat(Base):
         )
 
     def _clean_conf(self, gen_conf):
+        """Keep only generation parameters documented by the MWS API."""
         gen_conf = gen_conf or {}
         cleaned = {}
         if gen_conf.get("temperature") is not None:
@@ -1104,6 +1106,7 @@ class MWSChat(Base):
         return cleaned
 
     def _request_body(self, history, gen_conf, *, stream):
+        """Build a strict MWS chat request from RAGFlow messages and options."""
         messages = []
         for message in history:
             role = message.get("role") if isinstance(message, dict) else None
@@ -1125,6 +1128,7 @@ class MWSChat(Base):
         return body
 
     async def _post_json(self, body):
+        """Send a non-streaming MWS chat request and decode its JSON response."""
         timeout = aiohttp.ClientTimeout(
             total=int(os.environ.get("LLM_TIMEOUT_SECONDS", 600))
         )
@@ -1142,6 +1146,7 @@ class MWSChat(Base):
                 return await response.json()
 
     async def _async_chat(self, history, gen_conf, **kwargs):
+        """Return one complete MWS chat answer together with its token usage."""
         payload = await self._post_json(
             self._request_body(history, gen_conf, stream=False)
         )
@@ -1160,6 +1165,7 @@ class MWSChat(Base):
         return answer, total_token_count_from_response(payload)
 
     async def _async_chat_streamly(self, history, gen_conf, **kwargs):
+        """Yield MWS SSE content chunks and attach usage to the final chunk."""
         body = self._request_body(history, gen_conf, stream=True)
         timeout = aiohttp.ClientTimeout(
             total=int(os.environ.get("LLM_TIMEOUT_SECONDS", 600))
