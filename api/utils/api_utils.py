@@ -256,11 +256,31 @@ def get_json_result(code: RetCode = RetCode.SUCCESS, message="success", data=Non
     return _safe_jsonify(response)
 
 
+# Internal RetCode values below 200 collide with the HTTP 1xx (informational) range.
+# h11 refuses to send a 1xx status as a final response, so Hypercorn drops the
+# connection and the client receives an empty reply instead of the JSON error body.
+# Map them to real HTTP statuses; the body keeps the original RetCode.
+RET_CODE_TO_HTTP_STATUS = {
+    RetCode.EXCEPTION_ERROR: 500,
+    RetCode.ARGUMENT_ERROR: 400,
+    RetCode.DATA_ERROR: 400,
+    RetCode.OPERATING_ERROR: 400,
+    RetCode.CONNECTION_ERROR: 500,
+    RetCode.RUNNING: 500,
+    RetCode.PERMISSION_ERROR: 403,
+    # Dify's external knowledge API expects HTTP 403 for authorization failures.
+    RetCode.AUTHENTICATION_ERROR: 403,
+}
+
+
 def build_error_result(code=RetCode.FORBIDDEN, message="success"):
     response = {"code": code, "message": message}
     response = _safe_jsonify(response)
     if hasattr(response, "status_code"):
-        response.status_code = code
+        http_status = RET_CODE_TO_HTTP_STATUS.get(code)
+        if http_status is None:
+            http_status = int(code) if 200 <= int(code) <= 599 else 500
+        response.status_code = http_status
     return response
 
 

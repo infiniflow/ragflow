@@ -73,3 +73,61 @@ def test_get_data_openai_stream_delta_allows_reference_payload():
     data["choices"][0]["delta"]["reference"] = {"chunks": []}
 
     assert data["choices"][0]["delta"]["reference"] == {"chunks": []}
+
+
+def _build_error_result_in_app_context(code):
+    import asyncio
+
+    from quart import Quart
+
+    app = Quart(__name__)
+
+    async def run():
+        async with app.app_context():
+            return api_utils.build_error_result(code=code, message="boom")
+
+    return asyncio.run(run())
+
+
+def test_build_error_result_never_uses_1xx_http_status():
+    # RetCode.ARGUMENT_ERROR is 101. Sending it as the HTTP status makes h11
+    # reject the final response, so Hypercorn closes the connection and the
+    # client sees an empty reply instead of the JSON error (#17980).
+    from common.constants import RetCode
+
+    resp = _build_error_result_in_app_context(RetCode.ARGUMENT_ERROR)
+
+    assert resp.status_code == 400
+
+    # Plain ints must hit the same mapping (RetCode is an IntEnum).
+    assert _build_error_result_in_app_context(101).status_code == 400
+
+
+def test_build_error_result_maps_internal_ret_codes():
+    from common.constants import RetCode
+
+    expected = {
+        RetCode.EXCEPTION_ERROR: 500,
+        RetCode.DATA_ERROR: 400,
+        RetCode.OPERATING_ERROR: 400,
+        RetCode.CONNECTION_ERROR: 500,
+        RetCode.RUNNING: 500,
+        RetCode.PERMISSION_ERROR: 403,
+        RetCode.AUTHENTICATION_ERROR: 403,
+    }
+    for code, http_status in expected.items():
+        resp = _build_error_result_in_app_context(code)
+        assert resp.status_code == http_status, code
+        assert resp.status_code >= 200
+
+
+def test_build_error_result_keeps_valid_http_codes_and_body():
+    import asyncio
+
+    from common.constants import RetCode
+
+    resp = _build_error_result_in_app_context(RetCode.NOT_FOUND)
+
+    assert resp.status_code == 404
+    body = asyncio.run(resp.get_json())
+    assert body == {"code": RetCode.NOT_FOUND, "message": "boom"}
