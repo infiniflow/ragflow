@@ -184,6 +184,41 @@ def extract_named_entities(text: str) -> list[str]:
     return _spacy_ner_entities(text, lang)
 
 
+def _detect_numeric_conflict(disclosed: list[str]) -> list[str]:
+    """Detect close-but-different figures among the agent's disclosed numbers.
+
+    Extracts the leading number from each disclosure entry (e.g. "2,161,000 from
+    Wikipedia ..." → 2161000) and flags pairs that are numerically *close but not
+    equal* — the signature of a multi-source口径 conflict (same quantity, different
+    figure), which Q754 hit (population 2,161,000 vs 2,145,906 → 228 vs 227).
+    Numbers that are far apart are likely different quantities and not flagged.
+    """
+    import re as _re
+
+    figures: list[tuple[float, str]] = []
+    for entry in disclosed:
+        m = _re.search(r"([\d][\d,]*(?:\.\d+)?)", entry)
+        if not m:
+            continue
+        try:
+            fig = float(m.group(1).replace(",", ""))
+        except ValueError:
+            continue
+        figures.append((fig, entry[:80]))
+
+    conflicts: list[str] = []
+    for i in range(len(figures)):
+        for j in range(i + 1, len(figures)):
+            a, b = figures[i][0], figures[j][0]
+            if a <= 0 or b <= 0:
+                continue
+            ratio = max(a, b) / min(a, b)
+            # Close (within 30%) but not equal → same quantity, conflicting value.
+            if 1 < ratio <= 1.3:
+                conflicts.append(f"{figures[i][1]} vs {figures[j][1]}")
+    return conflicts
+
+
 def _entity_present(ent: str, chunk_texts: list[str]) -> bool:
     """Whether ``ent`` (lowercased) appears in any of the evidence chunk texts.
 
@@ -351,6 +386,31 @@ def cross_check_claim(agent_result: AgentResult, all_chunks: dict) -> ClaimCross
                 cross_check_passed=False,
                 cross_check_score=0.0,
                 mismatches=[f"grounded fact not in evidence: {g}" for g in ungounded],
+            )
+
+    # ── Numeric multi-source conflict detection (Q754: 225 vs 228口径) ──
+    # The agent may have used one figure while the evidence holds another value
+    # for the same quantity (e.g. Paris population from INSEE vs Wikipedia vs a
+    # news estimate). A ratio/mean cross-check passes as long as the used number
+    # matches somewhere, hiding the fact that a DIFFERENT authoritative figure
+    # exists. When the report discloses several distinct figures that are close
+    # but not equal (the classic "multiple sources, pick one" trap), surface them
+    # as conflicts and cap the claim below the pass floor so the caller does not
+    # blindly accept one口径.
+    disclosed = [str(n) for n in (agent_result.numbers or []) if str(n).strip()]
+    if disclosed:
+        conflict = _detect_numeric_conflict(disclosed)
+        if conflict:
+            _LOG.warning(
+                "[Cross-check] claim=%s → NUMERIC CONFLICT: multiple close-but-different figures for the same quantity: %s — capping below pass",
+                agent_result.claim_id,
+                conflict,
+            )
+            return ClaimCrossCheckResult(
+                claim_id=agent_result.claim_id,
+                cross_check_passed=False,
+                cross_check_score=0.0,
+                mismatches=[f"numeric source conflict: {c}" for c in conflict],
             )
 
     def _anywhere(needle: str) -> bool:

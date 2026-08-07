@@ -100,6 +100,11 @@ class AgentResult:
     # prior-knowledge-injection risk (see check1.log Q203 hometown=Ithaca,
     # Q665 first-solo-album=1970) and must not count as sufficient.
     grounded: list[str] = field(default_factory=list)
+    # For numerical / multi-hop questions: the figures used in the answer with
+    # their sources ("2,161,000 from Wikipedia Demographics of Paris 2019").
+    # Used to detect multi-source numeric conflicts that a ratio/mean cross-check
+    # would otherwise paper over (see check.log Q754: 225 vs 228 population口径).
+    numbers: list[str] = field(default_factory=list)
 
 
 # ═══════════════════════════════════════════════════════════════
