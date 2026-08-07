@@ -47,6 +47,7 @@ from rag.advanced_rag.knowlege_compile.structure import (
     LLMCallPool,
     MERGE_SCOPE_DATASET,
     MERGE_SCOPE_DOC,
+    assign_page_index_title_chunk_spans,
     compile_structure_from_text,
     cleanup_timeline_isolated_entities,
     merge_compiled_structures,
@@ -421,6 +422,10 @@ async def run_structure_compile_over_batches(
         if rechunked_chunks:
             known_ids = {chunk.get("id") for chunk in agg_infos[template_id]["rechunked_chunks"]}
             agg_infos[template_id]["rechunked_chunks"].extend(chunk for chunk in rechunked_chunks if chunk.get("id") not in known_ids)
+        if template_kinds.get(template_id) == "page_index":
+            # Title provenance is completed after all source chunks are known.
+            # Flushing early would prevent a title from spanning later batches.
+            return
         if len(accumulators[template_id]) >= DOC_STRUCTURE_MERGE_MAX_DOCS:
             progress_cb(msg=f"  merge flush ({len(accumulators[template_id])} docs) for batch {batch_no} ({batch_len} chunks) for template ({template_ids_by_id[template_id]}/{total})")
             await _flush(template_id)
@@ -544,6 +549,8 @@ async def run_structure_compile_over_batches(
         if cancel_check():
             await _cancel_pending()
             raise TaskCanceledException("Task was cancelled before merge flush")
+        if template_kinds.get(template_id) == "page_index":
+            assign_page_index_title_chunk_spans(accumulators[template_id], chunks_by_id)
         await _flush(template_id)
     if flush_tasks:
         try:
