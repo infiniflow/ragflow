@@ -702,3 +702,47 @@ func TestTokenizerComponent_ImportantKwd_CommaOnly(t *testing.T) {
 		t.Errorf("important_tks = %v, want full keyword string", got[0]["important_tks"])
 	}
 }
+
+// TestTextPayloadToChunks_B1B2 pins the text-payload adapter used for
+// markdown/text/html payloads (tokenizer.go:578). This is the Go-correct
+// counterpart to a Python-DSL bug where turning full_text off dropped the
+// entire document (B1), and where an empty payload failed to emit the chunks
+// key at all (B2). The Go helper always returns a slice: non-empty payload ->
+// one chunk carrying the raw text; nil/empty/whitespace payload -> a non-nil
+// EMPTY slice so the downstream "chunks" key is present as [].
+//
+// No-tag unit test: textPayloadToChunks is a pure function, no CGo pool needed.
+func TestTextPayloadToChunks_B1B2(t *testing.T) {
+	// B1: a real payload yields exactly one chunk with the text preserved.
+	payload := "plain payload body"
+	got := textPayloadToChunks(&payload)
+	if len(got) != 1 {
+		t.Fatalf("non-empty payload: len(chunks) = %d, want 1", len(got))
+	}
+	if got[0].Text != payload {
+		t.Errorf("chunk text = %q, want %q", got[0].Text, payload)
+	}
+
+	// B2: empty/whitespace/nil payloads must still return a non-nil EMPTY
+	// slice (so the chunks key is present as [] downstream), never nil.
+	for _, tc := range []struct {
+		name string
+		in   *string
+	}{
+		{"empty string", ptr("")},
+		{"whitespace only", ptr("   \n\t  ")},
+		{"nil pointer", nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out := textPayloadToChunks(tc.in)
+			if out == nil {
+				t.Fatalf("textPayloadToChunks(%s) = nil, want non-nil empty slice", tc.name)
+			}
+			if len(out) != 0 {
+				t.Errorf("textPayloadToChunks(%s) len = %d, want 0", tc.name, len(out))
+			}
+		})
+	}
+}
+
+func ptr(s string) *string { return &s }
