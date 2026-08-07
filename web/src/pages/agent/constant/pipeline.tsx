@@ -262,7 +262,7 @@ export const initialTokenChunkerValues = {
   outputs: {
     chunks: { type: 'Array<Object>', value: [] },
   },
-  delimiter_mode: 'token_size',
+  delimiter_mode: 'delimiter',
   chunk_token_size: 512,
   overlapped_percent: 0,
   delimiters: [{ value: '\n' }],
