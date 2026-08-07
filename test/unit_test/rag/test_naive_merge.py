@@ -27,6 +27,7 @@ Guards against:
   append instead of using a projected-total check.
 """
 
+import itertools
 import re
 
 import pytest
@@ -162,7 +163,7 @@ def test_overlap_prefix_is_never_dropped_at_overflow():
     assert len(chunks) > 1
     # The overlap prefix is always present at every boundary: each chunk (after
     # the first) starts with the tail of the previous chunk.
-    for prev, cur in zip(chunks, chunks[1:]):
+    for prev, cur in itertools.pairwise(chunks):
         cut = int(len(prev) * (100 - 20) / 100.0)
         assert prev[cut:] and cur.startswith(prev[cut:]), "overlap prefix missing at boundary"
     # And because the prefix is never dropped, some chunks exceed the budget.
@@ -291,7 +292,7 @@ def test_strict_cap_overlap_never_dropped_at_overflow_boundary():
     sentences = [" ".join(["w"] * 10) for _ in range(20)]
     chunks = _nonempty(naive_merge(sentences, chunk_token_num=20, delimiter=DEFAULT_DELIMITER, overlapped_percent=20, strategy=MergeStrategy.UNDER_CAP))
     assert len(chunks) > 1
-    for prev, cur in zip(chunks, chunks[1:]):
+    for prev, cur in itertools.pairwise(chunks):
         cut = int(len(prev) * (100 - 20) / 100.0)
         assert prev[cut:] and cur.startswith(prev[cut:]), "overlap prefix missing at boundary"
     assert any(_tok(c) > 20 for c in chunks)
@@ -322,7 +323,7 @@ def test_strict_cap_overlap_chosen_when_it_fits():
     chunks = _nonempty(naive_merge(sentences, chunk_token_num=20, delimiter=DEFAULT_DELIMITER, overlapped_percent=20, strategy=MergeStrategy.UNDER_CAP))
     assert all(_tok(c) <= 20 for c in chunks)
     overlap_seen = False
-    for a, b in zip(chunks, chunks[1:]):
+    for a, b in itertools.pairwise(chunks):
         a_tokens = a.split()
         b_tokens = b.split()
         if a_tokens and b_tokens and any(t in b_tokens for t in a_tokens):

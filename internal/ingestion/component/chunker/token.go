@@ -423,8 +423,9 @@ func (c *TokenChunkerComponent) mergeByTokenSize(text string, childrenPattern *r
 			continue
 		}
 		t := "\n" + sec
-		if tokenizeStr(t) <= target {
-			units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tokenizeStr(t)), CKType: "text"})
+		tk := tokenizeStr(t)
+		if tk <= target {
+			units = append(units, schema.ChunkDoc{Text: t, TKNums: intPtr(tk), CKType: "text"})
 			continue
 		}
 		// Oversized section: split on production sentence delimiters into

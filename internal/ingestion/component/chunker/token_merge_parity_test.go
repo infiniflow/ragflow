@@ -339,7 +339,10 @@ func pythonMergeWithOverlap(paragraphs []string, chunkTokenSize int, overlappedP
 	}
 	out := make([]string, len(merged))
 	for i := range merged {
-		out[i] = strings.TrimSpace(removeTag(merged[i].text))
+		// Mirror production token.go:465 (removeTag first, then TrimSpace) so
+		// whitespace between visible text and a trailing position tag survives
+		// exactly as the Go TokenChunker emits it.
+		out[i] = removeTag(strings.TrimSpace(merged[i].text))
 	}
 	return out
 }
@@ -356,6 +359,38 @@ func pythonMergeWithOverlap(paragraphs []string, chunkTokenSize int, overlappedP
 // introduced by the unified algorithm (decision #4: unconditional overlap
 // prefix) against Go/Python drift at overlap>0, which #17948 (overlap=0) does
 // not exercise.
+// TestTokenChunkerOverlapStripsTagsTrimOrder guards the final-strip ORDER for
+// tag-bearing text: production (token.go:465) does removeTag(TrimSpace(text)),
+// so whitespace that sits BETWEEN visible text and a trailing position tag is
+// PRESERVED (TrimSpace cannot see past the tag). The oracle
+// pythonMergeWithOverlap must use the SAME order, otherwise the parity test
+// would assert a text that the production code never emits.
+//
+// Input: every paragraph ends with "<space><space>@@page...##", so each merged
+// chunk's tail has two spaces before its closing tag. With the production
+// order the trailing spaces survive; with the swapped order they are trimmed.
+func TestTokenChunkerOverlapStripsTagsTrimOrder(t *testing.T) {
+	tagged := []string{
+		"alpha one  @@1\t2\t3\t4##",
+		"beta two  @@5\t6\t7\t8##",
+		"gamma three  @@9\t1\t2\t3##",
+	}
+	text := strings.Join(tagged, "\n")
+	const overlap = 20.0
+	for _, cap := range []int{8, 32} {
+		want := pythonMergeWithOverlap(tagged, cap, overlap)
+		got := invokeTokenChunker(t, text, cap, overlap)
+		if len(got) != len(want) {
+			t.Fatalf("chunk_token_size=%d overlap=%v: chunk count go=%d, python=%d", cap, overlap, len(got), len(want))
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Errorf("chunk_token_size=%d overlap=%v chunk[%d] mismatch:\n got=%q\nwant=%q", cap, overlap, i, got[i], want[i])
+			}
+		}
+	}
+}
+
 func TestTokenChunkerOverlapMatchesPython(t *testing.T) {
 	text := strings.Join(mergeSourceLines, "\n")
 	const overlap = 20.0
