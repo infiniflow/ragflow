@@ -32,7 +32,7 @@ from rag.nlp import naive_merge
 class TokenChunkerParam(ProcessParamBase):
     def __init__(self):
         super().__init__()
-        self.delimiter_mode = "token_size"
+        self.delimiter_mode = "delimiter"
         self.chunk_token_size = 512
         self.delimiters = ["\n"]
         self.overlapped_percent = 0
@@ -41,7 +41,7 @@ class TokenChunkerParam(ProcessParamBase):
         self.image_context_size = 0
 
     def check(self):
-        self.check_valid_value(self.delimiter_mode, "Delimiter mode abnormal.", ["token_size", "delimiter", "one"])
+        self.check_valid_value(self.delimiter_mode, "Delimiter mode abnormal.", ["delimiter", "one"])
         if self.delimiters is None:
             self.delimiters = []
         elif isinstance(self.delimiters, str):
@@ -316,9 +316,7 @@ class TokenChunker(ProcessBase):
                 self.set_output("chunks", [{"text": payload}] if payload.strip() else [])
                 self.callback(1, "Done.")
                 return
-            if self._param.delimiter_mode == "delimiter":
-                cks = _split_text_by_pattern(payload, delimiter_pattern)
-            elif delimiter_pattern:
+            if delimiter_pattern:
                 cks = _split_text_by_pattern(payload, delimiter_pattern)
             else:
                 cks = naive_merge(
@@ -358,100 +356,87 @@ class TokenChunker(ProcessBase):
             self.callback(1, "Done.")
             return
 
-        if self._param.delimiter_mode == "delimiter":
-            text_chunks = _build_json_chunks(json_result, "")
-            chunks = []
-            text_buffer = []
-            text_buffer_pos = []
+        text_chunks = _build_json_chunks(json_result, "")
+        chunks = []
+        text_buffer = []
+        text_buffer_pos = []
 
-            def flush_text_buffer():
-                if not text_buffer:
-                    return
-                # Join buffered text items with "\n" so adjacent item text is not
-                # glued together (e.g. "hello" + "world" must not become "helloworld").
-                # The delimiter is then applied to the combined text; a segment may
-                # span across item boundaries (the "\n" glue is not itself a
-                # delimiter), so each segment carries only the PDF positions of the
-                # buffered item(s) whose text contributed to it -- never the union of
-                # every item (which previously leaked page-N coordinates into
-                # page-M chunks and made all segments share one preview image).
-                parts = []
-                item_ranges = []  # (start, end) of each buffered item in combined_text
-                offset = 0
-                for text in text_buffer:
-                    start = offset
-                    parts.append(text)
-                    offset += len(text)
-                    item_ranges.append((start, offset))
-                    parts.append("\n")
-                    offset += 1
-                combined_text = "".join(parts[:-1])  # drop the trailing glue
+        def flush_text_buffer():
+            if not text_buffer:
+                return
+            # Join buffered text items with "\n" so adjacent item text is not
+            # glued together (e.g. "hello" + "world" must not become "helloworld").
+            # The delimiter is then applied to the combined text; a segment may
+            # span across item boundaries (the "\n" glue is not itself a
+            # delimiter), so each segment carries only the PDF positions of the
+            # buffered item(s) whose text contributed to it -- never the union of
+            # every item (which previously leaked page-N coordinates into
+            # page-M chunks and made all segments share one preview image).
+            parts = []
+            item_ranges = []  # (start, end) of each buffered item in combined_text
+            offset = 0
+            for text in text_buffer:
+                start = offset
+                parts.append(text)
+                offset += len(text)
+                item_ranges.append((start, offset))
+                parts.append("\n")
+                offset += 1
+            combined_text = "".join(parts[:-1])  # drop the trailing glue
 
-                if delimiter_pattern:
-                    raw = re.split(r"(%s)" % delimiter_pattern, combined_text, flags=re.DOTALL)
-                    segments = []  # (text, start, end) within combined_text
-                    pos = 0
-                    for i in range(0, len(raw), 2):
-                        seg = raw[i]
-                        seg_start = pos
-                        seg_end = pos + len(seg)
-                        if seg:
-                            segments.append((seg, seg_start, seg_end))
-                        pos = seg_end
-                        if i + 1 < len(raw):
-                            pos += len(raw[i + 1])
-                else:
-                    segments = [(combined_text, 0, len(combined_text))]
+            if delimiter_pattern:
+                raw = re.split(r"(%s)" % delimiter_pattern, combined_text, flags=re.DOTALL)
+                segments = []  # (text, start, end) within combined_text
+                pos = 0
+                for i in range(0, len(raw), 2):
+                    seg = raw[i]
+                    seg_start = pos
+                    seg_end = pos + len(seg)
+                    if seg:
+                        segments.append((seg, seg_start, seg_end))
+                    pos = seg_end
+                    if i + 1 < len(raw):
+                        pos += len(raw[i + 1])
+            else:
+                segments = [(combined_text, 0, len(combined_text))]
 
-                for text, seg_start, seg_end in segments:
-                    if not text.strip():
-                        continue
-                    seg_pos = []
-                    for (istart, iend), item_pos in zip(item_ranges, text_buffer_pos):
-                        # A segment overlaps an item when their character ranges
-                        # intersect; collect that item's coordinates.
-                        if seg_start < iend and istart < seg_end:
-                            seg_pos.extend(item_pos or [])
-                    chunks.append(
-                        {
-                            "text": text,
-                            "doc_type_kwd": "text",
-                            "ck_type": "text",
-                            PDF_POSITIONS_KEY: deepcopy(seg_pos),
-                            "tk_nums": num_tokens_from_string(text),
-                        }
-                    )
-                text_buffer.clear()
-                text_buffer_pos.clear()
+            for text, seg_start, seg_end in segments:
+                if not text.strip():
+                    continue
+                seg_pos = []
+                for (istart, iend), item_pos in zip(item_ranges, text_buffer_pos):
+                    # A segment overlaps an item when their character ranges
+                    # intersect; collect that item's coordinates.
+                    if seg_start < iend and istart < seg_end:
+                        seg_pos.extend(item_pos or [])
+                chunks.append(
+                    {
+                        "text": text,
+                        "doc_type_kwd": "text",
+                        "ck_type": "text",
+                        PDF_POSITIONS_KEY: deepcopy(seg_pos),
+                        "tk_nums": num_tokens_from_string(text),
+                    }
+                )
+            text_buffer.clear()
+            text_buffer_pos.clear()
 
-            for chunk in text_chunks:
-                if chunk["ck_type"] == "text":
-                    text_buffer.append(chunk["text"])
-                    text_buffer_pos.append(chunk.get(PDF_POSITIONS_KEY))
-                else:
-                    flush_text_buffer()
-                    chunks.append(chunk)
-            flush_text_buffer()
-            # Apply children_delimiters (secondary split) before finalizing.
-            if custom_pattern:
-                chunks = _split_chunk_docs_by_children(chunks, custom_pattern)
-            _attach_context_to_media_chunks(chunks, self._param.table_context_size, self._param.image_context_size)
-            await restore_pdf_text_previews(chunks, from_upstream, self._canvas)
-            self.set_output("chunks", _finalize_json_chunks(chunks))
-            self.callback(1, "Done.")
-            return
-
-        # Structured JSON input is normalized first, then optionally enriched with
-        # media context, and finally merged only when delimiter splitting is inactive.
-        chunks = _build_json_chunks(json_result, delimiter_pattern)
-        _attach_context_to_media_chunks(chunks, self._param.table_context_size, self._param.image_context_size)
-        if self._param.delimiter_mode == "token_size" and not delimiter_pattern:
+        for chunk in text_chunks:
+            if chunk["ck_type"] == "text":
+                text_buffer.append(chunk["text"])
+                text_buffer_pos.append(chunk.get(PDF_POSITIONS_KEY))
+            else:
+                flush_text_buffer()
+                chunks.append(chunk)
+        flush_text_buffer()
+        if not delimiter_pattern:
+            # 无分隔符时按 token cap 合并（吸收旧 token_size 行为）
             chunks = _merge_text_chunks_by_token_size(chunks, self._param.chunk_token_size, overlapped_percent)
-
+        # Apply children_delimiters (secondary split) before finalizing.
         if custom_pattern:
             chunks = _split_chunk_docs_by_children(chunks, custom_pattern)
-
+        _attach_context_to_media_chunks(chunks, self._param.table_context_size, self._param.image_context_size)
         await restore_pdf_text_previews(chunks, from_upstream, self._canvas)
-        cks = _finalize_json_chunks(chunks)
-        self.set_output("chunks", cks)
+        self.set_output("chunks", _finalize_json_chunks(chunks))
         self.callback(1, "Done.")
+        return
