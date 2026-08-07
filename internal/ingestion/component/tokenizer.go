@@ -680,13 +680,11 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			}
 		}
 		if kw := ck.Keywords; kw != "" {
-			// A2: split on the ENGLISH COMMA only, matching the DSL tokenizer
-			// (rag/flow/tokenizer/tokenizer.py:153 `keywords.split(",")`) and
-			// the keyword_prompt contract ("delimited by ENGLISH COMMA"). CJK
-			// commas/semicolons and newlines stay part of the keyword so the
-			// Go index is byte-compatible with the Python-DSL-built index.
-			// strings.Split preserves empty elements, matching Python's
-			// "a,,b".split(",") == ["a","","b"].
+			// Split keywords on the ENGLISH COMMA ONLY. The keyword_prompt
+			// contract specifies "delimited by ENGLISH COMMA", so CJK commas,
+			// semicolons and newlines stay part of the keyword rather than
+			// acting as separators. strings.Split also preserves empty
+			// elements, matching Python's "a,,b".split(",") == ["a","","b"].
 			if err = ck.SetExtraValue("important_kwd", strings.Split(kw, ",")); err != nil {
 				return fmt.Errorf("tokenizer: keyword list marshal: %w", err)
 			}
