@@ -13,6 +13,7 @@ import (
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Accessible reports whether docID belongs to a knowledge base
@@ -142,31 +143,49 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, id string, req *Up
 	return s.documentDAO.Update(ctx, dao.DB, document)
 }
 
-// IncrementChunkNum atomically increments chunk/token counters on the document and its knowledge base in a transaction
-func (s *DocumentService) IncrementChunkNum(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error {
+// ApplyDocCounts records a pipeline run's chunk/token/duration counts on the
+// document and rolls the change into its knowledge base aggregate. It is
+// idempotent per document: the document row holds this document's own counts, so
+// re-applying the same run - e.g. an at-least-once task redelivery that re-runs
+// the pipeline - sets the same document values and adjusts the knowledge base by
+// a zero delta. It also carries a changed count (a re-parse producing a
+// different result) correctly, since only the delta reaches the aggregate. The
+// document row is locked so the read-modify-write of its current counts is
+// atomic against a concurrent apply, and the aggregate is clamped at zero.
+func (s *DocumentService) ApplyDocCounts(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error {
 	return dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Update document
+		var doc entity.Document
+		if err := tx.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND kb_id = ?", docID, kbID).
+			First(&doc).Error; err != nil {
+			return err
+		}
+
+		chunkDelta := int64(chunkNum) - doc.ChunkNum
+		tokenDelta := int64(tokenNum) - doc.TokenNum
+
+		// Set the document to this run's absolute counts.
 		if err := tx.WithContext(ctx).Model(&entity.Document{}).
 			Where("id = ? AND kb_id = ?", docID, kbID).
 			Updates(map[string]interface{}{
-				"chunk_num":        gorm.Expr("chunk_num + ?", int64(chunkNum)),
-				"token_num":        gorm.Expr("token_num + ?", int64(tokenNum)),
-				"process_duration": gorm.Expr("process_duration + ?", duration),
+				"chunk_num":        int64(chunkNum),
+				"token_num":        int64(tokenNum),
+				"process_duration": duration,
 			}).Error; err != nil {
 			return err
 		}
 
-		// Update knowledgebase
-		if err := tx.WithContext(ctx).Model(&entity.Knowledgebase{}).
+		// Roll only the delta into the knowledge base aggregate; a re-applied run
+		// contributes zero. Clamp at zero so a stale aggregate cannot go negative.
+		if chunkDelta == 0 && tokenDelta == 0 {
+			return nil
+		}
+		return tx.WithContext(ctx).Model(&entity.Knowledgebase{}).
 			Where("id = ?", kbID).
 			Updates(map[string]interface{}{
-				"chunk_num": gorm.Expr("chunk_num + ?", int64(chunkNum)),
-				"token_num": gorm.Expr("token_num + ?", int64(tokenNum)),
-			}).Error; err != nil {
-			return err
-		}
-
-		return nil
+				"chunk_num": gorm.Expr("CASE WHEN chunk_num + ? >= 0 THEN chunk_num + ? ELSE 0 END", chunkDelta, chunkDelta),
+				"token_num": gorm.Expr("CASE WHEN token_num + ? >= 0 THEN token_num + ? ELSE 0 END", tokenDelta, tokenDelta),
+			}).Error
 	})
 }
 
