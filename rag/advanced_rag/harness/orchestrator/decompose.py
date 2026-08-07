@@ -146,7 +146,6 @@ async def decompose_and_search(state: dict, tools) -> dict:
                 gaps=analysis["gaps"],
                 discovered_claims=[],
             )
-            ctx.agent_results[c.claim_id] = c.agent_result
 
             next_queries = _new_queries(
                 analysis.get("next_queries", []),
