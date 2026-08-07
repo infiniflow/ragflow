@@ -21,10 +21,11 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from PIL import Image
 
 
-def _load_picture_module(tokenized_texts, ocr_text=""):
+def _load_picture_module(tokenized_texts, ocr_text="", vision_description=None, tokenize_error=None):
     """Load the picture parser with lightweight fakes for external services."""
 
     class FakeLLMBundle:
@@ -37,6 +38,11 @@ def _load_picture_module(tokenized_texts, ocr_text=""):
             """Return a deterministic video description for the regression test."""
 
             return "A concise video description."
+
+        def describe(self, _image_bytes):
+            if vision_description is None:
+                raise RuntimeError("vision model unavailable")
+            return vision_description
 
     llm_service = ModuleType("api.db.services.llm_service")
     llm_service.LLMBundle = FakeLLMBundle
@@ -67,6 +73,8 @@ def _load_picture_module(tokenized_texts, ocr_text=""):
     def fake_tokenize(doc, text, *_args, **_kwargs):
         """Capture the exact text passed to tokenization."""
 
+        if tokenize_error is not None:
+            raise tokenize_error
         tokenized_texts.append(text)
         doc["content_with_weight"] = text
 
@@ -133,3 +141,40 @@ def test_short_ocr_text_is_preserved_when_vision_model_is_unavailable():
     assert len(chunks) == 1
     assert chunks[0]["doc_type_kwd"] == "image"
     assert tokenized_texts == ["short OCR text"]
+
+
+def test_whitespace_only_ocr_does_not_create_a_chunk():
+    tokenized_texts = []
+    picture = _load_picture_module(tokenized_texts, ocr_text=" \n ")
+
+    image_bytes = io.BytesIO()
+    Image.new("RGB", (32, 32), "white").save(image_bytes, format="PNG")
+    callback_calls = []
+
+    chunks = picture.chunk(
+        "scan.png",
+        image_bytes.getvalue(),
+        "tenant",
+        "English",
+        callback=lambda *args, **kwargs: callback_calls.append((args, kwargs)),
+    )
+
+    errors = [kwargs.get("msg") for _args, kwargs in callback_calls if kwargs.get("prog") == -1]
+    assert errors == ["vision model unavailable"]
+    assert chunks == []
+    assert tokenized_texts == []
+
+
+def test_tokenization_errors_are_not_reported_as_ocr_fallback():
+    picture = _load_picture_module(
+        [],
+        ocr_text="short OCR text",
+        vision_description="image description",
+        tokenize_error=RuntimeError("tokenization failed"),
+    )
+
+    image_bytes = io.BytesIO()
+    Image.new("RGB", (32, 32), "white").save(image_bytes, format="PNG")
+
+    with pytest.raises(RuntimeError, match="tokenization failed"):
+        picture.chunk("scan.png", image_bytes.getvalue(), "tenant", "English", callback=lambda *_args, **_kwargs: None)

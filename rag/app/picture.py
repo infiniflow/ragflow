@@ -33,6 +33,7 @@ from deepdoc.vision import OCR
 from rag.nlp import attach_media_context, rag_tokenizer, tokenize
 
 _ocr = None
+_logger = logging.getLogger(__name__)
 
 
 def _get_ocr():
@@ -97,24 +98,29 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             callback(0.8, "OCR results is too long to use CV LLM.")
             return attach_media_context([doc], 0, image_ctx)
 
+        callback(0.4, "Use CV LLM to describe the picture.")
+        with io.BytesIO() as img_binary:
+            img.save(img_binary, format="JPEG")
+            img_binary.seek(0)
+            image_bytes = img_binary.read()
+
         try:
-            callback(0.4, "Use CV LLM to describe the picture.")
             cv_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.VISION)
             cv_mdl = LLMBundle(tenant_id, model_config=cv_model_config, lang=lang)
-            with io.BytesIO() as img_binary:
-                img.save(img_binary, format="JPEG")
-                img_binary.seek(0)
-                ans = cv_mdl.describe(img_binary.read())
-            callback(0.8, "CV LLM respond: %s ..." % ans[:32])
-            txt += "\n" + ans
-            tokenize(doc, txt, eng, language=lang)
-            return attach_media_context([doc], 0, image_ctx)
+            ans = cv_mdl.describe(image_bytes)
         except Exception as e:
-            if txt:
+            if txt.strip():
+                _logger.warning("Vision model unavailable; using OCR text only")
                 tokenize(doc, txt, eng, language=lang)
                 callback(0.8, "CV LLM unavailable; using OCR results.")
                 return attach_media_context([doc], 0, image_ctx)
             callback(prog=-1, msg=str(e))
+            return []
+
+        callback(0.8, "CV LLM respond: %s ..." % ans[:32])
+        txt += "\n" + ans
+        tokenize(doc, txt, eng, language=lang)
+        return attach_media_context([doc], 0, image_ctx)
 
     return []
 
