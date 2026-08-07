@@ -132,6 +132,8 @@ export const initialCategorizeValues = {
 
 export const initialMessageValues = {
   content: [''],
+  emit_all: false,
+  thinking: false,
 };
 
 export const initialExcelProcessorValues = {

@@ -13,7 +13,7 @@ import {
   MessageEventType,
   useSendMessageBySSE,
 } from '@/hooks/use-send-message';
-import { Message } from '@/interfaces/database/chat';
+import { IDocumentDownloadInfo, Message } from '@/interfaces/database/chat';
 import i18n from '@/locales/config';
 import api from '@/utils/api';
 import { get } from 'lodash';
@@ -39,65 +39,97 @@ import {
 import { BeginQuery } from '../interface';
 import useGraphStore from '../store';
 import { receiveMessageError } from '../utils';
-import { shouldSplitMessage } from '../utils/chat';
 
-export function findMessageFromList(eventList: IEventList) {
-  const messageEventList = eventList.filter(
-    (x) => x.event === MessageEventType.Message,
-  ) as IMessageEvent[];
+export interface IMessageSegment {
+  id: string;
+  content: string;
+  audio_binary?: string;
+  attachment?: IAttachment;
+  downloads: IDocumentDownloadInfo[];
+}
 
-  let nextContent = '';
+/**
+ * Разбивает SSE-поток одного прогона агента на отдельные области ответа.
+ *
+ * Каждая область ответа — это последовательность `message`-событий,
+ * завершённая своим `message_end`. Так получается и при нескольких
+ * Message-компонентах по ходу работы агента, и при одном Message-компоненте
+ * с включённым `emit_all`. Возвращается по одному элементу на область.
+ */
+export function findMessageSegmentsFromList(eventList: IEventList): IMessageSegment[] {
+  const segments: IMessageSegment[] = [];
+  const messageId = eventList[0]?.message_id ?? '';
+  let currentContent = '';
+  let thinking = false;
+  let audioBinary: string | undefined;
 
-  let startIndex = -1;
-  let endIndex = -1;
-  let audioBinary = undefined;
-  messageEventList.forEach((x, idx) => {
-    const { data } = x;
-    const { content, start_to_think, end_to_think, audio_binary } = data;
-    if (audio_binary) {
-      audioBinary = audio_binary;
+  const finalizeSegment = (
+    attachment?: IAttachment,
+    downloads: IDocumentDownloadInfo[] = [],
+  ) => {
+    if (thinking) {
+      currentContent += '</think>';
+      thinking = false;
     }
-    if (start_to_think === true) {
-      nextContent += '<think>' + content;
-      startIndex = idx;
-      return;
+    segments.push({
+      id: segments.length === 0 ? messageId : `${messageId}#${segments.length}`,
+      content: currentContent,
+      audio_binary: audioBinary,
+      attachment,
+      downloads: dedupeDownloads(downloads),
+    });
+    currentContent = '';
+    audioBinary = undefined;
+  };
+
+  for (const x of eventList) {
+    if (x.event === MessageEventType.Message && x.data) {
+      const { content = '', start_to_think, end_to_think, audio_binary } = x.data;
+      if (audio_binary) {
+        audioBinary = audio_binary;
+      }
+      if (start_to_think === true) {
+        currentContent += '<think>' + content;
+        thinking = true;
+      } else if (end_to_think === true) {
+        currentContent += content + '</think>';
+        thinking = false;
+      } else {
+        currentContent += content;
+      }
+    } else if (x.event === MessageEventType.MessageEnd && x.data) {
+      finalizeSegment(x.data.attachment, x.data.downloads);
     }
-
-    if (end_to_think === true) {
-      endIndex = idx;
-      nextContent += content + '</think>';
-      return;
-    }
-
-    nextContent += content;
-  });
-
-  const currentIdx = messageEventList.length - 1;
-
-  // Make sure that after start_to_think === true and before end_to_think === true, add a </think> tag at the end.
-  if (startIndex >= 0 && startIndex <= currentIdx && endIndex === -1) {
-    nextContent += '</think>';
   }
 
   const workflowFinished = eventList.find(
     (x) => x.event === MessageEventType.WorkflowFinished,
-  ) as IMessageEvent;
-  const messageEndEvent = [...eventList]
-    .reverse()
-    .find((x) => x.event === MessageEventType.MessageEnd) as IMessageEndEvent;
-  return {
-    id: eventList[0]?.message_id,
-    content: nextContent,
-    audio_binary: audioBinary,
-    attachment:
-      workflowFinished?.data?.outputs?.attachment ||
-      messageEndEvent?.data?.attachment ||
-      {},
-    downloads:
-      workflowFinished?.data?.outputs?.downloads ||
-      messageEndEvent?.data?.downloads ||
-      [],
-  };
+  ) as IMessageEvent | undefined;
+  const trailingAttachment = workflowFinished?.data?.outputs?.attachment;
+  const trailingDownloads = (workflowFinished?.data?.outputs?.downloads ?? []) as
+    | IDocumentDownloadInfo[]
+    | undefined;
+
+  if (currentContent !== '' || segments.length === 0) {
+    finalizeSegment(trailingAttachment, trailingDownloads ?? []);
+  } else if (trailingDownloads?.length) {
+    const last = segments[segments.length - 1];
+    last.downloads = dedupeDownloads([...last.downloads, ...trailingDownloads]);
+  }
+
+  return segments;
+}
+
+function dedupeDownloads(downloads: IDocumentDownloadInfo[]) {
+  const seen = new Set<string>();
+  return downloads.filter((d) => {
+    const key = d?.doc_id || d?.filename;
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 export function findInputFromList(eventList: IEventList) {
@@ -143,9 +175,9 @@ export function useFindMessageReference(answerList: IEventList) {
 
   const findReferenceByMessageId = useCallback(
     (messageId: string) => {
-      const event = messageEndEventList.find(
-        (item) => item.message_id === messageId,
-      );
+      const [, suffix] = String(messageId ?? '').split('#');
+      const index = suffix !== undefined ? Number(suffix) : 0;
+      const event = messageEndEventList[index];
       if (event) {
         return (event?.data as IMessageEndData)?.reference;
       }
@@ -161,7 +193,7 @@ export function useFindMessageReference(answerList: IEventList) {
       setMessageEndEventList((list) => {
         const nextList = [...list];
         if (
-          nextList.every((x) => x.message_id !== messageEndEvent.message_id)
+          nextList.every((x) => x !== messageEndEvent)
         ) {
           nextList.push(messageEndEvent as IMessageEndEvent);
         }
@@ -461,37 +493,44 @@ export const useSendAgentMessage = ({
   }, [sendMessageInTaskMode]);
 
   useEffect(() => {
-    const { content, id, attachment, audio_binary, downloads } =
-      findMessageFromList(answerList);
+    if (answerList.length === 0) return;
+    const segments = findMessageSegmentsFromList(answerList);
     const inputAnswer = findInputFromList(answerList);
-    const answer = content || getLatestError(answerList);
+    const error = getLatestError(answerList);
 
-    if (answerList.length > 0) {
-      const shouldSplit = shouldSplitMessage(answerList, content);
-
-      if (shouldSplit) {
+    if (segments.length === 0) {
+      if (error) {
         addNewestOneAnswer({
-          answer: answer ?? '',
-          audio_binary: audio_binary,
-          attachment: attachment as IAttachment,
-          downloads,
-          id,
-        });
-        addNewestOneAnswer({
-          answer: '',
-          ...inputAnswer,
-          id: `${id}${MessageWaitSuffix}`,
-        });
-      } else {
-        addNewestOneAnswer({
-          answer: answer ?? '',
-          audio_binary: audio_binary,
-          attachment: attachment as IAttachment,
-          downloads,
-          id,
-          ...inputAnswer,
+          answer: error,
+          id: answerList[0]?.message_id,
         });
       }
+      return;
+    }
+
+    segments.forEach((segment, index) => {
+      const hasContent = segment.content !== '';
+      const hasDownloads = (segment.downloads ?? []).length > 0;
+      const hasAttachment = Boolean(segment.attachment?.doc_id);
+      if (!hasContent && !hasDownloads && !hasAttachment) {
+        return;
+      }
+      addNewestOneAnswer({
+        answer: segment.content || (index === 0 ? error ?? '' : ''),
+        audio_binary: segment.audio_binary,
+        attachment: (segment.attachment ?? {}) as IAttachment,
+        downloads: segment.downloads,
+        id: segment.id,
+      });
+    });
+
+    if (inputAnswer.id && segments.length > 0) {
+      const lastId = segments[segments.length - 1].id;
+      addNewestOneAnswer({
+        answer: '',
+        ...inputAnswer,
+        id: `${lastId}${MessageWaitSuffix}`,
+      });
     }
   }, [answerList, addNewestOneAnswer]);
 

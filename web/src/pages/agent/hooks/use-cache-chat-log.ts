@@ -13,7 +13,9 @@ export const ExcludeTypes = [
 ];
 
 const resolveMessageId = (messageId: string) =>
-  messageId?.replace(new RegExp(`${MessageWaitSuffix}$`), '');
+  messageId
+    ?.replace(new RegExp(`${MessageWaitSuffix}$`), '')
+    .replace(/#\d+$/, '');
 
 export function useCacheChatLog() {
   const [messageIdPool, setMessageIdPool] = useState<

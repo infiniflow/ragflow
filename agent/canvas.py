@@ -474,6 +474,10 @@ class Canvas(Graph):
         self.message_id = get_uuid()
         created_at = int(time.time())
         self.add_user_input(kwargs.get("query"))
+        # Терминальный компонент — последний в пути запуска. Он отдаёт финальный
+        # ответ пользователю; все остальные Message-компоненты (в т.ч. статусные
+        # «листья» по ходу работы) считаются промежуточными.
+        self._run_terminal_id = self.path[-1] if self.path else None
         path_set = set(self.path)
         for k, cpn in self.components.items():
             if k in path_set:
@@ -656,50 +660,60 @@ class Canvas(Graph):
                     if cpn_obj.get_param("auto_play"):
                         tts_model_config = get_tenant_default_model_by_type(self._tenant_id, LLMType.TTS)
                         tts_mdl = LLMBundle(self._tenant_id, tts_model_config)
-                    if isinstance(cpn_obj.output("content"), partial):
+                    _thinking = bool(cpn_obj.get_param("thinking"))
+                    raw_content = cpn_obj.output("content")
+                    areas = raw_content if isinstance(raw_content, list) else [raw_content]
+                    accumulated = []
+                    for area_idx, area in enumerate(areas):
                         _m = ""
                         buff_m = ""
-                        stream = cpn_obj.output("content")()
+                        if isinstance(area, partial):
+                            stream = area()
 
-                        async def _process_stream(m):
-                            nonlocal buff_m, _m, tts_mdl
-                            if not m:
-                                return
-                            if m == "<think>":
-                                return decorate("message", {"content": "", "start_to_think": True})
+                            async def _process_stream(m):
+                                nonlocal buff_m, _m, tts_mdl
+                                if not m:
+                                    return
+                                if m == "<think>":
+                                    return decorate("message", {"content": "", "start_to_think": True, "thinking": _thinking})
 
-                            elif m == "</think>":
-                                return decorate("message", {"content": "", "end_to_think": True})
+                                elif m == "</think>":
+                                    return decorate("message", {"content": "", "end_to_think": True, "thinking": _thinking})
 
-                            buff_m += m
-                            _m += m
+                                buff_m += m
+                                _m += m
 
-                            if len(buff_m) > 16:
-                                ev = decorate("message", {"content": m, "audio_binary": self.tts(tts_mdl, buff_m)})
+                                if len(buff_m) > 16:
+                                    ev = decorate("message", {"content": m, "audio_binary": self.tts(tts_mdl, buff_m), "thinking": _thinking})
+                                    buff_m = ""
+                                    return ev
+
+                                return decorate("message", {"content": m, "thinking": _thinking})
+
+                            if inspect.isasyncgen(stream):
+                                async for m in stream:
+                                    ev = await _process_stream(m)
+                                    if ev:
+                                        yield ev
+                            else:
+                                for m in stream:
+                                    ev = await _process_stream(m)
+                                    if ev:
+                                        yield ev
+                            if buff_m:
+                                yield decorate("message", {"content": "", "audio_binary": self.tts(tts_mdl, buff_m), "thinking": _thinking})
                                 buff_m = ""
-                                return ev
-
-                            return decorate("message", {"content": m})
-
-                        if inspect.isasyncgen(stream):
-                            async for m in stream:
-                                ev = await _process_stream(m)
-                                if ev:
-                                    yield ev
                         else:
-                            for m in stream:
-                                ev = await _process_stream(m)
-                                if ev:
-                                    yield ev
-                        if buff_m:
-                            yield decorate("message", {"content": "", "audio_binary": self.tts(tts_mdl, buff_m)})
-                            buff_m = ""
-                        cpn_obj.set_output("content", _m)
-                    else:
-                        yield decorate("message", {"content": cpn_obj.output("content")})
+                            _m = area if area is not None else ""
+                            if _m:
+                                yield decorate("message", {"content": _m, "thinking": _thinking})
+                        accumulated.append(_m)
+                        message_end = self._build_message_end(
+                            cpn_obj, area_idx if isinstance(raw_content, list) else None
+                        )
+                        yield decorate("message_end", message_end)
 
-                    message_end = self._build_message_end(cpn_obj)
-                    yield decorate("message_end", message_end)
+                    cpn_obj.set_output("content", accumulated[0] if len(accumulated) == 1 else accumulated)
 
                     while partials:
                         _cpn_obj = self.get_component_obj(partials[0])
@@ -977,22 +991,45 @@ class Canvas(Graph):
             return False
         return bool(ref.get("chunks") or ref.get("doc_aggs"))
 
-    def _build_message_end(self, cpn_obj) -> dict:
+    def _build_message_end(self, cpn_obj, area_idx=None) -> dict:
         message_end = {}
         if cpn_obj.get_param("status"):
             message_end["status"] = cpn_obj.get_param("status")
         if isinstance(cpn_obj.output("attachment"), dict):
             message_end["attachment"] = cpn_obj.output("attachment")
-        downloads = cpn_obj.output("downloads")
-        if isinstance(downloads, list) and downloads:
+        downloads = self._area_downloads(cpn_obj, area_idx)
+        if downloads:
             message_end["downloads"] = downloads
         if self._has_reference():
             message_end["reference"] = self.get_reference()
+        # Терминальный Message-компонент отдаёт финальный ответ пользователю;
+        # промежуточные Message-компоненты — статусные сообщения по ходу работы.
+        message_end["final"] = self._is_terminal_message(cpn_obj)
+        # Message с включённым thinking — это «живой» промежуточный статус
+        # (показывается как думающий draft и заменяется следующим сообщением).
+        message_end["thinking"] = bool(cpn_obj.get_param("thinking"))
         # NOTE: aggregated run token usage is intentionally NOT attached here.
-        # _build_message_end runs once per Message component, so a multi-Message graph
-        # would emit cumulative usage repeatedly and double count. The run total is
-        # emitted exactly once on the terminal workflow_finished event instead.
+        # _build_message_end runs once per Message area, so a multi-area Message
+        # component would emit cumulative usage repeatedly and double count. The
+        # run total is emitted exactly once on the terminal workflow_finished event
+        # instead.
         return message_end
+
+    def _is_terminal_message(self, cpn_obj) -> bool:
+        terminal = getattr(self, "_run_terminal_id", None)
+        if terminal is not None:
+            return cpn_obj._id == terminal
+        comp = self.components.get(cpn_obj._id)
+        return comp is None or not comp.get("downstream")
+
+    @staticmethod
+    def _area_downloads(cpn_obj, area_idx):
+        if area_idx is not None:
+            per_area = getattr(cpn_obj, "_area_downloads", None)
+            if isinstance(per_area, list) and area_idx < len(per_area):
+                return per_area[area_idx] or []
+        dl = cpn_obj.output("downloads")
+        return dl if isinstance(dl, list) else []
 
     def _run_usage_payload(self) -> dict:
         usage = getattr(self, "_run_token_usage", None) or {}
