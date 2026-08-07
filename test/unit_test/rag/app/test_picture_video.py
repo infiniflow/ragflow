@@ -21,6 +21,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 from PIL import Image
 
 
@@ -162,13 +163,15 @@ def test_short_ocr_text_is_kept_when_vision_model_is_missing():
     assert tokenized_texts == ["工流宛转绕芳甸"]
 
 
-def test_failure_is_reported_when_ocr_finds_no_text():
-    """With no OCR text and no vision model there is nothing to index, so the
-    task must fail rather than report success with zero chunks."""
+@pytest.mark.parametrize("ocr_text", ["", " \n"])
+def test_parser_reports_failure_when_ocr_finds_no_text(ocr_text):
+    """With no usable OCR text and no vision model there is nothing to index, so
+    chunk() returns no chunks and reports the failure through the callback."""
 
     tokenized_texts = []
     picture = _load_picture_module(
         tokenized_texts,
+        ocr_text=ocr_text,
         vision_error="No default image2text model is set.",
     )
 
