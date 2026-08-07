@@ -19,6 +19,7 @@ critical band (token cost stays bounded for the default mode). The
 from __future__ import annotations
 
 import logging
+import re
 
 from rag.advanced_rag.harness.types import SufficiencyVerdict
 
@@ -33,6 +34,36 @@ _MAX_CHUNK_CHARS = 800
 _MAX_EVIDENCE_CHARS = 24_000
 
 
+def _narrow_keywords(question: str) -> list[str]:
+    """Language-agnostic keywords of ``question`` for snippet narrowing.
+
+    No language-specific stopword list (RAGFlow supports en/zh/de/fr/es/pt/ja and
+    any hard-coded English stopwords would be wrong for the rest). Instead we use
+    a length heuristic that generalises across scripts:
+      - numeric tokens (years / figures) — universal, high-signal;
+      - latin tokens of length >= 4 (keeps content words like "population" /
+        "paris" / "statistics" while the short function words "the"/"of"/"was"
+        fall below the cut — a length rule, not a stopword list);
+      - CJK runs are converted to character bigrams (巴黎 → 巴黎; 人口 → 人口),
+        which is tokeniser-free and works for zh/ja without any word segmenter.
+
+    Keeping a few extra tokens is safe: narrowing matches more sentences, so it
+    retains more of the chunk and is less likely to drop the answer.
+    """
+    tokens = re.findall(r"[a-zA-Z0-9]+|[\u4e00-\u9fff]+", (question or "").lower())
+    kw: list[str] = []
+    for t in tokens:
+        if t.isdigit():
+            kw.append(t)
+        elif re.search(r"[a-zA-Z]", t):
+            if len(t) >= 4:
+                kw.append(t)
+        else:  # CJK run → character bigrams
+            if len(t) >= 2:
+                kw.extend(t[i : i + 2] for i in range(len(t) - 1))
+    return kw
+
+
 def _clamp(value) -> float:
     """Clamp the AutoRater's confidence field to [0, 1], defaulting to 1.0."""
     try:
@@ -41,13 +72,68 @@ def _clamp(value) -> float:
         return 1.0
 
 
-def _evidence_md(tools, evidence_ids=None) -> str:
+# A chunk with this many sentences or fewer is never narrowed — there is little
+# to save and a real risk of losing the answer sentence.
+_NARROW_MIN_SENTENCES = 3
+# Number of neighbours kept around each keyword-bearing sentence.
+_NARROW_NEIGHBOURS = 1
+
+
+def _narrow_snippet_safe(content: str, kw_list: list[str]) -> str | None:
+    """Self-contained keyword narrowing of ``content`` to a compact snippet.
+
+    This is a purpose-built replacement for ``_narrow_content`` (which returns
+    a re-formatted string full of ``...`` and ``*kw*`` markers that, when split
+    again downstream, corrupts sentence counts). Here we work directly on the
+    original sentences and re-emit plain text, so there is no intermediate
+    format to misinterpret.
+
+    The only rule — a deliberately small one, because no rule set can cover
+    every phrasing: **narrow only when the keywords actually cover a meaningful
+    share of the chunk.** Concretely, we keep the keyword-bearing sentences plus
+    ``_NARROW_NEIGHBOURS`` around each, and refuse to narrow (return ``None``,
+    caller keeps the whole chunk) when:
+      * the chunk is short (<= ``_NARROW_MIN_SENTENCES`` sentences), or
+      * no sentence mentions a keyword, or
+      * keywords hit too few sentences for the narrowing to be safe
+        (< 2 hits, or fewer than half the sentences).
+
+    That last case is the whole point: if the answer sentence is phrased without
+    the exact keyword (a bare figure, a synonym, a date), keyword hits will be
+    sparse and we keep the whole chunk so the answer is never dropped.
+
+    Returns the narrowed plain text, or ``None`` to keep the chunk whole.
+    """
+    from rag.advanced_rag.harness.tools.search import _split_sentences
+
+    sents = _split_sentences(content or "")
+    if len(sents) <= _NARROW_MIN_SENTENCES:
+        return None
+
+    hit_idx = [i for i, s in enumerate(sents) if any(k in s.lower() for k in kw_list)]
+    # Refuse to narrow when keywords hit fewer than 2 sentences: with a single hit
+    # the narrowed snippet would keep just that sentence (+neighbours) and could
+    # drop most of the chunk, including the answer sentence. Two or more hits
+    # means the keywords genuinely relate to the passage, so narrowing is safe.
+    if len(hit_idx) < 2:
+        return None
+
+    keep_idx: set[int] = set()
+    for i in hit_idx:
+        for j in range(max(0, i - _NARROW_NEIGHBOURS), min(len(sents), i + _NARROW_NEIGHBOURS + 1)):
+            keep_idx.add(j)
+    return " ".join(sents[i] for i in sorted(keep_idx)).strip()
+
+
+def _evidence_md(tools, evidence_ids=None, keywords: str | None = None) -> str:
     """Render cited evidence chunks with ``ID: n`` markers for the AutoRater.
 
     Prefers the chunks referenced by ``evidence_ids`` (the union of all claims'
     evidence); falls back to a bounded prefix of the pool when no ids are
-    given. Either way the output is capped (see module constants) so the LLM
-    call stays cheap.
+    given. When ``keywords`` is provided each chunk is first narrowed to the
+    keyword-bearing sentences via ``_narrow_by_keywords`` (snippet evidence),
+    so the AutoRater sees compact relevant snippets instead of full passages.
+    Either way the output is capped (see module constants).
     """
     kb = getattr(tools, "kbinfos", None)
     chunks = (kb or {}).get("chunks", [])
@@ -70,14 +156,34 @@ def _evidence_md(tools, evidence_ids=None) -> str:
     if not picked:
         picked = [(i, c) for i, c in enumerate(chunks[:_MAX_EVIDENCE_CHUNKS])]
 
+    # Narrow each kept chunk to its keyword-bearing sentences when keywords are
+    # available, preserving the original ``ID: n`` index (the answer cites these).
+    # If narrowing empties a chunk it is skipped; if everything narrows away we
+    # fall back to the original text so the AutoRater never sees nothing.
+    texts: list[tuple[int, str, str]] = []
+    # Normalise keywords: accept a comma/space-separated string OR an iterable of
+    # words. Narrowing operates on the raw text, independent of chunk structure.
+    if isinstance(keywords, str):
+        kw_list = [k.strip() for k in re.split(r"[,\s]+", keywords) if k.strip()]
+    else:
+        kw_list = [str(k) for k in (keywords or []) if str(k).strip()]
+    for idx, c in picked:
+        raw = c.get("content_with_weight") or c.get("text") or ""
+        title = c.get("docnm_kwd", "") or ""
+        if kw_list:
+            narrowed = _narrow_snippet_safe(raw, kw_list)
+            if narrowed:
+                texts.append((idx, title, narrowed))
+                continue
+        texts.append((idx, title, raw))
+
     blocks: list[str] = []
     used = 0
-    for idx, c in picked:
-        text = c.get("content_with_weight") or c.get("text") or ""
+    for idx, title, text in texts:
         text = text[:_MAX_CHUNK_CHARS]
         if used + len(text) > _MAX_EVIDENCE_CHARS:
             break
-        blocks.append(f"ID: {idx} | {c.get('docnm_kwd', '')}\n{text}")
+        blocks.append(f"ID: {idx} | {title}\n{text}")
         used += len(text) + 8
     return "\n\n".join(blocks)
 
@@ -108,7 +214,7 @@ async def llm_sufficiency_boost(
     if chat_mdl is None:
         return {}
 
-    evidence_md = _evidence_md(tools, evidence_ids)
+    evidence_md = _evidence_md(tools, evidence_ids, keywords=_narrow_keywords(question))
     if not evidence_md:
         return {}
 
