@@ -284,9 +284,7 @@ def test_json_no_delimiter_mode_merges_to_token_cap():
     # single chunk before the merge would defeat the cap and emit one oversized
     # chunk. The per-token stub (num_tokens_from_string -> 1) makes the cap easy
     # to exceed: 12 one-token items under a cap of 5 must yield several chunks.
-    for _module, chunker in _build_json_chunker(
-        {"delimiter_mode": "delimiter", "delimiters": [], "chunk_token_size": 5}
-    ):
+    for _module, chunker in _build_json_chunker({"delimiter_mode": "delimiter", "delimiters": [], "chunk_token_size": 5}):
         kwargs = {
             "name": "token_chunker",
             "output_format": "json",
@@ -309,15 +307,11 @@ def test_json_no_delimiter_mode_merges_to_token_cap():
 def test_json_no_delimiter_mode_media_breaks_merge():
     # A non-text (media) chunk interleaved between text items must stay as its
     # own chunk and reset the merge, so text before/after it are sized separately.
-    for _module, chunker in _build_json_chunker(
-        {"delimiter_mode": "delimiter", "delimiters": [], "chunk_token_size": 5}
-    ):
+    for _module, chunker in _build_json_chunker({"delimiter_mode": "delimiter", "delimiters": [], "chunk_token_size": 5}):
         kwargs = {
             "name": "token_chunker",
             "output_format": "json",
-            "json_result": [
-                {"text": f"t{i}", "doc_type_kwd": "text"} for i in range(6)
-            ]
+            "json_result": [{"text": f"t{i}", "doc_type_kwd": "text"} for i in range(6)]
             + [{"text": "IMG", "doc_type_kwd": "image", "img_id": "im1"}]
             + [{"text": f"u{i}", "doc_type_kwd": "text"} for i in range(12)],
         }
