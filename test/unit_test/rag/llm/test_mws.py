@@ -15,7 +15,7 @@
 #
 """Tests for MWS provider registration, discovery, and inference adapters."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import numpy as np
 import pytest
@@ -80,6 +80,28 @@ def test_mws_project_url_validation_and_endpoints():
 
 
 @pytest.mark.p1
+def test_mws_model_discovery_logs_validation_failure_without_credentials():
+    """Log the failed validation target without exposing rejected URL data."""
+    with patch("rag.llm.model_meta.logging.warning") as warning:
+        with pytest.raises(ValueError, match="query string"):
+            MWS("super-secret-token", PROJECT_URL + "?secret=do-not-log")
+
+    warning.assert_called_once_with(
+        "mws_model_discovery_validation_failed",
+        extra={
+            "provider": "MWS",
+            "operation": "model_discovery",
+            "validation_target": "api_url",
+            "error_type": "ValueError",
+        },
+    )
+    logged = repr(warning.call_args)
+    assert "super-secret-token" not in logged
+    assert "do-not-log" not in logged
+    assert "Bearer" not in logged
+
+
+@pytest.mark.p1
 @pytest.mark.asyncio
 async def test_mws_model_list_uses_exact_url_and_bearer_header():
     """Load and classify models with the required URL and bearer token."""
@@ -98,7 +120,10 @@ async def test_mws_model_list_uses_exact_url_and_bearer_header():
     session.get.return_value = _async_context(response)
     session_context = _async_context(session)
 
-    with patch("rag.llm.model_meta.aiohttp.ClientSession", return_value=session_context):
+    with (
+        patch("rag.llm.model_meta.aiohttp.ClientSession", return_value=session_context),
+        patch("rag.llm.model_meta.logging.info") as info,
+    ):
         models = await MWS("token", PROJECT_URL + "/").get_model_list()
 
     session.get.assert_called_once_with(
@@ -110,6 +135,97 @@ async def test_mws_model_list_uses_exact_url_and_bearer_header():
         ["embedding"],
         ["rerank"],
     ]
+    log_context = {
+        "provider": "MWS",
+        "operation": "model_discovery",
+        "url": PROJECT_URL + "/openai/v1/models",
+    }
+    assert info.call_args_list == [
+        call("mws_model_discovery_request", extra=log_context),
+        call(
+            "mws_model_discovery_completed",
+            extra={**log_context, "result_count": 3},
+        ),
+    ]
+    assert "token" not in repr(info.call_args_list)
+    assert "Bearer" not in repr(info.call_args_list)
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_mws_model_discovery_logs_http_failure_and_zero_results():
+    """Log a failed HTTP response and the resulting empty model list."""
+    response = MagicMock(status=503)
+    session = MagicMock()
+    session.get.return_value = _async_context(response)
+    log_context = {
+        "provider": "MWS",
+        "operation": "model_discovery",
+        "url": PROJECT_URL + "/openai/v1/models",
+    }
+
+    with (
+        patch(
+            "rag.llm.model_meta.aiohttp.ClientSession",
+            return_value=_async_context(session),
+        ),
+        patch("rag.llm.model_meta.logging.info") as info,
+        patch("rag.llm.model_meta.logging.warning") as warning,
+    ):
+        models = await MWS("super-secret-token", PROJECT_URL).get_model_list()
+
+    assert models == []
+    warning.assert_called_once_with(
+        "mws_model_discovery_request_failed",
+        extra={
+            **log_context,
+            "failure_stage": "http_response",
+            "http_status": 503,
+        },
+    )
+    assert info.call_args_list == [
+        call("mws_model_discovery_request", extra=log_context),
+        call(
+            "mws_model_discovery_completed",
+            extra={**log_context, "result_count": 0},
+        ),
+    ]
+    logged = repr([info.call_args_list, warning.call_args_list])
+    assert "super-secret-token" not in logged
+    assert "Bearer" not in logged
+
+
+@pytest.mark.p1
+@pytest.mark.asyncio
+async def test_mws_model_discovery_logs_request_exception_without_credentials():
+    """Log a discovery transport exception without exposing authentication."""
+    session = MagicMock()
+    session.get.side_effect = RuntimeError("connection failed")
+
+    with (
+        patch(
+            "rag.llm.model_meta.aiohttp.ClientSession",
+            return_value=_async_context(session),
+        ),
+        patch("rag.llm.model_meta.logging.info"),
+        patch("rag.llm.model_meta.logging.warning") as warning,
+    ):
+        with pytest.raises(RuntimeError, match="connection failed"):
+            await MWS("super-secret-token", PROJECT_URL).get_model_list()
+
+    warning.assert_called_once_with(
+        "mws_model_discovery_request_failed",
+        extra={
+            "provider": "MWS",
+            "operation": "model_discovery",
+            "url": PROJECT_URL + "/openai/v1/models",
+            "failure_stage": "request",
+            "error_type": "RuntimeError",
+        },
+    )
+    logged = repr(warning.call_args)
+    assert "super-secret-token" not in logged
+    assert "Bearer" not in logged
 
 
 @pytest.mark.p1

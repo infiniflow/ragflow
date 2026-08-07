@@ -470,7 +470,35 @@ class MWS(OpenAIAPICompatible):
 
     def __init__(self, api_key: str, base_url: str = None):
         """Initialize dynamic model discovery for an MWS project."""
-        super().__init__(require_mws_token(api_key), normalize_mws_project_url(base_url))
+        try:
+            token = require_mws_token(api_key)
+        except ValueError as error:
+            logging.warning(
+                "mws_model_discovery_validation_failed",
+                extra={
+                    "provider": self._FACTORY_NAME,
+                    "operation": "model_discovery",
+                    "validation_target": "token",
+                    "error_type": type(error).__name__,
+                },
+            )
+            raise
+
+        try:
+            project_url = normalize_mws_project_url(base_url)
+        except ValueError as error:
+            logging.warning(
+                "mws_model_discovery_validation_failed",
+                extra={
+                    "provider": self._FACTORY_NAME,
+                    "operation": "model_discovery",
+                    "validation_target": "api_url",
+                    "error_type": type(error).__name__,
+                },
+            )
+            raise
+
+        super().__init__(token, project_url)
 
     def _get_model_list_url(self):
         """Return the OpenAI-compatible models endpoint for the MWS project."""
@@ -489,6 +517,80 @@ class MWS(OpenAIAPICompatible):
             if len(model.get("model_types") or []) == 1
             and model["model_types"][0] in supported_types
         ]
+
+    async def get_model_list(self):
+        """Discover MWS models while logging safe request and result metadata."""
+        try:
+            url = self._get_model_list_url()
+        except ValueError as error:
+            logging.warning(
+                "mws_model_discovery_validation_failed",
+                extra={
+                    "provider": self._FACTORY_NAME,
+                    "operation": "model_discovery",
+                    "validation_target": "api_url",
+                    "error_type": type(error).__name__,
+                },
+            )
+            raise
+
+        log_context = {
+            "provider": self._FACTORY_NAME,
+            "operation": "model_discovery",
+            "url": url,
+        }
+        logging.info("mws_model_discovery_request", extra=log_context)
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers={"Authorization": f"Bearer {self._get_api_key()}"}) as response:
+                    if response.status != 200:
+                        logging.warning(
+                            "mws_model_discovery_request_failed",
+                            extra={
+                                **log_context,
+                                "failure_stage": "http_response",
+                                "http_status": response.status,
+                            },
+                        )
+                        logging.info(
+                            "mws_model_discovery_completed",
+                            extra={**log_context, "result_count": 0},
+                        )
+                        return []
+                    raw_model_list = await response.json()
+        except Exception as error:
+            logging.warning(
+                "mws_model_discovery_request_failed",
+                extra={
+                    **log_context,
+                    "failure_stage": "request",
+                    "error_type": type(error).__name__,
+                },
+            )
+            raise
+
+        if not raw_model_list:
+            models = []
+        else:
+            try:
+                models = self._format_model_list(raw_model_list)
+            except Exception as error:
+                logging.warning(
+                    "mws_model_discovery_validation_failed",
+                    extra={
+                        **log_context,
+                        "validation_target": "response",
+                        "error_type": type(error).__name__,
+                    },
+                )
+                raise
+
+        logging.info(
+            "mws_model_discovery_completed",
+            extra={**log_context, "result_count": len(models)},
+        )
+        return models
 
 
 class NVIDIA(OpenAIAPICompatible):
