@@ -29,10 +29,15 @@ Rules:
 ATTRIBUTE FIDELITY (CRITICAL):
 Answer the EXACT attribute/relation the research task asks for. Do NOT substitute a
 similar but different attribute, even when the substitution is semantically related and
-tempting. For example, if the task asks for a person's HOMETOWN, do not report or search
-for their BIRTHPLACE (born in) instead — these are different facts. Likewise do not
-silently swap "first" for "largest", "age at death" for "birth year", etc.
-- Use the task's own attribute word in every search query and in the report.
+tempting. For example, if the task asks for a person's HOMETOWN, do not report their
+BIRTHPLACE (born in) as the answer — these are different facts. Likewise do not silently
+swap "first" for "largest", "age at death" for "birth year", etc.
+- In SEARCH queries you MAY use synonymous, translated, or corpus-specific terms (e.g.
+  "hometown", "place of residence", "ville natale") to find the evidence — retrieval
+  benefits from flexible wording. What matters is that the terms still TARGET the exact
+  attribute the task asks for; do not steer the search at a different fact.
+- The REPORT must state the exact attribute the task asked for. Never present a different
+  attribute's value as the answer.
 - If the exact attribute cannot be found in the evidence, mark the claim unverified and
   list it in gaps — do NOT answer with a different attribute's value.
 
@@ -70,9 +75,12 @@ Rules:
 ATTRIBUTE FIDELITY (CRITICAL):
 Answer the EXACT attribute/relation the research task asks for. Do NOT substitute a similar
 but different attribute (e.g. do not report HOMETOWN as BIRTHPLACE, do not swap "first" for
-"largest", "age at death" for "birth year"). Use the task's own attribute word in every
-search query and in the report. If the exact attribute cannot be found in evidence, mark the
-claim unverified and list it in gaps — do NOT answer with a different attribute's value.
+"largest", "age at death" for "birth year"). In SEARCH queries you MAY use synonymous,
+translated, or corpus-specific terms (e.g. "hometown", "place of residence") as long as they
+still TARGET the exact requested attribute — retrieval benefits from flexible wording. The
+REPORT must state the exact attribute asked for and never present a different attribute's
+value as the answer. If the exact attribute cannot be found in evidence, mark the claim
+unverified and list it in gaps — do NOT answer with a different attribute's value.
 
 SOURCE ANCHORING (CRITICAL):
 If the research task names a specific source (e.g. "In the Wikipedia article 'Demographics of

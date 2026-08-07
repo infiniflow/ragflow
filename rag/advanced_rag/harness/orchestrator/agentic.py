@@ -124,6 +124,15 @@ async def agentic_research(state: dict, tools) -> dict:
                     is_verified = result.get("is_verified", False)
                     c.is_verified = is_verified
                     c.confidence = result.get("confidence", 0.0)
+                    grounded = result.get("grounded", [])
+                    numbers = result.get("numbers", [])
+                    if "grounded" not in result or "numbers" not in result:
+                        _LOG.warning(
+                            "[Agentic research] claim=%s report omitted the schema-required grounded/numbers fields (grounded=%r numbers=%r) — verification for it is degraded",
+                            c.claim_id,
+                            grounded,
+                            numbers,
+                        )
                     c.agent_result = AgentResult(
                         claim_id=c.claim_id,
                         report=result.get("report", ""),
@@ -132,8 +141,8 @@ async def agentic_research(state: dict, tools) -> dict:
                         evidence_ids=result.get("evidence_ids", []),
                         gaps=result.get("gaps", []),
                         discovered_claims=result.get("discovered_claims", []),
-                        grounded=result.get("grounded", []),
-                        numbers=result.get("numbers", []),
+                        grounded=grounded,
+                        numbers=numbers,
                     )
 
                     # Ultra: dynamic claim expansion

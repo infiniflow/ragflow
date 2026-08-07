@@ -148,7 +148,12 @@ def _generate_report_schema() -> dict:
                         "description": "New research directions discovered during research.",
                     },
                 },
-                "required": ["report", "is_verified", "confidence"],
+                # grounded and numbers are required: the agent must explicitly
+                # declare which facts are evidence-backed (grounded) and which
+                # figures+source it used (numbers, [] for non-numeric). These feed
+                # the cross-check's grounded-fact and numeric-conflict detection,
+                # so silently omitting them would bypass verification.
+                "required": ["report", "is_verified", "confidence", "grounded", "numbers"],
             },
         },
     }

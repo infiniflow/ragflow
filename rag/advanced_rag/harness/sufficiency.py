@@ -219,6 +219,73 @@ def _detect_numeric_conflict(disclosed: list[str]) -> list[str]:
     return conflicts
 
 
+# Attribute/relationship descriptors: content words in a grounded fact that are
+# neither named entities nor numbers, e.g. "hometown", "captain", "born", "age".
+# Their presence in the evidence is what makes a grounded assertion authoritative
+# (the fact's *relationship*, not just its entities, must be supported).
+_PREDICATE_STOP = {
+    "the",
+    "a",
+    "an",
+    "of",
+    "in",
+    "on",
+    "at",
+    "to",
+    "for",
+    "and",
+    "or",
+    "is",
+    "was",
+    "are",
+    "were",
+    "by",
+    "with",
+    "from",
+    "his",
+    "her",
+    "their",
+    "its",
+    "that",
+    "this",
+    "he",
+    "she",
+    "they",
+    "it",
+    "also",
+    "as",
+    "when",
+    "who",
+    "what",
+    "which",
+    "there",
+    "have",
+    "has",
+    "had",
+    "be",
+    "been",
+    "being",
+}
+
+
+def _predicate_terms(fact: str, excluded: list[str]) -> list[str]:
+    """Return the predicate/attribute descriptors of ``fact`` (lowercased, ≤4 tokens).
+
+    These are the content words that carry the relationship being asserted,
+    excluding proper entities (in ``excluded``) and common stop words. For
+    "hometown is Ithaca" → ["hometown"]; for "Dustin Brown captain of Los Angeles
+    Kings" → ["captain"]. Used to verify the fact's relationship is evidenced.
+    """
+    excluded_lower = {e.lower() for e in excluded}
+    tokens = re.findall(r"[A-Za-z][A-Za-z'-]{1,19}", fact.lower())
+    out: list[str] = []
+    for tok in tokens:
+        if tok in excluded_lower or tok in _PREDICATE_STOP or tok in out:
+            continue
+        out.append(tok)
+    return out[:4]
+
+
 def _entity_present(ent: str, chunk_texts: list[str]) -> bool:
     """Whether ``ent`` (lowercased) appears in any of the evidence chunk texts.
 
@@ -368,8 +435,20 @@ def cross_check_claim(agent_result: AgentResult, all_chunks: dict) -> ClaimCross
         if not key_tokens:
             # No extractable key content — fall back to whole-phrase match.
             return any(re.search(rf"(?<![\w]){re.escape(f)}(?![\w])", t) for t in chunk_texts)
-        hits = sum(1 for tok in key_tokens if _entity_present(tok, chunk_texts))
-        return hits / len(key_tokens) >= 0.5
+        # Predicate/attribute co-occurrence: partial token overlap alone is not
+        # authoritative — the fact's *relationship* must also be evidenced. For
+        # "hometown is Ithaca", matching only "Ithaca" (present as a BIRTHPLACE)
+        # must NOT ground the claim. Extract the attribute descriptors (non-entity
+        # content words that carry the relation: "hometown", "captain of", "born")
+        # and require one of them to appear in the evidence. This downgrades a
+        # pure entity-overlap hit to non-authoritative when the predicate is absent.
+        predicate_tokens = _predicate_terms(fact, key_tokens)
+        entity_hits = sum(1 for tok in key_tokens if _entity_present(tok, chunk_texts))
+        if predicate_tokens:
+            pred_ok = any(re.search(rf"(?<![\w]){re.escape(pt)}(?![\w])", t) for pt in predicate_tokens for t in chunk_texts)
+            if not pred_ok:
+                return False  # relationship not evidenced → prior-injection risk
+        return entity_hits / len(key_tokens) >= 0.5
 
     grounded_facts = [str(g) for g in (agent_result.grounded or []) if str(g).strip()]
     if grounded_facts:
