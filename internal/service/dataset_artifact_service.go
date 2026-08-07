@@ -407,7 +407,7 @@ type WikiGraphRelation struct {
 // GetWikiGraph returns the wiki entity/relation graph for a dataset.
 func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, datasetID string) (*WikiGraph, error) {
 	entityChunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdWikiEntity}},
+		map[string]interface{}{"compile_kwd": []string{CompileKwdWikiEntity}, "available_int": 1},
 		[]string{"slug_kwd", "title_kwd", "aliases_kwd", "description_with_weight", "entity_type_kwd", "weight_int", "source_chunk_ids"},
 		0, 1000, (&types.OrderByExpr{}).Desc("weight_int"))
 	if err != nil {
@@ -420,27 +420,43 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 	graph := &WikiGraph{Entities: []WikiGraphEntity{}, Relations: []WikiGraphRelation{}}
 	for _, c := range entityChunks {
 		w := intValue(c["weight_int"])
+		// Match the GetWikiPage / ListWikiPages contract: expose the bare slug
+		// and the pure page_type (no "wiki_" prefix, no "<page_type>/" prefix)
+		// so the frontend can build artifact/<page_type>/<slug> links that
+		// round-trip. entity_type_kwd stores "wiki_" + page_type (e.g.
+		// "wiki_topic"); strip the prefix. slug_kwd stores the full
+		// "<page_type>/<slug>" form; expose the trailing bare slug.
+		fullSlug := firstStringValue(c["slug_kwd"])
+		bareSlug := fullSlug
+		pageType := strings.TrimPrefix(firstStringValue(c["entity_type_kwd"]), "wiki_")
+		if idx := strings.LastIndex(bareSlug, "/"); idx >= 0 {
+			pageType = bareSlug[:idx]
+			bareSlug = bareSlug[idx+1:]
+		}
 		graph.Entities = append(graph.Entities, WikiGraphEntity{
-			Slug:           firstStringValue(c["slug_kwd"]),
+			Slug:           bareSlug,
 			Name:           firstStringValue(c["title_kwd"]),
 			Aliases:        toStringSlice(c["aliases_kwd"]),
 			Description:    firstStringValue(c["description_with_weight"]),
-			Type:           firstStringValue(c["entity_type_kwd"]),
+			Type:           pageType,
 			Weight:         w,
 			SourceChunkIDs: toStringSlice(c["source_chunk_ids"]),
 		})
 	}
 	if len(fromKwds) > 0 {
 		relChunks, _, err := s.searchCompiled(ctx, tenantID, datasetID,
-			map[string]interface{}{"compile_kwd": []string{CompileKwdWikiRelation}, "from_kwd": fromKwds},
+			map[string]interface{}{"compile_kwd": []string{CompileKwdWikiRelation}, "available_int": 1, "from_kwd": fromKwds},
 			[]string{"from_kwd", "to_kwd"}, 0, 10000, nil)
 		if err != nil {
 			return nil, err
 		}
 		for _, c := range relChunks {
+			// Relations reference endpoints by their full "<page_type>/<slug>"
+			// form in ES; expose them as bare slugs so the frontend's
+			// nodesBySlug (keyed on the entity's bare slug) can resolve edges.
 			graph.Relations = append(graph.Relations, WikiGraphRelation{
-				From: firstStringValue(c["from_kwd"]),
-				To:   firstStringValue(c["to_kwd"]),
+				From: bareWikiSlug(firstStringValue(c["from_kwd"])),
+				To:   bareWikiSlug(firstStringValue(c["to_kwd"])),
 			})
 		}
 	}
@@ -875,6 +891,18 @@ func firstStringValue(v interface{}) string {
 		}
 	}
 	return ""
+}
+
+// bareWikiSlug strips the "<page_type>/" prefix from a full wiki slug
+// ("topic/yellow-turban-rebellion" -> "yellow-turban-rebellion"), matching the
+// bare-slug form the graph UI keys nodes/relations on. Slugs with no prefix are
+// returned unchanged.
+func bareWikiSlug(slug string) string {
+	s := strings.TrimSpace(slug)
+	if idx := strings.LastIndex(s, "/"); idx >= 0 && idx < len(s)-1 {
+		return s[idx+1:]
+	}
+	return s
 }
 
 // toStringSlice normalizes an ES field value (string or list) to []string.

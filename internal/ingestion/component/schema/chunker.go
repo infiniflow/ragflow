@@ -173,9 +173,10 @@ type ChunkerOutputs struct {
 
 type TokenChunkerParam struct {
 	// DelimiterMode selects the chunking strategy.
-	// Allowed value: "delimiter".
-	// The single-chunk "one" behavior is provided by the separate
-	// OneChunker component.
+	// Allowed value: "delimiter". The legacy "token_size" value is accepted for
+	// backward compatibility and normalized to "delimiter" (it is behaviorally
+	// identical at runtime; see Validate). The single-chunk "one" behavior is
+	// provided by the separate OneChunker component.
 	DelimiterMode string `json:"delimiter_mode"`
 
 	// ChunkTokenSize is the target chunk size in tokens.
@@ -355,6 +356,15 @@ func (p *TokenChunkerParam) Validate() error {
 		// to 29 (user expectation) rather than 28. Mirrors Python's
 		// common/float_utils.py:50-58 fix for #17418.
 		p.OverlappedPercent = math.Round(v * 100)
+	}
+	// Backward-compat: Python removed the standalone "token_size" mode and
+	// treats it as identical to "delimiter" at runtime, normalizing it in
+	// check() (rag/flow/chunker/token_chunker.py). A dataset configured under
+	// the old scheme may still carry delimiter_mode="token_size"; normalize it
+	// here instead of rejecting it so those pipelines keep working (mirrors
+	// the Python behaviour exactly).
+	if p.DelimiterMode == "token_size" {
+		p.DelimiterMode = "delimiter"
 	}
 	switch p.DelimiterMode {
 	case "delimiter":

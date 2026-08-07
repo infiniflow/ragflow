@@ -62,6 +62,7 @@ type engineReader struct {
 // stored compiled chunk document.
 var compiledSelectFields = []string{
 	"id", "doc_id", "tenant_id", "compile_kwd",
+	"available_int",
 	"content_with_weight", "kc_payload",
 	"source_chunk_ids", "source_doc_ids",
 	"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
@@ -140,7 +141,7 @@ func productFromChunkMap(c map[string]interface{}, tenant string) (kccommon.Prod
 	id, _ := c["id"].(string)
 	docID, _ := c["doc_id"].(string)
 	variant, _ := c["compile_kwd"].(string)
-	merged := isMerged(c["kc_merged"])
+	merged := isAvailable(c["available_int"])
 
 	meta := map[string]any{}
 	if v, ok := c["name_kwd"].(string); ok && v != "" {
@@ -216,7 +217,7 @@ func productFromChunkMap(c map[string]interface{}, tenant string) (kccommon.Prod
 	}, true
 }
 
-// SearchSimilar runs a dense KNN over the existing merged rows (kc_merged=1,
+// SearchSimilar runs a dense KNN over the existing merged rows (available_int=1,
 // compile_kwd=variant) of the KB and returns the closest hit above minScore.
 func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, variant kccommon.Variant, vector []float64, topN int, minScore float64) (kccommon.Product, float64, error) {
 	eng := r.eng
@@ -236,11 +237,11 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 		Limit:      topN,
 		SelectFields: append([]string{"id", "doc_id", "kb_id", "content_with_weight", "kc_payload",
 			"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd", "slug_kwd",
-			"type", "source_chunk_ids", "source_doc_ids", "kc_merged", "compile_kwd"},
+			"type", "source_chunk_ids", "source_doc_ids", "available_int", "compile_kwd"},
 			wikiSelectFields...),
 		Filter: map[string]interface{}{
-			"kc_merged":   1,
-			"compile_kwd": string(variant),
+			"available_int": 1,
+			"compile_kwd":   string(variant),
 		},
 		MatchExprs: []interface{}{
 			&types.MatchDenseExpr{
@@ -267,10 +268,10 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 	return kccommon.Product{}, 0, nil
 }
 
-// isMerged normalizes the boxed kc_merged field returned by the DocEngine,
+// isAvailable normalizes the boxed available_int field returned by the DocEngine,
 // which may be stored as a string ("1"/"0"/"true"), a bool, or a numeric,
 // depending on backend and mapping. Returns true for any positive/true form.
-func isMerged(v interface{}) bool {
+func isAvailable(v interface{}) bool {
 	switch t := v.(type) {
 	case nil:
 		return false

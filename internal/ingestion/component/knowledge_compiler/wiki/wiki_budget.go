@@ -13,10 +13,12 @@ import "sort"
 //   - a deterministic, mention-grounded truncation that selects the top pages
 //     under the global cap and reports how many were excluded.
 //
-// The provider never receives an explicit output max_tokens on the wiki path
-// (see P0 in tasks/2026-08-04-wiki-go-python-gap-alignment-plan.md): output
-// scale is controlled purely through max_pages in the prompt + the in-code
-// truncation below.
+// The provider receives an explicit output max_tokens on the wiki PLAN path
+// equal to outputTokens (below): without it, small-window models default to a
+// tiny completion cap and the large plan JSON gets truncated mid-stream,
+// producing "LLM response is not parseable JSON". The REFINE (page body)
+// step uses its own cap via wikiRefineMaxTokens. capacity (max page count) and
+// outputTokens (hard completion cap) both derive from the same model window.
 
 // Python alignment constants (wiki.py:1670-1674, 1783-1787).
 const (
@@ -55,6 +57,11 @@ type wikiPlanBudget struct {
 	// target; that is deliberate (never ask a small-window model for more pages
 	// than its output can hold).
 	Max int
+	// MaxTokens is the explicit completion cap sent to the provider for the
+	// PLAN step. It is the same outputTokens used to derive Max and prevents
+	// the large page JSON from being truncated mid-stream by a small default
+	// completion cap.
+	MaxTokens int
 }
 
 // Cap is the page budget the planner is actually allowed to emit. It is the
@@ -104,7 +111,7 @@ func deriveWikiPlanBudget(modelContextLen, totalItems int) wikiPlanBudget {
 	// never be asked to emit more pages than its output capacity permits, or we
 	// reintroduce truncated-JSON risk. When capacity < Target, Max simply lands
 	// below Target and the achievable page count is capacity-bound.
-	return wikiPlanBudget{Target: target, Max: maxCount}
+	return wikiPlanBudget{Target: target, Max: maxCount, MaxTokens: outputTokens}
 }
 
 // wikiExtractItemCount counts the planning items in one reduced extract. It is
