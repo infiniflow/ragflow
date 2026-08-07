@@ -15,14 +15,21 @@
 #
 
 import importlib.util
+import io
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
+from PIL import Image
 
-def _load_picture_module(tokenized_texts):
-    """Load the picture parser with lightweight fakes for external services."""
+
+def _load_picture_module(tokenized_texts, ocr_text="", vision_error=""):
+    """Load the picture parser with lightweight fakes for external services.
+
+    ``ocr_text`` is what the local OCR returns for an image, and ``vision_error``
+    makes the vision-model lookup fail with that message.
+    """
 
     class FakeLLMBundle:
         def __init__(self, *args, **kwargs):
@@ -38,8 +45,13 @@ def _load_picture_module(tokenized_texts):
     llm_service = ModuleType("api.db.services.llm_service")
     llm_service.LLMBundle = FakeLLMBundle
 
+    def resolve_default_model(*_args, **_kwargs):
+        if vision_error:
+            raise LookupError(vision_error)
+        return {}
+
     tenant_model_service = ModuleType("api.db.joint_services.tenant_model_service")
-    tenant_model_service.get_tenant_default_model_by_type = lambda *args, **kwargs: {}
+    tenant_model_service.get_tenant_default_model_by_type = resolve_default_model
     tenant_model_service.get_first_provider_model_name = lambda *args, **kwargs: None
     tenant_model_service.get_composite_model_name_by_id = lambda model_id: model_id
     tenant_model_service.resolve_model_config = lambda *args, **kwargs: {}
@@ -54,8 +66,13 @@ def _load_picture_module(tokenized_texts):
     string_utils = ModuleType("common.string_utils")
     string_utils.clean_markdown_block = lambda value: value
 
+    def fake_ocr(_image):
+        """Mimic deepdoc's OCR return shape: (box, (text, confidence)) pairs."""
+
+        return [(None, (ocr_text, 0.99))] if ocr_text else []
+
     vision = ModuleType("deepdoc.vision")
-    vision.OCR = lambda: object()
+    vision.OCR = lambda: fake_ocr
 
     nlp = ModuleType("rag.nlp")
     nlp.attach_media_context = lambda docs, *_args: docs
@@ -107,3 +124,63 @@ def test_video_description_is_tokenized_once():
     assert len(chunks) == 1
     assert chunks[0]["doc_type_kwd"] == "video"
     assert tokenized_texts == ["A concise video description."]
+
+
+def _jpeg_bytes():
+    """Encode a small blank image the parser can open."""
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (64, 64), "white").save(buffer, format="JPEG")
+    return buffer.getvalue()
+
+
+def test_short_ocr_text_is_kept_when_vision_model_is_missing():
+    """OCR text under the CV LLM threshold is indexed when no image2text model
+    is configured, instead of being dropped and leaving the image with no chunk.
+
+    Guards https://github.com/infiniflow/ragflow/issues/17941.
+    """
+
+    tokenized_texts = []
+    picture = _load_picture_module(
+        tokenized_texts,
+        ocr_text="工流宛转绕芳甸",
+        vision_error="No default image2text model is set.",
+    )
+
+    callback_calls = []
+    chunks = picture.chunk(
+        "scan.jpg",
+        _jpeg_bytes(),
+        "tenant",
+        "English",
+        callback=lambda *args, **kwargs: callback_calls.append((args, kwargs)),
+    )
+
+    assert len(chunks) == 1, "OCR text was discarded, leaving the image with no chunk"
+    assert chunks[0]["doc_type_kwd"] == "image"
+    assert tokenized_texts == ["工流宛转绕芳甸"]
+
+
+def test_failure_is_reported_when_ocr_finds_no_text():
+    """With no OCR text and no vision model there is nothing to index, so the
+    task must fail rather than report success with zero chunks."""
+
+    tokenized_texts = []
+    picture = _load_picture_module(
+        tokenized_texts,
+        vision_error="No default image2text model is set.",
+    )
+
+    callback_calls = []
+    chunks = picture.chunk(
+        "blank.jpg",
+        _jpeg_bytes(),
+        "tenant",
+        "English",
+        callback=lambda *args, **kwargs: callback_calls.append((args, kwargs)),
+    )
+
+    assert chunks == []
+    assert not tokenized_texts
+    assert [kwargs.get("msg") for _args, kwargs in callback_calls if kwargs.get("prog") == -1] == ["No default image2text model is set."]
