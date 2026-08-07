@@ -1297,7 +1297,11 @@ def _struct_rebuild_doc_storage_doc(
 async def _struct_reembed_payload(payload: dict, embd_mdl):
     """Re-encode a merged payload's description with embd_mdl and return the vector."""
     text = _struct_payload_description(payload)
-    vecs = await _struct_embed(embd_mdl, [text])
+    try:
+        vecs = await _struct_embed(embd_mdl, [text])
+    except Exception:
+        logging.exception("structure merge: failed to re-embed merged payload")
+        return None
     return vecs[0] if vecs else None
 
 
@@ -2017,8 +2021,8 @@ async def _struct_local_dedup(
             )
             new_vec = await _struct_reembed_payload(merged_payload, embd_mdl)
             if new_vec is None:
-                # Re-embed failed: keep existing, drop incoming silently.
-                dropped += 1
+                # Keep both candidates when the merged row cannot be embedded.
+                kept.append(incoming)
                 continue
             rebuilt = _struct_rebuild_doc_storage_doc(
                 merged_payload,
