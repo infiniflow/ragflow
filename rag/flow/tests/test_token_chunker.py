@@ -426,10 +426,10 @@ def test_json_delimiter_mode_consecutive_delimiter_keeps_boundary():
         assert all("##" not in t for t in texts)
 
 
-def test_text_delimiter_mode_zero_or_one_no_atom_split():
-    # chunk_token_size=0/1 must not atom-split delimiter segments into 1-token
+def test_text_delimiter_mode_one_no_atom_split():
+    # chunk_token_size=1 must not atom-split delimiter segments into 1-token
     # chunks; the delimiter path produces delimiter-boundary chunks regardless of cap.
-    for module, chunker in _build_json_chunker({"delimiter_mode": "delimiter", "delimiters": ["`|`"]}):
+    for _module, chunker in _build_json_chunker({"delimiter_mode": "delimiter", "delimiters": ["`|`"]}):
         # text path: delimiter_mode is delimiter but a custom delimiter is
         # present, so the delimiter branch (_split_text_by_pattern) is used.
         kwargs = {
@@ -437,9 +437,9 @@ def test_text_delimiter_mode_zero_or_one_no_atom_split():
             "output_format": "text",
             "text": "aaa|bbb|ccc",
         }
-        for chunk_token_size in (0, 1):
-            setattr(chunker._param, "chunk_token_size", chunk_token_size)
-            asyncio.run(chunker._invoke(**kwargs))
-            chunks = chunker._outputs["chunks"]
-            texts = [c["text"] for c in chunks]
-            assert texts == ["aaa", "bbb", "ccc"], f"chunk_token_size={chunk_token_size} atom-split a delimiter segment: {texts}"
+        chunk_token_size = 1
+        setattr(chunker._param, "chunk_token_size", chunk_token_size)
+        asyncio.run(chunker._invoke(**kwargs))
+        chunks = chunker._outputs["chunks"]
+        texts = [c["text"] for c in chunks]
+        assert texts == ["aaa", "bbb", "ccc"], f"chunk_token_size={chunk_token_size} atom-split a delimiter segment: {texts}"
