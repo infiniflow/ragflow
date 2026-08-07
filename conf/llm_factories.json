@@ -1735,6 +1735,34 @@
             "url": "https://open.bigmodel.cn/api/paas/v4",
             "llm": [
                 {
+                    "llm_name": "glm-5.2",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "glm-5.1",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "glm-5-turbo",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "glm-5",
+                    "tags": "LLM,CHAT,128k",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "glm-4.7",
                     "tags": "LLM,CHAT,128K",
                     "max_tokens": 128000,
