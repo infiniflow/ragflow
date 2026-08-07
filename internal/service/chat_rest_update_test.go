@@ -489,6 +489,24 @@ func TestChatServiceCreateRejectsInvalidPromptConfig(t *testing.T) {
 	}
 }
 
+func TestChatServiceUpdateRejectsDuplicatePromptParameterKeys(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	svc := NewChatService()
+	_, err := svc.UpdateChat(t.Context(), "user-1", "chat-1", map[string]interface{}{
+		"prompt_config": map[string]interface{}{
+			"parameters": []interface{}{
+				map[string]interface{}{"key": "knowledge"},
+				map[string]interface{}{"key": "knowledge"},
+			},
+		},
+	})
+	if err == nil || err.Error() != "`parameters` contains duplicate key: knowledge" {
+		t.Fatalf("expected duplicate parameter key error, got %v", err)
+	}
+}
+
 func TestChatServiceCreatePromptDefaultsContract(t *testing.T) {
 	setupChatRESTUpdateServiceTestDB(t)
 
