@@ -37,7 +37,9 @@ import (
 )
 
 func getDelimiters(delimiters string) string {
-	p := chunk.CompileDelimiterPattern(chunk.ParseDelimiterField(delimiters))
+	// Mirror the live path: backtick-wrapped entries contribute their inner
+	// content (see chunk.CompileDelimiterPatternList).
+	p := chunk.CompileDelimiterPatternList([]string{delimiters}, true)
 	if p == nil {
 		return ""
 	}
@@ -232,13 +234,9 @@ func TestTokenChunker_BacktickASplitsOnlyAtLowercase(t *testing.T) {
 
 func TestBacktickDelimiterIsCaseSensitive(t *testing.T) {
 	// Extraction and compiled pattern must both preserve letter casing.
-	parsed := chunk.ParseDelimiterField("`End`")
-	if len(parsed) != 1 || parsed[0] != "End" {
-		t.Fatalf("ParseDelimiterField(`End`) = %#v, want [End]", parsed)
-	}
-	p := chunk.CompileDelimiterPattern(parsed)
+	p := chunk.CompileDelimiterPatternList([]string{"`End`"}, true)
 	if p == nil {
-		t.Fatal("CompileDelimiterPattern returned nil")
+		t.Fatal("CompileDelimiterPatternList returned nil")
 	}
 	if !p.MatchString("End") || p.MatchString("end") || p.MatchString("END") {
 		t.Fatalf("pattern %q is not case-sensitive", p.String())
