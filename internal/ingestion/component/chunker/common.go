@@ -78,9 +78,9 @@ func stringListFromAny(in []any) []string {
 
 // compileDelimPattern compiles a TokenChunker-style []string delimiter list.
 // Only backtick-wrapped entries produce an active pattern (Python
-// token_chunker / rag/nlp/delim list helper). Plain entries are ignored here
-// and used by mergeByTokenSize for sentence-level splitting when no active
-// pattern exists. Canonical single-string parser_config.delimiter parsing
+// token_chunker / rag/nlp/delim list helper); plain (non-backtick) entries
+// are ignored here. mergeByTokenSize uses its own hardcoded sentenceDelimiter,
+// not this list. Canonical single-string parser_config.delimiter parsing
 // lives in ragflow/internal/parser/chunk (ParseDelimiterField).
 func compileDelimPattern(delims []string) *regexp.Regexp {
 	return chunk.CompileDelimiterListPattern(delims)
@@ -177,8 +177,6 @@ func emptyOutputs() map[string]any {
 		"chunks":        []map[string]any{},
 	}
 }
-
-func emptyChunkDocs() []schema.ChunkDoc { return []schema.ChunkDoc{} }
 
 // chunkOutputs builds the canonical chunker output (output_format="chunks" +
 // chunks). The Go runtime passes only this explicit output to the next node,

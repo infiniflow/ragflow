@@ -144,26 +144,32 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
       [data, searchTerm, filterTree],
     );
 
-    const visibleExpandedIds = useMemo(() => {
-      if (!searchTerm) return expandedIds;
-      const ids = new Set<string>();
-      const walk = (nodes: TreeSelectNode[]) => {
-        for (const node of nodes) {
-          if (node.children?.length) {
-            ids.add(node.id);
-            walk(node.children);
+    // Auto-expand all matching parents when the search term changes so users
+    // can see search results. The effect only depends on searchTerm and
+    // filteredData, so a manual collapse (which updates expandedIds) won't
+    // trigger re-expansion — the user's collapse choice is respected.
+    useEffect(() => {
+      if (!searchTerm) return;
+      setExpandedIds((prev) => {
+        const next = new Set(prev);
+        const walk = (nodes: TreeSelectNode[]) => {
+          for (const node of nodes) {
+            if (node.children?.length) {
+              next.add(node.id);
+              walk(node.children);
+            }
           }
-        }
-      };
-      walk(filteredData);
-      return ids;
-    }, [searchTerm, expandedIds, filteredData]);
+        };
+        walk(filteredData);
+        return next;
+      });
+    }, [searchTerm, filteredData]);
 
     const renderTree = useCallback(
       (nodes: TreeSelectNode[], level = 0): React.ReactNode => {
         return nodes.map((node) => {
           const leaf = isLeaf(node);
-          const expanded = visibleExpandedIds.has(node.id);
+          const expanded = expandedIds.has(node.id);
           const selected = value === node.id;
 
           return (
@@ -204,7 +210,7 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
           );
         });
       },
-      [isLeaf, visibleExpandedIds, value, handleSelect],
+      [isLeaf, expandedIds, value, handleSelect],
     );
 
     return (

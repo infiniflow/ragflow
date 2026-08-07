@@ -70,19 +70,21 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 	bText := strings.Repeat("word ", 18)
 	cText := strings.Repeat("word ", 6)
 	aN, bN, cN := tokenizeStr(aText), tokenizeStr(bText), tokenizeStr(cText)
-	joinedAB := tokenizeStr(aText + "\n" + bText)
-	// Budget just below the a+b join so a and b cannot merge without
-	// overflowing, but a alone and c alone fit, and an overlap prefix carved
-	// from chunk0 fits ahead of c (overlap path is exercised on chunk 1).
-	budget := joinedAB - 1
+	// The merge decision is now the running sum of per-unit token counts
+	// (aN + bN), faithful to Python's _merge_text_chunks_by_token_size, NOT the
+	// re-tokenized a+b join. Budget just below the a+b running sum so a and b
+	// cannot merge without overflowing (forcing mergeThenClose on chunk0), but
+	// a alone and c alone fit, and an overlap prefix carved from chunk0 fits
+	// ahead of c (overlap path is exercised on chunk 1).
+	budget := aN + bN - 1
 	if budget < aN {
 		budget = aN
 	}
 	if budget < cN {
 		budget = cN
 	}
-	if joinedAB <= budget {
-		t.Fatalf("could not derive tight budget (a=%d b=%d joined=%d budget=%d)", aN, bN, joinedAB, budget)
+	if aN+bN <= budget {
+		t.Fatalf("could not derive tight budget (a=%d b=%d sum=%d budget=%d)", aN, bN, aN+bN, budget)
 	}
 	items := [][]schema.ChunkDoc{
 		{

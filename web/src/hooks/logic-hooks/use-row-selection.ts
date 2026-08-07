@@ -42,7 +42,8 @@ export function useSelectedIds<T extends Array<{ id: string }>>(
         .map((x) => x.id);
     } else {
       // ID-based selection (when getRowId is used)
-      return selectionKeys.filter((id) => list.some((item) => item.id === id));
+      // return selectionKeys.filter((id) => list.some((item) => item.id === id));
+      return selectionKeys;
     }
   }, [list, rowSelection]);
 

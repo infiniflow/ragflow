@@ -110,7 +110,8 @@ type ListModelResponse struct {
 	MaxOutput     *int           `json:"max_output"`
 	ModelTypes    []string       `json:"model_types"`
 	Thinking      *ModelThinking `json:"thinking"`
-	MaxDimension  *int           `json:"max_dimension"` // used by embedding models
+	MaxDimension  *int           `json:"max_dimension"`  // used by embedding models
+	MaxBatchSize  *int           `json:"max_batch_size"` // used by embedding models
 	Dimensions    []int          `json:"dimensions"`
 }
 

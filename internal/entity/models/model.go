@@ -166,7 +166,8 @@ type Model struct {
 	Thinking      *ModelThinking `json:"thinking"`
 	Tools         *ModelTools    `json:"tools"`
 	Class         *string        `json:"class"`
-	MaxDimension  *int           `json:"max_dimension"` // used by embedding models
+	MaxDimension  *int           `json:"max_dimension"`  // used by embedding models
+	MaxBatchSize  *int           `json:"max_batch_size"` // used by embedding models
 	Dimensions    []int          `json:"dimensions"`
 	BatchSize     *int           `json:"batch_size"` // max texts per Embed request; used by embedding models
 	Alias         []string       `json:"alias"`
@@ -417,6 +418,9 @@ func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
 		if model.MaxDimension != nil {
 			modelData["max_dimension"] = *model.MaxDimension
 		}
+		if model.MaxBatchSize != nil {
+			modelData["max_batch_size"] = *model.MaxBatchSize
+		}
 		if len(model.Dimensions) > 0 {
 			modelData["dimensions"] = model.Dimensions
 		}
@@ -516,11 +520,12 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 		// keep the response shape stable for clients that destructure
 		// the object.
 		modelData := map[string]interface{}{
-			"name":          model.Name,
-			"max_output":    model.MaxOutput,
-			"model_types":   model.ModelTypes,
-			"max_dimension": model.MaxDimension,
-			"dimensions":    model.Dimensions,
+			"name":           model.Name,
+			"max_output":     model.MaxOutput,
+			"model_types":    model.ModelTypes,
+			"max_dimension":  model.MaxDimension,
+			"max_batch_size": model.MaxBatchSize,
+			"dimensions":     model.Dimensions,
 		}
 		if model.BatchSize != nil {
 			modelData["batch_size"] = *model.BatchSize
@@ -634,9 +639,10 @@ func (pm *ProviderManager) SearchModelInfo(providerName, modelName string, filte
 
 	if matchFilter {
 		modelData := map[string]interface{}{
-			"name":        model.Name,
-			"max_output":  model.MaxOutput,
-			"model_types": model.ModelTypes,
+			"name":           model.Name,
+			"max_output":     model.MaxOutput,
+			"model_types":    model.ModelTypes,
+			"max_batch_size": model.MaxBatchSize,
 			//"features":    getFeaturesMap(model.Features),
 		}
 
@@ -694,10 +700,11 @@ func (pm *ProviderManager) SearchByType(modelType string) ModelResponse {
 		for _, model := range provider.Models {
 			if containsModelType(model.ModelTypes, modelType) {
 				modelData := map[string]interface{}{
-					"provider":    provider.Name,
-					"name":        model.Name,
-					"max_output":  model.MaxOutput,
-					"model_types": model.ModelTypes,
+					"provider":       provider.Name,
+					"name":           model.Name,
+					"max_output":     model.MaxOutput,
+					"model_types":    model.ModelTypes,
+					"max_batch_size": model.MaxBatchSize,
 					//"features":    getFeaturesMap(model.Features),
 				}
 				resp.Data = append(resp.Data, modelData)

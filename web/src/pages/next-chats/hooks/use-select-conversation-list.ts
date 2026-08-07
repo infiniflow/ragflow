@@ -84,15 +84,19 @@ export const useSelectDerivedConversationList = () => {
 
   // When you first enter the page, select the top conversation card
 
+  // useEffect(() => {
+  //   setList((prevList) => {
+  //     const tempItems = prevList.filter((item) => item.is_new);
+  //     const existingTempIds = new Set(tempItems.map((t) => t.id));
+  //     const newItems = conversationList.filter(
+  //       (item) => !existingTempIds.has(item.id),
+  //     );
+  //     return [...tempItems, ...newItems];
+  //   });
+  // }, [conversationList]);
+
   useEffect(() => {
-    setList((prevList) => {
-      const tempItems = prevList.filter((item) => item.is_new);
-      const existingTempIds = new Set(tempItems.map((t) => t.id));
-      const newItems = conversationList.filter(
-        (item) => !existingTempIds.has(item.id),
-      );
-      return [...tempItems, ...newItems];
-    });
+    setList([...conversationList]);
   }, [conversationList]);
 
   return {

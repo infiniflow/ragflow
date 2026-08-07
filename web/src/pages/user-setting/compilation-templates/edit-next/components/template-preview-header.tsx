@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
 import { JsonPreviewSheet } from './json-preview-sheet';
-import { WorkflowPreviewSheet } from './workflow-preview-sheet';
 
 interface TemplatePreviewHeaderProps {
   templateName: string | undefined;
@@ -16,8 +15,6 @@ export function TemplatePreviewHeader({
   templateName,
   jsonSheetOpen,
   onJsonSheetOpenChange,
-  workflowSheetOpen,
-  onWorkflowSheetOpenChange,
   allFormValues,
 }: TemplatePreviewHeaderProps) {
   const { t } = useTranslation();
@@ -32,10 +29,6 @@ export function TemplatePreviewHeader({
           open={jsonSheetOpen}
           onOpenChange={onJsonSheetOpenChange}
           value={allFormValues}
-        />
-        <WorkflowPreviewSheet
-          open={workflowSheetOpen}
-          onOpenChange={onWorkflowSheetOpenChange}
         />
       </div>
     </section>

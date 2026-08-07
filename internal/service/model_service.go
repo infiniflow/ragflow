@@ -398,6 +398,7 @@ func (m *ModelProviderService) ListSupportedModels(ctx context.Context, provider
 		result = append(result, map[string]interface{}{
 			"name":           model.Name,
 			"max_dimension":  model.MaxDimension,
+			"max_batch_size": model.MaxBatchSize,
 			"dimensions":     model.Dimensions,
 			"content_length": model.ContentLength,
 			"max_output":     model.MaxOutput,
@@ -514,6 +515,9 @@ func setDiscoveredModelMetadata(extra map[string]interface{}, model modelModule.
 	extra["max_tokens"] = maxTokens
 	if model.MaxDimension != nil {
 		extra["max_dimension"] = *model.MaxDimension
+	}
+	if model.MaxBatchSize != nil {
+		extra["max_batch_size"] = *model.MaxBatchSize
 	}
 	if len(model.Dimensions) > 0 {
 		extra["dimensions"] = model.Dimensions
@@ -1140,8 +1144,11 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 					modelTypes = modelModule.InferModelTypes(modelName)
 				}
 				modelsToVerify = append(modelsToVerify, &modelModule.Model{
-					Name:       modelName,
-					ModelTypes: modelTypes,
+					Name:         modelName,
+					ModelTypes:   modelTypes,
+					MaxDimension: rm.MaxDimension,
+					MaxBatchSize: rm.MaxBatchSize,
+					Dimensions:   append([]int(nil), rm.Dimensions...),
 				})
 			}
 		} else {
@@ -1178,7 +1185,19 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 				msg := []modelModule.Message{{Role: "user", Content: "Hi"}}
 				_, err = driver.ChatWithMessages(ctx, modelName, msg, apiConfig, nil, nil)
 			case "embedding":
-				_, err = driver.Embed(ctx, &modelName, []string{"test"}, apiConfig, nil, nil)
+				// Provider discovery can return models without catalog limits. Apply
+				// the strict validator whenever the model has the metadata required
+				// to construct a valid verification request.
+				if model.MaxDimension != nil && model.MaxBatchSize != nil {
+					requestedDimension := *model.MaxDimension
+					if len(model.Dimensions) > 0 {
+						requestedDimension = model.Dimensions[0]
+					}
+					err = validateEmbeddingModel(model, requestedDimension, 1)
+				}
+				if err == nil {
+					_, err = driver.Embed(ctx, &modelName, []string{"test"}, apiConfig, nil, nil)
+				}
 			case "rerank":
 				_, err = driver.Rerank(ctx, &modelName, "test", []string{"test"}, apiConfig, &modelModule.RerankConfig{}, nil)
 			case "tts":
@@ -2509,6 +2528,7 @@ type tenantModelExtra struct {
 	MaxTokens    *int     `json:"max_tokens"`
 	ModelTypes   []string `json:"model_types"`
 	MaxDimension *int     `json:"max_dimension"`
+	MaxBatchSize *int     `json:"max_batch_size"`
 	Dimensions   []int    `json:"dimensions"`
 	Thinking     *bool    `json:"thinking"`
 }
@@ -2550,6 +2570,9 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 	}
 	if extra.MaxDimension != nil && *extra.MaxDimension > 0 {
 		model.MaxDimension = extra.MaxDimension
+	}
+	if extra.MaxBatchSize != nil && *extra.MaxBatchSize > 0 {
+		model.MaxBatchSize = extra.MaxBatchSize
 	}
 	if len(extra.Dimensions) > 0 {
 		model.Dimensions = append([]int(nil), extra.Dimensions...)
@@ -2860,28 +2883,48 @@ func (m *ModelProviderService) ChatToModelStreamWithSender(ctx context.Context, 
 	return common.CodeSuccess, nil
 }
 
-func validateEmbeddingDimension(model *modelModule.Model, requested int) error {
-	if requested <= 0 || model == nil {
-		return nil
+func validateEmbeddingModel(model *modelModule.Model, requestedDimension, requestedBatchSize int) error {
+	if model == nil {
+		return fmt.Errorf("embedding model is nil")
+	}
+
+	if requestedDimension <= 0 {
+		return fmt.Errorf("input dimension <= 0")
+	}
+
+	if requestedBatchSize <= 0 {
+		return fmt.Errorf("input batch size <= 0")
+	}
+
+	if model.MaxDimension == nil {
+		return fmt.Errorf("input embedding max dimension is nil, %s", model.Name)
+	}
+
+	if model.MaxBatchSize == nil {
+		return fmt.Errorf("input embedding max batch size is nil, %s", model.Name)
+	}
+
+	if *model.MaxBatchSize < requestedBatchSize {
+		return fmt.Errorf("input embedding max batch size is more than limitation, %s", model.Name)
 	}
 
 	if len(model.Dimensions) > 0 {
 		for _, dim := range model.Dimensions {
-			if dim == requested {
+			if dim == requestedDimension {
 				return nil
 			}
 		}
 		return fmt.Errorf(
 			"dimension %d is not supported by model %s, supported dimensions: %v",
-			requested,
+			requestedDimension,
 			model.Name,
 			model.Dimensions,
 		)
 	}
-	if model.MaxDimension != nil && requested > *model.MaxDimension {
+	if model.MaxDimension != nil && requestedDimension > *model.MaxDimension {
 		return fmt.Errorf(
 			"dimension %d is not supported by model %s, max dimension: %d",
-			requested,
+			requestedDimension,
 			model.Name,
 			*model.MaxDimension,
 		)
@@ -2940,7 +2983,7 @@ func (m *ModelProviderService) EmbedText(ctx context.Context, providerName, inst
 		}
 	}
 
-	if err = validateEmbeddingDimension(info.ModelInfo, modelConfig.Dimension); err != nil {
+	if err = validateEmbeddingModel(info.ModelInfo, modelConfig.Dimension, len(texts)); err != nil {
 		return nil, common.CodeBadRequest, err
 	}
 

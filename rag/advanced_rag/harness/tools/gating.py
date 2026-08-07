@@ -111,10 +111,13 @@ def get_gated_tools(
         sorted_tools.append(tool_name)
 
     selected = sorted_tools[: phase_config["max_returned"]]
-    defs = [TOOL_REGISTRY[n]["function_schema"] for n in selected if n in TOOL_REGISTRY]
-    for d in defs:
-        d["x_phase"] = phase
-        d["x_phase_hint"] = phase_config["tool_hint"]
+    # Copy the registry schemas before annotating — the registry dicts are
+    # shared process-wide, mutating them would leak phase hints across
+    # concurrent requests.
+    defs = []
+    for n in selected:
+        if n in TOOL_REGISTRY:
+            defs.append({**TOOL_REGISTRY[n]["function_schema"], "x_phase": phase, "x_phase_hint": phase_config["tool_hint"]})
     return defs
 
 
