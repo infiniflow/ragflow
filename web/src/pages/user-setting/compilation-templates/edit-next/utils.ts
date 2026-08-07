@@ -315,3 +315,20 @@ export const getTypeOptionsFromBuiltinSection = (
     .sort()
     .map((value) => ({ label: value, value }));
 };
+
+export const getRequiredFieldKeys = (fieldKeys: string[]) =>
+  fieldKeys.includes('type') ? ['type', 'description'] : fieldKeys;
+
+export const getAvailableTypeOptions = (
+  builtinSection: ICompilationTemplateSection | undefined,
+  existingFields: Record<string, string>[] | undefined,
+  editingType?: string,
+) => {
+  const usedTypes = new Set(
+    (existingFields ?? []).map((field) => field.type).filter(Boolean),
+  );
+  if (editingType) usedTypes.delete(editingType);
+  return getTypeOptionsFromBuiltinSection(builtinSection).filter(
+    (option) => !usedTypes.has(option.value),
+  );
+};

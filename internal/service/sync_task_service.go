@@ -107,6 +107,8 @@ func (s *SyncTaskService) Claim(ctx context.Context, taskID string) (bool, error
 	return true, s.taskDAO.MarkConnectorRunning(ctx, taskContext.Connector.ID)
 }
 
+// TODO: refactor some needless func
+
 // GetContext loads a task execution context.
 func (s *SyncTaskService) GetContext(ctx context.Context, taskID string) (SyncTaskContext, error) {
 	return s.taskDAO.GetTaskContext(ctx, taskID)
