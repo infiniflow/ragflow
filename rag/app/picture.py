@@ -104,11 +104,12 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             img_binary.seek(0)
             image_bytes = img_binary.read()
 
+        # Model lookup and vision providers currently expose heterogeneous SDK exceptions.
         try:
             cv_model_config = get_tenant_default_model_by_type(tenant_id, LLMType.VISION)
             cv_mdl = LLMBundle(tenant_id, model_config=cv_model_config, lang=lang)
             ans = cv_mdl.describe(image_bytes)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             if txt.strip():
                 _logger.warning("Vision model unavailable; using OCR text only")
                 tokenize(doc, txt, eng, language=lang)

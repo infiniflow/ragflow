@@ -25,7 +25,7 @@ import pytest
 from PIL import Image
 
 
-def _load_picture_module(tokenized_texts, ocr_text="", vision_description=None, tokenize_error=None):
+def _load_picture_module(tokenized_texts, ocr_text="", vision_description=None, tokenize_error=None, model_lookup_error=None):
     """Load the picture parser with lightweight fakes for external services."""
 
     class FakeLLMBundle:
@@ -48,7 +48,13 @@ def _load_picture_module(tokenized_texts, ocr_text="", vision_description=None, 
     llm_service.LLMBundle = FakeLLMBundle
 
     tenant_model_service = ModuleType("api.db.joint_services.tenant_model_service")
-    tenant_model_service.get_tenant_default_model_by_type = lambda *args, **kwargs: {}
+
+    def get_tenant_default_model_by_type(*_args, **_kwargs):
+        if model_lookup_error is not None:
+            raise model_lookup_error
+        return {}
+
+    tenant_model_service.get_tenant_default_model_by_type = get_tenant_default_model_by_type
     tenant_model_service.get_first_provider_model_name = lambda *args, **kwargs: None
     tenant_model_service.get_composite_model_name_by_id = lambda model_id: model_id
     tenant_model_service.resolve_model_config = lambda *args, **kwargs: {}
@@ -165,11 +171,27 @@ def test_whitespace_only_ocr_does_not_create_a_chunk():
     assert tokenized_texts == []
 
 
+def test_short_ocr_text_is_preserved_when_model_lookup_fails():
+    tokenized_texts = []
+    picture = _load_picture_module(
+        tokenized_texts,
+        ocr_text="short OCR text",
+        model_lookup_error=LookupError("vision model unavailable"),
+    )
+
+    image_bytes = io.BytesIO()
+    Image.new("RGB", (32, 32), "white").save(image_bytes, format="PNG")
+
+    chunks = picture.chunk("scan.png", image_bytes.getvalue(), "tenant", "English", callback=lambda *_args, **_kwargs: None)
+
+    assert len(chunks) == 1
+    assert tokenized_texts == ["short OCR text"]
+
+
 def test_tokenization_errors_are_not_reported_as_ocr_fallback():
     picture = _load_picture_module(
         [],
         ocr_text="short OCR text",
-        vision_description="image description",
         tokenize_error=RuntimeError("tokenization failed"),
     )
 
