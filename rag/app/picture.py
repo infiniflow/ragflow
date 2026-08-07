@@ -110,6 +110,10 @@ def chunk(filename, binary, tenant_id, lang, callback=None, **kwargs):
             tokenize(doc, txt, eng, language=lang)
             return attach_media_context([doc], 0, image_ctx)
         except Exception as e:
+            if txt:
+                tokenize(doc, txt, eng, language=lang)
+                callback(0.8, "CV LLM unavailable; using OCR results.")
+                return attach_media_context([doc], 0, image_ctx)
             callback(prog=-1, msg=str(e))
 
     return []

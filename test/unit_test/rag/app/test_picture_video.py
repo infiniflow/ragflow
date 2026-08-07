@@ -15,13 +15,16 @@
 #
 
 import importlib.util
+import io
 import sys
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
+from PIL import Image
 
-def _load_picture_module(tokenized_texts):
+
+def _load_picture_module(tokenized_texts, ocr_text=""):
     """Load the picture parser with lightweight fakes for external services."""
 
     class FakeLLMBundle:
@@ -55,7 +58,7 @@ def _load_picture_module(tokenized_texts):
     string_utils.clean_markdown_block = lambda value: value
 
     vision = ModuleType("deepdoc.vision")
-    vision.OCR = lambda: object()
+    vision.OCR = lambda: lambda _image: [(None, (ocr_text, 1.0))] if ocr_text else []
 
     nlp = ModuleType("rag.nlp")
     nlp.attach_media_context = lambda docs, *_args: docs
@@ -107,3 +110,26 @@ def test_video_description_is_tokenized_once():
     assert len(chunks) == 1
     assert chunks[0]["doc_type_kwd"] == "video"
     assert tokenized_texts == ["A concise video description."]
+
+
+def test_short_ocr_text_is_preserved_when_vision_model_is_unavailable():
+    tokenized_texts = []
+    picture = _load_picture_module(tokenized_texts, ocr_text="short OCR text")
+
+    image_bytes = io.BytesIO()
+    Image.new("RGB", (32, 32), "white").save(image_bytes, format="PNG")
+    callback_calls = []
+
+    chunks = picture.chunk(
+        "scan.png",
+        image_bytes.getvalue(),
+        "tenant",
+        "English",
+        callback=lambda *args, **kwargs: callback_calls.append((args, kwargs)),
+    )
+
+    errors = [kwargs.get("msg") for _args, kwargs in callback_calls if kwargs.get("prog") == -1]
+    assert not errors
+    assert len(chunks) == 1
+    assert chunks[0]["doc_type_kwd"] == "image"
+    assert tokenized_texts == ["short OCR text"]
